@@ -152,3 +152,44 @@ class TestStringLiteralContentNotTreatedAsStructural:
             ")\n"
         )
         assert filtered_apply(orig, formatted) == orig
+
+
+class TestMultilineTripleQuotedStringArgumentNotMisclassified:
+    """Regression test for a second, distinct bug found while regression-testing this fix against
+    mlframe's own source: a call whose argument is a multi-line triple-quoted string (e.g. a CUDA
+    ``cp.RawKernel(r\"\"\"...\"\"\", "name")`` call) can have difflib's line-level opcode split land
+    a hunk boundary INSIDE the string, so old_block/new_block only see a dangling delimiter with
+    no matching partner. norm() then mis-normalizes the fragment and a genuine call-arg-list
+    explosion goes undetected -- silently APPLIED instead of rejected. A naive per-block odd/even
+    triple-quote count is insufficient: two adjacent hunks (one call's closing delimiter + the
+    next call's opening delimiter) can sum to an even count while still being two unrelated
+    unresolvable fragments -- global per-line state tracking is required."""
+
+    def test_call_arg_explosion_across_a_multiline_raw_string_argument_is_rejected(self):
+        orig = (
+            '    _K["a"] = cp.RawKernel(r"""\n'
+            'extern "C" __global__\n'
+            "void foo() { }\n"
+            '""", "a_kernel")\n'
+            '    _K["b"] = cp.RawKernel(r"""\n'
+            'extern "C" __global__\n'
+            "void bar() { }\n"
+            '""", "b_kernel")\n'
+        )
+        formatted = (
+            '    _K["a"] = cp.RawKernel(\n'
+            '        r"""\n'
+            'extern "C" __global__\n'
+            "void foo() { }\n"
+            '""",\n'
+            '        "a_kernel",\n'
+            "    )\n"
+            '    _K["b"] = cp.RawKernel(\n'
+            '        r"""\n'
+            'extern "C" __global__\n'
+            "void bar() { }\n"
+            '""",\n'
+            '        "b_kernel",\n'
+            "    )\n"
+        )
+        assert filtered_apply(orig, formatted) == orig

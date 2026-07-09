@@ -84,16 +84,35 @@ def _swap_single_to_double_quotes(s: str) -> str:
     return re.sub(r"'((?:[^'\\]|\\.)*)'", repl, s)
 
 
-# Matches a single- or double-quoted string literal, restricted to NOT cross a newline (the
+# Triple-quoted alternatives are listed FIRST so a leading `"""`/`'''` (optionally r-prefixed,
+# as in a CUDA RawKernel source literal) is matched as one atomic multi-line span rather than the
+# single-quote alternatives matching its first two quote characters as an empty string. Their
+# content is intentionally allowed to cross newlines and contain arbitrary punctuation -- unlike
+# the single-quote case below, a triple-quoted string's start/end delimiter is unambiguous, so
+# there is no risk of scanning past it into unrelated code.
+#
+# The single- or double-quoted alternatives are restricted to NOT cross a newline (the
 # [^"\\\n] / [^'\\\n] classes exclude \n explicitly -- character classes match it by default).
 # Without that exclusion, an apostrophe in a comment (e.g. "# don't do this") has no closing
 # quote on its own line, so the regex would keep scanning past the newline looking for one and
 # could match all the way to an UNRELATED quote several lines down, "protecting" (and so
 # preserving verbatim, unstripped) a huge, wrong span of comments/code as if it were one string
 # literal's content -- confirmed against pyutilz's own source during this fix's own regression
-# testing. Triple-quoted strings are handled separately (this module's strip target is
-# call/import-list LINES, which never legitimately contain a triple-quoted string).
-_STRING_LITERAL_RE = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+# testing.
+#
+# A prior version of this regex had no triple-quoted alternative at all (the header comment
+# claimed they were "handled separately", which was never actually implemented). Multi-line
+# raw-string call arguments (e.g. ``cp.RawKernel(r"""...""", "name")``) then had their internal
+# whitespace/commas stripped as if structural, which garbled the before/after comparison enough
+# that a genuine call-arg-list explosion of that RawKernel(...) call went undetected and got
+# silently APPLIED instead of rejected -- confirmed against mlframe's own
+# _plugin_mi_classif_batch_cuda_resident during this fix's regression testing.
+_STRING_LITERAL_RE = re.compile(
+    r'r?"""(?:.|\n)*?"""'
+    r"|r?'''(?:.|\n)*?'''"
+    r'|"(?:[^"\\\n]|\\.)*"'
+    r"|'(?:[^'\\\n]|\\.)*'"
+)
 
 
 def norm(s: str) -> str:
@@ -124,6 +143,38 @@ def is_all_blank(lines):
     return all(line.strip() == "" for line in lines) and len(lines) > 0
 
 
+def _triple_quote_state_before_each_line(lines):
+    """For each line in ``lines``, whether we are INSIDE a triple-quoted string at that line's
+    start, tracked via a running parity toggle across the whole file (not just one hunk). Needed
+    because a single hunk's hand-picked hasattr-style local odd/even delimiter count is wrong
+    when a hunk happens to contain BOTH a closing delimiter (from a string opened earlier) and an
+    unrelated opening delimiter (for a string that closes later) -- their counts can sum to even
+    even though the hunk is unsafe to normalize on its own. Global state removes the ambiguity.
+    """
+    state = []
+    inside = False
+    for line in lines:
+        state.append(inside)
+        n = line.count('"""') + line.count("'''")
+        if n % 2:
+            inside = not inside
+    return state
+
+
+def _touches_multiline_string(lines, state_before_block):
+    """True if ``lines`` (a slice starting where ``state_before_block`` applies) either starts
+    already inside a triple-quoted string, or contains an odd number of delimiters (so it ends
+    inside/outside inconsistently with its own local content) -- either way, a fragment whose
+    string boundaries cannot be resolved from this slice alone. See
+    ``_triple_quote_state_before_each_line`` for why a local odd/even count on the slice alone is
+    insufficient.
+    """
+    if state_before_block:
+        return True
+    text = "".join(lines)
+    return (text.count('"""') + text.count("'''")) % 2 == 1
+
+
 def looks_like_import_or_call_list(old_block, new_block):
     """True if old_block and new_block are the SAME tokens (ignoring whitespace/
     commas/parens) but spread over a DIFFERENT number of lines -- the arg/import
@@ -143,6 +194,8 @@ def looks_like_import_or_call_list(old_block, new_block):
 def filtered_apply(orig: str, formatted: str) -> str:
     orig_lines = orig.splitlines(keepends=True)
     fmt_lines = formatted.splitlines(keepends=True)
+    orig_string_state = _triple_quote_state_before_each_line(orig_lines)
+    fmt_string_state = _triple_quote_state_before_each_line(fmt_lines)
     sm = difflib.SequenceMatcher(None, orig_lines, fmt_lines, autojunk=False)
     out = []
     for tag, i1, i2, j1, j2 in sm.get_opcodes():
@@ -180,6 +233,13 @@ def filtered_apply(orig: str, formatted: str) -> str:
                     continue
                 elif stag == "delete" and is_all_blank(s_old):
                     continue
+                elif _touches_multiline_string(
+                    s_old, orig_string_state[i1 + si1]
+                ) or _touches_multiline_string(s_new, fmt_string_state[j1 + sj1]):
+                    # A fragment of a multi-line triple-quoted string; norm() cannot reliably
+                    # classify it (see _touches_multiline_string). Reject conservatively rather
+                    # than risk silently applying a misclassified explosion.
+                    sub_out.extend(s_old)
                 else:
                     sub_kind = looks_like_import_or_call_list(s_old, s_new)
                     if sub_kind == "explode":
