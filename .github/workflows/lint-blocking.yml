@@ -44,19 +44,30 @@ on:
           string skips deptry entirely (repo not yet triaged for it).
         type: string
         default: ""
+      run-zizmor:
+        description: >-
+          Run zizmor (GitHub Actions workflow security scan) against the calling repo's OWN
+          .github/workflows/. False by default: a repo with many pre-existing workflow files
+          (matrix CI variants, nightly jobs, etc.) needs its own SHA-pinning/permissions triage
+          pass before this can be blocking -- see py-ci-shared's own workflows for the reference
+          triage. Flip true only after confirming `uvx zizmor .` is clean in that repo.
+        type: boolean
+        default: false
 
 jobs:
   lint-blocking:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
 
@@ -66,8 +77,24 @@ jobs:
       - name: Actionlint (workflow files)
         run: uvx --from actionlint-py actionlint
 
+      # Security linter for the workflow files themselves (unpinned actions, template-injection
+      # via untrusted `${{ }}` expansion in run:, overly broad permissions, credential
+      # persistence). Added 2026-07-09 via a CI/CD architecture review; would have caught this
+      # exact class of bug earlier (this repo's own workflows needed 23 auto-fixes + manual SHA
+      # pinning to reach 0 findings the same day it was added). Opt-in (see run-zizmor above).
+      - name: Zizmor (workflow security scan)
+        if: inputs.run-zizmor
+        run: uvx zizmor .
+
       - name: Codespell
-        run: uvx codespell --toml pyproject.toml ${{ inputs.codespell-paths }}
+        # codespell-paths is DELIBERATELY space-separated into multiple positional args (e.g.
+        # "src README.md CHANGELOG.md") -- word-splitting is the intended behavior here, not a
+        # bug, so this stays unquoted unlike the single-path vars below.
+        run: |
+          # shellcheck disable=SC2086
+          uvx codespell --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}
+        env:
+          INPUTS_CODESPELL_PATHS: ${{ inputs.codespell-paths }}
 
       - name: yamllint workflow files
         run: uvx yamllint .github/workflows .pre-commit-config.yaml
@@ -75,18 +102,37 @@ jobs:
       # Plain (not -f json) so a failure's findings are visible directly in the CI log --
       # no artifact download needed to diagnose a blocking failure.
       - name: Bandit security scan
-        run: uvx bandit -r ${{ inputs.source-path }} -ll
+        run: uvx bandit -r "${INPUTS_SOURCE_PATH}" -ll
+        env:
+          INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: Vulture dead-code scan
-        run: uvx vulture ${{ inputs.source-path }} ${{ inputs.vulture-whitelist-path }} --min-confidence 80
+        # vulture-whitelist-path is OPTIONAL (default ""): word-splitting an empty unquoted var
+        # makes it vanish from argv entirely, which is the desired "no whitelist arg" behavior --
+        # quoting it would instead pass vulture a literal empty-string path argument and error.
+        run: |
+          # shellcheck disable=SC2086
+          uvx vulture "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80
+        env:
+          INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
+          INPUTS_VULTURE_WHITELIST_PATH: ${{ inputs.vulture-whitelist-path }}
 
       - name: Interrogate docstring coverage
         if: inputs.interrogate-source-path != ''
-        run: uvx interrogate --fail-under ${{ inputs.interrogate-fail-under }} -v ${{ inputs.interrogate-source-path }}
+        run: uvx interrogate --fail-under ${{ inputs.interrogate-fail-under }} -v "${INPUTS_INTERROGATE_SOURCE_PATH}"
+        env:
+          INPUTS_INTERROGATE_SOURCE_PATH: ${{ inputs.interrogate-source-path }}
 
+      # Direct ${{ }} substitution: deptry-install-command is a multi-line shell SCRIPT, not a
+      # single token -- expanding it as an unquoted `${VAR}` would word-split it on every
+      # whitespace/newline and execute the result as ONE command's argv instead of running each
+      # line as its own statement. Only ever set by the calling workflow's own `with:` block
+      # (trusted, first-party config), so the injection risk the env-var pattern guards against
+      # elsewhere does not apply. See docs.yml for the same fix and the fuller rationale.
       - name: Install project (for deptry)
         if: inputs.deptry-install-command != ''
         shell: bash
+        # zizmor: ignore[template-injection] -- see the comment above.
         run: ${{ inputs.deptry-install-command }}
 
       # `uvx deptry .` (unlike every other uvx step above) is WRONG here: uvx runs deptry in its

@@ -6,18 +6,30 @@ on:
   pull_request:
     branches: [main, master]
 
+# Every other workflow in this repo has this guard (see mlframe/black-filtered.yml's 2026-07-06
+# incident comment for why); self-ci.yml was the one exception, found in a CI/CD architecture
+# review.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
 
@@ -35,8 +47,11 @@ jobs:
         run: uvx ruff check . --ignore C901
 
       - name: MyPy (self-check)
+        # Pinned, not latest: mypy-beachhead.yml's own header comment documents why an unpinned
+        # resolve can flag new errors with no corresponding code change, making a gate flaky
+        # across re-runs. Keep in sync with the default `mypy-version` used elsewhere in this repo.
         run: |
-          uv pip install --system mypy
+          uv pip install --system "mypy==2.1.0"
           mypy src/py_ci_shared
 
       - name: Validate ruff-base.toml is loadable

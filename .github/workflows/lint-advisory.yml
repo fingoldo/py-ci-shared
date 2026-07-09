@@ -20,13 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
 
@@ -39,12 +41,16 @@ jobs:
         run: git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
 
       - name: Run ruff (full - advisory)
-        run: uvx ruff check ${{ inputs.source-path }}
+        run: uvx ruff check "${INPUTS_SOURCE_PATH}"
         continue-on-error: true
+        env:
+          INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: Ruff mccabe complexity (advisory)
-        run: uvx ruff check ${{ inputs.source-path }} --select C90 --statistics
+        run: uvx ruff check "${INPUTS_SOURCE_PATH}" --select C90 --statistics
         continue-on-error: true
+        env:
+          INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: pip-audit dependency vulnerability scan
         run: uvx pip-audit --desc -f json -o pip-audit-report.json || true
@@ -52,7 +58,7 @@ jobs:
 
       - name: Upload pip-audit results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: pip-audit-report
           path: pip-audit-report.json

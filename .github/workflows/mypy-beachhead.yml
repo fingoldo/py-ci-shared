@@ -5,6 +5,14 @@ name: MyPy (strict-mode beachhead, reusable)
 # the calling project's heavy transitive deps; the explicit module list IS the beachhead.
 # Dep pins are exact (not ranges): an unpinned resolve can pick up a newer release that flags
 # errors the pinned version does not, making the gate flaky across re-runs.
+#
+# This workflow's uvx isolation (mypy running in its own sandbox, never seeing the real
+# project's dependency graph) is DELIBERATE and safe -- not the same class of bug as
+# lint-blocking.yml's deptry step, which used uvx BY ACCIDENT and got a bare/wrong environment
+# as a result. Don't "fix" this by installing the real deps first and switching to `python -m
+# mypy`: that would defeat the beachhead's whole reason to exist (a fast, isolated check that
+# doesn't pay the real dependency-install cost) and reintroduce exactly the class of drift the
+# deptry incident was about, just in reverse.
 
 on:
   workflow_call:
@@ -26,13 +34,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
 
@@ -41,6 +51,7 @@ jobs:
         env:
           MODULES_IN: ${{ inputs.modules }}
           DEPS_IN: ${{ inputs.extra-deps }}
+          INPUTS_MYPY_VERSION: ${{ inputs.mypy-version }}
         run: |
           with_args=()
           while IFS= read -r dep; do
@@ -52,4 +63,4 @@ jobs:
             [ -z "$mod" ] && continue
             modules+=("$mod")
           done <<< "$MODULES_IN"
-          uvx "${with_args[@]}" "mypy==${{ inputs.mypy-version }}" --follow-imports=silent "${modules[@]}"
+          uvx "${with_args[@]}" "mypy==${INPUTS_MYPY_VERSION}" --follow-imports=silent "${modules[@]}"

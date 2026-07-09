@@ -17,20 +17,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
 
       - name: Install py-ci-shared
         run: uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
 
+      # check-path can be multiple space-separated paths (per its "Path(s)" description) --
+      # word-splitting is the intended behavior here, not a bug.
       - name: Black format check, filtered
         env:
           BLACK_CMD: "uvx black"
-        run: python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check ${{ inputs.check-path }}
+          INPUTS_CHECK_PATH: ${{ inputs.check-path }}
+        run: |
+          # shellcheck disable=SC2086
+          python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check ${INPUTS_CHECK_PATH}

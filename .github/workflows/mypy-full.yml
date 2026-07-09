@@ -33,24 +33,40 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
         with:
           python-version: "3.11"
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@e58605a9b6da7c637471fab8847a5e5a6b8df081  # v5
         with:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
+      # Direct ${{ }} substitution: install-command is a multi-line shell SCRIPT, not a single
+      # token -- expanding it as an unquoted `${VAR}` would word-split it on every whitespace/
+      # newline and execute the result as ONE command's argv instead of running each line as its
+      # own statement. Only ever set by the calling workflow's own `with:` block (trusted,
+      # first-party config), so the injection risk the env-var pattern guards against elsewhere
+      # does not apply. See docs.yml for the same fix and the fuller rationale.
       - name: Install project
         shell: bash
+        # zizmor: ignore[template-injection] -- install-command is set only by the calling
+        # workflow's own first-party `with:` block, never by attacker-controllable GitHub
+        # context; quoting it as a shell var would break its multi-line-script semantics (see
+        # the comment above the equivalent step in docs.yml).
         run: ${{ inputs.install-command }}
 
       - name: Install mypy
-        run: uv pip install --system "mypy==${{ inputs.mypy-version }}"
+        run: uv pip install --system "mypy==${INPUTS_MYPY_VERSION}"
+        env:
+          INPUTS_MYPY_VERSION: ${{ inputs.mypy-version }}
 
       - name: MyPy (whole project)
-        run: mypy src/${{ inputs.package-name }}
+        run: mypy "src/${INPUTS_PACKAGE_NAME}"
         continue-on-error: ${{ inputs.advisory }}
+        env:
+          INPUTS_PACKAGE_NAME: ${{ inputs.package-name }}
