@@ -39,8 +39,14 @@ jobs:
       # The calling repo's pyproject.toml does `[tool.ruff] extend = "../py-ci-shared/configs/ruff-base.toml"`
       # -- a real filesystem path, resolved identically in local dev (where both repos already live as
       # sibling directories) and here (clone py-ci-shared as a sibling of the checked-out repo).
+      # Guarded on the target not already existing: when the CALLING repo IS py-ci-shared itself
+      # (self-ci.yml's own integration-ruff-blocking job), the checkout already occupies
+      # ../py-ci-shared and a second unconditional clone into the same path fails with exit 128.
       - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
-        run: git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+        run: |
+          if [ ! -d ../py-ci-shared/.git ]; then
+            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+          fi
 
       - name: Ruff (real bugs - blocking)
         run: uvx ruff check . --ignore "${INPUTS_IGNORE}"

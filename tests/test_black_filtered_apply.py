@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from py_ci_shared.black_filtered_apply import filtered_apply, looks_like_import_or_call_list, norm  # noqa: E402
+from py_ci_shared.black_filtered_apply import filtered_apply, looks_like_import_or_call_list, norm
 
 
 class TestBlankLineInsertion:

@@ -113,7 +113,7 @@ def norm(s: str) -> str:
     out = []
     pos = 0
     for m in _STRING_LITERAL_RE.finditer(s):
-        out.append(re.sub(r"[\s,();]+", "", s[pos:m.start()]))
+        out.append(re.sub(r"[\s,();]+", "", s[pos : m.start()]))
         out.append(m.group(0))  # string literal kept verbatim, including internal punctuation
         pos = m.end()
     out.append(re.sub(r"[\s,();]+", "", s[pos:]))
