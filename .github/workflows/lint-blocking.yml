@@ -89,6 +89,15 @@ jobs:
         shell: bash
         run: ${{ inputs.deptry-install-command }}
 
+      # `uvx deptry .` (unlike every other uvx step above) is WRONG here: uvx runs deptry in its
+      # own isolated tool venv, completely separate from wherever deptry-install-command just
+      # installed the project's real dependencies -- deptry would see a bare environment and
+      # every DEP001/DEP002/DEP003 rule collapses back to meaningless (found 2026-07-09: this
+      # reported 1084 findings on mlframe in CI despite `python -m deptry .` against the same
+      # install locally showing 0). deptry must run via `python -m` in the SAME environment
+      # deptry-install-command populated, not through uvx's isolation.
       - name: Deptry dependency check
         if: inputs.deptry-install-command != ''
-        run: uvx deptry .
+        run: |
+          uv pip install --system deptry
+          python -m deptry .
