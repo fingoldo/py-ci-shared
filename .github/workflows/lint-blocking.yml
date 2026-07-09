@@ -1,0 +1,94 @@
+name: Lint (blocking bundle, reusable)
+
+# Checks that gate the build once a repo's baseline is clean: actionlint (workflow-file
+# correctness), codespell (prose typos), yamllint (YAML style), interrogate (docstring coverage,
+# threshold-gated), deptry (dependency drift, threshold-gated on a REAL install since its
+# DEP001/DEP002 rules are meaningless in a bare environment), bandit (security, medium+
+# severity), vulture (dead code, min-confidence 80). Each one here reached 0 findings via an
+# explicit, reviewed triage pass (package_module_name_map + per_rule_ignores for deptry,
+# per-line noqa / whitelist entries / real fixes for the rest, # nosec for confirmed bandit
+# false positives) -- not by relaxing the tool. A repo not yet triaged for a given check should
+# leave that input at its default (empty/false) rather than wire it in half-triaged.
+
+on:
+  workflow_call:
+    inputs:
+      source-path:
+        description: 'Path to the package source, e.g. "src/mlframe" -- used by bandit/vulture'
+        required: true
+        type: string
+      codespell-paths:
+        description: "Space-separated paths for codespell to scan (config/ignore-words-list comes from [tool.codespell] in pyproject.toml)"
+        required: true
+        type: string
+      vulture-whitelist-path:
+        description: "Path to the calling repo's own vulture whitelist file (project-specific, never shared)"
+        type: string
+        default: ""
+      interrogate-source-path:
+        description: >-
+          Path to scan for docstring coverage, e.g. "src/mlframe". Empty string
+          skips interrogate entirely (repo not yet at its target coverage).
+        type: string
+        default: ""
+      interrogate-fail-under:
+        description: >-
+          Minimum docstring-coverage percentage (set to the repo's current actual
+          coverage, not a lower aspirational number, so any drop fails fast).
+        type: number
+        default: 100
+      deptry-install-command:
+        description: >-
+          Shell command(s) to install the package + its real extras, run from repo root, so
+          deptry's DEP001/DEP002 rules have an accurate environment to check against. Empty
+          string skips deptry entirely (repo not yet triaged for it).
+        type: string
+        default: ""
+
+jobs:
+  lint-blocking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # Mirrors the pre-commit actionlint hook so a workflow-file bug (bad expression,
+      # duplicate key, unknown runner label, shell-syntax error in a run: block) can't
+      # reach master even via --no-verify.
+      - name: Actionlint (workflow files)
+        run: uvx --from actionlint-py actionlint
+
+      - name: Codespell
+        run: uvx codespell --toml pyproject.toml ${{ inputs.codespell-paths }}
+
+      - name: yamllint workflow files
+        run: uvx yamllint .github/workflows .pre-commit-config.yaml
+
+      # Plain (not -f json) so a failure's findings are visible directly in the CI log --
+      # no artifact download needed to diagnose a blocking failure.
+      - name: Bandit security scan
+        run: uvx bandit -r ${{ inputs.source-path }} -ll
+
+      - name: Vulture dead-code scan
+        run: uvx vulture ${{ inputs.source-path }} ${{ inputs.vulture-whitelist-path }} --min-confidence 80
+
+      - name: Interrogate docstring coverage
+        if: inputs.interrogate-source-path != ''
+        run: uvx interrogate --fail-under ${{ inputs.interrogate-fail-under }} -v ${{ inputs.interrogate-source-path }}
+
+      - name: Install project (for deptry)
+        if: inputs.deptry-install-command != ''
+        shell: bash
+        run: ${{ inputs.deptry-install-command }}
+
+      - name: Deptry dependency check
+        if: inputs.deptry-install-command != ''
+        run: uvx deptry .

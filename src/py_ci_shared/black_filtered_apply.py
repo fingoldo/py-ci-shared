@@ -37,7 +37,7 @@ import subprocess
 import difflib
 import pathlib
 
-EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pycache__", "legacy"}
+EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pycache__", "legacy", "benchmarks", "_benchmarks", "profiling"}
 # A consuming repo with its own dir-name to skip (rare) can add it without forking this file.
 if os.environ.get("EXTRA_EXCLUDED_DIRS"):
     EXCLUDED_DIR_NAMES |= set(os.environ["EXTRA_EXCLUDED_DIRS"].split(","))

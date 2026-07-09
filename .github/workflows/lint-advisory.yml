@@ -1,7 +1,11 @@
 name: Lint (advisory bundle, reusable)
 
-# Every step here is non-blocking (continue-on-error, or inherently informational). Real-bug
-# gates live in ruff-blocking.yml / black-filtered.yml / mypy-beachhead.yml instead.
+# Every step here is non-blocking (continue-on-error) because it's inherently a design-taste
+# signal rather than a correctness bug (mccabe complexity), or a CVE feed whose fix isn't always
+# on your own timeline (pip-audit). Checks that CAN reach a clean 0-findings state after a real
+# triage pass (bandit, vulture, codespell, yamllint, interrogate, deptry) live in
+# lint-blocking.yml instead once triaged. Real-bug gates also live in ruff-blocking.yml /
+# black-filtered.yml / mypy-beachhead.yml.
 
 on:
   workflow_call:
@@ -10,22 +14,6 @@ on:
         description: 'Path to the package source, e.g. "src/mlframe"'
         required: true
         type: string
-      codespell-paths:
-        description: "Space-separated paths for codespell to scan (config/ignore-words-list comes from [tool.codespell] in pyproject.toml)"
-        required: true
-        type: string
-      vulture-whitelist-path:
-        description: "Path to the calling repo's own vulture whitelist file (project-specific, never shared)"
-        type: string
-        default: ""
-      run-deptry:
-        description: "Run deptry (unused/missing/transitive dependency drift), reading [tool.deptry] from the calling repo's pyproject.toml"
-        type: boolean
-        default: false
-      run-interrogate:
-        description: "Run interrogate (docstring coverage), reading [tool.interrogate] from the calling repo's pyproject.toml"
-        type: boolean
-        default: false
 
 jobs:
   lint-advisory:
@@ -48,42 +36,6 @@ jobs:
 
       - name: Ruff mccabe complexity (advisory)
         run: uvx ruff check ${{ inputs.source-path }} --select C90 --statistics
-        continue-on-error: true
-
-      - name: Codespell (advisory)
-        run: uvx codespell --toml pyproject.toml ${{ inputs.codespell-paths }}
-        continue-on-error: true
-
-      - name: Deptry dependency check (advisory)
-        if: inputs.run-deptry
-        run: uvx deptry .
-        continue-on-error: true
-
-      - name: Interrogate docstring coverage (advisory)
-        if: inputs.run-interrogate
-        run: uvx interrogate -v ${{ inputs.source-path }}
-        continue-on-error: true
-
-      - name: yamllint workflow files (advisory)
-        run: uvx yamllint .github/workflows .pre-commit-config.yaml
-        continue-on-error: true
-
-      - name: Run bandit security scan
-        run: uvx bandit -r ${{ inputs.source-path }} -ll -f json -o bandit-report.json
-        continue-on-error: true
-
-      - name: Upload bandit results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bandit-report
-          path: bandit-report.json
-
-      - name: Actionlint (workflow files)
-        run: uvx --from actionlint-py actionlint
-
-      - name: Vulture dead-code scan
-        run: uvx vulture ${{ inputs.source-path }} ${{ inputs.vulture-whitelist-path }} --min-confidence 80
         continue-on-error: true
 
       - name: pip-audit dependency vulnerability scan
