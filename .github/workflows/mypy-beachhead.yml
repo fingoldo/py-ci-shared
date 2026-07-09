@@ -1,0 +1,55 @@
+name: MyPy (strict-mode beachhead, reusable)
+
+# Fast strict-mode check over a small, cohesive, stable-surface module list -- NOT the whole
+# project (see mypy-full.yml for that). --follow-imports=silent because the uvx sandbox lacks
+# the calling project's heavy transitive deps; the explicit module list IS the beachhead.
+# Dep pins are exact (not ranges): an unpinned resolve can pick up a newer release that flags
+# errors the pinned version does not, making the gate flaky across re-runs.
+
+on:
+  workflow_call:
+    inputs:
+      modules:
+        description: "Newline-separated list of files/dirs for the strict-mode beachhead"
+        required: true
+        type: string
+      mypy-version:
+        type: string
+        default: "2.1.0"
+      extra-deps:
+        description: 'Newline-separated exact pins for the isolated uvx sandbox (e.g. "numpy==2.3.5")'
+        type: string
+        default: ""
+
+jobs:
+  mypy-beachhead:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: MyPy (strict-mode beachhead)
+        shell: bash
+        env:
+          MODULES_IN: ${{ inputs.modules }}
+          DEPS_IN: ${{ inputs.extra-deps }}
+        run: |
+          with_args=()
+          while IFS= read -r dep; do
+            [ -z "$dep" ] && continue
+            with_args+=("--with" "$dep")
+          done <<< "$DEPS_IN"
+          modules=()
+          while IFS= read -r mod; do
+            [ -z "$mod" ] && continue
+            modules+=("$mod")
+          done <<< "$MODULES_IN"
+          uvx "${with_args[@]}" "mypy==${{ inputs.mypy-version }}" --follow-imports=silent "${modules[@]}"

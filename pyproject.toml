@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=78.1.1,<82", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "py-ci-shared"
+version = "0.1.0"
+description = "Shared CI/lint tooling (scripts + ruff base config + reusable GitHub Actions workflows) for fingoldo Python projects."
+authors = [{name = "Anatoly Alexeev", email = "fingoldo@gmail.com"}]
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Software Development :: Quality Assurance",
+]
+# Deliberately dependency-free: black/ruff/mypy/bandit/vulture/codespell/pip-audit are installed
+# by the CALLING project's own CI/pre-commit setup (or run via `uvx`, which resolves them itself).
+# This package only ships the thin orchestration scripts + shared config, not the tools themselves.
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/fingoldo/py-ci-shared"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# configs/ruff-base.toml is NOT shipped as package data -- ruff's `extend` needs a real filesystem
+# path, so consuming repos resolve it by cloning this repo as a sibling directory (see README.md),
+# not via the installed pip package. Only the orchestration scripts (this package's actual purpose)
+# are consumed via `pip install`.
+
+[tool.black]
+line-length = 160
+target-version = ["py39", "py310", "py311", "py312", "py313"]
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.pytest_cache
+  | build
+  | dist
+  | __pycache__
+)/
+'''
+
+[tool.ruff]
+extend = "configs/ruff-base.toml"
+target-version = "py39"
+exclude = [".git", "__pycache__", "build", "dist"]
+
+[tool.ruff.lint.per-file-ignores]
+# Every script here IS a CLI tool whose entire job is printing to stdout/stderr -- that's the
+# interface, not a lint issue vs. converting to logger calls (there is no log configuration to
+# route through; these run standalone or as pre-commit/CI steps).
+"src/py_ci_shared/black_filtered_apply.py" = ["T201"]
+"src/py_ci_shared/format_warn.py" = ["T201"]
+"src/py_ci_shared/bandit_warn.py" = ["T201"]
+"src/py_ci_shared/vulture_warn.py" = ["T201"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+check_untyped_defs = true

@@ -1,0 +1,85 @@
+# Shared ruff base config for fingoldo Python projects (mlframe, pyutilz, ...).
+#
+# A consuming repo's own pyproject.toml pulls this in via:
+#     [tool.ruff]
+#     extend = "../py-ci-shared/configs/ruff-base.toml"
+#     target-version = "py39"          # each repo sets its own minimum-Python floor
+#     exclude = [...]                  # each repo's own dir excludes
+#
+#     [tool.ruff.lint]
+#     extend-select = [...]            # optional: rules this repo wants ON TOP of the shared select
+#     extend-ignore = [...]            # optional: rules this repo wants ignored ON TOP of the shared ignore
+#
+#     [tool.ruff.lint.per-file-ignores]
+#     "src/<pkg>/**" = [...]           # each repo's own path-specific ignores (these MERGE with the base)
+#
+#     [tool.ruff.lint.mccabe]
+#     max-complexity = <N>             # each repo's own measured threshold -- NOT shared, complexity
+#                                       # distributions differ per codebase; never copy another repo's number
+#
+# CRITICAL: never invoke ruff with `--select <subset>` in a consuming repo's CI/pre-commit blocking
+# gate -- `--select` REPLACES the effective rule set instead of narrowing it, silently dropping every
+# ignore below AND breaking RUF100's ("is this noqa still needed") determination, which evaluates
+# against whichever rule set is active in that specific invocation. Use `--ignore <code>` to add to the
+# already-resolved (extended) ignore list instead; it never drops anything. See the CLAUDE.md RUF100
+# incident write-up in mlframe/pyutilz for the full incident this rule postdates (2026-07-09).
+
+line-length = 160
+
+[lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # flake8-bugbear
+    "DTZ",  # naive-datetime usage (real bug class: silent local/UTC ambiguity, deprecated utcnow())
+    "A",    # builtin-shadowing names
+    "T20",  # stray print() -- route diagnostics through logger instead
+    "RUF",  # ruff-specific checks (unused noqa, mutable dataclass defaults, ambiguous unicode, etc.)
+    "G",    # flake8-logging-format: catches f-string/%-concat in logger.xxx() calls instead of lazy %-formatting
+    "ISC",  # implicit string concatenation: catches an accidentally-missing comma in a list/call
+    "PERF", # performance anti-patterns (quadratic list accumulation in a loop, etc.)
+    "C90",  # mccabe cyclomatic complexity (each repo sets its OWN [lint.mccabe] max-complexity locally)
+]
+
+ignore = [
+    "E501",   # line-length: each repo's black config enforces the shared 160-char width visually
+    "E401",   # multiple imports on one line: occasionally project-idiomatic; not worth churn
+    "E402",   # module-level import not at top: legitimate for try/except optional-dep gates (cupy, polars, torch, ...)
+    "E701",   # multiple statements on one line (colon): compact one-liners like ``if x: continue``
+    "E702",   # multiple statements on one line (semicolon): compact one-liners like ``a = 1; b = 2``
+    "I001",   # unsorted imports: ruff's isort variant collides with black + each repo's manual section order
+    "N802",   # function name should be lowercase: legitimately mixed-case in math/interop identifiers (e.g. computeFFT)
+    "N803",   # argument name should be lowercase: sklearn-API X/Y/Xt convention, camelCase interop, legacy code
+    "N806",   # variable name should be lowercase: same as N803 -- X/Y/Xt locals, legacy code
+    "B006",   # mutable default arg: audited case-by-case per call site, not blanket-safe to auto-flag
+    "F541",   # f-string without placeholders: tolerated in log lines that get placeholders added later in dev
+    "UP031",  # printf-style %: kept for ``logger.info("... %s ...", val)`` lazy-format pattern (structured logging)
+    "UP006",  # list/dict over typing.List: deferred-annotation form needs `from __future__ import annotations`
+    "UP007",  # X|Y over Union: same pre-3.10 concern -- Union evaluates eagerly without the future import
+    "UP045",  # X|None over Optional: same pre-3.10 concern
+    "UP037",  # quoted annotation: forward references in dataclass slots rely on the quoted form
+    "F403",   # ``from x import *``: intentional in several namespace/facade modules
+    "F405",   # name may be undefined / from star-import: consequence of intentional F403, not a bug
+    "B904",   # raise ... from inside except: stylistic, not a correctness issue
+    "B009",   # getattr(x, "const"): stylistic
+    "UP015",  # redundant open() mode arg: explicit "r"/"rb" preferred over the implicit default
+    # Ecosystem-level ignores (ruff's own docs / common practice recommend these once RUF/ISC are
+    # selected alongside a formatter or on a codebase with legitimate non-ASCII content -- not a
+    # project-specific taste call, so shared here rather than duplicated per consuming repo):
+    "ISC001", # single-line implicit string concat: ruff's OWN docs say disable this when a formatter (black) is in use
+    "RUF001", # ambiguous-unicode-character-string: false-positive-heavy on any codebase with intentional
+              # non-ASCII (Cyrillic identifiers/comments, mathematical operators) in string literals
+    "RUF002", # ambiguous-unicode-character-docstring: same -- flags legitimate set-notation / Greek letters, not typos
+    "RUF003", # ambiguous-unicode-character-comment: same as RUF002 but for comments
+    "RUF022", # unsorted __all__: cosmetic-only, no correctness value, churns every namespace module's ordering
+]
+
+[lint.pep8-naming]
+# F/L are the universal, ecosystem-standard aliases for torch.nn.functional / lightning (every
+# PyTorch/Lightning tutorial uses them). Harmless to keep even in a repo with no torch code --
+# an ignored name that never appears simply never fires.
+ignore-names = ["F", "L", "_F"]

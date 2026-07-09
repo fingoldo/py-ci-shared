@@ -1,0 +1,80 @@
+name: Lint (advisory bundle, reusable)
+
+# Every step here is non-blocking (continue-on-error, or inherently informational). Real-bug
+# gates live in ruff-blocking.yml / black-filtered.yml / mypy-beachhead.yml instead.
+
+on:
+  workflow_call:
+    inputs:
+      source-path:
+        description: 'Path to the package source, e.g. "src/mlframe"'
+        required: true
+        type: string
+      codespell-paths:
+        description: "Space-separated paths for codespell to scan (config/ignore-words-list comes from [tool.codespell] in pyproject.toml)"
+        required: true
+        type: string
+      vulture-whitelist-path:
+        description: "Path to the calling repo's own vulture whitelist file (project-specific, never shared)"
+        type: string
+        default: ""
+
+jobs:
+  lint-advisory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Run ruff (full - advisory)
+        run: uvx ruff check ${{ inputs.source-path }}
+        continue-on-error: true
+
+      - name: Ruff mccabe complexity (advisory)
+        run: uvx ruff check ${{ inputs.source-path }} --select C90 --statistics
+        continue-on-error: true
+
+      - name: Codespell (advisory)
+        run: uvx codespell --toml pyproject.toml ${{ inputs.codespell-paths }}
+        continue-on-error: true
+
+      - name: yamllint workflow files (advisory)
+        run: uvx yamllint .github/workflows .pre-commit-config.yaml
+        continue-on-error: true
+
+      - name: Run bandit security scan
+        run: uvx bandit -r ${{ inputs.source-path }} -ll -f json -o bandit-report.json
+        continue-on-error: true
+
+      - name: Upload bandit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bandit-report
+          path: bandit-report.json
+
+      - name: Actionlint (workflow files)
+        run: uvx --from actionlint-py actionlint
+
+      - name: Vulture dead-code scan
+        run: uvx vulture ${{ inputs.source-path }} ${{ inputs.vulture-whitelist-path }} --min-confidence 80
+        continue-on-error: true
+
+      - name: pip-audit dependency vulnerability scan
+        run: uvx pip-audit --desc -f json -o pip-audit-report.json || true
+        continue-on-error: true
+
+      - name: Upload pip-audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json

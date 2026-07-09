@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install package
+        run: uv pip install --system -e ".[dev]" || uv pip install --system -e .
+
+      - name: Smoke-import and run black_filtered_apply --help path
+        run: |
+          python -c "import py_ci_shared; print('py_ci_shared', py_ci_shared.__version__)"
+          python -m py_ci_shared.black_filtered_apply --config pyproject.toml src/py_ci_shared/__init__.py
+
+      - name: Ruff (self-check)
+        run: uvx ruff check . --ignore C901
+
+      - name: MyPy (self-check)
+        run: |
+          uv pip install --system mypy
+          mypy src/py_ci_shared
+
+      - name: Validate ruff-base.toml is loadable
+        run: uvx ruff check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5

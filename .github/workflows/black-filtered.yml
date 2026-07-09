@@ -1,0 +1,36 @@
+name: Black (filtered, reusable)
+
+# Flags any Black finding EXCEPT blank-line insertion and arg/import-list explosion, which
+# consuming projects deliberately keep -- see py_ci_shared/black_filtered_apply.py's docstring
+# for the excluded-class rationale.
+
+on:
+  workflow_call:
+    inputs:
+      check-path:
+        description: 'Path(s) to check, e.g. "src/mlframe" or "."'
+        required: true
+        type: string
+
+jobs:
+  black:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install py-ci-shared
+        run: uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+
+      - name: Black format check, filtered
+        env:
+          BLACK_CMD: "uvx black"
+        run: python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check ${{ inputs.check-path }}

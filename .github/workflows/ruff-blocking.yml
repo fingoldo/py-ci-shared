@@ -1,0 +1,44 @@
+name: Ruff (real bugs - blocking, reusable)
+
+# Reusable blocking gate: the calling repo's FULL configured select/ignore (extended from
+# configs/ruff-base.toml via the calling repo's own pyproject.toml `extend`), minus complexity
+# (advisory-only, see lint-advisory.yml). Mirrors the calling repo's pre-commit "ruff (real bugs
+# block)" hook exactly (same command) so a commit that passes locally cannot fail this and vice versa.
+#
+# CRITICAL: never change `run:` below to `ruff check . --select ...`. `--select` REPLACES the
+# effective rule set instead of narrowing the extended config, silently dropping the whole ignore
+# list (ISC001, RUF001/002/003/022, etc. would all reappear) and breaking RUF100's own "is this
+# noqa still needed" determination. `--ignore` only ADDS to the already-resolved ignore list, so
+# it is safe -- see the calling repos' CLAUDE.md for the incident this rule postdates.
+
+on:
+  workflow_call:
+    inputs:
+      ignore:
+        description: 'Extra --ignore codes on top of the extended config (e.g. "C901" to keep complexity advisory-only)'
+        type: string
+        default: "C901"
+
+jobs:
+  ruff-blocking:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # The calling repo's pyproject.toml does `[tool.ruff] extend = "../py-ci-shared/configs/ruff-base.toml"`
+      # -- a real filesystem path, resolved identically in local dev (where both repos already live as
+      # sibling directories) and here (clone py-ci-shared as a sibling of the checked-out repo).
+      - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
+        run: git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+
+      - name: Ruff (real bugs - blocking)
+        run: uvx ruff check . --ignore ${{ inputs.ignore }}

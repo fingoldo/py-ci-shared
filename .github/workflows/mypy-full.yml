@@ -1,0 +1,48 @@
+name: MyPy-full (whole project, reusable, advisory)
+
+# Whole-project mypy, separate from the fast beachhead (mypy-beachhead.yml): installs the real
+# dependency graph so mypy has genuine type info instead of collapsing every import to Any.
+# Advisory only (continue-on-error) -- promoting a subpackage to the strict-mode beachhead
+# is the deliberate, audited path to making part of this gate blocking.
+
+on:
+  workflow_call:
+    inputs:
+      package-name:
+        description: 'Import name of the package, e.g. "mlframe" (checks src/<package-name>)'
+        required: true
+        type: string
+      install-command:
+        description: "Shell command(s) to install the package + its extras, run from repo root"
+        required: true
+        type: string
+      mypy-version:
+        type: string
+        default: "2.1.0"
+
+jobs:
+  mypy-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+
+      - name: Install project
+        shell: bash
+        run: ${{ inputs.install-command }}
+
+      - name: Install mypy
+        run: uv pip install --system "mypy==${{ inputs.mypy-version }}"
+
+      - name: MyPy (whole project, advisory)
+        run: mypy src/${{ inputs.package-name }}
+        continue-on-error: true
