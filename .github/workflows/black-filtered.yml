@@ -30,7 +30,10 @@ jobs:
           enable-cache: true
 
       - name: Install py-ci-shared
-        run: uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+        # Pinned to the same tagged release consumers pin their `uses:` ref to (see README's
+        # tagged-release rationale) -- an unpinned git+https install here would silently pick up
+        # whatever's on master regardless of which tag the calling workflow itself resolved to.
+        run: uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.0.0"
 
       # check-path can be multiple space-separated paths (per its "Path(s)" description) --
       # word-splitting is the intended behavior here, not a bug.

@@ -27,19 +27,28 @@ on:
   pull_request: {branches: [main, master]}
 jobs:
   black:
-    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@master
+    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@v1.0.0
     with:
       check-path: src/mlframe
 ```
 
 See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`.
 
-**Pin to `@master`, not `@main`** — this repo's default branch is `master` (matches `mlframe`/`pyutilz`). GitHub does not fall back to the actual default branch when a `uses:` ref doesn't resolve; a stale/wrong ref fails the whole calling workflow at parse time with "reference to workflow should be either a valid branch, tag, or commit" and zero jobs ever run, which is easy to lose time to since the error never shows up in any job log.
+**Pin to a tagged release (`@v1.0.0`), not `@master` or `@main`.** Tagged releases exist precisely
+because a floating `@master` ref means any push to this repo instantly changes CI behavior for
+every consumer with no review gate in between (flagged in a 2026-07-09 CI/CD architecture review;
+`mlframe` and `pyutilz` both floated on `@master` before this tag existed). Bump the pin in both
+consumers deliberately when a new tag is cut, so a behavior change is a reviewable diff instead of
+an invisible side effect of an unrelated commit here. `@main` specifically never resolves at
+all — this repo's default branch is `master` — and GitHub does not fall back to the actual default
+branch when a `uses:` ref doesn't resolve; a stale/wrong ref fails the whole calling workflow at
+parse time with "reference to workflow should be either a valid branch, tag, or commit" and zero
+jobs ever run, which is easy to lose time to since the error never shows up in any job log.
 
 ## Using the installable package
 
 ```bash
-pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.0.0"
 ```
 
 Then, in place of the old `python scripts/black_filtered_apply.py ...`:
