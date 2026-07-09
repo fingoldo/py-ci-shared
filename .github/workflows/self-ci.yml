@@ -59,3 +59,27 @@ jobs:
 
       - name: Validate ruff-base.toml is loadable
         run: uvx ruff check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
+
+  # Integration tests: actually CALL the reusable workflows below (same-repo `uses: ./...` ref)
+  # against py-ci-shared's own tree, instead of only linting the YAML syntax. Added 2026-07-09
+  # (CI/CD architecture review): the `@main`-vs-`@master` ref bug and the lint-advisory.yml
+  # sibling-clone bug both shipped without any test ever actually invoking the affected
+  # workflow_call path. Scoped to the 3 workflows that can pass against py-ci-shared's own small
+  # source tree without bespoke fixtures (lint-blocking's bandit step flags 8 real subprocess-
+  # usage findings here that are out of scope for this fix; docs.yml needs a real mkdocs.yml this
+  # repo doesn't have) -- not exhaustive coverage of every reusable workflow, but real coverage of
+  # the ones that are.
+  integration-ruff-blocking:
+    uses: ./.github/workflows/ruff-blocking.yml
+    with:
+      ignore: "C901"
+
+  integration-black-filtered:
+    uses: ./.github/workflows/black-filtered.yml
+    with:
+      check-path: "src/py_ci_shared"
+
+  integration-mypy-beachhead:
+    uses: ./.github/workflows/mypy-beachhead.yml
+    with:
+      modules: "src/py_ci_shared/__init__.py"
