@@ -30,6 +30,14 @@ jobs:
         with:
           enable-cache: true
 
+      # Same requirement as ruff-blocking.yml: the calling repo's pyproject.toml does
+      # `[tool.ruff] extend = "../py-ci-shared/configs/ruff-base.toml"`, a real filesystem path.
+      # Missing this step made both ruff steps below fail at config-load time on every run,
+      # silently swallowed by continue-on-error -- found 2026-07-09 in a CI/CD architecture
+      # review, an unknown amount of time after the reusable-workflow split.
+      - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
+        run: git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+
       - name: Run ruff (full - advisory)
         run: uvx ruff check ${{ inputs.source-path }}
         continue-on-error: true
