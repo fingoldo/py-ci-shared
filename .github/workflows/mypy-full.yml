@@ -1,9 +1,13 @@
-name: MyPy-full (whole project, reusable, advisory)
+name: MyPy-full (whole project, reusable)
 
 # Whole-project mypy, separate from the fast beachhead (mypy-beachhead.yml): installs the real
 # dependency graph so mypy has genuine type info instead of collapsing every import to Any.
-# Advisory only (continue-on-error) -- promoting a subpackage to the strict-mode beachhead
-# is the deliberate, audited path to making part of this gate blocking.
+#
+# `advisory` (default true = continue-on-error) is a PER-REPO choice, not hardcoded here: a repo
+# that has already closed its whole-project mypy backlog to 0 (mlframe, as of 2026-07-08) should
+# pass `advisory: false` to make this a real blocking regression gate; a repo still working down
+# a backlog (pyutilz) keeps the default `true`. Never silently downgrade an already-clean repo's
+# gate from blocking to advisory by copying the wrong default.
 
 on:
   workflow_call:
@@ -19,6 +23,10 @@ on:
       mypy-version:
         type: string
         default: "2.1.0"
+      advisory:
+        description: "true = continue-on-error (backlog not yet clean); false = blocking (backlog already closed to 0)"
+        type: boolean
+        default: true
 
 jobs:
   mypy-full:
@@ -43,6 +51,6 @@ jobs:
       - name: Install mypy
         run: uv pip install --system "mypy==${{ inputs.mypy-version }}"
 
-      - name: MyPy (whole project, advisory)
+      - name: MyPy (whole project)
         run: mypy src/${{ inputs.package-name }}
-        continue-on-error: true
+        continue-on-error: ${{ inputs.advisory }}
