@@ -27,12 +27,14 @@ on:
   pull_request: {branches: [main, master]}
 jobs:
   black:
-    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@main
+    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@master
     with:
       check-path: src/mlframe
 ```
 
-See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-advisory.yml`, `docs.yml`.
+See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`.
+
+**Pin to `@master`, not `@main`** — this repo's default branch is `master` (matches `mlframe`/`pyutilz`). GitHub does not fall back to the actual default branch when a `uses:` ref doesn't resolve; a stale/wrong ref fails the whole calling workflow at parse time with "reference to workflow should be either a valid branch, tag, or commit" and zero jobs ever run, which is easy to lose time to since the error never shows up in any job log.
 
 ## Using the installable package
 
