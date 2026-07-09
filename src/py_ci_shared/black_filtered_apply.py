@@ -84,12 +84,40 @@ def _swap_single_to_double_quotes(s: str) -> str:
     return re.sub(r"'((?:[^'\\]|\\.)*)'", repl, s)
 
 
+# Matches a single- or double-quoted string literal, restricted to NOT cross a newline (the
+# [^"\\\n] / [^'\\\n] classes exclude \n explicitly -- character classes match it by default).
+# Without that exclusion, an apostrophe in a comment (e.g. "# don't do this") has no closing
+# quote on its own line, so the regex would keep scanning past the newline looking for one and
+# could match all the way to an UNRELATED quote several lines down, "protecting" (and so
+# preserving verbatim, unstripped) a huge, wrong span of comments/code as if it were one string
+# literal's content -- confirmed against pyutilz's own source during this fix's own regression
+# testing. Triple-quoted strings are handled separately (this module's strip target is
+# call/import-list LINES, which never legitimately contain a triple-quoted string).
+_STRING_LITERAL_RE = re.compile(r'"(?:[^"\\\n]|\\.)*"|\'(?:[^\'\\\n]|\\.)*\'')
+
+
 def norm(s: str) -> str:
-    # ';' is stripped too so semicolon-joined compound statements (``a = 1; b = 2``,
-    # explicitly kept as intentional compact style) normalize the same as Black's
-    # one-statement-per-line split, and get caught by the explosion detector below
-    # like any other packed line.
-    return re.sub(r"[\s,();]+", "", _swap_single_to_double_quotes(s))
+    """Normalize a line for explosion/collapse comparison: strip whitespace, commas, parens,
+    and semicolons -- EXCEPT inside string literals, where a comma/paren/space is real content,
+    not structural formatting. Without this exclusion, two blocks whose string CONTENTS differ
+    (e.g. ``foo("a, b")`` vs ``foo("a", "b")``) but happen to normalize to the same bag of
+    characters once literal commas are also stripped could be misclassified as an explosion/
+    collapse of the SAME call and have a genuine Black fix silently rejected (or the reverse: a
+    real explosion masked by string content padding out the character counts to match).
+    ';' is stripped too (outside strings) so semicolon-joined compound statements (``a = 1; b =
+    2``, explicitly kept as intentional compact style) normalize the same as Black's
+    one-statement-per-line split, and get caught by the explosion detector below like any other
+    packed line.
+    """
+    s = _swap_single_to_double_quotes(s)
+    out = []
+    pos = 0
+    for m in _STRING_LITERAL_RE.finditer(s):
+        out.append(re.sub(r"[\s,();]+", "", s[pos:m.start()]))
+        out.append(m.group(0))  # string literal kept verbatim, including internal punctuation
+        pos = m.end()
+    out.append(re.sub(r"[\s,();]+", "", s[pos:]))
+    return "".join(out)
 
 
 def is_all_blank(lines):

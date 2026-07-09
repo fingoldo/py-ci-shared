@@ -15,33 +15,40 @@ Shared across projects via the py-ci-shared package.
 import subprocess
 import sys
 
-_files = [a for a in sys.argv[1:] if a.endswith(".py")]
-if not _files:
+# ``--select UP`` re-enables py<3.10-parity UP codes on the CLI regardless of what ruff-base.toml
+# ignores (--select REPLACES the effective rule set, same caveat as the blocking gate's own
+# --ignore-only rule -- see ruff-blocking.yml). This list must stay a SUBSET of ruff-base.toml's
+# own `ignore` list -- tests/test_format_warn_ignore_subset.py pins that relationship so drift
+# between the two fails a test instead of silently nagging about deliberately-kept idioms.
+_UP_IGNORE = ["UP006", "UP007", "UP037", "UP045", "UP031"]
+
+def main() -> None:
+    files = [a for a in sys.argv[1:] if a.endswith(".py")]
+    if not files:
+        return
+
+    warned = False
+    for cmd in (
+        # taste only: formatting + pycodestyle/naming/pyupgrade/import-order. Real
+        # problems (pyflakes F + bugbear B) are a SEPARATE blocking hook, not here.
+        [sys.executable, "-m", "ruff", "format", "--check", "--diff", *files],
+        [sys.executable, "-m", "ruff", "check", "--select", "E,W,N,UP,I", "--ignore", ",".join(_UP_IGNORE), *files],
+    ):
+        try:
+            if subprocess.run(cmd).returncode != 0:
+                warned = True
+        except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
+            print(f"[format-warn] skipped {' '.join(cmd[2:4])}: {e}", file=sys.stderr)
+
+    if warned:
+        print(
+            "\n[format-warn] The diffs / lint issues above are WARNINGS ONLY -- nothing "
+            "was rewritten and the commit is NOT blocked. Run 'ruff format' / "
+            "'ruff check --fix' manually to apply.",
+            file=sys.stderr,
+        )
+
+
+if __name__ == "__main__":
+    main()
     sys.exit(0)
-
-_warned = False
-for _cmd in (
-    # taste only: formatting + pycodestyle/naming/pyupgrade/import-order. Real
-    # problems (pyflakes F + bugbear B) are a SEPARATE blocking hook, not here.
-    [sys.executable, "-m", "ruff", "format", "--check", "--diff", *_files],
-    # ``--ignore`` mirrors the shared ruff-base.toml's py<3.10-parity ignores: an explicit ``--select UP``
-    # would otherwise re-enable them on the CLI and spam UP006/UP007/UP037/UP045 (Optional/Union/List
-    # modernization) warnings the project deliberately keeps for older-Python compatibility. Keep in sync
-    # with configs/ruff-base.toml's ignore list so the warn-only hook does not nag about deliberately-kept
-    # idioms.
-    [sys.executable, "-m", "ruff", "check", "--select", "E,W,N,UP,I", "--ignore", "UP006,UP007,UP037,UP045,UP031", *_files],
-):
-    try:
-        if subprocess.run(_cmd).returncode != 0:
-            _warned = True
-    except Exception as _e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
-        print(f"[format-warn] skipped {' '.join(_cmd[2:4])}: {_e}", file=sys.stderr)
-
-if _warned:
-    print(
-        "\n[format-warn] The diffs / lint issues above are WARNINGS ONLY -- nothing "
-        "was rewritten and the commit is NOT blocked. Run 'ruff format' / "
-        "'ruff check --fix' manually to apply.",
-        file=sys.stderr,
-    )
-sys.exit(0)

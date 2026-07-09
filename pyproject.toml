@@ -24,6 +24,9 @@ classifiers = [
 # This package only ships the thin orchestration scripts + shared config, not the tools themselves.
 dependencies = []
 
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "black>=24.0"]
+
 [project.urls]
 Repository = "https://github.com/fingoldo/py-ci-shared"
 
