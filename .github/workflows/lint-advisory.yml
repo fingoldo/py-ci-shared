@@ -18,6 +18,14 @@ on:
         description: "Path to the calling repo's own vulture whitelist file (project-specific, never shared)"
         type: string
         default: ""
+      run-deptry:
+        description: "Run deptry (unused/missing/transitive dependency drift), reading [tool.deptry] from the calling repo's pyproject.toml"
+        type: boolean
+        default: false
+      run-interrogate:
+        description: "Run interrogate (docstring coverage), reading [tool.interrogate] from the calling repo's pyproject.toml"
+        type: boolean
+        default: false
 
 jobs:
   lint-advisory:
@@ -44,6 +52,16 @@ jobs:
 
       - name: Codespell (advisory)
         run: uvx codespell --toml pyproject.toml ${{ inputs.codespell-paths }}
+        continue-on-error: true
+
+      - name: Deptry dependency check (advisory)
+        if: inputs.run-deptry
+        run: uvx deptry .
+        continue-on-error: true
+
+      - name: Interrogate docstring coverage (advisory)
+        if: inputs.run-interrogate
+        run: uvx interrogate -v ${{ inputs.source-path }}
         continue-on-error: true
 
       - name: yamllint workflow files (advisory)
