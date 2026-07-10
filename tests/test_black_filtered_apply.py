@@ -14,7 +14,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from py_ci_shared.black_filtered_apply import filtered_apply, looks_like_import_or_call_list, norm
+from py_ci_shared.black_filtered_apply import discover_py_files, filtered_apply, looks_like_import_or_call_list, norm
 
 
 class TestBlankLineInsertion:
@@ -193,3 +193,37 @@ class TestMultilineTripleQuotedStringArgumentNotMisclassified:
             "    )\n"
         )
         assert filtered_apply(orig, formatted) == orig
+
+
+class TestDiscoverPyFiles:
+    """Regression test for a bug found while wiring --check into a pre-commit hook (2026-07-11):
+    discover_py_files used Path(root).rglob("*.py") unconditionally, which silently returns
+    EMPTY when root is an individual FILE rather than a directory (rglob only makes sense on a
+    directory) -- so --check <files...> reported "All 0 files are filtered-Black-clean" without
+    checking anything, a false-negative. This is exactly what pre-commit passes (a list of
+    changed files, not directories), so --check must handle both."""
+
+    def test_individual_file_path_is_included_as_is(self, tmp_path):
+        f = tmp_path / "mod.py"
+        f.write_text("x = 1\n")
+        assert discover_py_files([str(f)]) == [str(f)]
+
+    def test_directory_root_still_recursively_discovers(self, tmp_path):
+        (tmp_path / "pkg").mkdir()
+        f = tmp_path / "pkg" / "mod.py"
+        f.write_text("x = 1\n")
+        assert discover_py_files([str(tmp_path)]) == [str(f)]
+
+    def test_non_py_file_path_is_excluded(self, tmp_path):
+        f = tmp_path / "readme.md"
+        f.write_text("hi\n")
+        assert discover_py_files([str(f)]) == []
+
+    def test_mixed_files_and_directories(self, tmp_path):
+        (tmp_path / "pkg").mkdir()
+        dir_file = tmp_path / "pkg" / "mod.py"
+        dir_file.write_text("x = 1\n")
+        loose_file = tmp_path / "loose.py"
+        loose_file.write_text("y = 2\n")
+        result = discover_py_files([str(tmp_path / "pkg"), str(loose_file)])
+        assert result == sorted([str(dir_file), str(loose_file)])

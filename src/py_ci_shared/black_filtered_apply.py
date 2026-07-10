@@ -14,7 +14,7 @@ flag).
 
 Usage:
     python -m py_ci_shared.black_filtered_apply --config pyproject.toml [--write] <file.py> [file2.py ...]
-    python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check <root_dir> [root_dir2 ...]
+    python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check <root_dir_or_file> [... ...]
 
 --config is required (never rely on directory walk-up -- a file processed
 from a scratch/CI checkout dir must not silently fall back to Black's
@@ -23,11 +23,12 @@ from a scratch/CI checkout dir must not silently fall back to Black's
 Without --write and without --check: prints a unified diff of what WOULD
 change for each listed FILE and exits 0.
 With --write: rewrites each listed FILE in place.
-With --check <dirs>: recursively discovers *.py under the given directories
-(skipping .git/.venv/.pytest_cache/build/dist/__pycache__/legacy, plus any
-names in the EXTRA_EXCLUDED_DIRS env var), reports which files still have
-non-excluded-class Black findings, and exits 1 if any do (0 if the tree is
-fully filtered-Black-clean) -- the CI-friendly mode.
+With --check <roots>: each root may be a DIRECTORY (recursively discovers *.py under it,
+skipping .git/.venv/.pytest_cache/build/dist/__pycache__/legacy, plus any names in the
+EXTRA_EXCLUDED_DIRS env var) or an individual .py FILE path (included as-is, no directory
+walk) -- the latter is what a pre-commit hook passes (a list of changed files, not
+directories). Reports which files still have non-excluded-class Black findings, and exits 1
+if any do (0 if the tree/file-set is fully filtered-Black-clean).
 """
 import sys
 import os
@@ -49,12 +50,21 @@ _BLACK_CMD = shlex.split(os.environ["BLACK_CMD"]) if os.environ.get("BLACK_CMD")
 
 
 def discover_py_files(roots):
+    """Accepts a mix of directory roots (recursively walked) and individual .py file paths
+    (included as-is) -- the latter is what pre-commit passes (a list of changed files, not
+    directories), so --check must handle both, not just the directory-walk case the CLI was
+    originally documented for."""
     files = []
     for root in roots:
-        for p in pathlib.Path(root).rglob("*.py"):
-            if any(part in EXCLUDED_DIR_NAMES for part in p.parts):
+        p = pathlib.Path(root)
+        if p.is_file():
+            if p.suffix == ".py" and not any(part in EXCLUDED_DIR_NAMES for part in p.parts):
+                files.append(str(p))
+            continue
+        for sub in p.rglob("*.py"):
+            if any(part in EXCLUDED_DIR_NAMES for part in sub.parts):
                 continue
-            files.append(str(p))
+            files.append(str(sub))
     return sorted(files)
 
 
@@ -107,12 +117,7 @@ def _swap_single_to_double_quotes(s: str) -> str:
 # that a genuine call-arg-list explosion of that RawKernel(...) call went undetected and got
 # silently APPLIED instead of rejected -- confirmed against mlframe's own
 # _plugin_mi_classif_batch_cuda_resident during this fix's regression testing.
-_STRING_LITERAL_RE = re.compile(
-    r'r?"""(?:.|\n)*?"""'
-    r"|r?'''(?:.|\n)*?'''"
-    r'|"(?:[^"\\\n]|\\.)*"'
-    r"|'(?:[^'\\\n]|\\.)*'"
-)
+_STRING_LITERAL_RE = re.compile(r'r?"""(?:.|\n)*?"""' r"|r?'''(?:.|\n)*?'''" r'|"(?:[^"\\\n]|\\.)*"' r"|'(?:[^'\\\n]|\\.)*'")
 
 
 def norm(s: str) -> str:
@@ -233,9 +238,7 @@ def filtered_apply(orig: str, formatted: str) -> str:
                     continue
                 elif stag == "delete" and is_all_blank(s_old):
                     continue
-                elif _touches_multiline_string(
-                    s_old, orig_string_state[i1 + si1]
-                ) or _touches_multiline_string(s_new, fmt_string_state[j1 + sj1]):
+                elif _touches_multiline_string(s_old, orig_string_state[i1 + si1]) or _touches_multiline_string(s_new, fmt_string_state[j1 + sj1]):
                     # A fragment of a multi-line triple-quoted string; norm() cannot reliably
                     # classify it (see _touches_multiline_string). Reject conservatively rather
                     # than risk silently applying a misclassified explosion.
