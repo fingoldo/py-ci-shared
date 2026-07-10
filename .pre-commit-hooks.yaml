@@ -1,0 +1,30 @@
+# Pre-commit hooks manifest for py-ci-shared. Consuming repos (mlframe, pyutilz) reference these
+# via:
+#   - repo: https://github.com/fingoldo/py-ci-shared
+#     rev: v1.0.0
+#     hooks:
+#       - id: mypy-full-manual
+#         args: ['src/mlframe']
+#
+# `language: system` is deliberate for every hook here (not `language: python`, which would make
+# pre-commit build an ISOLATED venv for the hook -- wrong for checks that need the calling
+# repo's REAL installed dependency graph, e.g. mypy-full needs torch/numba/pandas actually
+# resolved to type-check anything beyond Any). This mirrors the assumption the existing
+# repo-local blocking hooks (deptry-blocking, bandit-blocking) already make: the local dev env
+# has the project's [all,dev] extras installed.
+
+- id: mypy-full-manual
+  name: "mypy (whole project, manual)"
+  description: >-
+    Whole-project mypy check (unlike the fast beachhead hook, which only covers the small
+    strict-mode module list). Assumes the real dependency graph is already installed locally --
+    same assumption CI's mypy-full.yml makes via its own explicit install step. Pass the
+    package's src path as this hook's `args` in the calling repo, e.g. args: ['src/mlframe'].
+    MANUAL stage: this is the heavier, whole-project sibling of the fast per-commit beachhead
+    check -- run on demand via `pre-commit run --hook-stage manual mypy-full-manual`, not on
+    every commit.
+  entry: mypy
+  language: system
+  types: [python]
+  pass_filenames: false
+  stages: [manual]
