@@ -23,7 +23,7 @@
     MANUAL stage: this is the heavier, whole-project sibling of the fast per-commit beachhead
     check -- run on demand via `pre-commit run --hook-stage manual mypy-full-manual`, not on
     every commit.
-  entry: mypy
+  entry: python -m mypy
   language: system
   types: [python]
   pass_filenames: false
