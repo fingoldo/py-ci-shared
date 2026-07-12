@@ -37,9 +37,16 @@ jobs:
 
       # check-path can be multiple space-separated paths (per its "Path(s)" description) --
       # word-splitting is the intended behavior here, not a bug.
+      #
+      # BLACK_CMD is version-pinned (not bare "uvx black"): unpinned resolves whatever's newest
+      # on PyPI at run time, which drifts both across CI runs over time AND against whatever
+      # version a contributor has installed locally -- observed 2026-07-12, a commit that
+      # verified 0 findings locally against black 26.5.1 still failed this CI job because uvx
+      # had resolved a different version. Consuming repos should pin the same version in their
+      # own [project.optional-dependencies] `black==...` pin so local and CI always agree.
       - name: Black format check, filtered
         env:
-          BLACK_CMD: "uvx black"
+          BLACK_CMD: "uvx black==26.5.1"
           INPUTS_CHECK_PATH: ${{ inputs.check-path }}
         run: |
           # shellcheck disable=SC2086
