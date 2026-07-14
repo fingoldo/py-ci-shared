@@ -27,6 +27,10 @@ dependencies = []
 [project.optional-dependencies]
 dev = ["pytest>=7.0", "black>=24.0"]
 
+[project.scripts]
+safe-precommit = "py_ci_shared.safe_precommit:main"
+py-ci-install-safe-hook = "py_ci_shared.install_safe_hook:main"
+
 [project.urls]
 Repository = "https://github.com/fingoldo/py-ci-shared"
 

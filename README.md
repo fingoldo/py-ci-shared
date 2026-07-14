@@ -59,6 +59,34 @@ python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check src/
 
 `format_warn.py` is already fully generic. `bandit_warn.py` / `vulture_warn.py` read `PY_CI_SHARED_SRC_PATH` (required) and `vulture_warn.py` additionally reads `PY_CI_SHARED_VULTURE_WHITELIST` (optional — whitelists are project-specific, never shipped here) from the environment; set both in the calling repo's `.pre-commit-config.yaml` hook `env:` block.
 
+## Surviving concurrent-session commits (`safe_precommit`)
+
+`pre-commit` stashes a repo's unstaged tracked-file changes to a patch file before running hooks
+(so hooks see only staged content), then tries to restore that patch afterward. When multiple git
+sessions share one working copy (parallel agents, multiple terminals), another session's commit
+can advance `HEAD` while ours is stashed; the restore-patch was computed against the OLD `HEAD`
+blob and no longer matches the new one, so `git apply` fails even after pre-commit's own
+checkout-and-retry, and the uncaught error aborts the ENTIRE commit — even though every real hook
+(mypy, tests, lint...) already ran and passed. The files actually being committed are unaffected;
+only some OTHER unstaged edit (not part of this commit) couldn't be silently restored.
+
+`py_ci_shared.safe_precommit` is a drop-in `pre-commit` replacement that patches this one failure
+mode to a warning (the un-restorable patch is preserved on disk, never silently dropped) instead
+of aborting. One-time per clone, after `pre-commit install`:
+
+```bash
+python -m py_ci_shared.install_safe_hook
+```
+
+This rewrites the generated `.git/hooks/pre-commit` to invoke `python -m
+py_ci_shared.safe_precommit hook-impl ...` instead of `python -mpre_commit hook-impl ...`, so plain
+`git commit` gets the patched behavior automatically — no wrapper command to remember, and it
+works on any machine as soon as `pip install -e ".[dev]"` (or however the consuming repo installs
+this package) makes `py_ci_shared` importable in that Python. Idempotent; safe to re-run any time,
+including after `pre-commit install` regenerates the hook file (which resets this override).
+
+Re-running `python -m py_ci_shared.install_safe_hook` after each `pre-commit install` (or `pre-commit autoupdate`) is the only maintenance this needs.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — instead, consuming repos clone this repo as a **sibling directory**, exactly the same pattern already used for `pyutilz` itself as an mlframe dependency:
