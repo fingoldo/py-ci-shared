@@ -70,6 +70,7 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/bandit_warn.py" = ["T201"]
 "src/py_ci_shared/vulture_warn.py" = ["T201"]
 "src/py_ci_shared/advisory_warn.py" = ["T201"]
+"src/py_ci_shared/install_safe_hook.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

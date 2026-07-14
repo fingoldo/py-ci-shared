@@ -73,7 +73,7 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
             patch_filename = f'patch{int(time.time())}-{os.getpid()}'
             patch_filename = os.path.join(patch_dir, patch_filename)
             sfo.logger.warning('Unstaged files detected.')
-            sfo.logger.info(f'Stashing unstaged files to {patch_filename}.')
+            sfo.logger.info('Stashing unstaged files to %s.', patch_filename)
             os.makedirs(patch_dir, exist_ok=True)
             with open(patch_filename, 'wb') as patch_file:
                 patch_file.write(diff_stdout)
@@ -99,7 +99,7 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
                     except sfo.CalledProcessError:
                         pass
                 if restored:
-                    sfo.logger.info(f'Restored changes from {patch_filename}.')
+                    sfo.logger.info('Restored changes from %s.', patch_filename)
                 else:
                     # PATCHED tail: the original raises here and aborts the whole commit, even
                     # though every real hook already ran. The staged changes we're committing are
@@ -107,10 +107,11 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
                     # own working copy) couldn't be silently restored. Surface it loudly and leave
                     # the patch file on disk (never delete it) so nothing is lost, but don't raise.
                     sfo.logger.warning(
-                        f'Could not restore unstaged changes from {patch_filename} (conflicted '
+                        'Could not restore unstaged changes from %s (conflicted '
                         'with concurrent edits from another session). The patch file is '
                         'PRESERVED on disk -- inspect it and `git apply` manually if those '
                         'changes are still needed. Proceeding with the commit.',
+                        patch_filename,
                     )
         else:  # pragma: win32 no cover
             e = sfo.CalledProcessError(retcode, diff_cmd, b'', diff_stderr)
