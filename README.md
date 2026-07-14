@@ -59,6 +59,42 @@ python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check src/
 
 `format_warn.py` is already fully generic. `bandit_warn.py` / `vulture_warn.py` read `PY_CI_SHARED_SRC_PATH` (required) and `vulture_warn.py` additionally reads `PY_CI_SHARED_VULTURE_WHITELIST` (optional — whitelists are project-specific, never shipped here) from the environment; set both in the calling repo's `.pre-commit-config.yaml` hook `env:` block.
 
+## Code-audit baseline meta-test (`code_audit_meta`)
+
+Shared harness for the "run `pyutilz.dev.code_audit.run_all()` against this repo's own source,
+gate on a committed baseline JSON" pattern used by every consumer (glossum_backend_scripts,
+llm_bench, realtime_applications, production_scrapers, pyutilz itself, mlframe, algopacksimple).
+`pyutilz`, `pytest`, and `orjson` are imported lazily inside the functions, not at module level,
+so this stays consistent with the rest of the package being otherwise dependency-free — every
+real caller already depends on `pyutilz` directly (it's what's being scanned).
+
+In a consuming repo's `tests/test_meta/test_code_audit_baseline.py` (or an equivalent root-level
+file for flat-layout repos):
+
+```python
+from pathlib import Path
+from py_ci_shared.code_audit_meta import assert_no_new_code_audit_findings
+
+import mypackage
+
+def test_no_new_code_audit_findings():
+    assert_no_new_code_audit_findings(
+        root=Path(mypackage.__file__).resolve().parent,
+        baseline_path=Path(__file__).resolve().parent / "_code_audit_baseline.json",
+        exclude_dirs=frozenset({"tests", "docs", "legacy"}),  # repo-specific, merged with the built-in cache/vcs defaults
+    )
+```
+
+And in the same directory's `conftest.py` (or the repo's root conftest.py if there's only one),
+register the refresh flag so pytest accepts `--refresh-code-audit-baseline`:
+
+```python
+from py_ci_shared.code_audit_meta import register_refresh_option
+
+def pytest_addoption(parser):
+    register_refresh_option(parser)
+```
+
 ## Surviving concurrent-session commits (`safe_precommit`)
 
 `pre-commit` stashes a repo's unstaged tracked-file changes to a patch file before running hooks
