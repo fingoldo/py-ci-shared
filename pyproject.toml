@@ -25,7 +25,14 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "black>=24.0", "orjson>=3.9"]
+dev = [
+    "pytest>=7.0",
+    "black>=24.0",
+    "orjson>=3.9",
+    # code_audit_meta.py wraps pyutilz.dev.code_audit.run_all() -- exercising it for real (not
+    # mocked) needs pyutilz itself. Not on PyPI, so git+https like every consuming repo's own CI.
+    "pyutilz @ git+https://github.com/fingoldo/pyutilz.git",
+]
 
 [project.scripts]
 safe-precommit = "py_ci_shared.safe_precommit:main"
