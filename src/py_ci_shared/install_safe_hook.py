@@ -17,42 +17,41 @@ import subprocess
 import sys
 from pathlib import Path
 
-_TARGET = '-mpre_commit'
-_REPLACEMENT = '-m py_ci_shared.safe_precommit'
+_TARGET = "-mpre_commit"
+_REPLACEMENT = "-m py_ci_shared.safe_precommit"
 
 
 def _git_dir() -> Path:
-    out = subprocess.run(['git', 'rev-parse', '--git-dir'], capture_output=True, text=True, check=True)
+    out = subprocess.run(["git", "rev-parse", "--git-dir"], capture_output=True, text=True, check=True)
     return Path(out.stdout.strip())
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        hook_path = _git_dir() / 'hooks' / 'pre-commit'
+        hook_path = _git_dir() / "hooks" / "pre-commit"
     except subprocess.CalledProcessError:
-        print('Not inside a git repository.', file=sys.stderr)
+        print("Not inside a git repository.", file=sys.stderr)
         return 1
     if not hook_path.exists():
-        print(f'{hook_path} does not exist -- run `pre-commit install` first.', file=sys.stderr)
+        print(f"{hook_path} does not exist -- run `pre-commit install` first.", file=sys.stderr)
         return 1
 
     text = hook_path.read_text()
     if _REPLACEMENT in text:
-        print(f'{hook_path} is already patched.')
+        print(f"{hook_path} is already patched.")
         return 0
     if _TARGET not in text:
         print(
-            f'Could not find `{_TARGET}` in {hook_path} (unexpected pre-commit hook template); '
-            'leaving it untouched.',
+            f"Could not find `{_TARGET}` in {hook_path} (unexpected pre-commit hook template); " "leaving it untouched.",
             file=sys.stderr,
         )
         return 1
 
     patched = text.replace(_TARGET, _REPLACEMENT)
     hook_path.write_text(patched)
-    print(f'Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.')
+    print(f"Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.")
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())

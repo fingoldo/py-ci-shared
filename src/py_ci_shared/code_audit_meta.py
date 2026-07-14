@@ -126,10 +126,7 @@ def assert_no_new_code_audit_findings(
             orjson.dumps(sorted(current_keys), option=orjson.OPT_INDENT_2).decode("utf-8"),
             encoding="utf-8",
         )
-        pytest.skip(
-            f"code-audit baseline refreshed at {baseline_path.name} "
-            f"({len(current_keys)} existing finding(s))"
-        )
+        pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
 
     baseline = set(orjson.loads(baseline_path.read_bytes()))
     new = sorted(current_keys - baseline)
@@ -154,7 +151,5 @@ def assert_no_new_code_audit_findings(
             f"{len(new)} new static-analysis finding(s) from pyutilz.dev.code_audit "
             f"(see pyutilz/src/pyutilz/dev/code_audit/__init__.py for check descriptions). "
             f"Fix the code, OR if this is a confirmed false positive, refresh the baseline "
-            f"after review:\n  "
-            + "\n  ".join(detail_lines)
-            + (f"\n  ... and {len(new) - 20} more" if len(new) > 20 else "")
+            f"after review:\n  " + "\n  ".join(detail_lines) + (f"\n  ... and {len(new) - 20} more" if len(new) > 20 else "")
         )

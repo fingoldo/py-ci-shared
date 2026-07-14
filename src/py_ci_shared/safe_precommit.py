@@ -59,7 +59,7 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
 
     @contextlib.contextmanager
     def _unstaged_changes_cleared(patch_dir: str) -> Generator[None]:
-        tree = sfo.cmd_output('git', 'write-tree')[1].strip()
+        tree = sfo.cmd_output("git", "write-tree")[1].strip()
         diff_cmd = (
             'git', 'diff-index', '--ignore-submodules', '--binary',
             '--exit-code', '--no-color', '--no-ext-diff', tree, '--',
@@ -70,15 +70,15 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
         elif retcode == 1 and not diff_stdout.strip():
             yield
         elif retcode == 1 and diff_stdout.strip():
-            patch_filename = f'patch{int(time.time())}-{os.getpid()}'
+            patch_filename = f"patch{int(time.time())}-{os.getpid()}"
             patch_filename = os.path.join(patch_dir, patch_filename)
-            sfo.logger.warning('Unstaged files detected.')
-            sfo.logger.info('Stashing unstaged files to %s.', patch_filename)
+            sfo.logger.warning("Unstaged files detected.")
+            sfo.logger.info("Stashing unstaged files to %s.", patch_filename)
             os.makedirs(patch_dir, exist_ok=True)
-            with open(patch_filename, 'wb') as patch_file:
+            with open(patch_filename, "wb") as patch_file:
                 patch_file.write(diff_stdout)
 
-            no_checkout_env = dict(os.environ, _PRE_COMMIT_SKIP_POST_CHECKOUT='1')
+            no_checkout_env = dict(os.environ, _PRE_COMMIT_SKIP_POST_CHECKOUT="1")
             try:
                 sfo.cmd_output_b(*sfo._CHECKOUT_CMD, env=no_checkout_env)
                 yield
@@ -91,7 +91,7 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
                     sfo._git_apply(patch_filename)
                     restored = True
                 except sfo.CalledProcessError:
-                    sfo.logger.warning('Stashed changes conflicted with hook auto-fixes... Rolling back fixes...')
+                    sfo.logger.warning("Stashed changes conflicted with hook auto-fixes... Rolling back fixes...")
                     sfo.cmd_output_b(*sfo._CHECKOUT_CMD, env=no_checkout_env)
                     try:
                         sfo._git_apply(patch_filename)
@@ -99,7 +99,7 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
                     except sfo.CalledProcessError:
                         pass
                 if restored:
-                    sfo.logger.info('Restored changes from %s.', patch_filename)
+                    sfo.logger.info("Restored changes from %s.", patch_filename)
                 else:
                     # PATCHED tail: the original raises here and aborts the whole commit, even
                     # though every real hook already ran. The staged changes we're committing are
@@ -107,16 +107,16 @@ def _patched_unstaged_changes_cleared(sfo: ModuleType) -> Callable[[str], contex
                     # own working copy) couldn't be silently restored. Surface it loudly and leave
                     # the patch file on disk (never delete it) so nothing is lost, but don't raise.
                     sfo.logger.warning(
-                        'Could not restore unstaged changes from %s (conflicted '
-                        'with concurrent edits from another session). The patch file is '
-                        'PRESERVED on disk -- inspect it and `git apply` manually if those '
-                        'changes are still needed. Proceeding with the commit.',
+                        "Could not restore unstaged changes from %s (conflicted "
+                        "with concurrent edits from another session). The patch file is "
+                        "PRESERVED on disk -- inspect it and `git apply` manually if those "
+                        "changes are still needed. Proceeding with the commit.",
                         patch_filename,
                     )
         else:  # pragma: win32 no cover
-            e = sfo.CalledProcessError(retcode, diff_cmd, b'', diff_stderr)
+            e = sfo.CalledProcessError(retcode, diff_cmd, b"", diff_stderr)
             raise sfo.FatalError(
-                f'pre-commit failed to diff -- perhaps due to permissions?\n\n{e}',
+                f"pre-commit failed to diff -- perhaps due to permissions?\n\n{e}",
             )
 
     return _unstaged_changes_cleared
@@ -126,12 +126,12 @@ def _verify_patch_target(sfo) -> None:
     """Best-effort staleness check: warn (never raise) if the live function's required attributes
     have drifted from what this copy expects, so a future pre-commit upgrade fails loudly via a
     log line instead of silently patching the wrong thing."""
-    required = ('cmd_output', 'cmd_output_b', '_CHECKOUT_CMD', '_git_apply', 'CalledProcessError', 'FatalError', 'logger')
+    required = ("cmd_output", "cmd_output_b", "_CHECKOUT_CMD", "_git_apply", "CalledProcessError", "FatalError", "logger")
     missing = [name for name in required if not hasattr(sfo, name)]
     if missing:
-        logging.getLogger('pre_commit').warning(
-            'safe_precommit: pre_commit.staged_files_only is missing expected attribute(s) %s -- '
-            'the stash-race patch may be stale for this pre-commit version and was NOT applied.',
+        logging.getLogger("pre_commit").warning(
+            "safe_precommit: pre_commit.staged_files_only is missing expected attribute(s) %s -- "
+            "the stash-race patch may be stale for this pre-commit version and was NOT applied.",
             missing,
         )
 
@@ -147,7 +147,7 @@ def patch_stash_restore() -> bool:
     except ImportError:
         return False
     _verify_patch_target(sfo)
-    if not hasattr(sfo, '_git_apply'):
+    if not hasattr(sfo, "_git_apply"):
         return False
     sfo._unstaged_changes_cleared = _patched_unstaged_changes_cleared(sfo)
     return True
@@ -160,5 +160,5 @@ def main(argv: list[str] | None = None) -> int:
     return int(pc_main(sys.argv[1:] if argv is None else argv))
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     raise SystemExit(main())
