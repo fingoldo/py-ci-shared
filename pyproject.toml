@@ -19,16 +19,18 @@ classifiers = [
     "Topic :: Software Development :: Build Tools",
     "Topic :: Software Development :: Quality Assurance",
 ]
-# Deliberately dependency-free: black/ruff/mypy/bandit/vulture/codespell/pip-audit are installed
-# by the CALLING project's own CI/pre-commit setup (or run via `uvx`, which resolves them itself).
-# This package only ships the thin orchestration scripts + shared config, not the tools themselves.
-dependencies = []
+# Deliberately dependency-free for the dev-tool orchestration scripts (black/ruff/mypy/bandit/
+# vulture/codespell/pip-audit are installed by the CALLING project's own CI/pre-commit setup, or
+# run via `uvx`). orjson is the one exception: code_audit_meta.assert_no_new_code_audit_findings()
+# imports it unconditionally at call time (baseline seed/compare/refresh), so every real consumer
+# needs it installed -- caught via a live CI failure (ModuleNotFoundError in a caller that didn't
+# happen to already depend on orjson itself).
+dependencies = ["orjson>=3.9"]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "black>=24.0",
-    "orjson>=3.9",
     # code_audit_meta.py wraps pyutilz.dev.code_audit.run_all() -- exercising it for real (not
     # mocked) needs pyutilz itself. Not on PyPI, so git+https like every consuming repo's own CI.
     "pyutilz @ git+https://github.com/fingoldo/pyutilz.git",
