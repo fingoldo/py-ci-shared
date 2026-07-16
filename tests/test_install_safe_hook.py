@@ -21,13 +21,15 @@ fi
 """
 
 
-def _init_repo_with_hook(tmp_path: Path) -> Path:
+def _init_repo_with_hook(tmp_path: Path, *, with_pre_merge_commit: bool = False) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
     hooks_dir = repo / ".git" / "hooks"
     hooks_dir.mkdir(exist_ok=True)
     (hooks_dir / "pre-commit").write_text(_TEMPLATE)
+    if with_pre_merge_commit:
+        (hooks_dir / "pre-merge-commit").write_text(_TEMPLATE.replace("hook-type=pre-commit", "hook-type=pre-merge-commit"))
     return repo
 
 
@@ -70,3 +72,29 @@ def test_install_safe_hook_fails_cleanly_outside_a_repo(tmp_path, monkeypatch):
 
     monkeypatch.chdir(tmp_path)
     assert main([]) == 1
+
+
+def test_install_safe_hook_also_patches_pre_merge_commit_when_present(tmp_path, monkeypatch):
+    """git merge does not fire the pre-commit hook stage -- a repo that also installed the
+    pre-merge-commit hook type needs it patched too, or a merge commit bypasses safe_precommit's
+    stash-restore-race fix entirely."""
+    from py_ci_shared.install_safe_hook import main
+
+    repo = _init_repo_with_hook(tmp_path, with_pre_merge_commit=True)
+    monkeypatch.chdir(repo)
+    assert main([]) == 0
+    for name in ("pre-commit", "pre-merge-commit"):
+        text = (repo / ".git" / "hooks" / name).read_text()
+        assert "-m py_ci_shared.safe_precommit" in text
+        assert "-mpre_commit" not in text
+
+
+def test_install_safe_hook_skips_missing_pre_merge_commit_without_failing(tmp_path, monkeypatch):
+    """pre-merge-commit is optional (only created by an explicit `--hook-type` install) -- its
+    absence must not fail the whole run, unlike a missing pre-commit hook."""
+    from py_ci_shared.install_safe_hook import main
+
+    repo = _init_repo_with_hook(tmp_path, with_pre_merge_commit=False)
+    monkeypatch.chdir(repo)
+    assert main([]) == 0
+    assert not (repo / ".git" / "hooks" / "pre-merge-commit").exists()

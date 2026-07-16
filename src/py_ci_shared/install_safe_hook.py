@@ -1,11 +1,25 @@
 #!/usr/bin/env python
-"""One-time per-clone setup: point the generated git hook at ``safe_precommit`` instead of raw
-``pre_commit``, so plain ``git commit`` transparently survives the concurrent-session stash-restore
-race (see ``py_ci_shared.safe_precommit`` for the full explanation) without anyone needing to
-remember a wrapper command.
+"""One-time per-clone setup: point the generated git hook(s) at ``safe_precommit`` instead of raw
+``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive the concurrent-
+session stash-restore race (see ``py_ci_shared.safe_precommit`` for the full explanation) without
+anyone needing to remember a wrapper command.
 
-Idempotent -- safe to run repeatedly. Re-run after ``pre-commit install`` (it regenerates
-``.git/hooks/pre-commit`` from its own template and resets this override).
+Patches BOTH ``.git/hooks/pre-commit`` and ``.git/hooks/pre-merge-commit`` when present (the
+latter only exists once ``pre-commit install --hook-type pre-merge-commit`` has been run at least
+once in this clone -- git's ``pre-commit`` hook stage does NOT fire on ``git merge``, only on a
+direct ``git commit``, so a repo relying solely on the former has a real gap: a merge commit can
+introduce a blocking-gate violation -- e.g. an un-filtered Black reformat from one merge parent --
+with zero local hook coverage, surfacing only once pushed to CI. Confirmed 2026-07-16 on mlframe:
+a "Merge remote-tracking branch 'origin/master' into HEAD" commit shipped a raw-Black-reformatted
+file that the repo's OWN blocking ``black-filtered-blocking`` pre-commit hook would have caught on
+a direct commit. Installing/patching the ``pre-merge-commit`` hook closes this: run once per
+clone, `python -m pre_commit install --hook-type pre-merge-commit` (creates the hook file) then
+this script (points it at the safe wrapper); each consuming repo's ``.pre-commit-config.yaml``
+blocking hooks also need ``pre-merge-commit`` added to their ``stages:`` list to actually fire at
+that stage (a hook's explicit ``stages: [pre-commit]`` does not implicitly include other stages).
+
+Idempotent -- safe to run repeatedly. Re-run after ``pre-commit install`` (it regenerates the hook
+file(s) from its own template and resets this override).
 
 Usage::
 
@@ -19,6 +33,7 @@ from pathlib import Path
 
 _TARGET = "-mpre_commit"
 _REPLACEMENT = "-m py_ci_shared.safe_precommit"
+_HOOK_NAMES = ("pre-commit", "pre-merge-commit")
 
 
 def _git_dir() -> Path:
@@ -26,15 +41,15 @@ def _git_dir() -> Path:
     return Path(out.stdout.strip())
 
 
-def main(argv: list[str] | None = None) -> int:
-    try:
-        hook_path = _git_dir() / "hooks" / "pre-commit"
-    except subprocess.CalledProcessError:
-        print("Not inside a git repository.", file=sys.stderr)
-        return 1
+def _patch_one(hook_path: Path) -> int:
     if not hook_path.exists():
-        print(f"{hook_path} does not exist -- run `pre-commit install` first.", file=sys.stderr)
-        return 1
+        # pre-merge-commit is optional (only created by an explicit `--hook-type` install) -- not
+        # an error, just nothing to patch yet.
+        if hook_path.name == "pre-commit":
+            print(f"{hook_path} does not exist -- run `pre-commit install` first.", file=sys.stderr)
+            return 1
+        print(f"{hook_path} does not exist (run `pre-commit install --hook-type pre-merge-commit` to add it) -- skipped.")
+        return 0
 
     text = hook_path.read_text()
     if _REPLACEMENT in text:
@@ -51,6 +66,17 @@ def main(argv: list[str] | None = None) -> int:
     hook_path.write_text(patched)
     print(f"Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.")
     return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    try:
+        hooks_dir = _git_dir() / "hooks"
+    except subprocess.CalledProcessError:
+        print("Not inside a git repository.", file=sys.stderr)
+        return 1
+
+    results = [_patch_one(hooks_dir / name) for name in _HOOK_NAMES]
+    return 1 if any(r != 0 for r in results) else 0
 
 
 if __name__ == "__main__":
