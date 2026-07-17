@@ -1,0 +1,51 @@
+# Shared ruff config for TEST directories across fingoldo Python projects (mlframe, pyutilz, ...).
+#
+# Test suites have a different risk profile than production code: a print() in a test is a
+# debugging aid a developer left in deliberately (or added mid-triage) and pytest captures/shows
+# it on failure anyway -- it's not the "route diagnostics through logger" problem T20 exists to
+# catch in src/. Naming conventions for parametrized scenario classes and vendored-alias imports
+# also legitimately diverge from src/ conventions. This file starts from the same base every
+# production module uses (correctness rules -- F, real bugs, RUF059 dup-signal, etc. -- all still
+# apply in full) and narrows ONLY the handful of rules that are stylistic-not-correctness in a
+# test context.
+#
+# A consuming repo wires this in via a nested config so it applies ONLY under tests/, without
+# touching the root pyproject.toml's [tool.ruff] (which stays scoped to src/ and keeps its own
+# `exclude = ["tests", ...]`):
+#
+#     # tests/ruff.toml
+#     extend = "../../py-ci-shared/configs/ruff-tests.toml"
+#     target-version = "py39"          # match the repo's own floor
+#
+# Ruff's config discovery walks up from each linted file looking for the nearest ruff.toml /
+# .ruff.toml / pyproject.toml[tool.ruff] -- tests/ruff.toml wins for anything under tests/ and is
+# never merged with the repo-root pyproject.toml automatically; `extend` here is what pulls in
+# ruff-base.toml's select/ignore explicitly. Invoke with `ruff check tests/` as its own gate,
+# separate from the src/-scoped `ruff check .`.
+#
+# Same CRITICAL warning as ruff-base.toml: never invoke with `--select <subset>` in a blocking
+# gate -- always `--ignore <code>` to add, never `--select` to replace.
+
+extend = "ruff-base.toml"
+
+[lint]
+extend-ignore = [
+    "T201",  # print(): a debugging/inspection aid deliberately left in a test, not a src/ logging-hygiene issue.
+             # pytest captures and shows it on failure -- that IS the point, not something to route through logger.
+    "T203",  # pprint(): same rationale as T201, this suite's counterpart for structured debug dumps.
+    "E731",  # lambda assigned to a variable: idiomatic in fixtures / @pytest.mark.parametrize argument builders
+             # (e.g. `build = lambda seed: _make_frame(seed, n=500)`) where a full `def` adds only noise.
+    "N801",  # class name should be CapWords: parametrized-scenario test classes intentionally encode the scenario
+             # in the name with underscores for readability (e.g. TestScenarioA_FinancialCross) -- established
+             # session-wide convention (see mlframe CLAUDE.md N801 note); never worth a rename churn.
+    "N812",  # lowercase module imported as non-lowercase (e.g. `import hermite_fe as H`): short aliases for
+             # deeply-nested filter modules keep parametrized test bodies readable; same never-touched convention.
+    "DTZ001",  # naive datetime() construction: test fixtures routinely build deliberately-naive timestamps to
+               # drive synthetic time-series data (temporal-leak-safety, rolling-window fixtures, etc.) -- the
+               # naivety is the fixture's point, not an accidental tz bug the way it would be in src/ scheduling code.
+]
+
+[lint.per-file-ignores]
+# conftest.py files commonly re-export fixtures/helpers purely for other test modules to import;
+# an "unused" import at the conftest level is often the intended public surface of that fixture module.
+"**/conftest.py" = ["F401"]
