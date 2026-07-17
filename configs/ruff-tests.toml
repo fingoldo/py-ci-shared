@@ -43,6 +43,35 @@ extend-ignore = [
     "DTZ001",  # naive datetime() construction: test fixtures routinely build deliberately-naive timestamps to
                # drive synthetic time-series data (temporal-leak-safety, rolling-window fixtures, etc.) -- the
                # naivety is the fixture's point, not an accidental tz bug the way it would be in src/ scheduling code.
+    "DTZ005",  # datetime.now() without tz: same rationale as DTZ001 -- deliberately naive test-fixture timestamps.
+    "DTZ011",  # date.today() without tz: same rationale as DTZ001.
+    "PERF401", # manual list-comprehension: a straight-line ``for``/``.append()`` loop in a 5-line fixture builder
+               # is not a hot path worth the readability trade -- unlike src/, test bodies run once per test, not
+               # per production request. Same reasoning extends to PERF402/403/203 below.
+    "PERF402", # manual list copy: same rationale as PERF401.
+    "PERF403", # manual dict-comprehension: same rationale as PERF401.
+    "PERF203", # try/except inside a loop: the per-iteration exception-handling cost this rule guards against is
+               # irrelevant at test-fixture scale (tens to thousands of rows, run once), and try/except-per-item is
+               # often the clearest way to assert "some items may legitimately fail" inside a test loop.
+    "RUF012", # mutable class-level default (e.g. ``items: list = []``): overwhelmingly test-scaffolding config
+              # objects and mock classes instantiated once per test, not the shared-mutable-default footgun this
+              # rule exists to catch in long-lived src/ classes reused across many instances.
+    "RUF043", # pytest.raises(..., match=...) pattern looks regex-ambiguous: the whole point of ``match`` in a test
+              # is usually a literal substring of an error message (parens/brackets and all) -- the rule's
+              # "did you mean to escape this" heuristic is false-positive-heavy against real assertion text.
+    "UP035",  # deprecated typing.Dict/List/Tuple import: same "pure import-source churn, no correctness value"
+              # reasoning ruff-base.toml already applies to src/ -- extended here since it fires independently
+              # per-scope (tests/ has its own nested config, not inherited from the root ignore).
+    "E741",   # ambiguous single-letter variable name (l/I/O): common and locally unambiguous in short synthetic-
+              # data / math test bodies (e.g. ``l`` for a loss value, ``I`` for interaction-information) where a
+              # fuller name would just repeat the surrounding docstring's own notation.
+    "N811",   # constant imported as non-constant / "N814",  # class imported as constant (e.g. ``import X as OLD``
+    "N814",   # / ``as NEW`` to alias two versions of the same class for an A/B comparison test): the point of the
+    "N815",   # alias IS the semantic role it plays in that specific test, not the ordinary CapWords/UPPER_CASE
+    "N817",   # convention for a name that will be imported and used elsewhere -- same never-touched-naming
+    "N818",   # convention already established for N801/N812 above. N999 (invalid module name) is the one
+              # module-name variant deliberately NOT ignored here: an actually-broken module filename would still
+              # break pytest's own test discovery, so it stays a real (if rare) signal.
 ]
 
 [lint.per-file-ignores]
