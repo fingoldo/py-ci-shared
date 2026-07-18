@@ -37,6 +37,16 @@ on:
           coverage, not a lower aspirational number, so any drop fails fast).
         type: number
         default: 100
+      interrogate-config:
+        description: >-
+          Path to an interrogate config file (e.g. "tests/interrogate.toml") to use instead of the
+          calling repo's root pyproject.toml section. Needed when a repo's root [tool.interrogate]
+          `exclude` list drops interrogate-source-path's subtree (e.g. "tests") -- passing that
+          subtree as the path would then scan 0 items under the root config. Empty string (default)
+          auto-discovers pyproject.toml as interrogate normally does; when set, --fail-under above is
+          ignored in favor of the config file's own fail-under.
+        type: string
+        default: ""
       deptry-install-command:
         description: >-
           Shell command(s) to install the package + its real extras, run from repo root, so
@@ -119,9 +129,16 @@ jobs:
 
       - name: Interrogate docstring coverage
         if: inputs.interrogate-source-path != ''
-        run: uvx interrogate --fail-under ${{ inputs.interrogate-fail-under }} -v "${INPUTS_INTERROGATE_SOURCE_PATH}"
+        run: |
+          if [ -n "$INTERROGATE_CONFIG" ]; then
+            uvx interrogate -c "$INTERROGATE_CONFIG" -v "$INTERROGATE_SOURCE_PATH"
+          else
+            uvx interrogate --fail-under "$INTERROGATE_FAIL_UNDER" -v "$INTERROGATE_SOURCE_PATH"
+          fi
         env:
-          INPUTS_INTERROGATE_SOURCE_PATH: ${{ inputs.interrogate-source-path }}
+          INTERROGATE_SOURCE_PATH: ${{ inputs.interrogate-source-path }}
+          INTERROGATE_FAIL_UNDER: ${{ inputs.interrogate-fail-under }}
+          INTERROGATE_CONFIG: ${{ inputs.interrogate-config }}
 
       # Direct ${{ }} substitution: deptry-install-command is a multi-line shell SCRIPT, not a
       # single token -- expanding it as an unquoted `${VAR}` would word-split it on every

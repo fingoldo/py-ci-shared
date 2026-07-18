@@ -18,6 +18,14 @@ on:
         description: 'Extra --ignore codes on top of the extended config (e.g. "C901" to keep complexity advisory-only)'
         type: string
         default: "C901"
+      check-path:
+        description: >-
+          Path to check, default "." (whole repo). A calling repo whose pyproject.toml `[tool.ruff]
+          exclude` list drops a subtree (e.g. "tests") from the default "." scan, but nests its own
+          ruff.toml under that subtree (so it gets its own rule set via ruff's config auto-discovery),
+          points this at that subtree to gate it as a SEPARATE job instead of leaving it unchecked.
+        type: string
+        default: "."
 
 jobs:
   ruff-blocking:
@@ -49,6 +57,7 @@ jobs:
           fi
 
       - name: Ruff (real bugs - blocking)
-        run: uvx ruff check . --ignore "${INPUTS_IGNORE}"
+        run: uvx ruff check "${INPUTS_CHECK_PATH}" --ignore "${INPUTS_IGNORE}"
         env:
           INPUTS_IGNORE: ${{ inputs.ignore }}
+          INPUTS_CHECK_PATH: ${{ inputs.check-path }}
