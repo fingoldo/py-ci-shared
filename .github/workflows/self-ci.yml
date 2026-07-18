@@ -64,15 +64,25 @@ jobs:
   # against py-ci-shared's own tree, instead of only linting the YAML syntax. Added 2026-07-09
   # (CI/CD architecture review): the `@main`-vs-`@master` ref bug and the lint-advisory.yml
   # sibling-clone bug both shipped without any test ever actually invoking the affected
-  # workflow_call path. Scoped to the 3 workflows that can pass against py-ci-shared's own small
-  # source tree without bespoke fixtures (lint-blocking's bandit step flags 8 real subprocess-
-  # usage findings here that are out of scope for this fix; docs.yml needs a real mkdocs.yml this
-  # repo doesn't have) -- not exhaustive coverage of every reusable workflow, but real coverage of
+  # workflow_call path. Extended 2026-07-18 to cover lint-advisory.yml, mypy-full.yml, and the
+  # check-path input, closing the exact gap that let those ship undogfooded. lint-blocking.yml
+  # and docs.yml remain out: lint-blocking's interrogate step needs py-ci-shared's own src at
+  # 100% docstring coverage (currently ~62%) to pass, and docs.yml needs a real mkdocs.yml this
+  # repo doesn't have -- not exhaustive coverage of every reusable workflow, but real coverage of
   # the ones that are.
   integration-ruff-blocking:
     uses: ./.github/workflows/ruff-blocking.yml
     with:
       ignore: "C901"
+
+  # Exercises the check-path input (added 2026-07-18 for mlframe's tests/ scoping) against this
+  # repo's own tree instead of shipping it unverified against every consumer's real usage --
+  # this is exactly the gap the 2026-07-09 architecture review's dogfooding rule exists to close.
+  integration-ruff-blocking-check-path:
+    uses: ./.github/workflows/ruff-blocking.yml
+    with:
+      ignore: "C901"
+      check-path: "src/py_ci_shared"
 
   integration-black-filtered:
     uses: ./.github/workflows/black-filtered.yml
@@ -83,3 +93,26 @@ jobs:
     uses: ./.github/workflows/mypy-beachhead.yml
     with:
       modules: "src/py_ci_shared/__init__.py"
+
+  # lint-advisory.yml had a real prior incident (2026-07-09, sibling-clone bug) that shipped with
+  # zero test ever invoking its workflow_call path -- exactly the failure mode dogfooding exists
+  # to prevent. Every step is continue-on-error by design (see the workflow's own header comment),
+  # so this job can never fail red; it exists purely to catch a config-load-time break like the
+  # one that motivated adding it.
+  integration-lint-advisory:
+    uses: ./.github/workflows/lint-advisory.yml
+    with:
+      source-path: "src/py_ci_shared"
+
+  # mypy-full.yml: this repo's OWN src/py_ci_shared is a real, if small, install target -- pip
+  # installing the local checkout itself satisfies install-command without needing a synthetic
+  # fixture package. advisory:true (backlog not asserted clean here) since this repo has never
+  # run a whole-project mypy-full pass before; the point is exercising the workflow_call path,
+  # not gating this repo's own mypy backlog (self.MyPy (self-check) above already does that via
+  # the beachhead-style direct `mypy src/py_ci_shared` call).
+  integration-mypy-full:
+    uses: ./.github/workflows/mypy-full.yml
+    with:
+      package-name: "py_ci_shared"
+      install-command: uv pip install --system -e ".[dev]"
+      advisory: true

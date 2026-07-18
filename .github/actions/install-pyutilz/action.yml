@@ -1,0 +1,29 @@
+name: Install pyutilz + calling project
+description: >-
+  Clones the first-party pyutilz sibling dependency (not yet on PyPI) and installs it alongside
+  the calling project's own extras in a single uv resolution. Extracted 2026-07-18 from 6+
+  near-identical copies across mlframe's ci.yml, mypy-full.yml, gpu-matrix.yml,
+  gpu-extras-install-matrix.yml, numba-coverage.yml, and sklearn-matrix-ci.yml.
+
+inputs:
+  pyutilz-extras:
+    description: 'pyutilz extras to install, e.g. "system,pandas,polars,database"'
+    required: true
+  project-extras:
+    description: 'The calling project''s own extras spec, e.g. ".[all,dev]" or "."'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Clone pyutilz
+      shell: bash
+      run: git clone --depth 1 https://github.com/fingoldo/pyutilz.git
+
+    - name: Install pyutilz + project in one uv resolution
+      shell: bash
+      env:
+        INPUTS_PYUTILZ_EXTRAS: ${{ inputs.pyutilz-extras }}
+        INPUTS_PROJECT_EXTRAS: ${{ inputs.project-extras }}
+      run: |
+        uv pip install --system "./pyutilz[${INPUTS_PYUTILZ_EXTRAS}]" -e "${INPUTS_PROJECT_EXTRAS}"

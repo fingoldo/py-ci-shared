@@ -30,10 +30,16 @@ jobs:
           enable-cache: true
 
       - name: Install py-ci-shared
-        # Pinned to the same tagged release consumers pin their `uses:` ref to (see README's
-        # tagged-release rationale) -- an unpinned git+https install here would silently pick up
-        # whatever's on master regardless of which tag the calling workflow itself resolved to.
-        run: uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.0.0"
+        # Derives the ref from github.workflow_ref (format "owner/repo/.github/workflows/FILE@REF")
+        # instead of a hardcoded tag: a hardcoded literal here silently decouples from whichever
+        # tag/SHA a consumer's `uses:` line actually resolved to -- a future fix to
+        # black_filtered_apply.py's diff-classification logic could ship a new tag that consumers
+        # bump to, yet this install step would keep installing the OLD package version forever
+        # until someone remembers to also edit this line by hand (found 2026-07-18 architecture
+        # review: this literal had already drifted to v1.0.0 while newer workflow versions existed).
+        run: |
+          PCS_REF="${GITHUB_WORKFLOW_REF#*@}"
+          uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@${PCS_REF}"
 
       # check-path can be multiple space-separated paths (per its "Path(s)" description) --
       # word-splitting is the intended behavior here, not a bug.

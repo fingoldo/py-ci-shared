@@ -151,4 +151,4 @@ Local dev: clone `py-ci-shared` next to the consuming repo (`C:\Users\<you>\Mach
 
 ## Keeping this repo in sync with consumers
 
-There is no automated config-drift check yet (a natural follow-up: a script here that clones both consumer repos and diffs their `[tool.ruff]`/`[tool.mypy]` sections against this repo's documented conventions). Until then, when you change something here that consuming repos should also pick up, open a matching PR in each — `git grep py-ci-shared` in each consumer finds every reference point.
+A weekly scheduled workflow (`config-drift-check.yml`, running `py_ci_shared.config_drift_check`) fetches both consumer repos' `pyproject.toml` and reports (informationally, never failing the run) any divergence in their `[tool.ruff]`/`[tool.mypy]` fields that are meant to stay in sync — trigger it on demand via `workflow_dispatch`. It does not replace opening a matching PR when you change something here that consuming repos should also pick up — `git grep py-ci-shared` in each consumer finds every reference point.
