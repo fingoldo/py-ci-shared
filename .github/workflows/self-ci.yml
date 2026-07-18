@@ -47,7 +47,7 @@ jobs:
         run: python -m pytest tests/ -v
 
       - name: Ruff (self-check)
-        run: uvx ruff check . --ignore C901
+        run: uvx ruff==0.15.20 check . --ignore C901
 
       - name: MyPy (self-check)
         # Pinned, not latest: mypy-beachhead.yml's own header comment documents why an unpinned
@@ -58,7 +58,7 @@ jobs:
           mypy src/py_ci_shared
 
       - name: Validate ruff-base.toml is loadable
-        run: uvx ruff check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
+        run: uvx ruff==0.15.20 check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
 
   # Integration tests: actually CALL the reusable workflows below (same-repo `uses: ./...` ref)
   # against py-ci-shared's own tree, instead of only linting the YAML syntax. Added 2026-07-09

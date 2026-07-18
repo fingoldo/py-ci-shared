@@ -56,8 +56,13 @@ jobs:
             git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
           fi
 
+      # Version-pinned (not bare "uvx ruff"), matching the pre-commit "ruff (real bugs block)"
+      # hook's rev pin exactly (see mlframe's .pre-commit-config.yaml) -- an unpinned uvx resolves
+      # whatever's newest on PyPI at run time, drifting from what a contributor's local pre-commit
+      # run just verified, same class of bug black-filtered.yml's BLACK_CMD pin already guards
+      # against. Bump both together.
       - name: Ruff (real bugs - blocking)
-        run: uvx ruff check "${INPUTS_CHECK_PATH}" --ignore "${INPUTS_IGNORE}"
+        run: uvx ruff==0.15.20 check "${INPUTS_CHECK_PATH}" --ignore "${INPUTS_IGNORE}"
         env:
           INPUTS_IGNORE: ${{ inputs.ignore }}
           INPUTS_CHECK_PATH: ${{ inputs.check-path }}
