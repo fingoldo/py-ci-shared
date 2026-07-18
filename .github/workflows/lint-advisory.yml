@@ -14,6 +14,27 @@ on:
         description: 'Path to the package source, e.g. "src/mlframe"'
         required: true
         type: string
+      run-import-linter:
+        description: >-
+          Run `lint-imports` (architectural-boundary contracts from the calling repo's
+          [tool.importlinter] in pyproject.toml). False by default: contracts are project-specific
+          and most repos won't have any defined yet.
+        type: boolean
+        default: false
+      pydoclint-source-path:
+        description: >-
+          Path to scan with pydoclint (docstring-vs-signature consistency), e.g. "src/mlframe".
+          Empty string (default) skips it entirely.
+        type: string
+        default: ""
+      semgrep-config-path:
+        description: >-
+          Path to the calling repo's own custom semgrep rules file (e.g. ".semgrep.yml"), for
+          org-specific static-analysis rules ruff/bandit don't cover. Empty string (default) skips
+          it entirely -- semgrep has no useful default ruleset without a repo-specific config here
+          (registry rulesets need a login/network call this workflow doesn't make).
+        type: string
+        default: ""
 
 jobs:
   lint-advisory:
@@ -53,7 +74,9 @@ jobs:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: pip-audit dependency vulnerability scan
-        run: uvx pip-audit --desc -f json -o pip-audit-report.json || true
+        # continue-on-error alone already prevents a non-zero exit from failing the job; the
+        # `|| true` was redundant belt-and-suspenders (2026-07-18 architecture review cleanup).
+        run: uvx pip-audit --desc -f json -o pip-audit-report.json
         continue-on-error: true
 
       - name: Upload pip-audit results
@@ -62,3 +85,35 @@ jobs:
         with:
           name: pip-audit-report
           path: pip-audit-report.json
+          retention-days: 14
+
+      # import-linter's graph builder (grimp) only needs the calling repo's modules to be
+      # PARSEABLE, not actually importable with a full dependency install -- PYTHONPATH pointing at
+      # the source root is enough (matches the worktree PYTHONPATH trick used for local dev; no
+      # need to `pip install -e .` the whole project + its sibling deps just to lint import shape).
+      # Assumes the standard `src/<package>` layout `[tool.importlinter] root_packages` implies.
+      - name: Import-linter (architectural boundaries, advisory)
+        if: inputs.run-import-linter
+        run: |
+          uv pip install --system import-linter
+          PYTHONPATH="${{ github.workspace }}/src" lint-imports
+        continue-on-error: true
+
+      - name: pydoclint (docstring-vs-signature consistency, advisory)
+        if: inputs.pydoclint-source-path != ''
+        run: |
+          uv pip install --system pydoclint
+          pydoclint --style=google "${INPUTS_PYDOCLINT_SOURCE_PATH}"
+        continue-on-error: true
+        env:
+          INPUTS_PYDOCLINT_SOURCE_PATH: ${{ inputs.pydoclint-source-path }}
+
+      - name: Semgrep (custom org-specific rules, advisory)
+        if: inputs.semgrep-config-path != ''
+        run: |
+          uv pip install --system semgrep
+          semgrep --config "${INPUTS_SEMGREP_CONFIG_PATH}" "${INPUTS_SOURCE_PATH}"
+        continue-on-error: true
+        env:
+          INPUTS_SEMGREP_CONFIG_PATH: ${{ inputs.semgrep-config-path }}
+          INPUTS_SOURCE_PATH: ${{ inputs.source-path }}

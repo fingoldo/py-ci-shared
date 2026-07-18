@@ -43,6 +43,10 @@ select = [
     "ISC",  # implicit string concatenation: catches an accidentally-missing comma in a list/call
     "PERF", # performance anti-patterns (quadratic list accumulation in a loop, etc.)
     "C90",  # mccabe cyclomatic complexity (each repo sets its OWN [lint.mccabe] max-complexity locally)
+    "NPY",  # numpy-specific: deprecated aliases (np.float/np.bool), legacy global-seed RNG misuse (NPY002),
+            # deprecated linalg/ufunc signatures -- added 2026-07-18, a real bug class every numpy-heavy
+            # consumer of this shared config has already been bitten by (mlframe's own pytest filterwarnings
+            # config documents hitting exactly NPY002's global-seed pattern via a third-party call).
 ]
 
 ignore = [
