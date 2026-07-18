@@ -58,8 +58,15 @@ jobs:
       # Missing this step made both ruff steps below fail at config-load time on every run,
       # silently swallowed by continue-on-error -- found 2026-07-09 in a CI/CD architecture
       # review, an unknown amount of time after the reusable-workflow split.
+      # Guarded on the target not already existing: when the CALLING repo IS py-ci-shared itself
+      # (self-ci.yml's own integration-lint-advisory job, added 2026-07-18), the checkout already
+      # occupies ../py-ci-shared and a second unconditional clone into the same path fails with
+      # exit 128 -- confirmed as the actual cause of this job's real CI failures 2026-07-18.
       - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
-        run: git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+        run: |
+          if [ ! -d ../py-ci-shared/.git ]; then
+            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+          fi
 
       - name: Run ruff (full - advisory)
         run: uvx ruff==0.15.20 check "${INPUTS_SOURCE_PATH}"
