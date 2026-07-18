@@ -72,6 +72,11 @@ extend-ignore = [
     "N818",   # convention already established for N801/N812 above. N999 (invalid module name) is the one
               # module-name variant deliberately NOT ignored here: an actually-broken module filename would still
               # break pytest's own test discovery, so it stays a real (if rare) signal.
+    "NPY002", # legacy np.random.* over np.random.Generator: added 2026-07-18 alongside ruff-base.toml's NPY
+              # selection -- a test fixture seeding `np.random.seed(N)` for reproducible synthetic data is the
+              # normal, correct pattern (matches pytest/numpy's own testing conventions), not the accidental-
+              # global-state footgun this rule targets in long-lived src/ code. Confirmed on mlframe: ~838 hits,
+              # overwhelmingly `np.random.seed`/`.rand`/`.randn` in fixture builders, zero worth migrating.
 ]
 
 [lint.per-file-ignores]
