@@ -30,16 +30,18 @@ jobs:
           enable-cache: true
 
       - name: Install py-ci-shared
-        # Derives the ref from github.workflow_ref (format "owner/repo/.github/workflows/FILE@REF")
-        # instead of a hardcoded tag: a hardcoded literal here silently decouples from whichever
-        # tag/SHA a consumer's `uses:` line actually resolved to -- a future fix to
-        # black_filtered_apply.py's diff-classification logic could ship a new tag that consumers
-        # bump to, yet this install step would keep installing the OLD package version forever
-        # until someone remembers to also edit this line by hand (found 2026-07-18 architecture
-        # review: this literal had already drifted to v1.0.0 while newer workflow versions existed).
+        # Was: derive the ref from github.workflow_ref, on the theory that it reports this
+        # reusable workflow's own pinned SHA. Wrong -- for a reusable-workflow job,
+        # github.workflow_ref actually reports the ROOT CALLER's own workflow ref (e.g. the
+        # consumer repo's "refs/heads/main"), not this file's pin. That "worked" by pure
+        # coincidence for every consumer whose own default branch is also named "master" (this
+        # repo's default branch) and broke loudly the first time a consumer's default branch had
+        # a different name (llm_bench: "main" -- git fetch of "refs/heads/main" against this repo
+        # 404s, since this repo has no branch by that name). Found 2026-07-18. Track this repo's
+        # own default branch instead of pinning to any ref at all: no ref to drift out of sync,
+        # and no dependency on a context variable that doesn't mean what it looks like it means.
         run: |
-          PCS_REF="${GITHUB_WORKFLOW_REF#*@}"
-          uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@${PCS_REF}"
+          uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
 
       # check-path can be multiple space-separated paths (per its "Path(s)" description) --
       # word-splitting is the intended behavior here, not a bug.
