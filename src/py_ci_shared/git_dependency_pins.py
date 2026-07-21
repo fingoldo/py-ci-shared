@@ -70,6 +70,5 @@ def assert_all_git_dependencies_pinned(pyproject_path: Path) -> None:
         pytest.fail(
             f"{len(violations)} git-URL dependenc{'y is' if len(violations) == 1 else 'ies are'} "
             f"not pinned to a full commit SHA in {pyproject_path} -- a fresh install can silently "
-            f"resolve to a different commit than the one actually developed/tested against:\n  "
-            + "\n  ".join(violations)
+            f"resolve to a different commit than the one actually developed/tested against:\n  " + "\n  ".join(violations)
         )

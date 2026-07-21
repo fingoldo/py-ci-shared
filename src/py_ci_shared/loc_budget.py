@@ -44,8 +44,8 @@ convention, so importing ``py_ci_shared`` itself never requires them.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable
 
 REFRESH_FLAG = "--refresh-loc-budget-baseline"
 
