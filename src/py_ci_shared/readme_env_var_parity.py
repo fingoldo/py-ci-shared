@@ -105,13 +105,23 @@ def assert_no_new_undocumented_env_vars(
     set and ``pytest.skip()``s that run; otherwise fails only on a var
     undocumented now that WASN'T in the baseline (a genuinely new gap),
     never on a pre-existing one. Call directly as a ``test_*`` body.
+
+    Unlike ``assert_readme_documents_every_env_var``, a missing ``heading``
+    section is NOT an error here -- a repo adopting this check may not have
+    an env-var table at all yet, in which case every var it reads is
+    grandfathered into the baseline on first run (documenting them is then a
+    separate, deliberate improvement, not something this check demands
+    up front).
     """
     import orjson
     import pytest
     import sys
 
     read_vars = find_env_vars_read(files) - third_party_vars
-    documented = find_readme_documented_vars(readme_path, heading)
+    try:
+        documented = find_readme_documented_vars(readme_path, heading)
+    except ValueError:
+        documented = set()
     current_undocumented = sorted(read_vars - documented)
 
     if REFRESH_FLAG in sys.argv or not baseline_path.exists():

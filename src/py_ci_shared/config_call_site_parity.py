@@ -33,6 +33,7 @@ DEFAULT_CFG_FUNCTION_NAMES: frozenset[str] = frozenset({"cfg", "_cfg"})
 
 class CfgGetCall(NamedTuple):
     file: str
+    abs_path: Path
     line: int
     section: str
     key: str
@@ -112,6 +113,7 @@ def _find_cfg_get_calls_in_file(path: Path, root: Path, cfg_function_names: froz
         type_node = _arg_node(node, 3, "type_")
         found.append(CfgGetCall(
             file=path.relative_to(root).as_posix(),
+            abs_path=path,
             line=node.lineno,
             section=section_node.value,
             key=key_node.value,
@@ -134,52 +136,162 @@ def find_cfg_get_calls(
     return calls
 
 
-def module_constants(files: Iterable[Path]) -> dict[str, object]:
-    """name -> value for every simple top-level ``NAME = <literal>`` assignment
-    across ``files`` -- lets a bare literal default and a named-constant default that
-    resolves to the same value be recognized as agreeing, not flagged as a spurious
-    divergence. Repo-wide and flat (not namespace-qualified): if two different files
-    define the same constant name with different values, the later one parsed wins --
-    a known, accepted imprecision (same tradeoff the originating implementation made),
-    since a real repo-wide name COLLISION on a constant used as a config default would
-    itself be surprising and worth surfacing separately.
+class ConstantResolver:
+    """Resolves a default-expression AST node to a constant value by following
+    same-file assignments, ``from X import Y`` chains, and ``module_alias.NAME``
+    attribute access through ``root``'s own module/package layout -- caching
+    parsed trees so the whole repo is parsed once regardless of how many call
+    sites reference the same module.
+
+    This is NOT a flat, repo-wide "search every file for this name" scan: a
+    bare name is resolved relative to the SPECIFIC file that references it,
+    following that file's own imports -- so when two different, unrelated
+    files each define their OWN same-named constant with a DIFFERENT value
+    (a real pattern seen in practice: six modules each defining their own
+    ``BATCH_SIZE`` with six different values), a call site's actual import
+    target resolves correctly instead of an arbitrary "whichever file's
+    constant got scanned last" collision silently producing the wrong value.
     """
-    consts: dict[str, object] = {}
-    for path in files:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            continue
-        for node in tree.body:
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
-                try:
-                    consts[node.targets[0].id] = ast.literal_eval(node.value)
-                except (ValueError, SyntaxError, TypeError):
-                    continue
-    return consts
 
+    def __init__(self, root: Path):
+        self.root = root
+        self._trees: dict[Path, Optional[ast.Module]] = {}
 
-def resolve_default(node: Optional[ast.expr], constants: dict[str, object]) -> Any:
-    """Resolve a default-expression AST node to a value: a literal via
-    ``ast.literal_eval``, else a bare ``Name``/dotted ``Attribute`` chain looked up
-    (by its final identifier) against ``constants``, else an ``_Unresolved`` sentinel
-    wrapping the source text (compared by that text, never silently treated as equal
-    to a different unresolved expression)."""
-    if node is None:
+    def _tree(self, path: Path) -> Optional[ast.Module]:
+        if path not in self._trees:
+            try:
+                self._trees[path] = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            except (OSError, UnicodeDecodeError, SyntaxError):
+                self._trees[path] = None
+        return self._trees[path]
+
+    def _module_file(self, dotted: str) -> Optional[Path]:
+        parts = dotted.split(".")
+        cand = self.root.joinpath(*parts).with_suffix(".py")
+        if cand.exists():
+            return cand
+        cand = self.root.joinpath(*parts, "__init__.py")
+        if cand.exists():
+            return cand
         return None
-    src = ast.unparse(node)
-    try:
-        return ast.literal_eval(node)
-    except (ValueError, SyntaxError, TypeError):
-        pass
-    name = None
-    if isinstance(node, ast.Name):
-        name = node.id
-    elif isinstance(node, ast.Attribute):
-        name = node.attr
-    if name is not None and name in constants:
-        return constants[name]
-    return _Unresolved(src)
+
+    def _package_dir(self, dotted: str) -> Optional[Path]:
+        d = self.root.joinpath(*dotted.split("."))
+        return d if d.is_dir() else None
+
+    def _const_in_file(self, path: Path, name: str) -> tuple[bool, Any]:
+        """(found, value) for a bare top-level ``name = <literal>`` in ``path``."""
+        tree = self._tree(path)
+        if tree is None:
+            return False, None
+        for node in tree.body:
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == name:
+                try:
+                    return True, ast.literal_eval(node.value)
+                except (ValueError, SyntaxError, TypeError):
+                    return False, None
+        return False, None
+
+    def _const_via_package(self, pkg_dir: Path, name: str) -> tuple[bool, Any]:
+        """Search every direct ``.py`` child of a package dir for a UNIQUE top-level
+        ``name = <literal>`` -- handles a package ``__init__.py`` that aggregates
+        (``from .x import *``) without the constant being assigned in ``__init__.py``
+        itself. Ambiguous (more than one distinct value found) resolves to unresolved,
+        never picks one arbitrarily."""
+        found: set[Any] = set()
+        for py in pkg_dir.glob("*.py"):
+            ok, val = self._const_in_file(py, name)
+            if ok:
+                try:
+                    found.add(val)
+                except TypeError:
+                    found.add(repr(val))
+        if len(found) == 1:
+            return True, next(iter(found))
+        return False, None
+
+    def _imported_source(self, path: Path, name: str) -> Optional[str]:
+        """If ``path`` does ``from MODULE import name [as alias]`` matching ``name``,
+        return the dotted MODULE. Handles both ``from pkg import x`` (name IS the
+        alias) and ``import pkg.mod as alias`` / ``import pkg.mod``."""
+        tree = self._tree(path)
+        if tree is None:
+            return None
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                for alias in node.names:
+                    if (alias.asname or alias.name) == name:
+                        return node.module
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if (alias.asname or alias.name.split(".")[-1]) == name:
+                        return alias.name
+        return None
+
+    def _const_from_file(self, path: Path, name: str, seen: set[Path]) -> tuple[bool, Any]:
+        """Resolve a bare Name in the context of ``path``: same-file constant, else
+        follow an import (possibly into a package, aggregated via star-imports)
+        recursively. ``seen`` guards against an import cycle."""
+        if path in seen:
+            return False, None
+        seen.add(path)
+        ok, val = self._const_in_file(path, name)
+        if ok:
+            return True, val
+        src_module = self._imported_source(path, name)
+        if src_module is None:
+            return False, None
+        mod_file = self._module_file(src_module)
+        if mod_file is not None:
+            ok, val = self._const_from_file(mod_file, name, seen)
+            if ok:
+                return True, val
+            if mod_file.name == "__init__.py":
+                return self._const_via_package(mod_file.parent, name)
+            return False, None
+        pkg_dir = self._package_dir(src_module)
+        if pkg_dir is not None:
+            return self._const_via_package(pkg_dir, name)
+        return False, None
+
+    def resolve(self, node: Optional[ast.expr], current_file: Path) -> Any:
+        """Resolve a default-expression AST node to a value: a literal via
+        ``ast.literal_eval``, else a bare ``Name``/dotted ``Attribute`` chain
+        resolved in the context of ``current_file`` (same-file constant, or
+        followed through that file's own imports), else an ``_Unresolved``
+        sentinel wrapping the source text (compared by that text, never
+        silently treated as equal to a different unresolved expression)."""
+        if node is None:
+            return None
+        src = ast.unparse(node)
+        try:
+            return ast.literal_eval(node)
+        except (ValueError, SyntaxError, TypeError):
+            pass
+        if isinstance(node, ast.Name):
+            ok, val = self._const_from_file(current_file, node.id, set())
+            if ok:
+                return val
+        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            base = node.value.id
+            src_module = self._imported_source(current_file, base)
+            if src_module is not None:
+                mod_file = self._module_file(src_module)
+                if mod_file is not None and mod_file.name == "__init__.py":
+                    ok, val = self._const_via_package(mod_file.parent, node.attr)
+                    if ok:
+                        return val
+                elif mod_file is not None:
+                    ok, val = self._const_from_file(mod_file, node.attr, set())
+                    if ok:
+                        return val
+                else:
+                    pkg_dir = self._package_dir(src_module)
+                    if pkg_dir is not None:
+                        ok, val = self._const_via_package(pkg_dir, node.attr)
+                        if ok:
+                            return val
+        return _Unresolved(src)
 
 
 def to_hashable(value: Any) -> Any:
@@ -299,13 +411,23 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     root: Path,
     files: Iterable[Path],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+    default_type_repr: Optional[str] = None,
 ) -> None:
     """Fail if two call sites reading the SAME ``(section, key)`` pass a different
     default/``type_`` -- two call sites silently disagreeing about what "the config
     value" resolves to when absent. Compared by RESOLVED value (literal-eval'd, or
     looked up against repo-wide module constants), not raw source text, so a bare
     ``24`` and a named constant that also equals ``24`` are correctly treated as
-    agreeing."""
+    agreeing.
+
+    ``default_type_repr`` (e.g. ``"int"``) is the accessor's OWN default for its
+    ``type_`` parameter (mirroring its real signature, e.g. ``def get(self, section,
+    key, default=None, type_: type = int)``) -- a call site that OMITS ``type_``
+    entirely is normalized to this value before comparing, so it's correctly treated
+    as agreeing with a sibling call site that passes the SAME type explicitly
+    (``type_=int``) instead of being flagged as a spurious "None vs 'int'" mismatch.
+    Leave unset if every call site in this repo always passes ``type_`` explicitly.
+    """
     import pytest
 
     calls = find_cfg_get_calls(root, files, cfg_function_names)
@@ -313,15 +435,18 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     for call in calls:
         by_pair.setdefault((call.section, call.key), []).append(call)
 
-    constants = module_constants(files)
+    resolver = ConstantResolver(root)
     bad = []
     for (section, key), pair_calls in by_pair.items():
         if len(pair_calls) < 2:
             continue
-        resolved_defaults = {to_hashable(resolve_default(c.default_node, constants)) for c in pair_calls}
-        types = {c.type_src for c in pair_calls}
+        resolvable_calls = [c for c in pair_calls if not isinstance(resolver.resolve(c.default_node, c.abs_path), _Unresolved)]
+        if len(resolvable_calls) < 2:
+            continue  # a genuinely dynamic (unresolvable) default at one site can't be compared at all -- not a divergence
+        resolved_defaults = {to_hashable(resolver.resolve(c.default_node, c.abs_path)) for c in resolvable_calls}
+        types = {(default_type_repr if c.type_src is None else c.type_src) for c in resolvable_calls}
         if len(resolved_defaults) > 1 or len(types) > 1:
-            sites = ", ".join(f"{c.file}:{c.line}(default={ast.unparse(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in pair_calls)
+            sites = ", ".join(f"{c.file}:{c.line}(default={ast.unparse(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in resolvable_calls)
             bad.append(f"[{section}] {key}: divergent default/type_ across call sites: {sites}")
     if bad:
         pytest.fail("cfg().get(...) call sites reading the same (section, key) with divergent default/type_:\n  " + "\n  ".join(bad))
@@ -355,13 +480,13 @@ def assert_call_site_defaults_match_schema_defaults(
 
     known_intentional_mismatches = known_intentional_mismatches or {}
     schema_defaults = schema_section_field_defaults(schema_cls)
-    constants = module_constants(files)
+    resolver = ConstantResolver(root)
     checked = 0
     mismatches = []
     for call in find_cfg_get_calls(root, files, cfg_function_names):
         if (call.section, call.key) in known_intentional_mismatches:
             continue
-        resolved = resolve_default(call.default_node, constants)
+        resolved = resolver.resolve(call.default_node, call.abs_path)
         if isinstance(resolved, _Unresolved):
             continue
         checked += 1

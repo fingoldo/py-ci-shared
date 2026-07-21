@@ -188,7 +188,9 @@ def test_every_schema_field_has_a_reader():
     assert_every_schema_field_has_a_reader(ROOT, FILES, AppConfig, known_indirect_readers={...})
 
 def test_no_divergent_cfg_get_call_site_defaults():
-    assert_no_divergent_cfg_get_call_site_defaults(ROOT, FILES)
+    # Pass default_type_repr if the accessor has its own type_ default (e.g. `type_: type
+    # = int`) -- a call site that omits type_ then agrees with one passing it explicitly.
+    assert_no_divergent_cfg_get_call_site_defaults(ROOT, FILES, default_type_repr="int")
 
 def test_call_site_defaults_match_schema_defaults():
     assert_call_site_defaults_match_schema_defaults(

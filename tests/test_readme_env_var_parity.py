@@ -99,6 +99,17 @@ class TestAssertNoNewUndocumentedEnvVars:
             assert_no_new_undocumented_env_vars([f], readme, baseline)
         assert orjson.loads(baseline.read_bytes()) == ["LEGACY_VAR"]
 
+    def test_seeds_cleanly_when_readme_has_no_env_var_section_at_all(self, tmp_path):
+        """A repo adopting this check may have NO env-var table yet -- unlike
+        the hard-assert variant, this must not raise ValueError; every var
+        read is simply grandfathered on first run."""
+        f = _write(tmp_path, "a.py", 'import os\nos.environ.get("LEGACY_VAR")\n')
+        readme = _write(tmp_path, "README.md", "# Project\nNo env var section here.\n")
+        baseline = tmp_path / "_baseline.json"
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_undocumented_env_vars([f], readme, baseline)
+        assert orjson.loads(baseline.read_bytes()) == ["LEGACY_VAR"]
+
     def test_grandfathered_var_does_not_fail_after_seeding(self, tmp_path):
         f = _write(tmp_path, "a.py", 'import os\nos.environ.get("LEGACY_VAR")\n')
         readme = _write_readme(tmp_path)
