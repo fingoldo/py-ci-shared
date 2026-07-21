@@ -59,6 +59,20 @@ class TestFindUnpinnedGitDependencies:
         p = _write_pyproject(tmp_path, f'"mypkg @ git+https://token@github.com/org/mypkg.git@{_FULL_SHA}",')
         assert find_unpinned_git_dependencies(p) == []
 
+    def test_no_ref_at_all_is_unpinned(self, tmp_path):
+        """Regression: a bare `git+https://host/path` with NO `@ref` suffix at
+        all floats on whatever the default branch's HEAD is at install time --
+        the most unpinned case of all, and the original regex (which required
+        an '@' to even attempt a match) silently missed it entirely."""
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/org/mypkg.git",')
+        assert find_unpinned_git_dependencies(p) == ["<no ref>"]
+
+    def test_embedded_auth_with_no_ref_is_unpinned(self, tmp_path):
+        """The auth '@' alone must not be mistaken for a ref separator when
+        there's genuinely no ref after it."""
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://token@github.com/org/mypkg.git",')
+        assert find_unpinned_git_dependencies(p) == ["<no ref>"]
+
     def test_multiple_git_dependencies_each_checked(self, tmp_path):
         p = tmp_path / "pyproject.toml"
         p.write_text(

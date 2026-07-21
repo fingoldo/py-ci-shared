@@ -31,9 +31,16 @@ dependencies = ["orjson>=3.9"]
 dev = [
     "pytest>=7.0",
     "black>=24.0",
+    # config_call_site_parity.py's tests build a real pydantic.BaseModel schema fixture (the
+    # module itself is duck-typed, no pydantic import at runtime -- only the tests need a
+    # concrete model class to exercise it against).
+    "pydantic>=2.0",
     # code_audit_meta.py wraps pyutilz.dev.code_audit.run_all() -- exercising it for real (not
     # mocked) needs pyutilz itself. Not on PyPI, so git+https like every consuming repo's own CI.
-    "pyutilz @ git+https://github.com/fingoldo/pyutilz.git",
+    # Pinned to a full commit SHA (found unpinned by this repo's own git_dependency_pins check,
+    # 2026-07-22 -- the original regex required an '@ref' to even attempt a match, so a bare
+    # `git+URL` with no ref at all sailed through undetected).
+    "pyutilz @ git+https://github.com/fingoldo/pyutilz.git@3be55c1512ad73a6dab628b4a79eeecbc31212a1",
 ]
 
 [project.scripts]

@@ -155,6 +155,81 @@ def test_ci_continue_on_error_steps_are_reviewed():
     )
 ```
 
+## Config call-site vs schema parity (`config_call_site_parity`)
+
+Shared engine for the "`cfg().get(section, key, default, type_)` call site agrees with the
+Pydantic schema" meta-test pattern — independently built twice in this ecosystem, catching real
+bugs both times: a call site reading a `(section, key)` that doesn't exist in the schema (silently
+unreadable — an unknown key is stripped on load, so the call always falls through to its own
+hardcoded default), a schema field with zero reader anywhere (a decorative knob), and two call
+sites reading the SAME `(section, key)` with a different hardcoded default/type. Assumes a
+2-level Pydantic schema (a top-level model whose fields are themselves sub-models, one per config
+section) and a `cfg()`/`_cfg()`-named accessor (optionally attribute-qualified, or bound to a
+local name first). Each consuming repo supplies its own schema class and, where it has one, its
+own whitelist of fields consumed a different way the AST heuristic can't see.
+
+```python
+from pathlib import Path
+from py_ci_shared.config_call_site_parity import (
+    assert_every_cfg_get_call_resolves_to_a_schema_field,
+    assert_every_schema_field_has_a_reader,
+    assert_no_divergent_cfg_get_call_site_defaults,
+    assert_call_site_defaults_match_schema_defaults,
+)
+from my_project.live_config import AppConfig
+
+ROOT = Path(__file__).resolve().parents[2]
+FILES = list(my_production_py_files())  # project-specific, same set used by other meta-tests
+
+def test_every_cfg_get_call_resolves_to_a_schema_field():
+    assert_every_cfg_get_call_resolves_to_a_schema_field(ROOT, FILES, AppConfig)
+
+def test_every_schema_field_has_a_reader():
+    assert_every_schema_field_has_a_reader(ROOT, FILES, AppConfig, known_indirect_readers={...})
+
+def test_no_divergent_cfg_get_call_site_defaults():
+    assert_no_divergent_cfg_get_call_site_defaults(ROOT, FILES)
+
+def test_call_site_defaults_match_schema_defaults():
+    assert_call_site_defaults_match_schema_defaults(ROOT, FILES, AppConfig, min_checked=50)
+```
+
+## README env-var documentation parity (`readme_env_var_parity`)
+
+Fails if production code reads an environment variable (`os.environ.get(...)` / `os.getenv(...)`)
+that isn't documented in the project's README table — an operator can't set a variable they don't
+know exists, and a required-but-undocumented var that fails closed when unset fails *silently*.
+Two entry points: `assert_readme_documents_every_env_var` (hard-fail on any gap — use once a repo
+is already at zero gap) and `assert_no_new_undocumented_env_vars` (baseline/grandfather style,
+same shape as `code_audit_meta`/`loc_budget`, for a repo adopting this with existing
+undocumented-var debt — only a NEW gap fails).
+
+```python
+from pathlib import Path
+from py_ci_shared.readme_env_var_parity import assert_readme_documents_every_env_var
+
+def test_readme_documents_every_env_var():
+    assert_readme_documents_every_env_var(
+        files=my_production_py_files(),
+        readme_path=Path(__file__).resolve().parents[2] / "README.md",
+        third_party_vars=frozenset({"HF_HOME", "ANTHROPIC_API_KEY"}),
+    )
+```
+
+Or, for a repo with existing debt (register `--refresh-readme-env-var-baseline` in `conftest.py`
+via `readme_env_var_parity.register_refresh_option`, same as the other baseline-style checks):
+
+```python
+from py_ci_shared.readme_env_var_parity import assert_no_new_undocumented_env_vars
+
+def test_no_new_undocumented_env_vars():
+    assert_no_new_undocumented_env_vars(
+        files=my_production_py_files(),
+        readme_path=Path(__file__).resolve().parents[2] / "README.md",
+        baseline_path=Path(__file__).resolve().parent / "_readme_env_var_baseline.json",
+    )
+```
+
 ## Surviving concurrent-session commits (`safe_precommit`)
 
 `pre-commit` stashes a repo's unstaged tracked-file changes to a patch file before running hooks

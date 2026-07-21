@@ -1,0 +1,145 @@
+"""Shared check: every environment variable production code reads via
+``os.environ.get(...)``/``os.getenv(...)`` is documented in the project's
+README.
+
+Generalizes a 2026-07-21 audit finding (O-13): an env var this code
+actually reads but never documents means an operator can't discover it
+exists to set it -- and if the code fails closed when it's unset (an
+auth check, a feature gate), the failure is silent. Two entry points:
+
+- ``assert_readme_documents_every_env_var`` -- hard-fail on ANY
+  undocumented var. Use once a repo is already at (or near) zero gap.
+- ``assert_no_new_undocumented_env_vars`` -- baseline/grandfather style
+  (same API shape as ``code_audit_meta``/``loc_budget``), for a repo
+  adopting this check with existing undocumented-var debt: only a NEW
+  gap (introduced after the baseline was captured) fails.
+
+Deliberately dependency-light: ``pytest``/``orjson`` are imported lazily
+inside the functions, matching this package's other modules.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+from pathlib import Path
+from typing import Iterable
+
+DEFAULT_HEADING = "## Environment variables"
+REFRESH_FLAG = "--refresh-readme-env-var-baseline"
+
+
+def find_env_vars_read(files: Iterable[Path]) -> set[str]:
+    """Every literal-string env-var name passed to ``os.environ.get(...)``
+    or ``os.getenv(...)`` across ``files`` (AST-based: only a literal
+    ``ast.Constant`` name counts)."""
+    found: set[str] = set()
+    for path in files:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            is_environ_get = isinstance(func, ast.Attribute) and func.attr == "get" and isinstance(func.value, ast.Attribute) and func.value.attr == "environ"
+            is_getenv = isinstance(func, ast.Attribute) and func.attr == "getenv" and isinstance(func.value, ast.Name) and func.value.id == "os"
+            if not (is_environ_get or is_getenv):
+                continue
+            if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+                found.add(node.args[0].value)
+    return found
+
+
+def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADING) -> set[str]:
+    """Every ```VAR``` documented in ``readme_path``'s markdown table under
+    ``heading`` -- a row's first cell may list more than one name joined by
+    e.g. " / " (``\\`GIT_SHA\\` / \\`COMMIT_SHA\\```)."""
+    text = readme_path.read_text(encoding="utf-8")
+    pattern = re.escape(heading) + r"\n.*?\n((?:\|.*\n)+)"
+    m = re.search(pattern, text)
+    if not m:
+        raise ValueError(f"{readme_path}'s {heading!r} section/table not found -- renamed, or heading doesn't match?")
+    names: set[str] = set()
+    for line in m.group(1).splitlines():
+        cells = line.split("|")
+        if len(cells) < 2:
+            continue
+        names.update(re.findall(r"`([A-Za-z][A-Za-z0-9_]*)`", cells[1]))
+    return names
+
+
+def assert_readme_documents_every_env_var(
+    files: Iterable[Path],
+    readme_path: Path,
+    heading: str = DEFAULT_HEADING,
+    third_party_vars: frozenset[str] = frozenset(),
+) -> None:
+    """Fail if any env var read by production code (``files``) isn't
+    documented in ``readme_path``'s table. ``third_party_vars`` excludes
+    vars consumed only by a third-party library the project depends on
+    (never read by the project's own code, so this AST scan can't find
+    them anyway, and they're expected to be documented by hand instead).
+    """
+    import pytest
+
+    read_vars = find_env_vars_read(files) - third_party_vars
+    documented = find_readme_documented_vars(readme_path, heading)
+    undocumented = sorted(read_vars - documented)
+    if undocumented:
+        pytest.fail(f"Env var(s) read by production code but missing from {readme_path}'s {heading!r} table:\n  " + "\n  ".join(undocumented))
+
+
+def assert_no_new_undocumented_env_vars(
+    files: Iterable[Path],
+    readme_path: Path,
+    baseline_path: Path,
+    heading: str = DEFAULT_HEADING,
+    third_party_vars: frozenset[str] = frozenset(),
+) -> None:
+    """Baseline/grandfather variant of ``assert_readme_documents_every_env_var``,
+    for a repo adopting this check with pre-existing undocumented-var debt:
+    seeds/refreshes ``baseline_path`` (first run, or the
+    ``--refresh-readme-env-var-baseline`` flag) with the CURRENT undocumented
+    set and ``pytest.skip()``s that run; otherwise fails only on a var
+    undocumented now that WASN'T in the baseline (a genuinely new gap),
+    never on a pre-existing one. Call directly as a ``test_*`` body.
+    """
+    import orjson
+    import pytest
+    import sys
+
+    read_vars = find_env_vars_read(files) - third_party_vars
+    documented = find_readme_documented_vars(readme_path, heading)
+    current_undocumented = sorted(read_vars - documented)
+
+    if REFRESH_FLAG in sys.argv or not baseline_path.exists():
+        baseline_path.write_text(
+            orjson.dumps(current_undocumented, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8"),
+            encoding="utf-8",
+        )
+        pytest.skip(f"README env-var baseline refreshed at {baseline_path.name} ({len(current_undocumented)} grandfathered undocumented var(s))")
+
+    baseline: list[str] = orjson.loads(baseline_path.read_bytes())
+    new_undocumented = sorted(set(current_undocumented) - set(baseline))
+    if new_undocumented:
+        pytest.fail(
+            f"{len(new_undocumented)} NEW env var(s) read by production code but not documented in "
+            f"{readme_path}'s {heading!r} table (pre-existing undocumented vars are grandfathered in "
+            f"the baseline -- this is a genuinely new one):\n  " + "\n  ".join(new_undocumented)
+        )
+
+
+def register_refresh_option(parser) -> None:
+    """Register ``--refresh-readme-env-var-baseline`` as a no-op boolean
+    flag. Call from a consuming repo's own ``pytest_addoption``."""
+    try:
+        parser.addoption(
+            REFRESH_FLAG,
+            action="store_true",
+            default=False,
+            help="rewrite the README env-var baseline JSON instead of comparing (intentional new-var doc backlog)",
+        )
+    except ValueError:
+        pass  # already registered
