@@ -207,12 +207,25 @@ def schema_section_field_map(schema_cls: type) -> dict[str, set[str]]:
 
 def schema_section_field_defaults(schema_cls: type) -> dict[tuple[str, str], Any]:
     """(section, key) -> that field's own Pydantic default value, for the same
-    2-level schema shape as ``schema_section_field_map``."""
+    2-level schema shape as ``schema_section_field_map``.
+
+    A field declared with ``default_factory=...`` (the required style for a
+    mutable default like a dict/list built by a callable, e.g.
+    ``Field(default_factory=dict)``) has ``FieldInfo.default`` set to the
+    ``PydanticUndefined`` sentinel, not the actual value -- calling the
+    factory to get the real produced value avoids a spurious "schema
+    default=PydanticUndefined" mismatch against every call site whose own
+    ``.get(..., default=...)`` correctly mirrors what the factory produces
+    (e.g. ``{}`` for ``default_factory=dict``).
+    """
     out: dict[tuple[str, str], Any] = {}
     for section, field in schema_cls.model_fields.items():
         sub_model = field.annotation
         for key, sub_field in sub_model.model_fields.items():
-            out[(section, key)] = sub_field.default
+            if sub_field.default_factory is not None:
+                out[(section, key)] = sub_field.default_factory()  # type: ignore[call-arg]  # pydantic 2's default_factory is always zero-arg unless validate_default uses the 1-arg (data) form, not used by any schema this helper targets
+            else:
+                out[(section, key)] = sub_field.default
     return out
 
 
@@ -320,6 +333,7 @@ def assert_call_site_defaults_match_schema_defaults(
     schema_cls: type,
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     min_checked: int = 1,
+    known_intentional_mismatches: Optional[dict[tuple[str, str], str]] = None,
 ) -> None:
     """Fail if a call site's own resolved default disagrees with the schema field's
     Pydantic default. Only call sites whose default expression actually resolves to a
@@ -327,14 +341,26 @@ def assert_call_site_defaults_match_schema_defaults(
     arg, is skipped, not failed). ``min_checked`` guards against a silently-broken
     resolver/call pattern matching nothing after a refactor -- raise it to the
     expected order of magnitude for your repo's call-site count.
+
+    ``known_intentional_mismatches`` whitelists a ``(section, key)`` whose call-site
+    default is DELIBERATELY different from the schema's normal-operation default --
+    e.g. a safety-net fallback for the (in practice unreachable, since the schema
+    always resolves a real value) case where config resolution itself fails, chosen
+    to be the SAFEST/simplest value rather than mirroring the schema's normal value
+    (``variant_count`` defaulting to 1, the single-call hot path, vs. the schema's
+    normal 3). Applies to every call site reading that ``(section, key)``, matching
+    ``known_indirect_readers``'s per-field (not per-call-site) whitelist granularity.
     """
     import pytest
 
+    known_intentional_mismatches = known_intentional_mismatches or {}
     schema_defaults = schema_section_field_defaults(schema_cls)
     constants = module_constants(files)
     checked = 0
     mismatches = []
     for call in find_cfg_get_calls(root, files, cfg_function_names):
+        if (call.section, call.key) in known_intentional_mismatches:
+            continue
         resolved = resolve_default(call.default_node, constants)
         if isinstance(resolved, _Unresolved):
             continue

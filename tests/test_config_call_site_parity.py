@@ -14,12 +14,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pytest
 from pydantic import BaseModel
 
+from pydantic import Field
+
 from py_ci_shared.config_call_site_parity import (
     assert_call_site_defaults_match_schema_defaults,
     assert_every_cfg_get_call_resolves_to_a_schema_field,
     assert_every_schema_field_has_a_reader,
     assert_no_divergent_cfg_get_call_site_defaults,
     find_cfg_get_calls,
+    schema_section_field_defaults,
     schema_section_field_map,
 )
 
@@ -46,6 +49,24 @@ def _write(tmp_path: Path, name: str, source: str) -> Path:
 
 def test_schema_section_field_map():
     assert schema_section_field_map(_AppConfig) == {"filters": {"max_results", "enabled"}, "db": {"pool_max"}}
+
+
+class _DbWithFactory(BaseModel):
+    pool_max: int = 10
+    pricing: dict = Field(default_factory=dict)
+
+
+class _AppConfigWithFactory(BaseModel):
+    db: _DbWithFactory = _DbWithFactory()
+
+
+def test_schema_section_field_defaults_handles_default_factory():
+    """A field declared with default_factory=... (required for a mutable
+    default like a dict) has FieldInfo.default set to PydanticUndefined --
+    the factory must be called to get the real produced value."""
+    defaults = schema_section_field_defaults(_AppConfigWithFactory)
+    assert defaults[("db", "pricing")] == {}
+    assert defaults[("db", "pool_max")] == 10
 
 
 def test_find_cfg_get_calls_direct_chain(tmp_path):
@@ -151,3 +172,16 @@ def test_assert_call_site_defaults_match_schema_defaults_min_checked_guard(tmp_p
     _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", some_dynamic_value())\n')
     with pytest.raises(AssertionError, match="only resolved"):
         assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=1)
+
+
+def test_assert_call_site_defaults_match_schema_defaults_honors_known_intentional_mismatches(tmp_path):
+    """A call site whose default is DELIBERATELY different from the schema's
+    normal-operation value (a safety-net fallback, e.g. variant_count=1 vs
+    the schema's normal 3) must not fail once whitelisted."""
+    _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", 1)\n')
+    with pytest.raises(pytest.fail.Exception, match="disagree"):
+        assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=1)
+    assert_call_site_defaults_match_schema_defaults(
+        tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=0,
+        known_intentional_mismatches={("filters", "max_results"): "deliberate safety-net fallback"},
+    )

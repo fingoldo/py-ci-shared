@@ -191,7 +191,13 @@ def test_no_divergent_cfg_get_call_site_defaults():
     assert_no_divergent_cfg_get_call_site_defaults(ROOT, FILES)
 
 def test_call_site_defaults_match_schema_defaults():
-    assert_call_site_defaults_match_schema_defaults(ROOT, FILES, AppConfig, min_checked=50)
+    assert_call_site_defaults_match_schema_defaults(
+        ROOT, FILES, AppConfig, min_checked=50,
+        # A call site whose default is DELIBERATELY different from the schema's normal
+        # value (a safety-net fallback, e.g. variant_count=1 vs the schema's normal 3
+        # for the case where config resolution itself somehow fails) -- not a bug.
+        known_intentional_mismatches={("evaluator", "variant_count"): "safety-net single-call fallback, see pipeline/evaluate.py"},
+    )
 ```
 
 ## README env-var documentation parity (`readme_env_var_parity`)
