@@ -44,16 +44,20 @@ jobs:
         with:
           enable-cache: true
 
-      # The calling repo's pyproject.toml does `[tool.ruff] extend = "../py-ci-shared/configs/ruff-base.toml"`
-      # -- a real filesystem path, resolved identically in local dev (where both repos already live as
-      # sibling directories) and here (clone py-ci-shared as a sibling of the checked-out repo).
-      # Guarded on the target not already existing: when the CALLING repo IS py-ci-shared itself
-      # (self-ci.yml's own integration-ruff-blocking job), the checkout already occupies
-      # ../py-ci-shared and a second unconditional clone into the same path fails with exit 128.
-      - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
+      # The calling repo's pyproject.toml does `[tool.ruff] extend = "$PY_CI_SHARED_DIR/configs/ruff-base.toml"`
+      # -- ruff expands environment variables in `extend` paths (docs.astral.sh/ruff/settings), so
+      # PY_CI_SHARED_DIR just needs to point at ANY real py-ci-shared checkout, not specifically a sibling
+      # directory (replaces the former sibling-clone convention, 2026-07-22 -- see README's "Sharing the
+      # ruff base config" section for the full rationale).
+      # When the calling repo IS py-ci-shared itself (self-ci.yml's own integration-ruff-blocking job),
+      # the checkout already IS the repo -- point PY_CI_SHARED_DIR at it instead of cloning a second copy.
+      - name: Resolve PY_CI_SHARED_DIR
         run: |
-          if [ ! -d ../py-ci-shared/.git ]; then
-            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ]; then
+            echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          else
+            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git "${RUNNER_TEMP}/py-ci-shared"
+            echo "PY_CI_SHARED_DIR=${RUNNER_TEMP}/py-ci-shared" >> "$GITHUB_ENV"
           fi
 
       # Version-pinned (not bare "uvx ruff"), matching the pre-commit "ruff (real bugs block)"

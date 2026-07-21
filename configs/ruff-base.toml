@@ -1,8 +1,9 @@
 # Shared ruff base config for fingoldo Python projects (mlframe, pyutilz, ...).
 #
-# A consuming repo's own pyproject.toml pulls this in via:
+# A consuming repo's own pyproject.toml pulls this in via (PY_CI_SHARED_DIR: ruff expands env vars
+# in `extend` paths, see README's "Using the shared ruff config" -- no longer requires a sibling clone):
 #     [tool.ruff]
-#     extend = "../py-ci-shared/configs/ruff-base.toml"
+#     extend = "$PY_CI_SHARED_DIR/configs/ruff-base.toml"
 #     target-version = "py39"          # each repo sets its own minimum-Python floor
 #     exclude = [...]                  # each repo's own dir excludes
 #

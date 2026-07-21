@@ -46,6 +46,7 @@ dev = [
 [project.scripts]
 safe-precommit = "py_ci_shared.safe_precommit:main"
 py-ci-install-safe-hook = "py_ci_shared.install_safe_hook:main"
+py-ci-setup-env = "py_ci_shared.setup_env:main"
 
 [project.urls]
 Repository = "https://github.com/fingoldo/py-ci-shared"
@@ -88,6 +89,7 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/advisory_warn.py" = ["T201"]
 "src/py_ci_shared/install_safe_hook.py" = ["T201"]
 "src/py_ci_shared/config_drift_check.py" = ["T201"]
+"src/py_ci_shared/setup_env.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

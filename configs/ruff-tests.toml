@@ -11,10 +11,11 @@
 #
 # A consuming repo wires this in via a nested config so it applies ONLY under tests/, without
 # touching the root pyproject.toml's [tool.ruff] (which stays scoped to src/ and keeps its own
-# `exclude = ["tests", ...]`):
+# `exclude = ["tests", ...]`). PY_CI_SHARED_DIR (env-var expansion, see README) means this path
+# is the SAME regardless of how deeply nested the config file is -- no "../.." vs "../" bookkeeping:
 #
 #     # tests/ruff.toml
-#     extend = "../../py-ci-shared/configs/ruff-tests.toml"
+#     extend = "$PY_CI_SHARED_DIR/configs/ruff-tests.toml"
 #     target-version = "py39"          # match the repo's own floor
 #
 # Ruff's config discovery walks up from each linted file looking for the nearest ruff.toml /

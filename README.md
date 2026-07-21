@@ -268,12 +268,12 @@ Re-running `python -m py_ci_shared.install_safe_hook` after each `pre-commit ins
 
 ## Using the shared ruff config
 
-Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — instead, consuming repos clone this repo as a **sibling directory**, exactly the same pattern already used for `pyutilz` itself as an mlframe dependency:
+Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
 
 ```toml
 # consuming repo's pyproject.toml
 [tool.ruff]
-extend = "../py-ci-shared/configs/ruff-base.toml"
+extend = "$PY_CI_SHARED_DIR/configs/ruff-base.toml"
 target-version = "py39"          # each repo's own minimum-Python floor
 exclude = [...]                  # each repo's own dir excludes
 
@@ -288,7 +288,22 @@ extend-ignore = [...]            # optional: rules ignored on TOP of the shared 
 max-complexity = <N>             # each repo's OWN measured threshold -- never copy another repo's number
 ```
 
-Local dev: clone `py-ci-shared` next to the consuming repo (`C:\Users\<you>\Machine learning\py-ci-shared`, sibling of `mlframe`/`pyutilz`) so the relative path resolves the same way locally and in CI. CI clones it automatically (see `ruff-blocking.yml`'s "Clone py-ci-shared (sibling)" step) — a calling repo's own workflow doesn't need to do this itself, it's handled inside the reusable workflow.
+`PY_CI_SHARED_DIR` just needs to point at SOME real `py-ci-shared` checkout — it no longer has to be a sibling of the consuming repo (that was the prior convention through 2026-07-22; a repo move or an unusual checkout layout would silently break the relative path). Clone this repo anywhere and point the var at it:
+
+```bash
+git clone https://github.com/fingoldo/py-ci-shared.git ~/dev/py-ci-shared
+```
+
+Then set `PY_CI_SHARED_DIR` **persistently at the OS/user level**, not just in a shell rc file — a GUI-launched editor (VS Code opened from the Dock/Start Menu rather than `code .` from a terminal) doesn't always inherit shell-only exports, especially on macOS, and would silently lint against the unmerged base config instead of the full ruleset. Either do it by hand (`setx PY_CI_SHARED_DIR <path>` on Windows; a `launchctl setenv` + LaunchAgent plist on macOS; a `~/.config/environment.d/*.conf` entry on Linux) or run the bundled helper once, which does the OS-appropriate thing for you:
+
+```bash
+pip install -e ~/dev/py-ci-shared
+python -m py_ci_shared.setup_env
+```
+
+Restart your terminal/IDE afterward so the new value is picked up.
+
+CI resolves `PY_CI_SHARED_DIR` itself — see `ruff-blocking.yml` / `lint-advisory.yml`'s "Resolve PY_CI_SHARED_DIR" step — a calling repo's own workflow doesn't need to do anything extra.
 
 **CRITICAL:** never invoke ruff with `--select <subset>` in a blocking gate — it REPLACES the effective rule set instead of narrowing the extended config, silently dropping the whole shared ignore list and breaking RUF100's own "is this noqa still needed" determination. Always use `--ignore <code>` to ADD to the resolved ignore list. See `configs/ruff-base.toml`'s header comment and the `mlframe`/`pyutilz` `CLAUDE.md` files for the incident this rule postdates (2026-07-09).
 

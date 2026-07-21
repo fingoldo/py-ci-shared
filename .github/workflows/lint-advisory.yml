@@ -54,18 +54,22 @@ jobs:
           enable-cache: true
 
       # Same requirement as ruff-blocking.yml: the calling repo's pyproject.toml does
-      # `[tool.ruff] extend = "../py-ci-shared/configs/ruff-base.toml"`, a real filesystem path.
-      # Missing this step made both ruff steps below fail at config-load time on every run,
-      # silently swallowed by continue-on-error -- found 2026-07-09 in a CI/CD architecture
-      # review, an unknown amount of time after the reusable-workflow split.
-      # Guarded on the target not already existing: when the CALLING repo IS py-ci-shared itself
-      # (self-ci.yml's own integration-lint-advisory job, added 2026-07-18), the checkout already
-      # occupies ../py-ci-shared and a second unconditional clone into the same path fails with
-      # exit 128 -- confirmed as the actual cause of this job's real CI failures 2026-07-18.
-      - name: Clone py-ci-shared (sibling, for ruff `extend` path resolution)
+      # `[tool.ruff] extend = "$PY_CI_SHARED_DIR/configs/ruff-base.toml"`, a real filesystem path
+      # ruff resolves with environment-variable expansion (docs.astral.sh/ruff/settings). Missing
+      # this step made both ruff steps below fail at config-load time on every run, silently
+      # swallowed by continue-on-error -- found 2026-07-09 in a CI/CD architecture review, an
+      # unknown amount of time after the reusable-workflow split.
+      # When the calling repo IS py-ci-shared itself (self-ci.yml's own integration-lint-advisory
+      # job, added 2026-07-18), the checkout already IS the repo -- point PY_CI_SHARED_DIR at it
+      # instead of cloning a second copy (a second unconditional clone caused this job's real CI
+      # failures 2026-07-18, under the former sibling-clone convention this replaces).
+      - name: Resolve PY_CI_SHARED_DIR
         run: |
-          if [ ! -d ../py-ci-shared/.git ]; then
-            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git ../py-ci-shared
+          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ]; then
+            echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          else
+            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git "${RUNNER_TEMP}/py-ci-shared"
+            echo "PY_CI_SHARED_DIR=${RUNNER_TEMP}/py-ci-shared" >> "$GITHUB_ENV"
           fi
 
       - name: Run ruff (full - advisory)
