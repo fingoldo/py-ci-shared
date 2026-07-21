@@ -95,6 +95,66 @@ def pytest_addoption(parser):
     register_refresh_option(parser)
 ```
 
+## LOC-budget baseline meta-test (`loc_budget`)
+
+Shared harness for the "no production file over N lines" meta-test pattern (realtime_applications
+and mlframe each independently wrote a near-identical ~75-line version of this). Same API shape as
+`code_audit_meta`: a committed baseline JSON (path -> LOC at capture time) grandfathers existing
+oversized files, a `--refresh-loc-budget-baseline` flag reseeds it after an intentional split, and
+a small per-file growth slack lets trivial edits to an already-oversized file through while a real
+expansion still trips the gate.
+
+```python
+from pathlib import Path
+from py_ci_shared.loc_budget import assert_no_new_oversized_file
+
+def test_no_new_file_over_1k_loc():
+    assert_no_new_oversized_file(
+        files=my_production_py_files(),  # project-specific: whatever "production" means for this layout
+        root=Path(__file__).resolve().parents[2],
+        baseline_path=Path(__file__).resolve().parent / "_loc_over_1k_baseline.json",
+    )
+```
+
+And register `--refresh-loc-budget-baseline` in `conftest.py` via `py_ci_shared.loc_budget.register_refresh_option`,
+same as `code_audit_meta`'s flag above.
+
+## Git-dependency pin check (`git_dependency_pins`)
+
+Fails if any `pyproject.toml` git-URL dependency (`name @ git+https://host/path@ref`) isn't pinned
+to a full 40-hex-character commit SHA — a branch name, tag, or short SHA all mean a fresh install
+can silently resolve to a different commit than the one actually developed/tested against. No
+baseline/refresh mechanism: an unpinned git dependency is unconditionally wrong, so there's no
+legitimate grandfathered case.
+
+```python
+from pathlib import Path
+from py_ci_shared.git_dependency_pins import assert_all_git_dependencies_pinned
+
+def test_all_git_dependencies_pinned():
+    assert_all_git_dependencies_pinned(Path(__file__).resolve().parents[2] / "pyproject.toml")
+```
+
+## CI continue-on-error gate check (`ci_workflow_gate`)
+
+Fails if a CI workflow file has a `continue-on-error: true` step/job that isn't on an explicit,
+by-name reviewed-advisory allowlist. Catches the case where a lint/security gate step is *supposed*
+to block on failure but a copy-pasted or refactored `continue-on-error: true` silently turns it
+into a no-op — the job still shows green even though the gate step itself failed. Deliberately
+line-based (matches a step/job to the nearest preceding `name:` line above it), not a full YAML
+parser, to avoid a new PyYAML dependency for a check this structurally simple.
+
+```python
+from pathlib import Path
+from py_ci_shared.ci_workflow_gate import assert_continue_on_error_is_reviewed
+
+def test_ci_continue_on_error_steps_are_reviewed():
+    assert_continue_on_error_is_reviewed(
+        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml",
+        reviewed_advisory_steps={"Run ruff", "Run black --check", "Run bandit security scan", "Run mypy"},
+    )
+```
+
 ## Surviving concurrent-session commits (`safe_precommit`)
 
 `pre-commit` stashes a repo's unstaged tracked-file changes to a patch file before running hooks
