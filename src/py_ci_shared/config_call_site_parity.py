@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import Any, Iterable, NamedTuple, Optional
+from collections.abc import Iterable
+from typing import Any, NamedTuple, Optional
 
 DEFAULT_CFG_FUNCTION_NAMES: frozenset[str] = frozenset({"cfg", "_cfg"})
 

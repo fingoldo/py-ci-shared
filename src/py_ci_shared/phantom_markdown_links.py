@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 
 # [text](path/to/thing.ext) -- captures the link target. Scoped to a small,
 # explicit extension allowlist (not "any non-space run") to avoid matching
