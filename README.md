@@ -155,6 +155,27 @@ def test_ci_continue_on_error_steps_are_reviewed():
     )
 ```
 
+## CI test-dir reachability check (`ci_test_dir_reachability`)
+
+Fails if any `tests/<subdir>` in a consuming repo is never invoked (directly, or via a bare
+`pytest tests/` not `--ignore`'d for that subdir) by any CI workflow. Catches a whole test category
+silently going CI-blind: a new test subdirectory added and never wired into a workflow's `pytest`
+invocation still runs fine locally, so nobody notices merges are no longer gated on it. Generalized
+from a check first written directly in a consuming repo (glossum_backend_scripts) after that repo's
+own audit surfaced the pattern. Text-based, matching this package's other `ci_*` checks.
+
+```python
+from pathlib import Path
+from py_ci_shared.ci_test_dir_reachability import assert_every_test_subdir_reachable
+
+def test_every_test_subdir_reachable_by_some_ci_job():
+    assert_every_test_subdir_reachable(
+        repo_root=Path(__file__).resolve().parents[2],
+        workflows_dir=Path(__file__).resolve().parents[2] / ".github" / "workflows",
+        intentionally_unreached={"live"},  # e.g. a paid-API tier deliberately excluded from CI
+    )
+```
+
 ## Config call-site vs schema parity (`config_call_site_parity`)
 
 Shared engine for the "`cfg().get(section, key, default, type_)` call site agrees with the
