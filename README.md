@@ -202,6 +202,69 @@ def test_call_site_defaults_match_schema_defaults():
     )
 ```
 
+Also in this module: `assert_no_module_scope_frozen_cli_defaults` — fails if a `cfg().get(...)`
+read sits at MODULE scope (not inside a function/closure) and its result feeds an
+`argparse.add_argument(..., default=...)` value. `cfg().get(...)` is normally re-read on every
+call so a live config edit takes effect within the reload interval; reading it once at import
+time freezes that ONE CLI flag's effective value for the process lifetime while every sibling
+knob stays hot-reloadable — invisible in a diff (the code looks like every other `cfg().get(...)`
+call site) and only shows up as "I edited config.toml and nothing happened" for that one flag.
+
+```python
+from py_ci_shared.config_call_site_parity import assert_no_module_scope_frozen_cli_defaults
+
+def test_no_module_scope_frozen_cli_defaults():
+    assert_no_module_scope_frozen_cli_defaults(
+        ROOT, FILES,
+        known_intentional_freezes={("traffic", "batch_size"): "reviewed, deliberately frozen at startup"},
+    )
+```
+
+## CHANGELOG promise / fix-sensor cross-walk (`changelog_promise_parity`)
+
+Shared engine for "a CHANGELOG bullet claims something (a fix was made, a follow-up will
+happen) — does the claim actually hold." Generalizes two independently-built checks: mlframe's
+"every `fix(...)`-tagged bullet must also cite a regression test/sensor" (self-contained
+satisfaction — the sensor reference lives in the SAME bullet), and production_scrapers's
+"every bullet promising deferred follow-up ('flagged for the final disposition report', 'tracked
+under...') must actually be resolved" (cross-document satisfaction — the resolution lives in a
+DIFFERENT file, e.g. a `DISPOSITION.md`). Both checks are one call into
+`assert_changelog_bullets_satisfy_pattern`, differing only in which satisfaction mode(s) are
+wired up.
+
+```python
+from pathlib import Path
+import re
+from py_ci_shared.changelog_promise_parity import (
+    assert_changelog_bullets_satisfy_pattern,
+    DEFAULT_PROMISE_PATTERN,
+)
+
+CHANGELOG = Path(__file__).resolve().parents[2] / "CHANGELOG.md"
+DISPOSITION = Path(__file__).resolve().parents[2] / "DISPOSITION.md"
+
+# mlframe-style: every fix(...)-tagged bullet in a dated audit-cycle section must cite a sensor,
+# self-contained within the bullet's own text. Soft threshold tolerates some doc-only fixes.
+_AUDIT_SECTION = re.compile(r"^##\s+\d{4}-\d{2}-\d{2}.*?(audit cycle|wave[ -]?\d+)", re.IGNORECASE | re.MULTILINE)
+_FIX_BULLET = re.compile(r"(fix\([^)]*\)|\bbug\b|\bregression\b)", re.IGNORECASE)
+_SENSOR_REF = re.compile(r"(test_[a-zA-Z0-9_]+\.py|tests/[\w/]+\.py|sensor[: ])", re.IGNORECASE)
+
+def test_each_fix_bullet_cites_a_sensor():
+    assert_changelog_bullets_satisfy_pattern(
+        CHANGELOG, _FIX_BULLET, _SENSOR_REF,
+        section_pattern=_AUDIT_SECTION, max_unsatisfied_fraction=0.15, label="fix bullet",
+    )
+
+# production_scrapers-style: every promise ("flagged for the final disposition report", "tracked
+# under...") must be resolved -- either mentioned later in CHANGELOG.md itself, or its title
+# appearing in DISPOSITION.md. Strict (default 0.0) -- every promise must be kept.
+def test_changelog_promises_resolved():
+    assert_changelog_bullets_satisfy_pattern(
+        CHANGELOG, DEFAULT_PROMISE_PATTERN,
+        other_resolution_paths=[DISPOSITION], label="promise",
+    )
+```
+
 ## README env-var documentation parity (`readme_env_var_parity`)
 
 Fails if production code reads an environment variable (`os.environ.get(...)` / `os.getenv(...)`)

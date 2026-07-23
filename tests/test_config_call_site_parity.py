@@ -20,7 +20,9 @@ from py_ci_shared.config_call_site_parity import (
     assert_every_cfg_get_call_resolves_to_a_schema_field,
     assert_every_schema_field_has_a_reader,
     assert_no_divergent_cfg_get_call_site_defaults,
+    assert_no_module_scope_frozen_cli_defaults,
     find_cfg_get_calls,
+    find_module_scope_frozen_cli_defaults,
     schema_section_field_defaults,
     schema_section_field_map,
 )
@@ -225,4 +227,69 @@ def test_assert_call_site_defaults_match_schema_defaults_honors_known_intentiona
     assert_call_site_defaults_match_schema_defaults(
         tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=0,
         known_intentional_mismatches={("filters", "max_results"): "deliberate safety-net fallback"},
+    )
+
+
+def test_find_module_scope_frozen_cli_defaults_flags_module_scope_read(tmp_path):
+    _write(tmp_path, "a.py", """
+DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
+
+def main():
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+""")
+    hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
+    assert len(hits) == 1
+    assert (hits[0].section, hits[0].key) == ("traffic", "default_workers")
+    assert hits[0].var_name == "DEFAULT_WORKERS"
+
+
+def test_find_module_scope_frozen_cli_defaults_ignores_function_scope_read(tmp_path):
+    """A cfg().get(...) read INSIDE a function (the correct, hot-reloadable pattern) --
+    even if the resulting variable were somehow fed to argparse -- is not module scope."""
+    _write(tmp_path, "a.py", """
+def make_default():
+    x = cfg().get("traffic", "default_workers", 4)
+    return x
+
+def main():
+    parser.add_argument("--workers", type=int, default=make_default())
+""")
+    hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
+    assert hits == []
+
+
+def test_find_module_scope_frozen_cli_defaults_ignores_unused_module_scope_read(tmp_path):
+    """A module-scope cfg().get(...) read that's never fed to an argparse default (e.g. only
+    used in a log line) is fine -- only the argparse-default wiring is the actual bug."""
+    _write(tmp_path, "a.py", """
+DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
+
+def main():
+    log.info("workers=%s", DEFAULT_WORKERS)
+""")
+    hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
+    assert hits == []
+
+
+def test_assert_no_module_scope_frozen_cli_defaults_fails(tmp_path):
+    _write(tmp_path, "a.py", """
+DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
+
+def main():
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+""")
+    with pytest.raises(pytest.fail.Exception, match="frozen"):
+        assert_no_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
+
+
+def test_assert_no_module_scope_frozen_cli_defaults_honors_known_intentional_freezes(tmp_path):
+    _write(tmp_path, "a.py", """
+DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
+
+def main():
+    parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+""")
+    assert_no_module_scope_frozen_cli_defaults(
+        tmp_path, [tmp_path / "a.py"],
+        known_intentional_freezes={("traffic", "default_workers"): "deliberate, reviewed"},
     )

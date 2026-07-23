@@ -497,3 +497,128 @@ def assert_call_site_defaults_match_schema_defaults(
     assert checked >= min_checked, f"only resolved {checked} call-site default(s) (expected >= {min_checked}) -- resolver or call pattern may be broken"
     if mismatches:
         pytest.fail("cfg().get(...) call-site default(s) disagree with the schema's own default:\n  " + "\n  ".join(mismatches))
+
+
+class FrozenCliDefault(NamedTuple):
+    file: str
+    line: int
+    var_name: str
+    section: str
+    key: str
+    argparse_lines: tuple[int, ...]
+
+
+def _module_scope_cfg_get_assignments(
+    tree: ast.Module,
+    cfg_function_names: frozenset[str],
+) -> list[tuple[str, str, str, int]]:
+    """``(var_name, section, key, line)`` for every top-level (module-scope, not inside any
+    ``def``/``class``) ``X = cfg().get(section, key, ...)`` assignment -- ``tree.body`` only
+    contains module-level statements, so this naturally excludes anything inside a function."""
+    out: list[tuple[str, str, str, int]] = []
+    for node in tree.body:
+        if not (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            continue
+        call = node.value
+        if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "get"):
+            continue
+        if not _is_cfg_call(call.func.value, cfg_function_names):
+            continue
+        if len(call.args) < 2:
+            continue
+        section_node, key_node = call.args[0], call.args[1]
+        if not (isinstance(section_node, ast.Constant) and isinstance(section_node.value, str)):
+            continue
+        if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+            continue
+        out.append((node.targets[0].id, section_node.value, key_node.value, node.lineno))
+    return out
+
+
+def _argparse_default_use_lines(tree: ast.Module, var_names: frozenset[str]) -> dict[str, list[int]]:
+    """``var_name -> [line, ...]`` for every ``<parser>.add_argument(..., default=<Name>)`` call
+    anywhere in the file whose ``default=`` value is a bare reference to one of ``var_names``."""
+    out: dict[str, list[int]] = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument"):
+            continue
+        default_val = next((kw.value for kw in node.keywords if kw.arg == "default"), None)
+        if isinstance(default_val, ast.Name) and default_val.id in var_names:
+            out.setdefault(default_val.id, []).append(node.lineno)
+    return out
+
+
+def find_module_scope_frozen_cli_defaults(
+    root: Path,
+    files: Iterable[Path],
+    cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+) -> list[FrozenCliDefault]:
+    """Every module-scope ``X = cfg().get(...)`` assignment whose variable is later used as an
+    ``argparse.add_argument(..., default=X)`` value in the same file.
+
+    ``cfg().get(...)`` is normally re-read on every call (typically inside a hot loop or a
+    per-invocation closure, e.g. ``make_n_workers()``-style patterns) so a live config edit takes
+    effect within the config-reload interval. Reading it ONCE at module import time and feeding
+    the result into an argparse default freezes that one CLI flag's effective value for the
+    entire process lifetime (hours to days for a long-running scraper/service), silently breaking
+    that specific knob's hot-reload guarantee while every sibling knob still honours it -- the
+    bug is invisible in a diff (the code *looks* like every other ``cfg().get(...)`` call site)
+    and only manifests as "I edited config.toml and nothing happened" for that one flag.
+    """
+    out: list[FrozenCliDefault] = []
+    for path in files:
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        except (SyntaxError, UnicodeDecodeError, OSError):
+            continue
+        assignments = _module_scope_cfg_get_assignments(tree, cfg_function_names)
+        if not assignments:
+            continue
+        var_names = frozenset(a[0] for a in assignments)
+        argparse_uses = _argparse_default_use_lines(tree, var_names)
+        for var_name, section, key, line in assignments:
+            lines = argparse_uses.get(var_name)
+            if lines:
+                out.append(FrozenCliDefault(
+                    file=path.relative_to(root).as_posix(),
+                    line=line,
+                    var_name=var_name,
+                    section=section,
+                    key=key,
+                    argparse_lines=tuple(lines),
+                ))
+    return out
+
+
+def assert_no_module_scope_frozen_cli_defaults(
+    root: Path,
+    files: Iterable[Path],
+    cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+    known_intentional_freezes: Optional[dict[tuple[str, str], str]] = None,
+) -> None:
+    """Fail if a module-scope ``cfg().get(...)`` read feeds an ``argparse`` default -- see
+    ``find_module_scope_frozen_cli_defaults`` for why this specifically (as opposed to any other
+    module-scope config read) breaks the project's hot-reload contract for that one CLI flag.
+
+    ``known_intentional_freezes`` whitelists a ``(section, key)`` where reading once at import
+    time (rather than resolving fresh per-invocation, e.g. via a closure like
+    ``make_n_workers(cli_value)``) is a deliberate, reviewed choice -- with a reason string
+    surfaced in the failure message convention used by this module's other ``known_*`` params.
+    """
+    import pytest
+
+    known_intentional_freezes = known_intentional_freezes or {}
+    bad = []
+    for hit in find_module_scope_frozen_cli_defaults(root, files, cfg_function_names):
+        if (hit.section, hit.key) in known_intentional_freezes:
+            continue
+        arg_lines = ", ".join(str(line) for line in hit.argparse_lines)
+        bad.append(
+            f"{hit.file}:{hit.line}  {hit.var_name} = cfg().get({hit.section!r}, {hit.key!r}, ...) at module scope, "
+            f"used as an argparse default at line(s) {arg_lines} -- this CLI flag's effective value is frozen at "
+            f"import time, not hot-reloadable like the rest of the project's config. Move the cfg().get(...) read "
+            f"inside a per-invocation closure/function (default=None, resolve fresh where the value is actually "
+            f"used), or pass ({hit.section!r}, {hit.key!r}) to known_intentional_freezes if this one is deliberate."
+        )
+    if bad:
+        pytest.fail("Module-scope cfg().get(...) read(s) feeding an argparse default (frozen-at-import hot-reload gap):\n  " + "\n  ".join(bad))
