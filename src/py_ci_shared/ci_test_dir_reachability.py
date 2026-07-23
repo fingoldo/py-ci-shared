@@ -43,10 +43,7 @@ def _test_subdirs(repo_root: Path) -> set[str]:
     tests_dir = repo_root / "tests"
     if not tests_dir.is_dir():
         return set()
-    return {
-        p.name for p in tests_dir.iterdir()
-        if p.is_dir() and p.name != "__pycache__" and not p.name.startswith(".")
-    }
+    return {p.name for p in tests_dir.iterdir() if p.is_dir() and p.name != "__pycache__" and not p.name.startswith(".")}
 
 
 def find_unreachable_test_subdirs(
