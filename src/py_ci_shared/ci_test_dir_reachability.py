@@ -67,10 +67,17 @@ def find_unreachable_test_subdirs(
             continue
         # Not directly named -- reachable only if some job runs the whole
         # `tests/` (or `tests` with no path) without an --ignore covering it.
-        ignored_paths = set(_PYTEST_IGNORE_RE.findall(ci_text))
+        ignored_paths = {ip.rstrip("/\\").replace("\\", "/") for ip in _PYTEST_IGNORE_RE.findall(ci_text)}
         bare_targets = {t.rstrip("/").rstrip("\\") for t in _PYTEST_INVOKE_RE.findall(ci_text)}
         covered_by_bare_tests_invoke = "tests" in bare_targets
-        ignored_everywhere = any(f"tests/{d}" in ip or f"tests\\{d}" in ip for ip in ignored_paths)
+        # An --ignore must name the directory ITSELF, or a --ignore-glob
+        # covering everything under it (`tests/<d>/*` or `/**`), to count as
+        # excluding the whole subdir -- an --ignore of one specific FILE
+        # inside the directory (e.g. tests/test_smoke/test_llm_providers_live.py)
+        # only excludes that file, leaving the rest of the directory's tests
+        # reachable via the bare `tests/` sweep.
+        whole_dir_ignore_targets = {f"tests/{d}", f"tests/{d}/*", f"tests/{d}/**"}
+        ignored_everywhere = bool(ignored_paths & whole_dir_ignore_targets)
         if covered_by_bare_tests_invoke and not ignored_everywhere:
             continue
         unreachable.append(d)

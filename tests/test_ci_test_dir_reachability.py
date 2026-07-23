@@ -53,6 +53,25 @@ class TestFindUnreachableTestSubdirs:
         )
         assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == ["test_cli"]
 
+    def test_ignoring_one_file_inside_a_subdir_does_not_mark_the_whole_subdir_unreachable(self, tmp_path):
+        """Regression: glossum's CI ignores exactly one file inside
+        tests/test_smoke (a paid-API live-provider test), not the whole
+        directory -- a substring match on the ignore path (e.g.
+        `tests/test_smoke` in `tests/test_smoke/test_llm_providers_live.py`)
+        wrongly treated that as excluding the entire subdir."""
+        repo = _make_repo(
+            tmp_path, ["test_api", "test_smoke"],
+            "jobs:\n  unit:\n    steps:\n      - run: pytest tests/ --ignore=tests/test_smoke/test_llm_providers_live.py\n",
+        )
+        assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == []
+
+    def test_ignore_glob_covering_whole_subdir_is_treated_as_unreachable(self, tmp_path):
+        repo = _make_repo(
+            tmp_path, ["test_api", "test_cli"],
+            "jobs:\n  unit:\n    steps:\n      - run: pytest tests/ --ignore-glob=tests/test_cli/*\n",
+        )
+        assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == ["test_cli"]
+
     def test_intentionally_unreached_whitelist_is_respected(self, tmp_path):
         repo = _make_repo(
             tmp_path, ["test_api", "live"],
