@@ -27,7 +27,13 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from collections.abc import Iterable
-from typing import Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+
+if TYPE_CHECKING:
+    # Type-only: pydantic is a [dev] test dependency here (schema_cls is always a real
+    # pydantic.BaseModel subclass at runtime), not a hard runtime import, matching this
+    # module's own "dependency-light" convention documented above.
+    from pydantic import BaseModel
 
 DEFAULT_CFG_FUNCTION_NAMES: frozenset[str] = frozenset({"cfg", "_cfg"})
 
@@ -307,18 +313,19 @@ def to_hashable(value: Any) -> Any:
     return value
 
 
-def schema_section_field_map(schema_cls: type) -> dict[str, set[str]]:
+def schema_section_field_map(schema_cls: type[BaseModel]) -> dict[str, set[str]]:
     """Top-level section name -> its sub-model's real field names, for a 2-level
     Pydantic schema (``schema_cls.model_fields`` maps each section to a field whose
     ``.annotation`` is itself a Pydantic model with its own ``model_fields``)."""
     out: dict[str, set[str]] = {}
     for section, field in schema_cls.model_fields.items():
         sub_model = field.annotation
+        assert sub_model is not None, f"schema field {section!r} has no annotation -- not a valid 2-level schema"
         out[section] = set(sub_model.model_fields.keys())
     return out
 
 
-def schema_section_field_defaults(schema_cls: type) -> dict[tuple[str, str], Any]:
+def schema_section_field_defaults(schema_cls: type[BaseModel]) -> dict[tuple[str, str], Any]:
     """(section, key) -> that field's own Pydantic default value, for the same
     2-level schema shape as ``schema_section_field_map``.
 
@@ -334,6 +341,7 @@ def schema_section_field_defaults(schema_cls: type) -> dict[tuple[str, str], Any
     out: dict[tuple[str, str], Any] = {}
     for section, field in schema_cls.model_fields.items():
         sub_model = field.annotation
+        assert sub_model is not None, f"schema field {section!r} has no annotation -- not a valid 2-level schema"
         for key, sub_field in sub_model.model_fields.items():
             if sub_field.default_factory is not None:
                 out[(section, key)] = sub_field.default_factory()  # type: ignore[call-arg]  # pydantic 2's default_factory is always zero-arg unless validate_default uses the 1-arg (data) form, not used by any schema this helper targets
@@ -345,7 +353,7 @@ def schema_section_field_defaults(schema_cls: type) -> dict[tuple[str, str], Any
 def assert_every_cfg_get_call_resolves_to_a_schema_field(
     root: Path,
     files: Iterable[Path],
-    schema_cls: type,
+    schema_cls: type[BaseModel],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
 ) -> None:
     """Fail if any ``cfg().get(section, key, ...)`` call site reads a ``(section,
@@ -368,7 +376,7 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
 def assert_every_schema_field_has_a_reader(
     root: Path,
     files: Iterable[Path],
-    schema_cls: type,
+    schema_cls: type[BaseModel],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     known_indirect_readers: Optional[dict[tuple[str, str], str]] = None,
     known_unwired_gaps: Optional[dict[tuple[str, str], str]] = None,
@@ -456,7 +464,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
 def assert_call_site_defaults_match_schema_defaults(
     root: Path,
     files: Iterable[Path],
-    schema_cls: type,
+    schema_cls: type[BaseModel],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     min_checked: int = 1,
     known_intentional_mismatches: Optional[dict[tuple[str, str], str]] = None,
