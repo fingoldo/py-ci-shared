@@ -55,6 +55,65 @@ def f():
     assert find_env_vars_read([f]) == {"MY_VAR", "OTHER_VAR"}
 
 
+def test_find_env_vars_read_loop_over_literal_tuple(tmp_path):
+    """for name in (LITERAL, ...): os.environ.get(name) -- a bare for-loop,
+    iterable is a literal tuple inline (not a separately-assigned name)."""
+    f = _write(tmp_path, "a.py", """
+import os
+
+def f():
+    for name in ("KEY_A", "KEY_B"):
+        if os.environ.get(name):
+            return name
+""")
+    assert find_env_vars_read([f]) == {"KEY_A", "KEY_B"}
+
+
+def test_find_env_vars_read_listcomp_over_named_tuple(tmp_path):
+    """The real llm_bench shape this was written for: a module-level
+    tuple assigned to a name, then consumed via a list-comprehension
+    generator (not a plain for-statement) that calls os.environ.get on
+    the comprehension's loop variable."""
+    f = _write(tmp_path, "a.py", """
+import os
+
+KEY_NAMES = ("OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+
+def f():
+    present = [name for name in KEY_NAMES if os.environ.get(name)]
+    return present
+""")
+    assert find_env_vars_read([f]) == {"OPENROUTER_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"}
+
+
+def test_find_env_vars_read_getenv_loop_form(tmp_path):
+    """Same loop-variable shape via os.getenv rather than os.environ.get."""
+    f = _write(tmp_path, "a.py", """
+import os
+
+NAMES = ("FOO", "BAR")
+
+def f():
+    for n in NAMES:
+        os.getenv(n)
+""")
+    assert find_env_vars_read([f]) == {"FOO", "BAR"}
+
+
+def test_find_env_vars_read_non_literal_iterable_not_hallucinated(tmp_path):
+    """A loop over a runtime-computed iterable (not a literal tuple/list/set,
+    and not a name resolvable to one) can't be resolved statically -- must
+    stay silent rather than guessing, and must not crash."""
+    f = _write(tmp_path, "a.py", """
+import os
+
+def f(names):
+    for name in names:
+        os.environ.get(name)
+""")
+    assert find_env_vars_read([f]) == set()
+
+
 def test_find_readme_documented_vars_multi_name_cell(tmp_path):
     readme = _write(tmp_path, "README.md", """
 ## Environment variables

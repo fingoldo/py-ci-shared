@@ -47,6 +47,13 @@ _NAME_RE = re.compile(r"^\s*(?:-\s*)?name:\s*[\"']?(.*?)[\"']?\s*$")
 # choice) is deliberately NOT flagged here, since there's no static answer
 # to review until the consuming repo's own ci.yml resolves the expression.
 _CONTINUE_ON_ERROR_RE = re.compile(r"^\s*continue-on-error:\s*true\s*$", re.IGNORECASE)
+# A trailing `  # explanation` comment on either a `name:` or a
+# `continue-on-error:` line (this repo's own workflows are full of them,
+# e.g. llm_bench's ci.yml) would otherwise desync a captured step name from
+# its allowlist entry, or make `_CONTINUE_ON_ERROR_RE`'s end-anchor fail to
+# match `continue-on-error: true  # TODO` at all -- silently hiding a real
+# gate-defeat from the scanner. Stripped from both lines before matching.
+_TRAILING_COMMENT_RE = re.compile(r"\s+#.*$")
 
 
 def find_continue_on_error_steps(workflow_path: Path) -> list[str]:
@@ -63,6 +70,7 @@ def find_continue_on_error_steps(workflow_path: Path) -> list[str]:
     found: list[str] = []
     current_name: str | None = None
     for i, line in enumerate(lines, start=1):
+        line = _TRAILING_COMMENT_RE.sub("", line)
         m = _NAME_RE.match(line)
         if m:
             current_name = m.group(1)

@@ -82,6 +82,31 @@ class TestFindContinueOnErrorSteps:
         )
         assert find_continue_on_error_steps(p) == []
 
+    def test_continue_on_error_with_trailing_comment_is_found(self, tmp_path):
+        """A trailing `# explanation` on the continue-on-error line itself
+        (this repo's own workflows are full of dense inline comments) must
+        not blind the end-anchored regex -- that would let a real gate-defeat
+        silently vanish from the scan."""
+        p = _write_workflow(
+            tmp_path,
+            "jobs:\n  lint:\n    steps:\n"
+            "      - name: Run new-tool\n"
+            "        continue-on-error: true  # TODO remove once fixed\n",
+        )
+        assert find_continue_on_error_steps(p) == ["Run new-tool"]
+
+    def test_name_with_trailing_comment_is_not_polluted(self, tmp_path):
+        """A trailing comment on the `name:` line itself must not leak into
+        the captured step name, or a cosmetic comment edit on an
+        already-reviewed step desyncs it from its allowlist entry."""
+        p = _write_workflow(
+            tmp_path,
+            "jobs:\n  lint:\n    steps:\n"
+            "      - name: Run new-tool  # noqa\n"
+            "        continue-on-error: true\n",
+        )
+        assert find_continue_on_error_steps(p) == ["Run new-tool"]
+
     def test_multiple_steps_each_tracked_independently(self, tmp_path):
         p = _write_workflow(
             tmp_path,
