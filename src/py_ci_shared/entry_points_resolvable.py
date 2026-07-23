@@ -53,7 +53,7 @@ def find_unresolvable_entry_points(pyproject_path: Path) -> list[str]:
             continue
         try:
             module = importlib.import_module(module_path)
-        except Exception as e:  # noqa: BLE001 -- any import failure is the finding itself
+        except Exception as e:  # any import failure is the finding itself
             violations.append(f"{qualified_name} = {spec!r}: cannot import {module_path!r}: {e}")
             continue
         if attr and not hasattr(module, attr):
