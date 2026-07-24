@@ -7,6 +7,13 @@ it, instead of failing fast with a clear timeout signal. Confirmed as a real, un
 two high-stakes jobs of a downstream project's own CI (build in ci.yml, publish in release.yml --
 the release job being the highest-stakes job in that repo) during the 2026-07-21 audit round.
 
+A ``uses:``-based reusable-workflow-call job is EXEMPT: GitHub Actions' schema only allows
+``name``/``uses``/``with``/``secrets``/``needs``/``if``/``permissions`` on that job shape --
+``timeout-minutes`` is a real YAML syntax error there (confirmed via ``actionlint``, which caught
+an earlier, incorrect version of this scanner that flagged 9 such jobs and would have broken CI
+had the "fix" landed). Whatever timeout that job effectively runs under is bounded by the CALLED
+workflow's own job(s), not settable from the caller side.
+
 Deliberately line-based/regex, matching this package's established convention (``sql_lint.py``,
 ``ci_workflow_gate.py``, ``code_audit``'s scanners) -- not a YAML parser, no new dependency.
 
@@ -35,12 +42,17 @@ _JOBS_HEADER_RE = re.compile(r"^jobs:\s*$")
 # detected purely from indentation, without needing a real YAML parser.
 _JOB_HEADER_RE = re.compile(r"^(?P<indent>[ ]+)(?P<job_id>[\w-]+):\s*(?:#.*)?$")
 _TIMEOUT_MINUTES_RE = re.compile(r"^\s*timeout-minutes:\s*\S")
+# A `uses:` key directly inside the job's own block (one level deeper than the job header) marks
+# it as a reusable-workflow-call job -- GitHub's schema forbids `timeout-minutes` there entirely.
+_USES_KEY_RE = re.compile(r"^\s*uses:\s*\S")
 
 
 def find_jobs_missing_timeout(workflow_path: Path) -> list[str]:
-    """Return the job id of every job under ``jobs:`` in ``workflow_path`` that has no
-    ``timeout-minutes:`` key anywhere in its own block (before the next job at the same
-    indentation level, or end of file).
+    """Return the job id of every NON-reusable-workflow-call job under ``jobs:`` in
+    ``workflow_path`` that has no ``timeout-minutes:`` key anywhere in its own block (before the
+    next job at the same indentation level, or end of file). A job whose block contains a
+    ``uses:`` key (a reusable-workflow-call job) is skipped entirely -- ``timeout-minutes`` is not
+    a valid key there per GitHub's own schema.
 
     Indentation-driven block detection: the FIRST job header's indent width sets the expected
     indent for every subsequent job header; a line at that same indent (or shallower, i.e. back
@@ -79,6 +91,8 @@ def find_jobs_missing_timeout(workflow_path: Path) -> list[str]:
     for idx, (job_id, start) in enumerate(jobs):
         end = jobs[idx + 1][1] if idx + 1 < len(jobs) else len(lines)
         block = lines[start:end]
+        if any(_USES_KEY_RE.match(line) for line in block):
+            continue
         if not any(_TIMEOUT_MINUTES_RE.match(line) for line in block):
             missing.append(job_id)
     return missing

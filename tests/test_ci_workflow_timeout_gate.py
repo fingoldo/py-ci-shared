@@ -65,6 +65,28 @@ jobs:
         timeout-minutes: 15
 """
 
+_REUSABLE_WORKFLOW_CALL_JOB_NO_TIMEOUT = """\
+jobs:
+  lint:
+    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@abc123
+    with:
+      ignore: "C901"
+"""
+
+_MIX_REUSABLE_AND_REGULAR_ONLY_REGULAR_FLAGGED = """\
+jobs:
+  lint:
+    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@abc123
+    with:
+      ignore: "C901"
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build
+        run: python -m build
+"""
+
 
 class TestFindJobsMissingTimeout:
     def test_job_with_timeout_not_flagged(self, tmp_path):
@@ -88,6 +110,16 @@ class TestFindJobsMissingTimeout:
     def test_no_jobs_section_returns_empty(self, tmp_path):
         p = _write_workflow(tmp_path, "name: CI\non: [push]\n")
         assert find_jobs_missing_timeout(p) == []
+
+    def test_reusable_workflow_call_job_exempt_even_without_timeout(self, tmp_path):
+        """GitHub's schema forbids timeout-minutes on a uses:-based job entirely (confirmed via
+        actionlint) -- must never be flagged, regardless of whether it has a timeout."""
+        p = _write_workflow(tmp_path, _REUSABLE_WORKFLOW_CALL_JOB_NO_TIMEOUT)
+        assert find_jobs_missing_timeout(p) == []
+
+    def test_mix_of_reusable_and_regular_jobs_only_flags_the_regular_one(self, tmp_path):
+        p = _write_workflow(tmp_path, _MIX_REUSABLE_AND_REGULAR_ONLY_REGULAR_FLAGGED)
+        assert find_jobs_missing_timeout(p) == ["build"]
 
 
 class TestAssertAllJobsHaveTimeout:
