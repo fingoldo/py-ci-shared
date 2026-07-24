@@ -322,6 +322,36 @@ def test_no_new_undocumented_env_vars():
     )
 ```
 
+## Content-hash / version-bump gate (`content_hash_version_bump_gate`)
+
+Fails if a set of tracked source files changed content but a version constant that's supposed to
+be bumped in lockstep (a prompt version, a cache-key version, a schema/serialization version) was
+NOT — the classic "forgot to bump the version" bug, where a stale cached/persisted artifact
+silently stays valid under the OLD version even though the code that produces it has since
+changed. A version bump is self-certifying: if the version constant differs from the baseline's
+pinned value, that's accepted as deliberate and the baseline is silently re-pinned — no separate
+refresh flag needed for the normal "I bumped it" workflow. Register `--refresh-content-hash-version-baseline`
+in `conftest.py` via `content_hash_version_bump_gate.register_refresh_option`, same as the other
+baseline-style checks, for bootstrapping a missing/corrupted baseline only.
+
+```python
+from pathlib import Path
+from py_ci_shared.content_hash_version_bump_gate import assert_version_bumped_with_content
+from myproject.prompt_version import USER_PROMPT_VERSION
+
+_SOURCE_FILES = [
+    Path(__file__).resolve().parents[2] / "prompt_builder" / f
+    for f in ("word_count.py", "truncation.py", "user_prompt.py")
+]
+
+def test_user_prompt_version_bumped_when_prompt_builder_changes():
+    assert_version_bumped_with_content(
+        files=_SOURCE_FILES,
+        version=USER_PROMPT_VERSION,
+        baseline_path=Path(__file__).resolve().parent / "_user_prompt_version_baseline.json",
+    )
+```
+
 ## Surviving concurrent-session commits (`safe_precommit`)
 
 `pre-commit` stashes a repo's unstaged tracked-file changes to a patch file before running hooks
