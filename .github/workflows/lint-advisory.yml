@@ -73,13 +73,13 @@ jobs:
           fi
 
       - name: Run ruff (full - advisory)
-        run: uvx ruff==0.15.20 check "${INPUTS_SOURCE_PATH}"
+        run: uvx ruff==0.15.22 check "${INPUTS_SOURCE_PATH}"
         continue-on-error: true
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: Ruff mccabe complexity (advisory)
-        run: uvx ruff==0.15.20 check "${INPUTS_SOURCE_PATH}" --select C90 --statistics
+        run: uvx ruff==0.15.22 check "${INPUTS_SOURCE_PATH}" --select C90 --statistics
         continue-on-error: true
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
