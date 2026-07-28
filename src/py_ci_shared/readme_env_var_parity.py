@@ -141,13 +141,25 @@ def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADIN
     """Every ```VAR``` documented in ``readme_path``'s markdown table under
     ``heading`` -- a row's first cell may list more than one name joined by
     e.g. " / " (``\\`GIT_SHA\\` / \\`COMMIT_SHA\\```)."""
-    text = readme_path.read_text(encoding="utf-8")
-    pattern = re.escape(heading) + r"\n.*?\n((?:\|.*\n)+)"
-    m = re.search(pattern, text)
-    if not m:
+    lines = readme_path.read_text(encoding="utf-8").splitlines()
+    start = next((i for i, line in enumerate(lines) if line.strip() == heading.strip()), None)
+    if start is None:
+        raise ValueError(f"{readme_path}'s {heading!r} section/table not found -- renamed, or heading doesn't match?")
+    # Scanned line by line rather than matched as one regex: any number of explanatory lines may sit between the
+    # heading and the table, and a `.*?` bridge silently matches only when the table starts on the second line,
+    # which turns a real check into a no-op for every README that introduces its table with a sentence.
+    table: list[str] = []
+    for line in lines[start + 1 :]:
+        if line.startswith("#"):
+            break
+        if line.startswith("|"):
+            table.append(line)
+        elif table:
+            break
+    if not table:
         raise ValueError(f"{readme_path}'s {heading!r} section/table not found -- renamed, or heading doesn't match?")
     names: set[str] = set()
-    for line in m.group(1).splitlines():
+    for line in table:
         cells = line.split("|")
         if len(cells) < 2:
             continue

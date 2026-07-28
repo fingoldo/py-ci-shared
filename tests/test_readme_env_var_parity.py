@@ -125,6 +125,32 @@ def test_find_readme_documented_vars_multi_name_cell(tmp_path):
     assert find_readme_documented_vars(readme) == {"GIT_SHA", "COMMIT_SHA"}
 
 
+def test_find_readme_documented_vars_with_prose_between_heading_and_table(tmp_path):
+    """A sentence introducing the table must not hide it.
+
+    The former single-regex bridge matched only when the table began on the second line after the
+    heading. Any README that explains its table first parsed as "section not found", the caller
+    swallowed that into an empty documented-set, and every variable silently counted as
+    undocumented -- the check passed while measuring nothing.
+    """
+    readme = _write(tmp_path, "README.md", """
+## Environment variables
+
+Every environment variable read anywhere in `src/`, generated from the source.
+This inventory documents *that* a var is read, not *why* it exists.
+
+| Variable | Default | First read at |
+|---|---|---|
+| `MLFRAME_FOO` | `'0'` | [a.py](a.py#L1) |
+| `MLFRAME_BAR` | — | [b.py](b.py#L2) |
+
+## Some other section
+
+| `NOT_A_VAR` | ignored |
+""")
+    assert find_readme_documented_vars(readme) == {"MLFRAME_FOO", "MLFRAME_BAR"}
+
+
 def test_find_readme_documented_vars_missing_heading_raises(tmp_path):
     readme = _write(tmp_path, "README.md", "# Project\nno such section here\n")
     with pytest.raises(ValueError, match="not found"):
