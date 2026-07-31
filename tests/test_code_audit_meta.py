@@ -101,6 +101,33 @@ class TestAssertNoNewCodeAuditFindings:
         seeded = orjson.loads(baseline.read_bytes())
         assert any("mutable_default" in k for k in seeded)
 
+    def test_refresh_flag_detected_via_request_even_when_argv_is_bare(self, tmp_path, monkeypatch):
+        """Regression: pytest-xdist workers run with sys.argv == ['-c'] (execnet
+        bootstraps them, it does not re-exec the original command line), so a
+        sys.argv-only check silently never refreshes under `-n`. Passing the
+        pytest `request` fixture must detect the flag via `request.config.getoption`
+        instead, which xdist reconstructs correctly per-worker."""
+        src = tmp_path / "src"
+        src.mkdir()
+        baseline = tmp_path / "_code_audit_baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+
+        _write_mutable_default_module(src)
+        monkeypatch.setattr(sys, "argv", ["-c"])  # simulates an xdist worker's argv
+
+        class _FakeConfig:
+            def getoption(self, name, default=None):
+                return name == REFRESH_FLAG
+
+        class _FakeRequest:
+            config = _FakeConfig()
+
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline, request=_FakeRequest())
+
+        seeded = orjson.loads(baseline.read_bytes())
+        assert any("mutable_default" in k for k in seeded)
+
     def test_exclude_dirs_merged_with_defaults(self, tmp_path):
         """A caller-supplied exclude_dirs must not disable the built-in
         cache/vcs exclusions (__pycache__, .git, etc.) -- they merge."""

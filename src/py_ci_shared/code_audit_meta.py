@@ -17,11 +17,12 @@ or an equivalent root-level file for flat-layout repos)::
 
     import mypackage
 
-    def test_no_new_code_audit_findings():
+    def test_no_new_code_audit_findings(request):
         assert_no_new_code_audit_findings(
             root=Path(mypackage.__file__).resolve().parent,
             baseline_path=Path(__file__).resolve().parent / "_code_audit_baseline.json",
             exclude_dirs=frozenset({"tests", "docs", "legacy"}),  # repo-specific, on top of the defaults
+            request=request,  # xdist-safe --refresh-code-audit-baseline detection
         )
 
 And in the same directory's ``conftest.py`` (or the repo's root conftest.py
@@ -80,7 +81,21 @@ def register_refresh_option(parser) -> None:
         pass  # already registered (e.g. a repo with more than one conftest.py in the chain)
 
 
-def _refresh_requested() -> bool:
+def _refresh_requested(request=None) -> bool:
+    """True if ``--refresh-code-audit-baseline`` was passed.
+
+    Prefers ``request.config.getoption(...)`` when a pytest ``request`` fixture
+    is supplied: under pytest-xdist, worker subprocesses run with
+    ``sys.argv == ['-c']`` (execnet bootstraps them, it does not re-exec the
+    original command line), so a bare ``sys.argv`` check silently never
+    triggers a refresh in any repo whose ``addopts`` enables ``-n``/``--dist``.
+    ``request.config.getoption`` is reconstructed correctly per-worker and
+    works in both modes, so it's tried first with ``sys.argv`` as a fallback
+    for callers not yet passing ``request``.
+    """
+    if request is not None:
+        return bool(request.config.getoption(REFRESH_FLAG, False))
+
     import sys
 
     return REFRESH_FLAG in sys.argv
@@ -95,6 +110,7 @@ def assert_no_new_code_audit_findings(
     baseline_path: Path,
     exclude_dirs: frozenset[str] = frozenset(),
     checks: list[str] | None = None,
+    request=None,
 ) -> None:
     """Run ``pyutilz.dev.code_audit.run_all()`` against ``root`` and either
     seed/refresh ``baseline_path`` (first run, or ``--refresh-code-audit-baseline``
@@ -111,6 +127,11 @@ def assert_no_new_code_audit_findings(
             ``DEFAULT_EXCLUDE_DIRS`` (cache/vcs dirs every repo needs).
         checks: optional subset of check names to run (``None`` runs every
             registered scanner, the normal case).
+        request: the pytest ``request`` fixture, if the caller's test function
+            accepts one. Pass it whenever the repo's ``addopts``/CI invocation
+            may run under pytest-xdist (``-n``) -- without it, the refresh flag
+            is detected via ``sys.argv``, which xdist worker subprocesses don't
+            reliably carry (see ``_refresh_requested``).
     """
     import orjson
     import pytest
@@ -121,7 +142,7 @@ def assert_no_new_code_audit_findings(
     current_by_key = {_key(f): f for f in current}
     current_keys = set(current_by_key)
 
-    if _refresh_requested() or not baseline_path.exists():
+    if _refresh_requested(request) or not baseline_path.exists():
         baseline_path.write_text(
             orjson.dumps(sorted(current_keys), option=orjson.OPT_INDENT_2).decode("utf-8"),
             encoding="utf-8",
