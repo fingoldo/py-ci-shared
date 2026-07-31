@@ -37,13 +37,13 @@ def _format_warn_reselected_ignore() -> list[str]:
     sys.path.insert(0, str(REPO_ROOT / "src"))
     from py_ci_shared.format_warn import _RESELECTED_IGNORE
 
-    return _RESELECTED_IGNORE
+    return list(_RESELECTED_IGNORE)
 
 
 def _ruff_base_ignore() -> list[str]:
     with open(REPO_ROOT / "configs" / "ruff-base.toml", "rb") as f:
         data = tomllib.load(f)
-    return data["lint"]["ignore"]
+    return list(data["lint"]["ignore"])
 
 
 def test_format_warn_reselected_ignore_matches_ruff_base_ignore_subset():
