@@ -13,9 +13,16 @@ on:
   workflow_call:
     inputs:
       package-name:
-        description: 'Import name of the package, e.g. "mlframe" (checks src/<package-name>)'
+        description: 'Import name of the package, e.g. "mlframe" (checks src/<package-name> unless package-path overrides it)'
         required: true
         type: string
+      package-path:
+        description: >-
+          Path to the package directory, relative to repo root, when it is NOT under src/<package-name>
+          (e.g. a repo with the package at its own root, like autopsia's "autopsia/"). Defaults to
+          "src/<package-name>" so every existing caller (mlframe, pyutilz) is unaffected.
+        type: string
+        default: ""
       install-command:
         description: "Shell command(s) to install the package + its extras, run from repo root"
         required: true
@@ -66,7 +73,8 @@ jobs:
           INPUTS_MYPY_VERSION: ${{ inputs.mypy-version }}
 
       - name: MyPy (whole project)
-        run: mypy "src/${INPUTS_PACKAGE_NAME}"
+        run: mypy "${INPUTS_PACKAGE_PATH:-src/$INPUTS_PACKAGE_NAME}"
         continue-on-error: ${{ inputs.advisory }}
         env:
           INPUTS_PACKAGE_NAME: ${{ inputs.package-name }}
+          INPUTS_PACKAGE_PATH: ${{ inputs.package-path }}
