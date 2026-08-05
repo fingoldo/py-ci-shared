@@ -1,5 +1,9 @@
 # py-ci-shared
 
+[![CI](https://github.com/fingoldo/py-ci-shared/workflows/CI/badge.svg)](https://github.com/fingoldo/py-ci-shared/actions/workflows/self-ci.yml)
+[![Config drift check](https://github.com/fingoldo/py-ci-shared/actions/workflows/config-drift-check.yml/badge.svg)](https://github.com/fingoldo/py-ci-shared/actions/workflows/config-drift-check.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and future repos). Single source of truth for the CI/lint conventions that used to be independently duplicated (and drift) across each project's `.github/workflows/`, `scripts/`, and `pyproject.toml`.
 
 Two things live here, each solving a different half of the duplication:
