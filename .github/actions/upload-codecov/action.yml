@@ -1,0 +1,42 @@
+name: Upload coverage to Codecov
+description: >-
+  Wraps codecov/codecov-action with the correct `files` (plural) input pinned in one place.
+  codecov-action v5+ renamed its single-file input from `file` to `files`; the stale singular
+  name is silently ignored (an easy-to-miss "Unexpected input(s) 'file'" warning), so the upload
+  reports success but attaches no actual coverage report -- codecov's own commit API then shows
+  "state": "error" with all-zero totals, and the badge sits at 0% forever, even on a CI run that
+  completed cleanly with no cancellation involved. Both mlframe and pyutilz independently carried
+  this exact bug (mlframe's `file:` typo went unnoticed for weeks); centralizing the upload step
+  here means the correct input name only has to be right once, not once per consuming repo per
+  workflow. Extracted 2026-08-13.
+
+inputs:
+  files:
+    description: 'Coverage report path(s), comma-separated -- forwarded to codecov-action''s `files` input.'
+    required: true
+  flags:
+    description: 'Optional comma-separated codecov flags (e.g. "numba-disabled").'
+    required: false
+    default: ""
+  token:
+    description: >-
+      CODECOV_TOKEN secret. Must be passed explicitly -- composite actions cannot read the
+      calling workflow's secrets context on their own.
+    required: true
+  fail-ci-if-error:
+    description: >-
+      Whether a codecov upload failure should fail the job. Defaults to false (matches both
+      prior inline call sites) so a codecov outage never blocks CI.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+      with:
+        files: ${{ inputs.files }}
+        flags: ${{ inputs.flags }}
+        fail_ci_if_error: ${{ inputs.fail-ci-if-error }}
+        token: ${{ inputs.token }}
