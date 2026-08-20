@@ -12,6 +12,17 @@ inputs:
   project-extras:
     description: 'The calling project''s own extras spec, e.g. ".[all,dev]" or "."'
     required: true
+  pyutilz-ref:
+    description: >-
+      Optional pyutilz commit SHA to pin. Without this, "Clone pyutilz" always resolves to
+      whatever pyutilz's default branch tip is AT RUN TIME -- the calling project's own pinned-SHA
+      documentation (a bump commit + a comment citing it) has no effect on this action, since
+      nothing here ever reads it; every caller silently installs a moving target. Leave unset for
+      that (pre-existing) unpinned behavior; set it to pin, matching the explicit
+      "git -C pyutilz checkout <sha>" line every OTHER pyutilz-cloning workflow in the calling
+      project already carries next to this same clone step.
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -19,6 +30,17 @@ runs:
     - name: Clone pyutilz
       shell: bash
       run: git clone --depth 1 https://github.com/fingoldo/pyutilz.git
+
+    - name: Pin pyutilz to a specific commit
+      if: ${{ inputs.pyutilz-ref != '' }}
+      shell: bash
+      env:
+        INPUTS_PYUTILZ_REF: ${{ inputs.pyutilz-ref }}
+      # The clone above is --depth 1 (tip only), so an older/different SHA isn't present yet --
+      # fetch just that one commit (still shallow, not a full-history clone) before checking it out.
+      run: |
+        git -C pyutilz fetch --depth 1 origin "${INPUTS_PYUTILZ_REF}"
+        git -C pyutilz checkout "${INPUTS_PYUTILZ_REF}"
 
     - name: Install pyutilz + project in one uv resolution
       shell: bash
