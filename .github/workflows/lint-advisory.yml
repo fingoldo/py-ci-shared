@@ -114,7 +114,23 @@ jobs:
         if: inputs.pydoclint-source-path != ''
         run: |
           uv pip install --system pydoclint
-          pydoclint --style=google "${INPUTS_PYDOCLINT_SOURCE_PATH}"
+          # pydoclint's own pyproject.toml auto-discovery looks for the config file relative to
+          # the SCANNED PATH's own directory (findCommonParentFolder of the path args), not the
+          # invocation cwd -- so `pydoclint --style=google src/mlframe` never finds a repo-root
+          # pyproject.toml at all (confirmed against pydoclint 0.9.1's parse_config.py). A calling
+          # repo's [tool.pydoclint] tuning (e.g. disabling checks that clash with a terse-
+          # docstring house style) silently never took effect without this. Pass --config
+          # explicitly only when the calling repo actually HAS a [tool.pydoclint] section --
+          # passing --config unconditionally would make pydoclint's own CLI enforce the section's
+          # presence (enforcePydoclintSection=True whenever --config comes from the command line)
+          # and hard-error on any repo using this reusable workflow WITHOUT one, turning a
+          # currently-fine "run with defaults" repo into a broken advisory job.
+          PYPROJECT="${GITHUB_WORKSPACE}/pyproject.toml"
+          CONFIG_ARGS=()
+          if [ -f "$PYPROJECT" ] && grep -q '^\[tool\.pydoclint\]' "$PYPROJECT"; then
+            CONFIG_ARGS=(--config "$PYPROJECT")
+          fi
+          pydoclint --style=google "${CONFIG_ARGS[@]}" "${INPUTS_PYDOCLINT_SOURCE_PATH}"
         continue-on-error: true
         env:
           INPUTS_PYDOCLINT_SOURCE_PATH: ${{ inputs.pydoclint-source-path }}
