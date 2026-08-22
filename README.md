@@ -38,16 +38,31 @@ jobs:
 
 See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`.
 
-**Pin to a tagged release (`@v1.0.0`), not `@master` or `@main`.** Tagged releases exist precisely
-because a floating `@master` ref means any push to this repo instantly changes CI behavior for
-every consumer with no review gate in between (flagged in a 2026-07-09 CI/CD architecture review;
-`mlframe` and `pyutilz` both floated on `@master` before this tag existed). Bump the pin in both
-consumers deliberately when a new tag is cut, so a behavior change is a reviewable diff instead of
-an invisible side effect of an unrelated commit here. `@main` specifically never resolves at
-all — this repo's default branch is `master` — and GitHub does not fall back to the actual default
-branch when a `uses:` ref doesn't resolve; a stale/wrong ref fails the whole calling workflow at
-parse time with "reference to workflow should be either a valid branch, tag, or commit" and zero
-jobs ever run, which is easy to lose time to since the error never shows up in any job log.
+**Use the moving `@v1` tag (2026-08-22 policy change).** `v1` always points at the latest `v1.x`
+release, so cutting a release here propagates to every consumer at once — no per-repo SHA bump.
+Re-point it as part of each release:
+
+```bash
+git tag -f -a v1 -m "…" && git push -f origin v1
+```
+
+This replaces the previous "pin every consumer to an exact tag/SHA" rule, which did not survive
+contact with reality: consumers drifted onto *different* pins of the same workflow (`algopacksimple`
+held three distinct SHAs across its own workflow files, `llm_bench` two), and the manual bump was
+skipped often enough that most satellites sat many releases behind. The old rule's stated benefit —
+"a behavior change is a reviewable diff, not an invisible side effect" — assumed CI actually runs
+and gates on every consumer; for private repos out of free GitHub Actions minutes that review gate
+was fictional, so the pin bought toil without buying safety.
+
+Still pin to a full SHA when *you* are not the owner of the upstream: the threat a SHA pin defends
+against is an upstream maintainer moving a tag under you, which does not apply to a first-party
+repo (whoever could move this tag could equally push to the consumer directly).
+
+`@main` specifically never resolves at all — this repo's default branch is `master` — and GitHub
+does not fall back to the actual default branch when a `uses:` ref doesn't resolve; a stale/wrong
+ref fails the whole calling workflow at parse time with "reference to workflow should be either a
+valid branch, tag, or commit" and zero jobs ever run, which is easy to lose time to since the error
+never shows up in any job log.
 
 ## Using the installable package
 
@@ -128,8 +143,8 @@ same as `code_audit_meta`'s flag above.
 Fails if any `pyproject.toml` git-URL dependency (`name @ git+https://host/path@ref`) isn't pinned
 to a full 40-hex-character commit SHA — a branch name, tag, or short SHA all mean a fresh install
 can silently resolve to a different commit than the one actually developed/tested against. No
-baseline/refresh mechanism: an unpinned git dependency is unconditionally wrong, so there's no
-legitimate grandfathered case.
+baseline/refresh mechanism: for a **third-party** git dependency the SHA pin is the only defence,
+so there's no legitimate grandfathered case.
 
 ```python
 from pathlib import Path
@@ -138,6 +153,22 @@ from py_ci_shared.git_dependency_pins import assert_all_git_dependencies_pinned
 def test_all_git_dependencies_pinned():
     assert_all_git_dependencies_pinned(Path(__file__).resolve().parents[2] / "pyproject.toml")
 ```
+
+**First-party exemption** (`allow_unpinned_url_prefixes`, added 2026-08-22): a satellite that
+depends on another repo *the same owner controls* may declare it without a SHA and let its
+committed lockfile (`uv.lock`) pin the resolved commit instead. Reproducibility is unchanged — the
+lock is the pin — while bumping becomes `uv lock --upgrade-package <name>` rather than
+hand-copying a 40-hex string into every satellite:
+
+```python
+    assert_all_git_dependencies_pinned(
+        Path(__file__).resolve().parents[2] / "pyproject.toml",
+        allow_unpinned_url_prefixes=("git+https://github.com/fingoldo/",),
+    )
+```
+
+Only exempt a URL that a lockfile actually covers, and only for first-party upstreams; the
+allowlist defaults to empty, so third-party deps keep the strict behaviour.
 
 ## CI continue-on-error gate check (`ci_workflow_gate`)
 

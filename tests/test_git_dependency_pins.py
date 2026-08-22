@@ -86,6 +86,28 @@ class TestFindUnpinnedGitDependencies:
         assert find_unpinned_git_dependencies(p) == ["main"]
 
 
+class TestFirstPartyAllowlist:
+    """``allow_unpinned_url_prefixes`` exempts first-party URLs only -- a
+    third-party dependency in the same file must still be flagged."""
+
+    def test_allowlisted_prefix_exempts_a_ref_less_url(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/fingoldo/mypkg.git",')
+        assert find_unpinned_git_dependencies(p) == ["<no ref>"]
+        assert find_unpinned_git_dependencies(p, allow_unpinned_url_prefixes=("git+https://github.com/fingoldo/",)) == []
+
+    def test_allowlisted_prefix_exempts_a_branch_ref(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/fingoldo/mypkg.git@master",')
+        assert find_unpinned_git_dependencies(p, allow_unpinned_url_prefixes=("git+https://github.com/fingoldo/",)) == []
+
+    def test_non_allowlisted_third_party_still_flagged(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"other @ git+https://github.com/someoneelse/other.git@master",')
+        assert find_unpinned_git_dependencies(p, allow_unpinned_url_prefixes=("git+https://github.com/fingoldo/",)) == ["master"]
+
+    def test_empty_allowlist_is_the_default_strict_behaviour(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/fingoldo/mypkg.git@master",')
+        assert find_unpinned_git_dependencies(p) == ["master"]
+
+
 class TestAssertAllGitDependenciesPinned:
     def test_passes_silently_when_all_pinned(self, tmp_path):
         p = _write_pyproject(tmp_path, f'"mypkg @ git+https://github.com/org/mypkg.git@{_FULL_SHA}",')
@@ -95,6 +117,12 @@ class TestAssertAllGitDependenciesPinned:
         p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/org/mypkg.git@master",')
         with pytest.raises(pytest.fail.Exception, match="not pinned to a full commit SHA"):
             assert_all_git_dependencies_pinned(p)
+
+    def test_allowlist_reaches_the_assert_wrapper(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"mypkg @ git+https://github.com/fingoldo/mypkg.git",')
+        with pytest.raises(pytest.fail.Exception):
+            assert_all_git_dependencies_pinned(p)
+        assert_all_git_dependencies_pinned(p, allow_unpinned_url_prefixes=("git+https://github.com/fingoldo/",))  # must not raise
 
 
 def test_this_repos_own_pyproject_toml_is_clean():

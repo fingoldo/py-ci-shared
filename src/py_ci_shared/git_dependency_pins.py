@@ -26,6 +26,7 @@ matching this package's other modules.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 # A git URL dependency, PEP 508 direct-reference form: `name @ git+URL[@ref]`. Captures the
@@ -67,7 +68,11 @@ def _extract_ref(git_url: str) -> str | None:
     return after_host.rsplit("@", 1)[1]
 
 
-def find_unpinned_git_dependencies(pyproject_path: Path) -> list[str]:
+def find_unpinned_git_dependencies(
+    pyproject_path: Path,
+    *,
+    allow_unpinned_url_prefixes: Sequence[str] = (),
+) -> list[str]:
     """Return every git-dependency line in ``pyproject_path`` whose ref is
     NOT a full 40-hex-character commit SHA (a branch name, a tag, a
     short/abbreviated SHA, or NO REF AT ALL all count as unpinned -- only
@@ -76,15 +81,35 @@ def find_unpinned_git_dependencies(pyproject_path: Path) -> list[str]:
     floats on whatever the default branch's HEAD happens to be at install
     time).
 
-    Returns the raw ref string found for each violation (e.g. ``"master"``,
-    ``"v1.2.0"``, or the literal string ``"<no ref>"`` when none is present
-    at all), not line numbers -- pyproject.toml dependency arrays are
-    typically short enough that this is enough to locate the line.
+    Args:
+        pyproject_path: The ``pyproject.toml`` to scan.
+        allow_unpinned_url_prefixes: Git-URL prefixes exempt from the pin
+            requirement -- intended for FIRST-PARTY dependencies (an upstream
+            the same owner controls), where the supply-chain threat the SHA
+            pin defends against does not apply: whoever could move the
+            upstream ref could equally push to this repo directly, so the
+            pin buys ~nothing while costing a hand-maintained SHA bump in
+            every satellite on each upstream release. Only exempt a URL when
+            a committed lockfile (``uv.lock``/``poetry.lock``) still pins the
+            resolved commit -- the lock, not the pyproject line, is then what
+            provides reproducibility. Leave empty (the default) for
+            third-party git dependencies, where the SHA pin is the only
+            defence and remains mandatory.
+
+    Returns:
+        The raw ref string found for each violation (e.g. ``"master"``,
+        ``"v1.2.0"``, or the literal string ``"<no ref>"`` when none is
+        present at all), not line numbers -- pyproject.toml dependency
+        arrays are typically short enough that this is enough to locate
+        the line.
     """
     text = pyproject_path.read_text(encoding="utf-8")
     violations = []
     for m in _GIT_DEP_RE.finditer(text):
-        ref = _extract_ref(m.group(1))
+        git_url = m.group(1)
+        if any(git_url.startswith(prefix) for prefix in allow_unpinned_url_prefixes):
+            continue
+        ref = _extract_ref(git_url)
         if ref is None:
             violations.append("<no ref>")
         elif not _FULL_SHA_RE.match(ref):
@@ -92,17 +117,28 @@ def find_unpinned_git_dependencies(pyproject_path: Path) -> list[str]:
     return violations
 
 
-def assert_all_git_dependencies_pinned(pyproject_path: Path) -> None:
+def assert_all_git_dependencies_pinned(
+    pyproject_path: Path,
+    *,
+    allow_unpinned_url_prefixes: Sequence[str] = (),
+) -> None:
     """Fail if any git-URL dependency in ``pyproject_path`` isn't pinned to
     a full 40-hex-character commit SHA. Call this directly as the body of
     a ``test_*`` function -- no baseline/refresh mechanism, unlike the
-    code-audit/LOC-budget helpers in this package, since an unpinned git
-    dependency is unconditionally wrong (there's no legitimate "grandfathered"
-    case for a reproducibility guarantee).
+    code-audit/LOC-budget helpers in this package, since an unpinned
+    THIRD-PARTY git dependency is unconditionally wrong (there's no
+    legitimate "grandfathered" case for a reproducibility guarantee).
+
+    Args:
+        pyproject_path: The ``pyproject.toml`` to scan.
+        allow_unpinned_url_prefixes: First-party git-URL prefixes exempt from
+            the pin requirement -- see
+            :func:`find_unpinned_git_dependencies` for when that is
+            defensible and what has to hold instead (a committed lockfile).
     """
     import pytest
 
-    violations = find_unpinned_git_dependencies(pyproject_path)
+    violations = find_unpinned_git_dependencies(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)
     if violations:
         pytest.fail(
             f"{len(violations)} git-URL dependenc{'y is' if len(violations) == 1 else 'ies are'} "
