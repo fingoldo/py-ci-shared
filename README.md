@@ -31,7 +31,7 @@ on:
   pull_request: {branches: [main, master]}
 jobs:
   black:
-    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@v1.0.0
+    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@v1
     with:
       check-path: src/mlframe
 ```
@@ -67,7 +67,7 @@ never shows up in any job log.
 ## Using the installable package
 
 ```bash
-pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.0.0"
+pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
 ```
 
 Then, in place of the old `python scripts/black_filtered_apply.py ...`:
