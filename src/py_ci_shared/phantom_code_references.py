@@ -188,9 +188,7 @@ def _comment_lines(path: Path) -> list[tuple[int, str]]:
     return out
 
 
-def find_phantom_code_references(
-    files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = ()
-) -> list[str]:
+def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = ()) -> list[str]:
     """``"<rel>:<line>: `<token>` names nothing in this repo"`` for every backticked reference in a comment
     or docstring that resolves to neither a test file under ``repo_root`` nor a declared name.
 
