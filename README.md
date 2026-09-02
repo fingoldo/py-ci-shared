@@ -70,6 +70,16 @@ never shows up in any job log.
 pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
 ```
 
+To hack on this repo itself, install a local clone in editable mode instead, so edits under `src/py_ci_shared` take effect without reinstalling. The `[dev]` extra pulls in `pytest`, `black`, `pydantic`, and `pyutilz` (needed by the test suite and by `code_audit_meta`); drop it for a runtime-only install:
+
+```bash
+git clone https://github.com/fingoldo/py-ci-shared.git
+cd py-ci-shared
+pip install -e ".[dev]"
+```
+
+Quote the argument: unquoted `[dev]` is glob syntax in most shells (and `pip install -e .[dev]` fails outright in zsh). On Windows, call the interpreter explicitly (`python.exe -m pip install -e ".[dev]"`) so the install lands in the environment you expect. The console scripts (`safe-precommit`, `py-ci-install-safe-hook`, `py-ci-setup-env`) are on `PATH` right after this, and `python -m py_ci_shared.setup_env` will point `PY_CI_SHARED_DIR` at the clone.
+
 Then, in place of the old `python scripts/black_filtered_apply.py ...`:
 
 ```bash
