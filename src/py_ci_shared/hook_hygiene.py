@@ -42,6 +42,7 @@ Usage::
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 # `[ -f x ] && cmd`, `[ -x x ] && cmd`, `command -v x >/dev/null && cmd` on one line: the `&&` form
@@ -55,6 +56,11 @@ _LOUD_RE = re.compile(r"\bexit\s+[1-9]|\bWARNING\b|\bERROR\b|\bMISSING\b", re.IG
 _GIT_ADD_ALL_RE = re.compile(r"^\s*git\s+add\s+(-u|-A|--all|--update)\b")
 _GREP_VERDICT_RE = re.compile(r"""(?:analyze|lint|test|check)[^\n|]*\|\s*grep\s+[^|\n]*["'](?:error|warning)\b""")
 _CHECK_SCRIPT_RE = re.compile(r"(tool/[\w.-]*check[\w.-]*\.(?:sh|py))")
+# The path a `[ -f ... ]` / `if [ -f ... ]` conditional is testing for.
+_GUARDED_PATH_RE = re.compile(r"\[\s*-[fxe]\s+([^\]]+?)\s*\]")
+# A runner that ENUMERATES guards rather than listing them one by one:
+# `for candidate in tool/check-*.sh`. Verified, not trusted - see the parity rule below.
+_GUARD_GLOB_RE = re.compile(r"tool/check[-_]?\*|tool/check[\w-]*\*")
 
 
 def _hook_files(hooks_dir: Path) -> list[Path]:
@@ -66,8 +72,10 @@ def _hook_files(hooks_dir: Path) -> list[Path]:
 def find_hook_hygiene_problems(
     hooks_dir: Path,
     *,
+    repo_root: "Path | None" = None,
     workflows_dir: "Path | None" = None,
     manual_only_file: "Path | None" = None,
+    runner_scripts: Sequence[str] = (),
     check_grep_verdicts: bool = True,
 ) -> list[str]:
     """Return one problem string per silent skip, self-staging hook, text-derived verdict, or
@@ -85,13 +93,21 @@ def find_hook_hygiene_problems(
             stripped = line.strip()
             if stripped.startswith("#"):
                 continue
-            if _INLINE_GUARD_RE.match(line) and "check" in line:
+            guarded = _GUARDED_PATH_RE.search(line)
+            guard_exists = False
+            if repo_root and guarded:
+                # Hooks write `"$PROJECT_ROOT/tool/check-x.sh"`; the variable is the repo root,
+                # so strip it before resolving rather than reporting a healthy guard as missing.
+                candidate = guarded.group(1).strip("\"'")
+                candidate = re.sub(r"^\$\{?\w+\}?/", "", candidate)
+                guard_exists = (repo_root / candidate).exists()
+            if _INLINE_GUARD_RE.match(line) and "check" in line and not guard_exists:
                 problems.append(
                     f"{path.name}:{i}: `{stripped[:90]}` - a `&&` guard with no else branch. When "
                     f"the file is missing the hook passes, so a deleted or renamed guard reads as "
                     f"coverage forever. Fail (or print a WARNING) in the missing case."
                 )
-            if _IF_GUARD_RE.match(line) and "check" in line:
+            if _IF_GUARD_RE.match(line) and "check" in line and not guard_exists:
                 block: list[str] = []
                 for follow in lines[i - 1 :]:
                     block.append(follow)
@@ -130,7 +146,30 @@ def find_hook_hygiene_problems(
                 name = line.split("#", 1)[0].strip()
                 if name:
                     manual.add(name if name.startswith("tool/") else f"tool/{name}")
-        hook_only = sorted(g for g in hook_guards - ci_guards if g not in manual and Path(g).name not in {Path(m).name for m in manual})
+        # A workflow may run every guard through ONE runner instead of naming each. That is the
+        # better shape, and a text comparison cannot see it - so the claim is checked rather than
+        # trusted: the named runner must exist AND discover guards by glob, or it is not standing
+        # in for anything and the guards really are hook-only.
+        runner_covers_everything = False
+        for runner in runner_scripts:
+            if runner not in ci_text:
+                continue
+            runner_path = (repo_root / runner) if repo_root else Path(runner)
+            if not runner_path.is_file():
+                problems.append(f"CI runs {runner}, which does not exist - the guards it was supposed to run " f"are running nowhere.")
+                continue
+            if _GUARD_GLOB_RE.search(runner_path.read_text(encoding="utf-8", errors="replace")):
+                runner_covers_everything = True
+            else:
+                problems.append(
+                    f"CI runs {runner}, but that script does not discover guards by glob, so it " f"cannot be standing in for the ones CI never names."
+                )
+
+        hook_only = (
+            []
+            if runner_covers_everything
+            else sorted(g for g in hook_guards - ci_guards if g not in manual and Path(g).name not in {Path(m).name for m in manual})
+        )
         if hook_only:
             problems.append(
                 f"{len(hook_only)} guard(s) run on the hook but never in CI, and are not listed in "
@@ -144,8 +183,10 @@ def find_hook_hygiene_problems(
 def assert_hooks_are_honest(
     hooks_dir: Path,
     *,
+    repo_root: "Path | None" = None,
     workflows_dir: "Path | None" = None,
     manual_only_file: "Path | None" = None,
+    runner_scripts: Sequence[str] = (),
     check_grep_verdicts: bool = True,
 ) -> None:
     """Fail on a silent skip, a self-staging hook, a text-derived verdict, or a hook-only guard."""
@@ -153,8 +194,10 @@ def assert_hooks_are_honest(
 
     problems = find_hook_hygiene_problems(
         hooks_dir,
+        repo_root=repo_root,
         workflows_dir=workflows_dir,
         manual_only_file=manual_only_file,
+        runner_scripts=runner_scripts,
         check_grep_verdicts=check_grep_verdicts,
     )
     if problems:

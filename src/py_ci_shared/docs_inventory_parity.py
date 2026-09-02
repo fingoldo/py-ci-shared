@@ -131,7 +131,9 @@ def find_extras_documentation_drift(
         if phantom:
             problems.append(f"{doc_path.name}: [{group}] description names {phantom}, which the group does not contain")
     problems.extend(
-        f"{doc_path.name}: install block documents extras group [{group}], which pyproject.toml does not declare" for group in sorted(documented) if group not in optional_dependencies
+        f"{doc_path.name}: install block documents extras group [{group}], which pyproject.toml does not declare"
+        for group in sorted(documented)
+        if group not in optional_dependencies
     )
     return problems
 
@@ -236,7 +238,14 @@ def find_phantom_doc_paths(doc_paths: Sequence[Path], repo_root: Path, *, search
                     continue
                 if any((root / target).exists() or any(root.glob(target)) for root in roots):
                     continue
-                problems.append(f"{doc_path.name}:{line_number}: `{target}` does not exist in the repo")
+                # Repo-relative when possible: a project with both `README.md` and
+                # `lib/src/README.md` gets two findings labelled `README.md:5` otherwise, and the
+                # reader cannot tell which file to open.
+                try:
+                    label = doc_path.resolve().relative_to(repo_root.resolve()).as_posix()
+                except (ValueError, OSError):
+                    label = doc_path.name
+                problems.append(f"{label}:{line_number}: `{target}` does not exist in the repo")
     return problems
 
 

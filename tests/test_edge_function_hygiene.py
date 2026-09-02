@@ -96,6 +96,13 @@ class TestSecretsAndLogging:
         root = _functions(tmp_path, enrich=body)
         assert find_edge_function_problems(root) == []
 
+    def test_redacting_the_variable_named_ip_also_passes(self, tmp_path):
+        # The fix keeps the variable name; matching on the name alone made the rule impossible
+        # to satisfy, which is how it reported thirteen already-fixed lines.
+        body = "console.log(`Skipping malformed IP: ${redactIp(ip)}`);"
+        root = _functions(tmp_path, enrich=body)
+        assert find_edge_function_problems(root) == []
+
     def test_first_forwarded_hop_is_flagged(self, tmp_path):
         body = 'const ip = req.headers.get("x-forwarded-for")?.split(",")[0];'
         root = _functions(tmp_path, log_login=body)

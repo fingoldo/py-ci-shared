@@ -56,6 +56,20 @@ class TestFindGuardsWithEmptyPopulation:
         tool, root = _repo(tmp_path, "#!/bin/sh\npython tool/other.py\n", "lib/a.dart")
         assert find_guards_with_empty_population(tool, root) == []
 
+    def test_a_violation_search_is_not_a_population(self, tmp_path):
+        # `grep -rn 'forbidden'` finding nothing is the guard PASSING. Reading that as an empty
+        # population reported two healthy guards as broken.
+        tool, root = _repo(
+            tmp_path,
+            "#!/bin/sh\nroot=\"$PWD\"\ngrep -rn 'Supabase.instance.client' \"$root/lib\" --include='*.dart'\n",
+            "lib/a.dart",
+        )
+        assert find_guards_with_empty_population(tool, root) == []
+
+    def test_a_file_listing_grep_is_still_a_population(self, tmp_path):
+        tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'NeverAppears' lib\n", "lib/a.dart")
+        assert len(find_guards_with_empty_population(tool, root)) == 1
+
     def test_skip_list_is_honoured(self, tmp_path):
         tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'Nope' lib\n", "lib/a.dart")
         assert find_guards_with_empty_population(tool, root, skip=["check-x.sh"]) == []

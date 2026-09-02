@@ -34,9 +34,13 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
-# The first file-selecting command in a guard: `grep -rl PATTERN DIR`, `find DIR -name ...`,
-# `ls DIR/*.dart`. Captured whole so it can be re-run verbatim.
-_POPULATION_RE = re.compile(r"^\s*(?:for\s+\w+\s+in\s+)?\$?\(?\s*((?:grep\s+-[rRl]+[^\n|;)]*|find\s+[^\n|;)]*|ls\s+[^\n|;)]*))")
+# The first file-SELECTING command in a guard: `grep -rl PATTERN DIR` (list the files to
+# examine), `find DIR -name ...`, `ls DIR/*.dart`. Captured whole so it can be re-run verbatim.
+#
+# `grep -rn 'forbidden'` is deliberately NOT a selector: that shape searches for a violation, so
+# empty output is the guard PASSING. Treating it as an empty population reported two healthy
+# guards as broken, which is the same false-positive class this check exists to remove.
+_POPULATION_RE = re.compile(r"^\s*(?:for\s+\w+\s+in\s+)?\$?\(?\s*((?:grep\s+-[a-zA-Z]*l[a-zA-Z]*\s[^\n|;)]*|find\s+[^\n|;)]*|ls\s+[^\n|;)]*))")
 # A script that admits it may legitimately match nothing.
 _SELF_ASSERT_RE = re.compile(
     r"examining nothing|examined nothing|SKIPPED|no files to check|population is empty",
@@ -44,14 +48,53 @@ _SELF_ASSERT_RE = re.compile(
 )
 
 
+_ASSIGNMENT_RE = re.compile(r"^\s*(\w+)=(?!\s)(\S.*)$")
+
+
 def _population_command(text: str) -> "str | None":
-    for line in text.splitlines():
+    """The guard's first file-selection command, with the variable assignments it depends on.
+
+    The command is re-run verbatim, so it has to carry its own context: nearly every guard here
+    opens with ``root="$(cd "$(dirname "$0")/.." && pwd)"`` and then selects files under
+    ``"$root/lib"``. Running that line alone expands ``$root`` to the empty string, ``find "/lib"``
+    matches nothing, and this check reports a healthy guard as broken -- which is exactly the
+    false-positive shape it exists to prevent in others. Assignments seen before the selection
+    line are prepended, and ``root`` falls back to the repository directory.
+    """
+    assignments: list[str] = []
+    lines = text.splitlines()
+    for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
+        assign = _ASSIGNMENT_RE.match(line)
+        if assign:
+            # An assignment derived from the script's own location ($0, dirname) cannot be
+            # replayed here - `bash -c` has no script path - so it is dropped and `root` is
+            # seeded from the repository directory instead, which is what it would have been.
+            if "$0" not in stripped and "dirname" not in stripped:
+                assignments.append(stripped)
+            continue
         m = _POPULATION_RE.match(line)
         if m:
-            return m.group(1).strip().rstrip("\\").strip()
+            command = m.group(1).strip()
+            # A guard's selection command routinely spans lines with a trailing backslash; taking
+            # the first line alone leaves an unbalanced `\(` and matches nothing.
+            idx = lines.index(line) if line in lines else -1
+            while command.endswith("\\") and idx != -1 and idx + 1 < len(lines):
+                idx += 1
+                command = command[:-1].strip() + " " + lines[idx].strip()
+            command = command.rstrip("\\").strip()
+            # A command piped into something else keeps only the selection half.
+            command = command.split("|")[0].strip()
+            # After stripping continuations and pipes there may be nothing selective left (the
+            # regex can latch onto an assignment that merely contains the word). Reporting that
+            # as "matches nothing" would be a false positive of exactly the kind this check is
+            # meant to remove from other guards.
+            if not re.match(r"^(grep|find|ls)\b", command):
+                return None
+            prefix = "".join(f"{a}; " for a in assignments)
+            return f'root="$PWD"; {prefix}{command}'
     return None
 
 

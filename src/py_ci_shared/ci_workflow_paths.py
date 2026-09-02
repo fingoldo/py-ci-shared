@@ -51,6 +51,8 @@ _PERMISSIONS_RE = re.compile(r"^permissions:\s*(?:#.*)?$")
 _SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 # Placeholders that are not real paths: `${{ ... }}` expressions and shell variables.
 _EXPRESSION_RE = re.compile(r"\$\{\{|\$[A-Za-z_{]")
+# `cd e2e && node x.js`, `(cd tool && python y.py)` - the directory a command runs in.
+_CD_RE = re.compile(r"(?:^|[\s(&;])cd\s+([\w./-]+)")
 
 
 def _workflow_files(workflows_dir: Path) -> list[Path]:
@@ -77,16 +79,28 @@ def find_missing_workflow_paths(
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         rel = path.relative_to(repo_root) if repo_root in path.parents else path.name
 
+        current_working_dir: "str | None" = None
         for i, line in enumerate(lines, start=1):
             if line.lstrip().startswith("#"):
                 continue
             m = _WORKING_DIR_RE.match(line)
             if m:
                 value = m.group(1).strip()
+                current_working_dir = value if not _EXPRESSION_RE.search(value) else None
                 if not _EXPRESSION_RE.search(value) and not (repo_root / value).exists():
                     problems.append(f"{rel}:{i}: working-directory `{value}` does not exist. The step it " f"scopes cannot be doing what its name claims.")
             for script in _RUN_SCRIPT_RE.findall(line):
                 if _EXPRESSION_RE.search(script) or script.startswith("-"):
+                    continue
+                # A step may cd first (`(cd e2e && node probe.js)`) or carry a working-directory,
+                # so the path is relative to THAT, not to the repository root. Resolving only
+                # against the root reported healthy steps as broken.
+                bases = [repo_root]
+                for cd_dir in _CD_RE.findall(line):
+                    bases.append(repo_root / cd_dir)
+                if current_working_dir:
+                    bases.append(repo_root / current_working_dir)
+                if any((base / script).exists() for base in bases):
                     continue
                 if not (repo_root / script).exists():
                     problems.append(f"{rel}:{i}: runs `{script}`, which does not exist in the repository. A " f"guard that is not there is not coverage.")

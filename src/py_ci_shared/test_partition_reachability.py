@@ -48,7 +48,12 @@ _PW_PROJECT_NAME_RE = re.compile(r"\bname:\s*['\"]([^'\"]+)['\"]")
 _INCLUDE_TAG_RE = re.compile(r"--tags[=\s]+([\w,-]+)")
 _EXCLUDE_TAG_RE = re.compile(r"--exclude-tags[=\s]+([\w,-]+)")
 _PROJECT_SELECT_RE = re.compile(r"--project[=\s]+['\"]?([\w-]+)")
-_SKIP_RE = re.compile(r"^\s*(?:test|describe|it)\.skip\(")
+# `npx playwright test` with no --project runs every project, so nothing is unreachable.
+_BARE_PLAYWRIGHT_RE = re.compile(r"playwright\s+test(?![^\n]*--project)")
+# `test.skip('name', async () => {...})` disables a test outright. `test.skip(cond, 'reason')`
+# inside a test is a platform guard - Chromium-only CDP, a browser without service workers - and
+# flagging those buries the real ones.
+_SKIP_RE = re.compile(r"^\s*(?:test|describe|it)\.skip\(\s*['\"`]")
 _SCRIPT_SUFFIXES = (".mjs", ".js", ".ts", ".py", ".sh")
 
 
@@ -99,7 +104,7 @@ def find_unselected_projects(playwright_config: Path, runner_text: str) -> list[
         return []
     names = _PW_PROJECT_NAME_RE.findall(playwright_config.read_text(encoding="utf-8", errors="replace"))
     selected = set(_PROJECT_SELECT_RE.findall(runner_text))
-    if not selected:
+    if not selected or _BARE_PLAYWRIGHT_RE.search(runner_text):
         return []
     return [n for n in names if n not in selected]
 
@@ -109,6 +114,7 @@ def find_unreferenced_scripts(
     reference_text: str,
     *,
     skip_dir_names: Sequence[str] = ("tests", "node_modules", "test-results", "playwright-report"),
+    skip_name_patterns: Sequence[str] = (".config.", ".test.", ".spec."),
 ) -> list[str]:
     """Return every standalone script under ``script_dirs`` whose file name appears in no
     workflow, hook or index document."""
@@ -120,6 +126,9 @@ def find_unreferenced_scripts(
             if not path.is_file() or path.suffix not in _SCRIPT_SUFFIXES:
                 continue
             if any(part in skip_dir_names for part in path.parts):
+                continue
+            # A config or a test file is not a standalone script somebody has to remember to run.
+            if any(marker in path.name for marker in skip_name_patterns):
                 continue
             if path.name not in reference_text:
                 out.append(path.relative_to(d.parent).as_posix())

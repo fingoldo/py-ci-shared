@@ -42,12 +42,18 @@ _REQ_JSON_RE = re.compile(r"await\s+req\.json\s*\(\)")
 _INSERT_RE = re.compile(r"\.insert\s*\(|\.upsert\s*\(")
 _CAP_RE = re.compile(r"content-length|MAX_[A-Z_]+|\.slice\s*\(|\.length\s*[<>]", re.IGNORECASE)
 _ARRAY_CAP_RE = re.compile(r"\.length\s*>\s*\d+|\.slice\s*\(\s*0\s*,\s*\d+")
+# A function that inserts ONE row from a parsed body has no batch to cap; the rule is about a
+# request that can carry many. `insert(rows)` where rows came from an array is the shape.
+_ARRAY_INSERT_RE = re.compile(r"Array\.isArray|\.map\s*\(|\.insert\s*\(\s*\w*[Rr]ows")
 # The secret can sit on either side of the operator, so match the comparison and inspect both
 # operands: `key === env(SECRET)` and `env(SECRET) === key` are the same bug.
 _COMPARISON_RE = re.compile(r"[^=!<>\n]{0,120}(?:===|!==|==|!=)[^=\n]{0,120}")
 _SECRET_TOKEN_RE = re.compile(r"SERVICE_ROLE_KEY|_SECRET\b|_TOKEN\b|\bsecret\b|\bapiKey\b|signed_request", re.IGNORECASE)
 _DIGEST_RE = re.compile(r"digest|timingSafe|createHash|subtle\.", re.IGNORECASE)
-_LOG_IP_RE = re.compile(r"console\.(?:log|info|warn|error)\s*\([^)]*\$\{[^}]*\bip\b[^}]*\}", re.IGNORECASE)
+# An interpolation that runs the address through a redaction helper is the FIX for this
+# finding, so matching it again would make the rule impossible to satisfy.
+_REDACTION_RE = re.compile(r"redact|mask|truncate|anonymi[sz]e|hash", re.IGNORECASE)
+_LOG_IP_RE = re.compile(r"console\.(?:log|info|warn|error)\s*\([^)]*?(\$\{[^}]*\bip\b[^}]*\})", re.IGNORECASE)
 _XFF_FIRST_HOP_RE = re.compile(r"""x-forwarded-for["']?\s*\)[^;\n]*?\.split\([^)]*\)\s*\[\s*0\s*\]""", re.IGNORECASE)
 
 
@@ -107,7 +113,8 @@ def find_edge_function_problems(
         if _REQ_JSON_RE.search(source) and _INSERT_RE.search(source):
             if not _CAP_RE.search(source):
                 problems.append(f"{rel}: reads the request body and inserts it with no size cap - whatever a " f"caller sends lands in the column.")
-            if name in public and not _ARRAY_CAP_RE.search(source):
+            inserts_an_array = _ARRAY_INSERT_RE.search(source) is not None
+            if name in public and inserts_an_array and not _ARRAY_CAP_RE.search(source):
                 problems.append(
                     f"{rel}: deployed without JWT verification and has no array-length cap - one "
                     f"request from anyone on the internet can carry an unbounded batch."
@@ -124,6 +131,8 @@ def find_edge_function_problems(
                 )
 
         for m in _LOG_IP_RE.finditer(source):
+            if _REDACTION_RE.search(m.group(1)):
+                continue
             problems.append(
                 f"{rel}:{_line_of(source, m.start())}: logs a raw IP address - the platform's log " f"retention becomes undeclared personal-data retention."
             )

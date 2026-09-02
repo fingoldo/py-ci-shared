@@ -95,9 +95,19 @@ class TestScriptsAndSkips:
         assert len(skips) == 1
         assert "offline.spec.ts:1" in skips[0]
 
-    def test_indented_skip_inside_a_test_is_not_top_level(self, tmp_path):
-        _write(tmp_path, "e2e/tests/x.spec.ts", "test('a', async ({}) => {\n  test.skip(process.env.CI === '1');\n});\n")
-        assert find_permanent_skips([tmp_path / "e2e"]) != []
+    def test_conditional_skip_is_a_platform_guard_not_a_disabled_test(self, tmp_path):
+        # `test.skip(browserName !== 'chromium', ...)` is how a Chromium-only capability is
+        # guarded. Flagging those buried the genuinely disabled ones under seven lines of noise.
+        _write(
+            tmp_path,
+            "e2e/tests/x.spec.ts",
+            "test.skip(browserName !== 'chromium', 'CDP is Chromium-only');\n",
+        )
+        assert find_permanent_skips([tmp_path / "e2e"]) == []
+
+    def test_named_skip_is_a_disabled_test(self, tmp_path):
+        _write(tmp_path, "e2e/tests/y.spec.ts", "test.skip('boots offline', async () => {});\n")
+        assert len(find_permanent_skips([tmp_path / "e2e"])) == 1
 
 
 class TestAssert:

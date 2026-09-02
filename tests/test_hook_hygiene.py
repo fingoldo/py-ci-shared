@@ -48,6 +48,18 @@ class TestSilentSkips:
         )
         assert find_hook_hygiene_problems(d) == []
 
+    def test_guard_that_exists_today_is_a_latent_risk_not_a_live_hole(self, tmp_path):
+        # `[ -f x ] && x` on a committed file skips nothing right now; reporting it as a
+        # hole buried the ones that ARE skipping under twenty lines of noise.
+        d = _hooks(tmp_path, "#!/bin/sh\n[ -f tool/check-x.sh ] && sh tool/check-x.sh\n")
+        (tmp_path / "tool").mkdir()
+        (tmp_path / "tool" / "check-x.sh").write_text("#!/bin/sh\n", encoding="utf-8")
+        assert find_hook_hygiene_problems(d, repo_root=tmp_path) == []
+
+    def test_guard_that_is_missing_is_still_flagged(self, tmp_path):
+        d = _hooks(tmp_path, "#!/bin/sh\n[ -f tool/check-gone.sh ] && sh tool/check-gone.sh\n")
+        assert len(find_hook_hygiene_problems(d, repo_root=tmp_path)) == 1
+
     def test_guard_unrelated_conditional_is_not_flagged(self, tmp_path):
         d = _hooks(tmp_path, "#!/bin/sh\n[ -f .env ] && . ./.env\n")
         assert find_hook_hygiene_problems(d) == []
@@ -105,6 +117,39 @@ class TestHookVsCiParity:
     def test_parity_holds_when_ci_runs_everything(self, tmp_path):
         d, wf = self._repo(tmp_path, "#!/bin/sh\nsh tool/check-a.sh\n", "jobs:\n  a:\n    steps:\n      - run: sh tool/check-a.sh\n")
         assert find_hook_hygiene_problems(d, workflows_dir=wf) == []
+
+    def test_a_verified_runner_satisfies_parity(self, tmp_path):
+        # CI naming one runner instead of 60 guards is the better shape; the rule has to be able
+        # to see it, or it pushes projects back towards a hand-maintained list.
+        d, wf = self._repo(
+            tmp_path,
+            "#!/bin/sh\nsh tool/check-a.sh\nsh tool/check-b.sh\n",
+            "jobs:\n  a:\n    steps:\n      - run: bash tool/run-guards.sh\n",
+        )
+        (tmp_path / "tool").mkdir(exist_ok=True)
+        (tmp_path / "tool" / "run-guards.sh").write_text('#!/bin/sh\nfor g in tool/check-*.sh; do sh "$g"; done\n', encoding="utf-8")
+        problems = find_hook_hygiene_problems(d, repo_root=tmp_path, workflows_dir=wf, runner_scripts=["tool/run-guards.sh"])
+        assert problems == []
+
+    def test_a_runner_that_lists_nothing_does_not_satisfy_parity(self, tmp_path):
+        d, wf = self._repo(
+            tmp_path,
+            "#!/bin/sh\nsh tool/check-a.sh\nsh tool/check-b.sh\n",
+            "jobs:\n  a:\n    steps:\n      - run: bash tool/run-guards.sh\n",
+        )
+        (tmp_path / "tool").mkdir(exist_ok=True)
+        (tmp_path / "tool" / "run-guards.sh").write_text("#!/bin/sh\necho nothing to do\n", encoding="utf-8")
+        problems = find_hook_hygiene_problems(d, repo_root=tmp_path, workflows_dir=wf, runner_scripts=["tool/run-guards.sh"])
+        assert any("does not discover guards by glob" in x for x in problems)
+
+    def test_a_runner_that_does_not_exist_is_reported(self, tmp_path):
+        d, wf = self._repo(
+            tmp_path,
+            "#!/bin/sh\nsh tool/check-a.sh\n",
+            "jobs:\n  a:\n    steps:\n      - run: bash tool/run-guards.sh\n",
+        )
+        problems = find_hook_hygiene_problems(d, repo_root=tmp_path, workflows_dir=wf, runner_scripts=["tool/run-guards.sh"])
+        assert any("which does not exist" in x for x in problems)
 
 
 class TestAssert:

@@ -46,6 +46,22 @@ class TestPaths:
         wf, root = _repo(tmp_path, "jobs:\n  a:\n    steps:\n      - run: python tool/ok.py\n", "tool/ok.py")
         assert find_missing_workflow_paths(wf, root) == []
 
+    def test_script_resolved_against_a_cd_in_the_same_command(self, tmp_path):
+        wf, root = _repo(
+            tmp_path,
+            "jobs:\n  a:\n    steps:\n      - run: (cd e2e && node probe.js http://x 3)\n",
+            "e2e/probe.js",
+        )
+        assert find_missing_workflow_paths(wf, root) == []
+
+    def test_script_resolved_against_the_step_working_directory(self, tmp_path):
+        wf, root = _repo(
+            tmp_path,
+            "jobs:\n  a:\n    steps:\n      - working-directory: e2e\n        run: node probe.js\n",
+            "e2e/probe.js",
+        )
+        assert find_missing_workflow_paths(wf, root) == []
+
     def test_expression_valued_path_is_not_guessed_at(self, tmp_path):
         wf, root = _repo(tmp_path, "jobs:\n  a:\n    steps:\n      - working-directory: ${{ matrix.dir }}\n")
         assert find_missing_workflow_paths(wf, root) == []

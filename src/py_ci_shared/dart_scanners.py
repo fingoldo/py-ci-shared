@@ -153,6 +153,9 @@ def scan_painter_animation(files: Iterable[str], read: Reader) -> dict:
 # M7 - repaint isolation
 
 _REPEATING_ANIMATION = re.compile(r"\.repeat\s*\(|AnimatedBuilder\s*\(\s*animation:|super\(repaint:")
+# A file with no widget and no painter has no subtree to isolate: a utility that calls
+# `controller.repeat()` on a caller's controller is not the thing that repaints.
+_PAINTS_SOMETHING = re.compile(r"Widget\s+build\s*\(\s*BuildContext|extends\s+CustomPainter|extends\s+\w*Painter\b")
 _REPAINT_BOUNDARY = re.compile(r"\bRepaintBoundary\s*\(")
 _ANIMATED_BUILDER = re.compile(r"AnimatedBuilder\s*\(")
 _EXPENSIVE_CHILD = re.compile(r"\bImage\.asset\s*\(|\bImage\.network\s*\(")
@@ -165,7 +168,7 @@ def scan_repaint_isolation(files: Iterable[str], read: Reader) -> dict:
         source = read(rel)
         clean = _strip_comments(source)
         m = _REPEATING_ANIMATION.search(clean)
-        if m and not _REPAINT_BOUNDARY.search(clean):
+        if m and _PAINTS_SOMETHING.search(clean) and not _REPAINT_BOUNDARY.search(clean):
             found[_key(found, rel)] = (
                 f"repeating animation (line {_line_of(clean, m.start())}) with no RepaintBoundary "
                 f"in the file - everything painted beneath it repaints every frame"
@@ -185,6 +188,8 @@ def scan_repaint_isolation(files: Iterable[str], read: Reader) -> dict:
 
 _ENUM_HEAD = re.compile(r"\benum\s+(\w+)\s*\{")
 _ENUM_STRING_ARG = re.compile(r"""\(\s*['"]([A-Z][^'"]{2,})['"]""")
+# An all-caps token is a code (currency, locale, HTTP verb), not a sentence anyone reads.
+_CODE_LIKE_RE = re.compile(r"^[A-Z0-9_]+$")
 _LITERAL_TEXT = re.compile(
     r"""(?:\bText\s*\(\s*|\btooltip:\s*|\blabel:\s*|\bhintText:\s*|\bsemanticLabel:\s*|\btitle:\s*Text\s*\(\s*)['"]([A-Z][^'"]{3,})['"]"""
 )
@@ -197,7 +202,16 @@ def scan_hardcoded_ui_strings(
     files: Iterable[str],
     read: Reader,
     *,
-    palette_markers: Sequence[str] = ("palette", "theme_colors", "colors.dart", "painter"),
+    palette_markers: Sequence[str] = (
+        "palette",
+        "theme_colors",
+        "colors.dart",
+        "painter",
+        "/styles/",
+        "_style.dart",
+        "high_contrast",
+        "min_tap_target_box",
+    ),
 ) -> dict:
     """User-visible text or colour baked into Dart instead of coming from l10n / the palette."""
     found: dict[str, str] = {}
@@ -208,7 +222,10 @@ def scan_hardcoded_ui_strings(
 
         for em in _ENUM_HEAD.finditer(clean):
             body = _balanced_body(clean, clean.find("{", em.end() - 1))
-            for sm in _ENUM_STRING_ARG.finditer(body):
+            # Only the constant list, which ends at the first `;`. A Dart enum may carry methods,
+            # and a log message inside one of them is not a display string.
+            constants = body.split(";", 1)[0]
+            for sm in _ENUM_STRING_ARG.finditer(constants):
                 found[_key(found, rel)] = (
                     f"enum {em.group(1)} carries the display string {sm.group(1)!r} - an enum is " f"an identity, and a name in it can never be translated"
                 )
@@ -224,6 +241,8 @@ def scan_hardcoded_ui_strings(
             )
 
         for m in _CAPITALISED_FALLBACK.finditer(clean):
+            if _CODE_LIKE_RE.match(m.group(1)):
+                continue
             found[_key(found, rel)] = (
                 f"capitalised fallback ?? {m.group(1)!r} (line {_line_of(clean, m.start())}) - a " f"default that renders in English whatever the locale"
             )
@@ -243,11 +262,23 @@ _SPINNER = re.compile(r"CircularProgressIndicator\s*\(")
 _TAPPABLE = re.compile(r"\b(?:InkWell|GestureDetector)\s*\(")
 _ON_TAP = re.compile(r"\bonTap:\s*(?!null)")
 _ON_DOUBLE_TAP = re.compile(r"\bonDoubleTap:\s*(?!null)")
-_MIN_TAP_TARGET = re.compile(r"\bMinTapTargetBox\s*\(")
-_SEMANTICS_BUTTON = re.compile(r"Semantics\s*\(\s*(?:[^()]*?)button:\s*true", re.DOTALL)
+# Either the shared helper, or an explicit constraint naming the same constant: a widget that
+# writes `ConstrainedBox(minHeight: AppConstants.minTapTarget)` has done the thing the helper
+# exists to do, and demanding the helper by name would be a style rule wearing an a11y label.
+_MIN_TAP_TARGET = re.compile(r"\bMinTapTargetBox\s*\(|\bminTapTarget\b")
+# Any announced ROLE, not just `button: true`: a segmented control is correctly announced with
+# inMutuallyExclusiveGroup/checked, and a like button with toggled. Demanding `button: true`
+# everywhere would push widgets towards the WRONG role.
+_SEMANTICS_BUTTON = re.compile(
+    r"Semantics\s*\(\s*(?:[^()]*?)(?:button:\s*true|inMutuallyExclusiveGroup:|checked:|selected:|toggled:)",
+    re.DOTALL,
+)
 _NAMED_CONTEXT_PARAM = re.compile(r"\{[^}]*?required\s+BuildContext\s+context\b", re.DOTALL)
 _BUILD_HELPER = re.compile(r"\bWidget\s+_build\w*\s*\(")
 _TOOLTIP_MESSAGE = re.compile(r"Tooltip\s*\(\s*message:\s*([^,\n]+)")
+_SEMANTICS_LABEL_RE = re.compile(r"Semantics\s*\(\s*(?:[^()]*?)label:", re.DOTALL)
+# The widget that PROVIDES the minimum tap target cannot be asked to wrap itself in one.
+_TAP_TARGET_HELPER_FILES = ("min_tap_target_box",)
 _EXCLUDE_FROM_SEMANTICS = re.compile(r"excludeFromSemantics:\s*true")
 
 
@@ -260,27 +291,35 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
 
         for m in _SPINNER.finditer(clean):
             body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
-            if "semanticsLabel" not in body:
+            # A Semantics(label:) wrapper already names it; adding semanticsLabel as well would
+            # announce the same thing twice, which is the defect the tooltip rule below catches.
+            labelled_ancestor = _SEMANTICS_LABEL_RE.search(clean[max(0, m.start() - 400) : m.start()])
+            if "semanticsLabel" not in body and not labelled_ancestor:
                 found[_key(found, rel)] = (
                     f"CircularProgressIndicator with no semanticsLabel (line "
                     f"{_line_of(clean, m.start())}) - a screen reader announces nothing while the "
                     f"user waits"
                 )
 
+        defines_tap_helper = any(name in rel for name in _TAP_TARGET_HELPER_FILES)
         for m in _TAPPABLE.finditer(clean):
             body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
-            if not _ON_TAP.search(body):
+            if not _ON_TAP.search(body) or defines_tap_helper:
                 continue
-            window_start = max(0, m.start() - 400)
+            window_start = max(0, m.start() - 600)
             before = clean[window_start : m.start()]
             if not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
                 found[_key(found, rel)] = (
                     f"tappable with no MinTapTargetBox (line {_line_of(clean, m.start())}) - the " f"visible target can be smaller than the 48x48 minimum"
                 )
-            if not _SEMANTICS_BUTTON.search(before) and "Semantics(" not in body:
+            # InkWell announces itself as a button; GestureDetector does not, which is the
+            # whole difference this rule is about.
+            is_gesture_detector = clean[m.start() :].startswith("GestureDetector")
+            if is_gesture_detector and not _SEMANTICS_BUTTON.search(before) and "Semantics(" not in body:
                 found[_key(found, rel)] = (
-                    f"tappable with no button semantics (line {_line_of(clean, m.start())}) - a "
-                    f"screen reader reads the contents, not that they are actionable"
+                    f"GestureDetector with no announced role (line {_line_of(clean, m.start())}) - "
+                    f"unlike InkWell it announces nothing, so a screen reader reads the contents "
+                    f"and not that they are actionable"
                 )
             if _ON_DOUBLE_TAP.search(body):
                 found[_key(found, rel)] = (
@@ -343,11 +382,17 @@ def scan_non_directional_layout(files: Iterable[str], read: Reader, *, skip_mark
 _ISO_WITHOUT_UTC = re.compile(r"(?<!toUtc\(\))\.toIso8601String\(\)")
 _TO_UTC_ISO = re.compile(r"\.toUtc\(\)\s*\.toIso8601String\(\)")
 _JSON_DECODE = re.compile(r"\bjsonDecode\s*\(")
-_ENUM_DEFAULT = re.compile(r"orElse:\s*\(\)\s*=>\s*\w+\.\w+")
+# `orElse: () => Type.value` is an enum default; `orElse: () => list.first` is a list fallback,
+# which is ordinary and correct. The capitalised head is what distinguishes them.
+_ENUM_DEFAULT = re.compile(r"orElse:\s*\(\)\s*=>\s*[A-Z]\w*\.\w+")
 _FIRE_AND_FORGET_THEN = re.compile(r"^\s*[\w.]+\([^;]*\)\s*\.then\s*\(", re.MULTILINE)
 _SOCKET_EXCEPTION = re.compile(r"\bon\s+SocketException\b")
 _CLIENT_EXCEPTION = re.compile(r"\bClientException\b")
-_NOW_FALLBACK = re.compile(r"\?\?\s*DateTime\.now\(\)")
+# `now ?? DateTime.now()` on an injectable parameter is the clock SEAM - the pattern this rule
+# exists to encourage. Only a fallback for a value that was being PARSED is a defect, because
+# there the missing timestamp becomes indistinguishable from a real one.
+_NOW_FALLBACK = re.compile(r"""(?P<lhs>[\w.\[\]'"()]+)\s*\?\?\s*DateTime\.now\(\)""")
+_PARSED_LHS_RE = re.compile(r"json\[|\bparse|\bmap\[|\brow\[|tryParse|\['\w+'\]")
 
 
 def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
@@ -366,6 +411,8 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
             )
 
         for m in _NOW_FALLBACK.finditer(clean):
+            if not _PARSED_LHS_RE.search(m.group("lhs")):
+                continue
             found[_key(found, rel)] = (
                 f"?? DateTime.now() (line {_line_of(clean, m.start())}) - a missing timestamp " f"becomes 'now', which is indistinguishable from a real one"
             )
@@ -403,7 +450,9 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
 # M12 - provider and state hygiene
 
 _DATETIME_NOW = re.compile(r"\bDateTime\.now\(\)")
-_PREFS_WRITE = re.compile(r"(?<![\w.])((?:await\s+|unawaited\(\s*)?)\w*[Pp]refs\.set\w+\(")
+# A write that is returned (`=> _prefs.setBool(...)`, `return prefs.setString(...)`) hands the
+# future to the caller, which is as awaited as awaiting it here.
+_PREFS_WRITE = re.compile(r"(?<![\w.])((?:await\s+|unawaited\(\s*|=>\s*|return\s+)?)\w*[Pp]refs\.set\w+\(")
 _TOSTRING_PII = re.compile(r"String\s+toString\(\)[^;{]*(?:=>|\{)[^;}]*\$\{?(?:\w+\.)?(displayName|email|avatarUrl|fullName)")
 
 

@@ -79,13 +79,22 @@ class TestPainterAnimation:
         assert scan_painter_animation(files, read) == {}
 
 
+_WIDGET = "Widget build(BuildContext context) { return x; }"
+
+
 class TestRepaintIsolation:
     def test_repeating_animation_without_boundary_is_flagged(self):
-        files, read = _reader({"lib/a.dart": "_controller.repeat();"})
+        files, read = _reader({"lib/a.dart": f"_controller.repeat();\n{_WIDGET}"})
         assert len(scan_repaint_isolation(files, read)) == 1
 
     def test_repeating_animation_with_boundary_passes(self):
-        files, read = _reader({"lib/a.dart": "_controller.repeat();\nRepaintBoundary(child: x);"})
+        files, read = _reader({"lib/a.dart": f"_controller.repeat();\nRepaintBoundary(child: x);\n{_WIDGET}"})
+        assert scan_repaint_isolation(files, read) == {}
+
+    def test_utility_that_repeats_a_callers_controller_is_not_flagged(self):
+        # No build() and no painter: there is no subtree here to isolate, so demanding a
+        # RepaintBoundary would be asking for a widget the file does not have.
+        files, read = _reader({"lib/reduced_motion.dart": "static void syncRepeat(BuildContext c, AnimationController x) { x.repeat(); }"})
         assert scan_repaint_isolation(files, read) == {}
 
     def test_animated_builder_rebuilding_an_image_without_child_is_flagged(self):
@@ -246,3 +255,83 @@ class TestProviderStateHygiene:
     def test_pii_free_tostring_passes(self):
         files, read = _reader({"lib/m.dart": "String toString() => 'Profile(id: $id, settings: ${s.length})';"})
         assert scan_provider_state_hygiene(files, read) == {}
+
+
+class TestRefinements:
+    """Each of these was a false positive the first run produced against a real package."""
+
+    def test_currency_code_fallback_is_not_ui_text(self):
+        files, read = _reader({"lib/a.dart": "final currency = plan.currency ?? 'USD';"})
+        assert scan_hardcoded_ui_strings(files, read) == {}
+
+    def test_log_message_inside_an_enum_method_is_not_a_display_string(self):
+        src = (
+            "enum SubscriptionStatus {\n"
+            "  active,\n"
+            "  expired;\n"
+            "  static SubscriptionStatus parse(String raw) {\n"
+            "    SharedLog.log('Unknown subscription status \"$raw\" - treated as not entitled');\n"
+            "    return expired;\n"
+            "  }\n"
+            "}\n"
+        )
+        files, read = _reader({"lib/e.dart": src})
+        assert scan_hardcoded_ui_strings(files, read) == {}
+
+    def test_style_definition_file_may_hold_raw_colours(self):
+        files, read = _reader({"lib/theming/styles/retro_style.dart": "shadow: const Color(0x40000000),"})
+        assert scan_hardcoded_ui_strings(files, read) == {}
+
+    def test_spinner_inside_a_labelled_semantics_is_not_unlabelled(self):
+        src = "Semantics(liveRegion: true, label: l10n.loading, child: const Center(child: CircularProgressIndicator()))"
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_the_min_tap_target_helper_is_not_asked_to_wrap_itself(self):
+        src = "class MinTapTargetBox extends StatelessWidget { Widget build(c) => GestureDetector(onTap: onTap, child: box); }"
+        files, read = _reader({"lib/widgets/min_tap_target_box.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_injectable_clock_default_is_the_seam_not_the_bug(self):
+        files, read = _reader({"lib/r.dart": "final at = now ?? DateTime.now();"})
+        assert scan_parse_serialize_catch(files, read) == {}
+
+    def test_parsed_timestamp_fallback_is_still_flagged(self):
+        files, read = _reader({"lib/m.dart": "createdAt: DateTime.tryParse(json['created_at']) ?? DateTime.now(),"})
+        assert any("?? DateTime.now()" in v for v in scan_parse_serialize_catch(files, read).values())
+
+    def test_list_first_fallback_is_not_an_enum_default(self):
+        files, read = _reader({"lib/r.dart": "subs.firstWhere((s) => s.isActive, orElse: () => subs.first);"})
+        assert scan_parse_serialize_catch(files, read) == {}
+
+    def test_returned_preferences_write_is_awaited_by_its_caller(self):
+        files, read = _reader({"lib/e.dart": "Future<void> mark(String k) => _prefs.setBool(k, true);"})
+        assert scan_provider_state_hygiene(files, read) == {}
+
+    def test_explicit_min_tap_target_constraint_counts_as_wrapping(self):
+        src = (
+            "GestureDetector(onTap: x, child: Semantics(button: true, child: ConstrainedBox("
+            "constraints: const BoxConstraints(minHeight: AppConstants.minTapTarget), child: c)))"
+        )
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_radio_role_counts_as_an_announced_role(self):
+        src = (
+            "Semantics(inMutuallyExclusiveGroup: true, checked: sel, label: o.label, child: "
+            "GestureDetector(onTap: x, child: ConstrainedBox(constraints: BoxConstraints("
+            "minHeight: AppConstants.minTapTarget), child: c)))"
+        )
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_inkwell_is_not_asked_for_button_semantics(self):
+        src = "InkWell(onTap: x, child: ConstrainedBox(constraints: BoxConstraints(minHeight: AppConstants.minTapTarget), child: c))"
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_bare_gesture_detector_still_needs_a_role(self):
+        src = "GestureDetector(onTap: x, child: MinTapTargetBox(child: c))"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert any("announced role" in v for v in problems.values())
