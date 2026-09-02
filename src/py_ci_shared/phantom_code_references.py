@@ -75,8 +75,12 @@ _NEVER_REFERENCES = frozenset(
         "Error", "Iterable", "Optional", "Union", "Literal", "Path", "Field", "BaseModel", "dataclass",
         "pytest", "flutter", "dart", "python", "json", "yaml", "toml", "csv", "jsonl", "utf-8", "ascii",
         "e", "x", "y", "n", "i", "j", "k", "s", "r", "p", "q", "t", "a", "b", "c", "d", "f", "g", "m", "v", "w",
+        # JSON/JS literals people quote.
+        "NaN", "Infinity", "undefined",
     }
 )
+# A dotted token whose tail is a file extension is a file name, which is `phantom_markdown_links`' territory.
+_FILE_EXT_RE = re.compile(r"\.(?:py|md|json|jsonl|csv|tsv|txt|xml|yaml|yml|toml|cfg|ini|gz|zip|sql|db|html|css|js|dart|arb|sh|ps1|log|pdf|png|svg)$", re.IGNORECASE)
 
 
 def python_declarations(files: Iterable[Path]) -> set[str]:
@@ -194,8 +198,12 @@ def find_phantom_code_references(
     library class - ``Text.rich``, ``pytest.mark`` - is not this repo's to declare). A trailing ``()`` or
     ``(`` is stripped. Tokens containing anything but identifier characters, dots and a call suffix are
     prose and skipped."""
+    import builtins
+    import sys
+
     files = list(files)
-    known = set(declared) | set(extra_known) | _NEVER_REFERENCES
+    # Python's own names resolve without a declaration: builtins (`ValueError`) and stdlib modules (`ftplib.FTP`).
+    known = set(declared) | set(extra_known) | _NEVER_REFERENCES | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
     test_files = {p.name for p in repo_root.rglob("*") if _TEST_FILE_RE.match(p.name)}
     violations: list[str] = []
     for path in files:
@@ -211,6 +219,8 @@ def find_phantom_code_references(
                     if tf.group(1) not in test_files:
                         violations.append(f"{rel}:{lineno}: `{token}` names a test file that does not exist")
                     continue
+                if _FILE_EXT_RE.search(token) or (token.isupper() and "_" in token):
+                    continue  # a file name, or an environment variable / another system's constant
                 im = _IDENT_RE.match(token)
                 if not im:
                     continue
@@ -221,7 +231,9 @@ def find_phantom_code_references(
                     # A declared head with an undeclared member is most often a library member; resolving
                     # library APIs is out of scope, so the head carries the claim.
                     continue
-                if head.islower() and len(head) <= 2:
+                # A lowercase bare identifier in backticks is a parameter, a keyword argument or a local far more
+                # often than a claim about a declared function; only a call suffix or a dotted member makes it one.
+                if head[0].islower() and member is None and not im.group("call"):
                     continue
                 violations.append(f"{rel}:{lineno}: `{token}` names nothing declared in this repo")
     return violations
