@@ -129,3 +129,45 @@ class TestAssert:
         c = _catalogues(tmp_path, en={"hello": "Hello"})
         with pytest.raises(pytest.fail.Exception, match="never rendered"):
             assert_arb_catalogues_are_sound(c, template_locale="en", source_text="")
+
+
+def test_an_exact_selector_covers_its_category(tmp_path):
+    """`=1` is checked before the categories, so a plural written with it renders correctly for 1.
+
+    Reading only the category names reported `one` missing on every such string - 18 of 24 findings on
+    the first repository this ran against, all of them correct ICU.
+    """
+    en = tmp_path / "app_en.arb"
+    en.write_text(
+        json.dumps(
+            {
+                "rows": "{count, plural, =1{1 row could not be read} other{{count} rows could not be read}}",
+                "days": "{days, plural, =1{1 day} other{{days} days}}",
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert find_plural_problems({"en": en}) == []
+
+
+def test_a_plural_with_neither_the_category_nor_an_exact_selector_still_fails(tmp_path):
+    en = tmp_path / "app_en.arb"
+    en.write_text(
+        json.dumps({"rows": "{count, plural, other{{count} rows could not be read}}"}),
+        encoding="utf-8",
+    )
+    problems = find_plural_problems({"en": en})
+    assert len(problems) == 1
+    assert "needs ['one', 'other']" in problems[0]
+
+
+def test_a_russian_plural_needs_its_own_categories_even_with_an_exact_one(tmp_path):
+    ru = tmp_path / "app_ru.arb"
+    ru.write_text(
+        json.dumps({"rows": "{count, plural, =1{1 строка} other{{count} строк}}"}),
+        encoding="utf-8",
+    )
+    problems = find_plural_problems({"ru": ru})
+    assert len(problems) == 1
+    assert "few" in problems[0] and "many" in problems[0]
+

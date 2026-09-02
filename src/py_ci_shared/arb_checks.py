@@ -67,7 +67,13 @@ PLURAL_CATEGORIES: Mapping[str, frozenset[str]] = {
 }
 
 _COUNT_LIKE_KEY_RE = re.compile(r"(count|days|results|items|total)$", re.IGNORECASE)
-_BRANCH_HEAD_RE = re.compile(r"(zero|one|two|few|many|other)\s*\{")
+_BRANCH_HEAD_RE = re.compile(r"(=\d+|zero|one|two|few|many|other)\s*\{")
+
+# An exact selector covers the category its value falls in: ICU checks `=N` before the categories, so
+# `{count, plural, =1{1 row} other{{count} rows}}` renders correctly for 1 in every locale whose `one`
+# category contains 1 - which is every locale that HAS a `one` category. Reading only the category names
+# reported `one` missing on exactly the strings that are right (measured on noema_app: 18 of 24 findings).
+_EXACT_COVERS = {"=0": "zero", "=1": "one", "=2": "two"}
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)[^}]*\}")
 _WORDS_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 # The text a placeholder is followed by, when it starts with a word, makes the placeholder a
@@ -159,7 +165,8 @@ def find_plural_problems(catalogues: Mapping[str, Path]) -> list[str]:
             if "plural" not in value:
                 continue
             branches = _plural_branches(value)
-            missing = sorted(required - set(branches))
+            covered = set(branches) | {_EXACT_COVERS[b] for b in branches if b in _EXACT_COVERS}
+            missing = sorted(required - covered)
             if missing:
                 out.append(
                     f"{path.name}: '{key}' has plural branches {sorted(branches)} but {loc} needs "
@@ -170,7 +177,7 @@ def find_plural_problems(catalogues: Mapping[str, Path]) -> list[str]:
                     continue
                 # A `one` branch may spell the number out ("1 blank", "один"); any other branch
                 # with no placeholder renders a sentence with no number in it.
-                if name != "one" and not re.search(r"\d", text):
+                if name not in {"one", "=0", "=1", "=2"} and not re.search(r"\d", text):
                     out.append(f"{path.name}: '{key}' branch '{name}' has no placeholder and no digit " f"({text!r}) - this count renders without its number.")
     return out
 
