@@ -425,6 +425,52 @@ including after `pre-commit install` regenerates the hook file (which resets thi
 
 Re-running `python -m py_ci_shared.install_safe_hook` after each `pre-commit install` (or `pre-commit autoupdate`) is the only maintenance this needs.
 
+## Checks derived from the 2026-09-02 Flutter audit round
+
+Eleven modules added after a full audit of two Flutter repositories (`polyvocab_app`,
+`flutter_app_core`) filed 271 findings, of which 154 turned out to be statically detectable and
+only three had been caught by a blocking gate. Each module is one finding class, generalised to
+whatever language the repository is written in; the docstring of each names the findings it would
+have caught. They are consumed exactly like the checks above -- a `find_*` function returning a
+list of problem strings, and an `assert_*` wrapper that imports `pytest` lazily -- so a Dart or
+TypeScript repository with no pytest harness can call the `find_*` half from a plain script.
+
+| Module | Answers |
+|---|---|
+| `sql_function_privileges` | Is a `SECURITY DEFINER` function still executable by every signed-in user? PostgreSQL grants `EXECUTE` to `PUBLIC` by default; on Supabase that is one HTTP call from any session. This is the check that would have caught the round's only P0 (a function that granted the caller a permanent admin plan). Also enforces `SET search_path`. |
+| `ci_workflow_paths` | Does a workflow name a `working-directory` or run a script that does not exist? Optionally: is there a top-level `permissions:`, and is every third-party action pinned to a SHA? |
+| `hook_hygiene` | Does a git hook skip a missing guard silently, stage files the author did not, decide a verdict by grepping a tool's human-readable output, or run guards CI never runs? |
+| `repo_hygiene` | Are generated artefacts tracked, required config files missing, or does a numeric CI gate pass when its input fails to parse? |
+| `test_partition_reachability` | Is a declared test tag, Playwright project or standalone script selected by any runner, or does a permanent `test.skip` sit at the top of a spec? |
+| `baseline_hygiene` | Does every accepted baseline entry carry a human reason, is any entry stale, and does any contain an absolute path? Also exposes `body_asserts_only_absence_of_crash` for assertion scanners. |
+| `import_layering` | Does the layer that exists to be reusable import the product it was extracted from? Rules are `from_glob !-> to_glob`; both relative and `package:` imports resolve to the same repo-relative path. |
+| `stale_comment_age` | How old is that TODO? `git blame` decides; an issue reference exempts a line. Also catches commented-out calls. |
+| `arb_checks` | Flutter `.arb` catalogues: key parity, ICU plural per locale's own CLDR categories, a `{count}` outside a plural, informal register (advisory), dead keys. |
+| `dart_scanners` | Seven structural scanners over Dart source (painters and animations, repaint isolation, hardcoded UI strings, tappable/semantics hygiene, non-directional layout, parse/serialise/catch, provider state), returning the `{key: description}` shape a repo's own baseline ratchet already consumes. |
+| `edge_function_hygiene` | Serverless functions: a catch that answers 200, an uncapped request body, a secret compared with `===`, an IP in a log line, the forgeable first `x-forwarded-for` hop. |
+| `guard_population` | Runs each guard's own file-selection command and fails when it matches nothing -- the failure mode where a guard has been passing for weeks without examining a single file. |
+| `version_tag_currency` | Does the declared version have a tag, is that tag reachable from HEAD, and how many releases behind is a consumer's pin? |
+
+### Consuming these from a Dart repository
+
+There is no pytest harness in a Flutter repo, but there is already Python on the hook and in CI, so
+the whole cost is one script that calls the `find_*` halves and exits non-zero:
+
+```python
+# tool/check_shared_scanners.py
+from pathlib import Path
+from py_ci_shared.sql_function_privileges import find_unlocked_definer_functions
+from py_ci_shared.arb_checks import find_plural_problems
+
+REPO = Path(__file__).resolve().parents[1]
+problems = find_unlocked_definer_functions(REPO / "supabase" / "migrations")
+problems += find_plural_problems({"en": ARB / "app_en.arb", "ru": ARB / "app_ru.arb"})
+if problems:
+    raise SystemExit("\n".join(problems))
+```
+
+Install it the same way the Python consumers do: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared@<sha>"`.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
