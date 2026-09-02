@@ -359,6 +359,10 @@ _NON_DIRECTIONAL = re.compile(
     r"|\bPositioned\(\s*(?:left|right):"
     r"|\bTextAlign\.(?:left|right)\b"
 )
+# A gradient's begin/end is a direction of shading, not a side of the layout: a corner-to-corner
+# sweep looks the same mirrored, and there is no Directional form to switch to. Matching these
+# produced twenty-two findings on one renderer and buried the four real ones.
+_GRADIENT_CONTEXT_RE = re.compile(r"\b(?:begin|end|transform|focal|center):\s*$")
 
 
 def scan_non_directional_layout(files: Iterable[str], read: Reader, *, skip_markers: Sequence[str] = ("painter", "paint_utils")) -> dict:
@@ -369,8 +373,12 @@ def scan_non_directional_layout(files: Iterable[str], read: Reader, *, skip_mark
             continue
         clean = _strip_comments(read(rel))
         for m in _NON_DIRECTIONAL.finditer(clean):
+            preceding = clean[max(0, m.start() - 40) : m.start()]
+            if _GRADIENT_CONTEXT_RE.search(preceding):
+                continue
             found[_key(found, rel)] = (
-                f"{m.group(0)} (line {_line_of(clean, m.start())}) - a physical side, so the "
+                f"{' '.join(m.group(0).split())} (line {_line_of(clean, m.start())}) - a "
+                f"physical side, so the "
                 f"layout does not mirror in a right-to-left locale. Use the Directional form."
             )
     return found

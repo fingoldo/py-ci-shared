@@ -188,6 +188,17 @@ class TestNonDirectionalLayout:
         files, read = _reader({"lib/a.dart": "alignment: AlignmentDirectional.centerStart,"})
         assert scan_non_directional_layout(files, read) == {}
 
+    def test_gradient_begin_and_end_are_not_layout_sides(self):
+        # A corner-to-corner sweep looks the same mirrored and has no Directional form; these
+        # accounted for twenty-two of twenty-six findings on one renderer.
+        src = "LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: c)"
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_non_directional_layout(files, read) == {}
+
+    def test_widget_alignment_is_still_flagged(self):
+        files, read = _reader({"lib/a.dart": "Align(alignment: Alignment.centerLeft, child: c)"})
+        assert len(scan_non_directional_layout(files, read)) == 1
+
     def test_painter_file_is_skipped(self):
         files, read = _reader({"lib/widgets/painters/wave_painter.dart": "Positioned(left: 8,"})
         assert scan_non_directional_layout(files, read) == {}
