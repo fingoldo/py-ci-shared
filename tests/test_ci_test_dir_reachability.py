@@ -85,3 +85,34 @@ class TestFindUnreachableTestSubdirs:
         repo = _make_repo(tmp_path, ["test_api"], "jobs: {}\n")
         missing_workflows_dir = repo / ".github" / "does_not_exist"
         assert find_unreachable_test_subdirs(repo, missing_workflows_dir) == ["test_api"]
+
+
+class TestPathlessPytestInvocation:
+    """A CI job that runs `pytest` with no positional path collects from
+    testpaths/rootdir, so it reaches every tests/ subdir. Before this was
+    recognized, the check reported EVERY subdir as unreachable for the most
+    common real-world CI shape (`pytest -m "not gpu" --cov=... --durations=200`),
+    which made it unusable as a blocking gate."""
+
+    def test_pathless_invoke_with_value_taking_short_flag_covers_every_subdir(self, tmp_path):
+        repo = _make_repo(
+            tmp_path, ["test_api", "test_meta"],
+            'jobs:\n  unit:\n    steps:\n      - run: pytest -m "not gpu" --cov=src/pkg --cov-fail-under=82 --durations=200\n',
+        )
+        assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == []
+
+    def test_pathless_invoke_still_honours_an_ignore(self, tmp_path):
+        repo = _make_repo(
+            tmp_path, ["test_api", "test_cli"],
+            'jobs:\n  unit:\n    steps:\n      - run: pytest -m "not gpu" --ignore=tests/test_cli\n',
+        )
+        assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == ["test_cli"]
+
+    def test_line_continuation_does_not_fake_a_pathless_invoke(self, tmp_path):
+        r"""`pytest -p no:randomly \` + newline + `tests/test_api` names a path; the
+        first physical line alone looks pathless and must not be read that way."""
+        repo = _make_repo(
+            tmp_path, ["test_api", "test_orphan"],
+            "jobs:\n  unit:\n    steps:\n      - run: |\n          pytest -p no:randomly \\n            tests/test_api\n",
+        )
+        assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == ["test_orphan"]

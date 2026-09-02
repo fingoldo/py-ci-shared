@@ -30,13 +30,52 @@ from pathlib import Path
 
 _PYTEST_INVOKE_RE = re.compile(r"pytest\s+([^\s|&><;]+)")
 _PYTEST_IGNORE_RE = re.compile(r"--ignore(?:-glob)?=(\S+)")
+# A pytest invocation with NO positional path argument runs whatever `testpaths`/rootdir
+# resolves to -- i.e. the whole `tests/` tree -- so it covers every subdir just as a literal
+# `pytest tests/` does. Without this, a repo whose CI runs `pytest -m "not gpu" --cov=...`
+# (no path at all, the most common shape) was reported as reaching NO test subdir whatsoever,
+# turning the check into a guaranteed false positive on exactly the repos it should pass.
+_TOKEN_RE = re.compile(r"\"[^\"]*\"|'[^']*'|[^\s|&;><]+")
+# Short flags that consume the following token as their VALUE (`-m "not gpu"`), which must not
+# be mistaken for a positional path. Long flags carry their value as `--flag=value` in every
+# CI invocation shape seen here, so they need no such table.
+_VALUE_TAKING_SHORT_FLAGS = frozenset({"-m", "-k", "-p", "-n", "-o", "-c", "-W", "-r", "--deselect", "--ignore", "--ignore-glob"})
 
 
 def _all_ci_run_lines(workflows_dir: Path) -> str:
     if not workflows_dir.is_dir():
         return ""
     workflow_files = sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml"))
-    return "\n".join(wf.read_text(encoding="utf-8") for wf in workflow_files)
+    text = "\n".join(wf.read_text(encoding="utf-8") for wf in workflow_files)
+    # Fold shell line-continuations so a multi-line `pytest ... \` + newline + `tests/foo` invocation is
+    # analysed as the single command it is -- otherwise its first line looks pathless and its
+    # continuation lines look like commands of their own.
+    return re.sub(r"\\\s*\n\s*", " ", text)
+
+
+def _has_pathless_pytest_invocation(ci_text: str) -> bool:
+    """True if any ``pytest`` command in ``ci_text`` passes no positional path.
+
+    Such a run collects from ``testpaths``/rootdir, so it reaches every ``tests/`` subdir.
+    """
+    for m in re.finditer(r"(?:^|[\s;&|])pytest\s+(.*)$", ci_text, re.MULTILINE):
+        tokens = _TOKEN_RE.findall(m.group(1))
+        skip_next = False
+        has_positional = False
+        for tok in tokens:
+            if skip_next:
+                skip_next = False
+                continue
+            if tok in _VALUE_TAKING_SHORT_FLAGS:
+                skip_next = True
+                continue
+            if tok.startswith("-") or tok == "\\":
+                continue
+            has_positional = True
+            break
+        if not has_positional:
+            return True
+    return False
 
 
 def _test_subdirs(repo_root: Path) -> set[str]:
@@ -69,7 +108,7 @@ def find_unreachable_test_subdirs(
         # `tests/` (or `tests` with no path) without an --ignore covering it.
         ignored_paths = {ip.rstrip("/\\").replace("\\", "/") for ip in _PYTEST_IGNORE_RE.findall(ci_text)}
         bare_targets = {t.rstrip("/").rstrip("\\") for t in _PYTEST_INVOKE_RE.findall(ci_text)}
-        covered_by_bare_tests_invoke = "tests" in bare_targets
+        covered_by_bare_tests_invoke = "tests" in bare_targets or _has_pathless_pytest_invocation(ci_text)
         # An --ignore must name the directory ITSELF, or a --ignore-glob
         # covering everything under it (`tests/<d>/*` or `/**`), to count as
         # excluding the whole subdir -- an --ignore of one specific FILE
