@@ -98,6 +98,55 @@ class TestPhantomDocPaths:
         doc.write_text("See `web/browser.py`.\n", encoding="utf-8")
         assert find_phantom_doc_paths([doc], tmp_path, search_roots=[tmp_path / "src" / "pkg"]) == []
 
+    def test_a_changelog_is_checked_only_where_it_describes_the_tree_that_exists(self, tmp_path):
+        """An old entry names the tree AS IT WAS; the only way to satisfy the check is to lie."""
+        doc = tmp_path / "CHANGELOG.md"
+        doc.write_text(
+            "\n".join(
+                [
+                    "# Changelog",
+                    "",
+                    "## v2.0",
+                    "",
+                    "Moved everything into `lib/current/thing.dart`.",
+                    "",
+                    "## v1.0",
+                    "",
+                    "Added `lib/gone/old.dart`, which a later release deleted.",
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        # Without the option, the release that DID add that file fails forever.
+        assert len(find_phantom_doc_paths([doc], tmp_path)) == 2
+
+        # With it, only the newest section - the one describing today - is held to today's tree.
+        only_current = find_phantom_doc_paths([doc], tmp_path, recent_sections={"CHANGELOG.md": 1})
+        assert len(only_current) == 1
+        assert "lib/current/thing.dart" in only_current[0]
+
+    def test_the_section_limit_applies_by_filename_not_to_every_doc(self, tmp_path):
+        """A README's sections are all current; trimming them would quietly stop checking it."""
+        readme = tmp_path / "README.md"
+        readme.write_text(
+            "\n".join(
+                [
+                    "# R",
+                    "",
+                    "## First",
+                    "",
+                    "See `lib/a/gone.dart`.",
+                    "",
+                    "## Second",
+                    "",
+                    "And `lib/b/gone.dart`.",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        assert len(find_phantom_doc_paths([readme], tmp_path, recent_sections={"CHANGELOG.md": 1})) == 2
+
     def test_a_slashed_english_phrase_is_not_a_path(self, tmp_path):
         doc = tmp_path / "README.md"
         doc.write_text("every import site is `try/except`-guarded and `and/or` safe.\n", encoding="utf-8")

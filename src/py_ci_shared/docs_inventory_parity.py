@@ -25,7 +25,7 @@ an oversight without an explicit by-design list.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 # Package names as they appear in a dependency spec, stripped of version/marker/extras.
@@ -210,7 +210,14 @@ def find_undocumented_modules(
     return undocumented
 
 
-def find_phantom_doc_paths(doc_paths: Sequence[Path], repo_root: Path, *, search_roots: Sequence[Path] = (), ignore: Iterable[str] = ()) -> list[str]:
+def find_phantom_doc_paths(
+    doc_paths: Sequence[Path],
+    repo_root: Path,
+    *,
+    search_roots: Sequence[Path] = (),
+    ignore: Iterable[str] = (),
+    recent_sections: Mapping[str, int] | None = None,
+) -> list[str]:
     """Return one message per backtick-quoted repo path or glob in prose that matches nothing.
 
     Scoped to backticked tokens containing a ``/``: a bare filename mention in prose is
@@ -223,6 +230,16 @@ def find_phantom_doc_paths(doc_paths: Sequence[Path], repo_root: Path, *, search
         search_roots: extra directories a documented path may be relative to, beyond
             ``repo_root``. Docs routinely write a path relative to the source package
             (``web/browser.py``) rather than to the repo, and both are legitimate.
+        recent_sections: ``{filename: n}`` -- scan only the first ``n`` ``##`` sections of that
+            document. For a CHANGELOG this is the difference between a useful check and an
+            impossible one: an old entry names the tree AS IT WAS, so a refactor that moves a
+            directory makes every entry that ever mentioned it fail, and the only way to go green
+            is to rewrite history into something that did not happen. Measured on one consuming
+            repo after its core extraction: 61 of 70 findings were changelog entries that were
+            true on the day they were written. The newest section describes the tree that exists
+            now and is worth checking; the ones below it are a record. Keyed by file NAME rather
+            than applied to every doc, because a README's sections are all current and trimming
+            them would quietly stop checking most of it.
     """
     ignored = set(ignore)
     roots = [repo_root, *search_roots]
@@ -230,7 +247,17 @@ def find_phantom_doc_paths(doc_paths: Sequence[Path], repo_root: Path, *, search
     for doc_path in doc_paths:
         if not doc_path.is_file():
             continue
-        for line_number, line in enumerate(doc_path.read_text(encoding="utf-8").splitlines(), start=1):
+        lines = doc_path.read_text(encoding="utf-8").splitlines()
+        keep = (recent_sections or {}).get(doc_path.name)
+        if keep is not None:
+            seen = 0
+            for index, heading in enumerate(lines):
+                if heading.startswith("## "):
+                    seen += 1
+                    if seen > keep:
+                        lines = lines[:index]
+                        break
+        for line_number, line in enumerate(lines, start=1):
             for target in _BACKTICK_PATH_RE.findall(line):
                 if target in ignored or "://" in target or target.startswith(("-", "/")):
                     continue
