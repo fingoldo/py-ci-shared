@@ -26,7 +26,9 @@ def _git_repo(tmp_path: Path, *tracked: str) -> Path:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("x", encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    # -f: these fixtures deliberately track files a developer's global gitignore excludes
+    # (__pycache__, *.pyc). Without it the test's own premise depends on whose machine it runs on.
+    subprocess.run(["git", "add", "-A", "-f"], cwd=tmp_path, check=True)
     return tmp_path
 
 
