@@ -279,7 +279,9 @@ _TOOLTIP_MESSAGE = re.compile(r"Tooltip\s*\(\s*message:\s*([^,\n]+)")
 _SEMANTICS_LABEL_RE = re.compile(r"Semantics\s*\(\s*(?:[^()]*?)label:", re.DOTALL)
 # The widget that PROVIDES the minimum tap target cannot be asked to wrap itself in one.
 _TAP_TARGET_HELPER_FILES = ("min_tap_target_box",)
-_EXCLUDE_FROM_SEMANTICS = re.compile(r"excludeFromSemantics:\s*true")
+# Either spelling closes the double announcement: `excludeFromSemantics` on the tooltip drops the
+# tooltip's own node, and `excludeSemantics` on the enclosing Semantics drops every descendant's.
+_EXCLUDE_FROM_SEMANTICS = re.compile(r"exclude(?:FromSemantics|Semantics):\s*true")
 
 
 def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:

@@ -174,6 +174,25 @@ class TestTappableSemantics:
         problems = scan_tappable_semantics(files, read)
         assert any("NAMED parameter" in v for v in problems.values())
 
+    def test_tooltip_repeating_the_semantics_label_is_flagged(self):
+        src = "Semantics(button: true, label: name, child: Tooltip(message: name, child: MinTapTargetBox(child: x)))"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert any("announced twice" in v for v in problems.values())
+
+    def test_exclude_semantics_on_the_wrapper_closes_the_duplicate(self):
+        """`excludeSemantics` on the Semantics drops every descendant node, the tooltip's included."""
+        src = "Semantics(button: true, label: name, excludeSemantics: true, child: Tooltip(message: name, child: MinTapTargetBox(child: x)))"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert not any("announced twice" in v for v in problems.values())
+
+    def test_exclude_from_semantics_on_the_tooltip_closes_the_duplicate(self):
+        src = "Semantics(button: true, label: name, child: Tooltip(message: name, excludeFromSemantics: true, child: MinTapTargetBox(child: x)))"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert not any("announced twice" in v for v in problems.values())
+
     def test_positional_context_passes(self):
         files, read = _reader({"lib/a.dart": "Widget _buildCard(BuildContext context, {required String title}) { return x; }"})
         assert scan_tappable_semantics(files, read) == {}
