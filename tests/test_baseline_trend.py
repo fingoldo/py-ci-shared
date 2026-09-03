@@ -86,3 +86,25 @@ def test_report_separates_a_rule_that_moved_from_one_that_did_not(repo):
         "a rule that fell is not what this filter is for - it is the ones that never move that need a "
         "decision"
     )
+
+
+def test_a_rule_that_has_always_been_clean_is_not_listed_as_unmoved(repo):
+    """Zero findings from the day it was adopted is a rule doing its job, not debt nobody owns."""
+    root, git = repo
+    base = root / "tool" / "meta" / "baselines"
+
+    write(base / "clean.json", [])
+    write(base / "stuck.json", ["x"])
+    git("add", "-A")
+    git("commit", "-qm", "adopt both")
+    write(base / "clean.json", [])
+    write(base / "stuck.json", ["x"])
+    (base / "note.txt").write_text("touch", encoding="utf-8")
+    git("add", "-A")
+    git("commit", "-qm", "no movement in either")
+
+    unmoved = report(str(root), ["tool/meta/baselines"], None, True)
+    assert [line for line in unmoved if "stuck" in line]
+    assert not [line for line in unmoved if "clean" in line], (
+        "listing a clean rule among the unmoved buries the ones that need a decision"
+    )

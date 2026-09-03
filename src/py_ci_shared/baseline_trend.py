@@ -18,7 +18,7 @@ Reads both shapes a baseline is written in: ``{"accepted": {key: note}}`` (the P
 
     python -m py_ci_shared.baseline_trend                     every baseline, default directories
     python -m py_ci_shared.baseline_trend --dir test/meta/baselines --since 2026-08-01
-    python -m py_ci_shared.baseline_trend --stale-days 30      only rules that have not moved
+    python -m py_ci_shared.baseline_trend --unmoved            only rules that have not moved
 """
 
 from __future__ import annotations
@@ -98,7 +98,9 @@ def report(
             continue
         first, last = points[0], points[-1]
         moved = first[2] != last[2]
-        if stale_only and moved:
+        # A rule sitting at zero has nothing to decide about: it is a clean rule doing its job, not one
+        # whose debt nobody owns. Listing it among the unmoved buries the three that matter.
+        if stale_only and (moved or last[2] == 0):
             continue
         arrow = "->" if moved else "=="
         name = path.rsplit("/", 1)[-1].removesuffix(".json")
