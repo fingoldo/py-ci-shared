@@ -271,7 +271,11 @@ def find_phantom_doc_paths(
                     continue
                 if not (target.endswith("/") or "*" in target or re.search(r"\.\w+$", target)):
                     continue
-                if any((root / target).exists() or any(root.glob(target)) for root in roots):
+                # Also relative to the doc's OWN directory. A `SCRIPTS.md` living in `e2e/` writes
+                # `tests/*.spec.ts` because that is what a reader standing in `e2e/` types, and the
+                # prose is right - only a repo-root reading of it is wrong.
+                candidates = [*roots, doc_path.parent]
+                if any((root / target).exists() or any(root.glob(target)) for root in candidates):
                     continue
                 # Repo-relative when possible: a project with both `README.md` and
                 # `lib/src/README.md` gets two findings labelled `README.md:5` otherwise, and the

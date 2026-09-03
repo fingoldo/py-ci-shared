@@ -147,6 +147,21 @@ class TestPhantomDocPaths:
         )
         assert len(find_phantom_doc_paths([readme], tmp_path, recent_sections={"CHANGELOG.md": 1})) == 2
 
+    def test_a_path_relative_to_the_docs_own_directory_resolves(self, tmp_path):
+        """A `SCRIPTS.md` in `e2e/` writes what a reader standing in `e2e/` would type."""
+        (tmp_path / "e2e" / "tests").mkdir(parents=True)
+        (tmp_path / "e2e" / "tests" / "smoke.spec.ts").write_text("", encoding="utf-8")
+        doc = tmp_path / "e2e" / "SCRIPTS.md"
+        doc.write_text("`playwright test` runs `tests/*.spec.ts`.\n", encoding="utf-8")
+        assert find_phantom_doc_paths([doc], tmp_path) == []
+
+    def test_a_path_relative_to_nothing_still_reports(self, tmp_path):
+        """The doc's own directory is one more place to look, not a way to stop looking."""
+        (tmp_path / "e2e").mkdir()
+        doc = tmp_path / "e2e" / "SCRIPTS.md"
+        doc.write_text("See `tests/gone.spec.ts`.\n", encoding="utf-8")
+        assert len(find_phantom_doc_paths([doc], tmp_path)) == 1
+
     def test_an_ignored_directory_covers_what_is_inside_it(self, tmp_path):
         """`lib/shared/` in the list read as one exact path, so everything under it still reported."""
         doc = tmp_path / "CHANGELOG.md"
