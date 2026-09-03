@@ -259,7 +259,15 @@ def find_phantom_doc_paths(
                         break
         for line_number, line in enumerate(lines, start=1):
             for target in _BACKTICK_PATH_RE.findall(line):
-                if target in ignored or "://" in target or target.startswith(("-", "/")):
+                # An ignore entry ending in `/` reads as a directory and covers what is under it.
+                # It was matched exactly, so `lib/shared/` in the list did not cover
+                # `lib/shared/access/` and every path inside an ignored directory still reported.
+                if (
+                    target in ignored
+                    or any(target.startswith(prefix) for prefix in ignored if prefix.endswith("/"))
+                    or "://" in target
+                    or target.startswith(("-", "/"))
+                ):
                     continue
                 if not (target.endswith("/") or "*" in target or re.search(r"\.\w+$", target)):
                     continue

@@ -147,6 +147,21 @@ class TestPhantomDocPaths:
         )
         assert len(find_phantom_doc_paths([readme], tmp_path, recent_sections={"CHANGELOG.md": 1})) == 2
 
+    def test_an_ignored_directory_covers_what_is_inside_it(self, tmp_path):
+        """`lib/shared/` in the list read as one exact path, so everything under it still reported."""
+        doc = tmp_path / "CHANGELOG.md"
+        doc.write_text("Moved `lib/shared/access/gate.dart` and `lib/shared/`.\n", encoding="utf-8")
+        assert len(find_phantom_doc_paths([doc], tmp_path)) == 2
+        assert find_phantom_doc_paths([doc], tmp_path, ignore=("lib/shared/",)) == []
+
+    def test_an_ignore_entry_without_a_trailing_slash_still_matches_only_itself(self, tmp_path):
+        """A file named in the list must not silently exempt every path that starts with its name."""
+        doc = tmp_path / "README.md"
+        doc.write_text("See `tool/gen.py` and `tool/gen.py.bak`.\n", encoding="utf-8")
+        remaining = find_phantom_doc_paths([doc], tmp_path, ignore=("tool/gen.py",))
+        assert len(remaining) == 1
+        assert "tool/gen.py.bak" in remaining[0]
+
     def test_a_slashed_english_phrase_is_not_a_path(self, tmp_path):
         doc = tmp_path / "README.md"
         doc.write_text("every import site is `try/except`-guarded and `and/or` safe.\n", encoding="utf-8")
