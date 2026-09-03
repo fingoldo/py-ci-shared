@@ -101,8 +101,58 @@ def _refresh_requested(request=None) -> bool:
     return REFRESH_FLAG in sys.argv
 
 
-def _key(f: "Finding") -> str:
+def _legacy_key(f: "Finding") -> str:
+    """The original ``check::file:line`` key. Read-only now; see ``_keys``."""
     return f"{f.check}::{f.file}:{f.line}"
+
+
+def _snippet_fingerprint(f: "Finding") -> str:
+    """Short stable digest of the flagged line's own text."""
+    import hashlib
+
+    snippet = (getattr(f, "snippet", "") or "").strip()
+    if not snippet:
+        # Nothing to fingerprint: fall back to the line number, which is the old
+        # behaviour and no worse than it.
+        return f"line{f.line}"
+    return hashlib.blake2s(snippet.encode("utf-8"), digest_size=6).hexdigest()
+
+
+def _keys(findings: "list[Finding]") -> "list[tuple[Finding, str]]":
+    """Pair each finding with a key that does not move when unrelated code does.
+
+    The key used to be ``check::file:line``. That made the baseline a line-number
+    ratchet: inserting a comment above a known finding re-reported it as NEW while the
+    old key showed up as DRAINED, so a commit that touched nothing relevant produced two
+    misleading signals at once. In one glossum session this happened three times in a
+    row, once turning 14 pure relocations into "14 findings fixed" -- the failure mode is
+    not just noise, it is a false all-clear.
+
+    Keying on a digest of the flagged line's own text instead makes the identity survive
+    relocation, and change exactly when the flagged code changes. Repeats of an identical
+    snippet in one file (say two identical ``except Exception:`` lines) would otherwise
+    collapse into one key and let one of them be fixed unnoticed, so they are numbered in
+    line order.
+    """
+    from collections import Counter
+
+    seen: Counter = Counter()
+    out = []
+    for f in sorted(findings, key=lambda x: (str(x.check), str(x.file), x.line)):
+        base = f"{f.check}::{f.file}::{_snippet_fingerprint(f)}"
+        n = seen[base]
+        seen[base] += 1
+        out.append((f, base if n == 0 else f"{base}#{n}"))
+    return out
+
+
+def _key(f: "Finding") -> str:
+    """Single-finding key. Kept for callers that key one finding at a time.
+
+    Prefer ``_keys`` on a whole result set: it is the only way duplicate snippets in one
+    file get distinct keys.
+    """
+    return f"{f.check}::{f.file}::{_snippet_fingerprint(f)}"
 
 
 def assert_no_new_code_audit_findings(
@@ -139,7 +189,8 @@ def assert_no_new_code_audit_findings(
 
     merged_exclude = DEFAULT_EXCLUDE_DIRS | exclude_dirs
     current = run_all(root, checks=checks, exclude_dirs=merged_exclude)
-    current_by_key = {_key(f): f for f in current}
+    keyed = _keys(current)
+    current_by_key = {k: f for f, k in keyed}
     current_keys = set(current_by_key)
 
     if _refresh_requested(request) or not baseline_path.exists():
@@ -150,8 +201,26 @@ def assert_no_new_code_audit_findings(
         pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
 
     baseline = set(orjson.loads(baseline_path.read_bytes()))
-    new = sorted(current_keys - baseline)
-    fixed = sorted(baseline - current_keys)
+
+    # Transitional: a baseline written before the key format changed holds
+    # ``check::file:line`` entries, which match nothing under the new scheme. Without
+    # this, the format change would report every existing finding as NEW and every
+    # baseline entry as DRAINED in all seven consuming repos at once. A finding counts
+    # as known if EITHER key is present, so an old baseline keeps working until someone
+    # refreshes it, and the refresh writes the new format.
+    legacy_known = {_legacy_key(f) for f, _ in keyed if _legacy_key(f) in baseline}
+    if legacy_known:
+        import sys
+
+        sys.stderr.write(
+            f"\n[assert_no_new_code_audit_findings] {baseline_path.name} is in the legacy "
+            f"line-numbered key format ({len(legacy_known)} of {len(baseline)} entries matched "
+            f"that way). It still gates correctly; refresh it with {REFRESH_FLAG} to move to "
+            f"the relocation-proof format.\n"
+        )
+    new = sorted(k for f, k in keyed if k not in baseline and _legacy_key(f) not in baseline)
+    matched_legacy = {_legacy_key(f) for f, k in keyed if k not in baseline and _legacy_key(f) in baseline}
+    fixed = sorted(baseline - current_keys - matched_legacy)
 
     if fixed:
         import sys

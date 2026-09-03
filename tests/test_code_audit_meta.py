@@ -166,3 +166,104 @@ class TestRegisterRefreshOption:
         parser = self._make_parser()
         register_refresh_option(parser)
         register_refresh_option(parser)  # must not raise (pytest.Parser raises ValueError on conflict)
+
+
+class TestKeysSurviveRelocation:
+    """The key format is relocation-proof: unrelated edits above a finding must not
+    re-report it as new, nor report the old entry as drained.
+
+    The line-numbered format made the baseline a line-number ratchet. Inserting a comment
+    above a known finding produced BOTH a "new finding" failure and a "finding drained"
+    note in the same run -- the second of which is a false all-clear, since it claims work
+    was completed that was not.
+    """
+
+    def test_inserting_lines_above_a_finding_reports_nothing(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        _write_mutable_default_module(src)
+        baseline = tmp_path / "_code_audit_baseline.json"
+
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        seeded = orjson.loads(baseline.read_bytes())
+
+        # Push the flagged def down by three lines without touching it.
+        original = (src / "bad.py").read_text(encoding="utf-8")
+        (src / "bad.py").write_text("# padding\n# padding\n# padding\n" + original, encoding="utf-8")
+
+        # Passes: returning normally is the assertion.
+        assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        # And the baseline was not rewritten behind our back.
+        assert orjson.loads(baseline.read_bytes()) == seeded
+
+    def test_changing_the_flagged_line_itself_is_still_reported(self, tmp_path):
+        """The negative control: relocation-proof must not mean change-blind."""
+        src = tmp_path / "src"
+        src.mkdir()
+        _write_mutable_default_module(src)
+        baseline = tmp_path / "_code_audit_baseline.json"
+
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+
+        # Same defect, different text on the flagged line -> a different finding.
+        (src / "bad.py").write_text(
+            "def f(other_name={}):\n    return other_name\n", encoding="utf-8"
+        )
+        with pytest.raises(pytest.fail.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+
+    def test_two_identical_snippets_in_one_file_get_distinct_keys(self, tmp_path):
+        src = tmp_path / "src"
+        src.mkdir()
+        (src / "twice.py").write_text(
+            "def a(items=[]):\n    return items\n\n\ndef b(items=[]):\n    return items\n",
+            encoding="utf-8",
+        )
+        baseline = tmp_path / "_code_audit_baseline.json"
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+
+        seeded = orjson.loads(baseline.read_bytes())
+        mutable = [k for k in seeded if "mutable_default" in k]
+        assert len(mutable) == len(set(mutable)) == 2, (
+            "identical snippets must not collapse to one key, or fixing one of them "
+            "would go unnoticed"
+        )
+
+
+class TestLegacyBaselineMigration:
+    """A baseline written in the old format keeps gating until it is refreshed."""
+
+    def test_legacy_keys_are_still_honoured(self, tmp_path, capsys):
+        src = tmp_path / "src"
+        src.mkdir()
+        _write_mutable_default_module(src)
+        baseline = tmp_path / "_code_audit_baseline.json"
+
+        # Hand-write a legacy baseline: check::file:line.
+        baseline.write_text(
+            orjson.dumps(["mutable_default::bad.py:1"], option=orjson.OPT_INDENT_2).decode("utf-8"),
+            encoding="utf-8",
+        )
+        # Must NOT fail: the finding is known, just recorded the old way.
+        assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        assert "legacy line-numbered key format" in capsys.readouterr().err
+
+    def test_refreshing_a_legacy_baseline_writes_the_new_format(self, tmp_path, monkeypatch):
+        src = tmp_path / "src"
+        src.mkdir()
+        _write_mutable_default_module(src)
+        baseline = tmp_path / "_code_audit_baseline.json"
+        baseline.write_text(
+            orjson.dumps(["mutable_default::bad.py:1"], option=orjson.OPT_INDENT_2).decode("utf-8"),
+            encoding="utf-8",
+        )
+
+        monkeypatch.setattr(sys, "argv", ["pytest", REFRESH_FLAG])
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+
+        refreshed = orjson.loads(baseline.read_bytes())
+        assert refreshed and all(k.count("::") == 2 for k in refreshed)
