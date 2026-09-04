@@ -450,6 +450,8 @@ TypeScript repository with no pytest harness can call the `find_*` half from a p
 | `edge_function_hygiene` | Serverless functions: a catch that answers 200, an uncapped request body, a secret compared with `===`, an IP in a log line, the forgeable first `x-forwarded-for` hop. |
 | `guard_population` | Runs each guard's own file-selection command and fails when it matches nothing -- the failure mode where a guard has been passing for weeks without examining a single file. |
 | `version_tag_currency` | Does the declared version have a tag, is that tag reachable from HEAD, and how many releases behind is a consumer's pin? |
+| `mutation_teeth` | Can a test that claims to pin a defect actually FAIL? Mutates the code at token level, runs the tests that claim to cover it, and reports the mutants nothing caught. Runs on a copy of the working tree, caches on the target's transitive import closure, and refuses to report a result when pytest exits for a reason other than pass or fail. |
+| `git_changed_lines` | The line ranges a diff actually touched, per file, from `--unified=0` -- so a check can be scoped to the lines a commit changed rather than a whole module. |
 
 ### Consuming these from a Dart repository
 
