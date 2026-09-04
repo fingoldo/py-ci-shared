@@ -61,6 +61,11 @@ earlier on the line silently moved the edit -- on a verified input the whole sta
 positions are character-based and each edit is one token, so a mutant is the original file with one
 operator changed and every comment intact.
 
+**Verified sound and deliberately not defended against:** CRLF line endings and tab indentation
+both round-trip correctly through the token splice -- checked by execution rather than assumed,
+because a harness that mangles a Windows file would be worse than none in these repos. There is
+no special handling for either, and none is needed.
+
 **Exit codes are classified, not truth-tested.** ``returncode != 0`` used to mean "killed". pytest
 exits 4 on a usage error and 5 when it collects nothing, so a typo in ``test_paths`` reported every
 mutant killed and the run as a clean bill of health -- precisely what :mod:`gate_integrity` exists
@@ -181,10 +186,15 @@ class MutationRun:
     truncated: bool
     candidates_total: int
     sampled_containers: dict[str, tuple[int, int]] = field(default_factory=dict)
+    killed_by_crash: int = 0
     from_cache: bool = False
 
     def summary(self) -> str:
         parts = [f"{self.mutants_run} mutants run, {self.killed} killed, {len(self.survivors)} survived"]
+        if self.killed_by_crash:
+            # Not a footnote: these die against any test that reaches the line, so a kill
+            # count that includes them overstates how much the tests actually check.
+            parts.append(f"{self.killed_by_crash} of the kills were CRASHES, not assertions")
         if self.truncated:
             parts.append(f"TRUNCATED: {self.candidates_total} candidates existed, {self.mutants_run} were run")
         for name, (shown, total) in sorted(self.sampled_containers.items()):
@@ -329,7 +339,7 @@ def _container_members(source: str) -> dict[int, str]:
     return out
 
 
-def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
+def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list[tuple[int, int, int, str, str, str]]:
     """``(abs_start, abs_end, line, replacement, description, category)`` per mutable token.
 
     Token positions from :mod:`tokenize` are CHARACTER offsets, so no byte conversion is needed
@@ -338,6 +348,7 @@ def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
     starts = _line_starts(source)
     excluded = _excluded_ranges(source)
     sampled_out = _container_members(source)
+    coupled = _repr_coupled_lines(source) if skip_coupled_constants else set()
 
     def excluded_at(a: int, b: int) -> bool:
         return any(a >= lo and b <= hi for lo, hi in excluded)
@@ -397,6 +408,8 @@ def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
             emit(abs_end, repr(new_value), f"constant: {value} becomes {new_value}")
 
         elif tok.type == tokenize.STRING and len(tok.string) > 2:
+            if row in coupled:
+                continue  # its numeric partner on this line states the same fact; see _repr_coupled_lines
             # f-strings are skipped: emptying one literal part turns `f"{x} and {'q'}"` into
             # concatenated literals where the second interpolation stops being one. That mutant is
             # labelled "emptied a string" and is not one. (On 3.12+ f-strings are FSTRING_* tokens
@@ -452,6 +465,7 @@ def generate_mutants(
     path: Path,
     lines: Iterable[range] | range | None = None,
     limit: int | None = None,
+    skip_coupled_constants: bool = False,
 ) -> tuple[list[Mutant], int, dict[str, tuple[int, int]]]:
     """``(mutants, candidates_total, sampled_containers)`` in SOURCE ORDER.
 
@@ -466,7 +480,7 @@ def generate_mutants(
     """
     source = io.open(path, encoding="utf-8", newline="").read()
     starts = _line_starts(source)
-    candidates = _token_candidates(source) + _statement_call_candidates(source)
+    candidates = _token_candidates(source, skip_coupled_constants) + _statement_call_candidates(source)
     candidates.sort(key=lambda c: (c[0], c[4]))
 
     ranges: list[range] = []
@@ -628,6 +642,76 @@ def _pytest_env() -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"}
     env["PYTEST_ADDOPTS"] = ""
     return env
+
+
+#: Exceptions that mean the mutant made the code CRASH rather than produce a wrong answer. A crash
+#: mutant dies against any test that reaches the line, so it is killed for free and tells nobody
+#: anything about test quality -- which is one of the four reasons a mutation SCORE is not computed
+#: here. Reported as a label rather than filtered: it never survives, so it costs no survivor-list
+#: noise, and knowing how many of the kills were free is exactly what stops a high kill count from
+#: being mistaken for good tests.
+_CRASH_EXCEPTIONS = (
+    "ValueError",
+    "LookupError",
+    "IndexError",
+    "KeyError",
+    "TypeError",
+    "AttributeError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "RecursionError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+)
+
+
+def _killed_by_crash(output: str) -> bool:
+    """True if the failure looks like an exception from the mutated code, not a failed assertion.
+
+    Read from pytest's own summary line rather than from the traceback body: a traceback can mention
+    an exception name that a test deliberately asserted with ``pytest.raises``, and counting that as
+    a crash would misreport a test doing its job.
+    """
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("E "):
+            continue
+        payload = stripped[2:].lstrip()
+        if payload.startswith("assert") or payload.startswith("AssertionError"):
+            return False
+        if any(payload.startswith(name) for name in _CRASH_EXCEPTIONS):
+            return True
+    return False
+
+
+def _repr_coupled_lines(source: str) -> set[int]:
+    """Lines where a numeric constant and a string constant state the same fact.
+
+    ``text[: max_len - 3] + "..."`` is the canonical shape: the ``3`` and the ``"..."`` are two
+    spellings of one decision, so mutating both produces two survivors that a reader must think
+    about twice to learn one thing.
+
+    Off by default. What it hides is real: the case where the two have drifted apart and only one
+    direction is covered -- a truncation that reserves three characters and appends four. The agent
+    that proposed it marked it optional for exactly that reason, and this keeps that judgement with
+    the caller instead of making it silently.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    numbers: dict[int, int] = {}
+    strings: dict[int, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or getattr(node, "lineno", None) is None:
+            continue
+        if isinstance(node.value, bool):
+            continue
+        if isinstance(node.value, int):
+            numbers[node.lineno] = numbers.get(node.lineno, 0) + 1
+        elif isinstance(node.value, str) and node.value:
+            strings[node.lineno] = strings.get(node.lineno, 0) + 1
+    return {line for line in numbers if line in strings}
 
 
 def _pytest_flags() -> list[str]:
@@ -870,6 +954,7 @@ def find_surviving_mutants(
         original = io.open(target, encoding="utf-8", newline="").read()
         survivors: list[Mutant] = []
         run = 0
+        crashes = 0
         with _WarmRunner(sandbox, timeout) as warm:
             for mutant in mutants:
                 io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
@@ -885,7 +970,12 @@ def find_surviving_mutants(
                     passed = _classify(result, f"mutant {mutant}")
                 else:
                     passed = _classify_code(code, f"mutant {mutant}")
+                    result = None  # the warm worker returns a code, not output, so a
+                    # crash cannot be distinguished from an assertion failure on this
+                    # path. The count is therefore a lower bound, which the summary says.
                 run += 1
+                if not passed and result is not None and _killed_by_crash(result.stdout):
+                    crashes += 1
                 if passed:
                     # Re-verify in a COLD process before believing it. A purge cannot reach state
                     # held inside an installed third-party package, so a warm survivor is a
@@ -903,6 +993,7 @@ def find_surviving_mutants(
             truncated=limit is not None and candidates_total > len(mutants),
             candidates_total=candidates_total,
             sampled_containers=sampled,
+            killed_by_crash=crashes,
         )
     finally:
         shutil.rmtree(sandbox_parent, ignore_errors=True)

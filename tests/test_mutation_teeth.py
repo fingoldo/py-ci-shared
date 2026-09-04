@@ -290,3 +290,105 @@ class TestMutantIdentity:
         mutant = Mutant(Path("pkg/m.py"), 1, 0, "operator: > becomes >=", "a > b", "a >= b")
 
         assert not Path(mutant.key.split("::")[0]).is_absolute()
+
+
+class TestAKillIsNotAlwaysEvidence:
+    """A mutant that makes the code CRASH dies against any test that reaches the line.
+
+    It is killed for free and says nothing about test quality, which is one of the four reasons a
+    mutation score is not computed here. Labelled rather than filtered: it never survives, so it
+    costs no survivor-list noise, and knowing how many kills were free is what stops a high kill
+    count from being read as good tests.
+    """
+
+    @pytest.mark.parametrize(
+        "output,expected",
+        [
+            ("E       assert 1 == 2", False),
+            ("E       AssertionError: nope", False),
+            ("E       ValueError: invalid literal", True),
+            ("E       LookupError: unknown encoding: ", True),
+            ("E       ZeroDivisionError: division by zero", True),
+        ],
+    )
+    def test_a_crash_is_told_apart_from_a_failed_assertion(self, output, expected):
+        from py_ci_shared.mutation_teeth import _killed_by_crash
+
+        assert _killed_by_crash(output) is expected
+
+    def test_an_exception_name_in_a_traceback_is_not_a_crash(self):
+        """Read from pytest's own ``E `` summary, not the traceback body: a test using
+        ``pytest.raises(ValueError)`` mentions the name while doing exactly its job, and counting
+        that as a free kill would misreport a working test."""
+        from py_ci_shared.mutation_teeth import _killed_by_crash
+
+        output = "E       assert 'x' in 'y'" + chr(10) + "ValueError appears in the traceback"
+
+        assert _killed_by_crash(output) is False
+
+    def test_the_summary_says_how_many_kills_were_free(self):
+        run = MutationRun(
+            survivors=[], mutants_run=10, killed=10, truncated=False, candidates_total=10, killed_by_crash=4
+        )
+
+        assert "4 of the kills were CRASHES" in run.summary()
+
+
+class TestReprCoupledConstantsAreOptional:
+    """``text[: max_len - 3] + "..."`` states one decision twice, so mutating both halves makes a
+    reader think about it twice to learn it once."""
+
+    SOURCE = 'def clip(text, max_len):' + chr(10) + '    return text[: max_len - 3] + "..."' + chr(10)
+
+    def test_it_is_off_by_default(self, tmp_path):
+        """What the filter hides is real -- the case where the two have DRIFTED and only one
+        direction is covered -- so the judgement stays with the caller rather than being made
+        silently on their behalf."""
+        path = _write(tmp_path, self.SOURCE)
+
+        default, _total, _sampled = generate_mutants(path)
+
+        assert any(m.description == "constant: emptied a string" for m in default)
+
+    def test_enabling_it_drops_the_string_and_keeps_the_number(self, tmp_path):
+        """The numeric half is the more informative of the pair: it says what the reservation IS,
+        while the string only shows what fills it."""
+        path = _write(tmp_path, self.SOURCE)
+
+        filtered, _total, _sampled = generate_mutants(path, skip_coupled_constants=True)
+
+        assert not any(m.description == "constant: emptied a string" for m in filtered)
+        assert any("3 becomes 4" in m.description for m in filtered)
+
+    def test_an_uncoupled_string_is_untouched_by_the_filter(self, tmp_path):
+        """The filter is per LINE. A string on a line with no numeric partner is not part of a pair
+        and must survive it, or this quietly becomes "skip most strings"."""
+        path = _write(tmp_path, 'MESSAGE = "hello"' + chr(10) + "N = 7" + chr(10))
+
+        filtered, _total, _sampled = generate_mutants(path, skip_coupled_constants=True)
+
+        assert any(m.description == "constant: emptied a string" for m in filtered)
+
+
+class TestWindowsSourceIsHandled:
+    """Verified rather than assumed: a harness that mangled a CRLF file would be worse than none in
+    repos developed on Windows."""
+
+    def test_crlf_line_endings_round_trip(self, tmp_path):
+        crlf = chr(13) + chr(10)
+        path = tmp_path / "crlf.py"
+        io.open(path, "w", encoding="utf-8", newline="").write("def f(a, b):" + crlf + "    return a > b" + crlf)
+
+        mutants, _total, _sampled = generate_mutants(path)
+
+        assert mutants, "a CRLF file produced no candidates at all"
+        assert mutants[0].mutated_file_text.count(crlf) == 2, "line endings were rewritten"
+        assert "return a >= b" in mutants[0].mutated_file_text
+
+    def test_tab_indentation_round_trips(self, tmp_path):
+        tab = chr(9)
+        path = _write(tmp_path, "def f(a, b):" + chr(10) + tab + "return a > b" + chr(10))
+
+        mutants, _total, _sampled = generate_mutants(path)
+
+        assert mutants and tab + "return a >= b" in mutants[0].mutated_file_text
