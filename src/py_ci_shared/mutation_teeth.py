@@ -187,6 +187,7 @@ class MutationRun:
     candidates_total: int
     sampled_containers: dict[str, tuple[int, int]] = field(default_factory=dict)
     killed_by_crash: int = 0
+    coverage_gaps: list[Mutant] = field(default_factory=list)
     from_cache: bool = False
 
     def summary(self) -> str:
@@ -195,6 +196,13 @@ class MutationRun:
             # Not a footnote: these die against any test that reaches the line, so a kill
             # count that includes them overstates how much the tests actually check.
             parts.append(f"{self.killed_by_crash} of the kills were CRASHES, not assertions")
+        if self.coverage_gaps:
+            # Reported separately and loudly: these are NOT test gaps. A reader who treats them as
+            # survivors writes a test that already exists.
+            parts.append(
+                f"{len(self.coverage_gaps)} 'survivors' were killed by a test the coverage map does "
+                "not list -- fix the map, not the tests"
+            )
         if self.truncated:
             parts.append(f"TRUNCATED: {self.candidates_total} candidates existed, {self.mutants_run} were run")
         for name, (shown, total) in sorted(self.sampled_containers.items()):
@@ -886,6 +894,7 @@ def find_surviving_mutants(
     use_cache: bool = True,
     use_warm_worker: bool = True,
     extra_fingerprint_paths: Sequence[Path | str] = (),
+    fallback_test_paths: Sequence[Path | str] = (),
 ) -> MutationRun:
     """Mutants the tests did NOT catch.
 
@@ -961,6 +970,7 @@ def find_surviving_mutants(
 
         original = io.open(target, encoding="utf-8", newline="").read()
         survivors: list[Mutant] = []
+        coverage_gaps: list[Mutant] = []
         run = 0
         crashes = 0
         with _WarmRunner(sandbox, timeout) as warm:
@@ -991,6 +1001,16 @@ def find_surviving_mutants(
                     # false survivor is the outcome that wastes a human's afternoon.
                     confirm = _run_pytest(test_paths, sandbox, timeout)
                     if confirm is not None and _classify(confirm, f"survivor re-check {mutant}"):
+                        # Before believing it, ask the wider set. "No test kills this" and "no
+                        # LISTED test kills this" are different findings, and only the first is
+                        # about the tests. Run only for survivors, which are rare -- listing the
+                        # wider set as primary would make every mutant cost minutes.
+                        if fallback_test_paths:
+                            wider = _run_pytest(fallback_test_paths, sandbox, timeout)
+                            if wider is not None and not _classify(wider, f"fallback re-check {mutant}"):
+                                coverage_gaps.append(mutant)
+                                io.open(target, "w", encoding="utf-8", newline="").write(original)
+                                continue
                         survivors.append(mutant)
                 io.open(target, "w", encoding="utf-8", newline="").write(original)
 
@@ -1002,6 +1022,7 @@ def find_surviving_mutants(
             candidates_total=candidates_total,
             sampled_containers=sampled,
             killed_by_crash=crashes,
+            coverage_gaps=coverage_gaps,
         )
     finally:
         shutil.rmtree(sandbox_parent, ignore_errors=True)
