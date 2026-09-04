@@ -28,6 +28,7 @@ The traps this handles, each of which produces a silently wrong range if ignored
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import warnings
@@ -102,7 +103,7 @@ def changed_lines(
         args.append(rev)
     else:
         args.append("HEAD")
-    completed = subprocess.run(args, capture_output=True, check=False)
+    completed = subprocess.run(args, capture_output=True, check=False, env=_git_env())
     if completed.returncode != 0:
         raise RuntimeError(
             f"git diff failed in {root} (exit {completed.returncode}): "
@@ -146,6 +147,7 @@ def changed_lines(
             ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z"],
             capture_output=True,
             check=False,
+            env=_git_env(),
         )
         for entry in listed.stdout.split(b"\0"):
             if not entry:
@@ -180,3 +182,18 @@ def lines_for(changed: dict[Path, list[range]], path: Path | str) -> list[range]
         if key == wanted or key.parts[-len(wanted.parts):] == wanted.parts:
             return ranges
     return []
+
+def _git_env() -> dict[str, str]:
+    """The ambient environment minus every ``GIT_*`` variable.
+
+    ``git`` exports ``GIT_DIR`` and ``GIT_INDEX_FILE`` to its hooks, and ``git -C <path>`` does NOT
+    override them: ``-C`` changes the working directory, while those name the repository and the
+    index outright and win. Every call here would otherwise inspect the repository git handed the
+    hook rather than *repo_root* -- and because pre-commit stashes unstaged changes before running
+    hooks, ``git status`` and ``git diff`` come back EMPTY inside one, which reads as 'nothing
+    changed' and silently scopes the caller's check to nothing at all.
+
+    Found by a test that fails only inside a hook: outside one the variables are simply absent, so
+    every ordinary run passed.
+    """
+    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}

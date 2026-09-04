@@ -16,7 +16,7 @@ from py_ci_shared.git_changed_lines import changed_lines, lines_for
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=_git_env())
 
 
 @pytest.fixture
@@ -154,3 +154,23 @@ def test_an_added_line_beginning_with_plus_plus_is_not_a_file_header(repo: Path)
     assert set(changed) == {Path("notes.md")}, f"a phantom path appeared: {sorted(changed)}"
     covered = {n for r in lines_for(changed, Path("notes.md")) for n in r}
     assert 2 in covered and 8 in covered, f"a genuine edit was lost: {sorted(covered)}"
+
+
+def _git_env() -> dict[str, str]:
+    """The environment minus every GIT_* variable.
+
+    `git commit` exports GIT_DIR and GIT_INDEX_FILE to its hooks, and `git -C <path>` does NOT
+    override them -- `-C` changes the working directory while those name the repository and the
+    index outright, and they win. A test that builds a temp repository inside a hook therefore
+    stages ITS files into the repository being committed, against blobs that exist only in the
+    temp one. That produced a real failure here:
+
+        error: invalid object 100644 1337a530... for 'm.py'
+        error: Error building trees
+
+    where `m.py` lives only in a tmp_path fixture. Stripping the variables makes each git call talk
+    to the repository named on its own command line.
+    """
+    import os
+
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
