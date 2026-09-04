@@ -91,6 +91,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import tokenize
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -113,7 +114,7 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "2"
+HARNESS_VERSION = "3"  # 3: closure resolves `from .mod import name`; the key covers scope
 
 REFRESH_FLAG = "--refresh-mutation-survivors-baseline"
 
@@ -147,18 +148,28 @@ class Mutant:
     original_span: str
     mutated_span: str
     category: str = ""
+    context: str = ""
     mutated_file_text: str = field(default="", repr=False, compare=False)
 
     @property
     def key(self) -> str:
-        """Stable baseline key: repo-relative path, the span's digest, and the operator.
+        """Stable baseline key: repo-relative path, a digest of the SITE, and the operator.
 
         Digested rather than line-numbered on purpose. ``code_audit_meta`` records that a
         line-number key produces a false all-clear the moment anything above it shifts, because the
         old key stops matching and the finding reads as new -- or, worse, an accepted key keeps
         matching a different line.
+
+        The digest covers the surrounding LINE as well as the mutated span, which is what makes it
+        a site rather than a shape. Over the span alone, every `secrets.token_hex(8)` in a file
+        digests to the same thing -- the span is the single character `8` -- so one accepted
+        baseline entry silenced four separate call sites, three of which the tests actually kill.
+        An accepted mutant is a claim about ONE place in the code; a key that cannot tell two
+        places apart turns one reasoned exception into a blanket one. The line text keeps the
+        property the line NUMBER was rejected for: it does not move when code above it shifts.
         """
-        digest = hashlib.sha256(self.original_span.encode("utf-8")).hexdigest()[:12]
+        site = repr((self.original_span, " ".join(self.context.split())))
+        digest = hashlib.sha256(site.encode("utf-8")).hexdigest()[:12]
         return f"{self.path.as_posix()}::{digest}::{self.description}"
 
     def diff_line(self) -> str:
@@ -188,6 +199,7 @@ class MutationRun:
     sampled_containers: dict[str, tuple[int, int]] = field(default_factory=dict)
     killed_by_crash: int = 0
     coverage_gaps: list[Mutant] = field(default_factory=list)
+    inconclusive: list[Mutant] = field(default_factory=list)
     from_cache: bool = False
 
     def summary(self) -> str:
@@ -196,6 +208,14 @@ class MutationRun:
             # Not a footnote: these die against any test that reaches the line, so a kill
             # count that includes them overstates how much the tests actually check.
             parts.append(f"{self.killed_by_crash} of the kills were CRASHES, not assertions")
+        if self.inconclusive:
+            # The one outcome that is neither a kill nor a survival. A mutant whose run timed out
+            # was previously dropped from the denominator, and a survivor whose confirmation timed
+            # out was counted as killed -- both let an unmeasured mutant read as a measured one.
+            parts.append(
+                f"{len(self.inconclusive)} mutants were INCONCLUSIVE (the run timed out); they are "
+                "neither killed nor survived, so this sweep is incomplete"
+            )
         if self.coverage_gaps:
             # Reported separately and loudly: these are NOT test gaps. A reader who treats them as
             # survivors writes a test that already exists.
@@ -532,13 +552,17 @@ def generate_mutants(
             continue
         mutants.append(
             Mutant(
-                path=Path(path).name if not Path(path).is_absolute() else Path(Path(path).name),
+                # Both branches must produce a Path: the first yielded a str, so `.key` raised on
+                # any mutant used before `find_surviving_mutants` overwrote the field -- which is
+                # every direct caller of `generate_mutants`.
+                path=Path(Path(path).name),
                 line=line,
                 column=abs_start - starts[line - 1],
                 description=description,
                 original_span=source[abs_start:abs_end],
                 mutated_span=replacement,
                 category=category,
+                context=source[starts[line - 1] : (starts[line] if line < len(starts) else len(source))],
                 mutated_file_text=mutated,
             )
         )
@@ -566,6 +590,17 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
             base = path.parent
             for _ in range(node.level - 1):
                 base = base.parent
+            # `from . import mod` puts the MODULE in node.names; `from .mod import func` puts the
+            # FUNCTION there and the module in node.module. Probing only node.names resolved the
+            # first form and silently dropped the second -- which is the dominant style inside a
+            # package, so `user_prompt.py`'s closure omitted all five siblings it actually calls
+            # (experience, formatting, smiley, truncation, word_count). A cached verdict then
+            # survived any edit to them, which is exactly the hole this closure exists to close.
+            if node.module:
+                for part in (base.joinpath(*node.module.split(".")),):
+                    for candidate in (part.with_suffix(".py"), part / "__init__.py"):
+                        if candidate.is_file():
+                            _first_party_imports(candidate, repo_root, seen)
             for alias in node.names:
                 for candidate in (base / f"{alias.name}.py", base / alias.name / "__init__.py"):
                     if candidate.is_file():
@@ -585,6 +620,7 @@ def fingerprint(
     target: Path,
     test_paths: Sequence[Path | str],
     extra_fingerprint_paths: Sequence[Path | str] = (),
+    scope: object = None,
 ) -> str:
     """A digest of everything that could change this check's answer -- as far as static analysis sees.
 
@@ -613,7 +649,14 @@ def fingerprint(
     files = _first_party_imports(repo_root / target, repo_root, set())
     for test in test_paths:
         test_path = (repo_root / test).resolve()
-        files.add(test_path)
+        # A directory is a legal pytest target and `read_bytes()` on one raises, which the digest
+        # loop swallowed into a constant -- leaving the fingerprint blind to every test file under
+        # it, permanently. Expand it to the files pytest would actually collect.
+        if test_path.is_dir():
+            files.update(sorted(test_path.rglob("test_*.py")))
+            files.update(sorted(test_path.rglob("conftest.py")))
+        else:
+            files.add(test_path)
         parent = test_path.parent
         while parent >= repo_root and parent != parent.parent:
             conftest = parent / "conftest.py"
@@ -626,11 +669,19 @@ def fingerprint(
         files.add((repo_root / extra).resolve())
 
     digest = hashlib.sha256(HARNESS_VERSION.encode())
+    # The SCOPE of a run is part of its answer, not part of its inputs. A sweep narrowed by
+    # `lines=` or capped by `limit=` examines a SUBSET of the mutants, and its verdict is only
+    # about that subset -- so replaying it for a wider scope reports "no survivors" about mutants
+    # that were never run. `lines` in particular moves on its own: it comes from `git diff`, which
+    # changes across an amend, a rebase or a branch switch while every file byte stays identical.
+    digest.update(repr(scope).encode("utf-8"))
     for file in sorted(files):
         try:
             body = file.read_bytes()
         except OSError:
-            body = b"<missing>"
+            # Distinct per path: one constant for every unreadable file makes two different
+            # mistakes (a typo'd extra_fingerprint_paths, a deleted module) digest identically.
+            body = b"<unreadable:" + str(file).encode("utf-8", "replace") + b">"
         try:
             name = file.relative_to(repo_root).as_posix()
         except ValueError:
@@ -638,6 +689,33 @@ def fingerprint(
         digest.update(name.encode("utf-8"))
         digest.update(hashlib.sha256(body).digest())
     return digest.hexdigest()
+
+
+def _mutant_json(m: Mutant) -> dict[str, object]:
+    """One serialisation, used by every list in the cache entry."""
+    return {
+        "path": m.path.as_posix(),
+        "line": m.line,
+        "column": m.column,
+        "description": m.description,
+        "original_span": m.original_span,
+        "mutated_span": m.mutated_span,
+        "category": m.category,
+        "context": m.context,
+    }
+
+
+def _mutant_from_json(d: dict) -> Mutant:
+    return Mutant(
+        path=Path(d["path"]),
+        line=d["line"],
+        column=d["column"],
+        description=d["description"],
+        original_span=d["original_span"],
+        mutated_span=d["mutated_span"],
+        category=d.get("category", ""),
+        context=d.get("context", ""),
+    )
 
 
 def _pytest_env() -> dict[str, str]:
@@ -648,6 +726,10 @@ def _pytest_env() -> dict[str, str]:
     overloading this module was rewritten to abolish.
     """
     env = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"}
+    # Defence in depth, not a fix for a reproduced bug: bytecode caching keys on the source's size
+    # and mtime-to-the-second, and an operator swap changes neither. Writing no bytecode at all
+    # removes the question for the cost of a recompile that the warm worker already pays.
+    env["PYTHONDONTWRITEBYTECODE"] = "1"
     env["PYTEST_ADDOPTS"] = ""
     return env
 
@@ -803,6 +885,12 @@ class _WarmRunner:
 
         ``None`` deliberately does not mean "killed": a dead worker is a harness problem, and the
         caller falls back to a cold subprocess rather than recording a result it cannot trust.
+
+        The timeout is enforced by reading the reply on a helper thread. It was previously stored
+        and never applied -- ``readline()`` on a pipe blocks with no deadline, so the sentence above
+        was true of the cold path only, and a single non-terminating mutant hung the whole sweep
+        with no output. A mutation that turns ``<`` into ``<=`` can produce exactly that by
+        construction, which this module's own docstring notes.
         """
         if self.process is None or self.process.poll() is not None:
             return None
@@ -811,8 +899,14 @@ class _WarmRunner:
             assert self.process.stdin is not None and self.process.stdout is not None
             self.process.stdin.write(json.dumps({"cmd": "run", "args": args}) + "\n")
             self.process.stdin.flush()
-            line = self.process.stdout.readline()
+            line = self._readline_within(self.timeout)
         except (OSError, ValueError):
+            return None
+        if line is None:
+            # The worker is wedged on this mutant, not merely slow: kill it so the caller's cold
+            # fallback starts from a clean process, and so the next mutant is not read against a
+            # reply that belongs to this one.
+            self.stop()
             return None
         if not line:
             return None
@@ -847,6 +941,30 @@ class _WarmRunner:
                         stream.close()
                 except OSError:
                     pass
+
+    def _readline_within(self, deadline: float) -> str | None:
+        """One reply line, or ``None`` if it does not arrive within *deadline* seconds.
+
+        A pipe read has no deadline of its own, so the wait happens on a helper thread that is
+        abandoned if it overruns. Abandoning it is safe precisely because the caller then kills the
+        worker: nothing else will ever read that pipe.
+        """
+        assert self.process is not None and self.process.stdout is not None
+        box: list[str] = []
+        stdout = self.process.stdout
+
+        def read() -> None:
+            try:
+                box.append(stdout.readline())
+            except (OSError, ValueError):  # pragma: no cover - the pipe closed under us
+                pass
+
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        reader.join(deadline)
+        if reader.is_alive() or not box:
+            return None
+        return box[0]
 
     def __enter__(self) -> "_WarmRunner":
         self.start()
@@ -911,7 +1029,19 @@ def find_surviving_mutants(
     relative = Path(path)
 
     cache_file = Path(cache_path) if cache_path else None
-    key = fingerprint(repo_root, relative, test_paths, extra_fingerprint_paths)
+    # Anything that changes WHICH mutants run belongs in the key. Omitting these made raising
+    # `limit` after a truncated sweep a silent no-op whenever a cache file was in play.
+    key = fingerprint(
+        repo_root,
+        relative,
+        test_paths,
+        extra_fingerprint_paths,
+        scope=(
+            [[r.start, r.stop] for r in lines] if lines else None,
+            limit,
+            [str(t) for t in (fallback_test_paths or ())],
+        ),
+    )
     if use_cache and cache_file and cache_file.is_file():
         try:
             cached = json.loads(cache_file.read_text(encoding="utf-8"))
@@ -929,9 +1059,13 @@ def find_surviving_mutants(
                         original_span=s["original_span"],
                         mutated_span=s["mutated_span"],
                         category=s.get("category", ""),
+                        context=s.get("context", ""),
                     )
                     for s in entry["survivors"]
                 ],
+                coverage_gaps=[_mutant_from_json(m) for m in entry.get("coverage_gaps", [])],
+                inconclusive=[_mutant_from_json(m) for m in entry.get("inconclusive", [])],
+                killed_by_crash=entry.get("killed_by_crash", 0),
                 mutants_run=entry["mutants_run"],
                 killed=entry["killed"],
                 truncated=entry["truncated"],
@@ -971,6 +1105,7 @@ def find_surviving_mutants(
         original = io.open(target, encoding="utf-8", newline="").read()
         survivors: list[Mutant] = []
         coverage_gaps: list[Mutant] = []
+        inconclusive: list[Mutant] = []
         run = 0
         crashes = 0
         with _WarmRunner(sandbox, timeout) as warm:
@@ -983,8 +1118,11 @@ def find_surviving_mutants(
                     # silently dropping a mutant from the denominator.
                     result = _run_pytest(test_paths, sandbox, timeout)
                     if result is None:
+                        # Not a survivor, and not a kill either. Dropping it silently shrank the
+                        # denominator while the report still read as complete.
+                        inconclusive.append(mutant)
                         io.open(target, "w", encoding="utf-8", newline="").write(original)
-                        continue  # a mutant that hung is not a survivor
+                        continue
                     passed = _classify(result, f"mutant {mutant}")
                 else:
                     passed = _classify_code(code, f"mutant {mutant}")
@@ -1000,7 +1138,14 @@ def find_surviving_mutants(
                     # candidate, not a finding. Survivors are rare, so this costs little, and a
                     # false survivor is the outcome that wastes a human's afternoon.
                     confirm = _run_pytest(test_paths, sandbox, timeout)
-                    if confirm is not None and _classify(confirm, f"survivor re-check {mutant}"):
+                    if confirm is None:
+                        # `killed` is `run - len(survivors)`, so falling through here recorded a
+                        # mutant nobody managed to run as one the tests caught -- the unsafe
+                        # direction, and the only re-check on this path that failed that way.
+                        inconclusive.append(mutant)
+                        io.open(target, "w", encoding="utf-8", newline="").write(original)
+                        continue
+                    if _classify(confirm, f"survivor re-check {mutant}"):
                         # Before believing it, ask the wider set. "No test kills this" and "no
                         # LISTED test kills this" are different findings, and only the first is
                         # about the tests. Run only for survivors, which are rare -- listing the
@@ -1018,11 +1163,14 @@ def find_surviving_mutants(
             survivors=survivors,
             mutants_run=run,
             killed=run - len(survivors),
-            truncated=limit is not None and candidates_total > len(mutants),
+            # NOT gated on `limit`: container sampling drops candidates too, and gating on the
+            # cap left the flag False while the report read as exhaustive.
+            truncated=candidates_total > len(mutants),
             candidates_total=candidates_total,
             sampled_containers=sampled,
             killed_by_crash=crashes,
             coverage_gaps=coverage_gaps,
+            inconclusive=inconclusive,
         )
     finally:
         shutil.rmtree(sandbox_parent, ignore_errors=True)
@@ -1039,6 +1187,11 @@ def find_surviving_mutants(
             "truncated": outcome.truncated,
             "candidates_total": outcome.candidates_total,
             "sampled_containers": {k: list(v) for k, v in outcome.sampled_containers.items()},
+            # Every caveat travels with the result. Dropping these made a replay read BETTER than
+            # the run it replayed, which is the one direction a cache must never fail in.
+            "killed_by_crash": outcome.killed_by_crash,
+            "coverage_gaps": [_mutant_json(m) for m in outcome.coverage_gaps],
+            "inconclusive": [_mutant_json(m) for m in outcome.inconclusive],
             "survivors": [
                 {
                     "path": s.path.as_posix(),
@@ -1048,12 +1201,17 @@ def find_surviving_mutants(
                     "original_span": s.original_span,
                     "mutated_span": s.mutated_span,
                     "category": s.category,
+                    "context": s.context,
                 }
                 for s in outcome.survivors
             ],
         }
         cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(existing, indent=2, sort_keys=True), encoding="utf-8")
+        # Atomic: a process killed mid-write left a truncated file, which the read path treats as
+        # an empty cache -- recoverable, but it silently discards every other target's result.
+        staging = cache_file.with_suffix(cache_file.suffix + ".tmp")
+        staging.write_text(json.dumps(existing, indent=2, sort_keys=True), encoding="utf-8")
+        staging.replace(cache_file)
     return outcome
 
 
