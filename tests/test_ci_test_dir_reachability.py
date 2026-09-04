@@ -116,3 +116,25 @@ class TestPathlessPytestInvocation:
             "jobs:\n  unit:\n    steps:\n      - run: |\n          pytest -p no:randomly \\n            tests/test_api\n",
         )
         assert find_unreachable_test_subdirs(repo, repo / ".github" / "workflows") == ["test_orphan"]
+
+
+def test_a_plugin_flag_value_is_not_mistaken_for_a_test_path(tmp_path):
+    """`--splits 10 --group 1` is a PATHLESS run; the bare numbers are flag values, not targets.
+
+    Enumerating every plugin's value-taking flags is a losing game, so the positional test is shape-based: a
+    pytest target carries a separator, a `.py`, or a `::`. Before this, pytest-split's numeric values read as
+    positional paths, which made a pathless invocation look targeted and reported every tests/ subdir in a
+    consuming repo as unreached -- 20 of them, all of which CI did in fact collect.
+    """
+    from py_ci_shared.ci_test_dir_reachability import find_unreachable_test_subdirs
+
+    (tmp_path / "tests" / "alpha").mkdir(parents=True)
+    (tmp_path / "tests" / "alpha" / "test_a.py").write_text("def test_a():\n    pass\n", encoding="utf-8")
+    workflows = tmp_path / ".github" / "workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text(
+        'jobs:\n  t:\n    steps:\n      - run: |\n          pytest -m "not slow" --splits 10 --group 1 -n auto\n',
+        encoding="utf-8",
+    )
+
+    assert find_unreachable_test_subdirs(repo_root=tmp_path, workflows_dir=workflows) == []

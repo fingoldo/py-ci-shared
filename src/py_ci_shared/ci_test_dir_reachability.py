@@ -53,6 +53,16 @@ def _all_ci_run_lines(workflows_dir: Path) -> str:
     return re.sub(r"\\\s*\n\s*", " ", text)
 
 
+def _looks_like_a_path(token: str) -> bool:
+    """True when a bare token could be a pytest target path rather than some flag's value.
+
+    Deliberately shape-based rather than filesystem-based: the workflow may name a path that exists only in
+    CI, and this check runs against the repo, not the runner. A test target is a directory, a module, or a
+    node id -- all of which carry a separator, a ``.py``, or a ``::``. A bare ``10`` carries none.
+    """
+    return "/" in token or "\\" in token or token.endswith(".py") or "::" in token
+
+
 def _has_pathless_pytest_invocation(ci_text: str) -> bool:
     """True if any ``pytest`` command in ``ci_text`` passes no positional path.
 
@@ -70,6 +80,14 @@ def _has_pathless_pytest_invocation(ci_text: str) -> bool:
                 skip_next = True
                 continue
             if tok.startswith("-") or tok == "\\":
+                continue
+            if not _looks_like_a_path(tok):
+                # A value belonging to a value-taking flag this module does not know about. Enumerating every
+                # plugin's flags is a losing game -- pytest-split alone contributes `--splits N` and
+                # `--group N`, and their bare numeric values were being read as positional test paths, which
+                # made a genuinely PATHLESS invocation look like a targeted one and reported every tests/
+                # subdir in the repo as unreached. What actually distinguishes a pytest path argument is that
+                # it is a path.
                 continue
             has_positional = True
             break
