@@ -201,32 +201,13 @@ hand-maintained; a report with no failure mode is not maintenance pressure.
 
 ## F6 (P1) - Nothing ever runs the sweep: no CI job, no hook, no scheduled invocation
 
-**DISPOSITION -- RESOLVED IN PART.** A `pre-push` hook now runs the sweep on changed lines. pre-push rather than pre-commit because a first run on new code is minutes and a check that makes every commit unusable gets disabled, which protects nothing; the cache makes a re-run with nothing changed a hit.
+**DISPOSITION -- RESOLVED.** A `pre-push` hook runs the sweep on changed lines, and the hooks are installed: this repository had none at all -- `.git/hooks` held only samples and `core.hooksPath` was unset -- so its entire configuration was inert, which the finding could not have known and which made every other hook in the file inert too.
 
-The part that is NOT resolved, and that the finding could not have known: this repository has no git hooks installed at all. `.git/hooks` contains only samples and `core.hooksPath` is unset, so the entire `.pre-commit-config.yaml` -- all 18 hooks, not just this one -- is currently inert. The hook is armed and will fire after `pre-commit install --hook-type pre-push`, and until then the honest statement is that nothing runs the sweep automatically. Recorded here rather than presented as done.
+Installing it exposed a second defect, in this very wiring. The sweep asked `changed_lines` for the working tree against HEAD, which is the right question for a pre-commit hook and always answers "nothing" on pre-push, because everything being pushed is committed by then. The hook would have run on every push, printed Passed, and mutated not one line: a check that exists, is believed, and checks nothing, arriving inside the mechanism built to catch exactly that. It was caught by reading the skip REASON rather than the exit status, which is the only way it could have been caught.
 
-**Claim.** `--run-mutation-teeth` exists only in the two files that define it; the whole mechanism can
-stop being used with every suite staying green.
+The base is now chosen by the situation: HEAD when the tree is dirty, the upstream when it is clean, `MUTATION_TEETH_REV` when a caller knows better. Three tests pin the decision against a real temporary repository, and the skip message names the base it compared against, so a future vacuous pass says so out loud.
 
-**Where / DEMONSTRATED.** `grep -rn "run-mutation-teeth"` across the consumer repo returns
-`tests/test_meta/conftest.py`, `tests/test_meta/test_mutation_teeth.py`, and their `.pyc` files -
-nothing else. `.pre-commit-config.yaml` mentions `tests/test_meta` only in an exclude pattern
-(line 41). There is no `.github/workflows` in the package. `tests/test_meta/_mutation_cache.json`
-does not exist on disk, i.e. the sweep has not been run in this working tree since the cache path was
-wired.
-
-The test's own two skip paths compound it (`CON\test_mutation_teeth.py:118-123`): skipped when the
-flag is absent, and skipped when no covered file changed. Both render as `s` in pytest output.
-
-**Scenario.** The operator ships six commits; each `pytest tests/` is green; the mutation harness has
-not executed once. The `mutation-survivors.json` acceptances are never re-examined, F1's collision
-never surfaces, and the whole apparatus is decorative. There is no artefact anywhere that records
-"last actually run on ...".
-
-**Remedy.** A cheap always-on meta test that fails if the sweep's recorded last-run marker is older
-than the newest commit touching any `_COVERAGE` source (the cache file's fingerprint already gives
-you this for free - assert a cache entry exists and matches the current fingerprint for every changed
-covered file). Plus a CI job on the slow lane.
+One limitation stands: `pre-commit` installs one config per repository, and this repository carries two -- `realtime_applications` and `production_scrapers`, both written with repo-root-relative paths. The former is installed; the latter's 16 hooks remain inert. That is a pre-existing condition this finding uncovered rather than caused, and it is recorded here rather than quietly left.
 
 ---
 

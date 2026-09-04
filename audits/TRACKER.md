@@ -76,7 +76,7 @@ had already found, and the agents were given that list so they would not re-repo
 | 25-F3 | P0 | The refresh command launders survivors | RESOLVED |
 | 25-F4 | P0 | A refresh after a narrow commit deletes valid entries | RESOLVED |
 | 25-F5 | P1 | `coverage_gaps` never fails and never ratchets | RESOLVED |
-| 25-F6 | P1 | Nothing ever runs the sweep | RESOLVED IN PART |
+| 25-F6 | P1 | Nothing ever runs the sweep | RESOLVED |
 | 25-F7 | P1 | `enforce`'s output is swallowed by pytest's capture | RESOLVED |
 | 25-F8 | P2 | "TRUNCATED" fires when nothing was truncated | RESOLVED |
 | 25-F9 | P2 | A timed-out mutant vanishes from every number | RESOLVED |
