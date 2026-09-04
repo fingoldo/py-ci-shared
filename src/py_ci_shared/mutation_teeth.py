@@ -92,6 +92,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import warnings
 import tokenize
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -115,6 +116,12 @@ __all__ = [
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
 HARNESS_VERSION = "3"  # 3: closure resolves `from .mod import name`; the key covers scope
+
+
+#: Written in place of a justification by a refresh, and rejected on the next run. A refresh
+#: that produced an acceptable-looking note made accepting every survivor a one-command,
+#: green-output operation.
+_UNJUSTIFIED = "NEEDS-JUSTIFICATION:"
 
 REFRESH_FLAG = "--refresh-mutation-survivors-baseline"
 
@@ -203,6 +210,10 @@ class MutationRun:
     from_cache: bool = False
 
     def summary(self) -> str:
+        if not self.mutants_run and not self.candidates_total:
+            # "0 mutants run, 0 killed, 0 survived" is the sentence a clean run would also produce,
+            # and the difference matters entirely: nothing was checked here.
+            return "NO MUTANTS WERE GENERATED -- nothing was checked (wrong path, or a line scope that selected nothing)"
         parts = [f"{self.mutants_run} mutants run, {self.killed} killed, {len(self.survivors)} survived"]
         if self.killed_by_crash:
             # Not a footnote: these die against any test that reaches the line, so a kill
@@ -228,7 +239,10 @@ class MutationRun:
         for name, (shown, total) in sorted(self.sampled_containers.items()):
             parts.append(f"sampled {shown} of {total} entries in {name}")
         if self.from_cache:
-            parts.append("(cached: nothing in the import closure changed)")
+            # Says what was checked, not what is true. The fingerprint covers the import
+            # closure, the tests, the declared data files and the run's scope -- it does not cover
+            # dynamic imports, the environment, or a data file nobody passed in.
+            parts.append("(REPLAYED FROM CACHE, not measured: no fingerprinted input changed)")
         return "; ".join(parts)
 
 
@@ -244,6 +258,18 @@ _OP_SWAP = {
     "-": ("+", "- becomes +"),
     "*": ("/", "* becomes /"),
     "/": ("*", "/ becomes *"),
+    # Each of these is a single OP token and none of them was in the table, so a whole family of
+    # real edits could not be expressed. `+=` -> `=` on an accumulator is the exact shape of the
+    # attachment-budget defect this harness was pointed at: the running total stops accumulating
+    # and every item is measured against the full budget.
+    "//": ("/", "// becomes /"),
+    "%": ("*", "% becomes *"),
+    "**": ("*", "** becomes *"),
+    "+=": ("=", "+= becomes ="),
+    "-=": ("=", "-= becomes ="),
+    "*=": ("=", "*= becomes ="),
+    "|=": ("=", "|= becomes ="),
+    "&=": ("=", "&= becomes ="),
 }
 _NAME_SWAP = {
     "and": ("or", "and becomes or"),
@@ -252,7 +278,34 @@ _NAME_SWAP = {
     "False": ("True", "False becomes True"),
     "is": ("is not", "is becomes is not"),
     "in": ("not in", "in becomes not in"),
+    # Cap-enforcement loops end with one of these, and swapping them is the difference between
+    # "skip this item" and "stop processing items" -- the same class as the off-by-one at a cap.
+    "continue": ("break", "continue becomes break"),
+    "break": ("continue", "break becomes continue"),
+    "max": ("min", "max becomes min"),
+    "min": ("max", "max becomes min"),
+    "any": ("all", "any becomes all"),
+    "all": ("any", "all becomes any"),
 }
+
+
+def _has_constant(node: ast.AST | None) -> bool:
+    """Does this annotation carry a literal INSIDE a subscript? Then it can carry a real bound.
+
+    The distinction is not "contains a literal". A bare string annotation is a forward reference
+    and, under ``from __future__ import annotations``, is never evaluated at all -- mutating it is
+    provably unkillable, which is why annotations were excluded in the first place. A literal inside
+    a subscript is a different animal: `Literal["draft", "sent"]` and `Annotated[int, Field(ge=1)]`
+    are read by pydantic when the model is built and enforced on every instance, so a moved bound
+    there is a defect a test can and does catch.
+    """
+    if node is None:
+        return False
+    return any(
+        isinstance(sub, ast.Subscript)
+        and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in ast.walk(sub.slice))
+        for sub in ast.walk(node)
+    )
 
 
 def _line_starts(source: str) -> list[int]:
@@ -322,20 +375,27 @@ def _excluded_ranges(source: str) -> list[tuple[int, int]]:
                 if isinstance(target, ast.Name) and target.id == "__all__" and (s := span(node.value)) is not None:
                     out.append(s)
         elif isinstance(node, ast.AnnAssign):
-            if (s := span(node.annotation)) is not None:
+            # Only annotations with nothing mutable in them. `Literal["draft", "sent"]` and
+            # `Annotated[int, Field(ge=1, le=5)]` are ENFORCED at runtime by pydantic, and tests
+            # observe the enforcement -- excluding them wholesale hid a bound that a mutation can
+            # really move. A bare `int` or `str | None` contains no constant, so excluding it costs
+            # nothing.
+            if not _has_constant(node.annotation) and (s := span(node.annotation)) is not None:
                 out.append(s)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             args = node.args
             for arg in [*args.args, *args.posonlyargs, *args.kwonlyargs, args.vararg, args.kwarg]:
-                if arg is not None and (s := span(arg.annotation)) is not None:
+                if arg is None or arg.annotation is None or _has_constant(arg.annotation):
+                    continue
+                if (s := span(arg.annotation)) is not None:
                     out.append(s)
             if (s := span(node.returns)) is not None:
                 out.append(s)
     return out
 
 
-def _container_members(source: str) -> dict[int, str]:
-    """Absolute start index of each element of a large module-level container -> container name.
+def _container_members(source: str) -> list[tuple[int, int, str]]:
+    """``(start, end, container name)`` for each SUPPRESSED element of a large module-level table.
 
     Used to SAMPLE rather than exhaust data tables. Rotation is seeded from the file's content hash
     so successive runs cover different rows: a row missed today is missed temporarily, not
@@ -347,11 +407,19 @@ def _container_members(source: str) -> dict[int, str]:
         return {}
     starts = _line_starts(source)
     seed = int(hashlib.sha256(source.encode("utf-8")).hexdigest()[:8], 16)
-    out: dict[int, str] = {}
+    out: list[tuple[int, int, str]] = []
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Assign) or not isinstance(node.value, (ast.Dict, ast.Set, ast.List, ast.Tuple)):
+        # AnnAssign as well as Assign: a module constant written `_BANNED: frozenset = {...}` is
+        # the SAME data table, and matching only the unannotated form meant the annotated ones were
+        # exhausted instead of sampled -- the whole survivor list then fills with rows of one table
+        # and nobody reads to the end of it. Typed module constants are the house style here, so
+        # this was not an edge case.
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not isinstance(
+            node.value, (ast.Dict, ast.Set, ast.List, ast.Tuple)
+        ):
             continue
-        name = next((t.id for t in node.targets if isinstance(t, ast.Name)), "<container>")
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        name = next((t.id for t in targets if isinstance(t, ast.Name)), "<container>")
         elements: list[ast.AST] = []
         if isinstance(node.value, ast.Dict):
             elements = [k for k in node.value.keys if k is not None] + list(node.value.values)
@@ -359,11 +427,25 @@ def _container_members(source: str) -> dict[int, str]:
             elements = list(node.value.elts)
         if len(elements) <= _CONTAINER_SAMPLE:
             continue
+        # A row that CONTAINS A CALL is code, not data. The sampler exists so a lookup table of
+        # country codes does not bury the survivor list; applied to a table of `re.compile(...)`
+        # guards it would suppress the substance of the module instead of its noise, and the
+        # content-hash seed means the same rows would stay suppressed until the file changed. The
+        # line is the presence of an expression that DOES something, which is exactly the
+        # difference between a data table and a table of behaviour.
+        if any(isinstance(sub, ast.Call) for element in elements for sub in ast.walk(element)):
+            continue
         keep = {(seed + i) % len(elements) for i in range(_CONTAINER_SAMPLE)}
         for index, element in enumerate(elements):
             if index in keep or getattr(element, "lineno", None) is None:
                 continue
-            out[_abs_index(source, starts, element.lineno, element.col_offset)] = name
+            end_line = getattr(element, "end_lineno", None)
+            end_col = getattr(element, "end_col_offset", None)
+            if end_line is None or end_col is None:  # pragma: no cover - ast always sets these
+                continue
+            start = _abs_index(source, starts, element.lineno, element.col_offset)
+            out.append((start, _abs_index(source, starts, end_line, end_col), name))
+    out.sort()
     return out
 
 
@@ -395,10 +477,22 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list
         abs_end = starts[tok.end[0] - 1] + tok.end[1] if tok.end[0] - 1 < len(starts) else abs_start
         if excluded_at(abs_start, abs_end):
             continue
-        category = f"noise:table-sample:{sampled_out[abs_start]}" if abs_start in sampled_out else ""
+        # Containment, not equality. The sampler marks an ELEMENT of a data table; the mutable
+        # tokens sit inside it at their own offsets, so an exact-offset test suppressed nothing at
+        # all and every row of every sampled table came back as a candidate.
+        sampled_name = next((n for lo, hi, n in sampled_out if lo <= abs_start < hi), None)
+        category = f"noise:table-sample:{sampled_name}" if sampled_name else ""
 
         def emit(end: int, replacement: str, description: str) -> None:
             out.append((abs_start, end, row, replacement, description, category))
+
+        if tok.type == tokenize.NAME and tok.string == "if" and index + 1 < len(tokens):
+            following = tokens[index + 1]
+            # `if flag:` -> `if not flag:`. A guard with no comparison and no `not` in it was the
+            # one shape with nothing to swap, so an inverted guard -- the most ordinary logic bug
+            # there is -- could not be expressed at all.
+            if following.type == tokenize.NAME and following.string not in ("not", "None", "True", "False"):
+                emit(abs_end, "if not", "logic: guard inverted")
 
         if tok.type == tokenize.OP and tok.string in _OP_SWAP:
             new, why = _OP_SWAP[tok.string]
@@ -445,6 +539,18 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list
             if tok.string.lstrip("rRbBuU")[:1] in ("f", "F"):
                 continue
             emit(abs_end, '""', "constant: emptied a string")
+
+        elif tok.type == getattr(tokenize, "FSTRING_MIDDLE", -1) and tok.string:
+            # The literal text BETWEEN interpolations, which on 3.12+ is where most of this
+            # project's prose lives: an entire prompt template rendered as one f-string produced
+            # mutants only for its `{...}` slots, so the sentences themselves could not be
+            # challenged at all. Deleting one segment is not the mutation the branch above rejects
+            # -- that one empties a whole f-string token and breaks the interpolations with it.
+            # A segment is exactly a run of literal characters, and removing it leaves every
+            # `{...}` in place, which is what makes it the same operator as "emptied a string".
+            if row in coupled:
+                continue
+            emit(abs_end, "", "constant: emptied an f-string segment")
 
     return out
 
@@ -535,19 +641,25 @@ def generate_mutants(
             end_line = line_of(max(abs_start, abs_end - 1))
             if not any(line <= r.stop - 1 and end_line >= r.start for r in ranges):
                 continue
-        total += 1
         if category.startswith("noise:table-sample:"):
             name = category.split(":", 2)[2]
             shown, seen = sampled.get(name, (0, 0))
             sampled[name] = (shown, seen + 1)
+            total += 1  # dropped by SAMPLING: a real omission, and the caller must be told
             continue
         mutated = source[:abs_start] + replacement + source[abs_end:]
+        # Counted only from here on. A candidate that is a no-op or does not compile is not a
+        # mutant that was left out -- there was never anything to run -- and counting it made
+        # `candidates_total > len(mutants)` true on files where nothing at all was omitted, which
+        # is how a TRUNCATED banner ends up on a report that is complete. A banner that cries wolf
+        # is worse than none: it trains the reader past the one line that matters.
         if mutated == source:
             continue
         try:
             ast.parse(mutated)
         except SyntaxError:
             continue  # a mutant that does not compile tests nothing
+        total += 1
         if limit is not None and len(mutants) >= limit:
             continue
         mutants.append(
@@ -579,6 +691,10 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
     try:
         tree = ast.parse(io.open(path, encoding="utf-8", errors="replace").read())
     except (SyntaxError, OSError):
+        # The file itself still counts. Dropping it silently removed it AND everything it imports
+        # from the fingerprint, so the very edit that fixes a syntax error would not invalidate the
+        # cached verdict that was measured without it.
+        seen.add(path)
         return seen
     names: list[str] = []
     for node in ast.walk(tree):
@@ -609,9 +725,14 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
                 names.append(node.module)
     for name in names:
         parts = name.split(".")
-        for candidate in (repo_root.joinpath(*parts).with_suffix(".py"), repo_root.joinpath(*parts, "__init__.py")):
-            if candidate.is_file():
-                _first_party_imports(candidate, repo_root, seen)
+        # `src/` is probed as well as the root. A src-layout package installed editable imports as
+        # `pkg.mod` while living at `src/pkg/mod.py`, so probing the root alone found nothing and
+        # the closure silently collapsed to the target file -- which is the state this very package
+        # would be fingerprinted in.
+        for base in (repo_root, repo_root / "src"):
+            for candidate in (base.joinpath(*parts).with_suffix(".py"), base.joinpath(*parts, "__init__.py")):
+                if candidate.is_file():
+                    _first_party_imports(candidate, repo_root, seen)
     return seen
 
 
@@ -669,6 +790,12 @@ def fingerprint(
         files.add((repo_root / extra).resolve())
 
     digest = hashlib.sha256(HARNESS_VERSION.encode())
+    # The machinery the answer was measured on. A Python upgrade or an installed/removed pytest
+    # plugin changes what the tests do without touching a byte of the repo, and a replay under
+    # different machinery is a verdict about a run that never happened. Cheap to include, and it
+    # converts a whole class of silent staleness into a cache miss.
+    digest.update(sys.version.encode("utf-8"))
+    digest.update(repr(sorted(_installed_pytest_plugins())).encode("utf-8"))
     # The SCOPE of a run is part of its answer, not part of its inputs. A sweep narrowed by
     # `lines=` or capped by `limit=` examines a SUBSET of the mutants, and its verdict is only
     # about that subset -- so replaying it for a wider scope reports "no survivors" about mutants
@@ -718,6 +845,27 @@ def _mutant_from_json(d: dict) -> Mutant:
     )
 
 
+def _installed_pytest_plugins() -> list[str]:
+    """Names and versions of installed pytest plugins, for the fingerprint.
+
+    Read from installed distribution metadata rather than by starting pytest: this runs on every
+    fingerprint, including cache hits, and must not cost a process.
+    """
+    found = []
+    try:
+        from importlib.metadata import distributions
+    except ImportError:  # pragma: no cover - stdlib since 3.8
+        return found
+    for dist in distributions():
+        try:
+            name = dist.metadata["Name"] or ""
+        except (KeyError, TypeError):  # pragma: no cover - broken metadata in the wild
+            continue
+        if name.startswith("pytest") or name.startswith("pytest-"):
+            found.append(f"{name}=={dist.version}")
+    return found
+
+
 def _pytest_env() -> dict[str, str]:
     """Environment for a nested pytest run.
 
@@ -752,6 +900,23 @@ _CRASH_EXCEPTIONS = (
     "RecursionError",
     "UnicodeDecodeError",
     "UnicodeEncodeError",
+    # The classes a MUTATION produces, as opposed to the ones application code raises. An emptied
+    # string becomes an invalid name or an empty pattern; a deleted call leaves a name unbound; a
+    # changed constant walks off the end of a sequence or opens a path that is not there.
+    "NameError",
+    "UnboundLocalError",
+    "ImportError",
+    "ModuleNotFoundError",
+    "AssertionError",
+    "StopIteration",
+    "ArithmeticError",
+    "OSError",
+    "FileNotFoundError",
+    "NotADirectoryError",
+    "IsADirectoryError",
+    "PermissionError",
+    "re.error",
+    "json.JSONDecodeError",
 )
 
 
@@ -867,6 +1032,8 @@ class _WarmRunner:
         self.sandbox = sandbox
         self.timeout = timeout
         self.process: subprocess.Popen | None = None
+        #: The file whose failure ended the last run, if the worker reported one.
+        self.last_failed: str | None = None
 
     def start(self) -> None:
         self.process = subprocess.Popen(
@@ -919,6 +1086,10 @@ class _WarmRunner:
         # mid-sweep or -- worse -- to a number read as an exit code.
         if not isinstance(reply, dict) or "rc" not in reply:
             return None
+        # Advisory: which file failed first, so the caller can lead with it next time. A worker
+        # that does not report it simply leaves the order alone.
+        failed = reply.get("failed")
+        self.last_failed = failed if isinstance(failed, str) else None
         try:
             return int(reply["rc"])
         except (TypeError, ValueError):
@@ -974,11 +1145,27 @@ class _WarmRunner:
         self.stop()
 
 
+def _lead_with(paths: list[Path | str], first: str) -> list[Path | str]:
+    """*paths* reordered so the entry matching *first* leads. Unknown names change nothing."""
+    wanted = Path(first).as_posix()
+    for i, p in enumerate(paths):
+        if Path(p).as_posix() == wanted:
+            return [paths[i], *paths[:i], *paths[i + 1 :]]
+    return paths
+
+
 def _classify_code(code: int, what: str) -> bool:
     """True if the tests PASSED. Raises when the exit code means neither pass nor fail."""
     if code == 0:
         return True
     if code == 1:
+        return False
+    if code in (2, 3) and not what.startswith("the unmutated baseline"):
+        # A mutant that breaks collection or the module import exits 2 (or 3) and takes every test
+        # with it. Aborting the sweep here blamed `test_paths` for something the mutation did --
+        # and the baseline has already passed with the same paths, so the mutation is the only
+        # thing that changed. It is a kill, of the crash kind, which `killed_by_crash` exists to
+        # keep separate from a kill by assertion.
         return False
     raise MutationHarnessError(
         f"pytest exited {code} on {what}, which is neither pass (0) nor fail (1). "
@@ -1109,9 +1296,36 @@ def find_surviving_mutants(
         run = 0
         crashes = 0
         with _WarmRunner(sandbox, timeout) as warm:
+            # The mandatory baseline above runs COLD, so it proves the tests pass in a fresh
+            # process and says nothing about the process every verdict actually comes from. That
+            # asymmetry is the harness's most flattering failure: survivors are re-verified cold,
+            # kills never are, and `killed` is derived by subtraction -- so anything that makes the
+            # warm path fail systematically (a different sys.path, a plugin that misbehaves on a
+            # second pytest.main() in one process) fails mutant 1 and every mutant after it, and
+            # the sweep reports "all killed, no survivors" with the cold baseline green behind it.
+            # One unmutated run through the worker turns that into a loud refusal.
+            if use_warm_worker:
+                warm_baseline = warm.run(test_paths)
+                if warm_baseline is None:
+                    use_warm_worker = False  # degrade to cold rather than trust an unproven worker
+                elif not _classify_code(warm_baseline, "the unmutated baseline in the warm worker"):
+                    raise MutationHarnessError(
+                        "the tests pass in a fresh process but fail inside the reused worker, so "
+                        "every mutant would be recorded as killed for a reason unrelated to the "
+                        "mutation. Re-run with `use_warm_worker=False` to get a usable result, and "
+                        "treat the difference between the two processes as the bug."
+                    )
+            # Most mutants are killed by the same test file as the one before -- they are, after
+            # all, usually neighbouring edits to the same function. `-x` stops at the first failure,
+            # so leading with the previous killer shortens both collection and execution. It cannot
+            # change any verdict: a kill is a kill whichever file produces it, and a survivor still
+            # requires every listed test to pass.
+            ordered = list(test_paths)
             for mutant in mutants:
                 io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
-                code = warm.run(test_paths) if use_warm_worker else None
+                code = warm.run(ordered) if use_warm_worker else None
+                if warm.last_failed:
+                    ordered = _lead_with(ordered, warm.last_failed)
                 if code is None:
                     # The worker died, timed out, or was never used. A cold run is slower but
                     # always available, so a worker problem degrades performance rather than
@@ -1126,6 +1340,11 @@ def find_surviving_mutants(
                     passed = _classify(result, f"mutant {mutant}")
                 else:
                     passed = _classify_code(code, f"mutant {mutant}")
+                    if code in (2, 3):
+                        # An import or collection failure: every test in the file dies at once, so
+                        # this proves nothing about any assertion. Counted here because the warm
+                        # path has no output to read a traceback out of.
+                        crashes += 1
                     result = None  # the warm worker returns a code, not output, so a
                     # crash cannot be distinguished from an assertion failure on this
                     # path. The count is therefore a lower bound, which the summary says.
@@ -1176,6 +1395,23 @@ def find_surviving_mutants(
         shutil.rmtree(sandbox_parent, ignore_errors=True)
 
     if cache_file:
+        # Re-taken AFTER the run. The sweep takes minutes; anything edited during one would
+        # otherwise be filed under its NEW fingerprint with a verdict measured on the OLD content,
+        # and the next run would replay a clean result for code that was never swept. A changed
+        # fingerprint means the result describes nothing that still exists, so it is discarded
+        # rather than stored under either key.
+        if fingerprint(
+            repo_root,
+            relative,
+            test_paths,
+            extra_fingerprint_paths,
+            scope=(
+                [[r.start, r.stop] for r in lines] if lines else None,
+                limit,
+                [str(t) for t in (fallback_test_paths or ())],
+            ),
+        ) != key:
+            return outcome
         try:
             existing = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.is_file() else {}
         except (OSError, json.JSONDecodeError):
@@ -1252,10 +1488,39 @@ def assert_no_new_surviving_mutant(
     suppression list is the pattern ``gate_integrity`` explicitly argues against.
     """
     outcome = find_surviving_mutants(path, test_paths, repo_root, **kwargs)
-    found = {m.key: f"{m} -- accepted because ..." for m in outcome.survivors}
+    found = {m.key: f"{_UNJUSTIFIED} {m}" for m in outcome.survivors}
     if request is not None and _refresh_requested(request):
-        baseline.regenerate(found)
-        return
+        # A refresh writes the KEYS, never the justifications. Regenerating with a plausible
+        # placeholder turned "accept every survivor" into one command whose output was green --
+        # which is the opposite of what a baseline is for. The marker below fails the very next
+        # run until a human replaces it with a real reason.
+        baseline.regenerate({k: v for k, v in found.items()})
+        raise AssertionError(
+            f"{len(found)} survivor(s) written to {baseline.path} WITHOUT justifications.\n"
+            f"Each is marked {_UNJUSTIFIED!r} and will keep failing until you replace that marker "
+            "with the reason the mutant cannot be observed. A refresh records what was found; it "
+            "does not decide that the finding is acceptable."
+        )
+    if outcome.truncated or outcome.from_cache:
+        # Not a failure -- a deliberate `limit` is a legitimate way to run this, and a cache hit is
+        # the point of the cache. But on the green path NOTHING was printed, so an incomplete or
+        # replayed result was indistinguishable from a complete measured one. A warning lands in
+        # pytest's summary without stopping anyone.
+        warnings.warn(f"mutation teeth for {path}: {outcome.summary()}", stacklevel=2)
+    if outcome.inconclusive:
+        raise AssertionError(
+            f"{len(outcome.inconclusive)} mutant(s) could not be run to a verdict in "
+            f"{path}, so this sweep does not support a pass.\n{outcome.summary()}"
+        )
+    if outcome.coverage_gaps:
+        # NOT a survivor and NOT something to accept: a test that kills this already exists and is
+        # missing from the caller's map. Reporting it without failing left the map wrong for as
+        # long as anyone tolerated the line, and a cached replay then stopped mentioning it.
+        listed = "\n".join(f"  {m}" for m in outcome.coverage_gaps)
+        raise AssertionError(
+            f"{len(outcome.coverage_gaps)} mutant(s) in {path} are killed by a test that the "
+            f"coverage map does not list. Fix the MAP, not the tests:\n{listed}"
+        )
     exit_code = baseline.enforce(
         found,
         label=f"mutation teeth: {path}",

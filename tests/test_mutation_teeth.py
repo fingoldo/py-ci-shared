@@ -7,6 +7,7 @@ own mutants are wrong is worse than no harness, because its output is read as ev
 
 from __future__ import annotations
 
+import ast
 import io
 import time
 from pathlib import Path
@@ -612,3 +613,119 @@ class TestTheCacheReplaysEveryCaveat:
 
         assert restored.context == original.context
         assert restored.key == original.key
+
+
+class TestProseInsideAnFStringCanBeChallenged:
+    """On 3.12+ the literal text of an f-string is FSTRING_MIDDLE, which the string operator never
+    saw. In this project that is where the prose lives: a prompt template rendered as one f-string
+    yielded mutants only for its `{...}` slots, so no sentence in it could be challenged."""
+
+    def test_a_literal_segment_is_mutable(self, tmp_path):
+        src = tmp_path / "m.py"
+        src.write_text('def go(name):\n    return f"### {name} fenced by a rule"\n', encoding="utf-8")
+        mutants, _t, _s = mutation_teeth.generate_mutants(src)
+        segments = [m for m in mutants if "f-string segment" in m.description]
+
+        assert segments, "the literal text of an f-string produced no mutants"
+        assert any("fenced by a rule" in m.original_span for m in segments)
+
+    def test_the_interpolations_survive_the_edit(self, tmp_path):
+        """The objection that made the whole f-string be skipped: emptying an entire f-string token
+        turns `f"{x} and {'q'}"` into something where the second interpolation is no longer one.
+        Deleting a SEGMENT cannot do that, and this is the assertion that says so."""
+        src = tmp_path / "m.py"
+        src.write_text('def go(a, b):\n    return f"{a} middle {b} tail"\n', encoding="utf-8")
+        mutants, _t, _s = mutation_teeth.generate_mutants(src)
+        segments = [m for m in mutants if "f-string segment" in m.description]
+
+        assert segments
+        for m in segments:
+            tree = ast.parse(m.mutated_file_text)
+            slots = [n for n in ast.walk(tree) if isinstance(n, ast.FormattedValue)]
+            assert len(slots) == 2, f"an interpolation was lost by {m.original_span!r}"
+
+
+class TestTheOperatorSetReachesTheShapesThisCodeProduces:
+    """Each of these was absent, and each names a real defect shape in the consuming project."""
+
+    def _descriptions(self, tmp_path, body: str) -> set[str]:
+        src = tmp_path / "m.py"
+        src.write_text(body, encoding="utf-8")
+        return {m.description for m in mutation_teeth.generate_mutants(src)[0]}
+
+    def test_an_accumulator_can_stop_accumulating(self, tmp_path):
+        """`+=` -> `=` is the attachment-budget defect exactly: the running total stops running, and
+        every item is then measured against the full budget instead of what is left of it."""
+        got = self._descriptions(tmp_path, "def go(items):\n    used = 0\n    for i in items:\n        used += i\n    return used\n")
+
+        assert any("+= becomes =" in d for d in got), sorted(got)
+
+    def test_a_loop_can_stop_instead_of_skipping(self, tmp_path):
+        """`continue` -> `break` in a cap-enforcement loop is the difference between skipping one
+        item and abandoning the rest, and it is the same family as an off-by-one at the cap."""
+        got = self._descriptions(tmp_path, "def go(items):\n    for i in items:\n        if i:\n            continue\n        print(i)\n")
+
+        assert any("continue becomes break" in d for d in got), sorted(got)
+
+    def test_a_clamp_can_invert(self, tmp_path):
+        got = self._descriptions(tmp_path, "def go(n, cap):\n    return max(1, min(n, cap))\n")
+
+        assert any("max becomes min" in d for d in got), sorted(got)
+
+    def test_integer_division_and_modulo_are_reachable(self, tmp_path):
+        got = self._descriptions(tmp_path, "def go(n):\n    return n // 3, n % 7, n ** 2\n")
+
+        for wanted in ("// becomes /", "% becomes *", "** becomes *"):
+            assert any(wanted in d for d in got), f"{wanted} missing from {sorted(got)}"
+
+    def test_every_generated_mutant_still_compiles(self, tmp_path):
+        """The guard on the whole set: a new operator that emits invalid syntax would be filtered
+        as 'does not compile' and silently reduce coverage instead of adding it."""
+        body = (
+            "def go(items, n, cap):\n"
+            "    used = 0\n"
+            "    for i in items:\n"
+            "        if i is None:\n"
+            "            continue\n"
+            "        used += i // 2\n"
+            "        if used > cap:\n"
+            "            break\n"
+            "    return max(used, min(n, cap)), any(items), all(items)\n"
+        )
+        src = tmp_path / "m.py"
+        src.write_text(body, encoding="utf-8")
+        mutants, _total, _s = mutation_teeth.generate_mutants(src)
+
+        # Asserted by NAME, not by count: a count is a guess about the operator set, and the point
+        # here is that each new operator fires and none of them emits invalid syntax -- an operator
+        # that did would be filtered as "does not compile" and quietly shrink coverage.
+        fired = {m.description for m in mutants}
+        for wanted in ("+= becomes =", "continue becomes break", "break becomes continue", "max becomes min"):
+            assert any(wanted in d for d in fired), f"{wanted} did not fire: {sorted(fired)}"
+        for m in mutants:
+            ast.parse(m.mutated_file_text)
+
+
+class TestAnnotationsThatCarryEnforcedBounds:
+    """The exclusion of annotations was right for the reason it gave and too wide by one case."""
+
+    def _descriptions(self, tmp_path, body: str) -> set[str]:
+        src = tmp_path / "m.py"
+        src.write_text(body, encoding="utf-8")
+        return {m.description for m in mutation_teeth.generate_mutants(src)[0]}
+
+    def test_a_literal_choice_set_is_mutable(self, tmp_path):
+        """`Literal[...]` is read when the model is built and enforced on every instance, so
+        emptying one of its members is a defect a test observes. Excluding every annotation hid
+        that behind the same rule that correctly excludes a forward reference."""
+        got = self._descriptions(tmp_path, 'from typing import Literal\n\nStatus = 1\n\n\ndef f(s: Literal["draft", "sent"]) -> int:\n    return 1\n')
+
+        assert any("emptied a string" in d for d in got), sorted(got)
+
+    def test_a_bare_forward_reference_is_still_left_alone(self, tmp_path):
+        """The counterweight, and the reason the original exclusion exists: under
+        `from __future__ import annotations` this is never evaluated, so the mutant is unkillable
+        by construction and would be a permanent false survivor."""
+        got = self._descriptions(tmp_path, 'from __future__ import annotations\n\n\ndef f(x: "MyType") -> "int":\n    return x\n')
+
+        assert not any("emptied a string" in d for d in got), sorted(got)
