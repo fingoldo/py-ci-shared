@@ -201,7 +201,9 @@ hand-maintained; a report with no failure mode is not maintenance pressure.
 
 ## F6 (P1) - Nothing ever runs the sweep: no CI job, no hook, no scheduled invocation
 
-**DISPOSITION -- DEFERRED.** Nothing schedules the sweep; it still runs only behind `--run-mutation-teeth`. Making it unconditional is tempting now that the cache is sound, but the first run on a cold cache is minutes and would land on whoever next runs the suite. Waiting on: the cost work (audit 24) landing, which measures a path from 323-361s to roughly 60-90s per file. The mitigation in the meantime is F2: the baseline's honesty is now checked unconditionally, so the part that can rot silently is guarded even when the sweep is not run.
+**DISPOSITION -- RESOLVED IN PART.** A `pre-push` hook now runs the sweep on changed lines. pre-push rather than pre-commit because a first run on new code is minutes and a check that makes every commit unusable gets disabled, which protects nothing; the cache makes a re-run with nothing changed a hit.
+
+The part that is NOT resolved, and that the finding could not have known: this repository has no git hooks installed at all. `.git/hooks` contains only samples and `core.hooksPath` is unset, so the entire `.pre-commit-config.yaml` -- all 18 hooks, not just this one -- is currently inert. The hook is armed and will fire after `pre-commit install --hook-type pre-push`, and until then the honest statement is that nothing runs the sweep automatically. Recorded here rather than presented as done.
 
 **Claim.** `--run-mutation-teeth` exists only in the two files that define it; the whole mechanism can
 stop being used with every suite staying green.

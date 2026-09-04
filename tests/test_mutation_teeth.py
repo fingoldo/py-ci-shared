@@ -729,3 +729,207 @@ class TestAnnotationsThatCarryEnforcedBounds:
         got = self._descriptions(tmp_path, 'from __future__ import annotations\n\n\ndef f(x: "MyType") -> "int":\n    return x\n')
 
         assert not any("emptied a string" in d for d in got), sorted(got)
+
+
+class TestTheOperatorsThatNeedAstSpans:
+    """Deferred once, because AST columns are BYTE offsets and this is where that bites.
+
+    The historical failure is on record in the module docstring: a span taken as a character offset
+    turned a whole statement into `a >= b` and reported it at a line nobody had touched. Both
+    operators here take every boundary through `_abs_index`, and the first test puts an emoji in
+    front of the call so a regression shows up as a mangled splice rather than as a subtly wrong
+    line number.
+    """
+
+    def _mutants(self, tmp_path, body: str):
+        src = tmp_path / "m.py"
+        io.open(src, "w", encoding="utf-8", newline="").write(body)
+        return mutation_teeth.generate_mutants(src)[0]
+
+    def test_adjacent_arguments_are_transposed(self, tmp_path):
+        """`log("%s kept %d of %d", uid, n, cap)` type-checks, reads correctly, and lies when two of
+        those values change places. No single token is wrong, so no token operator can express it."""
+        mutants = self._mutants(tmp_path, 'def go(uid, n, cap):\n    log("kept", uid, n, cap)\n')
+        swaps = [m for m in mutants if "transposed" in m.description]
+
+        assert len(swaps) == 3, [m.description for m in swaps]
+        assert any("uid <-> n" in m.description for m in swaps)
+
+    def test_a_transposition_survives_a_non_ascii_prefix(self, tmp_path):
+        """The trap itself. With an emoji earlier on the line, a span read as a character offset
+        lands two positions late and destroys the surrounding text."""
+        body = 'def go(uid, n):\n    x = "\U0001f600\U0001f600"; log("kept", uid, n)\n'
+        swaps = [m for m in self._mutants(tmp_path, body) if "transposed" in m.description]
+
+        assert swaps
+        for mutant in swaps:
+            line = mutant.mutated_file_text.split("\n")[1]
+            assert '"\U0001f600\U0001f600"' in line, f"the text before the call was destroyed: {line}"
+            ast.parse(mutant.mutated_file_text)
+
+    def test_star_args_are_left_alone(self, tmp_path):
+        """`*args` has no fixed position, so there is nothing to transpose and the splice would be
+        meaningless rather than wrong."""
+        mutants = self._mutants(tmp_path, "def go(a, rest):\n    log(a, *rest)\n")
+
+        assert not [m for m in mutants if "transposed" in m.description]
+
+    def test_a_named_slice_bound_can_be_removed(self, tmp_path):
+        """`text[:limit]` -> `text[:]` is the unbounded-slice defect. The numeric operator reached
+        this only when the bound was a literal, and a bound worth having is usually a name."""
+        mutants = self._mutants(tmp_path, "def go(text, limit):\n    return text[:limit]\n")
+        cuts = [m for m in mutants if m.description.startswith("slice:")]
+
+        assert cuts, [m.description for m in mutants]
+        assert "text[:]" in cuts[0].mutated_file_text
+
+    def test_a_literal_slice_bound_is_left_to_the_numeric_operator(self, tmp_path):
+        """The counterweight: two operators firing on one site is noise, and `10` -> `11` already
+        says everything a removed literal bound would."""
+        mutants = self._mutants(tmp_path, "def go(text):\n    return text[:10]\n")
+
+        assert not [m for m in mutants if m.description.startswith("slice:")]
+        assert any("10 becomes 11" in m.description for m in mutants)
+
+
+class TestSubstitutionNeedsARuleAndHasOne:
+    """Both of these were deferred for want of a rule, not for want of effort.
+
+    Emptying a string is unambiguous; substituting one has to answer "with WHAT", and an arbitrary
+    answer would add to the 56% of all candidates that string-emptying already produces.
+    """
+
+    def _mutants(self, tmp_path, body: str):
+        src = tmp_path / "m.py"
+        io.open(src, "w", encoding="utf-8", newline="").write(body)
+        return mutation_teeth.generate_mutants(src)[0]
+
+    def test_a_guard_pattern_is_widened_at_its_anchors(self, tmp_path):
+        """Each perturbation makes the pattern match MORE, which is the direction a guard fails in:
+        a narrowed guard misses something and says so, a widened one quietly says yes."""
+        body = _RAW_GUARD
+        widened = [m for m in self._mutants(tmp_path, body) if "regex widened" in m.description]
+
+        assert widened, [m.description for m in self._mutants(tmp_path, body)]
+        assert "word-boundary" in widened[0].description
+
+    def test_prose_in_the_same_shape_is_not_treated_as_a_pattern(self, tmp_path):
+        """The counterweight. `\b` in a log message is not an anchor, and perturbing it would be a
+        mutant about nothing -- the rule is that the string must reach a regex CALL."""
+        body = _RAW_PROSE
+        widened = [m for m in self._mutants(tmp_path, body) if "regex widened" in m.description]
+
+        assert not widened
+
+    def test_a_pattern_that_would_not_compile_is_not_emitted(self, tmp_path):
+        """A perturbation that breaks the pattern is not a mutant no test kills -- it is not a
+        mutant. Emitting it would put a permanent unkillable entry in every survivor list."""
+        body = _RAW_ANCHORED
+        for mutant in self._mutants(tmp_path, body):
+            if "regex widened" in mutant.description:
+                import re as _re
+
+                pattern = mutant.mutated_file_text.split('r"')[1].split('"')[0]
+                _re.compile(pattern)
+
+    def test_a_literal_is_swapped_for_a_confusable_one_from_the_same_file(self, tmp_path):
+        """The vocabulary is the file's own, so the rule invents nothing: if `NFKD` and `NFKC` both
+        appear, the author held both in mind and "does anything check which one this is" is a real
+        question."""
+        body = 'def go(text, mode):\n    a = norm("NFKD", text)\n    b = norm("NFKC", text)\n    return a, b\n'
+        swaps = [m for m in self._mutants(tmp_path, body) if "became" in m.description]
+
+        assert swaps, [m.description for m in self._mutants(tmp_path, body)]
+        assert any("NFKD" in m.description and "NFKC" in m.description for m in swaps)
+
+    def test_a_literal_with_no_confusable_neighbour_gets_no_mutant(self, tmp_path):
+        """The other half of the rule, and what keeps it cheap: no neighbour, no mutant. Measured at
+        1.6% of candidates across five real modules."""
+        body = 'def go(text):\n    return norm("NFKD", text)\n'
+        swaps = [m for m in self._mutants(tmp_path, body) if "became" in m.description]
+
+        assert not swaps
+
+#: Raw string bodies. A backslash-b inside an ordinary Python string is the BACKSPACE
+#: escape, and an earlier version of these tests handed the harness that control character
+#: and then reported that no widening was produced -- true, and about nothing. Four separate
+#: attempts lost a level of escaping between a shell heredoc and this file; the rule that
+#: finally worked is to stop escaping rather than to escape more carefully.
+_RAW_GUARD = r"""import re
+
+
+P = re.compile(r"\bnot the right fit\b")
+"""
+
+_RAW_PROSE = r"""def go(log):
+    log("a message with a \b in it")
+"""
+
+_RAW_ANCHORED = r"""import re
+
+
+P = re.compile(r"^a+$")
+"""
+
+
+class TestConcurrencyChangesSpeedAndNothingElse:
+    """`jobs=N` is opt-in, and this is the property that makes it safe to opt into.
+
+    The speedup that motivated it was measured on a machine its own author recorded as carrying
+    40-50 foreign processes, where the noisy twin of the same A/B pair gave 1.27x against the quiet
+    one's 3.5x -- so the number is not claimed here and is not what this asserts. What IS assertable
+    without a quiet machine is that concurrency does not change the ANSWER, which is the only
+    property a harness may not trade for speed.
+
+    It stays off by default because the remaining risk is not in the harness: a suite that binds a
+    port, shares a database or writes a fixed temp path gets FALSE KILLS from concurrency, and only
+    the suite's owner can rule that out.
+    """
+
+    def _repo(self, tmp_path: Path) -> Path:
+        repo = tmp_path / "repo"
+        (repo / "tests").mkdir(parents=True)
+        io.open(repo / "m.py", "w", encoding="utf-8", newline="").write(
+            "def clamp(n, cap):\n"
+            "    if n > cap:\n"
+            "        return cap\n"
+            "    return n\n"
+            "\n"
+            "\n"
+            "def unchecked(n):\n"
+            "    return n * 2 + 1\n"
+        )
+        io.open(repo / "tests" / "test_m.py", "w", encoding="utf-8", newline="").write(
+            "from m import clamp\n"
+            "\n"
+            "\n"
+            "def test_clamp():\n"
+            "    assert clamp(5, 3) == 3\n"
+            "    assert clamp(2, 3) == 2\n"
+            "    assert clamp(3, 3) == 3\n"
+        )
+        return repo
+
+    def test_four_workers_reach_the_same_verdict_as_one(self, tmp_path):
+        repo = self._repo(tmp_path)
+        serial = mutation_teeth.find_surviving_mutants(
+            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False
+        )
+        parallel = mutation_teeth.find_surviving_mutants(
+            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=4
+        )
+
+        assert serial.mutants_run == parallel.mutants_run
+        assert serial.killed == parallel.killed
+        assert [m.key for m in serial.survivors] == [m.key for m in parallel.survivors]
+
+    def test_survivors_come_back_in_source_order(self, tmp_path):
+        """Merged from several partitions, so completion order is arbitrary. A survivor list that
+        reorders itself between runs is a diff nobody can read, and a baseline that churns."""
+        repo = self._repo(tmp_path)
+        outcome = mutation_teeth.find_surviving_mutants(
+            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=3
+        )
+
+        lines = [m.line for m in outcome.survivors]
+        assert lines == sorted(lines), lines

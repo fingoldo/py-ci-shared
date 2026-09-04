@@ -87,6 +87,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -115,7 +116,7 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "3"  # 3: closure resolves `from .mod import name`; the key covers scope
+HARNESS_VERSION = "5"  # 5: opt-in `jobs`, which changes how a verdict is reached if not what it is
 
 
 #: Written in place of a justification by a refresh, and rejected on the next run. A refresh
@@ -449,6 +450,217 @@ def _container_members(source: str) -> list[tuple[int, int, str]]:
     return out
 
 
+def _span_of(source: str, starts: list[int], node: ast.AST) -> tuple[int, int] | None:
+    """Absolute character span of an AST node, or ``None`` when it has no position.
+
+    Every boundary goes through :func:`_abs_index` because ``ast`` reports BYTE columns. Taking
+    them as character offsets is the bug that once replaced an entire statement and blamed a line
+    it had not touched, so there is no shortcut here even for the end position.
+    """
+    line = getattr(node, "lineno", None)
+    col = getattr(node, "col_offset", None)
+    end_line = getattr(node, "end_lineno", None)
+    end_col = getattr(node, "end_col_offset", None)
+    if line is None or col is None or end_line is None or end_col is None:
+        return None
+    return _abs_index(source, starts, line, col), _abs_index(source, starts, end_line, end_col)
+
+
+def _argument_transpositions(source: str) -> list[tuple[int, int, int, str, str, str]]:
+    """Swap two adjacent positional arguments of a call.
+
+    The shape this exists for is a format string and its values: ``"%s kept %d of %d", uid, n, cap``
+    passes type checking, reads correctly, and lies. Nothing in a token-level operator set can
+    express it, because no single token is wrong.
+
+    Adjacent pairs only. Transposing arbitrary pairs would grow quadratically for no extra signal --
+    a call whose neighbours are interchangeable is a call whose argument order is unchecked, and one
+    demonstration of that per pair is enough.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    starts = _line_starts(source)
+    out: list[tuple[int, int, int, str, str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or len(node.args) < 2:
+            continue
+        if any(isinstance(a, ast.Starred) for a in node.args):
+            continue  # `*args` has no fixed position to swap
+        for left, right in zip(node.args, node.args[1:]):
+            left_span = _span_of(source, starts, left)
+            right_span = _span_of(source, starts, right)
+            if left_span is None or right_span is None or left_span[1] > right_span[0]:
+                continue
+            left_text = source[left_span[0] : left_span[1]]
+            right_text = source[right_span[0] : right_span[1]]
+            if left_text == right_text:
+                continue  # a no-op, and it would be filtered later anyway
+            between = source[left_span[1] : right_span[0]]
+            if "#" in between or "\n" in left_text or "\n" in right_text:
+                # A comment between the two, or an argument spanning lines: the splice would be
+                # correct but the mutant would be unreadable, and a survivor nobody can read is a
+                # survivor nobody acts on.
+                continue
+            out.append(
+                (
+                    left_span[0],
+                    right_span[1],
+                    left.lineno,
+                    right_text + between + left_text,
+                    f"arguments transposed: {left_text} <-> {right_text}",
+                    "",
+                )
+            )
+    return out
+
+
+def _slice_bound_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
+    """Remove a slice bound, making the slice unbounded on that side.
+
+    ``text[:limit]`` -> ``text[:]`` is the defect a cap is written to prevent, and the numeric
+    operator reached it only when the bound was a literal. Here the bound is usually a name -- a
+    configured maximum, a remaining budget -- which is exactly the interesting case.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    starts = _line_starts(source)
+    out: list[tuple[int, int, int, str, str, str]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Slice):
+            continue
+        for bound, side in ((node.lower, "lower"), (node.upper, "upper")):
+            if bound is None or isinstance(bound, ast.Constant):
+                continue  # a literal bound is already covered by the numeric operator
+            span = _span_of(source, starts, bound)
+            if span is None:
+                continue
+            text = source[span[0] : span[1]]
+            if "\n" in text:
+                continue
+            out.append((span[0], span[1], bound.lineno, "", f"slice: {side} bound {text} removed", ""))
+    return out
+
+
+
+#: Calls whose string argument is a regular expression. A pattern is only worth perturbing where it
+#: is actually used as one -- the same text sitting in a message is prose.
+_REGEX_CALLS = {"compile", "match", "search", "fullmatch", "sub", "subn", "split", "findall", "finditer"}
+
+#: Each perturbation WIDENS the pattern, which is the direction a guard fails in: it begins matching
+#: what it was written to exclude. A narrowed guard fails loudly the first time it misses something;
+#: a widened one just quietly says yes.
+_REGEX_WIDENINGS = (
+    ("\\b", "", "a word-boundary anchor removed"),
+    ("$", "", "the end anchor removed"),
+    ("^", "", "the start anchor removed"),
+    ("+", "*", "one-or-more became zero-or-more"),
+)
+
+
+def _string_literal_sites(tree: ast.AST) -> list[tuple[ast.Constant, bool]]:
+    """Every string constant, paired with whether it is used as a regular expression."""
+    sites: list[tuple[ast.Constant, bool]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
+        regexish = name in _REGEX_CALLS
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                sites.append((arg, regexish))
+        for kw in node.keywords:
+            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
+                sites.append((kw.value, False))
+    return sites
+
+
+def _substitution_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
+    """Replace a string with a confusable neighbour, and widen a regex that guards something."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    starts = _line_starts(source)
+    sites = _string_literal_sites(tree)
+    # The vocabulary is the file's own. Short values only: a long string is prose, and swapping two
+    # sentences tests nothing that emptying one does not already test.
+    vocabulary = sorted({n.value for n, _r in sites if 1 <= len(n.value) <= 12 and n.value.strip()})
+    out: list[tuple[int, int, int, str, str, str]] = []
+    for node, regexish in sites:
+        span = _span_of(source, starts, node)
+        if span is None:
+            continue
+        raw = source[span[0] : span[1]]
+        if "\n" in raw:
+            continue
+        value = node.value
+        if regexish:
+            for needle, replacement, description in _REGEX_WIDENINGS:
+                if needle not in value:
+                    continue
+                widened = value.replace(needle, replacement, 1)
+                if widened == value:
+                    continue
+                try:
+                    re.compile(widened)
+                except re.error:
+                    continue  # a perturbation that does not compile is not a mutant
+                out.append(
+                    (
+                        span[0],
+                        span[1],
+                        node.lineno,
+                        raw.replace(needle, replacement, 1),
+                        f"regex widened: {description}",
+                        "",
+                    )
+                )
+            continue
+        if not (1 <= len(value) <= 12):
+            continue
+        neighbour = _confusable(value, vocabulary)
+        if neighbour is None:
+            continue
+        out.append(
+            (
+                span[0],
+                span[1],
+                node.lineno,
+                raw.replace(value, neighbour, 1),
+                f"constant: {value!r} became {neighbour!r}",
+                "",
+            )
+        )
+    return out
+
+
+def _confusable(value: str, vocabulary: list[str]) -> str | None:
+    """The closest OTHER literal in the file, or ``None`` when nothing is close enough.
+
+    Closeness is a shared prefix of at least half the shorter string. `"NFKD"` and `"NFKC"` qualify;
+    `"replace"` and `"ignore"` do not, and that is the honest limit of a rule that invents no
+    vocabulary -- it finds the pairs an author actually confused, not the ones a thesaurus would.
+    """
+    best: str | None = None
+    best_shared = 0
+    for other in vocabulary:
+        if other == value:
+            continue
+        shared = 0
+        for a, b in zip(value, other):
+            if a != b:
+                break
+            shared += 1
+        if shared > best_shared and shared * 2 >= min(len(value), len(other)):
+            best, best_shared = other, shared
+    return best
+
+
+
 def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list[tuple[int, int, int, str, str, str]]:
     """``(abs_start, abs_end, line, replacement, description, category)`` per mutable token.
 
@@ -614,7 +826,13 @@ def generate_mutants(
     """
     source = io.open(path, encoding="utf-8", newline="").read()
     starts = _line_starts(source)
-    candidates = _token_candidates(source, skip_coupled_constants) + _statement_call_candidates(source)
+    candidates = (
+        _token_candidates(source, skip_coupled_constants)
+        + _statement_call_candidates(source)
+        + _argument_transpositions(source)
+        + _slice_bound_candidates(source)
+        + _substitution_candidates(source)
+    )
     candidates.sort(key=lambda c: (c[0], c[4]))
 
     ranges: list[range] = []
@@ -1188,6 +1406,81 @@ def _classify(result, what: str) -> bool:
     )
 
 
+def _sweep_partition(
+    sandbox: Path,
+    relative: Path,
+    mutants: "list[Mutant]",
+    test_paths: "Sequence[Path | str]",
+    fallback_test_paths: "Sequence[Path | str]",
+    timeout: float,
+    use_warm_worker: bool,
+) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int]":
+    """One sandbox's share of the mutants.
+
+    Returns ``(survivors, coverage_gaps, inconclusive, run, crashes)``. Every path in and out is a
+    value: the caller merges, and nothing here touches state another partition can see. That is
+    what makes running several of these at once safe on the harness's side -- whether it is safe on
+    the CONSUMER's side is a property of its tests, which is why concurrency is opt-in.
+    """
+    target = sandbox / relative
+    original = io.open(target, encoding="utf-8", newline="").read()
+    survivors: list[Mutant] = []
+    coverage_gaps: list[Mutant] = []
+    inconclusive: list[Mutant] = []
+    run = 0
+    crashes = 0
+    with _WarmRunner(sandbox, timeout) as warm:
+        if use_warm_worker:
+            warm_baseline = warm.run(test_paths)
+            if warm_baseline is None:
+                use_warm_worker = False
+            elif not _classify_code(warm_baseline, "the unmutated baseline in the warm worker"):
+                raise MutationHarnessError(
+                    "the tests pass in a fresh process but fail inside the reused worker, so "
+                    "every mutant would be recorded as killed for a reason unrelated to the "
+                    "mutation. Re-run with `use_warm_worker=False` to get a usable result, and "
+                    "treat the difference between the two processes as the bug."
+                )
+        ordered = list(test_paths)
+        for mutant in mutants:
+            io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
+            code = warm.run(ordered) if use_warm_worker else None
+            if warm.last_failed:
+                ordered = _lead_with(ordered, warm.last_failed)
+            if code is None:
+                result = _run_pytest(test_paths, sandbox, timeout)
+                if result is None:
+                    inconclusive.append(mutant)
+                    io.open(target, "w", encoding="utf-8", newline="").write(original)
+                    continue
+                passed = _classify(result, f"mutant {mutant}")
+            else:
+                passed = _classify_code(code, f"mutant {mutant}")
+                if code in (2, 3):
+                    crashes += 1
+                result = None
+            run += 1
+            if not passed and result is not None and _killed_by_crash(result.stdout):
+                crashes += 1
+            if passed:
+                confirm = _run_pytest(test_paths, sandbox, timeout)
+                if confirm is None:
+                    inconclusive.append(mutant)
+                    io.open(target, "w", encoding="utf-8", newline="").write(original)
+                    continue
+                if _classify(confirm, f"survivor re-check {mutant}"):
+                    if fallback_test_paths:
+                        wider = _run_pytest(fallback_test_paths, sandbox, timeout)
+                        if wider is not None and not _classify(wider, f"fallback re-check {mutant}"):
+                            coverage_gaps.append(mutant)
+                            io.open(target, "w", encoding="utf-8", newline="").write(original)
+                            continue
+                    survivors.append(mutant)
+            io.open(target, "w", encoding="utf-8", newline="").write(original)
+    return survivors, coverage_gaps, inconclusive, run, crashes
+
+
+
 def find_surviving_mutants(
     path: Path | str,
     test_paths: Sequence[Path | str],
@@ -1198,6 +1491,7 @@ def find_surviving_mutants(
     cache_path: Path | str | None = None,
     use_cache: bool = True,
     use_warm_worker: bool = True,
+    jobs: int = 1,
     extra_fingerprint_paths: Sequence[Path | str] = (),
     fallback_test_paths: Sequence[Path | str] = (),
 ) -> MutationRun:
@@ -1289,95 +1583,59 @@ def find_surviving_mutants(
         for mutant in mutants:
             object.__setattr__(mutant, "path", relative)
 
-        original = io.open(target, encoding="utf-8", newline="").read()
-        survivors: list[Mutant] = []
-        coverage_gaps: list[Mutant] = []
-        inconclusive: list[Mutant] = []
-        run = 0
-        crashes = 0
-        with _WarmRunner(sandbox, timeout) as warm:
-            # The mandatory baseline above runs COLD, so it proves the tests pass in a fresh
-            # process and says nothing about the process every verdict actually comes from. That
-            # asymmetry is the harness's most flattering failure: survivors are re-verified cold,
-            # kills never are, and `killed` is derived by subtraction -- so anything that makes the
-            # warm path fail systematically (a different sys.path, a plugin that misbehaves on a
-            # second pytest.main() in one process) fails mutant 1 and every mutant after it, and
-            # the sweep reports "all killed, no survivors" with the cold baseline green behind it.
-            # One unmutated run through the worker turns that into a loud refusal.
-            if use_warm_worker:
-                warm_baseline = warm.run(test_paths)
-                if warm_baseline is None:
-                    use_warm_worker = False  # degrade to cold rather than trust an unproven worker
-                elif not _classify_code(warm_baseline, "the unmutated baseline in the warm worker"):
-                    raise MutationHarnessError(
-                        "the tests pass in a fresh process but fail inside the reused worker, so "
-                        "every mutant would be recorded as killed for a reason unrelated to the "
-                        "mutation. Re-run with `use_warm_worker=False` to get a usable result, and "
-                        "treat the difference between the two processes as the bug."
-                    )
-            # Most mutants are killed by the same test file as the one before -- they are, after
-            # all, usually neighbouring edits to the same function. `-x` stops at the first failure,
-            # so leading with the previous killer shortens both collection and execution. It cannot
-            # change any verdict: a kill is a kill whichever file produces it, and a survivor still
-            # requires every listed test to pass.
-            ordered = list(test_paths)
-            for mutant in mutants:
-                io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
-                code = warm.run(ordered) if use_warm_worker else None
-                if warm.last_failed:
-                    ordered = _lead_with(ordered, warm.last_failed)
-                if code is None:
-                    # The worker died, timed out, or was never used. A cold run is slower but
-                    # always available, so a worker problem degrades performance rather than
-                    # silently dropping a mutant from the denominator.
-                    result = _run_pytest(test_paths, sandbox, timeout)
-                    if result is None:
-                        # Not a survivor, and not a kill either. Dropping it silently shrank the
-                        # denominator while the report still read as complete.
-                        inconclusive.append(mutant)
-                        io.open(target, "w", encoding="utf-8", newline="").write(original)
-                        continue
-                    passed = _classify(result, f"mutant {mutant}")
-                else:
-                    passed = _classify_code(code, f"mutant {mutant}")
-                    if code in (2, 3):
-                        # An import or collection failure: every test in the file dies at once, so
-                        # this proves nothing about any assertion. Counted here because the warm
-                        # path has no output to read a traceback out of.
-                        crashes += 1
-                    result = None  # the warm worker returns a code, not output, so a
-                    # crash cannot be distinguished from an assertion failure on this
-                    # path. The count is therefore a lower bound, which the summary says.
-                run += 1
-                if not passed and result is not None and _killed_by_crash(result.stdout):
-                    crashes += 1
-                if passed:
-                    # Re-verify in a COLD process before believing it. A purge cannot reach state
-                    # held inside an installed third-party package, so a warm survivor is a
-                    # candidate, not a finding. Survivors are rare, so this costs little, and a
-                    # false survivor is the outcome that wastes a human's afternoon.
-                    confirm = _run_pytest(test_paths, sandbox, timeout)
-                    if confirm is None:
-                        # `killed` is `run - len(survivors)`, so falling through here recorded a
-                        # mutant nobody managed to run as one the tests caught -- the unsafe
-                        # direction, and the only re-check on this path that failed that way.
-                        inconclusive.append(mutant)
-                        io.open(target, "w", encoding="utf-8", newline="").write(original)
-                        continue
-                    if _classify(confirm, f"survivor re-check {mutant}"):
-                        # Before believing it, ask the wider set. "No test kills this" and "no
-                        # LISTED test kills this" are different findings, and only the first is
-                        # about the tests. Run only for survivors, which are rare -- listing the
-                        # wider set as primary would make every mutant cost minutes.
-                        if fallback_test_paths:
-                            wider = _run_pytest(fallback_test_paths, sandbox, timeout)
-                            if wider is not None and not _classify(wider, f"fallback re-check {mutant}"):
-                                coverage_gaps.append(mutant)
-                                io.open(target, "w", encoding="utf-8", newline="").write(original)
-                                continue
-                        survivors.append(mutant)
-                io.open(target, "w", encoding="utf-8", newline="").write(original)
+        # One partition per worker, each with its own copy of the tree. `jobs=1` is the
+        # default and runs exactly the path that existed before: a consumer whose tests
+        # share a port, a database or a fixed temp path gets FALSE KILLS from concurrency,
+        # and the harness cannot see that condition from outside. The speedup reported for
+        # this was measured on a loaded machine and is deliberately not claimed here.
+        partitions = [mutants[i::jobs] for i in range(jobs)] if jobs > 1 else [mutants]
+        partitions = [p for p in partitions if p]
+        sandboxes = [sandbox]
+        for index in range(1, len(partitions)):
+            extra = sandbox_parent / f"{repo_root.name}_{index}"
+            shutil.copytree(repo_root, extra, ignore=_COPY_IGNORE, symlinks=False)
+            sandboxes.append(extra)
+        results: list[tuple] = [()] * len(partitions)
+        errors: list[BaseException] = []
 
+        def _one(slot: int) -> None:
+            try:
+                results[slot] = _sweep_partition(
+                    sandboxes[slot],
+                    relative,
+                    partitions[slot],
+                    test_paths,
+                    fallback_test_paths,
+                    timeout,
+                    use_warm_worker,
+                )
+            except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
+                errors.append(exc)
+
+        if len(partitions) == 1:
+            _one(0)
+        else:
+            threads = [threading.Thread(target=_one, args=(i,)) for i in range(len(partitions))]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+        if errors:
+            # A harness failure in any partition is a harness failure, full stop. Merging the
+            # partitions that happened to finish would report a subset as if it were the whole.
+            raise errors[0]
+
+        survivors = [m for r in results for m in r[0]]
+        coverage_gaps = [m for r in results for m in r[1]]
+        inconclusive = [m for r in results for m in r[2]]
+        run = sum(r[3] for r in results)
+        crashes = sum(r[4] for r in results)
+        # Source order, not completion order: a survivor list that reorders itself between
+        # runs is a diff nobody can read.
+        order = {id(m): i for i, m in enumerate(mutants)}
+        survivors.sort(key=lambda m: order[id(m)])
+        coverage_gaps.sort(key=lambda m: order[id(m)])
+        inconclusive.sort(key=lambda m: order[id(m)])
         outcome = MutationRun(
             survivors=survivors,
             mutants_run=run,

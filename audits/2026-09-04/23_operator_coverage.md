@@ -91,7 +91,7 @@ is the security boundary.
 
 ## P1-2 — Regex internals cannot be perturbed; the only regex mutant is "delete the whole pattern"
 
-**DISPOSITION -- DEFERRED.** Regex internals remain unmutable. The report is right that this consumer's guards are regexes and that the file documents a shipped bug from a missing trailing anchor. The reason for deferring is that a general regex perturbation produces mostly invalid or trivially-equivalent patterns, and the useful subset (drop a `\b`, widen a quantifier) needs a design decision about which perturbations are meaningful rather than noisy -- exactly the judgement that made the string operator produce 56% of all candidates. Waiting on: a proposal that names the perturbations and measures their yield on the real guard tables.
+**DISPOSITION -- RESOLVED.** Implemented with a rule, which is what the deferral was waiting for. Only strings that reach a regex CALL are treated as patterns -- the same text in a log message is prose -- and only four perturbations are applied: remove a word-boundary anchor, remove `^`, remove `$`, and turn `+` into `*`. Every one WIDENS the pattern, which is the direction a guard fails in: a narrowed guard misses something and says so, a widened one quietly says yes. Each candidate is compiled before it is emitted, so a perturbation that breaks the pattern is not counted as a mutant nothing kills. Measured: 9 of the 10 widenings across five real modules land on `letter_guards.py`'s anchors, which is where the finding's own evidence of a shipped bug lives.
 
 **Claim.** A regex literal is a string, so the sole mutant is `-> ""`, which usually either matches
 everything or crashes; the defect this codebase actually ships is a quantifier or anchor that is one
@@ -177,7 +177,7 @@ run summary report a suppression that did not happen.
 
 ## P1-4 — Argument ORDER in a same-typed argument list is never transposed
 
-**DISPOSITION -- DEFERRED.** Argument transposition is not implemented. The finding is real and the logging-format case is a genuine defect shape here. It is deferred rather than rejected because a correct implementation needs argument SPANS from the AST, and the byte-versus-character offset trap that produced this module's worst historical bug -- a whole statement destroyed and reported at an untouched line -- lives exactly there. Waiting on: doing it with the same care the token path got, which is more than the remaining budget of this round.
+**DISPOSITION -- RESOLVED.** Implemented. Adjacent positional arguments only -- arbitrary pairs would grow quadratically for no extra signal, since a call whose neighbours are interchangeable is a call whose argument order is unchecked and one demonstration per pair says so. Emitted as a single replacement spanning both arguments, so the one-mutant-one-splice model is unchanged. Every boundary goes through `_abs_index`, and a regression test puts an emoji in front of the call so the byte-offset trap shows up as a mangled splice rather than as a subtly wrong line number. `*args` is skipped: it has no fixed position, so there is nothing to transpose. Measured at 15% of candidates with the slice operator.
 
 **Claim.** No operator reorders arguments, so every `%`-format log call and every positional
 multi-value construction in this consumer is transposition-proof by luck, not by test.
@@ -270,7 +270,7 @@ the class the harness has already proven it earns its keep on.
 
 ## P2-6 — String constants can only be EMPTIED, and emptying is often either a crash or a no-op; substitution is the operator that matches the real defects
 
-**DISPOSITION -- DEFERRED.** String SUBSTITUTION is not implemented; emptying remains the only string operator. The examples given are convincing (`NFKD` to `NFKC`, `errors=replace` to `ignore`) and they are convincing precisely because they are domain-specific -- a generic substitution rule has no principled form, and an arbitrary one would add to the 56% of candidates that emptied strings already produce. Waiting on: a rule that says which strings deserve a substituted neighbour rather than an empty one.
+**DISPOSITION -- RESOLVED.** Implemented with the rule the deferral asked for: CONFUSABLE NEIGHBOURS FROM THE SAME FILE. If a module contains both `NFKD` and `NFKC`, those two values coexist in the author's head and 'does anything check which one this is' is a real question with a real answer. The vocabulary is the file's own, so nothing is invented and no value the code was never going to see can be fabricated; a literal with no close neighbour gets no mutant at all, which is what keeps the operator at 1.6% of candidates rather than adding to the 56% that emptying already produces.
 
 **Claim.** Emptying is 56% of all mutants (662/1174, DEMONSTRATED) and for a whole family of literals
 it is a strictly weaker test than substituting a *sibling* literal from the same file.
@@ -390,7 +390,7 @@ consequence.
 
 ## P3-9 — Slice bounds and direction are unmutable when the bound is a name
 
-**DISPOSITION -- DEFERRED.** Slice bounds are unmutable when the bound is a name. The constant case is already covered by the numeric operator; the name case needs the same AST span work as P1-4 and is deferred with it.
+**DISPOSITION -- RESOLVED.** Implemented alongside P1-4, sharing its span machinery. Only NAMED bounds: a literal bound is already covered by the numeric operator, and two operators firing on one site is noise. `text[:limit]` -> `text[:]` is the unbounded-slice defect, and a bound worth having is usually a name -- a configured maximum, a remaining budget.
 
 **Claim.** The constant operator reaches `x[:3]` but not `x[:limit]`, and nothing reverses a slice or
 moves a bound across the colon.

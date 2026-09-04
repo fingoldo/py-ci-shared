@@ -32,7 +32,7 @@ had already found, and the agents were given that list so they would not re-repo
 | 21-F3 | P1 | A `src/` layout fingerprints only the target file | RESOLVED |
 | 21-F4 | P1 | A directory test path contributes nothing | RESOLVED |
 | 21-F5 | P1 | The key is taken before the run and written after | RESOLVED |
-| 21-F6 | P1 | `HARNESS_VERSION` is a human promise | DEFERRED |
+| 21-F6 | P1 | `HARNESS_VERSION` is a human promise | RESOLVED |
 | 21-F7 | P2 | A cache hit drops the caveats | RESOLVED |
 | 21-F8 | P2 | Interpreter, dependencies and plugins outside the digest | RESOLVED |
 | 21-F9 | P2 | The cache file is rewritten non-atomically | RESOLVED |
@@ -53,21 +53,21 @@ had already found, and the agents were given that list so they would not re-repo
 | 22-F12 | P3 | Only `pytest-randomly` is neutralised | WON'T FIX |
 | 22-F13 | P3 | `_pytest_env` sanitises one variable | RESOLVED IN PART |
 | 23-P0-1 | P0 | Everything inside an f-string is unmutable | RESOLVED |
-| 23-P1-2 | P1 | Regex internals cannot be perturbed | DEFERRED |
+| 23-P1-2 | P1 | Regex internals cannot be perturbed | RESOLVED |
 | 23-P1-3 | P1 | The sampler never fires on an annotated table | RESOLVED |
-| 23-P1-4 | P1 | Argument ORDER is never transposed | DEFERRED |
+| 23-P1-4 | P1 | Argument ORDER is never transposed | RESOLVED |
 | 23-P1-5 | P1 | `continue`/`break` are not mutable | RESOLVED |
-| 23-P2-6 | P2 | Strings can only be emptied, never substituted | DEFERRED |
+| 23-P2-6 | P2 | Strings can only be emptied, never substituted | RESOLVED |
 | 23-P2-7 | P2 | `+=`, `//`, `%`, `**` absent from the operator table | RESOLVED |
 | 23-P2-8 | P2 | `max`/`min` cannot be swapped | RESOLVED |
-| 23-P3-9 | P3 | Slice bounds unmutable when the bound is a name | DEFERRED |
+| 23-P3-9 | P3 | Slice bounds unmutable when the bound is a name | RESOLVED |
 | 23-P3-10 | P3 | The exception type and the swallow are unmutable | WON'T FIX |
 | 23-P3-11 | P3 | A truthiness guard cannot be inverted | RESOLVED |
 | 23-P3-12 | P3 | Waste: the "+1 on an opaque length" family | WON'T FIX |
 | 24-1 | — | Purge scan is ~29% of a sweep | RESOLVED |
-| 24-2 | — | Parallelism, claimed 3.5x on a loaded machine | DEFERRED |
+| 24-2 | — | Parallelism, claimed 3.5x on a loaded machine | IMPLEMENTED, SPEEDUP NOT CLAIMED |
 | 24-3 | — | Test ordering, -22.6% of the pytest phase | RESOLVED |
-| 24-4 | — | Survivor confirmations run serially | DEFERRED |
+| 24-4 | — | Survivor confirmations run serially | RESOLVED |
 | 24-5 | — | `__pycache__` excluded from the copy costs ~12s once | WON'T FIX |
 | 24-5b | — | A warm baseline would save 15s | REJECTED |
 | 24-6 | — | Measured non-findings | ACKNOWLEDGED |
@@ -76,7 +76,7 @@ had already found, and the agents were given that list so they would not re-repo
 | 25-F3 | P0 | The refresh command launders survivors | RESOLVED |
 | 25-F4 | P0 | A refresh after a narrow commit deletes valid entries | RESOLVED |
 | 25-F5 | P1 | `coverage_gaps` never fails and never ratchets | RESOLVED |
-| 25-F6 | P1 | Nothing ever runs the sweep | DEFERRED |
+| 25-F6 | P1 | Nothing ever runs the sweep | RESOLVED IN PART |
 | 25-F7 | P1 | `enforce`'s output is swallowed by pytest's capture | RESOLVED |
 | 25-F8 | P2 | "TRUNCATED" fires when nothing was truncated | RESOLVED |
 | 25-F9 | P2 | A timed-out mutant vanishes from every number | RESOLVED |
@@ -87,12 +87,25 @@ had already found, and the agents were given that list so they would not re-repo
 | 25-F14 | P3 | The mutant's path is a bare basename | RESOLVED |
 | 25-F15 | P3 | The cache file is not gitignored | RESOLVED |
 
-**Counts.** 54 RESOLVED (including three resolved in part), 8 DEFERRED, 5 WON'T FIX, 1 REJECTED,
-1 NOT REPRODUCED, 1 ACKNOWLEDGED.
+**Counts, after the same session closed every deferral.** 62 RESOLVED (four of them in part),
+5 WON'T FIX, 1 REJECTED, 1 NOT REPRODUCED, 1 ACKNOWLEDGED. Zero outstanding.
 
-**The eight DEFERRED, and what each waits on.** 21-F6 waits on the module settling before a
-version-bump gate is wired to it. 23-P1-2 and 23-P2-6 wait on a rule that names which regex and
-string perturbations are meaningful rather than noisy. 23-P1-4 and 23-P3-9 wait on AST argument
-spans done with the care the byte-offset trap demands. 24-2 and 24-4 wait on a quiet machine.
-25-F6 waits on 24 landing, because scheduling a sweep that costs minutes per file is a different
-decision from scheduling one that costs seconds.
+**What the deferrals were actually waiting on, and what happened.** Five were waiting on work:
+an AST-span implementation careful enough for the byte-offset trap (23-P1-4, 23-P3-9), a RULE
+for what to substitute a string or a pattern with rather than an arbitrary one (23-P1-2,
+23-P2-6), and a module settled enough to gate its own version (21-F6). All five were done.
+
+Two were waiting on a quiet machine (24-2, 24-4). The machine never got quiet, so the speedup
+is still not claimed -- but the implementation shipped with the property that CAN be verified
+under load and is the only one a harness may not trade for speed: `jobs=4` reaches the same
+verdicts as `jobs=1`.
+
+One (25-F6) turned out to be waiting on something nobody had noticed: this repository has no
+git hooks installed at all, so its entire pre-commit configuration -- all 18 hooks -- is inert.
+The sweep is now wired to `pre-push` and will fire after `pre-commit install --hook-type
+pre-push`. Recorded as resolved IN PART rather than resolved, because arming a mechanism is not
+the same as running it.
+
+**The gate that caught its author.** Wiring 21-F6 immediately failed: this session had widened
+the operator set four times over while `HARNESS_VERSION` still read 3. That is the entire
+argument for the gate, demonstrated on the first run.

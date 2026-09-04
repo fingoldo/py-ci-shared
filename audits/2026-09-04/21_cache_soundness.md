@@ -129,7 +129,7 @@ The test body was replaced with `assert 0` and the key did not move.
 
 ## F6 (P1) — `HARNESS_VERSION` is a human promise, and the package ships the gate that would enforce it without applying it to itself
 
-**DISPOSITION -- DEFERRED.** `HARNESS_VERSION` remains a human promise. The version was bumped to 3 in this round, and the operator-set changes here are exactly what it exists for -- but wiring `content_hash_version_bump_gate` to this module is a check about the check, and adding it in the same round that rewrote the module would have made every intermediate commit fail for a reason unrelated to the work. Waiting on: the module settling. The risk while it waits is bounded by the interpreter and plugin set now being in the digest, which catches the most common accidental staleness.
+**DISPOSITION -- RESOLVED.** `content_hash_version_bump_gate` is now applied to `mutation_teeth.py` and `_mutation_worker.py` by `tests/test_mutation_harness_version_is_bumped.py`. The worker is in the set because it decides what a mutant run MEANS -- its purge and its exit-code plumbing are as much a part of a verdict as the operator table. The gate found the omission immediately: this session's new operators had changed the mutant set while `HARNESS_VERSION` still said 3. Bumped to 4. Verified with teeth by appending a line to the module without a bump and watching the gate fail.
 
 **Claim.** Nothing binds `HARNESS_VERSION = "2"` to the content of the mutant-generation code; adding an operator, changing an exclusion, or changing `_CONTAINER_SAMPLE` without touching the constant leaves every cached "clean" answering for a different, usually smaller, mutant set.
 
