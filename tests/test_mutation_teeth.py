@@ -392,3 +392,62 @@ class TestWindowsSourceIsHandled:
         mutants, _total, _sampled = generate_mutants(path)
 
         assert mutants and tab + "return a >= b" in mutants[0].mutated_file_text
+
+
+class TestTheWorkerProtocolSurvivesTestOutput:
+    """`pytest.main()` writes its report to the worker's stdout, which is also the protocol channel.
+
+    Found by the sweep itself, three files in: the parent read a pytest output line, it happened to
+    parse as JSON, and `reply["rc"]` raised `TypeError` in the middle of a run. A test that prints
+    anything JSON-shaped was enough. The worker now redirects pytest's output, and the parent treats
+    a line that is not a reply as "worker unavailable" -- which degrades to a cold re-run rather
+    than to an exception or, worse, to a printed number read as an exit code.
+    """
+
+    def test_json_shaped_test_output_does_not_break_the_channel(self, tmp_path):
+        from py_ci_shared.mutation_teeth import _WarmRunner
+
+        noisy = (
+            "def test_prints_json():" + chr(10)
+            + '    print(chr(34) + "a bare json string" + chr(34))' + chr(10)
+            + "    print('{" + chr(34) + "rc" + chr(34) + ": 999}')" + chr(10)
+            + "    assert True" + chr(10)
+        )
+        io.open(tmp_path / "test_noisy.py", "w", encoding="utf-8", newline="").write(noisy)
+
+        with _WarmRunner(tmp_path, timeout=120) as warm:
+            codes = [warm.run(["test_noisy.py"]) for _ in range(3)]
+
+        assert codes == [0, 0, 0], (
+            f"the worker returned {codes}; a 999 would mean the printed line was read as the reply, "
+            "and a None that the channel was lost"
+        )
+
+    def test_a_reply_without_rc_is_treated_as_worker_unavailable(self):
+        """Not as an error and not as a result. The caller must fall back to a cold run, because a
+        harness that turns a protocol hiccup into a verdict is the failure this module exists for."""
+        from py_ci_shared.mutation_teeth import _WarmRunner
+
+        runner = _WarmRunner(Path("."), timeout=1)
+
+        class _Fake:
+            def poll(self):
+                return None
+
+            class stdin:
+                @staticmethod
+                def write(_):
+                    return None
+
+                @staticmethod
+                def flush():
+                    return None
+
+            class stdout:
+                @staticmethod
+                def readline():
+                    return '"a bare json string"' + chr(10)
+
+        runner.process = _Fake()
+
+        assert runner.run(["tests"]) is None

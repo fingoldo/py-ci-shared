@@ -812,7 +812,15 @@ class _WarmRunner:
             reply = json.loads(line)
         except json.JSONDecodeError:
             return None
-        return None if "error" in reply else int(reply["rc"])
+        # Defensive even though the worker now redirects pytest's output: a line that parses as
+        # JSON but is not our reply shape must degrade to a cold re-run, never to an exception
+        # mid-sweep or -- worse -- to a number read as an exit code.
+        if not isinstance(reply, dict) or "rc" not in reply:
+            return None
+        try:
+            return int(reply["rc"])
+        except (TypeError, ValueError):
+            return None
 
     def stop(self) -> None:
         if self.process is None:
