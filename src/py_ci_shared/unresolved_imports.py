@@ -59,11 +59,14 @@ class ModuleIndex:
 
         # A package's SUBMODULES are importable names too: `from a.b import c` is valid whenever a/b/c.py
         # exists, even though b/__init__.py binds no name `c`. Without this every subpackage facade reads
-        # as thousands of undefined names.
+        # as thousands of undefined names. Parents are registered on the way, which also covers IMPLICIT
+        # NAMESPACE packages -- a directory with no __init__.py is importable since 3.3, and treating one
+        # as absent reports every module under it as missing.
         for dotted in list(self._names):
-            parent, _, leaf = dotted.rpartition(".")
-            if parent in self._names:
-                self._names[parent].add(leaf)
+            parts = dotted.split(".")
+            for depth in range(len(parts) - 1, 0, -1):
+                parent = ".".join(parts[:depth])
+                self._names.setdefault(parent, set()).add(parts[depth])
 
     def _dotted(self, path: Path) -> str | None:
         """The dotted module name for a file, relative to whichever package root contains it."""
@@ -176,6 +179,8 @@ def _judge_import(path: Path, tree: ast.Module, node: ast.ImportFrom, index: "Mo
     target = _resolve_relative(importing, node, is_package=index.is_package(importing))
     if not target or not target.startswith(prefixes):
         return None
+    if _absence_is_expected(tree, node):
+        return None
     if not index.knows(target):
         # Inside the package but never parsed: `from pkg.does_not_exist import X` is the defect hunted here.
         return f"{path.as_posix()}:{node.lineno}: module '{target}' does not exist"
@@ -215,6 +220,33 @@ def find_unresolved_from_imports(
                     if problem:
                         problems.append(problem)
     return problems
+
+
+def _absence_is_expected(tree: ast.Module, target: ast.ImportFrom) -> bool:
+    """True when the surrounding code already handles, or asserts, that this import fails.
+
+    Two legitimate shapes that a naive scan reports as defects:
+
+    * ``try: from x import y`` with an ``ImportError`` handler -- an optional dependency or an optional
+      frozen baseline snapshot, where absence is the documented fallback path.
+    * ``with pytest.raises(ImportError): from x import y`` -- a test whose whole point is that the name is
+      NOT importable. Reporting that one would be actively wrong: the finding IS the contract.
+    """
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Try):
+            handles = any(h.type is None or any(isinstance(n, ast.Name) and n.id in {"ImportError", "ModuleNotFoundError", "Exception"} for n in ast.walk(h.type)) for h in node.handlers)
+            if handles and any(inner is target for stmt in node.body for inner in ast.walk(stmt)):
+                return True
+        if isinstance(node, ast.With):
+            raises_import_error = any(
+                isinstance(item.context_expr, ast.Call)
+                and getattr(item.context_expr.func, "attr", "") == "raises"
+                and any(isinstance(a, ast.Name) and a.id in {"ImportError", "ModuleNotFoundError"} for a in item.context_expr.args)
+                for item in node.items
+            )
+            if raises_import_error and any(inner is target for stmt in node.body for inner in ast.walk(stmt)):
+                return True
+    return False
 
 
 def _at_module_scope(tree: ast.Module, target: ast.ImportFrom) -> bool:

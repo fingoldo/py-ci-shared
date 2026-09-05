@@ -129,3 +129,42 @@ def test_a_third_party_target_is_not_judged(tmp_path):
     """Only prefixes the caller declares resolvable are checked; absence elsewhere proves nothing."""
     root = _pkg(tmp_path, "pkg", {"__init__.py": "", "consumer.py": "from numpy.linalg import definitely_not_a_real_name\n"})
     assert _scan(root) == []
+
+
+def test_an_implicit_namespace_package_is_importable(tmp_path):
+    """A directory of modules with no __init__.py is importable since 3.3; absent is not missing."""
+    root = _pkg(
+        tmp_path,
+        "pkg",
+        {"__init__.py": "", "ns/leaf.py": "VALUE = 1\n", "consumer.py": "from pkg.ns import leaf\n"},
+    )
+    assert _scan(root) == []
+
+
+def test_an_import_with_an_ImportError_fallback_is_not_a_finding(tmp_path):
+    """An optional dependency or optional baseline snapshot handles its own absence."""
+    root = _pkg(
+        tmp_path,
+        "pkg",
+        {
+            "__init__.py": "",
+            "consumer.py": "try:\n    from pkg.absent import thing\nexcept ImportError:\n    thing = None\n",
+        },
+    )
+    assert _scan(root) == []
+
+
+def test_an_import_asserted_to_fail_is_not_a_finding(tmp_path):
+    """`with pytest.raises(ImportError): from x import y` -- the absence IS the contract being pinned.
+
+    Reporting this one would be actively wrong: the scanner would be demanding the repo break its own test.
+    """
+    root = _pkg(
+        tmp_path,
+        "pkg",
+        {
+            "__init__.py": "",
+            "consumer.py": "import pytest\n\n\ndef test_gone():\n    with pytest.raises(ImportError):\n        from pkg.absent import thing\n",
+        },
+    )
+    assert _scan(root) == []
