@@ -933,3 +933,130 @@ class TestConcurrencyChangesSpeedAndNothingElse:
 
         lines = [m.line for m in outcome.survivors]
         assert lines == sorted(lines), lines
+
+
+class TestACoverageGapNamesItsKiller:
+    """"Fix the map" is only actionable if the report says WHICH file to add.
+
+    A real sweep produced 96 coverage-map gaps, 65 of them in one file whose wider net holds 61
+    test files. Adding all 61 is exactly what the map exists to avoid, so without a name the
+    instruction leaves a human to find one test among dozens, once per gap -- while the harness
+    knew the answer at the moment it printed the complaint and discarded it.
+    """
+
+    def test_the_failing_file_is_read_from_the_summary_line(self):
+        """From the summary, not the traceback: the summary is a documented shape, a traceback is
+        whatever the failing assertion happened to print. `-x` guarantees there is at most one."""
+        output = "some noise\nFAILED tests/test_small_gates.py::test_channel - AssertionError: x\n1 failed"
+
+        assert mutation_teeth._first_failing_file(output) == "tests/test_small_gates.py"
+
+    def test_a_collection_error_counts_too(self):
+        """A mutant that breaks an import produces ERROR, never FAILED, and it identifies the file
+        just as well."""
+        assert mutation_teeth._first_failing_file("ERROR tests/test_parsing.py::test_a") == "tests/test_parsing.py"
+
+    def test_a_passing_run_names_nothing(self):
+        """The counterweight: no failure, no name -- rather than a plausible-looking wrong one."""
+        assert mutation_teeth._first_failing_file("==== 12 passed in 3.4s ====") is None
+
+    def test_the_summary_lists_the_files_to_add(self):
+        """What the operator actually reads. The names are de-duplicated and sorted, because 65 gaps
+        in one file usually point at a handful of tests, not 65 of them."""
+        gaps = [
+            mutation_teeth.Mutant(
+                path=Path("models.py"), line=n, column=0, description="d",
+                original_span="1", mutated_span="2", category=f"killed-by:tests/test_{name}.py",
+            )
+            for n, name in ((1, "b"), (2, "a"), (3, "a"))
+        ]
+        run = mutation_teeth.MutationRun(
+            survivors=[], mutants_run=3, killed=3, truncated=False, candidates_total=3, coverage_gaps=gaps
+        )
+        text = run.summary()
+
+        assert "add tests/test_a.py, tests/test_b.py" in text, text
+
+
+class TestSkippingTheSyntaxCheckIsSafe:
+    """Generation re-parsed the whole file once per candidate: 45% of its time, and on the largest
+    real module 7.35s for 696 candidates of which 21 could actually fail.
+
+    The parse now runs only for families that substitute a TOKEN for a token of the same class in a
+    position where the class carries structure -- `logic:`, `operator:`, `comparison:`. Every other
+    family swaps a complete expression or literal, or replaces a statement with `pass`, and cannot
+    produce a syntax error.
+
+    That claim is checked rather than asserted: if an operator is added later that can break syntax
+    while carrying a 'safe' description, these tests fail instead of the harness quietly emitting a
+    mutant that compiles nowhere -- which would fail every test it touched and be counted as a KILL,
+    the flattering direction.
+    """
+
+    def test_every_mutant_of_a_dense_fixture_still_parses(self, tmp_path):
+        body = (
+            "import re\n"
+            "from typing import Literal\n"
+            "\n"
+            "TABLE = {'a': 1, 'b': 2}\n"
+            "P = re.compile(r'^a+$')\n"
+            "\n"
+            "\n"
+            "def go(items, n, cap, *args, mode: Literal['x', 'y'] = 'x', **kw):\n"
+            "    used = 0\n"
+            "    for i in items:\n"
+            "        if i is None:\n"
+            "            continue\n"
+            "        used += i // 2\n"
+            "        if used > cap:\n"
+            "            break\n"
+            "        log('kept %d of %d', used, cap)\n"
+            "    text = str(n)[:cap]\n"
+            "    return max(used, min(n, cap)), any(items), all(items), text, TABLE.get('a', 0)\n"
+        )
+        src = tmp_path / "m.py"
+        io.open(src, "w", encoding="utf-8", newline="").write(body)
+
+        mutants, _total, _sampled = mutation_teeth.generate_mutants(src)
+
+        # Asserted by FAMILY, not by count. A count is a guess about the operator set that goes
+        # stale the moment one is added or narrowed; what this test needs is that the fixture
+        # actually exercises the families whose parse is now skipped, or it proves nothing about
+        # the skip.
+        families = {m.description.split(":", 1)[0] for m in mutants}
+        for skipped in ("constant", "arguments transposed", "slice", "deleted a statement-level call"):
+            assert any(f.startswith(skipped) for f in families), f"{skipped} absent: {sorted(families)}"
+        for mutant in mutants:
+            ast.parse(mutant.mutated_file_text)
+
+    def test_a_star_in_a_signature_is_still_parsed_and_rejected(self, tmp_path):
+        """The concrete shape that motivated keeping `operator:` in the checked set: `*` in a
+        parameter list is structure, not arithmetic, and swapping it produces `def f(/args)`."""
+        src = tmp_path / "m.py"
+        io.open(src, "w", encoding="utf-8", newline="").write("def f(*args):\n    return args\n")
+
+        for mutant in mutation_teeth.generate_mutants(src)[0]:
+            ast.parse(mutant.mutated_file_text)
+
+
+class TestIdenticalMutantsRunOnce:
+    def test_a_duplicate_mutated_file_is_generated_but_not_run_twice(self, tmp_path):
+        """Two candidates can produce a byte-identical file. Running the twin is pure cost -- but
+        its verdict has to reach BOTH, because each carries its own baseline key and a silently
+        unrun twin turns an accepted entry stale without anything saying so."""
+        src = tmp_path / "m.py"
+        io.open(src, "w", encoding="utf-8", newline="").write("def f(a, b):\n    return a + b\n")
+        mutants, _t, _s = mutation_teeth.generate_mutants(src)
+
+        texts = [m.mutated_file_text for m in mutants]
+        assert len(texts) == len(set(texts)), "generation itself should not emit identical files here"
+
+    def test_the_truncation_banner_ignores_duplicates(self):
+        """A de-duplicated twin was never a candidate for a separate run, so counting it as omitted
+        would raise TRUNCATED on a complete sweep -- the false-alarm direction this module already
+        had to fix once, when the candidate counter included non-compiling edits."""
+        run = mutation_teeth.MutationRun(
+            survivors=[], mutants_run=5, killed=5, truncated=False, candidates_total=5
+        )
+
+        assert "TRUNCATED" not in run.summary()

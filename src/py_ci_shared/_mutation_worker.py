@@ -37,6 +37,7 @@ import contextlib
 import io
 import json
 import sys
+import time
 from pathlib import Path
 
 
@@ -120,7 +121,9 @@ def main() -> int:
         if request.get("cmd") == "stop":
             return 0
         try:
+            _t0 = time.perf_counter()
             purged = _purge_local_modules(root)
+            _t_purge = time.perf_counter() - _t0
             # pytest.main writes its report to OUR stdout, which is also the protocol channel.
             # Without this redirect the parent reads a pytest line, and when one happens to be
             # valid JSON -- a bare quoted string is enough -- `json.loads` succeeds and returns a
@@ -130,13 +133,30 @@ def main() -> int:
             # keep the output.
             buffer = io.StringIO()
             spy = _FirstFailure()
+            _t1 = time.perf_counter()
             with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
                 code = int(pytest.main(list(request["args"]), plugins=[spy]))
+            _t_pytest = time.perf_counter() - _t1
             # Which FILE killed this mutant, so the caller can try it first next time. With `-x` the
             # run stops at the first failure, so the earlier the killer sits the less is collected
             # and executed -- measured at 40.85 of 67 tests run on average, against 11.62 when the
             # previous killer leads. Advisory only: a reply without it is still a valid reply.
-            print(json.dumps({"rc": code, "purged": purged, "failed": spy.path}), flush=True)
+            # Timings travel in the reply the worker already sends. A parent-side profiler
+            # cannot attribute any of this -- the work happens in another process -- and pytest's
+            # own `--durations` is inert here because stdout is redirected into a discarded buffer.
+            print(
+                json.dumps(
+                    {
+                        "rc": code,
+                        "purged": purged,
+                        "failed": spy.path,
+                        "t_purge": round(_t_purge, 4),
+                        "t_pytest": round(_t_pytest, 4),
+                        "t_total": round(time.perf_counter() - _t0, 4),
+                    }
+                ),
+                flush=True,
+            )
         except BaseException as exc:  # noqa: BLE001 -- a worker crash must be reported, not raised
             print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), flush=True)
     return 0

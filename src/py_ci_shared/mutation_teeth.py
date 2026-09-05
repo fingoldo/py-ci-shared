@@ -110,13 +110,14 @@ __all__ = [
     "find_surviving_mutants",
     "fingerprint",
     "generate_mutants",
+    "sweep_files",
     "register_refresh_option",
 ]
 
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "5"  # 5: opt-in `jobs`, which changes how a verdict is reached if not what it is
+HARNESS_VERSION = "6"  # 6: the wider net is baselined, so a verdict it decided may now differ
 
 
 #: Written in place of a justification by a refresh, and rejected on the next run. A refresh
@@ -208,6 +209,8 @@ class MutationRun:
     killed_by_crash: int = 0
     coverage_gaps: list[Mutant] = field(default_factory=list)
     inconclusive: list[Mutant] = field(default_factory=list)
+    #: Why the wider net was not used, when it was not. Empty when it ran normally.
+    wider_net_note: str = ""
     from_cache: bool = False
 
     def summary(self) -> str:
@@ -228,12 +231,20 @@ class MutationRun:
                 f"{len(self.inconclusive)} mutants were INCONCLUSIVE (the run timed out); they are "
                 "neither killed nor survived, so this sweep is incomplete"
             )
+        if self.wider_net_note:
+            # Loud, because its absence silently changes what a survivor MEANS: without the net,
+            # every survivor is "no listed test kills this", which is a weaker claim.
+            parts.append(f"WIDER NET UNUSED: {self.wider_net_note}")
         if self.coverage_gaps:
             # Reported separately and loudly: these are NOT test gaps. A reader who treats them as
             # survivors writes a test that already exists.
+            named = sorted(
+                {m.category.split(":", 1)[1] for m in self.coverage_gaps if m.category.startswith("killed-by:")}
+            )
+            detail = f" -- add {', '.join(named)}" if named else ""
             parts.append(
                 f"{len(self.coverage_gaps)} 'survivors' were killed by a test the coverage map does "
-                "not list -- fix the map, not the tests"
+                f"not list -- fix the map, not the tests{detail}"
             )
         if self.truncated:
             parts.append(f"TRUNCATED: {self.candidates_total} candidates existed, {self.mutants_run} were run")
@@ -307,6 +318,17 @@ def _has_constant(node: ast.AST | None) -> bool:
         and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in ast.walk(sub.slice))
         for sub in ast.walk(node)
     )
+
+
+#: Families whose mutation can change the SYNTAX, and therefore have to be parsed before being
+#: emitted. Both substitute a token for another token of the same class, in positions where that
+#: class carries structure -- `*` inside a signature becoming `/`, a guard gaining a `not`.
+#:
+#: Everything else swaps a COMPLETE expression or literal for another, or replaces a statement with
+#: `pass`, and cannot produce a syntax error. Re-parsing the whole file for those was 45% of
+#: generation time (11.97s of a 26.4s profile; `models.py` alone 7.35s for 696 candidates, of which
+#: 21 could fail).
+_SYNTAX_RISKY_PREFIXES = ("logic:", "operator:", "comparison:")
 
 
 def _line_starts(source: str) -> list[int]:
@@ -873,10 +895,11 @@ def generate_mutants(
         # is worse than none: it trains the reader past the one line that matters.
         if mutated == source:
             continue
-        try:
-            ast.parse(mutated)
-        except SyntaxError:
-            continue  # a mutant that does not compile tests nothing
+        if description.startswith(_SYNTAX_RISKY_PREFIXES):
+            try:
+                ast.parse(mutated)
+            except SyntaxError:
+                continue  # a mutant that does not compile tests nothing
         total += 1
         if limit is not None and len(mutants) >= limit:
             continue
@@ -1063,12 +1086,23 @@ def _mutant_from_json(d: dict) -> Mutant:
     )
 
 
+#: Memoised for the life of the process. `importlib.metadata.distributions()` walks every installed
+#: package and parses its metadata with the email parser -- measured at 0.8s and 825,000 `readline`
+#: calls. `fingerprint` calls this twice per sweep, and it is the ENTIRE cost of a cache hit, so the
+#: uncached version made the common case (nothing changed, replay the answer) cost most of a second
+#: for no reason. The installed set cannot change while the process runs.
+_PLUGIN_CACHE: list[str] | None = None
+
+
 def _installed_pytest_plugins() -> list[str]:
     """Names and versions of installed pytest plugins, for the fingerprint.
 
     Read from installed distribution metadata rather than by starting pytest: this runs on every
     fingerprint, including cache hits, and must not cost a process.
     """
+    global _PLUGIN_CACHE
+    if _PLUGIN_CACHE is not None:
+        return _PLUGIN_CACHE
     found = []
     try:
         from importlib.metadata import distributions
@@ -1081,6 +1115,7 @@ def _installed_pytest_plugins() -> list[str]:
             continue
         if name.startswith("pytest") or name.startswith("pytest-"):
             found.append(f"{name}=={dist.version}")
+    _PLUGIN_CACHE = found
     return found
 
 
@@ -1206,6 +1241,22 @@ def _pytest_flags() -> list[str]:
     return flags
 
 
+def _first_failing_file(output: str) -> str | None:
+    """The test FILE named by pytest's first failure line, or ``None``.
+
+    Read from the short summary (``FAILED path::test - reason``) rather than from the traceback,
+    for the same reason `_killed_by_crash` does: the summary line is a stable shape and a traceback
+    is whatever the failing assertion happened to print. With `-x` there is at most one.
+    """
+    for line in output.splitlines():
+        stripped = line.strip()
+        for prefix in ("FAILED ", "ERROR "):
+            if stripped.startswith(prefix):
+                target = stripped[len(prefix) :].split(" ", 1)[0]
+                return target.split("::", 1)[0] or None
+    return None
+
+
 def _run_pytest(test_paths: Sequence[Path | str], cwd: Path, timeout: float):
     """Run pytest, or return ``None`` when it did not finish inside *timeout*.
 
@@ -1252,6 +1303,8 @@ class _WarmRunner:
         self.process: subprocess.Popen | None = None
         #: The file whose failure ended the last run, if the worker reported one.
         self.last_failed: str | None = None
+        #: The last run's `t_purge` / `t_pytest` / `t_total`, measured inside the worker.
+        self.last_timings: dict[str, float] | None = None
 
     def start(self) -> None:
         self.process = subprocess.Popen(
@@ -1308,6 +1361,9 @@ class _WarmRunner:
         # that does not report it simply leaves the order alone.
         failed = reply.get("failed")
         self.last_failed = failed if isinstance(failed, str) else None
+        #: Per-mutant timings from inside the worker, where the cost actually is. `None` from a
+        #: worker that does not report them, so an older worker still works.
+        self.last_timings = {k: reply[k] for k in ("t_purge", "t_pytest", "t_total") if k in reply} or None
         try:
             return int(reply["rc"])
         except (TypeError, ValueError):
@@ -1429,6 +1485,33 @@ def _sweep_partition(
     inconclusive: list[Mutant] = []
     run = 0
     crashes = 0
+    # The restore is in a `finally` because the sandbox may be SHARED across files: an exception
+    # mid-sweep used to leave the last mutant on disk, which was harmless while every file got
+    # its own throwaway copy and becomes contamination of the next file the moment one does not.
+    try:
+        return _sweep_mutants(
+            sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker
+        )
+    finally:
+        io.open(target, "w", encoding="utf-8", newline="").write(original)
+
+
+def _sweep_mutants(
+    sandbox: Path,
+    target: Path,
+    original: str,
+    mutants: "list[Mutant]",
+    test_paths: "Sequence[Path | str]",
+    fallback_test_paths: "Sequence[Path | str]",
+    timeout: float,
+    use_warm_worker: bool,
+) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int]":
+    """The loop itself, split out so the restore above can wrap it in a `finally`."""
+    survivors: list[Mutant] = []
+    coverage_gaps: list[Mutant] = []
+    inconclusive: list[Mutant] = []
+    run = 0
+    crashes = 0
     with _WarmRunner(sandbox, timeout) as warm:
         if use_warm_worker:
             warm_baseline = warm.run(test_paths)
@@ -1442,6 +1525,10 @@ def _sweep_partition(
                     "treat the difference between the two processes as the bug."
                 )
         ordered = list(test_paths)
+        # The wider net gets the same treatment as the primary set, and for a bigger prize: it is
+        # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
+        # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
+        ordered_wider = list(fallback_test_paths)
         for mutant in mutants:
             io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
             code = warm.run(ordered) if use_warm_worker else None
@@ -1470,8 +1557,18 @@ def _sweep_partition(
                     continue
                 if _classify(confirm, f"survivor re-check {mutant}"):
                     if fallback_test_paths:
-                        wider = _run_pytest(fallback_test_paths, sandbox, timeout)
+                        wider = _run_pytest(ordered_wider, sandbox, timeout)
                         if wider is not None and not _classify(wider, f"fallback re-check {mutant}"):
+                            # Record WHICH file killed it. Without this the report says "fix the
+                            # map" and leaves the operator to find the one test among dozens --
+                            # and adding them all is precisely what the map exists to avoid.
+                            killer = _first_failing_file(wider.stdout)
+                            if killer:
+                                object.__setattr__(mutant, "category", f"killed-by:{killer}")
+                                # Lead with it next time. Gaps cluster: the same unlisted test
+                                # usually kills many of them, and on the file that produced 65 gaps
+                                # every one named the same killer.
+                                ordered_wider = _lead_with(ordered_wider, killer)
                             coverage_gaps.append(mutant)
                             io.open(target, "w", encoding="utf-8", newline="").write(original)
                             continue
@@ -1492,6 +1589,7 @@ def find_surviving_mutants(
     use_cache: bool = True,
     use_warm_worker: bool = True,
     jobs: int = 1,
+    _sandbox: Path | None = None,
     extra_fingerprint_paths: Sequence[Path | str] = (),
     fallback_test_paths: Sequence[Path | str] = (),
 ) -> MutationRun:
@@ -1555,10 +1653,16 @@ def find_surviving_mutants(
                 from_cache=True,
             )
 
-    sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
-    sandbox = sandbox_parent / repo_root.name
+    # A caller-owned sandbox (from `sweep_files`) is reused as-is: the copy, the cold
+    # baseline and the worker start are the fixed costs a multi-file sweep should pay once.
+    # `_sweep_partition` restores the target in a `finally`, so a shared tree is clean for
+    # the next file even when a sweep raises.
+    borrowed = _sandbox is not None
+    sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_")) if not borrowed else None
+    sandbox = _sandbox if borrowed else sandbox_parent / repo_root.name
     try:
-        shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
+        if not borrowed:
+            shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
         target = sandbox / relative
         if not target.is_file():
             raise MutationHarnessError(
@@ -1579,9 +1683,39 @@ def find_surviving_mutants(
                 f"{baseline.stdout[-2000:]}"
             )
 
+        # The wider net decides verdicts too -- a failure in it RECLASSIFIES a survivor as a
+        # coverage-map gap -- so it needs the same unmutated check the primary set gets. It was not
+        # getting one, and the consequence was measured rather than imagined: a test that reads two
+        # files from a SIBLING project raises FileNotFoundError inside the sandbox on every mutant,
+        # pytest exits non-zero, and 65 real survivors in one module were reported as "killed by a
+        # test the map does not list". That module then read as having no survivors at all, which is
+        # the direction nobody investigates.
+        #
+        # A net that cannot run is not evidence, so it is dropped for this file and said out loud.
+        wider_baseline_note = ""
+        if fallback_test_paths:
+            wider_baseline = _run_pytest(fallback_test_paths, sandbox, timeout)
+            if wider_baseline is None or not _classify(wider_baseline, "the unmutated wider net"):
+                broken = _first_failing_file(wider_baseline.stdout) if wider_baseline else None
+                wider_baseline_note = (
+                    "the wider net does not pass unmutated"
+                    + (f" ({broken} fails in the sandbox)" if broken else "")
+                    + " -- it cannot tell a coverage-map gap from a survivor, so it was NOT used"
+                )
+                fallback_test_paths = ()
+
         mutants, candidates_total, sampled = generate_mutants(target, lines=lines, limit=limit)
         for mutant in mutants:
             object.__setattr__(mutant, "path", relative)
+        # Two candidates can produce a byte-identical file -- an operator landing on a span a
+        # container sampler already covers, most often. Running the twin is pure cost, but its
+        # verdict must be FANNED to every colliding mutant rather than recorded once: each carries
+        # its own baseline key, and a silently unrun twin turns an accepted entry stale.
+        twins: dict[str, list[Mutant]] = {}
+        for mutant in mutants:
+            twins.setdefault(mutant.mutated_file_text, []).append(mutant)
+        duplicates = sum(len(g) - 1 for g in twins.values())
+        mutants = [g[0] for g in twins.values()]
 
         # One partition per worker, each with its own copy of the tree. `jobs=1` is the
         # default and runs exactly the path that existed before: a consumer whose tests
@@ -1642,15 +1776,20 @@ def find_surviving_mutants(
             killed=run - len(survivors),
             # NOT gated on `limit`: container sampling drops candidates too, and gating on the
             # cap left the flag False while the report read as exhaustive.
-            truncated=candidates_total > len(mutants),
+            # `duplicates` are subtracted because they were never candidates for a SEPARATE run:
+            # counting them as omitted would raise the TRUNCATED banner on a complete sweep, the
+            # false-alarm direction this module already had to fix once.
+            truncated=candidates_total - duplicates > len(mutants),
             candidates_total=candidates_total,
             sampled_containers=sampled,
             killed_by_crash=crashes,
             coverage_gaps=coverage_gaps,
             inconclusive=inconclusive,
+            wider_net_note=wider_baseline_note,
         )
     finally:
-        shutil.rmtree(sandbox_parent, ignore_errors=True)
+        if sandbox_parent is not None:
+            shutil.rmtree(sandbox_parent, ignore_errors=True)
 
     if cache_file:
         # Re-taken AFTER the run. The sweep takes minutes; anything edited during one would
@@ -1724,6 +1863,56 @@ def _refresh_requested(request) -> bool:
         return bool(request.config.getoption(REFRESH_FLAG))
     except ValueError:
         return REFRESH_FLAG in sys.argv
+
+
+def sweep_files(
+    targets: "Sequence[tuple[Path | str, Sequence[Path | str]]]",
+    repo_root: Path | str,
+    *,
+    lines_by_source: "dict[str, Iterable[range]] | None" = None,
+    fallback_by_source: "dict[str, Sequence[Path | str]] | None" = None,
+    **common,
+) -> "dict[str, MutationRun]":
+    """Sweep several files, paying the fixed per-sweep costs once.
+
+    *targets* is ``[(source, test_paths), ...]``; *lines_by_source* and *fallback_by_source* carry
+    the per-file arguments that differ. Everything in *common* is forwarded to
+    :func:`find_surviving_mutants` unchanged, so this adds no behaviour of its own -- the results
+    are the same objects, keyed by source, and each file keeps its own fingerprint and cache entry.
+
+    The saving is the tree copy, the cold baseline and the worker start, which
+    :func:`find_surviving_mutants` pays once per call and this pays once per sweep. It is a wrapper
+    rather than a merge on purpose: merging the fingerprints would make one changed file invalidate
+    every verdict, which is the opposite of what the cache exists for.
+    """
+    repo_root = Path(repo_root).resolve()
+    lines_by_source = lines_by_source or {}
+    fallback_by_source = fallback_by_source or {}
+    out: dict[str, MutationRun] = {}
+    shared: Path | None = None
+    parent: Path | None = None
+    try:
+        for source, test_paths in targets:
+            key = str(source)
+            if shared is None:
+                # Lazy: an all-cache-hit sweep copies nothing at all, which is the common case once
+                # the cache is warm and the reason the copy is not hoisted out of the loop.
+                parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
+                shared = parent / repo_root.name
+                shutil.copytree(repo_root, shared, ignore=_COPY_IGNORE, symlinks=False)
+            out[key] = find_surviving_mutants(
+                source,
+                test_paths,
+                repo_root,
+                lines=lines_by_source.get(key),
+                fallback_test_paths=fallback_by_source.get(key, ()),
+                _sandbox=shared,
+                **common,
+            )
+    finally:
+        if parent is not None:
+            shutil.rmtree(parent, ignore_errors=True)
+    return out
 
 
 def assert_no_new_surviving_mutant(
