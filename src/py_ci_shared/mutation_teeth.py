@@ -93,6 +93,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import warnings
 import tokenize
 from collections.abc import Iterable, Sequence
@@ -117,7 +118,7 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "6"  # 6: the wider net is baselined, so a verdict it decided may now differ
+HARNESS_VERSION = "7"  # 7: the wider net runs warm, and the worker is the parent's own copy
 
 
 #: Written in place of a justification by a refresh, and rejected on the next run. A refresh
@@ -211,6 +212,11 @@ class MutationRun:
     inconclusive: list[Mutant] = field(default_factory=list)
     #: Why the wider net was not used, when it was not. Empty when it ran normally.
     wider_net_note: str = ""
+    #: Per-mutant cost, measured rather than estimated: totals in seconds for the module purge,
+    #: pytest inside the warm worker, the parent-side overhead around it, and the cold re-checks
+    #: that only survivors and coverage-map gaps pay. A parent-side profiler cannot attribute any
+    #: of the first two -- they happen in another process.
+    timings: dict[str, float] = field(default_factory=dict)
     from_cache: bool = False
 
     def summary(self) -> str:
@@ -1127,6 +1133,14 @@ def _pytest_env() -> dict[str, str]:
     overloading this module was rewritten to abolish.
     """
     env = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"}
+    # The child inherits PYTHONPATH, never the parent's in-process `sys.path`. Without this, a
+    # parent running from a checkout spawns a worker that loads the INSTALLED package instead --
+    # measured: parent on a worktree, child on `C:\...\py-ci-shared\src`. Every worker-side change
+    # is then untested by any run of the checkout, and silently so, because a reply missing the new
+    # fields is still a valid reply. That is this module's own failure mode, applied to itself.
+    inherited = env.get("PYTHONPATH", "")
+    entries = [p for p in sys.path if p and p not in inherited.split(os.pathsep)]
+    env["PYTHONPATH"] = os.pathsep.join([*entries, inherited]) if inherited else os.pathsep.join(entries)
     # Defence in depth, not a fix for a reproduced bug: bytecode caching keys on the source's size
     # and mtime-to-the-second, and an operator swap changes neither. Writing no bytecode at all
     # removes the question for the cost of a recompile that the warm worker already pays.
@@ -1470,7 +1484,7 @@ def _sweep_partition(
     fallback_test_paths: "Sequence[Path | str]",
     timeout: float,
     use_warm_worker: bool,
-) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int]":
+) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int, dict[str, float]]":
     """One sandbox's share of the mutants.
 
     Returns ``(survivors, coverage_gaps, inconclusive, run, crashes)``. Every path in and out is a
@@ -1505,7 +1519,7 @@ def _sweep_mutants(
     fallback_test_paths: "Sequence[Path | str]",
     timeout: float,
     use_warm_worker: bool,
-) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int]":
+) -> "tuple[list[Mutant], list[Mutant], list[Mutant], int, int, dict[str, float]]":
     """The loop itself, split out so the restore above can wrap it in a `finally`."""
     survivors: list[Mutant] = []
     coverage_gaps: list[Mutant] = []
@@ -1529,9 +1543,18 @@ def _sweep_mutants(
         # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
         # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
         ordered_wider = list(fallback_test_paths)
+        budget = {"purge": 0.0, "pytest": 0.0, "overhead": 0.0, "recheck": 0.0, "mutants": 0.0}
         for mutant in mutants:
+            _mutant_started = time.perf_counter()
             io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
             code = warm.run(ordered) if use_warm_worker else None
+            _judged_at = time.perf_counter()
+            if warm.last_timings:
+                budget["purge"] += warm.last_timings.get("t_purge", 0.0)
+                budget["pytest"] += warm.last_timings.get("t_pytest", 0.0)
+                # What the parent spent that the worker did not: the pipe, the JSON, and the two
+                # whole-file writes around every mutant.
+                budget["overhead"] += max(0.0, (_judged_at - _mutant_started) - warm.last_timings.get("t_total", 0.0))
             if warm.last_failed:
                 ordered = _lead_with(ordered, warm.last_failed)
             if code is None:
@@ -1557,12 +1580,28 @@ def _sweep_mutants(
                     continue
                 if _classify(confirm, f"survivor re-check {mutant}"):
                     if fallback_test_paths:
-                        wider = _run_pytest(ordered_wider, sandbox, timeout)
-                        if wider is not None and not _classify(wider, f"fallback re-check {mutant}"):
+                        # WARM, unlike the confirmation above. That one is cold on purpose -- it
+                        # exists to escape state a purge cannot reach, which is why a warm survivor
+                        # is a candidate rather than a finding. This one asks a different question:
+                        # does a test OUTSIDE the map kill it? That needs a wider selection, not a
+                        # fresh process. Measured, it was half of the dominant cost: on the weakly
+                        # covered file the two cold runs per survivor were 43 of the 46 seconds a
+                        # mutant took.
+                        wider_code = warm.run(ordered_wider) if use_warm_worker else None
+                        if wider_code is not None:
+                            wider_killed = not _classify_code(wider_code, f"fallback re-check {mutant}")
+                            wider_killer = warm.last_failed
+                        else:
+                            # The worker died or was never used: fall back to the cold path rather
+                            # than lose the answer.
+                            wider = _run_pytest(ordered_wider, sandbox, timeout)
+                            wider_killed = wider is not None and not _classify(wider, f"fallback re-check {mutant}")
+                            wider_killer = _first_failing_file(wider.stdout) if wider is not None else None
+                        if wider_killed:
                             # Record WHICH file killed it. Without this the report says "fix the
                             # map" and leaves the operator to find the one test among dozens --
                             # and adding them all is precisely what the map exists to avoid.
-                            killer = _first_failing_file(wider.stdout)
+                            killer = wider_killer
                             if killer:
                                 object.__setattr__(mutant, "category", f"killed-by:{killer}")
                                 # Lead with it next time. Gaps cluster: the same unlisted test
@@ -1574,7 +1613,10 @@ def _sweep_mutants(
                             continue
                     survivors.append(mutant)
             io.open(target, "w", encoding="utf-8", newline="").write(original)
-    return survivors, coverage_gaps, inconclusive, run, crashes
+            budget["mutants"] += 1
+            # Everything after the verdict is a cold re-check: the confirmation and the wider net.
+            budget["recheck"] += max(0.0, time.perf_counter() - _judged_at)
+    return survivors, coverage_gaps, inconclusive, run, crashes, budget
 
 
 
@@ -1729,7 +1771,7 @@ def find_surviving_mutants(
             extra = sandbox_parent / f"{repo_root.name}_{index}"
             shutil.copytree(repo_root, extra, ignore=_COPY_IGNORE, symlinks=False)
             sandboxes.append(extra)
-        results: list[tuple] = [()] * len(partitions)
+        results: list[tuple] = [()] * len(partitions)  # each: survivors, gaps, inconclusive, run, crashes, budget
         errors: list[BaseException] = []
 
         def _one(slot: int) -> None:
@@ -1764,6 +1806,7 @@ def find_surviving_mutants(
         inconclusive = [m for r in results for m in r[2]]
         run = sum(r[3] for r in results)
         crashes = sum(r[4] for r in results)
+        budget = {k: sum(r[5].get(k, 0.0) for r in results) for k in ("purge", "pytest", "overhead", "recheck", "mutants")}
         # Source order, not completion order: a survivor list that reorders itself between
         # runs is a diff nobody can read.
         order = {id(m): i for i, m in enumerate(mutants)}
@@ -1786,6 +1829,7 @@ def find_surviving_mutants(
             coverage_gaps=coverage_gaps,
             inconclusive=inconclusive,
             wider_net_note=wider_baseline_note,
+            timings={k: round(v, 3) for k, v in budget.items()},
         )
     finally:
         if sandbox_parent is not None:
