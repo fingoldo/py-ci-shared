@@ -23,6 +23,13 @@ The safe forms are a CLAMP (``np.maximum(denominator, tiny)``), which engages on
 leaves every representable value untouched, or restructuring so no epsilon is needed at all. Both are what
 the two sites above were rewritten to.
 
+Known blind spot: a denominator that is quadratically small for a REASON the parse cannot see is not
+reported. `expected = r @ c` in a correspondence analysis is a product of two marginal probabilities, so
+two categories each at 1e-6 of the rows give 1e-12 -- the same order as a `+ 1e-12` pad, which shrank the
+standardised residual by 29.3% there and by 90.0% one decade further down. Syntactically it is a name
+divided into another name, indistinguishable from any safe denominator, so catching it would need to know
+what the quantity means.
+
 Scope is deliberately narrow. A pad on a non-power denominator is not flagged: on a repository of ~3500
 modules the general form matched 109 sites, nearly all of them legitimate relative-error denominators,
 while the power-denominator rule matched exactly 2 -- both real bugs. A check that has to be triaged is a
