@@ -183,6 +183,59 @@ class TestTheOtherMockingIdiom:
 
         assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
 
+    def test_a_mock_bound_under_a_name_of_its_own_counts(self, tmp_path):
+        """`as mock_ev` is what real tests write, and the bare-name rule above cannot see it: the
+        assertion reads `mock_ev.assert_called_once()`, which names no effect.
+
+        Measured on production_scrapers: five modules were reported while five real tests were
+        asserting the cursor, the SQL and the rows under a name of their own. The check has to
+        follow the binding or it spends the operator's time on its own blind spot.
+        """
+        _write(tmp_path, "store.py", "def save(cur, rows):\n    execute_values(cur, 'INSERT', rows)\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n"
+            "def test_it(cur):\n"
+            "    with patch('store.execute_values') as mock_ev:\n"
+            "        store.save(cur, [])\n"
+            "    assert mock_ev.call_args.args[2] == []\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_the_decorator_form_counts_too(self, tmp_path):
+        """`@patch(...)` injects the mock as a PARAMETER, which is the same binding problem with a
+        different syntax."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n"
+            "@patch('store.commit')\n"
+            "def test_it(fake):\n"
+            "    fake.assert_called_once()\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_patch_of_something_else_bound_under_a_name_does_not_count(self, tmp_path):
+        """The alias is credited with the effect it PATCHES, not with being a mock at all. A patched
+        unrelated collaborator asserted by bare name leaves the module reported -- otherwise the
+        relaxation would excuse every test that mocks anything."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n"
+            "def test_it(conn):\n"
+            "    with patch('store.notify') as mock_notify:\n"
+            "        store.save(conn)\n"
+            "    mock_notify.assert_called_once()\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
     def test_a_bare_name_that_is_not_an_effect_still_does_not_count(self, tmp_path):
         """The relaxation is scoped to the effect names themselves, so an unrelated mock asserted
         by bare name does not excuse the module."""

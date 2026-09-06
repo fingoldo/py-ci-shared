@@ -73,6 +73,61 @@ def _performs(path: Path, effects: Sequence[str]) -> set[str]:
     return found
 
 
+def _patch_target(call: ast.Call, effects: Sequence[str]) -> str | None:
+    """The effect a ``patch(...)`` call replaces, if it replaces one.
+
+    ``patch("mod.execute_values")`` names it in the dotted string; ``patch.object(mod, "commit")``
+    names it in the second argument. Anything else -- a patch of something that is not an effect, or
+    one built from a variable -- answers None.
+    """
+    func = call.func
+    is_patch = (isinstance(func, ast.Name) and func.id == "patch") or (
+        isinstance(func, ast.Attribute) and (func.attr == "patch" or (func.attr == "object" and isinstance(func.value, ast.Name) and func.value.id == "patch"))
+    )
+    if not is_patch:
+        return None
+    is_object = isinstance(func, ast.Attribute) and func.attr == "object"
+    index = 1 if is_object else 0
+    if len(call.args) <= index:
+        return None
+    arg = call.args[index]
+    if not (isinstance(arg, ast.Constant) and isinstance(arg.value, str)):
+        return None
+    name = arg.value.rsplit(".", 1)[-1]
+    return name if name in effects else None
+
+
+def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
+    """``{local name: effect}`` for mocks a test binds under a name of its own.
+
+    ``with patch("mod.execute_values") as mock_ev:`` is the ordinary idiom and it defeats a
+    name-based match completely: the assertion below it reads ``mock_ev.assert_called_once()``, which
+    says nothing about which effect it is. Without this the check reported an effect as uninspected
+    while a well-written test three lines away asserted the cursor, the SQL and the rows.
+
+    Decorator form (``@patch("mod.commit")``) binds the mock to a PARAMETER instead, injected
+    bottom-up, so the parameters are credited as a set rather than positionally -- the alternative is
+    silently wrong whenever a test stacks two patches and inspects only one.
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.withitem):
+            if isinstance(node.context_expr, ast.Call) and isinstance(node.optional_vars, ast.Name):
+                effect = _patch_target(node.context_expr, effects)
+                if effect:
+                    aliases[node.optional_vars.id] = effect
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            patched = [_patch_target(d, effects) for d in node.decorator_list if isinstance(d, ast.Call)]
+            patched = [e for e in patched if e]
+            if not patched:
+                continue
+            params = [a.arg for a in node.args.args if a.arg not in {"self", "cls"}]
+            for param in params[-len(patched) :] if len(params) >= len(patched) else params:
+                for effect in patched:
+                    aliases.setdefault(param, effect)
+    return aliases
+
+
 def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
@@ -84,6 +139,7 @@ def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
     except SyntaxError:
         return set()
     found: set[str] = set()
+    aliases = _patch_aliases(tree, effects)
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
@@ -99,6 +155,9 @@ def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
         # uninspected while a test three lines long was inspecting it.
         elif isinstance(target, ast.Name) and target.id in effects:
             found.add(target.id)
+        # `with patch("mod.execute_values") as mock_ev: ... mock_ev.assert_called_once()`.
+        elif isinstance(target, ast.Name) and target.id in aliases:
+            found.add(aliases[target.id])
     return found
 
 
