@@ -164,6 +164,72 @@ def _exercises_against_a_real_database(tree: ast.AST) -> bool:
     return False
 
 
+#: How a fixture says it is building a real database handle, beyond a driver's own ``connect``.
+_REAL_DB_FACTORIES = frozenset({"create_engine", "create_async_engine"})
+
+
+def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
+    """Fixture names in *conftest* that hand out a handle to a REAL database.
+
+    The third shape of the same false report, and the one with the best evidence behind it. A
+    project with a `db_session` fixture bound to a live server -- glossum requires `_test` in the
+    URL and wraps every test in a SAVEPOINT it rolls back -- exercises its writes against Postgres
+    itself. There is no mock anywhere to assert on, and the check reported all 55 of its effects.
+
+    Resolved one level: a fixture that opens the database, and a fixture that merely REQUESTS one
+    that does. That covers the ordinary `_db_engine` -> `db_session` split without turning this into
+    a dependency solver.
+    """
+    try:
+        tree = ast.parse(conftest.read_text(encoding="utf-8", errors="replace"))
+    except (OSError, SyntaxError):
+        return set()
+
+    def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+        for decorator in node.decorator_list:
+            target = decorator.func if isinstance(decorator, ast.Call) else decorator
+            name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+            if name == "fixture":
+                return True
+        return False
+
+    direct: set[str] = set()
+    functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and _is_fixture(n)]
+    for node in functions:
+        for call in ast.walk(node):
+            if not isinstance(call, ast.Call):
+                continue
+            func = call.func
+            name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+            if name in _REAL_DB_FACTORIES or (
+                name == "connect" and isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in _REAL_DB_MODULES
+            ):
+                direct.add(node.name)
+                break
+
+    backed = set(direct)
+    for node in functions:
+        params = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
+        if params & direct:
+            backed.add(node.name)
+    return backed
+
+
+def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -> bool:
+    """True when a test function in *tree* asks for one of *fixtures* by parameter name."""
+    if not fixtures:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        if not node.name.startswith("test"):
+            continue
+        params = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
+        if params & fixtures:
+            return True
+    return False
+
+
 def _owns_its_connection(path: Path) -> bool:
     """True when the MODULE opens its own database rather than being handed one.
 
@@ -222,7 +288,7 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
     return False
 
 
-def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
+def _inspects(path: Path, effects: Sequence[str], db_fixtures: frozenset[str] = frozenset()) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
     Matched on the ATTRIBUTE CHAIN rather than on text, so ``# commit is asserted below`` in a comment
@@ -234,7 +300,7 @@ def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
         return set()
     # A test that opens its own database is exercising every effect the module performs, and
     # observing the ROWS rather than the call. Nothing more specific is needed or available.
-    if _exercises_against_a_real_database(tree):
+    if _exercises_against_a_real_database(tree) or _requests_a_real_database_fixture(tree, db_fixtures):
         return set(effects)
     found: set[str] = set()
     aliases = _patch_aliases(tree, effects)
@@ -343,6 +409,14 @@ def find_unasserted_effects(
     """
     inspected: dict[str, set[str]] = {}
     problems: dict[str, str] = {}
+    # Every conftest in the tree, because a `db_session` may be defined in the root one and used
+    # three packages down. Collected once: this is an AST parse per conftest, not per test.
+    db_fixtures = frozenset(
+        name
+        for conftest in repo_root.rglob("conftest.py")
+        if not _SKIP_DIRS & set(conftest.parts)
+        for name in _fixture_names_backed_by_a_real_database(conftest)
+    )
 
     for module, tests in sorted(import_map.items()):
         module_path = repo_root / module
@@ -367,7 +441,7 @@ def find_unasserted_effects(
                 if not test_path.is_file():
                     continue
                 if test not in inspected:
-                    inspected[test] = _inspects(test_path, effects)
+                    inspected[test] = _inspects(test_path, effects, db_fixtures)
                 if effect in inspected[test]:
                     checked_by = test
                     break

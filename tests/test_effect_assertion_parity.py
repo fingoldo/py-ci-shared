@@ -249,6 +249,66 @@ class TestTheOtherMockingIdiom:
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
 
 
+class TestAFixtureThatHandsOutARealSession:
+    """The third shape, and the one with the best evidence behind it.
+
+    A project whose `db_session` fixture is bound to a live server -- glossum requires `_test` in the
+    URL and wraps every test in a SAVEPOINT it rolls back -- exercises its writes against Postgres
+    itself. There is no mock anywhere to assert on. The session arrives by fixture, so neither the
+    test nor the module ever calls `connect`, and both earlier recognitions miss it.
+
+    Worth stating plainly: adding this did NOT move glossum's own count, because its CLI tests mock
+    the session with `AsyncMock` and its 55 entries are real. It closes the false-positive class for
+    the tests that do use the fixture, and for the next repository laid out this way.
+    """
+
+    _CONFTEST = (
+        "import pytest\nfrom sqlalchemy.ext.asyncio import create_async_engine\n\n\n"
+        "@pytest.fixture(scope='session')\ndef _db_engine():\n    return create_async_engine('postgresql+asyncpg:///x_test')\n\n\n"
+        "@pytest.fixture\ndef db_session(_db_engine):\n    return _db_engine.connect()\n"
+    )
+
+    def test_a_test_asking_for_the_session_fixture_is_running_for_real(self, tmp_path):
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.execute('INSERT')\n    await session.commit()\n")
+        _write(tmp_path, "tests/conftest.py", self._CONFTEST)
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\nasync def test_it(db_session):\n    await store.save(db_session)\n")
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_the_fixture_that_opens_it_counts_as_well_as_the_one_that_requests_it(self, tmp_path):
+        """`_db_engine` -> `db_session` is the ordinary split, so the resolution has to follow one
+        level -- but only one, rather than becoming a dependency solver."""
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.commit()\n")
+        _write(tmp_path, "tests/conftest.py", self._CONFTEST)
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\nasync def test_it(_db_engine):\n    await store.save(_db_engine)\n")
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_test_that_mocks_the_session_instead_is_still_reported(self, tmp_path):
+        """The case glossum is actually in: a fixture exists, and these tests do not use it."""
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.commit()\n")
+        _write(tmp_path, "tests/conftest.py", self._CONFTEST)
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import AsyncMock\n\nimport store\n\n\nasync def test_it():\n    await store.save(AsyncMock())\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+    def test_a_fixture_that_touches_no_database_does_not_count(self, tmp_path):
+        """A `session` fixture handing out a mock is the defect, not the excuse."""
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.commit()\n")
+        _write(
+            tmp_path,
+            "tests/conftest.py",
+            "from unittest.mock import AsyncMock\n\nimport pytest\n\n\n@pytest.fixture\ndef db_session():\n    return AsyncMock()\n",
+        )
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\nasync def test_it(db_session):\n    await store.save(db_session)\n")
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+
 class TestAModuleThatOpensItsOwnConnection:
     """A structural fact that decides what evidence is even POSSIBLE.
 
