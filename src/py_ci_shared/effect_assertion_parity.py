@@ -85,13 +85,20 @@ def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
         return set()
     found: set[str] = set()
     for node in ast.walk(tree):
-        if not isinstance(node, ast.Attribute) or not isinstance(node.value, ast.Attribute):
+        if not isinstance(node, ast.Attribute):
             continue
-        effect = node.value.attr
-        if effect not in effects:
+        if not (node.attr.startswith("assert_") or node.attr in _INSPECTIONS):
             continue
-        if node.attr.startswith("assert_") or node.attr in _INSPECTIONS:
-            found.add(effect)
+        target = node.value
+        # `conn.commit.assert_called_once()` -- the mock reached through the object it patches.
+        if isinstance(target, ast.Attribute) and target.attr in effects:
+            found.add(target.attr)
+        # `with patch.object(mod, "execute_values") as execute_values: ... execute_values.assert_called()`
+        # binds the mock to a BARE NAME, and that is the commoner idiom for a module-level function.
+        # Matching only the attribute chain missed it, and the check then reported an effect as
+        # uninspected while a test three lines long was inspecting it.
+        elif isinstance(target, ast.Name) and target.id in effects:
+            found.add(target.id)
     return found
 
 

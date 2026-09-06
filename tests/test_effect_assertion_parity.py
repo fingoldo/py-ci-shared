@@ -159,3 +159,38 @@ class TestTheImportMapItBuilds:
         _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it():\n    assert store\n")
 
         assert all(not key.startswith("tests/") for key in build_import_map(tmp_path))
+
+
+class TestTheOtherMockingIdiom:
+    """`patch.object(...) as name` binds the mock to a BARE NAME, not to an attribute chain.
+
+    It is the commoner idiom for a module-level function, and matching only `x.effect.assert_*`
+    missed it: the check reported `execute_values` as uninspected while a three-line test was
+    inspecting it. Found by running the check against a fix written for its own finding.
+    """
+
+    def test_a_patched_module_function_asserted_by_bare_name_counts(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(cur, rows):\n    execute_values(cur, 'INSERT', rows)\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n"
+            "def test_it(cur):\n"
+            "    with patch.object(store, 'execute_values') as execute_values:\n"
+            "        store.save(cur, [])\n"
+            "    execute_values.assert_called_once()\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_bare_name_that_is_not_an_effect_still_does_not_count(self, tmp_path):
+        """The relaxation is scoped to the effect names themselves, so an unrelated mock asserted
+        by bare name does not excuse the module."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\n\n\ndef test_it(conn, notifier):\n    store.save(conn)\n    notifier.assert_called_once()\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
