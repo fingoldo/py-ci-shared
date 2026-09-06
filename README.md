@@ -15,6 +15,13 @@ Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` sup
 
 **Deliberately NOT here:** anything whose shared surface is small relative to the parametrization cost (`sklearn-matrix-ci.yml`, `gpu-matrix.yml`, `release.yml`, `numba-coverage.yml`'s hardcoded test-path lists), and anything inherently project-specific (vulture whitelists, per-repo meta-test suites, the `test`/`build` jobs in each repo's own `ci.yml`). Those stay local to each repo.
 
+## Writing tests: [WRITING_TESTS.md](WRITING_TESTS.md)
+
+A convention for every project that consumes this package, derived from what a mutation sweep of a
+3,676-test suite actually found: five shapes of test that a one-step change to the code slips past,
+and the habit that closes each. Written that way in the first place, a sweep has nothing to report --
+which matters because a sweep costs hours and the habits cost nothing.
+
 ## Why a separate repo, not part of `pyutilz`
 
 `pyutilz` is a runtime dependency (real library code other repos `import`). Bundling CI tooling into it would couple tooling-script releases to runtime-code releases, and `pyutilz`'s own meta-tests (import-cycle checks, docstring-coverage snapshots, etc.) are specific to *its own* codebase structure — not generic/reusable against arbitrary consumer repos. Keeping this concern separate keeps both repos' release history clean.
