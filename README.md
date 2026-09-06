@@ -437,6 +437,7 @@ TypeScript repository with no pytest harness can call the `find_*` half from a p
 
 | Module | Answers |
 |---|---|
+| `sql_verify` | Does PostgreSQL actually accept every SQL statement this project ships? A unit suite drives its loaders through a fake cursor, which accepts any string at all -- so an interpolated projection with a stray comma, or a `WHERE job_uid` against a table keyed on `uid`, ships green. Provides the harness (`dsn_from_env`, `check`, `check_loader`, `run_checks`) and leaves the statement inventory to the consumer. `psycopg2` is imported lazily, so this package stays dependency-free. Run it **pre-push**, with `--skip-without-db` so a checkout with no database can still push. |
 | `sql_function_privileges` | Is a `SECURITY DEFINER` function still executable by every signed-in user? PostgreSQL grants `EXECUTE` to `PUBLIC` by default; on Supabase that is one HTTP call from any session. This is the check that would have caught the round's only P0 (a function that granted the caller a permanent admin plan). Also enforces `SET search_path`. |
 | `ci_workflow_paths` | Does a workflow name a `working-directory` or run a script that does not exist? Optionally: is there a top-level `permissions:`, and is every third-party action pinned to a SHA? |
 | `hook_hygiene` | Does a git hook skip a missing guard silently, stage files the author did not, decide a verdict by grepping a tool's human-readable output, or run guards CI never runs? |

@@ -33,9 +33,41 @@ Protocol: one JSON object per line on stdin, one on stdout.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
+import time
 from pathlib import Path
+
+
+#: `__file__` -> is it under the sandbox root. `Path.resolve()` is a syscall per entry, and the
+#: purge walked all ~3900 of `sys.modules` on EVERY mutant to find the ~84 local ones; measured
+#: at 2.3-6.3s per mutant, roughly 29% of a sweep. A module's `__file__` does not change while
+#: the worker lives, so the answer is a pure function of that string. Verified equivalent by
+#: comparing the resulting name sets: symmetric difference empty.
+_IS_LOCAL: dict[str, bool] = {}
+
+
+class _FirstFailure:
+    """Records the file of the first failing test, and nothing else.
+
+    A pytest plugin rather than output parsing: the worker discards pytest's report deliberately,
+    and re-enabling it to scrape a filename would put the report back on the protocol channel that
+    already broke this worker once.
+    """
+
+    def __init__(self) -> None:
+        self.path: str | None = None
+
+    def pytest_runtest_logreport(self, report) -> None:  # noqa: ANN001 - pytest's own type
+        if self.path is None and report.failed:
+            self.path = str(report.nodeid).split("::", 1)[0]
+
+    def pytest_collectreport(self, report) -> None:  # noqa: ANN001 - pytest's own type
+        # A collection error kills every test in the file at once and never reaches logreport.
+        if self.path is None and report.failed:
+            self.path = str(report.nodeid).split("::", 1)[0]
 
 
 def _purge_local_modules(root: Path) -> int:
@@ -49,12 +81,24 @@ def _purge_local_modules(root: Path) -> int:
     for name, module in list(sys.modules.items()):
         file = getattr(module, "__file__", None)
         if not file:
+            # A namespace package has no `__file__` but does have a `__path__`, and leaving it
+            # imported keeps the next mutant's submodule import resolving through a stale parent.
+            paths = getattr(module, "__path__", None) or []
+            try:
+                if any(Path(p).resolve().is_relative_to(root) for p in paths):
+                    doomed.append(name)
+            except (OSError, ValueError, TypeError):
+                pass
             continue
-        try:
-            if Path(file).resolve().is_relative_to(root):
-                doomed.append(name)
-        except (OSError, ValueError):
-            continue
+        verdict = _IS_LOCAL.get(file)
+        if verdict is None:
+            try:
+                verdict = Path(file).resolve().is_relative_to(root)
+            except (OSError, ValueError):
+                verdict = False
+            _IS_LOCAL[file] = verdict
+        if verdict:
+            doomed.append(name)
     for name in doomed:
         sys.modules.pop(name, None)
     return len(doomed)
@@ -77,9 +121,42 @@ def main() -> int:
         if request.get("cmd") == "stop":
             return 0
         try:
+            _t0 = time.perf_counter()
             purged = _purge_local_modules(root)
-            code = int(pytest.main(list(request["args"])))
-            print(json.dumps({"rc": code, "purged": purged}), flush=True)
+            _t_purge = time.perf_counter() - _t0
+            # pytest.main writes its report to OUR stdout, which is also the protocol channel.
+            # Without this redirect the parent reads a pytest line, and when one happens to be
+            # valid JSON -- a bare quoted string is enough -- `json.loads` succeeds and returns a
+            # str, so `reply["rc"]` raises TypeError mid-sweep. Found by the sweep itself, three
+            # files in. The report is discarded rather than captured: the exit code is the whole
+            # answer here, and the caller re-runs any survivor in a cold process where it does
+            # keep the output.
+            buffer = io.StringIO()
+            spy = _FirstFailure()
+            _t1 = time.perf_counter()
+            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+                code = int(pytest.main(list(request["args"]), plugins=[spy]))
+            _t_pytest = time.perf_counter() - _t1
+            # Which FILE killed this mutant, so the caller can try it first next time. With `-x` the
+            # run stops at the first failure, so the earlier the killer sits the less is collected
+            # and executed -- measured at 40.85 of 67 tests run on average, against 11.62 when the
+            # previous killer leads. Advisory only: a reply without it is still a valid reply.
+            # Timings travel in the reply the worker already sends. A parent-side profiler
+            # cannot attribute any of this -- the work happens in another process -- and pytest's
+            # own `--durations` is inert here because stdout is redirected into a discarded buffer.
+            print(
+                json.dumps(
+                    {
+                        "rc": code,
+                        "purged": purged,
+                        "failed": spy.path,
+                        "t_purge": round(_t_purge, 4),
+                        "t_pytest": round(_t_pytest, 4),
+                        "t_total": round(time.perf_counter() - _t0, 4),
+                    }
+                ),
+                flush=True,
+            )
         except BaseException as exc:  # noqa: BLE001 -- a worker crash must be reported, not raised
             print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), flush=True)
     return 0
