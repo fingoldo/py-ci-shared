@@ -247,3 +247,62 @@ class TestTheOtherMockingIdiom:
         )
 
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+
+class TestATestThatRunsAgainstARealDatabase:
+    """The case this module's own docstring told the operator to BASELINE by hand.
+
+    Measured on autopsia: 22 vocabulary installers connect to SQLite themselves and each has a test
+    that installs into a temp file and SELECTs the rows back -- 82 of its 93 reported effects, every
+    one a false report, and every one strictly better evidence than the mock assertion the check was
+    asking for.
+    """
+
+    def test_opening_a_database_counts_as_exercising_every_effect(self, tmp_path):
+        _write(tmp_path, "store.py", "import sqlite3\n\n\ndef install(path):\n    db = sqlite3.connect(path)\n    db.execute('CREATE TABLE t (a)')\n    db.executemany('INSERT INTO t VALUES (?)', [(1,)])\n    db.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import sqlite3\n\nimport store\n\n\ndef test_it(tmp_path):\n"
+            "    store.install(tmp_path / 'v.sqlite')\n"
+            "    db = sqlite3.connect(tmp_path / 'v.sqlite')\n"
+            "    assert db.execute('SELECT count(*) FROM t').fetchone()[0] == 1\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_postgres_driver_counts_the_same_way(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import psycopg2\n\nimport store\n\n\ndef test_it(dsn):\n    conn = psycopg2.connect(dsn)\n    store.save(conn)\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_patching_a_drivers_connect_is_not_running_against_one(self, tmp_path):
+        """The distinction the whole relaxation rests on. `patch("sqlite3.connect")` is a call to
+        `patch`, not to `connect` -- a test that mocks the driver is exactly the case this check
+        exists for, and must stay reported."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it(conn):\n"
+            "    with patch('sqlite3.connect'):\n        store.save(conn)\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+    def test_an_unrelated_connect_does_not_count(self, tmp_path):
+        """`self.pool.connect()` or a socket's `connect` is not a database driver, and crediting it
+        would excuse a module because a test connected to something."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import socket\n\nimport store\n\n\ndef test_it(conn):\n    socket.socket().connect(('localhost', 1))\n    store.save(conn)\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]

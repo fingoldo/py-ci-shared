@@ -128,6 +128,42 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
     return aliases
 
 
+#: Drivers whose ``connect`` a test only calls when it means to talk to a REAL database.
+_REAL_DB_MODULES = frozenset({"sqlite3", "psycopg2", "duckdb", "pymysql", "MySQLdb"})
+
+
+def _exercises_against_a_real_database(tree: ast.AST) -> bool:
+    """True when this test opens a database of its own -- so it is not mocking, it is running.
+
+    A test that calls ``sqlite3.connect(tmp_path / "x.sqlite")``, drives the module, and then queries
+    the result back is STRONGER evidence than any mock assertion: it observes the rows, not the call.
+    The check could not see that, so it reported such modules as uninspected -- and this module's own
+    docstring says those "belong in the baseline with a note", which means hand-maintaining an entry
+    per module for the one case that is actually well tested.
+
+    Measured on autopsia: 22 vocabulary installers connect to SQLite directly and are each covered by
+    a test that installs into a temp file and SELECTs the rows back. That is 66 of its 93 reported
+    effects, every one of them a false report.
+
+    The signal is deliberately narrow -- a `connect` on a real driver, called BY THE TEST. A mocking
+    test patches `connect` instead, and `patch("sqlite3.connect")` is a call to `patch`, not to
+    `connect`. Same limitation as everything else here: it answers "does anything exercise this",
+    not "does the assertion afterwards check the right thing".
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "connect":
+            root = func.value
+            if isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES:
+                return True
+            # `psycopg2.extras.connect`-style chains, and `from x import y; y.db.connect()`.
+            if isinstance(root, ast.Attribute) and root.attr in _REAL_DB_MODULES:
+                return True
+    return False
+
+
 def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
@@ -138,6 +174,10 @@ def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
     except SyntaxError:
         return set()
+    # A test that opens its own database is exercising every effect the module performs, and
+    # observing the ROWS rather than the call. Nothing more specific is needed or available.
+    if _exercises_against_a_real_database(tree):
+        return set(effects)
     found: set[str] = set()
     aliases = _patch_aliases(tree, effects)
     for node in ast.walk(tree):
