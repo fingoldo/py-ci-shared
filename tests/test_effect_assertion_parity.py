@@ -249,6 +249,78 @@ class TestTheOtherMockingIdiom:
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
 
 
+class TestAModuleThatOpensItsOwnConnection:
+    """A structural fact that decides what evidence is even POSSIBLE.
+
+    A module handed a `conn` can be given a mock, and a test that then asserts nothing about it is
+    the case this whole check exists for. A module that calls `sqlite3.connect(...)` itself offers no
+    such seam: a test either patches the driver -- visibly -- or runs the real thing.
+
+    Measured on autopsia: `loinc_ru` installs into a temp SQLite and asserts through `display_ru()`,
+    its own production read path, which never touches a mock and never opens a connection of its own.
+    Demanding a mock assertion there is demanding something the design does not permit.
+    """
+
+    _SELF_CONNECTING = "import sqlite3\n\n\ndef install(db_path):\n    db = sqlite3.connect(db_path)\n    db.execute('CREATE TABLE t (a)')\n    db.commit()\n\n\ndef read(db_path):\n    return sqlite3.connect(db_path).execute('SELECT a FROM t').fetchone()\n"
+
+    def test_a_test_that_reads_back_through_the_modules_own_reader_counts(self, tmp_path):
+        _write(tmp_path, "store.py", self._SELF_CONNECTING)
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\n\n\ndef test_it(tmp_path):\n    store.install(tmp_path / 'v.sqlite')\n    assert store.read(tmp_path / 'v.sqlite') is None\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_test_that_patches_the_driver_is_mocking_after_all(self, tmp_path):
+        """The escape hatch has to close, or a self-connecting module would be excused by the very
+        tests that mock it away."""
+        _write(tmp_path, "store.py", self._SELF_CONNECTING)
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it():\n"
+            "    with patch('sqlite3.connect'):\n        store.install('x')\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == [
+            "store.py::commit",
+            "store.py::execute",
+        ]
+
+    def test_patch_object_on_the_driver_closes_it_too(self, tmp_path):
+        _write(tmp_path, "store.py", self._SELF_CONNECTING)
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import sqlite3\nfrom unittest.mock import patch\n\nimport store\n\n\ndef test_it():\n"
+            "    with patch.object(sqlite3, 'connect'):\n        store.install('x')\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == [
+            "store.py::commit",
+            "store.py::execute",
+        ]
+
+    def test_a_module_handed_a_connection_is_still_held_to_the_mock_assertion(self, tmp_path):
+        """The relaxation is scoped to modules with no seam. One that takes `conn` HAS a seam, and a
+        test that ignores it is exactly what this check was built to report."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    store.save(conn)\n")
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+    def test_a_module_with_no_importing_test_at_all_is_still_reported(self, tmp_path):
+        """Owning the connection is not a licence; something still has to run it."""
+        _write(tmp_path, "store.py", self._SELF_CONNECTING)
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": []})) == [
+            "store.py::commit",
+            "store.py::execute",
+        ]
+
+
 class TestATestThatRunsAgainstARealDatabase:
     """The case this module's own docstring told the operator to BASELINE by hand.
 

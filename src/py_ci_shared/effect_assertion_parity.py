@@ -164,6 +164,64 @@ def _exercises_against_a_real_database(tree: ast.AST) -> bool:
     return False
 
 
+def _owns_its_connection(path: Path) -> bool:
+    """True when the MODULE opens its own database rather than being handed one.
+
+    This is a structural fact about the code, and it decides what evidence is even possible. A
+    module that takes `conn` as a parameter can be handed a mock, and a test that does not assert on
+    that mock is the case this whole check exists for. A module that calls
+    `sqlite3.connect(db_path or DB_PATH)` itself offers no such seam: a test either patches the
+    driver -- and is then mocking, which is visible -- or runs the real thing against a temp file.
+
+    So for a self-connecting module, "no test inspects a mock" does not mean "nothing checks the
+    effect". It usually means the tests read the rows back through the module's own reader, which is
+    better evidence and is invisible here. Measured on autopsia: `loinc_ru` installs into a temp
+    SQLite and asserts through `display_ru()`, the production read path, and was still reported.
+
+    The escape hatch stays honest: a test that PATCHES the driver's connect is mocking after all, and
+    `_exercises_against_a_real_database` is not what credits it -- `_patches_a_real_driver` below
+    takes that case back out.
+    """
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "connect":
+            root = node.func.value
+            if isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES:
+                return True
+    return False
+
+
+def _patches_a_real_driver(tree: ast.AST) -> bool:
+    """True when a test replaces a database driver's ``connect`` -- i.e. it IS mocking the database.
+
+    `patch("sqlite3.connect")` is a call to `patch` whose argument names the driver, so it is
+    distinguishable from calling `connect` itself. Without this, a self-connecting module would be
+    excused by the very tests that mock it away.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                head = arg.value.split(".")[0]
+                if head in _REAL_DB_MODULES and arg.value.endswith(".connect"):
+                    return True
+        func = node.func
+        if isinstance(func, ast.Attribute) and func.attr == "object" and len(node.args) >= 2:
+            target, attribute = node.args[0], node.args[1]
+            if (
+                isinstance(target, ast.Name)
+                and target.id in _REAL_DB_MODULES
+                and isinstance(attribute, ast.Constant)
+                and attribute.value == "connect"
+            ):
+                return True
+    return False
+
+
 def _inspects(path: Path, effects: Sequence[str]) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
@@ -292,6 +350,15 @@ def find_unasserted_effects(
             continue
         performed = _performs(module_path, effects)
         if not performed:
+            continue
+        # A module that opens its own connection offers no seam to hand a mock through, so a test
+        # either patches the driver -- visibly -- or runs the real thing. One importing test that
+        # does neither of those two things is still running it, and the assertion it makes will be
+        # about the ROWS, through the module's own reader. See `_owns_its_connection`.
+        if _owns_its_connection(module_path) and any(
+            (repo_root / test).is_file() and not _patches_a_real_driver(ast.parse((repo_root / test).read_text(encoding="utf-8", errors="replace")))
+            for test in tests
+        ):
             continue
         for effect in sorted(performed):
             checked_by = None
