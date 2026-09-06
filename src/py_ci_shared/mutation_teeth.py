@@ -118,7 +118,7 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "7"  # 7: the wider net runs warm, and the worker is the parent's own copy
+HARNESS_VERSION = "8"  # 8: a mutant that stops pytest starting (exit 4/5) is a kill, not a refusal
 
 
 #: Written in place of a justification by a refresh, and rejected on the next run. A refresh
@@ -1442,18 +1442,36 @@ def _lead_with(paths: list[Path | str], first: str) -> list[Path | str]:
     return paths
 
 
-def _classify_code(code: int, what: str) -> bool:
-    """True if the tests PASSED. Raises when the exit code means neither pass nor fail."""
+#: Exit codes that mean "pytest did not get through the run": 2 interrupted, 3 internal error, 4
+#: usage error, 5 nothing collected. On a MUTANT all four say the same thing, because the baseline
+#: has already passed with the same paths, so only the mutation can have caused it.
+#:
+#: 4 and 5 were added after a measured case: emptying the string ``"_count"`` inside a ``__slots__``
+#: tuple raises ``TypeError: __slots__ must be identifiers`` while the class body executes, which
+#: happens during ``conftest`` import, so pytest exits 4. A refusal discards the result for the
+#: WHOLE FILE, so that one obviously-killed mutant cost the other thirty-five in its file an answer.
+_MUTATION_BROKE_THE_RUN = frozenset({2, 3, 4, 5})
+
+
+def _classify_code(code: int, what: str, *, baseline_verified: bool = False) -> bool:
+    """True if the tests PASSED. Raises when the exit code means neither pass nor fail.
+
+    *baseline_verified* says the identical command was already observed to exit 0 on the unmutated
+    tree, which is what licenses reading a "did not get through the run" code as a kill -- of the
+    crash kind, which ``killed_by_crash`` keeps separate from a kill by assertion -- rather than as
+    a refusal. On the baseline itself the same codes mean the caller passed paths pytest cannot use,
+    and refusing is the only safe answer: the alternative reports every mutant killed and the run as
+    a clean bill of health, the failure :mod:`gate_integrity` exists to prevent.
+
+    It replaces a check that sniffed *what* for the words "the unmutated baseline". A guard that
+    depends on the wording of a human-readable label is one rename away from silently classifying
+    every baseline failure as a kill.
+    """
     if code == 0:
         return True
     if code == 1:
         return False
-    if code in (2, 3) and not what.startswith("the unmutated baseline"):
-        # A mutant that breaks collection or the module import exits 2 (or 3) and takes every test
-        # with it. Aborting the sweep here blamed `test_paths` for something the mutation did --
-        # and the baseline has already passed with the same paths, so the mutation is the only
-        # thing that changed. It is a kill, of the crash kind, which `killed_by_crash` exists to
-        # keep separate from a kill by assertion.
+    if baseline_verified and code in _MUTATION_BROKE_THE_RUN:
         return False
     raise MutationHarnessError(
         f"pytest exited {code} on {what}, which is neither pass (0) nor fail (1). "
@@ -1462,11 +1480,17 @@ def _classify_code(code: int, what: str) -> bool:
     )
 
 
-def _classify(result, what: str) -> bool:
-    """True if the tests PASSED. Raises when the exit code means neither pass nor fail."""
+def _classify(result, what: str, *, baseline_verified: bool = False) -> bool:
+    """True if the tests PASSED. Raises when the exit code means neither pass nor fail.
+
+    Same rule as :func:`_classify_code`, for the cold-process path -- which had no mutation-caused
+    branch at all, so a mutant that broke the run was a refusal whenever it was re-checked cold.
+    """
     if result.returncode == 0:
         return True
     if result.returncode == 1:
+        return False
+    if baseline_verified and result.returncode in _MUTATION_BROKE_THE_RUN:
         return False
     raise MutationHarnessError(
         f"pytest exited {result.returncode} on {what}, which is neither pass (0) nor fail (1). "
@@ -1563,9 +1587,9 @@ def _sweep_mutants(
                     inconclusive.append(mutant)
                     io.open(target, "w", encoding="utf-8", newline="").write(original)
                     continue
-                passed = _classify(result, f"mutant {mutant}")
+                passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
             else:
-                passed = _classify_code(code, f"mutant {mutant}")
+                passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
                 if code in (2, 3):
                     crashes += 1
                 result = None
@@ -1578,7 +1602,7 @@ def _sweep_mutants(
                     inconclusive.append(mutant)
                     io.open(target, "w", encoding="utf-8", newline="").write(original)
                     continue
-                if _classify(confirm, f"survivor re-check {mutant}"):
+                if _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
                     if fallback_test_paths:
                         # WARM, unlike the confirmation above. That one is cold on purpose -- it
                         # exists to escape state a purge cannot reach, which is why a warm survivor
@@ -1589,13 +1613,13 @@ def _sweep_mutants(
                         # mutant took.
                         wider_code = warm.run(ordered_wider) if use_warm_worker else None
                         if wider_code is not None:
-                            wider_killed = not _classify_code(wider_code, f"fallback re-check {mutant}")
+                            wider_killed = not _classify_code(wider_code, f"fallback re-check {mutant}", baseline_verified=True)
                             wider_killer = warm.last_failed
                         else:
                             # The worker died or was never used: fall back to the cold path rather
                             # than lose the answer.
                             wider = _run_pytest(ordered_wider, sandbox, timeout)
-                            wider_killed = wider is not None and not _classify(wider, f"fallback re-check {mutant}")
+                            wider_killed = wider is not None and not _classify(wider, f"fallback re-check {mutant}", baseline_verified=True)
                             wider_killer = _first_failing_file(wider.stdout) if wider is not None else None
                         if wider_killed:
                             # Record WHICH file killed it. Without this the report says "fix the
@@ -2078,7 +2102,7 @@ def assert_revert_fails_tests(
         result = _run_pytest(test_paths, sandbox, timeout)
         if result is None:
             raise MutationHarnessError(f"the mutated run did not finish within {timeout}s")
-        if _classify(result, "the mutated run"):
+        if _classify(result, "the mutated run", baseline_verified=True):
             raise AssertionError(
                 f"The tests PASSED with the defect reintroduced in {relative}.\n"
                 f"Reverted: {old[:100]!r}\n"

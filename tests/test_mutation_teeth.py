@@ -1060,3 +1060,83 @@ class TestIdenticalMutantsRunOnce:
         )
 
         assert "TRUNCATED" not in run.summary()
+
+
+class TestAMutantThatStopsPytestStartingIsAKill:
+    """The same exit code means opposite things on the baseline and on a mutant.
+
+    On the baseline, "pytest did not get through the run" says the caller passed paths pytest cannot
+    use, and refusing is the only safe answer: the alternative reports every mutant killed and the
+    run as a clean bill of health. On a mutant the identical command with the identical paths was
+    just observed to exit 0, so only the mutation can have caused it -- and a mutation that stops the
+    suite from starting has been noticed as loudly as pytest is able to notice one.
+    """
+
+    def test_every_could_not_run_code_is_a_kill_on_a_mutant(self):
+        from py_ci_shared.mutation_teeth import _classify_code
+
+        for code in (2, 3, 4, 5):
+            assert _classify_code(code, "a mutant", baseline_verified=True) is False
+
+    def test_every_could_not_run_code_still_refuses_on_the_baseline(self):
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
+
+        for code in (2, 3, 4, 5):
+            with pytest.raises(MutationHarnessError, match="neither pass"):
+                _classify_code(code, "the unmutated baseline")
+
+    def test_the_cold_path_classifies_the_same_way(self):
+        """`_classify` had no mutation-caused branch at all, so a mutant that broke the run was a
+        refusal whenever it happened to be re-checked in a cold process rather than the warm one."""
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify
+
+        class _Result:
+            def __init__(self, code):
+                self.returncode = code
+                self.stdout = ""
+
+        for code in (2, 3, 4, 5):
+            assert _classify(_Result(code), "a mutant", baseline_verified=True) is False
+            with pytest.raises(MutationHarnessError, match="neither pass"):
+                _classify(_Result(code), "the unmutated baseline")
+
+    def test_the_guard_does_not_depend_on_the_wording_of_the_label(self):
+        """The previous version decided by testing whether the label started with "the unmutated
+        baseline". Renaming that label -- a pure cosmetic edit -- would have turned every baseline
+        failure into a silent kill, which is the exact class of defect this harness exists to find.
+        """
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
+
+        with pytest.raises(MutationHarnessError):
+            _classify_code(4, "the unmutated baseline, renamed to something else")
+        with pytest.raises(MutationHarnessError):
+            _classify_code(4, "a mutant")  # no claim of a verified baseline: still refuses
+
+    def test_pass_and_fail_are_untouched_in_both_modes(self):
+        from py_ci_shared.mutation_teeth import _classify_code
+
+        for verified in (False, True):
+            assert _classify_code(0, "x", baseline_verified=verified) is True
+            assert _classify_code(1, "x", baseline_verified=verified) is False
+
+    def test_end_to_end_a_slots_mutation_is_killed_rather_than_refusing_the_file(self, tmp_path):
+        """The measured case, run for real rather than simulated.
+
+        `__slots__ = ("_count",)` with the string emptied raises `TypeError: __slots__ must be
+        identifiers` while the class body executes -- at import time, inside conftest -- so pytest
+        exits 4. Before this the harness raised, and the refusal discarded the whole file.
+        """
+        (tmp_path / "subject.py").write_text(
+            'class Thing:\n    __slots__ = ("_count",)\n\n    def __init__(self):\n        self._count = 0\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "conftest.py").write_text("import subject  # noqa: F401\n", encoding="utf-8")
+        (tmp_path / "test_subject.py").write_text(
+            "import subject\n\n\ndef test_it_constructs():\n    assert subject.Thing()._count == 0\n",
+            encoding="utf-8",
+        )
+
+        outcome = mutation_teeth.find_surviving_mutants("subject.py", ["test_subject.py"], repo_root=tmp_path, use_cache=False)
+
+        assert outcome.mutants_run >= 1
+        assert not [m for m in outcome.survivors if "_count" in m.original_span], outcome.summary()
