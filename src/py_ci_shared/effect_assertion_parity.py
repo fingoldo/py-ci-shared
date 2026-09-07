@@ -70,18 +70,59 @@ _INSPECTIONS = (
 )
 
 
+#: Import roots that are definitely NOT this project, so an attribute call through them is a real
+#: driver effect rather than a call into a sibling module. Deliberately a small allow-list of the
+#: database libraries this check is about: anything else is treated as possibly-first-party, which
+#: errs toward NOT reporting -- the direction that sends nobody to write a wrong assertion.
+_THIRD_PARTY_ROOTS = frozenset({
+    "sqlalchemy", "psycopg2", "psycopg", "asyncpg", "sqlite3", "pymysql", "MySQLdb", "duckdb",
+    "databases", "aiomysql", "aiosqlite", "cx_Oracle", "pyodbc",
+})
+
+
 def _performs(path: Path, effects: Sequence[str]) -> set[str]:
-    """Effects this module performs, as method calls: ``conn.commit()``, ``cur.execute(sql)``."""
+    """Effects this module performs, as method calls: ``conn.commit()``, ``cur.execute(sql)``.
+
+    ``execute`` is also an ordinary word. A module that DEFINES ``def execute(...)`` -- a GraphQL
+    client wrapper, a command runner, a rules engine -- is not touching a database when it calls its
+    own function, and neither is a caller reaching it as ``graphql.execute(...)``. Reporting those
+    sends the reader to write an assertion about a driver that is not there, which is the same
+    "fix that does not apply" failure this module already avoids for ``hash()`` and dict keys.
+
+    So a name the file defines itself is not an effect, and neither is an attribute call whose base
+    is a module the file imports from the project. Everything else is unchanged: ``cur.execute(...)``
+    on a parameter or an attribute is still an effect, and so is a bare ``execute_values(...)``
+    imported from psycopg2.
+    """
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
     except SyntaxError:
         return set()
+
+    defined_here = {
+        node.name
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects
+    }
+    # `from . import graphql` / `from pkg import graphql` / `import pkg.graphql as graphql`: the bound
+    # name refers to a first-party MODULE, so `graphql.execute(...)` is a project call, not a driver.
+    local_modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] not in _THIRD_PARTY_ROOTS):
+            local_modules.update(alias.asname or alias.name for alias in node.names)
+
     found: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in effects:
+            base = node.func.value
+            if isinstance(base, ast.Name) and base.id in local_modules:
+                continue
             found.add(node.func.attr)
-        # A bare call, `execute_values(cur, sql, rows)`, is an effect too.
+        # A bare call, `execute_values(cur, sql, rows)`, is an effect too -- unless this module is
+        # the one that defines it.
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in effects:
+            if node.func.id in defined_here:
+                continue
             found.add(node.func.id)
     return found
 
@@ -430,7 +471,21 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     credited with ``pipeline/replay.py`` as well. *package_name* covers repositories whose tests
     import themselves as a package (``from dashboard import data``); *src_dir* covers a src layout,
     where the file at ``src/pkg/x.py`` is imported as ``pkg.x``.
+
+    Both are DETECTED when not given, because forgetting them is silent and total. A src-layout repo
+    passed ``build_import_map(root)`` and got an empty map: no module resolved, so no module could be
+    reported, so the check passed having examined nothing. That is the failure mode the check itself
+    exists to prevent, and it was reported as a clean result on a repository with seven real
+    findings. Detection makes the default correct; an explicit argument still wins.
     """
+    if not src_dir and (repo_root / "src").is_dir():
+        packages = [
+            d for d in (repo_root / "src").iterdir()
+            if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))
+        ]
+        if len(packages) == 1:
+            src_dir = "src"
+            package_name = package_name or packages[0].name
 
     def module_name(path: Path) -> str:
         rel = path.relative_to(repo_root).with_suffix("")

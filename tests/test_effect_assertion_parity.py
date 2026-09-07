@@ -556,3 +556,104 @@ class TestAnExtractedAssertionHelperStillCounts:
         )
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+
+class TestASrcLayoutResolvesWithoutBeingTold:
+    """A src layout that nobody declared produced an EMPTY map, so the check passed vacuously.
+
+    `build_import_map(root)` on `src/pkg/x.py` resolved no module, so no module could be reported,
+    so the gate was green on a repository with seven real findings -- and green for the one reason a
+    gate must never be green. Detection makes the default correct; an explicit `src_dir` still wins.
+    """
+
+    @staticmethod
+    def _src_repo(tmp_path: Path) -> Path:
+        _write(tmp_path, "src/pkg/__init__.py", "")
+        _write(tmp_path, "src/pkg/store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from pkg.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
+        return tmp_path
+
+    def test_the_map_is_not_empty(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert build_import_map(root), "a src layout resolved to no modules at all"
+
+    def test_the_module_is_found_under_its_import_name(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert "src/pkg/store.py" in build_import_map(root)
+
+    def test_its_effects_are_reported(self, tmp_path: Path):
+        """The point: before detection this returned {} and read as a clean repository."""
+        root = self._src_repo(tmp_path)
+
+        problems = find_unasserted_effects(root, build_import_map(root))
+
+        assert "src/pkg/store.py::commit" in problems
+        assert "src/pkg/store.py::execute" in problems
+
+    def test_an_explicit_src_dir_still_wins(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert build_import_map(root, src_dir="src", package_name="pkg") == build_import_map(root)
+
+    def test_a_flat_layout_is_untouched(self, tmp_path: Path):
+        """Detection must not change what already worked."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    assert store.save(conn) is None\n")
+
+        assert "store.py" in build_import_map(tmp_path)
+
+    def test_two_packages_under_src_are_left_to_the_caller(self, tmp_path: Path):
+        """Guessing between them would silently pick one and drop the other's modules, which is the
+        same empty-population failure wearing a different shape."""
+        _write(tmp_path, "src/one/__init__.py", "")
+        _write(tmp_path, "src/two/__init__.py", "")
+        _write(tmp_path, "src/one/store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from one.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
+
+        assert build_import_map(tmp_path) == {} or "src/one/store.py" not in build_import_map(tmp_path)
+
+
+class TestExecuteIsAlsoAnOrdinaryWord:
+    """A module that defines `execute` is not touching a database when it calls its own function.
+
+    pyutilz's GraphQL wrapper defines `def execute(query, variables)` and a scheduler calls it as
+    `graphql.execute(...)`. Both were reported, which sends the reader to write an assertion about a
+    driver that is not there -- the same "fix that does not apply" this module already avoids for
+    `hash()` and dict keys.
+    """
+
+    def test_a_module_calling_its_own_execute_is_not_reported(self, tmp_path: Path):
+        _write(tmp_path, "client.py", "def execute(query):\n    return _send(query)\n\n\ndef _send(q):\n    return q\n\n\ndef run():\n    return execute('{ a }')\n")
+        _write(tmp_path, "tests/test_client.py", "import client\n\n\ndef test_it():\n    assert client.run() == '{ a }'\n")
+
+        assert find_unasserted_effects(tmp_path, {"client.py": ["tests/test_client.py"]}) == {}
+
+    def test_calling_a_sibling_modules_execute_is_not_reported(self, tmp_path: Path):
+        _write(tmp_path, "client.py", "def execute(query):\n    return query\n")
+        _write(tmp_path, "scheduler.py", "from . import client\n\n\ndef flows():\n    return client.execute('{ a }')\n")
+        _write(tmp_path, "tests/test_scheduler.py", "import scheduler\n\n\ndef test_it():\n    assert scheduler.flows() == '{ a }'\n")
+
+        assert find_unasserted_effects(tmp_path, {"scheduler.py": ["tests/test_scheduler.py"]}) == {}
+
+    def test_a_real_cursor_execute_is_still_reported(self, tmp_path: Path):
+        """The narrowing must not swallow the thing the check is for."""
+        _write(tmp_path, "store.py", "def save(cur):\n    cur.execute('INSERT INTO t VALUES (1)')\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(cur):\n    assert store.save(cur) is None\n")
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_driver_helper_imported_by_name_is_still_reported(self, tmp_path: Path):
+        """`execute_values(cur, sql, rows)` from psycopg2.extras is a bare call AND a real effect."""
+        _write(tmp_path, "store.py", "from psycopg2.extras import execute_values\n\n\ndef save(cur, rows):\n    execute_values(cur, 'INSERT INTO t VALUES %s', rows)\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(cur):\n    assert store.save(cur, []) is None\n")
+
+        assert "store.py::execute_values" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_third_party_session_execute_is_still_reported(self, tmp_path: Path):
+        """The base being an imported NAME is not enough -- only a first-party module is exempt."""
+        _write(tmp_path, "store.py", "import sqlalchemy\n\n\ndef save(session):\n    session.execute(sqlalchemy.text('SELECT 1'))\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(session):\n    assert store.save(session) is None\n")
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
