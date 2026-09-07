@@ -42,6 +42,7 @@ def test_a_hash_fed_by_a_copy_is_reported(tmp_path: Path, label: str, line: str)
 
 NOT_FLAGGED = [
     ("buffer_read", "h.update(np.ascontiguousarray(a).data)"),
+    ("buffer_read_uint8_view", "h.update(np.ascontiguousarray(a).view(np.uint8).data)"),
     ("plain_bytes", "h.update(b'literal')"),
     ("encoded_string", "h.update(str(arr.dtype).encode())"),
     ("builtin_hash", "key = hash(arr.tobytes())"),
@@ -72,7 +73,7 @@ def test_the_assertion_names_every_site_and_carries_the_rewrite(tmp_path: Path):
         assert_no_hash_fed_by_array_copy([root])
     message = str(exc.value)
     assert "m.py:2" in message
-    assert "np.ascontiguousarray(a).data" in message
+    assert "np.ascontiguousarray(a).view(np.uint8).data" in message
 
 
 def test_an_allowed_site_is_not_reported(tmp_path: Path):
@@ -96,3 +97,38 @@ def test_a_file_that_does_not_parse_is_skipped_rather_than_raising(tmp_path: Pat
     _module(tmp_path, "h.update(arr.tobytes())", name="good.py")
     found = find_hashes_fed_by_array_copy([tmp_path])
     assert [f.path.name for f in found] == ["good.py"]
+
+
+def test_the_recommended_rewrite_works_on_every_dtype_including_datetime64():
+    """The advice this module prints has to be advice that runs.
+
+    It used to recommend `np.ascontiguousarray(a).data`, which raises `cannot include dtype 'M' in a
+    buffer` on datetime64 and timedelta64 -- dtypes that are ordinary in exactly the time-series data
+    these hashes are computed over. A reader following the message got a ValueError at the call site,
+    not in review, and the natural conclusion is that the check was wrong rather than its wording.
+
+    Asserted as behaviour, not as text: both halves run, so the message cannot drift back to a form
+    that does not work while this file still passes.
+    """
+    import hashlib
+
+    np = pytest.importorskip("numpy")
+
+    for arr in (
+        np.array([1, 2, 3], dtype="datetime64[ns]"),
+        np.array([1, 2, 3], dtype="timedelta64[ns]"),
+        np.arange(12, dtype=np.float64).reshape(3, 4),
+        np.asfortranarray(np.arange(12, dtype=np.float64).reshape(3, 4)),
+        np.array(3.5),
+        np.array([], dtype=np.float64),
+        np.zeros(3, dtype=[("a", "i4"), ("b", "f8")]),
+        np.array(["ab", "cde"], dtype="U8"),
+    ):
+        contiguous = np.ascontiguousarray(arr)
+        recommended = hashlib.blake2b(contiguous.view(np.uint8).data, digest_size=16).hexdigest()
+        copied = hashlib.blake2b(contiguous.tobytes(), digest_size=16).hexdigest()
+        assert recommended == copied, f"the rewrite changes the digest for {arr.dtype}"
+
+    for arr in (np.array([1, 2, 3], dtype="datetime64[ns]"), np.array([1, 2, 3], dtype="timedelta64[ns]")):
+        with pytest.raises(ValueError, match="buffer"):
+            memoryview(np.ascontiguousarray(arr).data)

@@ -15,6 +15,13 @@ Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` sup
 
 **Deliberately NOT here:** anything whose shared surface is small relative to the parametrization cost (`sklearn-matrix-ci.yml`, `gpu-matrix.yml`, `release.yml`, `numba-coverage.yml`'s hardcoded test-path lists), and anything inherently project-specific (vulture whitelists, per-repo meta-test suites, the `test`/`build` jobs in each repo's own `ci.yml`). Those stay local to each repo.
 
+## Writing tests: [WRITING_TESTS.md](WRITING_TESTS.md)
+
+A convention for every project that consumes this package, derived from what a mutation sweep of a
+3,676-test suite actually found: five shapes of test that a one-step change to the code slips past,
+and the habit that closes each. Written that way in the first place, a sweep has nothing to report --
+which matters because a sweep costs hours and the habits cost nothing.
+
 ## Why a separate repo, not part of `pyutilz`
 
 `pyutilz` is a runtime dependency (real library code other repos `import`). Bundling CI tooling into it would couple tooling-script releases to runtime-code releases, and `pyutilz`'s own meta-tests (import-cycle checks, docstring-coverage snapshots, etc.) are specific to *its own* codebase structure — not generic/reusable against arbitrary consumer repos. Keeping this concern separate keeps both repos' release history clean.
@@ -437,6 +444,7 @@ TypeScript repository with no pytest harness can call the `find_*` half from a p
 
 | Module | Answers |
 |---|---|
+| `sql_verify` | Does PostgreSQL actually accept every SQL statement this project ships? A unit suite drives its loaders through a fake cursor, which accepts any string at all -- so an interpolated projection with a stray comma, or a `WHERE job_uid` against a table keyed on `uid`, ships green. Provides the harness (`dsn_from_env`, `check`, `check_loader`, `run_checks`) and leaves the statement inventory to the consumer. `psycopg2` is imported lazily, so this package stays dependency-free. Run it **pre-push**, with `--skip-without-db` so a checkout with no database can still push. |
 | `sql_function_privileges` | Is a `SECURITY DEFINER` function still executable by every signed-in user? PostgreSQL grants `EXECUTE` to `PUBLIC` by default; on Supabase that is one HTTP call from any session. This is the check that would have caught the round's only P0 (a function that granted the caller a permanent admin plan). Also enforces `SET search_path`. |
 | `ci_workflow_paths` | Does a workflow name a `working-directory` or run a script that does not exist? Optionally: is there a top-level `permissions:`, and is every third-party action pinned to a SHA? |
 | `hook_hygiene` | Does a git hook skip a missing guard silently, stage files the author did not, decide a verdict by grepping a tool's human-readable output, or run guards CI never runs? |

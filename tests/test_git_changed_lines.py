@@ -16,7 +16,7 @@ from py_ci_shared.git_changed_lines import changed_lines, lines_for
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=_git_env())
 
 
 @pytest.fixture
@@ -114,3 +114,63 @@ def test_a_bad_revision_raises_rather_than_returning_empty(repo: Path):
     misconfigured hook silently checks zero lines and passes."""
     with pytest.raises(RuntimeError):
         changed_lines(repo, rev="no-such-revision")
+
+
+def test_a_path_with_a_space_and_non_ascii_is_decoded(repo: Path) -> None:
+    """git C-quotes such a path in patch mode, and `-z` does not apply there -- the flag is honoured
+    for --raw/--numstat/--name-only/--name-status only. The dict was keyed on the quoted, escaped
+    string, so `lines_for` returned [] and the caller read that as "nothing changed here"."""
+    sub = repo / "sub dir"
+    sub.mkdir()
+    target = sub / "m\u00f3d ule.py"
+    target.write_text("a = 1\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add")
+    target.write_text("a = 2\n", encoding="utf-8")
+
+    changed = changed_lines(repo, include_untracked=False)
+
+    assert lines_for(changed, Path("sub dir/m\u00f3d ule.py")) == [range(1, 2)]
+
+
+def test_an_added_line_beginning_with_plus_plus_is_not_a_file_header(repo: Path) -> None:
+    """`+++ ` at the start of a line is a header only in the right position. An added source line
+    whose own text begins `++ ` renders identically, and every hunk after it was filed under a
+    phantom path -- so the real file's later changes were never mutated. A markdown list marker or
+    a patch fixture inside a test is enough."""
+    target = repo / "notes.md"
+    target.write_text("\n".join(f"line{i}" for i in range(1, 9)) + "\n", encoding="utf-8")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "add")
+    lines = target.read_text(encoding="utf-8").split("\n")
+    # The added line must itself begin `++ `, because the diff renders it as `+++ ...` -- which is
+    # exactly what a prefix test cannot tell from a file header.
+    lines.insert(1, "++ a nested list marker")
+    lines[7] = "line7 changed"
+    target.write_text("\n".join(lines), encoding="utf-8")
+
+    changed = changed_lines(repo, include_untracked=False)
+
+    assert set(changed) == {Path("notes.md")}, f"a phantom path appeared: {sorted(changed)}"
+    covered = {n for r in lines_for(changed, Path("notes.md")) for n in r}
+    assert 2 in covered and 8 in covered, f"a genuine edit was lost: {sorted(covered)}"
+
+
+def _git_env() -> dict[str, str]:
+    """The environment minus every GIT_* variable.
+
+    `git commit` exports GIT_DIR and GIT_INDEX_FILE to its hooks, and `git -C <path>` does NOT
+    override them -- `-C` changes the working directory while those name the repository and the
+    index outright, and they win. A test that builds a temp repository inside a hook therefore
+    stages ITS files into the repository being committed, against blobs that exist only in the
+    temp one. That produced a real failure here:
+
+        error: invalid object 100644 1337a530... for 'm.py'
+        error: Error building trees
+
+    where `m.py` lives only in a tmp_path fixture. Stripping the variables makes each git call talk
+    to the repository named on its own command line.
+    """
+    import os
+
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
