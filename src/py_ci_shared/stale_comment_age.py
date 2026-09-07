@@ -41,6 +41,59 @@ _COMMENTED_CODE_RE = re.compile(rf"^\s*(?://+|#)\s*(?!TODO|FIXME|HACK|XXX)[\w.]+
 _ISSUE_REF_RE = re.compile(r"#\d+|https?://|\b[A-Z]{2,}-\d+\b|\(\w[\w-]*\)")
 _DEFAULT_SUFFIXES = (".dart", ".py", ".ts", ".tsx", ".js", ".mjs", ".sh", ".sql", ".yaml", ".yml")
 
+# Words that carry an English sentence but essentially never stand alone as a token in code.
+# Deliberately conservative: keywords and plausible identifiers (`is`, `in`, `and`, `or`, `for`,
+# `as`, `from`, `to`, `not`, `if`, `with`, `this`) are absent, because dropping a real
+# commented-out statement is the expensive mistake and keeping one prose line is the cheap one.
+_PROSE_WORDS = (
+    "the an but which because however rather instead whether than its their there "
+    "would should does was were been we you they our your etc"
+).split()
+_PROSE_WORD_RE = re.compile(r"(?<![\w.])(?:" + "|".join(_PROSE_WORDS) + r"|e\.g\.|i\.e\.)(?![\w])", re.IGNORECASE)
+# A lone "a" needs its own pattern: as a word it is prose, but `a` is also an ordinary variable
+# name, so require an article's shape - "a" followed by a word.
+_PROSE_ARTICLE_RE = re.compile(r"(?<![\w.])a\s+[a-z]{2,}", re.IGNORECASE)
+_COMMENT_LINE_RE = re.compile(r"^\s*(?://+|#)\s?(?P<body>.*)$")
+# A sentence-ending period, anchored so that `...`, a decimal and a dotted identifier do not count.
+_SENTENCE_END_RE = re.compile(r"[\w)\"'\]]\.$")
+_STRING_LITERAL_RE = re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`")
+
+
+def _comment_body(line: str) -> "str | None":
+    """The text of ``line`` with its comment marker stripped, or None if it is not a comment."""
+    m = _COMMENT_LINE_RE.match(line)
+    return m.group("body") if m else None
+
+
+def _block_reads_as_prose(lines: Sequence[str], index: int) -> bool:
+    """True when the contiguous comment block around ``lines[index]`` is English, not code.
+
+    One line cannot answer this. ``# behavior_config.target_temporal_audit_unit ('s' / 'ms');``
+    is indistinguishable from a call by structure alone, and so is
+    ``# ErrorService.setUserId(null), AnalyticsService.setUserId(null),``. What separates them
+    from real dead code is what surrounds them: commented-out code sits among more commented-out
+    code, while a code-shaped sentence sits inside a paragraph.
+
+    Measured across five repositories before this was added, the line-only rule matched 37
+    comments, of which exactly one was actually commented-out code.
+    """
+    start = index
+    while start > 0 and _comment_body(lines[start - 1]) is not None:
+        start -= 1
+    end = index
+    while end + 1 < len(lines) and _comment_body(lines[end + 1]) is not None:
+        end += 1
+    for i in range(start, end + 1):
+        body = (_comment_body(lines[i]) or "").strip()
+        if not body:
+            continue
+        # Strip string literals first: `{ error: "email failed" }` is code whose payload happens
+        # to be English, and that payload is not evidence about the line.
+        stripped = _STRING_LITERAL_RE.sub("", body)
+        if _SENTENCE_END_RE.search(stripped) or _PROSE_WORD_RE.search(stripped) or _PROSE_ARTICLE_RE.search(stripped):
+            return True
+    return False
+
 
 def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, float]:
     """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``."""
@@ -93,13 +146,14 @@ def find_stale_comments(
             if "/.dart_tool/" in f"/{rel}" or "/node_modules/" in f"/{rel}":
                 continue
             candidates: dict[int, str] = {}
-            for i, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
+            file_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            for i, line in enumerate(file_lines, start=1):
                 todo = _TODO_RE.match(line)
                 if todo:
                     if require_issue_ref and _ISSUE_REF_RE.search(line):
                         continue
                     candidates[i] = line.strip()[:100]
-                elif _COMMENTED_CODE_RE.match(line):
+                elif _COMMENTED_CODE_RE.match(line) and not _block_reads_as_prose(file_lines, i - 1):
                     candidates[i] = line.strip()[:100]
             if not candidates:
                 continue
