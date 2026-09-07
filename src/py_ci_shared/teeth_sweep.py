@@ -86,6 +86,36 @@ def _apply(path: pathlib.Path, old: str, new: str) -> str | None:
     return None
 
 
+def read_pytest_outcome(stdout: str) -> tuple[str, list[str]]:
+    """A pytest run's summary line and the tests it named as not passing.
+
+    Split out of `_run_suite` so the part that decides a sweep's verdict can be tested without
+    running a suite. The rule it encodes is the whole correctness of that verdict:
+
+    FAILED *AND* ERROR, and the difference is not cosmetic. A mutation that renames or removes
+    something an importer needs makes pytest fail at COLLECTION, reported as::
+
+        ERROR tests/test_x.py::test_y
+
+    with no FAILED line anywhere. Counting only FAILED reports that mutation as SURVIVED -- "this
+    fix has no teeth" -- for a fix so thoroughly watched that the suite cannot even load without it.
+    The verdict is inverted, and inverted in the direction that costs work: someone is sent to write
+    a regression test that already exists.
+
+    Found 2026-09-07 by hand-checking a surprising SURVIVED. Any earlier "no teeth" verdict from
+    this tool for a mutation of that shape was wrong and should be re-run rather than trusted.
+
+    `"ERROR "` carries its trailing space on purpose: pytest also emits bare `ERRORS` section
+    banners and `ERROR` lines from logging, and neither names a test.
+    """
+    lines = stdout.splitlines()
+    summary = next(
+        (ln.strip() for ln in reversed(lines) if " passed" in ln or " failed" in ln or " error" in ln),
+        "NO RESULT LINE",
+    )
+    return summary, [ln.strip() for ln in lines if ln.startswith(("FAILED", "ERROR "))]
+
+
 def _run_suite(repo: pathlib.Path, jobs: int) -> tuple[str, list[str]]:
     """Run the WHOLE suite and return its summary line plus the names that failed.
 
@@ -106,9 +136,7 @@ def _run_suite(repo: pathlib.Path, jobs: int) -> tuple[str, list[str]]:
         )
     except subprocess.TimeoutExpired:
         return "TIMED OUT -- the mutation hangs the suite; that is a finding, not a pass", ["<suite timed out>"]
-    lines = proc.stdout.splitlines()
-    summary = next((ln.strip() for ln in reversed(lines) if " passed" in ln or " failed" in ln), "NO RESULT LINE")
-    return summary, [ln.strip() for ln in lines if ln.startswith("FAILED")]
+    return read_pytest_outcome(proc.stdout)
 
 
 def main() -> int:
