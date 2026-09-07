@@ -98,6 +98,33 @@ assertion.
 
 ---
 
+## 6. If you print a fix, run it
+
+A check that tells the reader what to write instead has made a claim, and the claim can be wrong.
+`hash_fed_by_array_copy` recommended replacing `h.update(a.tobytes())` with
+`h.update(np.ascontiguousarray(a).data)` and called it mechanical. It is not: `.data` raises
+`cannot include dtype 'M' in a buffer` on datetime64 and timedelta64, which have no
+buffer-protocol format. One consumer had applied it at twenty-six sites, and the result was a hard
+crash on any training frame carrying a date column -- surfacing as "training is broken", nowhere near
+the check that suggested it.
+
+The reader cannot tell a wrong suggestion from a right one; they assume the check knows. So the test
+for a rule that prints a replacement should EXECUTE the replacement, over the range of inputs the
+rule claims to cover, and assert it does what the message says -- same result, no exception. Quoting
+the string in an assertion only pins the wording:
+
+```python
+def test_the_recommended_rewrite_works_on_every_dtype_including_datetime64():
+    for arr in (..., np.array([1, 2, 3], dtype="datetime64[ns]"), ...):
+        contiguous = np.ascontiguousarray(arr)
+        assert hashlib.blake2b(contiguous.view(np.uint8).data).hexdigest() == hashlib.blake2b(contiguous.tobytes()).hexdigest()
+```
+
+Two things follow. The advice becomes falsifiable, so it cannot drift back to a form that does not
+run while the suite stays green. And the dtype (or shape, or encoding) list in the test IS the
+rule's real scope -- if the fix only works for some inputs, the message has to say which, and
+writing the test is what surfaces that.
+
 ## The habit about mocks
 
 **A mock must be no weaker than the collaborator it stands for.** If the real object is used as a
