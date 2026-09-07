@@ -613,3 +613,47 @@ class TestASrcLayoutResolvesWithoutBeingTold:
         _write(tmp_path, "tests/test_store.py", "from one.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
 
         assert build_import_map(tmp_path) == {} or "src/one/store.py" not in build_import_map(tmp_path)
+
+
+class TestExecuteIsAlsoAnOrdinaryWord:
+    """A module that defines `execute` is not touching a database when it calls its own function.
+
+    pyutilz's GraphQL wrapper defines `def execute(query, variables)` and a scheduler calls it as
+    `graphql.execute(...)`. Both were reported, which sends the reader to write an assertion about a
+    driver that is not there -- the same "fix that does not apply" this module already avoids for
+    `hash()` and dict keys.
+    """
+
+    def test_a_module_calling_its_own_execute_is_not_reported(self, tmp_path: Path):
+        _write(tmp_path, "client.py", "def execute(query):\n    return _send(query)\n\n\ndef _send(q):\n    return q\n\n\ndef run():\n    return execute('{ a }')\n")
+        _write(tmp_path, "tests/test_client.py", "import client\n\n\ndef test_it():\n    assert client.run() == '{ a }'\n")
+
+        assert find_unasserted_effects(tmp_path, {"client.py": ["tests/test_client.py"]}) == {}
+
+    def test_calling_a_sibling_modules_execute_is_not_reported(self, tmp_path: Path):
+        _write(tmp_path, "client.py", "def execute(query):\n    return query\n")
+        _write(tmp_path, "scheduler.py", "from . import client\n\n\ndef flows():\n    return client.execute('{ a }')\n")
+        _write(tmp_path, "tests/test_scheduler.py", "import scheduler\n\n\ndef test_it():\n    assert scheduler.flows() == '{ a }'\n")
+
+        assert find_unasserted_effects(tmp_path, {"scheduler.py": ["tests/test_scheduler.py"]}) == {}
+
+    def test_a_real_cursor_execute_is_still_reported(self, tmp_path: Path):
+        """The narrowing must not swallow the thing the check is for."""
+        _write(tmp_path, "store.py", "def save(cur):\n    cur.execute('INSERT INTO t VALUES (1)')\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(cur):\n    assert store.save(cur) is None\n")
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_driver_helper_imported_by_name_is_still_reported(self, tmp_path: Path):
+        """`execute_values(cur, sql, rows)` from psycopg2.extras is a bare call AND a real effect."""
+        _write(tmp_path, "store.py", "from psycopg2.extras import execute_values\n\n\ndef save(cur, rows):\n    execute_values(cur, 'INSERT INTO t VALUES %s', rows)\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(cur):\n    assert store.save(cur, []) is None\n")
+
+        assert "store.py::execute_values" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_third_party_session_execute_is_still_reported(self, tmp_path: Path):
+        """The base being an imported NAME is not enough -- only a first-party module is exempt."""
+        _write(tmp_path, "store.py", "import sqlalchemy\n\n\ndef save(session):\n    session.execute(sqlalchemy.text('SELECT 1'))\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(session):\n    assert store.save(session) is None\n")
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
