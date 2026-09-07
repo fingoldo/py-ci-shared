@@ -249,6 +249,41 @@ class TestTheOtherMockingIdiom:
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
 
 
+class TestTheAsyncInspectionNames:
+    """An `AsyncSession` is inspected through `await_*`, and only one of those names was listed.
+
+    Found on glossum, whose every session is async: a test asserting on
+    `session.execute.await_args_list` read as inspecting nothing, and its module stayed reported
+    while eight assertions walked the awaited calls.
+    """
+
+    @pytest.mark.parametrize("reader", ["await_args", "await_args_list", "await_count"])
+    def test_every_awaited_call_reader_counts(self, tmp_path, reader):
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.execute('INSERT')\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\n\n\nasync def test_it(session):\n"
+            "    await store.save(session)\n"
+            f"    assert session.execute.{reader}\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_an_unrelated_await_attribute_does_not_count(self, tmp_path):
+        """Scoped to the effect names, like every other relaxation here: a notifier's awaited calls
+        say nothing about whether the commit was looked at."""
+        _write(tmp_path, "store.py", "async def save(session):\n    await session.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\n\n\nasync def test_it(session, notifier):\n"
+            "    await store.save(session)\n    assert notifier.await_count == 1\n",
+        )
+
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+
 class TestAFixtureThatHandsOutARealSession:
     """The third shape, and the one with the best evidence behind it.
 

@@ -54,7 +54,20 @@ DEFAULT_EFFECTS: tuple[str, ...] = ("commit", "rollback", "execute", "executeman
 
 #: How a test says it looked at a mock's call. ``called``/``call_count``/``call_args`` are reads;
 #: ``assert_*`` are the assertion helpers ``unittest.mock`` provides.
-_INSPECTIONS = ("called", "call_count", "call_args", "call_args_list", "mock_calls", "await_args")
+#: await_* are the AsyncMock equivalents, and the list held only await_args -- so a test
+#: reading session.execute.await_args_list or .await_count read as inspecting nothing.
+#: Found on glossum, whose sessions are all async: eight assertions on the awaited calls, and
+#: the module still reported.
+_INSPECTIONS = (
+    "called",
+    "call_count",
+    "call_args",
+    "call_args_list",
+    "mock_calls",
+    "await_args",
+    "await_args_list",
+    "await_count",
+)
 
 
 def _performs(path: Path, effects: Sequence[str]) -> set[str]:
