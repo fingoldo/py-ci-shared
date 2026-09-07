@@ -129,6 +129,23 @@ def _forwards_dynamically(tree: ast.AST) -> bool:
     return False
 
 
+def _bound_names(target: ast.expr) -> "list[str]":
+    """Every module-level name an assignment target binds, including tuple and list unpacking.
+
+    `m_app_name, m_scraper_name, m_version, m_ip = None, None, None, None` binds four names, and
+    collecting only bare `Name` targets bound none of them -- so a test patching any of the four was
+    reported as inventing an attribute the module very much has. Found on pyutilz, five findings,
+    all of them this. Starred targets (`a, *rest = ...`) unpack the same way.
+    """
+    if isinstance(target, ast.Name):
+        return [target.id]
+    if isinstance(target, ast.Starred):
+        return _bound_names(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [name for element in target.elts for name in _bound_names(element)]
+    return []
+
+
 def _module_level_names(tree: ast.AST) -> tuple[set[str], set[str]]:
     """(bound, defined) for one module.
 
@@ -146,10 +163,9 @@ def _module_level_names(tree: ast.AST) -> tuple[set[str], set[str]]:
             bound.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
-                if isinstance(target, ast.Name):
-                    bound.add(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            bound.add(node.target.id)
+                bound.update(_bound_names(target))
+        elif isinstance(node, ast.AnnAssign):
+            bound.update(_bound_names(node.target))
     bound |= imported
     return bound, bound - imported
 

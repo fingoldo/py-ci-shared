@@ -83,3 +83,64 @@ class TestWhatMustStayQuiet:
     def test_a_third_party_module_is_never_reported(self, project):
         tmp_path, _pkg, tests = project
         assert not _scan(tmp_path, tests, "import logging\n\n\ndef test_x():\n    logging.SOMETHING = 1\n")
+
+
+class TestATupleUnpackingBindsEveryNameInIt:
+    """`a, b, c = None, None, None` binds three module attributes, not zero.
+
+    Collecting only bare `Name` targets bound none of them, so a test patching any of the four
+    names on pyutilz's `system.distributed` was reported as inventing an attribute the module
+    very much has -- five findings, all of them this. A false report here is expensive: it sends
+    the reader to "fix" a patch that was correct, and the obvious fix is to delete it.
+    """
+
+    @staticmethod
+    def _with_state(tmp_path, pkg, tests, module_body, test_body):
+        """Write a state module and a probe test, then scan."""
+        (pkg / "_state.py").write_text(module_body, encoding="utf-8")
+        return _scan(tmp_path, tests, test_body)
+
+    def test_a_name_bound_by_tuple_unpacking_is_not_reported(self, project):
+        tmp_path, pkg, tests = project
+
+        found = self._with_state(
+            tmp_path, pkg, tests,
+            'm_app, m_ip = None, None\n',
+            'import pkg._state as state\n\n\ndef test_it():\n    state.m_ip = 0\n',
+        )
+
+        assert found == [], [f.target for f in found]
+
+    def test_every_name_in_the_tuple_counts_not_just_the_first(self, project):
+        tmp_path, pkg, tests = project
+
+        found = self._with_state(
+            tmp_path, pkg, tests,
+            'a, b, c, d = 1, 2, 3, 4\n',
+            'import pkg._state as state\n\n\ndef test_it():\n    state.a = 9\n    state.b = 9\n    state.c = 9\n    state.d = 9\n',
+        )
+
+        assert found == [], [f.target for f in found]
+
+    def test_a_starred_target_unpacks_the_same_way(self, project):
+        tmp_path, pkg, tests = project
+
+        found = self._with_state(
+            tmp_path, pkg, tests,
+            'first, *rest = 1, 2, 3\n',
+            'import pkg._state as state\n\n\ndef test_it():\n    state.first = 9\n    state.rest = []\n',
+        )
+
+        assert found == [], [f.target for f in found]
+
+    def test_a_name_that_really_is_absent_is_still_reported(self, project):
+        """The narrowing must not swallow the thing the check is for."""
+        tmp_path, pkg, tests = project
+
+        found = self._with_state(
+            tmp_path, pkg, tests,
+            'a, b = 1, 2\n',
+            'import pkg._state as state\n\n\ndef test_it():\n    state.never_defined = 9\n',
+        )
+
+        assert [f.target for f in found] == ["pkg._state.never_defined"]
