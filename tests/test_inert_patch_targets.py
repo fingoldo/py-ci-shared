@@ -144,3 +144,45 @@ class TestATupleUnpackingBindsEveryNameInIt:
         )
 
         assert [f.target for f in found] == ["pkg._state.never_defined"]
+
+
+class TestAPresenceGuardedAssignmentInventsNothing:
+    """The careful shape -- a sentinel, a guarded set, a guarded restore -- was being reported.
+
+    That is the pattern this check WANTS: the assignment runs only when the module really has the
+    attribute, so it cannot create one. Reporting it says a correct test is inventing state, and
+    the obvious response to the finding is to delete the guard. Found on two repositories.
+
+    The guard usually sits in a `finally` several scopes below the `getattr` that produced the
+    sentinel, which is why the sentinel is resolved across the whole file rather than the
+    current block.
+    """
+
+    @staticmethod
+    def _run(tmp_path, pkg, tests, test_body):
+        """Write a state module with no `absent` attribute, then scan *test_body*."""
+        (pkg / "_state.py").write_text('_MTIME = 0\n', encoding="utf-8")
+        return _scan(tmp_path, tests, test_body)
+
+    def test_a_sentinel_guarded_set_and_restore_is_not_reported(self, project):
+        tmp_path, pkg, tests = project
+
+        found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\n_SENTINEL = object()\n\n\ndef test_it():\n    saved = getattr(state, 'absent', _SENTINEL)\n    if saved is not _SENTINEL:\n        state.absent = 0\n    try:\n        pass\n    finally:\n        if saved is not _SENTINEL:\n            state.absent = saved\n")
+
+        assert found == [], [f.target for f in found]
+
+    def test_a_hasattr_guard_is_recognised_too(self, project):
+        tmp_path, pkg, tests = project
+
+        found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\ndef test_it():\n    if hasattr(state, 'absent'):\n        state.absent = 1\n")
+
+        assert found == [], [f.target for f in found]
+
+    def test_an_unguarded_restore_is_still_reported(self, project):
+        """The actual defect: `getattr(mod, NAME, 0)` then an unconditional set, which invents
+        the attribute and leaves it behind for the process."""
+        tmp_path, pkg, tests = project
+
+        found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\ndef test_it():\n    saved = getattr(state, 'absent', 0)\n    state.absent = saved\n")
+
+        assert [f.target for f in found] == ["pkg._state.absent"]

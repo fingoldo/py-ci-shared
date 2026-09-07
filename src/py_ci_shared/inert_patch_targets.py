@@ -222,6 +222,59 @@ def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str,
     return aliases
 
 
+#: {attr: sentinel names} for the file currently being scanned. Module-level because the guard sits
+#: in a `finally` many scopes below the `getattr` that produced the sentinel, and threading it
+#: through the recursive walk would change a signature three call sites rely on.
+_FILE_SENTINELS: "dict[str, set[str]]" = {}
+
+
+def _names_in(node: ast.expr) -> "set[str]":
+    """Every bare name mentioned in an expression."""
+    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+
+
+def _guards_presence_of(test: ast.expr, attr: str) -> bool:
+    """Whether *test* is an existence check for *attr*, so an assignment under it is not inventing.
+
+    The careful shape looks like this, and it is the one this check WANTS people to write::
+
+        _SENTINEL = object()
+        saved = getattr(mod, "NAME", _SENTINEL)
+        if saved is not _SENTINEL:
+            mod.NAME = 0          # only when the module really has NAME
+        ...
+        elif hasattr(mod, "NAME"):
+            delattr(mod, "NAME")  # restores its ABSENCE
+
+    Reporting that assignment says the test invents an attribute, when the guard is precisely what
+    stops it from doing so -- and the obvious response to the finding is to delete a correct test.
+    Recognised: a `hasattr(..., "NAME")` test, and a sentinel comparison against a name that a
+    `getattr(..., "NAME", sentinel)` produced in the same scope.
+    """
+    for node in ast.walk(test):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hasattr":
+            if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and node.args[1].value == attr:
+                return True
+        if isinstance(node, ast.Constant) and node.value == attr:
+            return True
+    return False
+
+
+def _sentinel_names_for(body: "list[ast.stmt]", attr: str) -> "set[str]":
+    """Names assigned from ``getattr(mod, attr, <sentinel>)`` anywhere in this scope."""
+    names: set[str] = set()
+    for node in ast.walk(ast.Module(body=list(body), type_ignores=[])):
+        if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+            continue
+        call = node.value
+        if not (isinstance(call.func, ast.Name) and call.func.id == "getattr" and len(call.args) >= 3):
+            continue
+        if not (isinstance(call.args[1], ast.Constant) and call.args[1].value == attr):
+            continue
+        names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return names
+
+
 def _module_assignments(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str, str]"):
     """Yield `(lineno, dotted_module, attr)` for `mod.NAME = ...` visible in this scope and below."""
     aliases = _aliases_in(body, known, inherited)
@@ -234,7 +287,17 @@ def _module_assignments(body: "list[ast.stmt]", known: "set[str]", inherited: "d
                         yield node.lineno, dotted, target.attr
         inner = getattr(node, "body", None)
         if isinstance(inner, list):
-            yield from _module_assignments(inner, known, aliases)
+            # An `if` whose test checks whether the module HAS the attribute is the careful shape,
+            # not the defect: the assignment under it cannot invent anything.
+            if isinstance(node, ast.If):
+                guarded = {
+                    a
+                    for _l, _d, a in _module_assignments(inner, known, aliases)
+                    if _guards_presence_of(node.test, a) or _FILE_SENTINELS.get(a, frozenset()) & _names_in(node.test)
+                }
+                yield from (t for t in _module_assignments(inner, known, aliases) if t[2] not in guarded)
+            else:
+                yield from _module_assignments(inner, known, aliases)
         for extra in ("orelse", "finalbody"):
             branch = getattr(node, extra, None)
             if isinstance(branch, list) and branch:
@@ -254,6 +317,18 @@ def scan(test_paths: "list[Path]", index: "dict[str, ModuleFacts]") -> "list[Fin
             tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
         except SyntaxError:
             continue
+
+        _FILE_SENTINELS.clear()
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+                continue
+            call = node.value
+            if not (isinstance(call.func, ast.Name) and call.func.id == "getattr" and len(call.args) >= 3):
+                continue
+            if not isinstance(call.args[1], ast.Constant):
+                continue
+            bound_to = {t.id for t in node.targets if isinstance(t, ast.Name)}
+            _FILE_SENTINELS.setdefault(str(call.args[1].value), set()).update(bound_to)
 
         for lineno, dotted, attr in _module_assignments(tree.body, known, {}):
             facts = index[dotted]
