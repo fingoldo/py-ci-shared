@@ -81,6 +81,26 @@ class TestTextAllowlist:
         p.write_text(f"widgets/x.dart  # {_GOOD_NOTE}\n", encoding="utf-8")
         assert find_baseline_problems(p) == []
 
+    def test_a_comment_heading_explains_the_entries_under_it(self, tmp_path):
+        # The convention in both consuming repos: one sentence introducing a group. Demanding a
+        # per-line note reported eighteen entries that were already explained.
+        p = tmp_path / "shared-test-allowlist.txt"
+        p.write_text(
+            "# Platform-conditional stubs and thin SDK wrappers, covered indirectly:\n" "analytics/core_analytics.dart\n" "utils/shared_log.dart\n",
+            encoding="utf-8",
+        )
+        assert find_baseline_problems(p) == []
+
+    def test_a_blank_line_ends_the_heading_s_reach(self, tmp_path):
+        p = tmp_path / "shared-test-allowlist.txt"
+        p.write_text(
+            "# Platform-conditional stubs, covered indirectly by their callers:\n" "analytics/core_analytics.dart\n" "\n" "widgets/unexplained.dart\n",
+            encoding="utf-8",
+        )
+        problems = find_baseline_problems(p)
+        assert len(problems) == 1
+        assert "unexplained.dart" in problems[0]
+
 
 class TestTakeExceptionOnly:
     def test_take_exception_alone_is_not_an_assertion(self):

@@ -66,13 +66,24 @@ def _entries(baseline_path: Path) -> dict[str, str]:
             for item in accepted:
                 out[str(item)] = ""
         return out
+    # A text allowlist carries its reason in one of two places, and both are legitimate: a
+    # trailing `# reason` on the entry, or a comment HEADING above a group of entries that share
+    # one. Demanding the first shape reported eighteen well-documented entries in a file whose
+    # every group is introduced by a sentence explaining it - which is the more readable
+    # convention of the two, so the rule reads it rather than fighting it.
     out = {}
+    heading: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
+        if not stripped:
+            # A blank line closes the current heading: entries after it are unexplained again.
+            heading = []
+            continue
+        if stripped.startswith("#"):
+            heading.append(stripped.lstrip("#").strip())
             continue
         key, _, note = stripped.partition("#")
-        out[key.strip()] = note.strip()
+        out[key.strip()] = note.strip() or " ".join(heading)
     return out
 
 
