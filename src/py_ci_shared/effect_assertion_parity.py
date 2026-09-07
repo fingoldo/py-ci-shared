@@ -430,7 +430,21 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     credited with ``pipeline/replay.py`` as well. *package_name* covers repositories whose tests
     import themselves as a package (``from dashboard import data``); *src_dir* covers a src layout,
     where the file at ``src/pkg/x.py`` is imported as ``pkg.x``.
+
+    Both are DETECTED when not given, because forgetting them is silent and total. A src-layout repo
+    passed ``build_import_map(root)`` and got an empty map: no module resolved, so no module could be
+    reported, so the check passed having examined nothing. That is the failure mode the check itself
+    exists to prevent, and it was reported as a clean result on a repository with seven real
+    findings. Detection makes the default correct; an explicit argument still wins.
     """
+    if not src_dir and (repo_root / "src").is_dir():
+        packages = [
+            d for d in (repo_root / "src").iterdir()
+            if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))
+        ]
+        if len(packages) == 1:
+            src_dir = "src"
+            package_name = package_name or packages[0].name
 
     def module_name(path: Path) -> str:
         rel = path.relative_to(repo_root).with_suffix("")

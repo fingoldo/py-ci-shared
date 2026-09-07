@@ -556,3 +556,60 @@ class TestAnExtractedAssertionHelperStillCounts:
         )
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+
+class TestASrcLayoutResolvesWithoutBeingTold:
+    """A src layout that nobody declared produced an EMPTY map, so the check passed vacuously.
+
+    `build_import_map(root)` on `src/pkg/x.py` resolved no module, so no module could be reported,
+    so the gate was green on a repository with seven real findings -- and green for the one reason a
+    gate must never be green. Detection makes the default correct; an explicit `src_dir` still wins.
+    """
+
+    @staticmethod
+    def _src_repo(tmp_path: Path) -> Path:
+        _write(tmp_path, "src/pkg/__init__.py", "")
+        _write(tmp_path, "src/pkg/store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from pkg.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
+        return tmp_path
+
+    def test_the_map_is_not_empty(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert build_import_map(root), "a src layout resolved to no modules at all"
+
+    def test_the_module_is_found_under_its_import_name(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert "src/pkg/store.py" in build_import_map(root)
+
+    def test_its_effects_are_reported(self, tmp_path: Path):
+        """The point: before detection this returned {} and read as a clean repository."""
+        root = self._src_repo(tmp_path)
+
+        problems = find_unasserted_effects(root, build_import_map(root))
+
+        assert "src/pkg/store.py::commit" in problems
+        assert "src/pkg/store.py::execute" in problems
+
+    def test_an_explicit_src_dir_still_wins(self, tmp_path: Path):
+        root = self._src_repo(tmp_path)
+
+        assert build_import_map(root, src_dir="src", package_name="pkg") == build_import_map(root)
+
+    def test_a_flat_layout_is_untouched(self, tmp_path: Path):
+        """Detection must not change what already worked."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    assert store.save(conn) is None\n")
+
+        assert "store.py" in build_import_map(tmp_path)
+
+    def test_two_packages_under_src_are_left_to_the_caller(self, tmp_path: Path):
+        """Guessing between them would silently pick one and drop the other's modules, which is the
+        same empty-population failure wearing a different shape."""
+        _write(tmp_path, "src/one/__init__.py", "")
+        _write(tmp_path, "src/two/__init__.py", "")
+        _write(tmp_path, "src/one/store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from one.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
+
+        assert build_import_map(tmp_path) == {} or "src/one/store.py" not in build_import_map(tmp_path)
