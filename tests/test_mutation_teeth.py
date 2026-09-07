@@ -44,7 +44,7 @@ class TestTheSpliceLandsWhereItShould:
 
     @pytest.mark.parametrize(
         "prefix",
-        ['x = "\U0001F600\U0001F600"; ', 'x = "——"; ', "т = 1; "],
+        ['x = "\U0001f600\U0001f600"; ', 'x = "——"; ', "т = 1; "],
         ids=["emoji", "em-dashes", "cyrillic-identifier"],
     )
     def test_non_ascii_earlier_on_the_line_does_not_move_the_edit(self, tmp_path, prefix):
@@ -70,11 +70,7 @@ class TestTheSpliceLandsWhereItShould:
             assert mutants
             text = mutants[0].mutated_file_text
             assert "# keep me" in text and "# and me" in text
-            changed = [
-                (a, b)
-                for a, b in zip(source.split("\n"), text.split("\n"))
-                if a != b
-            ]
+            changed = [(a, b) for a, b in zip(source.split("\n"), text.split("\n")) if a != b]
             assert len(changed) == 1, f"a single-token mutation changed {len(changed)} lines"
 
 
@@ -179,7 +175,7 @@ class TestRegexFragmentsAreMutatedOnPurpose:
 
 class TestLimitAndScope:
     def test_truncation_is_reported_rather_than_silent(self, tmp_path):
-        """"No survivors" from a truncated run used to be indistinguishable from "no survivors" from
+        """ "No survivors" from a truncated run used to be indistinguishable from "no survivors" from
         a complete one."""
         path = _write(tmp_path, "def f(a, b):\n" + "".join(f"    x{i} = a > b\n" for i in range(10)))
 
@@ -290,3 +286,230 @@ class TestMutantIdentity:
         mutant = Mutant(Path("pkg/m.py"), 1, 0, "operator: > becomes >=", "a > b", "a >= b")
 
         assert not Path(mutant.key.split("::")[0]).is_absolute()
+
+
+class TestAKillIsNotAlwaysEvidence:
+    """A mutant that makes the code CRASH dies against any test that reaches the line.
+
+    It is killed for free and says nothing about test quality, which is one of the four reasons a
+    mutation score is not computed here. Labelled rather than filtered: it never survives, so it
+    costs no survivor-list noise, and knowing how many kills were free is what stops a high kill
+    count from being read as good tests.
+    """
+
+    @pytest.mark.parametrize(
+        "output,expected",
+        [
+            ("E       assert 1 == 2", False),
+            ("E       AssertionError: nope", False),
+            ("E       ValueError: invalid literal", True),
+            ("E       LookupError: unknown encoding: ", True),
+            ("E       ZeroDivisionError: division by zero", True),
+        ],
+    )
+    def test_a_crash_is_told_apart_from_a_failed_assertion(self, output, expected):
+        from py_ci_shared.mutation_teeth import _killed_by_crash
+
+        assert _killed_by_crash(output) is expected
+
+    def test_an_exception_name_in_a_traceback_is_not_a_crash(self):
+        """Read from pytest's own ``E `` summary, not the traceback body: a test using
+        ``pytest.raises(ValueError)`` mentions the name while doing exactly its job, and counting
+        that as a free kill would misreport a working test."""
+        from py_ci_shared.mutation_teeth import _killed_by_crash
+
+        output = "E       assert 'x' in 'y'" + chr(10) + "ValueError appears in the traceback"
+
+        assert _killed_by_crash(output) is False
+
+    def test_the_summary_says_how_many_kills_were_free(self):
+        run = MutationRun(survivors=[], mutants_run=10, killed=10, truncated=False, candidates_total=10, killed_by_crash=4)
+
+        assert "4 of the kills were CRASHES" in run.summary()
+
+
+class TestReprCoupledConstantsAreOptional:
+    """``text[: max_len - 3] + "..."`` states one decision twice, so mutating both halves makes a
+    reader think about it twice to learn it once."""
+
+    SOURCE = "def clip(text, max_len):" + chr(10) + '    return text[: max_len - 3] + "..."' + chr(10)
+
+    def test_it_is_off_by_default(self, tmp_path):
+        """What the filter hides is real -- the case where the two have DRIFTED and only one
+        direction is covered -- so the judgement stays with the caller rather than being made
+        silently on their behalf."""
+        path = _write(tmp_path, self.SOURCE)
+
+        default, _total, _sampled = generate_mutants(path)
+
+        assert any(m.description == "constant: emptied a string" for m in default)
+
+    def test_enabling_it_drops_the_string_and_keeps_the_number(self, tmp_path):
+        """The numeric half is the more informative of the pair: it says what the reservation IS,
+        while the string only shows what fills it."""
+        path = _write(tmp_path, self.SOURCE)
+
+        filtered, _total, _sampled = generate_mutants(path, skip_coupled_constants=True)
+
+        assert not any(m.description == "constant: emptied a string" for m in filtered)
+        assert any("3 becomes 4" in m.description for m in filtered)
+
+    def test_an_uncoupled_string_is_untouched_by_the_filter(self, tmp_path):
+        """The filter is per LINE. A string on a line with no numeric partner is not part of a pair
+        and must survive it, or this quietly becomes "skip most strings"."""
+        path = _write(tmp_path, 'MESSAGE = "hello"' + chr(10) + "N = 7" + chr(10))
+
+        filtered, _total, _sampled = generate_mutants(path, skip_coupled_constants=True)
+
+        assert any(m.description == "constant: emptied a string" for m in filtered)
+
+
+class TestWindowsSourceIsHandled:
+    """Verified rather than assumed: a harness that mangled a CRLF file would be worse than none in
+    repos developed on Windows."""
+
+    def test_crlf_line_endings_round_trip(self, tmp_path):
+        crlf = chr(13) + chr(10)
+        path = tmp_path / "crlf.py"
+        io.open(path, "w", encoding="utf-8", newline="").write("def f(a, b):" + crlf + "    return a > b" + crlf)
+
+        mutants, _total, _sampled = generate_mutants(path)
+
+        assert mutants, "a CRLF file produced no candidates at all"
+        assert mutants[0].mutated_file_text.count(crlf) == 2, "line endings were rewritten"
+        assert "return a >= b" in mutants[0].mutated_file_text
+
+    def test_tab_indentation_round_trips(self, tmp_path):
+        tab = chr(9)
+        path = _write(tmp_path, "def f(a, b):" + chr(10) + tab + "return a > b" + chr(10))
+
+        mutants, _total, _sampled = generate_mutants(path)
+
+        assert mutants and tab + "return a >= b" in mutants[0].mutated_file_text
+
+
+class TestTheWorkerProtocolSurvivesTestOutput:
+    """`pytest.main()` writes its report to the worker's stdout, which is also the protocol channel.
+
+    Found by the sweep itself, three files in: the parent read a pytest output line, it happened to
+    parse as JSON, and `reply["rc"]` raised `TypeError` in the middle of a run. A test that prints
+    anything JSON-shaped was enough. The worker now redirects pytest's output, and the parent treats
+    a line that is not a reply as "worker unavailable" -- which degrades to a cold re-run rather
+    than to an exception or, worse, to a printed number read as an exit code.
+    """
+
+    def test_json_shaped_test_output_does_not_break_the_channel(self, tmp_path):
+        from py_ci_shared.mutation_teeth import _WarmRunner
+
+        noisy = (
+            "def test_prints_json():"
+            + chr(10)
+            + '    print(chr(34) + "a bare json string" + chr(34))'
+            + chr(10)
+            + "    print('{"
+            + chr(34)
+            + "rc"
+            + chr(34)
+            + ": 999}')"
+            + chr(10)
+            + "    assert True"
+            + chr(10)
+        )
+        io.open(tmp_path / "test_noisy.py", "w", encoding="utf-8", newline="").write(noisy)
+
+        with _WarmRunner(tmp_path, timeout=120) as warm:
+            codes = [warm.run(["test_noisy.py"]) for _ in range(3)]
+
+        assert codes == [0, 0, 0], f"the worker returned {codes}; a 999 would mean the printed line was read as the reply, and a None that the channel was lost"
+
+    def test_a_reply_without_rc_is_treated_as_worker_unavailable(self):
+        """Not as an error and not as a result. The caller must fall back to a cold run, because a
+        harness that turns a protocol hiccup into a verdict is the failure this module exists for."""
+        from py_ci_shared.mutation_teeth import _WarmRunner
+
+        runner = _WarmRunner(Path("."), timeout=1)
+
+        class _Fake:
+            def poll(self):
+                return None
+
+            class stdin:
+                @staticmethod
+                def write(_):
+                    return None
+
+                @staticmethod
+                def flush():
+                    return None
+
+            class stdout:
+                @staticmethod
+                def readline():
+                    return '"a bare json string"' + chr(10)
+
+        runner.process = _Fake()
+
+        assert runner.run(["tests"]) is None
+
+
+class TestAMutantThatStopsPytestStartingIsKilledNotRefused:
+    """Exit 4/5 means one thing on the baseline and the opposite on a mutant.
+
+    On the baseline they say the caller passed paths pytest cannot use, and the harness must refuse
+    rather than report every mutant killed. On a mutant the same command with the same paths was
+    already observed to exit 0, so only the mutation can have caused it -- and a mutation that stops
+    the suite from starting has been noticed as loudly as it is possible to notice one.
+    """
+
+    def test_the_baseline_still_refuses_a_could_not_run_code(self):
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
+
+        for code in (4, 5):
+            with pytest.raises(MutationHarnessError, match="neither pass"):
+                _classify_code(code, "the unmutated baseline")
+
+    def test_a_mutant_with_a_could_not_run_code_counts_as_killed(self):
+        from py_ci_shared.mutation_teeth import _classify_code
+
+        for code in (4, 5):
+            assert _classify_code(code, "a mutant", baseline_verified=True) is False
+
+    def test_interrupted_and_internal_errors_still_refuse_even_on_a_mutant(self):
+        """A Ctrl-C or a crash inside pytest can arrive from outside the mutation, so reading them
+        as kills would inflate the count with runs that measured nothing."""
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
+
+        for code in (2, 3):
+            with pytest.raises(MutationHarnessError, match="neither pass"):
+                _classify_code(code, "a mutant", baseline_verified=True)
+
+    def test_pass_and_fail_are_unchanged_in_both_modes(self):
+        from py_ci_shared.mutation_teeth import _classify_code
+
+        for verified in (False, True):
+            assert _classify_code(0, "x", baseline_verified=verified) is True
+            assert _classify_code(1, "x", baseline_verified=verified) is False
+
+    def test_end_to_end_a_slots_mutation_is_killed_rather_than_refusing_the_file(self, tmp_path):
+        """The case this was written for, run for real rather than simulated.
+
+        `__slots__ = ("_count",)` with the string emptied raises `TypeError: __slots__ must be
+        identifiers` while the class body executes -- at IMPORT time, inside conftest, so pytest
+        exits 4. Before this change the harness raised and the whole file went unswept.
+        """
+        from py_ci_shared.mutation_teeth import find_surviving_mutants
+
+        (tmp_path / "subject.py").write_text(
+            'class Thing:\n    __slots__ = ("_count",)\n\n    def __init__(self):\n        self._count = 0\n',
+            encoding="utf-8",
+        )
+        (tmp_path / "conftest.py").write_text("import subject  # noqa: F401\n", encoding="utf-8")
+        (tmp_path / "test_subject.py").write_text(
+            "import subject\n\n\ndef test_it_constructs():\n    assert subject.Thing()._count == 0\n",
+            encoding="utf-8",
+        )
+
+        outcome = find_surviving_mutants("subject.py", ["test_subject.py"], repo_root=tmp_path, use_cache=False)
+
+        assert outcome.mutants_run >= 1
+        assert not [m for m in outcome.survivors if "_count" in m.original_span], outcome.summary()

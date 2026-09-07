@@ -61,11 +61,24 @@ earlier on the line silently moved the edit -- on a verified input the whole sta
 positions are character-based and each edit is one token, so a mutant is the original file with one
 operator changed and every comment intact.
 
+**Verified sound and deliberately not defended against:** CRLF line endings and tab indentation
+both round-trip correctly through the token splice -- checked by execution rather than assumed,
+because a harness that mangles a Windows file would be worse than none in these repos. There is
+no special handling for either, and none is needed.
+
 **Exit codes are classified, not truth-tested.** ``returncode != 0`` used to mean "killed". pytest
 exits 4 on a usage error and 5 when it collects nothing, so a typo in ``test_paths`` reported every
 mutant killed and the run as a clean bill of health -- precisely what :mod:`gate_integrity` exists
-to prevent. There is now a mandatory unmutated baseline run, and any exit code other than 0 or 1
-aborts loudly.
+to prevent. There is now a mandatory unmutated baseline run, and on the BASELINE any exit code other
+than 0 or 1 aborts loudly.
+
+On a MUTANT the same codes mean the opposite, and are read as a kill. The baseline has already shown
+that this command, with these paths, exits 0, so a mutant that turns it into "could not run" was
+noticed -- in the loudest way pytest has. Refusing there was not merely conservative, it was
+expensive and wrong: emptying a string inside a ``__slots__`` tuple raises ``TypeError: __slots__
+must be identifiers`` during ``conftest`` import, pytest exits 4, and the whole FILE was discarded
+over one obviously-killed mutant. Codes 2 (interrupted) and 3 (internal error) still abort, because
+a Ctrl-C or a crash inside pytest can come from outside the mutation.
 
 **Results are cached on a fingerprint of everything that could change the answer.** Re-running a
 mutation check that cannot have changed is the dominant cost in a hook. The fingerprint covers the
@@ -108,13 +121,23 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "2"
+HARNESS_VERSION = "3"
 
 REFRESH_FLAG = "--refresh-mutation-survivors-baseline"
 
 _COPY_IGNORE = shutil.ignore_patterns(
-    ".git", "__pycache__", "*.pyc", ".pytest_cache", ".mypy_cache", ".hypothesis",
-    ".benchmarks", ".cache", ".ruff_cache", "node_modules", ".venv", "venv",
+    ".git",
+    "__pycache__",
+    "*.pyc",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".hypothesis",
+    ".benchmarks",
+    ".cache",
+    ".ruff_cache",
+    "node_modules",
+    ".venv",
+    "venv",
 )
 
 #: Container literals larger than this are SAMPLED rather than exhausted. Measured on four real
@@ -181,10 +204,20 @@ class MutationRun:
     truncated: bool
     candidates_total: int
     sampled_containers: dict[str, tuple[int, int]] = field(default_factory=dict)
+    killed_by_crash: int = 0
+    coverage_gaps: list[Mutant] = field(default_factory=list)
     from_cache: bool = False
 
     def summary(self) -> str:
         parts = [f"{self.mutants_run} mutants run, {self.killed} killed, {len(self.survivors)} survived"]
+        if self.killed_by_crash:
+            # Not a footnote: these die against any test that reaches the line, so a kill
+            # count that includes them overstates how much the tests actually check.
+            parts.append(f"{self.killed_by_crash} of the kills were CRASHES, not assertions")
+        if self.coverage_gaps:
+            # Reported separately and loudly: these are NOT test gaps. A reader who treats them as
+            # survivors writes a test that already exists.
+            parts.append(f"{len(self.coverage_gaps)} 'survivors' were killed by a test the coverage map does not list -- fix the map, not the tests")
         if self.truncated:
             parts.append(f"TRUNCATED: {self.candidates_total} candidates existed, {self.mutants_run} were run")
         for name, (shown, total) in sorted(self.sampled_containers.items()):
@@ -329,7 +362,7 @@ def _container_members(source: str) -> dict[int, str]:
     return out
 
 
-def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
+def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list[tuple[int, int, int, str, str, str]]:
     """``(abs_start, abs_end, line, replacement, description, category)`` per mutable token.
 
     Token positions from :mod:`tokenize` are CHARACTER offsets, so no byte conversion is needed
@@ -338,6 +371,7 @@ def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
     starts = _line_starts(source)
     excluded = _excluded_ranges(source)
     sampled_out = _container_members(source)
+    coupled = _repr_coupled_lines(source) if skip_coupled_constants else set()
 
     def excluded_at(a: int, b: int) -> bool:
         return any(a >= lo and b <= hi for lo, hi in excluded)
@@ -397,6 +431,8 @@ def _token_candidates(source: str) -> list[tuple[int, int, int, str, str, str]]:
             emit(abs_end, repr(new_value), f"constant: {value} becomes {new_value}")
 
         elif tok.type == tokenize.STRING and len(tok.string) > 2:
+            if row in coupled:
+                continue  # its numeric partner on this line states the same fact; see _repr_coupled_lines
             # f-strings are skipped: emptying one literal part turns `f"{x} and {'q'}"` into
             # concatenated literals where the second interpolation stops being one. That mutant is
             # labelled "emptied a string" and is not one. (On 3.12+ f-strings are FSTRING_* tokens
@@ -452,6 +488,7 @@ def generate_mutants(
     path: Path,
     lines: Iterable[range] | range | None = None,
     limit: int | None = None,
+    skip_coupled_constants: bool = False,
 ) -> tuple[list[Mutant], int, dict[str, tuple[int, int]]]:
     """``(mutants, candidates_total, sampled_containers)`` in SOURCE ORDER.
 
@@ -466,7 +503,7 @@ def generate_mutants(
     """
     source = io.open(path, encoding="utf-8", newline="").read()
     starts = _line_starts(source)
-    candidates = _token_candidates(source) + _statement_call_candidates(source)
+    candidates = _token_candidates(source, skip_coupled_constants) + _statement_call_candidates(source)
     candidates.sort(key=lambda c: (c[0], c[4]))
 
     ranges: list[range] = []
@@ -630,6 +667,76 @@ def _pytest_env() -> dict[str, str]:
     return env
 
 
+#: Exceptions that mean the mutant made the code CRASH rather than produce a wrong answer. A crash
+#: mutant dies against any test that reaches the line, so it is killed for free and tells nobody
+#: anything about test quality -- which is one of the four reasons a mutation SCORE is not computed
+#: here. Reported as a label rather than filtered: it never survives, so it costs no survivor-list
+#: noise, and knowing how many of the kills were free is exactly what stops a high kill count from
+#: being mistaken for good tests.
+_CRASH_EXCEPTIONS = (
+    "ValueError",
+    "LookupError",
+    "IndexError",
+    "KeyError",
+    "TypeError",
+    "AttributeError",
+    "ZeroDivisionError",
+    "OverflowError",
+    "RecursionError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+)
+
+
+def _killed_by_crash(output: str) -> bool:
+    """True if the failure looks like an exception from the mutated code, not a failed assertion.
+
+    Read from pytest's own summary line rather than from the traceback body: a traceback can mention
+    an exception name that a test deliberately asserted with ``pytest.raises``, and counting that as
+    a crash would misreport a test doing its job.
+    """
+    for line in output.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("E "):
+            continue
+        payload = stripped[2:].lstrip()
+        if payload.startswith("assert") or payload.startswith("AssertionError"):
+            return False
+        if any(payload.startswith(name) for name in _CRASH_EXCEPTIONS):
+            return True
+    return False
+
+
+def _repr_coupled_lines(source: str) -> set[int]:
+    """Lines where a numeric constant and a string constant state the same fact.
+
+    ``text[: max_len - 3] + "..."`` is the canonical shape: the ``3`` and the ``"..."`` are two
+    spellings of one decision, so mutating both produces two survivors that a reader must think
+    about twice to learn one thing.
+
+    Off by default. What it hides is real: the case where the two have drifted apart and only one
+    direction is covered -- a truncation that reserves three characters and appends four. The agent
+    that proposed it marked it optional for exactly that reason, and this keeps that judgement with
+    the caller instead of making it silently.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return set()
+    numbers: dict[int, int] = {}
+    strings: dict[int, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or getattr(node, "lineno", None) is None:
+            continue
+        if isinstance(node.value, bool):
+            continue
+        if isinstance(node.value, int):
+            numbers[node.lineno] = numbers.get(node.lineno, 0) + 1
+        elif isinstance(node.value, str) and node.value:
+            strings[node.lineno] = strings.get(node.lineno, 0) + 1
+    return {line for line in numbers if line in strings}
+
+
 def _pytest_flags() -> list[str]:
     """Flags that isolate a nested run, built from what is actually installed.
 
@@ -728,7 +835,15 @@ class _WarmRunner:
             reply = json.loads(line)
         except json.JSONDecodeError:
             return None
-        return None if "error" in reply else int(reply["rc"])
+        # Defensive even though the worker now redirects pytest's output: a line that parses as
+        # JSON but is not our reply shape must degrade to a cold re-run, never to an exception
+        # mid-sweep or -- worse -- to a number read as an exit code.
+        if not isinstance(reply, dict) or "rc" not in reply:
+            return None
+        try:
+            return int(reply["rc"])
+        except (TypeError, ValueError):
+            return None
 
     def stop(self) -> None:
         if self.process is None:
@@ -756,11 +871,33 @@ class _WarmRunner:
         self.stop()
 
 
-def _classify_code(code: int, what: str) -> bool:
-    """True if the tests PASSED. Raises when the exit code means neither pass nor fail."""
+#: Exit codes that mean "pytest could not run the tests as configured": 4 is a usage error and 5 is
+#: nothing collected. On the BASELINE they mean the caller passed bad `test_paths`, and the harness
+#: must refuse. On a MUTANT they mean something else entirely, because the baseline just proved the
+#: same command with the same paths exits 0 -- so only the mutation can have caused it, and a
+#: mutation that stops the suite from starting has been noticed in the loudest way available.
+#:
+#: This is not hypothetical. Emptying the string `"_count"` inside a `__slots__` tuple raises
+#: `TypeError: __slots__ must be identifiers` while the class body executes, which happens during
+#: `conftest.py` import, so pytest exits 4. Refusing there discarded the result for the WHOLE FILE,
+#: turning one obviously-killed mutant into no answer at all for the other thirty-five.
+#:
+#: 2 (interrupted) and 3 (internal error) stay ambiguous deliberately: a Ctrl-C or a crash in pytest
+#: itself can arrive from outside the mutation, and reading those as kills would inflate the count.
+_MUTATION_BROKE_THE_RUN = frozenset({4, 5})
+
+
+def _classify_code(code: int, what: str, *, baseline_verified: bool = False) -> bool:
+    """True if the tests PASSED. Raises when the exit code means neither pass nor fail.
+
+    *baseline_verified* says the identical command was already observed to exit 0 on the unmutated
+    tree, which is what licenses reading a "could not run" code as a kill rather than as a refusal.
+    """
     if code == 0:
         return True
     if code == 1:
+        return False
+    if baseline_verified and code in _MUTATION_BROKE_THE_RUN:
         return False
     raise MutationHarnessError(
         f"pytest exited {code} on {what}, which is neither pass (0) nor fail (1). "
@@ -769,11 +906,13 @@ def _classify_code(code: int, what: str) -> bool:
     )
 
 
-def _classify(result, what: str) -> bool:
+def _classify(result, what: str, *, baseline_verified: bool = False) -> bool:
     """True if the tests PASSED. Raises when the exit code means neither pass nor fail."""
     if result.returncode == 0:
         return True
     if result.returncode == 1:
+        return False
+    if baseline_verified and result.returncode in _MUTATION_BROKE_THE_RUN:
         return False
     raise MutationHarnessError(
         f"pytest exited {result.returncode} on {what}, which is neither pass (0) nor fail (1). "
@@ -794,6 +933,7 @@ def find_surviving_mutants(
     use_cache: bool = True,
     use_warm_worker: bool = True,
     extra_fingerprint_paths: Sequence[Path | str] = (),
+    fallback_test_paths: Sequence[Path | str] = (),
 ) -> MutationRun:
     """Mutants the tests did NOT catch.
 
@@ -846,15 +986,13 @@ def find_surviving_mutants(
         target = sandbox / relative
         if not target.is_file():
             raise MutationHarnessError(
-                f"{relative} does not exist under {repo_root}. "
-                "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
+                f"{relative} does not exist under {repo_root}. `path` must be relative to `repo_root`, not absolute and not relative to the cwd."
             )
 
         baseline = _run_pytest(test_paths, sandbox, timeout)
         if baseline is None:
             raise MutationHarnessError(
-                f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. "
-                "Raise `timeout`, or narrow `test_paths`."
+                f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. Raise `timeout`, or narrow `test_paths`."
             )
         if not _classify(baseline, "the unmutated baseline"):
             raise MutationHarnessError(
@@ -869,7 +1007,9 @@ def find_surviving_mutants(
 
         original = io.open(target, encoding="utf-8", newline="").read()
         survivors: list[Mutant] = []
+        coverage_gaps: list[Mutant] = []
         run = 0
+        crashes = 0
         with _WarmRunner(sandbox, timeout) as warm:
             for mutant in mutants:
                 io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
@@ -882,17 +1022,32 @@ def find_surviving_mutants(
                     if result is None:
                         io.open(target, "w", encoding="utf-8", newline="").write(original)
                         continue  # a mutant that hung is not a survivor
-                    passed = _classify(result, f"mutant {mutant}")
+                    passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
                 else:
-                    passed = _classify_code(code, f"mutant {mutant}")
+                    passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
+                    result = None  # the warm worker returns a code, not output, so a
+                    # crash cannot be distinguished from an assertion failure on this
+                    # path. The count is therefore a lower bound, which the summary says.
                 run += 1
+                if not passed and result is not None and _killed_by_crash(result.stdout):
+                    crashes += 1
                 if passed:
                     # Re-verify in a COLD process before believing it. A purge cannot reach state
                     # held inside an installed third-party package, so a warm survivor is a
                     # candidate, not a finding. Survivors are rare, so this costs little, and a
                     # false survivor is the outcome that wastes a human's afternoon.
                     confirm = _run_pytest(test_paths, sandbox, timeout)
-                    if confirm is not None and _classify(confirm, f"survivor re-check {mutant}"):
+                    if confirm is not None and _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
+                        # Before believing it, ask the wider set. "No test kills this" and "no
+                        # LISTED test kills this" are different findings, and only the first is
+                        # about the tests. Run only for survivors, which are rare -- listing the
+                        # wider set as primary would make every mutant cost minutes.
+                        if fallback_test_paths:
+                            wider = _run_pytest(fallback_test_paths, sandbox, timeout)
+                            if wider is not None and not _classify(wider, f"fallback re-check {mutant}", baseline_verified=True):
+                                coverage_gaps.append(mutant)
+                                io.open(target, "w", encoding="utf-8", newline="").write(original)
+                                continue
                         survivors.append(mutant)
                 io.open(target, "w", encoding="utf-8", newline="").write(original)
 
@@ -903,6 +1058,8 @@ def find_surviving_mutants(
             truncated=limit is not None and candidates_total > len(mutants),
             candidates_total=candidates_total,
             sampled_containers=sampled,
+            killed_by_crash=crashes,
+            coverage_gaps=coverage_gaps,
         )
     finally:
         shutil.rmtree(sandbox_parent, ignore_errors=True)
@@ -1036,15 +1193,14 @@ def assert_revert_fails_tests(
             raise MutationHarnessError(f"the unmutated baseline did not finish within {timeout}s")
         if not _classify(baseline, "the unmutated baseline"):
             raise MutationHarnessError(
-                "the unmutated baseline does not pass, so the teeth check means nothing. "
-                f"Fix the failing tests first.\n{baseline.stdout[-2000:]}"
+                f"the unmutated baseline does not pass, so the teeth check means nothing. Fix the failing tests first.\n{baseline.stdout[-2000:]}"
             )
 
         io.open(target, "w", encoding="utf-8", newline="").write(mutated)
         result = _run_pytest(test_paths, sandbox, timeout)
         if result is None:
             raise MutationHarnessError(f"the mutated run did not finish within {timeout}s")
-        if _classify(result, "the mutated run"):
+        if _classify(result, "the mutated run", baseline_verified=True):
             raise AssertionError(
                 f"The tests PASSED with the defect reintroduced in {relative}.\n"
                 f"Reverted: {old[:100]!r}\n"

@@ -33,6 +33,8 @@ Protocol: one JSON object per line on stdin, one on stdout.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -78,7 +80,16 @@ def main() -> int:
             return 0
         try:
             purged = _purge_local_modules(root)
-            code = int(pytest.main(list(request["args"])))
+            # pytest.main writes its report to OUR stdout, which is also the protocol channel.
+            # Without this redirect the parent reads a pytest line, and when one happens to be
+            # valid JSON -- a bare quoted string is enough -- `json.loads` succeeds and returns a
+            # str, so `reply["rc"]` raises TypeError mid-sweep. Found by the sweep itself, three
+            # files in. The report is discarded rather than captured: the exit code is the whole
+            # answer here, and the caller re-runs any survivor in a cold process where it does
+            # keep the output.
+            buffer = io.StringIO()
+            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+                code = int(pytest.main(list(request["args"])))
             print(json.dumps({"rc": code, "purged": purged}), flush=True)
         except BaseException as exc:  # noqa: BLE001 -- a worker crash must be reported, not raised
             print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), flush=True)
