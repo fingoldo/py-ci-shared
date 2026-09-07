@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from pathlib import Path
 
 _ABSOLUTE_PATH_RE = re.compile(r"(?:^|[\s\"'(])(?:[A-Za-z]:[\\/]|/(?:home|Users|mnt|c)/)")
