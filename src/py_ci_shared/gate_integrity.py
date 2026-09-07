@@ -136,7 +136,7 @@ def _pyproject_narrowings(pyproject_path: "Path | None", pyproject_tables: tuple
     found: dict[str, str] = {}
     if pyproject_path is None or not pyproject_path.is_file():
         return found
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     for dotted in pyproject_tables:
@@ -269,7 +269,7 @@ def find_coverage_gate_mismatches(pyproject_path: Path, workflows_dir: Path) -> 
     Two venues, one policy: when they desync, the lower one is the real gate and the higher
     one is decoration. Keeping them equal makes raising the ratchet a single deliberate edit.
     """
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     declared = data.get("tool", {}).get("coverage", {}).get("report", {}).get("fail_under")

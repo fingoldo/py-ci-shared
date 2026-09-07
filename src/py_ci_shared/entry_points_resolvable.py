@@ -42,7 +42,7 @@ def find_unresolvable_entry_points(pyproject_path: Path) -> list[str]:
     """Return one message per entry-point spec that fails to import its
     module, or whose module lacks the named attribute."""
     import importlib
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     violations: list[str] = []

@@ -100,7 +100,7 @@ def find_extras_documentation_drift(
     does not contain (the "now core, still advertised" shape), and a bullet omitting a
     package the group does contain (the "two heaviest members missing" shape).
     """
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     optional_dependencies = data.get("project", {}).get("optional-dependencies", {})
@@ -151,7 +151,7 @@ def find_aggregate_group_drift(pyproject_path: Path, doc_path: Path, pattern: st
         pattern: a regex with two capture groups, ``(group_name)`` and a comma-separated
             ``(member_group_list)``, matching the prose that states the composition.
     """
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     optional_dependencies = data.get("project", {}).get("optional-dependencies", {})
@@ -294,7 +294,7 @@ def find_undeclared_markers(doc_paths: Sequence[Path], pyproject_path: Path) -> 
     Under ``--strict-markers`` an undeclared marker is a collection ERROR, so a contributor
     following the documentation cannot run the suite at all.
     """
-    import tomllib
+    from ._toml_compat import tomllib
 
     data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
     declared = {entry.split(":")[0].strip() for entry in data.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", [])}

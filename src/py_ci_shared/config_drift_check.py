@@ -11,7 +11,7 @@ this repo in sync with consumers" section for why no automated gate existed befo
 from __future__ import annotations
 
 import sys
-import tomllib
+from ._toml_compat import tomllib
 import urllib.request
 
 CONSUMERS = {
