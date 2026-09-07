@@ -301,7 +301,54 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
     return False
 
 
-def _inspects(path: Path, effects: Sequence[str], db_fixtures: frozenset[str] = frozenset()) -> set[str]:
+def _inspection_helpers(repo_root: Path, effects: Sequence[str]) -> dict[str, set[str]]:
+    """``{helper name: effects it inspects}`` for helpers defined in non-test modules of the tree.
+
+    A suite that grows past a handful of effect tests extracts its session doubles and its statement
+    accessors into a shared module -- `duplicate_function_body` and every reviewer ask for exactly
+    that. The extraction moves `session.execute.await_args_list` out of the test file, and matching
+    only the test's own attribute chains then reports the module as uninspected: the check would
+    punish the refactor it should reward, and the punishment arrives a week later when someone
+    "fixes" the report by inlining the helper back.
+
+    So the helpers are resolved. A function whose own body reads one of the inspection attributes off
+    an effect name is recorded here, and a test that CALLS it inspects whatever it inspects. Scoped
+    to the repository's own files, so an unrelated third-party function of the same name cannot
+    silently satisfy the check.
+    """
+    helpers: dict[str, set[str]] = {}
+    for path in sorted(repo_root.rglob("*.py")):
+        if path.name.startswith("test_"):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
+        except (SyntaxError, OSError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            inspected: set[str] = set()
+            for inner in ast.walk(node):
+                if not isinstance(inner, ast.Attribute):
+                    continue
+                if not (inner.attr.startswith("assert_") or inner.attr in _INSPECTIONS):
+                    continue
+                target = inner.value
+                if isinstance(target, ast.Attribute) and target.attr in effects:
+                    inspected.add(target.attr)
+                elif isinstance(target, ast.Name) and target.id in effects:
+                    inspected.add(target.id)
+            if inspected:
+                helpers.setdefault(node.name, set()).update(inspected)
+    return helpers
+
+
+def _inspects(
+    path: Path,
+    effects: Sequence[str],
+    db_fixtures: frozenset[str] = frozenset(),
+    helpers: Mapping[str, Sequence[str]] | None = None,
+) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
     Matched on the ATTRIBUTE CHAIN rather than on text, so ``# commit is asserted below`` in a comment
@@ -317,6 +364,19 @@ def _inspects(path: Path, effects: Sequence[str], db_fixtures: frozenset[str] = 
         return set(effects)
     found: set[str] = set()
     aliases = _patch_aliases(tree, effects)
+    # A call to a helper the suite extracted counts as whatever that helper inspects. Restricted to
+    # helpers this file actually IMPORTS: a same-named local function is a different function, and
+    # crediting it would let a rename quietly satisfy the check.
+    if helpers:
+        imported_here = {
+            alias.asname or alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in imported_here:
+                found.update(helpers.get(node.func.id, ()))
     for node in ast.walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
@@ -421,6 +481,7 @@ def find_unasserted_effects(
     asserts on commit" would be satisfied by one unrelated test and would gate nothing.
     """
     inspected: dict[str, set[str]] = {}
+    helpers = _inspection_helpers(repo_root, effects)
     problems: dict[str, str] = {}
     # Every conftest in the tree, because a `db_session` may be defined in the root one and used
     # three packages down. Collected once: this is an AST parse per conftest, not per test.
@@ -454,7 +515,7 @@ def find_unasserted_effects(
                 if not test_path.is_file():
                     continue
                 if test not in inspected:
-                    inspected[test] = _inspects(test_path, effects, db_fixtures)
+                    inspected[test] = _inspects(test_path, effects, db_fixtures, helpers)
                 if effect in inspected[test]:
                     checked_by = test
                     break

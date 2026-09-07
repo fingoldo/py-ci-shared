@@ -473,3 +473,86 @@ class TestATestThatRunsAgainstARealDatabase:
         )
 
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+
+class TestAnExtractedAssertionHelperStillCounts:
+    """A suite past a handful of effect tests extracts its session doubles and statement accessors.
+
+    `duplicate_function_body` asks for exactly that, and so does every reviewer. The extraction moves
+    `session.execute.await_args_list` out of the test file, and matching only the test's own
+    attribute chains then reports the module as uninspected -- so the check would punish the refactor
+    it should reward, and the punishment arrives later as someone inlining the helper back to silence
+    a report. Measured on glossum: seven modules flipped back to reported the moment twenty copies of
+    the same two accessors were collapsed into one shared module.
+    """
+
+    def test_a_helper_the_test_imports_is_credited(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n    conn.commit()\n")
+        _write(tmp_path, "tests/_doubles.py", "def statements(conn):\n    return [str(c.args[0]) for c in conn.execute.call_args_list]\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\nfrom tests._doubles import statements\n\n\ndef test_it(conn):\n"
+            "    store.save(conn)\n    assert 'INSERT' in statements(conn)[0]\n    conn.commit.assert_called_once()\n",
+        )
+
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_a_helper_that_inspects_nothing_credits_nothing(self, tmp_path):
+        """The teeth. A helper that merely BUILDS a double is not an assertion, and crediting every
+        imported name would make the check pass for any test that imported anything."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n")
+        _write(tmp_path, "tests/_doubles.py", "from unittest.mock import MagicMock\n\n\ndef session_double():\n    return MagicMock()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\nfrom tests._doubles import session_double\n\n\ndef test_it():\n"
+            "    conn = session_double()\n    store.save(conn)\n    assert conn is not None\n",
+        )
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_same_named_local_function_is_not_the_helper(self, tmp_path):
+        """Credit is scoped to names the file actually imports. A local function of the same name is
+        a different function, and crediting it would let a rename satisfy the check silently."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n")
+        _write(tmp_path, "tests/_doubles.py", "def statements(conn):\n    return [str(c.args[0]) for c in conn.execute.call_args_list]\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\n\n\ndef statements(conn):\n    return []\n\n\ndef test_it(conn):\n"
+            "    store.save(conn)\n    assert statements(conn) == []\n",
+        )
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+    def test_a_helper_is_credited_only_for_what_it_inspects(self, tmp_path):
+        """It reads `execute`, so it says nothing about `commit`. Crediting the whole effect set from
+        one imported accessor would hide every unasserted commit in the suite that uses it."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n    conn.commit()\n")
+        _write(tmp_path, "tests/_doubles.py", "def statements(conn):\n    return [str(c.args[0]) for c in conn.execute.call_args_list]\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\nfrom tests._doubles import statements\n\n\ndef test_it(conn):\n"
+            "    store.save(conn)\n    assert 'INSERT' in statements(conn)[0]\n",
+        )
+
+        problems = find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+        assert "store.py::commit" in problems
+        assert "store.py::execute" not in problems
+
+    def test_a_helper_defined_in_a_test_file_is_not_collected(self, tmp_path):
+        """Helpers are read from non-test modules only. A function inside another TEST file is that
+        file's business, and crediting it across files would let one suite's assertions vouch for a
+        different suite that merely borrowed the name."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n")
+        _write(tmp_path, "tests/test_other.py", "def statements(conn):\n    return [str(c.args[0]) for c in conn.execute.call_args_list]\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import store\nfrom tests.test_other import statements\n\n\ndef test_it(conn):\n"
+            "    store.save(conn)\n    assert statements(conn) == []\n",
+        )
+
+        assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
