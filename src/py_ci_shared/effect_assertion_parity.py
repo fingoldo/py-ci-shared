@@ -170,7 +170,7 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
                 effect = _patch_target(node.context_expr, effects)
                 if effect:
                     aliases[node.optional_vars.id] = effect
-        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             patched = [_patch_target(d, effects) for d in node.decorator_list if isinstance(d, ast.Call)]
             patched = [e for e in patched if e]
             if not patched:
@@ -239,7 +239,7 @@ def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
     except (OSError, SyntaxError):
         return set()
 
-    def _is_fixture(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    def _is_fixture(node: (ast.FunctionDef, ast.AsyncFunctionDef)) -> bool:
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
             name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
@@ -248,7 +248,7 @@ def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
         return False
 
     direct: set[str] = set()
-    functions = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef | ast.AsyncFunctionDef) and _is_fixture(n)]
+    functions = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_fixture(n)]
     for node in functions:
         for call in ast.walk(node):
             if not isinstance(call, ast.Call):
@@ -274,7 +274,7 @@ def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -
     if not fixtures:
         return False
     for node in ast.walk(tree):
-        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         if not node.name.startswith("test"):
             continue
