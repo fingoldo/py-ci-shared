@@ -186,3 +186,66 @@ class TestAPresenceGuardedAssignmentInventsNothing:
         found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\ndef test_it():\n    saved = getattr(state, 'absent', 0)\n    state.absent = saved\n")
 
         assert [f.target for f in found] == ["pkg._state.absent"]
+
+
+class TestAPlainImportOfASubmoduleStillBindsThePackage:
+    """`import pkg.sub` binds `pkg` -- the PACKAGE. Reading it as the submodule breaks re-exports.
+
+    A test that does `import pkg` and then `import pkg.sub` binds one name, `pkg`, and it is the
+    package. An earlier version mapped the bare name to whichever dotted module was imported last,
+    so `pkg.thing = x` was checked against the SUBMODULE's namespace -- and every name the package
+    re-exports came back absent. Five findings in one repository were this and nothing else, all of
+    them on deliberate re-export identity tests: the fix each finding invited was to delete the very
+    assertion that proves the re-export is a live alias.
+    """
+
+    @staticmethod
+    def _project(tmp_path):
+        """`pkg` re-exports `_SOURCES` from `pkg.queries`; `pkg.vocabulary` is an unrelated sibling."""
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text(
+            "from pkg.queries import _SOURCES\n\n__all__ = ['_SOURCES']\n", encoding="utf-8"
+        )
+        (pkg / "queries.py").write_text("_SOURCES = ('a',)\n", encoding="utf-8")
+        # An UNRELATED sibling, and the one the test ALSO imports -- the real shape. The defect
+        # resolved the bare package name to this module, which has nothing to do with `_SOURCES`.
+        (pkg / "vocabulary.py").write_text("WORDS = ()\n", encoding="utf-8")
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        return tests
+
+    def test_a_reexported_name_set_on_the_package_is_not_reported(self, tmp_path):
+        """The shape the checker was wrong about: the submodule import must not steal the name."""
+        tests = self._project(tmp_path)
+        body = (
+            "import pkg\n"
+            "import pkg.vocabulary\n"
+            "\n"
+            "\n"
+            "def test_the_reexport_is_a_live_alias():\n"
+            "    pkg._SOURCES = ('sentinel',)\n"
+        )
+
+        assert not _scan(tmp_path, tests, body)
+
+    def test_a_name_absent_from_the_package_is_still_reported(self, tmp_path):
+        """The fix must not buy quiet by resolving the bare name to nothing at all."""
+        tests = self._project(tmp_path)
+        body = (
+            "import pkg\n"
+            "import pkg.vocabulary\n"
+            "\n"
+            "\n"
+            "def test_it():\n"
+            "    pkg.never_defined = 1\n"
+        )
+
+        assert [f.target for f in _scan(tmp_path, tests, body)] == ["pkg.never_defined"]
+
+    def test_an_explicit_alias_still_means_the_submodule(self, tmp_path):
+        """`import pkg.vocabulary as v` binds `v`, and `v` IS the submodule -- unchanged by the fix."""
+        tests = self._project(tmp_path)
+        body = "import pkg.vocabulary as v\n\n\ndef test_it():\n    v.never_defined = 1\n"
+
+        assert [f.target for f in _scan(tmp_path, tests, body)] == ["pkg.vocabulary.never_defined"]

@@ -208,8 +208,17 @@ def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str,
     for node in body:
         if isinstance(node, ast.Import):
             for alias in node.names:
-                if alias.name in known:
-                    aliases[alias.asname or alias.name.split(".")[0]] = alias.name
+                if alias.asname:
+                    if alias.name in known:
+                        aliases[alias.asname] = alias.name
+                    continue
+                # `import a.b.c` binds `a`, and `a` is the PACKAGE -- not `a.b.c`. Mapping the bare
+                # name to the submodule reads `a.thing = x` against the submodule's namespace, so a
+                # name the package re-exports is reported absent. That is not hypothetical: three
+                # such findings in one repo were all `import pkg` followed by `import pkg.sub`.
+                root = alias.name.split(".")[0]
+                if root in known:
+                    aliases[root] = root
         elif isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 candidate = f"{node.module}.{alias.name}"
