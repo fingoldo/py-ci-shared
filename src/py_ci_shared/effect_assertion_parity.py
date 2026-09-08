@@ -36,6 +36,8 @@ no test currently inspects.
 from __future__ import annotations
 
 import ast
+import os
+from functools import lru_cache
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
@@ -46,7 +48,17 @@ __all__ = [
     "find_unasserted_effects",
 ]
 
-_SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache", "build", "dist"})
+#: Directories whose contents are not this repository's own source.
+#:
+#: ``.claude`` earns its place the hard way. Claude Code puts agent worktrees under
+#: ``.claude/worktrees/``, and a worktree is a FULL SECOND CHECKOUT of the repository. On
+#: mlframe, five of them made 56,500 of the tree's 62,765 ``.py`` files copies -- the scan
+#: walked the repository six times over, took more than the 900s test timeout, and read as a
+#: hang rather than as a directory that should never have been entered. ``.tox`` and
+#: ``site-packages`` are the same mistake wearing different names.
+_SKIP_DIRS = frozenset(
+    {".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache", "build", "dist", ".claude", ".tox", ".eggs", "site-packages"}
+)
 
 #: The effects worth pairing by default: a transaction boundary and a statement execution. Each is a
 #: call whose entire purpose is what it does elsewhere, so a return-value assertion cannot see it.
@@ -358,7 +370,7 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str]) -> dict[str, se
     silently satisfy the check.
     """
     helpers: dict[str, set[str]] = {}
-    for path in sorted(repo_root.rglob("*.py")):
+    for path in _py_files(repo_root):
         if path.name.startswith("test_"):
             continue
         try:
@@ -439,6 +451,34 @@ def _inspects(
     return found
 
 
+@lru_cache(maxsize=None)
+def _cached_imported_names(path: Path) -> frozenset[str]:
+    """`_imported_names` memoised on the path.
+
+    `by_module` maps up to three names to one file -- the flat name, the package-qualified
+    name, and the src-stripped one -- and the edge pass walks that mapping, so without this
+    every source file is read and parsed up to three times over.
+    """
+    return frozenset(_imported_names(path))
+
+
+def _py_files(root: Path) -> "list[Path]":
+    """Every ``.py`` under *root*, with skipped directories never entered.
+
+    ``rglob`` descends into everything and filters afterwards, so a repository holding agent
+    worktrees under ``.claude/`` pays the full walk of every copy -- and this module walked the tree
+    four separate times. Pruning ``dirnames`` in place makes the directory tree itself smaller
+    instead of discarding paths after the cost is already sunk.
+    """
+    found: "list[Path]" = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for name in filenames:
+            if name.endswith(".py"):
+                found.append(Path(dirpath) / name)
+    return sorted(found)
+
+
 def _imported_names(path: Path) -> set[str]:
     """Every dotted name the file imports, in both forms.
 
@@ -503,10 +543,10 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
 
     sources = [
         p
-        for p in repo_root.rglob("*.py")
-        if not _SKIP_DIRS & set(p.parts) and "tests" not in p.relative_to(repo_root).parts
+        for p in _py_files(repo_root)
+        if "tests" not in p.relative_to(repo_root).parts
     ]
-    tests = [p for p in repo_root.rglob("test_*.py") if not _SKIP_DIRS & set(p.parts)]
+    tests = [p for p in _py_files(repo_root) if p.name.startswith("test_")]
 
     by_module: dict[str, Path] = {}
     for path in sources:
@@ -517,7 +557,7 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
         if src_dir and flat.startswith(f"{src_dir}."):
             by_module[flat[len(src_dir) + 1 :]] = path
 
-    own_edges = {name: {i for i in _imported_names(path) if i in by_module} for name, path in by_module.items()}
+    own_edges = {name: {i for i in _cached_imported_names(path) if i in by_module} for name, path in by_module.items()}
 
     hits: dict[str, set[str]] = {}
     for test in tests:
@@ -528,6 +568,19 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
                 test.relative_to(repo_root).as_posix()
             )
     return {source: sorted(found) for source, found in sorted(hits.items())}
+
+
+@lru_cache(maxsize=None)
+def _patches_a_real_driver_cached(path: Path) -> bool:
+    """`_patches_a_real_driver` memoised on the path.
+
+    The caller asks this per (module, importing test), so a conftest-heavy test imported by a
+    hundred modules was parsed a hundred times. On mlframe that was most of a nine-minute run.
+    """
+    try:
+        return _patches_a_real_driver(ast.parse(path.read_text(encoding="utf-8", errors="replace")))
+    except SyntaxError:
+        return False
 
 
 def find_unasserted_effects(
@@ -549,8 +602,8 @@ def find_unasserted_effects(
     # three packages down. Collected once: this is an AST parse per conftest, not per test.
     db_fixtures = frozenset(
         name
-        for conftest in repo_root.rglob("conftest.py")
-        if not _SKIP_DIRS & set(conftest.parts)
+        for conftest in _py_files(repo_root)
+        if conftest.name == "conftest.py"
         for name in _fixture_names_backed_by_a_real_database(conftest)
     )
 
@@ -566,8 +619,7 @@ def find_unasserted_effects(
         # does neither of those two things is still running it, and the assertion it makes will be
         # about the ROWS, through the module's own reader. See `_owns_its_connection`.
         if _owns_its_connection(module_path) and any(
-            (repo_root / test).is_file() and not _patches_a_real_driver(ast.parse((repo_root / test).read_text(encoding="utf-8", errors="replace")))
-            for test in tests
+            (repo_root / test).is_file() and not _patches_a_real_driver_cached(repo_root / test) for test in tests
         ):
             continue
         for effect in sorted(performed):

@@ -701,3 +701,73 @@ class TestARepositoryThatIsItselfAPackage:
         _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    assert store.save(conn) is None\n")
 
         assert "store.py" in build_import_map(tmp_path)
+
+
+class TestANestedCheckoutIsNotThisRepository:
+    """A worktree under `.claude/` is a full second copy, and scanning it is not free.
+
+    Claude Code puts agent worktrees in `.claude/worktrees/`. Each is an entire checkout, so on a
+    large repository the scan walks the tree once per worktree plus once for the tree itself. On
+    mlframe that made 56,500 of 62,765 `.py` files copies: `build_import_map` ran past the suite's
+    900-second timeout and the failure read as a hang, not as a directory that should never have
+    been entered.
+
+    The copies are not merely slow, they are WRONG: a module and its duplicate resolve to different
+    flat names, so an effect can be paired with a test out of the copy rather than the real one.
+    """
+
+    def test_a_test_inside_a_nested_worktree_does_not_count_as_coverage(self, tmp_path):
+        """The concrete harm, asserted where it actually lands: the map's TEST side.
+
+        The copy's own `tests/test_store.py` matches `test_*.py`, imports `store`, and resolves to
+        the REAL `store.py` -- so the effect gets paired with a test living in a throwaway checkout.
+        Delete that worktree and the coverage this gate reported silently vanishes.
+
+        Asserting on the map's KEYS instead proves nothing: a nested copy resolves to a module name
+        nothing imports, so it never appears there. The first version of this test did that and
+        passed against the unfixed scanner.
+        """
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        copy = tmp_path / ".claude" / "worktrees" / "agent-abc"
+        (copy / "tests").mkdir(parents=True)
+        (copy / "store.py").write_text("def save(conn):\n    conn.commit()\n", encoding="utf-8")
+        (copy / "tests" / "test_store.py").write_text("import store\n", encoding="utf-8")
+
+        import_map = build_import_map(tmp_path)
+
+        counted = [t for found in import_map.values() for t in found if ".claude" in t]
+        assert not counted, f"a test inside a nested worktree was counted as coverage: {counted}"
+
+    def test_the_other_nested_checkout_names_are_skipped_too(self, tmp_path):
+        """`.tox`, `.eggs` and a vendored `site-packages` are the same mistake under other names."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        for junk in (".tox", "site-packages", ".eggs"):
+            d = tmp_path / junk / "tests"
+            d.mkdir(parents=True)
+            (d / "test_store.py").write_text("import store\n", encoding="utf-8")
+
+        import_map = build_import_map(tmp_path)
+
+        counted = [t for found in import_map.values() for t in found if any(j in t for j in (".tox", "site-packages", ".eggs"))]
+        assert not counted, f"tests from a vendored or throwaway tree were counted: {counted}"
+
+    def test_one_file_is_parsed_once_however_many_names_reach_it(self, tmp_path, monkeypatch):
+        """`by_module` holds up to three names per file; the edge pass must not re-read it each time.
+
+        Not a timing assertion -- those are flaky. This counts the reads, which is the property the
+        memoisation actually has.
+        """
+        import py_ci_shared.effect_assertion_parity as parity
+
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n")
+
+        parity._cached_imported_names.cache_clear()
+        reads: list = []
+        real = parity._imported_names
+        monkeypatch.setattr(parity, "_imported_names", lambda p: reads.append(p) or real(p))
+
+        build_import_map(tmp_path, package_name="pkg", src_dir="src")
+
+        store_reads = [p for p in reads if p.name == "store.py"]
+        assert len(store_reads) == 1, f"store.py was parsed {len(store_reads)} times"
