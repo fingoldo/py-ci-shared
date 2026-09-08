@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
+from py_ci_shared import repo_hygiene
 from py_ci_shared.repo_hygiene import (
     assert_repo_hygiene,
     find_missing_required_files,
@@ -108,3 +109,49 @@ class TestAssert:
         repo = _git_repo(tmp_path, "tool/__pycache__/x.pyc")
         with pytest.raises(pytest.fail.Exception, match="__pycache__"):
             assert_repo_hygiene(repo)
+
+
+class TestNulBytesInTextFiles:
+    """Rule 4: a NUL makes a text file invisible to grep, silently.
+
+    production_scrapers CQ-35 (2026-09-09): an audit file held one for eight days, so every text
+    search over that tree reported nothing about seven findings of a closed round. The byte arrived
+    inside a sentence ABOUT NUL stripping.
+    """
+
+    def test_a_nul_in_markdown_is_found(self, tmp_path):
+        (tmp_path / "notes.md").write_bytes(b"literal `\x00` text")
+        found = repo_hygiene.find_text_files_with_nul_bytes(tmp_path)
+        assert found and found[0].startswith("notes.md")
+        assert "first at byte" in found[0]
+
+    def test_clean_text_is_not_flagged(self, tmp_path):
+        # The ESCAPE, four characters, which is what the offending file should have said. Built
+        # with chr(92) so no shell or heredoc between here and disk can turn it back into the byte
+        # -- which is exactly what happened while writing this test.
+        (tmp_path / "notes.md").write_text("literal `" + chr(92) + "x00` text -- the escape, written properly")
+        assert repo_hygiene.find_text_files_with_nul_bytes(tmp_path) == []
+
+    def test_a_binary_fixture_is_left_alone(self, tmp_path):
+        """The suffix list is why: a `.png` full of NULs is not a defect."""
+        (tmp_path / "logo.png").write_bytes(b"\x89PNG\x00\x00\x00")
+        assert repo_hygiene.find_text_files_with_nul_bytes(tmp_path) == []
+
+    def test_skipped_directories_are_skipped(self, tmp_path):
+        cache = tmp_path / "__pycache__"
+        cache.mkdir()
+        (cache / "x.md").write_bytes(b"\x00")
+        assert repo_hygiene.find_text_files_with_nul_bytes(tmp_path) == []
+
+    def test_the_entry_point_reports_it(self, tmp_path):
+        """`assert_repo_hygiene` shells out to `git ls-files` for rule 1, so the fixture needs to
+        be a repository -- without it the entry point raises about git and the NUL goes unmentioned,
+        which is how the first version of this test 'failed'."""
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / "notes.md").write_bytes(bytes([0]))
+        # BaseException, not Exception: `pytest.fail` raises `Failed`, which derives from
+        # `BaseException` so that an `except Exception` in the code under test cannot swallow a
+        # failed assertion. `pytest.raises(Exception)` therefore does not catch it.
+        with pytest.raises(BaseException) as excinfo:
+            repo_hygiene.assert_repo_hygiene(tmp_path)
+        assert "NUL byte" in str(excinfo.value)

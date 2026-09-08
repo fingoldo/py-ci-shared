@@ -19,8 +19,20 @@ Small, boring rules that each cost one line to satisfy and are invisible until t
    ``: "${VAR:?}"``) in any block that compares a shell variable numerically. Found as glossum
    P04-5, where a coverage percentage that failed to parse read as "coverage fine".
 
+4. **No NUL byte in a text file.** ``grep`` classifies such a file as binary and prints
+   ``Binary file ... matches`` instead of the matches, so every text search over that tree skips it
+   and says nothing. Found 2026-09-09 as production_scrapers CQ-35: an audit file had held one for
+   eight days, hiding seven findings of a closed round from every search. The byte arrived inside a
+   sentence *about* NUL stripping -- the four characters spelling the escape written as the byte --
+   and the same slip was made twice that week, the other time in a code comment about NUL handling.
+   The shape is easy to produce precisely when the subject makes it plausible.
+
+   Scoped to text suffixes on purpose. In a ``.py`` file a NUL fails loudly (``SyntaxError: source
+   code string cannot contain null bytes``, at import), so the interpreter already catches it; the
+   rule earns its place on ``.md``/``.sql``/``.toml``/``.txt``, where it is silent.
+
 Deliberately dependency-free (``git ls-files`` via subprocess, regex over workflow text), and
-language-agnostic: rules 1 and 3 fire on any repo, rule 2 takes the caller's own list.
+language-agnostic: rules 1, 3 and 4 fire on any repo, rule 2 takes the caller's own list.
 
 Usage::
 
@@ -101,6 +113,48 @@ def find_missing_required_files(repo_root: Path, required_files: Iterable[str]) 
     return [name for name in required_files if not (repo_root / name).exists()]
 
 
+#: Suffixes something reads as TEXT. A list rather than "anything not known-binary": a new binary
+#: fixture must not start failing this, and missing a text suffix costs coverage, not a false alarm.
+DEFAULT_TEXT_SUFFIXES: "tuple[str, ...]" = (".py", ".md", ".sql", ".toml", ".yaml", ".yml", ".json", ".txt", ".ini", ".cfg", ".rst")
+
+
+def find_text_files_with_nul_bytes(
+    repo_root: Path,
+    *,
+    text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
+    skip_dirs: Iterable[str] = (
+        ".git",
+        "__pycache__",
+        ".hypothesis",
+        ".benchmarks",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".mypy_cache",
+        "node_modules",
+        "build",
+        "dist",
+        "logs",
+        "checkpoints",
+    ),
+) -> list[str]:
+    """`path (xN, first at byte B)` for every text file holding a NUL byte."""
+    skip = set(skip_dirs)
+    suffixes = {suffix.lower() for suffix in text_suffixes}
+    out: list[str] = []
+    for path in sorted(repo_root.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in suffixes:
+            continue
+        if set(path.relative_to(repo_root).parts) & skip:
+            continue
+        try:
+            blob = path.read_bytes()
+        except OSError:
+            continue
+        if b"\x00" in blob:
+            out.append(f"{path.relative_to(repo_root).as_posix()} (x{blob.count(bytes([0]))}, first at byte {blob.index(bytes([0]))})")
+    return out
+
+
 def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
     """Return one problem string per workflow ``run:`` block that compares a shell variable
     numerically without first proving the variable is non-empty."""
@@ -139,6 +193,7 @@ def assert_repo_hygiene(
     required_files: Iterable[str] = (),
     generated_patterns: Sequence[str] = _DEFAULT_GENERATED_PATTERNS,
     workflows_dir: "Path | None" = None,
+    text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
 ) -> None:
     """Fail on tracked generated files, missing required files, or an unguarded numeric CI gate."""
     import pytest
@@ -147,8 +202,14 @@ def assert_repo_hygiene(
     tracked = find_tracked_generated_files(repo_root, generated_patterns)
     if tracked:
         problems.append(
-            f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and "
-            f"conflict on every merge:\n    " + "\n    ".join(tracked[:20])
+            f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and conflict on every merge:\n    " + "\n    ".join(tracked[:20])
+        )
+    nul_files = find_text_files_with_nul_bytes(repo_root, text_suffixes=text_suffixes)
+    if nul_files:
+        problems.append(
+            f"{len(nul_files)} text file(s) contain a NUL byte. grep reports these as BINARY and "
+            "prints no matches, so every text search silently skips them. If you meant the escape, "
+            "write the four characters:\n    " + "\n    ".join(nul_files[:20])
         )
     missing = find_missing_required_files(repo_root, required_files)
     if missing:
