@@ -31,8 +31,17 @@ Small, boring rules that each cost one line to satisfy and are invisible until t
    code string cannot contain null bytes``, at import), so the interpreter already catches it; the
    rule earns its place on ``.md``/``.sql``/``.toml``/``.txt``, where it is silent.
 
+5. **No UTF-8 BOM.** Measured rather than assumed: ``json.loads`` raises ``Unexpected UTF-8 BOM``
+   and ``tomllib.loads`` raises ``Invalid statement (at line 1, column 1)``, so a BOM is a HARD
+   parse failure in the two formats a repo keeps its baselines and config in. Python source
+   tolerates it (the interpreter accepts ``utf-8-sig``), and in Markdown it is quieter but not
+   harmless: the first line stops starting with what it appears to start with, so
+   ``line.startswith("#")`` is False, ``grep '^# '`` misses the title, and a shebang check on a
+   BOM'd script fails. Found 2026-09-09 as dashboard's ``audits/2026-09-03/03_performance.md``:
+   one file in 1,700, three bytes, and ``grep '^# '`` went from finding one heading to two.
+
 Deliberately dependency-free (``git ls-files`` via subprocess, regex over workflow text), and
-language-agnostic: rules 1, 3 and 4 fire on any repo, rule 2 takes the caller's own list.
+language-agnostic: rules 1, 3, 4 and 5 fire on any repo, rule 2 takes the caller's own list.
 
 Usage::
 
@@ -118,34 +127,43 @@ def find_missing_required_files(repo_root: Path, required_files: Iterable[str]) 
 DEFAULT_TEXT_SUFFIXES: "tuple[str, ...]" = (".py", ".md", ".sql", ".toml", ".yaml", ".yml", ".json", ".txt", ".ini", ".cfg", ".rst")
 
 
+#: Directories no rule here should descend into. Shared by rules 4 and 5.
+_DEFAULT_SKIP_DIRS: "tuple[str, ...]" = (
+    ".git",
+    "__pycache__",
+    ".hypothesis",
+    ".benchmarks",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    "node_modules",
+    "build",
+    "dist",
+    "logs",
+    "checkpoints",
+)
+
+
+def _walk_text_files(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: Iterable[str]) -> "list[Path]":
+    """Every file under *repo_root* with a text suffix, outside the skipped directories."""
+    skip = set(skip_dirs)
+    suffixes = {suffix.lower() for suffix in text_suffixes}
+    return [
+        path
+        for path in sorted(repo_root.rglob("*"))
+        if path.is_file() and path.suffix.lower() in suffixes and not (set(path.relative_to(repo_root).parts) & skip)
+    ]
+
+
 def find_text_files_with_nul_bytes(
     repo_root: Path,
     *,
     text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
-    skip_dirs: Iterable[str] = (
-        ".git",
-        "__pycache__",
-        ".hypothesis",
-        ".benchmarks",
-        ".pytest_cache",
-        ".ruff_cache",
-        ".mypy_cache",
-        "node_modules",
-        "build",
-        "dist",
-        "logs",
-        "checkpoints",
-    ),
+    skip_dirs: Iterable[str] = _DEFAULT_SKIP_DIRS,
 ) -> list[str]:
     """`path (xN, first at byte B)` for every text file holding a NUL byte."""
-    skip = set(skip_dirs)
-    suffixes = {suffix.lower() for suffix in text_suffixes}
     out: list[str] = []
-    for path in sorted(repo_root.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in suffixes:
-            continue
-        if set(path.relative_to(repo_root).parts) & skip:
-            continue
+    for path in _walk_text_files(repo_root, text_suffixes, skip_dirs):
         try:
             blob = path.read_bytes()
         except OSError:
@@ -153,6 +171,25 @@ def find_text_files_with_nul_bytes(
         if b"\x00" in blob:
             out.append(f"{path.relative_to(repo_root).as_posix()} (x{blob.count(bytes([0]))}, first at byte {blob.index(bytes([0]))})")
     return out
+
+
+def find_text_files_with_a_bom(
+    repo_root: Path,
+    *,
+    text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
+    skip_dirs: Iterable[str] = _DEFAULT_SKIP_DIRS,
+) -> list[str]:
+    """Text files beginning with a UTF-8 BOM.
+
+    Shares `DEFAULT_TEXT_SUFFIXES` with the NUL rule deliberately: both are "this file is not the
+    plain text every tool assumes", and a repo that disagrees about which files are text would get
+    two different answers from one setting.
+    """
+    return [
+        path.relative_to(repo_root).as_posix()
+        for path in _walk_text_files(repo_root, text_suffixes, skip_dirs)
+        if path.read_bytes().startswith(b"\xef\xbb\xbf")
+    ]
 
 
 def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
@@ -210,6 +247,13 @@ def assert_repo_hygiene(
             f"{len(nul_files)} text file(s) contain a NUL byte. grep reports these as BINARY and "
             "prints no matches, so every text search silently skips them. If you meant the escape, "
             "write the four characters:\n    " + "\n    ".join(nul_files[:20])
+        )
+    bom_files = find_text_files_with_a_bom(repo_root, text_suffixes=text_suffixes)
+    if bom_files:
+        problems.append(
+            f"{len(bom_files)} text file(s) start with a UTF-8 BOM. `json.loads` and `tomllib.loads` "
+            "REJECT it outright, and in Markdown the first line stops starting with what it looks "
+            "like it starts with:\n    " + "\n    ".join(bom_files[:20])
         )
     missing = find_missing_required_files(repo_root, required_files)
     if missing:

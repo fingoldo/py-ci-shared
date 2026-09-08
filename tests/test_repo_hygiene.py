@@ -155,3 +155,48 @@ class TestNulBytesInTextFiles:
         with pytest.raises(BaseException) as excinfo:
             repo_hygiene.assert_repo_hygiene(tmp_path)
         assert "NUL byte" in str(excinfo.value)
+
+
+class TestUtf8BomsInTextFiles:
+    """Rule 5: a BOM is a HARD parse failure in json/toml and a quiet one in Markdown.
+
+    Measured, not assumed: `json.loads` raises `Unexpected UTF-8 BOM` and `tomllib.loads` raises
+    `Invalid statement (at line 1, column 1)`. Python source tolerates it. Found 2026-09-09 as
+    dashboard's `audits/2026-09-03/03_performance.md` -- one file in 1,700, three bytes, and
+    `grep '^# '` went from finding one heading to two once they were gone.
+    """
+
+    BOM = b"\xef\xbb\xbf"
+
+    def test_a_bom_in_markdown_is_found(self, tmp_path):
+        (tmp_path / "notes.md").write_bytes(self.BOM + b"# Title")
+        assert repo_hygiene.find_text_files_with_a_bom(tmp_path) == ["notes.md"]
+
+    def test_a_file_without_one_is_not_flagged(self, tmp_path):
+        (tmp_path / "notes.md").write_bytes(b"# Title")
+        assert repo_hygiene.find_text_files_with_a_bom(tmp_path) == []
+
+    def test_json_really_does_reject_it(self):
+        """The measurement the rule rests on, kept as a test because 'a BOM is harmless' is the
+        intuition it contradicts."""
+        import json
+
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(self.BOM.decode("utf-8") + '{"a": 1}')
+
+    def test_python_source_really_does_tolerate_it(self):
+        """The other half, and the reason the rule is not described as 'always fatal'."""
+        compile(self.BOM + b"x = 1", "<test>", "exec")
+
+    def test_the_two_rules_agree_on_what_a_text_file_is(self, tmp_path):
+        """Both walk `_walk_text_files`; a `.png` is neither rule's business."""
+        (tmp_path / "logo.png").write_bytes(self.BOM + b"\x00\x00")
+        assert repo_hygiene.find_text_files_with_a_bom(tmp_path) == []
+        assert repo_hygiene.find_text_files_with_nul_bytes(tmp_path) == []
+
+    def test_the_entry_point_reports_it(self, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / "notes.md").write_bytes(self.BOM + b"# Title")
+        with pytest.raises(BaseException) as excinfo:
+            repo_hygiene.assert_repo_hygiene(tmp_path)
+        assert "BOM" in str(excinfo.value)
