@@ -478,6 +478,13 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     exists to prevent, and it was reported as a clean result on a repository with seven real
     findings. Detection makes the default correct; an explicit argument still wins.
     """
+    # A repository that IS a package -- `dashboard/__init__.py` at its root, tests importing
+    # `from dashboard import data` -- maps its files as bare `data.py` while every test names
+    # `dashboard.data`, so almost nothing matches. Measured on one: 2 modules resolved out of 250
+    # files, and the check reported it clean. Same silent-empty-map failure as the src layout below,
+    # through a different door.
+    if not package_name and (repo_root / "__init__.py").is_file():
+        package_name = repo_root.name
     if not src_dir and (repo_root / "src").is_dir():
         packages = [
             d for d in (repo_root / "src").iterdir()

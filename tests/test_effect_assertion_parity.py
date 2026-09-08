@@ -657,3 +657,47 @@ class TestExecuteIsAlsoAnOrdinaryWord:
         _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(session):\n    assert store.save(session) is None\n")
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+
+
+class TestARepositoryThatIsItselfAPackage:
+    """`dashboard/__init__.py` at the root, tests importing `from dashboard import data`.
+
+    Files map as bare `data.py` while every test names `dashboard.data`, so almost nothing
+    matches and the map comes back nearly empty. Measured on one such repository: 2 modules
+    resolved out of 250 files, and the check reported it clean. That is the same silent
+    empty-population failure as the src layout, arriving through a different door.
+    """
+
+    @staticmethod
+    def _repo(tmp_path: Path) -> Path:
+        """A package-shaped repo whose test imports through the package name."""
+        _write(tmp_path, "__init__.py", "")
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.execute('INSERT INTO t VALUES (1)')\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from " + tmp_path.name + " import store\n\n\ndef test_it(conn):\n    assert store.save(conn) is None\n")
+        return tmp_path
+
+    def test_the_map_is_not_empty(self, tmp_path: Path):
+        root = self._repo(tmp_path)
+
+        assert build_import_map(root), "a package-shaped repo resolved no modules at all"
+
+    def test_its_effects_are_reported(self, tmp_path: Path):
+        """Before detection this returned {} and read as a clean repository."""
+        root = self._repo(tmp_path)
+
+        problems = find_unasserted_effects(root, build_import_map(root))
+
+        assert "store.py::commit" in problems
+        assert "store.py::execute" in problems
+
+    def test_an_explicit_package_name_still_wins(self, tmp_path: Path):
+        root = self._repo(tmp_path)
+
+        assert build_import_map(root, package_name=root.name) == build_import_map(root)
+
+    def test_a_repo_with_no_root_init_is_untouched(self, tmp_path: Path):
+        """Detection must not change what already worked."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    assert store.save(conn) is None\n")
+
+        assert "store.py" in build_import_map(tmp_path)
