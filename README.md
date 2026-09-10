@@ -483,6 +483,29 @@ if problems:
 
 Install it the same way the Python consumers do: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared@<sha>"`.
 
+## LLM-output preservation gates
+
+Static checks that an answer the model was asked for, and paid for, is not thrown away. Written for glossum
+and autopsia, which store to PostgreSQL and to JSONL/JSON files respectively, so nothing in them assumes
+either store. The runtime halves (the attempt archive, the sentinel sweep, the blast-radius diff) live in
+`pyutilz.dev`, because they import `pyutilz.llm` or touch a live store.
+
+- `llm_call_archive_gate` -- every paid call goes through the place that keeps its raw answer:
+  `find_direct_sdk_calls` (`.messages.create`, `.chat.completions.create`, `.generate_content`),
+  `find_unwrapped_providers` (a provider class or an unwrapping factory used outside the wrapping
+  factory), `find_generate_calls_without_archive` (a module calling `generate*` that never names the
+  archive), and `assert_every_llm_call_is_archived`, which takes an `allowed` file -> reason mapping and
+  fails for a stale entry.
+- `prompt_field_parity` -- a field a prompt or dict schema asks for is read by something and stored:
+  keys from prose fences (`keys_in_source`) and directly from dict schemas (`keys_in_schema`); consumers
+  with benchmark/gold modules excluded; run-time keys only through a real accessor; storage as SQL DDL
+  plus binds or as a file writer's keys; and the gate's own blind spots as checks (`invisible_keys`,
+  `undemonstrated_fields`, `structural_names_prompted`). Baselining is the caller's.
+- `save_failure_markers` -- every `<name>_failed` marker a writer emits is fatal per the caller's
+  predicate or listed as non-fatal with a reason; stale and wrongly-listed entries fail.
+- `dataclass_case_completeness` -- every `@dataclass` matching a name pattern has a test case or an
+  exemption with a reason; stale names fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
