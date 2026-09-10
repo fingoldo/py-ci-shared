@@ -148,6 +148,8 @@ def find_aggregate_group_drift(pyproject_path: Path, doc_path: Path, pattern: st
     there the most expensive documentation drift in the file.
 
     Args:
+        pyproject_path: the ``pyproject.toml`` whose ``[project.optional-dependencies]`` is the source of truth.
+        doc_path: the document whose prose states the aggregate group's composition.
         pattern: a regex with two capture groups, ``(group_name)`` and a comma-separated
             ``(member_group_list)``, matching the prose that states the composition.
     """
@@ -227,9 +229,12 @@ def find_phantom_doc_paths(
     read as a broken path.
 
     Args:
+        doc_paths: the documents whose backticked repo paths are checked.
+        repo_root: the directory a documented path is resolved against by default.
         search_roots: extra directories a documented path may be relative to, beyond
             ``repo_root``. Docs routinely write a path relative to the source package
             (``web/browser.py``) rather than to the repo, and both are legitimate.
+        ignore: path tokens to skip entirely (deliberately aspirational or externally-owned ones).
         recent_sections: ``{filename: n}`` -- scan only the first ``n`` ``##`` sections of that
             document. For a CHANGELOG this is the difference between a useful check and an
             impossible one: an old entry names the tree AS IT WAS, so a refactor that moves a
