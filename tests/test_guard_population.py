@@ -70,6 +70,36 @@ class TestFindGuardsWithEmptyPopulation:
         tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'NeverAppears' lib\n", "lib/a.dart")
         assert len(find_guards_with_empty_population(tool, root)) == 1
 
+    def test_a_multi_line_command_substitution_is_not_prepended(self, tmp_path):
+        # `hits="$(` opens a substitution the next lines finish. Prepended as an assignment it gave
+        # `hits="$(; find ...`, a syntax error that was reported as a broken guard.
+        body = "#!/bin/sh\nhits=\"$(\n  find lib -name '*.dart' -print0 \\\n  | xargs -0 cat\n)\"\n"
+        tool, root = _repo(tmp_path, body, "lib/a.dart")
+        assert find_guards_with_empty_population(tool, root) == []
+
+    def test_a_pipe_and_parentheses_inside_a_quoted_pattern_belong_to_it(self, tmp_path):
+        # The selection used to be cut at the `|` inside the quotes, leaving `grep -rlE 'class (Foo`.
+        tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rlE 'class (Foo|Bar)' lib\n", "lib/a.dart")
+        assert find_guards_with_empty_population(tool, root) == []
+
+    def test_the_same_quoted_pattern_still_reports_an_empty_population(self, tmp_path):
+        # Teeth for the case above: the command genuinely RAN, so a pattern that selects nothing is
+        # flagged as matching nothing rather than as a command that could not run.
+        tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rlE 'class (Nope|Never)' lib\n", "lib/a.dart")
+        problems = find_guards_with_empty_population(tool, root)
+        assert len(problems) == 1
+        assert "matches nothing" in problems[0]
+
+    def test_a_selection_inside_command_substitution_stops_at_its_close(self, tmp_path):
+        body = "#!/bin/sh\nfor f in $(find lib -name '*.dart'); do echo \"$f\"; done\n"
+        tool, root = _repo(tmp_path, body, "lib/a.dart")
+        assert find_guards_with_empty_population(tool, root) == []
+
+    def test_a_quote_closing_on_a_later_line_is_not_a_guard_problem(self, tmp_path):
+        # Not replayable from one line; that is the parser's limit, not the guard's fault.
+        tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'first\nsecond' lib\n", "lib/a.dart")
+        assert find_guards_with_empty_population(tool, root) == []
+
     def test_skip_list_is_honoured(self, tmp_path):
         tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'Nope' lib\n", "lib/a.dart")
         assert find_guards_with_empty_population(tool, root, skip=["check-x.sh"]) == []

@@ -53,6 +53,43 @@ _SELF_ASSERT_RE = re.compile(
 _ASSIGNMENT_RE = re.compile(r"^\s*(\w+)=(?!\s)(\S.*)$")
 
 
+def _read_shell(text: str) -> "tuple[str, bool]":
+    """``text`` up to its first ``|``, ``;`` or ``&`` outside quotes, or up to a ``)`` closing a
+    parenthesis it did not open; and whether ALL of ``text`` is balanced - every quote closed and
+    every parenthesis matched - as bash would read it.
+
+    The selection regex cannot do either: its stop set cannot tell a ``|`` or ``)`` inside quotes
+    from one outside, so ``grep -rlE 'a|b'`` and ``grep -rl 'initState()'`` were cut mid-pattern
+    into an unclosed quote, and replaying that failed as though the guard were broken.
+    """
+    quote = ""
+    depth = 0
+    cut: "int | None" = None
+    unmatched_close = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == quote:
+                quote = ""
+            elif ch == "\\" and quote == '"':
+                i += 1
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "\\":
+            i += 1
+        elif ch == "(":
+            depth += 1
+        elif ch == ")" and depth:
+            depth -= 1
+        elif (ch == ")" or (ch in "|;&" and not depth)) and cut is None:
+            cut = i
+            unmatched_close = unmatched_close or ch == ")"
+        i += 1
+    head = text if cut is None else text[:cut]
+    return head, not quote and not depth and not unmatched_close
+
+
 def _population_command(text: str) -> "str | None":
     """The guard's first file-selection command, with the variable assignments it depends on.
 
@@ -74,12 +111,16 @@ def _population_command(text: str) -> "str | None":
             # An assignment derived from the script's own location ($0, dirname) cannot be
             # replayed here - `bash -c` has no script path - so it is dropped and `root` is
             # seeded from the repository directory instead, which is what it would have been.
-            if "$0" not in stripped and "dirname" not in stripped:
+            # Nor can one that is not a whole statement on its own: `hits="$(` opens a substitution
+            # the following lines finish, and prepending it produced `hits="$(; find ...`.
+            if "$0" not in stripped and "dirname" not in stripped and _read_shell(stripped)[1]:
                 assignments.append(stripped)
             continue
         m = _POPULATION_RE.match(line)
         if m:
-            command = m.group(1).strip()
+            # The regex only FINDS the selection; its text is read from the line itself, since the
+            # regex's stop set would cut a quoted pattern at a `|` or `)` inside it.
+            command = line[m.start(1) :].strip()
             # A guard's selection command routinely spans lines with a trailing backslash; taking
             # the first line alone leaves an unbalanced `\(` and matches nothing.
             idx = lines.index(line) if line in lines else -1
@@ -87,8 +128,13 @@ def _population_command(text: str) -> "str | None":
                 idx += 1
                 command = command[:-1].strip() + " " + lines[idx].strip()
             command = command.rstrip("\\").strip()
-            # A command piped into something else keeps only the selection half.
-            command = command.split("|")[0].strip()
+            # A command piped into something else, or closing the `$(` it sits in, keeps only the
+            # selection half.
+            command = _read_shell(command)[0].strip()
+            # A pattern whose quote closes on a LATER line cannot be replayed from this one. That is
+            # this parser's limit, not a fault of the guard, so it is not reported as one.
+            if not _read_shell(command)[1]:
+                return None
             # After stripping continuations and pipes there may be nothing selective left (the
             # regex can latch onto an assignment that merely contains the word). Reporting that
             # as "matches nothing" would be a false positive of exactly the kind this check is
