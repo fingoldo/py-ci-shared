@@ -105,10 +105,7 @@ def changed_lines(
         args.append("HEAD")
     completed = subprocess.run(args, capture_output=True, check=False, env=_git_env())
     if completed.returncode != 0:
-        raise RuntimeError(
-            f"git diff failed in {root} (exit {completed.returncode}): "
-            f"{completed.stderr.decode('utf-8', 'replace')[:400]}"
-        )
+        raise RuntimeError(f"git diff failed in {root} (exit {completed.returncode}): " f"{completed.stderr.decode('utf-8', 'replace')[:400]}")
 
     out: dict[Path, list[range]] = {}
     current: Path | None = None
@@ -179,7 +176,7 @@ def lines_for(changed: dict[Path, list[range]], path: Path | str) -> list[range]
         # Segment-wise, not a raw suffix. `endswith` made `m.py` match `sub/m.py`, so a sweep could
         # be scoped by ANOTHER file's changed lines and report clean on lines it never looked at --
         # and `helpers.py` would match `test_helpers.py`.
-        if key == wanted or key.parts[-len(wanted.parts):] == wanted.parts:
+        if key == wanted or key.parts[-len(wanted.parts) :] == wanted.parts:
             return ranges
     return []
 
@@ -196,4 +193,4 @@ def _git_env() -> dict[str, str]:
     Found by a test that fails only inside a hook: outside one the variables are simply absent, so
     every ordinary run passed.
     """
-    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}

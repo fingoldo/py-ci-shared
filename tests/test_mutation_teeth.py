@@ -8,7 +8,6 @@ own mutants are wrong is worse than no harness, because its output is read as ev
 from __future__ import annotations
 
 import ast
-import io
 import time
 import tokenize
 from pathlib import Path
@@ -27,7 +26,7 @@ from py_ci_shared.mutation_teeth import (
 
 def _write(tmp_path: Path, text: str, name: str = "subject.py") -> Path:
     path = tmp_path / name
-    io.open(path, "w", encoding="utf-8", newline="").write(text)
+    open(path, "w", encoding="utf-8", newline="").write(text)
     return path
 
 
@@ -381,7 +380,7 @@ class TestWindowsSourceIsHandled:
     def test_crlf_line_endings_round_trip(self, tmp_path):
         crlf = chr(13) + chr(10)
         path = tmp_path / "crlf.py"
-        io.open(path, "w", encoding="utf-8", newline="").write("def f(a, b):" + crlf + "    return a > b" + crlf)
+        open(path, "w", encoding="utf-8", newline="").write("def f(a, b):" + crlf + "    return a > b" + crlf)
 
         mutants, _total, _sampled = generate_mutants(path)
 
@@ -417,7 +416,7 @@ class TestTheWorkerProtocolSurvivesTestOutput:
             + "    print('{" + chr(34) + "rc" + chr(34) + ": 999}')" + chr(10)
             + "    assert True" + chr(10)
         )
-        io.open(tmp_path / "test_noisy.py", "w", encoding="utf-8", newline="").write(noisy)
+        open(tmp_path / "test_noisy.py", "w", encoding="utf-8", newline="").write(noisy)
 
         with _WarmRunner(tmp_path, timeout=120) as warm:
             codes = [warm.run(["test_noisy.py"]) for _ in range(3)]
@@ -438,7 +437,7 @@ class TestTheWorkerProtocolSurvivesTestOutput:
             def poll(self):
                 return None
 
-            class stdin:
+            class stdin:  # noqa: N801 - stands in for Popen.stdin, so it must carry that name
                 @staticmethod
                 def write(_):
                     return None
@@ -447,7 +446,7 @@ class TestTheWorkerProtocolSurvivesTestOutput:
                 def flush():
                     return None
 
-            class stdout:
+            class stdout:  # noqa: N801 - stands in for Popen.stdout, so it must carry that name
                 @staticmethod
                 def readline():
                     return '"a bare json string"' + chr(10)
@@ -543,9 +542,9 @@ class TestABaselineEntryNamesOnePlace:
         src = tmp_path / "m.py"
         body = "def go():\n    return secrets.token_hex(8)\n"
         src.write_text("import secrets\n\n\n" + body, encoding="utf-8")
-        before = [m for m in mutation_teeth.generate_mutants(src)[0] if m.original_span == "8"][0]
+        before = next(m for m in mutation_teeth.generate_mutants(src)[0] if m.original_span == "8")
         src.write_text("import secrets\n\n\n# a new comment above\n\n\n" + body, encoding="utf-8")
-        after = [m for m in mutation_teeth.generate_mutants(src)[0] if m.original_span == "8"][0]
+        after = next(m for m in mutation_teeth.generate_mutants(src)[0] if m.original_span == "8")
 
         assert after.line != before.line, "the fixture did not actually shift the line"
         assert after.key == before.key
@@ -748,7 +747,7 @@ class TestTheOperatorsThatNeedAstSpans:
 
     def _mutants(self, tmp_path, body: str):
         src = tmp_path / "m.py"
-        io.open(src, "w", encoding="utf-8", newline="").write(body)
+        open(src, "w", encoding="utf-8", newline="").write(body)
         return mutation_teeth.generate_mutants(src)[0]
 
     def test_adjacent_arguments_are_transposed(self, tmp_path):
@@ -806,7 +805,7 @@ class TestSubstitutionNeedsARuleAndHasOne:
 
     def _mutants(self, tmp_path, body: str):
         src = tmp_path / "m.py"
-        io.open(src, "w", encoding="utf-8", newline="").write(body)
+        open(src, "w", encoding="utf-8", newline="").write(body)
         return mutation_teeth.generate_mutants(src)[0]
 
     def test_a_guard_pattern_is_widened_at_its_anchors(self, tmp_path):
@@ -894,7 +893,7 @@ class TestConcurrencyChangesSpeedAndNothingElse:
     def _repo(self, tmp_path: Path) -> Path:
         repo = tmp_path / "repo"
         (repo / "tests").mkdir(parents=True)
-        io.open(repo / "m.py", "w", encoding="utf-8", newline="").write(
+        open(repo / "m.py", "w", encoding="utf-8", newline="").write(
             "def clamp(n, cap):\n"
             "    if n > cap:\n"
             "        return cap\n"
@@ -904,7 +903,7 @@ class TestConcurrencyChangesSpeedAndNothingElse:
             "def unchecked(n):\n"
             "    return n * 2 + 1\n"
         )
-        io.open(repo / "tests" / "test_m.py", "w", encoding="utf-8", newline="").write(
+        open(repo / "tests" / "test_m.py", "w", encoding="utf-8", newline="").write(
             "from m import clamp\n"
             "\n"
             "\n"
@@ -1020,7 +1019,7 @@ class TestSkippingTheSyntaxCheckIsSafe:
             "    return max(used, min(n, cap)), any(items), all(items), text, TABLE.get('a', 0)\n"
         )
         src = tmp_path / "m.py"
-        io.open(src, "w", encoding="utf-8", newline="").write(body)
+        open(src, "w", encoding="utf-8", newline="").write(body)
 
         mutants, _total, _sampled = mutation_teeth.generate_mutants(src)
 
@@ -1038,7 +1037,7 @@ class TestSkippingTheSyntaxCheckIsSafe:
         """The concrete shape that motivated keeping `operator:` in the checked set: `*` in a
         parameter list is structure, not arithmetic, and swapping it produces `def f(/args)`."""
         src = tmp_path / "m.py"
-        io.open(src, "w", encoding="utf-8", newline="").write("def f(*args):\n    return args\n")
+        open(src, "w", encoding="utf-8", newline="").write("def f(*args):\n    return args\n")
 
         for mutant in mutation_teeth.generate_mutants(src)[0]:
             ast.parse(mutant.mutated_file_text)
@@ -1050,7 +1049,7 @@ class TestIdenticalMutantsRunOnce:
         its verdict has to reach BOTH, because each carries its own baseline key and a silently
         unrun twin turns an accepted entry stale without anything saying so."""
         src = tmp_path / "m.py"
-        io.open(src, "w", encoding="utf-8", newline="").write("def f(a, b):\n    return a + b\n")
+        open(src, "w", encoding="utf-8", newline="").write("def f(a, b):\n    return a + b\n")
         mutants, _t, _s = mutation_teeth.generate_mutants(src)
 
         texts = [m.mutated_file_text for m in mutants]

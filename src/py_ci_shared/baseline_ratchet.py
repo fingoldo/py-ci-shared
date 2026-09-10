@@ -119,10 +119,7 @@ class Baseline:
             return 1
 
         if stale:
-            print(
-                f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule - "
-                f"run {self.refresh_command} to prune:"
-            )
+            print(f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule - " f"run {self.refresh_command} to prune:")
             for key in sorted(stale):
                 print(f"  {key}")
 
@@ -156,8 +153,6 @@ def run_rules(
             worst = max(worst, 1)
             continue
         found = scan()  # type: ignore[operator]
-        code = Baseline(name, directory=directory, refresh_command=refresh_command).enforce(
-            found, label=label, guidance=guidance
-        )
+        code = Baseline(name, directory=directory, refresh_command=refresh_command).enforce(found, label=label, guidance=guidance)
         worst = max(worst, code)
     return worst

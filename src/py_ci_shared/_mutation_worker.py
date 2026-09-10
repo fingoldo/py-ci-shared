@@ -40,7 +40,6 @@ import sys
 import time
 from pathlib import Path
 
-
 #: `__file__` -> is it under the sandbox root. `Path.resolve()` is a syscall per entry, and the
 #: purge walked all ~3900 of `sys.modules` on EVERY mutant to find the ~84 local ones; measured
 #: at 2.3-6.3s per mutant, roughly 29% of a sweep. A module's `__file__` does not change while
@@ -60,11 +59,11 @@ class _FirstFailure:
     def __init__(self) -> None:
         self.path: str | None = None
 
-    def pytest_runtest_logreport(self, report) -> None:  # noqa: ANN001 - pytest's own type
+    def pytest_runtest_logreport(self, report) -> None:
         if self.path is None and report.failed:
             self.path = str(report.nodeid).split("::", 1)[0]
 
-    def pytest_collectreport(self, report) -> None:  # noqa: ANN001 - pytest's own type
+    def pytest_collectreport(self, report) -> None:
         # A collection error kills every test in the file at once and never reaches logreport.
         if self.path is None and report.failed:
             self.path = str(report.nodeid).split("::", 1)[0]
@@ -157,7 +156,7 @@ def main() -> int:
                 ),
                 flush=True,
             )
-        except BaseException as exc:  # noqa: BLE001 -- a worker crash must be reported, not raised
+        except BaseException as exc:
             print(json.dumps({"error": f"{type(exc).__name__}: {exc}"}), flush=True)
     return 0
 

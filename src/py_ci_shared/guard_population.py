@@ -30,6 +30,8 @@ Usage::
 from __future__ import annotations
 
 import re
+import os
+import shutil
 import subprocess
 from collections.abc import Iterable
 from pathlib import Path
@@ -98,6 +100,23 @@ def _population_command(text: str) -> "str | None":
     return None
 
 
+def _bash() -> str:
+    """The bash to replay a guard's selection command with.
+
+    On Windows a bare ``bash`` can resolve to ``System32\\bash.exe``, the WSL launcher, which fails
+    without a distribution installed; the bash that ships with Git is the one the guards are written
+    for. Measured on the windows-latest runner: every guard here was skipped as unrunnable.
+    """
+    if os.name == "nt":
+        git = shutil.which("git")
+        if git:
+            for parent in Path(git).resolve().parents[:3]:
+                candidate = parent / "bin" / "bash.exe"
+                if candidate.is_file():
+                    return str(candidate)
+    return shutil.which("bash") or "bash"
+
+
 def find_guards_with_empty_population(
     tool_dir: Path,
     repo_root: Path,
@@ -125,17 +144,25 @@ def find_guards_with_empty_population(
         command = _population_command(text)
         if not command:
             continue
+        # A selection command that cannot be run, or that fails, has not shown the guard examines
+        # anything. Both used to be skipped, which reported every guard healthy on the Windows
+        # runner, where bash itself could not start -- the silence this check exists to remove.
         try:
             result = subprocess.run(
-                ["bash", "-c", command],
+                [_bash(), "-c", command],
                 cwd=repo_root,
                 capture_output=True,
                 text=True,
                 timeout=120,
             )
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError) as exc:
+            problems.append(f"{path.name}: its file-selection command `{command[:90]}` could not be run ({exc}), so its population is unknown.")
             continue
         if result.returncode not in (0, 1):
+            problems.append(
+                f"{path.name}: its file-selection command `{command[:90]}` exited {result.returncode} "
+                f"({result.stderr.strip()[:200]}), so its population is unknown."
+            )
             continue
         if not result.stdout.strip():
             problems.append(

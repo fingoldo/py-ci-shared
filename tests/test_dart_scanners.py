@@ -45,7 +45,7 @@ class TestPainterAnimation:
         files, read = _reader({"lib/p.dart": src})
         problems = scan_painter_animation(files, read)
         assert len(problems) == 1
-        assert "inside a loop" in list(problems.values())[0]
+        assert "inside a loop" in next(iter(problems.values()))
 
     def test_paint_hoisted_out_of_the_loop_passes(self):
         src = (
@@ -67,7 +67,7 @@ class TestPainterAnimation:
         files, read = _reader({"lib/a.dart": "CallbackAction<ActivateIntent>(onInvoke: (_) => x());"})
         problems = scan_painter_animation(files, read)
         assert len(problems) == 1
-        assert "ButtonActivateIntent" in list(problems.values())[0]
+        assert "ButtonActivateIntent" in next(iter(problems.values()))
 
     def test_both_intents_handled_passes(self):
         src = "ActivateIntent: a, ButtonActivateIntent: b,"
@@ -102,7 +102,7 @@ class TestRepaintIsolation:
         files, read = _reader({"lib/a.dart": src})
         problems = scan_repaint_isolation(files, read)
         assert len(problems) == 1
-        assert "child:" in list(problems.values())[0]
+        assert "child:" in next(iter(problems.values()))
 
     def test_animated_builder_with_child_slot_passes(self):
         src = "RepaintBoundary(child: AnimatedBuilder(animation: a, child: Image.asset('x.png'), builder: (c, ch) => ch!));"
@@ -115,7 +115,7 @@ class TestHardcodedStrings:
         files, read = _reader({"lib/e.dart": "enum Design { aiSlop('AI Slop', 'Excessive gradients'), wave('Wave', 'Curves') }"})
         problems = scan_hardcoded_ui_strings(files, read)
         assert len(problems) == 1
-        assert "AI Slop" in list(problems.values())[0]
+        assert "AI Slop" in next(iter(problems.values()))
 
     def test_bare_enum_passes(self):
         files, read = _reader({"lib/e.dart": "enum Design { aiSlop, wave }"})
@@ -133,7 +133,7 @@ class TestHardcodedStrings:
         files, read = _reader({"lib/a.dart": "final name = profile?.displayName ?? 'User';"})
         problems = scan_hardcoded_ui_strings(files, read)
         assert len(problems) == 1
-        assert "User" in list(problems.values())[0]
+        assert "User" in next(iter(problems.values()))
 
     def test_raw_colour_outside_a_palette_is_flagged(self):
         files, read = _reader({"lib/login_dialog.dart": "color: const Color(0xFF1877F2),"})

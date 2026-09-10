@@ -104,10 +104,7 @@ def report(
             continue
         arrow = "->" if moved else "=="
         name = path.rsplit("/", 1)[-1].removesuffix(".json")
-        lines.append(
-            f"{last[2]:5d}  {name:34s} {first[2]:5d} {arrow} {last[2]:<5d}"
-            f"  {first[0]} .. {last[0]}  ({len(points)} change(s))"
-        )
+        lines.append(f"{last[2]:5d}  {name:34s} {first[2]:5d} {arrow} {last[2]:<5d}" f"  {first[0]} .. {last[0]}  ({len(points)} change(s))")
     return lines
 
 

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import ast
 import os
-from functools import lru_cache
+from functools import cache
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
@@ -111,11 +111,7 @@ def _performs(path: Path, effects: Sequence[str]) -> set[str]:
     except SyntaxError:
         return set()
 
-    defined_here = {
-        node.name
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects
-    }
+    defined_here = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects}
     # `from . import graphql` / `from pkg import graphql` / `import pkg.graphql as graphql`: the bound
     # name refers to a first-party MODULE, so `graphql.execute(...)` is a project call, not a driver.
     local_modules: set[str] = set()
@@ -344,12 +340,7 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
         func = node.func
         if isinstance(func, ast.Attribute) and func.attr == "object" and len(node.args) >= 2:
             target, attribute = node.args[0], node.args[1]
-            if (
-                isinstance(target, ast.Name)
-                and target.id in _REAL_DB_MODULES
-                and isinstance(attribute, ast.Constant)
-                and attribute.value == "connect"
-            ):
+            if isinstance(target, ast.Name) and target.id in _REAL_DB_MODULES and isinstance(attribute, ast.Constant) and attribute.value == "connect":
                 return True
     return False
 
@@ -421,12 +412,7 @@ def _inspects(
     # helpers this file actually IMPORTS: a same-named local function is a different function, and
     # crediting it would let a rename quietly satisfy the check.
     if helpers:
-        imported_here = {
-            alias.asname or alias.name
-            for node in ast.walk(tree)
-            if isinstance(node, ast.ImportFrom)
-            for alias in node.names
-        }
+        imported_here = {alias.asname or alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in imported_here:
                 found.update(helpers.get(node.func.id, ()))
@@ -451,7 +437,7 @@ def _inspects(
     return found
 
 
-@lru_cache(maxsize=None)
+@cache
 def _cached_imported_names(path: Path) -> frozenset[str]:
     """`_imported_names` memoised on the path.
 
@@ -526,10 +512,7 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     if not package_name and (repo_root / "__init__.py").is_file():
         package_name = repo_root.name
     if not src_dir and (repo_root / "src").is_dir():
-        packages = [
-            d for d in (repo_root / "src").iterdir()
-            if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))
-        ]
+        packages = [d for d in (repo_root / "src").iterdir() if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))]
         if len(packages) == 1:
             src_dir = "src"
             package_name = package_name or packages[0].name
@@ -541,11 +524,7 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
             parts.pop()
         return ".".join(parts)
 
-    sources = [
-        p
-        for p in _py_files(repo_root)
-        if "tests" not in p.relative_to(repo_root).parts
-    ]
+    sources = [p for p in _py_files(repo_root) if "tests" not in p.relative_to(repo_root).parts]
     tests = [p for p in _py_files(repo_root) if p.name.startswith("test_")]
 
     by_module: dict[str, Path] = {}
@@ -564,13 +543,11 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
         reached = {i for i in _imported_names(test) if i in by_module}
         reached |= {n for m in list(reached) for n in own_edges.get(m, set())}
         for name in reached:
-            hits.setdefault(by_module[name].relative_to(repo_root).as_posix(), set()).add(
-                test.relative_to(repo_root).as_posix()
-            )
+            hits.setdefault(by_module[name].relative_to(repo_root).as_posix(), set()).add(test.relative_to(repo_root).as_posix())
     return {source: sorted(found) for source, found in sorted(hits.items())}
 
 
-@lru_cache(maxsize=None)
+@cache
 def _patches_a_real_driver_cached(path: Path) -> bool:
     """`_patches_a_real_driver` memoised on the path.
 
@@ -601,10 +578,7 @@ def find_unasserted_effects(
     # Every conftest in the tree, because a `db_session` may be defined in the root one and used
     # three packages down. Collected once: this is an AST parse per conftest, not per test.
     db_fixtures = frozenset(
-        name
-        for conftest in _py_files(repo_root)
-        if conftest.name == "conftest.py"
-        for name in _fixture_names_backed_by_a_real_database(conftest)
+        name for conftest in _py_files(repo_root) if conftest.name == "conftest.py" for name in _fixture_names_backed_by_a_real_database(conftest)
     )
 
     for module, tests in sorted(import_map.items()):
@@ -618,9 +592,7 @@ def find_unasserted_effects(
         # either patches the driver -- visibly -- or runs the real thing. One importing test that
         # does neither of those two things is still running it, and the assertion it makes will be
         # about the ROWS, through the module's own reader. See `_owns_its_connection`.
-        if _owns_its_connection(module_path) and any(
-            (repo_root / test).is_file() and not _patches_a_real_driver_cached(repo_root / test) for test in tests
-        ):
+        if _owns_its_connection(module_path) and any((repo_root / test).is_file() and not _patches_a_real_driver_cached(repo_root / test) for test in tests):
             continue
         for effect in sorted(performed):
             checked_by = None
@@ -660,6 +632,5 @@ def assert_effects_are_asserted(
     new = {key: why for key, why in found.items() if key not in accepted}
     if new:
         pytest.fail(
-            f"{len(new)} effect(s) performed but inspected by no importing test:\n  "
-            + "\n  ".join(f"{key}: {why}" for key, why in sorted(new.items()))
+            f"{len(new)} effect(s) performed but inspected by no importing test:\n  " + "\n  ".join(f"{key}: {why}" for key, why in sorted(new.items()))
         )

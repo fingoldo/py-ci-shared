@@ -52,7 +52,8 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Callable, Iterable, Sequence
+from typing import Callable
+from collections.abc import Iterable, Sequence
 
 #: Distinct from 1 (a statement failed) so a CI job can tell "not verified" from "verified clean".
 #: ``--skip-without-db`` maps it to 0, which is what a pre-push hook wants.
@@ -95,7 +96,7 @@ def check(conn, label: str, sql: str, params=None) -> bool:
         head = tuple(str(v)[:40] for v in rows[0]) if rows else None
         print(f"OK   {label}: {len(rows)} row(s), first={head}")
         return True
-    except Exception as exc:  # noqa: BLE001 -- reporting every failure is the point
+    except Exception as exc:
         conn.rollback()
         print(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
         return False
@@ -116,7 +117,7 @@ def check_loader(conn, label: str, call: Callable[[], object]) -> bool:
     del conn  # the loader borrows its own connection from the configured pool
     try:
         rows = call()
-    except Exception as exc:  # noqa: BLE001 -- reporting every failure is the point
+    except Exception as exc:
         print(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
         return False
     if getattr(rows, "failed", False):
@@ -152,7 +153,7 @@ def run_checks(
     args = list(sys.argv if argv is None else argv)
     lenient = "--skip-without-db" in args
 
-    import psycopg2  # noqa: PLC0415 -- lazy, so this package stays dependency-free
+    import psycopg2
 
     if dsn is None:
         dsn = dsn_from_env(env_names)
@@ -162,7 +163,7 @@ def run_checks(
     try:
         probe = psycopg2.connect(dsn, connect_timeout=connect_timeout)
         probe.close()
-    except Exception as exc:  # noqa: BLE001 -- an unreachable server is a skip, not a failed statement
+    except Exception as exc:
         print(f"SKIPPED: database unreachable ({type(exc).__name__}: {str(exc).strip()[:120]}).")
         return 0 if lenient else SKIPPED
 

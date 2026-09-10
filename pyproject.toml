@@ -33,6 +33,10 @@ dependencies = ["orjson>=3.9", "tomli>=2.0; python_version < '3.11'"]
 dev = [
     "pytest>=7.0",
     "black>=24.0",
+    # timezone_honest runs `python -m ruff`, so its tests need ruff in the test environment; without
+    # it CI's test job had none and every one of them failed. Exact, equal to tool_versions.RUFF_VERSION
+    # (tests/test_pinned_tool_versions.py holds the two together).
+    "ruff==0.16.1",
     # config_call_site_parity.py's tests build a real pydantic.BaseModel schema fixture (the
     # module itself is duck-typed, no pydantic import at runtime -- only the tests need a
     # concrete model class to exercise it against).
@@ -93,6 +97,13 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/config_drift_check.py" = ["T201"]
 "src/py_ci_shared/setup_env.py" = ["T201"]
 "src/py_ci_shared/pinned_tool_versions.py" = ["T201"]
+"src/py_ci_shared/sql_verify.py" = ["T201"]
+"src/py_ci_shared/teeth_sweep.py" = ["T201"]
+"src/py_ci_shared/_mutation_worker.py" = ["T201"]  # a subprocess worker; its stdout IS the protocol its parent reads
+"src/py_ci_shared/baseline_ratchet.py" = ["T201"]  # the ratchet's report is what a developer reads when it blocks
+# These two print ADVISORY lines on purpose -- findings that are shown but never fail the gate.
+"src/py_ci_shared/arb_checks.py" = ["T201"]
+"src/py_ci_shared/import_layering.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

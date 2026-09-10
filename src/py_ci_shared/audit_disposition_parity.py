@@ -40,9 +40,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 # `- Disposition: RESOLVED - ...` / `Disposition: PARTIAL - ...`
-_DISPOSITION_RE = re.compile(
-    r"^-?\s*Disposition(?: of this (?:item|report))?:\s*(?P<verdict>[A-Z][A-Z' ]+?)\b\s*[-:]?\s*(?P<text>.*)$"
-)
+_DISPOSITION_RE = re.compile(r"^-?\s*Disposition(?: of this (?:item|report))?:\s*(?P<verdict>[A-Z][A-Z' ]+?)\b\s*[-:]?\s*(?P<text>.*)$")
 # A backticked token that looks like a repository path: it carries a separator and an extension.
 _BACKTICK_PATH_RE = re.compile(r"`([\w./\-]*/[\w./\-]+\.[\w]{1,6})`")
 # A bare path written without backticks, which audit prose does constantly.
@@ -88,15 +86,11 @@ def find_unsupported_dispositions(
     assertive = {v.upper() for v in verdicts}
     ignored = set(ignore_paths)
     migrations_dir = migrations_dir or (repo_root / "supabase" / "migrations")
-    migration_prefixes = (
-        {p.name[:3] for p in migrations_dir.glob("*.sql")} if migrations_dir.is_dir() else set()
-    )
+    migration_prefixes = {p.name[:3] for p in migrations_dir.glob("*.sql")} if migrations_dir.is_dir() else set()
 
     files = sorted(audit_dir.glob("*.md")) if audit_dir.is_dir() else []
     if not files:
-        return [
-            f"{audit_dir}: no audit files found - this check examined nothing, which reads as a pass."
-        ]
+        return [f"{audit_dir}: no audit files found - this check examined nothing, which reads as a pass."]
 
     problems: list[str] = []
     # Two different counters: a file whose findings are ALL deferred is normal, while a file where
@@ -105,9 +99,7 @@ def find_unsupported_dispositions(
     seen_any = 0
     checked = 0
     for path in files:
-        for lineno, line in enumerate(
-            path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1
-        ):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
             match = _DISPOSITION_RE.match(line.strip())
             if not match:
                 continue
@@ -153,11 +145,6 @@ def assert_dispositions_name_real_artefacts(
     """Fail when a RESOLVED/PARTIAL disposition names a file or migration that is not there."""
     import pytest
 
-    problems = find_unsupported_dispositions(
-        audit_dir, repo_root, migrations_dir=migrations_dir, ignore_paths=ignore_paths
-    )
+    problems = find_unsupported_dispositions(audit_dir, repo_root, migrations_dir=migrations_dir, ignore_paths=ignore_paths)
     if problems:
-        pytest.fail(
-            f"{len(problems)} disposition(s) claim something that is not in the tree:\n  "
-            + "\n  ".join(problems)
-        )
+        pytest.fail(f"{len(problems)} disposition(s) claim something that is not in the tree:\n  " + "\n  ".join(problems))

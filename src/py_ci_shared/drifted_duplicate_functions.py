@@ -96,11 +96,7 @@ def find_drifted_duplicate_functions(
         dumps = [dump for _, _, dump in members]
         if len(set(dumps)) == 1:
             continue
-        best = max(
-            difflib.SequenceMatcher(None, dumps[i], dumps[j]).ratio()
-            for i in range(len(dumps))
-            for j in range(i + 1, len(dumps))
-        )
+        best = max(difflib.SequenceMatcher(None, dumps[i], dumps[j]).ratio() for i in range(len(dumps)) for j in range(i + 1, len(dumps)))
         if best >= similarity:
             found.append(DriftGroup(name, [(p, line) for p, line, _ in members], best, len(set(dumps))))
     return sorted(found, key=lambda g: (-g.similarity, g.name))

@@ -119,10 +119,7 @@ def assert_doubles_are_spec_bound(
     subjects = files_driving(files, entries)
 
     if len(subjects) < min_subjects:
-        pytest.fail(
-            f"only {len(subjects)} test file(s) mention {sorted(entries)} -- expected at least "
-            f"{min_subjects}. The scan lost its subject."
-        )
+        pytest.fail(f"only {len(subjects)} test file(s) mention {sorted(entries)} -- expected at least " f"{min_subjects}. The scan lost its subject.")
 
     problems: list[str] = []
     for path in subjects:

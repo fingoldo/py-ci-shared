@@ -67,7 +67,7 @@ def register_refresh_option(parser) -> None:
             default=False,
             help="Rewrite the uncalled-function baseline instead of asserting against it.",
         )
-    except Exception:  # noqa: BLE001 -- a duplicate registration must not break collection
+    except Exception:
         pass
 
 
@@ -201,16 +201,11 @@ def assert_no_new_uncalled_function(
     if new:
         pytest.fail(
             "these functions are defined and never called by production code, so whatever they "
-            "enforce is not enforced:\n  "
-            + "\n  ".join(new)
-            + "\n\nA test calling it is not a production call site, and neither is an `__all__` "
+            "enforce is not enforced:\n  " + "\n  ".join(new) + "\n\nA test calling it is not a production call site, and neither is an `__all__` "
             "entry or a doctest -- that is how this class of dead control hides. Either wire it in, "
             "delete it, or add its name to `ignore` with a reason."
         )
 
     stale = sorted(baseline - set(current))
     if stale:
-        pytest.fail(
-            "these are no longer uncalled and must be dropped from the baseline, or it stops "
-            "meaning anything for them:\n  " + "\n  ".join(stale)
-        )
+        pytest.fail("these are no longer uncalled and must be dropped from the baseline, or it stops " "meaning anything for them:\n  " + "\n  ".join(stale))

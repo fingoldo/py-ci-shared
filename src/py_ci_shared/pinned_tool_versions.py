@@ -52,9 +52,31 @@ def installed_version(module: str) -> Optional[str]:
     return tokens[-1] if tokens else None
 
 
-def find_problems(pyproject_text: str, installed: Callable[[str], Optional[str]] = installed_version) -> list[str]:
-    """One message per disagreement between the shared version, the repo's pin and the installed tool."""
-    problems: list[str] = []
+_RUFF_PRE_COMMIT_REV = re.compile(r"repo:\s*https://github\.com/astral-sh/ruff-pre-commit\s*\n\s*rev:\s*['\"]?v?([0-9][^\s'\"#]*)")
+
+
+def precommit_ruff_revs(precommit_text: str) -> list[str]:
+    """Every ``rev:`` of an ``astral-sh/ruff-pre-commit`` repo in a ``.pre-commit-config.yaml``.
+
+    Hooks from that repo run the ruff their ``rev`` names, in pre-commit's own environment -- a third
+    copy of the version, besides the pin and the interpreter, that can drift from CI.
+    """
+    return _RUFF_PRE_COMMIT_REV.findall(precommit_text)
+
+
+def find_problems(
+    pyproject_text: str,
+    installed: Callable[[str], Optional[str]] = installed_version,
+    precommit_text: str = "",
+) -> list[str]:
+    """One message per disagreement between the shared version, the repo's pin, the installed tool and
+    any ``ruff-pre-commit`` rev."""
+    problems: list[str] = [
+        f"ruff: .pre-commit-config.yaml runs astral-sh/ruff-pre-commit at v{rev} while py-ci-shared's "
+        f"workflows run {RUFF_VERSION}. Set its rev to v{RUFF_VERSION}"
+        for rev in precommit_ruff_revs(precommit_text)
+        if rev != RUFF_VERSION
+    ]
     for name, (module, dist, shared) in TOOLS.items():
         pin = pinned_version(pyproject_text, dist)
         if pin is None:
@@ -79,8 +101,13 @@ def main(argv: Optional[list[str]] = None) -> int:
     """Check ``--pyproject`` (default ``./pyproject.toml``) and print each problem."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--pyproject", default="pyproject.toml", help="the consuming repo's pyproject.toml")
+    parser.add_argument("--precommit", default=".pre-commit-config.yaml", help="checked for ruff-pre-commit revs when it exists")
     args = parser.parse_args(argv)
-    problems = find_problems(Path(args.pyproject).read_text(encoding="utf-8"))
+    precommit = Path(args.precommit)
+    problems = find_problems(
+        Path(args.pyproject).read_text(encoding="utf-8"),
+        precommit_text=precommit.read_text(encoding="utf-8") if precommit.is_file() else "",
+    )
     for problem in problems:
         print("pinned-tool-version mismatch: " + problem)
     return 1 if problems else 0

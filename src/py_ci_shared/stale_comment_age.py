@@ -46,8 +46,7 @@ _DEFAULT_SUFFIXES = (".dart", ".py", ".ts", ".tsx", ".js", ".mjs", ".sh", ".sql"
 # `as`, `from`, `to`, `not`, `if`, `with`, `this`) are absent, because dropping a real
 # commented-out statement is the expensive mistake and keeping one prose line is the cheap one.
 _PROSE_WORDS = (
-    "the an but which because however rather instead whether than its their there "
-    "would should does was were been we you they our your etc"
+    "the an but which because however rather instead whether than its their there " "would should does was were been we you they our your etc"
 ).split()
 _PROSE_WORD_RE = re.compile(r"(?<![\w.])(?:" + "|".join(_PROSE_WORDS) + r"|e\.g\.|i\.e\.)(?![\w])", re.IGNORECASE)
 # A lone "a" needs its own pattern: as a word it is prose, but `a` is also an ordinary variable

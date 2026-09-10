@@ -117,5 +117,5 @@ class TestAssert:
 
     def test_assert_fails_naming_the_path(self, tmp_path):
         wf, root = _repo(tmp_path, "jobs:\n  a:\n    steps:\n      - run: sh tool/nope.sh\n")
-        with pytest.raises(pytest.fail.Exception, match="nope.sh"):
+        with pytest.raises(pytest.fail.Exception, match=r"nope\.sh"):
             assert_workflow_paths_exist(wf, root)

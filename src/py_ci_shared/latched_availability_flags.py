@@ -115,9 +115,11 @@ def find_latched_availability_flags(roots: Sequence[Path], exclude: Iterable[str
                         for stmt in ast.walk(ast.Module(body=handler.body, type_ignores=[])):
                             if not (isinstance(stmt, ast.Assign) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, bool)):
                                 continue
-                            for target in stmt.targets:
-                                if isinstance(target, ast.Name) and target.id in declared_global and target.id in module_names and _looks_like_a_flag(target.id):
-                                    findings.append(Finding(path, stmt.lineno, target.id, function.name))
+                            findings.extend(
+                                Finding(path, stmt.lineno, target.id, function.name)
+                                for target in stmt.targets
+                                if isinstance(target, ast.Name) and target.id in declared_global and target.id in module_names and _looks_like_a_flag(target.id)
+                            )
     return findings
 
 

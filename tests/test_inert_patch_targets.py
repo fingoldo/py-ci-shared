@@ -7,7 +7,6 @@ switch the check off.
 
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 

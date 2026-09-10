@@ -98,6 +98,11 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
     )
     if result.returncode not in (0, 1):
         raise RuntimeError(f"ruff exited {result.returncode}: {result.stderr.strip()[:500]}")
+    # Exit 1 means "findings", so it must come with at least one. Without this, a ruff that is not
+    # installed (`No module named ruff`, also exit 1, nothing on stdout) read as a clean result: on
+    # py-ci-shared's own CI, whose test job had no ruff, every test here saw an empty set.
+    if result.returncode == 1 and not any(_FINDING.match(line.strip()) for line in result.stdout.splitlines()):
+        raise RuntimeError(f"ruff exited 1 without reporting a single finding, so it checked nothing: {(result.stderr or result.stdout).strip()[:500]}")
     if "Failed to lint" in result.stderr:
         raise RuntimeError(f"ruff skipped input it was given: {result.stderr.strip()[:500]}")
 

@@ -6,6 +6,7 @@ through a mock, and a test that runs it and looks only at what came back.
 
 from __future__ import annotations
 
+from pathlib import Path
 import pytest
 
 from py_ci_shared.effect_assertion_parity import (

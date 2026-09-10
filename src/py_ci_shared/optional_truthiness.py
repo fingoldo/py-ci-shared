@@ -50,15 +50,11 @@ def _union_members(annotation: ast.AST) -> list[str]:
         base = ast.unparse(annotation.value).split(".")[-1]
         if base in ("Optional", "Union"):
             inner = annotation.slice
-            members = (
-                [m for e in inner.elts for m in _union_members(e)]
-                if isinstance(inner, ast.Tuple)
-                else _union_members(inner)
-            )
+            members = [m for e in inner.elts for m in _union_members(e)] if isinstance(inner, ast.Tuple) else _union_members(inner)
             # Optional[X] means X | None: the None is implicit and has to be added, or the
             # whole spelling reads as non-optional.
-            return members + ["None"] if base == "Optional" else members
-        return [ast.unparse(annotation)]          # dict[str, int] stays one opaque member
+            return [*members, "None"] if base == "Optional" else members
+        return [ast.unparse(annotation)]  # dict[str, int] stays one opaque member
     if isinstance(annotation, ast.Constant) and annotation.value is None:
         return ["None"]
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
@@ -104,13 +100,13 @@ def find_truthiness_tests(path: Path) -> list[str]:
                 tested = [node.test]
             elif isinstance(node, ast.BoolOp):
                 tested = list(node.values)
-            for expr in tested:
-                if isinstance(expr, ast.Name) and expr.id in optional:
-                    out.append(
-                        f"{path.name}:{expr.lineno}: `{expr.id}` is an optional number tested for "
-                        f"TRUTH; 0 is a value a caller can mean, and this reads it as absent. Use "
-                        f"`{expr.id} is not None`."
-                    )
+            out.extend(
+                f"{path.name}:{expr.lineno}: `{expr.id}` is an optional number tested for "
+                f"TRUTH; 0 is a value a caller can mean, and this reads it as absent. Use "
+                f"`{expr.id} is not None`."
+                for expr in tested
+                if isinstance(expr, ast.Name) and expr.id in optional
+            )
     return sorted(set(out))
 
 

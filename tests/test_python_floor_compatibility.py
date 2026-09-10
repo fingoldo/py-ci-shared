@@ -46,9 +46,7 @@ def test_no_module_uses_a_runtime_union_between_classes(path: Path):
             continue
         if node.func.id not in {"isinstance", "issubclass"}:
             continue
-        for arg in node.args[1:]:
-            if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.BitOr):
-                offenders.append(f"{path.name}:{node.lineno}")
+        offenders.extend(f"{path.name}:{node.lineno}" for arg in node.args[1:] if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.BitOr))
     assert not offenders, f"PEP 604 union evaluated at runtime, unsupported on 3.9: {offenders}. Use a tuple."
 
 

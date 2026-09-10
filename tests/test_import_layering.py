@@ -133,5 +133,5 @@ class TestAssert:
                 "lib__providers__theme.dart": "// provider\n",
             },
         )
-        with pytest.raises(pytest.fail.Exception, match="lib/core/a.dart"):
+        with pytest.raises(pytest.fail.Exception, match=r"lib/core/a\.dart"):
             assert_layering(root, [_CORE_RULE])

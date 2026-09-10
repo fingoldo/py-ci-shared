@@ -89,5 +89,5 @@ class TestAssert:
 
     def test_assert_fails_naming_the_guard(self, tmp_path):
         tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'Nope' lib\n", "lib/a.dart")
-        with pytest.raises(pytest.fail.Exception, match="check-x.sh"):
+        with pytest.raises(pytest.fail.Exception, match=r"check-x\.sh"):
             assert_guards_examine_something(tool, root)

@@ -154,5 +154,5 @@ class TestAssert:
             tmp_path,
             "#### P01-1\n- Disposition: RESOLVED - fixed in `lib/gone.dart`\n",
         )
-        with pytest.raises(pytest.fail.Exception, match="gone.dart"):
+        with pytest.raises(pytest.fail.Exception, match=r"gone\.dart"):
             assert_dispositions_name_real_artefacts(audit, root)

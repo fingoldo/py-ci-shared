@@ -118,7 +118,8 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "8"  # 8: a mutant that stops pytest starting (exit 4/5) is a kill, not a refusal
+HARNESS_VERSION = "9"  # 9: lint and formatting only (ruff 0.16.1 clean-up), bumped because the gate is content-based
+# 8: a mutant that stops pytest starting (exit 4/5) is a kill, not a refusal
 
 
 #: Written in place of a justification by a refresh, and rejected on the next run. A refresh
@@ -234,8 +235,7 @@ class MutationRun:
             # was previously dropped from the denominator, and a survivor whose confirmation timed
             # out was counted as killed -- both let an unmeasured mutant read as a measured one.
             parts.append(
-                f"{len(self.inconclusive)} mutants were INCONCLUSIVE (the run timed out); they are "
-                "neither killed nor survived, so this sweep is incomplete"
+                f"{len(self.inconclusive)} mutants were INCONCLUSIVE (the run timed out); they are " "neither killed nor survived, so this sweep is incomplete"
             )
         if self.wider_net_note:
             # Loud, because its absence silently changes what a survivor MEANS: without the net,
@@ -244,13 +244,10 @@ class MutationRun:
         if self.coverage_gaps:
             # Reported separately and loudly: these are NOT test gaps. A reader who treats them as
             # survivors writes a test that already exists.
-            named = sorted(
-                {m.category.split(":", 1)[1] for m in self.coverage_gaps if m.category.startswith("killed-by:")}
-            )
+            named = sorted({m.category.split(":", 1)[1] for m in self.coverage_gaps if m.category.startswith("killed-by:")})
             detail = f" -- add {', '.join(named)}" if named else ""
             parts.append(
-                f"{len(self.coverage_gaps)} 'survivors' were killed by a test the coverage map does "
-                f"not list -- fix the map, not the tests{detail}"
+                f"{len(self.coverage_gaps)} 'survivors' were killed by a test the coverage map does " f"not list -- fix the map, not the tests{detail}"
             )
         if self.truncated:
             parts.append(f"TRUNCATED: {self.candidates_total} candidates existed, {self.mutants_run} were run")
@@ -320,8 +317,7 @@ def _has_constant(node: ast.AST | None) -> bool:
     if node is None:
         return False
     return any(
-        isinstance(sub, ast.Subscript)
-        and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in ast.walk(sub.slice))
+        isinstance(sub, ast.Subscript) and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in ast.walk(sub.slice))
         for sub in ast.walk(node)
     )
 
@@ -400,9 +396,8 @@ def _excluded_ranges(source: str) -> list[tuple[int, int]]:
             if (s := span(node)) is not None:
                 out.append(s)
         elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id == "__all__" and (s := span(node.value)) is not None:
-                    out.append(s)
+            if any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets) and (s := span(node.value)) is not None:
+                out.append(s)
         elif isinstance(node, ast.AnnAssign):
             # Only annotations with nothing mutable in them. `Literal["draft", "sent"]` and
             # `Annotated[int, Field(ge=1, le=5)]` are ENFORCED at runtime by pydantic, and tests
@@ -443,9 +438,7 @@ def _container_members(source: str) -> list[tuple[int, int, str]]:
         # exhausted instead of sampled -- the whole survivor list then fills with rows of one table
         # and nobody reads to the end of it. Typed module constants are the house style here, so
         # this was not an edge case.
-        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not isinstance(
-            node.value, (ast.Dict, ast.Set, ast.List, ast.Tuple)
-        ):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not isinstance(node.value, (ast.Dict, ast.Set, ast.List, ast.Tuple)):
             continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         name = next((t.id for t in targets if isinstance(t, ast.Name)), "<container>")
@@ -573,7 +566,6 @@ def _slice_bound_candidates(source: str) -> list[tuple[int, int, int, str, str, 
     return out
 
 
-
 #: Calls whose string argument is a regular expression. A pattern is only worth perturbing where it
 #: is actually used as one -- the same text sitting in a message is prose.
 _REGEX_CALLS = {"compile", "match", "search", "fullmatch", "sub", "subn", "split", "findall", "finditer"}
@@ -597,12 +589,8 @@ def _string_literal_sites(tree: ast.AST) -> list[tuple[ast.Constant, bool]]:
             continue
         name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
         regexish = name in _REGEX_CALLS
-        for arg in node.args:
-            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                sites.append((arg, regexish))
-        for kw in node.keywords:
-            if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str):
-                sites.append((kw.value, False))
+        sites.extend((arg, regexish) for arg in node.args if isinstance(arg, ast.Constant) and isinstance(arg.value, str))
+        sites.extend((kw.value, False) for kw in node.keywords if isinstance(kw.value, ast.Constant) and isinstance(kw.value.value, str))
     return sites
 
 
@@ -688,7 +676,6 @@ def _confusable(value: str, vocabulary: list[str]) -> str | None:
     return best
 
 
-
 def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list[tuple[int, int, int, str, str, str]]:
     """``(abs_start, abs_end, line, replacement, description, category)`` per mutable token.
 
@@ -723,8 +710,8 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list
         sampled_name = next((n for lo, hi, n in sampled_out if lo <= abs_start < hi), None)
         category = f"noise:table-sample:{sampled_name}" if sampled_name else ""
 
-        def emit(end: int, replacement: str, description: str) -> None:
-            out.append((abs_start, end, row, replacement, description, category))
+        def emit(end: int, replacement: str, description: str, _start: int = abs_start, _row: int = row, _category: str = category) -> None:
+            out.append((_start, end, _row, replacement, description, _category))
 
         if tok.type == tokenize.NAME and tok.string == "if" and index + 1 < len(tokens):
             following = tokens[index + 1]
@@ -852,7 +839,7 @@ def generate_mutants(
     functions. A truncated run's empty survivor list is indistinguishable from a complete one's,
     which is why the count is returned rather than discarded.
     """
-    source = io.open(path, encoding="utf-8", newline="").read()
+    source = open(path, encoding="utf-8", newline="").read()
     starts = _line_starts(source)
     candidates = (
         _token_candidates(source, skip_coupled_constants)
@@ -936,7 +923,7 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
         return seen
     seen.add(path)
     try:
-        tree = ast.parse(io.open(path, encoding="utf-8", errors="replace").read())
+        tree = ast.parse(open(path, encoding="utf-8", errors="replace").read())
     except (SyntaxError, OSError):
         # The file itself still counts. Dropping it silently removed it AND everything it imports
         # from the fingerprint, so the very edit that fixes a syntax error would not invalidate the
@@ -1391,14 +1378,14 @@ class _WarmRunner:
                 self.process.stdin.write(json.dumps({"cmd": "stop"}) + "\n")
                 self.process.stdin.flush()
             self.process.wait(timeout=10)
-        except Exception:  # noqa: BLE001 -- shutdown must never raise over the real result
+        except Exception:
             self.process.kill()
         finally:
             for stream in (self.process.stdin, self.process.stdout):
                 try:
                     if stream is not None:
                         stream.close()
-                except OSError:
+                except OSError:  # noqa: PERF203 - each stream is closed on its own; one failing must not leave the next open
                     pass
 
     def _readline_within(self, deadline: float) -> str | None:
@@ -1517,21 +1504,14 @@ def _sweep_partition(
     the CONSUMER's side is a property of its tests, which is why concurrency is opt-in.
     """
     target = sandbox / relative
-    original = io.open(target, encoding="utf-8", newline="").read()
-    survivors: list[Mutant] = []
-    coverage_gaps: list[Mutant] = []
-    inconclusive: list[Mutant] = []
-    run = 0
-    crashes = 0
+    original = open(target, encoding="utf-8", newline="").read()
     # The restore is in a `finally` because the sandbox may be SHARED across files: an exception
     # mid-sweep used to leave the last mutant on disk, which was harmless while every file got
     # its own throwaway copy and becomes contamination of the next file the moment one does not.
     try:
-        return _sweep_mutants(
-            sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker
-        )
+        return _sweep_mutants(sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker)
     finally:
-        io.open(target, "w", encoding="utf-8", newline="").write(original)
+        open(target, "w", encoding="utf-8", newline="").write(original)
 
 
 def _sweep_mutants(
@@ -1570,7 +1550,7 @@ def _sweep_mutants(
         budget = {"purge": 0.0, "pytest": 0.0, "overhead": 0.0, "recheck": 0.0, "mutants": 0.0}
         for mutant in mutants:
             _mutant_started = time.perf_counter()
-            io.open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
+            open(target, "w", encoding="utf-8", newline="").write(mutant.mutated_file_text)
             code = warm.run(ordered) if use_warm_worker else None
             _judged_at = time.perf_counter()
             if warm.last_timings:
@@ -1585,7 +1565,7 @@ def _sweep_mutants(
                 result = _run_pytest(test_paths, sandbox, timeout)
                 if result is None:
                     inconclusive.append(mutant)
-                    io.open(target, "w", encoding="utf-8", newline="").write(original)
+                    open(target, "w", encoding="utf-8", newline="").write(original)
                     continue
                 passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
             else:
@@ -1600,7 +1580,7 @@ def _sweep_mutants(
                 confirm = _run_pytest(test_paths, sandbox, timeout)
                 if confirm is None:
                     inconclusive.append(mutant)
-                    io.open(target, "w", encoding="utf-8", newline="").write(original)
+                    open(target, "w", encoding="utf-8", newline="").write(original)
                     continue
                 if _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
                     if fallback_test_paths:
@@ -1633,15 +1613,14 @@ def _sweep_mutants(
                                 # every one named the same killer.
                                 ordered_wider = _lead_with(ordered_wider, killer)
                             coverage_gaps.append(mutant)
-                            io.open(target, "w", encoding="utf-8", newline="").write(original)
+                            open(target, "w", encoding="utf-8", newline="").write(original)
                             continue
                     survivors.append(mutant)
-            io.open(target, "w", encoding="utf-8", newline="").write(original)
+            open(target, "w", encoding="utf-8", newline="").write(original)
             budget["mutants"] += 1
             # Everything after the verdict is a cold re-check: the confirmation and the wider net.
             budget["recheck"] += max(0.0, time.perf_counter() - _judged_at)
     return survivors, coverage_gaps, inconclusive, run, crashes, budget
-
 
 
 def find_surviving_mutants(
@@ -1732,15 +1711,13 @@ def find_surviving_mutants(
         target = sandbox / relative
         if not target.is_file():
             raise MutationHarnessError(
-                f"{relative} does not exist under {repo_root}. "
-                "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
+                f"{relative} does not exist under {repo_root}. " "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
             )
 
         baseline = _run_pytest(test_paths, sandbox, timeout)
         if baseline is None:
             raise MutationHarnessError(
-                f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. "
-                "Raise `timeout`, or narrow `test_paths`."
+                f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. " "Raise `timeout`, or narrow `test_paths`."
             )
         if not _classify(baseline, "the unmutated baseline"):
             raise MutationHarnessError(
@@ -1809,7 +1786,7 @@ def find_surviving_mutants(
                     timeout,
                     use_warm_worker,
                 )
-            except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
+            except BaseException as exc:
                 errors.append(exc)
 
         if len(partitions) == 1:
@@ -2024,8 +2001,7 @@ def assert_no_new_surviving_mutant(
         warnings.warn(f"mutation teeth for {path}: {outcome.summary()}", stacklevel=2)
     if outcome.inconclusive:
         raise AssertionError(
-            f"{len(outcome.inconclusive)} mutant(s) could not be run to a verdict in "
-            f"{path}, so this sweep does not support a pass.\n{outcome.summary()}"
+            f"{len(outcome.inconclusive)} mutant(s) could not be run to a verdict in " f"{path}, so this sweep does not support a pass.\n{outcome.summary()}"
         )
     if outcome.coverage_gaps:
         # NOT a survivor and NOT something to accept: a test that kills this already exists and is
@@ -2078,7 +2054,7 @@ def assert_revert_fails_tests(
         target = sandbox / relative
         if not target.is_file():
             raise MutationHarnessError(f"{relative} does not exist under {repo_root}")
-        original = io.open(target, encoding="utf-8", newline="").read()
+        original = open(target, encoding="utf-8", newline="").read()
         if old not in original:
             raise MutationHarnessError(
                 f"revert anchor not found in {relative}: {old[:80]!r}\n"
@@ -2094,11 +2070,10 @@ def assert_revert_fails_tests(
             raise MutationHarnessError(f"the unmutated baseline did not finish within {timeout}s")
         if not _classify(baseline, "the unmutated baseline"):
             raise MutationHarnessError(
-                "the unmutated baseline does not pass, so the teeth check means nothing. "
-                f"Fix the failing tests first.\n{baseline.stdout[-2000:]}"
+                "the unmutated baseline does not pass, so the teeth check means nothing. " f"Fix the failing tests first.\n{baseline.stdout[-2000:]}"
             )
 
-        io.open(target, "w", encoding="utf-8", newline="").write(mutated)
+        open(target, "w", encoding="utf-8", newline="").write(mutated)
         result = _run_pytest(test_paths, sandbox, timeout)
         if result is None:
             raise MutationHarnessError(f"the mutated run did not finish within {timeout}s")

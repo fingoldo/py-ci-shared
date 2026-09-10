@@ -63,9 +63,11 @@ def _read(paths: Iterable[Path]) -> str:
         if p.is_file():
             out.append(p.read_text(encoding="utf-8", errors="replace"))
         elif p.is_dir():
-            for child in sorted(p.rglob("*")):
-                if child.is_file() and child.suffix in {".yml", ".yaml", ".sh", ".md", ""}:
-                    out.append(child.read_text(encoding="utf-8", errors="replace"))
+            out.extend(
+                child.read_text(encoding="utf-8", errors="replace")
+                for child in sorted(p.rglob("*"))
+                if child.is_file() and child.suffix in {".yml", ".yaml", ".sh", ".md", ""}
+            )
     return "\n".join(out)
 
 
@@ -189,8 +191,7 @@ def assert_partitions_reachable(
             f"{script} is referenced by no workflow, hook or index document - nobody knows it "
             f"exists or how to invoke it. Add it to the script index, or delete it."
         )
-    for skip in find_permanent_skips(list(spec_dirs)):
-        problems.append(f"{skip} - a permanently skipped spec reads as a passing suite.")
+    problems.extend(f"{skip} - a permanently skipped spec reads as a passing suite." for skip in find_permanent_skips(list(spec_dirs)))
 
     if problems:
         pytest.fail(f"{len(problems)} unreachable test partition(s):\n  " + "\n  ".join(problems))

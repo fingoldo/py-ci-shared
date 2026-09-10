@@ -137,11 +137,11 @@ def find_edge_function_problems(
                 f"{rel}:{_line_of(source, m.start())}: logs a raw IP address - the platform's log " f"retention becomes undeclared personal-data retention."
             )
 
-        for m in _XFF_FIRST_HOP_RE.finditer(source):
-            problems.append(
-                f"{rel}:{_line_of(source, m.start())}: takes the FIRST x-forwarded-for hop, which "
-                f"is the value the client sent and anyone can forge. Take the last."
-            )
+        problems.extend(
+            f"{rel}:{_line_of(source, m.start())}: takes the FIRST x-forwarded-for hop, which "
+            f"is the value the client sent and anyone can forge. Take the last."
+            for m in _XFF_FIRST_HOP_RE.finditer(source)
+        )
     return problems
 
 

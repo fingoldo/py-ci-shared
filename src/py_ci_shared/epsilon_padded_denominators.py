@@ -156,7 +156,7 @@ def assert_no_epsilon_padded_power_denominators(
     if not findings:
         return
     newline = chr(10)
-    listing = (newline + '  ').join(str(f) for f in findings)
+    listing = (newline + "  ").join(str(f) for f in findings)
     raise AssertionError(
         newline.join(
             [
