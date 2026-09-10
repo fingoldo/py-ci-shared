@@ -461,6 +461,7 @@ TypeScript repository with no pytest harness can call the `find_*` half from a p
 | `version_tag_currency` | Does the declared version have a tag, is that tag reachable from HEAD, and how many releases behind is a consumer's pin? |
 | `mutation_teeth` | Can a test that claims to pin a defect actually FAIL? Mutates the code at token level, runs the tests that claim to cover it, and reports the mutants nothing caught. Runs on a copy of the working tree, caches on the target's transitive import closure, and refuses to report a result when pytest exits for a reason other than pass or fail. |
 | `git_changed_lines` | The line ranges a diff actually touched, per file, from `--unified=0` -- so a check can be scoped to the lines a commit changed rather than a whole module. |
+| `pinned_tool_versions` | Do the ruff CI runs, a repo's own `ruff==` pin and the ruff its interpreter has all agree? The CI version is defined once, as `RUFF_VERSION` in `tool_versions`, and `ruff-blocking.yml`, `lint-advisory.yml` and `self-ci.yml` read it at run time instead of each carrying a literal. Wire `python -m py_ci_shared.pinned_tool_versions` as a `language: system` hook ahead of the ruff hook; it names both versions and the fix. It exists because the literal was copied by hand and drifted both ways: one consumer's pin moved ahead of the workflows it calls, others ran a newer interpreter ruff than their pin. |
 
 ### Consuming these from a Dart repository
 

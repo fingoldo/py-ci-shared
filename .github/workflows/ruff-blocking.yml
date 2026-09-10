@@ -60,21 +60,32 @@ jobs:
             echo "PY_CI_SHARED_DIR=${RUNNER_TEMP}/py-ci-shared" >> "$GITHUB_ENV"
           fi
 
-      # Version-pinned (not bare "uvx ruff"), matching the pre-commit "ruff (real bugs block)"
-      # hook's rev pin exactly (see mlframe's .pre-commit-config.yaml) -- an unpinned uvx resolves
-      # whatever's newest on PyPI at run time, drifting from what a contributor's local pre-commit
-      # run just verified, same class of bug black-filtered.yml's BLACK_CMD pin already guards
-      # against. Bump both together.
-      # Ruff 0.15.22 rejects `--ignore ""` outright ("Unknown rule selector `` in ignore from the
-      # CLI") rather than treating an empty string as "no extra codes" - a caller passing
-      # `ignore: ""` (meaning "the extended config's own ignores are enough, add nothing") used to
-      # crash here. Only append `--ignore` when the caller actually supplied codes.
+      # Version-pinned (not bare "uvx ruff"): an unpinned uvx resolves whatever is newest on PyPI at
+      # run time, drifting from what a contributor's local pre-commit run just verified, the same
+      # class of bug black-filtered.yml's BLACK_CMD pin guards against. The version is defined ONCE,
+      # in src/py_ci_shared/tool_versions.py of the checkout resolved above; every consumer's
+      # pinned-tool-versions hook checks its own pin and its installed ruff against the same value.
+      # It used to be a literal repeated in four steps and copied by hand into every consumer, and
+      # consumers drifted from it in both directions.
+      - name: Resolve ruff version
+        run: |
+          v=$(sed -n 's/^RUFF_VERSION = "\([0-9][0-9.]*\)".*/\1/p' "${PY_CI_SHARED_DIR}/src/py_ci_shared/tool_versions.py")
+          if [ -z "$v" ]; then
+            echo "::error::RUFF_VERSION not found in ${PY_CI_SHARED_DIR}/src/py_ci_shared/tool_versions.py"
+            exit 1
+          fi
+          echo "RUFF_VERSION=$v" >> "$GITHUB_ENV"
+
+      # Ruff (0.15.22 when this was written) rejects `--ignore ""` outright ("Unknown rule selector
+      # `` in ignore from the CLI") rather than treating an empty string as "no extra codes" - a
+      # caller passing `ignore: ""` (meaning "the extended config's own ignores are enough, add
+      # nothing") used to crash here. Only append `--ignore` when the caller actually supplied codes.
       - name: Ruff (real bugs - blocking)
         run: |
           if [ -n "${INPUTS_IGNORE}" ]; then
-            uvx ruff==0.15.22 check "${INPUTS_CHECK_PATH}" --ignore "${INPUTS_IGNORE}"
+            uvx "ruff==${RUFF_VERSION}" check "${INPUTS_CHECK_PATH}" --ignore "${INPUTS_IGNORE}"
           else
-            uvx ruff==0.15.22 check "${INPUTS_CHECK_PATH}"
+            uvx "ruff==${RUFF_VERSION}" check "${INPUTS_CHECK_PATH}"
           fi
         env:
           INPUTS_IGNORE: ${{ inputs.ignore }}

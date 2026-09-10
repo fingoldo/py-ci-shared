@@ -72,14 +72,24 @@ jobs:
             echo "PY_CI_SHARED_DIR=${RUNNER_TEMP}/py-ci-shared" >> "$GITHUB_ENV"
           fi
 
+      # One version, defined in src/py_ci_shared/tool_versions.py -- see ruff-blocking.yml.
+      - name: Resolve ruff version
+        run: |
+          v=$(sed -n 's/^RUFF_VERSION = "\([0-9][0-9.]*\)".*/\1/p' "${PY_CI_SHARED_DIR}/src/py_ci_shared/tool_versions.py")
+          if [ -z "$v" ]; then
+            echo "::error::RUFF_VERSION not found in ${PY_CI_SHARED_DIR}/src/py_ci_shared/tool_versions.py"
+            exit 1
+          fi
+          echo "RUFF_VERSION=$v" >> "$GITHUB_ENV"
+
       - name: Run ruff (full - advisory)
-        run: uvx ruff==0.15.22 check "${INPUTS_SOURCE_PATH}"
+        run: uvx "ruff==${RUFF_VERSION}" check "${INPUTS_SOURCE_PATH}"
         continue-on-error: true
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
 
       - name: Ruff mccabe complexity (advisory)
-        run: uvx ruff==0.15.22 check "${INPUTS_SOURCE_PATH}" --select C90 --statistics
+        run: uvx "ruff==${RUFF_VERSION}" check "${INPUTS_SOURCE_PATH}" --select C90 --statistics
         continue-on-error: true
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}

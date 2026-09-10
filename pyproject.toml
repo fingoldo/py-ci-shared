@@ -92,6 +92,7 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/install_safe_hook.py" = ["T201"]
 "src/py_ci_shared/config_drift_check.py" = ["T201"]
 "src/py_ci_shared/setup_env.py" = ["T201"]
+"src/py_ci_shared/pinned_tool_versions.py" = ["T201"]
 
 [tool.mypy]
 python_version = "3.10"

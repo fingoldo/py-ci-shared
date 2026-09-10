@@ -72,7 +72,7 @@ def find_missing_workflow_paths(
     first_party = {o.lower() for o in first_party_owners}
     files = _workflow_files(workflows_dir)
     if not files:
-        return [f"{workflows_dir}: no workflow files found - this check examined nothing, which reads " f"as a pass."]
+        return [f"{workflows_dir}: no workflow files found - this check examined nothing, which reads as a pass."]
 
     problems: list[str] = []
     for path in files:
@@ -96,8 +96,7 @@ def find_missing_workflow_paths(
                 # so the path is relative to THAT, not to the repository root. Resolving only
                 # against the root reported healthy steps as broken.
                 bases = [repo_root]
-                for cd_dir in _CD_RE.findall(line):
-                    bases.append(repo_root / cd_dir)
+                bases.extend(repo_root / cd_dir for cd_dir in _CD_RE.findall(line))
                 if current_working_dir:
                     bases.append(repo_root / current_working_dir)
                 if any((base / script).exists() for base in bases):
@@ -105,7 +104,7 @@ def find_missing_workflow_paths(
                 if not (repo_root / script).exists():
                     problems.append(f"{rel}:{i}: runs `{script}`, which does not exist in the repository. A " f"guard that is not there is not coverage.")
 
-        if require_permissions and not any(_PERMISSIONS_RE.match(l) for l in lines):
+        if require_permissions and not any(_PERMISSIONS_RE.match(line_) for line_ in lines):
             problems.append(
                 f"{rel}: no top-level `permissions:` block. The GITHUB_TOKEN then gets the "
                 f"repository default, which is read/write on every scope on many accounts. Declare "

@@ -125,7 +125,7 @@ def find_unlocked_definer_functions(
     allowed = dict(allowed or {})
     files = sorted(p for p in migrations_dir.rglob("*.sql") if p.is_file())
     if not files:
-        return [f"{migrations_dir}: no .sql files found - this check examined nothing, which reads as " f"a pass. Point it at the migrations directory."]
+        return [f"{migrations_dir}: no .sql files found - this check examined nothing, which reads as a pass. Point it at the migrations directory."]
     combined = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in files)
 
     # Last definition wins: a later CREATE OR REPLACE is what the database ends up running.
@@ -177,10 +177,10 @@ def find_unlocked_definer_functions(
                         f"CALLER's search_path, so a caller who can create objects in any schema "
                         f"on it can shadow a table or function this body trusts."
                     )
-    for name in sorted(set(allowed) - all_defined):
-        problems.append(
-            f"allowed[{name!r}] does not name any function defined under {migrations_dir} - a " f"stale allowlist entry reads as coverage. Remove it."
-        )
+    problems.extend(
+        f"allowed[{name!r}] does not name any function defined under {migrations_dir} - a stale allowlist entry reads as coverage. Remove it."
+        for name in sorted(set(allowed) - all_defined)
+    )
     return problems
 
 

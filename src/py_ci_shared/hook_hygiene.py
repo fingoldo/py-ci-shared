@@ -82,7 +82,7 @@ def find_hook_hygiene_problems(
     hook-only guard. See the module docstring for what each rule is protecting against."""
     hooks = _hook_files(hooks_dir)
     if not hooks:
-        return [f"{hooks_dir}: no hook files found - this check examined nothing, which reads as a " f"pass. Point it at the directory `core.hooksPath` names."]
+        return [f"{hooks_dir}: no hook files found - this check examined nothing, which reads as a pass. Point it at the directory `core.hooksPath` names."]
 
     problems: list[str] = []
     hook_guards: set[str] = set()

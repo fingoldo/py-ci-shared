@@ -58,8 +58,19 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -v
 
+      # One version, defined in src/py_ci_shared/tool_versions.py -- see ruff-blocking.yml. The
+      # pattern tolerates a trailing CR: the Windows leg may check the file out with CRLF endings.
+      - name: Resolve ruff version
+        run: |
+          v=$(sed -n 's/^RUFF_VERSION = "\([0-9][0-9.]*\)".*/\1/p' src/py_ci_shared/tool_versions.py)
+          if [ -z "$v" ]; then
+            echo "::error::RUFF_VERSION not found in src/py_ci_shared/tool_versions.py"
+            exit 1
+          fi
+          echo "RUFF_VERSION=$v" >> "$GITHUB_ENV"
+
       - name: Ruff (self-check)
-        run: uvx ruff==0.15.22 check . --ignore C901
+        run: uvx "ruff==${RUFF_VERSION}" check . --ignore C901
 
       - name: MyPy (self-check)
         # Pinned, not latest: mypy-beachhead.yml's own header comment documents why an unpinned
@@ -70,7 +81,7 @@ jobs:
           mypy src/py_ci_shared
 
       - name: Validate ruff-base.toml is loadable
-        run: uvx ruff==0.15.22 check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
+        run: uvx "ruff==${RUFF_VERSION}" check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
 
   # Integration tests: actually CALL the reusable workflows below (same-repo `uses: ./...` ref)
   # against py-ci-shared's own tree, instead of only linting the YAML syntax. Added 2026-07-09
