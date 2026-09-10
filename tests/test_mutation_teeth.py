@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import io
 import time
+import tokenize
 from pathlib import Path
 
 import pytest
@@ -615,6 +616,10 @@ class TestTheCacheReplaysEveryCaveat:
         assert restored.key == original.key
 
 
+@pytest.mark.skipif(
+    not hasattr(tokenize, "FSTRING_MIDDLE"),
+    reason="before 3.12 an f-string is a single STRING token, so it has no literal segment to mutate",
+)
 class TestProseInsideAnFStringCanBeChallenged:
     """On 3.12+ the literal text of an f-string is FSTRING_MIDDLE, which the string operator never
     saw. In this project that is where the prose lives: a prompt template rendered as one f-string
