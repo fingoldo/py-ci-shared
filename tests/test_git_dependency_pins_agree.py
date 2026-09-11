@@ -86,6 +86,15 @@ class TestInstalledIncludesPin:
         with pytest.raises(pytest.fail.Exception, match="without the pinned commit"):
             assert_installed_includes_pin("pinpkg", "f" * 40)
 
+    def test_a_hook_environment_does_not_redirect_git(self, checkout, tmp_path, monkeypatch):
+        """Inside a pre-commit hook GIT_DIR names the repository being committed; the check must still read the checkout."""
+        _repo, first, _second = checkout
+        other = tmp_path / "committing"
+        _git(tmp_path, "init", "-q", str(other))
+        monkeypatch.setenv("GIT_DIR", str(other / ".git"))
+        monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))
+        assert installed_pin_problem("pinpkg", first) == (None, None)
+
     def test_a_plain_directory_install_skips_with_the_reason(self, tmp_path, monkeypatch):
         (tmp_path / "plainpkg").mkdir()
         (tmp_path / "plainpkg" / "__init__.py").write_text("", encoding="utf-8")

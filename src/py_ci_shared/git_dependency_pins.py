@@ -208,9 +208,17 @@ def assert_pins_agree(files: Sequence[Path], name: str, *, root: Path | None = N
 
 
 def _git(args: list[str], cwd: Path):
+    """Run git in *cwd* and nowhere else.
+
+    A pre-commit hook runs with GIT_DIR and GIT_INDEX_FILE exported for the repository being committed, and git obeys
+    them over its working directory: inside a hook, ``rev-parse HEAD`` in the dependency's checkout answered with the
+    committing repository's HEAD, and the pin check failed every commit. So every GIT_* variable is dropped.
+    """
+    import os
     import subprocess
 
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
 
 
 def _checkout_root(path: Path) -> Path | None:
