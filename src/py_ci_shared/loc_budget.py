@@ -86,12 +86,70 @@ def _loc(path: Path) -> int:
         return 0
 
 
+def oversized_files(files: Iterable[Path], root: Path, limit: int = DEFAULT_LOC_LIMIT) -> "dict[str, int]":
+    """``{path relative to root: loc}`` for every file over *limit* -- the map a baseline records."""
+    out: "dict[str, int]" = {}
+    for p in files:
+        n = _loc(p)
+        if n > limit:
+            out[p.relative_to(root).as_posix()] = n
+    return out
+
+
+def write_loc_baseline(path: Path, current: "dict[str, int]") -> None:
+    """Write *current* as the baseline, keys sorted, for a repo's own ``regenerate_baseline`` or a refresh."""
+    import orjson
+
+    path.write_text(orjson.dumps(dict(sorted(current.items())), option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8"), encoding="utf-8")
+
+
+def ratchet_problems(
+    baseline: "dict[str, int]",
+    current: "dict[str, int]",
+    *,
+    limit: int = DEFAULT_LOC_LIMIT,
+    growth_slack: int = DEFAULT_GROWTH_SLACK,
+    one_way: bool = True,
+) -> "list[str]":
+    """Every way the committed baseline and the tree disagree, as reviewer-readable lines.
+
+    A pure function over two ``{relpath: loc}`` maps, so each rule can be exercised on inputs that do not
+    exist in any tree. ``one_way`` (the default) makes the ratchet turn in one direction only:
+
+    * a grandfathered file that SHRANK by more than ``growth_slack`` must have its ceiling lowered, or the
+      headroom it left gets used -- production_scrapers watched a file carved from 1136 to 1021 lines grow
+      back under a ceiling of 1136 + 50 without the gate objecting once (audit 2026-09-05 TEST-7);
+    * a grandfathered file that dropped under ``limit`` entirely keeps its old, higher ceiling unless the
+      entry FAILS -- it used to print to stderr in a green run, which nobody reads.
+
+    ``one_way=False`` reproduces the original two rules (new file, growth past slack) for a repo that has
+    not yet refreshed its baseline.
+    """
+    problems: "list[str]" = []
+    for rel, loc in sorted(current.items()):
+        if rel not in baseline:
+            problems.append(f"NEW oversized: {rel} ({loc} LOC > {limit})")
+        elif loc > baseline[rel] + growth_slack:
+            problems.append(f"GREW: {rel} ({baseline[rel]} -> {loc} LOC, slack {growth_slack})")
+        elif one_way and loc < baseline[rel] - growth_slack:
+            problems.append(f"SHRANK: {rel} ({baseline[rel]} -> {loc} LOC) -- refresh the baseline to lock in the smaller ceiling")
+    if one_way:
+        drained = sorted(set(baseline) - set(current))
+        if drained:
+            problems.append(
+                f"{len(drained)} grandfathered file(s) dropped under {limit} LOC and still hold their old ceiling -- "
+                f"refresh the baseline ({REFRESH_FLAG}):\n    " + "\n    ".join(drained)
+            )
+    return problems
+
+
 def assert_no_new_oversized_file(
     files: Iterable[Path],
     root: Path,
     baseline_path: Path,
     limit: int = DEFAULT_LOC_LIMIT,
     growth_slack: int = DEFAULT_GROWTH_SLACK,
+    one_way: bool = True,
 ) -> None:
     """Fail if any file in ``files`` exceeds ``limit`` lines UNLESS it's
     already in the baseline (grandfathered), or fail if a grandfathered
@@ -114,27 +172,22 @@ def assert_no_new_oversized_file(
         limit: LOC ceiling; a file at or under this is never flagged.
         growth_slack: how many lines a grandfathered file may grow before
             it's flagged too -- 0 means any growth at all fails.
+        one_way: also fail when a grandfathered file shrank by more than the slack
+            or dropped under the limit, so its ceiling follows it down (see
+            ``ratchet_problems``). On by default; False keeps the two original rules.
     """
     import orjson
     import pytest
 
-    current = {p.relative_to(root).as_posix(): _loc(p) for p in files if _loc(p) > limit}
+    current = oversized_files(files, root, limit)
 
     if _refresh_requested() or not baseline_path.exists():
-        baseline_path.write_text(
-            orjson.dumps(dict(sorted(current.items())), option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8"),
-            encoding="utf-8",
-        )
+        write_loc_baseline(baseline_path, current)
         pytest.skip(f"LOC-budget baseline refreshed at {baseline_path.name} ({len(current)} grandfathered file(s))")
 
     baseline: dict[str, int] = orjson.loads(baseline_path.read_bytes())
 
-    problems: list[str] = []
-    for rel, loc in sorted(current.items()):
-        if rel not in baseline:
-            problems.append(f"NEW oversized: {rel} ({loc} LOC > {limit})")
-        elif loc > baseline[rel] + growth_slack:
-            problems.append(f"GREW: {rel} ({baseline[rel]} -> {loc} LOC, slack {growth_slack})")
+    problems = ratchet_problems(baseline, current, limit=limit, growth_slack=growth_slack, one_way=one_way)
 
     if problems:
         pytest.fail(
