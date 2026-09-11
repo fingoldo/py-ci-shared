@@ -8,7 +8,7 @@ just hit (2026-09-11 comparison, recorded in the py-ci-shared history of this mo
 * ``inspect.getsource`` bare or aliased, ``getsourcelines``, ``ast.unparse``, ``dis`` and ``co_code``
   -- one repo saw the bare name, one the aliases, one the ``dis`` family;
 * a ``.py`` or ``.sql`` file read through ``__file__``, a module constant, or a ``glob("*.py")`` loop
-  variable -- one repo saw the variables, another only a literal on the same line;
+  variable or a generator over one -- one repo saw the variables, another only a literal on the same line;
 * the text travelling under a new name, sliced (``src[src.index("def f"):]``), or returned by a
   module-level ``def _read(rel)`` helper -- each seen by exactly one repo.
 
@@ -22,7 +22,7 @@ landed. Reading a fixture, a JSON cache, a README or a prompt file is not a clai
 
 Two modes. ``"assertion"`` (the default) flags an ``assert`` -- or an ``if`` whose body calls
 ``.fail(...)`` -- that tests source text's CONTENT (``in``, ``==``, ``.count``, a regex, ``.find`` /
-``.index`` / ``.startswith``). ``"read"`` flags every read of source in a test, asserted on or not,
+``.index`` / ``.startswith``, or the truth of a regex match taken over the source). ``"read"`` flags every read of source in a test, asserted on or not,
 for a repo that wants the stricter rule.
 """
 
@@ -128,7 +128,8 @@ class _Detector:
                         if item.optional_vars is not None and isinstance(expr, ast.Call) and _call_name(expr) == "open" and expr.args:
                             if self._is_source_path_expr(expr.args[0], names):
                                 names.update(n.id for n in ast.walk(item.optional_vars) if isinstance(n, ast.Name))
-                elif isinstance(node, (ast.For, ast.AsyncFor)):
+                elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+                    # `ast.comprehension` covers `"".join(p.read_text() for p in DIR.glob("*.py"))`, which reads the same files.
                     globs = [c for c in ast.walk(node.iter) if isinstance(c, ast.Call) and _call_name(c) in ("glob", "rglob", "iterdir")]
                     if any(lit.lower().endswith(self.suffixes) for c in globs for lit in _string_constants(c)):
                         names.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
@@ -238,6 +239,19 @@ def _tests_content(test: ast.AST) -> bool:
     return False
 
 
+_MATCHERS = frozenset({"search", "match", "fullmatch"})
+
+
+def _match_names(body: list[ast.stmt], det: _Detector, paths: set[str], tainted: set[str]) -> set[str]:
+    """Names bound to a regex match over source: ``m = re.search(pat, src)`` makes a bare ``assert m`` a content check."""
+    out: set[str] = set()
+    for node in _walk_scope(body):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and isinstance(node.value, ast.Call) and _call_name(node.value) in _MATCHERS:
+            if det.reader_kind(node.value, paths, tainted) or _uses(node.value, tainted):
+                out.update(_target_names(node))
+    return out
+
+
 def _fails_in_body(node: ast.If) -> bool:
     return any(isinstance(s, ast.Expr) and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute) and s.value.func.attr == "fail" for s in node.body)
 
@@ -270,6 +284,7 @@ def find_source_text_claims(
     det = _Detector(tree, readers=reader_names, treat_sql_as_source=treat_sql_as_source, follow_helpers=follow_helpers)
     claims: dict[int, SourceTextClaim] = {}
     for function, body, paths, tainted in det.scopes():
+        matches = _match_names(body, det, paths, tainted)
         for node in _walk_scope(body):
             if mode == "read":
                 if isinstance(node, (ast.Call, ast.Attribute)) and node.lineno not in claims:
@@ -289,7 +304,7 @@ def find_source_text_claims(
             if kind is None:
                 used = next((s.id for s in ast.walk(test) if isinstance(s, ast.Name) and s.id in tainted), None)
                 kind = f"text held in `{used}`" if used and _uses(test, tainted) else None
-            if kind and _tests_content(test):
+            if kind and (_tests_content(test) or _uses(test, matches)):
                 claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
     return sorted(claims.values(), key=lambda c: c.line)
 

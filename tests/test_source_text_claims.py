@@ -58,6 +58,15 @@ class TestSourceFilesReadTheLongWay:
         body = 'def test_x():\n    for path in ROOT.glob("*.py"):\n        text = path.read_text()\n        assert "x" not in text\n'
         assert _lines(tmp_path, body) == [4]
 
+    def test_a_generator_over_a_glob(self, tmp_path):
+        """glossum's test_saver_loads_ol_to_en_too joined a module family this way and the loop-only rule missed it."""
+        body = 'def test_x():\n    src = "".join(p.read_text() for p in sorted(DIR.glob("tv*.py")))\n    assert "x" in src\n'
+        assert _lines(tmp_path, body) == [3]
+
+    def test_a_generator_over_a_non_source_glob(self, tmp_path):
+        body = 'def test_x():\n    text = "".join(p.read_text() for p in DIR.glob("*.json"))\n    assert "x" in text\n'
+        assert _lines(tmp_path, body) == []
+
     def test_a_sql_file_counts_as_source(self, tmp_path):
         body = 'def test_x():\n    sql = (SQL_DIR / "q.sql").read_text()\n    assert "ORDER BY" in sql\n'
         assert _lines(tmp_path, body) == [3]
@@ -85,6 +94,16 @@ class TestTheTextTravels:
     def test_a_position_comparison(self, tmp_path):
         body = 'import inspect\ndef test_x():\n    src = inspect.getsource(m)\n    assert src.find("a") < src.find("b")\n'
         assert _lines(tmp_path, body) == [4]
+
+    @pytest.mark.parametrize("check", ["assert m", "assert m is not None", "assert (m := re.search('x', src))"])
+    def test_a_regex_match_over_source(self, tmp_path, check):
+        """glossum's test_update_includes_source_word_match asserted a bare match object and was not flagged."""
+        body = f"import inspect, re\ndef test_x():\n    src = inspect.getsource(mod)\n    m = re.search('x', src)\n    {check}\n"
+        assert _lines(tmp_path, body) == [5]
+
+    def test_a_regex_match_over_rendered_output(self, tmp_path):
+        body = "import re\ndef test_x():\n    m = re.search('x', render())\n    assert m\n"
+        assert _lines(tmp_path, body) == []
 
     def test_an_if_fail_guard(self, tmp_path):
         body = 'import inspect, pytest\ndef test_x():\n    src = inspect.getsource(m)\n    if "x" not in src:\n        pytest.fail("gone")\n'
