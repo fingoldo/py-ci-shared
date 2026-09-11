@@ -138,6 +138,17 @@ class TestRoundFiling:
 
         assert tracker_status_cells(tracker) == [("18", "RESOLVED - capped")]
 
+    def test_an_open_row_in_a_later_table_keeps_the_round_open(self, tmp_path):
+        audits = tmp_path / "audits"
+        _write(
+            audits / "2026-08-20" / "TRACKER.md",
+            "| Report | Findings |\n|---|---|\n| a.md | 3 |\n\n## lane 1\n\n| Finding | Ref | Disposition |\n|---|---|---|\n"
+            "| x | a #1 | **RESOLVED** |\n\n## lane 2\n\n| Finding | Ref | Disposition |\n|---|---|---|\n| y | api #5 | **OPEN** |\n",
+        )
+
+        assert [label for label, _ in tracker_status_cells(audits / "2026-08-20" / "TRACKER.md")] == ["x", "y"]
+        assert round_filing_problems(audits) == []
+
     def test_a_closed_round_in_the_open_tree_and_an_open_row_in_implemented_are_reported(self, tmp_path):
         audits = tmp_path / "audits"
         _write(audits / "2026-09-11" / "TRACKER.md", self._CLOSED)

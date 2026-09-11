@@ -203,14 +203,17 @@ def _is_totals_row(label: str, status: str) -> bool:
 
 
 def tracker_status_cells(tracker: Path, status_columns: Iterable[str] = DEFAULT_STATUS_COLUMNS) -> "list[tuple[str, str]] | None":
-    """``(row label, status cell)`` for the first table whose header names a status column; None when no table does.
+    """``(row label, status cell)`` from EVERY table whose header names a status column; None when no table does.
 
     The column is found by its NAME, not its position: trackers written weeks apart put the disposition first, fifth
-    or last, and `status_problems`' first-cell rule read every such tracker as having no status at all. The row label
-    is the row's first cell, so a problem string stays stable when a line is inserted above it.
+    or last, and `status_problems`' first-cell rule read every such tracker as having no status at all. Every table,
+    not the first: noema_app's 2026-08-20 tracker keeps one table per lane, and reading only the first hid an OPEN
+    row three tables down and called the round closed. The row label is the row's first cell, so a problem string
+    stays stable when a line is inserted above it.
     """
     wanted = {c.lower() for c in status_columns}
     lines = _text(tracker).splitlines()
+    found: "list[tuple[str, str]] | None" = None
     i = 0
     while i < len(lines):
         if not lines[i].lstrip().startswith("|"):
@@ -224,13 +227,13 @@ def tracker_status_cells(tracker: Path, status_columns: Iterable[str] = DEFAULT_
             block.append(_table_cells(lines[j]))
             j += 1
         if column is not None:
-            return [
+            found = (found or []) + [
                 (cells[0], cells[column])
                 for cells in block
                 if column < len(cells) and not all(set(c) <= set("-: ") for c in cells) and not _is_totals_row(cells[0], cells[column])
             ]
         i = j
-    return None
+    return found
 
 
 def closing_word(cell: str, closing: Iterable[str] = DEFAULT_CLOSING) -> "str | None":
