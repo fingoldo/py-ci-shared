@@ -19,6 +19,11 @@ Usage (in a consuming repo's test suite)::
     def test_all_git_dependencies_pinned():
         assert_all_git_dependencies_pinned(Path(__file__).resolve().parents[2] / "pyproject.toml")
 
+Two further checks live here too. :func:`assert_pins_agree` fails unless every pin of one dependency across a
+set of files (requirements, pyproject, uv.lock, CI workflows) names the same commit, and
+:func:`assert_installed_includes_pin` fails when the installed copy -- an editable checkout, or a git install
+recorded in ``direct_url.json`` -- does not include the pinned commit.
+
 Deliberately dependency-light: ``tomllib``/``pytest`` are imported lazily,
 matching this package's other modules.
 """
@@ -145,3 +150,123 @@ def assert_all_git_dependencies_pinned(
             f"not pinned to a full commit SHA in {pyproject_path} -- a fresh install can silently "
             f"resolve to a different commit than the one actually developed/tested against:\n  " + "\n  ".join(violations)
         )
+
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Pins that agree, and an installed copy that includes the pin.
+#
+# A full SHA on every line (above) is necessary and not sufficient. Two further failures were measured on 2026-09-11:
+# mlframe carried 16 pyutilz pins across 9 workflow files naming two different commits, and realtime_applications'
+# requirements.txt and pyproject.toml named two different commits for one project -- a bump that misses a line leaves
+# CI testing a different commit from the one it claims. And the editable pyutilz checkout on the development machine
+# was 8 commits behind master, so baselines refreshed that day were built with scanners no pin used.
+# ---------------------------------------------------------------------------------------------------------------------
+
+_SHA40 = r"([0-9a-f]{40})"
+
+
+def _pin_patterns(name: str) -> list[re.Pattern[str]]:
+    n = re.escape(name)
+    return [
+        re.compile(rf"{n}\.git@{_SHA40}"),
+        re.compile(rf"{n}\.git#{_SHA40}"),
+        re.compile(rf"{n}-ref:\s*['\"]?{_SHA40}"),
+        re.compile(rf"git\s+-C\s+{n}\s+checkout\s+{_SHA40}"),
+    ]
+
+
+def pinned_shas(files: Sequence[Path], name: str, *, root: Path | None = None) -> dict[str, list[str]]:
+    """``{sha: ["file:line", ...]}`` for every pin of *name* in *files*: ``<name>.git@<sha>``, ``<name>.git#<sha>``
+    (a uv.lock source), ``<name>-ref: <sha>`` (an action input) and ``git -C <name> checkout <sha>``."""
+    found: dict[str, list[str]] = {}
+    patterns = _pin_patterns(name)
+    for path in files:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        rel = path.relative_to(root).as_posix() if root is not None and path.is_relative_to(root) else path.as_posix()
+        for lineno, line in enumerate(text.splitlines(), 1):
+            for pattern in patterns:
+                for sha in pattern.findall(line):
+                    found.setdefault(sha, []).append(f"{rel}:{lineno}")
+    return found
+
+
+def assert_pins_agree(files: Sequence[Path], name: str, *, root: Path | None = None, min_pins: int = 1) -> str:
+    """Fail unless every pin of *name* in *files* names one commit, and at least *min_pins* were found; return it."""
+    import pytest
+
+    found = pinned_shas(list(files), name, root=root)
+    total = sum(len(v) for v in found.values())
+    if total < min_pins:
+        pytest.fail(f"found {total} pin(s) of {name}, expected at least {min_pins} -- Check the file list and the pin spellings")
+    if len(found) > 1:
+        detail = "\n".join(f"  {sha[:12]}: {', '.join(where)}" for sha, where in sorted(found.items(), key=lambda kv: -len(kv[1])))
+        pytest.fail(f"{name} is pinned to {len(found)} different commits; Update every pin to one commit:\n{detail}")
+    return next(iter(found))
+
+
+def _git(args: list[str], cwd: Path):
+    import subprocess
+
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60)
+
+
+def _checkout_root(path: Path) -> Path | None:
+    for parent in [path, *path.parents]:
+        if (parent / ".git").exists():
+            return parent
+    return None
+
+
+def _direct_url_commit(dist: str) -> str | None:
+    import json
+    from importlib import metadata
+
+    try:
+        raw = metadata.distribution(dist).read_text("direct_url.json")
+    except metadata.PackageNotFoundError:
+        return None
+    if not raw:
+        return None
+    commit = json.loads(raw).get("vcs_info", {}).get("commit_id")
+    return commit if isinstance(commit, str) else None
+
+
+def installed_pin_problem(package: str, pinned_sha: str, *, dist: str | None = None) -> tuple[str | None, str | None]:
+    """``(problem, skip_reason)`` for the installed *package* against *pinned_sha*.
+
+    An editable checkout must contain the pinned commit as an ancestor of its HEAD. A git install records the commit
+    it came from in ``direct_url.json``, which must equal the pin. A copy installed from a plain directory, as CI does
+    after cloning at the pin, records neither: that is a reason to skip, not a problem.
+    """
+    import importlib
+
+    module = importlib.import_module(package)
+    location = Path(module.__file__ or "").resolve()
+    root = _checkout_root(location.parent)
+    if root is not None:
+        head = _git(["rev-parse", "HEAD"], root).stdout.strip()
+        if _git(["cat-file", "-e", f"{pinned_sha}^{{commit}}"], root).returncode != 0:
+            return f"{package} is an editable checkout at {root} ({head[:12]}) without the pinned commit {pinned_sha[:12]}; Fetch and update it", None
+        if _git(["merge-base", "--is-ancestor", pinned_sha, "HEAD"], root).returncode != 0:
+            return f"{package} at {root} is at {head[:12]}, which does not include the pinned commit {pinned_sha[:12]}; Update the checkout to the pin or past it", None
+        return None, None
+    commit = _direct_url_commit(dist or package)
+    if commit is None:
+        return None, f"{package} is installed from a plain directory ({location.parent}); it records no commit to compare with the pin"
+    if commit != pinned_sha:
+        return f"{package} was installed from commit {commit[:12]}, but the pin is {pinned_sha[:12]}; Reinstall it at the pin", None
+    return None, None
+
+
+def assert_installed_includes_pin(package: str, pinned_sha: str, *, dist: str | None = None) -> None:
+    """Fail when the installed *package* does not include *pinned_sha*; skip, saying why, when it cannot tell."""
+    import pytest
+
+    problem, skip = installed_pin_problem(package, pinned_sha, dist=dist)
+    if problem:
+        pytest.fail(problem)
+    if skip:
+        pytest.skip(skip)
