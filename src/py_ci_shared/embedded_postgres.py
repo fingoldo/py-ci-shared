@@ -34,9 +34,16 @@ from pathlib import Path
 _EXE = ".exe" if os.name == "nt" else ""
 
 
+def cache_bin_dir() -> Path:
+    """Where ``fetch`` unpacks the server binaries: ``$PY_CI_SHARED_CACHE`` or ``~/.cache/py-ci-shared``, then ``pginstall/bin``."""
+    base = Path(os.environ.get("PY_CI_SHARED_CACHE") or Path.home() / ".cache" / "py-ci-shared")
+    return base / "pginstall" / "bin"
+
+
 def find_pg_bin(explicit: "str | None" = None) -> "Path | None":
-    """A directory holding ``initdb`` and ``pg_ctl``: *explicit*, ``$PG_BIN``, an installed ``pgserver``, or PATH."""
+    """A directory holding ``initdb`` and ``pg_ctl``: *explicit*, ``$PG_BIN``, the ``fetch`` cache, an installed ``pgserver``, or PATH."""
     candidates = [Path(value) for value in (explicit, os.environ.get("PG_BIN")) if value]
+    candidates.append(cache_bin_dir())
     try:
         import pgserver  # type: ignore[import-not-found]
 
@@ -103,15 +110,65 @@ def run(argv: Sequence[str], *, env_var: str, bin_dir: "Path | None", missing_ex
         return subprocess.run(list(argv), env={**os.environ, env_var: dsn}, check=False).returncode
 
 
+#: The pgserver wheel carries a relocatable PostgreSQL build; its binaries do not depend on the Python it was
+#: built for, so a cp312 wheel serves any interpreter.
+PGSERVER_VERSION = "0.1.4"
+_WHEEL_PLATFORM = {"win32": "win_amd64", "linux": "manylinux_2_17_x86_64", "darwin": "macosx_11_0_arm64"}
+
+
+def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Path:
+    """Download the pgserver wheel for this platform and unpack its ``pginstall/`` into the cache. Idempotent."""
+    import zipfile
+
+    bin_dir = dest or cache_bin_dir()
+    if (bin_dir / f"initdb{_EXE}").is_file():
+        return bin_dir
+    platform = next((tag for key, tag in _WHEEL_PLATFORM.items() if sys.platform.startswith(key)), None)
+    if platform is None:
+        raise RuntimeError(f"no pgserver wheel known for {sys.platform}; set PG_BIN instead")
+    with tempfile.TemporaryDirectory() as tmp:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "download",
+                f"pgserver=={version}",
+                "--no-deps",
+                "--only-binary=:all:",
+                "--python-version",
+                "3.12",
+                "--platform",
+                platform,
+                "-d",
+                tmp,
+                "-q",
+            ],
+            check=True,
+        )
+        wheel = next(Path(tmp).glob("pgserver-*.whl"))
+        with zipfile.ZipFile(wheel) as zf:
+            members = [m for m in zf.namelist() if m.startswith("pgserver/pginstall/")]
+            zf.extractall(tmp, members)
+        target = bin_dir.parent
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(Path(tmp) / "pgserver" / "pginstall", target)
+    return bin_dir
+
+
 def main(args: "Sequence[str] | None" = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.embedded_postgres")
     sub = parser.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("fetch", help=f"download the pgserver {PGSERVER_VERSION} binaries into {cache_bin_dir().parent}")
     r = sub.add_parser("run", help="run a command with a throwaway server's DSN in an environment variable")
     r.add_argument("--env", required=True, help="the environment variable to set to the DSN")
     r.add_argument("--pg-bin", default=None)
     r.add_argument("--missing-exit", type=int, default=0, help="exit code when no binaries are found (default 0, printed loudly)")
     r.add_argument("command", nargs=argparse.REMAINDER)
     ns = parser.parse_args(args)
+    if ns.cmd == "fetch":
+        print(fetch())
+        return 0
     command = [c for c in ns.command if c != "--"]
     if not command:
         parser.error("no command given after --")

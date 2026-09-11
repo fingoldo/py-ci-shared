@@ -34,6 +34,22 @@ def test_find_pg_bin_takes_a_directory_only_when_both_binaries_are_there(tmp_pat
     assert find_pg_bin(str(half)) != half
 
 
+def test_the_fetch_cache_is_searched(tmp_path, monkeypatch):
+    """A hook on a machine with no PG_BIN still finds binaries that `fetch` unpacked earlier."""
+    exe = ".exe" if os.name == "nt" else ""
+    monkeypatch.delenv("PG_BIN", raising=False)
+    monkeypatch.setenv("PY_CI_SHARED_CACHE", str(tmp_path))
+    bin_dir = tmp_path / "pginstall" / "bin"
+    bin_dir.mkdir(parents=True)
+    for name in ("initdb", "pg_ctl"):
+        (bin_dir / f"{name}{exe}").write_text("", encoding="utf-8")
+    from py_ci_shared.embedded_postgres import cache_bin_dir, fetch
+
+    assert cache_bin_dir() == bin_dir
+    assert find_pg_bin() == bin_dir
+    assert fetch() == bin_dir, "fetch is idempotent: an unpacked cache is not downloaded again"
+
+
 def _git(cwd: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
 
