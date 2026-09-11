@@ -14,10 +14,14 @@ from py_ci_shared.audit_round_format import (
     absence_comparisons,
     assert_no_whole_file_absence_claims,
     assert_rounds_countable,
+    assert_rounds_filed,
     assert_tracker_statuses_countable,
+    closing_word,
     finding_problems,
     is_whole_file_read,
+    round_filing_problems,
     status_problems,
+    tracker_status_cells,
 )
 
 
@@ -111,6 +115,64 @@ class TestRoundFiles:
 
         with pytest.raises(pytest.fail.Exception):
             assert_rounds_countable(tmp_path / "nowhere")
+
+
+class TestRoundFiling:
+    _CLOSED = "| # | Lane | Severity | Disposition | Title |\n|---|---|---|---|---|\n| 1 | a | P1 | RESOLVED - `x.py` | t |\n| 2 | a | P2 | **FUTURE** (owner) | u |\n"
+
+    def test_the_status_column_is_found_by_name_wherever_it_sits(self, tmp_path):
+        tracker = _write(tmp_path / "TRACKER.md", "intro\n\n| id | severity | finding | status |\n|---|---|---|---|\n| A-1 | P1 | x | rejected - no |\n")
+
+        assert tracker_status_cells(tracker) == [("A-1", "rejected - no")]
+        assert closing_word("rejected - no") == "REJECTED"
+        assert closing_word("**Won’t fix**") == "WON'T FIX"
+        assert closing_word("OPEN - waiting") is None
+
+    def test_an_escaped_pipe_does_not_shift_the_column_and_a_totals_row_is_not_a_row(self, tmp_path):
+        tracker = _write(
+            tmp_path / "TRACKER.md",
+            "| # | Lane | Finding | Disposition |\n|---|---|---|---|\n"
+            "| 18 | sec | `/x` runs `2 + \\|delta\\|` ablations | RESOLVED - capped |\n"
+            "| **Total** | | | |\n",
+        )
+
+        assert tracker_status_cells(tracker) == [("18", "RESOLVED - capped")]
+
+    def test_a_closed_round_in_the_open_tree_and_an_open_row_in_implemented_are_reported(self, tmp_path):
+        audits = tmp_path / "audits"
+        _write(audits / "2026-09-11" / "TRACKER.md", self._CLOSED)
+        _write(audits / "implemented" / "2026-09-06" / "TRACKER.md", self._CLOSED.replace("**FUTURE** (owner)", "OPEN"))
+
+        problems = round_filing_problems(audits)
+
+        assert "2026-09-11: every row of TRACKER.md is closed - move the round to implemented/" in problems
+        assert "implemented/2026-09-06/TRACKER.md: row '2' is not closed, yet the round is filed under implemented/" in problems
+        assert len(problems) == 2, problems
+
+    def test_an_uncountable_tracker_and_an_open_round_without_one_are_reported(self, tmp_path):
+        audits = tmp_path / "audits"
+        _write(audits / "2026-09-01" / "TRACKER.md", "| Report | Findings | Done |\n|---|---|---|\n| a.md | 3 | 3 |\n")
+        _write(audits / "2026-09-02" / "report.md", "# prose only\n")
+        _write(audits / "implemented" / "2026-07-01" / "report.md", "# filed before trackers existed\n")
+
+        problems = round_filing_problems(audits)
+
+        assert any(p.startswith("2026-09-01/TRACKER.md: no table") for p in problems), problems
+        assert "2026-09-02: open round with no TRACKER*.md - its closure cannot be counted" in problems
+        assert not any("2026-07-01" in p for p in problems), problems
+
+    def test_the_ratchet_fails_on_a_new_and_on_a_stale_entry_and_passes_when_they_agree(self, tmp_path):
+        audits = tmp_path / "audits"
+        _write(audits / "2026-09-11" / "TRACKER.md", self._CLOSED)
+        known = round_filing_problems(audits)
+
+        assert_rounds_filed(audits, known=known)
+        with pytest.raises(pytest.fail.Exception, match="move the round"):
+            assert_rounds_filed(audits, known=())
+        with pytest.raises(pytest.fail.Exception, match="no longer reproduce"):
+            assert_rounds_filed(audits, known=[*known, "2026-01-01: gone"])
+        with pytest.raises(pytest.fail.Exception, match="expected at least"):
+            assert_rounds_filed(tmp_path / "nowhere")
 
 
 class TestAbsenceClaims:

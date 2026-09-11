@@ -12,6 +12,9 @@ that read clean while missing part of the file (production_scrapers, 2026-09-07.
 * **Tracker and findings drifting apart**, in either direction.
 * **A claim asserting a string is ABSENT from a whole file**, in a disposition verifier. It went green four
   times for one reason: the file's own comment explaining the fix contained the banned string.
+* **A round filed in the wrong place** (autopsia, 2026-09-12): a round whose every row was closed still sat in the
+  open tree, and nothing noticed because the tracker kept its disposition in a named column, not the first one, so
+  every check above read it as an older format and counted nothing. `assert_rounds_filed` finds the column by name.
 
 Every format is a parameter, with production_scrapers' conventions as the defaults, and every check
 has a floor on what it parsed: a check whose pattern stopped matching reports a clean tree otherwise.
@@ -177,6 +180,131 @@ def assert_rounds_countable(
         problems.extend(f"tracker row {fid} names no finding section" for fid in sorted(tracked - set(ids)))
     if problems:
         pytest.fail(f"{len(problems)} problem(s) that keep the rounds from being counted:\n  " + "\n  ".join(problems[:40]))
+
+
+# ------------------------------------------------------------------ closed rounds are filed
+#: Words that close a tracker row. A repo passes its own; these are the union two trackers already use.
+DEFAULT_CLOSING: tuple[str, ...] = ("RESOLVED", "DOCUMENTED", "FUTURE", "REJECTED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
+#: Header names of the column a tracker keeps its disposition in, matched case-insensitively.
+DEFAULT_STATUS_COLUMNS: tuple[str, ...] = ("disposition", "status")
+
+
+_UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
+
+
+def _table_cells(line: str) -> list[str]:
+    """Cells split on UNESCAPED pipes: a finding that quotes ``2 + \\|delta\\|`` otherwise shifts every column after it."""
+    return [c.strip() for c in _UNESCAPED_PIPE.split(line.strip().strip("|"))]
+
+
+def _is_totals_row(label: str, status: str) -> bool:
+    """A bold first cell over an empty status is a summary line (``| **Total** | 9 | ... | |``), not an open row."""
+    return label.startswith("**") and label.endswith("**") and not status.strip()
+
+
+def tracker_status_cells(tracker: Path, status_columns: Iterable[str] = DEFAULT_STATUS_COLUMNS) -> "list[tuple[str, str]] | None":
+    """``(row label, status cell)`` for the first table whose header names a status column; None when no table does.
+
+    The column is found by its NAME, not its position: trackers written weeks apart put the disposition first, fifth
+    or last, and `status_problems`' first-cell rule read every such tracker as having no status at all. The row label
+    is the row's first cell, so a problem string stays stable when a line is inserted above it.
+    """
+    wanted = {c.lower() for c in status_columns}
+    lines = _text(tracker).splitlines()
+    i = 0
+    while i < len(lines):
+        if not lines[i].lstrip().startswith("|"):
+            i += 1
+            continue
+        header = _table_cells(lines[i])
+        column = next((k for k, name in enumerate(header) if name.strip("*`_ ").lower() in wanted), None)
+        j = i + 1
+        block = []
+        while j < len(lines) and lines[j].lstrip().startswith("|"):
+            block.append(_table_cells(lines[j]))
+            j += 1
+        if column is not None:
+            return [
+                (cells[0], cells[column])
+                for cells in block
+                if column < len(cells) and not all(set(c) <= set("-: ") for c in cells) and not _is_totals_row(cells[0], cells[column])
+            ]
+        i = j
+    return None
+
+
+def closing_word(cell: str, closing: Iterable[str] = DEFAULT_CLOSING) -> "str | None":
+    """The closing word *cell* opens with - bold, backticks, case and a curly apostrophe ignored - or None."""
+    lead = cell.strip().lstrip("*`_ ").upper().replace("’", "'")
+    return next((word for word in sorted(closing, key=len, reverse=True) if lead.startswith(word.upper())), None)
+
+
+def round_filing_problems(
+    audits_dir: Path,
+    *,
+    closing: Iterable[str] = DEFAULT_CLOSING,
+    status_columns: Iterable[str] = DEFAULT_STATUS_COLUMNS,
+    implemented: str = "implemented",
+    tracker_glob: str = "TRACKER*.md",
+) -> list[str]:
+    """Where a dated round sits must agree with its tracker. Line-number-free strings, so a baseline survives edits.
+
+    * a round filed under ``implemented/`` whose tracker has a row that is not closed;
+    * a round still in the open tree whose every tracker row IS closed - it should have been moved;
+    * a tracker with no table carrying a status column, which nothing can count;
+    * an open-tree round with no tracker at all, whose closure therefore cannot be shown either way.
+
+    Older ``implemented/`` rounds without a tracker are not reported: they predate the tracker convention and were
+    filed by hand; requiring one retroactively would only restate history.
+    """
+    words = tuple(closing)
+    columns = tuple(status_columns)
+    problems: list[str] = []
+    for parent, filed in ((audits_dir, False), (audits_dir / implemented, True)):
+        if not parent.is_dir():
+            continue
+        for rnd in sorted(d for d in parent.iterdir() if d.is_dir() and _DATED.match(d.name)):
+            where = rnd.relative_to(audits_dir).as_posix()
+            trackers = sorted(rnd.glob(tracker_glob))
+            if not trackers and not filed:
+                problems.append(f"{where}: open round with no {tracker_glob} - its closure cannot be counted")
+            for tracker in trackers:
+                rows = tracker_status_cells(tracker, columns)
+                if not rows:
+                    problems.append(f"{where}/{tracker.name}: no table with a {'/'.join(columns)} column and a row - nothing to count")
+                    continue
+                open_rows = [label for label, cell in rows if closing_word(cell, words) is None]
+                if filed:
+                    problems.extend(f"{where}/{tracker.name}: row {label!r} is not closed, yet the round is filed under {implemented}/" for label in open_rows)
+                elif not open_rows:
+                    problems.append(f"{where}: every row of {tracker.name} is closed - move the round to {implemented}/")
+    return problems
+
+
+def assert_rounds_filed(
+    audits_dir: Path,
+    *,
+    known: Iterable[str] = (),
+    min_trackers: int = 1,
+    implemented: str = "implemented",
+    tracker_glob: str = "TRACKER*.md",
+    **kwargs: Iterable[str],
+) -> None:
+    """`round_filing_problems` as a shrink-only ratchet: a problem not in *known* fails, and so does a *known* entry
+    that no longer reproduces. Fails too when fewer than *min_trackers* trackers exist, since zero parsed is clean."""
+    import pytest
+
+    count = sum(len(list(d.glob(tracker_glob))) for parent in (audits_dir, audits_dir / implemented) if parent.is_dir() for d in parent.iterdir() if d.is_dir())
+    if count < min_trackers:
+        pytest.fail(f"only {count} {tracker_glob} file(s) under {audits_dir}; expected at least {min_trackers} -- the layout moved or the glob broke")
+    found = set(round_filing_problems(audits_dir, implemented=implemented, tracker_glob=tracker_glob, **kwargs))
+    baseline = set(known)
+    new, stale = sorted(found - baseline), sorted(baseline - found)
+    if new or stale:
+        pytest.fail(
+            (f"{len(new)} audit round(s) filed against their own tracker - close the rows, or move the round:\n  " + "\n  ".join(new) if new else "")
+            + (f"\n{len(stale)} baseline entr(ies) no longer reproduce - remove them:\n  " + "\n  ".join(stale) if stale else "")
+        )
 
 
 # ------------------------------------------------------------------ disposition verifiers
