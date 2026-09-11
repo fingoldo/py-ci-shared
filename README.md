@@ -374,6 +374,28 @@ def test_no_new_undocumented_env_vars():
     )
 ```
 
+## `.env.example` values load (`env_example_round_trip`)
+
+Fails if a value `.env.example` documents cannot be loaded by the project's pydantic-settings class. A
+name-parity check passes while the documented VALUE breaks startup: glossum's example showed
+`CORS_ORIGINS=http://localhost:3000,http://localhost:8080`, pydantic-settings JSON-decoded the list field before
+its comma-splitting validator ran, and copying the example raised `SettingsError`.
+
+Each documented value, commented out (`# NAME=VALUE`) or not, is put alone into a cleared environment on top of
+`base_env` (the minimum the class builds from), and the class is constructed with `_env_file=None`. Any exception
+is a failure. Dotenv inline comments are stripped; placeholders (`...`, `<...>`, `your-...`, `changeme`, empty) are
+skipped; a floor fails the check when fewer than `min_values` values were tried. One value per trial, so a
+cross-field validator does not fire on an unrelated line.
+
+```python
+from pathlib import Path
+from py_ci_shared.env_example_round_trip import assert_env_example_loads
+from myapp.config import Settings
+
+def test_every_documented_value_loads():
+    assert_env_example_loads(Settings, Path(".env.example"), base_env={"DATABASE_URL": "postgresql://x"}, min_values=10)
+```
+
 ## Content-hash / version-bump gate (`content_hash_version_bump_gate`)
 
 Fails if a set of tracked source files changed content but a version constant that's supposed to

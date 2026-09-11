@@ -41,6 +41,9 @@ dev = [
     # module itself is duck-typed, no pydantic import at runtime -- only the tests need a
     # concrete model class to exercise it against).
     "pydantic>=2.0",
+    # env_example_round_trip.py's tests build real pydantic-settings classes, one with the NoDecode
+    # annotation the fixed shape needs (added in 2.7). The module itself imports neither pydantic package.
+    "pydantic-settings>=2.7",
     # code_audit_meta.py wraps pyutilz.dev.code_audit.run_all() -- exercising it for real (not
     # mocked) needs pyutilz itself. Not on PyPI, so git+https like every consuming repo's own CI.
     # Pinned to a full commit SHA (found unpinned by this repo's own git_dependency_pins check,
