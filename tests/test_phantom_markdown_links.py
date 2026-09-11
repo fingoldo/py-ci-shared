@@ -70,3 +70,26 @@ class TestAssertNoPhantomMarkdownLinks:
     def test_passes_when_clean(self, tmp_path):
         readme = _write(tmp_path, "README.md", "no links here\n")
         assert_no_phantom_markdown_links([readme], tmp_path)  # does not raise
+
+
+def test_tracked_markdown_files_skips_an_untracked_virtualenv(tmp_path):
+    """A local .venv is untracked and full of third-party markdown with dead relative links; the repo's own prose is tracked."""
+    import subprocess
+
+    from py_ci_shared.phantom_markdown_links import tracked_markdown_files
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    _write(tmp_path, "README.md", "See [docs](docs/guide.md).\n")
+    (tmp_path / "docs").mkdir()
+    _write(tmp_path, "docs/guide.md", "notes\n")
+    _write(tmp_path, "setup.py", "\n")
+    subprocess.run(["git", "add", "README.md", "docs/guide.md", "setup.py"], cwd=tmp_path, check=True)
+    venv_doc = tmp_path / ".venv" / "Lib" / "site-packages" / "pkg-1.0.dist-info" / "README.md"
+    venv_doc.parent.mkdir(parents=True)
+    venv_doc.write_text("[contributing](CONTRIBUTING.md)\n", encoding="utf-8")
+
+    files = tracked_markdown_files(tmp_path)
+
+    assert sorted(p.relative_to(tmp_path).as_posix() for p in files) == ["README.md", "docs/guide.md"]
+    assert find_phantom_markdown_links(files, tmp_path) == []
+    assert find_phantom_markdown_links([venv_doc], tmp_path), "the planted .venv link must be dead, or the test above proves nothing"

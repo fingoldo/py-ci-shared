@@ -43,6 +43,20 @@ def _is_external(target: str) -> bool:
     return target.startswith(("http://", "https://", "git+", "mailto:"))
 
 
+def tracked_markdown_files(repo_root: Path) -> list[Path]:
+    """Every ``.md`` file git tracks under ``repo_root``: the repository's own prose, and nothing else.
+
+    A ``rglob("*.md")`` also walks whatever sits in the checkout untracked, and a local virtualenv
+    is full of third-party markdown whose relative links point at files its packaging never shipped:
+    glossum's check failed on ``.venv/Lib/site-packages/nltk-*.dist-info/licenses/README.md`` the
+    first time a ``.venv`` appeared beside it. An untracked file is not something a reader of the
+    repository can follow a link from, so it is not the check's subject.
+    """
+    from .repo_hygiene import _tracked_files
+
+    return [repo_root / rel for rel in _tracked_files(repo_root) if rel.endswith(".md")]
+
+
 def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> list[str]:
     """Return ``"<rel_path>:<line>: dead markdown-link target '<target>'"``
     for every markdown-link target that resolves against neither
