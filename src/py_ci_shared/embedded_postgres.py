@@ -167,7 +167,7 @@ def main(args: "Sequence[str] | None" = None) -> int:
     r.add_argument("command", nargs=argparse.REMAINDER)
     ns = parser.parse_args(args)
     if ns.cmd == "fetch":
-        print(fetch())
+        sys.stdout.write(f"{fetch()}\n")
         return 0
     command = [c for c in ns.command if c != "--"]
     if not command:
