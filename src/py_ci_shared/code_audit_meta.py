@@ -161,6 +161,7 @@ def assert_no_new_code_audit_findings(
     exclude_dirs: frozenset[str] = frozenset(),
     checks: list[str] | None = None,
     request=None,
+    fail_on_drained: bool = True,
 ) -> None:
     """Run ``pyutilz.dev.code_audit.run_all()`` against ``root`` and either
     seed/refresh ``baseline_path`` (first run, or ``--refresh-code-audit-baseline``
@@ -182,6 +183,11 @@ def assert_no_new_code_audit_findings(
             may run under pytest-xdist (``-n``) -- without it, the refresh flag
             is detected via ``sys.argv``, which xdist worker subprocesses don't
             reliably carry (see ``_refresh_requested``).
+        fail_on_drained: fail when a baseline entry no longer matches a finding.
+            A drained entry used to be printed to stderr and left in place, so a
+            fixed finding kept its slot and the next one written the same way was
+            excused by it; the baseline only ever grew back. ``False`` restores the
+            print for a repo mid-migration.
     """
     import orjson
     import pytest
@@ -222,6 +228,13 @@ def assert_no_new_code_audit_findings(
     matched_legacy = {_legacy_key(f) for f, k in keyed if k not in baseline and _legacy_key(f) in baseline}
     fixed = sorted(baseline - current_keys - matched_legacy)
 
+    if fixed and fail_on_drained and not new:
+        pytest.fail(
+            f"{len(fixed)} code-audit baseline entr(ies) no longer match a finding -- Refresh the baseline with "
+            f"{REFRESH_FLAG} so the fixed findings leave it:\n  "
+            + "\n  ".join(fixed[:20])
+            + (f"\n  ... and {len(fixed) - 20} more" if len(fixed) > 20 else "")
+        )
     if fixed:
         import sys
 

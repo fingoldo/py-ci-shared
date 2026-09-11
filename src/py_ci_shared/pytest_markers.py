@@ -9,7 +9,9 @@ own copy of this check, 99 to 175 lines, all with the same regexes and slightly 
 parsers. This module is their union:
 
 * registered = ``[tool.pytest.ini_options].markers`` in pyproject (an ``name(args): text`` entry
-  registers ``name``, as pytest itself reads it) plus every ``config.addinivalue_line("markers", ...)``
+  registers ``name``, as pytest itself reads it), the ``markers`` of ``pytest.ini`` / ``tox.ini`` /
+  ``setup.cfg`` (dashboard registers there, and a pyproject-only reader called both its markers
+  unregistered), plus every ``config.addinivalue_line("markers", ...)``
   in any ``conftest.py`` under the tests directory, plus pytest's builtins and the common plugins';
 * used = every ``pytest.mark.<name>`` in any ``.py`` under the tests directory, docstrings included,
   because a snippet in a docstring is copied into a real decorator (mlframe S27).
@@ -67,6 +69,36 @@ def pyproject_markers(pyproject: Path) -> set[str]:
     return {name for entry in raw if isinstance(entry, str) and (name := _marker_name(entry))}
 
 
+#: ini files pytest reads its ``markers`` from, with the section each uses.
+_INI_SECTIONS: tuple[tuple[str, str], ...] = (("pytest.ini", "pytest"), ("tox.ini", "pytest"), ("setup.cfg", "tool:pytest"))
+
+
+def ini_markers(repo_root: Path) -> set[str]:
+    """Marker names registered in ``pytest.ini``, ``tox.ini`` or ``setup.cfg`` at *repo_root*.
+
+    pytest splits the ``markers`` value into lines and registers each one, continuation lines included; only a line
+    whose name is an identifier can match a ``pytest.mark.<name>``, so the rest are dropped.
+    """
+    import configparser
+
+    out: set[str] = set()
+    for filename, section in _INI_SECTIONS:
+        path = repo_root / filename
+        if not path.is_file():
+            continue
+        parser = configparser.ConfigParser(interpolation=None)
+        try:
+            parser.read(path, encoding="utf-8")
+        except configparser.Error:
+            continue
+        if parser.has_option(section, "markers"):
+            for line in parser.get(section, "markers").splitlines():
+                name = _marker_name(line)
+                if name.isidentifier():
+                    out.add(name)
+    return out
+
+
 def conftest_markers(tests_dir: Path) -> set[str]:
     """Marker names registered through ``config.addinivalue_line("markers", "...")`` in any conftest."""
     out: set[str] = set()
@@ -111,7 +143,7 @@ def find_unregistered_markers(
 ) -> dict[str, list[str]]:
     """Markers used under the tests directory that nothing registers, with the files naming each."""
     tests = tests_dir or repo_root / "tests"
-    registered = pyproject_markers(repo_root / "pyproject.toml") | conftest_markers(tests) | BUILTIN_MARKERS | set(extra_registered)
+    registered = pyproject_markers(repo_root / "pyproject.toml") | ini_markers(repo_root) | conftest_markers(tests) | BUILTIN_MARKERS | set(extra_registered)
     return {name: files for name, files in used_markers(tests, repo_root, exclude=exclude).items() if name not in registered}
 
 
@@ -132,7 +164,7 @@ def assert_markers_registered(
     import pytest
 
     tests = tests_dir or repo_root / "tests"
-    registered = pyproject_markers(repo_root / "pyproject.toml") | conftest_markers(tests)
+    registered = pyproject_markers(repo_root / "pyproject.toml") | ini_markers(repo_root) | conftest_markers(tests)
     missing = sorted(set(expect_registered) - registered)
     if missing:
         pytest.fail(f"expected registered marker(s) not found by the parser: {missing} -- pyproject or conftest moved, or the parser broke")

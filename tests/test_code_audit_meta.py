@@ -71,10 +71,11 @@ class TestAssertNoNewCodeAuditFindings:
         with pytest.raises(pytest.fail.Exception, match="new static-analysis finding"):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
-    def test_drained_finding_does_not_fail(self, tmp_path):
-        """A finding present in the baseline but no longer in the current
-        scan (the bug got fixed) must not fail the test -- only NET-NEW
-        findings are gated."""
+    def test_a_drained_finding_fails_until_the_baseline_follows(self, tmp_path):
+        """A finding in the baseline that the scan no longer reports (the bug got
+        fixed) fails until the baseline is refreshed, so its slot cannot excuse the
+        next finding written the same way. ``fail_on_drained=False`` keeps the old
+        print-only behaviour for a repo mid-migration."""
         src = tmp_path / "src"
         src.mkdir()
         _write_mutable_default_module(src)
@@ -84,7 +85,9 @@ class TestAssertNoNewCodeAuditFindings:
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
         (src / "bad.py").write_text("def f():\n    return 1\n", encoding="utf-8")
-        assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        with pytest.raises(pytest.fail.Exception, match="no longer match a finding"):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        assert_no_new_code_audit_findings(root=src, baseline_path=baseline, fail_on_drained=False)
 
     def test_refresh_flag_reseeds_even_with_existing_baseline(self, tmp_path, monkeypatch):
         src = tmp_path / "src"
