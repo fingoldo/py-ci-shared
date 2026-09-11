@@ -67,6 +67,16 @@ class TestGatesThatCannotFail:
         (p,) = find_gates_that_cannot_fail(gate_commands(None, [wf]))
         assert p.startswith("ci.yml::lint::Lint")
 
+    def test_exit_zero_in_a_hooks_args_is_reported(self, tmp_path):
+        """A remote ruff hook given `--exit-zero` in `args` cannot fail; a mutation check in dashboard found it unflagged."""
+        pc = _precommit(tmp_path, "      - id: ruff\n        alias: dash-ruff\n        args: ['--exit-zero', '--select', 'F,E9']\n")
+        (p,) = find_gates_that_cannot_fail(gate_commands(pc, []))
+        assert "always exits 0" in p
+
+    def test_a_flag_that_only_contains_exit_zero_is_not_it(self, tmp_path):
+        pc = _precommit(tmp_path, "      - id: ruff\n        args: ['--no-exit-zero-on-fix', '--select', 'F']\n")
+        assert find_gates_that_cannot_fail(gate_commands(pc, [])) == []
+
     def test_manual_only_hooks_are_not_gates(self, tmp_path):
         pc = _precommit(tmp_path, "      - id: fixer\n        entry: ruff check --fix . || true\n        stages: [manual]\n")
         assert gate_commands(pc, []) == {}

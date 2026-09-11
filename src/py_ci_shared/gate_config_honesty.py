@@ -26,7 +26,9 @@ from pathlib import Path
 #: pyproject.toml by themselves belong here; ruff and mypy do.
 DEFAULT_TOOLS: Mapping[str, tuple[str, tuple[str, ...]]] = {"bandit": ("bandit", ("-c", "--configfile"))}
 _ADVISORY_WORDS = ("warn", "advisory", "report", "informational")
-_ALWAYS_ZERO = re.compile(r"\|\|\s*true\b|;\s*exit\s+0\b|\bpy_ci_shared\.\w*_warn\b")
+#: `--exit-zero` is the tool's own way of never failing (ruff, flake8, pylint): a gate carrying it in its
+#: `args` passes whatever it finds, exactly like `|| true`, and reads as a blocking hook.
+_ALWAYS_ZERO = re.compile(r"\|\|\s*true\b|;\s*exit\s+0\b|\bpy_ci_shared\.\w*_warn\b|(?<!\S)--exit-zero\b")
 #: What makes a workflow step a GATE: a shell line in a workflow is often plumbing (`git fetch ... || true`),
 #: so `|| true` there counts only on a line that runs one of these.
 _GATE_TOOL = re.compile(r"\b(?:pytest|ruff|mypy|bandit|black|flake8|pylint|pre-commit|vulture|interrogate|codespell|py_ci_shared)\b")
