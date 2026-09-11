@@ -272,9 +272,13 @@ def find_source_text_claims(
     for function, body, paths, tainted in det.scopes():
         for node in _walk_scope(body):
             if mode == "read":
-                if isinstance(node, (ast.Call, ast.Attribute)) and not isinstance(getattr(node, "func", None), ast.Name) or isinstance(node, ast.Call):
-                    kind = det.reader_kind(node, paths, set()) if isinstance(node, (ast.Call, ast.Attribute)) else None
-                    if kind and node.lineno not in claims:
+                if isinstance(node, (ast.Call, ast.Attribute)) and node.lineno not in claims:
+                    kind = det.reader_kind(node, paths, set())
+                    # Parsing a file's content as Python says the file IS Python, wherever its path came from: a
+                    # parameter, or a list a helper built. A read mode that tracked only literal paths missed both.
+                    if kind is None and isinstance(node, ast.Call) and _call_name(node) == "parse" and any(_contains_read(a) for a in node.args):
+                        kind = "parses a file as Python"
+                    if kind:
                         claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
                 continue
             is_check = isinstance(node, ast.Assert) or (isinstance(node, ast.If) and _fails_in_body(node))

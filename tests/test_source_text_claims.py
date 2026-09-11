@@ -119,6 +119,24 @@ class TestReadMode:
         body = 'import inspect\ndef test_x():\n    src = inspect.getsource(m)\n    text = (ROOT / "x.py").read_text()\n    doc = (ROOT / "README.md").read_text()\n'
         assert _lines(tmp_path, body, mode="read") == [3, 4]
 
+    def test_parsing_a_file_whose_path_is_a_parameter(self, tmp_path):
+        """dashboard's `_names_in(path)` got its path from a caller's glob loop; only the parse said it was Python."""
+        body = 'import ast\ndef _names_in(path):\n    tree = ast.parse(path.read_text(encoding="utf-8"))\n    return tree\n'
+        assert _lines(tmp_path, body, mode="read") == [3]
+
+    def test_parsing_a_file_from_a_helper_built_list(self, tmp_path):
+        """realtime_applications' worker parity test iterated a list another function built from rglob."""
+        body = 'import ast\ndef test_x():\n    for f in _unit_files():\n        tree = ast.parse(f.read_text(encoding="utf-8"))\n'
+        assert _lines(tmp_path, body, mode="read") == [4]
+
+    def test_parsing_is_still_not_an_assertion(self, tmp_path):
+        body = 'import ast\ndef test_x():\n    tree = ast.parse(path.read_text())\n    assert any(isinstance(n, ast.Try) for n in ast.walk(tree))\n'
+        assert _lines(tmp_path, body) == []
+
+    def test_parsing_a_string_literal_is_not_a_read(self, tmp_path):
+        body = 'import ast\ndef test_x():\n    tree = ast.parse("x = 1")\n'
+        assert _lines(tmp_path, body, mode="read") == []
+
 
 class TestTheRatchet:
     def _tree(self, tmp_path):
