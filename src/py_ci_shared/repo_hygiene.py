@@ -40,8 +40,16 @@ Small, boring rules that each cost one line to satisfy and are invisible until t
    BOM'd script fails. Found 2026-09-09 as dashboard's ``audits/2026-09-03/03_performance.md``:
    one file in 1,700, three bytes, and ``grep '^# '`` went from finding one heading to two.
 
+6. **No ``.py`` or ``.sql`` inside an ``audits/`` folder.** An audit folder holds findings; the
+   runbook goes in ``sql/``, the probe in ``probes/``, the script in ``scripts/``, and the finding
+   links to it. Found 2026-09-11 in social: a deliberate 09-04 ``DROP INDEX`` runbook sat in
+   ``audits/2026-09-01-full-audit/``, its conclusion never reached the finding, and a later
+   ``CREATE`` runbook in ``sql/`` had the operator rebuild the index it had dropped. Eight such
+   files across three projects; the owner's rule since. Opt out with
+   ``audit_dirs_hold_no_scripts=False`` only for a repo whose ``audits`` is a code package.
+
 Deliberately dependency-free (``git ls-files`` via subprocess, regex over workflow text), and
-language-agnostic: rules 1, 3, 4 and 5 fire on any repo, rule 2 takes the caller's own list.
+language-agnostic: rules 1, 3, 4, 5 and 6 fire on any repo, rule 2 takes the caller's own list.
 
 Usage::
 
@@ -192,6 +200,20 @@ def find_text_files_with_a_bom(
     ]
 
 
+#: Suffixes of code that must not live in an audit folder (rule 6).
+AUDIT_FORBIDDEN_SUFFIXES: "tuple[str, ...]" = (".py", ".sql")
+
+
+def find_scripts_in_audit_folders(repo_root: Path, suffixes: Sequence[str] = AUDIT_FORBIDDEN_SUFFIXES) -> list[str]:
+    """Every TRACKED file with a script suffix under a directory named ``audits`` at any depth.
+
+    Tracked, not walked: an untracked scratch probe on one machine is nobody else's problem, and a
+    monorepo keeps several projects' ``audits/`` folders at different depths.
+    """
+    wanted = {s.lower() for s in suffixes}
+    return [rel for rel in _tracked_files(repo_root) if "audits" in rel.replace("\\", "/").split("/")[:-1] and Path(rel).suffix.lower() in wanted]
+
+
 def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
     """Return one problem string per workflow ``run:`` block that compares a shell variable
     numerically without first proving the variable is non-empty."""
@@ -231,8 +253,10 @@ def assert_repo_hygiene(
     generated_patterns: Sequence[str] = _DEFAULT_GENERATED_PATTERNS,
     workflows_dir: "Path | None" = None,
     text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
+    audit_dirs_hold_no_scripts: bool = True,
 ) -> None:
-    """Fail on tracked generated files, missing required files, or an unguarded numeric CI gate."""
+    """Fail on tracked generated files, missing required files, a script in an audits/ folder, or an
+    unguarded numeric CI gate."""
     import pytest
 
     problems: list[str] = []
@@ -258,6 +282,14 @@ def assert_repo_hygiene(
     missing = find_missing_required_files(repo_root, required_files)
     if missing:
         problems.append("required file(s) missing: " + ", ".join(missing))
+    if audit_dirs_hold_no_scripts:
+        in_audits = find_scripts_in_audit_folders(repo_root)
+        if in_audits:
+            problems.append(
+                f"{len(in_audits)} script(s) are tracked inside an audits/ folder. Runbooks belong in sql/, probes in "
+                "probes/, scripts in scripts/, linked from the finding; beside the audit nobody looking in sql/ "
+                "sees what is pending or already decided:\n    " + "\n    ".join(in_audits[:20])
+            )
     if workflows_dir is not None:
         if workflows_dir.is_dir() and not list(workflows_dir.glob("*.y*ml")):
             problems.append(f"{workflows_dir} has no workflow files - this repo has no CI at all.")
