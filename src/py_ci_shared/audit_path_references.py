@@ -38,11 +38,46 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
     return ids
 
 
-def find_open_round_literals(files: Iterable[Path], audits_dirs: Iterable[Path], *, root: "Path | None" = None) -> list[str]:
-    names = open_round_names(audits_dirs)
-    if not names:
+def _path_chains(tree: ast.AST) -> dict[int, list[str]]:
+    """``{id(constant): [every string segment of the `a / "b" / "c"` expression it sits in]}``."""
+    chains: dict[int, list[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+            parts: list[ast.AST] = []
+            stack: list[ast.AST] = [node]
+            while stack:
+                cur = stack.pop()
+                if isinstance(cur, ast.BinOp) and isinstance(cur.op, ast.Div):
+                    stack += [cur.left, cur.right]
+                else:
+                    parts.append(cur)
+            segments = [p.value for p in parts if isinstance(p, ast.Constant) and isinstance(p.value, str)]
+            for p in parts:
+                if isinstance(p, ast.Constant):
+                    chains.setdefault(id(p), []).extend(segments)
+    return chains
+
+
+def find_open_round_literals(
+    files: Iterable[Path],
+    own_audits: Iterable[Path],
+    *,
+    other_audits: Iterable[Path] = (),
+    root: "Path | None" = None,
+    implemented: str = "implemented",
+) -> list[str]:
+    """Literals pinning an open round.
+
+    A BARE round name (``"2026-09-03"``, a path segment) is judged against the project's OWN open rounds
+    only -- another project may well have an open round of the same date while this one's is closed. A
+    string holding ``audits/<name>`` is judged against every project's open rounds. A segment that sits in
+    the same ``a / b / c`` expression as ``implemented`` is a closed round and never reported.
+    """
+    own = open_round_names(own_audits, implemented=implemented)
+    every = own | open_round_names(other_audits, implemented=implemented)
+    if not every:
         return []
-    pattern = re.compile(r"(?:^|[/\\])(" + "|".join(re.escape(n) for n in sorted(names)) + r")(?:$|[/\\])")
+    in_path = re.compile(r"audits[/\\](" + "|".join(re.escape(n) for n in sorted(every)) + r")(?:$|[/\\])")
     problems: list[str] = []
     for path in files:
         try:
@@ -50,6 +85,7 @@ def find_open_round_literals(files: Iterable[Path], audits_dirs: Iterable[Path],
         except SyntaxError:
             continue
         docs = _docstring_nodes(tree)
+        chains = _path_chains(tree)
         rel = path.relative_to(root).as_posix() if root else path.as_posix()
         hits = sorted(
             (node.lineno, node.value)
@@ -57,18 +93,33 @@ def find_open_round_literals(files: Iterable[Path], audits_dirs: Iterable[Path],
             if isinstance(node, ast.Constant)
             and isinstance(node.value, str)
             and id(node) not in docs
-            and (node.value in names or ("audits" in node.value and pattern.search(node.value)))
+            and implemented not in chains.get(id(node), [])
+            and (node.value in own or in_path.search(node.value))
         )
         problems += [f"{rel}:{line}: {value[:80]!r} pins an OPEN audit round, which moves when it closes -- resolve it instead" for line, value in hits]
     return problems
 
 
-def assert_no_open_round_paths(files: Iterable[Path], audits_dirs: Iterable[Path], *, root: "Path | None" = None, min_files: int = 1) -> None:
+def assert_no_open_round_paths(
+    files: Iterable[Path],
+    own_audits: Iterable[Path],
+    *,
+    other_audits: Iterable[Path] = (),
+    root: "Path | None" = None,
+    known: Iterable[str] = (),
+    min_files: int = 1,
+) -> None:
+    """Shrink-only against *known*: entries are ``path:<value>`` so a line shift does not break them."""
     import pytest
 
     files = list(files)
     if len(files) < min_files:
         pytest.fail(f"only {len(files)} file(s) scanned; expected at least {min_files} -- this would check nothing")
-    problems = find_open_round_literals(files, list(audits_dirs), root=root)
-    if problems:
-        pytest.fail(f"{len(problems)} literal path(s) into an open audit round:\n  " + "\n  ".join(problems))
+    found = find_open_round_literals(files, list(own_audits), other_audits=list(other_audits), root=root)
+    keys = {f"{p.split(':', 1)[0]}:{p.split(': ', 1)[1].split(' pins', 1)[0]}": p for p in found}
+    new, stale = sorted(set(keys) - set(known)), sorted(set(known) - set(keys))
+    if new or stale:
+        pytest.fail(
+            (f"{len(new)} literal path(s) into an open audit round:\n  " + "\n  ".join(keys[k] for k in new) if new else "")
+            + (f"\n{len(stale)} accepted entr(ies) no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
+        )

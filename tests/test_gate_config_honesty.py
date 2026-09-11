@@ -72,6 +72,29 @@ class TestGatesThatCannotFail:
         assert gate_commands(pc, []) == {}
 
 
+def test_installing_or_naming_the_tool_is_not_running_it(tmp_path):
+    """realtime_applications' `pip install ... bandit` step was reported as running bandit without -c."""
+    wf = tmp_path / "ci.yml"
+    wf.write_text(
+        "jobs:\n  lint:\n    steps:\n      - name: Install\n        run: pip install ruff bandit mypy\n"
+        "      - name: Upload\n        run: echo bandit-report.json\n"
+        "      - name: Scan\n        run: |\n          cd proj\n          uvx --from bandit==1.8 bandit -r . -ll\n",
+        encoding="utf-8",
+    )
+    (p,) = find_tools_run_without_their_config(gate_commands(None, [wf]), _pyproject(tmp_path))
+    assert p.startswith("ci.yml::lint::Scan")
+
+
+def test_or_true_on_a_plumbing_line_is_not_a_defeated_gate(tmp_path):
+    """A `git fetch ... || true` in a workflow is plumbing; only a line that runs a checking tool counts."""
+    wf = tmp_path / "ci.yml"
+    wf.write_text(
+        "jobs:\n  nightly:\n    steps:\n      - name: Resolve the window\n        run: |\n          git fetch --depth 50 origin || true\n          echo done\n",
+        encoding="utf-8",
+    )
+    assert find_gates_that_cannot_fail(gate_commands(None, [wf])) == []
+
+
 def test_scope_keeps_other_projects_hooks_out(tmp_path):
     pc = _precommit(
         tmp_path,

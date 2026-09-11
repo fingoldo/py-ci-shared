@@ -27,6 +27,15 @@ from pathlib import Path
 DEFAULT_TOOLS: Mapping[str, tuple[str, tuple[str, ...]]] = {"bandit": ("bandit", ("-c", "--configfile"))}
 _ADVISORY_WORDS = ("warn", "advisory", "report", "informational")
 _ALWAYS_ZERO = re.compile(r"\|\|\s*true\b|;\s*exit\s+0\b|\bpy_ci_shared\.\w*_warn\b")
+#: What makes a workflow step a GATE: a shell line in a workflow is often plumbing (`git fetch ... || true`),
+#: so `|| true` there counts only on a line that runs one of these.
+_GATE_TOOL = re.compile(r"\b(?:pytest|ruff|mypy|bandit|black|flake8|pylint|pre-commit|vulture|interrogate|codespell|py_ci_shared)\b")
+
+
+def _invokes(tool: str, command: str) -> bool:
+    """Does *command* RUN *tool* -- in command position, bare or via `python -m` / `uvx` -- rather than install or name it?"""
+    run = re.compile(rf"(?:^|[\s;&|(]|&&)(?:\S*python\S*\s+-m\s+|uvx\s+(?:--from\s+\S+\s+)?)?{re.escape(tool)}(?=\s|$)")
+    return any(run.search(line) and not re.search(r"\b(?:install|uninstall|add)\b", line) for line in command.splitlines())
 
 
 def _mentions(scope: "str | None", *texts: str) -> bool:
@@ -72,7 +81,7 @@ def find_tools_run_without_their_config(
     problems: list[str] = []
     for label, (command, _names) in sorted(commands.items()):
         for tool in sorted(configured):
-            if not re.search(rf"(?<![\w.]){re.escape(tool)}(?![\w.])", command) or re.search(rf"py_ci_shared\.{tool}", command):
+            if not _invokes(tool, command):
                 continue
             flags = tools[tool][1]
             if not any(re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", command) for f in flags):
@@ -85,7 +94,11 @@ def find_gates_that_cannot_fail(commands: Mapping[str, tuple[str, str]], *, advi
     words = tuple(w.lower() for w in advisory_words)
     problems: list[str] = []
     for label, (command, names) in sorted(commands.items()):
-        zero = _ALWAYS_ZERO.search(command)
+        is_hook = label.startswith("pre-commit::")
+        zero = next(
+            (m for line in command.splitlines() for m in [_ALWAYS_ZERO.search(line)] if m and (is_hook or _GATE_TOOL.search(line))),
+            None,
+        )
         if zero and not any(w in names.lower() or w in label.lower() for w in words):
             problems.append(f"{label}: always exits 0 ({zero.group(0)}) but is not named as advisory -- it reads as a gate and blocks nothing")
     return problems

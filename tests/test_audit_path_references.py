@@ -40,6 +40,26 @@ def test_a_pinned_open_round_is_reported_and_a_docstring_or_closed_round_is_not(
     assert [p.split(":")[1] for p in problems] == ["3", "4"]
 
 
+def test_another_projects_open_round_of_the_same_date_does_not_make_ours_open(tmp_path, audits):
+    """production_scrapers pinned its own CLOSED `implemented/2026-09-01`, and dashboard happened to have an
+    open round of that date; the first version reported it."""
+    ours = tmp_path / "ours" / "audits"
+    (ours / "implemented" / "2026-01-01").mkdir(parents=True)
+    code = tmp_path / "c.py"
+    code.write_text(
+        'from pathlib import Path\nX = Path("audits") / "implemented" / "2026-01-01"\nY = "2026-01-01"\nZ = "dashboard/audits/2026-01-01/x.md"\n',
+        encoding="utf-8",
+    )
+    problems = find_open_round_literals([code], [ours], other_audits=[audits], root=tmp_path)
+    assert [p.split(":")[1] for p in problems] == ["4"]
+
+
+def test_an_implemented_path_string_is_not_an_open_round(tmp_path, audits):
+    code = tmp_path / "c.py"
+    code.write_text('X = "audits/implemented/2026-01-01/x.md"\n', encoding="utf-8")
+    assert find_open_round_literals([code], [audits]) == []
+
+
 def test_no_open_rounds_means_nothing_to_pin(tmp_path):
     (tmp_path / "audits" / "implemented").mkdir(parents=True)
     code = tmp_path / "c.py"

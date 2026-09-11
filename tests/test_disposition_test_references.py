@@ -45,6 +45,17 @@ def test_a_missing_file_a_missing_member_and_a_missing_name_are_each_reported(pr
     ]
 
 
+def test_a_sibling_projects_test_resolves_against_that_sibling(tmp_path):
+    """A fix that landed in a sibling package is tested there, and the disposition says so by path or name."""
+    proj, sibling = tmp_path / "proj", tmp_path / "other_pkg"
+    (proj / "tests").mkdir(parents=True)
+    (sibling / "tests").mkdir(parents=True)
+    (sibling / "tests" / "test_there.py").write_text("def test_in_the_sibling():\n    pass\n", encoding="utf-8")
+    audit = _audit(proj, "**Disposition:** RESOLVED in `other_pkg/tests/test_there.py`, by `test_in_the_sibling`.\n")
+    assert len(find_missing_test_references([audit], proj)) == 2
+    assert find_missing_test_references([audit], proj, other_roots=[sibling]) == []
+
+
 def test_only_disposition_paragraphs_count(project):
     """A finding's own text may name a test that is missing -- that is often the finding."""
     audit = _audit(project, "The problem: `TestNowhere` was never written.\n\n**Disposition:** RESOLVED, see `TestGuard`.\n\nLater prose: `TestAlsoMissing`.\n")

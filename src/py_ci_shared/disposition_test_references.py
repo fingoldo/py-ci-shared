@@ -63,13 +63,15 @@ def disposition_paragraphs(text: str) -> list[str]:
     return out
 
 
-def _path_reference_problems(where: str, para: str, project_root: Path, tests_dir: str) -> set[str]:
+def _path_reference_problems(where: str, para: str, project_root: Path, tests_dir: str, other_roots: "tuple[Path, ...]" = ()) -> set[str]:
     """`tests/<file>.py[::A[::b]]` references in one paragraph whose file or members are missing."""
     problems: set[str] = set()
     for raw, first, second in _TEST_PATH.findall(para):
         rel = raw.rstrip(".")
-        # A reference may carry the package prefix (`pkg/tests/x.py`) or start at `tests/`.
+        # `tests/x.py`, or with this project's own prefix (`pkg/tests/x.py`), or a SIBLING project's
+        # (`other_pkg/tests/x.py`), resolved against that sibling.
         candidates = [project_root / rel] if rel.startswith(tests_dir + "/") else [project_root / rel, project_root / rel.split("/", 1)[-1]]
+        candidates += [r.parent / rel for r in other_roots if rel.startswith(r.name + "/")]
         path = next((c for c in candidates if c.is_file()), None)
         if path is None:
             problems.add(f"{where}: `{rel}`: no such test file")
@@ -90,20 +92,32 @@ def _name_reference_problems(where: str, para: str, all_names: set[str], tests_d
     return problems
 
 
-def find_missing_test_references(audit_files: Iterable[Path], project_root: Path, *, tests_dir: str = "tests") -> list[str]:
-    """``<file>: <reference>: <why>`` for every named test that is not there."""
-    test_files = sorted((project_root / tests_dir).rglob("*.py")) if (project_root / tests_dir).is_dir() else []
+def find_missing_test_references(audit_files: Iterable[Path], project_root: Path, *, tests_dir: str = "tests", other_roots: Iterable[Path] = ()) -> list[str]:
+    """``<file>: <reference>: <why>`` for every named test that is not there.
+
+    *other_roots* are sibling projects a disposition may cite: their test files resolve a
+    `sibling/tests/x.py` path, and the names they define count for a bare `TestX` too -- a fix that
+    landed in the sibling is tested there.
+    """
+    siblings = tuple(other_roots)
+    test_files = [f for r in (project_root, *siblings) if (r / tests_dir).is_dir() for f in sorted((r / tests_dir).rglob("*.py"))]
     all_names: set[str] = set().union(*(_defined_names(f) for f in test_files)) if test_files else set()
     problems: set[str] = set()
     for audit in audit_files:
         for para in disposition_paragraphs(audit.read_text(encoding="utf-8", errors="replace")):
-            problems |= _path_reference_problems(audit.name, para, project_root, tests_dir)
+            problems |= _path_reference_problems(audit.name, para, project_root, tests_dir, siblings)
             problems |= _name_reference_problems(audit.name, para, all_names, tests_dir)
     return sorted(problems)
 
 
 def assert_disposition_tests_exist(
-    audit_files: Iterable[Path], project_root: Path, *, known: Iterable[str] = (), min_files: int = 1, tests_dir: str = "tests"
+    audit_files: Iterable[Path],
+    project_root: Path,
+    *,
+    known: Iterable[str] = (),
+    min_files: int = 1,
+    tests_dir: str = "tests",
+    other_roots: Iterable[Path] = (),
 ) -> None:
     """Shrink-only: a missing reference not in *known* fails, and so does a *known* one that resolves again."""
     import pytest
@@ -111,7 +125,7 @@ def assert_disposition_tests_exist(
     files = list(audit_files)
     if len(files) < min_files:
         pytest.fail(f"only {len(files)} audit file(s) given; expected at least {min_files} -- this would check nothing")
-    found = set(find_missing_test_references(files, project_root, tests_dir=tests_dir))
+    found = set(find_missing_test_references(files, project_root, tests_dir=tests_dir, other_roots=other_roots))
     new, stale = sorted(found - set(known)), sorted(set(known) - found)
     if new or stale:
         pytest.fail(
