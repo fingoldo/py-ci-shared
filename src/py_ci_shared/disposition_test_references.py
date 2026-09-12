@@ -70,7 +70,13 @@ def _path_reference_problems(where: str, para: str, project_root: Path, tests_di
         rel = raw.rstrip(".")
         # `tests/x.py`, or with this project's own prefix (`pkg/tests/x.py`), or a SIBLING project's
         # (`other_pkg/tests/x.py`), resolved against that sibling.
-        candidates = [project_root / rel] if rel.startswith(tests_dir + "/") else [project_root / rel, project_root / rel.split("/", 1)[-1]]
+        if rel.startswith(tests_dir + "/"):
+            # A bare `tests/x.py` in a SIBLING's round: the fix landed there and the round names the
+            # package in its prose, not inside the backticks. A dashboard disposition citing
+            # `tests/test_check_indexes_reconciliation.py` (realtime_applications') read as missing here.
+            candidates = [project_root / rel, *(r / rel for r in other_roots)]
+        else:
+            candidates = [project_root / rel, project_root / rel.split("/", 1)[-1]]
         candidates += [r.parent / rel for r in other_roots if rel.startswith(r.name + "/")]
         path = next((c for c in candidates if c.is_file()), None)
         if path is None:

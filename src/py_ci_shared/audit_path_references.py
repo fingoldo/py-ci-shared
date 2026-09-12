@@ -58,6 +58,29 @@ def _path_chains(tree: ast.AST) -> dict[int, list[str]]:
     return chains
 
 
+_RESOLVER = re.compile(r"audit|round", re.I)
+_AUDIT_FILE = re.compile(r"\.md$|^\d\d[a-z]?[-_]", re.I)
+
+
+def _used_as_a_path(tree: ast.AST) -> set[int]:
+    """``{id(constant)}`` for bare strings a call USES as a path segment.
+
+    A call that resolves a round by name (``audit_file("2026-09-03", "03_performance.md")``,
+    ``round_dir(name)``), or one carrying an audit file name in another argument, is pinning a path. A
+    date sitting in a tuple of expected values is not.
+    """
+    ids: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        args = [a for a in (*node.args, *(k.value for k in node.keywords)) if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        if _RESOLVER.search(name) or any(_AUDIT_FILE.search(a.value) for a in args):
+            ids |= {id(a) for a in args}
+    return ids
+
+
 def find_open_round_literals(
     files: Iterable[Path],
     own_audits: Iterable[Path],
@@ -72,6 +95,12 @@ def find_open_round_literals(
     only -- another project may well have an open round of the same date while this one's is closed. A
     string holding ``audits/<name>`` is judged against every project's open rounds. A segment that sits in
     the same ``a / b / c`` expression as ``implemented`` is a closed round and never reported.
+
+    A bare name counts only where it is USED as a path: a segment of a ``a / b / c`` expression, or an
+    argument to a call that resolves a round (``audit_file(...)``) or takes an audit file beside it. A
+    round's folder name is also an ordinary date, and dates are data: four dashboard tests carry one as a
+    card's last-activity day, a fixture's observation day, a chart x value and a ``computed_at``, none of
+    them a path (2026-09-12).
     """
     own = open_round_names(own_audits, implemented=implemented)
     every = own | open_round_names(other_audits, implemented=implemented)
@@ -86,6 +115,7 @@ def find_open_round_literals(
             continue
         docs = _docstring_nodes(tree)
         chains = _path_chains(tree)
+        as_path = _used_as_a_path(tree) | set(chains)
         rel = path.relative_to(root).as_posix() if root else path.as_posix()
         hits = sorted(
             (node.lineno, node.value)
@@ -94,7 +124,7 @@ def find_open_round_literals(
             and isinstance(node.value, str)
             and id(node) not in docs
             and implemented not in chains.get(id(node), [])
-            and (node.value in own or in_path.search(node.value))
+            and ((node.value in own and id(node) in as_path) or in_path.search(node.value))
         )
         problems += [f"{rel}:{line}: {value[:80]!r} pins an OPEN audit round, which moves when it closes -- resolve it instead" for line, value in hits]
     return problems

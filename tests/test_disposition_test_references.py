@@ -56,6 +56,22 @@ def test_a_sibling_projects_test_resolves_against_that_sibling(tmp_path):
     assert find_missing_test_references([audit], proj, other_roots=[sibling]) == []
 
 
+def test_a_bare_tests_path_resolves_in_a_sibling_too(tmp_path):
+    """A dashboard disposition cited `tests/test_check_indexes_reconciliation.py`, which lives in the
+
+    sibling package; the round names the package in its prose, not inside the backticks.
+    """
+    proj = tmp_path / "dashboard"
+    (proj / "tests").mkdir(parents=True)
+    sibling = tmp_path / "realtime_applications"
+    (sibling / "tests").mkdir(parents=True)
+    (sibling / "tests" / "test_reconciliation.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    audit = proj / "02b.md"
+    audit.write_text("**Disposition:** RESOLVED; `tests/test_reconciliation.py` globs every expectation.\n", encoding="utf-8")
+    assert find_missing_test_references([audit], proj, other_roots=[sibling]) == []
+    assert find_missing_test_references([audit], proj) == ["02b.md: `tests/test_reconciliation.py`: no such test file"]
+
+
 def test_only_disposition_paragraphs_count(project):
     """A finding's own text may name a test that is missing -- that is often the finding."""
     audit = _audit(project, "The problem: `TestNowhere` was never written.\n\n**Disposition:** RESOLVED, see `TestGuard`.\n\nLater prose: `TestAlsoMissing`.\n")
