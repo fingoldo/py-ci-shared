@@ -73,11 +73,13 @@ def _used_as_a_path(tree: ast.AST) -> set[int]:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        args = [a for a in (*node.args, *(k.value for k in node.keywords)) if isinstance(a, ast.Constant) and isinstance(a.value, str)]
+        args: list[tuple[ast.Constant, str]] = [
+            (a, a.value) for a in (*node.args, *(k.value for k in node.keywords)) if isinstance(a, ast.Constant) and isinstance(a.value, str)
+        ]
         func = node.func
         name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
-        if _RESOLVER.search(name) or any(_AUDIT_FILE.search(a.value) for a in args):
-            ids |= {id(a) for a in args}
+        if _RESOLVER.search(name) or any(_AUDIT_FILE.search(value) for _, value in args):
+            ids |= {id(a) for a, _ in args}
     return ids
 
 

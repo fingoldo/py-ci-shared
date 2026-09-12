@@ -75,7 +75,7 @@ def test_a_date_used_as_data_is_not_a_path(tmp_path, audits):
     code = tmp_path / "c.py"
     code.write_text(
         'OBSERVED_ON = "2026-01-01"\n'
-        'def t():\n'
+        "def t():\n"
         '    assert totals == (7, "2026-01-01")\n'
         '    assert facts["computed_at"] == "2026-01-01"\n'
         '    return {m: [("2026-01-01", 1.0)] for m in ("a",)}\n',
