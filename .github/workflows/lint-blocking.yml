@@ -63,6 +63,41 @@ on:
           triage. Flip true only after confirming `uvx zizmor .` is clean in that repo.
         type: boolean
         default: false
+      # L1.1 (a calling repo's own CI review): "every CI lint tool runs unpinned via uvx" -- a tool
+      # pinned in the calling repo's OWN dev extra (and asserted by its own
+      # test_installed_tool_versions_match_their_exact_pins) can still drift here, because `uvx TOOL`
+      # with no version resolves whatever PyPI currently serves, independent of that pin. Every
+      # version input below defaults to "" (unpinned, today's exact behaviour) so an existing caller
+      # that has not triaged a pin for a given tool sees no change; a repo that HAS one passes it
+      # explicitly via `with:`.
+      actionlint-version:
+        description: 'Exact actionlint-py version to pin (e.g. "1.7.9"), or "" for unpinned latest.'
+        type: string
+        default: ""
+      zizmor-version:
+        description: 'Exact zizmor version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+      codespell-version:
+        description: 'Exact codespell version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+      yamllint-version:
+        description: 'Exact yamllint version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+      bandit-version:
+        description: 'Exact bandit version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+      vulture-version:
+        description: 'Exact vulture version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+      interrogate-version:
+        description: 'Exact interrogate version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
 
 jobs:
   lint-blocking:
@@ -83,9 +118,14 @@ jobs:
 
       # Mirrors the pre-commit actionlint hook so a workflow-file bug (bad expression,
       # duplicate key, unknown runner label, shell-syntax error in a run: block) can't
-      # reach master even via --no-verify.
+      # reach master even via --no-verify. actionlint-version pins the actionlint-py PACKAGE
+      # (--from), not a binary named "actionlint" -- the two are unrelated version strings.
       - name: Actionlint (workflow files)
-        run: uvx --from actionlint-py actionlint
+        run: |
+          # shellcheck disable=SC2086
+          if [ -n "$PIN" ]; then uvx --from "actionlint-py==$PIN" actionlint; else uvx --from actionlint-py actionlint; fi
+        env:
+          PIN: ${{ inputs.actionlint-version }}
 
       # Security linter for the workflow files themselves (unpinned actions, template-injection
       # via untrusted `${{ }}` expansion in run:, overly broad permissions, credential
@@ -94,7 +134,10 @@ jobs:
       # pinning to reach 0 findings the same day it was added). Opt-in (see run-zizmor above).
       - name: Zizmor (workflow security scan)
         if: inputs.run-zizmor
-        run: uvx zizmor .
+        run: |
+          if [ -n "$PIN" ]; then uvx "zizmor==$PIN" .; else uvx zizmor .; fi
+        env:
+          PIN: ${{ inputs.zizmor-version }}
 
       - name: Codespell
         # codespell-paths is DELIBERATELY space-separated into multiple positional args (e.g.
@@ -102,19 +145,25 @@ jobs:
         # bug, so this stays unquoted unlike the single-path vars below.
         run: |
           # shellcheck disable=SC2086
-          uvx codespell --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}
+          if [ -n "$PIN" ]; then uvx "codespell==$PIN" --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}; else uvx codespell --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}; fi
         env:
           INPUTS_CODESPELL_PATHS: ${{ inputs.codespell-paths }}
+          PIN: ${{ inputs.codespell-version }}
 
       - name: yamllint workflow files
-        run: uvx yamllint .github/workflows .pre-commit-config.yaml
+        run: |
+          if [ -n "$PIN" ]; then uvx "yamllint==$PIN" .github/workflows .pre-commit-config.yaml; else uvx yamllint .github/workflows .pre-commit-config.yaml; fi
+        env:
+          PIN: ${{ inputs.yamllint-version }}
 
       # Plain (not -f json) so a failure's findings are visible directly in the CI log --
       # no artifact download needed to diagnose a blocking failure.
       - name: Bandit security scan
-        run: uvx bandit -r "${INPUTS_SOURCE_PATH}" -ll
+        run: |
+          if [ -n "$PIN" ]; then uvx "bandit==$PIN" -r "$INPUTS_SOURCE_PATH" -ll; else uvx bandit -r "$INPUTS_SOURCE_PATH" -ll; fi
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
+          PIN: ${{ inputs.bandit-version }}
 
       - name: Vulture dead-code scan
         # vulture-whitelist-path is OPTIONAL (default ""): word-splitting an empty unquoted var
@@ -122,22 +171,25 @@ jobs:
         # quoting it would instead pass vulture a literal empty-string path argument and error.
         run: |
           # shellcheck disable=SC2086
-          uvx vulture "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80
+          if [ -n "$PIN" ]; then uvx "vulture==$PIN" "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80; else uvx vulture "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80; fi
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
           INPUTS_VULTURE_WHITELIST_PATH: ${{ inputs.vulture-whitelist-path }}
+          PIN: ${{ inputs.vulture-version }}
 
       - name: Interrogate docstring coverage
         if: inputs.interrogate-source-path != ''
         run: |
+          if [ -n "$PIN" ]; then INTERROGATE="interrogate==$PIN"; else INTERROGATE="interrogate"; fi
           if [ -n "$INTERROGATE_CONFIG" ]; then
-            uvx interrogate -c "$INTERROGATE_CONFIG" -v "$INTERROGATE_SOURCE_PATH"
+            uvx "$INTERROGATE" -c "$INTERROGATE_CONFIG" -v "$INTERROGATE_SOURCE_PATH"
           else
-            uvx interrogate --fail-under "$INTERROGATE_FAIL_UNDER" -v "$INTERROGATE_SOURCE_PATH"
+            uvx "$INTERROGATE" --fail-under "$INTERROGATE_FAIL_UNDER" -v "$INTERROGATE_SOURCE_PATH"
           fi
         env:
           INTERROGATE_SOURCE_PATH: ${{ inputs.interrogate-source-path }}
           INTERROGATE_FAIL_UNDER: ${{ inputs.interrogate-fail-under }}
+          PIN: ${{ inputs.interrogate-version }}
           INTERROGATE_CONFIG: ${{ inputs.interrogate-config }}
 
       # Direct ${{ }} substitution: deptry-install-command is a multi-line shell SCRIPT, not a
