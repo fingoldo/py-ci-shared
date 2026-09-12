@@ -87,6 +87,27 @@ def test_addopts_supplies_the_default_expression_and_a_command_overrides_it():
     assert explicit.expression == "integration"
 
 
+def test_a_dependency_install_line_is_not_a_runner(project):
+    """`gate_commands` hands over install steps too, and `pip install pytest pytest-cov` names pytest
+
+    without running it. Read as a runner it looks PATHLESS, which means "selects everything" and would
+    hide every real finding behind it.
+    """
+    install = (
+        "ci.yml::test::Install test dependencies",
+        "python -m pip install --upgrade pip\npip install psycopg2-binary orjson \\\n  pytest pytest-cov pytest-timeout hypothesis",
+    )
+    assert runners([install]) == []
+    problems = find_unselected_marked_tests(project / "tests", project, marker="integration", commands=[install, _NIGHTLY, _HOOK], addopts=_DEFAULT_ADDOPTS)
+    assert [p.split(": ")[0] for p in problems] == ["tests/integration/test_db.py::<whole file>"], "the install step must not mask the finding"
+
+
+def test_a_real_pathless_runner_still_counts():
+    """The install rule must not swallow the common shape it looks like: `pytest -m "..." --cov=pkg`."""
+    (only,) = runners([("ci.yml", 'pytest -m "not integration" --cov=pkg')])
+    assert only.is_pathless and only.expression == "not integration"
+
+
 def test_expression_evaluation_covers_the_shapes_in_use():
     assert expression_selects("integration", ["integration"])
     assert not expression_selects("not integration", ["integration"])

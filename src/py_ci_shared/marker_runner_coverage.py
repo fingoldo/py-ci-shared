@@ -40,6 +40,10 @@ from pathlib import Path
 _MARK = re.compile(r"pytest\.mark\.([A-Za-z_][A-Za-z0-9_]*)")
 _DASH_M = re.compile(r"-m\s+(\"[^\"]+\"|'[^']+'|[A-Za-z_][A-Za-z0-9_]*)")
 _TOKEN = re.compile(r"\"[^\"]*\"|'[^']*'|[^\s|&;><]+")
+#: A dependency-install line NAMES pytest without running it (`pip install pytest pytest-cov ...`).
+#: Read as a runner it looks PATHLESS, which would mean "selects everything" and hide every real
+#: finding behind it -- the same trap `gate_config_honesty._invokes` exists for.
+_INSTALL = re.compile(r"\b(?:pip3?|uv|uvx|poetry|conda|pdm|hatch)\b[^\n]*\binstall\b|\binstall\b[^\n]*\bpytest\b")
 _VALUE_TAKING = frozenset({"-m", "-k", "-p", "-n", "-o", "-c", "-W", "-r", "--deselect", "--ignore", "--ignore-glob"})
 
 
@@ -128,9 +132,15 @@ def runners(commands: "Iterable[tuple[str, str]]", *, addopts: str = "") -> list
     for label, command in commands:
         if "pytest" not in command:
             continue
-        for part in re.findall(r"pytest\s[^\n]*", command):
-            paths, expression = _paths_and_expression(part)
-            out.append(Runner(label, paths, expression if expression is not None else default_expression))
+        # Fold shell line-continuations first, as `ci_test_dir_reachability` does: an install step's
+        # `pip install foo \` + newline + `  pytest pytest-cov` puts the word `pytest` on a line that
+        # no longer carries `install`, so a per-line rule reads the continuation as its own command.
+        for line in re.sub(r"\\\s*\n\s*", " ", command).splitlines():
+            if _INSTALL.search(line):
+                continue
+            for part in re.findall(r"pytest\s[^\n]*", line):
+                paths, expression = _paths_and_expression(part)
+                out.append(Runner(label, paths, expression if expression is not None else default_expression))
     return out
 
 
