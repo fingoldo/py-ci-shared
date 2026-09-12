@@ -85,7 +85,7 @@ _SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", 
 
 
 class IncompleteTransaction:
-    __slots__ = ("path", "function", "lineno", "handle")
+    __slots__ = ("function", "handle", "lineno", "path")
 
     def __init__(self, path: str, function: str, lineno: int, handle: str) -> None:
         self.path = path
@@ -182,8 +182,7 @@ def find_incomplete_transactions(
                 continue
             executed = _called_methods(node, candidates, execute_names)
             completed = _called_methods(node, candidates, complete_names)
-            for handle in sorted(executed - completed):
-                out.append(IncompleteTransaction(rel, node.name, node.lineno, handle))
+            out.extend(IncompleteTransaction(rel, node.name, node.lineno, handle) for handle in sorted(executed - completed))
     return out
 
 

@@ -123,12 +123,16 @@ def check_loader(conn, label: str, call: Callable[[], object]) -> bool:
     if getattr(rows, "failed", False):
         print(f"FAIL {label}: the loader returned a flagged-failed result -- see the log above")
         return False
+    # A loader's return type is `object` by contract -- it may hand back a list of tuples, of dicts,
+    # or a result object carrying `failed`. Narrowed here rather than promised in the signature: a
+    # wider annotation would only move the guess to the call sites.
+    items = list(rows) if isinstance(rows, (list, tuple)) else []
     first = None
-    if rows:
-        row = rows[0]
-        values = row.values() if hasattr(row, "values") else row
+    if items:
+        row = items[0]
+        values = list(row.values()) if isinstance(row, dict) else list(row)
         first = tuple(str(v)[:40] for v in values)
-    print(f"OK   {label}: {len(rows)} row(s), first={first}")
+    print(f"OK   {label}: {len(items)} row(s), first={first}")
     return True
 
 

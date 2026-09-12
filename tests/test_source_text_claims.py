@@ -7,6 +7,7 @@ a read a careless rule would flag, which is how such a rule gets switched off.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -167,7 +168,7 @@ class TestTheRatchet:
         return [bad, good]
 
     def test_a_new_claim_fails(self, tmp_path):
-        with pytest.raises(pytest.fail.Exception, match="test_bad.py::test_x"):
+        with pytest.raises(pytest.fail.Exception, match=re.escape("test_bad.py::test_x")):
             assert_no_new_source_text_claims(self._tree(tmp_path), tmp_path)
 
     def test_an_allowlisted_file_passes_and_a_stale_one_fails(self, tmp_path):
@@ -182,7 +183,7 @@ class TestTheRatchet:
         baseline.write_text(json.dumps(["tests/test_bad.py::test_x::getsource()"]), encoding="utf-8")
         assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
         baseline.write_text(json.dumps(["tests/test_bad.py::test_x::getsource()", "tests/test_gone.py::test_z::getsource()"]), encoding="utf-8")
-        with pytest.raises(pytest.fail.Exception, match="test_gone.py"):
+        with pytest.raises(pytest.fail.Exception, match=re.escape("test_gone.py")):
             assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
 
     def test_a_missing_baseline_is_written_and_skips(self, tmp_path):

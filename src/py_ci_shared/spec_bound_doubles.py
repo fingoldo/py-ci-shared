@@ -77,8 +77,9 @@ def find_unbound_doubles(
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             names = [t.id for t in targets if isinstance(t, ast.Name)]
             names += [t.attr for t in targets if isinstance(t, ast.Attribute)]
-            if any(h in n.lower() for n in names for h in name_hints) and is_bare_mock(node.value, mock_names):
-                lines.add(node.value.lineno)
+            value = node.value
+            if value is not None and any(h in n.lower() for n in names for h in name_hints) and is_bare_mock(value, mock_names):
+                lines.add(value.lineno)
         if isinstance(node, ast.Call):
             func = node.func
             called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")

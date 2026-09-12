@@ -109,7 +109,8 @@ def _split_top_level(text: str) -> list[str]:
                 quote = None
             continue
         if ch in "'\"":
-            quote, _ = ch, current.append(ch)
+            quote = ch
+            current.append(ch)
             continue
         if ch == "(":
             depth += 1
@@ -126,7 +127,8 @@ def _split_top_level(text: str) -> list[str]:
 
 def _balanced_prefix(text: str) -> tuple[str, str]:
     """Return the key-column list (already inside its opening paren) and the rest of the statement."""
-    depth, out = 1, []
+    depth = 1
+    out: list[str] = []
     for i, ch in enumerate(text):
         if ch == "(":
             depth += 1
@@ -144,7 +146,7 @@ def _normalise(column: str) -> tuple[str, bool]:
     # Read the direction off the trailing keyword only; a bare `\bDESC\b` search would also fire on
     # the word inside an expression's string literal.
     trailing = _TRAILING_DIRECTION.search(column)
-    descending = bool(trailing) and "desc" in trailing.group(0).lower()
+    descending = trailing is not None and "desc" in trailing.group(0).lower()
     column = _TRAILING_DIRECTION.sub("", column).strip()
     while column.startswith("(") and column.endswith(")"):
         inner, rest = _balanced_prefix(column[1:])

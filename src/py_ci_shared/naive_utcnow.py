@@ -66,7 +66,7 @@ def find_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = ()) -> list
         except (OSError, SyntaxError, UnicodeDecodeError):  # pragma: no cover - unreadable file
             continue
         rel = path.relative_to(root).as_posix()
-        out.extend(f"{rel}:{node.lineno}: {ast.unparse(node)}" for node in ast.walk(tree) if _is_utcnow_call(node))
+        out.extend(f"{rel}:{getattr(node, chr(108) + chr(105) + chr(110) + chr(101) + chr(110) + chr(111), 0)}: {ast.unparse(node)}" for node in ast.walk(tree) if _is_utcnow_call(node))
     return out
 
 

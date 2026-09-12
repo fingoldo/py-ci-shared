@@ -231,9 +231,7 @@ def assert_no_new_code_audit_findings(
     if fixed and fail_on_drained and not new:
         pytest.fail(
             f"{len(fixed)} code-audit baseline entr(ies) no longer match a finding -- Refresh the baseline with "
-            f"{REFRESH_FLAG} so the fixed findings leave it:\n  "
-            + "\n  ".join(fixed[:20])
-            + (f"\n  ... and {len(fixed) - 20} more" if len(fixed) > 20 else "")
+            f"{REFRESH_FLAG} so the fixed findings leave it:\n  " + "\n  ".join(fixed[:20]) + (f"\n  ... and {len(fixed) - 20} more" if len(fixed) > 20 else "")
         )
     if fixed:
         import sys

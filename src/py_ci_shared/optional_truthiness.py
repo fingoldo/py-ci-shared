@@ -74,7 +74,7 @@ def _optional_of_meaningful_falsy(annotation: ast.AST | None) -> bool:
     return "None" in members and any(m in _MEANINGFUL_FALSY for m in members)
 
 
-def _optional_params(fn: ast.AST) -> set[str]:
+def _optional_params(fn: "ast.FunctionDef | ast.AsyncFunctionDef") -> set[str]:
     args = fn.args
     every = list(args.posonlyargs) + list(args.args) + list(args.kwonlyargs)
     return {a.arg for a in every if _optional_of_meaningful_falsy(a.annotation)}

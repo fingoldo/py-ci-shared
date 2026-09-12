@@ -118,7 +118,9 @@ __all__ = [
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "9"  # 9: lint and formatting only (ruff 0.16.1 clean-up), bumped because the gate is content-based
+HARNESS_VERSION = "10"  # 10: string-literal mutants skip non-string constants, the container path returns a list on a SyntaxError,
+# and the scope fingerprint ignores a non-range entry -- each changes WHICH mutants a run generates
+# 9: lint and formatting only (ruff 0.16.1 clean-up), bumped because the gate is content-based
 # 8: a mutant that stops pytest starting (exit 4/5) is a kill, not a refusal
 
 
@@ -382,11 +384,13 @@ def _excluded_ranges(source: str) -> list[tuple[int, int]]:
     starts = _line_starts(source)
 
     def span(node: ast.AST | None) -> tuple[int, int] | None:
-        if node is None or getattr(node, "lineno", None) is None or getattr(node, "end_lineno", None) is None:
+        line = getattr(node, "lineno", None)
+        end_line = getattr(node, "end_lineno", None)
+        if node is None or line is None or end_line is None:
             return None
         return (
-            _abs_index(source, starts, node.lineno, node.col_offset),
-            _abs_index(source, starts, node.end_lineno, node.end_col_offset),  # type: ignore[arg-type]
+            _abs_index(source, starts, line, getattr(node, "col_offset", 0)),
+            _abs_index(source, starts, end_line, getattr(node, "end_col_offset", 0)),
         )
 
     out: list[tuple[int, int]] = []
@@ -428,7 +432,7 @@ def _container_members(source: str) -> list[tuple[int, int, str]]:
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return {}
+        return []
     starts = _line_starts(source)
     seed = int(hashlib.sha256(source.encode("utf-8")).hexdigest()[:8], 16)
     out: list[tuple[int, int, str]] = []
@@ -442,7 +446,7 @@ def _container_members(source: str) -> list[tuple[int, int, str]]:
             continue
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         name = next((t.id for t in targets if isinstance(t, ast.Name)), "<container>")
-        elements: list[ast.AST] = []
+        elements: list[ast.expr] = []
         if isinstance(node.value, ast.Dict):
             elements = [k for k in node.value.keys if k is not None] + list(node.value.values)
         else:
@@ -465,7 +469,7 @@ def _container_members(source: str) -> list[tuple[int, int, str]]:
             end_col = getattr(element, "end_col_offset", None)
             if end_line is None or end_col is None:  # pragma: no cover - ast always sets these
                 continue
-            start = _abs_index(source, starts, element.lineno, element.col_offset)
+            start = _abs_index(source, starts, getattr(element, "lineno", 0), getattr(element, "col_offset", 0))
             out.append((start, _abs_index(source, starts, end_line, end_col), name))
     out.sort()
     return out
@@ -604,7 +608,7 @@ def _substitution_candidates(source: str) -> list[tuple[int, int, int, str, str,
     sites = _string_literal_sites(tree)
     # The vocabulary is the file's own. Short values only: a long string is prose, and swapping two
     # sentences tests nothing that emptying one does not already test.
-    vocabulary = sorted({n.value for n, _r in sites if 1 <= len(n.value) <= 12 and n.value.strip()})
+    vocabulary = sorted({v for n, _r in sites if isinstance(v := n.value, str) and 1 <= len(v) <= 12 and v.strip()})
     out: list[tuple[int, int, int, str, str, str]] = []
     for node, regexish in sites:
         span = _span_of(source, starts, node)
@@ -613,7 +617,9 @@ def _substitution_candidates(source: str) -> list[tuple[int, int, int, str, str,
         raw = source[span[0] : span[1]]
         if "\n" in raw:
             continue
-        value = node.value
+        value = node.value if isinstance(node.value, str) else ""
+        if not value:
+            continue
         if regexish:
             for needle, replacement, description in _REGEX_WIDENINGS:
                 if needle not in value:
@@ -726,9 +732,9 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list
             emit(abs_end, new, f"operator: {why}")
 
         elif tok.type == tokenize.NAME and tok.string in _NAME_SWAP:
-            following = tokens[index + 1] if index + 1 < len(tokens) else None
-            if tok.string == "is" and following is not None and following.string == "not":
-                emit(starts[following.end[0] - 1] + following.end[1], "is", "comparison: is not becomes is")
+            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+            if tok.string == "is" and nxt is not None and nxt.string == "not":
+                emit(starts[nxt.end[0] - 1] + nxt.end[1], "is", "comparison: is not becomes is")
                 continue
             if tok.string == "in" and index and tokens[index - 1].string == "not":
                 continue  # the `not in` pair is emitted by the `not` branch below
@@ -736,9 +742,9 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False) -> list
             emit(abs_end, new, f"logic: {why}")
 
         elif tok.type == tokenize.NAME and tok.string == "not":
-            following = tokens[index + 1] if index + 1 < len(tokens) else None
-            if following is not None and following.string == "in":
-                emit(starts[following.end[0] - 1] + following.end[1], "in", "comparison: not in becomes in")
+            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+            if nxt is not None and nxt.string == "in":
+                emit(starts[nxt.end[0] - 1] + nxt.end[1], "in", "comparison: not in becomes in")
             else:
                 emit(abs_end + 1, "", "dropped a `not`")
 
@@ -1096,7 +1102,7 @@ def _installed_pytest_plugins() -> list[str]:
     global _PLUGIN_CACHE
     if _PLUGIN_CACHE is not None:
         return _PLUGIN_CACHE
-    found = []
+    found: list[str] = []
     try:
         from importlib.metadata import distributions
     except ImportError:  # pragma: no cover - stdlib since 3.8
@@ -1661,7 +1667,7 @@ def find_surviving_mutants(
         test_paths,
         extra_fingerprint_paths,
         scope=(
-            [[r.start, r.stop] for r in lines] if lines else None,
+            [[r.start, r.stop] for r in lines if isinstance(r, range)] if lines else None,
             limit,
             [str(t) for t in (fallback_test_paths or ())],
         ),
@@ -1703,8 +1709,12 @@ def find_surviving_mutants(
     # `_sweep_partition` restores the target in a `finally`, so a shared tree is clean for
     # the next file even when a sweep raises.
     borrowed = _sandbox is not None
-    sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_")) if not borrowed else None
-    sandbox = _sandbox if borrowed else sandbox_parent / repo_root.name
+    if _sandbox is not None:
+        sandbox_parent: "Path | None" = None
+        sandbox = _sandbox
+    else:
+        sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
+        sandbox = sandbox_parent / repo_root.name
     try:
         if not borrowed:
             shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
@@ -1769,7 +1779,7 @@ def find_surviving_mutants(
         partitions = [p for p in partitions if p]
         sandboxes = [sandbox]
         for index in range(1, len(partitions)):
-            extra = sandbox_parent / f"{repo_root.name}_{index}"
+            extra = (sandbox_parent or sandbox.parent) / f"{repo_root.name}_{index}"
             shutil.copytree(repo_root, extra, ignore=_COPY_IGNORE, symlinks=False)
             sandboxes.append(extra)
         results: list[tuple] = [()] * len(partitions)  # each: survivors, gaps, inconclusive, run, crashes, budget
@@ -1848,7 +1858,7 @@ def find_surviving_mutants(
             test_paths,
             extra_fingerprint_paths,
             scope=(
-                [[r.start, r.stop] for r in lines] if lines else None,
+                [[r.start, r.stop] for r in lines if isinstance(r, range)] if lines else None,
                 limit,
                 [str(t) for t in (fallback_test_paths or ())],
             ),

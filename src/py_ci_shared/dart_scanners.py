@@ -139,11 +139,10 @@ def scan_painter_animation(files: Iterable[str], read: Reader) -> dict:
                 f"disagree: a ticker driving nothing, or a frozen sweep"
             )
 
-        if _ACTIVATE_INTENT.search(clean) and not _BUTTON_ACTIVATE_INTENT.search(clean):
-            m = _ACTIVATE_INTENT.search(clean)
+        if (activate := _ACTIVATE_INTENT.search(clean)) and not _BUTTON_ACTIVATE_INTENT.search(clean):
             found[_key(found, rel)] = (
                 f"ActivateIntent handled without ButtonActivateIntent (line "
-                f"{_line_of(clean, m.start())}) - on the web Enter maps to ButtonActivateIntent, "
+                f"{_line_of(clean, activate.start())}) - on the web Enter maps to ButtonActivateIntent, "
                 f"so the key does nothing there"
             )
     return found
@@ -446,11 +445,10 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
                     f"a rejection is an unhandled async error and the UI waits forever"
                 )
 
-        if _SOCKET_EXCEPTION.search(clean) and not _CLIENT_EXCEPTION.search(clean):
-            m = _SOCKET_EXCEPTION.search(clean)
+        if (socket_hit := _SOCKET_EXCEPTION.search(clean)) and not _CLIENT_EXCEPTION.search(clean):
             found[_key(found, rel)] = (
                 f"SocketException caught without ClientException (line "
-                f"{_line_of(clean, m.start())}) - the web build never throws SocketException, so "
+                f"{_line_of(clean, socket_hit.start())}) - the web build never throws SocketException, so "
                 f"this branch is dead there"
             )
     return found

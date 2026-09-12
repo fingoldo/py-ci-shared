@@ -38,7 +38,7 @@ from __future__ import annotations
 import ast
 import os
 from functools import cache
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 
 __all__ = [
@@ -180,12 +180,12 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
                     aliases[node.optional_vars.id] = effect
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             patched = [_patch_target(d, effects) for d in node.decorator_list if isinstance(d, ast.Call)]
-            patched = [e for e in patched if e]
-            if not patched:
+            named = [e for e in patched if e]
+            if not named:
                 continue
             params = [a.arg for a in node.args.args if a.arg not in {"self", "cls"}]
-            for param in params[-len(patched) :] if len(params) >= len(patched) else params:
-                for effect in patched:
+            for param in params[-len(named) :] if len(params) >= len(named) else params:
+                for effect in named:
                     aliases.setdefault(param, effect)
     return aliases
 
@@ -247,7 +247,7 @@ def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
     except (OSError, SyntaxError):
         return set()
 
-    def _is_fixture(node: (ast.FunctionDef, ast.AsyncFunctionDef)) -> bool:
+    def _is_fixture(node: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
         for decorator in node.decorator_list:
             target = decorator.func if isinstance(decorator, ast.Call) else decorator
             name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
@@ -391,7 +391,7 @@ def _inspects(
     path: Path,
     effects: Sequence[str],
     db_fixtures: frozenset[str] = frozenset(),
-    helpers: Mapping[str, Sequence[str]] | None = None,
+    helpers: Mapping[str, Collection[str]] | None = None,
 ) -> set[str]:
     """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 

@@ -77,7 +77,7 @@ def find_unprotected_releases(path: Path, release: str) -> list[int]:
     for node in ast.walk(tree):
         text = ast.unparse(node).strip() if isinstance(node, (ast.Await, ast.Call)) else ""
         if text.endswith(f".{release}()"):
-            out.append(node.lineno)
+            out.append(getattr(node, "lineno", 0))
     return sorted(set(out))
 
 

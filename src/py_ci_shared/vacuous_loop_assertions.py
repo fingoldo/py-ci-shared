@@ -62,7 +62,7 @@ __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loo
 
 
 class FloorlessLoop:
-    __slots__ = ("path", "function", "lineno")
+    __slots__ = ("function", "lineno", "path")
 
     def __init__(self, path: str, function: str, lineno: int) -> None:
         self.path = path
@@ -98,7 +98,7 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
     prove."""
     try:
         iter_src = ast.unparse(loop.iter)
-    except Exception:  # noqa: BLE001 -- unparse is best-effort; missing it just narrows the check
+    except Exception:  # unparse is best-effort; missing it just narrows the check
         iter_src = None
     var_names = {n.id for n in ast.walk(loop.target) if isinstance(n, ast.Name)}
 
@@ -108,7 +108,7 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
             continue
         try:
             test_src = ast.unparse(node.test)
-        except Exception:  # noqa: BLE001
+        except Exception:  # unparse is best-effort, as above
             continue
         if iter_src and iter_src in test_src:
             return True

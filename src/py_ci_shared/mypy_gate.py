@@ -58,7 +58,13 @@ def check_mypy_output(output: str, returncode: int, min_files: int = 0) -> str |
 
     # The scope check applies to BOTH terminators. A run that narrowed to three files and then
     # found two errors in them is exactly as uninformative as one that narrowed and found none.
-    checked = int(match.group(1)) if match else int(found.group(2))
+    # Narrowed with locals rather than inline: the early return above covers the case where NEITHER
+    # terminator matched, which mypy cannot see through a conditional expression.
+    if match is not None:
+        checked = int(match.group(1))
+    else:
+        assert found is not None
+        checked = int(found.group(2))
     if min_files and checked < min_files:
         return f"mypy completed but checked only {checked} source files, below the declared minimum of {min_files} -- the invocation's scope has silently narrowed."
 

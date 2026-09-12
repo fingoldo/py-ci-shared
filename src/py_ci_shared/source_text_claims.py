@@ -201,7 +201,7 @@ _NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambd
 
 def _walk_scope(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
     """Every node in *body* without descending into nested function or class definitions -- they are scopes of their own."""
-    stack = [node for node in body if not isinstance(node, _NESTED_SCOPES)]
+    stack: list[ast.AST] = [node for node in body if not isinstance(node, _NESTED_SCOPES)]
     while stack:
         node = stack.pop()
         yield node
@@ -296,8 +296,10 @@ def find_source_text_claims(
                     if kind:
                         claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
                 continue
-            is_check = isinstance(node, ast.Assert) or (isinstance(node, ast.If) and _fails_in_body(node))
-            if not is_check or node.lineno in claims:
+            # `node.test` is read through the isinstance itself, not through an `is_check` flag: mypy
+            # narrows the former and not the latter, and the flag hid that the branch also accepts an
+            # `ast.If` whose body fails.
+            if not isinstance(node, (ast.Assert, ast.If)) or (isinstance(node, ast.If) and not _fails_in_body(node)) or node.lineno in claims:
                 continue
             test = node.test
             kind = det.reader_kind(test, paths, tainted)
