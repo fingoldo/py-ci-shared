@@ -146,3 +146,46 @@ class TestAssertNoNewFloorlessLoop:
 
         with pytest.raises(AssertionError, match="no longer describe"):
             assert_no_new_floorless_loop(files=[tmp_path / "good.py"], repo_root=tmp_path, baseline_path=baseline)
+
+
+_LITERAL_TUPLE_NEEDS_NO_FLOOR = """
+    def test_every_id_is_mounted():
+        ids = mounted_ids()
+        for name in ("a", "b", "c"):
+            assert name in ids
+"""
+
+_EMPTY_LITERAL_IS_STILL_THE_SHAPE = """
+    def test_nothing_at_all():
+        for name in []:
+            assert name in mounted_ids()
+"""
+
+_LITERAL_THROUGH_A_WRAPPER = """
+    def test_every_id_is_mounted():
+        ids = mounted_ids()
+        for i, name in enumerate(("a", "b")):
+            assert name in ids
+"""
+
+
+class TestALiteralIterableNeedsNoFloor:
+    """`for x in ("a", "b"): assert ...` cannot arrive empty, and the floor a reader would add is
+    an assertion about the line directly above it."""
+
+    def test_a_literal_tuple_is_not_flagged(self, tmp_path):
+        path = _module(tmp_path, "ok.py", _LITERAL_TUPLE_NEEDS_NO_FLOOR)
+
+        assert find_floorless_loops([path], tmp_path) == []
+
+    def test_a_literal_through_enumerate_is_not_flagged(self, tmp_path):
+        path = _module(tmp_path, "ok.py", _LITERAL_THROUGH_A_WRAPPER)
+
+        assert find_floorless_loops([path], tmp_path) == []
+
+    def test_an_EMPTY_literal_is_still_reported(self, tmp_path):
+        """The exemption is for "a reader can count it", not for "it is written at the loop" -- a
+        loop over `[]` is exactly the silent pass this check exists for."""
+        path = _module(tmp_path, "bad.py", _EMPTY_LITERAL_IS_STILL_THE_SHAPE)
+
+        assert len(find_floorless_loops([path], tmp_path)) == 1

@@ -117,6 +117,26 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
     return False
 
 
+def _iterates_a_nonempty_literal(loop) -> bool:
+    """True when the loop's iterable is a literal collection with elements in it.
+
+    `for x in ("a", "b"): assert x in thing` needs no floor: the iterable is written out at the
+    loop, a reader can count it, and it cannot arrive empty however the rest of the file changes.
+    Flagging it asks for an `assert ("a", "b")` whose answer is visible in the line above -- noise
+    that trains the reader to add the assertion without thinking, which is the opposite of what this
+    check is for.
+
+    Only NON-EMPTY literals. `for x in []:` really is a loop that never runs, and the whole point of
+    this check is that such a loop reads as if it verifies something.
+    """
+    iterable = loop.iter
+    # `enumerate((...))` / `sorted([...])` and friends: the floor is still visible at the loop.
+    if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Name):
+        if iterable.func.id in {"enumerate", "sorted", "reversed", "list", "tuple", "set"} and iterable.args:
+            iterable = iterable.args[0]
+    return isinstance(iterable, (ast.Tuple, ast.List, ast.Set)) and bool(iterable.elts)
+
+
 def find_floorless_loops(
     files: Iterable[Path],
     repo_root: Path,
@@ -139,6 +159,8 @@ def find_floorless_loops(
                 if not isinstance(node, (ast.For, ast.AsyncFor)):
                     continue
                 if not _is_assert_only(node.body):
+                    continue
+                if _iterates_a_nonempty_literal(node):
                     continue
                 if _floor_exists(fn, node):
                     continue
