@@ -139,6 +139,38 @@ class TestAssertNoNewFloorlessLoop:
 
         assert_no_new_floorless_loop(files=[path], repo_root=tmp_path, baseline_path=baseline)
 
+    def test_moving_a_baselined_loop_down_the_file_does_not_fail(self, tmp_path):
+        path = _module(tmp_path, "bad.py", _FLOORLESS_CONDITIONAL_ASSERT)
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps({find_floorless_loops([path], tmp_path)[0].key: "known"}), encoding="utf-8")
+        path.write_text("# a line added above the test\n\n" + path.read_text(encoding="utf-8"), encoding="utf-8")
+
+        assert_no_new_floorless_loop(files=[path], repo_root=tmp_path, baseline_path=baseline)
+
+    def test_a_line_numbered_baseline_key_is_still_honoured(self, tmp_path):
+        path = _module(tmp_path, "bad.py", _FLOORLESS_CONDITIONAL_ASSERT)
+        loop = find_floorless_loops([path], tmp_path)[0]
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps({f"{loop.scope}::{loop.lineno + 40}": "written before keys were ordinal"}), encoding="utf-8")
+
+        assert_no_new_floorless_loop(files=[path], repo_root=tmp_path, baseline_path=baseline)
+
+    def test_a_second_floorless_loop_in_a_baselined_function_fails(self, tmp_path):
+        path = _module(tmp_path, "bad.py", _FLOORLESS_CONDITIONAL_ASSERT)
+        found = find_floorless_loops([path], tmp_path)
+        assert len(found) == 1
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps({found[0].key: "known"}), encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
+        body_start = text.index("    for ", text.index(f"def {found[0].function}"))
+        # Renamed so neither loop's assert reads as the other's floor (a floor may name the loop variable).
+        loop_block = text[body_start:].split("\n\n", 1)[0].replace("line", "row") + "\n"
+        path.write_text(text[:body_start] + loop_block + text[body_start:], encoding="utf-8")
+        assert len(find_floorless_loops([path], tmp_path)) == 2
+
+        with pytest.raises(AssertionError, match="zero matches"):
+            assert_no_new_floorless_loop(files=[path], repo_root=tmp_path, baseline_path=baseline)
+
     def test_a_stale_baseline_entry_fails_too(self, tmp_path):
         _module(tmp_path, "good.py", _WITH_A_FLOOR_ON_THE_ITERABLE)
         baseline = tmp_path / "baseline.json"

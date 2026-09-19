@@ -47,6 +47,10 @@ _GPU_DOTTED_PREFIXES = ("torch.cuda.", "numba.cuda.")
 _TIMER_ATTRS = frozenset({"perf_counter", "perf_counter_ns", "time", "monotonic", "monotonic_ns", "process_time"})
 _TIMER_NAMES = frozenset({"timer", "perf_counter", "monotonic", "clock", "_timer"})
 
+# Text-level prefilter: a call to any timer name above. A file it does not match cannot contain a timed region, so it
+# is skipped before parsing; it is a superset of ``_is_timer_read`` (a match only means "parse and look").
+_TIMER_CALL_TEXT_RE = re.compile(r"\b(?:" + "|".join(sorted(_TIMER_ATTRS | _TIMER_NAMES, key=len, reverse=True)) + r")\s*\(")
+
 # A call counts as a device synchronization when its resolved name looks like one. Deliberately
 # name-based and generous: a project's own wrapper (``_gpu_sync``, ``synchronize_gpu_if_available``,
 # ``ev.synchronize``) is the normal way this is spelled, and an unrecognized sync name would produce
@@ -239,7 +243,12 @@ def _own_stmt_blocks(func: ast.AST) -> Iterator[list[ast.stmt]]:
             block = getattr(node, field, None)
             if isinstance(block, list) and block and all(isinstance(s, ast.stmt) for s in block):
                 yield block
-        stack.extend(child for child in ast.iter_child_nodes(node) if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+        # Statement blocks only hang off statements (and except handlers / match cases), so the walk never needs to
+        # descend into expressions -- which is where almost all of a module's nodes are.
+        for field in ("body", "orelse", "finalbody", "handlers", "cases"):
+            for child in getattr(node, field, None) or ():
+                if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    stack.append(child)
 
 
 def find_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None) -> list[GpuTimingFinding]:
@@ -252,8 +261,13 @@ def find_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] 
     for path in files:
         try:
             source = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if not _TIMER_CALL_TEXT_RE.search(source):
+            continue
+        try:
             tree = ast.parse(source, filename=str(path))
-        except (SyntaxError, UnicodeDecodeError, OSError):
+        except SyntaxError:
             continue
         gpu_aware = bool(_GPU_AWARE_RE.search(source))
         source_lines = source.splitlines()

@@ -62,16 +62,25 @@ __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loo
 
 
 class FloorlessLoop:
-    __slots__ = ("function", "lineno", "path")
+    __slots__ = ("function", "lineno", "ordinal", "path")
 
-    def __init__(self, path: str, function: str, lineno: int) -> None:
+    def __init__(self, path: str, function: str, lineno: int, ordinal: int = 1) -> None:
         self.path = path
         self.function = function
         self.lineno = lineno
+        # 1-based position among this function's floorless loops, in source order.
+        self.ordinal = ordinal
 
     @property
     def key(self) -> str:
-        return f"{self.path}::{self.function}::{self.lineno}"
+        # Keyed on the ordinal, not the line: a line number goes stale on any edit above the loop, which turned
+        # every baselined loop into a "new" one plus a "stale" one without anything about the loop changing.
+        return f"{self.path}::{self.function}::#{self.ordinal}"
+
+    @property
+    def scope(self) -> str:
+        """``path::function``: what the ratchet counts against, for both the current and the line-numbered key form."""
+        return f"{self.path}::{self.function}"
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"FloorlessLoop({self.key})"
@@ -152,6 +161,7 @@ def find_floorless_loops(
         except SyntaxError:
             continue
         rel = path.relative_to(repo_root).as_posix() if path.is_absolute() else path.as_posix()
+        per_file: list[tuple[str, int]] = []
         for fn in ast.walk(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -164,8 +174,17 @@ def find_floorless_loops(
                     continue
                 if _floor_exists(fn, node):
                     continue
-                out.append(FloorlessLoop(rel, fn.name, node.lineno))
+                per_file.append((fn.name, node.lineno))
+        seen: dict[str, int] = {}
+        for name, lineno in sorted(per_file, key=lambda t: t[1]):
+            seen[name] = seen.get(name, 0) + 1
+            out.append(FloorlessLoop(rel, name, lineno, seen[name]))
     return out
+
+
+def _scope_of(key: str) -> str:
+    """``path::function`` of a baseline key, whether it ends in ``::#<ordinal>`` or the older ``::<lineno>``."""
+    return key.rsplit("::", 1)[0]
 
 
 def assert_no_new_floorless_loop(
@@ -177,15 +196,28 @@ def assert_no_new_floorless_loop(
     baseline records what was already true, and the list can only shrink from here."""
     accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
     found = find_floorless_loops(files, repo_root)
-    new = {loop.key: loop for loop in found if loop.key not in accepted}
+    # Counted per function: a function may keep as many floorless loops as the baseline lists for it. That is what
+    # both key forms can express, and it survives edits that move a loop without adding one.
+    allowed: dict[str, int] = {}
+    for key in accepted:
+        allowed[_scope_of(key)] = allowed.get(_scope_of(key), 0) + 1
+    by_scope: dict[str, list[FloorlessLoop]] = {}
+    for loop in found:
+        by_scope.setdefault(loop.scope, []).append(loop)
+    new = {loop.key: loop for scope, loops in by_scope.items() for loop in loops[allowed.get(scope, 0):]}
     if new:
-        lines = "\n  ".join(f"{loop.key}" for loop in sorted(new.values(), key=lambda loop: loop.key))
+        lines = "\n  ".join(f"{loop.key} (line {loop.lineno})" for loop in sorted(new.values(), key=lambda loop: loop.key))
         raise AssertionError(
             f"{len(new)} loop(s) whose body is only conditional asserts, with nothing outside the "
             f"loop asserting it iterated at all -- zero matches is a silent pass, not a failure:\n  {lines}\n"
             "Add `assert <the collection>` (or `assert list(<generator>)`) before the loop, or if the "
             "loop's own emptiness IS the thing under test, record it in the baseline with a reason."
         )
-    stale = sorted(k for k in accepted if k not in {loop.key for loop in found})
+    stale: list[str] = []
+    for scope, n_allowed in allowed.items():
+        n_found = len(by_scope.get(scope, ()))
+        if n_allowed > n_found:
+            stale.extend(sorted(k for k in accepted if _scope_of(k) == scope)[n_found:])
+    stale.sort()
     if stale:
         raise AssertionError(f"these baseline entries no longer describe a floorless loop -- remove them: {stale}")
