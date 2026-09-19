@@ -38,6 +38,16 @@ class TestPaths:
         assert len(problems) == 1
         assert "check-live-rpc-exists.py" in problems[0]
 
+    def test_the_markdown_bold_form_is_read(self, tmp_path):
+        audit, root = _audit(tmp_path, "#### F1\n**Disposition:** RESOLVED. `tool/gone.py` now guards it\n")
+        problems = find_unsupported_dispositions(audit, root)
+        assert len(problems) == 1 and "gone.py" in problems[0]
+
+    def test_a_path_relative_to_a_search_root_resolves(self, tmp_path):
+        audit, root = _audit(tmp_path, "#### F1\n**Disposition:** RESOLVED. `training/split.py` fixed\n", "src/pkg/training/split.py")
+        assert len(find_unsupported_dispositions(audit, root)) == 1
+        assert find_unsupported_dispositions(audit, root, search_roots=[root / "src" / "pkg"]) == []
+
     def test_resolved_naming_a_script_that_exists_passes(self, tmp_path):
         audit, root = _audit(
             tmp_path,

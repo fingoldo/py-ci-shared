@@ -40,7 +40,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 # `- Disposition: RESOLVED - ...` / `Disposition: PARTIAL - ...`
-_DISPOSITION_RE = re.compile(r"^-?\s*Disposition(?: of this (?:item|report))?:\s*(?P<verdict>[A-Z][A-Z' ]+?)\b\s*[-:]?\s*(?P<text>.*)$")
+# Also the Markdown-bold form ``**Disposition:** RESOLVED. text`` (verdict ended by a period rather than a dash).
+_DISPOSITION_RE = re.compile(r"^-?\s*(?:\*\*)?Disposition(?: of this (?:item|report))?:(?:\*\*)?\s*(?P<verdict>[A-Z][A-Z' ]+?)\b\s*[-:.]?\s*(?P<text>.*)$")
 # A backticked token that looks like a repository path: it carries a separator and an extension.
 _BACKTICK_PATH_RE = re.compile(r"`([\w./\-]*/[\w./\-]+\.[\w]{1,6})`")
 # A bare path written without backticks, which audit prose does constantly.
@@ -76,8 +77,12 @@ def find_unsupported_dispositions(
     migrations_dir: "Path | None" = None,
     ignore_paths: Iterable[str] = (),
     verdicts: Sequence[str] = tuple(sorted(_ASSERTIVE_VERDICTS)),
+    search_roots: Sequence[Path] = (),
 ) -> list[str]:
     """Return one problem string per disposition that claims a file or migration which is absent.
+
+    ``search_roots`` are extra directories a named path may be relative to, beyond ``repo_root``: dispositions
+    routinely write a path relative to the source package (``training/splitting.py``).
 
     ``ignore_paths`` lists artefacts a disposition may legitimately name without them existing
     here: a path in another repository, or one a CORRECTION line is quoting precisely because it
@@ -111,7 +116,7 @@ def find_unsupported_dispositions(
             checked += 1
 
             for artefact in sorted(_artefacts(text)):
-                if artefact in ignored or (repo_root / artefact).exists():
+                if artefact in ignored or any((root / artefact).exists() for root in (repo_root, *search_roots)):
                     continue
                 problems.append(
                     f"{path.name}:{lineno}: disposition says {verdict} and names `{artefact}`, "
@@ -141,10 +146,11 @@ def assert_dispositions_name_real_artefacts(
     *,
     migrations_dir: "Path | None" = None,
     ignore_paths: Iterable[str] = (),
+    search_roots: Sequence[Path] = (),
 ) -> None:
     """Fail when a RESOLVED/PARTIAL disposition names a file or migration that is not there."""
     import pytest
 
-    problems = find_unsupported_dispositions(audit_dir, repo_root, migrations_dir=migrations_dir, ignore_paths=ignore_paths)
+    problems = find_unsupported_dispositions(audit_dir, repo_root, migrations_dir=migrations_dir, ignore_paths=ignore_paths, search_roots=search_roots)
     if problems:
         pytest.fail(f"{len(problems)} disposition(s) claim something that is not in the tree:\n  " + "\n  ".join(problems))
