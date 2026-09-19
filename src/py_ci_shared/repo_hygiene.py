@@ -65,6 +65,7 @@ Usage::
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Iterable, Sequence
@@ -152,15 +153,67 @@ _DEFAULT_SKIP_DIRS: "tuple[str, ...]" = (
 )
 
 
+def _candidate_files(repo_root: Path, skip: "set[str]") -> "list[str]":
+    """Repo-relative POSIX paths to consider: git's view when *repo_root* is a checkout, else a pruned walk.
+
+    Git's view is the tracked files plus untracked ones that are NOT ignored, so a new file is checked before it is
+    committed while ignored data, caches and outputs -- often ten times the repository -- are never read. Outside a
+    checkout the walk prunes skipped directories instead of descending into them and filtering afterwards.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
+            cwd=repo_root,
+            capture_output=True,
+            check=True,
+        ).stdout
+        return sorted({rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel})
+    except (OSError, subprocess.CalledProcessError):
+        pass
+    found: "list[str]" = []
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        dirnames[:] = [d for d in dirnames if d not in skip]
+        rel_dir = Path(dirpath).relative_to(repo_root)
+        found.extend((rel_dir / name).as_posix() for name in filenames)
+    return sorted(found)
+
+
 def _walk_text_files(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: Iterable[str]) -> "list[Path]":
-    """Every file under *repo_root* with a text suffix, outside the skipped directories."""
+    """Every existing file under *repo_root* with a text suffix, outside the skipped directories."""
     skip = set(skip_dirs)
     suffixes = {suffix.lower() for suffix in text_suffixes}
+    paths: "list[Path]" = []
+    for rel in _candidate_files(repo_root, skip):
+        parts = rel.split("/")
+        if Path(parts[-1]).suffix.lower() not in suffixes or skip.intersection(parts[:-1]):
+            continue
+        path = repo_root / rel
+        if path.is_file():  # a tracked file deleted from the working tree is still listed by git
+            paths.append(path)
+    return paths
+
+
+def _text_file_bytes(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: Iterable[str]) -> "list[tuple[Path, bytes]]":
+    """``(path, content)`` for every text file, each read once, so the NUL and BOM rules share one pass."""
+    out: "list[tuple[Path, bytes]]" = []
+    for path in _walk_text_files(repo_root, text_suffixes, skip_dirs):
+        try:
+            out.append((path, path.read_bytes()))
+        except OSError:
+            continue
+    return out
+
+
+def _nul_problems(repo_root: Path, blobs: "list[tuple[Path, bytes]]") -> list[str]:
     return [
-        path
-        for path in sorted(repo_root.rglob("*"))
-        if path.is_file() and path.suffix.lower() in suffixes and not (set(path.relative_to(repo_root).parts) & skip)
+        f"{path.relative_to(repo_root).as_posix()} (x{blob.count(bytes([0]))}, first at byte {blob.index(bytes([0]))})"
+        for path, blob in blobs
+        if bytes([0]) in blob
     ]
+
+
+def _bom_problems(repo_root: Path, blobs: "list[tuple[Path, bytes]]") -> list[str]:
+    return [path.relative_to(repo_root).as_posix() for path, blob in blobs if blob.startswith(b"\xef\xbb\xbf")]
 
 
 def find_text_files_with_nul_bytes(
@@ -170,15 +223,7 @@ def find_text_files_with_nul_bytes(
     skip_dirs: Iterable[str] = _DEFAULT_SKIP_DIRS,
 ) -> list[str]:
     """`path (xN, first at byte B)` for every text file holding a NUL byte."""
-    out: list[str] = []
-    for path in _walk_text_files(repo_root, text_suffixes, skip_dirs):
-        try:
-            blob = path.read_bytes()
-        except OSError:
-            continue
-        if b"\x00" in blob:
-            out.append(f"{path.relative_to(repo_root).as_posix()} (x{blob.count(bytes([0]))}, first at byte {blob.index(bytes([0]))})")
-    return out
+    return _nul_problems(repo_root, _text_file_bytes(repo_root, text_suffixes, skip_dirs))
 
 
 def find_text_files_with_a_bom(
@@ -193,11 +238,7 @@ def find_text_files_with_a_bom(
     plain text every tool assumes", and a repo that disagrees about which files are text would get
     two different answers from one setting.
     """
-    return [
-        path.relative_to(repo_root).as_posix()
-        for path in _walk_text_files(repo_root, text_suffixes, skip_dirs)
-        if path.read_bytes().startswith(b"\xef\xbb\xbf")
-    ]
+    return _bom_problems(repo_root, _text_file_bytes(repo_root, text_suffixes, skip_dirs))
 
 
 #: Suffixes of code that must not live in an audit folder (rule 6).
@@ -265,14 +306,15 @@ def assert_repo_hygiene(
         problems.append(
             f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and conflict on every merge:\n    " + "\n    ".join(tracked[:20])
         )
-    nul_files = find_text_files_with_nul_bytes(repo_root, text_suffixes=text_suffixes)
+    blobs = _text_file_bytes(repo_root, text_suffixes, _DEFAULT_SKIP_DIRS)
+    nul_files = _nul_problems(repo_root, blobs)
     if nul_files:
         problems.append(
             f"{len(nul_files)} text file(s) contain a NUL byte. grep reports these as BINARY and "
             "prints no matches, so every text search silently skips them. If you meant the escape, "
             "write the four characters:\n    " + "\n    ".join(nul_files[:20])
         )
-    bom_files = find_text_files_with_a_bom(repo_root, text_suffixes=text_suffixes)
+    bom_files = _bom_problems(repo_root, blobs)
     if bom_files:
         problems.append(
             f"{len(bom_files)} text file(s) start with a UTF-8 BOM. `json.loads` and `tomllib.loads` "

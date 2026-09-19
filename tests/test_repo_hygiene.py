@@ -200,3 +200,22 @@ class TestUtf8BomsInTextFiles:
         with pytest.raises(BaseException) as excinfo:
             repo_hygiene.assert_repo_hygiene(tmp_path)
         assert "BOM" in str(excinfo.value)
+
+
+class TestTextFileScope:
+    """In a checkout the text rules read git's view: tracked plus untracked-not-ignored, never ignored files."""
+
+    def test_an_ignored_file_is_not_read_but_a_new_unignored_one_is(self, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / ".gitignore").write_text("data/\n", encoding="utf-8")
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "dump.txt").write_bytes(b"a\x00b")
+        (tmp_path / "new.md").write_bytes(b"x\x00y")
+        found = repo_hygiene.find_text_files_with_nul_bytes(tmp_path)
+        assert [f.split(" ")[0] for f in found] == ["new.md"]
+
+    def test_outside_a_checkout_skipped_dirs_are_not_entered(self, tmp_path):
+        (tmp_path / "node_modules").mkdir()
+        (tmp_path / "node_modules" / "x.json").write_bytes(b"\xef\xbb\xbf{}")
+        (tmp_path / "a.json").write_bytes(b"\xef\xbb\xbf{}")
+        assert repo_hygiene.find_text_files_with_a_bom(tmp_path) == ["a.json"]
