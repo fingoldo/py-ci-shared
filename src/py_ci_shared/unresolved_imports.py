@@ -174,12 +174,19 @@ def _resolve_relative(importing: str, node: ast.ImportFrom, *, is_package: bool)
     return ".".join([*parts, node.module]) if node.module else ".".join(parts)
 
 
-def _judge_import(path: Path, tree: ast.Module, node: ast.ImportFrom, index: "ModuleIndex", importing: str, prefixes: tuple) -> str | None:
-    """One `from X import Y`, judged. Returns a problem line or None."""
+def _judge_import(
+    path: Path, tree: ast.Module, node: ast.ImportFrom, index: "ModuleIndex", importing: str, prefixes: tuple,
+    guarded: "set[int] | None" = None,
+) -> str | None:
+    """One `from X import Y`, judged. Returns a problem line or None.
+
+    ``guarded`` is this file's ``_guarded_import_ids`` when the caller computed it once for the whole file; without
+    it the guard shape is re-derived here, which walks the tree again per import.
+    """
     target = _resolve_relative(importing, node, is_package=index.is_package(importing))
     if not target or not target.startswith(prefixes):
         return None
-    if _absence_is_expected(tree, node):
+    if id(node) in guarded if guarded is not None else _absence_is_expected(tree, node):
         return None
     if not index.knows(target):
         # Inside the package but never parsed: `from pkg.does_not_exist import X` is the defect hunted here.
@@ -214,12 +221,40 @@ def find_unresolved_from_imports(
                 tree = ast.parse(path.read_text(encoding="utf-8"))
             except (SyntaxError, UnicodeDecodeError, OSError):
                 continue
-            for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom):
-                    problem = _judge_import(path, tree, node, index, importing, prefixes)
+            imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+            if imports:
+                guarded = _guarded_import_ids(tree)
+                for node in imports:
+                    problem = _judge_import(path, tree, node, index, importing, prefixes, guarded)
                     if problem:
                         problems.append(problem)
     return problems
+
+
+def _guarded_import_ids(tree: ast.Module) -> "set[int]":
+    """``id()`` of every ImportFrom whose failure the surrounding code handles or asserts, from ONE walk of *tree*.
+
+    :func:`_absence_is_expected` answers the same question for a single import by walking the whole tree, so asking
+    it per import is quadratic in the file (measured: 170 s of a 235 s scan of mlframe's src).
+    """
+    guarded: "set[int]" = set()
+    for node in ast.walk(tree):
+        bodies = None
+        if isinstance(node, ast.Try) and any(
+            h.type is None or any(isinstance(n, ast.Name) and n.id in {"ImportError", "ModuleNotFoundError", "Exception"} for n in ast.walk(h.type))
+            for h in node.handlers
+        ):
+            bodies = node.body
+        elif isinstance(node, ast.With) and any(
+            isinstance(item.context_expr, ast.Call)
+            and getattr(item.context_expr.func, "attr", "") == "raises"
+            and any(isinstance(a, ast.Name) and a.id in {"ImportError", "ModuleNotFoundError"} for a in item.context_expr.args)
+            for item in node.items
+        ):
+            bodies = node.body
+        if bodies is not None:
+            guarded.update(id(inner) for stmt in bodies for inner in ast.walk(stmt) if isinstance(inner, ast.ImportFrom))
+    return guarded
 
 
 def _absence_is_expected(tree: ast.Module, target: ast.ImportFrom) -> bool:

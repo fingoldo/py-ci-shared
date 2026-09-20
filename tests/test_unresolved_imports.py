@@ -168,3 +168,23 @@ def test_an_import_asserted_to_fail_is_not_a_finding(tmp_path):
         },
     )
     assert _scan(root) == []
+
+
+def test_guard_detection_is_one_walk_not_one_per_import(tmp_path):
+    """A guarded import is recognised from a single walk of the file, not a walk per import.
+
+    _absence_is_expected walks the whole tree for ONE import, so asking it per import is quadratic: on a 400-import
+    module that is 1.4 s against 3 ms. The two must agree exactly, or the scan would change its verdicts.
+    """
+    import ast
+
+    from py_ci_shared.unresolved_imports import _absence_is_expected, _guarded_import_ids
+
+    source = "try:\n    from pkg.a import x\nexcept ImportError:\n    x = None\n"
+    source += "with pytest.raises(ImportError):\n    from pkg.b import y\n"
+    source += "".join(f"from pkg.m{i} import n{i}\n" for i in range(20))
+    tree = ast.parse(source)
+    imports = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
+    guarded = _guarded_import_ids(tree)
+    assert [id(n) in guarded for n in imports] == [_absence_is_expected(tree, n) for n in imports]
+    assert sum(id(n) in guarded for n in imports) == 2
