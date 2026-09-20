@@ -248,3 +248,26 @@ class TestAPlainImportOfASubmoduleStillBindsThePackage:
         body = "import pkg.vocabulary as v\n\n\ndef test_it():\n    v.never_defined = 1\n"
 
         assert [f.target for f in _scan(tmp_path, tests, body)] == ["pkg.vocabulary.never_defined"]
+
+
+def test_one_walk_agrees_with_the_two_it_replaced(tmp_path):
+    """module_index derives bound names, defined names and dynamic forwarding from a single walk.
+
+    The three answers come from the same node types; walking each module twice to get them separately was half the
+    index build. The combined pass must return exactly what the two separate ones did.
+    """
+    import ast
+
+    from py_ci_shared.inert_patch_targets import _forwards_dynamically, _module_facts, _module_level_names
+
+    for source in (
+        "import os\nfrom x import y as z\nA, B = 1, 2\nC: int = 3\ndef f(): pass\nclass K: pass\n",
+        "def __getattr__(name):\n    return 1\n",
+        "globals()['a'] = 1\n",
+        "globals().update({'b': 2})\n",
+        "try:\n    import numpy as np\nexcept ImportError:\n    np = None\n",
+    ):
+        tree = ast.parse(source)
+        bound, defined, forwards = _module_facts(tree)
+        assert (bound, defined) == _module_level_names(tree)
+        assert forwards == _forwards_dynamically(tree)

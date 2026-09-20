@@ -170,6 +170,42 @@ def _module_level_names(tree: ast.AST) -> tuple[set[str], set[str]]:
     return bound, bound - imported
 
 
+def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
+    """``(bound, defined, forwards_dynamically)`` from ONE walk of *tree*.
+
+    The three answers come from the same node types, and walking a module twice to get them separately was half the
+    index build on a package of a few thousand modules.
+    """
+    bound: set[str] = set()
+    imported: set[str] = set()
+    forwards = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                imported.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"__getattr__", "__setattr__"}:
+                forwards = True
+            bound.add(node.name)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                bound.update(_bound_names(target))
+                if (
+                    isinstance(target, ast.Subscript)
+                    and isinstance(target.value, ast.Call)
+                    and isinstance(target.value.func, ast.Name)
+                    and target.value.func.id == "globals"
+                ):
+                    forwards = True
+        elif isinstance(node, ast.AnnAssign):
+            bound.update(_bound_names(node.target))
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "update":
+            if isinstance(node.func.value, ast.Call) and isinstance(node.func.value.func, ast.Name) and node.func.value.func.id == "globals":
+                forwards = True
+    bound |= imported
+    return bound, bound - imported, forwards
+
+
 def module_index(roots: "list[Path]", *, package_root: Path) -> "dict[str, ModuleFacts]":
     """Module-level names for every first-party module under *roots*, keyed by dotted name."""
     index: dict[str, ModuleFacts] = {}
@@ -181,15 +217,9 @@ def module_index(roots: "list[Path]", *, package_root: Path) -> "dict[str, Modul
                 tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
             except SyntaxError:
                 continue
-            bound, defined = _module_level_names(tree)
+            bound, defined, forwards = _module_facts(tree)
             name = _module_name(path, package_root)
-            index[name] = ModuleFacts(
-                name=name,
-                path=path,
-                bound=frozenset(bound),
-                defined=frozenset(defined),
-                forwards=_forwards_dynamically(tree),
-            )
+            index[name] = ModuleFacts(name=name, path=path, bound=frozenset(bound), defined=frozenset(defined), forwards=forwards)
     return index
 
 
