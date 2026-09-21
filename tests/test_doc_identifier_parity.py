@@ -75,3 +75,20 @@ def test_the_assert_names_every_problem(tmp_path: Path):
     root, _, _ = _repo(tmp_path, "Pass `--gone-flag`.\n")
     with pytest.raises(pytest.fail.Exception, match=r"README\.md:1: `--gone-flag`"):
         assert_doc_identifiers_exist(root, doc_files=[root / "README.md"], corpus_files=[root / "run.py"])
+
+
+def test_the_default_corpus_skips_gitignored_files_and_keeps_untracked_ones(tmp_path):
+    """A gitignored data dump is not where identifiers are defined, and reading it raised MemoryError on glossum."""
+    import subprocess
+
+    from py_ci_shared.doc_identifier_parity import default_corpus_files
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text("data/\n", encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "dump.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "new_module.py").write_text("x = 1\n", encoding="utf-8")
+
+    names = {p.name for p in default_corpus_files(tmp_path)}
+    assert "new_module.py" in names
+    assert "dump.json" not in names

@@ -33,6 +33,7 @@ Usage::
 from __future__ import annotations
 
 import re
+import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -71,6 +72,30 @@ def _external_flags(lines: list[str], external: frozenset[str]) -> set[str]:
     return flags
 
 
+def default_corpus_files(repo_root: Path) -> list[Path]:
+    """Every source or config file git would commit under *repo_root*: tracked, plus untracked-but-not-ignored.
+
+    An ``rglob`` read every gitignored file too, and glossum keeps an 861 MB Wiktextract dump under a
+    gitignored ``data/``: joining it into the corpus raised MemoryError on every run. Ignored data is not
+    where a document's identifiers are defined. Untracked files still count, so a new module is found
+    before it is added. Falls back to the walk (outside hidden and virtualenv folders) when git is unavailable.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", check=True,
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return [
+            p
+            for p in repo_root.rglob("*")
+            if p.suffix in DEFAULT_CORPUS_SUFFIXES
+            and p.is_file()
+            and not any(part.startswith(".") or part in {"node_modules", "venv", "__pycache__"} for part in p.relative_to(repo_root).parts)
+        ]
+    return [p for rel in out.splitlines() if rel and (p := repo_root / rel).suffix in DEFAULT_CORPUS_SUFFIXES and p.is_file()]
+
+
 def find_absent_doc_identifiers(
     repo_root: Path,
     *,
@@ -82,20 +107,13 @@ def find_absent_doc_identifiers(
 ) -> list[str]:
     """``doc:line: `token` ...`` for each backticked flag or identifier that occurs in no corpus file.
 
-    *doc_files* defaults to the tracked Markdown; *corpus_files* to every file under *repo_root* with a source or
-    config suffix, outside hidden and virtualenv folders. *exclude_docs* are repo-relative POSIX paths or folder
-    prefixes ending in ``/``.
+    *doc_files* defaults to the tracked Markdown; *corpus_files* to :func:`default_corpus_files`.
+    *exclude_docs* are repo-relative POSIX paths or folder prefixes ending in ``/``.
     """
     root = repo_root.resolve()
     docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
     if corpus_files is None:
-        corpus_files = [
-            p
-            for p in root.rglob("*")
-            if p.suffix in DEFAULT_CORPUS_SUFFIXES
-            and p.is_file()
-            and not any(part.startswith(".") or part in {"node_modules", "venv", "__pycache__"} for part in p.relative_to(root).parts)
-        ]
+        corpus_files = default_corpus_files(root)
     corpus = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in corpus_files)
     skipped = set(exclude_docs)
     ignored = set(ignore)
