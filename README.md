@@ -569,6 +569,37 @@ CI resolves `PY_CI_SHARED_DIR` itself — see `ruff-blocking.yml` / `lint-adviso
 
 **CRITICAL:** never invoke ruff with `--select <subset>` in a blocking gate — it REPLACES the effective rule set instead of narrowing the extended config, silently dropping the whole shared ignore list and breaking RUF100's own "is this noqa still needed" determination. Always use `--ignore <code>` to ADD to the resolved ignore list. See `configs/ruff-base.toml`'s header comment and the `mlframe`/`pyutilz` `CLAUDE.md` files for the incident this rule postdates (2026-07-09).
 
+## Worktree hygiene report (`worktree_hygiene`)
+
+Reports which linked worktrees, leftover directories and local branches hold nothing that is not already
+somewhere durable, and which still carry unsaved work. Reports only: it never removes anything.
+
+```
+python -m py_ci_shared.worktree_hygiene /path/to/repo           # text
+python -m py_ci_shared.worktree_hygiene /path/to/repo --json    # machine-readable
+```
+
+A multi-session project accumulates worktrees faster than anyone retires them. Measured 2026-09-15 across
+eight repos here: ~200 worktrees and ~100 local branches were removable, and six directories under
+`mlframe/.claude/worktrees` each still held a 100 MB copy of the tree while appearing in no git listing at
+all, because the registration was already gone.
+
+The verdict per path answers "does this hold anything not already saved", which is three questions, not one:
+
+* **Identical upstream.** Landing a file copies it; the original stays behind and reads as dirty forever.
+  Both line-ending spellings are compared, or a byte comparison lies on Windows.
+* **Committed at some point.** A copy left on an old commit differs from today's default branch in thousands
+  of files while holding nothing new: every blob is reachable from some ref. This is what separates a stale
+  copy from unsaved work, and it is the check a human skips.
+* **Neither** -- real uncommitted work. Reported as `REVIEW` with the paths as evidence, never as removable.
+
+A deletion is not unsaved work (what it removes is still in the ref), and a worktree whose HEAD no remote
+branch contains is `REVIEW` even when its working tree is clean. Dot-directories beside the worktrees are
+left alone: a shared tool cache lives there on purpose (`.mlframe_mypy_cache_shared`).
+
+An unregistered directory is judged by walking its files, not by asking git: `git -C` inside one resolves to
+the enclosing repository and answers about that instead, reporting the directory clean whatever it holds.
+
 ## Keeping this repo in sync with consumers
 
 A weekly scheduled workflow (`config-drift-check.yml`, running `py_ci_shared.config_drift_check`) fetches both consumer repos' `pyproject.toml` and reports (informationally, never failing the run) any divergence in their `[tool.ruff]`/`[tool.mypy]` fields that are meant to stay in sync — trigger it on demand via `workflow_dispatch`. It does not replace opening a matching PR when you change something here that consuming repos should also pick up — `git grep py-ci-shared` in each consumer finds every reference point.
