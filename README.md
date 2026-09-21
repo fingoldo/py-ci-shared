@@ -541,6 +541,10 @@ def test_no_new_fail_open_handlers():
 
 The baseline is a ratchet keyed `path::function::rule` and counted per key; a key listed `n` times (`key`, `key#2`, ...) accepts `n` findings, and an entry with nothing left to accept fails as stale.
 
+## Assertion shapes that cannot fail (`nondiscriminating_shapes`)
+
+`shape_reasons(func)` returns the slugs a test function exhibits: `wide-literal-range` (`assert 0 < rmse < 100`, literal bounds spanning 20x, or from <= 0 to >= 10; `0 <= p <= 1` is exempt), `envelope-assert` (`pred.min() > 0.5 * y.min()`), `median-roundtrip` (a median absolute error in a round-trip / inverse test) and `late-skip` (a `pytest.skip` after the test computed something, outside an environment probe). `SHAPE_HELP` maps each slug to the fix. The consuming repository chooses the scope and the baseline.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
