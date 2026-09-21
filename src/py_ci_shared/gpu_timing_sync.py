@@ -246,9 +246,7 @@ def _own_stmt_blocks(func: ast.AST) -> Iterator[list[ast.stmt]]:
         # Statement blocks only hang off statements (and except handlers / match cases), so the walk never needs to
         # descend into expressions -- which is where almost all of a module's nodes are.
         for field in ("body", "orelse", "finalbody", "handlers", "cases"):
-            for child in getattr(node, field, None) or ():
-                if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    stack.append(child)
+            stack.extend(child for child in getattr(node, field, None) or () if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
 
 
 def find_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None) -> list[GpuTimingFinding]:

@@ -193,14 +193,21 @@ def _walk_text_files(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: I
     return paths
 
 
+def _read_bytes_or_none(path: Path) -> "bytes | None":
+    """The file's bytes, or None when it cannot be read -- a vanished or unreadable file is not a finding."""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
 def _text_file_bytes(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: Iterable[str]) -> "list[tuple[Path, bytes]]":
     """``(path, content)`` for every text file, each read once, so the NUL and BOM rules share one pass."""
     out: "list[tuple[Path, bytes]]" = []
     for path in _walk_text_files(repo_root, text_suffixes, skip_dirs):
-        try:
-            out.append((path, path.read_bytes()))
-        except OSError:
-            continue
+        data = _read_bytes_or_none(path)
+        if data is not None:
+            out.append((path, data))
     return out
 
 

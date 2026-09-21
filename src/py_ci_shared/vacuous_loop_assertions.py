@@ -204,7 +204,7 @@ def assert_no_new_floorless_loop(
     by_scope: dict[str, list[FloorlessLoop]] = {}
     for loop in found:
         by_scope.setdefault(loop.scope, []).append(loop)
-    new = {loop.key: loop for scope, loops in by_scope.items() for loop in loops[allowed.get(scope, 0):]}
+    new = {loop.key: loop for scope, loops in by_scope.items() for loop in loops[allowed.get(scope, 0) :]}
     if new:
         lines = "\n  ".join(f"{loop.key} (line {loop.lineno})" for loop in sorted(new.values(), key=lambda loop: loop.key))
         raise AssertionError(

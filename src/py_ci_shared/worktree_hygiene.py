@@ -74,7 +74,7 @@ class WorktreeFinding:
 
 def _git(repo: Path, *args: str, stdin: bytes | None = None) -> str:
     """Run git in *repo* and return stdout, empty on failure -- a missing ref is an answer, not a crash."""
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=stdin, check=False)  # noqa: S603,S607
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=stdin, check=False)
     return result.stdout.decode("utf-8", "replace") if result.returncode == 0 else ""
 
 
@@ -116,7 +116,7 @@ def _hash(repo: Path, data: bytes) -> str:
 
 def _is_known(repo: Path, blob: str) -> bool:
     """True when *blob* is an object this repository already stores, so the content was committed once."""
-    return subprocess.run(["git", "-C", str(repo), "cat-file", "-e", blob], capture_output=True, check=False).returncode == 0  # noqa: S603,S607
+    return subprocess.run(["git", "-C", str(repo), "cat-file", "-e", blob], capture_output=True, check=False).returncode == 0
 
 
 def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD") -> list[str]:

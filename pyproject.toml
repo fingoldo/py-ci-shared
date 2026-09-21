@@ -104,6 +104,7 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/install_safe_hook.py" = ["T201"]
 "src/py_ci_shared/config_drift_check.py" = ["T201"]
 "src/py_ci_shared/setup_env.py" = ["T201"]
+"src/py_ci_shared/worktree_hygiene.py" = ["T201"]  # a report CLI: printing the report IS its interface.
 "src/py_ci_shared/pinned_tool_versions.py" = ["T201"]
 "src/py_ci_shared/sql_verify.py" = ["T201"]
 "src/py_ci_shared/teeth_sweep.py" = ["T201"]
