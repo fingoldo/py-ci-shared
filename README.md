@@ -528,6 +528,19 @@ either store. The runtime halves (the attempt archive, the sentinel sweep, the b
 - `dataclass_case_completeness` -- every `@dataclass` matching a name pattern has a test case or an
   exemption with a reason; stale names fail.
 
+## Fail-open handlers in gate code (`fail_open_handlers`)
+
+A gate that keeps a candidate whenever evaluating it raises is switched off for exactly the candidates that fail. `find_fail_open_handlers(files, repo_root)` reports four shapes: an `except` handler that appends the loop's own element to a kept list (`admit_on_error`), an `except` that returns `True` in a function named like a decision (`gate_returns_true`), a fallback assignment logged only at DEBUG/INFO (`quiet_substitution`, where a `# best-effort: <reason>` comment on the `except` line marks a fallback that cannot change a result), and a reject guarded by `isfinite(x) and x >= thr`, which NaN and inf skip (`finite_guarded_reject`).
+
+```python
+from py_ci_shared.fail_open_handlers import assert_no_new_fail_open_handlers
+
+def test_no_new_fail_open_handlers():
+    assert_no_new_fail_open_handlers(files=GATE_FILES, repo_root=REPO_ROOT, baseline_path=BASELINE)
+```
+
+The baseline is a ratchet keyed `path::function::rule` and counted per key; a key listed `n` times (`key`, `key#2`, ...) accepts `n` findings, and an entry with nothing left to accept fails as stale.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
