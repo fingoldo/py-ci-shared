@@ -545,6 +545,19 @@ The baseline is a ratchet keyed `path::function::rule` and counted per key; a ke
 
 `shape_reasons(func)` returns the slugs a test function exhibits: `wide-literal-range` (`assert 0 < rmse < 100`, literal bounds spanning 20x, or from <= 0 to >= 10; `0 <= p <= 1` is exempt), `envelope-assert` (`pred.min() > 0.5 * y.min()`), `median-roundtrip` (a median absolute error in a round-trip / inverse test) and `late-skip` (a `pytest.skip` after the test computed something, outside an environment probe). `SHAPE_HELP` maps each slug to the fix. The consuming repository chooses the scope and the baseline.
 
+## Runtime writes to a module registry (`runtime_registry_mutation`)
+
+A registry filled at import time is rebuilt by every interpreter; an entry added from inside a function exists only in the process that ran it, so a pickled object naming it fails to load anywhere else. `find_runtime_registry_writes(files, repo_root)` reports every function-scope write (`X[k] = v`, `setdefault`, `update`, `pop`, `del`) to a module-level dict whose name contains `REGISTRY`, defined in any scanned file (writes usually go through an import). Helpers used as a module-scope decorator or called in a module-scope statement run at import and are exempt.
+
+```python
+from py_ci_shared.runtime_registry_mutation import assert_writes_have_replay
+
+def test_runtime_registry_writes_have_a_replay():
+    assert_writes_have_replay(files=SRC_FILES, repo_root=REPO_ROOT, replay_writers={"reregister_plugins": "called from __setstate__"})
+```
+
+Each `replay_writers` entry needs a reason (how its entries are replayed on load, or why no pickled object names them); an entry that no longer writes a registry fails as stale.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
