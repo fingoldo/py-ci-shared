@@ -558,6 +558,19 @@ def test_runtime_registry_writes_have_a_replay():
 
 Each `replay_writers` entry needs a reason (how its entries are replayed on load, or why no pickled object names them); an entry that no longer writes a registry fails as stale.
 
+## Config copies nobody receives (`discarded_model_copy`)
+
+`cfg2 = cfg.model_copy(update={...})` leaves the caller's `cfg` untouched, so a copy that is never returned, stored on an object or container, or passed to a call is an override every later consumer misses. `find_discarded_model_copies(files, repo_root)` reports each such local, following plain aliases (`base = copy; run(base)` counts as used).
+
+```python
+from py_ci_shared.discarded_model_copy import assert_no_discarded_model_copy
+
+def test_no_discarded_model_copy():
+    assert_no_discarded_model_copy(files=SRC_FILES, repo_root=REPO_ROOT, allowed={})
+```
+
+`allowed` maps a function name to the reason its copy is intentionally local; stale and empty-reason entries fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
