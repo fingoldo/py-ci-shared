@@ -173,7 +173,7 @@ class _Detector:
         for _ in range(6):
             before = len(tainted)
             for node in _walk_scope(body):
-                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.AugAssign)) and node.value is not None:
                     value = node.value
                     if isinstance(value, ast.Call) and _call_name(value) in _STRUCTURAL:
                         continue
@@ -209,6 +209,7 @@ def _walk_scope(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
 
 
 def _target_names(node: ast.AST) -> set[str]:
+    """The names a binding statement writes to; ``src += path.read_text()`` taints ``src`` exactly as a plain assign would."""
     targets = node.targets if isinstance(node, ast.Assign) else [node.target]  # type: ignore[attr-defined]
     return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
 

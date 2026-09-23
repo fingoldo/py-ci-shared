@@ -202,3 +202,34 @@ class TestTheRatchet:
 
     def test_the_refresh_flag_is_named(self):
         assert REFRESH_FLAG.startswith("--refresh-")
+
+
+def test_source_accumulated_with_augassign_is_tainted(tmp_path):
+    """``src += mod.read_text()`` binds source text as surely as ``src = mod.read_text()`` does.
+
+    Without the AugAssign leg the accumulate-then-assert shape passed the gate: a test that read four production modules
+    into one string and asserted that a comment marker was in it reported no claim at all.
+    """
+    f = tmp_path / "t.py"
+    f.write_text(
+        "\n".join(
+            [
+                "from pathlib import Path",
+                "",
+                "import mypkg",
+                "",
+                "",
+                "def test_marker_is_present():",
+                "    root = Path(mypkg.__file__).resolve().parent",
+                "    src = ''",
+                "    for name in ('a.py', 'b.py'):",
+                "        mod = root / name",
+                "        src += mod.read_text(encoding='utf-8')",
+                "    assert 'XGB cat dtype coercion' in src",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    claims = find_source_text_claims(f)
+    assert [(c.function, c.kind) for c in claims] == [("test_marker_is_present", "text held in `src`")]
