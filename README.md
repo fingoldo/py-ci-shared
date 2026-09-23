@@ -584,6 +584,19 @@ def test_no_unread_constructor_parameters():
 
 `allowlist` maps a parameter name to the reason it is accepted unread; stale and empty-reason entries fail.
 
+## Boolean env flags parsed by hand (`env_flag_parsing`)
+
+`not os.environ.get(NAME)` turns the flag on for `NAME=0`; `lower() in {"1","true","yes"}` ignores `on`; `== "1"` ignores everything else. One package carried all three, so an operator who wrote `FLAG=0` got the opposite of what they asked for from one switch and the right answer from the next. `find_hand_parsed_env_flags(files, repo_root, prefixes)` reports every read of a prefixed variable used as a boolean - a truth test, `not`, a comparison with a string literal, or membership in a literal collection - so they can move to one shared `env_flag(name, default)`. Value reads (numbers, paths, backend names) never appear in those contexts and are not reported.
+
+```python
+from py_ci_shared.env_flag_parsing import assert_env_flags_use_one_parser
+
+def test_env_flags_go_through_env_flag():
+    assert_env_flags_use_one_parser(files=SRC_FILES, repo_root=REPO_ROOT, prefixes=("MYPROJ_",), allowed={})
+```
+
+`allowed` maps a variable to the reason it is read directly (a presence test for a numeric override, say); stale and empty-reason entries fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
