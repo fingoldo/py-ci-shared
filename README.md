@@ -610,6 +610,19 @@ def test_getattr_defaults_match_the_config():
 
 `allowed` maps a field to the reason its sites may differ; stale and empty-reason entries fail.
 
+## Metrics scored on survivors only (`survivorship_scoring`)
+
+`rmse(y[finite], pred[finite])` measures the model where it produced a number at all, and the rows it dropped are the ones it failed on. The deployed predictor has no such option: it fills them or falls back, so a gate written this way under-rejects the collapse it exists to catch. `find_survivorship_scoring(files, repo_root)` reports every metric call whose two arguments are indexed by the same `isfinite(<prediction>)` mask, unless the enclosing function fills the dropped rows or reports the dropped fraction as part of its verdict. Counting the finite rows to reject below a floor is not a remedy: the survivors are still scored alone.
+
+```python
+from py_ci_shared.survivorship_scoring import assert_no_survivorship_scoring
+
+def test_metrics_are_not_scored_on_survivors_only():
+    assert_no_survivorship_scoring(files=SRC_FILES, repo_root=REPO_ROOT, allowed={})
+```
+
+`allowed` maps `path::function` to the reason that site scores survivors on purpose; stale and empty-reason entries fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
