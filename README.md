@@ -597,6 +597,19 @@ def test_env_flags_go_through_env_flag():
 
 `allowed` maps a variable to the reason it is read directly (a presence test for a numeric override, say); stale and empty-reason entries fail.
 
+## getattr fallbacks that contradict the config (`config_getattr_default_parity`)
+
+`getattr(cfg, "field", <literal>)` is read defensively so a duck-typed config still works, and that literal becomes the stand-in's effective default. When it disagrees with the schema's, the setting means two things depending on which object the caller passed: one gate read `reject_on_alpha_drift` as False while the config declared True, so a duck-typed config kept the specs the real one dropped. `find_getattr_default_mismatches(files, repo_root, schema_classes)` reports each such site with both values. Fields no schema declares, required fields, `default_factory` fields and fields two schemas disagree about are skipped, and `receiver_names` / `receiver_suffixes` pick which objects count, so a repository with several configs does not read a shared field name off the wrong one.
+
+```python
+from py_ci_shared.config_getattr_default_parity import assert_getattr_defaults_match_schema
+
+def test_getattr_defaults_match_the_config():
+    assert_getattr_defaults_match_schema(files=SRC_FILES, repo_root=REPO_ROOT, schema_classes=[MyConfig], allowed={})
+```
+
+`allowed` maps a field to the reason its sites may differ; stale and empty-reason entries fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
