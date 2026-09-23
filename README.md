@@ -571,6 +571,19 @@ def test_no_discarded_model_copy():
 
 `allowed` maps a function name to the reason its copy is intentionally local; stale and empty-reason entries fail.
 
+## Constructor parameters nothing reads (`unread_init_params`)
+
+A stored-and-never-read `__init__` parameter still appears in `get_params()`, in a repr and in a grid search, so setting it changes nothing and reports nothing. `find_unread_init_params(files, repo_root)` reports each one. A parameter counts as read when the `__init__` body does anything with it beyond a plain store (the attribute may be renamed on the way in: `self._p = p`), or when the attribute it lands in is read anywhere in the scanned files, through any receiver, `getattr(x, "p")` or a string literal (a `get_params` list, a state key) included.
+
+```python
+from py_ci_shared.unread_init_params import assert_no_unread_init_params
+
+def test_no_unread_constructor_parameters():
+    assert_no_unread_init_params(files=SRC_FILES, repo_root=REPO_ROOT, allowlist={"random_state": "sklearn meta-parameter"})
+```
+
+`allowlist` maps a parameter name to the reason it is accepted unread; stale and empty-reason entries fail.
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
