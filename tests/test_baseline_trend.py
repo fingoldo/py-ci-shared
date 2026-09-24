@@ -83,8 +83,7 @@ def test_report_separates_a_rule_that_moved_from_one_that_did_not(repo):
     unmoved = report(str(root), ["tool/meta/baselines"], None, True)
     assert [line for line in unmoved if "stuck" in line]
     assert not [line for line in unmoved if "paid" in line], (
-        "a rule that fell is not what this filter is for - it is the ones that never move that need a "
-        "decision"
+        "a rule that fell is not what this filter is for - it is the ones that never move that need a " "decision"
     )
 
 
@@ -105,6 +104,58 @@ def test_a_rule_that_has_always_been_clean_is_not_listed_as_unmoved(repo):
 
     unmoved = report(str(root), ["tool/meta/baselines"], None, True)
     assert [line for line in unmoved if "stuck" in line]
-    assert not [line for line in unmoved if "clean" in line], (
-        "listing a clean rule among the unmoved buries the ones that need a decision"
-    )
+    assert not [line for line in unmoved if "clean" in line], "listing a clean rule among the unmoved buries the ones that need a decision"
+
+
+def test_a_bare_key_note_map_and_the_core_multiset_are_counted():
+    assert count_entries(json.dumps({"src/a.py": "n"})) == 1
+    assert count_entries(json.dumps({"_comment": "x", "rule::src/a.py::msg": "n", "lib/b.dart:12": "m"})) == 2
+    assert count_entries(json.dumps({"schema": 1, "gate": "g", "entries": {"k1": {"count": 3, "note": ""}, "k2": {"count": 1, "note": ""}}})) == 4
+    assert count_entries(json.dumps({"something": "else"})) is None
+    assert count_entries("﻿" + json.dumps({"accepted": {"a": ""}})) == 1
+
+
+def test_history_survives_a_rename(repo):
+    root, git = repo
+    old = root / "tool" / "meta" / "baselines" / "old_name.json"
+    write(old, ["a", "b", "c", "d"])
+    git("add", "-A")
+    git("commit", "-qm", "adopt")
+    write(old, ["a", "b", "c"])
+    git("add", "-A")
+    git("commit", "-qm", "pay one")
+    git("mv", "tool/meta/baselines/old_name.json", "tool/meta/baselines/new_name.json")
+    git("commit", "-qm", "rename")
+    write(root / "tool" / "meta" / "baselines" / "new_name.json", ["a"])
+    git("add", "-A")
+    git("commit", "-qm", "pay two")
+
+    counts = [c for _, _, c in history(str(root), "tool/meta/baselines/new_name.json", None)]
+    assert counts == [4, 3, 3, 1]
+
+
+def test_a_count_that_moved_and_came_back_is_not_unmoved(repo):
+    root, git = repo
+    base = root / "tool" / "meta" / "baselines"
+    for entries in (["a", "b"], ["a"], ["a", "b"]):
+        write(base / "wobble.json", entries)
+        git("add", "-A")
+        git("commit", "-qm", str(len(entries)))
+    assert report(str(root), ["tool/meta/baselines"], None, True) == []
+    everything = report(str(root), ["tool/meta/baselines"], None, False)
+    assert len(everything) == 1 and "~~" in everything[0]
+
+
+def test_a_git_failure_exits_non_zero(tmp_path, capsys):
+    from py_ci_shared.baseline_trend import main
+
+    assert main(["--repo", str(tmp_path / "not-a-repo")]) == 2
+    assert "baseline_trend: git" in capsys.readouterr().err
+
+
+def test_an_empty_repo_still_reports_no_baselines(repo, capsys):
+    from py_ci_shared.baseline_trend import main
+
+    root, _ = repo
+    assert main(["--repo", str(root)]) == 0
+    assert "no baselines found" in capsys.readouterr().out

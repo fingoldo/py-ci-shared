@@ -61,3 +61,16 @@ class TestOffendingStatePaths:
         repo.mkdir()
 
         assert offending_state_paths({"_A": tmp_path / "tmp" / "a.json"}, repo) == []
+
+
+def test_a_relative_constant_is_judged_against_the_checkout_not_the_cwd(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    with pytest.raises(AssertionError, match="_REL"):
+        assert_outside("checkpoints/state.json", repo, what="_REL")
+    assert offending_state_paths({"_REL": "checkpoints/state.json"}, repo) == [f"_REL -> {(repo / 'checkpoints' / 'state.json').resolve()}"]
+    assert offending_state_paths({"_ABS": elsewhere / "state.json"}, repo) == []
+    assert_outside("../outside/state.json", repo, what="_UP")

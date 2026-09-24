@@ -120,3 +120,37 @@ class TestAssert:
     def test_assert_fails(self, tmp_path):
         with pytest.raises(pytest.fail.Exception, match="no human reason"):
             assert_baseline_is_honest(_json_baseline(tmp_path, {"lib/a.dart#0": ""}))
+
+
+def test_the_entries_list_and_core_record_shapes_are_checked(tmp_path):
+    listed = tmp_path / "a.json"
+    listed.write_text(json.dumps({"schema": 1, "entries": ["lib/a.dart", "lib/b.dart"]}), encoding="utf-8")
+    problems = find_baseline_problems(listed)
+    assert len(problems) == 2 and "'lib/a.dart'" in problems[0] and "'entries'" not in "".join(problems)
+    record = tmp_path / "b.json"
+    record.write_text(json.dumps({"entries": {"lib/a.dart": {"count": 2, "note": _GOOD_NOTE}, "lib/b.dart": {"count": 1, "note": ""}}}), encoding="utf-8")
+    problems = find_baseline_problems(record, current_violations=["lib/a.dart", "lib/b.dart"])
+    assert len(problems) == 1 and "'lib/b.dart'" in problems[0]
+    stale = find_baseline_problems(record, current_violations=["lib/a.dart"], require_notes=False)
+    assert len(stale) == 1 and "lib/b.dart" in stale[0]
+
+
+@pytest.mark.parametrize(
+    "key",
+    ["/opt/app/src/x.py", "/tmp/x.py", "/root/x.py", "/github/workspace/src/x.py", "\\\\server\\share\\x.py", "D:\\work\\x.py", "e:/x.py"],
+)
+def test_every_absolute_key_is_flagged(tmp_path, key):
+    problems = find_baseline_problems(_json_baseline(tmp_path, {key: _GOOD_NOTE}))
+    assert len(problems) == 1 and "absolute path" in problems[0]
+
+
+@pytest.mark.parametrize("note", [_GOOD_NOTE + " (read/write split)", _GOOD_NOTE + " see /api/v1/items and https://x.org/a"])
+def test_a_relative_key_with_slashes_in_its_note_is_not_absolute(tmp_path, note):
+    assert find_baseline_problems(_json_baseline(tmp_path, {"src/x.py": note})) == []
+
+
+def test_a_note_in_another_script_counts_its_words(tmp_path):
+    ok = _json_baseline(tmp_path, {"src/x.py": "оставлено: декоративный слой, изоляция стоит дороже"})
+    assert find_baseline_problems(ok) == []
+    short = _json_baseline(tmp_path, {"src/x.py": "оставлено навсегда"})
+    assert len(find_baseline_problems(short)) == 1

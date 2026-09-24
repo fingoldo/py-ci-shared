@@ -101,3 +101,64 @@ def test_assert(tmp_path, audits):
     code.write_text('X = "audits/2026-01-01/x.md"\n', encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="open audit round"):
         assert_no_open_round_paths([code], [audits])
+
+
+def test_two_files_with_the_same_literal_are_two_keys_even_without_root(tmp_path, audits):
+    a = tmp_path / "a.py"
+    b = tmp_path / "b.py"
+    for f in (a, b):
+        f.write_text('X = "audits/2026-01-01/x.md"\n', encoding="utf-8")
+    only_a = [f"{a.resolve().as_posix()}:audits/2026-01-01/x.md"]
+    with pytest.raises(pytest.fail.Exception, match=r"1 literal path") as exc:
+        assert_no_open_round_paths([a, b], [audits], known=only_a)
+    assert "b.py" in str(exc.value) and "a.py:1" not in str(exc.value)
+    assert_no_open_round_paths([a, b], [audits], known=[*only_a, f"{b.resolve().as_posix()}:audits/2026-01-01/x.md"])
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'X = os.path.join(ROOT, "audits", "2026-01-01", "x")',
+        'X = Path(ROOT, "audits", "2026-01-01")',
+        'X = f"{R}/2026-01-01/x.md"',
+        'X = ROOT + "/audits/" + "2026-01-01" + "/x.md"',
+        'X = f"{R}/audits/2026-01-01"',
+    ],
+)
+def test_a_round_built_in_pieces_is_reported(tmp_path, audits, line):
+    code = tmp_path / "c.py"
+    code.write_text("import os\nfrom pathlib import Path\n" + line + "\n", encoding="utf-8")
+    problems = find_open_round_literals([code], [audits], root=tmp_path)
+    assert problems and all(p.startswith("c.py:3:") for p in problems)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        'X = os.path.join(ROOT, "audits", "implemented", "2026-01-01", "x")',
+        'X = f"{R}/implemented/2026-01-01/x.md"',
+        'X = f"range {a}: 2026-01-01/2026-02-01"',
+        'X = "day " + "2026-01-01"',
+        'X = os.path.join(ROOT, "audits", "2025-12-01", "x")',
+    ],
+)
+def test_a_closed_or_data_round_built_in_pieces_is_not(tmp_path, audits, line):
+    code = tmp_path / "c.py"
+    code.write_text("import os\n" + line + "\n", encoding="utf-8")
+    assert find_open_round_literals([code], [audits], root=tmp_path) == []
+
+
+def test_an_unparsable_file_is_reported_and_fails_the_assert(tmp_path, audits):
+    bad = tmp_path / "bad.py"
+    bad.write_text("def f(:\n", encoding="utf-8")
+    nul = tmp_path / "nul.py"
+    nul.write_bytes(b"x = 1\x00\n")
+    good = tmp_path / "good.py"
+    good.write_text("X = 1\n", encoding="utf-8")
+    problems = find_open_round_literals([bad, nul, good], [audits], root=tmp_path)
+    assert [p.split(":")[0] for p in problems] == ["bad.py", "nul.py"] and all("unparsable" in p for p in problems)
+    with pytest.raises(pytest.fail.Exception, match="could not be parsed"):
+        assert_no_open_round_paths([bad, good], [audits], root=tmp_path)
+    assert_no_open_round_paths([good], [audits], root=tmp_path)
+    with pytest.raises(pytest.fail.Exception, match="only 0 file"):
+        assert_no_open_round_paths([bad], [audits], root=tmp_path, min_files=1)

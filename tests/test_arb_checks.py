@@ -171,3 +171,60 @@ def test_a_russian_plural_needs_its_own_categories_even_with_an_exact_one(tmp_pa
     assert len(problems) == 1
     assert "few" in problems[0] and "many" in problems[0]
 
+
+def _one(tmp_path: Path, loc: str, value: str) -> dict[str, Path]:
+    p = tmp_path / f"app_{loc}.arb"
+    p.write_text(json.dumps({"k": value}, ensure_ascii=False), encoding="utf-8")
+    return {loc: p}
+
+
+def test_exact_one_does_not_cover_russian_one_which_also_holds_21(tmp_path):
+    bad = find_plural_problems(_one(tmp_path, "ru", "{count, plural, =1{1 строка} few{{count} строки} many{{count} строк} other{{count} строки}}"))
+    assert len(bad) == 1 and "['one']" in bad[0]
+    good = find_plural_problems(_one(tmp_path, "ru", "{count, plural, one{{count} строка} few{{count} строки} many{{count} строк} other{{count} строки}}"))
+    assert good == []
+
+
+def test_exact_one_covers_polish_one_but_french_one_also_needs_zero(tmp_path):
+    pl = "{count, plural, =1{1 plik} few{{count} pliki} many{{count} plików} other{{count} pliku}}"
+    assert find_plural_problems(_one(tmp_path, "pl", pl)) == []
+    assert len(find_plural_problems(_one(tmp_path, "fr", "{count, plural, =1{1 jour} other{{count} jours}}"))) == 1
+    assert find_plural_problems(_one(tmp_path, "fr", "{count, plural, =0{0 jour} =1{1 jour} other{{count} jours}}")) == []
+
+
+def test_a_word_ending_in_one_inside_a_body_is_not_a_branch(tmp_path):
+    bad = find_plural_problems(_one(tmp_path, "en", "{count, plural, other{someone {name} and {count} more}}"))
+    assert len(bad) == 1 and "['other']" in bad[0]
+    assert find_plural_problems(_one(tmp_path, "en", "{count, plural, one{someone {name}} other{someone {name} and {count} more}}")) == []
+
+
+def test_a_bom_arb_file_is_read(tmp_path):
+    p = tmp_path / "app_en.arb"
+    p.write_bytes(b"\xef\xbb\xbf" + json.dumps({"a": "x"}).encode())
+    q = tmp_path / "app_fr.arb"
+    q.write_text(json.dumps({"b": "y"}), encoding="utf-8")
+    problems = find_key_parity_problems({"en": p, "fr": q}, "en")
+    assert len(problems) == 2 and "missing 1 key" in problems[0]
+
+
+def test_the_icu_hash_placeholder_counts_as_the_number(tmp_path):
+    assert find_plural_problems(_one(tmp_path, "en", "{count, plural, one{# day} other{# days}}")) == []
+    bad = find_plural_problems(_one(tmp_path, "en", "{count, plural, one{# day} other{days}}"))
+    assert len(bad) == 1 and "branch 'other'" in bad[0]
+
+
+def test_a_missing_template_locale_names_the_catalogues(tmp_path):
+    from py_ci_shared.arb_checks import TemplateLocaleError
+
+    c = _one(tmp_path, "en_US", "x")
+    with pytest.raises(TemplateLocaleError, match=r"'en' is not among the catalogues \['en_US'\]"):
+        find_key_parity_problems(c, "en")
+    with pytest.raises(KeyError):
+        find_dead_keys(c, "en", "")
+    assert find_key_parity_problems(c, "en_US") == []
+
+
+def test_the_word_plural_in_text_does_not_exempt_a_counted_phrase(tmp_path):
+    bad = find_plural_problems(_one(tmp_path, "en", "{count} plural forms"))
+    assert len(bad) == 1 and "no ICU plural" in bad[0]
+    assert find_plural_problems(_one(tmp_path, "en", "{count, plural, one{# plural form} other{# plural forms}}")) == []

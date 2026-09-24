@@ -7,7 +7,10 @@ union, plus a baseline for repos that already hold such names (the social projec
 ``test_audit_2026_*`` files), so adopting it blocks NEW offenders without failing on the old ones.
 
 A baseline that is never drained is a list nobody reads, so an entry that no longer names an offender
-(the file was renamed or deleted) fails too -- ``fail_on_stale=False`` only while migrating.
+(the file was renamed or deleted) fails too -- ``fail_on_stale=False`` only while migrating. A baseline path
+that does not exist fails (rewrite it with ``--refresh-audit-wave-filenames-baseline`` or
+``PY_CI_SHARED_REFRESH=audit-wave-filenames``), and so does a tests directory that is missing or holds no
+test file: a check that scanned nothing is not a pass. Patterns match the stem case-insensitively.
 
 Usage::
 
@@ -23,8 +26,13 @@ import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any
 
-#: Stems that carry process metadata instead of a topic. Matched against the file stem.
+from ._core import Baseline, atomic_write_text, iter_files, refresh_requested
+
+REFRESH_FLAG = "--refresh-audit-wave-filenames-baseline"
+
+#: Stems that carry process metadata instead of a topic. Matched against the file stem, ignoring case.
 DEFAULT_PATTERNS: tuple[str, ...] = (
     r"^test_audit_\d{4}_",
     r"^test_audit_round\d+",
@@ -39,23 +47,25 @@ DEFAULT_PATTERNS: tuple[str, ...] = (
 )
 
 
+def scan_audit_wave_test_files(tests_dir: Path, *, extra_patterns: Iterable[str] = (), exclude_names: Iterable[str] = ()) -> "tuple[list[str], int]":
+    """``(offenders, number of test files scanned)``. A missing *tests_dir* raises ``_core.CorpusError``."""
+    compiled = [re.compile(p, re.IGNORECASE) for p in (*DEFAULT_PATTERNS, *extra_patterns)]
+    skip = set(exclude_names)
+    tests_dir = Path(tests_dir)
+    files = [p for p in iter_files(tests_dir, ("test_*.py",)) if p.name not in skip]
+    out = [p.relative_to(tests_dir).as_posix() for p in files if any(c.match(p.stem) for c in compiled)]
+    return sorted(out), len(files)
+
+
 def find_audit_wave_test_files(tests_dir: Path, *, extra_patterns: Iterable[str] = (), exclude_names: Iterable[str] = ()) -> list[str]:
     """Every ``test_*.py`` under *tests_dir* whose stem matches a pattern, as sorted posix paths relative to it."""
-    compiled = [re.compile(p) for p in (*DEFAULT_PATTERNS, *extra_patterns)]
-    skip = set(exclude_names)
-    out = []
-    for path in tests_dir.rglob("test_*.py"):
-        if "__pycache__" in path.parts or path.name in skip:
-            continue
-        if any(p.match(path.stem) for p in compiled):
-            out.append(path.relative_to(tests_dir).as_posix())
-    return sorted(out)
+    return scan_audit_wave_test_files(tests_dir, extra_patterns=extra_patterns, exclude_names=exclude_names)[0]
 
 
 def _read_baseline(baseline: "Path | None") -> set[str]:
     if baseline is None or not baseline.is_file():
         return set()
-    data = json.loads(baseline.read_text(encoding="utf-8"))
+    data = json.loads(baseline.read_text(encoding="utf-8-sig"))
     if not isinstance(data, list) or not all(isinstance(x, str) for x in data):
         raise ValueError(f"{baseline} must hold a JSON list of test-file paths relative to the tests directory")
     return set(data)
@@ -63,7 +73,7 @@ def _read_baseline(baseline: "Path | None") -> set[str]:
 
 def write_baseline(baseline: Path, offenders: Iterable[str]) -> None:
     """Record the current offenders as grandfathered. For adoption only; not called by the assertion."""
-    baseline.write_text(json.dumps(sorted(offenders), indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(baseline, json.dumps(sorted(offenders), indent=2) + "\n")
 
 
 def assert_no_new_audit_wave_filenames(
@@ -73,21 +83,21 @@ def assert_no_new_audit_wave_filenames(
     extra_patterns: Iterable[str] = (),
     exclude_names: Iterable[str] = (),
     fail_on_stale: bool = True,
+    min_files: int = 1,
+    request: Any = None,
 ) -> None:
-    """Fail on an offender not in *baseline*, and (by default) on a baseline entry that is no longer one."""
+    """Fail on an offender not in *baseline*, (by default) on a baseline entry that is no longer one, on a missing
+    baseline file, and when fewer than *min_files* test files were scanned."""
     import pytest
 
-    current = set(find_audit_wave_test_files(tests_dir, extra_patterns=extra_patterns, exclude_names=exclude_names))
-    grandfathered = _read_baseline(baseline)
-    problems = []
-    new = sorted(current - grandfathered)
-    if new:
-        problems.append(
-            f"{len(new)} test file(s) named after an audit wave rather than what they cover; rename to the topic "
-            "(git history keeps the process metadata):\n    " + "\n    ".join(new[:30])
-        )
-    stale = sorted(grandfathered - current)
-    if stale and fail_on_stale:
-        problems.append(f"{len(stale)} baseline entr(y/ies) no longer name an offender; delete them from {baseline}:\n    " + "\n    ".join(stale[:30]))
-    if problems:
-        pytest.fail("\n  ".join(problems))
+    current, scanned = scan_audit_wave_test_files(tests_dir, extra_patterns=extra_patterns, exclude_names=exclude_names)
+    if scanned < min_files:
+        pytest.fail(f"only {scanned} test_*.py file(s) under {tests_dir}; expected at least {min_files} -- the check is reading nothing")
+    guidance = "test file(s) named after an audit wave rather than what they cover; rename to the topic (git history keeps the process metadata)"
+    if baseline is None:
+        if current:
+            pytest.fail(f"{len(current)} {guidance}:\n    " + "\n    ".join(current[:30]))
+        return
+    Baseline(baseline, gate="audit-wave-filenames", refresh_command=f"pytest {REFRESH_FLAG}").enforce(
+        current, refresh=refresh_requested(REFRESH_FLAG, request), guidance=guidance
+    ).raise_for_pytest(fail_on_stale=fail_on_stale)

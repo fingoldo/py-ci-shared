@@ -18,7 +18,9 @@ Usage:
 
 --config is required (never rely on directory walk-up -- a file processed
 from a scratch/CI checkout dir must not silently fall back to Black's
-88-col default).
+88-col default). ``--config=PATH`` works too. --check and --write are mutually exclusive.
+Each file is piped to Black with ``--stdin-filename``, so Black's own force-exclude and
+.pyi mode apply to it exactly as they would to a path argument.
 
 Without --write and without --check: prints a unified diff of what WOULD
 change for each listed FILE and exits 0.
@@ -27,16 +29,24 @@ With --check <roots>: each root may be a DIRECTORY (recursively discovers *.py u
 skipping .git/.venv/.pytest_cache/build/dist/__pycache__/legacy, plus any names in the
 EXTRA_EXCLUDED_DIRS env var) or an individual .py FILE path (included as-is, no directory
 walk) -- the latter is what a pre-commit hook passes (a list of changed files, not
-directories). Reports which files still have non-excluded-class Black findings, and exits 1
+directories). Excluded names are matched against path parts RELATIVE to the root, so a
+checkout that itself lives under a directory named ``build`` is still scanned. A root that
+does not exist, or a directory root holding no .py file, is an error rather than a clean run.
+Reports which files still have non-excluded-class Black findings, and exits 1
 if any do (0 if the tree/file-set is fully filtered-Black-clean).
 """
+
 import sys
 import os
+import io
 import shlex
 import re
 import subprocess
 import difflib
 import pathlib
+import tokenize
+
+from py_ci_shared._core import CorpusError, iter_files
 
 EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pycache__", "legacy", "benchmarks", "_benchmarks", "profiling"}
 # A consuming repo with its own dir-name to skip (rare) can add it without forking this file.
@@ -49,34 +59,64 @@ if os.environ.get("EXTRA_EXCLUDED_DIRS"):
 _BLACK_CMD = shlex.split(os.environ["BLACK_CMD"]) if os.environ.get("BLACK_CMD") else [sys.executable, "-m", "black"]
 
 
+class DiscoveryError(Exception):
+    """A --check root is missing, or a directory root holds nothing to check."""
+
+
+def _relative_parts(p: pathlib.Path):
+    """Parts of an explicit file path that the exclusion applies to: relative to the CWD when the path is under it."""
+    if p.is_absolute():
+        try:
+            return p.resolve().relative_to(pathlib.Path.cwd().resolve()).parts
+        except ValueError:
+            return p.parts[-1:]
+    return p.parts
+
+
 def discover_py_files(roots):
     """Accepts a mix of directory roots (recursively walked) and individual .py file paths
     (included as-is) -- the latter is what pre-commit passes (a list of changed files, not
     directories), so --check must handle both, not just the directory-walk case the CLI was
-    originally documented for."""
+    originally documented for.
+
+    Raises :class:`DiscoveryError` for a root that does not exist and for a directory root
+    with no .py file under it: both would otherwise print "All 0 files ... clean".
+    """
     files = []
     for root in roots:
         p = pathlib.Path(root)
         if p.is_file():
-            if p.suffix == ".py" and not any(part in EXCLUDED_DIR_NAMES for part in p.parts):
+            if p.suffix == ".py" and not any(part in EXCLUDED_DIR_NAMES for part in _relative_parts(p)):
                 files.append(str(p))
             continue
-        for sub in p.rglob("*.py"):
-            if any(part in EXCLUDED_DIR_NAMES for part in sub.parts):
-                continue
-            files.append(str(sub))
+        try:
+            found = iter_files(p, ("*.py",), exclude=EXCLUDED_DIR_NAMES)
+        except CorpusError as exc:
+            raise DiscoveryError(str(exc)) from exc
+        if not found:
+            raise DiscoveryError(f"no .py files under {p} (after excluding {sorted(EXCLUDED_DIR_NAMES)}); nothing would be checked")
+        files.extend(str(sub) for sub in found)
     return sorted(files)
 
 
-def run_black_stdin(src: str, config_path: str) -> str:
+def run_black_stdin(src: str, config_path: str, filename=None) -> str:
+    """Black's output for *src*. With *filename*, Black sees the path (``--stdin-filename``): its force-exclude
+    and .pyi mode apply, and an excluded file comes back unchanged."""
+    cmd = [*_BLACK_CMD, "-q", "--config", config_path]
+    if filename:
+        cmd += ["--stdin-filename", str(filename)]
     proc = subprocess.run(
-        [*_BLACK_CMD, "-q", "--config", config_path, "-"],
+        [*cmd, "-"],
         input=src.encode("utf-8"),
         capture_output=True,
     )
     if proc.returncode not in (0,):
         raise RuntimeError(f"black failed: {proc.stderr.decode('utf-8', 'replace')}")
-    return proc.stdout.decode("utf-8")
+    out = proc.stdout.decode("utf-8")
+    if filename and ((not out and src) or out.replace("\r\n", "\n") == src.replace("\r\n", "\n")):
+        # Force-excluded: Black echoes the source (through a text-mode stdout, so CRLF on Windows) or prints nothing.
+        return src
+    return out
 
 
 def _swap_single_to_double_quotes(s: str) -> str:
@@ -85,6 +125,7 @@ def _swap_single_to_double_quotes(s: str) -> str:
     mask an explosion/collapse comparison. Skips triple-quoted strings and
     literals that already contain a double quote (Black wouldn't requote
     those either, so leaving them alone is correct)."""
+
     def repl(m):
         inner = m.group(1)
         if '"' in inner:
@@ -148,14 +189,7 @@ def is_all_blank(lines):
     return all(line.strip() == "" for line in lines) and len(lines) > 0
 
 
-def _triple_quote_state_before_each_line(lines):
-    """For each line in ``lines``, whether we are INSIDE a triple-quoted string at that line's
-    start, tracked via a running parity toggle across the whole file (not just one hunk). Needed
-    because a single hunk's hand-picked hasattr-style local odd/even delimiter count is wrong
-    when a hunk happens to contain BOTH a closing delimiter (from a string opened earlier) and an
-    unrelated opening delimiter (for a string that closes later) -- their counts can sum to even
-    even though the hunk is unsafe to normalize on its own. Global state removes the ambiguity.
-    """
+def _parity_state(lines):
     state = []
     inside = False
     for line in lines:
@@ -163,19 +197,58 @@ def _triple_quote_state_before_each_line(lines):
         n = line.count('"""') + line.count("'''")
         if n % 2:
             inside = not inside
+    state.append(inside)
     return state
 
 
-def _touches_multiline_string(lines, state_before_block):
-    """True if ``lines`` (a slice starting where ``state_before_block`` applies) either starts
-    already inside a triple-quoted string, or contains an odd number of delimiters (so it ends
-    inside/outside inconsistently with its own local content) -- either way, a fragment whose
-    string boundaries cannot be resolved from this slice alone. See
-    ``_triple_quote_state_before_each_line`` for why a local odd/even count on the slice alone is
-    insufficient.
+_FSTRING_START = getattr(tokenize, "FSTRING_START", None)
+_FSTRING_END = getattr(tokenize, "FSTRING_END", None)
+
+
+def _triple_quote_state_before_each_line(lines):
+    """For each line in ``lines`` (plus one entry for the end of the file), whether we are INSIDE a
+    multi-line string at that line's start.
+
+    Read from the tokenizer's STRING spans, so a delimiter that is itself string content
+    (``Q = '<three double quotes>'``) does not flip the state: a file-wide delimiter-parity toggle read that line as
+    opening a string, marked every later line as inside one, and so rejected every later fix while
+    --check passed unformatted code. A file that does not tokenize falls back to the parity toggle.
+    Global (file-wide) state is still what a hunk is judged by: a single hunk may hold the end of one
+    string and the start of another.
+    """
+    state = [False] * (len(lines) + 1)
+    try:
+        tokens = list(tokenize.generate_tokens(io.StringIO("".join(lines)).readline))
+    except (tokenize.TokenError, SyntaxError, IndentationError):
+        return _parity_state(lines)
+    spans = []
+    fstring_starts = []
+    for tok in tokens:
+        if tok.type == tokenize.STRING and tok.start[0] < tok.end[0]:
+            spans.append((tok.start[0], tok.end[0]))
+        elif _FSTRING_START is not None and tok.type == _FSTRING_START:
+            fstring_starts.append(tok.start[0])
+        elif _FSTRING_END is not None and tok.type == _FSTRING_END and fstring_starts:
+            start = fstring_starts.pop()
+            if start < tok.end[0]:
+                spans.append((start, tok.end[0]))
+    for start_row, end_row in spans:
+        # Lines are 1-based in tokens; the lines after the opening one, up to and including the closing one, start inside.
+        for row in range(start_row + 1, min(end_row, len(lines)) + 1):
+            state[row - 1] = True
+    return state
+
+
+def _touches_multiline_string(lines, state_before_block, state_after_block=None):
+    """True if ``lines`` (a slice starting where ``state_before_block`` applies) starts inside a
+    multi-line string, or ends inside one (the line after it starts inside) -- either way a fragment
+    whose string boundaries cannot be resolved from this slice alone. Without *state_after_block*
+    (older callers) an odd local delimiter count stands in for "ends inside".
     """
     if state_before_block:
         return True
+    if state_after_block is not None:
+        return bool(state_after_block)
     text = "".join(lines)
     return (text.count('"""') + text.count("'''")) % 2 == 1
 
@@ -238,7 +311,9 @@ def filtered_apply(orig: str, formatted: str) -> str:
                     continue
                 elif stag == "delete" and is_all_blank(s_old):
                     continue
-                elif _touches_multiline_string(s_old, orig_string_state[i1 + si1]) or _touches_multiline_string(s_new, fmt_string_state[j1 + sj1]):
+                elif _touches_multiline_string(s_old, orig_string_state[i1 + si1], orig_string_state[i1 + si2]) or _touches_multiline_string(
+                    s_new, fmt_string_state[j1 + sj1], fmt_string_state[j1 + sj2]
+                ):
                     # A fragment of a multi-line triple-quoted string; norm() cannot reliably
                     # classify it (see _touches_multiline_string). Reject conservatively rather
                     # than risk silently applying a misclassified explosion.
@@ -258,26 +333,49 @@ def process_one(path, config_path):
     """Returns (changed: bool, orig: str, result: str)."""
     with open(path, "r", encoding="utf-8", newline="") as f:
         orig = f.read()
-    formatted = run_black_stdin(orig, config_path)
+    formatted = run_black_stdin(orig, config_path, filename=path)
     result = filtered_apply(orig, formatted)
     return result != orig, orig, result
 
 
-def main():
-    args = sys.argv[1:]
+def _pop_config(args):
+    config_path = None
+    rest = []
+    i = 0
+    while i < len(args):
+        a = args[i]
+        if a == "--config":
+            if i + 1 >= len(args):
+                raise SystemExit("--config needs a value: --config <path-to-pyproject.toml>")
+            config_path = args[i + 1]
+            i += 2
+            continue
+        if a.startswith("--config="):
+            config_path = a.split("=", 1)[1]
+        else:
+            rest.append(a)
+        i += 1
+    return config_path, rest
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
     write = "--write" in args
     check = "--check" in args
+    if write and check:
+        raise SystemExit("--check and --write are mutually exclusive: --check never rewrites files")
     args = [a for a in args if a not in ("--write", "--check")]
-    config_path = None
-    if "--config" in args:
-        idx = args.index("--config")
-        config_path = args[idx + 1]
-        args = args[:idx] + args[idx + 2 :]
+    config_path, args = _pop_config(args)
     if not config_path:
         raise SystemExit("--config <path-to-pyproject.toml> is required")
 
     if check:
-        files = discover_py_files(args)
+        if not args:
+            raise SystemExit("--check needs at least one directory or file to check")
+        try:
+            files = discover_py_files(args)
+        except DiscoveryError as exc:
+            raise SystemExit(f"--check: {exc}")
         changed_files = []
         for path in files:
             try:

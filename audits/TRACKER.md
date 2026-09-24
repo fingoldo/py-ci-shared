@@ -118,83 +118,83 @@ Each file keeps the agent's original id on every finding.
 
 | Status | Sev | Id | Finding |
 |---|---|---|---|
-| **OPEN** | High | `GA-1` | =1 is treated as covering the whole one category, but in ru/uk/pl one also contains 21,... |
-| **OPEN** | Med | `GA-2` | The branch-head regex also scans branch bodies, so it finds fake branches |
-| **OPEN** | Med | `GA-3` | ARB files are read as utf-8, so a BOM causes a JSONDecodeError crash |
-| **OPEN** | Low | `GA-4` | The ICU # placeholder is not accepted (false positive) |
-| **OPEN** | Low | `GA-5` | A missing template locale raises a bare KeyError |
-| **OPEN** | Low | `GA-6` | The "plural" in value substring test skips the counted-phrase rule |
-| **OPEN** | Med | `GA-7` | Only a positional str constant is detected; f-strings, concatenation, variables and sql... |
-| **OPEN** | Med | `GA-8` | Unparseable or non-UTF8 migrations are skipped (fail-open) |
-| **OPEN** | Low | `GA-9` | async with autocommit_block() is not a guard (false positive) |
-| **OPEN** | Low | `GA-10` | The guard is lexical: a def nested in the with but called later passes; a bare-Name aut... |
-| **OPEN** | Low | `GA-11` | Baseline key file:line breaks on any edit above the call |
-| **OPEN** | Med | `GA-12` | The verdict regex misses common spellings; PARTIALLY RESOLVED parses as PARTIALLY |
-| **OPEN** | Med | `GA-13` | Backslash paths are ignored; absolute or . |
-| **OPEN** | Low | `GA-14` | A reversed migration range expands to nothing |
-| **OPEN** | Low | `GA-15` | The :\d+ strip is dead code (the regex cannot capture :) |
-| **OPEN** | Med | `GA-16` | The ratchet key splits on the first :; with root=None on Windows every key becomes C:<v... |
-| **OPEN** | Med | `GA-17` | Round names in os.path.join/Path args, + concatenation and f-strings are missed |
-| **OPEN** | Low | `GA-18` | Parse failures are skipped; a NUL byte raises ValueError (py<3.12) |
-| **OPEN** | Med | `GA-19` | A row shorter than the status column is dropped, neither open nor closed |
-| **OPEN** | Med | `GA-20` | The status mention check is case-sensitive |
-| **OPEN** | Low | `GA-21` | finding_problems re-reads every sibling .md for each file: O(n^2) |
-| **OPEN** | Low | `GA-22` | is_whole_file_read rejects any [ in the expression |
-| **OPEN** | Low | `GA-23` | ~~~ fences are ignored; a BOM hides the header row |
-| **OPEN** | Low | `GA-24` | min_trackers counts undated directories that the check then ignores |
-| **OPEN** | Med | `GA-25` | A missing or empty tests_dir passes; patterns are case-sensitive |
-| **OPEN** | Med | `GA-26` | A trailing --src-path raises IndexError, so exit 1 blocks the commit (the docstring say... |
-| **OPEN** | Med | `GA-27` | --src-path is not backslash-normalised, so it silently scans nothing; a substring prefi... |
-| **OPEN** | Low | `GA-28` | pip-audit runs (network) even when no .py is staged |
-| **OPEN** | Med | `GA-29` | The {"entries":[...]} shape is read as the single key entries, so real entries are neve... |
-| **OPEN** | Med | `GA-30` | The absolute-path regex misses /opt, /tmp, /root, /github/workspace, UNC paths and othe... |
-| **OPEN** | Low | `GA-31` | Words are counted with [A-Za-z], so a non-Latin note fails |
-| **OPEN** | Med | `GA-32` | No floor on found: a broken scanner returning {} exits 0 |
-| **OPEN** | Low | `GA-33` | A raising scan aborts run_rules; scans without a rule are never enforced |
-| **OPEN** | Med | `GA-34` | git log --follow crosses renames, but git show sha:<current path> fails before the rena... |
-| **OPEN** | Low | `GA-35` | Bare {key:note} counts as None; "moved" compares only the endpoints; a git failure exits 0 |
-| **OPEN** | Med | `GA-36` | Excluded dir names are matched against absolute ancestors, so a checkout under build/ s... |
-| **OPEN** | Med | `GA-37` | File-wide """ parity counts quotes inside strings, so every later fix is rejected and -... |
-| **OPEN** | Low | `GA-38` | No --stdin-filename (force-exclude and .pyi mode are ignored); a trailing --config rais... |
-| **OPEN** | High | `GB-1` | The pytest\s+ regex matches pip install pytest pytest-cov as a pathless run, so every s... |
-| **OPEN** | High | `GB-2` | YAML comments are scanned |
-| **OPEN** | Med | `GB-3` | Substring match: tests/unit is found in tests/unit_slow |
-| **OPEN** | Med | `GB-4` | The space form --ignore tests/gpu is not recognised and counts as an invocation |
-| **OPEN** | Med | `GB-5` | An ignore in one job applies globally (false positive) |
-| **OPEN** | Low | `GB-6` | \s+ crosses newlines, so the next line is read as pytest's args |
-| **OPEN** | High | `GB-7` | A job without a name inherits the previous step's name, so allowlisted names mask other... |
-| **OPEN** | Med | `GB-8` | with: name: (artifact input) is taken as the step name |
-| **OPEN** | Med | `GB-9` | Misses - continue-on-error: true and quoted 'true' |
-| **OPEN** | High | `GB-10` | Any indented uses: exempts the job as a reusable-workflow call, which covers most real... |
-| **OPEN** | Med | `GB-11` | A step-level timeout satisfies the job check (enshrined by a test) |
-| **OPEN** | Med | `GB-12` | jobs:  # comment finds no jobs, so the result is [] |
-| **OPEN** | Low | `GB-13` | The last job's block runs to EOF |
-| **OPEN** | Med | `GB-14` | permissions: read-all / {} are reported missing (false positive) |
-| **OPEN** | Med | `GB-15` | working-directory is never reset between steps/jobs (false negative) |
-| **OPEN** | Low | `GB-16` | A docker://…@sha256: digest is flagged as mutable |
-| **OPEN** | Low | `GB-17` | The script regex is applied to name/description lines |
-| **OPEN** | Low | `GB-18` | Dead repo_root recheck |
-| **OPEN** | High | `GB-19` | BOM or SyntaxError files are silently skipped |
-| **OPEN** | Med | `GB-20` | Keyword section=/key= calls are skipped |
-| **OPEN** | Med | `GB-21` | Binding only via Assign; AnnAssign, walrus and with .. |
-| **OPEN** | Low | `GB-22` | Bound names are file-wide, not scoped (false positive) |
-| **OPEN** | Med | `GB-23` | _const_in_file takes the first assignment and ignores AnnAssign |
-| **OPEN** | Med | `GB-24` | Relative imports are unresolved, so defaults are silently skipped |
-| **OPEN** | Low | `GB-25` | import a.b binds b (wrong) |
-| **OPEN** | Low | `GB-26` | 1 == True == 1.0 counts as agreement |
-| **OPEN** | Low | `GB-27` | sorted() on mixed-type keys raises TypeError |
-| **OPEN** | Low | `GB-28` | The min_checked guard is a bare assert (dropped under -O) |
-| **OPEN** | Low | `GB-29` | relative_to raises outside root; every assert re-parses all files; resolve runs twice |
-| **OPEN** | Med | `GB-30` | A missing baseline is seeded and the test skipped (green in CI; also writes into the tree) |
-| **OPEN** | Low | `GB-31` | An empty snippet falls back to a line{n} key |
-| **OPEN** | Med | `GB-32` | The hash concatenates contents without separators; an empty file list gives a constant... |
-| **OPEN** | Med | `GB-33` | Refresh via sys.argv is ignored under xdist |
-| **OPEN** | Med | `GB-34` | A missing baseline seeds and skips; any version change, including a revert, self-certif... |
-| **OPEN** | Low | `GB-35` | A title containing * is not a bullet; matching is a case-sensitive substring |
-| **OPEN** | Low | `GB-36` | A missing section or trigger produces a permanent skip |
-| **OPEN** | Low | `GB-37` | copytree into an existing dir raises; the str-prefix check accepts copy2; the return co... |
-| **OPEN** | Low | `GB-38` | Relative constants resolve against the CWD, not repo_root |
-| **OPEN** | Low | `GB-39` | A field missing in one repo is not reported as drift; a list-valued field raises TypeEr... |
+| **RESOLVED** | High | `GA-1` | =1 is treated as covering the whole one category, but in ru/uk/pl one also contains 21,... |
+| **RESOLVED** | Med | `GA-2` | The branch-head regex also scans branch bodies, so it finds fake branches |
+| **RESOLVED** | Med | `GA-3` | ARB files are read as utf-8, so a BOM causes a JSONDecodeError crash |
+| **RESOLVED** | Low | `GA-4` | The ICU # placeholder is not accepted (false positive) |
+| **RESOLVED** | Low | `GA-5` | A missing template locale raises a bare KeyError |
+| **RESOLVED** | Low | `GA-6` | The "plural" in value substring test skips the counted-phrase rule |
+| **RESOLVED** | Med | `GA-7` | Only a positional str constant is detected; f-strings, concatenation, variables and sql... |
+| **RESOLVED** | Med | `GA-8` | Unparseable or non-UTF8 migrations are skipped (fail-open) |
+| **RESOLVED** | Low | `GA-9` | async with autocommit_block() is not a guard (false positive) |
+| **RESOLVED** | Low | `GA-10` | The guard is lexical: a def nested in the with but called later passes; a bare-Name aut... |
+| **RESOLVED** | Low | `GA-11` | Baseline key file:line breaks on any edit above the call |
+| **RESOLVED** | Med | `GA-12` | The verdict regex misses common spellings; PARTIALLY RESOLVED parses as PARTIALLY |
+| **RESOLVED** | Med | `GA-13` | Backslash paths are ignored; absolute or . |
+| **RESOLVED** | Low | `GA-14` | A reversed migration range expands to nothing |
+| **RESOLVED** | Low | `GA-15` | The :\d+ strip is dead code (the regex cannot capture :) |
+| **RESOLVED** | Med | `GA-16` | The ratchet key splits on the first :; with root=None on Windows every key becomes C:<v... |
+| **RESOLVED** | Med | `GA-17` | Round names in os.path.join/Path args, + concatenation and f-strings are missed |
+| **RESOLVED** | Low | `GA-18` | Parse failures are skipped; a NUL byte raises ValueError (py<3.12) |
+| **RESOLVED** | Med | `GA-19` | A row shorter than the status column is dropped, neither open nor closed |
+| **RESOLVED** | Med | `GA-20` | The status mention check is case-sensitive |
+| **RESOLVED** | Low | `GA-21` | finding_problems re-reads every sibling .md for each file: O(n^2) |
+| **RESOLVED** | Low | `GA-22` | is_whole_file_read rejects any [ in the expression |
+| **RESOLVED** | Low | `GA-23` | ~~~ fences are ignored; a BOM hides the header row |
+| **RESOLVED** | Low | `GA-24` | min_trackers counts undated directories that the check then ignores |
+| **RESOLVED** | Med | `GA-25` | A missing or empty tests_dir passes; patterns are case-sensitive |
+| **RESOLVED** | Med | `GA-26` | A trailing --src-path raises IndexError, so exit 1 blocks the commit (the docstring say... |
+| **RESOLVED** | Med | `GA-27` | --src-path is not backslash-normalised, so it silently scans nothing; a substring prefi... |
+| **RESOLVED** | Low | `GA-28` | pip-audit runs (network) even when no .py is staged |
+| **RESOLVED** | Med | `GA-29` | The {"entries":[...]} shape is read as the single key entries, so real entries are neve... |
+| **RESOLVED** | Med | `GA-30` | The absolute-path regex misses /opt, /tmp, /root, /github/workspace, UNC paths and othe... |
+| **RESOLVED** | Low | `GA-31` | Words are counted with [A-Za-z], so a non-Latin note fails |
+| **RESOLVED** | Med | `GA-32` | No floor on found: a broken scanner returning {} exits 0 |
+| **RESOLVED** | Low | `GA-33` | A raising scan aborts run_rules; scans without a rule are never enforced |
+| **RESOLVED** | Med | `GA-34` | git log --follow crosses renames, but git show sha:<current path> fails before the rena... |
+| **RESOLVED** | Low | `GA-35` | Bare {key:note} counts as None; "moved" compares only the endpoints; a git failure exits 0 |
+| **RESOLVED** | Med | `GA-36` | Excluded dir names are matched against absolute ancestors, so a checkout under build/ s... |
+| **RESOLVED** | Med | `GA-37` | File-wide """ parity counts quotes inside strings, so every later fix is rejected and -... |
+| **RESOLVED** | Low | `GA-38` | No --stdin-filename (force-exclude and .pyi mode are ignored); a trailing --config rais... |
+| **RESOLVED** | High | `GB-1` | The pytest\s+ regex matches pip install pytest pytest-cov as a pathless run, so every s... |
+| **RESOLVED** | High | `GB-2` | YAML comments are scanned |
+| **RESOLVED** | Med | `GB-3` | Substring match: tests/unit is found in tests/unit_slow |
+| **RESOLVED** | Med | `GB-4` | The space form --ignore tests/gpu is not recognised and counts as an invocation |
+| **RESOLVED** | Med | `GB-5` | An ignore in one job applies globally (false positive) |
+| **RESOLVED** | Low | `GB-6` | \s+ crosses newlines, so the next line is read as pytest's args |
+| **RESOLVED** | High | `GB-7` | A job without a name inherits the previous step's name, so allowlisted names mask other... |
+| **RESOLVED** | Med | `GB-8` | with: name: (artifact input) is taken as the step name |
+| **RESOLVED** | Med | `GB-9` | Misses - continue-on-error: true and quoted 'true' |
+| **RESOLVED** | High | `GB-10` | Any indented uses: exempts the job as a reusable-workflow call, which covers most real... |
+| **RESOLVED** | Med | `GB-11` | A step-level timeout satisfies the job check (enshrined by a test) |
+| **RESOLVED** | Med | `GB-12` | jobs:  # comment finds no jobs, so the result is [] |
+| **RESOLVED** | Low | `GB-13` | The last job's block runs to EOF |
+| **RESOLVED** | Med | `GB-14` | permissions: read-all / {} are reported missing (false positive) |
+| **RESOLVED** | Med | `GB-15` | working-directory is never reset between steps/jobs (false negative) |
+| **RESOLVED** | Low | `GB-16` | A docker://…@sha256: digest is flagged as mutable |
+| **RESOLVED** | Low | `GB-17` | The script regex is applied to name/description lines |
+| **RESOLVED** | Low | `GB-18` | Dead repo_root recheck |
+| **RESOLVED** | High | `GB-19` | BOM or SyntaxError files are silently skipped |
+| **RESOLVED** | Med | `GB-20` | Keyword section=/key= calls are skipped |
+| **RESOLVED** | Med | `GB-21` | Binding only via Assign; AnnAssign, walrus and with .. |
+| **RESOLVED** | Low | `GB-22` | Bound names are file-wide, not scoped (false positive) |
+| **RESOLVED** | Med | `GB-23` | _const_in_file takes the first assignment and ignores AnnAssign |
+| **RESOLVED** | Med | `GB-24` | Relative imports are unresolved, so defaults are silently skipped |
+| **RESOLVED** | Low | `GB-25` | import a.b binds b (wrong) |
+| **RESOLVED** | Low | `GB-26` | 1 == True == 1.0 counts as agreement |
+| **RESOLVED** | Low | `GB-27` | sorted() on mixed-type keys raises TypeError |
+| **RESOLVED** | Low | `GB-28` | The min_checked guard is a bare assert (dropped under -O) |
+| **RESOLVED** | Low | `GB-29` | relative_to raises outside root; every assert re-parses all files; resolve runs twice |
+| **RESOLVED** | Med | `GB-30` | A missing baseline is seeded and the test skipped (green in CI; also writes into the tree) |
+| **RESOLVED** | Low | `GB-31` | An empty snippet falls back to a line{n} key |
+| **RESOLVED** | Med | `GB-32` | The hash concatenates contents without separators; an empty file list gives a constant... |
+| **RESOLVED** | Med | `GB-33` | Refresh via sys.argv is ignored under xdist |
+| **RESOLVED** | Med | `GB-34` | A missing baseline seeds and skips; any version change, including a revert, self-certif... |
+| **RESOLVED** | Low | `GB-35` | A title containing * is not a bullet; matching is a case-sensitive substring |
+| **RESOLVED** | Low | `GB-36` | A missing section or trigger produces a permanent skip |
+| **RESOLVED** | Low | `GB-37` | copytree into an existing dir raises; the str-prefix check accepts copy2; the return co... |
+| **RESOLVED** | Low | `GB-38` | Relative constants resolve against the CWD, not repo_root |
+| **RESOLVED** | Low | `GB-39` | A field missing in one repo is not reported as drift; a list-valued field raises TypeEr... |
 | **OPEN** | High | `GC-1` | A missing functions dir returns [] (a test enshrines it) |
 | **OPEN** | High | `GC-2` | Misses the psycopg cursor pattern |
 | **OPEN** | Med | `GC-3` | The key has no class, so same-named methods collide |

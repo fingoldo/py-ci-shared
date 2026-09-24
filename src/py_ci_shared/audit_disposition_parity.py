@@ -39,32 +39,86 @@ import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-# `- Disposition: RESOLVED - ...` / `Disposition: PARTIAL - ...`
-# Also the Markdown-bold form ``**Disposition:** RESOLVED. text`` (verdict ended by a period rather than a dash).
-_DISPOSITION_RE = re.compile(r"^-?\s*(?:\*\*)?Disposition(?: of this (?:item|report))?:(?:\*\*)?\s*(?P<verdict>[A-Z][A-Z' ]+?)\b\s*[-:.]?\s*(?P<text>.*)$")
-# A backticked token that looks like a repository path: it carries a separator and an extension.
-_BACKTICK_PATH_RE = re.compile(r"`([\w./\-]*/[\w./\-]+\.[\w]{1,6})`")
+from ._core import SourceReadError, read_source
+
+# `- Disposition: RESOLVED - ...` / `Disposition: PARTIAL - ...`, the Markdown-bold forms ``**Disposition:** RESOLVED. text``
+# and ``**Disposition**: Resolved``, any list marker, any case.
+_DISPOSITION_RE = re.compile(
+    r"^\s*(?:[-*+]\s+)?(?:\*\*|__)?Disposition(?: of this (?:item|report))?\s*(?:\*\*|__)?\s*:\s*(?:\*\*|__)?\s*(?P<rest>.*)$",
+    re.IGNORECASE,
+)
+# Multi-word and variant spellings, normalised to one verdict. Longest first, so PARTIALLY RESOLVED is not read as PARTIALLY.
+_VERDICT_ALIASES = {
+    "PARTIALLY RESOLVED": "PARTIAL",
+    "PARTIALLY FIXED": "PARTIAL",
+    "PARTIALLY": "PARTIAL",
+    "NOT A DEFECT": "NOT A DEFECT",
+    "WON'T FIX": "WON'T FIX",
+    "WON\u2019T FIX": "WON'T FIX",
+    "WONT FIX": "WON'T FIX",
+    "WONTFIX": "WON'T FIX",
+    "RESOLVED": "RESOLVED",
+    "PARTIAL": "PARTIAL",
+    "DEFERRED": "DEFERRED",
+    "DOC": "DOC",
+    "FIXED": "FIXED",
+    "DONE": "DONE",
+    "IMPLEMENTED": "IMPLEMENTED",
+    "OPEN": "OPEN",
+    "REJECTED": "REJECTED",
+    "DUPLICATE": "DUPLICATE",
+}
+_VERDICT_PREFIX_RE = re.compile(
+    r"^(?P<verdict>" + "|".join(re.escape(v) for v in sorted(_VERDICT_ALIASES, key=len, reverse=True)) + r")(?![\w'])", re.IGNORECASE
+)
+_UPPER_VERDICT_RE = re.compile(r"^(?P<verdict>[A-Z][A-Z']*(?: [A-Z][A-Z']*)*)\b")
+_SEPARATOR_RE = re.compile(r"^(?:\*\*|__)?\s*(?:[-\u2013\u2014]+|[:.;,])?\s*")
+# A backticked token that looks like a repository path: it carries a separator and an extension, and may end in a
+# `:line` / `:start-end` reference that is not part of the path.
+_BACKTICK_PATH_RE = re.compile(r"`((?:[A-Za-z]:)?[\w./\\\-]*[/\\][\w./\\\-]+\.[\w]{1,6})(?::\d+(?:-\d+)?)?`")
 # A bare path written without backticks, which audit prose does constantly.
 _BARE_PATH_RE = re.compile(r"(?<![\w`/])((?:lib|tool|test|web|e2e|scripts|deploy|supabase|\.github|\.githooks)/[\w./\-]+\.[\w]{1,6})")
 # `migration 039`, `migration 034`, `migrations 034-039`
-_MIGRATION_RE = re.compile(r"\bmigrations?\s+(\d{3})(?:\s*[-–]\s*(\d{3}))?", re.IGNORECASE)
+_MIGRATION_RE = re.compile(r"\bmigrations?\s+(\d{3})(?:\s*[-\u2013]\s*(\d{3}))?", re.IGNORECASE)
 # Verdicts that assert something was done. DEFERRED and WON'T FIX assert the opposite.
 _ASSERTIVE_VERDICTS = frozenset({"RESOLVED", "PARTIAL", "DOC", "FIXED", "DONE", "IMPLEMENTED"})
 
 
+def parse_disposition(line: str) -> "tuple[str, str] | None":
+    """``(normalised VERDICT, text)`` for a disposition line, or None when the line is not one."""
+    match = _DISPOSITION_RE.match(line.strip())
+    if not match:
+        return None
+    rest = match.group("rest")
+    known = _VERDICT_PREFIX_RE.match(rest)
+    if known:
+        verdict = _VERDICT_ALIASES[known.group("verdict").upper()]
+        tail = rest[known.end() :]
+    else:
+        upper = _UPPER_VERDICT_RE.match(rest)
+        if not upper:
+            return None
+        verdict, tail = upper.group("verdict").strip(), rest[upper.end() :]
+    return verdict, _SEPARATOR_RE.sub("", tail, count=1)
+
+
+def _is_outside(path: str) -> bool:
+    return path.startswith("/") or re.match(r"^[A-Za-z]:/", path) is not None or ".." in path.split("/")
+
+
 def _artefacts(text: str) -> set[str]:
-    """Paths a disposition claims exist."""
+    """Paths a disposition claims exist, POSIX-normalised, trailing sentence punctuation removed."""
     found = set(_BACKTICK_PATH_RE.findall(text))
     found.update(_BARE_PATH_RE.findall(text))
-    # Strip a trailing `:123` line reference and any sentence punctuation that stuck.
-    return {re.sub(r":\d+(?:-\d+)?$", "", p).rstrip(".,;)") for p in found}
+    return {p.replace("\\", "/").rstrip(".,;)") for p in found}
 
 
 def _migration_numbers(text: str) -> set[str]:
     numbers: set[str] = set()
     for start, end in _MIGRATION_RE.findall(text):
         if end:
-            numbers.update(f"{n:03d}" for n in range(int(start), int(end) + 1))
+            lo, hi = sorted((int(start), int(end)))
+            numbers.update(f"{n:03d}" for n in range(lo, hi + 1))
         else:
             numbers.add(start)
     return numbers
@@ -88,7 +142,7 @@ def find_unsupported_dispositions(
     here: a path in another repository, or one a CORRECTION line is quoting precisely because it
     was missing.
     """
-    assertive = {v.upper() for v in verdicts}
+    assertive = {_VERDICT_ALIASES.get(v.upper(), v.upper()) for v in verdicts}
     ignored = set(ignore_paths)
     migrations_dir = migrations_dir or (repo_root / "supabase" / "migrations")
     migration_prefixes = {p.name[:3] for p in migrations_dir.glob("*.sql")} if migrations_dir.is_dir() else set()
@@ -104,19 +158,31 @@ def find_unsupported_dispositions(
     seen_any = 0
     checked = 0
     for path in files:
-        for lineno, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), start=1):
-            match = _DISPOSITION_RE.match(line.strip())
-            if not match:
+        try:
+            lines = read_source(path).splitlines()
+        except SourceReadError as exc:
+            problems.append(f"{path.name}: could not be read, so its dispositions were not checked: {exc.message}")
+            continue
+        for lineno, line in enumerate(lines, start=1):
+            parsed = parse_disposition(line)
+            if parsed is None:
                 continue
             seen_any += 1
-            verdict = match.group("verdict").strip().upper()
+            verdict, text = parsed
             if verdict not in assertive:
                 continue
-            text = match.group("text")
             checked += 1
 
             for artefact in sorted(_artefacts(text)):
-                if artefact in ignored or any((root / artefact).exists() for root in (repo_root, *search_roots)):
+                if artefact in ignored:
+                    continue
+                if _is_outside(artefact):
+                    problems.append(
+                        f"{path.name}:{lineno}: disposition says {verdict} and names `{artefact}`, which is outside "
+                        f"the repository, so this check cannot verify it. Name the repository path, or list it in ignore_paths."
+                    )
+                    continue
+                if any((root / artefact).exists() for root in (repo_root, *search_roots)):
                     continue
                 problems.append(
                     f"{path.name}:{lineno}: disposition says {verdict} and names `{artefact}`, "

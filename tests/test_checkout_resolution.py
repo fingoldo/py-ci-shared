@@ -69,3 +69,44 @@ def test_a_copy_that_puts_its_own_src_first_imports_itself(tmp_path):
     resolved = resolved_in_a_copy(root, "zz_copy_pkg", tmp_path / "work", timeout=120)
 
     assert resolved and str((tmp_path / "work" / "copy").resolve()) in str(Path(resolved).resolve())
+
+
+def _orig(tmp_path: Path, name: str, *, prepend_src: bool = True) -> Path:
+    root = tmp_path / "orig"
+    (root / "src" / name).mkdir(parents=True)
+    (root / "src" / name / "__init__.py").write_text("", encoding="utf-8")
+    if prepend_src:
+        (root / "conftest.py").write_text(
+            "import sys, pathlib\nsys.path.insert(0, str(pathlib.Path(__file__).parent / 'src'))\n",
+            encoding="utf-8",
+        )
+    return root
+
+
+def test_a_second_call_with_the_same_workdir_takes_a_fresh_copy(tmp_path):
+    root = _orig(tmp_path, "zz_copy_pkg2")
+    work = tmp_path / "work"
+    first = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120)
+    (work / "copy" / "stale_marker.txt").write_text("x", encoding="utf-8")
+    second = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120)
+    assert first and first == second
+    assert not (work / "copy" / "stale_marker.txt").exists()
+
+
+def test_a_sibling_directory_sharing_the_prefix_is_not_the_copy():
+    from py_ci_shared.checkout_resolution import _is_within
+
+    base = Path("/w")
+    assert _is_within(base / "copy" / "src" / "p" / "__init__.py", base / "copy")
+    assert not _is_within(base / "copy2" / "src" / "p" / "__init__.py", base / "copy")
+
+
+def test_a_probe_that_fails_is_reported_with_its_output(tmp_path):
+    from py_ci_shared.checkout_resolution import assert_a_copy_imports_itself
+
+    root = _orig(tmp_path, "zz_copy_pkg3")
+    with pytest.raises(pytest.fail.Exception, match=r"pytest exit [1-9]") as exc:
+        assert_a_copy_imports_itself(root, "zz_absent_pkg", tmp_path / "work", timeout=120)
+    assert "ModuleNotFoundError" in str(exc.value) or "No module named" in str(exc.value)
+    good = _orig(tmp_path / "g", "zz_copy_pkg4")
+    assert_a_copy_imports_itself(good, "zz_copy_pkg4", tmp_path / "g" / "work", timeout=120)

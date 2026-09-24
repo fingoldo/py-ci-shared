@@ -24,11 +24,19 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from ._core import ScanResult, UnparsedFilesError, scan_python
+
 if TYPE_CHECKING:  # pydantic is a test-time dependency here, as in this package's other schema checks
     from pydantic import BaseModel
 
-__all__ = ["GetattrDefault", "schema_field_defaults", "find_getattr_default_mismatches", "assert_getattr_defaults_match_schema",
-           "DEFAULT_RECEIVER_NAMES", "DEFAULT_RECEIVER_SUFFIXES"]
+__all__ = [
+    "GetattrDefault",
+    "schema_field_defaults",
+    "find_getattr_default_mismatches",
+    "assert_getattr_defaults_match_schema",
+    "DEFAULT_RECEIVER_NAMES",
+    "DEFAULT_RECEIVER_SUFFIXES",
+]
 
 DEFAULT_RECEIVER_NAMES: frozenset[str] = frozenset({"config", "cfg", "self.config", "self.cfg", "self._config"})
 DEFAULT_RECEIVER_SUFFIXES: tuple[str, ...] = ("_config", "_cfg", ".config", ".cfg")
@@ -89,18 +97,38 @@ def schema_field_defaults(schema_classes: Sequence[type["BaseModel"]]) -> dict[s
     return {k: v for k, v in seen.items() if k not in conflicting}
 
 
-def find_getattr_default_mismatches(files: Iterable[Path], repo_root: Path, schema_classes: Sequence[type["BaseModel"]],
-                                    receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
-                                    receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES) -> list[GetattrDefault]:
-    """Every ``getattr(<config>, "<field>", <literal>)`` whose literal differs from the field's declared default."""
+def find_getattr_default_mismatches(
+    files: Iterable[Path],
+    repo_root: Path,
+    schema_classes: Sequence[type["BaseModel"]],
+    receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
+    receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES,
+) -> list[GetattrDefault]:
+    """Every ``getattr(<config>, "<field>", <literal>)`` whose literal differs from the field's declared default.
+
+    A file that cannot be read or parsed raises ``_core.UnparsedFilesError`` instead of being skipped.
+    """
+    scan = _scan(files, repo_root)
+    if scan.unparsed:
+        raise UnparsedFilesError(_unparsed_message(scan))
+    return _mismatches(scan, schema_classes, receiver_names, receiver_suffixes)
+
+
+def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
+    return scan_python([Path(p) for p in files], root=Path(repo_root), min_files=0)
+
+
+def _unparsed_message(scan: ScanResult) -> str:
+    return "could not read or parse, so their getattr fallbacks were not checked:\n  " + "\n  ".join(p.render() for p in scan.unparsed)
+
+
+def _mismatches(
+    scan: ScanResult, schema_classes: Sequence[type["BaseModel"]], receiver_names: frozenset[str], receiver_suffixes: Sequence[str]
+) -> list[GetattrDefault]:
     declared = schema_field_defaults(schema_classes)
     out: list[GetattrDefault] = []
-    for path in files:
-        try:
-            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
+    for parsed in scan:
+        tree, rel = parsed.tree, parsed.rel
         for node in ast.walk(tree):
             if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" and len(node.args) == 3):
                 continue
@@ -121,29 +149,38 @@ def find_getattr_default_mismatches(files: Iterable[Path], repo_root: Path, sche
     return sorted(out, key=lambda g: (g.path, g.lineno, g.field))
 
 
-def assert_getattr_defaults_match_schema(files: Iterable[Path], repo_root: Path, schema_classes: Sequence[type["BaseModel"]],
-                                         allowed: Mapping[str, str] | None = None, min_files: int = 1,
-                                         receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
-                                         receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES) -> None:
+def assert_getattr_defaults_match_schema(
+    files: Iterable[Path],
+    repo_root: Path,
+    schema_classes: Sequence[type["BaseModel"]],
+    allowed: Mapping[str, str] | None = None,
+    min_files: int = 1,
+    receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
+    receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES,
+) -> None:
     """Fail on a ``getattr`` fallback that contradicts the config's own default.
 
     ``allowed`` maps a field name to the reason its sites may differ (a deliberately stricter fallback for a duck-typed
     caller, say); an empty reason is rejected, and an entry with nothing left to excuse must be removed.
     """
-    files = list(files)
-    if len(files) < min_files:
-        raise AssertionError(f"scanned only {len(files)} files (< {min_files}); the scan lost its subject")
+    scan = _scan(files, repo_root)
+    if scan.parsed_count < min_files:
+        raise AssertionError(f"parsed only {scan.parsed_count} files (< {min_files}); the scan lost its subject")
     allowed = dict(allowed or {})
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowed fields need a reason: {empty}")
-    found = find_getattr_default_mismatches(files, repo_root, schema_classes, receiver_names, receiver_suffixes)
+    found = _mismatches(scan, schema_classes, receiver_names, receiver_suffixes)
     bad = [g for g in found if g.field not in allowed]
     stale = sorted(set(allowed) - {g.field for g in found})
     msgs = []
+    if scan.unparsed:
+        msgs.append(_unparsed_message(scan))
     if bad:
-        msgs.append("getattr fallbacks that contradict the config's own default (a duck-typed config silently gets the "
-                    "other behaviour): " + "; ".join(map(repr, bad)))
+        msgs.append(
+            "getattr fallbacks that contradict the config's own default (a duck-typed config silently gets the "
+            "other behaviour): " + "; ".join(map(repr, bad))
+        )
     if stale:
         msgs.append(f"allowed fields whose sites now agree with the config: {stale}")
     if msgs:

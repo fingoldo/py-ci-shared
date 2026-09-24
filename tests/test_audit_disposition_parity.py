@@ -92,12 +92,7 @@ class TestPaths:
             tmp_path,
             "#### P04-1\n- Disposition: RESOLVED - CORRECTION: `packages/flutter_app_core/x.dart` had left the repo\n",
         )
-        assert (
-            find_unsupported_dispositions(
-                audit, root, ignore_paths=["packages/flutter_app_core/x.dart"]
-            )
-            == []
-        )
+        assert find_unsupported_dispositions(audit, root, ignore_paths=["packages/flutter_app_core/x.dart"]) == []
 
 
 class TestMigrations:
@@ -166,3 +161,73 @@ class TestAssert:
         )
         with pytest.raises(pytest.fail.Exception, match=r"gone\.dart"):
             assert_dispositions_name_real_artefacts(audit, root)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "**Disposition**: RESOLVED - `tool/gone.py` guards it",
+        "Disposition: Resolved - `tool/gone.py` guards it",
+        "* Disposition: resolved. `tool/gone.py` guards it",
+        "**Disposition:** PARTIALLY RESOLVED - `tool/gone.py` guards it",
+    ],
+)
+def test_common_disposition_spellings_are_read(tmp_path, line):
+    audit, root = _audit(tmp_path, f"#### F1\n{line}\n")
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "`tool/gone.py`" in problems[0]
+    (root / "tool").mkdir()
+    (root / "tool" / "gone.py").write_text("x", encoding="utf-8")
+    assert find_unsupported_dispositions(audit, root) == []
+
+
+def test_multi_word_verdicts_are_normalised():
+    from py_ci_shared.audit_disposition_parity import parse_disposition
+
+    assert parse_disposition("**Disposition:** PARTIALLY RESOLVED - x") == ("PARTIAL", "x")
+    assert parse_disposition("Disposition: won't fix: y") == ("WON'T FIX", "y")
+    assert parse_disposition("Disposition: NOT A DEFECT -- z") == ("NOT A DEFECT", "z")
+    assert parse_disposition("Disposition: see below") is None
+
+
+def test_a_deferred_spelled_in_lower_case_is_still_not_checked(tmp_path):
+    audit, root = _audit(tmp_path, "#### F1\nDisposition: deferred - `tool/gone.py` later\n")
+    assert find_unsupported_dispositions(audit, root) == []
+
+
+def test_a_backslash_path_is_normalised_and_checked(tmp_path):
+    audit, root = _audit(tmp_path, "#### F1\n- Disposition: RESOLVED - fixed in `lib\\foo\\bar.dart`\n")
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "`lib/foo/bar.dart`" in problems[0]
+    (root / "lib" / "foo").mkdir(parents=True)
+    (root / "lib" / "foo" / "bar.dart").write_text("x", encoding="utf-8")
+    assert find_unsupported_dispositions(audit, root) == []
+
+
+@pytest.mark.parametrize("path", ["/etc/hosts.txt", "../other/x.py", "C:/Windows/win.ini"])
+def test_a_path_outside_the_repository_is_not_checked_against_the_filesystem(tmp_path, path):
+    audit, root = _audit(tmp_path, f"#### F1\n- Disposition: RESOLVED - see `{path}`\n")
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "outside the repository" in problems[0]
+    assert find_unsupported_dispositions(audit, root, ignore_paths=[path]) == []
+
+
+def test_a_reversed_migration_range_expands(tmp_path):
+    audit, root = _audit(
+        tmp_path, "#### F1\n- Disposition: RESOLVED - migrations 036-034 add it\n", "supabase/migrations/034_a.sql", "supabase/migrations/036_c.sql"
+    )
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "migration 035" in problems[0]
+
+
+def test_a_line_reference_inside_backticks_does_not_hide_the_path(tmp_path):
+    audit, root = _audit(tmp_path, "#### F1\n- Disposition: RESOLVED - fixed in `lib/missing.dart:219`\n")
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "`lib/missing.dart`" in problems[0]
+
+
+def test_a_bom_audit_file_is_read(tmp_path):
+    audit, root = _audit(tmp_path, "")
+    (audit / "01_correctness.md").write_bytes(b"\xef\xbb\xbf- Disposition: RESOLVED - `tool/gone.py`\n")
+    problems = find_unsupported_dispositions(audit, root)
+    assert len(problems) == 1 and "gone.py" in problems[0]

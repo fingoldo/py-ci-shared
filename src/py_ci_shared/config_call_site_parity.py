@@ -18,6 +18,13 @@ resolution; each consuming repo supplies its own schema class and, where it has 
 own whitelist of fields consumed a different way (not through a literal
 ``cfg().get(...)`` call the AST heuristic can see).
 
+Call sites are found in every spelling of the accessor: positional or ``section=``/``key=``
+keywords, and a name bound by ``=``, an annotated assignment, a walrus or ``with ... as`` -- scoped
+like Python scopes it, so a parameter that happens to share a module-level binding's name is not
+the accessor. A file that cannot be read or parsed (a BOM is fine; a syntax error is not) fails
+every ``assert_*`` instead of being skipped. Constants resolve through relative imports, ``import
+a.b`` (which binds ``a``) and ``a.b.NAME`` chains, and to their LAST top-level binding.
+
 Deliberately dependency-light: ``pytest`` is imported lazily inside the ``assert_*``
 functions, matching this package's other modules.
 """
@@ -27,7 +34,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
+
+from ._core import SourceError, SourceProblem, UnparsedFilesError, parse_file, relative_posix, resolve_relative, scan_python
 
 if TYPE_CHECKING:
     # Type-only: pydantic is a [dev] test dependency here (schema_cls is always a real
@@ -87,47 +96,141 @@ def _arg_node(call: ast.Call, position: int, keyword: str) -> Optional[ast.expr]
     return None
 
 
-def _find_cfg_get_calls_in_file(path: Path, root: Path, cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    except (SyntaxError, UnicodeDecodeError, OSError):
-        return []
+_ScopeNode = Union[ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef]
+_NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 
-    # File-scoped "bind cfg() to a local name first" idiom: `_c = cfg(); _c.get(...)`.
-    cfg_bound_names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign) and _is_cfg_call(node.value, cfg_function_names):
+
+def _direct_nodes(scope: ast.AST) -> list[ast.AST]:
+    """Every node in *scope*'s own body, not descending into nested function/lambda/class bodies."""
+    out: list[ast.AST] = []
+    stack: list[ast.AST] = list(ast.iter_child_nodes(scope))
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        if isinstance(node, _NESTED_SCOPES):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _scope_bindings(scope: ast.AST, cfg_function_names: frozenset[str]) -> "tuple[set[str], set[str]]":
+    """``(names bound to cfg() in this scope, every other name bound in this scope)``."""
+    cfg_names: set[str] = set()
+    other: set[str] = set()
+    if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        a = scope.args
+        for arg in [*a.posonlyargs, *a.args, *a.kwonlyargs, *([a.vararg] if a.vararg else []), *([a.kwarg] if a.kwarg else [])]:
+            other.add(arg.arg)
+    declared_outer: set[str] = set()
+    for node in _direct_nodes(scope):
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            declared_outer.update(node.names)
+        elif isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    cfg_bound_names.add(target.id)
+                    (cfg_names if _is_cfg_call(node.value, cfg_function_names) else other).add(target.id)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            (cfg_names if node.value is not None and _is_cfg_call(node.value, cfg_function_names) else other).add(node.target.id)
+        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+            (cfg_names if _is_cfg_call(node.value, cfg_function_names) else other).add(node.target.id)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if isinstance(item.optional_vars, ast.Name):
+                    (cfg_names if _is_cfg_call(item.context_expr, cfg_function_names) else other).add(item.optional_vars.id)
+        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+            other.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            other.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            other.add(node.name)
+    return cfg_names - declared_outer, other - declared_outer - cfg_names
 
+
+def _cfg_get_nodes(tree: ast.Module, cfg_function_names: frozenset[str]) -> list[ast.Call]:
+    """Every ``<accessor>.get(...)`` call in *tree* whose receiver is ``cfg()`` or a name bound to it in scope."""
+    found: list[ast.Call] = []
+
+    def visit(scope: ast.AST, chain: "list[tuple[ast.AST, set[str], set[str]]]") -> None:
+        cfg_names, other = _scope_bindings(scope, cfg_function_names)
+        chain = [*chain, (scope, cfg_names, other)]
+        for node in _direct_nodes(scope):
+            if isinstance(node, _NESTED_SCOPES):
+                visit(node, chain)
+                continue
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"):
+                continue
+            base = node.func.value
+            if _is_cfg_call(base, cfg_function_names) or (isinstance(base, ast.Name) and _bound_to_cfg(base.id, chain)):
+                found.append(node)
+
+    visit(tree, [])
+    return sorted(found, key=lambda n: (n.lineno, n.col_offset))
+
+
+def _bound_to_cfg(name: str, chain: "list[tuple[ast.AST, set[str], set[str]]]") -> bool:
+    """Python's lookup: the innermost function scope binding *name* decides; class scopes are skipped for inner functions."""
+    innermost = True
+    for scope, cfg_names, other in reversed(chain):
+        if isinstance(scope, ast.ClassDef) and not innermost:
+            continue
+        innermost = False
+        if name in cfg_names:
+            return True
+        if name in other:
+            return False
+    return False
+
+
+def _string_arg(call: ast.Call, position: int, keyword: str) -> Optional[str]:
+    node = _arg_node(call, position, keyword)
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def _calls_in_tree(tree: ast.Module, path: Path, root: Path, cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
     found: list[CfgGetCall] = []
-    for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get"):
-            continue
-        base = node.func.value
-        is_direct_chain = _is_cfg_call(base, cfg_function_names)
-        is_bound_name = isinstance(base, ast.Name) and base.id in cfg_bound_names
-        if not (is_direct_chain or is_bound_name):
-            continue
-        if len(node.args) < 2:
-            continue
-        section_node, key_node = node.args[0], node.args[1]
-        if not (isinstance(section_node, ast.Constant) and isinstance(section_node.value, str)):
-            continue
-        if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
+    for node in _cfg_get_nodes(tree, cfg_function_names):
+        section = _string_arg(node, 0, "section")
+        key = _string_arg(node, 1, "key")
+        if section is None or key is None:
             continue
         type_node = _arg_node(node, 3, "type_")
-        found.append(CfgGetCall(
-            file=path.relative_to(root).as_posix(),
-            abs_path=path,
-            line=node.lineno,
-            section=section_node.value,
-            key=key_node.value,
-            default_node=_arg_node(node, 2, "default"),
-            type_src=ast.unparse(type_node) if type_node is not None else None,
-        ))
+        found.append(
+            CfgGetCall(
+                file=relative_posix(path, root),
+                abs_path=path,
+                line=node.lineno,
+                section=section,
+                key=key,
+                default_node=_arg_node(node, 2, "default"),
+                type_src=ast.unparse(type_node) if type_node is not None else None,
+            )
+        )
     return found
+
+
+def _find_cfg_get_calls_in_file(path: Path, root: Path, cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
+    """Call sites in one file. Raises ``_core.SourceError`` when the file cannot be read or parsed."""
+    return _calls_in_tree(parse_file(path), path, root, cfg_function_names)
+
+
+def scan_cfg_get_calls(
+    root: Path,
+    files: Iterable[Path],
+    cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+) -> "tuple[list[CfgGetCall], list[SourceProblem]]":
+    """``(call sites, files that could not be read or parsed)``."""
+    scan = scan_python(list(files), root=root, min_files=0)
+    calls: list[CfgGetCall] = []
+    for f in scan:
+        calls.extend(_calls_in_tree(f.tree, f.path, root, cfg_function_names))
+    return calls, list(scan.unparsed)
+
+
+def _unparsed_error(unparsed: "list[SourceProblem]") -> UnparsedFilesError:
+    return UnparsedFilesError(
+        f"{len(unparsed)} file(s) could not be read or parsed, so their cfg().get(...) call sites were not checked:\n  "
+        + "\n  ".join(p.render() for p in unparsed)
+    )
 
 
 def find_cfg_get_calls(
@@ -136,10 +239,13 @@ def find_cfg_get_calls(
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
 ) -> list[CfgGetCall]:
     """Every ``cfg().get(section, key, ...)`` (or bound-name equivalent) call site
-    across ``files``, with literal string ``section``/``key`` arguments."""
-    calls: list[CfgGetCall] = []
-    for path in files:
-        calls.extend(_find_cfg_get_calls_in_file(path, root, cfg_function_names))
+    across ``files``, with literal string ``section``/``key`` arguments (positional or keyword).
+
+    Raises ``_core.UnparsedFilesError`` (an ``AssertionError``) when a file cannot be read or parsed: a
+    skipped file's call sites would otherwise read as agreeing with everything."""
+    calls, unparsed = scan_cfg_get_calls(root, files, cfg_function_names)
+    if unparsed:
+        raise _unparsed_error(unparsed)
     return calls
 
 
@@ -163,14 +269,24 @@ class ConstantResolver:
     def __init__(self, root: Path):
         self.root = root
         self._trees: dict[Path, Optional[ast.Module]] = {}
+        #: Files an import led to that could not be read or parsed (their constants stay unresolved).
+        self.unparsed: list[str] = []
 
     def _tree(self, path: Path) -> Optional[ast.Module]:
         if path not in self._trees:
             try:
-                self._trees[path] = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-            except (OSError, UnicodeDecodeError, SyntaxError):
+                self._trees[path] = parse_file(path)
+            except SourceError as exc:
                 self._trees[path] = None
+                self.unparsed.append(str(exc))
         return self._trees[path]
+
+    def _package_of(self, path: Path) -> Optional[str]:
+        rel = relative_posix(path, self.root)
+        if rel.startswith("/") or ":" in rel.split("/", 1)[0]:
+            return None  # outside root: no package to resolve a relative import against
+        parts = rel.split("/")[:-1]
+        return ".".join(parts) if parts else ""
 
     def _module_file(self, dotted: str) -> Optional[Path]:
         parts = dotted.split(".")
@@ -187,17 +303,29 @@ class ConstantResolver:
         return d if d.is_dir() else None
 
     def _const_in_file(self, path: Path, name: str) -> tuple[bool, Any]:
-        """(found, value) for a bare top-level ``name = <literal>`` in ``path``."""
+        """(found, value) for a top-level ``name = <literal>`` / ``name: T = <literal>`` in ``path``.
+
+        The LAST top-level binding wins, as it does at import time; if that binding is not a literal the
+        name is unresolved rather than falling back to an earlier value.
+        """
         tree = self._tree(path)
         if tree is None:
             return False, None
+        last: Optional[ast.expr] = None
+        bound = False
         for node in tree.body:
-            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and node.targets[0].id == name:
-                try:
-                    return True, ast.literal_eval(node.value)
-                except (ValueError, SyntaxError, TypeError):
-                    return False, None
-        return False, None
+            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
+                last, bound = node.value, True
+            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == name and node.value is not None:
+                last, bound = node.value, True
+            elif isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name) and node.target.id == name:
+                last, bound = None, True
+        if not bound or last is None:
+            return False, None
+        try:
+            return True, ast.literal_eval(last)
+        except (ValueError, SyntaxError, TypeError):
+            return False, None
 
     def _const_via_package(self, pkg_dir: Path, name: str) -> tuple[bool, Any]:
         """Search every direct ``.py`` child of a package dir for a UNIQUE top-level
@@ -217,23 +345,35 @@ class ConstantResolver:
             return True, next(iter(found))
         return False, None
 
-    def _imported_source(self, path: Path, name: str) -> Optional[str]:
-        """If ``path`` does ``from MODULE import name [as alias]`` matching ``name``,
-        return the dotted MODULE. Handles both ``from pkg import x`` (name IS the
-        alias) and ``import pkg.mod as alias`` / ``import pkg.mod``."""
+    def _import_target(self, path: Path, name: str) -> "Optional[tuple[str, Optional[str]]]":
+        """``(dotted module, imported member or None)`` for the import in ``path`` that binds ``name``.
+
+        ``from pkg import x`` -> ``("pkg", "x")``; ``from .consts import X`` resolves against ``path``'s package;
+        ``import pkg.mod as m`` -> ``("pkg.mod", None)``; ``import pkg.mod`` binds ``pkg`` -> ``("pkg", None)``.
+        """
         tree = self._tree(path)
         if tree is None:
             return None
         for node in tree.body:
-            if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            if isinstance(node, ast.ImportFrom):
+                module = resolve_relative(node.module, node.level, self._package_of(path)) if node.level else node.module
+                if module is None and node.level:
+                    continue
                 for alias in node.names:
                     if (alias.asname or alias.name) == name:
-                        return node.module
+                        return (module or ""), alias.name
             if isinstance(node, ast.Import):
                 for alias in node.names:
-                    if (alias.asname or alias.name.split(".")[-1]) == name:
-                        return alias.name
+                    if alias.asname == name:
+                        return alias.name, None
+                    if alias.asname is None and alias.name.split(".")[0] == name:
+                        return name, None
         return None
+
+    def _imported_source(self, path: Path, name: str) -> Optional[str]:
+        """If ``path`` imports ``name``, the dotted module it comes from (see :meth:`_import_target`)."""
+        target = self._import_target(path, name)
+        return target[0] if target is not None else None
 
     def _const_from_file(self, path: Path, name: str, seen: set[Path]) -> tuple[bool, Any]:
         """Resolve a bare Name in the context of ``path``: same-file constant, else
@@ -246,7 +386,7 @@ class ConstantResolver:
         if ok:
             return True, val
         src_module = self._imported_source(path, name)
-        if src_module is None:
+        if not src_module:
             return False, None
         mod_file = self._module_file(src_module)
         if mod_file is not None:
@@ -279,37 +419,75 @@ class ConstantResolver:
             ok, val = self._const_from_file(current_file, node.id, set())
             if ok:
                 return val
-        elif isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-            base = node.value.id
-            src_module = self._imported_source(current_file, base)
-            if src_module is not None:
-                mod_file = self._module_file(src_module)
-                if mod_file is not None and mod_file.name == "__init__.py":
-                    ok, val = self._const_via_package(mod_file.parent, node.attr)
-                    if ok:
-                        return val
-                elif mod_file is not None:
-                    ok, val = self._const_from_file(mod_file, node.attr, set())
-                    if ok:
-                        return val
-                else:
-                    pkg_dir = self._package_dir(src_module)
-                    if pkg_dir is not None:
-                        ok, val = self._const_via_package(pkg_dir, node.attr)
-                        if ok:
-                            return val
+        elif isinstance(node, ast.Attribute):
+            chain = _dotted(node)
+            if chain is not None and len(chain) >= 2:
+                ok, val = self._const_via_module_chain(current_file, chain)
+                if ok:
+                    return val
         return _Unresolved(src)
+
+    def _const_via_module_chain(self, current_file: Path, chain: list[str]) -> tuple[bool, Any]:
+        """Resolve ``base.sub.NAME`` where ``base`` is bound by an import in ``current_file``."""
+        target = self._import_target(current_file, chain[0])
+        if target is None:
+            return False, None
+        module, member = target
+        parts = [p for p in [module, member, *chain[1:-1]] if p]
+        attr = chain[-1]
+        candidates = [".".join(parts)]
+        if member is not None:
+            candidates.append(".".join(p for p in [module, *chain[1:-1]] if p))  # `from pkg import CONSTS_OBJ` is not a module
+        for dotted in candidates:
+            if not dotted:
+                continue
+            mod_file = self._module_file(dotted)
+            if mod_file is not None:
+                ok, val = self._const_from_file(mod_file, attr, set())
+                if ok:
+                    return True, val
+                if mod_file.name == "__init__.py":
+                    ok, val = self._const_via_package(mod_file.parent, attr)
+                    if ok:
+                        return True, val
+                continue
+            pkg_dir = self._package_dir(dotted)
+            if pkg_dir is not None:
+                ok, val = self._const_via_package(pkg_dir, attr)
+                if ok:
+                    return True, val
+        return False, None
+
+
+def _dotted(node: ast.expr) -> Optional[list[str]]:
+    """``["a", "b", "C"]`` for ``a.b.C``; None for anything that is not a pure Name/Attribute chain."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return None
+    parts.append(node.id)
+    return parts[::-1]
 
 
 def to_hashable(value: Any) -> Any:
     """Recursively convert list/dict/set into a hashable, order-preserving (for
-    lists) equivalent so resolved default values can live in a set/dict key."""
-    if isinstance(value, list):
-        return ("__list__", tuple(to_hashable(v) for v in value))
+    lists) equivalent so resolved default values can live in a set/dict key.
+
+    ``True``, ``1`` and ``1.0`` compare equal in Python but are different defaults, so bools and floats are
+    tagged with their type. Dict items and set members are ordered by ``repr`` so mixed-type keys sort.
+    """
+    if isinstance(value, bool):
+        return ("__bool__", value)
+    if isinstance(value, float):
+        return ("__float__", value)
+    if isinstance(value, (list, tuple)):
+        return ("__list__" if isinstance(value, list) else "__tuple__", tuple(to_hashable(v) for v in value))
     if isinstance(value, dict):
-        return ("__dict__", tuple(sorted((k, to_hashable(v)) for k, v in value.items())))
-    if isinstance(value, set):
-        return ("__set__", tuple(sorted(to_hashable(v) for v in value)))
+        return ("__dict__", tuple(sorted(((to_hashable(k), to_hashable(v)) for k, v in value.items()), key=repr)))
+    if isinstance(value, (set, frozenset)):
+        return ("__set__", tuple(sorted((to_hashable(v) for v in value), key=repr)))
     return value
 
 
@@ -350,6 +528,16 @@ def schema_section_field_defaults(schema_cls: type[BaseModel]) -> dict[tuple[str
     return out
 
 
+def _calls_or_fail(root: Path, files: Iterable[Path], cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
+    """Call sites, or ``pytest.fail`` naming every file that could not be read or parsed."""
+    import pytest
+
+    calls, unparsed = scan_cfg_get_calls(root, files, cfg_function_names)
+    if unparsed:
+        pytest.fail(str(_unparsed_error(unparsed)))
+    return calls
+
+
 def assert_every_cfg_get_call_resolves_to_a_schema_field(
     root: Path,
     files: Iterable[Path],
@@ -364,7 +552,7 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
 
     schema = schema_section_field_map(schema_cls)
     bad = []
-    for call in find_cfg_get_calls(root, files, cfg_function_names):
+    for call in _calls_or_fail(root, files, cfg_function_names):
         if call.section not in schema:
             bad.append(f"{call.file}:{call.line} -- unknown section {call.section!r}")
         elif call.key not in schema[call.section]:
@@ -392,7 +580,7 @@ def assert_every_schema_field_has_a_reader(
     known_indirect_readers = known_indirect_readers or {}
     known_unwired_gaps = known_unwired_gaps or {}
     schema = schema_section_field_map(schema_cls)
-    read = {(c.section, c.key) for c in find_cfg_get_calls(root, files, cfg_function_names)}
+    read = {(c.section, c.key) for c in _calls_or_fail(root, files, cfg_function_names)}
     unread = []
     tracked_gaps_hit = []
     for section, keys in schema.items():
@@ -407,7 +595,9 @@ def assert_every_schema_field_has_a_reader(
     if tracked_gaps_hit:
         import sys
 
-        sys.stderr.write("\n[assert_every_schema_field_has_a_reader] known tracked gap(s), not failing but not fixed either:\n  " + "\n  ".join(tracked_gaps_hit) + "\n")
+        sys.stderr.write(
+            "\n[assert_every_schema_field_has_a_reader] known tracked gap(s), not failing but not fixed either:\n  " + "\n  ".join(tracked_gaps_hit) + "\n"
+        )
     if unread:
         pytest.fail(
             "Schema field(s) with zero cfg().get(...) reader anywhere in production code (decorative "
@@ -439,23 +629,27 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     """
     import pytest
 
-    calls = find_cfg_get_calls(root, files, cfg_function_names)
+    calls = _calls_or_fail(root, files, cfg_function_names)
     by_pair: dict[tuple[str, str], list[CfgGetCall]] = {}
     for call in calls:
         by_pair.setdefault((call.section, call.key), []).append(call)
 
     resolver = ConstantResolver(root)
     bad = []
-    for (section, key), pair_calls in by_pair.items():
+    for (section, key), pair_calls in sorted(by_pair.items()):
         if len(pair_calls) < 2:
             continue
-        resolvable_calls = [c for c in pair_calls if not isinstance(resolver.resolve(c.default_node, c.abs_path), _Unresolved)]
+        resolved = [(c, resolver.resolve(c.default_node, c.abs_path)) for c in pair_calls]
+        resolvable = [(c, v) for c, v in resolved if not isinstance(v, _Unresolved)]
+        resolvable_calls = [c for c, _ in resolvable]
         if len(resolvable_calls) < 2:
             continue  # a genuinely dynamic (unresolvable) default at one site can't be compared at all -- not a divergence
-        resolved_defaults = {to_hashable(resolver.resolve(c.default_node, c.abs_path)) for c in resolvable_calls}
+        resolved_defaults = {to_hashable(v) for _, v in resolvable}
         types = {(default_type_repr if c.type_src is None else c.type_src) for c in resolvable_calls}
         if len(resolved_defaults) > 1 or len(types) > 1:
-            sites = ", ".join(f"{c.file}:{c.line}(default={ast.unparse(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in resolvable_calls)
+            sites = ", ".join(
+                f"{c.file}:{c.line}(default={ast.unparse(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in resolvable_calls
+            )
             bad.append(f"[{section}] {key}: divergent default/type_ across call sites: {sites}")
     if bad:
         pytest.fail("cfg().get(...) call sites reading the same (section, key) with divergent default/type_:\n  " + "\n  ".join(bad))
@@ -492,7 +686,7 @@ def assert_call_site_defaults_match_schema_defaults(
     resolver = ConstantResolver(root)
     checked = 0
     mismatches = []
-    for call in find_cfg_get_calls(root, files, cfg_function_names):
+    for call in _calls_or_fail(root, files, cfg_function_names):
         if (call.section, call.key) in known_intentional_mismatches:
             continue
         resolved = resolver.resolve(call.default_node, call.abs_path)
@@ -503,7 +697,8 @@ def assert_call_site_defaults_match_schema_defaults(
         if to_hashable(resolved) != to_hashable(schema_default):
             mismatches.append(f"{call.file}:{call.line}  [{call.section}].{call.key}  call-site default={resolved!r}  schema default={schema_default!r}")
 
-    assert checked >= min_checked, f"only resolved {checked} call-site default(s) (expected >= {min_checked}) -- resolver or call pattern may be broken"
+    if checked < min_checked:
+        pytest.fail(f"only resolved {checked} call-site default(s) (expected >= {min_checked}) -- resolver or call pattern may be broken")
     if mismatches:
         pytest.fail("cfg().get(...) call-site default(s) disagree with the schema's own default:\n  " + "\n  ".join(mismatches))
 
@@ -533,14 +728,11 @@ def _module_scope_cfg_get_assignments(
             continue
         if not _is_cfg_call(call.func.value, cfg_function_names):
             continue
-        if len(call.args) < 2:
+        section = _string_arg(call, 0, "section")
+        key = _string_arg(call, 1, "key")
+        if section is None or key is None:
             continue
-        section_node, key_node = call.args[0], call.args[1]
-        if not (isinstance(section_node, ast.Constant) and isinstance(section_node.value, str)):
-            continue
-        if not (isinstance(key_node, ast.Constant) and isinstance(key_node.value, str)):
-            continue
-        out.append((node.targets[0].id, section_node.value, key_node.value, node.lineno))
+        out.append((node.targets[0].id, section, key, node.lineno))
     return out
 
 
@@ -575,11 +767,11 @@ def find_module_scope_frozen_cli_defaults(
     and only manifests as "I edited config.toml and nothing happened" for that one flag.
     """
     out: list[FrozenCliDefault] = []
-    for path in files:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            continue
+    scan = scan_python(list(files), root=root, min_files=0)
+    if scan.unparsed:
+        raise _unparsed_error(list(scan.unparsed))
+    for f in scan:
+        path, tree = f.path, f.tree
         assignments = _module_scope_cfg_get_assignments(tree, cfg_function_names)
         if not assignments:
             continue
@@ -588,14 +780,16 @@ def find_module_scope_frozen_cli_defaults(
         for var_name, section, key, line in assignments:
             lines = argparse_uses.get(var_name)
             if lines:
-                out.append(FrozenCliDefault(
-                    file=path.relative_to(root).as_posix(),
-                    line=line,
-                    var_name=var_name,
-                    section=section,
-                    key=key,
-                    argparse_lines=tuple(lines),
-                ))
+                out.append(
+                    FrozenCliDefault(
+                        file=relative_posix(path, root),
+                        line=line,
+                        var_name=var_name,
+                        section=section,
+                        key=key,
+                        argparse_lines=tuple(lines),
+                    )
+                )
     return out
 
 
@@ -618,7 +812,11 @@ def assert_no_module_scope_frozen_cli_defaults(
 
     known_intentional_freezes = known_intentional_freezes or {}
     bad = []
-    for hit in find_module_scope_frozen_cli_defaults(root, files, cfg_function_names):
+    try:
+        hits = find_module_scope_frozen_cli_defaults(root, files, cfg_function_names)
+    except UnparsedFilesError as exc:
+        pytest.fail(str(exc))
+    for hit in hits:
         if (hit.section, hit.key) in known_intentional_freezes:
             continue
         arg_lines = ", ".join(str(line) for line in hit.argparse_lines)

@@ -37,14 +37,21 @@ from pathlib import Path
 __all__ = ["assert_outside", "offending_state_paths"]
 
 
+def _resolve(value: "Path | str", root: Path) -> Path:
+    """*value* as the program would see it when run from the checkout: a RELATIVE path is relative to the
+    checkout root, not to whatever directory the check happens to run from."""
+    path = Path(value).expanduser()
+    return (path if path.is_absolute() else root / path).resolve()
+
+
 def assert_outside(value: Path | str, repo_root: Path | str, *, what: str) -> None:
     """Fail if *value* resolves inside *repo_root*.
 
     `what` names the constant, because the failure has to tell a reader which redirect is missing
-    rather than that "a path was wrong".
+    rather than that "a path was wrong". A relative *value* is judged against *repo_root*.
     """
-    target = Path(value).resolve()
     root = Path(repo_root).resolve()
+    target = _resolve(value, root)
     if target.is_relative_to(root):
         raise AssertionError(
             f"{what} resolves to {target}, inside the checkout. A test that writes it changes what the "
@@ -62,7 +69,7 @@ def offending_state_paths(constants: dict[str, Path | str], repo_root: Path | st
     problems: list[str] = []
     root = Path(repo_root).resolve()
     for name, value in sorted(constants.items()):
-        target = Path(value).resolve()
+        target = _resolve(value, root)
         if target.is_relative_to(root):
             problems.append(f"{name} -> {target}")
     return problems

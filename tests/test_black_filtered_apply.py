@@ -14,6 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import pytest
+
 from py_ci_shared.black_filtered_apply import discover_py_files, filtered_apply, looks_like_import_or_call_list, norm
 
 
@@ -135,12 +137,7 @@ class TestStringLiteralContentNotTreatedAsStructural:
         of a commented frozenset() call was no longer detected as an explosion at all once this
         bug was in play, because the comment text survived normalization as fake "string content"
         and made the before/after blocks compare unequal."""
-        orig = (
-            "_X = frozenset({\n"
-            "    # Coercions that don't change the semantics\n"
-            '    "int", "float", "bool",\n'
-            "})\n"
-        )
+        orig = "_X = frozenset({\n" "    # Coercions that don't change the semantics\n" '    "int", "float", "bool",\n' "})\n"
         formatted = (
             "_X = frozenset(\n"
             "    {\n"
@@ -227,3 +224,97 @@ class TestDiscoverPyFiles:
         loose_file.write_text("y = 2\n")
         result = discover_py_files([str(tmp_path / "pkg"), str(loose_file)])
         assert result == sorted([str(dir_file), str(loose_file)])
+
+
+class TestDiscoveryRootsAndFloor:
+    def test_a_checkout_under_a_build_directory_is_still_scanned(self, tmp_path):
+        repo = tmp_path / "build" / "repo"
+        (repo / "pkg").mkdir(parents=True)
+        f = repo / "pkg" / "mod.py"
+        f.write_text("x = 1\n")
+        (repo / "dist").mkdir()
+        (repo / "dist" / "gen.py").write_text("y = 2\n")
+        assert discover_py_files([str(repo)]) == [str(f)]
+
+    def test_a_missing_root_is_an_error(self, tmp_path):
+        from py_ci_shared.black_filtered_apply import DiscoveryError
+
+        with pytest.raises(DiscoveryError, match="does not exist"):
+            discover_py_files([str(tmp_path / "nope")])
+
+    def test_a_directory_with_no_py_file_is_an_error(self, tmp_path):
+        from py_ci_shared.black_filtered_apply import DiscoveryError
+
+        (tmp_path / "legacy").mkdir()
+        (tmp_path / "legacy" / "old.py").write_text("x = 1\n")
+        with pytest.raises(DiscoveryError, match=r"no \.py files"):
+            discover_py_files([str(tmp_path)])
+
+    def test_main_check_fails_on_a_missing_root_instead_of_all_clean(self, tmp_path, capsys):
+        from py_ci_shared.black_filtered_apply import main
+
+        with pytest.raises(SystemExit) as exc:
+            main(["--config", str(tmp_path / "pyproject.toml"), "--check", str(tmp_path / "nope")])
+        assert "does not exist" in str(exc.value.code)
+        assert "All 0 files" not in capsys.readouterr().out
+
+
+class TestTripleQuoteState:
+    def test_a_quoted_delimiter_does_not_open_a_string(self):
+        from py_ci_shared.black_filtered_apply import _triple_quote_state_before_each_line
+
+        lines = ['Q = \'"""\'\n', "x  =  1\n", 'D = """a\n', "b\n", '"""\n', "y = 2\n"]
+        assert _triple_quote_state_before_each_line(lines) == [False, False, False, True, True, False, False]
+
+    def test_a_fix_after_a_quoted_delimiter_is_applied(self):
+        orig = 'Q = \'"""\'\nx  =  1\n'
+        formatted = 'Q = \'"""\'\nx = 1\n'
+        assert filtered_apply(orig, formatted) == formatted
+
+    def test_a_fix_inside_a_real_multiline_string_region_is_still_rejected(self):
+        orig = 'D = """a\n  b ,c\n"""\n'
+        formatted = 'D = """a\n  b ,c\n  """\n'
+        assert filtered_apply(orig, formatted) == orig
+
+
+class TestCli:
+    def test_a_trailing_config_is_a_clear_error(self):
+        from py_ci_shared.black_filtered_apply import main
+
+        with pytest.raises(SystemExit, match="--config needs a value"):
+            main(["x.py", "--config"])
+
+    def test_check_and_write_together_are_rejected(self, tmp_path):
+        from py_ci_shared.black_filtered_apply import main
+
+        with pytest.raises(SystemExit, match="mutually exclusive"):
+            main(["--config", "p.toml", "--check", "--write", str(tmp_path)])
+
+    def test_config_equals_form_is_read(self, tmp_path):
+        from py_ci_shared.black_filtered_apply import _pop_config
+
+        assert _pop_config(["--config=p.toml", "a.py"]) == ("p.toml", ["a.py"])
+        assert _pop_config(["a.py"]) == (None, ["a.py"])
+
+
+class TestStdinFilename:
+    def test_force_exclude_applies_to_a_piped_file(self, tmp_path):
+        pytest.importorskip("black")
+        from py_ci_shared.black_filtered_apply import run_black_stdin
+
+        cfg = tmp_path / "pyproject.toml"
+        cfg.write_text('[tool.black]\nline-length = 100\nforce-exclude = "skip_me"\n', encoding="utf-8")
+        src = "x  =  1\n"
+        assert run_black_stdin(src, str(cfg), filename="pkg/skip_me.py") == src
+        assert run_black_stdin(src, str(cfg), filename="pkg/other.py") == "x = 1\n"
+
+    def test_a_stub_is_formatted_in_pyi_mode(self, tmp_path):
+        pytest.importorskip("black")
+        from py_ci_shared.black_filtered_apply import run_black_stdin
+
+        cfg = tmp_path / "pyproject.toml"
+        cfg.write_text("[tool.black]\nline-length = 100\n", encoding="utf-8")
+        src = "import os\nclass A:\n    x: int\n    def f(self) -> int: ...\n"
+        stub = "import os\n\nclass A:\n    x: int\n    def f(self) -> int: ...\n"
+        assert run_black_stdin(src, str(cfg), filename="m.pyi") == stub
+        assert run_black_stdin(src, str(cfg)) != stub

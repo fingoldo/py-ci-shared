@@ -46,6 +46,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ._core import atomic_write_text, refresh_requested, register_refresh_options
+
 if TYPE_CHECKING:
     from pyutilz.dev.code_audit import Finding
 
@@ -54,51 +56,42 @@ REFRESH_FLAG = "--refresh-code-audit-baseline"
 # The cache/vcs dirs every consumer needs regardless of its own layout.
 # Repo-specific exclusions (tests/, legacy/, research/, ...) are passed in
 # by the caller and merged with these, not a replacement for them.
-DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset({
-    "__pycache__", ".git", ".venv", "venv", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", "node_modules",
-})
+DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        ".venv",
+        "venv",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        "node_modules",
+    }
+)
 
 
 def register_refresh_option(parser) -> None:
-    """Register ``--refresh-code-audit-baseline`` as a no-op boolean flag.
+    """Register ``--refresh-code-audit-baseline`` (and the shared ``--py-ci-refresh``) as boolean flags.
 
     pytest rejects unrecognized CLI options before test code runs
     (independent of ``--strict-config``, which only affects INI parsing),
     so every consuming repo's conftest.py must call this from its own
     ``pytest_addoption`` -- there is no way to register an option from
     inside a plugin/module that isn't itself a conftest.py or a real
-    pytest plugin entry point.
+    pytest plugin entry point. Idempotent; a thin wrapper over
+    ``py_ci_shared._core.register_refresh_options``.
     """
-    try:
-        parser.addoption(
-            REFRESH_FLAG,
-            action="store_true",
-            default=False,
-            help="rewrite the code-audit baseline JSON instead of comparing (intentional change)",
-        )
-    except ValueError:
-        pass  # already registered (e.g. a repo with more than one conftest.py in the chain)
+    register_refresh_options(parser, [REFRESH_FLAG], help_suffix="code-audit baseline JSON")
 
 
 def _refresh_requested(request=None) -> bool:
-    """True if ``--refresh-code-audit-baseline`` was passed.
+    """True if a refresh of the code-audit baseline was asked for.
 
-    Prefers ``request.config.getoption(...)`` when a pytest ``request`` fixture
-    is supplied: under pytest-xdist, worker subprocesses run with
-    ``sys.argv == ['-c']`` (execnet bootstraps them, it does not re-exec the
-    original command line), so a bare ``sys.argv`` check silently never
-    triggers a refresh in any repo whose ``addopts`` enables ``-n``/``--dist``.
-    ``request.config.getoption`` is reconstructed correctly per-worker and
-    works in both modes, so it's tried first with ``sys.argv`` as a fallback
-    for callers not yet passing ``request``.
+    A thin wrapper over ``py_ci_shared._core.refresh_requested``: the pytest option (via *request*, which
+    xdist reconstructs per worker, unlike ``sys.argv == ['-c']``), the ``--py-ci-refresh`` list, the
+    ``PY_CI_SHARED_REFRESH`` env var (inherited by workers; ``code-audit`` or ``all``), then ``sys.argv``.
     """
-    if request is not None:
-        return bool(request.config.getoption(REFRESH_FLAG, False))
-
-    import sys
-
-    return REFRESH_FLAG in sys.argv
+    return refresh_requested(REFRESH_FLAG, request)
 
 
 def _legacy_key(f: "Finding") -> str:
@@ -107,14 +100,20 @@ def _legacy_key(f: "Finding") -> str:
 
 
 def _snippet_fingerprint(f: "Finding") -> str:
-    """Short stable digest of the flagged line's own text."""
+    """Short stable digest of the flagged line's own text.
+
+    A finding with no snippet is fingerprinted from its detail (and function, when the scanner reports one)
+    rather than its line number, so it survives relocation like every other key; only a finding with neither
+    falls back to the line.
+    """
     import hashlib
 
     snippet = (getattr(f, "snippet", "") or "").strip()
     if not snippet:
-        # Nothing to fingerprint: fall back to the line number, which is the old
-        # behaviour and no worse than it.
-        return f"line{f.line}"
+        parts = [str(getattr(f, attr, "") or "").strip() for attr in ("detail", "function")]
+        if not any(parts):
+            return f"line{f.line}"
+        return "d" + hashlib.blake2s("\x00".join(parts).encode("utf-8"), digest_size=6).hexdigest()
     return hashlib.blake2s(snippet.encode("utf-8"), digest_size=6).hexdigest()
 
 
@@ -164,9 +163,11 @@ def assert_no_new_code_audit_findings(
     fail_on_drained: bool = True,
 ) -> None:
     """Run ``pyutilz.dev.code_audit.run_all()`` against ``root`` and either
-    seed/refresh ``baseline_path`` (first run, or ``--refresh-code-audit-baseline``
-    passed), or ``pytest.fail()`` if any finding is NOT already in the
-    baseline. Call this directly as the body of a ``test_*`` function.
+    rewrite ``baseline_path`` (a refresh was requested: ``--refresh-code-audit-baseline``,
+    ``--py-ci-refresh=code-audit`` or ``PY_CI_SHARED_REFRESH=code-audit``), or ``pytest.fail()``
+    if any finding is NOT already in the baseline. A MISSING baseline fails too: seeding it
+    silently would turn a deleted or mistyped baseline into a green, skipped test that also
+    writes into the tree during CI. Call this directly as the body of a ``test_*`` function.
 
     Args:
         root: directory to scan (a package dir, or a repo root for
@@ -199,12 +200,15 @@ def assert_no_new_code_audit_findings(
     current_by_key = {k: f for f, k in keyed}
     current_keys = set(current_by_key)
 
-    if _refresh_requested(request) or not baseline_path.exists():
-        baseline_path.write_text(
-            orjson.dumps(sorted(current_keys), option=orjson.OPT_INDENT_2).decode("utf-8"),
-            encoding="utf-8",
-        )
+    if _refresh_requested(request):
+        atomic_write_text(baseline_path, orjson.dumps(sorted(current_keys), option=orjson.OPT_INDENT_2).decode("utf-8") + "\n")
         pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
+    if not baseline_path.exists():
+        pytest.fail(
+            f"code-audit baseline {baseline_path} does not exist, so nothing was checked against it "
+            f"({len(current_keys)} current finding(s)). Create it deliberately with {REFRESH_FLAG} "
+            f"(or PY_CI_SHARED_REFRESH=code-audit) and commit it."
+        )
 
     baseline = set(orjson.loads(baseline_path.read_bytes()))
 

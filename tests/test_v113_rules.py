@@ -196,13 +196,15 @@ class TestDrainedCodeAuditEntries:
     def _finding(self, snippet):
         return SimpleNamespace(check="c", file="m.py", line=1, snippet=snippet, severity="low", detail="d")
 
-    def test_a_drained_entry_fails_by_default(self, audit, tmp_path):
+    def test_a_drained_entry_fails_by_default(self, audit, tmp_path, monkeypatch):
         from py_ci_shared.code_audit_meta import assert_no_new_code_audit_findings
 
         baseline = tmp_path / "_b.json"
         audit.append(self._finding("x = 1"))
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "code-audit")
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(tmp_path, baseline)
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH")
         assert_no_new_code_audit_findings(tmp_path, baseline)
         audit.clear()
         with pytest.raises(pytest.fail.Exception, match="no longer match a finding"):

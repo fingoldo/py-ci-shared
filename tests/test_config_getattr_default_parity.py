@@ -74,7 +74,7 @@ def test_only_config_shaped_receivers_count(tmp_path):
 def test_the_assert_names_the_site_and_honours_the_allowlist(tmp_path):
     """The failure names field, literal and declared default; an allowed field passes with its reason."""
     p = _write(tmp_path, "def f(cfg):\n    return getattr(cfg, 'threshold', 0.9)\n")
-    with pytest.raises(AssertionError, match="threshold=0.9 vs the config's 0.5"):
+    with pytest.raises(AssertionError, match=r"threshold=0\.9 vs the config's 0\.5"):
         assert_getattr_defaults_match_schema([p], tmp_path, [Schema])
     assert_getattr_defaults_match_schema([p], tmp_path, [Schema], allowed={"threshold": "the gate is deliberately stricter"})
     with pytest.raises(AssertionError, match="need a reason"):
@@ -88,3 +88,16 @@ def test_a_stale_allowlist_entry_and_an_empty_scan_are_rejected(tmp_path):
         assert_getattr_defaults_match_schema([p], tmp_path, [Schema], allowed={"threshold": "was off once"})
     with pytest.raises(AssertionError, match="lost its subject"):
         assert_getattr_defaults_match_schema([], tmp_path, [Schema], min_files=1)
+
+
+def test_a_bom_file_is_read_and_an_unparsable_one_fails(tmp_path):
+    bom = tmp_path / "bom.py"
+    bom.write_bytes(b"\xef\xbb\xbfdef f(cfg):\n    return getattr(cfg, 'threshold', 0.9)\n")
+    assert [g.field for g in find_getattr_default_mismatches([bom], tmp_path, [Schema])] == ["threshold"]
+    bad = _write(tmp_path, "def f(:\n", name="bad.py")
+    with pytest.raises(AssertionError, match=r"bad\.py"):
+        find_getattr_default_mismatches([bom, bad], tmp_path, [Schema])
+    with pytest.raises(AssertionError, match="could not read or parse"):
+        assert_getattr_defaults_match_schema([bom, bad], tmp_path, [Schema], allowed={"threshold": "deliberately stricter"})
+    with pytest.raises(AssertionError, match="parsed only 0 files"):
+        assert_getattr_defaults_match_schema([bad], tmp_path, [Schema])

@@ -197,3 +197,75 @@ class TestAbsenceClaims:
         verifier = _write(tmp_path / "verify.py", 'CHECKS = [("X-1", "gone", lambda: "proxy_url(0)" not in src("a.py"))]\n')
         with pytest.raises(pytest.fail.Exception, match="WHOLE file"):
             assert_no_whole_file_absence_claims(verifier)
+
+
+def test_a_row_shorter_than_the_status_column_is_an_open_row(tmp_path):
+    tracker = _write(tmp_path / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | **RESOLVED** |\n| A-2 |\n")
+    assert tracker_status_cells(tracker) == [("A-1", "**RESOLVED**"), ("A-2", "")]
+    audits = tmp_path / "audits"
+    _write(audits / "2026-09-11" / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | **RESOLVED** |\n| A-2 |\n")
+    assert round_filing_problems(audits) == []
+    _write(audits / "2026-09-11" / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | **RESOLVED** |\n| A-2 | **RESOLVED** |\n")
+    assert round_filing_problems(audits) == ["2026-09-11: every row of TRACKER.md is closed - move the round to implemented/"]
+
+
+def test_a_status_mention_in_any_case_must_be_the_bold_upper_form(tmp_path):
+    tracker = _write(tmp_path / "TRACKER.md", "| Resolved | P1 | `A-1` x |\n| **Deferred** | P2 | `A-2` y |\n| **RESOLVED** | P2 | `A-3` z |\n")
+    problems, parsed = status_problems(tracker)
+    assert parsed == ["Deferred", "RESOLVED"]
+    assert len(problems) == 2 and "not in the `**WORD**` form" in problems[0] and "'Deferred'" in problems[1]
+
+
+def test_sibling_files_are_read_once_per_round_not_once_per_file(tmp_path, monkeypatch):
+    import py_ci_shared.audit_round_format as arf
+
+    audits = tmp_path / "audits"
+    for i in range(12):
+        _write(audits / "2026-09-01" / f"{i:02d}_x.md", f"### A-{i} (P1) -- t\n\n**Disposition:** RESOLVED\n")
+    calls: list[Path] = []
+    real = arf._text
+
+    def counting(p: Path) -> str:
+        calls.append(p)
+        return real(p)
+
+    monkeypatch.setattr(arf, "_text", counting)
+    assert_rounds_countable(audits)
+    # 12 for the round's disposition probe, 12 for finding_problems, 12 for defined_ids; the old code read 12*12 more.
+    assert len(calls) <= 3 * 12, len(calls)
+    assert finding_problems(audits / "2026-09-01" / "00_x.md") == []
+
+
+def test_a_subscript_inside_the_reader_call_is_still_a_whole_file_read():
+    assert is_whole_file_read("src(FILES[0])")
+    assert is_whole_file_read('src(PATHS["a"]).lower()')
+    assert not is_whole_file_read("src(FILES[0])[:200]")
+    assert not is_whole_file_read('src("x.py").split("M")[1]')
+    assert not is_whole_file_read('other("x.py")')
+
+
+def test_a_tilde_fence_hides_a_quoted_heading(tmp_path):
+    from py_ci_shared.audit_round_format import without_fenced_blocks
+
+    text = "~~~\n### X-1 (P2) -- quoted\n```\n### X-2 (P2)\n~~~\n### X-3 (P1) -- real\n"
+    assert without_fenced_blocks(text).split("\n") == ["", "", "", "", "", "### X-3 (P1) -- real", ""]
+    f = _write(tmp_path / "2026-09-01" / "a.md", "~~~\n### X-1 (P2) -- quoted\n~~~\n### X-3 (P1) -- real\n\n**Disposition:** RESOLVED\n")
+    assert finding_problems(f) == []
+
+
+def test_a_bom_does_not_hide_the_tracker_header_row(tmp_path):
+    tracker = tmp_path / "TRACKER.md"
+    tracker.write_bytes(b"\xef\xbb\xbf| ID | Status |\n|---|---|\n| A-1 | OPEN |\n")
+    assert tracker_status_cells(tracker) == [("A-1", "OPEN")]
+    status = tmp_path / "STATUS.md"
+    status.write_bytes(b"\xef\xbb\xbf| RESOLVED | P1 | `A-1` x |\n")
+    assert len(status_problems(status)[0]) == 1
+
+
+def test_min_trackers_counts_only_dated_rounds(tmp_path):
+    audits = tmp_path / "audits"
+    _write(audits / "misc" / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | OPEN |\n")
+    with pytest.raises(pytest.fail.Exception, match="only 0 TRACKER"):
+        assert_rounds_filed(audits)
+    _write(audits / "2026-09-01" / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | OPEN |\n")
+    assert_rounds_filed(audits)

@@ -27,10 +27,15 @@ import collections
 import re
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Optional
+
+from ._core import read_source
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 #: A tracker row's status cell in the one spelling: ``| **WORD** |``, optionally followed by a qualifier.
 BOLD_STATUS_RE = re.compile(r"^\|\s*\*\*([A-Z'’ ]+)\*\*[^|]*\|")
+# The same shape in any case, so a lower-case ``**Resolved**`` is reported as a wrong word, not as a missing one.
+_BOLD_ANY_CASE_RE = re.compile(r"^\|\s*\*\*([A-Za-z'’ ]+)\*\*[^|]*\|")
 #: ``### SQL-1 (P2) -- ...``: a finding heading.
 FINDING_ID_RE = re.compile(r"^([A-Z]+-\d+) \(")
 #: Either ``**Disposition:** X`` or ``**Disposition: X**`` -- anchored on the bold-open and the word.
@@ -43,13 +48,13 @@ _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 # ------------------------------------------------------------------ the tracker's status column
 def tracker_rows(tracker: Path) -> list[str]:
-    return [ln for ln in tracker.read_text(encoding="utf-8").splitlines() if ln.startswith("|")]
+    return [ln for ln in read_source(tracker).splitlines() if ln.startswith("|")]
 
 
 def status_problems(tracker: Path, statuses: Iterable[str] = DEFAULT_STATUSES) -> "tuple[list[str], list[str]]":
     """(problems, parsed status words). A cell that MENTIONS a status word must be the bold form of one."""
     words = tuple(statuses)
-    mention = re.compile("|".join(re.escape(s) for s in words))
+    mention = re.compile("|".join(re.escape(s) for s in words), re.IGNORECASE)
     problems, parsed = [], []
     for line in tracker_rows(tracker):
         if line.count("|") < 2:
@@ -57,7 +62,7 @@ def status_problems(tracker: Path, statuses: Iterable[str] = DEFAULT_STATUSES) -
         cell = line.split("|")[1].strip()
         if not mention.search(cell):
             continue
-        m = BOLD_STATUS_RE.match(line)
+        m = _BOLD_ANY_CASE_RE.match(line)
         if not m:
             problems.append(f"not in the `**WORD**` form every count keys on: {line[:100]}")
             continue
@@ -80,14 +85,21 @@ def assert_tracker_statuses_countable(tracker: Path, *, statuses: Iterable[str] 
 
 # ------------------------------------------------------------------ round files
 def without_fenced_blocks(text: str) -> str:
-    """*text* with fenced code blocks blanked line for line: a finding QUOTING a heading is not one."""
-    out, fenced = [], False
+    """*text* with fenced code blocks blanked line for line: a finding QUOTING a heading is not one.
+
+    Both fence kinds count, and a fence closes only on the same character it opened with (CommonMark), so a
+    ``~~~`` block that quotes a ````` line stays fenced.
+    """
+    out: list[str] = []
+    fence = ""
     for line in text.split("\n"):
-        if line.lstrip().startswith("```"):
-            fenced = not fenced
+        lead = line.lstrip()
+        marker = lead[:3]
+        if marker in ("```", "~~~") and (not fence or marker == fence):
+            fence = "" if fence else marker
             out.append("")
             continue
-        out.append("" if fenced else line)
+        out.append("" if fence else line)
     return "\n".join(out)
 
 
@@ -103,7 +115,17 @@ def round_files(audits_dir: Path) -> list[Path]:
 
 
 def _text(path: Path) -> str:
-    return without_fenced_blocks(path.read_text(encoding="utf-8", errors="replace"))
+    return without_fenced_blocks(read_source(path))
+
+
+def _round_keeps_dispositions(directory: Path, disposition_re: "re.Pattern[str]", cache: "Optional[dict[tuple[str, str], bool]]") -> bool:
+    key = (str(directory), disposition_re.pattern)
+    if cache is not None and key in cache:
+        return cache[key]
+    result = any(disposition_re.search(_text(f)) for f in sorted(directory.glob("*.md")))
+    if cache is not None:
+        cache[key] = result
+    return result
 
 
 def finding_problems(
@@ -112,9 +134,13 @@ def finding_problems(
     finding_id_re: "re.Pattern[str]" = FINDING_ID_RE,
     disposition_re: "re.Pattern[str]" = DISPOSITION_RE,
     not_findings: Iterable[str] = (),
+    dir_cache: "Optional[dict[tuple[str, str], bool]]" = None,
 ) -> "list[str] | None":
-    """Problems in one round file, or None when its round keeps dispositions elsewhere (a thematic older format)."""
-    if not any(disposition_re.search(_text(f)) for f in path.parent.glob("*.md")):
+    """Problems in one round file, or None when its round keeps dispositions elsewhere (a thematic older format).
+
+    *dir_cache* is shared across calls so a round's sibling files are read once per round, not once per file.
+    """
+    if not _round_keeps_dispositions(path.parent, disposition_re, dir_cache):
         return None
     prose = set(not_findings)
     text = _text(path)
@@ -163,8 +189,9 @@ def assert_rounds_countable(
         pytest.fail(f"only {len(files)} round file(s) under {audits_dir}; expected at least {min_files}")
     problems: list[str] = []
     checked = 0
+    dir_cache: dict[tuple[str, str], bool] = {}
     for path in files:
-        found = finding_problems(path, finding_id_re=finding_id_re, disposition_re=disposition_re, not_findings=not_findings)
+        found = finding_problems(path, finding_id_re=finding_id_re, disposition_re=disposition_re, not_findings=not_findings, dir_cache=dir_cache)
         if found is not None:
             checked += 1
             problems.extend(found)
@@ -175,7 +202,7 @@ def assert_rounds_countable(
         pytest.fail(f"only {len(ids)} finding ids found; expected at least {min_ids}")
     problems.extend(f"{fid} is defined by more than one heading: {', '.join(where)}" for fid, where in sorted(ids.items()) if len(where) > 1)
     if tracker is not None:
-        tracked = {m.group(1) for m in tracker_row_re.finditer(tracker.read_text(encoding="utf-8", errors="replace"))}
+        tracked = {m.group(1) for m in tracker_row_re.finditer(read_source(tracker))}
         problems.extend(f"{fid} has a finding section but no tracker row" for fid in sorted(set(ids) - tracked))
         problems.extend(f"tracker row {fid} names no finding section" for fid in sorted(tracked - set(ids)))
     if problems:
@@ -227,13 +254,18 @@ def tracker_status_cells(tracker: Path, status_columns: Iterable[str] = DEFAULT_
             block.append(_table_cells(lines[j]))
             j += 1
         if column is not None:
+            # A row shorter than the status column has an EMPTY status: it is open, never silently dropped.
             found = (found or []) + [
-                (cells[0], cells[column])
+                (cells[0], _cell(cells, column))
                 for cells in block
-                if column < len(cells) and not all(set(c) <= set("-: ") for c in cells) and not _is_totals_row(cells[0], cells[column])
+                if not all(set(c) <= set("-: ") for c in cells) and not _is_totals_row(cells[0], _cell(cells, column))
             ]
         i = j
     return found
+
+
+def _cell(cells: list[str], column: int) -> str:
+    return cells[column] if column < len(cells) else ""
 
 
 def closing_word(cell: str, closing: Iterable[str] = DEFAULT_CLOSING) -> "str | None":
@@ -297,7 +329,13 @@ def assert_rounds_filed(
     that no longer reproduces. Fails too when fewer than *min_trackers* trackers exist, since zero parsed is clean."""
     import pytest
 
-    count = sum(len(list(d.glob(tracker_glob))) for parent in (audits_dir, audits_dir / implemented) if parent.is_dir() for d in parent.iterdir() if d.is_dir())
+    count = sum(
+        len(list(d.glob(tracker_glob)))
+        for parent in (audits_dir, audits_dir / implemented)
+        if parent.is_dir()
+        for d in parent.iterdir()
+        if d.is_dir() and _DATED.match(d.name)
+    )
     if count < min_trackers:
         pytest.fail(f"only {count} {tracker_glob} file(s) under {audits_dir}; expected at least {min_trackers} -- the layout moved or the glob broke")
     found = set(round_filing_problems(audits_dir, implemented=implemented, tracker_glob=tracker_glob, **kwargs))
@@ -321,9 +359,20 @@ def absence_comparisons(source: str) -> list[tuple[int, str, str]]:
 
 
 def is_whole_file_read(expr: str, readers: Iterable[str] = ("src", "sibling_src")) -> bool:
-    """``src("x.py")`` is a whole file; ``src("x.py").split(...)[1][:200]`` is a slice a reader can audit."""
-    stripped = expr.strip()
-    return any(stripped.startswith(f"{r}(") for r in readers) and stripped.endswith(")") and "[" not in stripped
+    """``src("x.py")`` is a whole file; ``src("x.py").split(...)[1][:200]`` is a slice a reader can audit.
+
+    Judged on the expression tree: a subscript INSIDE the reader call's arguments (``src(FILES[0])``) still reads
+    the whole file; only a subscript applied to what the reader returns narrows it.
+    """
+    names = set(readers)
+    try:
+        node: ast.expr = ast.parse(expr.strip(), mode="eval").body
+    except SyntaxError:
+        stripped = expr.strip()
+        return any(stripped.startswith(f"{r}(") for r in names) and stripped.endswith(")") and "[" not in stripped
+    while isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        node = node.func.value  # src(x).lower() is still the whole file
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names
 
 
 def assert_no_whole_file_absence_claims(verifier: Path, *, readers: Iterable[str] = ("src", "sibling_src")) -> None:
@@ -332,9 +381,7 @@ def assert_no_whole_file_absence_claims(verifier: Path, *, readers: Iterable[str
 
     names = tuple(readers)
     offenders = [
-        f"line {line}: {left[:40]} not in {right}"
-        for line, left, right in absence_comparisons(verifier.read_text(encoding="utf-8"))
-        if is_whole_file_read(right, names)
+        f"line {line}: {left[:40]} not in {right}" for line, left, right in absence_comparisons(read_source(verifier)) if is_whole_file_read(right, names)
     ]
     if offenders:
         pytest.fail(

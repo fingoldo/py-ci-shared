@@ -20,6 +20,9 @@ What the copies learned, kept here:
   and pruned by a regeneration.
 * **Regeneration preserves existing notes.** Otherwise the first regeneration silently replaces every
   human reason with the scanner's own sentence.
+* **A scan that finds nothing while the baseline holds entries fails.** Every accepted entry going stale at once
+  is far more often a scan that stopped matching (a moved glob, a renamed directory) than a backlog paid off in
+  one commit; regenerating the baseline says which. ``min_found`` puts an explicit floor on a scan.
 * **Keys are repo-relative.** An absolute path in a committed baseline matches on exactly one machine and
   silently accepts everything everywhere else.
 
@@ -41,6 +44,7 @@ import json
 import os
 import sys
 from collections.abc import Mapping
+from typing import Optional
 
 from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified
 
@@ -73,7 +77,7 @@ class Baseline:
         """
         if not os.path.exists(self.path):
             return {}
-        with open(self.path, encoding="utf-8") as handle:
+        with open(self.path, encoding="utf-8-sig") as handle:
             data = json.load(handle)
         if isinstance(data, dict) and "accepted" in data:
             accepted = data["accepted"]
@@ -96,13 +100,26 @@ class Baseline:
 
     # ---- use ----
 
-    def enforce(self, found: Mapping[str, str], *, label: str, guidance: str) -> int:
+    def enforce(self, found: Mapping[str, str], *, label: str, guidance: str, min_found: int = 0, fail_on_empty_scan: bool = True) -> int:
         """Fail on any entry in ``found`` the baseline does not accept; return a process exit code.
 
         ``found`` maps a stable key - a repo-relative path, or ``path:line`` - to a short description of
-        the violation, which is what a reader sees when the check fails.
+        the violation, which is what a reader sees when the check fails. Also fails when ``found`` has fewer
+        than *min_found* entries, and when it is empty while the baseline accepts entries (every entry stale at
+        once): both read as a scan that stopped reaching the code. A caller whose scan can legitimately clear everything
+        (a mutation run that kills every survivor) passes ``fail_on_empty_scan=False``.
         """
         accepted = self.load()
+        if len(found) < min_found:
+            print(f"{label}: the scan found {len(found)} entr(ies), fewer than its floor of {min_found} - it is not reaching the code.", file=sys.stderr)
+            return 1
+        if fail_on_empty_scan and not found and accepted:
+            print(
+                f"{label}: the scan found nothing, yet {self.path} accepts {len(accepted)} entr(ies). Either the scan stopped "
+                f"matching, or the whole backlog was paid off - then run {self.refresh_command} to record that.",
+                file=sys.stderr,
+            )
+            return 1
         new = {key: value for key, value in found.items() if key not in accepted}
         stale = [key for key in accepted if key not in found]
 
@@ -148,21 +165,34 @@ def run_rules(
     *,
     directory: str = DEFAULT_DIRECTORY,
     refresh_command: str = DEFAULT_REFRESH_COMMAND,
+    min_found: Optional[Mapping[str, int]] = None,
 ) -> int:
     """Run every named scan against its baseline; return the worst exit code.
 
     ``scans`` maps a rule name to a zero-argument callable returning ``{key: description}``; ``rules`` maps
-    the same names to ``(label, guidance)``. Every rule runs even after one fails, so a push reports every
-    problem it has rather than the first.
+    the same names to ``(label, guidance)``. Every rule runs even after one fails or raises, so a push reports
+    every problem it has rather than the first. A scan with no rule is reported and fails too: it would
+    otherwise never be enforced. ``min_found`` gives per-rule floors (see :meth:`Baseline.enforce`).
     """
+    floors = dict(min_found or {})
     worst = 0
+    for name in sorted(set(scans) - set(rules)):
+        print(f"{name}: scan registered with no rule - it is never enforced; add a (label, guidance) rule for it", file=sys.stderr)
+        worst = 1
     for name, (label, guidance) in rules.items():
         scan = scans.get(name)
         if scan is None:
             print(f"{label}: SKIPPED - no scan registered under {name!r}", file=sys.stderr)
             worst = max(worst, 1)
             continue
-        found = scan()  # type: ignore[operator]
-        code = Baseline(name, directory=directory, refresh_command=refresh_command).enforce(found, label=label, guidance=guidance)
+        try:
+            found = scan()  # type: ignore[operator]
+        except Exception as exc:  # one broken scan must not hide the others; it still fails the run
+            print(f"{label}: the scan raised {type(exc).__name__}: {exc}", file=sys.stderr)
+            worst = max(worst, 1)
+            continue
+        code = Baseline(name, directory=directory, refresh_command=refresh_command).enforce(
+            found, label=label, guidance=guidance, min_found=floors.get(name, 0)
+        )
         worst = max(worst, code)
     return worst

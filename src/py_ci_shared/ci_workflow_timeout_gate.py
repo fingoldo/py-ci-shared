@@ -14,6 +14,11 @@ an earlier, incorrect version of this scanner that flagged 9 such jobs and would
 had the "fix" landed). Whatever timeout that job effectively runs under is bounded by the CALLED
 workflow's own job(s), not settable from the caller side.
 
+Only a ``timeout-minutes`` (and a ``uses``) at the JOB's own key level counts: a step-level
+``timeout-minutes`` bounds that one step, not the job, and a step's ``uses: actions/checkout@v4`` does
+not make the job a reusable-workflow call. A workflow in which no job is found fails the assert (a
+``jobs:`` the scanner cannot read is not a workflow with every timeout set).
+
 Deliberately line-based/regex, matching this package's established convention (``sql_lint.py``,
 ``ci_workflow_gate.py``, ``code_audit``'s scanners) -- not a YAML parser, no new dependency.
 
@@ -34,68 +39,99 @@ this package's other modules.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
-_JOBS_HEADER_RE = re.compile(r"^jobs:\s*$")
+from ._core import read_source
+
+_JOBS_HEADER_RE = re.compile(r"^jobs:\s*(?:#.*)?$")
 # A job id key at the first indentation level under `jobs:` (e.g. `  build:`), NOT a nested key
 # (those sit at a deeper indent). Captures the indent width so job-block boundaries can be
 # detected purely from indentation, without needing a real YAML parser.
-_JOB_HEADER_RE = re.compile(r"^(?P<indent>[ ]+)(?P<job_id>[\w-]+):\s*(?:#.*)?$")
+_JOB_HEADER_RE = re.compile(r"^(?P<indent>[ ]+)(?P<job_id>[\w-]+|\"[^\"]+\"|'[^']+'):\s*(?:#.*)?$")
 _TIMEOUT_MINUTES_RE = re.compile(r"^\s*timeout-minutes:\s*\S")
 # A `uses:` key directly inside the job's own block (one level deeper than the job header) marks
 # it as a reusable-workflow-call job -- GitHub's schema forbids `timeout-minutes` there entirely.
 _USES_KEY_RE = re.compile(r"^\s*uses:\s*\S")
+_JOB_KEY_RE = re.compile(r"^(?P<indent>[ ]*)(?P<key>[\w-]+)\s*:(?:\s|$)")
+
+
+@dataclass(frozen=True)
+class JobTimeout:
+    """One job under ``jobs:``: whether it sets a job-level ``timeout-minutes`` or is a reusable-workflow call."""
+
+    job_id: str
+    line: int
+    has_timeout: bool
+    reusable: bool
+
+
+def _indent(line: str) -> int:
+    return len(line) - len(line.lstrip(" "))
+
+
+def collect_jobs(workflow_path: Path) -> list[JobTimeout]:
+    """Every job under ``jobs:`` with its job-level ``timeout-minutes``/``uses`` status.
+
+    Indentation-driven: the FIRST job header's indent sets the job level; the first key line inside a job
+    sets that job's key level; only keys at the key level are the job's own. A job's block ends at the next
+    line at or above the job level, so a top-level section after ``jobs:`` is never part of the last job.
+    """
+    lines = read_source(workflow_path).splitlines()
+    jobs: list[JobTimeout] = []
+    in_jobs = False
+    job_indent: Optional[int] = None
+    current: Optional[dict] = None
+
+    def close() -> None:
+        nonlocal current
+        if current is not None:
+            jobs.append(JobTimeout(current["id"], current["line"], current["timeout"], current["uses"]))
+        current = None
+
+    for lineno, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        indent = _indent(line)
+        if indent == 0:
+            close()
+            in_jobs = bool(_JOBS_HEADER_RE.match(line))
+            job_indent = None
+            continue
+        if not in_jobs:
+            continue
+        if job_indent is None:
+            job_indent = indent
+        if indent <= job_indent:
+            close()
+            m = _JOB_HEADER_RE.match(line)
+            if m and indent == job_indent:
+                current = {"id": m.group("job_id").strip("\"'"), "line": lineno, "timeout": False, "uses": False, "key_indent": None}
+            continue
+        if current is None:
+            continue
+        if current["key_indent"] is None:
+            current["key_indent"] = indent
+        if indent != current["key_indent"] or stripped.startswith("-"):
+            continue
+        if _TIMEOUT_MINUTES_RE.match(line):
+            current["timeout"] = True
+        elif _USES_KEY_RE.match(line):
+            current["uses"] = True
+    close()
+    return jobs
 
 
 def find_jobs_missing_timeout(workflow_path: Path) -> list[str]:
     """Return the job id of every NON-reusable-workflow-call job under ``jobs:`` in
-    ``workflow_path`` that has no ``timeout-minutes:`` key anywhere in its own block (before the
-    next job at the same indentation level, or end of file). A job whose block contains a
+    ``workflow_path`` that has no job-level ``timeout-minutes:`` key. A job with a job-level
     ``uses:`` key (a reusable-workflow-call job) is skipped entirely -- ``timeout-minutes`` is not
-    a valid key there per GitHub's own schema.
-
-    Indentation-driven block detection: the FIRST job header's indent width sets the expected
-    indent for every subsequent job header; a line at that same indent (or shallower, i.e. back
-    out of the ``jobs:`` section entirely) ends the current job's block.
+    a valid key there per GitHub's own schema. A step-level ``timeout-minutes`` or ``uses`` is a
+    property of that step and counts for neither.
     """
-    lines = workflow_path.read_text(encoding="utf-8").splitlines()
-    in_jobs_section = False
-    job_indent: "str | None" = None
-    jobs: list[tuple[str, int]] = []  # (job_id, header_line_index)
-    for i, line in enumerate(lines):
-        if _JOBS_HEADER_RE.match(line):
-            in_jobs_section = True
-            continue
-        if not in_jobs_section:
-            continue
-        if not line.strip():
-            continue
-        m = _JOB_HEADER_RE.match(line)
-        if m:
-            indent = m.group("indent")
-            if job_indent is None:
-                job_indent = indent
-            if indent == job_indent:
-                jobs.append((m.group("job_id"), i))
-                continue
-            # A deeper-indented `key:` line inside a job's own body (e.g. `  build:\n    steps:`)
-            # -- not a new job, ignore.
-            if len(indent) > len(job_indent):
-                continue
-        # A line back at or above the top level (no leading whitespace, or shallower than the
-        # first job's indent) closes the `jobs:` section.
-        if not line[:1].isspace():
-            in_jobs_section = False
-
-    missing: list[str] = []
-    for idx, (job_id, start) in enumerate(jobs):
-        end = jobs[idx + 1][1] if idx + 1 < len(jobs) else len(lines)
-        block = lines[start:end]
-        if any(_USES_KEY_RE.match(line) for line in block):
-            continue
-        if not any(_TIMEOUT_MINUTES_RE.match(line) for line in block):
-            missing.append(job_id)
-    return missing
+    return [job.job_id for job in collect_jobs(workflow_path) if not job.reusable and not job.has_timeout]
 
 
 def assert_all_jobs_have_timeout(workflow_path: Path, exempt_jobs: "frozenset[str] | None" = None) -> None:
@@ -105,7 +141,13 @@ def assert_all_jobs_have_timeout(workflow_path: Path, exempt_jobs: "frozenset[st
     """
     import pytest
 
-    missing = find_jobs_missing_timeout(workflow_path)
+    jobs = collect_jobs(workflow_path)
+    if not jobs:
+        pytest.fail(
+            f"no job found under a top-level `jobs:` in {workflow_path} -- either the file is not a workflow or its "
+            "layout is one this scanner cannot read; either way nothing was checked"
+        )
+    missing = [job.job_id for job in jobs if not job.reusable and not job.has_timeout]
     if exempt_jobs:
         missing = [j for j in missing if j not in exempt_jobs]
     if missing:

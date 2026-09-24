@@ -101,11 +101,15 @@ class TestFindJobsMissingTimeout:
         p = _write_workflow(tmp_path, _TWO_JOBS_ONE_MISSING)
         assert find_jobs_missing_timeout(p) == ["publish"]
 
-    def test_step_level_timeout_still_satisfies_the_check(self, tmp_path):
-        """The scanner doesn't require job-level placement -- any timeout-minutes: line anywhere
-        in the job's block (including a per-step one) counts, matching a real human's reading."""
+    def test_step_level_timeout_does_not_satisfy_the_job_check(self, tmp_path):
+        """A per-step timeout bounds that step only: the job's other steps (checkout, setup, a hung
+        install) still run under the 360-minute default, so the job is still missing its timeout."""
         p = _write_workflow(tmp_path, _TIMEOUT_IN_A_STEP_NOT_JOB_LEVEL_STILL_COUNTS)
-        assert find_jobs_missing_timeout(p) == []
+        assert find_jobs_missing_timeout(p) == ["build"]
+        job_level = _TIMEOUT_IN_A_STEP_NOT_JOB_LEVEL_STILL_COUNTS.replace(
+            "    runs-on: ubuntu-latest\n", "    runs-on: ubuntu-latest\n    timeout-minutes: 30\n"
+        )
+        assert find_jobs_missing_timeout(_write_workflow(tmp_path, job_level)) == []
 
     def test_no_jobs_section_returns_empty(self, tmp_path):
         p = _write_workflow(tmp_path, "name: CI\non: [push]\n")
@@ -135,3 +139,25 @@ class TestAssertAllJobsHaveTimeout:
     def test_exempt_jobs_suppresses_the_failure(self, tmp_path):
         p = _write_workflow(tmp_path, _TWO_JOBS_ONE_MISSING)
         assert_all_jobs_have_timeout(p, exempt_jobs=frozenset({"publish"}))  # no raise
+
+
+def test_a_step_uses_does_not_exempt_the_job(tmp_path):
+    p = _write_workflow(tmp_path, "jobs:\n  build:\n    runs-on: x\n    steps:\n      - name: co\n        uses: actions/checkout@v4\n")
+    assert find_jobs_missing_timeout(p) == ["build"]
+    reusable = _write_workflow(tmp_path, "jobs:\n  build:\n    uses: org/repo/.github/workflows/x.yml@v1\n")
+    assert find_jobs_missing_timeout(reusable) == []
+
+
+def test_a_commented_jobs_header_is_read_and_zero_jobs_fails_the_assert(tmp_path):
+    p = _write_workflow(tmp_path, "on: push\njobs: # all of them\n  build:\n    runs-on: x\n")
+    assert find_jobs_missing_timeout(p) == ["build"]
+    empty = _write_workflow(tmp_path, "name: CI\non: [push]\n")
+    with pytest.raises(pytest.fail.Exception, match="no job found"):
+        assert_all_jobs_have_timeout(empty)
+
+
+def test_the_last_job_ends_at_the_next_top_level_section(tmp_path):
+    body = "jobs:\n  build:\n    runs-on: x\nconcurrency:\n  timeout-minutes: 5\n"
+    assert find_jobs_missing_timeout(_write_workflow(tmp_path, body)) == ["build"]
+    body_ok = "jobs:\n  build:\n    runs-on: x\n    timeout-minutes: 5\nconcurrency:\n  group: g\n"
+    assert find_jobs_missing_timeout(_write_workflow(tmp_path, body_ok)) == []

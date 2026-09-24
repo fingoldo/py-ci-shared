@@ -20,7 +20,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-1 (High) -- =1 is treated as covering the whole one category, but in ru/uk/pl one also contains 21,...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- exact selectors now cover a category only when the locale's category is a finite integer set they enumerate (`FINITE_CATEGORY_VALUES`: `one`={1} for en/de/es/it/nl/tr/cs/pl, {0,1} for fr/pt, ar zero/one/two); ru/uk `one` is never covered by `=1`; regression test: test_exact_one_does_not_cover_russian_one_which_also_holds_21, test_exact_one_covers_polish_one_but_french_one_also_needs_zero
 
 - **Original id:** G1-01
 - **Where:** arb_checks.py:76,168
@@ -31,7 +31,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-2 (Med) -- The branch-head regex also scans branch bodies, so it finds fake branches
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_plural_branches` finds the `{arg, plural,` head and reads selectors only at its top level with a depth counter, so text inside a body is never a branch; regression test: test_a_word_ending_in_one_inside_a_body_is_not_a_branch
 
 - **Original id:** G1-02
 - **Where:** arb_checks.py:70,121
@@ -42,7 +42,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-3 (Med) -- ARB files are read as utf-8, so a BOM causes a JSONDecodeError crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- ARB files are read with `_core.read_source` (utf-8-sig for non-Python files); regression test: test_a_bom_arb_file_is_read
 
 - **Original id:** G1-03
 - **Where:** arb_checks.py:92
@@ -53,7 +53,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-4 (Low) -- The ICU # placeholder is not accepted (false positive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a branch containing the ICU `#` counts as carrying the number; regression test: test_the_icu_hash_placeholder_counts_as_the_number
 
 - **Original id:** G1-04
 - **Where:** arb_checks.py:176-181
@@ -64,7 +64,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-5 (Low) -- A missing template locale raises a bare KeyError
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a missing template locale raises `TemplateLocaleError` (a `KeyError` subclass, so existing handlers still work) naming the locale and the catalogue keys; regression test: test_a_missing_template_locale_names_the_catalogues
 
 - **Original id:** G1-05
 - **Where:** arb_checks.py:97
@@ -75,7 +75,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-6 (Low) -- The "plural" in value substring test skips the counted-phrase rule
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- plural detection matches `,\s*plural\s*,` instead of the substring `plural`, in both the counted-phrase rule and the branch check; regression test: test_the_word_plural_in_text_does_not_exempt_a_counted_phrase
 
 - **Original id:** G1-06
 - **Where:** arb_checks.py:141
@@ -86,7 +86,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-7 (Med) -- Only a positional str constant is detected; f-strings, concatenation, variables and sql...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every string that flows into a call argument or keyword (constants, f-string parts, concatenations, `sqltext=`, and names bound to such strings anywhere in the file) is searched for CONCURRENTLY; nested calls are judged on their own; regression test: test_every_spelling_of_the_sql_is_seen, test_a_non_concurrent_computed_sql_is_not_flagged
 
 - **Original id:** G1-07
 - **Where:** alembic_concurrently.py:31
@@ -97,7 +97,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-8 (Med) -- Unparseable or non-UTF8 migrations are skipped (fail-open)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- migrated to `_core.scan_python`; unreadable/unparsable migrations appear in `find_unguarded_concurrently` output as `file:line: unparsable: ...` and fail `assert_concurrently_is_in_autocommit_blocks`; regression test: test_an_unparsable_migration_is_reported_not_skipped
 
 - **Original id:** G1-08
 - **Where:** alembic_concurrently.py:64-65
@@ -108,7 +108,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-9 (Low) -- async with autocommit_block() is not a guard (false positive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `async with ...autocommit_block()` is a guard; regression test: test_async_with_and_bare_name_autocommit_block_are_guards
 
 - **Original id:** G1-09
 - **Where:** alembic_concurrently.py:47
@@ -119,7 +119,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-10 (Low) -- The guard is lexical: a def nested in the with but called later passes; a bare-Name aut...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the guard stack resets at every def/async def/lambda/class; a bare-name `autocommit_block()` is accepted; `postgresql_concurrently` counts when truthy or computed; regression test: test_a_def_nested_in_the_block_is_not_guarded_by_it, test_async_with_and_bare_name_autocommit_block_are_guards, test_every_spelling_of_the_sql_is_seen
 
 - **Original id:** G1-10
 - **Where:** alembic_concurrently.py:34-39,49
@@ -130,7 +130,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-11 (Low) -- Baseline key file:line breaks on any edit above the call
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the baseline is now a `_core.Baseline` (multiset, missing file fails, refresh via `--refresh-alembic-concurrently-baseline` / `PY_CI_SHARED_REFRESH`) keyed on file name plus the normalised call source, never the line; existing JSON-list baselines still load (their line keys go stale once and are rewritten by a refresh); regression test: test_baseline_keys_survive_an_edit_above_the_call, test_a_missing_baseline_fails_and_a_refresh_writes_it
 
 - **Original id:** G1-11
 - **Where:** alembic_concurrently.py:66
@@ -141,7 +141,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-12 (Med) -- The verdict regex misses common spellings; PARTIALLY RESOLVED parses as PARTIALLY
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the disposition line regex accepts any list marker, bold before or after the colon, and any case; the verdict is read against a longest-first alias table (`PARTIALLY RESOLVED` -> PARTIAL, `won't fix`/curly apostrophe/`WONTFIX` -> WON'T FIX), with the old upper-case-run fallback for unknown verdicts; new public `parse_disposition`; audit files are read with `_core.read_source` (BOM stripped, undecodable file reported instead of lossy decode); regression test: test_common_disposition_spellings_are_read, test_multi_word_verdicts_are_normalised, test_a_deferred_spelled_in_lower_case_is_still_not_checked, test_a_bom_audit_file_is_read
 
 - **Original id:** G1-12
 - **Where:** audit_disposition_parity.py:44
@@ -152,7 +152,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-13 (Med) -- Backslash paths are ignored; absolute or .
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- backticked paths may use backslashes (normalised to `/`); absolute, drive-letter and `..` paths are reported as unverifiable (outside the repository) instead of being resolved against the real filesystem, unless listed in `ignore_paths`; regression test: test_a_backslash_path_is_normalised_and_checked, test_a_path_outside_the_repository_is_not_checked_against_the_filesystem
 
 - **Original id:** G1-13
 - **Where:** audit_disposition_parity.py:46-48
@@ -163,7 +163,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-14 (Low) -- A reversed migration range expands to nothing
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a migration range expands from min to max whatever the order; regression test: test_a_reversed_migration_range_expands
 
 - **Original id:** G1-14
 - **Where:** audit_disposition_parity.py:50,66
@@ -174,7 +174,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-15 (Low) -- The :\d+ strip is dead code (the regex cannot capture :)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the finding understated it: because the backtick regex could not match `:`, a backticked `lib/app.dart:219` was never extracted at all, so a missing file with a line reference passed. The backtick regex now accepts an optional `:line`/`:start-end` suffix outside the captured path, and the dead strip is removed; regression test: test_a_line_reference_inside_backticks_does_not_hide_the_path
 
 - **Original id:** G1-15
 - **Where:** audit_disposition_parity.py:60
@@ -185,7 +185,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-16 (Med) -- The ratchet key splits on the first :; with root=None on Windows every key becomes C:<v...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- hits are `RoundHit(rel, line, value)` records and the ratchet key is built from `(rel, value)` directly, never by splitting a rendered string on `:`; regression test: test_two_files_with_the_same_literal_are_two_keys_even_without_root
 
 - **Original id:** G1-16
 - **Where:** audit_path_references.py:151
@@ -196,7 +196,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-17 (Med) -- Round names in os.path.join/Path args, + concatenation and f-strings are missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `os.path.join`/`Path(...)`-family arguments are path segments like the parts of an `a / b` chain (so `implemented` beside them still exempts), and outermost `+` concatenations and f-strings are folded (`{}` for computed pieces) and checked both for `audits/<round>` and for an own open round segment next to `audits` or an audit-file segment; regression test: test_a_round_built_in_pieces_is_reported, test_a_closed_or_data_round_built_in_pieces_is_not
 
 - **Original id:** G1-17
 - **Where:** audit_path_references.py:41-83,111
@@ -207,7 +207,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-18 (Low) -- Parse failures are skipped; a NUL byte raises ValueError (py<3.12)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- migrated to `_core.scan_python`; unparsable files (including NUL bytes on every Python version) are reported as `path:line: unparsable: ...` and always fail the assert; the `min_files` floor counts parsed files; regression test: test_an_unparsable_file_is_reported_and_fails_the_assert
 
 - **Original id:** G1-18
 - **Where:** audit_path_references.py:116
@@ -218,7 +218,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-19 (Med) -- A row shorter than the status column is dropped, neither open nor closed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a tracker row shorter than the status column is kept with an empty status, so it counts as open instead of disappearing; regression test: test_a_row_shorter_than_the_status_column_is_an_open_row
 
 - **Original id:** G1-19
 - **Where:** audit_round_format.py:233
@@ -229,7 +229,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-20 (Med) -- The status mention check is case-sensitive
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the status mention check is case-insensitive and the bold form is matched in any case, so `| Resolved |` is reported as not bold and `**Deferred**` as a word outside the list; regression test: test_a_status_mention_in_any_case_must_be_the_bold_upper_form
 
 - **Original id:** G1-20
 - **Where:** audit_round_format.py:52
@@ -240,7 +240,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-21 (Low) -- finding_problems re-reads every sibling .md for each file: O(n^2)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `finding_problems` takes an optional `dir_cache`; `assert_rounds_countable` shares one, so each round's siblings are read once per round instead of once per file; regression test: test_sibling_files_are_read_once_per_round_not_once_per_file
 
 - **Original id:** G1-21
 - **Where:** audit_round_format.py:117
@@ -251,7 +251,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-22 (Low) -- is_whole_file_read rejects any [ in the expression
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `is_whole_file_read` judges the expression tree: method calls on the reader result are unwrapped, only a subscript applied to the result narrows it, and a subscript inside the reader's own arguments does not; regression test: test_a_subscript_inside_the_reader_call_is_still_a_whole_file_read
 
 - **Original id:** G1-22
 - **Where:** audit_round_format.py:326
@@ -262,7 +262,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-23 (Low) -- ~~~ fences are ignored; a BOM hides the header row
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `without_fenced_blocks` handles both backtick and tilde fences and closes a fence only on its own marker; every Markdown/verifier read goes through `_core.read_source` (BOM stripped); regression test: test_a_tilde_fence_hides_a_quoted_heading, test_a_bom_does_not_hide_the_tracker_header_row
 
 - **Original id:** G1-23
 - **Where:** audit_round_format.py:86
@@ -273,7 +273,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-24 (Low) -- min_trackers counts undated directories that the check then ignores
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `min_trackers` count applies the same dated-directory filter as the check; regression test: test_min_trackers_counts_only_dated_rounds
 
 - **Original id:** G1-24
 - **Where:** audit_round_format.py:300
@@ -284,7 +284,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-25 (Med) -- A missing or empty tests_dir passes; patterns are case-sensitive
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- enumeration moved to `_core.iter_files` (a missing tests dir raises `CorpusError`); the assert fails when fewer than `min_files` (default 1) test files were scanned; stem patterns match case-insensitively; the baseline is a `_core.Baseline` (missing file fails, refresh via `--refresh-audit-wave-filenames-baseline`/`PY_CI_SHARED_REFRESH`), `write_baseline` is atomic; regression test: test_a_missing_or_empty_tests_dir_is_not_a_pass, test_patterns_ignore_case, test_a_missing_baseline_file_fails_and_a_refresh_writes_it
 
 - **Original id:** G1-25
 - **Where:** audit_wave_filenames.py:47,80
@@ -295,7 +295,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-26 (Med) -- A trailing --src-path raises IndexError, so exit 1 blocks the commit (the docstring say...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- both wrappers are now `main(argv)` functions; the shared `bandit_warn.pop_option` bounds-checks (a trailing `--src-path` warns and is ignored, exit 0) and accepts `--src-path=X`; advisory_warn reuses it; regression test: test_a_trailing_src_path_does_not_crash_the_hook (both test files), test_pop_option_reads_both_forms_and_a_missing_value, test_equals_form_scopes_the_scan
 
 - **Original id:** G1-26
 - **Where:** bandit_warn.py:26; advisory_warn.py:24
@@ -306,7 +306,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-27 (Med) -- --src-path is not backslash-normalised, so it silently scans nothing; a substring prefi...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `select_src_files` normalises backslashes and `./` on both sides and matches whole `/`-separated segments (so `src/pkg` never matches `src/pkg_other`); when .py files were staged and none matched, a warning names the src path; regression test: test_a_backslash_src_path_matches_and_a_sibling_prefix_does_not, test_a_windows_src_path_runs_bandit, test_staged_files_outside_the_src_path_warn_that_nothing_was_scanned, test_a_sibling_prefix_is_not_the_src_path
 
 - **Original id:** G1-27
 - **Where:** bandit_warn.py:34; advisory_warn.py:32
@@ -317,7 +317,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-28 (Low) -- pip-audit runs (network) even when no .py is staged
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- advisory_warn returns before any tool (pip-audit included) when no staged source file is in scope; regression test: test_no_staged_source_file_runs_nothing_not_even_pip_audit, test_a_staged_source_file_runs_ruff_twice_and_pip_audit_once
 
 - **Original id:** G1-28
 - **Where:** advisory_warn.py:57
@@ -328,7 +328,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-29 (Med) -- The {"entries":[...]} shape is read as the single key entries, so real entries are neve...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_entries` unwraps `accepted` or `entries` whether it holds a list or a map, reads the note out of `_core.Baseline` `{"count", "note"}` records, and reads a bare top-level list; the file is read with `_core.read_source`; regression test: test_the_entries_list_and_core_record_shapes_are_checked
 
 - **Original id:** G1-29
 - **Where:** baseline_hygiene.py:58-64
@@ -339,7 +339,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-30 (Med) -- The absolute-path regex misses /opt, /tmp, /root, /github/workspace, UNC paths and othe...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a key with any leading `/`, `\` (UNC) or drive letter is flagged; inside prose, any drive letter, a UNC share or a well-known root (/opt, /tmp, /root, /github/workspace, /var, /usr, ...) is flagged, while `read/write` or an `/api/v1` route in a note is not; regression test: test_every_absolute_key_is_flagged, test_a_relative_key_with_slashes_in_its_note_is_not_absolute
 
 - **Original id:** G1-30
 - **Where:** baseline_hygiene.py:41
@@ -350,7 +350,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-31 (Low) -- Words are counted with [A-Za-z], so a non-Latin note fails
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- note words are counted with a Unicode letter class; regression test: test_a_note_in_another_script_counts_its_words
 
 - **Original id:** G1-31
 - **Where:** baseline_hygiene.py:113
@@ -361,7 +361,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-32 (Med) -- No floor on found: a broken scanner returning {} exits 0
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `Baseline.enforce` takes `min_found` (explicit floor) and, by default, fails when the scan returns nothing while the baseline accepts entries (every entry stale at once reads as a scan that stopped matching; regenerating records a genuine full payoff); `fail_on_empty_scan=False` opts out for scans that can legitimately clear everything; `run_rules` takes per-rule `min_found`; the baseline file is read as utf-8-sig; regression test: test_an_empty_scan_against_a_non_empty_baseline_fails, test_min_found_is_a_floor_on_the_scan, test_run_rules_passes_per_rule_floors, test_an_empty_scan_may_opt_out_of_the_floor (test_paid_debt_is_reported_but_does_not_fail re-framed to a partial payoff)
 
 - **Original id:** G1-32
 - **Where:** baseline_ratchet.py:104-127
@@ -372,7 +372,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-33 (Low) -- A raising scan aborts run_rules; scans without a rule are never enforced
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `run_rules` catches an exception per scan, reports it under the rule's label, fails the run and continues with the other rules; a scan registered without a rule is reported and fails; regression test: test_a_raising_scan_fails_its_rule_and_the_others_still_run, test_a_scan_without_a_rule_is_reported_and_fails
 
 - **Original id:** G1-33
 - **Where:** baseline_ratchet.py:155
@@ -383,7 +383,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-34 (Med) -- git log --follow crosses renames, but git show sha:<current path> fails before the rena...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `history` reads `git log --follow --name-status` and shows each commit at the path the file had in that commit, so points before a rename are kept (deletions skipped); regression test: test_history_survives_a_rename
 
 - **Original id:** G1-34
 - **Where:** baseline_trend.py:73-82
@@ -394,7 +394,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-35 (Low) -- Bare {key:note} counts as None; "moved" compares only the endpoints; a git failure exits 0
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `count_entries` counts a bare `{key: note}` map when its keys read as paths/finding keys (a stray `{"something": "else"}` is still None), sums `_core.Baseline` `count` records, strips a BOM; "moved" compares min and max over every point (a count that moved and returned is shown as `~~`, not listed as unmoved); `_git` raises `GitError` on a non-zero exit and `main` returns 2; regression test: test_a_bare_key_note_map_and_the_core_multiset_are_counted, test_a_count_that_moved_and_came_back_is_not_unmoved, test_a_git_failure_exits_non_zero, test_an_empty_repo_still_reports_no_baselines
 
 - **Original id:** G1-35
 - **Where:** baseline_trend.py:43-49,100
@@ -405,7 +405,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-36 (Med) -- Excluded dir names are matched against absolute ancestors, so a checkout under build/ s...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- directory roots are enumerated with `_core.iter_files`, which matches excluded names against root-relative parts (explicit file roots use CWD-relative parts); a missing root or a directory root with no .py file raises `DiscoveryError`, and `--check` exits with that message instead of "All 0 files ... clean"; regression test: test_a_checkout_under_a_build_directory_is_still_scanned, test_a_missing_root_is_an_error, test_a_directory_with_no_py_file_is_an_error, test_main_check_fails_on_a_missing_root_instead_of_all_clean
 
 - **Original id:** G1-36
 - **Where:** black_filtered_apply.py:61,65
@@ -416,7 +416,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-37 (Med) -- File-wide """ parity counts quotes inside strings, so every later fix is rejected and -...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the multi-line-string state per line comes from tokenizer STRING (and 3.12+ FSTRING_START/END) spans, with the parity toggle only as a fallback for untokenizable files; a hunk is judged by the state before it and the state after it, so a quoted delimiter no longer freezes the rest of the file; regression test: test_a_quoted_delimiter_does_not_open_a_string, test_a_fix_after_a_quoted_delimiter_is_applied, test_a_fix_inside_a_real_multiline_string_region_is_still_rejected
 
 - **Original id:** G1-37
 - **Where:** black_filtered_apply.py:163
@@ -427,7 +427,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GA-38 (Low) -- No --stdin-filename (force-exclude and .pyi mode are ignored); a trailing --config rais...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every file is piped with `--stdin-filename <path>` (force-exclude and .pyi mode apply; an echoed or empty excluded output returns the source unchanged, CRLF echo on Windows included); a trailing `--config` exits with a clear message, `--config=PATH` is accepted, and `--check --write` is rejected as mutually exclusive; `main` takes an optional argv; regression test: test_force_exclude_applies_to_a_piped_file, test_a_stub_is_formatted_in_pyi_mode, test_a_trailing_config_is_a_clear_error, test_check_and_write_together_are_rejected, test_config_equals_form_is_read
 
 - **Original id:** G1-38
 - **Where:** black_filtered_apply.py:73,274
@@ -438,7 +438,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-1 (High) -- The pytest\s+ regex matches pip install pytest pytest-cov as a pathless run, so every s...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `pytest` counts only as a command: the first word of a shell command (split on `;`, `&&`, `||`, `|`), optionally behind `-`/`run:`, env assignments, `python -m`, `uv/poetry/pipenv/hatch/pdm run`, `coverage run -m`, `timeout N` and similar wrappers; `pip install pytest pytest-cov` and step names are not invocations; regression test: test_pip_install_pytest_is_not_a_pathless_run, test_wrapped_commands_are_invocations
 
 - **Original id:** G2-01
 - **Where:** ci_test_dir_reachability.py:71
@@ -449,7 +449,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-2 (High) -- YAML comments are scanned
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- YAML comments (a `#` at line start or after whitespace, outside quotes) are stripped before scanning; workflows are read with `_core.read_source` (BOM stripped); regression test: test_a_commented_out_run_is_not_an_invocation, test_a_bom_workflow_is_read
 
 - **Original id:** G2-02
 - **Where:** ci_test_dir_reachability.py:49-71
@@ -460,7 +460,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-3 (Med) -- Substring match: tests/unit is found in tests/unit_slow
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a positional target reaches a subdir only on a path-segment boundary (equal, ancestor, or a file/node id inside it), never by substring; regression test: test_a_sibling_with_a_longer_name_does_not_reach_the_shorter_one
 
 - **Original id:** G2-03
 - **Where:** ci_test_dir_reachability.py:122
@@ -471,7 +471,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-4 (Med) -- The space form --ignore tests/gpu is not recognised and counts as an invocation
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `--ignore X` / `--ignore-glob X` are read as ignores exactly like the `=` form, and their value is never a positional target; regression test: test_the_space_form_of_ignore_is_an_ignore_not_a_target
 
 - **Original id:** G2-04
 - **Where:** ci_test_dir_reachability.py:32,119
@@ -482,7 +482,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-5 (Med) -- An ignore in one job applies globally (false positive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the check now builds one `PytestInvocation(paths, ignores)` per command and a subdir is reachable when ANY single invocation collects it under its own ignores; regression test: test_an_ignore_in_one_job_does_not_hide_a_subdir_another_job_runs
 
 - **Original id:** G2-05
 - **Where:** ci_test_dir_reachability.py:127-137
@@ -493,7 +493,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-6 (Low) -- \s+ crosses newlines, so the next line is read as pytest's args
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- invocations are parsed line by line (after folding only explicit backslash continuations), so a following line is never read as pytest's arguments; regression test: test_the_next_line_is_not_read_as_pytest_arguments
 
 - **Original id:** G2-06
 - **Where:** ci_test_dir_reachability.py:71
@@ -504,7 +504,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-7 (High) -- A job without a name inherits the previous step's name, so allowlisted names mask other...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `find_continue_on_error_steps` reads jobs and steps by YAML indentation: each job and each step is its own scope whose name is its own `name` key (resolved when the scope closes, so a later `name:` still applies); a job-level flag reports the job's name or id, an unnamed step falls back only to its own job's name, and a previous step's name can never leak into another job or step; regression test: test_a_job_without_a_name_does_not_inherit_the_previous_step_name, test_a_name_after_the_flag_still_names_the_step
 
 - **Original id:** G2-07
 - **Where:** ci_workflow_gate.py:72-79
@@ -515,7 +515,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-8 (Med) -- with: name: (artifact input) is taken as the step name
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only a `name` key at the step's own key column names it; `with: name:` (deeper) is ignored; regression test: test_an_action_input_called_name_is_not_the_step_name
 
 - **Original id:** G2-08
 - **Where:** ci_workflow_gate.py:44
@@ -526,7 +526,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-9 (Med) -- Misses - continue-on-error: true and quoted 'true'
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the flag is recognised on the step's `-` line and as quoted `'true'`/`"true"` in any case, still not for templated values or `'false'`; comments are stripped quote-aware; composite actions (no `jobs:`) are read for `steps:` anywhere; workflows are read with `_core.read_source`; regression test: test_the_flag_on_the_dash_line_and_quoted_is_found, test_quoted_false_and_a_templated_value_are_not_found, test_a_composite_action_without_jobs_is_read, test_a_bom_workflow_is_read
 
 - **Original id:** G2-09
 - **Where:** ci_workflow_gate.py:49
@@ -537,7 +537,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-10 (High) -- Any indented uses: exempts the job as a reusable-workflow call, which covers most real...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `uses:` exempts a job only at the job's own key level (new `collect_jobs` returns `JobTimeout(job_id, line, has_timeout, reusable)`); a step's `uses: actions/checkout@v4` no longer exempts the job; regression test: test_a_step_uses_does_not_exempt_the_job
 
 - **Original id:** G2-10
 - **Where:** ci_workflow_timeout_gate.py:47,94
@@ -548,7 +548,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-11 (Med) -- A step-level timeout satisfies the job check (enshrined by a test)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only a job-level `timeout-minutes` satisfies the check; the test that enshrined the step-level reading is re-framed to the correct behaviour; regression test: test_step_level_timeout_does_not_satisfy_the_job_check
 
 - **Original id:** G2-11
 - **Where:** ci_workflow_timeout_gate.py:96
@@ -559,7 +559,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-12 (Med) -- jobs:  # comment finds no jobs, so the result is []
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `jobs:` header accepts a trailing comment (as do job headers, which may also be quoted), comment-only lines are skipped, and `assert_all_jobs_have_timeout` fails when no job is found; the workflow is read with `_core.read_source`; regression test: test_a_commented_jobs_header_is_read_and_zero_jobs_fails_the_assert
 
 - **Original id:** G2-12
 - **Where:** ci_workflow_timeout_gate.py:39
@@ -570,7 +570,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-13 (Low) -- The last job's block runs to EOF
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a job's block ends at the next line at or above the job level, so a top-level section after `jobs:` is not part of the last job; regression test: test_the_last_job_ends_at_the_next_top_level_section
 
 - **Original id:** G2-13
 - **Where:** ci_workflow_timeout_gate.py:92
@@ -581,7 +581,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-14 (Med) -- permissions: read-all / {} are reported missing (false positive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- any top-level `permissions:` (block, `read-all`, `write-all`, `{}`) counts as declared; a job-level one still does not; regression test: test_any_top_level_permissions_value_is_declared, test_a_nested_permissions_key_is_not_top_level
 
 - **Original id:** G2-14
 - **Where:** ci_workflow_paths.py:50
@@ -592,7 +592,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-15 (Med) -- working-directory is never reset between steps/jobs (false negative)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- lines are assigned to their job and step by indentation; a `working-directory` applies only to its own step, a job's `defaults.run.working-directory` to that job, a top-level one to the workflow, and a step's key is honoured even when it follows the `run:`; regression test: test_a_working_directory_does_not_leak_into_the_next_job, test_a_working_directory_does_not_leak_into_the_next_step, test_job_defaults_and_a_later_working_directory_key_apply_to_their_own_scope
 
 - **Original id:** G2-15
 - **Where:** ci_workflow_paths.py:82,89
@@ -603,7 +603,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-16 (Low) -- A docker://…@sha256: digest is flagged as mutable
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `docker://image@sha256:<64 hex>` is pinned; a `docker://image:tag` gets its own mutable-tag message; regression test: test_a_docker_digest_is_pinned_and_a_docker_tag_is_not
 
 - **Original id:** G2-16
 - **Where:** ci_workflow_paths.py:120-126
@@ -614,7 +614,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-17 (Low) -- The script regex is applied to name/description lines
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the script regex runs only on `run:` content (inline values and block-scalar bodies), never on `name:`/`description:` lines; comments are stripped quote-aware; workflows are read with `_core.read_source`; problem paths are POSIX; regression test: test_a_script_named_in_a_step_name_is_not_a_run, test_a_bom_workflow_is_read
 
 - **Original id:** G2-17
 - **Where:** ci_workflow_paths.py:92
@@ -625,7 +625,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-18 (Low) -- Dead repo_root recheck
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the dead second `repo_root` existence recheck is removed (the bases loop already includes `repo_root`); covered by the existing test_missing_run_script_is_flagged / test_existing_run_script_passes; regression test: test_missing_run_script_is_flagged
 
 - **Original id:** G2-18
 - **Where:** ci_workflow_paths.py:104
@@ -636,7 +636,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-19 (High) -- BOM or SyntaxError files are silently skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- call sites are read through `_core.scan_python`/`parse_file` (BOM stripped); new `scan_cfg_get_calls` returns `(calls, unparsed)`, `find_cfg_get_calls` and `find_module_scope_frozen_cli_defaults` raise `UnparsedFilesError` and every `assert_*` fails naming each unreadable/unparsable file; the resolver records files it could not parse; regression test: test_a_bom_file_is_read_and_a_syntax_error_fails, test_frozen_cli_default_with_keywords_and_a_syntax_error
 
 - **Original id:** G2-19
 - **Where:** config_call_site_parity.py:91-94,170,580
@@ -647,7 +647,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-20 (Med) -- Keyword section=/key= calls are skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `section`/`key` are read positionally or as keywords (`section=`, `key=`), in the call-site scan and in the frozen-CLI scan; regression test: test_keyword_section_and_key_are_found, test_frozen_cli_default_with_keywords_and_a_syntax_error
 
 - **Original id:** G2-20
 - **Where:** config_call_site_parity.py:113-119
@@ -658,7 +658,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-21 (Med) -- Binding only via Assign; AnnAssign, walrus and with ..
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a name is bound to the accessor by `=`, an annotated assignment, a walrus or `with cfg() as c`; regression test: test_every_binding_form_is_followed
 
 - **Original id:** G2-21
 - **Where:** config_call_site_parity.py:98-102
@@ -669,7 +669,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-22 (Low) -- Bound names are file-wide, not scoped (false positive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- bindings are resolved per scope with Python's lookup rules (innermost function scope that binds the name decides; parameters, other assignments, loop targets and imports shadow; class scopes are skipped for nested functions; `global`/`nonlocal` defer outward); regression test: test_a_bound_name_is_scoped_like_python_scopes_it
 
 - **Original id:** G2-22
 - **Where:** config_call_site_parity.py:97-111
@@ -680,7 +680,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-23 (Med) -- _const_in_file takes the first assignment and ignores AnnAssign
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_const_in_file` takes the LAST top-level binding (`=`, multi-target `=`, annotated assignment; an augmented assignment or a non-literal last binding makes it unresolved); regression test: test_the_last_binding_and_an_annotated_one_resolve
 
 - **Original id:** G2-23
 - **Where:** config_call_site_parity.py:194-199
@@ -691,7 +691,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-24 (Med) -- Relative imports are unresolved, so defaults are silently skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `from .x import Y` / `from . import m` resolve against the importing file's package (relative to the resolver root) via `_core.resolve_relative`; regression test: test_a_relative_import_and_import_a_dot_b_resolve
 
 - **Original id:** G2-24
 - **Where:** config_call_site_parity.py:228
@@ -702,7 +702,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-25 (Low) -- import a.b binds b (wrong)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `import a.b` binds `a` (target `a`), `import a.b as c` binds `c` (target `a.b`), and `a.b.NAME` chains of any depth are resolved through the module path; regression test: test_a_relative_import_and_import_a_dot_b_resolve
 
 - **Original id:** G2-25
 - **Where:** config_call_site_parity.py:234
@@ -713,7 +713,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-26 (Low) -- 1 == True == 1.0 counts as agreement
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `to_hashable` tags bools and floats with their type (tuples too), so `True`, `1` and `1.0` are different defaults; regression test: test_true_one_and_one_point_zero_are_different_defaults
 
 - **Original id:** G2-26
 - **Where:** config_call_site_parity.py:455,503
@@ -724,7 +724,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-27 (Low) -- sorted() on mixed-type keys raises TypeError
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- dict items and set members are ordered by `repr` of their hashable form, so mixed-type keys no longer raise; regression test: test_mixed_type_dict_keys_do_not_crash
 
 - **Original id:** G2-27
 - **Where:** config_call_site_parity.py:310,312
@@ -735,7 +735,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-28 (Low) -- The min_checked guard is a bare assert (dropped under -O)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `min_checked` guard is a `pytest.fail`, not a bare assert (the test that caught `AssertionError` is re-framed to `pytest.fail.Exception`); regression test: test_the_min_checked_guard_survives_python_dash_o
 
 - **Original id:** G2-28
 - **Where:** config_call_site_parity.py:506
@@ -746,7 +746,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-29 (Low) -- relative_to raises outside root; every assert re-parses all files; resolve runs twice
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- paths are made relative with `_core.relative_posix` (a file outside root gets its absolute POSIX path instead of raising); parses go through the `_core` parse cache so repeated asserts do not re-parse unchanged files; each default is resolved once per call site in the divergence check; regression test: test_a_file_outside_root_does_not_raise
 
 - **Original id:** G2-29
 - **Where:** config_call_site_parity.py:122,367,442,452,455,495
@@ -757,7 +757,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-30 (Med) -- A missing baseline is seeded and the test skipped (green in CI; also writes into the tree)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a missing baseline now fails (naming the refresh command) and writes nothing; the baseline is written only on an explicit refresh, atomically (`_core.atomic_write_text`); `_refresh_requested`/`register_refresh_option` are thin wrappers over `_core.refresh_requested`/`register_refresh_options` (option, `--py-ci-refresh`, `PY_CI_SHARED_REFRESH=code-audit`, xdist-safe); existing tests that relied on seeding were re-framed to seed through a refresh request; regression test: test_a_missing_baseline_fails_and_writes_nothing_until_a_refresh, test_register_refresh_option_also_registers_the_shared_generic_flag
 
 - **Original id:** G2-30
 - **Where:** code_audit_meta.py:202-207
@@ -768,7 +768,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-31 (Low) -- An empty snippet falls back to a line{n} key
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a finding with an empty snippet is fingerprinted from its detail (and `function`, when a scanner provides one), so its key survives relocation; only a finding with neither falls back to `line{n}`; regression test: test_an_empty_snippet_is_keyed_by_detail_not_line
 
 - **Original id:** G2-31
 - **Where:** code_audit_meta.py:117
@@ -779,7 +779,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-32 (Med) -- The hash concatenates contents without separators; an empty file list gives a constant...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- each file contributes a machine-independent label (its path relative to the files' common directory) and its length before its bytes, so byte moves between files and renames change the hash; `content_hash([])` raises and the assert fails on an empty file list; new baselines carry `hash_format: 2`, and a baseline without it is still compared with the legacy hash so upgrading does not fail every consumer; regression test: test_moving_bytes_between_files_changes_the_hash, test_the_hash_does_not_depend_on_where_the_checkout_lives, test_an_empty_file_list_is_rejected, test_a_legacy_baseline_still_gates
 
 - **Original id:** G2-32
 - **Where:** content_hash_version_bump_gate.py:91
@@ -790,7 +790,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-33 (Med) -- Refresh via sys.argv is ignored under xdist
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- refresh detection is `_core.refresh_requested` (new `request=` kwarg, `--py-ci-refresh`, env `PY_CI_SHARED_REFRESH=content-hash-version`, argv last), and `register_refresh_option` is a thin wrapper over `_core.register_refresh_options`; regression test: test_refresh_is_detected_from_the_env_under_xdist, test_register_refresh_option_registers_the_generic_flag_too
 
 - **Original id:** G2-33
 - **Where:** content_hash_version_bump_gate.py:77-80
@@ -801,7 +801,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-34 (Med) -- A missing baseline seeds and skips; any version change, including a revert, self-certif...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a missing baseline fails and is written only by an explicit refresh (atomically); a bump is re-pinned only outside CI (`write_on_bump`, default "env CI unset"), in CI an unrecorded bump fails until the re-pinned baseline is committed; the baseline keeps a `history` of version -> hash and a version already pinned to different content (A -> B -> A with B's content) is rejected; existing seeding tests re-framed to seed through a refresh; regression test: test_a_missing_baseline_fails_and_a_refresh_seeds_it, test_a_bump_in_ci_is_not_written_and_fails_until_committed, test_reverting_to_an_old_version_with_new_content_fails
 
 - **Original id:** G2-34
 - **Where:** content_hash_version_bump_gate.py:129,140-147
@@ -812,7 +812,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-35 (Low) -- A title containing * is not a bullet; matching is a case-sensitive substring
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- bullet and title patterns take the title up to the first closing `**` (so `- **a*b title**` is a bullet), and cross-document matching compares `normalize_title` forms (case-folded, `*`/backtick/underscore markup removed, whitespace collapsed) on both sides; files are read with `_core.read_source`; regression test: test_a_title_containing_an_asterisk_is_still_a_bullet, test_a_title_is_matched_across_case_markup_and_wrapping, test_a_bom_changelog_is_read
 
 - **Original id:** G2-35
 - **Where:** changelog_promise_parity.py:34,37
@@ -823,7 +823,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-36 (Low) -- A missing section or trigger produces a permanent skip
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new kwargs `require_section` (a missing/renamed heading fails), `min_triggered` (too few triggering bullets fails) and `require_resolution_paths` (a missing resolution document fails) turn the skips into failures once a repo's convention is established; the defaults keep the documented "not yet applicable" skip for repos that have not adopted the convention; regression test: test_a_missing_section_or_trigger_can_be_required, test_a_required_resolution_document_must_exist
 
 - **Original id:** G2-36
 - **Where:** changelog_promise_parity.py:139,144
@@ -834,7 +834,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-37 (Low) -- copytree into an existing dir raises; the str-prefix check accepts copy2; the return co...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a copy left in the workdir by an earlier call is removed before a fresh `copytree` (a merge would keep stale files, `dirs_exist_ok` alone would too); containment is checked on path components (`relative_to`), so `copy2` is not `copy`; the probe's pytest return code is checked and a failed probe is reported with the tail of its stdout/stderr; regression test: test_a_second_call_with_the_same_workdir_takes_a_fresh_copy, test_a_sibling_directory_sharing_the_prefix_is_not_the_copy, test_a_probe_that_fails_is_reported_with_its_output
 
 - **Original id:** G2-37
 - **Where:** checkout_resolution.py:74,106
@@ -845,7 +845,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-38 (Low) -- Relative constants resolve against the CWD, not repo_root
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a relative constant is resolved against `repo_root` (where a real run from the checkout would put it), not the current working directory, in both `assert_outside` and `offending_state_paths`; regression test: test_a_relative_constant_is_judged_against_the_checkout_not_the_cwd
 
 - **Original id:** G2-38
 - **Where:** checkpoint_isolation.py:46,65
@@ -856,7 +856,7 @@ Read-only audit of `src/py_ci_shared/[a-l]*.py` (skipping mutation_teeth.py and 
 
 ### GB-39 (Low) -- A field missing in one repo is not reported as drift; a list-valued field raises TypeEr...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a field present in one repo and absent in another is reported as divergence (shown as `<missing>`; absent everywhere is not), values are compared by canonical JSON so list/table fields no longer raise `TypeError`; `main` takes injectable `consumers`/`fetch` so it is testable offline; new test file tests/test_config_drift_check.py; regression test: test_a_field_missing_in_one_repo_is_divergence, test_a_list_valued_field_is_compared_not_crashed_on, test_main_reports_divergence_without_failing
 
 - **Original id:** G2-39
 - **Where:** config_drift_check.py

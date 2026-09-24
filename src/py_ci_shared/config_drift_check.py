@@ -6,13 +6,21 @@ flags) against each other. This is informational, not a pass/fail gate: legitima
 divergence exists (e.g. a repo mid-migration to a new rule), so the scheduled workflow that runs
 this posts the report as a step summary rather than failing the run -- see README.md's "Keeping
 this repo in sync with consumers" section for why no automated gate existed before this script.
+
+A field set in one repo and absent from another IS divergence (the absent one runs the tool's
+default), and values are compared by their canonical JSON form, so list- and table-valued fields
+(``extend-select``, per-module overrides) are compared instead of crashing the report.
 """
 
 from __future__ import annotations
 
+import json
 import sys
-from ._toml_compat import tomllib
 import urllib.request
+from collections.abc import Callable, Mapping
+from typing import Any, Optional
+
+from ._toml_compat import tomllib
 
 CONSUMERS = {
     "mlframe": "https://raw.githubusercontent.com/fingoldo/mlframe/master/pyproject.toml",
@@ -29,6 +37,14 @@ def _fetch_pyproject(url: str) -> dict:
         return doc
 
 
+_MISSING = "<missing>"
+
+
+def _canonical(value: Any) -> str:
+    """A hashable, order-stable form of any TOML value (lists and tables included)."""
+    return _MISSING if value is None else json.dumps(value, sort_keys=True, default=str)
+
+
 def _diff_section(section_name: str, fields: tuple, parsed: dict) -> list[str]:
     lines = []
     values = {}
@@ -37,18 +53,21 @@ def _diff_section(section_name: str, fields: tuple, parsed: dict) -> list[str]:
         values[repo] = {f: section.get(f) for f in fields}
     for field in fields:
         seen = {repo: v[field] for repo, v in values.items()}
-        distinct = {v for v in seen.values() if v is not None}
+        distinct = {_canonical(v) for v in seen.values()}
         if len(distinct) > 1:
-            lines.append(f"  [tool.{section_name}].{field} diverges: {seen}")
+            shown = {repo: (v if v is not None else _MISSING) for repo, v in seen.items()}
+            lines.append(f"  [tool.{section_name}].{field} diverges: {shown}")
     return lines
 
 
-def main() -> int:
+def main(consumers: Optional[Mapping[str, str]] = None, fetch: Optional[Callable[[str], dict]] = None) -> int:
     parsed = {}
-    for repo, url in CONSUMERS.items():
+    fetch_one = fetch or _fetch_pyproject
+    for repo, url in (consumers if consumers is not None else CONSUMERS).items():
+        # PERF203: 2 network calls total, not a hot loop; broad catch so one consumer's fetch failure doesn't abort the report
         try:
-            parsed[repo] = _fetch_pyproject(url)
-        except Exception as e:  # noqa: PERF203 -- 2 network calls total, not a hot loop; broad catch so one consumer's fetch failure doesn't abort the report for the others
+            parsed[repo] = fetch_one(url)
+        except Exception as e:  # noqa: PERF203
             print(f"WARNING: could not fetch {repo}'s pyproject.toml ({type(e).__name__}: {e}), skipping it", file=sys.stderr)
     if len(parsed) < 2:
         print("Fewer than 2 consumer pyproject.toml files fetched successfully -- nothing to diff.")

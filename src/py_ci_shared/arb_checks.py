@@ -44,6 +44,8 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from ._core import read_source
+
 # CLDR plural categories that a locale must cover for a count to render correctly. Only the locales
 # a caller is likely to ship are listed; an unlisted locale falls back to {"other"}, which every
 # language needs.
@@ -67,13 +69,30 @@ PLURAL_CATEGORIES: Mapping[str, frozenset[str]] = {
 }
 
 _COUNT_LIKE_KEY_RE = re.compile(r"(count|days|results|items|total)$", re.IGNORECASE)
-_BRANCH_HEAD_RE = re.compile(r"(=\d+|zero|one|two|few|many|other)\s*\{")
+_PLURAL_HEAD_RE = re.compile(r"\{\s*\w+\s*,\s*plural\s*,")
+_SELECTOR_RE = re.compile(r"\s*(offset:\s*\d+\s*)?(=\d+|zero|one|two|few|many|other)\s*\{")
 
-# An exact selector covers the category its value falls in: ICU checks `=N` before the categories, so
-# `{count, plural, =1{1 row} other{{count} rows}}` renders correctly for 1 in every locale whose `one`
-# category contains 1 - which is every locale that HAS a `one` category. Reading only the category names
-# reported `one` missing on exactly the strings that are right (measured on noema_app: 18 of 24 findings).
+# Kept for callers that imported it. Coverage is now decided by FINITE_CATEGORY_VALUES below.
 _EXACT_COVERS = {"=0": "zero", "=1": "one", "=2": "two"}
+
+# An exact selector covers a category only when that category is a FINITE set of integers that the exact
+# selectors present enumerate completely: ICU checks `=N` first, so `=1{..}` renders 1 correctly, but in ru/uk
+# `one` also holds 21, 31, ... which then fall through to `other`, and in fr/pt `one` holds 0 as well as 1.
+# Categories not listed here for a locale are treated as infinite (never covered by exact selectors).
+FINITE_CATEGORY_VALUES: Mapping[str, Mapping[str, frozenset[int]]] = {
+    "en": {"one": frozenset({1})},
+    "de": {"one": frozenset({1})},
+    "es": {"one": frozenset({1})},
+    "it": {"one": frozenset({1})},
+    "nl": {"one": frozenset({1})},
+    "tr": {"one": frozenset({1})},
+    "cs": {"one": frozenset({1})},
+    "pl": {"one": frozenset({1})},
+    "fr": {"one": frozenset({0, 1})},
+    "pt": {"one": frozenset({0, 1})},
+    "ar": {"zero": frozenset({0}), "one": frozenset({1}), "two": frozenset({2})},
+}
+_PLURAL_ARG_RE = re.compile(r",\s*plural\s*,")
 _PLACEHOLDER_RE = re.compile(r"\{(\w+)[^}]*\}")
 _WORDS_RE = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
 # The text a placeholder is followed by, when it starts with a word, makes the placeholder a
@@ -87,14 +106,29 @@ _INFORMAL_PATTERNS: Mapping[str, tuple[str, ...]] = {
 }
 
 
+class TemplateLocaleError(KeyError):
+    """The template locale is not one of the catalogues passed in."""
+
+    def __str__(self) -> str:
+        return str(self.args[0]) if self.args else ""
+
+
 def _messages(path: Path) -> dict[str, str]:
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = json.loads(read_source(path))
     return {k: v for k, v in data.items() if not k.startswith("@") and isinstance(v, str)}
+
+
+def _template(catalogues: Mapping[str, Path], template_locale: str) -> Path:
+    if template_locale not in catalogues:
+        raise TemplateLocaleError(
+            f"template locale {template_locale!r} is not among the catalogues {sorted(catalogues)}; " "pass template_locale= matching one of those keys"
+        )
+    return catalogues[template_locale]
 
 
 def find_key_parity_problems(catalogues: Mapping[str, Path], template_locale: str) -> list[str]:
     """Return one problem string per locale whose key set differs from the template's."""
-    base = set(_messages(catalogues[template_locale]))
+    base = set(_messages(_template(catalogues, template_locale)))
     out: list[str] = []
     for loc, path in catalogues.items():
         if loc == template_locale:
@@ -116,19 +150,49 @@ def _plural_branches(value: str) -> dict[str, str]:
     (``one{{count} день}``), so ``[^{}]*`` matches nothing and every branch of every correctly
     written plural disappears -- which would make this checker report a missing category on exactly
     the strings that are right.
+
+    Only the selectors at the top level of each plural are heads: a body such as ``other{someone {name}}``
+    contains ``one {`` as text, which is not a branch.
     """
     branches: dict[str, str] = {}
-    for m in _BRANCH_HEAD_RE.finditer(value):
-        depth = 1
-        i = m.end()
-        while i < len(value) and depth:
-            if value[i] == "{":
-                depth += 1
-            elif value[i] == "}":
-                depth -= 1
-            i += 1
-        branches[m.group(1)] = value[m.end() : i - 1]
-    return branches
+    pos = 0
+    while True:
+        head = _PLURAL_HEAD_RE.search(value, pos)
+        if head is None:
+            return branches
+        i = head.end()
+        while True:
+            m = _SELECTOR_RE.match(value, i)
+            if m is None:
+                break
+            end = _close(value, m.end())
+            branches.setdefault(m.group(2), value[m.end() : end - 1])
+            i = end
+        pos = max(i, head.end())
+
+
+def _close(value: str, start: int) -> int:
+    """Index just past the ``}`` that closes the brace opened right before *start*."""
+    depth = 1
+    i = start
+    while i < len(value) and depth:
+        if value[i] == "{":
+            depth += 1
+        elif value[i] == "}":
+            depth -= 1
+        i += 1
+    return i
+
+
+def _is_plural(value: str) -> bool:
+    return bool(_PLURAL_ARG_RE.search(value))
+
+
+def _covered(locale: str, branches: Iterable[str]) -> set[str]:
+    names = set(branches)
+    exact = {int(b[1:]) for b in names if b.startswith("=")}
+    finite = FINITE_CATEGORY_VALUES.get(locale, {})
+    return names | {cat for cat, values in finite.items() if values <= exact}
 
 
 def _needs_plural(key: str, value: str) -> bool:
@@ -138,7 +202,7 @@ def _needs_plural(key: str, value: str) -> bool:
     pluralizes, while ``{index} of {count}`` and ``{current} / {total}`` are ratio displays that do
     not pluralize in any language.
     """
-    if "plural" in value or "{" not in value:
+    if _is_plural(value) or "{" not in value:
         return False
     count_like_key = bool(_COUNT_LIKE_KEY_RE.search(key))
     for m in _PLACEHOLDER_RE.finditer(value):
@@ -155,17 +219,18 @@ def find_plural_problems(catalogues: Mapping[str, Path]) -> list[str]:
     category its locale needs, and per branch that dropped the placeholder."""
     out: list[str] = []
     for loc, path in catalogues.items():
-        required = PLURAL_CATEGORIES.get(loc.split("_")[0].lower(), frozenset({"other"}))
+        lang = loc.split("_")[0].split("-")[0].lower()
+        required = PLURAL_CATEGORIES.get(lang, frozenset({"other"}))
         for key, value in _messages(path).items():
             if _needs_plural(key, value):
                 out.append(
                     f"{path.name}: '{key}' reads as a counted phrase ({value!r}) with no ICU " f"plural. It is wrong for at least one count in this locale."
                 )
                 continue
-            if "plural" not in value:
+            if not _is_plural(value):
                 continue
             branches = _plural_branches(value)
-            covered = set(branches) | {_EXACT_COVERS[b] for b in branches if b in _EXACT_COVERS}
+            covered = _covered(lang, branches)
             missing = sorted(required - covered)
             if missing:
                 out.append(
@@ -173,7 +238,7 @@ def find_plural_problems(catalogues: Mapping[str, Path]) -> list[str]:
                     f"{sorted(required)} - counts falling in {missing} render the wrong form."
                 )
             for name, text in branches.items():
-                if "{" in text or not text.strip():
+                if "{" in text or "#" in text or not text.strip():
                     continue
                 # A `one` branch may spell the number out ("1 blank", "один"); any other branch
                 # with no placeholder renders a sentence with no number in it.
@@ -218,7 +283,7 @@ def find_dead_keys(
     for pattern in call_patterns:
         called.update(re.findall(pattern, source_text))
     allow = set(allowed)
-    return [key for key in sorted(_messages(catalogues[template_locale])) if key not in called and key not in allow]
+    return [key for key in sorted(_messages(_template(catalogues, template_locale))) if key not in called and key not in allow]
 
 
 def assert_arb_catalogues_are_sound(

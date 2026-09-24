@@ -71,21 +71,29 @@ def test_schema_section_field_defaults_handles_default_factory():
 
 
 def test_find_cfg_get_calls_direct_chain(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 def f():
     return cfg().get("filters", "max_results", 50, int)
-""")
+""",
+    )
     calls = find_cfg_get_calls(tmp_path, [tmp_path / "a.py"])
     assert len(calls) == 1
     assert (calls[0].section, calls[0].key) == ("filters", "max_results")
 
 
 def test_find_cfg_get_calls_bound_name(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 def f():
     _c = cfg()
     return _c.get("db", "pool_max", 10)
-""")
+""",
+    )
     calls = find_cfg_get_calls(tmp_path, [tmp_path / "a.py"])
     assert len(calls) == 1
     assert (calls[0].section, calls[0].key) == ("db", "pool_max")
@@ -109,11 +117,15 @@ def test_assert_every_cfg_get_call_resolves_to_a_schema_field_fails_on_unknown_s
 
 
 def test_assert_every_schema_field_has_a_reader_passes(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 cfg().get("filters", "max_results", 50)
 cfg().get("filters", "enabled", True)
 cfg().get("db", "pool_max", 10)
-""")
+""",
+    )
     assert_every_schema_field_has_a_reader(tmp_path, [tmp_path / "a.py"], _AppConfig)
 
 
@@ -126,7 +138,9 @@ def test_assert_every_schema_field_has_a_reader_fails_on_unread_field(tmp_path):
 def test_assert_every_schema_field_has_a_reader_honors_known_indirect_readers(tmp_path):
     _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", 50)\n')
     assert_every_schema_field_has_a_reader(
-        tmp_path, [tmp_path / "a.py"], _AppConfig,
+        tmp_path,
+        [tmp_path / "a.py"],
+        _AppConfig,
         known_indirect_readers={("filters", "enabled"): "read via snapshot()", ("db", "pool_max"): "read via snapshot()"},
     )
 
@@ -169,7 +183,7 @@ def test_assert_no_divergent_cfg_get_call_site_defaults_named_constant_agrees_wi
     must NOT be flagged as divergent."""
     _write(tmp_path, "consts.py", "MAX_RESULTS = 50\n")
     _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", 50)\n')
-    _write(tmp_path, "b.py", "from consts import MAX_RESULTS\ncfg().get(\"filters\", \"max_results\", MAX_RESULTS)\n")
+    _write(tmp_path, "b.py", 'from consts import MAX_RESULTS\ncfg().get("filters", "max_results", MAX_RESULTS)\n')
     files = [tmp_path / "consts.py", tmp_path / "a.py", tmp_path / "b.py"]
     assert_no_divergent_cfg_get_call_site_defaults(tmp_path, files)
 
@@ -193,7 +207,7 @@ def test_assert_no_divergent_cfg_get_call_site_defaults_unresolvable_site_is_ski
     value would spuriously flag it even when the resolvable sites agree."""
     _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", 50)\n')
     _write(tmp_path, "b.py", 'cfg().get("filters", "max_results", 50)\n')
-    _write(tmp_path, "c.py", "def f(some_dynamic_arg):\n    cfg().get(\"filters\", \"max_results\", some_dynamic_arg)\n")
+    _write(tmp_path, "c.py", 'def f(some_dynamic_arg):\n    cfg().get("filters", "max_results", some_dynamic_arg)\n')
     files = [tmp_path / "a.py", tmp_path / "b.py", tmp_path / "c.py"]
     assert_no_divergent_cfg_get_call_site_defaults(tmp_path, files)  # must not raise
 
@@ -213,7 +227,7 @@ def test_assert_call_site_defaults_match_schema_defaults_min_checked_guard(tmp_p
     """A dynamic (unresolvable) default must be skipped, not counted -- and if
     that leaves too few checked call sites, the resolver-broken guard fires."""
     _write(tmp_path, "a.py", 'cfg().get("filters", "max_results", some_dynamic_value())\n')
-    with pytest.raises(AssertionError, match="only resolved"):
+    with pytest.raises(pytest.fail.Exception, match="only resolved"):
         assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=1)
 
 
@@ -225,18 +239,25 @@ def test_assert_call_site_defaults_match_schema_defaults_honors_known_intentiona
     with pytest.raises(pytest.fail.Exception, match="disagree"):
         assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=1)
     assert_call_site_defaults_match_schema_defaults(
-        tmp_path, [tmp_path / "a.py"], _AppConfig, min_checked=0,
+        tmp_path,
+        [tmp_path / "a.py"],
+        _AppConfig,
+        min_checked=0,
         known_intentional_mismatches={("filters", "max_results"): "deliberate safety-net fallback"},
     )
 
 
 def test_find_module_scope_frozen_cli_defaults_flags_module_scope_read(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
 
 def main():
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-""")
+""",
+    )
     hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
     assert len(hits) == 1
     assert (hits[0].section, hits[0].key) == ("traffic", "default_workers")
@@ -246,14 +267,18 @@ def main():
 def test_find_module_scope_frozen_cli_defaults_ignores_function_scope_read(tmp_path):
     """A cfg().get(...) read INSIDE a function (the correct, hot-reloadable pattern) --
     even if the resulting variable were somehow fed to argparse -- is not module scope."""
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 def make_default():
     x = cfg().get("traffic", "default_workers", 4)
     return x
 
 def main():
     parser.add_argument("--workers", type=int, default=make_default())
-""")
+""",
+    )
     hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
     assert hits == []
 
@@ -261,35 +286,183 @@ def main():
 def test_find_module_scope_frozen_cli_defaults_ignores_unused_module_scope_read(tmp_path):
     """A module-scope cfg().get(...) read that's never fed to an argparse default (e.g. only
     used in a log line) is fine -- only the argparse-default wiring is the actual bug."""
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
 
 def main():
     log.info("workers=%s", DEFAULT_WORKERS)
-""")
+""",
+    )
     hits = find_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
     assert hits == []
 
 
 def test_assert_no_module_scope_frozen_cli_defaults_fails(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
 
 def main():
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-""")
+""",
+    )
     with pytest.raises(pytest.fail.Exception, match="frozen"):
         assert_no_module_scope_frozen_cli_defaults(tmp_path, [tmp_path / "a.py"])
 
 
 def test_assert_no_module_scope_frozen_cli_defaults_honors_known_intentional_freezes(tmp_path):
-    _write(tmp_path, "a.py", """
+    _write(
+        tmp_path,
+        "a.py",
+        """
 DEFAULT_WORKERS = cfg().get("traffic", "default_workers", 4)
 
 def main():
     parser.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-""")
+""",
+    )
     assert_no_module_scope_frozen_cli_defaults(
-        tmp_path, [tmp_path / "a.py"],
+        tmp_path,
+        [tmp_path / "a.py"],
         known_intentional_freezes={("traffic", "default_workers"): "deliberate, reviewed"},
     )
+
+
+def _keys(calls):
+    return sorted((c.section, c.key, c.line) for c in calls)
+
+
+def test_a_bom_file_is_read_and_a_syntax_error_fails(tmp_path):
+    bom = tmp_path / "bom.py"
+    bom.write_bytes(b"\xef\xbb\xbfx = cfg().get('filters', 'max_results', 50)\n")
+    assert _keys(find_cfg_get_calls(tmp_path, [bom])) == [("filters", "max_results", 1)]
+    bad = _write(tmp_path, "bad.py", "cfg().get('filters', 'nope',\n")
+    with pytest.raises(AssertionError, match=r"bad\.py"):
+        find_cfg_get_calls(tmp_path, [bom, bad])
+    with pytest.raises(pytest.fail.Exception, match="could not be read or parsed"):
+        assert_every_cfg_get_call_resolves_to_a_schema_field(tmp_path, [bom, bad], _AppConfig)
+    assert_every_cfg_get_call_resolves_to_a_schema_field(tmp_path, [bom], _AppConfig)
+
+
+def test_keyword_section_and_key_are_found(tmp_path):
+    p = _write(tmp_path, "a.py", "x = cfg().get(section='filters', key='nope')\ny = cfg().get('filters', key='max_results', default=50)\n")
+    assert _keys(find_cfg_get_calls(tmp_path, [p])) == [("filters", "max_results", 2), ("filters", "nope", 1)]
+    with pytest.raises(pytest.fail.Exception, match="no field 'nope'"):
+        assert_every_cfg_get_call_resolves_to_a_schema_field(tmp_path, [p], _AppConfig)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "c: Config = cfg()\nc.get('filters', 'max_results')\n",
+        "if (c := cfg()) is not None:\n    c.get('filters', 'max_results')\n",
+        "with cfg() as c:\n    c.get('filters', 'max_results')\n",
+    ],
+)
+def test_every_binding_form_is_followed(tmp_path, source):
+    p = _write(tmp_path, "a.py", source)
+    assert [(s, k) for s, k, _ in _keys(find_cfg_get_calls(tmp_path, [p]))] == [("filters", "max_results")]
+
+
+def test_a_bound_name_is_scoped_like_python_scopes_it(tmp_path):
+    p = _write(
+        tmp_path,
+        "a.py",
+        "c = cfg()\n"
+        "def g(c):\n    return c.get('x', 'y')\n"
+        "def h():\n    return c.get('filters', 'max_results')\n"
+        "def k():\n    c = {}\n    return c.get('p', 'q')\n"
+        "def m():\n    d = cfg()\n    def inner():\n        return d.get('db', 'pool_max')\n    return inner\n"
+        "def n():\n    return d.get('not', 'bound')\n",
+    )
+    assert [(s, k) for s, k, _ in _keys(find_cfg_get_calls(tmp_path, [p]))] == [("db", "pool_max"), ("filters", "max_results")]
+
+
+def test_the_last_binding_and_an_annotated_one_resolve(tmp_path):
+    from py_ci_shared.config_call_site_parity import ConstantResolver
+
+    import ast
+
+    p = _write(tmp_path, "a.py", "X = 1\nX = 2\nY: int = 5\nZ = 3\nZ = compute()\n")
+    r = ConstantResolver(tmp_path)
+    assert r.resolve(ast.parse("X", mode="eval").body, p) == 2
+    assert r.resolve(ast.parse("Y", mode="eval").body, p) == 5
+    assert type(r.resolve(ast.parse("Z", mode="eval").body, p)).__name__ == "_Unresolved"
+
+
+def test_a_relative_import_and_import_a_dot_b_resolve(tmp_path):
+    from py_ci_shared.config_call_site_parity import ConstantResolver
+
+    import ast
+
+    pkg = tmp_path / "pkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("", encoding="utf-8")
+    (pkg / "consts.py").write_text("BATCH = 64\n", encoding="utf-8")
+    user = pkg / "user.py"
+    user.write_text("from .consts import BATCH\nimport pkg.consts\nfrom . import consts as c2\n", encoding="utf-8")
+    r = ConstantResolver(tmp_path)
+    assert r.resolve(ast.parse("BATCH", mode="eval").body, user) == 64
+    assert r.resolve(ast.parse("pkg.consts.BATCH", mode="eval").body, user) == 64
+    assert r.resolve(ast.parse("c2.BATCH", mode="eval").body, user) == 64
+    assert type(r.resolve(ast.parse("consts.BATCH", mode="eval").body, user)).__name__ == "_Unresolved"
+
+
+def test_true_one_and_one_point_zero_are_different_defaults(tmp_path):
+    from py_ci_shared.config_call_site_parity import to_hashable
+
+    assert len({to_hashable(True), to_hashable(1), to_hashable(1.0)}) == 3
+    assert to_hashable([1, 2]) == to_hashable([1, 2]) and to_hashable({1: "a"}) != to_hashable({True: "a"})
+    a = _write(tmp_path, "a.py", "cfg().get('filters', 'enabled', True)\n")
+    b = _write(tmp_path, "b.py", "cfg().get('filters', 'enabled', 1)\n")
+    with pytest.raises(pytest.fail.Exception, match="divergent"):
+        assert_no_divergent_cfg_get_call_site_defaults(tmp_path, [a, b])
+    c = _write(tmp_path, "c.py", "cfg().get('filters', 'enabled', True)\n")
+    assert_no_divergent_cfg_get_call_site_defaults(tmp_path, [a, c])
+
+
+def test_mixed_type_dict_keys_do_not_crash(tmp_path):
+    from py_ci_shared.config_call_site_parity import to_hashable
+
+    assert to_hashable({1: "a", "b": 2}) == to_hashable({"b": 2, 1: "a"})
+    assert to_hashable({1, "b"}) == to_hashable({"b", 1})
+
+
+def test_the_min_checked_guard_survives_python_dash_o(tmp_path):
+    import subprocess
+
+    _write(tmp_path, "a.py", "cfg().get('filters', 'max_results', dyn())\n")
+    script = (
+        "import sys; sys.path.insert(0, {src!r})\n"
+        "from pathlib import Path\nimport pytest\nfrom pydantic import BaseModel\n"
+        "from py_ci_shared.config_call_site_parity import assert_call_site_defaults_match_schema_defaults\n"
+        "class F(BaseModel):\n    max_results: int = 50\n"
+        "class A(BaseModel):\n    filters: F = F()\n"
+        "try:\n    assert_call_site_defaults_match_schema_defaults(Path({root!r}), [Path({root!r}) / 'a.py'], A, min_checked=1)\n"
+        "except pytest.fail.Exception:\n    print('FAILED-AS-EXPECTED')\n"
+    ).format(src=str(Path(__file__).resolve().parents[1] / "src"), root=str(tmp_path))
+    out = subprocess.run([sys.executable, "-O", "-c", script], capture_output=True, text=True, check=False)
+    assert "FAILED-AS-EXPECTED" in out.stdout, out.stderr
+
+
+def test_a_file_outside_root_does_not_raise(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    root = tmp_path / "root"
+    root.mkdir()
+    p = _write(outside, "a.py", "cfg().get('filters', 'max_results')\n")
+    calls = find_cfg_get_calls(root, [p])
+    assert len(calls) == 1 and calls[0].file.endswith("outside/a.py")
+
+
+def test_frozen_cli_default_with_keywords_and_a_syntax_error(tmp_path):
+    p = _write(tmp_path, "a.py", "W = cfg().get(section='traffic', key='workers', default=4)\nparser.add_argument('--w', default=W)\n")
+    assert [(h.section, h.key) for h in find_module_scope_frozen_cli_defaults(tmp_path, [p])] == [("traffic", "workers")]
+    bad = _write(tmp_path, "bad.py", "def (:\n")
+    with pytest.raises(pytest.fail.Exception, match=r"bad\.py"):
+        assert_no_module_scope_frozen_cli_defaults(tmp_path, [p, bad], known_intentional_freezes={("traffic", "workers"): "x"})

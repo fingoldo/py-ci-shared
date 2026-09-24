@@ -13,8 +13,11 @@ A rule whose count never falls is saying one of three things, and all three are 
 * the rule is satisfied and the entries are stale, which the ratchet's own prune check would catch on
   the next run - so this is the cheap way to notice nobody has run it.
 
-Reads both shapes a baseline is written in: ``{"accepted": {key: note}}`` (the Python ratchet) and
-``{"entries": [...]}`` or ``{"entries": {finding: note}}`` (the Dart sweeps).
+Reads every shape a baseline is written in: ``{"accepted": {key: note}}`` (the Python ratchet),
+``{"entries": [...]}`` or ``{"entries": {finding: note}}`` (the Dart sweeps), the ``_core.Baseline`` multiset
+``{"entries": {key: {"count": n, "note": ..}}}`` (counts summed) and a bare ``{key: note}`` map whose keys read as
+paths or finding keys. A baseline renamed in its history is followed across the rename, a rule counts as moved
+when its count changed at any point (not only between the endpoints), and a git failure exits non-zero.
 
     python -m py_ci_shared.baseline_trend                     every baseline, default directories
     python -m py_ci_shared.baseline_trend --dir test/meta/baselines --since 2026-08-01
@@ -28,36 +31,74 @@ import json
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
+from typing import Optional
 
 DEFAULT_DIRECTORIES = ("tool/meta/baselines", "test/meta/baselines")
 
+_KEY_CHARS = ("/", "\\", ".", ":")
 
-def count_entries(text: str) -> int | None:
+
+class GitError(RuntimeError):
+    """A git command the report depends on failed."""
+
+
+def _weight(value: object) -> int:
+    """How many accepted findings one mapping entry stands for: a ``{"count": n}`` record counts n, anything else 1."""
+    if isinstance(value, dict) and isinstance(value.get("count"), int) and not isinstance(value.get("count"), bool):
+        return max(int(value["count"]), 0)
+    return 1
+
+
+def _count_mapping(mapping: dict) -> int:
+    return sum(_weight(v) for k, v in mapping.items() if not str(k).startswith("_"))
+
+
+def count_entries(text: str) -> Optional[int]:
     """The number of accepted findings in a baseline file's text, or None when it is not one."""
     try:
-        data = json.loads(text)
+        data = json.loads(text.lstrip("\ufeff"))
     except (json.JSONDecodeError, ValueError):
         return None
     if not isinstance(data, dict):
         return None
     for key in ("accepted", "entries"):
         value = data.get(key)
-        if isinstance(value, (dict, list)):
+        if isinstance(value, dict):
+            return _count_mapping(value)
+        if isinstance(value, list):
             return len(value)
     # `module_sizes.json` keeps its per-file ceilings under its own name.
     ceilings = data.get("ceilings")
-    return len(ceilings) if isinstance(ceilings, dict) else None
+    if isinstance(ceilings, dict):
+        return len(ceilings)
+    # A bare {key: note} baseline: counted when its keys read as paths or finding keys, so a stray config
+    # file ({"something": "else"}) is still not reported as a rule.
+    keys = [k for k in data if not k.startswith("_")]
+    if keys and any(ch in k for k in keys for ch in _KEY_CHARS):
+        return _count_mapping(data)
+    return None
+
+
+def _run_git(repo: str, *args: str) -> "subprocess.CompletedProcess[str]":
+    try:
+        return subprocess.run(
+            ["git", "-C", repo, *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError as exc:
+        raise GitError(f"git {args[0]}: {exc}") from exc
 
 
 def _git(repo: str, *args: str) -> str:
-    return subprocess.run(
-        ["git", "-C", repo, *args],
-        capture_output=True,
-        text=True,
-        check=False,
-        encoding="utf-8",
-        errors="replace",
-    ).stdout
+    """stdout of a git command; raises :class:`GitError` when it fails, so a broken repo is never an empty report."""
+    proc = _run_git(repo, *args)
+    if proc.returncode != 0:
+        raise GitError(f"git {' '.join(args)} failed ({proc.returncode}): {proc.stderr.strip()}")
+    return proc.stdout
 
 
 def baseline_files(repo: str, directories: Iterable[str]) -> list[str]:
@@ -68,20 +109,40 @@ def baseline_files(repo: str, directories: Iterable[str]) -> list[str]:
     return sorted(out)
 
 
-def history(repo: str, path: str, since: str | None) -> list[tuple[str, str, int]]:
-    """`(date, short sha, count)` per commit that touched [path], oldest first."""
-    args = ["log", "--follow", "--format=%h %ad", "--date=short"]
+_COMMIT_MARK = "@@commit "
+
+
+def _commits_with_paths(repo: str, path: str, since: "str | None") -> list[tuple[str, str, Optional[str]]]:
+    """``(short sha, date, path at that commit or None when deleted there)``, newest first, following renames."""
+    args = ["log", "--follow", "--name-status", f"--format={_COMMIT_MARK}%h %ad", "--date=short"]
     if since:
         args += [f"--since={since}"]
     args += ["--", path]
+    out: list[tuple[str, str, Optional[str]]] = []
+    for line in _git(repo, *args).splitlines():
+        if line.startswith(_COMMIT_MARK):
+            sha, date = line[len(_COMMIT_MARK) :].split(None, 1)
+            out.append((sha, date.strip(), None))
+        elif line.strip() and out and out[-1][2] is None:
+            fields = line.split("\t")
+            status = fields[0][:1]
+            if status != "D":
+                out[-1] = (out[-1][0], out[-1][1], fields[-1])
+    return out
+
+
+def history(repo: str, path: str, since: "str | None") -> list[tuple[str, str, int]]:
+    """`(date, short sha, count)` per commit that touched [path], oldest first.
+
+    Each commit is read at the path the file had IN that commit, so history before a rename is kept.
+    """
     points: list[tuple[str, str, int]] = []
-    for line in reversed(_git(repo, *args).splitlines()):
-        if not line.strip():
+    for sha, date, at_path in reversed(_commits_with_paths(repo, path, since)):
+        if at_path is None:
             continue
-        sha, date = line.split(None, 1)
-        count = count_entries(_git(repo, "show", f"{sha}:{path}"))
+        count = count_entries(_git(repo, "show", f"{sha}:{at_path}"))
         if count is not None:
-            points.append((date.strip(), sha, count))
+            points.append((date, sha, count))
     return points
 
 
@@ -97,12 +158,13 @@ def report(
         if not points:
             continue
         first, last = points[0], points[-1]
-        moved = first[2] != last[2]
+        counts = [c for _, _, c in points]
+        moved = min(counts) != max(counts)
         # A rule sitting at zero has nothing to decide about: it is a clean rule doing its job, not one
         # whose debt nobody owns. Listing it among the unmoved buries the three that matter.
         if stale_only and (moved or last[2] == 0):
             continue
-        arrow = "->" if moved else "=="
+        arrow = "->" if first[2] != last[2] else ("~~" if moved else "==")
         name = path.rsplit("/", 1)[-1].removesuffix(".json")
         lines.append(f"{last[2]:5d}  {name:34s} {first[2]:5d} {arrow} {last[2]:<5d}" f"  {first[0]} .. {last[0]}  ({len(points)} change(s))")
     return lines
@@ -130,12 +192,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    lines = report(
-        args.repo,
-        args.directories or list(DEFAULT_DIRECTORIES),
-        args.since,
-        args.unmoved or args.stale_days is not None,
-    )
+    try:
+        lines = report(
+            args.repo,
+            args.directories or list(DEFAULT_DIRECTORIES),
+            args.since,
+            args.unmoved or args.stale_days is not None,
+        )
+    except GitError as exc:
+        sys.stderr.write(f"baseline_trend: {exc}\n")
+        return 2
     if not lines:
         sys.stdout.write("no baselines found\n")
         return 0
@@ -143,7 +209,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     for line in lines:
         sys.stdout.write(f"{line}\n")
     sys.stdout.write(
-        "\nA count that never moved is a rule to decide about: real unowned debt, a rule reporting\n"
+        "\n'~~' means the count moved and came back to where it started.\n"
+        "A count that never moved is a rule to decide about: real unowned debt, a rule reporting\n"
         "something nobody can act on, or entries nobody has pruned.\n"
     )
     return 0

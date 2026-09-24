@@ -110,30 +110,42 @@ def test_find_unsatisfied_bullets_short_title_never_satisfied_via_cross_document
 
 
 def test_assert_changelog_bullets_satisfy_pattern_passes(tmp_path: Path):
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 - **fix(scan): dedup rows** covered by test_dedup.py
-""")
+""",
+    )
     assert_changelog_bullets_satisfy_pattern(changelog, _FIX_PATTERN, _SENSOR_PATTERN)
 
 
 def test_assert_changelog_bullets_satisfy_pattern_fails(tmp_path: Path):
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 - **fix(scan): dedup rows** no sensor reference anywhere
-""")
+""",
+    )
     with pytest.raises(pytest.fail.Exception, match="have no matching resolution"):
         assert_changelog_bullets_satisfy_pattern(changelog, _FIX_PATTERN, _SENSOR_PATTERN)
 
 
 def test_assert_changelog_bullets_satisfy_pattern_skips_when_no_triggers(tmp_path: Path):
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 - **refactor: rename var** nothing to trigger on
-""")
+""",
+    )
     with pytest.raises(pytest.skip.Exception):
         assert_changelog_bullets_satisfy_pattern(changelog, _FIX_PATTERN, _SENSOR_PATTERN)
 
@@ -157,16 +169,24 @@ def test_assert_changelog_bullets_satisfy_pattern_soft_threshold_fails_when_exce
 
 
 def test_assert_changelog_bullets_satisfy_pattern_cross_document_mode_via_disposition_file(tmp_path: Path):
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 - **Prefetch reconciliation extraction flagged for the final disposition report** deferred
-""")
-    _write(tmp_path, "DISPOSITION.md", """
+""",
+    )
+    _write(
+        tmp_path,
+        "DISPOSITION.md",
+        """
 # Disposition
 
 - Prefetch reconciliation extraction flagged for the final disposition report -- deliberately not done
-""")
+""",
+    )
     assert_changelog_bullets_satisfy_pattern(
         changelog,
         DEFAULT_PROMISE_PATTERN,
@@ -175,11 +195,15 @@ def test_assert_changelog_bullets_satisfy_pattern_cross_document_mode_via_dispos
 
 
 def test_assert_changelog_bullets_satisfy_pattern_missing_other_path_is_skipped_not_crashed(tmp_path: Path):
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 - **Something flagged for the final disposition report** deferred
-""")
+""",
+    )
     with pytest.raises(pytest.fail.Exception):
         assert_changelog_bullets_satisfy_pattern(
             changelog,
@@ -190,7 +214,10 @@ def test_assert_changelog_bullets_satisfy_pattern_missing_other_path_is_skipped_
 
 def test_assert_changelog_bullets_satisfy_pattern_section_scoping(tmp_path: Path):
     section_pattern = re.compile(r"^## \d{4}-\d{2}-\d{2}.*$", re.MULTILINE)
-    changelog = _write(tmp_path, "CHANGELOG.md", """
+    changelog = _write(
+        tmp_path,
+        "CHANGELOG.md",
+        """
 # Changelog
 
 ## 2026-02-01 newer entries
@@ -200,7 +227,8 @@ def test_assert_changelog_bullets_satisfy_pattern_section_scoping(tmp_path: Path
 ## 2026-01-01 older entries (pre-convention)
 
 - **fix(scan): older item** no sensor here, predates the convention
-""")
+""",
+    )
     # Scoped to only the FIRST matching section -- the older, unsatisfied bullet is out of scope.
     assert_changelog_bullets_satisfy_pattern(changelog, _FIX_PATTERN, _SENSOR_PATTERN, section_pattern=section_pattern)
 
@@ -210,3 +238,49 @@ def test_assert_changelog_bullets_satisfy_pattern_default_bullet_pattern_matches
     bullets = DEFAULT_BULLET_PATTERN.findall(text)
     assert len(bullets) == 2
     assert "continuation line indented" in bullets[0]
+
+
+_FIX = re.compile(r"\bfix\b", re.IGNORECASE)
+
+
+def test_a_title_containing_an_asterisk_is_still_a_bullet():
+    text = "- **a*b title that is long** fix: something\n- **plain title long enough** fix: other\n"
+    triggered, unsatisfied = find_unsatisfied_bullets(text, _FIX)
+    assert len(triggered) == 2
+    assert [u.title for u in unsatisfied] == ["a*b title that is long", "plain title long enough"]
+
+
+def test_a_title_is_matched_across_case_markup_and_wrapping():
+    text = "- **Retry Budget Is Now Capped** fix, flagged for the final disposition report\n"
+    resolution = "Findings:\n* **retry budget is\n  now `capped`** -- done\n"
+    _, unsatisfied = find_unsatisfied_bullets(text, DEFAULT_PROMISE_PATTERN, other_resolution_texts=[resolution])
+    assert unsatisfied == []
+    _, still = find_unsatisfied_bullets(text, DEFAULT_PROMISE_PATTERN, other_resolution_texts=["retry budget is uncapped"])
+    assert len(still) == 1
+
+
+def test_a_missing_section_or_trigger_can_be_required(tmp_path: Path):
+    section = re.compile(r"^## \d{4}-\d{2}-\d{2}.*$", re.MULTILINE)
+    renamed = _write(tmp_path, "CHANGELOG.md", "## Cycle of Sept\n- **some long title here** fix: x (test_x)\n")
+    with pytest.raises(pytest.skip.Exception):
+        assert_changelog_bullets_satisfy_pattern(renamed, _FIX, re.compile(r"test_\w+"), section_pattern=section)
+    with pytest.raises(pytest.fail.Exception, match="no section matching"):
+        assert_changelog_bullets_satisfy_pattern(renamed, _FIX, re.compile(r"test_\w+"), section_pattern=section, require_section=True)
+    no_trigger = _write(tmp_path, "C2.md", "- **some long title here** repaired x\n")
+    with pytest.raises(pytest.fail.Exception, match="fewer than min_triggered=1"):
+        assert_changelog_bullets_satisfy_pattern(no_trigger, _FIX, re.compile(r"test_\w+"), min_triggered=1)
+    ok = _write(tmp_path, "C3.md", "- **some long title here** fix: x (test_x)\n")
+    assert_changelog_bullets_satisfy_pattern(ok, _FIX, re.compile(r"test_\w+"), min_triggered=1)
+
+
+def test_a_required_resolution_document_must_exist(tmp_path: Path):
+    cl = _write(tmp_path, "CHANGELOG.md", "- **some long title here** tracked under the later leaf\n")
+    with pytest.raises(pytest.fail.Exception, match="resolution document"):
+        assert_changelog_bullets_satisfy_pattern(cl, DEFAULT_PROMISE_PATTERN, other_resolution_paths=[tmp_path / "gone.md"], require_resolution_paths=True)
+
+
+def test_a_bom_changelog_is_read(tmp_path: Path):
+    cl = tmp_path / "CHANGELOG.md"
+    cl.write_bytes(b"\xef\xbb\xbf- **some long title here** fix: x\n")
+    with pytest.raises(pytest.fail.Exception, match="some long title here"):
+        assert_changelog_bullets_satisfy_pattern(cl, _FIX, re.compile(r"test_\w+"))

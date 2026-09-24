@@ -29,18 +29,36 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+from ._core import read_source
+
 # Matches this ecosystem's dominant CHANGELOG bullet convention: `- **Title** rest of line`,
-# optionally followed by indented continuation lines (a multi-line bullet body).
-DEFAULT_BULLET_PATTERN = re.compile(r"^- \*\*[^*]+\*\*[^\n]*(?:\n[ \t]+[^\n-][^\n]*)*", re.MULTILINE)
+# optionally followed by indented continuation lines (a multi-line bullet body). The title may itself
+# contain a `*` (`- **a*b title**`): it runs to the first closing `**`.
+DEFAULT_BULLET_PATTERN = re.compile(r"^- \*\*.+?\*\*[^\n]*(?:\n[ \t]+[^\n-][^\n]*)*", re.MULTILINE)
 
 # Extracts the bolded title text from a bullet matched by DEFAULT_BULLET_PATTERN.
-DEFAULT_TITLE_PATTERN = re.compile(r"^- \*\*([^*]+)\*\*")
+DEFAULT_TITLE_PATTERN = re.compile(r"^- \*\*(.+?)\*\*")
+
+_MARKUP_RE = re.compile(r"[*`_]+")
+_SPACE_RE = re.compile(r"\s+")
+
+
+def normalize_title(text: str) -> str:
+    """Case-folded, markup-free (``*``, `` ` ``, ``_``), whitespace-collapsed text for title matching: a
+    resolution document that re-wraps, re-cases or re-bolds a title still names the same promise."""
+    return _SPACE_RE.sub(" ", _MARKUP_RE.sub("", text)).strip().casefold()
+
 
 # A generic "this bullet promises later follow-up elsewhere" trigger, matching phrasing observed
 # in practice across both consuming repos ("flagged for the final disposition report", "tracked
 # under the future sql/ leaf", "carried forward to", "noted for a later pass").
 DEFAULT_PROMISE_PATTERN = re.compile(
-    r"(flagged for (the )?(final )?disposition" r"|tracked under" r"|carried forward to" r"|noted for (a )?(later|future)" r"|will be (addressed|tracked|handled)" r"|future leaf)",
+    r"(flagged for (the )?(final )?disposition"
+    r"|tracked under"
+    r"|carried forward to"
+    r"|noted for (a )?(later|future)"
+    r"|will be (addressed|tracked|handled)"
+    r"|future leaf)",
     re.IGNORECASE,
 )
 
@@ -76,7 +94,7 @@ def find_unsatisfied_bullets(
     A bullet matching ``trigger_pattern`` is "satisfied" (excluded from ``unsatisfied``) if
     EITHER: ``satisfies_pattern`` matches somewhere within the bullet's own text (mlframe's
     self-contained "fix cites a sensor" mode), OR the bullet's extracted title (via
-    ``title_pattern``) appears verbatim as a substring of any of ``other_resolution_texts``
+    ``title_pattern``) appears, after :func:`normalize_title` on both sides, as a substring of any of ``other_resolution_texts``
     (production_scrapers's cross-document "promise resolved in another file" mode). Either mode
     can be disabled by passing ``satisfies_pattern=None`` / an empty ``other_resolution_texts``;
     a repo can use one, the other, or both together.
@@ -88,14 +106,15 @@ def find_unsatisfied_bullets(
     """
     bullets = bullet_pattern.findall(text)
     triggered = [b for b in bullets if trigger_pattern.search(b)]
-    combined_other = "\n".join(other_resolution_texts)
+    combined_other = normalize_title("\n".join(other_resolution_texts))
     unsatisfied: list[UnsatisfiedBullet] = []
     for b in triggered:
         if satisfies_pattern is not None and satisfies_pattern.search(b):
             continue
         m = title_pattern.match(b)
         title = m.group(1).strip() if m else b[:80].strip()
-        if combined_other and len(title) >= min_title_len and title in combined_other:
+        key = normalize_title(title)
+        if combined_other and len(key) >= min_title_len and key in combined_other:
             continue
         unsatisfied.append(UnsatisfiedBullet(title=title, excerpt=b[:200].strip()))
     return triggered, unsatisfied
@@ -112,6 +131,9 @@ def assert_changelog_bullets_satisfy_pattern(
     title_pattern: re.Pattern = DEFAULT_TITLE_PATTERN,
     max_unsatisfied_fraction: float = 0.0,
     label: str = "bullet",
+    require_section: bool = False,
+    min_triggered: int = 0,
+    require_resolution_paths: bool = False,
 ) -> None:
     """Fail if too many ``trigger_pattern``-matching bullets in ``changelog_path`` are
     unsatisfied -- see ``find_unsatisfied_bullets`` for what "satisfied" means.
@@ -129,17 +151,35 @@ def assert_changelog_bullets_satisfy_pattern(
     fires when the fraction exceeds the threshold AND at least one bullet WAS satisfied (otherwise
     the sample is too small/the convention not yet established to drift-detect on -- mirrors
     mlframe's own ``cited_n > 0`` guard).
+
+    Once a convention IS established, a skip must not become permanent: ``require_section=True`` fails
+    when the section heading is missing (a renamed heading otherwise skips forever), ``min_triggered``
+    fails when fewer bullets than that trigger (a reworded trigger phrase otherwise skips forever), and
+    ``require_resolution_paths=True`` fails when a resolution document is missing.
     """
     import pytest
 
-    text = changelog_path.read_text(encoding="utf-8")
+    text = read_source(changelog_path)
     if section_pattern is not None:
         text = extract_section(text, section_pattern)
         if not text:
+            if require_section:
+                pytest.fail(
+                    f"{changelog_path.name} has no section matching {section_pattern.pattern!r}; the heading was renamed or removed, so nothing is checked"
+                )
             pytest.skip(f"{changelog_path.name} has no section matching section_pattern; convention not yet applicable")
 
-    other_texts = [p.read_text(encoding="utf-8") for p in other_resolution_paths if p.exists()]
+    paths = list(other_resolution_paths)
+    missing = [str(p) for p in paths if not p.exists()]
+    if missing and require_resolution_paths:
+        pytest.fail(f"resolution document(s) missing, so no promise can be matched against them: {missing}")
+    other_texts = [read_source(p) for p in paths if p.exists()]
     triggered, unsatisfied = find_unsatisfied_bullets(text, trigger_pattern, satisfies_pattern, other_texts, bullet_pattern, title_pattern)
+    if len(triggered) < min_triggered:
+        pytest.fail(
+            f"only {len(triggered)} {label}-triggering bullet(s) in scope, fewer than min_triggered={min_triggered}; "
+            "the trigger pattern or the bullet shape stopped matching"
+        )
     if not triggered:
         pytest.skip(f"no {label}-triggering bullets found in scope; convention can't drift")
 

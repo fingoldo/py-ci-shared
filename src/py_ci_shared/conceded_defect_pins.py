@@ -24,6 +24,8 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from ._core import UnparsedFilesError, scan_python
+
 __all__ = ["ConcededPin", "CONCESSION_RE", "find_conceded_defect_pins"]
 
 CONCESSION_RE = re.compile(
@@ -59,13 +61,14 @@ def _is_exact_pin(node: ast.AST) -> bool:
             return True
         if name == "assert_allclose":
             kw = {k.arg: k.value for k in node.keywords}
-            return all(isinstance(kw.get(t), ast.Constant) and kw[t].value == 0 for t in ("rtol", "atol"))
+            values = [kw.get(t) for t in ("rtol", "atol")]
+            return all(isinstance(v, ast.Constant) and v.value == 0 for v in values)
     return False
 
 
 def _comment_lines_above(source_lines: list[str], lineno: int, span: int = 3) -> str:
     """The comment lines directly above ``lineno`` (1-based), which carry a concession as often as the docstring does."""
-    out = []
+    out: list[str] = []
     i = lineno - 2
     while i >= 0 and len(out) < span and source_lines[i].lstrip().startswith("#"):
         out.append(source_lines[i])
@@ -74,16 +77,18 @@ def _comment_lines_above(source_lines: list[str], lineno: int, span: int = 3) ->
 
 
 def find_conceded_defect_pins(files: Iterable[Path], repo_root: Path) -> list[ConcededPin]:
-    """Every test function whose docstring or leading comment concedes a defect and whose body pins a value exactly."""
+    """Every test function whose docstring or leading comment concedes a defect and whose body pins a value exactly.
+
+    A file that cannot be read or parsed raises ``_core.UnparsedFilesError`` (an ``AssertionError``) rather than being
+    skipped: a count ratchet over a file it never read would under-count and pass.
+    """
     out: list[ConcededPin] = []
-    for path in files:
-        try:
-            text = Path(path).read_text(encoding="utf-8")
-            tree = ast.parse(text)
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
-        lines = text.splitlines()
+    scan = scan_python([Path(p) for p in files], root=Path(repo_root), min_files=0)
+    if scan.unparsed:
+        raise UnparsedFilesError("could not read or parse, so conceded pins in them were not counted:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
+    for parsed in scan:
+        tree, rel = parsed.tree, parsed.rel
+        lines = parsed.source.splitlines()
         for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             if not func.name.startswith("test_") or func.name.startswith(_KNOWN_DEFECT_PREFIX):
                 continue

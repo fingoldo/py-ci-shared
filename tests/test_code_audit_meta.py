@@ -23,6 +23,21 @@ from py_ci_shared.code_audit_meta import (
 )
 
 
+class _RefreshConfig:
+    def getoption(self, name, default=None):
+        return name == REFRESH_FLAG
+
+
+class _RefreshRequest:
+    config = _RefreshConfig()
+
+
+def _seed(src: Path, baseline: Path) -> None:
+    """Write the baseline the only way it is written now: an explicit refresh."""
+    with pytest.raises(pytest.skip.Exception):
+        assert_no_new_code_audit_findings(root=src, baseline_path=baseline, request=_RefreshRequest())
+
+
 def _write_mutable_default_module(root: Path) -> None:
     (root / "bad.py").write_text(
         "def f(items=[]):\n    items.append(1)\n    return items\n",
@@ -31,16 +46,21 @@ def _write_mutable_default_module(root: Path) -> None:
 
 
 class TestAssertNoNewCodeAuditFindings:
-    def test_first_run_seeds_baseline_and_skips(self, tmp_path):
+    def test_a_missing_baseline_fails_and_writes_nothing_until_a_refresh(self, tmp_path, monkeypatch):
         src = tmp_path / "src"
         src.mkdir()
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
+        monkeypatch.setattr(sys, "argv", ["pytest"])
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH", raising=False)
 
+        with pytest.raises(pytest.fail.Exception, match="does not exist"):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        assert not baseline.exists()
+
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "code-audit")
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
-
-        assert baseline.exists()
         seeded = orjson.loads(baseline.read_bytes())
         assert any("mutable_default" in k for k in seeded)
 
@@ -50,8 +70,7 @@ class TestAssertNoNewCodeAuditFindings:
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         # No pytest.fail/skip on the second call -- returning normally is the pass.
         assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
@@ -62,8 +81,7 @@ class TestAssertNoNewCodeAuditFindings:
         baseline = tmp_path / "_code_audit_baseline.json"
         (src / "clean.py").write_text("def f():\n    return 1\n", encoding="utf-8")
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         # Introduce a new offender after the baseline was seeded clean.
         _write_mutable_default_module(src)
@@ -81,8 +99,7 @@ class TestAssertNoNewCodeAuditFindings:
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         (src / "bad.py").write_text("def f():\n    return 1\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="no longer match a finding"):
@@ -98,8 +115,7 @@ class TestAssertNoNewCodeAuditFindings:
         _write_mutable_default_module(src)
         monkeypatch.setattr(sys, "argv", [*sys.argv, REFRESH_FLAG])
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         seeded = orjson.loads(baseline.read_bytes())
         assert any("mutable_default" in k for k in seeded)
@@ -143,7 +159,7 @@ class TestAssertNoNewCodeAuditFindings:
         baseline = tmp_path / "_code_audit_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline, exclude_dirs=frozenset({"legacy"}))
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline, exclude_dirs=frozenset({"legacy"}), request=_RefreshRequest())
 
         seeded = orjson.loads(baseline.read_bytes())
         assert seeded == [], "both __pycache__ (default) and legacy (caller-supplied) must be excluded"
@@ -187,8 +203,7 @@ class TestKeysSurviveRelocation:
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
         seeded = orjson.loads(baseline.read_bytes())
 
         # Push the flagged def down by three lines without touching it.
@@ -207,13 +222,10 @@ class TestKeysSurviveRelocation:
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
 
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         # Same defect, different text on the flagged line -> a different finding.
-        (src / "bad.py").write_text(
-            "def f(other_name={}):\n    return other_name\n", encoding="utf-8"
-        )
+        (src / "bad.py").write_text("def f(other_name={}):\n    return other_name\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
@@ -225,15 +237,11 @@ class TestKeysSurviveRelocation:
             encoding="utf-8",
         )
         baseline = tmp_path / "_code_audit_baseline.json"
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         seeded = orjson.loads(baseline.read_bytes())
         mutable = [k for k in seeded if "mutable_default" in k]
-        assert len(mutable) == len(set(mutable)) == 2, (
-            "identical snippets must not collapse to one key, or fixing one of them "
-            "would go unnoticed"
-        )
+        assert len(mutable) == len(set(mutable)) == 2, "identical snippets must not collapse to one key, or fixing one of them " "would go unnoticed"
 
 
 class TestLegacyBaselineMigration:
@@ -265,8 +273,42 @@ class TestLegacyBaselineMigration:
         )
 
         monkeypatch.setattr(sys, "argv", ["pytest", REFRESH_FLAG])
-        with pytest.raises(pytest.skip.Exception):
-            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        _seed(src, baseline)
 
         refreshed = orjson.loads(baseline.read_bytes())
         assert refreshed and all(k.count("::") == 2 for k in refreshed)
+
+
+class TestSnippetlessFingerprint:
+    def test_an_empty_snippet_is_keyed_by_detail_not_line(self):
+        from pyutilz.dev.code_audit import Finding
+
+        from py_ci_shared.code_audit_meta import _key
+
+        a = Finding(check="c", severity="Low", file="x.py", line=3, snippet="", detail="swallows OSError")
+        moved = Finding(check="c", severity="Low", file="x.py", line=40, snippet="", detail="swallows OSError")
+        other = Finding(check="c", severity="Low", file="x.py", line=3, snippet="", detail="swallows KeyError")
+        assert _key(a) == _key(moved)
+        assert _key(a) != _key(other)
+        assert "line" not in _key(a).rsplit("::", 1)[1]
+        bare = Finding(check="c", severity="Low", file="x.py", line=3, snippet="", detail="")
+        assert _key(bare).endswith("::line3")
+
+
+def test_register_refresh_option_also_registers_the_shared_generic_flag():
+    import argparse
+
+    class _Parser:
+        def __init__(self):
+            self.p = argparse.ArgumentParser()
+            self.names = []
+
+        def addoption(self, name, **kwargs):
+            if name in self.names:
+                raise ValueError(name)
+            self.names.append(name)
+
+    parser = _Parser()
+    register_refresh_option(parser)
+    register_refresh_option(parser)
+    assert parser.names == ["--py-ci-refresh", REFRESH_FLAG]

@@ -71,10 +71,39 @@ class TestBaseline:
         baseline = tmp_path / "baseline.json"
         baseline.write_text(json.dumps(["test_wave1_renamed_since.py"]), encoding="utf-8")
 
-        with pytest.raises(pytest.fail.Exception, match="no longer name an offender"):
+        with pytest.raises(pytest.fail.Exception, match="no longer found"):
             assert_no_new_audit_wave_filenames(tests, baseline=baseline)
         assert_no_new_audit_wave_filenames(tests, baseline=baseline, fail_on_stale=False)
 
     def test_no_baseline_means_no_offender_is_allowed(self, tmp_path):
         with pytest.raises(pytest.fail.Exception):
             assert_no_new_audit_wave_filenames(_tests(tmp_path, "test_round1_x.py"))
+
+
+def test_a_missing_or_empty_tests_dir_is_not_a_pass(tmp_path):
+    from py_ci_shared._core import CorpusError
+
+    with pytest.raises(CorpusError):
+        assert_no_new_audit_wave_filenames(tmp_path / "nope")
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "empty" / "conftest.py").write_text("", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match="only 0 test_"):
+        assert_no_new_audit_wave_filenames(tmp_path / "empty")
+    assert_no_new_audit_wave_filenames(_tests(tmp_path, "test_topic.py"))
+
+
+def test_patterns_ignore_case(tmp_path):
+    tests = _tests(tmp_path, "test_Wave97_x.py", "test_AUDIT_2026_x.py", "test_Waveform.py")
+    assert find_audit_wave_test_files(tests) == ["test_AUDIT_2026_x.py", "test_Wave97_x.py"]
+
+
+def test_a_missing_baseline_file_fails_and_a_refresh_writes_it(tmp_path, monkeypatch):
+    tests = _tests(tmp_path, "test_wave1_old.py")
+    baseline = tmp_path / "baseline.json"
+    with pytest.raises(pytest.fail.Exception, match="does not exist"):
+        assert_no_new_audit_wave_filenames(tests, baseline=baseline)
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH", "audit-wave-filenames")
+    with pytest.raises(pytest.skip.Exception):
+        assert_no_new_audit_wave_filenames(tests, baseline=baseline)
+    monkeypatch.delenv("PY_CI_SHARED_REFRESH")
+    assert_no_new_audit_wave_filenames(tests, baseline=baseline)
