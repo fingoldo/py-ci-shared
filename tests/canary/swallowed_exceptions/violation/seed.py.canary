@@ -1,0 +1,8 @@
+import os
+
+
+def seed_replace(a, b):
+    try:
+        os.replace(a, b)
+    except OSError:
+        pass

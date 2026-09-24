@@ -29,6 +29,9 @@ on:
         type: string
         default: ""
 
+permissions:
+  contents: read
+
 jobs:
   mypy-beachhead:
     runs-on: ubuntu-latest

@@ -1,0 +1,5 @@
+﻿import os
+
+SEED_ON = bool(os.environ.get("SEED_FLAG"))
+if os.environ.get("SEED_FLAG"):
+    pass

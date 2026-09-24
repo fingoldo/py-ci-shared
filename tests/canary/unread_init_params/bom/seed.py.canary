@@ -1,0 +1,3 @@
+﻿class Seed:
+    def __init__(self, seed_alpha=1):
+        self.seed_alpha = seed_alpha

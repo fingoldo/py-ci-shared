@@ -1,0 +1,3 @@
+import os
+
+SEED_CACHE_DIR = os.path.expanduser("~/seed_cache")

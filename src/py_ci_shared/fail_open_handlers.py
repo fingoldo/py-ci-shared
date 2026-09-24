@@ -128,14 +128,42 @@ def _marked_best_effort(lines: list[str], handler: ast.ExceptHandler) -> bool:
     return any(_BEST_EFFORT in lines[j] for j in (i - 1, i) if 0 <= j < len(lines))
 
 
-_FAILURE_LIST_RE = re.compile(r"fail|reject|drop|skip|error|bad|invalid|broken", re.IGNORECASE)
+_FAILURE_LIST_RE = re.compile(r"fail|reject|drop|skip|error|bad|invalid|broken|unparsed|unreadable|problem|violation", re.IGNORECASE)
+
+
+def _is_message(node: ast.AST) -> bool:
+    """An f-string, ``"..." % x`` or ``"...".format(...)``: text describing something, not the thing itself."""
+    if isinstance(node, ast.JoinedStr):
+        return True
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and isinstance(node.left, ast.Constant) and isinstance(node.left.value, str):
+        return True
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, str)
+    )
+
+
+def _reports_the_error(value: ast.expr, exc_name: Optional[str]) -> bool:
+    """True when the appended *value* is a message string, or a record constructed from the caught exception.
+
+    A bare tuple such as ``(spec, exc)`` is still an admission: the element itself goes into the list."""
+    if _is_message(value):
+        return True
+    if exc_name is None or not isinstance(value, ast.Call):
+        return False
+    return any(isinstance(a, ast.Name) and a.id == exc_name for a in ast.walk(value))
 
 
 def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
     """True when the handler calls ``<list>.append(...)`` with an argument built from one of ``names`` (``spec``,
     ``(spec, 0)``, ``spec.name``), into a list not named for failures.
 
-    ``failed.append(k)`` records the failure; ``survivors.append(spec)`` admits the element that failed.
+    ``failed.append(k)`` records the failure; ``survivors.append(spec)`` admits the element that failed. An appended
+    value that carries the caught exception (``problems.append(f"{path}: {exc}")``) or is a formatted message string
+    reports the failure, whatever the list is called, and is not an admission.
     """
     for n in ast.walk(handler):
         if (
@@ -144,6 +172,7 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
             and n.func.attr == "append"
             and len(n.args) == 1
             and any(isinstance(a, ast.Name) and a.id in names for a in ast.walk(n.args[0]))
+            and not _reports_the_error(n.args[0], handler.name)
         ):
             target = n.func.value
             list_name = target.id if isinstance(target, ast.Name) else (target.attr if isinstance(target, ast.Attribute) else "")

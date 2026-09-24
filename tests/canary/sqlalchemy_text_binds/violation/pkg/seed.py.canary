@@ -1,0 +1,3 @@
+from sqlalchemy import text
+
+SEED_Q = text("SELECT * FROM unnest(:seed_a::int[])")

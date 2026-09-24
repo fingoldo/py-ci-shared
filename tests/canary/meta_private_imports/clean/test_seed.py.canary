@@ -1,0 +1,5 @@
+from seedpkg.mod import seed_helper
+
+
+def test_seed():
+    assert seed_helper() == 1

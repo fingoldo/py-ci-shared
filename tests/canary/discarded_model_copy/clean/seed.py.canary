@@ -1,0 +1,3 @@
+def seed_build(cfg):
+    seed_copy = cfg.model_copy(update={"enabled": True})
+    return seed_copy

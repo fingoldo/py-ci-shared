@@ -1,0 +1,8 @@
+import os
+
+
+def seed_replace(a, b):
+    try:
+        os.replace(a, b)
+    except OSError as exc:
+        raise RuntimeError(f"could not move {a} to {b}") from exc

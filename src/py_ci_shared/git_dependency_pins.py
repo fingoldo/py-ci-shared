@@ -35,7 +35,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import SourceReadError, read_source, relative_posix
+from ._core import SourceParseError, SourceReadError, read_source, relative_posix
 
 # A git URL dependency, PEP 508 direct-reference form: `name @ git+URL[@ref]`. Captures the
 # WHOLE URL blob (ref, if any, still embedded) -- ref extraction is done separately in
@@ -112,10 +112,16 @@ def find_unpinned_git_dependencies(
         present at all), not line numbers -- pyproject.toml dependency
         arrays are typically short enough that this is enough to locate
         the line.
+
+    Raises:
+        PyprojectParseError: the file is not valid TOML, so no dependency in it could be checked.
     """
-    text = read_source(pyproject_path)
+    data = _load_toml(Path(pyproject_path))
     violations = []
-    for m in _GIT_DEP_RE.finditer(text):
+    for requirement in _strings(data):
+        m = _GIT_DEP_RE.match(requirement)
+        if m is None:
+            continue
         git_url = m.group(1)
         if any(git_url.startswith(prefix) for prefix in allow_unpinned_url_prefixes):
             continue
@@ -124,20 +130,41 @@ def find_unpinned_git_dependencies(
             violations.append("<no ref>")
         elif not _FULL_SHA_RE.match(ref):
             violations.append(ref)
-    violations.extend(_source_table_violations(text, allow_unpinned_url_prefixes))
+    violations.extend(_source_table_violations(data, allow_unpinned_url_prefixes))
     return violations
 
 
-def _source_table_violations(text: str, allow_unpinned_url_prefixes: Sequence[str]) -> list[str]:
+class PyprojectParseError(SourceParseError):
+    """The pyproject file is not valid TOML."""
+
+
+def _load_toml(path: Path) -> dict[str, Any]:
+    from ._toml_compat import tomllib
+
+    text = read_source(path)
+    try:
+        data: dict[str, Any] = tomllib.loads(text)
+    except tomllib.TOMLDecodeError as exc:
+        raise PyprojectParseError(path, f"not valid TOML: {exc}", getattr(exc, "lineno", None)) from exc
+    return data
+
+
+def _strings(node: object) -> list[str]:
+    """Every string anywhere in a parsed TOML document, in document order: dependency arrays of any shape and
+    location (``[project]``, optional dependencies, dependency groups, build requires, tool tables)."""
+    if isinstance(node, str):
+        return [node]
+    if isinstance(node, dict):
+        return [s for value in node.values() for s in _strings(value)]
+    if isinstance(node, list):
+        return [s for value in node for s in _strings(value)]
+    return []
+
+
+def _source_table_violations(data: dict[str, Any], allow_unpinned_url_prefixes: Sequence[str]) -> list[str]:
     """Git sources declared as tables: ``[tool.uv.sources] foo = { git = "...", rev = "..." }`` and poetry's
     ``foo = { git = "...", branch/tag/rev = "..." }`` in ``[tool.poetry.*dependencies]`` / group dependencies. Only a
     full-SHA ``rev`` pins; ``branch``/``tag`` or nothing is reported as ``name: branch=main``."""
-    from ._toml_compat import tomllib
-
-    try:
-        data = tomllib.loads(text)
-    except ValueError:
-        return []
     tool = data.get("tool", {}) if isinstance(data, dict) else {}
     tables: list[Any] = [tool.get("uv", {}).get("sources", {})]
     poetry = tool.get("poetry", {})
@@ -183,7 +210,10 @@ def assert_all_git_dependencies_pinned(
     """
     import pytest
 
-    violations = find_unpinned_git_dependencies(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)
+    try:
+        violations = find_unpinned_git_dependencies(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)
+    except (PyprojectParseError, SourceReadError) as exc:
+        pytest.fail(f"{exc}\nNo git dependency in it could be checked; Fix the file.")
     if violations:
         pytest.fail(
             f"{len(violations)} git-URL dependenc{'y is' if len(violations) == 1 else 'ies are'} "

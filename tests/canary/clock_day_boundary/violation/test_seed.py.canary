@@ -1,0 +1,6 @@
+import time
+
+
+def test_seed_still_valid_later_the_same_day(client):
+    cursor = client.mint(now=time.time())
+    assert client.accepts(cursor, now=time.time() + 3600)

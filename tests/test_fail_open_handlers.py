@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import json
-import sys
 import textwrap
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
@@ -319,3 +316,38 @@ def test_a_file_outside_the_root_does_not_raise(tmp_path):
     mod = _module(inner, "def check(x):\n    try:\n        return run(x)\n    except Exception:\n        return True\n")
     found = find_fail_open_handlers([mod], tmp_path / "elsewhere")
     assert [h.rule for h in found] == ["gate_returns_true"] and found[0].path.endswith("a/mod.py")
+
+
+@pytest.mark.parametrize(
+    "record",
+    ['out.append(f"{path}: cannot be read: {exc}")', "problems.append(path)", "out.append(Problem(path, str(exc)))", 'out.append("%s: broken" % path)'],
+)
+def test_reporting_the_error_is_not_admit_on_error(tmp_path, record):
+    body = f"""
+        def scan(paths):
+            out = []
+            problems = []
+            for path in paths:
+                try:
+                    read(path)
+                except OSError as exc:
+                    {record}
+                    continue
+            return out, problems
+    """
+    assert _rules(tmp_path, body) == []
+
+
+@pytest.mark.parametrize("record", ["keep.append((spec, exc))", "keep.append(spec)", "keep.append(Wrapped(spec))"])
+def test_keeping_the_element_next_to_the_error_is_still_admit_on_error(tmp_path, record):
+    body = f"""
+        def select(specs):
+            keep = []
+            for spec in specs:
+                try:
+                    score(spec)
+                except Exception as exc:
+                    {record}
+            return keep
+    """
+    assert _rules(tmp_path, body) == ["admit_on_error"]

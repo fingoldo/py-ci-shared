@@ -1,0 +1,5 @@
+import py_ci_shared
+
+
+def test_seed_no_cycles(tree):
+    py_ci_shared.import_cycles.assert_no_import_cycles(tree)

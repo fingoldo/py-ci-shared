@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import ast
 import os
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared._core import SourceParseError, SourceReadError, clear_parse_cache, parse_file, parse_source, read_source
 from py_ci_shared._core.source import parse_cache_size
@@ -96,15 +93,23 @@ class TestParseFile:
         assert second is not first and len(second.body) == 2
         assert parse_cache_size() == 1, "a changed file replaces its entry, it does not accumulate"
 
-    def test_same_size_edit_is_seen_through_mtime(self, tmp_path):
+    def test_same_size_edit_with_the_same_mtime_is_seen(self, tmp_path):
         p = _write(tmp_path, b"x = 1\n")
+        st = p.stat()
         first = parse_file(p)
         p.write_bytes(b"y = 1\n")
-        st = p.stat()
-        os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+        os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))
+        assert p.stat().st_mtime_ns == st.st_mtime_ns and p.stat().st_size == st.st_size
         tree = parse_file(p)
         assert tree is not first
         assert isinstance(tree.body[0], ast.Assign) and tree.body[0].targets[0].id == "y"  # type: ignore[attr-defined]
+
+    def test_an_unchanged_file_with_a_touched_mtime_keeps_its_tree(self, tmp_path):
+        p = _write(tmp_path, b"x = 1\n")
+        first = parse_file(p)
+        st = p.stat()
+        os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))
+        assert parse_file(p) is first
 
     def test_a_parse_error_is_not_cached_as_success(self, tmp_path):
         p = _write(tmp_path, b"def (:\n")

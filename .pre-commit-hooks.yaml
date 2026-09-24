@@ -1,8 +1,9 @@
-# Pre-commit hooks manifest for py-ci-shared. Consuming repos (mlframe, pyutilz) reference these
-# via:
+# Pre-commit hooks manifest for py-ci-shared. Consuming repos reference these via:
 #   - repo: https://github.com/fingoldo/py-ci-shared
-#     rev: v1.0.0
+#     rev: v1.17.0            # an exact tag (pre-commit freezes it to a SHA with `pre-commit autoupdate --freeze`)
 #     hooks:
+#       - id: py-ci-shared-run-all
+#       - id: pinned-tool-versions
 #       - id: mypy-full-manual
 #         args: ['src/mlframe']
 #
@@ -11,7 +12,45 @@
 # repo's REAL installed dependency graph, e.g. mypy-full needs torch/numba/pandas actually
 # resolved to type-check anything beyond Any). This mirrors the assumption the existing
 # repo-local blocking hooks (deptry-blocking, bandit-blocking) already make: the local dev env
-# has the project's [all,dev] extras installed.
+# has the project's [all,dev] extras installed, py-ci-shared included.
+
+- id: py-ci-shared-run-all
+  name: "py-ci-shared gates ([tool.py_ci_shared])"
+  description: >-
+    Every gate the calling repo enables in [tool.py_ci_shared] of its pyproject.toml, the same set its pytest run and
+    CI step execute. Exit 1 on findings, 2 on a configuration error.
+  entry: python -m py_ci_shared.cli run-all
+  language: system
+  pass_filenames: false
+  always_run: true
+
+- id: pinned-tool-versions
+  name: "ruff pin matches py-ci-shared"
+  description: >-
+    Fails when the repo's ruff pin, or the ruff its interpreter runs, differs from py_ci_shared.tool_versions.
+  entry: python -m py_ci_shared.pinned_tool_versions
+  language: system
+  pass_filenames: false
+  files: '(^pyproject\.toml$|^\.pre-commit-config\.yaml$|^\.github/workflows/)'
+
+- id: mypy-gate
+  name: "mypy (must complete)"
+  description: >-
+    mypy as a gate that requires completion, not only a zero exit code. Pass the paths as args.
+  entry: python -m py_ci_shared.mypy_gate
+  language: system
+  types: [python]
+  pass_filenames: false
+
+- id: worktree-hygiene
+  name: "worktree hygiene report (manual)"
+  description: >-
+    Which worktrees, branches and leftover directories can go and which still hold work. A report; run it on demand
+    with `pre-commit run --hook-stage manual worktree-hygiene`.
+  entry: python -m py_ci_shared.worktree_hygiene
+  language: system
+  pass_filenames: false
+  stages: [manual]
 
 - id: mypy-full-manual
   name: "mypy (whole project, manual)"

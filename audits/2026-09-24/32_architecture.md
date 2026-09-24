@@ -70,7 +70,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-1 (High) -- Package version is 0.1.0 while releases are tagged up to v1.16.1
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- version is 1.17.0 (the next release after v1.16.1) in pyproject.toml and `__version__`; `version_consistency` runs on this repo (dogfood), a test holds the version at or ahead of the newest semver tag and an existing tag on HEAD's ancestry, and release.yml runs `version_tag_currency` and refuses a tag that differs from the declared version; regression test: tests/test_release_version.py::test_pyproject_and_the_module_agree, tests/test_release_version.py::test_the_version_is_at_least_the_newest_release_tag
 
 - **Original id:** A1
 - **Where:** pyproject.toml:7, src/py_ci_shared/__init__.py:10
@@ -79,7 +79,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-2 (High) -- Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1...
 
-**Disposition:** OPEN
+**Disposition:** DEFERRED -- this repo's side is done: README "Pinning and releases" fixes one policy (`@v1`, or a full SHA with the exact tag as comment, never `# v1` next to a SHA, never mixed in one repo), and the reusable workflows now fetch their own release so either pin is reproducible. The mixed SHA pins with false `# v1` comments live in mlframe/pyutilz; re-pinning them waits on the consumer adoption phase (33_adoption, INFRA-6).
 
 - **Original id:** A2
 - **Where:** README.md:48, pyutilz/.github/workflows/black-filtered.yml:20, mlframe/.github/workflows/*.yml
@@ -88,7 +88,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-3 (High) -- v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new .github/workflows/release.yml: on a `vX.Y.Z` tag it checks the tag equals the declared version and is on master, runs the release tests, then force-moves the major tag (`v1`) and creates the GitHub release; `v1` stays behind until the coordinator pushes v1.17.0 after merging; regression test: tests/test_reusable_workflows.py::test_release_moves_the_major_tag_only_after_verification
 
 - **Original id:** A3
 - **Where:** git tags
@@ -97,7 +97,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-4 (High) -- Reusable workflows git clone --depth 1 py-ci-shared default-branch tip to get configs/r...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- ruff-blocking, lint-advisory and black-filtered take a `py-ci-shared-ref` input whose default is the release the file ships in (v1.17.0, bumped with the version); configs, RUFF_VERSION and the package are fetched at that ref, with master only as a logged fallback when the ref cannot be fetched. `github.job_workflow_sha` was the proposed source, but it is not in the `github` context (actionlint rejects it; it exists only as an OIDC claim), so the ref is an input held equal to the version by a test; regression test: tests/test_reusable_workflows.py::test_py_ci_shared_is_never_fetched_at_master_by_default, tests/test_release_version.py::test_each_reusable_workflow_defaults_to_its_own_release
 
 - **Original id:** A4
 - **Where:** .github/workflows/ruff-blocking.yml:54-60, lint-advisory.yml:66-73
@@ -106,7 +106,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-5 (Med) -- 6 of 7 reusable workflows declare no permissions:; they inherit the caller's token scop...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `permissions: contents: read` at workflow level in black-filtered, lint-advisory, lint-blocking, mypy-beachhead, mypy-full and ruff-blocking; release.yml grants `contents: write` only to its publish job; regression test: tests/test_reusable_workflows.py::test_every_workflow_declares_least_privilege_permissions
 
 - **Original id:** A5
 - **Where:** .github/workflows/black-filtered.yml, lint-advisory.yml, lint-blocking.yml, mypy-beachhead.yml, mypy-full.yml, ruff-blocking.yml
@@ -115,7 +115,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-6 (Med) -- pip-audit, import-linter, pydoclint, semgrep installed unpinned (uvx pip-audit, uv pip...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- lint-advisory installs pip-audit 2.10.1, import-linter 2.15, pydoclint 0.9.1 and semgrep 1.178.0 at exact versions through new `*-version` inputs (the current PyPI releases); the `${{ github.workspace }}` expansion in run: became `$GITHUB_WORKSPACE`. lint-blocking gained a `deptry-version` input like its other tools. The pins live in the workflow inputs, not tool_versions.py, because that module belongs to the gate agents and consumers override inputs per call; regression test: tests/test_reusable_workflows.py::test_lint_advisory_installs_every_tool_at_an_exact_version
 
 - **Original id:** A6
 - **Where:** lint-advisory.yml:100,119,126,151
@@ -124,7 +124,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-7 (Med) -- pyutilz-ref defaults to empty = unpinned pyutilz tip; the description itself documents...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- install-pyutilz's `pyutilz-ref` defaults to 3be55c1512ad73a6dab628b4a79eeecbc31212a1, the commit this repo's `[dev]` extra pins, so the pin step always runs; "master" remains available on purpose; regression test: tests/test_release_version.py::test_the_install_pyutilz_action_defaults_to_the_pinned_commit
 
 - **Original id:** A7
 - **Where:** .github/actions/install-pyutilz/action.yml:15-31
@@ -133,7 +133,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-8 (Med) -- requires-python >=3.9 but CI runs only 3.11 (matrix is OS only) and mypy checks as 3.10
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- self-ci tests Python 3.9, 3.10, 3.11, 3.12 and 3.13 on ubuntu plus 3.11 on Windows and macOS; ruff and mypy run on the 3.11 legs. `[tool.mypy] python_version` stays 3.10 because the pinned mypy 2.1.0 cannot target 3.9; the 3.9 leg runs the whole suite, which is what caught the field breakages; regression test: tests/test_reusable_workflows.py::test_self_ci_covers_the_python_floor_and_installs_dev_without_a_fallback
 
 - **Original id:** A8
 - **Where:** pyproject.toml:13, self-ci.yml:42, pyproject.toml `[tool.mypy] python_version = "3.10"`
@@ -142,7 +142,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-9 (Med) -- Manifest exposes one hook (mypy-full-manual, which is just python -m mypy), while 13 mo...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- .pre-commit-hooks.yaml publishes py-ci-shared-run-all, pinned-tool-versions, mypy-gate and worktree-hygiene (manual) next to mypy-full-manual; the header example uses `rev: v1.17.0`; regression test: tests/test_package_inventory.py::test_every_pre_commit_hook_runs_a_module_that_has_a_main
 
 - **Original id:** A9
 - **Where:** .pre-commit-hooks.yaml:1-27
@@ -151,7 +151,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-10 (Med) -- Only 3 console scripts; the other 10 CLIs are python -m only
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- one `py-ci-shared` console script (src/py_ci_shared/cli.py, argparse subcommands run, run-all, refresh, list, config-path, tool, version); `tool <name>` reaches every CLI module's main; regression test: tests/test_package_inventory.py::test_every_console_script_resolves, tests/test_package_inventory.py::test_every_cli_module_is_reachable_through_the_umbrella_script, tests/test_cli.py::TestCommandLine::test_run_all_exit_codes
 
 - **Original id:** A10
 - **Where:** pyproject.toml `[project.scripts]`
@@ -160,7 +160,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-11 (Med) -- 67 of 112 modules are not mentioned in README (e.g
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- README has a "Gate catalogue" table rendered from the registry (one row per module: kind, since, entry, summary, link), and a test fails when the README block differs from `py-ci-shared list --markdown`; regression test: tests/test_package_inventory.py::test_the_readme_catalogue_is_the_rendered_registry, tests/test_package_inventory.py::test_every_registered_module_has_a_readme_row
 
 - **Original id:** A11
 - **Where:** README.md
@@ -169,7 +169,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-12 (Low) -- Docstring describes the package as four scripts (black_filtered_apply, format_warn, ban...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `py_ci_shared/__init__.py` docstring now describes gates, CLIs and libraries, points at the registry, and states the public API (registered modules, names without a leading underscore; `_core` and underscore modules internal); every module is either registered or listed in `registry.INTERNAL_MODULES` with a reason; regression test: tests/test_package_inventory.py::test_every_module_is_registered_or_declared_internal
 
 - **Original id:** A12
 - **Where:** src/py_ci_shared/__init__.py:1-8
@@ -178,7 +178,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-13 (Low) -- Stale build/lib (22 modules, vs 112 in src) and build/bdist.win-amd64 exist on disk
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `build/` is gitignored and the shared corpus enumerates with `git ls-files` and matches exclusions on root-relative parts, so a stale local build/ is invisible to the migrated gates; this repo's own gates run from `py-ci-shared run-all` over the git corpus in CI; regression test: tests/test_core_corpus.py::TestGit::test_a_checkout_under_build_is_scanned_through_git, tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** A13
 - **Where:** build/
@@ -187,7 +187,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-14 (High) -- Corpus enumeration is inconsistent
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the `_core` and gate-migration agents: `_core.iter_files` (git ls-files, one fallback exclude set) is used by 86+ modules. Remaining `rglob` uses are docstring examples, `test_partition_reachability` (walks consumer script dirs by design) and `timezone_honest` (an existence probe); regression test: tests/test_core_corpus.py::TestGit::test_ignored_files_are_left_out_and_untracked_ones_kept
 
 - **Original id:** B1
 - **Where:** 39 modules using `rglob`, 2 `os.walk`, 4 `git ls-files`
@@ -196,7 +196,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-15 (High) -- Seven divergent skip-dir sets
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `llm_call_archive_gate._SKIP_DIRS` and `effect_assertion_parity._SKIP_DIRS` are now aliases of `_core.DEFAULT_EXCLUDE` (both were strict subsets; the names stay for importers) and enumeration passes `DEFAULT_EXCLUDE` alone. The remaining own walks moved to `_core.iter_files`: repo_hygiene's non-git fallback `os.walk`, test_partition_reachability's three `rglob`s (runner dirs, scripts, spec files, which now skip node_modules and caches), timezone_honest's excluded-dir probe and the mutation fingerprint's test-dir expansion (`use_git=False`, as pytest does not consult git). Kept by design: `worktree_hygiene._files_under` must see gitignored and cache files, since finding unsaved ignored content is its job; `value_bearing_asserts._DEFAULT_EXCLUDE` is a scope choice, not a skip list; `rglob` in docstrings is usage prose; regression test: tests/test_corpus_walks_use_core.py::test_the_local_skip_sets_are_the_canonical_one, tests/test_corpus_walks_use_core.py::test_llm_python_files_skip_every_default_excluded_dir, tests/test_corpus_walks_use_core.py::test_permanent_skips_ignore_node_modules, tests/test_corpus_walks_use_core.py::test_unreferenced_scripts_skip_caches_and_keep_real_scripts, tests/test_corpus_walks_use_core.py::test_excluded_code_dirs_ignore_bytecode_only_dirs, tests/test_corpus_walks_use_core.py::test_repo_hygiene_walk_outside_git_prunes_skipped_dirs, tests/test_corpus_walks_use_core.py::test_fingerprint_expands_a_test_dir_like_pytest
 
 - **Original id:** B2
 - **Where:** 7 modules (db_transaction_completeness.py:84, effect_assertion_parity.py:59, llm_call_archive_gate.py:46, naive_utcnow.py:41, prompt_field_parity.py:76, save_failure_markers.py:34, value_bearing_asserts.py:36)
@@ -205,7 +205,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-16 (Med) -- Every gate re-reads and re-parses the same files; a consumer running 40 gates in one py...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- no file is parsed outside `_core` any more: env_flag_parsing goes through `scan_python`, and prompt_field_parity's files already went through `_core.parse_source` (`_parsed`). Every remaining `ast.parse(` in src parses a string the caller or gate supplies, not a file: public string APIs (`prompt_field_parity.string_literals`, `llm_call_archive_gate._tree_of`, `sqlalchemy_text_binds.python_colon_cast_binds`, `audit_round_format.absence_comparisons`), annotation or expression strings (optional_truthiness, reiterated_iterable_params, prompt_field_parity `_annotation_members`, audit_round_format), and mutants or mutation targets read by the harness's own `read_target` (`_mutation_operators`); regression test: tests/test_gate_floors_and_parse_errors.py::TestEnvFlagParsing::test_a_bom_file_is_read_like_a_plain_one
 
 - **Original id:** B3
 - **Where:** 46 modules, 75 `ast.parse`
@@ -214,7 +214,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-17 (Med) -- Unparsable files are silently dropped (continue/return []/return set()), so a file with...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the two silent skips are gone: `prompt_field_parity.string_literals` now raises `SyntaxError` by default (`strict=False` opts back into the empty answer), so `keys_in_source`, `invisible_keys`, `undemonstrated_fields` and `structural_names_prompted` no longer read a broken module as one asking for nothing; and the `llm_call_archive_gate` finders raise `UnparsedFilesError` naming the file when called without an `unparsed` list. The remaining `except SyntaxError` sites are string or annotation parses with a defined fallback (optional_truthiness, reiterated_iterable_params, audit_round_format, prompt_field_parity `_annotation_members`), `ast.literal_eval` of a default expression (config_call_site_parity, config_getattr_default_parity), tokenizing a hunk (black_filtered_apply), and the mutation harness, which raises `MutationHarnessError` for an unparsable target and drops only invalid mutants; regression test: tests/test_prompt_field_parity.py::TestAuditRegressions::test_an_unparsable_source_string_raises_by_default, tests/test_corpus_walks_use_core.py::test_llm_finders_raise_on_an_unparsable_file_instead_of_skipping_it
 
 - **Original id:** B4
 - **Where:** 42 modules with `except SyntaxError`
@@ -223,7 +223,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-18 (Low) -- read_text() without encoding=: locale-dependent on Windows (cp1251 here).
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- no `read_text()` without an encoding remains in src (the install_safe_hook site was fixed by the gate agents; the two remaining matches are inside docstrings), and this repo's own gates now run on it in CI; regression test: tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** B5
 - **Where:** install_safe_hook.py
@@ -232,7 +232,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-19 (Med) -- CLI conventions differ: argparse in 4 (baseline_trend, embedded_postgres, pinned_tool_v...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the one convention is the new `py-ci-shared` CLI (argparse subcommands, `main(argv) -> int`, exit 0/1/2, output through one writer, no import-time side effects); the 13 module mains stay as they are for compatibility and are reachable through `py-ci-shared tool <name>`. advisory_warn and bandit_warn read argv only inside `main` now (fixed by the gate agents); regression test: tests/test_cli.py::TestCommandLine::test_tool_forwards_to_a_module_main
 
 - **Original id:** C1
 - **Where:** 13 CLIs (see table above)
@@ -241,7 +241,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-20 (Med) -- No common signature
 
-**Disposition:** OPEN
+**Disposition:** WON'T FIX -- rewriting 100+ `assert_*` signatures to one `(ctx, cfg)` protocol would break every consumer's meta-tests for no behavioural gain. The uniform surface is the config layer instead: `[tool.py_ci_shared.gates.<name>]` keys are the entry's keyword arguments, paths resolved from annotations, unknown keys rejected with the signature, and the plugin and `run-all` call every gate the same way (`_core.runner.run_gate`); tests: tests/test_cli.py::TestResolveKwargs::test_an_unknown_key_names_the_signature
 
 - **Original id:** C2
 - **Where:** 83 `assert_*` functions
@@ -250,7 +250,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-21 (Med) -- Refresh mechanism duplicated six times, with 10 different flags; detection via REFRESH_...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the pytest plugin registers one `--py-ci-refresh[=<gate>,...]` option (bare = all) and exports it as `PY_CI_SHARED_REFRESH` for the whole session, which xdist workers inherit; `py-ci-shared refresh <gate>` does the same outside pytest. The six per-module `register_refresh_option` functions remain for compatibility (three already delegate to `_core`); regression test: tests/test_pytest_plugin.py::test_refresh_writes_a_missing_baseline_and_reaches_every_test_through_the_env
 
 - **Original id:** C3
 - **Where:** 6 `register_refresh_option` copies (code_audit_meta.py:63, content_hash_version_bump_gate.py:58, loc_budget.py:56, mutation_teeth.py:1906, readme_env_var_parity.py:241, uncalled_functions.py:56); code_audit_meta.py:89-101, content_hash_version_bump_gate.py:80
@@ -259,7 +259,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-22 (Med) -- Baseline formats and ratchet semantics differ: json vs orjson (orjson a hard dependency...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the `_core` and migration agents: `_core.Baseline` (schema 1, sorted, LF, atomic) and `atomic_write_text`/`dump_json` are used by the baselined gates; the readers still accept every older format. code_audit_meta and content_hash_version_bump_gate still serialise with orjson but write atomically; regression test: tests/test_core_baseline.py::TestFormatsAndWrites::test_writes_are_byte_stable_sorted_lf_utf8
 
 - **Original id:** C4
 - **Where:** ~12 baseline writers (audit_wave_filenames.py:66, code_audit_meta.py:204, content_hash_version_bump_gate.py:131, deferred_drift.py:61, function_length.py:68, ignore_ratchet.py:102, import_side_effects.py:125, loc_budget.py:103, mutation_teeth.py:1901, readme_env_var_parity.py:226, source_text_claims.py:329, uncalled_functions.py:194, value_bearing_asserts.py:106)
@@ -268,7 +268,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-23 (Med) -- No per-repo configuration surface ([tool.py_ci_shared] appears nowhere)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `[tool.py_ci_shared]` (`enable`, `budget`, `[tool.py_ci_shared.gates.<name>]` with reserved `module`/`entry`/`budget_s`/`enabled`) is loaded once by `_core.config.load_config` through `_toml_compat`, used by the plugin and the CLI, and documented in README "Configuring gates"; this repo carries its own table; regression test: tests/test_cli.py::TestLoadConfig::test_enable_and_tables_become_runs_with_reserved_keys_split_off, tests/test_cli.py::TestLoadConfig::test_malformed_tables_fail_loudly
 
 - **Original id:** C5
 - **Where:** whole package
@@ -277,7 +277,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-24 (Low) -- Message quality varies: some gates print file:line plus fix (pinned_tool_versions, per...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `fail_message_quality` now runs on this repo's gate code (dogfood table, `meta_dir = src/py_ci_shared`), and the runner reports each gate's own message under its name in both the CLI and the pytest item; `_core.Finding.render` exists for gates that migrate onto it; regression test: tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** C6
 - **Where:** failure messages
@@ -286,7 +286,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-25 (Med) -- Dogfooding is partial: self-ci runs pytest, ruff, mypy and the reusable workflows, but...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- this repo's pyproject.toml enables 17 of its own gates plus a timeout gate per workflow (repo_hygiene, version_consistency, pytest_markers, entry_points_resolvable, git_dependency_pins, ci_workflow_paths with required permissions and SHA pins, private_imports, naive_utcnow, identity_comparisons, phantom_markdown_links over README/WRITING_TESTS/CHANGELOG, unresolved_imports, value_bearing_asserts, stale_comment_age, audit_round_format over audits/, loc_budget, function_length, fail_open_handlers, fail_message_quality). self-ci runs `py-ci-shared run-all`, and the suite runs each one as a test. `uncalled_functions` is left out on purpose: in a library every public function is called only by consumers. Baselines seeded under tests/baselines/; regression test: tests/test_self_gates.py::test_the_dogfood_set_covers_the_gates_this_repo_can_break, tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** D1
 - **Where:** self-ci.yml
@@ -295,7 +295,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-26 (Low) -- T201 ignores are listed per file (16 entries) and must be maintained by hand as CLIs ar...
 
-**Disposition:** OPEN
+**Disposition:** WON'T FIX -- moving the CLIs into a `py_ci_shared/cli/` package to ignore T201 by glob would rename `python -m py_ci_shared.<name>`, which consumer hooks call. New command-line code writes through `sys.stdout.write` (cli.py), so the per-file list does not grow.
 
 - **Original id:** D2
 - **Where:** pyproject.toml per-file-ignores
@@ -304,7 +304,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-27 (Low) -- orjson is a hard runtime dependency used only for baseline I/O in 5 modules, where stdl...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- code_audit_meta and content_hash_version_bump_gate read baselines with the new `_core.load_json` (UTF-8, BOM tolerated, a corrupt file raises `BaselineError` naming it) and write with `_core.dump_json` + `atomic_write_text`; the files stay in their existing formats (a JSON list, and the version/hash/history object) and, for ASCII content, are byte-identical to what orjson wrote (indent 2, sorted keys, trailing newline). No module in src imports orjson any more and the tests use `json`, so `orjson` can leave `[project].dependencies`; regression test: tests/test_code_audit_meta.py::TestAssertNoNewCodeAuditFindings::test_the_baseline_round_trips_without_orjson, tests/test_content_hash_version_bump_gate.py::TestBaselineFile::test_the_gate_runs_without_orjson_installed, tests/test_content_hash_version_bump_gate.py::TestBaselineFile::test_the_written_baseline_is_canonical_json_that_an_orjson_era_file_matches, tests/test_content_hash_version_bump_gate.py::TestBaselineFile::test_a_corrupt_baseline_fails_naming_the_file
 
 - **Original id:** D3
 - **Where:** pyproject.toml deps
@@ -313,7 +313,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-28 (Low) -- ruff-base.toml/ruff-tests.toml are not package data (pyproject comment), so every consu...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- ruff-base.toml and ruff-tests.toml ship as package data (`src/py_ci_shared/configs/`), `py-ci-shared config-path ruff-base` prints the installed path, README shows how to derive `PY_CI_SHARED_DIR` from it; a test keeps the shipped copies byte-identical to configs/; regression test: tests/test_package_inventory.py::test_shipped_configs_are_byte_identical_to_the_repo_copies, tests/test_cli.py::TestCommandLine::test_config_path_points_at_the_shipped_file
 
 - **Original id:** D4
 - **Where:** configs/
@@ -322,7 +322,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-29 (Info) -- Convention document, not an API reference; claims are measurement-based (realtime_appli...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the README catalogue introduction links WRITING_TESTS.md for mutation_teeth and teeth_sweep; phantom_markdown_links checks README, WRITING_TESTS and CHANGELOG links in the dogfood run; regression test: tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** D5
 - **Where:** WRITING_TESTS.md
@@ -331,7 +331,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-30 (Info) -- Only module over the 1k LOC limit used elsewhere in these repos.
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the mutation_teeth agent (commit e310c24): mutation_teeth.py is 967 lines with `_mutation_*` siblings; `loc_budget` now runs on this repo with a 1000-line limit; regression test: tests/test_self_gates.py::test_gate_passes_on_this_repo
 
 - **Original id:** D6
 - **Where:** mutation_teeth.py (2,099 LOC)

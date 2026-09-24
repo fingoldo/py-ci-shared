@@ -1,0 +1,5 @@
+﻿from alembic import op
+
+
+def upgrade():
+    op.execute("CREATE INDEX CONCURRENTLY ix_seed ON t (c)")

@@ -49,7 +49,7 @@ __all__ = [
     "find_unasserted_effects",
 ]
 
-#: Directories whose contents are not this repository's own source.
+#: Directories whose contents are not this repository's own source: the one canonical ``_core.DEFAULT_EXCLUDE``.
 #:
 #: ``.claude`` earns its place the hard way. Claude Code puts agent worktrees under
 #: ``.claude/worktrees/``, and a worktree is a FULL SECOND CHECKOUT of the repository. On
@@ -57,24 +57,7 @@ __all__ = [
 #: walked the repository six times over, took more than the 900s test timeout, and read as a
 #: hang rather than as a directory that should never have been entered. ``.tox`` and
 #: ``site-packages`` are the same mistake wearing different names.
-_SKIP_DIRS = frozenset(
-    {
-        ".git",
-        "__pycache__",
-        ".venv",
-        "venv",
-        "node_modules",
-        ".pytest_cache",
-        ".mypy_cache",
-        ".ruff_cache",
-        "build",
-        "dist",
-        ".claude",
-        ".tox",
-        ".eggs",
-        "site-packages",
-    }
-)
+_SKIP_DIRS = DEFAULT_EXCLUDE
 
 #: The effects worth pairing by default: a transaction boundary and a statement execution. Each is a
 #: call whose entire purpose is what it does elsewhere, so a return-value assertion cannot see it.
@@ -591,7 +574,7 @@ def _cached_imported_names(path: Path) -> frozenset[str]:
 def _py_files(root: Path) -> "list[Path]":
     """Every ``.py`` under *root*, with skipped directories never entered (``_core.iter_files``: git's listing inside a
     work tree, a pruned walk outside one)."""
-    return iter_files(root, ("*.py",), exclude=DEFAULT_EXCLUDE | _SKIP_DIRS)
+    return iter_files(root, ("*.py",), exclude=DEFAULT_EXCLUDE)
 
 
 _ImportRecord = tuple[int, Optional[str], tuple[str, ...]]

@@ -1,0 +1,6 @@
+from unittest.mock import AsyncMock
+
+
+def test_seed():
+    session = AsyncMock(spec=AsyncSession)
+    claim_lock(session, "k")

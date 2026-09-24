@@ -1,0 +1,6 @@
+﻿import pytest
+
+
+@pytest.mark.xfail(reason="PROD GAP: the seed selector keeps a redundant column")
+def test_seed():
+    pass

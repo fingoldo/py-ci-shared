@@ -1,0 +1,3 @@
+def test_seed_mean():
+    """Round-trips."""
+    assert compute() == 3.7

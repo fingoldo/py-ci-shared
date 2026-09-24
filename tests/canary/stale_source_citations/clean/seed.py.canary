@@ -1,0 +1,2 @@
+# the loop in target.py:10 does this
+SEED = 1

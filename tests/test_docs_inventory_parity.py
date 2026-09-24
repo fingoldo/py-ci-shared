@@ -3,12 +3,8 @@ concrete documentation-audit finding shape on a scratch repo."""
 
 from __future__ import annotations
 
-import sys
-
 import pytest
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared.docs_inventory_parity import (
     find_aggregate_group_drift,
@@ -70,7 +66,7 @@ class TestExtrasDocumentationDrift:
 class TestResolveExtrasGroup:
     def test_a_self_referential_group_resolves_transitively(self, tmp_path):
         pyproject, _ = _repo(tmp_path, "")
-        import tomllib
+        from py_ci_shared._toml_compat import tomllib
 
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         assert resolve_extras_group(data["project"]["optional-dependencies"], "all") == {"selenium", "requests", "grequests", "anthropic", "httpx"}

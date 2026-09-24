@@ -66,13 +66,12 @@ Usage::
 from __future__ import annotations
 
 import fnmatch
-import os
 import re
 import subprocess
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, git_listing
+from ._core import DEFAULT_EXCLUDE, iter_files
 
 #: Generated-artefact patterns, matched on path COMPONENTS, never as substrings (see :func:`matches_generated_pattern`).
 _DEFAULT_GENERATED_PATTERNS: tuple[str, ...] = (
@@ -110,7 +109,7 @@ _EMPTINESS_GUARD_TMPL = (
 )
 
 
-def _tracked_files(repo_root: Path) -> list[str]:
+def tracked_files(repo_root: Path) -> list[str]:
     """Tracked paths as git stores them: ``-z`` so a non-ASCII name is not C-quoted (``"audits/\320\277..."``)."""
     try:
         out = subprocess.run(
@@ -122,6 +121,9 @@ def _tracked_files(repo_root: Path) -> list[str]:
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover - environment
         raise RuntimeError(f"git ls-files failed in {repo_root}: {exc}") from exc
     return [rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel]
+
+
+_tracked_files = tracked_files
 
 
 def matches_generated_pattern(rel: str, pattern: str) -> bool:
@@ -189,15 +191,7 @@ def _candidate_files(repo_root: Path, skip: "set[str]") -> "list[str]":
     committed while ignored data, caches and outputs -- often ten times the repository -- are never read. Outside a
     checkout the walk prunes skipped directories instead of descending into them and filtering afterwards.
     """
-    listed = git_listing(repo_root)
-    if listed is not None:
-        return listed
-    found: "list[str]" = []
-    for dirpath, dirnames, filenames in os.walk(repo_root):
-        dirnames[:] = [d for d in dirnames if d not in skip]
-        rel_dir = Path(dirpath).relative_to(repo_root)
-        found.extend((rel_dir / name).as_posix() for name in filenames)
-    return sorted(found)
+    return [path.relative_to(repo_root).as_posix() for path in iter_files(repo_root, ("*",), exclude=skip)]
 
 
 def _walk_text_files(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: Iterable[str]) -> "list[Path]":

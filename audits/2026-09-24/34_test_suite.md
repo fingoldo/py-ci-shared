@@ -83,7 +83,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-1 (High) -- CI tests only Python 3.11 while requires-python = ">=3.9"
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- self-ci matrix covers Python 3.9 to 3.13 on ubuntu plus 3.11 on Windows and macOS; regression test: tests/test_reusable_workflows.py::test_self_ci_covers_the_python_floor_and_installs_dev_without_a_fallback
 
 - **Original id:** F-01
 - **Where:** .github/workflows/self-ci.yml:42
@@ -93,7 +93,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-2 (High) -- The floor-guard test itself does import tomllib at module level, so it fails at collect...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the floor test reads pyproject through `py_ci_shared._toml_compat` instead of importing tomllib, so it collects on 3.9/3.10; regression test: tests/test_python_floor_compatibility.py::test_the_floor_is_still_below_the_versions_these_rules_guard
 
 - **Original id:** F-02
 - **Where:** tests/test_python_floor_compatibility.py:17
@@ -103,7 +103,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-3 (Med) -- The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the ban walks the AST for `import tomllib`, `import tomllib as t` and `from tomllib import ...`, allows imports under a `sys.version_info` test or an ImportError handler, and covers src (recursively, `_core` included) and tests. It now reports tests/test_docs_inventory_parity.py:71 (an unguarded `import tomllib` inside a test, which fails on 3.9/3.10); that file belongs to the docs_inventory_parity owner; regression test: tests/test_python_floor_compatibility.py::test_the_tomllib_ban_sees_every_import_spelling, tests/test_python_floor_compatibility.py::test_no_file_imports_tomllib_without_a_version_guard
 
 - **Original id:** F-03
 - **Where:** tests/test_python_floor_compatibility.py:59
@@ -113,7 +113,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-4 (High) -- There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra...
 
-**Disposition:** OPEN
+**Disposition:** DEFERRED -- done: `[tool.pytest.ini_options]` (testpaths, pythonpath, `-ra --strict-markers`, a 300 s pytest-timeout, the plugin marker), `[tool.coverage.run]` (branch, source) and a coverage run on the ubuntu 3.11 leg. Waiting: `[tool.coverage.report] fail_under`, which must be the floor of a measured full-suite total; it waits on the first full CI run of this change (the coordinator reads the total from the ubuntu 3.11 log and sets it).
 
 - **Original id:** F-04
 - **Where:** pyproject.toml (no `[tool.pytest.ini_options]`, no `[tool.coverage.*]`); self-ci.yml:59
@@ -123,7 +123,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-5 (High) -- uv pip install -e ".[dev]" \/\/ uv pip install -e 
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `|| uv pip install -e .` fallback is gone, pytest runs with `-ra` (every skip listed with its reason), and a step writes the skip count from junit.xml to the job summary; regression test: tests/test_reusable_workflows.py::test_self_ci_covers_the_python_floor_and_installs_dev_without_a_fallback
 
 - **Original id:** F-05
 - **Where:** .github/workflows/self-ci.yml:49
@@ -133,7 +133,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-6 (Med) -- pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the dev extra adds pre-commit, numpy, sqlalchemy, tomli, pytest-cov and pytest-timeout, so the importorskip files (safe_precommit, hash_fed_by_array_copy, statement_compilation, the tomli fallback) run in CI; regression test: tests/test_test_harness.py::test_every_test_has_a_deadline
 
 - **Original id:** F-06
 - **Where:** tests/test_safe_precommit.py:17
@@ -153,7 +153,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-8 (Med) -- No test references either module.
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the gate agents: tests/test_advisory_warn.py and tests/test_vulture_warn.py exist; the inventory test now requires a test file that imports every registered module; regression test: tests/test_package_inventory.py::test_each_registered_module_has_a_test_file_that_imports_it
 
 - **Original id:** F-08
 - **Where:** src/py_ci_shared/advisory_warn.py, vulture_warn.py
@@ -163,7 +163,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-9 (Med) -- Covered only nominally (referenced, or 1 to 3 unrelated tests); their own branches (7,...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the gate agents: dedicated tests/test_bandit_warn.py, test_format_warn.py, test_config_drift_check.py and test_mutation_worker.py; kept honest by the per-module inventory check; regression test: tests/test_package_inventory.py::test_each_registered_module_has_a_test_file_that_imports_it
 
 - **Original id:** F-09
 - **Where:** src/py_ci_shared/bandit_warn.py, format_warn.py, config_drift_check.py, _mutation_worker.py
@@ -173,7 +173,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-10 (Med) -- 9 gates share 3 grouped files at about 5 to 8 tests each
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the grouped modules now have their own files (test_dataclass_case_completeness, test_fail_message_quality, test_meta_private_imports, test_pydantic_field_bounds, test_import_side_effects, test_save_failure_markers, test_sql_verifier_coverage); the one remaining grouped mapping (llm_call_archive_gate in test_llm_preservation_gates.py) is recorded in the registry's `tests` field and checked; regression test: tests/test_package_inventory.py::test_each_registered_module_has_a_test_file_that_imports_it
 
 - **Original id:** F-10
 - **Where:** tests/test_v113_rules.py, test_llm_preservation_gates.py, test_single_copy_rules.py
@@ -183,7 +183,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-11 (Med) -- Thin tests relative to branches: runtime_registry_mutation 6/38, unread_init_params 6/3...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- by the gate agents: runtime_registry_mutation 6 -> 13 tests, unread_init_params 6 -> 11, tracker_summary_parity 6 -> 9, identity_comparisons 4 -> 8, private_imports 4 -> 11, discarded_model_copy 5 -> 13, teeth_sweep 4 -> 27 (their dispositions name the survivors each kills); regression test: tests/test_identity_comparisons.py::test_a_percent_formatted_constant_is_stringish
 
 - **Original id:** F-11
 - **Where:** see section 1
@@ -193,7 +193,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-12 (Med) -- No meta-test asserts that every module has a test file, every gate has a README entry,...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new tests/test_package_inventory.py: every module registered or internal, no ghost entries, spec matches the module's `assert_*` set and kind, a test file importing each registered module, the README catalogue equals the rendered registry, every console script and the pytest11 entry resolve, every CLI reachable through `py-ci-shared tool`, every pre-commit hook module has a main, shipped configs identical; regression test: tests/test_package_inventory.py::test_every_module_is_registered_or_declared_internal
 
 - **Original id:** F-12
 - **Where:** tests/ (absent)
@@ -203,7 +203,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-13 (Med) -- Many of the repo's own gates are not run on itself (full list in section 2): ci_workflo...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- tests/test_self_gates.py runs every gate of this repo's `[tool.py_ci_shared]` as a test (the set is pinned, and every workflow must have a timeout gate entry), and self-ci runs the same through `py-ci-shared run-all`; regression test: tests/test_self_gates.py::test_the_dogfood_set_covers_the_gates_this_repo_can_break
 
 - **Original id:** F-13
 - **Where:** .github/workflows/self-ci.yml
@@ -213,7 +213,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-14 (Low) -- The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- tests/test_reusable_workflows.py asserts lint-advisory's continue-on-error steps equal the exact reviewed set of six names, with no skip. The old weak test (tests/test_ci_workflow_gate.py::test_this_repos_own_reusable_workflows_are_clean_or_reviewed) is in a gate agent's file and is now redundant; the coordinator may delete it; regression test: tests/test_reusable_workflows.py::test_lint_advisory_advisory_steps_are_exactly_the_reviewed_set
 
 - **Original id:** F-14
 - **Where:** tests/test_ci_workflow_gate.py:145-156
@@ -263,7 +263,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-19 (Low) -- Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs...
 
-**Disposition:** RESOLVED -- naive_utcnow's default skip list is now `_core.DEFAULT_EXCLUDE` (migrated by the core agent). A test pins the list against the canonical set and names the directories that matter, and a test parametrized over every entry proves each one is skipped while a sibling source directory is still scanned, so dropping any entry (not only `build`) fails a named test. regression test: tests/test_naive_utcnow.py::TestDefaultSkipDirsArePinned::test_the_default_list_is_the_shared_canonical_set, tests/test_naive_utcnow.py::TestDefaultSkipDirsArePinned::test_each_default_skip_dir_is_skipped_and_a_sibling_is_not
+**Disposition:** RESOLVED -- by the naive_utcnow owner: the default skip list is pinned to `_core.DEFAULT_EXCLUDE` and named members; regression test: tests/test_naive_utcnow.py::TestDefaultSkipDirsArePinned::test_the_default_list_is_the_shared_canonical_set
 
 - **Original id:** F-19
 - **Where:** tests/test_naive_utcnow.py
@@ -293,7 +293,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-22 (Low) -- Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- tests/conftest.py has a session-wide autouse fixture that sets GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM=1, GIT_TERMINAL_PROMPT=0 and, through GIT_CONFIG_COUNT, commit.gpgsign/tag.gpgsign false, init.defaultBranch master and a test identity, so every git a test runs (directly or through a gate) ignores the developer's global config without editing each test file; regression test: tests/test_test_harness.py::test_git_sees_no_global_or_system_config, tests/test_test_harness.py::test_the_repo_factory_commits_unsigned_with_its_own_identity
 
 - **Original id:** F-22
 - **Where:** tests/test_version_tag_currency.py:31, tests/test_stale_comment_age.py:33 (and others using `git commit`)
@@ -303,7 +303,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-23 (Low) -- Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- pytest-timeout is in the dev extra and `timeout = 300` in `[tool.pytest.ini_options]`, so a hung git or python child fails its test instead of holding the job; the new tests pass `timeout=` to every subprocess; regression test: tests/test_test_harness.py::test_every_test_has_a_deadline
 
 - **Original id:** F-23
 - **Where:** tests/ (37 `subprocess.run` calls)
@@ -323,7 +323,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-25 (Low) -- The real-server tests skip unless Postgres binaries are on PATH or PG_BIN; the GitHub r...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- self-ci's Linux legs export PG_BIN as the newest /usr/lib/postgresql/*/bin, so the embedded-Postgres real-server tests run instead of skipping; regression test: tests/test_reusable_workflows.py::test_self_ci_covers_the_python_floor_and_installs_dev_without_a_fallback
 
 - **Original id:** F-25
 - **Where:** tests/test_embedded_postgres.py:74,84
@@ -333,7 +333,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-26 (Low) -- Every file does sys.path.insert(0, <repo>/src)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `[tool.pytest.ini_options] pythonpath = ["src"]` and tests/conftest.py already put src on sys.path, so the per-file `sys.path.insert(0, .../"src")` line is removed from 82 test modules (with the `sys`/`Path` imports it alone needed); five modules of gates still being written keep theirs and are listed in the test's pending set, which fails once any other file carries the line again. The three batches (1696 tests) pass without PYTHONPATH set. Also deleted tests/test_ci_workflow_gate.py::test_this_repos_own_reusable_workflows_are_clean_or_reviewed, a `>= 1` check made redundant by the exact-set test; regression test: tests/test_test_harness.py::test_src_is_importable_without_a_per_file_path_insert, tests/test_reusable_workflows.py::test_lint_advisory_advisory_steps_are_exactly_the_reviewed_set
 
 - **Original id:** F-26
 - **Where:** tests/*.py (about 100 files)
@@ -343,7 +343,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-27 (Low) -- No shared fixtures (git repo factory, write helper), so each file re-implements _write/...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- tests/conftest.py provides `git_repo` (initialised repo with files, one commit, optional tags), `write` (LF, parents created) and `run_git` (isolated env, timeout), used by the new tests; regression test: tests/test_test_harness.py::test_the_repo_factory_commits_unsigned_with_its_own_identity, tests/test_test_harness.py::test_the_write_fixture_writes_lf
 
 - **Original id:** F-27
 - **Where:** tests/ (absent conftest.py)
@@ -353,7 +353,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-28 (Info) -- Portability is otherwise good: all tests use tmp_path (one tempfile.TemporaryDirectory...
 
-**Disposition:** OPEN
+**Disposition:** NOT A DEFECT -- informational: the audit found portability good (tmp_path, explicit encodings, no shell=True, three OSes); nothing to fix.
 
 - **Original id:** F-28
 - **Where:** self-ci.yml (Windows/macOS legs)

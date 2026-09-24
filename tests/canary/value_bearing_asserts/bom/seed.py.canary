@@ -1,0 +1,3 @@
+﻿def seed_guard(x):
+    assert x > 0
+    return x

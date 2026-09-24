@@ -1,0 +1,955 @@
+# Every public module of py_ci_shared, read by py_ci_shared/registry.py. Keep sorted by name.
+# Fields: name, kind (gate | cli | library), entries (assert_* functions, default first), since (first release),
+# budget_s (runtime budget per call), cli (has a main), summary (one line for the README), tests (when not tests/test_<name>.py).
+
+[[gate]]
+name = "advisory_warn"
+kind = "cli"
+since = "1.0.0"
+cli = true
+summary = "Warn-only advisory-taste check for the pre-commit hook"
+
+[[gate]]
+name = "alembic_concurrently"
+kind = "gate"
+entries = ["assert_concurrently_is_in_autocommit_blocks"]
+since = "1.8.0"
+summary = "An Alembic migration runs ``CONCURRENTLY`` only inside ``autocommit_block()``"
+
+[[gate]]
+name = "arb_checks"
+kind = "gate"
+entries = ["assert_arb_catalogues_are_sound"]
+since = "1.3.6"
+summary = "Shared checks over Flutter ``.arb`` localization catalogues"
+
+[[gate]]
+name = "atomic_write_staging"
+kind = "gate"
+entries = ["assert_atomic_write_staging"]
+since = "1.17.0"
+summary = "Write-then-rename staging that does not stage what it renames, and cache/baseline files rewritten in place"
+
+[[gate]]
+name = "audit_disposition_parity"
+kind = "gate"
+entries = ["assert_dispositions_name_real_artefacts"]
+since = "1.4.0"
+summary = "A finding marked RESOLVED names artefacts that exist"
+
+[[gate]]
+name = "audit_path_references"
+kind = "gate"
+entries = ["assert_no_open_round_paths"]
+since = "1.17.0"
+summary = "Code never pins the path of an OPEN audit round"
+
+[[gate]]
+name = "audit_round_format"
+kind = "gate"
+entries = ["assert_tracker_statuses_countable", "assert_rounds_countable", "assert_rounds_filed", "assert_no_whole_file_absence_claims"]
+since = "1.9.0"
+summary = "An audit tracker and its round files stay countable by machine"
+
+[[gate]]
+name = "audit_wave_filenames"
+kind = "gate"
+entries = ["assert_no_new_audit_wave_filenames"]
+since = "1.7.0"
+summary = "A test file is named after what it covers, not after the audit wave that produced it"
+
+[[gate]]
+name = "bandit_warn"
+kind = "cli"
+since = "1.0.0"
+cli = true
+summary = "Warn-only security-lint check for the pre-commit hook"
+
+[[gate]]
+name = "baseline_hygiene"
+kind = "gate"
+entries = ["assert_baseline_is_honest"]
+since = "1.3.6"
+summary = "A baseline of accepted violations stays a decision, not a landfill"
+
+[[gate]]
+name = "baseline_ratchet"
+kind = "library"
+since = "1.3.6"
+summary = "Shared ratchet for structural checks with a pre-existing backlog"
+
+[[gate]]
+name = "baseline_trend"
+kind = "cli"
+since = "1.3.6"
+budget_s = 60
+cli = true
+summary = "How each baselined rule's count has moved over time, read out of git history"
+
+[[gate]]
+name = "black_filtered_apply"
+kind = "cli"
+since = "1.0.0"
+cli = true
+summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes"
+
+[[gate]]
+name = "changelog_promise_parity"
+kind = "gate"
+entries = ["assert_changelog_bullets_satisfy_pattern"]
+since = "1.3.1"
+summary = "Shared checks for the \"a CHANGELOG bullet promises something, does the promise ever get kept\" consistency pattern"
+
+[[gate]]
+name = "checkout_resolution"
+kind = "gate"
+entries = ["assert_modules_resolve_to_checkout", "assert_a_copy_imports_itself"]
+since = "1.7.0"
+budget_s = 180
+summary = "The suite examines the code in THIS checkout, not a copy installed somewhere else"
+
+[[gate]]
+name = "checkpoint_isolation"
+kind = "gate"
+entries = ["assert_outside"]
+since = "1.4.0"
+summary = "Assert that no test reads or writes the on-disk state a real run of the program uses"
+
+[[gate]]
+name = "ci_test_dir_reachability"
+kind = "gate"
+entries = ["assert_every_test_subdir_reachable"]
+since = "1.3.1"
+summary = "Every subdirectory under a consumer repo's ``tests/`` must be reachable by at least one CI job -- or be explicitly whitelisted as intentionally"
+
+[[gate]]
+name = "ci_workflow_gate"
+kind = "gate"
+entries = ["assert_continue_on_error_is_reviewed"]
+since = "1.3.0"
+summary = "Every ``continue-on-error"
+
+[[gate]]
+name = "ci_workflow_paths"
+kind = "gate"
+entries = ["assert_workflow_paths_exist"]
+since = "1.3.6"
+summary = "A CI workflow does not name paths that do not exist, and declares its permissions"
+
+[[gate]]
+name = "ci_workflow_timeout_gate"
+kind = "gate"
+entries = ["assert_all_jobs_have_timeout"]
+since = "1.3.1"
+summary = "Every job in a CI workflow file declares ``timeout-minutes``"
+
+[[gate]]
+name = "clock_day_boundary"
+kind = "gate"
+entries = ["assert_no_clock_day_boundary"]
+since = "1.17.0"
+summary = "A test that reads the real clock and shifts it by part of a day fails for part of every day"
+
+[[gate]]
+name = "code_audit_meta"
+kind = "gate"
+entries = ["assert_no_new_code_audit_findings"]
+since = "1.1.0"
+budget_s = 180
+summary = "Shared harness for the \"code-audit baseline\" meta-test pattern"
+
+[[gate]]
+name = "conceded_defect_pins"
+kind = "library"
+since = "1.17.0"
+summary = "Tests that say the behaviour is wrong and then pin it exactly"
+
+[[gate]]
+name = "config_call_site_parity"
+kind = "gate"
+entries = ["assert_every_cfg_get_call_resolves_to_a_schema_field", "assert_every_schema_field_has_a_reader", "assert_no_divergent_cfg_get_call_site_defaults", "assert_call_site_defaults_match_schema_defaults", "assert_no_module_scope_frozen_cli_defaults"]
+since = "1.3.0"
+summary = "Shared checks for the \"``cfg().get(section, key, default, type_)`` call-site vs Pydantic schema\" consistency pattern"
+
+[[gate]]
+name = "config_drift_check"
+kind = "cli"
+since = "1.1.1"
+cli = true
+summary = "Reports [tool.ruff]/[tool.mypy] config divergence across consumer repos"
+
+[[gate]]
+name = "config_getattr_default_parity"
+kind = "gate"
+entries = ["assert_getattr_defaults_match_schema"]
+since = "1.17.0"
+summary = "``getattr(cfg, \"field\", <literal>)`` whose literal disagrees with the field's own default"
+
+[[gate]]
+name = "content_hash_version_bump_gate"
+kind = "gate"
+entries = ["assert_version_bumped_with_content"]
+since = "1.3.1"
+summary = "Shared harness for the \"N files feed a version/cache-key constant that must be bumped by hand whenever those files change\" meta-test pattern"
+
+[[gate]]
+name = "coverage_config_parity"
+kind = "gate"
+entries = ["assert_coverage_config_parity"]
+since = "1.17.0"
+summary = "Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see"
+
+[[gate]]
+name = "dart_scanners"
+kind = "library"
+since = "1.3.6"
+summary = "Shared structural scanners over Dart/Flutter source"
+
+[[gate]]
+name = "dataclass_case_completeness"
+kind = "gate"
+entries = ["assert_every_dataclass_has_a_case"]
+since = "1.5.0"
+summary = "Every dataclass of a given kind has a test case, or an exemption with a reason"
+
+[[gate]]
+name = "db_transaction_completeness"
+kind = "gate"
+entries = ["assert_no_new_incomplete_transaction"]
+since = "1.17.0"
+summary = "A function that runs a statement on a database-handle parameter must also close the transaction it opened -- a ``commit()`` or ``rollback()`` on"
+
+[[gate]]
+name = "deferred_drift"
+kind = "gate"
+entries = ["assert_deferred_lists_not_grown"]
+since = "1.12.0"
+summary = "Deferred-debt lists in a meta-test directory may not grow, and a list that shrank must say so"
+
+[[gate]]
+name = "deletion_gates"
+kind = "library"
+since = "1.4.0"
+summary = "Assert that something an audit deliberately REMOVED has not come back"
+
+[[gate]]
+name = "discarded_model_copy"
+kind = "gate"
+entries = ["assert_no_discarded_model_copy"]
+since = "1.17.0"
+summary = "A config rebuilt with ``model_copy(update=...)`` into a local must reach something, or the override is lost"
+
+[[gate]]
+name = "disposition_test_references"
+kind = "gate"
+entries = ["assert_disposition_tests_exist"]
+since = "1.17.0"
+summary = "A test an audit disposition names must exist"
+
+[[gate]]
+name = "doc_identifier_parity"
+kind = "gate"
+entries = ["assert_doc_identifiers_exist"]
+since = "1.17.0"
+summary = "A flag or identifier a document names in backticks must exist somewhere in the code"
+
+[[gate]]
+name = "docs_inventory_parity"
+kind = "gate"
+entries = ["assert_no_inventory_drift"]
+since = "1.3.6"
+summary = "A documented inventory is computed from the thing it documents"
+
+[[gate]]
+name = "drifted_duplicate_functions"
+kind = "gate"
+entries = ["assert_no_drifted_duplicate_functions"]
+since = "1.4.0"
+summary = "Copies of one function that have drifted apart"
+
+[[gate]]
+name = "edge_function_hygiene"
+kind = "gate"
+entries = ["assert_edge_functions_are_sound"]
+since = "1.3.6"
+summary = "A serverless edge function is not a hole in the product's own back end"
+
+[[gate]]
+name = "effect_assertion_parity"
+kind = "gate"
+entries = ["assert_effects_are_asserted"]
+since = "1.4.0"
+summary = "A side effect the code performs must be one some test actually inspects"
+
+[[gate]]
+name = "embedded_postgres"
+kind = "cli"
+since = "1.17.0"
+budget_s = 120
+cli = true
+summary = "Run a command against a throwaway local Postgres, and find the main checkout's ``.env`` from a worktree"
+
+[[gate]]
+name = "entry_points_resolvable"
+kind = "gate"
+entries = ["assert_all_entry_points_resolvable"]
+since = "1.3.1"
+summary = "Every ``[project.scripts]``/``[project.entry-points.*]`` entry in pyproject.toml actually resolves (module imports, attribute exists)"
+
+[[gate]]
+name = "env_example_round_trip"
+kind = "gate"
+entries = ["assert_env_example_loads"]
+since = "1.17.0"
+summary = "Every value a `.env.example` documents can actually be loaded by the settings class"
+
+[[gate]]
+name = "env_flag_parsing"
+kind = "gate"
+entries = ["assert_env_flags_use_one_parser"]
+since = "1.17.0"
+summary = "Boolean environment flags read by hand, each with its own idea of what \"on\" means"
+
+[[gate]]
+name = "epsilon_padded_denominators"
+kind = "gate"
+entries = ["assert_no_epsilon_padded_power_denominators"]
+since = "1.4.0"
+summary = "An additive epsilon must not guard a denominator whose magnitude falls off geometrically"
+
+[[gate]]
+name = "fail_message_quality"
+kind = "gate"
+entries = ["assert_fail_messages_actionable"]
+since = "1.12.0"
+summary = "Every ``pytest.fail`` message in a meta-test directory tells the reviewer what to do"
+
+[[gate]]
+name = "fail_open_handlers"
+kind = "gate"
+entries = ["assert_no_new_fail_open_handlers"]
+since = "1.17.0"
+summary = "Fail-open exception handlers in gate code"
+
+[[gate]]
+name = "format_warn"
+kind = "cli"
+since = "1.0.0"
+cli = true
+summary = "Warn-only formatting / lint check for the pre-commit hook"
+
+[[gate]]
+name = "function_length"
+kind = "gate"
+entries = ["assert_functions_do_not_grow"]
+since = "1.17.0"
+summary = "No NEW long function, and the long ones already there may not grow"
+
+[[gate]]
+name = "gate_config_honesty"
+kind = "gate"
+entries = ["assert_gates_honest"]
+since = "1.17.0"
+summary = "A gate runs its tool the way the project configured it, and a \"blocking\" gate can block"
+
+[[gate]]
+name = "gate_integrity"
+kind = "gate"
+entries = ["assert_narrowings_declared", "assert_blocking_gates_assert_completion", "assert_coverage_gate_parity"]
+since = "1.3.6"
+summary = "A gate that is DECLARED blocking must actually be able to block"
+
+[[gate]]
+name = "gate_population_canary"
+kind = "gate"
+entries = ["assert_every_gate_declares_its_population", "assert_population_is_not_empty", "assert_canary_is_matched"]
+since = "1.17.0"
+summary = "A pattern-matching gate must prove it still looks at something, and still matches it"
+
+[[gate]]
+name = "git_changed_lines"
+kind = "library"
+since = "1.4.0"
+summary = "The line ranges a diff actually touched, per file"
+
+[[gate]]
+name = "git_dependency_pins"
+kind = "gate"
+entries = ["assert_all_git_dependencies_pinned", "assert_pins_agree", "assert_installed_includes_pin"]
+since = "1.3.0"
+summary = "Every git-URL dependency in pyproject.toml is pinned to a full commit SHA, not floating on a branch/tag"
+
+[[gate]]
+name = "gpu_timing_sync"
+kind = "gate"
+entries = ["assert_no_unsynchronized_gpu_timings"]
+since = "1.3.6"
+summary = "A wall-clock measurement taken around GPU work must synchronize the device before the timer stops"
+
+[[gate]]
+name = "guard_population"
+kind = "gate"
+entries = ["assert_guards_examine_something"]
+since = "1.3.6"
+summary = "A guard script is actually looking at something"
+
+[[gate]]
+name = "hardcoded_token_ceilings"
+kind = "gate"
+entries = ["assert_no_hardcoded_token_ceilings"]
+since = "1.17.0"
+summary = "LLM output ceilings written as a number someone chose by eye"
+
+[[gate]]
+name = "hash_fed_by_array_copy"
+kind = "gate"
+entries = ["assert_no_hash_fed_by_array_copy"]
+since = "1.4.0"
+summary = "An array must not be copied just to be hashed"
+
+[[gate]]
+name = "hash_key_determinism"
+kind = "gate"
+entries = ["assert_hash_keys_are_deterministic"]
+since = "1.17.0"
+summary = "JSON serialised for a hash, a cache key or a dedup comparison without sorting its keys"
+
+[[gate]]
+name = "hook_hygiene"
+kind = "gate"
+entries = ["assert_hooks_are_honest"]
+since = "1.3.6"
+summary = "A git hook fails loudly, stages nothing of its own, and runs what CI runs"
+
+[[gate]]
+name = "identity_comparisons"
+kind = "gate"
+entries = ["assert_no_identity_comparisons"]
+since = "1.17.0"
+summary = "A string constant is compared by value, not by identity"
+
+[[gate]]
+name = "ignore_ratchet"
+kind = "gate"
+entries = ["assert_ignore_list_only_shrinks"]
+since = "1.17.0"
+summary = "The codes a blocking lint gate IGNORES may only shrink"
+
+[[gate]]
+name = "import_cycles"
+kind = "gate"
+entries = ["assert_no_import_cycles"]
+since = "1.17.0"
+budget_s = 120
+summary = "Module-level import cycles, and the cycles that only load when one particular side is imported first"
+
+[[gate]]
+name = "import_layering"
+kind = "gate"
+entries = ["assert_layering"]
+since = "1.3.6"
+summary = "Declared architectural layers are not violated by an import"
+
+[[gate]]
+name = "import_side_effects"
+kind = "gate"
+entries = ["assert_no_new_import_time_env_mutations", "assert_imports_have_no_side_effects"]
+since = "1.13.0"
+budget_s = 120
+summary = "Importing a module has no side effects"
+
+[[gate]]
+name = "index_coverage"
+kind = "library"
+since = "1.4.0"
+summary = "Is an expected index already served by a live one under a different name?"
+
+[[gate]]
+name = "inert_patch_targets"
+kind = "library"
+since = "1.4.0"
+summary = "Find test fixtures that RESET a module attribute the module does not have"
+
+[[gate]]
+name = "install_safe_hook"
+kind = "cli"
+since = "1.1.0"
+cli = true
+summary = "Point the generated git hook(s) at ``safe_precommit`` instead of raw ``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive"
+
+[[gate]]
+name = "latched_availability_flags"
+kind = "gate"
+entries = ["assert_no_latched_availability_flags"]
+since = "1.4.0"
+summary = "A broad ``except`` must not cache a process-lifetime \"unavailable\" verdict"
+
+[[gate]]
+name = "lf_file_writes"
+kind = "gate"
+entries = ["assert_no_crlf_writes"]
+since = "1.17.0"
+summary = "Text-mode writes that put CRLF into a file that must stay LF"
+
+[[gate]]
+name = "llm_call_archive_gate"
+kind = "gate"
+entries = ["assert_every_llm_call_is_archived"]
+since = "1.5.0"
+summary = "Every paid LLM call goes through the place that keeps its raw answer"
+tests = ["tests/test_llm_preservation_gates.py"]
+
+[[gate]]
+name = "loc_budget"
+kind = "gate"
+entries = ["assert_no_new_oversized_file"]
+since = "1.3.0"
+summary = "Shared harness for the \"no file over N LOC\" meta-test pattern"
+
+[[gate]]
+name = "local_copy_report"
+kind = "gate"
+entries = ["assert_local_copies_do_not_grow"]
+since = "1.17.0"
+summary = "Local meta-tests that duplicate a central gate"
+
+[[gate]]
+name = "machine_specific_paths"
+kind = "gate"
+entries = ["assert_no_machine_specific_paths"]
+since = "1.17.0"
+summary = "Paths and connection strings that only exist on the machine that wrote them"
+
+[[gate]]
+name = "marker_runner_coverage"
+kind = "gate"
+entries = ["assert_every_marked_test_is_selected"]
+since = "1.17.0"
+summary = "A test carrying a marker must be SELECTED by some runner, or it never runs"
+
+[[gate]]
+name = "meta_private_imports"
+kind = "gate"
+entries = ["assert_no_private_meta_imports"]
+since = "1.13.0"
+summary = "A meta-test does not import a private name of the package it polices, unless a permitted entry says why"
+
+[[gate]]
+name = "module_cache_thread_safety"
+kind = "gate"
+entries = ["assert_thread_safe_module_caches"]
+since = "1.17.0"
+summary = "Module-level caches mutated with no lock, and lazy ``from X import`` inside joblib-dispatched workers"
+
+[[gate]]
+name = "module_reload_safety"
+kind = "gate"
+entries = ["assert_no_reloads_in_code", "assert_no_unpaired_reloads"]
+since = "1.7.0"
+summary = "No module is reloaded or dropped from ``sys.modules`` without a restore in the same scope"
+
+[[gate]]
+name = "mutation_teeth"
+kind = "gate"
+entries = ["assert_no_new_surviving_mutant", "assert_revert_fails_tests"]
+since = "1.4.0"
+budget_s = 900
+summary = "A test that claims to pin a defect must be able to FAIL"
+
+[[gate]]
+name = "mypy_gate"
+kind = "cli"
+since = "1.3.6"
+budget_s = 300
+cli = true
+summary = "Run mypy as a gate that requires COMPLETION, not merely a zero exit code"
+
+[[gate]]
+name = "naive_utcnow"
+kind = "gate"
+entries = ["assert_no_naive_utcnow"]
+since = "1.4.1"
+summary = "No production module builds a timestamp with `datetime.utcnow()`"
+
+[[gate]]
+name = "no_xfail_to_defer"
+kind = "gate"
+entries = ["assert_no_xfail_to_defer"]
+since = "1.17.0"
+summary = "xfail and skip may mark a limit outside the repository, never park a bug inside it"
+
+[[gate]]
+name = "nondiscriminating_shapes"
+kind = "library"
+since = "1.17.0"
+summary = "Assertion shapes that pass whether or not the property under test holds"
+
+[[gate]]
+name = "numba_seed_range"
+kind = "gate"
+entries = ["assert_numba_seeds_fit_int64"]
+since = "1.17.0"
+summary = "A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them"
+
+[[gate]]
+name = "optional_truthiness"
+kind = "gate"
+entries = ["assert_optionals_test_for_none"]
+since = "1.4.0"
+summary = "An optional parameter tested for truth rather than for absence"
+
+[[gate]]
+name = "package_doctests"
+kind = "gate"
+entries = ["assert_package_doctests_pass"]
+since = "1.12.0"
+budget_s = 120
+summary = "The doctests a package ships actually run, and there are some to run"
+
+[[gate]]
+name = "phantom_code_references"
+kind = "gate"
+entries = ["assert_no_phantom_code_references", "assert_no_count_claim_mismatches"]
+since = "1.3.6"
+summary = "A comment that names a test file, a class or a function must name one that exists"
+
+[[gate]]
+name = "phantom_markdown_links"
+kind = "gate"
+entries = ["assert_no_phantom_markdown_links"]
+since = "1.3.1"
+summary = "Every markdown-link target in a repo's .md files resolves to a real file"
+
+[[gate]]
+name = "pickle_state_completeness"
+kind = "gate"
+entries = ["assert_no_pickle_state_gaps", "assert_pickle_round_trips"]
+since = "1.17.0"
+summary = "Runtime caches and live handles that a pickle round trip (joblib fan-out, a saved model) cannot carry"
+
+[[gate]]
+name = "pinned_tool_versions"
+kind = "cli"
+since = "1.4.1"
+cli = true
+summary = "Fail when a repo's ruff pin, or the ruff its interpreter runs, differs from the shared version"
+
+[[gate]]
+name = "plotly_annotation_loop"
+kind = "gate"
+entries = ["assert_no_plotly_annotation_loops"]
+since = "1.17.0"
+summary = "plotly ``fig.add_annotation``/``add_shape`` called once per item in a loop: O(n^2) in the number of items"
+
+[[gate]]
+name = "polars_null_equality"
+kind = "gate"
+entries = ["assert_polars_null_equality"]
+since = "1.17.0"
+summary = "Advisory: polars comparisons whose null handling silently changes the answer"
+
+[[gate]]
+name = "private_imports"
+kind = "gate"
+entries = ["assert_no_private_cross_package_imports"]
+since = "1.8.0"
+summary = "Production code does not import another package's underscore-prefixed module"
+
+[[gate]]
+name = "prompt_field_parity"
+kind = "library"
+since = "1.5.0"
+summary = "A field a prompt or schema asks the model for is read by something, and stored"
+
+[[gate]]
+name = "prose_numeric_claims"
+kind = "gate"
+entries = ["assert_numeric_claims_match"]
+since = "1.3.6"
+summary = "A counted fact stated in prose is computed from the repo, not typed by hand"
+
+[[gate]]
+name = "pydantic_field_bounds"
+kind = "gate"
+entries = ["assert_field_bounds_enforced"]
+since = "1.12.0"
+summary = "A pydantic field's declared bound or ``Literal`` set actually rejects a value outside it"
+
+[[gate]]
+name = "pytest_addopts_path_runs"
+kind = "gate"
+entries = ["assert_path_runs_select_tests"]
+since = "1.17.0"
+summary = "A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them"
+
+[[gate]]
+name = "pytest_markers"
+kind = "gate"
+entries = ["assert_markers_registered"]
+since = "1.7.0"
+summary = "Every pytest marker a test suite uses is registered"
+
+[[gate]]
+name = "readme_env_var_parity"
+kind = "gate"
+entries = ["assert_readme_documents_every_env_var", "assert_no_new_undocumented_env_vars"]
+since = "1.3.0"
+summary = "Every environment variable production code reads via ``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's"
+
+[[gate]]
+name = "reiterated_iterable_params"
+kind = "gate"
+entries = ["assert_no_reiterated_iterable_params"]
+since = "1.17.0"
+summary = "A parameter typed ``Iterable`` (or ``Iterator``/``Generator``) consumed more than once"
+
+[[gate]]
+name = "repo_hygiene"
+kind = "gate"
+entries = ["assert_repo_hygiene"]
+since = "1.3.6"
+summary = "The repository tracks nothing it generates, and carries the files its gates need"
+
+[[gate]]
+name = "resource_leak_guard"
+kind = "library"
+since = "1.17.0"
+summary = "Opt-in pytest plugin: a test that leaks a child process, a thread, a socket, ``logging.disable`` or an env var errors at teardown"
+
+[[gate]]
+name = "resource_release_paths"
+kind = "gate"
+entries = ["assert_released_on_every_path"]
+since = "1.4.0"
+summary = "A resource a module OWNS is released on the failure path too"
+
+[[gate]]
+name = "rollback_then_continue"
+kind = "gate"
+entries = ["assert_no_rollback_then_continue"]
+since = "1.17.0"
+summary = "``rollback()`` in a loop's ``except`` handler, then on to the next item as if only that item failed"
+
+[[gate]]
+name = "runtime_registry_mutation"
+kind = "gate"
+entries = ["assert_writes_have_replay"]
+since = "1.17.0"
+summary = "Runtime writes to a module-level registry"
+
+[[gate]]
+name = "safe_precommit"
+kind = "cli"
+since = "1.1.0"
+cli = true
+summary = "Drop-in ``pre-commit`` replacement that survives concurrent-session stash-restore races"
+
+[[gate]]
+name = "save_failure_markers"
+kind = "gate"
+entries = ["assert_markers_are_fatal"]
+since = "1.5.0"
+summary = "Every save-failure marker a writer emits is one the success decision recognises"
+
+[[gate]]
+name = "sentinel_or_fallback"
+kind = "gate"
+entries = ["assert_no_sentinel_or_fallback"]
+since = "1.17.0"
+summary = "``value or fallback`` on a setting whose falsy values are meaningful: ``max_tokens=0``, ``timeout=0``, ``seed=0``"
+
+[[gate]]
+name = "setup_env"
+kind = "cli"
+since = "1.3.0"
+cli = true
+summary = "Persist ``PY_CI_SHARED_DIR`` at the OS/user level so ruff's ``extend = \"$PY_CI_SHARED_DIR/configs/ruff-base.toml\"`` (see README's \"Using the"
+
+[[gate]]
+name = "source_text_ban"
+kind = "library"
+since = "1.4.0"
+summary = "Find tests that assert on a module's SOURCE TEXT instead of running it"
+
+[[gate]]
+name = "source_text_claims"
+kind = "gate"
+entries = ["assert_no_new_source_text_claims"]
+since = "1.11.0"
+summary = "Tests that assert on SOURCE TEXT instead of running the code"
+
+[[gate]]
+name = "spec_bound_doubles"
+kind = "gate"
+entries = ["assert_doubles_are_spec_bound"]
+since = "1.4.0"
+summary = "A test double reaching duck-typed production code must be spec-bound"
+
+[[gate]]
+name = "sql_function_privileges"
+kind = "gate"
+entries = ["assert_definer_functions_are_locked_down"]
+since = "1.3.6"
+summary = "A ``SECURITY DEFINER`` SQL function is not left executable by every logged-in user"
+
+[[gate]]
+name = "sql_verifier_coverage"
+kind = "gate"
+entries = ["assert_verifier_covers_statements"]
+since = "1.12.0"
+summary = "Every SQL statement a package defines is on its SQL verifier's list, and the list names nothing that has gone"
+
+[[gate]]
+name = "sql_verify"
+kind = "library"
+since = "1.4.0"
+budget_s = 120
+summary = "Execute every SQL statement a project ships against a real PostgreSQL server"
+
+[[gate]]
+name = "sqlalchemy_text_binds"
+kind = "gate"
+entries = ["assert_no_colon_cast_binds"]
+since = "1.8.0"
+summary = "No SQLAlchemy ``text()`` bind parameter is followed directly by a ``::`` cast"
+
+[[gate]]
+name = "stale_comment_age"
+kind = "gate"
+entries = ["assert_no_stale_todos"]
+since = "1.3.6"
+budget_s = 60
+summary = "A TODO or a commented-out call does not quietly become permanent"
+
+[[gate]]
+name = "stale_source_citations"
+kind = "gate"
+entries = ["assert_no_stale_source_citations"]
+since = "1.17.0"
+summary = "``file.py:NNN`` citations that no longer point where they say"
+
+[[gate]]
+name = "statement_compilation"
+kind = "gate"
+entries = ["assert_no_mocked_statement_constructors"]
+since = "1.17.0"
+summary = "A test that mocks the statement constructor never compiles the statement"
+
+[[gate]]
+name = "stdlib_json_ban"
+kind = "gate"
+entries = ["assert_no_stdlib_json"]
+since = "1.17.0"
+summary = "Opt-in: no module imports the standard-library ``json``; JSON goes through ``orjson`` (or a project shim over it)"
+
+[[gate]]
+name = "survivorship_scoring"
+kind = "gate"
+entries = ["assert_no_survivorship_scoring"]
+since = "1.17.0"
+summary = "A metric scored only on the rows where the prediction happened to be finite"
+
+[[gate]]
+name = "swallowed_exceptions"
+kind = "gate"
+entries = ["assert_no_swallowed_exceptions"]
+since = "1.17.0"
+summary = "Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind"
+
+[[gate]]
+name = "teeth_sweep"
+kind = "cli"
+since = "1.4.0"
+budget_s = 900
+cli = true
+summary = "Does anything actually FAIL if an audit fix is undone? Mutate, run the suite, restore"
+
+[[gate]]
+name = "test_partition_reachability"
+kind = "gate"
+entries = ["assert_partitions_reachable"]
+since = "1.3.6"
+summary = "Every declared test partition is actually selected by some runner"
+
+[[gate]]
+name = "timezone_honest"
+kind = "gate"
+entries = ["assert_timezone_honest"]
+since = "1.4.1"
+summary = "Non-test code states its time frame in the expression, and the scan cannot miss a directory"
+
+[[gate]]
+name = "tool_versions"
+kind = "library"
+since = "1.4.1"
+summary = "The linter versions every consuming repo runs, defined in one place"
+
+[[gate]]
+name = "tracker_summary_parity"
+kind = "gate"
+entries = ["assert_tracker_summaries_agree"]
+since = "1.17.0"
+summary = "A tracker's summary tables and headings agree with the rows they summarise"
+
+[[gate]]
+name = "uncalled_functions"
+kind = "gate"
+entries = ["assert_no_new_uncalled_function"]
+since = "1.4.0"
+summary = "A function that production code never calls"
+
+[[gate]]
+name = "unread_init_params"
+kind = "gate"
+entries = ["assert_no_unread_init_params"]
+since = "1.17.0"
+summary = "Constructor parameters nothing ever reads"
+
+[[gate]]
+name = "unresolved_imports"
+kind = "gate"
+entries = ["assert_all_from_imports_resolve"]
+since = "1.4.0"
+summary = "Every ``from X import Y`` must name something X actually defines"
+
+[[gate]]
+name = "vacuous_loop_assertions"
+kind = "gate"
+entries = ["assert_no_new_floorless_loop"]
+since = "1.17.0"
+summary = "A ``for`` loop whose body is only conditional assertions, with nothing elsewhere asserting the loop actually ran, is a test that passes on zero"
+
+[[gate]]
+name = "value_bearing_asserts"
+kind = "gate"
+entries = ["assert_no_value_bearing_asserts"]
+since = "1.12.0"
+summary = "No guard that checks a VALUE may ride on an ``assert`` in production code"
+
+[[gate]]
+name = "version_consistency"
+kind = "gate"
+entries = ["assert_versions_agree"]
+since = "1.8.0"
+summary = "A package reports one version wherever it states one"
+
+[[gate]]
+name = "version_tag_currency"
+kind = "gate"
+entries = ["assert_version_is_tagged"]
+since = "1.3.6"
+summary = "A package's declared version, its tags and its consumers' pins agree"
+
+[[gate]]
+name = "vulture_warn"
+kind = "cli"
+since = "1.0.0"
+cli = true
+summary = "Warn-only dead-code check for the pre-commit hook"
+
+[[gate]]
+name = "worktree_hygiene"
+kind = "cli"
+since = "1.17.0"
+cli = true
+summary = "Which worktrees, branches and leftover directories can go, and which still hold work"

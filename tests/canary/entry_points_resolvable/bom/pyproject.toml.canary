@@ -1,0 +1,6 @@
+﻿[project]
+name = "seed"
+version = "0"
+
+[project.scripts]
+seed-cli = "json:seed_missing_attr"

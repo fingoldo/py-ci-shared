@@ -1,0 +1,3 @@
+﻿def test_seed_mean():
+    """Dropout does not perfectly reconstruct y; pins the current value."""
+    assert compute() == 3.7

@@ -1,0 +1,5 @@
+import polars as pl
+
+
+def seed_filter(df):
+    return df.filter(pl.col("seed").is_null())

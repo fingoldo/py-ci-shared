@@ -1,0 +1,2 @@
+def seed_budget(cfg, default):
+    return cfg.max_tokens or default

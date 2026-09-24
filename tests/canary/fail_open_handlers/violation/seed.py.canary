@@ -1,0 +1,5 @@
+def seed_check(v):
+    try:
+        return v > 0
+    except Exception:
+        return True

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-ci-shared"
-version = "0.1.0"
+version = "1.17.0"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
 description = "Shared CI/lint tooling (scripts + ruff base config + reusable GitHub Actions workflows) for fingoldo Python projects."
 authors = [{name = "Anatoly Alexeev", email = "fingoldo@gmail.com"}]
 license = "MIT"
@@ -21,18 +21,15 @@ classifiers = [
 ]
 # Deliberately dependency-free for the dev-tool orchestration scripts (black/ruff/mypy/bandit/
 # vulture/codespell/pip-audit are installed by the CALLING project's own CI/pre-commit setup, or
-# run via `uvx`). orjson is the one exception: code_audit_meta.assert_no_new_code_audit_findings()
-# imports it unconditionally at call time (baseline seed/compare/refresh), so every real consumer
-# needs it installed -- caught via a live CI failure (ModuleNotFoundError in a caller that didn't
-# happen to already depend on orjson itself).
+# run via `uvx`). Baselines are read and written with the stdlib json module through _core.
 # ``tomllib`` is stdlib only from 3.11, and this package supports 3.9 upward: five checkers read a
 # pyproject.toml, so on 3.9/3.10 they need the parser tomllib was adopted from.
-# PyYAML is the same shape of exception as orjson, found the same way: CI's test job on all three
+# PyYAML is a runtime dependency, found the hard way: CI's test job on all three
 # runners failed with ModuleNotFoundError: No module named 'yaml' (2026-09-12, 14 failed / 1480
 # passed). `gate_config_honesty`, `gate_integrity` and `ignore_ratchet` each parse a pre-commit
 # config or a workflow with an unconditional `import yaml`, so a consumer that does not already
 # happen to have it gets an import error from the check instead of a finding.
-dependencies = ["orjson>=3.9", "tomli>=2.0; python_version < '3.11'", "PyYAML>=6.0"]
+dependencies = ["tomli>=2.0; python_version < '3.11'", "PyYAML>=6.0"]
 
 [project.optional-dependencies]
 dev = [
@@ -55,12 +52,27 @@ dev = [
     # 2026-07-22 -- the original regex required an '@ref' to even attempt a match, so a bare
     # `git+URL` with no ref at all sailed through undetected).
     "pyutilz @ git+https://github.com/fingoldo/pyutilz.git@3be55c1512ad73a6dab628b4a79eeecbc31212a1",
+    # Each of these is imported by some test through importorskip; without them in the extra those tests skipped in CI
+    # and the modules they cover (safe_precommit, hash_fed_by_array_copy, statement_compilation, the tomli fallback)
+    # were never exercised.
+    "pre-commit>=3.0",
+    "numpy>=1.22",
+    "sqlalchemy>=2.0",
+    "tomli>=2.0",
+    "pytest-cov>=5.0",
+    "pytest-timeout>=2.2",
 ]
 
 [project.scripts]
 safe-precommit = "py_ci_shared.safe_precommit:main"
 py-ci-install-safe-hook = "py_ci_shared.install_safe_hook:main"
 py-ci-setup-env = "py_ci_shared.setup_env:main"
+# One entry point for every gate and tool: run/run-all/refresh/list/config-path/tool (see README "Command line").
+py-ci-shared = "py_ci_shared.cli:main"
+
+# Opt-in: the plugin does nothing until the repo's pyproject.toml has a [tool.py_ci_shared] table.
+[project.entry-points.pytest11]
+py_ci_shared = "py_ci_shared.pytest_plugin"
 
 [project.urls]
 Repository = "https://github.com/fingoldo/py-ci-shared"
@@ -68,10 +80,28 @@ Repository = "https://github.com/fingoldo/py-ci-shared"
 [tool.setuptools.packages.find]
 where = ["src"]
 
-# configs/ruff-base.toml is NOT shipped as package data -- ruff's `extend` needs a real filesystem
-# path, so consuming repos resolve it by cloning this repo as a sibling directory (see README.md),
-# not via the installed pip package. Only the orchestration scripts (this package's actual purpose)
-# are consumed via `pip install`.
+# The ruff configs ship as package data too, so an installed package can point ruff's `extend` at them:
+# `py-ci-shared config-path ruff-base` prints the path. configs/ at the repo root stays the copy consumers reach through
+# PY_CI_SHARED_DIR; tests/test_package_inventory.py keeps the two byte-identical.
+[tool.setuptools.package-data]
+py_ci_shared = ["configs/*.toml", "registry.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra --strict-markers"
+# A hung git or python child fails its test after this long instead of holding the job to its 15-minute limit.
+timeout = 300
+markers = ["py_ci_shared: a gate item generated from [tool.py_ci_shared]"]
+
+[tool.coverage.run]
+source = ["py_ci_shared"]
+branch = true
+
+[tool.coverage.report]
+# fail_under is set from the first full measured run of the ubuntu 3.11 leg (floor of its line+branch total), never guessed.
+show_missing = false
+skip_covered = true
 
 [tool.black]
 line-length = 160
@@ -120,3 +150,126 @@ warn_return_any = true
 warn_unused_configs = true
 ignore_missing_imports = true
 check_untyped_defs = true
+
+# The gates this repo runs on itself: `py-ci-shared run-all` in self-ci, and one pytest item each on a bare `pytest`.
+[tool.py_ci_shared]
+budget = "warn"
+enable = ["repo_hygiene"]
+
+[tool.py_ci_shared.gates.version_consistency]
+files = ["src/py_ci_shared/__init__.py"]
+modules = ["py_ci_shared"]
+
+[tool.py_ci_shared.gates.pytest_markers]
+# These test files hold marker names inside the fixture repos they write, not on their own tests.
+exclude = [
+    "tests/test_pytest_markers.py",
+    "tests/test_docs_inventory_parity.py",
+    "tests/test_v113_rules.py",
+    "tests/test_marker_runner_coverage.py",
+    "tests/test_statement_compilation.py",
+    "tests/test_pytest_addopts_path_runs.py",
+    "tests/test_resource_leak_guard.py",
+]
+
+[tool.py_ci_shared.gates.entry_points_resolvable]
+pyproject_path = "pyproject.toml"
+min_entries = 5
+
+[tool.py_ci_shared.gates.git_dependency_pins]
+pyproject_path = "pyproject.toml"
+
+[tool.py_ci_shared.gates.ci_workflow_paths]
+workflows_dir = ".github/workflows"
+require_permissions = true
+require_sha_pins = true
+first_party_owners = ["fingoldo"]
+
+[tool.py_ci_shared.gates.private_imports]
+src_dir = "src/py_ci_shared"
+package = "py_ci_shared"
+
+[tool.py_ci_shared.gates.naive_utcnow]
+root = "src"
+
+[tool.py_ci_shared.gates.identity_comparisons]
+files = ["src/**/*.py"]
+
+[tool.py_ci_shared.gates.phantom_markdown_links]
+md_files = ["README.md", "WRITING_TESTS.md", "CHANGELOG.md"]
+
+[tool.py_ci_shared.gates.unresolved_imports]
+scan_roots = ["src", "tests"]
+package_roots = ["src"]
+resolvable_prefixes = ["py_ci_shared"]
+
+[tool.py_ci_shared.gates.value_bearing_asserts]
+package_root = "src/py_ci_shared"
+
+[tool.py_ci_shared.gates.stale_comment_age]
+scan_dirs = ["src", "tests", ".github"]
+
+[tool.py_ci_shared.gates.audit_rounds_format]
+module = "audit_round_format"
+entry = "assert_rounds_countable"
+audits_dir = "audits"
+
+[tool.py_ci_shared.gates.loc_budget]
+files = ["src/**/*.py"]
+root = "."
+baseline_path = "tests/baselines/loc_budget.json"
+
+[tool.py_ci_shared.gates.function_length]
+files = ["src/**/*.py"]
+root = "."
+baseline_path = "tests/baselines/function_length.json"
+
+# uncalled_functions is not enabled: every public assert_*/find_* here is called by consumers, never by this package, so
+# it would list the public API itself.
+
+[tool.py_ci_shared.gates.fail_open_handlers]
+files = ["src/**/*.py"]
+baseline_path = "tests/baselines/fail_open_handlers.json"
+
+[tool.py_ci_shared.gates.fail_message_quality]
+meta_dir = "src/py_ci_shared"
+
+[tool.py_ci_shared.gates.workflow_timeouts_black_filtered]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/black-filtered.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_config_drift_check]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/config-drift-check.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_docs]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/docs.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_lint_advisory]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/lint-advisory.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_lint_blocking]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/lint-blocking.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_mypy_beachhead]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/mypy-beachhead.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_mypy_full]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/mypy-full.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_release]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/release.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_ruff_blocking]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/ruff-blocking.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_self_ci]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/self-ci.yml"

@@ -1,0 +1,12 @@
+_SEED_GPU_AVAILABLE = None
+
+
+def seed_probe():
+    global _SEED_GPU_AVAILABLE
+    try:
+        import cupy
+        cupy.cuda.runtime.getDeviceCount()
+        _SEED_GPU_AVAILABLE = True
+    except ImportError:
+        _SEED_GPU_AVAILABLE = False
+    return _SEED_GPU_AVAILABLE

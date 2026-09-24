@@ -40,7 +40,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from ._core import SourceError, read_source
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, read_source
 
 # `name:` sits inside an object literal on the same line as the brace in most configs, so this
 # is deliberately not anchored to the line start.
@@ -84,7 +84,7 @@ def _read(paths: Iterable[Path]) -> str:
         if p.is_file():
             out.append(read_source(p))
         elif p.is_dir():
-            out.extend(read_source(child) for child in sorted(p.rglob("*")) if child.is_file() and child.suffix in {".yml", ".yaml", ".sh", ".md", ""})
+            out.extend(read_source(child) for child in iter_files(p, ("*",)) if child.suffix in {".yml", ".yaml", ".sh", ".md", ""})
         else:
             raise FileNotFoundError(f"runner path does not exist: {p}")
     return "\n".join(out)
@@ -159,8 +159,8 @@ def find_unreferenced_scripts(
     for d in script_dirs:
         if not d.is_dir():
             raise FileNotFoundError(f"script dir does not exist: {d}")
-        for path in sorted(d.rglob("*")):
-            if not path.is_file() or path.suffix not in _SCRIPT_SUFFIXES:
+        for path in iter_files(d, ("*",), exclude=DEFAULT_EXCLUDE):
+            if path.suffix not in _SCRIPT_SUFFIXES:
                 continue
             if any(part in skip_dir_names for part in path.relative_to(d).parts[:-1]):
                 continue
@@ -179,7 +179,7 @@ def find_permanent_skips(spec_dirs: Sequence[Path]) -> list[str]:
     for d in spec_dirs:
         if not d.is_dir():
             raise FileNotFoundError(f"spec dir does not exist: {d}")
-        for path in sorted(d.rglob("*.spec.*")):
+        for path in iter_files(d, ("*.spec.*",)):
             for i, line in enumerate(read_source(path).splitlines(), start=1):
                 if _SKIP_RE.match(line):
                     out.append(f"{path.name}:{i}: {line.strip()[:80]}")

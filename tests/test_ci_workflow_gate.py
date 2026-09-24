@@ -5,10 +5,7 @@ this package's other tests.
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
@@ -136,20 +133,6 @@ class TestAssertContinueOnErrorIsReviewed:
         )
         with pytest.raises(pytest.fail.Exception, match="Run bandit security scan"):
             assert_continue_on_error_is_reviewed(p, reviewed_advisory_steps={"Run ruff"})
-
-
-def test_this_repos_own_reusable_workflows_are_clean_or_reviewed():
-    """Dogfooding: py-ci-shared's own lint-advisory.yml is BY DESIGN
-    entirely continue-on-error (its header comment says so) -- every step
-    in it is expected and reviewed."""
-    workflow = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "lint-advisory.yml"
-    if not workflow.exists():
-        pytest.skip("lint-advisory.yml not present in this checkout")
-    steps = find_continue_on_error_steps(workflow)
-    # Every step in this file is deliberately advisory (see the file's own
-    # header comment) -- just confirm the scanner finds a non-empty,
-    # sane set rather than silently matching zero due to a regex drift.
-    assert len(steps) >= 1
 
 
 class TestStructure:

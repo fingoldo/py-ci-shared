@@ -1,0 +1,6 @@
+﻿from unittest.mock import patch
+
+
+def test_seed():
+    with patch("sqlalchemy.dialects.postgresql.insert"):
+        pass

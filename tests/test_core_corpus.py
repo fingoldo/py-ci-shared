@@ -4,12 +4,9 @@ from __future__ import annotations
 
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared._core import DEFAULT_EXCLUDE, CorpusError, iter_files, relative_posix
 

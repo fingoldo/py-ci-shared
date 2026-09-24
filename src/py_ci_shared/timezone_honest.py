@@ -41,6 +41,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from ._core import iter_files
 from ._toml_compat import tomllib
 
 #: Excluded names that are never source even when they contain `.py` files: build artefacts and
@@ -87,7 +88,7 @@ def excluded_code_dirs(root: Path) -> list[str]:
         if any(ch in name for ch in "*?[") or name.startswith(".") or name in _NEVER_CODE:
             continue
         directory = root / name
-        if directory.is_dir() and any("__pycache__" not in p.parts for p in directory.rglob("*.py")):
+        if directory.is_dir() and iter_files(directory, ("*.py",)):
             out.append(name)
     return sorted(set(out))
 

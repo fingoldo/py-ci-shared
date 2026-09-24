@@ -34,7 +34,7 @@ if there's only one), register the refresh flag so pytest accepts it::
         register_refresh_option(parser)
 
 Deliberately dependency-light like the rest of this package: ``pyutilz``,
-``pytest``, and ``orjson`` are imported LAZILY inside the functions below,
+and ``pytest`` are imported LAZILY inside the functions below,
 not at module level, so importing ``py_ci_shared`` itself never requires
 them -- every actual caller already depends on ``pyutilz`` directly (it's
 what's being scanned) and runs under ``pytest``, so this costs nothing in
@@ -46,7 +46,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ._core import atomic_write_text, refresh_requested, register_refresh_options
+from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
 
 if TYPE_CHECKING:
     from pyutilz.dev.code_audit import Finding
@@ -190,7 +190,6 @@ def assert_no_new_code_audit_findings(
             excused by it; the baseline only ever grew back. ``False`` restores the
             print for a repo mid-migration.
     """
-    import orjson
     import pytest
     from pyutilz.dev.code_audit import run_all
 
@@ -201,7 +200,7 @@ def assert_no_new_code_audit_findings(
     current_keys = set(current_by_key)
 
     if _refresh_requested(request):
-        atomic_write_text(baseline_path, orjson.dumps(sorted(current_keys), option=orjson.OPT_INDENT_2).decode("utf-8") + "\n")
+        atomic_write_text(baseline_path, dump_json(sorted(current_keys)))
         pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
     if not baseline_path.exists():
         pytest.fail(
@@ -210,7 +209,7 @@ def assert_no_new_code_audit_findings(
             f"(or PY_CI_SHARED_REFRESH=code-audit) and commit it."
         )
 
-    baseline = set(orjson.loads(baseline_path.read_bytes()))
+    baseline = set(load_json(baseline_path))
 
     # Transitional: a baseline written before the key format changed holds
     # ``check::file:line`` entries, which match nothing under the new scheme. Without

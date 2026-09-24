@@ -1,0 +1,7 @@
+﻿import os
+
+os.environ["SEED_X"] = "1"
+
+
+def test_seed():
+    pass

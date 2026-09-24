@@ -1,0 +1,6 @@
+﻿jobs:
+  lint:
+    steps:
+      - name: seed step
+        run: mypy .
+        continue-on-error: true

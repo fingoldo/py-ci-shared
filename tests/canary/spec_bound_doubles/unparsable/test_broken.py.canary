@@ -1,0 +1,2 @@
+def test_broken(:
+    claim_lock(AsyncMock(), 1)

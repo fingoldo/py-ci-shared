@@ -1,0 +1,5 @@
+def seed_fn(x, y):
+    total = x + y
+    total = total * 2
+    total = total - 2
+    return total

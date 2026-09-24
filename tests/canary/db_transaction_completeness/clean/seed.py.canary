@@ -1,0 +1,5 @@
+def seed_load(db):
+    db.execute("SELECT 1")
+    rows = db.fetchall()
+    db.commit()
+    return rows

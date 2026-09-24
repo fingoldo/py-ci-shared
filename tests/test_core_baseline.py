@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import json
 import os
-import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared._core import UNJUSTIFIED_MARKER, Baseline, BaselineError, Finding, atomic_write_text
 from py_ci_shared._core import baseline as baseline_mod

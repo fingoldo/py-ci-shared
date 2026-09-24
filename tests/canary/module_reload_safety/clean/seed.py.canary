@@ -1,0 +1,5 @@
+import importlib
+
+
+def seed_refresh():
+    return importlib.import_module("json")

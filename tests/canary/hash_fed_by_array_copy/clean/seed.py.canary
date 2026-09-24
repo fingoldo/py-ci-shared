@@ -1,0 +1,9 @@
+import hashlib
+
+import numpy as np
+
+
+def seed_hash(a):
+    h = hashlib.sha256()
+    h.update(np.ascontiguousarray(a).view(np.uint8).data)
+    return h.hexdigest()

@@ -1,0 +1,6 @@
+from typing import Iterable
+
+
+def seed_columns(columns: Iterable[str]) -> str:
+    names = set(columns)
+    return ",".join(columns) + str(len(names))

@@ -8,12 +8,10 @@ seed/compare/refresh/report cycle around it.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import orjson
 import pytest
 
 from py_ci_shared.code_audit_meta import (
@@ -61,7 +59,7 @@ class TestAssertNoNewCodeAuditFindings:
         monkeypatch.setenv("PY_CI_SHARED_REFRESH", "code-audit")
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert any("mutable_default" in k for k in seeded)
 
     def test_unchanged_tree_passes_after_seeding(self, tmp_path):
@@ -74,6 +72,20 @@ class TestAssertNoNewCodeAuditFindings:
 
         # No pytest.fail/skip on the second call -- returning normally is the pass.
         assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+
+    def test_the_baseline_round_trips_without_orjson(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(sys.modules, "orjson", None)  # any `import orjson` now raises ImportError
+        src = tmp_path / "src"
+        src.mkdir()
+        _write_mutable_default_module(src)
+        baseline = tmp_path / "_code_audit_baseline.json"
+        _seed(src, baseline)
+        text = baseline.read_text(encoding="utf-8")
+        assert text == json.dumps(sorted(json.loads(text)), indent=2) + "\n"
+        assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
+        baseline.write_text("[not json", encoding="utf-8")
+        with pytest.raises(AssertionError, match=r"_code_audit_baseline\.json"):
+            assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
     def test_new_finding_fails(self, tmp_path):
         src = tmp_path / "src"
@@ -117,7 +129,7 @@ class TestAssertNoNewCodeAuditFindings:
 
         _seed(src, baseline)
 
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert any("mutable_default" in k for k in seeded)
 
     def test_refresh_flag_detected_via_request_even_when_argv_is_bare(self, tmp_path, monkeypatch):
@@ -144,7 +156,7 @@ class TestAssertNoNewCodeAuditFindings:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline, request=_FakeRequest())
 
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert any("mutable_default" in k for k in seeded)
 
     def test_exclude_dirs_merged_with_defaults(self, tmp_path):
@@ -161,7 +173,7 @@ class TestAssertNoNewCodeAuditFindings:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline, exclude_dirs=frozenset({"legacy"}), request=_RefreshRequest())
 
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert seeded == [], "both __pycache__ (default) and legacy (caller-supplied) must be excluded"
 
 
@@ -204,7 +216,7 @@ class TestKeysSurviveRelocation:
         baseline = tmp_path / "_code_audit_baseline.json"
 
         _seed(src, baseline)
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
 
         # Push the flagged def down by three lines without touching it.
         original = (src / "bad.py").read_text(encoding="utf-8")
@@ -213,7 +225,7 @@ class TestKeysSurviveRelocation:
         # Passes: returning normally is the assertion.
         assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
         # And the baseline was not rewritten behind our back.
-        assert orjson.loads(baseline.read_bytes()) == seeded
+        assert json.loads(baseline.read_text(encoding="utf-8")) == seeded
 
     def test_changing_the_flagged_line_itself_is_still_reported(self, tmp_path):
         """The negative control: relocation-proof must not mean change-blind."""
@@ -239,7 +251,7 @@ class TestKeysSurviveRelocation:
         baseline = tmp_path / "_code_audit_baseline.json"
         _seed(src, baseline)
 
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         mutable = [k for k in seeded if "mutable_default" in k]
         assert len(mutable) == len(set(mutable)) == 2, "identical snippets must not collapse to one key, or fixing one of them " "would go unnoticed"
 
@@ -255,7 +267,7 @@ class TestLegacyBaselineMigration:
 
         # Hand-write a legacy baseline: check::file:line.
         baseline.write_text(
-            orjson.dumps(["mutable_default::bad.py:1"], option=orjson.OPT_INDENT_2).decode("utf-8"),
+            json.dumps(["mutable_default::bad.py:1"], indent=2),
             encoding="utf-8",
         )
         # Must NOT fail: the finding is known, just recorded the old way.
@@ -268,14 +280,14 @@ class TestLegacyBaselineMigration:
         _write_mutable_default_module(src)
         baseline = tmp_path / "_code_audit_baseline.json"
         baseline.write_text(
-            orjson.dumps(["mutable_default::bad.py:1"], option=orjson.OPT_INDENT_2).decode("utf-8"),
+            json.dumps(["mutable_default::bad.py:1"], indent=2),
             encoding="utf-8",
         )
 
         monkeypatch.setattr(sys, "argv", ["pytest", REFRESH_FLAG])
         _seed(src, baseline)
 
-        refreshed = orjson.loads(baseline.read_bytes())
+        refreshed = json.loads(baseline.read_text(encoding="utf-8"))
         assert refreshed and all(k.count("::") == 2 for k in refreshed)
 
 

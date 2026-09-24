@@ -1,0 +1,3 @@
+def seed_long():
+    v0 = 0
+    return v0

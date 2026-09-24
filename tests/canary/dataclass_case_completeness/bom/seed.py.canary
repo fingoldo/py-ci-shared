@@ -1,0 +1,6 @@
+﻿from dataclasses import dataclass
+
+
+@dataclass
+class SeedVerdict:
+    x: int = 0

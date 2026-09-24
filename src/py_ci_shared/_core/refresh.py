@@ -92,8 +92,10 @@ def register_refresh_options(parser: Any, flags: Iterable[str] = (), *, help_suf
         parser,
         GENERIC_OPTION,
         action="append",
+        nargs="?",
+        const="all",
         default=[],
-        help=f"py-ci-shared: comma list of baseline flags/gate names to rewrite, or 'all' (env: {ENV_VAR})",
+        help=f"py-ci-shared: comma list of baseline flags/gate names to rewrite; bare or 'all' for every one (env: {ENV_VAR})",
     )
     for flag in flags:
         _add(parser, flag, action="store_true", default=False, help=f"rewrite the {help_suffix} instead of comparing")

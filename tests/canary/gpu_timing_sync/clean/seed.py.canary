@@ -1,0 +1,9 @@
+import time
+import cupy as cp
+
+
+def seed_measure(a, b):
+    t0 = time.perf_counter()
+    cp.matmul(a, b)
+    cp.cuda.runtime.deviceSynchronize()
+    return time.perf_counter() - t0

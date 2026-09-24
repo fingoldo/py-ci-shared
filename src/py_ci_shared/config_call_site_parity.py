@@ -528,13 +528,18 @@ def schema_section_field_defaults(schema_cls: type[BaseModel]) -> dict[tuple[str
     return out
 
 
-def _calls_or_fail(root: Path, files: Iterable[Path], cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
-    """Call sites, or ``pytest.fail`` naming every file that could not be read or parsed."""
+def _calls_or_fail(root: Path, files: Iterable[Path], cfg_function_names: frozenset[str], min_files: int = 0) -> list[CfgGetCall]:
+    """Call sites, or ``pytest.fail`` naming every file that could not be read or parsed, or when fewer than
+    *min_files* files parsed (a scan that lost its subject)."""
     import pytest
 
+    files = list(files)
     calls, unparsed = scan_cfg_get_calls(root, files, cfg_function_names)
     if unparsed:
         pytest.fail(str(_unparsed_error(unparsed)))
+    parsed = len(set(files)) - len({p.path for p in unparsed})
+    if parsed < min_files:
+        pytest.fail(f"only {parsed} file(s) parsed; expected at least {min_files}. The scan lost its subject.")
     return calls
 
 
@@ -543,6 +548,8 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
     files: Iterable[Path],
     schema_cls: type[BaseModel],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+    *,
+    min_files: int = 1,
 ) -> None:
     """Fail if any ``cfg().get(section, key, ...)`` call site reads a ``(section,
     key)`` pair that doesn't exist in ``schema_cls``'s schema -- silently unreadable
@@ -552,7 +559,7 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
 
     schema = schema_section_field_map(schema_cls)
     bad = []
-    for call in _calls_or_fail(root, files, cfg_function_names):
+    for call in _calls_or_fail(root, files, cfg_function_names, min_files):
         if call.section not in schema:
             bad.append(f"{call.file}:{call.line} -- unknown section {call.section!r}")
         elif call.key not in schema[call.section]:
@@ -568,6 +575,8 @@ def assert_every_schema_field_has_a_reader(
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     known_indirect_readers: Optional[dict[tuple[str, str], str]] = None,
     known_unwired_gaps: Optional[dict[tuple[str, str], str]] = None,
+    *,
+    min_files: int = 1,
 ) -> None:
     """Fail if any schema field has zero ``cfg().get(...)`` reader anywhere in
     ``files``, unless it's listed in ``known_indirect_readers`` (genuinely consumed a
@@ -580,7 +589,7 @@ def assert_every_schema_field_has_a_reader(
     known_indirect_readers = known_indirect_readers or {}
     known_unwired_gaps = known_unwired_gaps or {}
     schema = schema_section_field_map(schema_cls)
-    read = {(c.section, c.key) for c in _calls_or_fail(root, files, cfg_function_names)}
+    read = {(c.section, c.key) for c in _calls_or_fail(root, files, cfg_function_names, min_files)}
     unread = []
     tracked_gaps_hit = []
     for section, keys in schema.items():
@@ -611,6 +620,8 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     files: Iterable[Path],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     default_type_repr: Optional[str] = None,
+    *,
+    min_files: int = 1,
 ) -> None:
     """Fail if two call sites reading the SAME ``(section, key)`` pass a different
     default/``type_`` -- two call sites silently disagreeing about what "the config
@@ -629,7 +640,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     """
     import pytest
 
-    calls = _calls_or_fail(root, files, cfg_function_names)
+    calls = _calls_or_fail(root, files, cfg_function_names, min_files)
     by_pair: dict[tuple[str, str], list[CfgGetCall]] = {}
     for call in calls:
         by_pair.setdefault((call.section, call.key), []).append(call)
@@ -662,6 +673,8 @@ def assert_call_site_defaults_match_schema_defaults(
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     min_checked: int = 1,
     known_intentional_mismatches: Optional[dict[tuple[str, str], str]] = None,
+    *,
+    min_files: int = 1,
 ) -> None:
     """Fail if a call site's own resolved default disagrees with the schema field's
     Pydantic default. Only call sites whose default expression actually resolves to a
@@ -686,7 +699,7 @@ def assert_call_site_defaults_match_schema_defaults(
     resolver = ConstantResolver(root)
     checked = 0
     mismatches = []
-    for call in _calls_or_fail(root, files, cfg_function_names):
+    for call in _calls_or_fail(root, files, cfg_function_names, min_files):
         if (call.section, call.key) in known_intentional_mismatches:
             continue
         resolved = resolver.resolve(call.default_node, call.abs_path)

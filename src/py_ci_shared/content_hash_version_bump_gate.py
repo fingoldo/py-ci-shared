@@ -46,7 +46,7 @@ And in the same directory's ``conftest.py`` (or the repo's root conftest.py)::
     def pytest_addoption(parser):
         register_refresh_option(parser)
 
-Deliberately dependency-light: ``pytest`` and ``orjson`` are imported
+Deliberately dependency-light: ``pytest`` is imported
 LAZILY inside the functions below, matching ``code_audit_meta.py``'s own
 convention, so importing ``py_ci_shared`` itself never requires them.
 """
@@ -58,7 +58,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import atomic_write_text, refresh_requested, register_refresh_options
+from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
 
 REFRESH_FLAG = "--refresh-content-hash-version-baseline"
 #: Version of the hash layout written into new baselines. A baseline without it holds a legacy hash.
@@ -130,10 +130,8 @@ def _legacy_content_hash(paths: "list[Path]") -> str:
 
 
 def _write(baseline_path: Path, version: str, current_hash: str, history: "dict[str, str]") -> None:
-    import orjson
-
     payload = {"version": version, "content_hash": current_hash, "hash_format": HASH_FORMAT, "history": {**history, version: current_hash}}
-    atomic_write_text(baseline_path, orjson.dumps(payload, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8") + "\n")
+    atomic_write_text(baseline_path, dump_json(payload))
 
 
 def assert_version_bumped_with_content(
@@ -171,7 +169,6 @@ def assert_version_bumped_with_content(
         request: the pytest ``request`` fixture, for xdist-safe refresh detection.
         write_on_bump: whether an accepted bump rewrites the baseline; ``None`` means "unless in CI".
     """
-    import orjson
     import pytest
 
     paths = [Path(p) for p in files]
@@ -181,7 +178,7 @@ def assert_version_bumped_with_content(
 
     history: dict[str, str] = {}
     if baseline_path.exists():
-        loaded = orjson.loads(baseline_path.read_bytes())
+        loaded = load_json(baseline_path)
         if isinstance(loaded.get("history"), dict) and loaded.get("hash_format") == HASH_FORMAT:
             history = {str(k): str(v) for k, v in loaded["history"].items()}
 
@@ -195,7 +192,7 @@ def assert_version_bumped_with_content(
             f"content. Create it deliberately with {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=content-hash-version) and commit it."
         )
 
-    baseline: dict[str, Any] = orjson.loads(baseline_path.read_bytes())
+    baseline: dict[str, Any] = load_json(baseline_path)
     baseline_version = baseline.get("version")
     baseline_hash = baseline.get("content_hash")
     legacy = baseline.get("hash_format") != HASH_FORMAT

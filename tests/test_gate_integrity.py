@@ -3,12 +3,9 @@ no-mocking convention as this package's other tests."""
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared.gate_integrity import (
     find_coverage_gate_mismatches,

@@ -1,0 +1,10 @@
+class SeedModel:
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        state.pop("_lock", None)
+        state.pop("_seed_cache", None)
+        return state
+
+    def run(self):
+        self._seed_cache = {}
+        self._lock = object()

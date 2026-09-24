@@ -1,0 +1,6 @@
+import hashlib
+import json
+
+
+def seed_key(cfg):
+    return hashlib.sha256(json.dumps(cfg).encode()).hexdigest()

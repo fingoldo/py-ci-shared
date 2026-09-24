@@ -5,11 +5,8 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared.git_dependency_pins import assert_installed_includes_pin, assert_pins_agree, installed_pin_problem, pinned_shas
 
@@ -101,4 +98,56 @@ class TestInstalledIncludesPin:
         monkeypatch.syspath_prepend(str(tmp_path))
         monkeypatch.delitem(sys.modules, "plainpkg", raising=False)
         problem, skip = installed_pin_problem("plainpkg", A)
+        assert problem is None and skip and "records no commit" in skip
+
+
+class TestAuditRegressions:
+    def test_a_longer_name_ending_in_the_package_is_not_its_pin(self, tmp_path):
+        f = tmp_path / "r.txt"
+        f.write_text(f"notpyutilz @ git+https://x/notpyutilz.git@{B}\npyutilz @ git+https://x/pyutilz.git@{A}\n", encoding="utf-8")
+        assert list(pinned_shas([f], "pyutilz")) == [A]
+
+    def test_an_uppercase_sha_is_the_same_commit(self, tmp_path):
+        f = tmp_path / "r.txt"
+        f.write_text(f"pyutilz @ git+https://x/pyutilz.git@{A.upper()}\n        pyutilz-ref: {A}\n", encoding="utf-8")
+        assert assert_pins_agree([f], "pyutilz") == A
+
+    def test_no_pins_with_min_pins_zero_returns_empty(self, tmp_path):
+        f = tmp_path / "x.txt"
+        f.write_text("nothing\n", encoding="utf-8")
+        assert assert_pins_agree([f], "pyutilz", min_pins=0) == ""
+
+    def test_an_unreadable_file_fails(self, tmp_path):
+        good = tmp_path / "r.txt"
+        good.write_text(f"pyutilz @ git+https://x/pyutilz.git@{A}\n", encoding="utf-8")
+        bad = tmp_path / "latin.txt"
+        bad.write_bytes(b"caf\xe9\n")
+        assert assert_pins_agree([good], "pyutilz") == A
+        with pytest.raises(pytest.fail.Exception, match=r"latin.txt"):
+            assert_pins_agree([good, bad], "pyutilz")
+        with pytest.raises(pytest.fail.Exception, match=r"missing.txt"):
+            assert_pins_agree([good, tmp_path / "missing.txt"], "pyutilz")
+
+
+class TestCheckoutOwnership:
+    def test_a_package_installed_into_a_venv_inside_a_repo_is_not_that_repo(self, tmp_path, monkeypatch):
+        repo = tmp_path / "consumer"
+        site = repo / ".venv" / "Lib" / "site-packages"
+        (site / "venvpkg").mkdir(parents=True)
+        (site / "venvpkg" / "__init__.py").write_text("", encoding="utf-8")
+        _git(tmp_path, "init", "-q", str(repo))
+        monkeypatch.syspath_prepend(str(site))
+        monkeypatch.delitem(sys.modules, "venvpkg", raising=False)
+        problem, skip = installed_pin_problem("venvpkg", A)
+        assert problem is None and skip and "records no commit" in skip
+
+    def test_an_untracked_package_under_a_repo_is_not_its_checkout(self, tmp_path, monkeypatch):
+        repo = tmp_path / "other"
+        (repo / "vendored").mkdir(parents=True)
+        (repo / "vendored" / "__init__.py").write_text("", encoding="utf-8")
+        _git(tmp_path, "init", "-q", str(repo))
+        (repo / ".gitignore").write_text("vendored/\n", encoding="utf-8")
+        monkeypatch.syspath_prepend(str(repo))
+        monkeypatch.delitem(sys.modules, "vendored", raising=False)
+        problem, skip = installed_pin_problem("vendored", A)
         assert problem is None and skip and "records no commit" in skip

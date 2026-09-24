@@ -1,0 +1,7 @@
+import inspect
+
+import json
+
+
+def test_seed():
+    assert "dumps" in inspect.getsource(json)

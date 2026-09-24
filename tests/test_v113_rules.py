@@ -7,12 +7,9 @@ import json
 import re
 import sys
 import textwrap
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared.import_side_effects import (
     ENV_REFRESH_FLAG,

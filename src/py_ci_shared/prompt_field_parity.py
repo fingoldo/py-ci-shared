@@ -139,9 +139,9 @@ def _literals(tree: ast.AST) -> list[str]:
     return [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
-def string_literals(src: str, *, strict: bool = False) -> list[str]:
-    """Every string constant in a module's source; an unparsable module yields none, or raises ``SyntaxError``
-    when *strict*. The file-reading functions here always behave as *strict*."""
+def string_literals(src: str, *, strict: bool = True) -> list[str]:
+    """Every string constant in a module's source. An unparsable module raises ``SyntaxError``: an empty answer would
+    read as a module that asks for no fields. ``strict=False`` opts into the old empty answer."""
     try:
         tree = ast.parse(src[1:] if src.startswith("\ufeff") else src)
     except SyntaxError:

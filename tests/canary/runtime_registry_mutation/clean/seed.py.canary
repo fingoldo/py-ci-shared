@@ -1,0 +1,13 @@
+SEED_REGISTRY = {}
+
+
+def seed_register(k):
+    def deco(f):
+        SEED_REGISTRY[k] = f
+        return f
+    return deco
+
+
+@seed_register("a")
+def seed_a():
+    return 1

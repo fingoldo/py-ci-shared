@@ -19,7 +19,9 @@ from ._core import SourceError, read_source
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "11"  # 11: `min` describes itself as "min becomes max", `not` removal keeps the next token, emptied bytes stay bytes,
+HARNESS_VERSION = "12"  # 12: the fingerprint walks test dirs with DEFAULT_EXCLUDE (pytest's norecursedirs), so a .venv or
+# build/ copy of a test no longer enters it
+# 11: `min` describes itself as "min becomes max", `not` removal keeps the next token, emptied bytes stay bytes,
 # table sampling applies to every operator, twins share one verdict, warm timeouts are inconclusive and crash kills are counted
 # 10: string-literal mutants skip non-string constants, the container path returns a list on a SyntaxError,
 # and the scope fingerprint ignores a non-range entry -- each changes WHICH mutants a run generates

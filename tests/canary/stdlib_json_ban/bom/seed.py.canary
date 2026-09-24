@@ -1,0 +1,5 @@
+﻿import json
+
+
+def seed_load(text):
+    return json.loads(text)

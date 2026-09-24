@@ -1,0 +1,6 @@
+import plotly.graph_objects as go
+
+
+def seed_heatmap(fig, cells):
+    for cell in cells:
+        fig.add_annotation(text=str(cell))

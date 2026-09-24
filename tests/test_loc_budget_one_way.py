@@ -7,11 +7,6 @@ stderr line in green runs until audit 2026-09-05 TEST-7. These drive the pure fu
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.loc_budget import DEFAULT_GROWTH_SLACK as SLACK

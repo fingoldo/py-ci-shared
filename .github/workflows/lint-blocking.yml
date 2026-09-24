@@ -98,6 +98,13 @@ on:
         description: 'Exact interrogate version to pin, or "" for unpinned latest.'
         type: string
         default: ""
+      deptry-version:
+        description: 'Exact deptry version to pin, or "" for unpinned latest.'
+        type: string
+        default: ""
+
+permissions:
+  contents: read
 
 jobs:
   lint-blocking:
@@ -213,6 +220,8 @@ jobs:
       # deptry-install-command populated, not through uvx's isolation.
       - name: Deptry dependency check
         if: inputs.deptry-install-command != ''
+        env:
+          PIN: ${{ inputs.deptry-version }}
         run: |
-          uv pip install --system deptry
+          if [ -n "$PIN" ]; then uv pip install --system "deptry==$PIN"; else uv pip install --system deptry; fi
           python -m deptry .

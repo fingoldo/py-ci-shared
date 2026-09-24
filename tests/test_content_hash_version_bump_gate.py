@@ -9,12 +9,10 @@ real file I/O.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import orjson
 import pytest
 
 from py_ci_shared.content_hash_version_bump_gate import (
@@ -63,7 +61,7 @@ class TestAssertVersionBumpedWithContent:
         assert not baseline.exists()
 
         _seed([src], "v1", baseline)
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert seeded["version"] == "v1"
         assert seeded["content_hash"] == content_hash([src])
 
@@ -100,7 +98,7 @@ class TestAssertVersionBumpedWithContent:
         _write(src, "def build(): return 'v2-new-structure'\n")
         assert_version_bumped_with_content(files=[src], version="v2", baseline_path=baseline)  # must not raise
 
-        reseeded = orjson.loads(baseline.read_bytes())
+        reseeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert reseeded["version"] == "v2"
         assert reseeded["content_hash"] == content_hash([src])
 
@@ -114,7 +112,7 @@ class TestAssertVersionBumpedWithContent:
         _seed([src], "v1", baseline)
 
         assert_version_bumped_with_content(files=[src], version="v2", baseline_path=baseline)
-        assert orjson.loads(baseline.read_bytes())["version"] == "v2"
+        assert json.loads(baseline.read_text(encoding="utf-8"))["version"] == "v2"
 
     def test_multiple_tracked_files_combined_into_one_hash(self, tmp_path):
         a = tmp_path / "a.py"
@@ -145,14 +143,14 @@ class TestAssertVersionBumpedWithContent:
         src = tmp_path / "prompt_builder.py"
         _write(src, "def build(): return 'v2'\n")
         baseline = tmp_path / "_version_baseline.json"
-        baseline.write_text(orjson.dumps({"version": "stale", "content_hash": "deadbeef"}).decode("utf-8"), encoding="utf-8")
+        baseline.write_text(json.dumps({"version": "stale", "content_hash": "deadbeef"}, separators=(",", ":")), encoding="utf-8")
 
         monkeypatch.setattr(sys, "argv", [*sys.argv, REFRESH_FLAG])
 
         with pytest.raises(pytest.skip.Exception):
             assert_version_bumped_with_content(files=[src], version="v2", baseline_path=baseline)
 
-        reseeded = orjson.loads(baseline.read_bytes())
+        reseeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert reseeded["version"] == "v2"
         assert reseeded["content_hash"] == content_hash([src])
 
@@ -226,7 +224,7 @@ class TestHashLayout:
         _write(src, "x = 1\n")
         legacy = hashlib.sha256(b"x = 1\n").hexdigest()[:16]
         baseline = tmp_path / "b.json"
-        baseline.write_text(orjson.dumps({"version": "v1", "content_hash": legacy}).decode("utf-8"), encoding="utf-8")
+        baseline.write_text(json.dumps({"version": "v1", "content_hash": legacy}, separators=(",", ":")), encoding="utf-8")
         assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)
         _write(src, "x = 2\n")
         with pytest.raises(pytest.fail.Exception, match="was NOT bumped"):
@@ -242,7 +240,7 @@ class TestBumpDiscipline:
         monkeypatch.setenv("PY_CI_SHARED_REFRESH", "content-hash-version")
         with pytest.raises(pytest.skip.Exception):
             assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)
-        assert orjson.loads(baseline.read_bytes())["version"] == "v1"
+        assert json.loads(baseline.read_text(encoding="utf-8"))["version"] == "v1"
 
     def test_a_bump_in_ci_is_not_written_and_fails_until_committed(self, tmp_path, monkeypatch):
         src = tmp_path / "p.py"
@@ -256,7 +254,7 @@ class TestBumpDiscipline:
         assert baseline.read_bytes() == before
         monkeypatch.setenv("CI", "false")
         assert_version_bumped_with_content(files=[src], version="v2", baseline_path=baseline)
-        assert orjson.loads(baseline.read_bytes())["version"] == "v2"
+        assert json.loads(baseline.read_text(encoding="utf-8"))["version"] == "v2"
 
     def test_reverting_to_an_old_version_with_new_content_fails(self, tmp_path):
         src = tmp_path / "p.py"
@@ -278,3 +276,34 @@ def test_register_refresh_option_registers_the_generic_flag_too():
     register_refresh_option(parser)
     args = parser.parse(["--py-ci-refresh", "content-hash-version"])
     assert args.py_ci_refresh == ["content-hash-version"]
+
+
+class TestBaselineFile:
+    def test_the_written_baseline_is_canonical_json_that_an_orjson_era_file_matches(self, tmp_path):
+        src = tmp_path / "prompt_builder.py"
+        _write(src, "def build(): return 'v1'\n")
+        baseline = tmp_path / "_version_baseline.json"
+        _seed([src], "v1", baseline)
+        text = baseline.read_text(encoding="utf-8")
+        data = json.loads(text)
+        assert text == json.dumps(data, indent=2, sort_keys=True) + "\n"
+        # The file orjson wrote before (indent 2, sorted keys) is byte-identical for this ASCII payload.
+        assert list(data) == ["content_hash", "hash_format", "history", "version"]
+        baseline.write_bytes(b"\xef\xbb\xbf" + text.encode("utf-8"))
+        assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)
+
+    def test_a_corrupt_baseline_fails_naming_the_file(self, tmp_path):
+        src = tmp_path / "prompt_builder.py"
+        _write(src, "x = 1\n")
+        baseline = tmp_path / "_version_baseline.json"
+        baseline.write_text("{not json", encoding="utf-8")
+        with pytest.raises(AssertionError, match=r"_version_baseline\.json"):
+            assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)
+
+    def test_the_gate_runs_without_orjson_installed(self, tmp_path, monkeypatch):
+        monkeypatch.setitem(sys.modules, "orjson", None)  # any `import orjson` now raises ImportError
+        src = tmp_path / "prompt_builder.py"
+        _write(src, "x = 1\n")
+        baseline = tmp_path / "_version_baseline.json"
+        _seed([src], "v1", baseline)
+        assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)

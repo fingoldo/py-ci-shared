@@ -1,0 +1,5 @@
+def seed_unused():
+    return 1
+
+
+VALUE = seed_unused()

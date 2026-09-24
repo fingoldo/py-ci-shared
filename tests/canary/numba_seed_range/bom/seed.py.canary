@@ -1,0 +1,9 @@
+﻿import os
+import struct
+
+from mylib import set_numba_random_seed
+
+
+def seed_restore():
+    seed = struct.unpack("<Q", os.urandom(8))[0]
+    set_numba_random_seed(seed)

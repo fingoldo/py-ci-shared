@@ -8,12 +8,9 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared._core import Baseline
 from py_ci_shared.source_text_claims import REFRESH_FLAG, assert_no_new_source_text_claims, find_source_text_claims

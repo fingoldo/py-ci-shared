@@ -10,6 +10,13 @@ name: Lint (advisory bundle, reusable)
 on:
   workflow_call:
     inputs:
+      py-ci-shared-ref:
+        description: >-
+          Ref of py-ci-shared to take configs, RUFF_VERSION and the package from. The default is the release this
+          workflow file belongs to (bumped with the version in every release commit), so a caller pinned to a tag or SHA
+          gets that release's config rather than master's. A ref that cannot be fetched falls back to master with a warning.
+        type: string
+        default: "v1.17.0"
       source-path:
         description: 'Path to the package source, e.g. "src/mlframe"'
         required: true
@@ -35,6 +42,23 @@ on:
           (registry rulesets need a login/network call this workflow doesn't make).
         type: string
         default: ""
+      # Exact pins with real defaults: an unpinned install resolves whatever PyPI serves on the day, so the same commit
+      # could pass on Monday and fail on Tuesday. A caller overrides a pin through `with:`.
+      pip-audit-version:
+        type: string
+        default: "2.10.1"
+      import-linter-version:
+        type: string
+        default: "2.15"
+      pydoclint-version:
+        type: string
+        default: "0.9.1"
+      semgrep-version:
+        type: string
+        default: "1.178.0"
+
+permissions:
+  contents: read
 
 jobs:
   lint-advisory:
@@ -64,13 +88,23 @@ jobs:
       # instead of cloning a second copy (a second unconditional clone caused this job's real CI
       # failures 2026-07-18, under the former sibling-clone convention this replaces).
       - name: Resolve PY_CI_SHARED_DIR
+        # Fetched at inputs.py-ci-shared-ref (this file's own release by default), never at master: a caller pinned to a
+        # tag or SHA gets that release's ruff config and RUFF_VERSION, not whatever master holds.
+        env:
+          PCS_REF: ${{ inputs.py-ci-shared-ref }}
         run: |
           if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ]; then
             echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
-          else
-            git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git "${RUNNER_TEMP}/py-ci-shared"
-            echo "PY_CI_SHARED_DIR=${RUNNER_TEMP}/py-ci-shared" >> "$GITHUB_ENV"
+            exit 0
           fi
+          d="${RUNNER_TEMP}/py-ci-shared"
+          git init -q "$d"
+          if ! git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
+            echo "::warning::py-ci-shared ref ${PCS_REF} could not be fetched; using master instead of the pinned release"
+            git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git master
+          fi
+          git -C "$d" checkout -q FETCH_HEAD
+          echo "PY_CI_SHARED_DIR=$d" >> "$GITHUB_ENV"
 
       # One version, defined in src/py_ci_shared/tool_versions.py -- see ruff-blocking.yml.
       - name: Resolve ruff version
@@ -97,8 +131,10 @@ jobs:
       - name: pip-audit dependency vulnerability scan
         # continue-on-error alone already prevents a non-zero exit from failing the job; the
         # `|| true` was redundant belt-and-suspenders (2026-07-18 architecture review cleanup).
-        run: uvx pip-audit --desc -f json -o pip-audit-report.json
+        run: uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json
         continue-on-error: true
+        env:
+          PIP_AUDIT_VERSION: ${{ inputs.pip-audit-version }}
 
       - name: Upload pip-audit results
         if: always()
@@ -116,14 +152,16 @@ jobs:
       - name: Import-linter (architectural boundaries, advisory)
         if: inputs.run-import-linter
         run: |
-          uv pip install --system import-linter
-          PYTHONPATH="${{ github.workspace }}/src" lint-imports
+          uv pip install --system "import-linter==${IMPORT_LINTER_VERSION}"
+          PYTHONPATH="${GITHUB_WORKSPACE}/src" lint-imports
         continue-on-error: true
+        env:
+          IMPORT_LINTER_VERSION: ${{ inputs.import-linter-version }}
 
       - name: pydoclint (docstring-vs-signature consistency, advisory)
         if: inputs.pydoclint-source-path != ''
         run: |
-          uv pip install --system pydoclint
+          uv pip install --system "pydoclint==${PYDOCLINT_VERSION}"
           # pydoclint's own pyproject.toml auto-discovery looks for the config file relative to
           # the SCANNED PATH's own directory (findCommonParentFolder of the path args), not the
           # invocation cwd -- so `pydoclint --style=google src/mlframe` never finds a repo-root
@@ -144,13 +182,15 @@ jobs:
         continue-on-error: true
         env:
           INPUTS_PYDOCLINT_SOURCE_PATH: ${{ inputs.pydoclint-source-path }}
+          PYDOCLINT_VERSION: ${{ inputs.pydoclint-version }}
 
       - name: Semgrep (custom org-specific rules, advisory)
         if: inputs.semgrep-config-path != ''
         run: |
-          uv pip install --system semgrep
+          uv pip install --system "semgrep==${SEMGREP_VERSION}"
           semgrep --config "${INPUTS_SEMGREP_CONFIG_PATH}" "${INPUTS_SOURCE_PATH}"
         continue-on-error: true
         env:
           INPUTS_SEMGREP_CONFIG_PATH: ${{ inputs.semgrep-config-path }}
+          SEMGREP_VERSION: ${{ inputs.semgrep-version }}
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}

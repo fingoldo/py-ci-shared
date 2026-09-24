@@ -34,7 +34,6 @@ def _code_prefix(code: str) -> str:
 
 
 def _format_warn_reselected_ignore() -> list[str]:
-    sys.path.insert(0, str(REPO_ROOT / "src"))
     from py_ci_shared.format_warn import _RESELECTED_IGNORE
 
     return list(_RESELECTED_IGNORE)

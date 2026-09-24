@@ -1,4 +1,8 @@
 {
-  "version": "11",
-  "content_hash": "4210ba3def630419"
+  "content_hash": "652ba4425e85760d",
+  "hash_format": 2,
+  "history": {
+    "12": "652ba4425e85760d"
+  },
+  "version": "12"
 }

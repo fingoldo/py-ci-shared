@@ -267,8 +267,10 @@ def assert_markers_registered(
     extra_registered: Iterable[str] = (),
     expect_registered: Iterable[str] = (),
     exclude: Iterable[Path] = (),
+    min_files: int = 1,
 ) -> None:
-    """Fail on an unregistered marker, and on a registration the parsers could not see.
+    """Fail on an unregistered marker, on a registration the parsers could not see, and on fewer than ``min_files``
+    Python files under the tests directory (a scan that lost its subject).
 
     ``expect_registered`` names markers the caller KNOWS it registers. If the parsers miss one of them
     (a pyproject schema move, a conftest refactor), the check would otherwise report a clean tree while
@@ -277,6 +279,11 @@ def assert_markers_registered(
     import pytest
 
     tests = tests_dir or repo_root / "tests"
+    exclude = list(exclude)
+    skip = {p.resolve() for p in exclude}
+    scanned = len([p for p in iter_files(tests, ("*.py",), exclude=DEFAULT_EXCLUDE) if p.resolve() not in skip])
+    if scanned < min_files:
+        pytest.fail(f"only {scanned} test file(s) found under {tests}; expected at least {min_files}. The scan lost its subject.")
     unresolved: list[str] = []
     registered = registered_markers(repo_root, tests_dir=tests, unresolved=unresolved)
     missing = sorted(set(expect_registered) - registered)

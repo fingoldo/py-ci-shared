@@ -515,36 +515,36 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `TS-3` | one bad case aborts whole sweep |
 | **RESOLVED** | Low | `TS-4` | read-back check vacuous for empty/duplicated repl |
 | **RESOLVED** | Low | `TS-5` | CRLF old becomes \r\r\n |
-| **OPEN** | High | `ARCH-1` | Package version is 0.1.0 while releases are tagged up to v1.16.1 |
-| **OPEN** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
-| **OPEN** | High | `ARCH-3` | v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09... |
-| **OPEN** | High | `ARCH-4` | Reusable workflows git clone --depth 1 py-ci-shared default-branch tip to get configs/r... |
-| **OPEN** | Med | `ARCH-5` | 6 of 7 reusable workflows declare no permissions:; they inherit the caller's token scop... |
-| **OPEN** | Med | `ARCH-6` | pip-audit, import-linter, pydoclint, semgrep installed unpinned (uvx pip-audit, uv pip... |
-| **OPEN** | Med | `ARCH-7` | pyutilz-ref defaults to empty = unpinned pyutilz tip; the description itself documents... |
-| **OPEN** | Med | `ARCH-8` | requires-python >=3.9 but CI runs only 3.11 (matrix is OS only) and mypy checks as 3.10 |
-| **OPEN** | Med | `ARCH-9` | Manifest exposes one hook (mypy-full-manual, which is just python -m mypy), while 13 mo... |
-| **OPEN** | Med | `ARCH-10` | Only 3 console scripts; the other 10 CLIs are python -m only |
-| **OPEN** | Med | `ARCH-11` | 67 of 112 modules are not mentioned in README (e.g |
-| **OPEN** | Low | `ARCH-12` | Docstring describes the package as four scripts (black_filtered_apply, format_warn, ban... |
-| **OPEN** | Low | `ARCH-13` | Stale build/lib (22 modules, vs 112 in src) and build/bdist.win-amd64 exist on disk |
-| **OPEN** | High | `ARCH-14` | Corpus enumeration is inconsistent |
-| **OPEN** | High | `ARCH-15` | Seven divergent skip-dir sets |
-| **OPEN** | Med | `ARCH-16` | Every gate re-reads and re-parses the same files; a consumer running 40 gates in one py... |
-| **OPEN** | Med | `ARCH-17` | Unparsable files are silently dropped (continue/return []/return set()), so a file with... |
-| **OPEN** | Low | `ARCH-18` | read_text() without encoding=: locale-dependent on Windows (cp1251 here). |
-| **OPEN** | Med | `ARCH-19` | CLI conventions differ: argparse in 4 (baseline_trend, embedded_postgres, pinned_tool_v... |
-| **OPEN** | Med | `ARCH-20` | No common signature |
-| **OPEN** | Med | `ARCH-21` | Refresh mechanism duplicated six times, with 10 different flags; detection via REFRESH_... |
-| **OPEN** | Med | `ARCH-22` | Baseline formats and ratchet semantics differ: json vs orjson (orjson a hard dependency... |
-| **OPEN** | Med | `ARCH-23` | No per-repo configuration surface ([tool.py_ci_shared] appears nowhere) |
-| **OPEN** | Low | `ARCH-24` | Message quality varies: some gates print file:line plus fix (pinned_tool_versions, per... |
-| **OPEN** | Med | `ARCH-25` | Dogfooding is partial: self-ci runs pytest, ruff, mypy and the reusable workflows, but... |
-| **OPEN** | Low | `ARCH-26` | T201 ignores are listed per file (16 entries) and must be maintained by hand as CLIs ar... |
-| **OPEN** | Low | `ARCH-27` | orjson is a hard runtime dependency used only for baseline I/O in 5 modules, where stdl... |
-| **OPEN** | Low | `ARCH-28` | ruff-base.toml/ruff-tests.toml are not package data (pyproject comment), so every consu... |
-| **OPEN** | Info | `ARCH-29` | Convention document, not an API reference; claims are measurement-based (realtime_appli... |
-| **OPEN** | Info | `ARCH-30` | Only module over the 1k LOC limit used elsewhere in these repos. |
+| **RESOLVED** | High | `ARCH-1` | Package version is 0.1.0 while releases are tagged up to v1.16.1 |
+| **DEFERRED** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
+| **RESOLVED** | High | `ARCH-3` | v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09... |
+| **RESOLVED** | High | `ARCH-4` | Reusable workflows git clone --depth 1 py-ci-shared default-branch tip to get configs/r... |
+| **RESOLVED** | Med | `ARCH-5` | 6 of 7 reusable workflows declare no permissions:; they inherit the caller's token scop... |
+| **RESOLVED** | Med | `ARCH-6` | pip-audit, import-linter, pydoclint, semgrep installed unpinned (uvx pip-audit, uv pip... |
+| **RESOLVED** | Med | `ARCH-7` | pyutilz-ref defaults to empty = unpinned pyutilz tip; the description itself documents... |
+| **RESOLVED** | Med | `ARCH-8` | requires-python >=3.9 but CI runs only 3.11 (matrix is OS only) and mypy checks as 3.10 |
+| **RESOLVED** | Med | `ARCH-9` | Manifest exposes one hook (mypy-full-manual, which is just python -m mypy), while 13 mo... |
+| **RESOLVED** | Med | `ARCH-10` | Only 3 console scripts; the other 10 CLIs are python -m only |
+| **RESOLVED** | Med | `ARCH-11` | 67 of 112 modules are not mentioned in README (e.g |
+| **RESOLVED** | Low | `ARCH-12` | Docstring describes the package as four scripts (black_filtered_apply, format_warn, ban... |
+| **RESOLVED** | Low | `ARCH-13` | Stale build/lib (22 modules, vs 112 in src) and build/bdist.win-amd64 exist on disk |
+| **RESOLVED** | High | `ARCH-14` | Corpus enumeration is inconsistent |
+| **RESOLVED** | High | `ARCH-15` | Seven divergent skip-dir sets |
+| **RESOLVED** | Med | `ARCH-16` | Every gate re-reads and re-parses the same files; a consumer running 40 gates in one py... |
+| **RESOLVED** | Med | `ARCH-17` | Unparsable files are silently dropped (continue/return []/return set()), so a file with... |
+| **RESOLVED** | Low | `ARCH-18` | read_text() without encoding=: locale-dependent on Windows (cp1251 here). |
+| **RESOLVED** | Med | `ARCH-19` | CLI conventions differ: argparse in 4 (baseline_trend, embedded_postgres, pinned_tool_v... |
+| **WON'T FIX** | Med | `ARCH-20` | No common signature |
+| **RESOLVED** | Med | `ARCH-21` | Refresh mechanism duplicated six times, with 10 different flags; detection via REFRESH_... |
+| **RESOLVED** | Med | `ARCH-22` | Baseline formats and ratchet semantics differ: json vs orjson (orjson a hard dependency... |
+| **RESOLVED** | Med | `ARCH-23` | No per-repo configuration surface ([tool.py_ci_shared] appears nowhere) |
+| **RESOLVED** | Low | `ARCH-24` | Message quality varies: some gates print file:line plus fix (pinned_tool_versions, per... |
+| **RESOLVED** | Med | `ARCH-25` | Dogfooding is partial: self-ci runs pytest, ruff, mypy and the reusable workflows, but... |
+| **WON'T FIX** | Low | `ARCH-26` | T201 ignores are listed per file (16 entries) and must be maintained by hand as CLIs ar... |
+| **RESOLVED** | Low | `ARCH-27` | orjson is a hard runtime dependency used only for baseline I/O in 5 modules, where stdl... |
+| **RESOLVED** | Low | `ARCH-28` | ruff-base.toml/ruff-tests.toml are not package data (pyproject comment), so every consu... |
+| **RESOLVED** | Info | `ARCH-29` | Convention document, not an API reference; claims are measurement-based (realtime_appli... |
+| **RESOLVED** | Info | `ARCH-30` | Only module over the 1k LOC limit used elsewhere in these repos. |
 | **OPEN** | High | `ADOPT-1` | CI installs .[test,llm] only; py-ci-shared is in [dev], so it is never installed |
 | **OPEN** | High | `ADOPT-2` | [dev] lists bare "py-ci-shared" with no direct URL |
 | **OPEN** | High | `ADOPT-3` | py-ci-shared is not a dependency, yet tests/test_meta/test_no_top_level_side_effects.py... |
@@ -575,20 +575,20 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Low | `ADOPT-28` | autopsia calls lint-advisory but not lint-blocking; llm_bench and social call neither. |
 | **OPEN** | Low | `ADOPT-29` | Stale second clone of autopsia (2026-09-08, 15 days behind Redline/autopsia); greps and... |
 | **OPEN** | Info | `ADOPT-30` | Jobs are not starting: "recent account payments have failed or your spending limit need... |
-| **OPEN** | High | `SUITE-1` | CI tests only Python 3.11 while requires-python = ">=3.9" |
-| **OPEN** | High | `SUITE-2` | The floor-guard test itself does import tomllib at module level, so it fails at collect... |
-| **OPEN** | Med | `SUITE-3` | The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro... |
-| **OPEN** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
-| **OPEN** | High | `SUITE-5` | uv pip install -e ".[dev]" \/\/ uv pip install -e  |
-| **OPEN** | Med | `SUITE-6` | pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole... |
+| **RESOLVED** | High | `SUITE-1` | CI tests only Python 3.11 while requires-python = ">=3.9" |
+| **RESOLVED** | High | `SUITE-2` | The floor-guard test itself does import tomllib at module level, so it fails at collect... |
+| **RESOLVED** | Med | `SUITE-3` | The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro... |
+| **DEFERRED** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
+| **RESOLVED** | High | `SUITE-5` | uv pip install -e ".[dev]" \/\/ uv pip install -e  |
+| **RESOLVED** | Med | `SUITE-6` | pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole... |
 | **RESOLVED** | High | `SUITE-7` | setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te... |
-| **OPEN** | Med | `SUITE-8` | No test references either module. |
-| **OPEN** | Med | `SUITE-9` | Covered only nominally (referenced, or 1 to 3 unrelated tests); their own branches (7,... |
-| **OPEN** | Med | `SUITE-10` | 9 gates share 3 grouped files at about 5 to 8 tests each |
-| **OPEN** | Med | `SUITE-11` | Thin tests relative to branches: runtime_registry_mutation 6/38, unread_init_params 6/3... |
-| **OPEN** | Med | `SUITE-12` | No meta-test asserts that every module has a test file, every gate has a README entry,... |
-| **OPEN** | Med | `SUITE-13` | Many of the repo's own gates are not run on itself (full list in section 2): ci_workflo... |
-| **OPEN** | Low | `SUITE-14` | The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this... |
+| **RESOLVED** | Med | `SUITE-8` | No test references either module. |
+| **RESOLVED** | Med | `SUITE-9` | Covered only nominally (referenced, or 1 to 3 unrelated tests); their own branches (7,... |
+| **RESOLVED** | Med | `SUITE-10` | 9 gates share 3 grouped files at about 5 to 8 tests each |
+| **RESOLVED** | Med | `SUITE-11` | Thin tests relative to branches: runtime_registry_mutation 6/38, unread_init_params 6/3... |
+| **RESOLVED** | Med | `SUITE-12` | No meta-test asserts that every module has a test file, every gate has a README entry,... |
+| **RESOLVED** | Med | `SUITE-13` | Many of the repo's own gates are not run on itself (full list in section 2): ci_workflo... |
+| **RESOLVED** | Low | `SUITE-14` | The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this... |
 | **RESOLVED** | Med | `SUITE-15` | Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re... |
 | **RESOLVED** | Med | `SUITE-16` | Mutant F2 survives: async functions dropped from measurement |
 | **RESOLVED** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
@@ -596,40 +596,55 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
 | **RESOLVED** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |
 | **RESOLVED** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
-| **OPEN** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |
-| **OPEN** | Low | `SUITE-23` | Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is... |
+| **RESOLVED** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |
+| **RESOLVED** | Low | `SUITE-23` | Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is... |
 | **RESOLVED** | Low | `SUITE-24` | The fake reader sleeps 30 s in a background thread that is left running after the test... |
-| **OPEN** | Low | `SUITE-25` | The real-server tests skip unless Postgres binaries are on PATH or PG_BIN; the GitHub r... |
-| **OPEN** | Low | `SUITE-26` | Every file does sys.path.insert(0, <repo>/src) |
-| **OPEN** | Low | `SUITE-27` | No shared fixtures (git repo factory, write helper), so each file re-implements _write/... |
-| **OPEN** | Info | `SUITE-28` | Portability is otherwise good: all tests use tmp_path (one tempfile.TemporaryDirectory... |
-| **OPEN** | High | `NEW-1` | gate `import_cycles` |
-| **OPEN** | High | `NEW-2` | gate `local_copy_report` (migrate locals onto existing central gates) |
-| **OPEN** | High | `NEW-3` | gate `swallowed_exceptions` |
-| **OPEN** | High | `NEW-4` | gate `pickle_state_completeness` (runtime + static) |
-| **OPEN** | High | `NEW-5` | gate `test_resource_leaks` (pytest plugin) |
-| **OPEN** | High | `NEW-6` | gate `atomic_write_staging` |
-| **OPEN** | High | `NEW-7` | gate `hash_key_determinism` |
-| **OPEN** | High | `NEW-8` | gate `sentinel_or_fallback` |
-| **OPEN** | High | `NEW-9` | gate `no_xfail_to_defer` |
-| **OPEN** | High | `NEW-10` | gate `timing_assertions` |
-| **OPEN** | Med | `NEW-11` | gate `stale_source_citations` |
-| **OPEN** | Med | `NEW-12` | gate `console_encoding_safety` |
-| **OPEN** | Med | `NEW-13` | gate `lf_file_writes` |
-| **OPEN** | Med | `NEW-14` | gate `module_cache_thread_safety` |
-| **OPEN** | Med | `NEW-15` | gate `machine_specific_paths` |
-| **OPEN** | Med | `NEW-16` | gate `hardcoded_token_ceilings` |
-| **OPEN** | Med | `NEW-17` | gate `coverage_config_parity` |
-| **OPEN** | Med | `NEW-18` | gate `pytest_addopts_path_runs` |
-| **OPEN** | Low | `NEW-19` | gate `rollback_then_continue` |
-| **OPEN** | Low | `NEW-20` | gate `reiterated_iterable_params` |
-| **OPEN** | Low | `NEW-21` | gate `numba_seed_range` |
-| **OPEN** | Low | `NEW-22` | gate `stdlib_json_ban` (opt-in) |
-| **OPEN** | Low | `NEW-23` | gate `polars_null_equality` |
-| **OPEN** | Low | `NEW-24` | gate `plotly_annotation_loop` |
-| **OPEN** | High | `INFRA-1` | pytest11 plugin py_ci_shared.pytest_plugin |
-| **OPEN** | High | `INFRA-2` | Gate-teeth self-check |
-| **OPEN** | High | `INFRA-3` | Canary corpus |
-| **OPEN** | High | `INFRA-4` | Per-gate runtime budget |
-| **OPEN** | Med | `INFRA-5` | Registry + README parity |
+| **RESOLVED** | Low | `SUITE-25` | The real-server tests skip unless Postgres binaries are on PATH or PG_BIN; the GitHub r... |
+| **RESOLVED** | Low | `SUITE-26` | Every file does sys.path.insert(0, <repo>/src) |
+| **RESOLVED** | Low | `SUITE-27` | No shared fixtures (git repo factory, write helper), so each file re-implements _write/... |
+| **NOT A DEFECT** | Info | `SUITE-28` | Portability is otherwise good: all tests use tmp_path (one tempfile.TemporaryDirectory... |
+| **RESOLVED** | High | `NEW-1` | gate `import_cycles` |
+| **DEFERRED** | High | `NEW-2` | gate `local_copy_report` (migrate locals onto existing central gates) |
+| **RESOLVED** | High | `NEW-3` | gate `swallowed_exceptions` |
+| **RESOLVED** | High | `NEW-4` | gate `pickle_state_completeness` (runtime + static) |
+| **RESOLVED** | High | `NEW-5` | gate `test_resource_leaks` (pytest plugin) |
+| **RESOLVED** | High | `NEW-6` | gate `atomic_write_staging` |
+| **RESOLVED** | High | `NEW-7` | gate `hash_key_determinism` |
+| **RESOLVED** | High | `NEW-8` | gate `sentinel_or_fallback` |
+| **RESOLVED** | High | `NEW-9` | gate `no_xfail_to_defer` |
+| **RESOLVED** | High | `NEW-10` | gate `timing_assertions` |
+| **RESOLVED** | Med | `NEW-11` | gate `stale_source_citations` |
+| **RESOLVED** | Med | `NEW-12` | gate `console_encoding_safety` |
+| **RESOLVED** | Med | `NEW-13` | gate `lf_file_writes` |
+| **RESOLVED** | Med | `NEW-14` | gate `module_cache_thread_safety` |
+| **RESOLVED** | Med | `NEW-15` | gate `machine_specific_paths` |
+| **RESOLVED** | Med | `NEW-16` | gate `hardcoded_token_ceilings` |
+| **RESOLVED** | Med | `NEW-17` | gate `coverage_config_parity` |
+| **RESOLVED** | Med | `NEW-18` | gate `pytest_addopts_path_runs` |
+| **RESOLVED** | Low | `NEW-19` | gate `rollback_then_continue` |
+| **RESOLVED** | Low | `NEW-20` | gate `reiterated_iterable_params` |
+| **RESOLVED** | Low | `NEW-21` | gate `numba_seed_range` |
+| **RESOLVED** | Low | `NEW-22` | gate `stdlib_json_ban` (opt-in) |
+| **RESOLVED** | Low | `NEW-23` | gate `polars_null_equality` |
+| **RESOLVED** | Low | `NEW-24` | gate `plotly_annotation_loop` |
+| **RESOLVED** | High | `INFRA-1` | pytest11 plugin py_ci_shared.pytest_plugin |
+| **RESOLVED** | High | `INFRA-2` | Gate-teeth self-check |
+| **RESOLVED** | High | `INFRA-3` | Canary corpus |
+| **RESOLVED** | High | `INFRA-4` | Per-gate runtime budget |
+| **RESOLVED** | Med | `INFRA-5` | Registry + README parity |
 | **OPEN** | Med | `INFRA-6` | Consumer adoption matrix |
+| **RESOLVED** | Med | `CANARY-1` | env_flag_parsing skips a BOM file |
+| **RESOLVED** | Med | `CANARY-2` | env_flag_parsing passes an unparsable file |
+| **RESOLVED** | Med | `CANARY-3` | git_dependency_pins passes an unparsable pyproject.toml |
+| **RESOLVED** | Med | `CANARY-4` | git_dependency_pins misses a single-line dependency array |
+| **RESOLVED** | Med | `CANARY-5` | module_reload_safety.assert_no_reloads_in_code passes an empty corpus |
+| **RESOLVED** | Med | `CANARY-6` | vacuous_loop_assertions.assert_no_new_floorless_loop passes an empty corpus |
+| **RESOLVED** | Med | `CANARY-7` | config_call_site_parity.assert_no_divergent_cfg_get_call_site_defaults passes an empty corpus |
+| **RESOLVED** | Med | `CANARY-8` | unresolved_imports.assert_all_from_imports_resolve passes an empty corpus |
+| **RESOLVED** | Med | `CANARY-9` | phantom_markdown_links.assert_no_phantom_markdown_links passes an empty corpus |
+| **RESOLVED** | Med | `CANARY-10` | pytest_markers.assert_markers_registered passes an empty corpus |
+| **RESOLVED** | Low | `CANARY-11` | 22 fail_open_handlers baseline entries carry NEEDS-JUSTIFICATION placeholders |
+| **RESOLVED** | Med | `CANARY-12` | _core parse cache serves a stale tree after a same-size rewrite within one mtime tick |
+| **RESOLVED** | Low | `CANARY-13` | test_docs_inventory_parity imports tomllib unguarded |
+| **RESOLVED** | Low | `CANARY-14` | phantom_markdown_links and tracker_summary_parity import private helpers of sibling modules |
+| **RESOLVED** | Low | `CANARY-15` | resource_release_paths narrows with assert isinstance, which python -O strips |

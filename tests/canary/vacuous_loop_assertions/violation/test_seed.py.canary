@@ -1,0 +1,4 @@
+def test_seed():
+    items = [1]
+    for x in items:
+        assert x

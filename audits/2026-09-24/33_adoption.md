@@ -157,7 +157,7 @@ Columns: algo=algopacksimple, autop=Redline/autopsia, cun=claude-usage-notifier,
 
 The three modules on remote master after local HEAD (`env_flag_parsing`, `config_getattr_default_parity`, `survivorship_scoring`) are adopted nowhere.
 
-### Reusable workflows / composite actions
+#### Reusable workflows / composite actions
 
 | workflow/action | algo | autop | cun | cn | dac | glos | llmb | mlf | pyu | soc |
 |---|---|---|---|---|---|---|---|---|---|---|

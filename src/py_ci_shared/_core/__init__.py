@@ -6,7 +6,7 @@ See ``audits/2026-09-24/dispositions/core.md`` (section ``_core API``) for the i
 from __future__ import annotations
 
 from .aliases import ImportAliases, module_of, package_of, resolve_relative
-from .baseline import UNJUSTIFIED_MARKER, Baseline, BaselineOutcome, atomic_write_text, dump_json, is_unjustified
+from .baseline import UNJUSTIFIED_MARKER, Baseline, BaselineOutcome, atomic_write_text, dump_json, is_unjustified, load_json
 from .corpus import DEFAULT_EXCLUDE, git_listing, iter_files, relative_posix
 from .errors import (
     BaselineError,
@@ -52,6 +52,7 @@ __all__ = [
     "git_listing",
     "is_unjustified",
     "iter_files",
+    "load_json",
     "module_of",
     "package_of",
     "parse_file",

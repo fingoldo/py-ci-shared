@@ -11,8 +11,6 @@ import sys
 import types
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.entry_points_resolvable import assert_all_entry_points_resolvable, find_unresolvable_entry_points

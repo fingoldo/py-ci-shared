@@ -1,0 +1,3 @@
+import os
+
+SEED_PATH = os.environ.get("SEED_FLAG", "")

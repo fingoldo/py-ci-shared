@@ -9,8 +9,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.embedded_postgres import embedded_postgres, find_pg_bin, main_checkout_file, run

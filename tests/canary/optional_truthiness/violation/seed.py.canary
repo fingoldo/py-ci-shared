@@ -1,0 +1,7 @@
+from typing import Optional
+
+
+def seed_limit(limit: Optional[int] = None):
+    if limit:
+        return 1
+    return 0

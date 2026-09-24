@@ -9,11 +9,6 @@ own pre-commit/CI usage instead, not unit-tested here.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.black_filtered_apply import discover_py_files, filtered_apply, looks_like_import_or_call_list, norm

@@ -92,9 +92,9 @@ def tracked_markdown_files(repo_root: Path) -> list[Path]:
     first time a ``.venv`` appeared beside it. An untracked file is not something a reader of the
     repository can follow a link from, so it is not the check's subject.
     """
-    from .repo_hygiene import _tracked_files
+    from .repo_hygiene import tracked_files
 
-    return [repo_root / rel for rel in _tracked_files(repo_root) if rel.endswith(".md")]
+    return [repo_root / rel for rel in tracked_files(repo_root) if rel.endswith(".md")]
 
 
 def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> list[str]:
@@ -126,14 +126,20 @@ def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> li
     return violations
 
 
-def assert_no_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> None:
-    """Fail if any markdown-link target in ``md_files`` doesn't resolve.
+def assert_no_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path, *, min_files: int = 1) -> None:
+    """Fail if any markdown-link target in ``md_files`` doesn't resolve, or if fewer than ``min_files`` files could
+    be read (a scan that lost its subject).
     Call this directly as the body of a ``test_*`` function -- no
     baseline/refresh mechanism, since a dead link is unconditionally
     wrong (there's no legitimate "grandfathered" dead link)."""
     import pytest
 
+    md_files = list(md_files)
     violations = find_phantom_markdown_links(md_files, repo_root)
+    unreadable = {v.split(":", 1)[0] for v in violations if ": unreadable: " in v}
+    read = len({relative_posix(p, repo_root) for p in md_files} - unreadable)
+    if read < min_files:
+        violations.append(f"only {read} markdown file(s) read; expected at least {min_files}. The scan lost its subject.")
     if violations:
         msg = "\n  ".join(violations)
         pytest.fail(f"Dead markdown-link target(s):\n  {msg}")

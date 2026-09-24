@@ -1,0 +1,6 @@
+import numpy as np
+
+
+def seed_score(y, pred):
+    m = np.isfinite(pred)
+    return rmse(y[m], pred[m])

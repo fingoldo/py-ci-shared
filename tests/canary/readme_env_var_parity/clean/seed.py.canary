@@ -1,0 +1,3 @@
+import os
+
+SEED = os.environ.get("SEED_DOCUMENTED_VAR")

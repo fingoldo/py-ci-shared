@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import SourceError, parse_file
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file
 
 #: pytest's own default for ``python_files``.
 _DEFAULT_PYTHON_FILES = ("test_*.py", "*_test.py")
@@ -188,8 +188,9 @@ def fingerprint(
         if test_path.is_dir():
             if patterns is None:
                 patterns = _python_files_patterns(repo_root)
-            files.update(p for p in test_path.rglob("*.py") if any(fnmatch.fnmatch(p.name, pat) for pat in patterns))
-            files.update(test_path.rglob("conftest.py"))
+            # pytest does not consult git, so neither does this walk; DEFAULT_EXCLUDE mirrors its norecursedirs.
+            collected = iter_files(test_path, ("*.py",), exclude=DEFAULT_EXCLUDE, use_git=False)
+            files.update(p for p in collected if p.name == "conftest.py" or any(fnmatch.fnmatch(p.name, pat) for pat in patterns))
         else:
             files.add(test_path)
         parent = test_path.parent

@@ -1,0 +1,5 @@
+﻿SEED_SQL = "select 1"
+
+
+def seed_is(x):
+    return x is SEED_SQL

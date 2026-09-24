@@ -1,0 +1,5 @@
+﻿from pathlib import Path
+
+
+def seed_write(text):
+    Path("seed.sh").write_text(text)

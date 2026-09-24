@@ -1,0 +1,9 @@
+[project]
+name = "seed"
+version = "0"
+dependencies = [
+    "seedlib @ git+https://github.com/o/seedlib.git@0123456789abcdef0123456789abcdef01234567",
+]
+
+[project.optional-dependencies]
+extra = ["seedextra @ git+https://github.com/o/seedextra.git@main"]

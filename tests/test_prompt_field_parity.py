@@ -152,7 +152,14 @@ class TestAuditRegressions:
             consumed_names([tmp_path / "prompts"])
         with pytest.raises(SyntaxError):
             string_literals("def (:\n", strict=True)
-        assert string_literals("def (:\n") == []
+        assert string_literals("def (:\n", strict=False) == []
+
+    def test_an_unparsable_source_string_raises_by_default(self) -> None:
+        with pytest.raises(SyntaxError):
+            string_literals("def (:\n")
+        with pytest.raises(SyntaxError):
+            keys_in_source('X = """{"field_a": 1}"""\ndef (:\n')
+        assert keys_in_source('X = """{"field_a": 1}"""\n') == {"field_a"}
 
     def test_non_utf8_files_raise_a_located_error_not_a_bare_decode_error(self, tmp_path: Path) -> None:
         (tmp_path / "w").mkdir()

@@ -1,0 +1,2 @@
+def seed_call(client):
+    return client.messages.create(model="m")

@@ -219,9 +219,12 @@ DEFAULT_STATUS_COLUMNS: tuple[str, ...] = ("disposition", "status")
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 
 
-def _table_cells(line: str) -> list[str]:
+def table_cells(line: str) -> list[str]:
     """Cells split on UNESCAPED pipes: a finding that quotes ``2 + \\|delta\\|`` otherwise shifts every column after it."""
     return [c.strip() for c in _UNESCAPED_PIPE.split(line.strip().strip("|"))]
+
+
+_table_cells = table_cells
 
 
 def _is_totals_row(label: str, status: str) -> bool:

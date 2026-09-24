@@ -5,11 +5,6 @@ mock of the rule under test).
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 from py_ci_shared.dart_scanners import (
     scan_hardcoded_ui_strings,
     scan_non_directional_layout,

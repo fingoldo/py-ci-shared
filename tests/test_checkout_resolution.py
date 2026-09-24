@@ -5,8 +5,6 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.checkout_resolution import assert_modules_resolve_to_checkout, module_resolution_problems, resolved_in_a_copy

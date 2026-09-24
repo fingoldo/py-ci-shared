@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from py_ci_shared._core import read_source
-from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, _table_cells, closing_word, round_files, without_fenced_blocks
+from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, closing_word, table_cells, round_files, without_fenced_blocks
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 _SUBSECTION = re.compile(r"^###\s+`([^`]+)`\s*$")
@@ -58,11 +58,11 @@ def _finding_sections(lines: list[str]) -> dict[str, list[str]]:
         elif line.startswith("## ") or line.startswith("### "):
             current = None
         elif current and line.lstrip().startswith("|"):
-            cells = _table_cells(line)
+            cells = table_cells(line)
             if not cells or _is_separator(cells):
                 continue
             following = lines[index + 1] if index + 1 < len(lines) else ""
-            if following.lstrip().startswith("|") and _is_separator(_table_cells(following)):
+            if following.lstrip().startswith("|") and _is_separator(table_cells(following)):
                 lowered = [c.strip("* ").lower() for c in cells]
                 status_col = next((i for i, c in enumerate(lowered) if c in _STATUS_HEADERS), 0)
                 continue
@@ -74,7 +74,7 @@ def _summary_columns(line: str, words: tuple[str, ...]) -> "tuple[int, dict[str,
     """``(findings column, {status: column})`` when *line* is a summary table's header, else None."""
     if not line.lstrip().startswith("|"):
         return None
-    lowered = [h.strip("* ").lower() for h in _table_cells(line)]
+    lowered = [h.strip("* ").lower() for h in table_cells(line)]
     if "file" not in lowered or "findings" not in lowered or not any(w.lower() in lowered for w in words):
         return None
     return lowered.index("findings"), {w: lowered.index(w.lower()) for w in words if w.lower() in lowered}
@@ -106,7 +106,7 @@ def _table_problems(lines: list[str], start: int, sections: dict[str, list[str]]
     j = start + 2
     width = max([findings_col, *columns.values()]) + 1
     while j < len(lines) and lines[j].lstrip().startswith("|"):
-        cells = _table_cells(lines[j])
+        cells = table_cells(lines[j])
         j += 1
         if not cells or not any(cells):
             problems.append(f"{where}: an empty summary row at line {j}")
@@ -174,7 +174,7 @@ def heading_status_problems(
     for line in read_source(tracker).splitlines():
         m = tracker_row_re.match(line)
         if m:
-            status = _status_of(_table_cells(line)[0], words)
+            status = _status_of(table_cells(line)[0], words)
             if status:
                 tracked[m.group(1)] = status
     problems: list[str] = []

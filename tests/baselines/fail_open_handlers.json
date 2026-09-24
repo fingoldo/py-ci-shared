@@ -1,0 +1,3 @@
+{
+  "src/py_ci_shared/spec_bound_doubles.py::files_driving::admit_on_error": "fail-closed: an unreadable file is kept as a candidate so the parse that follows reports it by path instead of dropping it from the scan"
+}

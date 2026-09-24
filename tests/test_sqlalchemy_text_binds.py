@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
 import pytest
 
 from py_ci_shared.sqlalchemy_text_binds import assert_no_colon_cast_binds, colon_cast_binds, find_colon_cast_binds

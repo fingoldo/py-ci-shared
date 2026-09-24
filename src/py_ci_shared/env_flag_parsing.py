@@ -24,6 +24,8 @@ import ast
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from ._core import ScanResult, scan_python
+
 __all__ = ["EnvFlagRead", "find_hand_parsed_env_flags", "assert_env_flags_use_one_parser"]
 
 _GETTERS = frozenset({"getenv", "environ"})
@@ -99,49 +101,62 @@ def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
                 yield node, var, "membership in a literal collection"
 
 
-def find_hand_parsed_env_flags(files: Iterable[Path], repo_root: Path, prefixes: Sequence[str]) -> list[EnvFlagRead]:
-    """Every boolean-context read of a ``prefixes`` environment variable that does not go through a shared parser."""
-    out: list[EnvFlagRead] = []
-    for path in files:
-        try:
-            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
-        owner: dict[int, str] = {}
-        for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
-            for child in ast.walk(func):
-                owner.setdefault(id(child), func.name)
-        for node, var, shape in _boolean_contexts(tree, prefixes):
-            out.append(EnvFlagRead(rel, owner.get(id(node), "<module>"), node.lineno, var, shape))
+def _reads_in(tree: ast.Module, rel: str, prefixes: Sequence[str]) -> list[EnvFlagRead]:
+    owner: dict[int, str] = {}
+    for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for child in ast.walk(func):
+            owner.setdefault(id(child), func.name)
+    return [EnvFlagRead(rel, owner.get(id(node), "<module>"), node.lineno, var, shape) for node, var, shape in _boolean_contexts(tree, prefixes)]
+
+
+def _dedup(out: list[EnvFlagRead]) -> list[EnvFlagRead]:
     seen: dict[tuple, EnvFlagRead] = {}
     for r in out:
         seen.setdefault((r.path, r.lineno, r.var, r.shape), r)
     return [seen[k] for k in sorted(seen)]
 
 
-def assert_env_flags_use_one_parser(files: Iterable[Path], repo_root: Path, prefixes: Sequence[str],
-                                    allowed: Mapping[str, str] | None = None, min_files: int = 1) -> None:
-    """Fail on a boolean env flag parsed by hand.
+def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
+    return scan_python([Path(f) for f in files], root=Path(repo_root).resolve(), min_files=0)
+
+
+def find_hand_parsed_env_flags(files: Iterable[Path], repo_root: Path, prefixes: Sequence[str]) -> list[EnvFlagRead]:
+    """Every boolean-context read of a ``prefixes`` environment variable that does not go through a shared parser.
+
+    Files that cannot be read or parsed yield nothing here; :func:`assert_env_flags_use_one_parser` reports them.
+    """
+    scan = _scan(files, repo_root)
+    return _dedup([r for f in scan for r in _reads_in(f.tree, f.rel, prefixes)])
+
+
+def assert_env_flags_use_one_parser(
+    files: Iterable[Path], repo_root: Path, prefixes: Sequence[str], allowed: Mapping[str, str] | None = None, min_files: int = 1
+) -> None:
+    """Fail on a boolean env flag parsed by hand, and on any file that could not be read or parsed.
 
     ``allowed`` maps a variable name to the reason it is read directly (a three-state switch, a value forwarded verbatim
     to another tool); an empty reason is rejected, and an entry with nothing left to excuse must be removed.
+    ``min_files`` is a floor on the files that PARSED.
     """
-    files = list(files)
-    if len(files) < min_files:
-        raise AssertionError(f"scanned only {len(files)} files (< {min_files}); the scan lost its subject")
     allowed = dict(allowed or {})
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowed env flags need a reason: {empty}")
-    reads = find_hand_parsed_env_flags(files, repo_root, prefixes)
+    scan = _scan(files, repo_root)
+    if scan.parsed_count < min_files:
+        raise AssertionError(f"parsed only {scan.parsed_count} files (< {min_files}); the scan lost its subject")
+    reads = _dedup([r for f in scan for r in _reads_in(f.tree, f.rel, prefixes)])
     bad = [r for r in reads if r.var not in allowed]
     stale = sorted(set(allowed) - {r.var for r in reads})
     msgs = []
+    if scan.unparsed:
+        msgs.append("files that could not be read or parsed, so their env reads were not checked: " + "; ".join(u.render() for u in scan.unparsed))
     if bad:
-        msgs.append("boolean env flags parsed by hand (each spelling of 'on' differs; route them through one shared "
-                    "env_flag(name, default)): " + "; ".join(map(repr, bad)))
-    if stale:
+        msgs.append(
+            "boolean env flags parsed by hand (each spelling of 'on' differs; route them through one shared "
+            "env_flag(name, default)): " + "; ".join(map(repr, bad))
+        )
+    if stale and not scan.unparsed:
         msgs.append(f"allowed env flags that are no longer read by hand: {stale}")
     if msgs:
         raise AssertionError("\n".join(msgs))

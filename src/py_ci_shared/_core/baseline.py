@@ -71,6 +71,16 @@ def dump_json(data: Any) -> str:
     return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
 
 
+def load_json(path: PathLike) -> Any:
+    """Parse the JSON file at *path* (UTF-8, a BOM tolerated). Raises :class:`BaselineError` naming the file when it
+    cannot be read or is not JSON; a missing file is the caller's to check first."""
+    p = Path(path)
+    try:
+        return json.loads(p.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError) as exc:
+        raise BaselineError(f"baseline {p} is unreadable: {exc}") from exc
+
+
 _META_KEYS = frozenset({"_comment", "_meta", "_schema", "_note"})
 
 

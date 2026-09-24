@@ -293,8 +293,13 @@ def find_unresolved_from_imports(
     index that cannot be read or parsed is reported as ``<path>:<line>: unparsable: ...``: its imports, or its
     names, are unknown.
     """
-    prefixes = tuple(resolvable_prefixes)
+    return _unresolved(scan_roots, index, tuple(resolvable_prefixes))[0]
+
+
+def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple[str, ...]") -> "tuple[list[str], int]":
+    """``(problems, parsed file count)`` for :func:`find_unresolved_from_imports`."""
     problems: list[str] = []
+    parsed_count = 0
     seen_unparsed: set[str] = set()
     for root in scan_roots:
         for path in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE):
@@ -305,6 +310,7 @@ def find_unresolved_from_imports(
                 seen_unparsed.add(str(path.resolve()))
                 problems.append(f"{path.as_posix()}:{exc.line or 1}: {exc.kind}: {exc.message}")
                 continue
+            parsed_count += 1
             imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
             if imports:
                 guarded = _guarded_import_ids(tree)
@@ -315,7 +321,7 @@ def find_unresolved_from_imports(
     for path, detail in index.unparsed:
         if str(path.resolve()) not in seen_unparsed:
             problems.append(f"{path.as_posix()}:{detail}")
-    return problems
+    return problems, parsed_count
 
 
 def _names_in(node: "ast.AST | None") -> set[str]:
@@ -397,8 +403,10 @@ def assert_all_from_imports_resolve(
     *,
     resolvable_prefixes: Iterable[str],
     allowlist: Iterable[str] = (),
+    min_files: int = 1,
 ) -> None:
-    """Fail on any `from X import Y` naming something X does not define, and on a file that cannot be parsed.
+    """Fail on any `from X import Y` naming something X does not define, on a file that cannot be parsed, and on fewer
+    than ``min_files`` parsed files under ``scan_roots`` (a scan that lost its subject).
 
     ``allowlist`` entries are matched as substrings of the reported line, for the rare genuinely-dynamic
     target this module's own heuristics cannot see.
@@ -406,7 +414,10 @@ def assert_all_from_imports_resolve(
     import pytest
 
     index = ModuleIndex(package_roots, package_roots)
-    problems = [p for p in find_unresolved_from_imports(scan_roots, index, resolvable_prefixes=resolvable_prefixes) if not any(a in p for a in allowlist)]
+    found, parsed_count = _unresolved(scan_roots, index, tuple(resolvable_prefixes))
+    problems = [p for p in found if not any(a in p for a in allowlist)]
+    if parsed_count < min_files:
+        pytest.fail(f"only {parsed_count} file(s) parsed under {[str(r) for r in scan_roots]}; expected at least {min_files}. The scan lost its subject.")
     if problems:
         pytest.fail(
             f"{len(problems)} unresolved `from X import Y`:\n  "

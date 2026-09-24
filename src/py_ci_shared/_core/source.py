@@ -16,6 +16,7 @@ the path and line. Whether an unparsable file fails the gate is then a decision 
 from __future__ import annotations
 
 import ast
+import hashlib
 import io
 import os
 import threading
@@ -29,9 +30,10 @@ PathLike = Union[str, "os.PathLike[str]"]
 
 _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".pyw"})
 
-# resolved path -> (mtime_ns, size, source, tree). One entry per path: a changed file replaces its entry
-# rather than accumulating stale ones, so the cache is bounded by the corpus size.
-_CACHE: dict[str, tuple[int, int, str, ast.Module]] = {}
+# resolved path -> (content digest, source, tree). One entry per path: a changed file replaces its entry
+# rather than accumulating stale ones, so the cache is bounded by the corpus size. Keyed on the bytes, not on
+# mtime and size: a same-size rewrite inside one mtime tick would otherwise serve the old tree.
+_CACHE: dict[str, tuple[bytes, str, ast.Module]] = {}
 _LOCK = threading.Lock()
 
 
@@ -81,23 +83,24 @@ def _parse_text(path: Path, text: str) -> ast.Module:
 def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     """``(source, tree)`` for *path*, from the in-process cache when the file is unchanged.
 
-    The cache key is (resolved path, ``st_mtime_ns``, ``st_size``): a gate suite that runs forty gates over one
-    package parses it once. The returned tree is SHARED between callers; treat it as read-only.
+    The cache key is (resolved path, digest of the file's bytes): a gate suite that runs forty gates over one
+    package parses it once, and an edited file is re-parsed however quickly it was rewritten. The returned tree is SHARED between callers; treat it as read-only.
     """
     p = Path(path)
     try:
-        st = p.stat()
+        raw = p.read_bytes()
         key = str(p.resolve())
     except OSError as exc:
-        raise SourceReadError(p, f"cannot stat: {exc.strerror or exc}") from exc
+        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
+    digest = hashlib.blake2b(raw, digest_size=16).digest()
     with _LOCK:
         hit = _CACHE.get(key)
-    if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
-        return hit[2], hit[3]
-    text = read_source(p)
+    if hit is not None and hit[0] == digest:
+        return hit[1], hit[2]
+    text = _decode(p, raw)
     tree = _parse_text(p, text)
     with _LOCK:
-        _CACHE[key] = (st.st_mtime_ns, st.st_size, text, tree)
+        _CACHE[key] = (digest, text, tree)
     return text, tree
 
 
@@ -107,7 +110,7 @@ def parse_file(path: PathLike) -> ast.Module:
 
 
 def clear_parse_cache() -> None:
-    """Drop every cached tree (tests; long-lived processes that rewrite files within one mtime tick)."""
+    """Drop every cached tree (frees memory in long-lived processes; correctness never depends on it)."""
     with _LOCK:
         _CACHE.clear()
 

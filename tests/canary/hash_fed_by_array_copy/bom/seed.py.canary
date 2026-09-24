@@ -1,0 +1,7 @@
+﻿import hashlib
+
+
+def seed_hash(a):
+    h = hashlib.sha256()
+    h.update(a.tobytes())
+    return h.hexdigest()

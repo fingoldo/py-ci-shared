@@ -1,0 +1,2 @@
+﻿def seed_save(errors, e):
+    errors.append(f"seed_failed: {e}")

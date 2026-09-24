@@ -1,0 +1,1 @@
+cfg().get("seed", "max_results", 50)

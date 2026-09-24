@@ -31,7 +31,7 @@ from pathlib import Path
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, CorpusError, ImportAliases, SourceError, iter_files, parse_source, relative_posix
+from ._core import DEFAULT_EXCLUDE, CorpusError, ImportAliases, SourceError, UnparsedFilesError, iter_files, parse_source, relative_posix
 
 __all__ = [
     "DEFAULT_GENERATE_METHODS",
@@ -59,8 +59,8 @@ DEFAULT_SDK_METHODS: frozenset[tuple[str | None, str]] = frozenset(
     }
 )
 DEFAULT_GENERATE_METHODS: frozenset[str] = frozenset({"generate", "generate_json", "generate_stream", "generate_batch"})
-#: Kept for callers that imported it; enumeration uses ``_core.DEFAULT_EXCLUDE`` (a superset).
-_SKIP_DIRS = frozenset({"__pycache__", ".git", ".venv", "venv", "node_modules", ".tox", "build", "dist"})
+#: Kept for callers that imported it; it is the canonical ``_core.DEFAULT_EXCLUDE``.
+_SKIP_DIRS = DEFAULT_EXCLUDE
 
 
 def python_files(repo_root: Path, scanned: Sequence[str]) -> list[Path]:
@@ -75,7 +75,7 @@ def python_files(repo_root: Path, scanned: Sequence[str]) -> list[Path]:
         if base.is_file() and base.suffix == ".py":
             out.append(base)
             continue
-        out.extend(iter_files(base, ("*.py",), exclude=DEFAULT_EXCLUDE | _SKIP_DIRS))
+        out.extend(iter_files(base, ("*.py",), exclude=DEFAULT_EXCLUDE))
     return sorted(set(out))
 
 
@@ -85,16 +85,21 @@ def _rel(path: Path, repo_root: Path) -> str:
 
 def _parsed(repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str]] = None) -> list[tuple[Path, str, ast.Module]]:
     """``(path, source, tree)`` for every scanned file, parsed once through the shared ``_core`` cache (BOM-safe).
-    A file that cannot be parsed is appended to *unparsed* (``rel:line: why``) instead of raising."""
+    A file that cannot be parsed is appended to *unparsed* (``rel:line: why``); without that list the files are
+    reported by raising ``UnparsedFilesError``, since an unparsed file would otherwise read as one with no LLM calls."""
     out: list[tuple[Path, str, ast.Module]] = []
+    problems: list[str] = []
     for path in python_files(repo_root, scanned):
         try:
             source, tree = parse_source(path)
         except SourceError as exc:
-            if unparsed is not None:
-                unparsed.append(f"{_rel(path, repo_root)}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            problems.append(f"{_rel(path, repo_root)}:{exc.line or 1}: {exc.kind}: {exc.message}")
             continue
         out.append((path, source, tree))
+    if unparsed is not None:
+        unparsed.extend(problems)
+    elif problems:
+        raise UnparsedFilesError("these files could not be parsed, so their LLM calls are unknown:\n  " + "\n  ".join(problems))
     return out
 
 

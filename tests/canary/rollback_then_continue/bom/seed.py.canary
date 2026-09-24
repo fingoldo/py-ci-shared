@@ -1,0 +1,7 @@
+﻿def seed_import(session, rows):
+    for row in rows:
+        try:
+            session.add(row)
+        except Exception:
+            session.rollback()
+    session.commit()

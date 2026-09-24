@@ -335,11 +335,18 @@ def find_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Ite
     :class:`py_ci_shared._core.CorpusError`; an unparsable file is returned as a site whose primitive says so. Use
     :func:`assert_no_reloads_in_code` to also fail on allowlist entries that match nothing.
     """
+    return _reloads_in_code(roots, repo_root, allowed=allowed)[0]
+
+
+def _reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = ()) -> "tuple[list[ReloadSite], int]":
+    """``(sites, parsed file count)`` for :func:`find_reloads_in_code`."""
     ok = set(allowed)
     out: list[ReloadSite] = []
+    parsed_count = 0
     for root in roots:
         scan = scan_python(Path(root), min_files=0, root=repo_root, exclude=DEFAULT_EXCLUDE)
         out.extend(s for s in (_unparsed_site(p) for p in scan.unparsed) if (s.path, s.line) not in ok)
+        parsed_count += scan.parsed_count
         for parsed in scan:
             aliases = ImportAliases.from_tree(parsed.tree)
             rel = relative_posix(parsed.path, repo_root)
@@ -351,20 +358,23 @@ def find_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Ite
                 text = _statement_text(parsed.source, node)
                 if (rel, line) not in ok and (rel, text) not in ok:
                     out.append(ReloadSite(rel, line, prim, text=text))
-    return out
+    return out, parsed_count
 
 
-def assert_no_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = ()) -> None:
-    """Fail on any primitive under *roots* the allowlist does not name, and on an allowlist entry that names nothing."""
+def assert_no_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = (), min_files: int = 1) -> None:
+    """Fail on any primitive under *roots* the allowlist does not name, on an allowlist entry that names nothing, and on
+    fewer than *min_files* parsed files (a scan that lost its subject)."""
     import pytest
 
     allowed = list(allowed)
     roots = list(roots)
-    unexcused = find_reloads_in_code(roots, repo_root, allowed=())
+    unexcused, parsed_count = _reloads_in_code(roots, repo_root, allowed=())
     present = {(s.path, s.line) for s in unexcused} | {(s.path, s.text) for s in unexcused}
     sites = [s for s in unexcused if (s.path, s.line) not in set(allowed) and (s.path, s.text) not in set(allowed)]
     stale = [entry for entry in allowed if tuple(entry) not in present]
     problems: list[str] = []
+    if parsed_count < min_files:
+        problems.append(f"only {parsed_count} file(s) parsed under {[str(r) for r in roots]}; expected at least {min_files}. The scan lost its subject.")
     if sites:
         problems.append(f"{len(sites)} module reload/unload site(s) in production code:\n  " + "\n  ".join(f"{s}  {s.text}" for s in sites))
     if stale:

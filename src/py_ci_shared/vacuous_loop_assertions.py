@@ -240,6 +240,11 @@ def find_floorless_loops(
     absolute POSIX path for a file outside it. An unreadable or unparsable file raises
     :class:`py_ci_shared._core.UnparsedFilesError` unless ``allow_unparsed=True``.
     """
+    return _floorless_loops(files, repo_root, allow_unparsed=allow_unparsed)[0]
+
+
+def _floorless_loops(files: Iterable[Path], repo_root: Path, *, allow_unparsed: bool = False) -> "tuple[list[FloorlessLoop], int]":
+    """``(loops, parsed file count)`` for :func:`find_floorless_loops`."""
     scan = scan_python([Path(p).resolve() for p in files], min_files=0, root=Path(repo_root).resolve())
     if scan.unparsed and not allow_unparsed:
         scan.check_unparsed()
@@ -266,7 +271,7 @@ def find_floorless_loops(
         for name, lineno in sorted(per_file, key=lambda t: t[1]):
             seen[name] = seen.get(name, 0) + 1
             out.append(FloorlessLoop(rel, name, lineno, seen[name]))
-    return out
+    return out, scan.parsed_count
 
 
 def _scope_of(key: str) -> str:
@@ -278,11 +283,16 @@ def assert_no_new_floorless_loop(
     files: Iterable[Path],
     repo_root: Path,
     baseline_path: Path,
+    *,
+    min_files: int = 1,
 ) -> None:
-    """Fail on a floorless loop not already in *baseline_path*, and on a test file that cannot be parsed. Ratchet,
-    not a gate: the baseline records what was already true, and the list can only shrink from here."""
+    """Fail on a floorless loop not already in *baseline_path*, on a test file that cannot be parsed, and on fewer
+    than *min_files* parsed files. Ratchet, not a gate: the baseline records what was already true, and the list can
+    only shrink from here."""
     accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8-sig")) if baseline_path.exists() else {}
-    found = find_floorless_loops(files, repo_root)
+    found, parsed_count = _floorless_loops(files, repo_root)
+    if parsed_count < min_files:
+        raise AssertionError(f"only {parsed_count} test file(s) parsed; expected at least {min_files}. The scan lost its subject.")
     # Counted per function: a function may keep as many floorless loops as the baseline lists for it. That is what
     # both key forms can express, and it survives edits that move a loop without adding one.
     allowed: dict[str, int] = {}

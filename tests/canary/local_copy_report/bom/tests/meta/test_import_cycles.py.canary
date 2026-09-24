@@ -1,0 +1,6 @@
+﻿import ast
+
+
+def test_seed_no_cycles(tree):
+    for node in ast.walk(tree):
+        assert node

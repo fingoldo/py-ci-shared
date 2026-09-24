@@ -14,15 +14,11 @@ inputs:
     required: true
   pyutilz-ref:
     description: >-
-      Optional pyutilz commit SHA to pin. Without this, "Clone pyutilz" always resolves to
-      whatever pyutilz's default branch tip is AT RUN TIME -- the calling project's own pinned-SHA
-      documentation (a bump commit + a comment citing it) has no effect on this action, since
-      nothing here ever reads it; every caller silently installs a moving target. Leave unset for
-      that (pre-existing) unpinned behavior; set it to pin, matching the explicit
-      "git -C pyutilz checkout <sha>" line every OTHER pyutilz-cloning workflow in the calling
-      project already carries next to this same clone step.
+      pyutilz commit to install. Defaults to the commit this repo's own `[dev]` extra pins (tests hold the two equal),
+      so an unset input installs a known commit rather than whatever pyutilz's default branch holds at run time. Set
+      it to the SHA your project pins, or to "master" to take the tip on purpose.
     required: false
-    default: ""
+    default: "3be55c1512ad73a6dab628b4a79eeecbc31212a1"
 
 runs:
   using: composite

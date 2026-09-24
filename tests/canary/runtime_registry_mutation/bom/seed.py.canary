@@ -1,0 +1,5 @@
+﻿SEED_REGISTRY = {}
+
+
+def seed_register_late(k, v):
+    SEED_REGISTRY[k] = v

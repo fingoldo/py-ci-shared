@@ -1,0 +1,9 @@
+import os
+
+import numpy as np
+
+
+def seed_save(path, a):
+    tmp = f"{path}.tmp.npy"
+    np.save(tmp, a)
+    os.replace(tmp, path)

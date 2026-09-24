@@ -1,0 +1,5 @@
+import json
+
+
+def test_seed():
+    assert json.dumps(1) == "1"

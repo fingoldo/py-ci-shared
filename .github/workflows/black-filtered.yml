@@ -7,10 +7,20 @@ name: Black (filtered, reusable)
 on:
   workflow_call:
     inputs:
+      py-ci-shared-ref:
+        description: >-
+          Ref of py-ci-shared to take configs, RUFF_VERSION and the package from. The default is the release this
+          workflow file belongs to (bumped with the version in every release commit), so a caller pinned to a tag or SHA
+          gets that release's config rather than master's. A ref that cannot be fetched falls back to master with a warning.
+        type: string
+        default: "v1.17.0"
       check-path:
         description: 'Path(s) to check, e.g. "src/mlframe" or "."'
         required: true
         type: string
+
+permissions:
+  contents: read
 
 jobs:
   black:
@@ -40,8 +50,17 @@ jobs:
         # 404s, since this repo has no branch by that name). Found 2026-07-18. Track this repo's
         # own default branch instead of pinning to any ref at all: no ref to drift out of sync,
         # and no dependency on a context variable that doesn't mean what it looks like it means.
+        # Since then: install at inputs.py-ci-shared-ref, which defaults to the release this workflow file belongs to, so
+        # a pinned caller no longer runs master's code under a pinned workflow. This repo's own CI installs its checkout.
+        env:
+          PCS_REF: ${{ inputs.py-ci-shared-ref }}
         run: |
-          uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ]; then
+            uv pip install --system -e .
+          elif ! uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@${PCS_REF}"; then
+            echo "::warning::py-ci-shared ref ${PCS_REF} could not be installed; using master instead of the pinned release"
+            uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+          fi
 
       # check-path can be multiple space-separated paths (per its "Path(s)" description) --
       # word-splitting is the intended behavior here, not a bug.

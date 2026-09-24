@@ -5,12 +5,9 @@ from __future__ import annotations
 import sys
 import re
 import textwrap
-from pathlib import Path
 from typing import Literal
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from py_ci_shared.fail_message_quality import ACTIONABLE_RE, assert_fail_messages_actionable, fail_message_problems
 from py_ci_shared.package_doctests import assert_package_doctests_pass, run_package_doctests

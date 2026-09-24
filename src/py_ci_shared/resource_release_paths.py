@@ -77,8 +77,10 @@ def _release_calls(nodes: Iterable[ast.AST], release: str) -> Iterator[ast.Call]
 
 
 def _receiver(call: ast.Call) -> str:
-    assert isinstance(call.func, ast.Attribute)
-    return ast.unparse(call.func.value)
+    func = call.func
+    if not isinstance(func, ast.Attribute):
+        raise TypeError(f"release call without a receiver at line {call.lineno}")
+    return ast.unparse(func.value)
 
 
 def _protected_calls(tree: ast.AST, release: str) -> list[ast.Call]:

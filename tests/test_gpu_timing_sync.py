@@ -6,10 +6,7 @@ needs a CUDA device (or even cupy/numba installed): the check is a pure AST scan
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 

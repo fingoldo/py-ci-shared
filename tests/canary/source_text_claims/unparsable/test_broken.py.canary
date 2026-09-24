@@ -1,0 +1,5 @@
+import inspect
+
+
+def test_broken(:
+    assert 'x' in inspect.getsource(json)

@@ -16,7 +16,7 @@ Repro scripts live in the session scratchpad (`repro.py`, `rs/`, `tz/`, `r1..r6.
 
 Test gaps: `test_mutation_teeth.py` covers none of MT-1, BOM, zero mutants, generator/empty `lines`, `sweep_files(jobs>1)`, twin fan-out, `wider_net_note` replay, fd-1 worker writes. `_mutation_worker` has no test file; `test_teeth_sweep.py` covers only `_apply`.
 
-### Proposed split of mutation_teeth.py (2099 LOC → 5 modules, re-exported)
+#### Proposed split of mutation_teeth.py (2099 LOC → 5 modules, re-exported)
 
 1. `_mutation_model.py` (~230): HARNESS_VERSION, _UNJUSTIFIED, REFRESH_FLAG, _COPY_IGNORE, _CONTAINER_SAMPLE, MutationHarnessError, Mutant, MutationRun, (de)serialisers.
 2. `_mutation_operators.py` (~720): operator tables, range/span helpers, candidate generators, `generate_mutants`.

@@ -8,12 +8,10 @@ seed/compare/refresh/report cycle around real file I/O.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-import orjson
 import pytest
 
 from py_ci_shared.loc_budget import (
@@ -39,7 +37,7 @@ class TestAssertNoNewOversizedFile:
             assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, refresh=True)
 
         assert baseline.exists()
-        seeded = orjson.loads(baseline.read_bytes())
+        seeded = json.loads(baseline.read_text(encoding="utf-8"))
         assert seeded == {"big.py": 20}
 
     def test_file_under_limit_never_flagged(self, tmp_path):
@@ -51,7 +49,7 @@ class TestAssertNoNewOversizedFile:
 
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_oversized_file(files=[small], root=src, baseline_path=baseline, limit=10, refresh=True)
-        assert orjson.loads(baseline.read_bytes()) == {}
+        assert json.loads(baseline.read_text(encoding="utf-8")) == {}
 
     def test_unchanged_tree_passes_after_seeding(self, tmp_path):
         src = tmp_path / "src"
@@ -136,7 +134,7 @@ class TestAssertNoNewOversizedFile:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
 
-        assert orjson.loads(baseline.read_bytes()) == {"big.py": 20}
+        assert json.loads(baseline.read_text(encoding="utf-8")) == {"big.py": 20}
 
 
 class TestRegisterRefreshOption:
@@ -175,7 +173,7 @@ class TestAuditRegressions:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_oversized_file(files=[big], root=tmp_path, baseline_path=baseline, limit=10)
         monkeypatch.delenv("PY_CI_SHARED_REFRESH")
-        assert orjson.loads(baseline.read_bytes()) == {"big.py": 20}
+        assert json.loads(baseline.read_text(encoding="utf-8")) == {"big.py": 20}
         assert_no_new_oversized_file(files=[big], root=tmp_path, baseline_path=baseline, limit=10)
 
     def test_an_unreadable_file_fails_rather_than_counting_zero(self, tmp_path):
