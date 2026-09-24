@@ -268,9 +268,10 @@ def find_dead_keys(
     source_text: str,
     *,
     call_patterns: Sequence[str] = (
-        r"l10n\.([A-Za-z]\w*)",
-        r"AppLocalizations\.of\([^)]*\)!?\.([A-Za-z]\w*)",
-        r"localizations\.([A-Za-z]\w*)",
+        # `\s*` around the dot: dart format wraps a long chain as `l10n\n    .key`; `[!?]?` accepts `of(context)?.key`.
+        r"l10n\s*\.\s*([A-Za-z]\w*)",
+        r"AppLocalizations\.of\([^)]*\)[!?]?\s*\.\s*([A-Za-z]\w*)",
+        r"localizations\s*\.\s*([A-Za-z]\w*)",
     ),
     allowed: Iterable[str] = (),
 ) -> list[str]:

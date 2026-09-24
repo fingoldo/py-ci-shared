@@ -658,3 +658,11 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `CANARY-23` | randomly_seed_guard unregistered |
 | **RESOLVED** | Med | `CANARY-24` | phantom_code_references flagged real dotted paths of installed dependencies |
 | **RESOLVED** | Med | `CANARY-25` | test_partition_reachability read a subshell's closing paren as part of a project name |
+| **RESOLVED** | Med | `NEW-25` | upstream Dart scanner file-size |
+| **RESOLVED** | Med | `NEW-26` | upstream Dart scanner empty-catch |
+| **RESOLVED** | Med | `NEW-27` | upstream Dart scanner source-text-assertions |
+| **RESOLVED** | Med | `NEW-28` | upstream Dart scanner import-cycles |
+| **RESOLVED** | Med | `NEW-29` | upstream Dart scanner tests-without-assertions |
+| **RESOLVED** | Med | `NEW-30` | upstream Dart scanner timed-dismissal |
+| **RESOLVED** | Med | `NEW-31` | upstream Dart scanner double-error-reports |
+| **RESOLVED** | Med | `NEW-32` | upstream Dart scanner unused-test-seams |

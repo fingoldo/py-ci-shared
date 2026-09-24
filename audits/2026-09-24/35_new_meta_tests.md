@@ -313,6 +313,62 @@ the pyutilz `code_audit` scanner (run via `code_audit_meta`).
 - **Effort:** S
 - **Priority:** P3
 
+### NEW-25 (Med) -- upstream Dart scanner file-size
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_file_size(files, read, ...)`: max_lines=1000 kwarg, keyed by path; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: flutter_app_core 0/0, polyvocab_app 4/4 (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestFileSize, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-26 (Med) -- upstream Dart scanner empty-catch
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_empty_catch(files, read, ...)`: `catch (_)`/`catch (_, _)` with an empty or comment-only body, content-hash keys via _rekey; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: flutter_app_core 4/4, polyvocab_app 3/3 (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestEmptyCatch, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-27 (Med) -- upstream Dart scanner source-text-assertions
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_source_text_assertions(files, read, ...)`: File(/Directory( ... readAsString/readAsLines in test files; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: 0/0 in both (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestSourceTextAssertions, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-28 (Med) -- upstream Dart scanner import-cycles
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_import_cycles(files, read, ...)`: `import` and `export`, either quote, leading whitespace, block comments stripped; `package=`/`lib_root=` kwargs, with package_name() reading pubspec.yaml BOM-safe; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: flutter_app_core 1/1, polyvocab_app 4/4 (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestImportCycles, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-29 (Med) -- upstream Dart scanner tests-without-assertions
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_tests_without_assertions(files, read, ...)`: paren-matched test/testWidgets blocks, comments stripped so a commented-out expect is no assertion, duplicate names keyed `#n` instead of overwritten; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: flutter_app_core 0/0, polyvocab_app 3/3 (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestTestsWithoutAssertions, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-30 (Med) -- upstream Dart scanner timed-dismissal
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_timed_dismissal(files, read, ...)`: Future.delayed ... Navigator.of(...).pop( outside comments; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: 0/0 in both (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestTimedDismissal, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-31 (Med) -- upstream Dart scanner double-error-reports
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_double_error_reports(files, read, ...)`: logger_call=/recorder_call= kwargs (defaults AppLog.error / ErrorService.recordError), string-aware comment strip; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: 0/0 in both (local/upstream, identical); regression tests: tests/test_dart_scanners_upstreamed.py::TestDoubleErrorReports, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
+### NEW-32 (Med) -- upstream Dart scanner unused-test-seams
+
+**Disposition:** RESOLVED -- `py_ci_shared.dart_scanners.scan_unused_test_seams(files, read, ...)`: @visibleForTesting members absent from the test_files= corpus, keyed rel::name; files from `dart_files_under`, read through `dart_reader` (_core.read_source); parity with the local tool/meta/scanners.py copy, run over both worktrees: 0/0 in both (local/upstream, identical); unused-l10n-keys is covered by arb_checks.find_dead_keys, extended to count `l10n` chains split across lines and `?.key` calls (tests/test_arb_checks.py::TestRegisterAndDeadKeys::test_wrapped_and_null_aware_call_forms_count_as_uses), polyvocab_app 0/0 dead keys; regression tests: tests/test_dart_scanners_upstreamed.py::TestUnusedTestSeams, tests/test_dart_scanners_upstreamed.py::TestPlumbing
+
+- **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
+- **Repos:** flutter_app_core, polyvocab_app
+
 ### INFRA-1 (High) -- pytest11 plugin py_ci_shared.pytest_plugin
 
 **Disposition:** RESOLVED -- `[project.entry-points.pytest11] py_ci_shared = "py_ci_shared.pytest_plugin"`: inert without `[tool.py_ci_shared]`; with it, a bare `pytest` (or `--py-ci-gates=on`) gets one `pyproject.toml::<gate>` item per enabled gate that calls the entry with the table's kwargs from the repo root; `--py-ci-refresh` is wired to `_core.refresh` through the env var; a malformed table is a usage error; regression test: tests/test_pytest_plugin.py::test_a_repo_without_the_table_sees_no_gate_items, tests/test_pytest_plugin.py::test_a_bare_run_adds_one_item_per_gate_and_reports_the_gates_text, tests/test_pytest_plugin.py::test_selecting_paths_leaves_gates_out_unless_forced, tests/test_pytest_plugin.py::test_a_malformed_table_is_a_usage_error

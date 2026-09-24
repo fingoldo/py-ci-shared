@@ -37,6 +37,12 @@ Rules and the findings that motivated them (P = glossum, C = flutter_app_core):
   (P01-12, C01-5), an unawaited preferences write (C01-17), and a ``toString()`` that interpolates
   a personal field (C05-10).
 
+Eight more that both Flutter repos carried as local copies: :func:`scan_file_size`, :func:`scan_empty_catch`,
+:func:`scan_source_text_assertions` and :func:`scan_tests_without_assertions` (pass the test files),
+:func:`scan_import_cycles` (``import`` and ``export``), :func:`scan_timed_dismissal`,
+:func:`scan_double_error_reports` and :func:`scan_unused_test_seams`. :func:`dart_files_under`,
+:func:`dart_reader` and :func:`package_name` are the file listing, reader and pubspec lookup those copies shared.
+
 Usage (from a repo's own ``tool/meta/scanners.py``)::
 
     from py_ci_shared.dart_scanners import scan_painter_animation
@@ -46,8 +52,14 @@ Usage (from a repo's own ``tool/meta/scanners.py``)::
 from __future__ import annotations
 
 import hashlib
+import os
+import posixpath
 import re
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
+from pathlib import Path
+
+from ._core import SourceError, read_source
+from ._core.source import PathLike
 
 Reader = Callable[[str], str]
 
@@ -582,6 +594,242 @@ def scan_provider_state_hygiene(
     return _rekey(found)
 
 
+# --------------------------------------------------------------------------------------------
+# Repository plumbing: file listing, reader and package name, so a caller need not copy them.
+
+GENERATED_MARKERS = ("// GENERATED CODE - DO NOT MODIFY BY HAND", "// dart format off")
+
+
+def package_name(repo_root: PathLike) -> str:
+    """The Dart package name from ``pubspec.yaml``, read BOM-safe; raises when there is none to read.
+
+    A scan that recognises first-party ``package:`` imports sees none at all without it, and reports a clean graph.
+    """
+    for line in read_source(Path(repo_root) / "pubspec.yaml").splitlines():
+        match = re.match(r"\s*name:\s*([A-Za-z_][A-Za-z0-9_]*)", line)
+        if match:
+            return match.group(1)
+    raise RuntimeError(f"no `name:` in {Path(repo_root) / 'pubspec.yaml'} - every first-party import would be invisible")
+
+
+def dart_files_under(repo_root: PathLike, root: str, *, generated_prefixes: Sequence[str] = ("lib/src/l10n/generated/",)) -> list[str]:
+    """Every hand-written ``.dart`` file under *root*, repo-relative POSIX paths, in a stable order.
+
+    Skips ``.g.dart``/``.freezed.dart``, files whose first 400 characters carry a :data:`GENERATED_MARKERS` header,
+    and paths starting with one of *generated_prefixes*. A file that cannot be decoded is still listed, so the
+    reader from :func:`dart_reader` raises on it by name instead of the file silently leaving the corpus.
+    """
+    base = Path(repo_root) / root
+    out: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(base):
+        dirnames.sort()
+        for name in sorted(filenames):
+            if not name.endswith(".dart") or name.endswith((".g.dart", ".freezed.dart")):
+                continue
+            full = Path(dirpath) / name
+            try:
+                head = read_source(full)[:400]
+            except SourceError:
+                head = ""
+            if any(marker in head for marker in GENERATED_MARKERS):
+                continue
+            rel = full.relative_to(repo_root).as_posix()
+            if not rel.startswith(tuple(generated_prefixes)):
+                out.append(rel)
+    return out
+
+
+def dart_reader(repo_root: PathLike) -> Reader:
+    """A :data:`Reader` over *repo_root*: BOM stripped, an undecodable file raises ``SourceReadError`` naming it."""
+    return lambda rel: read_source(Path(repo_root) / rel)
+
+
+def _context(source: str, index: int) -> str:
+    """The nearest non-blank line above *index*, trimmed: what a finding's key hashes besides the matched text."""
+    for line in reversed(source[:index].rsplit("\n", 12)[:-1]):
+        if line.strip():
+            return " ".join(line.split())[:60]
+    return ""
+
+
+# --------------------------------------------------------------------------------------------
+# File size, silent catches, source-reading tests, timers, double reports, seams, import cycles
+
+
+def scan_file_size(files: Iterable[str], read: Reader, *, max_lines: int = 1000) -> dict:
+    """Files over *max_lines* lines (newlines + 1), keyed by path: one finding per file, so the path is stable."""
+    found: dict[str, str] = {}
+    for rel in files:
+        lines = read(rel).count("\n") + 1
+        if lines > max_lines:
+            found[rel] = f"{lines} lines"
+    return found
+
+
+# `catch (_) {}` and `catch (_, _) { // comment only }`: a catch that does nothing. One that logs, returns a
+# fallback or rethrows is fine. Only `_` as the bound name, which is how this code base spells "ignored".
+_EMPTY_CATCH = re.compile(r"catch\s*\(\s*_\s*(?:,\s*_\s*)?\)\s*\{(?P<body>(?:[^{}]|//[^\n]*)*?)\}", re.DOTALL)
+
+
+def scan_empty_catch(files: Iterable[str], read: Reader) -> dict:
+    """Catch blocks whose body is empty or comments only: each needs a decision, so a new one must not appear unseen."""
+    found: dict[str, str] = {}
+    for rel in files:
+        source = read(rel)
+        for m in _EMPTY_CATCH.finditer(source):
+            if re.sub(r"//[^\n]*", "", m.group("body")).strip():
+                continue
+            found[_key(found, rel)] = f"catch with an empty body (line {_line_of(source, m.start())}) after `{_context(source, m.start())}`"
+    return _rekey(found)
+
+
+_SOURCE_TEXT_ASSERTION = re.compile(r"(File\(|Directory\()[^\n]*\.(readAsString|readAsLines)")
+
+
+def scan_source_text_assertions(files: Iterable[str], read: Reader) -> dict:
+    """Tests (pass the TEST files) that read source text: they check a line exists, not that the behaviour holds."""
+    found: dict[str, str] = {}
+    for rel in files:
+        source = read(rel)
+        for m in _SOURCE_TEXT_ASSERTION.finditer(source):
+            found[_key(found, rel)] = f"test reads source on it (line {_line_of(source, m.start())}): `{' '.join(m.group(0).split())[:80]}`"
+    return _rekey(found)
+
+
+# Both directives, either quote, leading whitespace: a cycle through a barrel `export` is a cycle too.
+_DIRECTIVE = re.compile(r"""^\s*(?:import|export)\s+['"]([^'"]+)['"]""", re.MULTILINE)
+
+
+def scan_import_cycles(files: Iterable[str], read: Reader, *, package: str, lib_root: str = "lib") -> dict:
+    """Import/export cycles among *files*: one finding per cycle, keyed on its entry file.
+
+    ``package:<package>/x`` resolves to ``<lib_root>/x``, a relative URI against the importer; ``dart:`` and other
+    packages are external. Dart tolerates cycles, which is why nothing else notices the one that turns extracting a
+    package from a move into a rewrite.
+    """
+    prefix = f"package:{package}/"
+    graph: dict[str, set[str]] = {}
+    for rel in files:
+        targets: set[str] = set()
+        for m in _DIRECTIVE.finditer(_strip_comments(read(rel))):
+            uri = m.group(1)
+            if uri.startswith(prefix):
+                targets.add(f"{lib_root}/{uri[len(prefix):]}")
+            elif not uri.startswith(("dart:", "package:")):
+                targets.add(posixpath.normpath(posixpath.join(posixpath.dirname(rel), uri)))
+        graph[rel] = targets
+
+    found: dict[str, str] = {}
+    state: dict[str, str] = {}
+
+    def visit(node: str, stack: list[str]) -> None:
+        if state.get(node) == "done":
+            return
+        if state.get(node) == "open":
+            found[node] = "import cycle: " + " -> ".join([*stack[stack.index(node) :], node])
+            return
+        state[node] = "open"
+        for target in sorted(graph.get(node, ())):
+            if target in graph:
+                visit(target, [*stack, node])
+        state[node] = "done"
+
+    for module in sorted(graph):
+        visit(module, [])
+    return found
+
+
+# expect[A-Z]... covers shared matcher helpers (expectMinTapTargets and friends) that hold the expect() calls.
+_ASSERTION = re.compile(r"\b(expect|expectLater|expect[A-Z]\w*|verify|verifyNever|verifyInOrder|fail)\s*\(")
+
+
+def _test_blocks(source: str) -> Iterator[tuple[str, str, int]]:
+    """``(name, body, line)`` for each ``test(``/``testWidgets(`` call, paren-matched from its opening paren."""
+    for match in re.finditer(r"\b(testWidgets|test)\(", source):
+        start = match.end() - 1
+        body = "(" + _balanced_body(source, start, "(", ")") + ")"
+        name_match = re.search(r"['\"](.+?)['\"]", body, re.DOTALL)
+        yield (name_match.group(1)[:70] if name_match else "?"), body, _line_of(source, start)
+
+
+def scan_tests_without_assertions(files: Iterable[str], read: Reader, *, assertion: re.Pattern[str] = _ASSERTION) -> dict:
+    """Tests (pass the TEST files) with no assertion: a smoke test counted as coverage of what its name claims.
+
+    Keyed ``rel::<test name>``; a second test of the same name in one file gets ``#n`` instead of replacing the
+    first. A commented-out ``expect`` is not an assertion. ``expect(call, returnsNormally)`` is the explicit form.
+    """
+    found: dict[str, str] = {}
+    for rel in files:
+        for name, body, line in _test_blocks(_strip_comments(read(rel))):
+            if assertion.search(body):
+                continue
+            key, n = f"{rel}::{name}", 1
+            while key in found:
+                key, n = f"{rel}::{name}#{n}", n + 1
+            found[key] = f"test contains no assertion (line {line})"
+    return found
+
+
+_TIMED_DISMISS = re.compile(r"Future\.delayed\([^;]{0,400}?Navigator\.of\([^;]{0,200}?\)\.pop\(", re.DOTALL)
+
+
+def scan_timed_dismissal(files: Iterable[str], read: Reader) -> dict:
+    """UI that pops itself on a timer: content on a time limit the user cannot pause or extend (WCAG 2.2.1)."""
+    found: dict[str, str] = {}
+    for rel in files:
+        clean = _strip_comments(read(rel))
+        for m in _TIMED_DISMISS.finditer(clean):
+            found[_key(found, rel)] = f"UI dismissed by an uncontrollable timer (line {_line_of(clean, m.start())}): `{' '.join(m.group(0).split())[:100]}`"
+    return _rekey(found)
+
+
+_CATCH_HEAD = re.compile(r"catch\s*\([^)]*\)\s*\{")
+
+
+def scan_double_error_reports(
+    files: Iterable[str],
+    read: Reader,
+    *,
+    logger_call: str = "AppLog.error",
+    recorder_call: str = "ErrorService.recordError",
+) -> dict:
+    """A catch body calling both *logger_call* and *recorder_call*, when the logger already forwards to the recorder.
+
+    One failure then files two crash-reporter issues, one of them without the stack trace or the reason.
+    """
+    found: dict[str, str] = {}
+    for rel in files:
+        clean = _strip_comments(read(rel))
+        for m in _CATCH_HEAD.finditer(clean):
+            body = _balanced_body(clean, m.end() - 1)
+            if logger_call in body and recorder_call in body:
+                found[_key(found, rel)] = (
+                    f"one failure reported twice, {logger_call} and {recorder_call} in one catch "
+                    f"(line {_line_of(clean, m.start())}) after `{_context(clean, m.start())}`"
+                )
+    return _rekey(found)
+
+
+_TEST_SEAM = re.compile(r"@visibleForTesting\s*\n\s*[^\n]*?\b(\w+)\s*[;(=]")
+_NOT_A_MEMBER_NAME = frozenset({"final", "const", "static", "void", "int", "bool", "String"})
+
+
+def scan_unused_test_seams(files: Iterable[str], read: Reader, *, test_files: Iterable[str]) -> dict:
+    """``@visibleForTesting`` members in *files* whose name no file in *test_files* mentions; keyed ``rel::name``.
+
+    A seam exists to make something checkable; one no test uses bought nothing and is maintained as public API.
+    """
+    corpus = "\n".join(read(rel) for rel in test_files)
+    found: dict[str, str] = {}
+    for rel in files:
+        for m in _TEST_SEAM.finditer(read(rel)):
+            name = m.group(1)
+            if name in _NOT_A_MEMBER_NAME or re.search(r"\b" + re.escape(name) + r"\b", corpus):
+                continue
+            found[f"{rel}::{name}"] = "@visibleForTesting member used by no test"
+    return found
+
+
 SCANNERS: dict[str, Callable[..., dict]] = {
     "painter-animation": scan_painter_animation,
     "repaint-isolation": scan_repaint_isolation,
@@ -590,4 +838,12 @@ SCANNERS: dict[str, Callable[..., dict]] = {
     "non-directional-layout": scan_non_directional_layout,
     "parse-serialize-catch": scan_parse_serialize_catch,
     "provider-state-hygiene": scan_provider_state_hygiene,
+    "file-size": scan_file_size,
+    "empty-catch": scan_empty_catch,
+    "source-text-assertions": scan_source_text_assertions,
+    "import-cycles": scan_import_cycles,
+    "tests-without-assertions": scan_tests_without_assertions,
+    "timed-dismissal": scan_timed_dismissal,
+    "double-error-reports": scan_double_error_reports,
+    "unused-test-seams": scan_unused_test_seams,
 }

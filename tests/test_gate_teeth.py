@@ -273,7 +273,7 @@ EXEMPT: dict[str, str] = {
     "pytest_addopts_path_runs": "compares hook/workflow pytest commands against addopts; CI configuration",
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
-    "dart_scanners": "Dart/Flutter source scanners driven by a caller-supplied reader; covered by test_dart_scanners.py",
+    "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
     "deferred_drift": "counts DEFERRED list entries against a baseline; bookkeeping",
     "deletion_gates": "library of git-diff deletion checks; needs git history",
     "disposition_test_references": "cross-references audit dispositions against test files; subject is repo layout",

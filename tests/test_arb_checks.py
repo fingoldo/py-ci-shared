@@ -112,6 +112,11 @@ class TestRegisterAndDeadKeys:
         c = _catalogues(tmp_path, en={"used": "U"})
         assert find_dead_keys(c, "en", "AppLocalizations.of(context)!.used") == []
 
+    def test_wrapped_and_null_aware_call_forms_count_as_uses(self, tmp_path):
+        c = _catalogues(tmp_path, en={"wrapped": "W", "nullAware": "N", "dead": "D"})
+        source = "final a = l10n\n    .wrapped;\nfinal b = AppLocalizations.of(\n  context,\n)?.nullAware;\n"
+        assert find_dead_keys(c, "en", source) == ["dead"]
+
     def test_allowed_key_is_not_dead(self, tmp_path):
         c = _catalogues(tmp_path, en={"generatorOnly": "G"})
         assert find_dead_keys(c, "en", "", allowed=["generatorOnly"]) == []
