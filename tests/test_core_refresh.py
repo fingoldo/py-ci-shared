@@ -91,3 +91,16 @@ def test_register_refresh_options_is_idempotent():
     register_refresh_options(parser, [FLAG])
     register_refresh_options(parser, [FLAG, "--refresh-other-baseline"])
     assert parser.names == [REFRESH_OPTION, FLAG, "--refresh-other-baseline"]
+
+
+def test_registering_after_the_plugin_group_on_a_real_pytest_parser_is_not_an_error():
+    # The pytest11 plugin registers --py-ci-refresh in its own group; a consumer conftest then calls a gate's
+    # register_refresh_option(parser) on the root parser. argparse reports that cross-group clash as ArgumentError,
+    # not ValueError, and it used to stop every test run of the consumer.
+    from _pytest.config.argparsing import Parser
+
+    parser = Parser()
+    register_refresh_options(parser.getgroup("py-ci-shared"))
+    register_refresh_options(parser, [FLAG])
+    ns = parser.parse_known_args([FLAG])
+    assert getattr(ns, FLAG.lstrip("-").replace("-", "_")) is True

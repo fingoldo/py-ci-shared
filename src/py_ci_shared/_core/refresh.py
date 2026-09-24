@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from typing import Any, Optional
@@ -104,5 +105,7 @@ def register_refresh_options(parser: Any, flags: Iterable[str] = (), *, help_suf
 def _add(parser: Any, name: str, **kwargs: Any) -> None:
     try:
         parser.addoption(name, **kwargs)
-    except ValueError:
-        pass  # already registered (a repo with more than one conftest.py in the chain)
+    except (ValueError, argparse.ArgumentError):
+        # Already registered: pytest raises ValueError for a clash inside one group, argparse raises ArgumentError for one
+        # across groups (this package's pytest11 plugin registers --py-ci-refresh in its own group before any conftest).
+        pass
