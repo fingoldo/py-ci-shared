@@ -952,6 +952,21 @@ def test_no_order_losing_row_filters():
     assert not find_order_losing_filters(SOURCE_FILES, REPO_ROOT)
 ```
 
+## Arguments a wrapper drops (`kwarg_forwarding`)
+
+Three finders for optional arguments lost between a wrapper and what it wraps, each keyed so a repository can allow-list the deliberate ones with a reason:
+
+- `find_dropped_variant_params(files, root, delegates=...)`: a variant (`fit_stacked` of `fit`, or any pair in `delegates={"path::variant": "path::base"}`) that neither forwards nor `**`-passes an optional parameter of its base.
+- `find_available_but_not_passed(files, root, delegates=...)`: a call that omits an optional `None`-default parameter `p` while the caller has a parameter named `p`.
+- `find_delegate_state_loss(files, root, methods=...)`: a method that builds `obj = SameClass(...)` and calls `obj.m()` without copying a private attribute that `m` (or anything it calls with the object) reads, that nothing on its path sets, and that some code injects onto the object from outside. Methods bound after the class body (`Cls.m = f`) and functions annotated `self: "Cls"` count as methods.
+
+```python
+from py_ci_shared.kwarg_forwarding import find_dropped_variant_params
+
+def test_variants_forward_their_bases_options():
+    assert not find_dropped_variant_params(SOURCE_FILES, REPO_ROOT, delegates=DELEGATES)
+```
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. Since 1.17.0 both configs also ship inside the installed package: `py-ci-shared config-path ruff-base` prints the real path, so `export PY_CI_SHARED_DIR="$(dirname "$(dirname "$(py-ci-shared config-path ruff-base)")")"` (the package directory, which holds `configs/`) works without a clone. Ruff needs a real filesystem path, resolved at ruff-invocation time, and it DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
