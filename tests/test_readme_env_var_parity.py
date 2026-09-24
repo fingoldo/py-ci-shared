@@ -396,3 +396,51 @@ class TestRegisterRefreshOption:
         parser = self._make_parser()
         register_refresh_option(parser)
         register_refresh_option(parser)
+
+
+def test_find_env_vars_read_resolves_string_constants(tmp_path):
+    f = _write(tmp_path, "c.py", """
+import os
+
+_ENV_VAR = "PROJ_ALLOW_UNSAFE"
+_OTHER: str = "PROJ_OTHER"
+_TWICE = "PROJ_A"
+_TWICE = "PROJ_B"
+
+def f():
+    return os.environ.get(_ENV_VAR), os.getenv(_OTHER), os.environ.get(_TWICE), os.environ[_ENV_VAR]
+""")
+    assert find_env_vars_read([f]) == {"PROJ_ALLOW_UNSAFE", "PROJ_OTHER"}
+
+
+def test_find_env_vars_read_project_reader_funcs(tmp_path):
+    f = _write(tmp_path, "d.py", """
+from proj.env import env_flag, env_int
+from proj import env
+
+_NAME = "PROJ_CONST"
+
+def f():
+    return env_flag("PROJ_SWITCH"), env_int("PROJ_N", 5), env.env_float(_NAME, 0.5), unrelated("NOT_A_VAR")
+""")
+    assert find_env_vars_read([f]) == set()
+    assert find_env_vars_read([f], reader_funcs={"env_flag", "env_int", "env_float"}) == {"PROJ_SWITCH", "PROJ_N", "PROJ_CONST"}
+
+
+def test_find_env_var_reads_first_site_and_default(tmp_path):
+    from py_ci_shared.readme_env_var_parity import find_env_var_reads
+
+    f = _write(tmp_path, "e.py", """
+import os
+
+def f():
+    a = os.environ.get("PROJ_A", "0.05")
+    b = env_int("PROJ_B", 32, minimum=2)
+    c = os.environ.get("PROJ_A")
+    return a, b, c
+""")
+    reads = find_env_var_reads([f], reader_funcs={"env_int"})
+    assert reads["PROJ_A"][1:] == (4, "'0.05'")
+    assert reads["PROJ_B"][1:] == (5, "32")
+    assert reads["PROJ_A"][0].name == "e.py"
+
