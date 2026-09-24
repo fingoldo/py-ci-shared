@@ -623,6 +623,17 @@ def test_metrics_are_not_scored_on_survivors_only():
 
 `allowed` maps `path::function` to the reason that site scores survivors on purpose; stale and empty-reason entries fail.
 
+## Tests that concede a defect and pin it (`conceded_defect_pins`)
+
+A test whose docstring or leading comment concedes the behaviour is wrong - "does not perfectly reconstruct", "is a no-op", "lossy by design", "known defect" - while its body pins that behaviour with exact equality turns the defect into a contract: the fix turns it red and gets reverted. `find_conceded_defect_pins(files, repo_root)` lists them. The same words appear in honest tests (a docstring explaining why a value is lossy while asserting a bound), so this is a reading list with a count ratchet, not a per-site failure. A deliberately pinned defect lives in a test named `test_known_defect_<id>_...`, which the scan accepts.
+
+```python
+from py_ci_shared.conceded_defect_pins import find_conceded_defect_pins
+
+def test_conceded_defect_pins_do_not_grow():
+    assert len(find_conceded_defect_pins(TEST_FILES, REPO_ROOT)) <= RECORDED_COUNT
+```
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
