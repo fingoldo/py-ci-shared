@@ -148,12 +148,12 @@ def test_a_closed_or_data_round_built_in_pieces_is_not(tmp_path, audits, line):
 def test_an_unparsable_file_is_reported_and_fails_the_assert(tmp_path, audits):
     bad = tmp_path / "bad.py"
     bad.write_text("def f(:\n", encoding="utf-8")
-    nul = tmp_path / "nul.py"
+    nul = tmp_path / "nul_byte.py"  # not "nul.py": Windows 10 resolves that name to the NUL device
     nul.write_bytes(b"x = 1\x00\n")
     good = tmp_path / "good.py"
     good.write_text("X = 1\n", encoding="utf-8")
     problems = find_open_round_literals([bad, nul, good], [audits], root=tmp_path)
-    assert [p.split(":")[0] for p in problems] == ["bad.py", "nul.py"] and all("unparsable" in p for p in problems)
+    assert [p.split(":")[0] for p in problems] == ["bad.py", "nul_byte.py"] and all("unparsable" in p for p in problems)
     with pytest.raises(pytest.fail.Exception, match="could not be parsed"):
         assert_no_open_round_paths([bad, good], [audits], root=tmp_path)
     assert_no_open_round_paths([good], [audits], root=tmp_path)
