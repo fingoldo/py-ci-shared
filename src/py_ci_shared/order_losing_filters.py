@@ -15,20 +15,24 @@ repository's allow table with the reason.
 
 Usage from a repository's meta tests::
 
-    from py_ci_shared.order_losing_filters import find_order_losing_filters
+    from py_ci_shared.order_losing_filters import assert_no_order_losing_filters
 
     def test_no_order_losing_row_filters():
-        found = {f.key for f in find_order_losing_filters(SOURCE_FILES, REPO_ROOT)}
-        assert found <= set(ALLOWED), sorted(found - set(ALLOWED))
+        assert_no_order_losing_filters(SOURCE_FILES, REPO_ROOT, ALLOWED)
+
+Sources are read the way the interpreter reads them (a BOM is fine), and a file that cannot be read or parsed is
+reported rather than skipped: a filter inside it would otherwise pass unseen.
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-__all__ = ["OrderLosingFilter", "find_order_losing_filters"]
+from ._core import scan_python
+
+__all__ = ["OrderLosingFilter", "assert_no_order_losing_filters", "find_order_losing_filters"]
 
 _MEMBERSHIP_CALLS = frozenset({"isin", "is_in", "in1d"})
 
@@ -87,6 +91,7 @@ def _positional_indices(func: ast.AST) -> set[str]:
 
 def _selections(func: ast.AST, masks: dict[str, set[str]]):
     """``(lineno, mask)`` for every row selection by one of ``masks`` (``.filter(m)``, ``x[m]``, ``x.loc[m]``)."""
+
     def mask_of(arg: ast.AST):
         """The mask name ``arg`` is, or wraps in a call such as ``pl.Series(mask)``; None otherwise."""
         if isinstance(arg, ast.Call) and len(arg.args) == 1:
@@ -102,6 +107,7 @@ def _selections(func: ast.AST, masks: dict[str, set[str]]):
 
 def _functions(tree: ast.Module):
     """``(qualified name, node)`` for every function, with its enclosing classes and functions."""
+
     def walk(node: ast.AST, prefix: str):
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -112,18 +118,21 @@ def _functions(tree: ast.Module):
                 yield from walk(child, f"{prefix}{child.name}.")
             else:
                 yield from walk(child, prefix)
+
     yield from walk(tree, "")
 
 
-def find_order_losing_filters(files: Iterable[Path], repo_root: Path) -> list[OrderLosingFilter]:
-    """Every row selection by a mask built from an index the same function also selects positionally, keyed ``path::function::mask``."""
+def find_order_losing_filters(files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False) -> list[OrderLosingFilter]:
+    """Every row selection by a mask built from an index the same function also selects positionally, keyed ``path::function::mask``.
+
+    Raises ``UnparsedFilesError`` for a file that cannot be read or parsed (unless *allow_unparsed*), and
+    ``EmptyScanError`` when fewer than *min_files* files parsed.
+    """
+    result = scan_python(files, root=Path(repo_root).resolve(), min_files=min_files)
+    result.assert_ok(allow_unparsed=allow_unparsed)
     out: list[OrderLosingFilter] = []
-    for path in files:
-        try:
-            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-        except (OSError, SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
+    for parsed in result.files:
+        tree, rel = parsed.tree, parsed.rel
         seen: set[tuple[str, str]] = set()
         for scope, func in _functions(tree):
             positional = _positional_indices(func)
@@ -132,5 +141,27 @@ def find_order_losing_filters(files: Iterable[Path], repo_root: Path) -> list[Or
                 if (scope, mask) in seen:
                     continue
                 seen.add((scope, mask))
-                out.append(OrderLosingFilter(rel, scope, lineno, mask, "a mask built from an index that also selects rows positionally keeps frame order, not index order"))
+                out.append(
+                    OrderLosingFilter(
+                        rel, scope, lineno, mask, "a mask built from an index that also selects rows positionally keeps frame order, not index order"
+                    )
+                )
     return out
+
+
+def assert_no_order_losing_filters(
+    files: Iterable[Path],
+    repo_root: Path,
+    allowed: Mapping[str, str] | None = None,
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+) -> None:
+    """Fail on an order-losing row filter not in *allowed* (key -> reason), or on a stale or reasonless entry."""
+    allowed = allowed or {}
+    found = {f.key: f for f in find_order_losing_filters(files, repo_root, min_files=min_files, allow_unparsed=allow_unparsed)}
+    problems = [repr(found[k]) for k in sorted(set(found) - set(allowed))]
+    problems += [f"stale entry {k}: no such row filter any more" for k in sorted(set(allowed) - set(found))]
+    problems += [f"entry {k} gives no reason" for k in sorted(k for k, v in allowed.items() if k in found and not str(v).strip())]
+    if problems:
+        raise AssertionError("row filters that lose the index order:\n  " + "\n  ".join(problems))

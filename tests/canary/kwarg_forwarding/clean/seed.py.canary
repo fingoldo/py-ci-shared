@@ -1,0 +1,6 @@
+def seed(df, val_df=None):
+    return df
+
+
+def seed_stacked(df, val_df=None):
+    return seed(df, val_df=val_df)

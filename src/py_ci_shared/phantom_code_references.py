@@ -40,6 +40,8 @@ Deliberately dependency-light: ``pytest`` is imported lazily, matching the packa
 from __future__ import annotations
 
 import ast
+import functools
+import importlib
 import io
 import json
 import re
@@ -357,6 +359,54 @@ def _comment_lines(path: Path) -> list[tuple[int, str]]:
     return _comment_lines_checked(path)[0]
 
 
+def _import_or_none(name: str) -> object:
+    """The module ``name``, or None when importing it raises anything (a module may even call ``sys.exit``)."""
+    try:
+        return importlib.import_module(name)
+    except (Exception, SystemExit):
+        return None
+
+
+@functools.cache
+def _resolves_by_import(dotted: str) -> bool:
+    """Whether ``a.b.c`` names a real object of an installed module or of ``builtins``: import the longest importable
+    prefix, then ``getattr`` the rest. Nothing runs beyond the import itself, and whatever the import raises counts
+    as "does not resolve"."""
+    import builtins
+
+    parts = dotted.split(".")
+    obj: object = None
+    rest: list[str] = []
+    for i in range(len(parts), 0, -1):
+        obj = _import_or_none(".".join(parts[:i]))
+        if obj is not None:
+            rest = parts[i:]
+            break
+    else:
+        if not hasattr(builtins, parts[0]):
+            return False
+        obj, rest = getattr(builtins, parts[0]), parts[1:]
+    try:
+        for name in rest:
+            obj = getattr(obj, name)
+    except Exception:  # a property or a module __getattr__ may raise anything
+        return False
+    return True
+
+
+_VIOLATION_KEY_RE = re.compile(r"^(?P<rel>.+?):\d+: (?:`(?P<token>[^`\n]*)`|(?P<kind>[a-z_]+):)")
+
+
+def _violation_key(entry: str) -> str:
+    """The baseline identity of a violation: ``<rel>::<token>`` (or ``<rel>::<kind>`` for an unreadable file), with
+    no line number and no message wording, so a moved line or a reworded message keeps its entry. An entry
+    already in key form is returned unchanged."""
+    m = _VIOLATION_KEY_RE.match(entry)
+    if m is None:
+        return entry
+    return f"{m.group('rel')}::{m.group('token') if m.group('token') is not None else '<' + m.group('kind') + '>'}"
+
+
 def _test_file_index(repo_root: Path) -> "tuple[set[str], set[str]]":
     """``(basenames, repo-relative paths)`` of the test files git would commit under *repo_root* (venvs, build
     output and other excluded directories never count as the file a comment names)."""
@@ -373,13 +423,18 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
     not this repo's to declare; a member of a closed repo class is). Only the first member of ``a.b.c`` is judged.
     A test-file token with a directory must match that repo-relative path. A trailing ``()`` or ``(`` is stripped.
     Tokens containing anything but identifier characters, dots and a call suffix are prose and skipped. A file
-    that cannot be read or parsed is reported as ``<rel>:<line>: unparsable: ...``."""
+    that cannot be read or parsed is reported as ``<rel>:<line>: unparsable: ...``.
+
+    A dotted token whose head this repo does not declare (a stdlib module, a builtin, an installed dependency such as
+    ``pyutilz.llm.get_llm_provider``) is real when it resolves by import, attribute by attribute, so a misspelled
+    ``os.path.joinn`` is reported and an external path a comment cites is not."""
     import builtins
     import sys
 
     files = list(files)
     # Python's own names resolve without a declaration: builtins (`ValueError`) and stdlib modules (`ftplib.FTP`).
-    known = set(declared) | set(extra_known) | _NEVER_REFERENCES | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
+    repo_known = set(declared) | set(extra_known) | _NEVER_REFERENCES
+    known = repo_known | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
     test_names, test_paths = _test_file_index(repo_root)
     violations: list[str] = []
     for path in files:
@@ -403,6 +458,13 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
                 if not im:
                     continue
                 head, member = im.group("head"), im.group("member")
+                if member is not None and head not in repo_known:
+                    # Not this repo's name: an installed module or a builtin decides, attribute by attribute.
+                    if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
+                        continue
+                    if head in known:
+                        violations.append(f"{rel}:{lineno}: `{token}` does not resolve by import")
+                        continue
                 repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)
                 if head in known and (member is None or f"{head}.{member}" in known):
                     continue
@@ -467,15 +529,21 @@ def assert_no_phantom_code_references(
     extra_known: Iterable[str] = (),
 ) -> None:
     """Fail on any phantom reference not in the committed baseline; also fail when a baseline entry is no
-    longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks."""
+    longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks.
+
+    A baseline entry is matched on file and name: ``"<rel>::<token>"``, or a full violation line whose line number
+    and wording are ignored, so moving a comment or rewording a message does not churn the baseline."""
     import pytest
 
     violations = set(find_phantom_code_references(files, repo_root, declared, extra_known=extra_known))
     baseline: set[str] = set()
     if baseline_path is not None and baseline_path.exists():
         baseline = set(json.loads(baseline_path.read_text(encoding="utf-8-sig"))["phantom_references"])
-    new = sorted(violations - baseline)
-    stale = sorted(baseline - violations)
+    # Entries match on file + name (either the key form or a full violation line), never on line or wording.
+    baseline_keys = {_violation_key(e) for e in baseline}
+    found_keys = {_violation_key(v) for v in violations}
+    new = sorted(v for v in violations if _violation_key(v) not in baseline_keys)
+    stale = sorted(e for e in baseline if _violation_key(e) not in found_keys)
     problems = []
     if new:
         problems.append("comments naming things that do not exist (fix the comment, do not extend the baseline):\n  " + "\n  ".join(new))

@@ -1,0 +1,6 @@
+def seed(frame, idx):
+    if hasattr(frame, 'iloc'):
+        return frame.iloc[idx]
+    mask = np.zeros(frame.height, dtype=bool)
+    mask[idx] = True
+    return frame.filter(mask)

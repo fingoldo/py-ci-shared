@@ -1,0 +1,4 @@
+def seed(frame, idx):
+    if hasattr(frame, 'iloc'):
+        return frame.iloc[idx]
+    return frame.gather(idx)

@@ -45,7 +45,10 @@ from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, read_source
 # `name:` sits inside an object literal on the same line as the brace in most configs, so this
 # is deliberately not anchored to the line start.
 _PW_PROJECT_NAME_RE = re.compile(r"\bname:\s*['\"]([^'\"]+)['\"]")
-_FLAG_VALUE = r"(?:=|\s+)(?:\"([^\"]*)\"|'([^']*)'|([^\s'\"]+))"
+# An unquoted value ends at whitespace, a quote or a shell metacharacter: in `(cd e2e && npx playwright test
+# --project=chromium-desktop)` the `)` closes the subshell and is not part of the project name. A quoted value is
+# read whole, spaces included.
+_FLAG_VALUE = r"(?:=|\s+)(?:\"([^\"]*)\"|'([^']*)'|([^\s'\"();|&<>`]+))"
 _INCLUDE_TAG_RE = re.compile(r"(?<![\w-])--tags" + _FLAG_VALUE)
 _EXCLUDE_TAG_RE = re.compile(r"(?<![\w-])--exclude-tags" + _FLAG_VALUE)
 # `-t` / `-x` are dart test's short spellings; they are read only on a `dart test` / `flutter test` line, since other

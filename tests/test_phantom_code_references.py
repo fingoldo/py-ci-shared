@@ -167,3 +167,50 @@ class TestAuditRegressions:
         assert out[0] == "bom.py:1: `Ghost()` names nothing declared in this repo"
         assert out[1].startswith("bad.py:2: unparsable:")
         assert "Real" in python_declarations([bom])
+
+
+class TestExternalDottedNames:
+    """Dotted names whose head the repo does not declare resolve by import, attribute by attribute (CANARY-24)."""
+
+    def test_installed_module_paths_resolve_and_misspellings_do_not(self, tmp_path: Path) -> None:
+        p = _write(
+            tmp_path,
+            "pkg/mod.py",
+            "# `os.path.join` `email.mime.text.MIMEText` `json.dumps()` `ValueError.args`\n" "# `os.path.joinn` `nosuchpkg.x.y` `email.mime.text.MIMEGhost`\n",
+        )
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == [
+            "pkg/mod.py:2: `os.path.joinn` does not resolve by import",
+            "pkg/mod.py:2: `nosuchpkg.x.y` names nothing declared in this repo",
+            "pkg/mod.py:2: `email.mime.text.MIMEGhost` does not resolve by import",
+        ]
+
+    def test_a_repo_declared_head_is_still_judged_by_the_repo(self, tmp_path: Path) -> None:
+        """A repo class named like an importable module keeps the repo check: its renamed member is still flagged."""
+        p = _write(tmp_path, "pkg/mod.py", "# `json.renamed_method()` `json.method()`\nclass json:\n    def method(self):\n        pass\n")
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == ["pkg/mod.py:1: `json.renamed_method()` names a member `json` does not declare"]
+
+    def test_an_import_that_raises_anything_counts_as_unresolved(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        pkg = tmp_path / "site"
+        _write(pkg, "exploding_mod_c24/__init__.py", "raise SystemExit('no')\n")
+        monkeypatch.syspath_prepend(str(pkg))
+        p = _write(tmp_path, "pkg/mod.py", "# `exploding_mod_c24.thing.x`\n")
+        out = find_phantom_code_references([p], tmp_path, set())
+        assert out == ["pkg/mod.py:1: `exploding_mod_c24.thing.x` names nothing declared in this repo"]
+
+
+def test_baseline_entries_match_on_file_and_name_not_line_or_wording(tmp_path: Path) -> None:
+    p = _write(tmp_path, "pkg/mod.py", "# see `Ghost()`\n")
+    baseline = tmp_path / "_baseline.json"
+    baseline.write_text(json.dumps({"phantom_references": ["pkg/mod.py:7: `Ghost()` an older wording of the message"]}))
+    assert_no_phantom_code_references([p], tmp_path, set(), baseline_path=baseline)
+    baseline.write_text(json.dumps({"phantom_references": ["pkg/mod.py::Ghost()"]}))
+    assert_no_phantom_code_references([p], tmp_path, set(), baseline_path=baseline)
+    # Negative controls: another file, or another name in the same file, is not covered by the entry.
+    baseline.write_text(json.dumps({"phantom_references": ["pkg/other.py::Ghost()"]}))
+    with pytest.raises(pytest.fail.Exception, match="do not extend the baseline"):
+        assert_no_phantom_code_references([p], tmp_path, set(), baseline_path=baseline)
+    baseline.write_text(json.dumps({"phantom_references": ["pkg/mod.py::Phantom()"]}))
+    with pytest.raises(pytest.fail.Exception, match="no longer reproduced"):
+        assert_no_phantom_code_references([p], tmp_path, set(), baseline_path=baseline)

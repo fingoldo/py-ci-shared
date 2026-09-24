@@ -478,6 +478,12 @@ cli = true
 summary = "Point the generated git hook(s) at ``safe_precommit`` instead of raw ``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive"
 
 [[gate]]
+name = "kwarg_forwarding"
+kind = "library"
+since = "1.17.0"
+summary = "Optional arguments a wrapper, a caller or a same-class delegate drops on the way to the function it reaches"
+
+[[gate]]
 name = "latched_availability_flags"
 kind = "gate"
 entries = ["assert_no_latched_availability_flags"]
@@ -599,6 +605,13 @@ since = "1.4.0"
 summary = "An optional parameter tested for truth rather than for absence"
 
 [[gate]]
+name = "order_losing_filters"
+kind = "gate"
+entries = ["assert_no_order_losing_filters"]
+since = "1.17.0"
+summary = "Row selections by an index-built mask whose positional twin returns the rows in index order"
+
+[[gate]]
 name = "package_doctests"
 kind = "gate"
 entries = ["assert_package_doctests_pass"]
@@ -695,6 +708,12 @@ kind = "gate"
 entries = ["assert_markers_registered"]
 since = "1.7.0"
 summary = "Every pytest marker a test suite uses is registered"
+
+[[gate]]
+name = "randomly_seed_guard"
+kind = "library"
+since = "1.17.0"
+summary = "Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it"
 
 [[gate]]
 name = "readme_env_var_parity"

@@ -15,6 +15,10 @@ Three shapes, each found in one audit with a live defect behind it:
 
 Functions are resolved within one file, or across files through ``delegates``: ``{"path::variant": "path::base"}``, and
 ``methods``: ``{"ClassName.method": "path::function"}`` for methods bound onto a class from another module.
+
+Sources are read the way the interpreter reads them (a BOM is fine). A file that cannot be read or parsed raises
+``UnparsedFilesError`` unless ``allow_unparsed=True``, and fewer than ``min_files`` parsed files raise ``EmptyScanError``:
+a wrapper inside a skipped file would otherwise drop its arguments unnoticed.
 """
 
 from __future__ import annotations
@@ -22,6 +26,9 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Union
+
+from ._core import scan_python
 
 __all__ = ["ForwardingFinding", "find_available_but_not_passed", "find_delegate_state_loss", "find_dropped_variant_params"]
 
@@ -45,55 +52,49 @@ class ForwardingFinding:
 
 
 _FUNC_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef)
+_Func = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
-def _parse_one(path: Path, root: Path) -> tuple[str, ast.Module] | None:
-    """``(repo-relative posix path, module)``, or None when the file does not parse."""
-    try:
-        return Path(path).resolve().relative_to(root).as_posix(), ast.parse(Path(path).read_text(encoding="utf-8"))
-    except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
-        return None
+def _parse(files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False) -> dict[str, ast.Module]:
+    """``{repo-relative posix path: parsed module}``; raises on an unparsable file or fewer than *min_files* parsed."""
+    result = scan_python(files, root=Path(repo_root).resolve(), min_files=min_files)
+    result.assert_ok(allow_unparsed=allow_unparsed)
+    return {parsed.rel: parsed.tree for parsed in result.files}
 
 
-def _parse(files: Iterable[Path], repo_root: Path) -> dict[str, ast.Module]:
-    """``{repo-relative posix path: parsed module}``, skipping files that do not parse."""
-    root = Path(repo_root).resolve()
-    return dict(filter(None, (_parse_one(p, root) for p in files)))
-
-
-def _functions(tree: ast.Module) -> dict[str, ast.FunctionDef]:
+def _functions(tree: ast.Module) -> dict[str, _Func]:
     """``{name or Class.name: def}`` for module-level functions and class methods."""
-    out: dict[str, ast.FunctionDef] = {n.name: n for n in tree.body if isinstance(n, _FUNC_TYPES)}
+    out: dict[str, _Func] = {n.name: n for n in tree.body if isinstance(n, _FUNC_TYPES)}
     for cls in (n for n in tree.body if isinstance(n, ast.ClassDef)):
         out.update({f"{cls.name}.{i.name}": i for i in cls.body if isinstance(i, _FUNC_TYPES)})
     return out
 
 
-def _positional(fn: ast.FunctionDef) -> list[str]:
+def _positional(fn: _Func) -> list[str]:
     """Positional parameter names, without ``self`` / ``cls``."""
     return [p.arg for p in fn.args.posonlyargs + fn.args.args if p.arg not in ("self", "cls")]
 
 
-def _defaulted(fn: ast.FunctionDef) -> list[tuple[str, ast.expr]]:
+def _defaulted(fn: _Func) -> list[tuple[str, ast.expr]]:
     """``(name, default)`` for every parameter with a default, positional and keyword-only, without ``self`` / ``cls``."""
     a = fn.args
     pos_all = a.posonlyargs + a.args
-    pos = list(zip(pos_all[len(pos_all) - len(a.defaults):], a.defaults))
+    pos = list(zip(pos_all[len(pos_all) - len(a.defaults) :], a.defaults))
     kwo = [(p, d) for p, d in zip(a.kwonlyargs, a.kw_defaults) if d is not None]
     return [(p.arg, d) for p, d in pos + kwo if p.arg not in ("self", "cls")]
 
 
-def _optional_params(fn: ast.FunctionDef) -> list[str]:
+def _optional_params(fn: _Func) -> list[str]:
     """Parameters with a default."""
     return [p for p, _ in _defaulted(fn)]
 
 
-def _none_default_params(fn: ast.FunctionDef) -> list[str]:
+def _none_default_params(fn: _Func) -> list[str]:
     """Optional parameters whose default is ``None``."""
     return [p for p, d in _defaulted(fn) if isinstance(d, ast.Constant) and d.value is None]
 
 
-def _params(fn: ast.FunctionDef) -> set[str]:
+def _params(fn: _Func) -> set[str]:
     """Every named parameter of ``fn``."""
     a = fn.args
     return {p.arg for p in a.posonlyargs + a.args + a.kwonlyargs}
@@ -104,13 +105,12 @@ def _is_self_call(f: ast.expr, name: str | None = None) -> bool:
     return isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id in ("self", "cls") and (name is None or f.attr == name)
 
 
-def _calls_to(fn: ast.FunctionDef, name: str) -> list[ast.Call]:
+def _calls_to(fn: _Func, name: str) -> list[ast.Call]:
     """Calls inside ``fn`` to ``name(...)``, ``self.name(...)`` or ``cls.name(...)``."""
-    return [n for n in ast.walk(fn) if isinstance(n, ast.Call)
-            and ((isinstance(n.func, ast.Name) and n.func.id == name) or _is_self_call(n.func, name))]
+    return [n for n in ast.walk(fn) if isinstance(n, ast.Call) and ((isinstance(n.func, ast.Name) and n.func.id == name) or _is_self_call(n.func, name))]
 
 
-def _passed(call: ast.Call, callee: ast.FunctionDef) -> tuple[set[str], bool]:
+def _passed(call: ast.Call, callee: _Func) -> tuple[set[str], bool]:
     """``(parameter names the call supplies by keyword or position, whether it forwards *args / **kwargs)``."""
     names = {k.arg for k in call.keywords if k.arg is not None} | set(_positional(callee)[: len(call.args)])
     star = any(k.arg is None for k in call.keywords) or any(isinstance(a, ast.Starred) for a in call.args)
@@ -124,13 +124,13 @@ def _class_bases(tree: ast.Module) -> dict[str, list[str]]:
     return {c.name: [b.id for b in c.bases if isinstance(b, ast.Name) and b.id in names] for c in classes}
 
 
-def _resolve_call(call: ast.Call, owner: str, tree: ast.Module, funcs: dict[str, ast.FunctionDef]) -> tuple[str, ast.FunctionDef] | None:
+def _resolve_call(call: ast.Call, owner: str, tree: ast.Module, funcs: dict[str, _Func]) -> tuple[str, _Func] | None:
     """The same-file def a call reaches: ``self.m()`` / ``cls.m()`` through the owner class and its same-file bases, a bare
     ``f()`` to a module-level function."""
     f = call.func
     if isinstance(f, ast.Name):
         return (f.id, funcs[f.id]) if f.id in funcs else None
-    if not (_is_self_call(f) and owner):
+    if not (isinstance(f, ast.Attribute) and _is_self_call(f) and owner):
         return None
     bases = _class_bases(tree)
     todo, seen = [owner], set()
@@ -144,7 +144,7 @@ def _resolve_call(call: ast.Call, owner: str, tree: ast.Module, funcs: dict[str,
     return None
 
 
-def _resolve(trees: dict[str, ast.Module], ref: str) -> ast.FunctionDef | None:
+def _resolve(trees: dict[str, ast.Module], ref: str) -> _Func | None:
     """The def named by ``path::name``."""
     path, _, name = ref.partition("::")
     tree = trees.get(path)
@@ -173,14 +173,16 @@ def _variant_pairs(trees: dict[str, ast.Module], delegates: Mapping[str, str]):
                     yield path, fname, fn, f"{path}::{hit[0]}", hit[1]
                     break
     for variant, base in delegates.items():
-        fn, g = _resolve(trees, variant), _resolve(trees, base)
-        if fn is not None and g is not None:
-            yield variant.partition("::")[0], variant.partition("::")[2], fn, base, g
+        v_fn, b_fn = _resolve(trees, variant), _resolve(trees, base)
+        if v_fn is not None and b_fn is not None:
+            yield variant.partition("::")[0], variant.partition("::")[2], v_fn, base, b_fn
 
 
-def find_dropped_variant_params(files: Iterable[Path], repo_root: Path, delegates: Mapping[str, str] | None = None) -> list[ForwardingFinding]:
+def find_dropped_variant_params(
+    files: Iterable[Path], repo_root: Path, delegates: Mapping[str, str] | None = None, *, min_files: int = 1, allow_unparsed: bool = False
+) -> list[ForwardingFinding]:
     """Optional parameters of a base function its variant neither forwards nor passes through ``**kwargs``."""
-    trees = _parse(files, repo_root)
+    trees = _parse(files, repo_root, min_files=min_files, allow_unparsed=allow_unparsed)
     out: list[ForwardingFinding] = []
     for path, fname, fn, base_ref, g in _variant_pairs(trees, delegates or {}):
         calls = _calls_to(fn, _short(base_ref))
@@ -190,8 +192,7 @@ def find_dropped_variant_params(files: Iterable[Path], repo_root: Path, delegate
         if any(star for _, star in passed):
             continue
         supplied = set().union(*(names for names, _ in passed))
-        out.extend(ForwardingFinding("dropped_variant_param", path, fname, calls[0].lineno, base_ref, p)
-                   for p in _optional_params(g) if p not in supplied)
+        out.extend(ForwardingFinding("dropped_variant_param", path, fname, calls[0].lineno, base_ref, p) for p in _optional_params(g) if p not in supplied)
     return out
 
 
@@ -200,7 +201,7 @@ def find_dropped_variant_params(files: Iterable[Path], repo_root: Path, delegate
 # ---------------------------------------------------------------------------
 
 
-def _call_target(node: ast.Call, path: str, fname: str, owner: str, tree, funcs, trees, delegates) -> tuple[str, ast.FunctionDef] | None:
+def _call_target(node: ast.Call, path: str, fname: str, owner: str, tree, funcs, trees, delegates) -> tuple[str, _Func] | None:
     """The def a call reaches: a same-file function, or a registered variant's base through ``self.<base>(...)``."""
     hit = _resolve_call(node, owner, tree, funcs)
     if hit is not None:
@@ -212,10 +213,12 @@ def _call_target(node: ast.Call, path: str, fname: str, owner: str, tree, funcs,
     return None
 
 
-def find_available_but_not_passed(files: Iterable[Path], repo_root: Path, delegates: Mapping[str, str] | None = None) -> list[ForwardingFinding]:
+def find_available_but_not_passed(
+    files: Iterable[Path], repo_root: Path, delegates: Mapping[str, str] | None = None, *, min_files: int = 1, allow_unparsed: bool = False
+) -> list[ForwardingFinding]:
     """Calls to a same-file function (or a registered variant's base) that omit an optional ``None``-default parameter ``p``
     while the caller has a parameter named ``p``."""
-    trees = _parse(files, repo_root)
+    trees = _parse(files, repo_root, min_files=min_files, allow_unparsed=allow_unparsed)
     out: list[ForwardingFinding] = []
     for path, tree in trees.items():
         funcs = _functions(tree)
@@ -227,8 +230,11 @@ def find_available_but_not_passed(files: Iterable[Path], repo_root: Path, delega
                     continue
                 names, star = _passed(node, target[1])
                 if not star:
-                    out.extend(ForwardingFinding("available_not_passed", path, fname, node.lineno, target[0], p)
-                               for p in _none_default_params(target[1]) if p in have and p not in names)
+                    out.extend(
+                        ForwardingFinding("available_not_passed", path, fname, node.lineno, target[0], p)
+                        for p in _none_default_params(target[1])
+                        if p in have and p not in names
+                    )
     return out
 
 
@@ -237,12 +243,18 @@ def find_available_but_not_passed(files: Iterable[Path], repo_root: Path, delega
 # ---------------------------------------------------------------------------
 
 
-def _self_attrs(fn: ast.FunctionDef, *, stored: bool) -> set[str]:
+def _self_attrs(fn: _Func, *, stored: bool) -> set[str]:
     """Private ``self._x`` attributes ``fn`` stores (``stored=True``) or reads, including ``getattr(self, "_x", ...)``."""
     out: set[str] = set()
     for node in ast.walk(fn):
-        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self" and node.attr.startswith("_")
-                and not node.attr.startswith("__") and isinstance(node.ctx, ast.Store) == stored):
+        if (
+            isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+            and node.attr.startswith("_")
+            and not node.attr.startswith("__")
+            and isinstance(node.ctx, ast.Store) == stored
+        ):
             out.add(node.attr)
         elif not stored and isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" and len(node.args) >= 2:
             obj, attr = node.args[0], node.args[1]
@@ -259,7 +271,7 @@ class _Index:
     def __init__(self, trees: dict[str, ast.Module], methods: Mapping[str, str]) -> None:
         self.trees = trees
         self.methods = methods
-        self.top: dict[str, list[ast.FunctionDef]] = {}
+        self.top: dict[str, list[_Func]] = {}
         for t in trees.values():
             for node in (n for n in t.body if isinstance(n, _FUNC_TYPES)):
                 self.top.setdefault(node.name, []).append(node)
@@ -268,7 +280,7 @@ class _Index:
         self.injected = self._injected()
         self.fn_path = {id(n): p for p, t in trees.items() for n in ast.walk(t) if isinstance(n, _FUNC_TYPES)}
 
-    def unique(self, name: str) -> ast.FunctionDef | None:
+    def unique(self, name: str) -> _Func | None:
         """The one module-level function called ``name`` (through its import alias), or None when absent or ambiguous."""
         cands = self.top.get(self.aliases.get(name, name), [])
         return cands[0] if len(cands) == 1 else None
@@ -277,8 +289,13 @@ class _Index:
         """``(Cls.m, def)`` for every module-level ``Cls.m = f``."""
         for t in self.trees.values():
             for node in t.body:
-                if (isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Attribute)
-                        and isinstance(node.targets[0].value, ast.Name) and isinstance(node.value, ast.Name)):
+                if (
+                    isinstance(node, ast.Assign)
+                    and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Attribute)
+                    and isinstance(node.targets[0].value, ast.Name)
+                    and isinstance(node.value, ast.Name)
+                ):
                     fn = self.unique(node.value.id)
                     if fn is not None:
                         yield f"{node.targets[0].value.id}.{node.targets[0].attr}", fn
@@ -288,27 +305,38 @@ class _Index:
         out: set[str] = set()
         for t in self.trees.values():
             for n in ast.walk(t):
-                if (isinstance(n, ast.Attribute) and isinstance(n.ctx, ast.Store) and n.attr.startswith("_") and not n.attr.startswith("__")
-                        and not (isinstance(n.value, ast.Name) and n.value.id == "self")):
+                if (
+                    isinstance(n, ast.Attribute)
+                    and isinstance(n.ctx, ast.Store)
+                    and n.attr.startswith("_")
+                    and not n.attr.startswith("__")
+                    and not (isinstance(n.value, ast.Name) and n.value.id == "self")
+                ):
                     out.add(n.attr)
-                elif (isinstance(n, ast.Call) and getattr(n.func, "id", None) == "setattr" and len(n.args) >= 2
-                      and isinstance(n.args[1], ast.Constant) and str(n.args[1].value).startswith("_")):
+                elif (
+                    isinstance(n, ast.Call)
+                    and getattr(n.func, "id", None) == "setattr"
+                    and len(n.args) >= 2
+                    and isinstance(n.args[1], ast.Constant)
+                    and str(n.args[1].value).startswith("_")
+                ):
                     out.add(str(n.args[1].value))
         return out
 
-    def method(self, cls: str, name: str, tree: ast.Module) -> ast.FunctionDef | None:
+    def method(self, cls: str, name: str, tree: ast.Module) -> _Func | None:
         """``cls.name`` through ``methods``, the class body, or a post-hoc binding."""
         ref = self.methods.get(f"{cls}.{name}")
         if ref:
             return _resolve(self.trees, ref)
         return _functions(tree).get(f"{cls}.{name}") or self.bound.get(f"{cls}.{name}")
 
-    def class_methods(self, cls: ast.ClassDef) -> dict[str, ast.FunctionDef]:
+    def class_methods(self, cls: ast.ClassDef) -> dict[str, _Func]:
         """Every def that runs as a method of ``cls``: body, ``methods``, post-hoc bindings and ``self: "Cls"`` functions."""
         out = {f"{cls.name}.{i.name}": i for i in cls.body if isinstance(i, _FUNC_TYPES)}
         for k, v in self.methods.items():
-            if k.startswith(cls.name + ".") and _resolve(self.trees, v) is not None:
-                out[k] = _resolve(self.trees, v)
+            resolved = _resolve(self.trees, v) if k.startswith(cls.name + ".") else None
+            if resolved is not None:
+                out[k] = resolved
         out.update({k: v for k, v in self.bound.items() if k.startswith(cls.name + ".")})
         for fns in self.top.values():
             for node in fns:
@@ -317,9 +345,9 @@ class _Index:
                     out.setdefault(f"{cls.name}.{node.name}", node)
         return out
 
-    def reachable(self, entry: ast.FunctionDef, cls: str, tree: ast.Module, depth: int = 6) -> list[ast.FunctionDef]:
+    def reachable(self, entry: _Func, cls: str, tree: ast.Module, depth: int = 6) -> list[_Func]:
         """``entry`` plus what it reaches with the same object (``self.m()``, ``f(self, ...)``), up to ``depth`` calls deep."""
-        seen: list[ast.FunctionDef] = []
+        seen: list[_Func] = []
         frontier = [entry]
         for _ in range(depth):
             fresh = [fn for fn in frontier if not any(fn is s for s in seen)]
@@ -327,7 +355,7 @@ class _Index:
             frontier = [nxt for fn in fresh for nxt in self._callees(fn, cls, tree)]
         return seen
 
-    def _callees(self, fn: ast.FunctionDef, cls: str, tree: ast.Module):
+    def _callees(self, fn: _Func, cls: str, tree: ast.Module):
         """Defs ``fn`` calls with its own object."""
         for node in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
             f = node.func
@@ -341,7 +369,7 @@ class _Index:
                 yield target
 
 
-def _loop_constants(fn: ast.FunctionDef) -> dict[str, set[str]]:
+def _loop_constants(fn: _Func) -> dict[str, set[str]]:
     """Names a for-loop binds to a tuple / list of string constants: ``for a in ("_x", "_y"): ...``."""
     out: dict[str, set[str]] = {}
     for n in ast.walk(fn):
@@ -350,14 +378,21 @@ def _loop_constants(fn: ast.FunctionDef) -> dict[str, set[str]]:
     return out
 
 
-def _delegate_vars(fn: ast.FunctionDef, cls: str) -> list[str]:
+def _delegate_vars(fn: _Func, cls: str) -> list[str]:
     """Local names bound to a new instance of ``cls`` (directly or through an import alias) inside ``fn``."""
     names = {cls} | {a.asname for n in ast.walk(fn) if isinstance(n, ast.ImportFrom) for a in n.names if a.name == cls and a.asname}
-    return [n.targets[0].id for n in ast.walk(fn) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
-            and isinstance(n.value, ast.Call) and getattr(n.value.func, "id", None) in names]
+    return [
+        n.targets[0].id
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Assign)
+        and len(n.targets) == 1
+        and isinstance(n.targets[0], ast.Name)
+        and isinstance(n.value, ast.Call)
+        and getattr(n.value.func, "id", None) in names
+    ]
 
 
-def _set_on(fn: ast.FunctionDef, var: str) -> set[str]:
+def _set_on(fn: _Func, var: str) -> set[str]:
     """Attributes ``fn`` sets on ``var``: ``var._x = ...``, ``setattr(var, "_x", ...)`` and a copy loop over constant names."""
     loops = _loop_constants(fn)
     out: set[str] = set()
@@ -370,7 +405,7 @@ def _set_on(fn: ast.FunctionDef, var: str) -> set[str]:
     return out
 
 
-def _lost_state(idx: _Index, cls: ast.ClassDef, tree: ast.Module, fname: str, fn: ast.FunctionDef, method_names: set[str]):
+def _lost_state(idx: _Index, cls: ast.ClassDef, tree: ast.Module, fname: str, fn: _Func, method_names: set[str]):
     """Findings for each delegate of ``cls`` created in ``fn`` whose called method needs injected state it was not given."""
     init = idx.method(cls.name, "__init__", tree)
     init_set = _self_attrs(init, stored=True) if init else set()
@@ -389,11 +424,13 @@ def _lost_state(idx: _Index, cls: ast.ClassDef, tree: ast.Module, fname: str, fn
                 yield ForwardingFinding("delegate_state_loss", idx.fn_path.get(id(fn), ""), fname, node.lineno, f"{cls.name}.{node.func.attr}", attr)
 
 
-def find_delegate_state_loss(files: Iterable[Path], repo_root: Path, methods: Mapping[str, str] | None = None) -> list[ForwardingFinding]:
+def find_delegate_state_loss(
+    files: Iterable[Path], repo_root: Path, methods: Mapping[str, str] | None = None, *, min_files: int = 1, allow_unparsed: bool = False
+) -> list[ForwardingFinding]:
     """Inside a method of class ``C``: ``obj = C(...)`` then ``obj.m(...)`` without first setting each private attribute that
     ``C.m`` (or anything it calls with the object) reads, that nothing on its path or in ``__init__`` sets, and that some code
     injects onto the object from outside."""
-    trees = _parse(files, repo_root)
+    trees = _parse(files, repo_root, min_files=min_files, allow_unparsed=allow_unparsed)
     idx = _Index(trees, methods or {})
     out: list[ForwardingFinding] = []
     for tree in trees.values():

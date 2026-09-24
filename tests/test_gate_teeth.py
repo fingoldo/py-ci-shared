@@ -61,6 +61,13 @@ def _fatal(marker: str) -> bool:
     return marker.startswith("fatal_failed")
 
 
+def _kwarg_forwarding_canary(d: Path) -> None:
+    """The library has finders, not an ``assert_*`` entry: fail the way a consumer's meta test does on any finding."""
+    mod, files = _gate("kwarg_forwarding"), sorted(d.rglob("*.py"))
+    found = mod.find_dropped_variant_params(files, d) + mod.find_available_but_not_passed(files, d) + mod.find_delegate_state_loss(files, d)
+    assert not found, f"dropped arguments: {found}"
+
+
 CANARIES: dict[str, Canary] = {
     c.gate: c
     for c in [
@@ -241,6 +248,8 @@ CANARIES: dict[str, Canary] = {
         Canary("no_xfail_to_defer", lambda d: _gate("no_xfail_to_defer").assert_no_xfail_to_defer(d / "tests", repo_root=d, use_git=False)),
         Canary("sentinel_or_fallback", lambda d: _gate("sentinel_or_fallback").assert_no_sentinel_or_fallback(d, use_git=False)),
         Canary("printed_advice", lambda d: _gate("printed_advice").assert_printed_advice_registered(sorted(d.rglob("*.py")), d, {})),
+        Canary("order_losing_filters", lambda d: _gate("order_losing_filters").assert_no_order_losing_filters(sorted(d.rglob("*.py")), d)),
+        Canary("kwarg_forwarding", _kwarg_forwarding_canary),
         Canary("stale_source_citations", lambda d: _gate("stale_source_citations").assert_no_stale_source_citations(d, use_git=False)),
         Canary("pickle_state_completeness", lambda d: _gate("pickle_state_completeness").assert_no_pickle_state_gaps(d, use_git=False), token="_seed_cache"),
     ]
@@ -291,6 +300,7 @@ EXEMPT: dict[str, str] = {
     "prompt_field_parity": "library comparing prompt templates against schema fields",
     "prose_numeric_claims": "takes caller-built claims; no corpus",
     "pydantic_field_bounds": "needs live pydantic model classes as input",
+    "randomly_seed_guard": "runtime helper called from pytest_configure to wrap pytest-randomly's reseeders; reads no corpus",
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",
     "repo_hygiene": "tracked-file and layout hygiene; needs a git work tree",
     "source_text_ban": "library of banned-substring helpers configured by the caller",

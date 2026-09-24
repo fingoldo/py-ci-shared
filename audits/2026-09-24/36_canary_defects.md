@@ -126,3 +126,37 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 
 - **Finding:** the black-filtered and ruff-blocking (RUF043) CI jobs failed
 
+
+### CANARY-21 (Med) -- kwarg_forwarding skipped unreadable and unparsable files and was unregistered
+
+**Disposition:** RESOLVED -- the three finders read through _core.scan_python (BOM handled, UnparsedFilesError unless allow_unparsed=True, min_files=1 floor raising EmptyScanError), signatures gain only keyword arguments; registered as a library with a canary and its pre-existing mypy errors fixed; regression test: test_kwarg_forwarding.py::test_a_bom_file_is_scanned_like_a_plain_one, test_an_unparsable_file_is_reported_not_skipped, test_allow_unparsed_keeps_the_findings_of_the_files_that_parse, test_an_empty_corpus_fails_the_floor; test_gate_teeth.py canary kwarg_forwarding
+
+- **Finding:** ast.parse(read_text(encoding='utf-8')) with a bare skip on SyntaxError/UnicodeDecodeError/ValueError: a BOM file, a broken file or a file outside the root dropped its wrappers silently, and an empty corpus passed; the module was missing from registry.toml, so CI's inventory check failed
+
+
+### CANARY-22 (Med) -- order_losing_filters skipped unreadable and unparsable files, had no assert entry and was unregistered
+
+**Disposition:** RESOLVED -- reads through _core.scan_python with the same allow_unparsed / min_files contract, gains assert_no_order_losing_filters for the allow table its docstring describes (unlisted, stale and reasonless entries fail), registered as a gate with a canary; regression test: test_order_losing_filters.py::test_a_bom_file_is_scanned_like_a_plain_one, test_an_unparsable_file_is_reported_not_skipped, test_an_empty_corpus_fails_the_floor, test_assert_fails_on_unlisted_stale_and_reasonless_entries; test_gate_teeth.py canary order_losing_filters
+
+- **Finding:** the same fail-open read as printed_advice before c732ca3: a BOM or a syntax error hid every filter in the file
+
+
+### CANARY-23 (Low) -- randomly_seed_guard unregistered
+
+**Disposition:** RESOLVED -- registered as a library (a runtime helper called from pytest_configure) and given a reasoned EXEMPT entry in test_gate_teeth.py, since it reads no corpus; regression test: test_package_inventory.py and test_gate_teeth.py::test_every_scanning_gate_has_a_canary_or_a_reasoned_exemption
+
+- **Finding:** the module shipped without a registry.toml entry or README catalogue row, which fails the package inventory check on master
+
+
+### CANARY-24 (Med) -- phantom_code_references flagged real dotted paths of installed dependencies
+
+**Disposition:** RESOLVED -- a dotted name whose head the repo does not declare is real when it resolves by import (longest importable prefix, then getattr; anything the import raises counts as unresolved; cached per name), after the repo-declared check; baseline entries now match on file + name (`<rel>::<token>`, or a full violation line with its line number and wording ignored); regression test: test_phantom_code_references.py::TestExternalDottedNames (os.path.join and email.mime.text.MIMEText pass, os.path.joinn and nosuchpkg.x.y are flagged, a repo-declared renamed member is still flagged, an import raising SystemExit is unresolved), test_baseline_entries_match_on_file_and_name_not_line_or_wording
+
+- **Finding:** since 46dc50a the member check covers 3+ part names but resolved them only against the repo's own declarations, so a backticked `pyutilz.llm.get_llm_provider` counted as phantom (autopsia's gate grew by about 108 findings), while a misspelled stdlib member such as `os.path.joinn` passed because the stdlib head alone carried the claim; baseline entries included line and message wording
+
+
+### CANARY-25 (Med) -- test_partition_reachability read a subshell's closing paren as part of a project name
+
+**Disposition:** RESOLVED -- an unquoted flag value stops at whitespace, quotes and the shell metacharacters ( ) ; | & < > and backtick; quoted names with spaces are still read whole; regression test: test_test_partition_reachability.py::test_an_unquoted_name_stops_at_a_shell_metacharacter (the exact polyvocab_app line), test_a_subshell_selection_still_reports_a_project_nobody_runs (negative control)
+
+- **Finding:** polyvocab_app ci.yml:531 `(cd e2e && npx playwright test --project=chromium-desktop)` was read as project `chromium-desktop)`, so the real chromium-desktop project was reported as never run

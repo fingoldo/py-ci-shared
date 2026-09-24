@@ -144,6 +144,18 @@ class TestAuditRegressions:
         assert find_unselected_projects(cfg, 'npx playwright test --project="Mobile Chrome"') == ["Mobile Safari"]
         assert find_unselected_projects(cfg, "npx playwright test --project 'Mobile Chrome' --project='Mobile Safari'") == []
 
+    def test_an_unquoted_name_stops_at_a_shell_metacharacter(self, tmp_path):
+        """polyvocab_app ci.yml: the subshell's `)` is not part of the project name (CANARY-25)."""
+        cfg = _write(tmp_path, "e2e/playwright.config.ts", "projects: [{ name: 'chromium-desktop' }]\n")
+        assert find_unselected_projects(cfg, "          (cd e2e && npx playwright test --project=chromium-desktop)\n") == []
+        for tail in (";", " | tee log", "&& echo ok", "&"):
+            assert find_unselected_projects(cfg, f"npx playwright test --project=chromium-desktop{tail}\n") == [], tail
+
+    def test_a_subshell_selection_still_reports_a_project_nobody_runs(self, tmp_path):
+        cfg = _write(tmp_path, "e2e/playwright.config.ts", _PLAYWRIGHT)
+        runner = "          (cd e2e && npx playwright test --project=chromium-desktop)\n"
+        assert find_unselected_projects(cfg, runner) == ["webkit-mobile-390"]
+
     def test_a_continuation_or_a_comment_does_not_disable_the_check(self, tmp_path):
         cfg = _write(tmp_path, "e2e/playwright.config.ts", _PLAYWRIGHT)
         continued = "run: npx playwright test \\\n  --project=chromium-desktop\n"

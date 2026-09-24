@@ -653,3 +653,8 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `CANARY-18` | embedded_postgres cannot start as an unprivileged user on Linux |
 | **RESOLVED** | Low | `CANARY-19` | the leak-guard plugin test counted a message pytest prints twice under -rA |
 | **RESOLVED** | Low | `CANARY-20` | printed_advice fix landed without black and with unescaped match= patterns |
+| **RESOLVED** | Med | `CANARY-21` | kwarg_forwarding skipped unreadable and unparsable files and was unregistered |
+| **RESOLVED** | Med | `CANARY-22` | order_losing_filters skipped unreadable and unparsable files, had no assert entry and was unregistered |
+| **RESOLVED** | Low | `CANARY-23` | randomly_seed_guard unregistered |
+| **RESOLVED** | Med | `CANARY-24` | phantom_code_references flagged real dotted paths of installed dependencies |
+| **RESOLVED** | Med | `CANARY-25` | test_partition_reachability read a subshell's closing paren as part of a project name |

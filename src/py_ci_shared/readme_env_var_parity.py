@@ -174,7 +174,7 @@ def _env_var_reads_in_file(
             if _is_environ(node.comparators[0], aliases):
                 names = _names_of(node.left, loop_var_literals, consts)
         found.extend((name, node) for name in sorted(names))
-    found.sort(key=lambda item: (item[1].lineno, item[1].col_offset))
+    found.sort(key=lambda item: (getattr(item[1], "lineno", 0), getattr(item[1], "col_offset", 0)))
     return found
 
 

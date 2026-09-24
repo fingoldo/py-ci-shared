@@ -195,6 +195,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`index_coverage`](src/py_ci_shared/index_coverage.py) | library | 1.4.0 |  | Is an expected index already served by a live one under a different name? |
 | [`inert_patch_targets`](src/py_ci_shared/inert_patch_targets.py) | library | 1.4.0 |  | Find test fixtures that RESET a module attribute the module does not have |
 | [`install_safe_hook`](src/py_ci_shared/install_safe_hook.py) | cli | 1.1.0 | `main` | Point the generated git hook(s) at ``safe_precommit`` instead of raw ``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive |
+| [`kwarg_forwarding`](src/py_ci_shared/kwarg_forwarding.py) | library | 1.17.0 |  | Optional arguments a wrapper, a caller or a same-class delegate drops on the way to the function it reaches |
 | [`latched_availability_flags`](src/py_ci_shared/latched_availability_flags.py) | gate | 1.4.0 | `assert_no_latched_availability_flags` | A broad ``except`` must not cache a process-lifetime "unavailable" verdict |
 | [`lf_file_writes`](src/py_ci_shared/lf_file_writes.py) | gate | 1.17.0 | `assert_no_crlf_writes` | Text-mode writes that put CRLF into a file that must stay LF |
 | [`llm_call_archive_gate`](src/py_ci_shared/llm_call_archive_gate.py) | gate | 1.5.0 | `assert_every_llm_call_is_archived` | Every paid LLM call goes through the place that keeps its raw answer |
@@ -212,6 +213,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |
 | [`numba_seed_range`](src/py_ci_shared/numba_seed_range.py) | gate | 1.17.0 | `assert_numba_seeds_fit_int64` | A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them |
 | [`optional_truthiness`](src/py_ci_shared/optional_truthiness.py) | gate | 1.4.0 | `assert_optionals_test_for_none` | An optional parameter tested for truth rather than for absence |
+| [`order_losing_filters`](src/py_ci_shared/order_losing_filters.py) | gate | 1.17.0 | `assert_no_order_losing_filters` | Row selections by an index-built mask whose positional twin returns the rows in index order |
 | [`package_doctests`](src/py_ci_shared/package_doctests.py) | gate | 1.12.0 | `assert_package_doctests_pass` | The doctests a package ships actually run, and there are some to run |
 | [`phantom_code_references`](src/py_ci_shared/phantom_code_references.py) | gate | 1.3.6 | `assert_no_phantom_code_references` (+1) | A comment that names a test file, a class or a function must name one that exists |
 | [`phantom_markdown_links`](src/py_ci_shared/phantom_markdown_links.py) | gate | 1.3.1 | `assert_no_phantom_markdown_links` | Every markdown-link target in a repo's .md files resolves to a real file |
@@ -226,6 +228,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`pydantic_field_bounds`](src/py_ci_shared/pydantic_field_bounds.py) | gate | 1.12.0 | `assert_field_bounds_enforced` | A pydantic field's declared bound or ``Literal`` set actually rejects a value outside it |
 | [`pytest_addopts_path_runs`](src/py_ci_shared/pytest_addopts_path_runs.py) | gate | 1.17.0 | `assert_path_runs_select_tests` | A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them |
 | [`pytest_markers`](src/py_ci_shared/pytest_markers.py) | gate | 1.7.0 | `assert_markers_registered` | Every pytest marker a test suite uses is registered |
+| [`randomly_seed_guard`](src/py_ci_shared/randomly_seed_guard.py) | library | 1.17.0 |  | Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it |
 | [`readme_env_var_parity`](src/py_ci_shared/readme_env_var_parity.py) | gate | 1.3.0 | `assert_readme_documents_every_env_var` (+1) | Every environment variable production code reads via ``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's |
 | [`reiterated_iterable_params`](src/py_ci_shared/reiterated_iterable_params.py) | gate | 1.17.0 | `assert_no_reiterated_iterable_params` | A parameter typed ``Iterable`` (or ``Iterator``/``Generator``) consumed more than once |
 | [`repo_hygiene`](src/py_ci_shared/repo_hygiene.py) | gate | 1.3.6 | `assert_repo_hygiene` | The repository tracks nothing it generates, and carries the files its gates need |
