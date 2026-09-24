@@ -941,6 +941,17 @@ def test_every_printed_advice_has_a_test():
     assert {a.key for a in find_printed_advice(SOURCE_FILES, REPO_ROOT)} == set(PRINTED_ADVICE_TESTS)
 ```
 
+## Row selections that lose the index order (`order_losing_filters`)
+
+`frame.iloc[idx]` returns rows in `idx` order; its polars twin written as `mask[idx] = True; frame.filter(mask)` returns them in frame order. The branches agree only while `idx` is sorted, so a shuffled or time-reversed index silently pairs rows with the wrong targets. `find_order_losing_filters(files, repo_root)` flags a function that selects rows positionally (`.iloc[idx]`, `.take(idx)`, `.gather(idx)`) and also by a boolean mask built from that same index (`m[idx] = True`, `np.isin(x, idx)`, `.is_in(idx)`), keyed `path::function::mask`. A mask with no positional twin is not flagged.
+
+```python
+from py_ci_shared.order_losing_filters import find_order_losing_filters
+
+def test_no_order_losing_row_filters():
+    assert not find_order_losing_filters(SOURCE_FILES, REPO_ROOT)
+```
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. Since 1.17.0 both configs also ship inside the installed package: `py-ci-shared config-path ruff-base` prints the real path, so `export PY_CI_SHARED_DIR="$(dirname "$(dirname "$(py-ci-shared config-path ruff-base)")")"` (the package directory, which holds `configs/`) works without a clone. Ruff needs a real filesystem path, resolved at ruff-invocation time, and it DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
