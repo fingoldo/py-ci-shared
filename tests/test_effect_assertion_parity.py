@@ -906,7 +906,11 @@ class TestAReadIsNotAnEffect:
             ('"SELECT * INTO backup FROM t"', True),
             ('"INSERT INTO t VALUES (1)"', True),
             ('"CREATE TABLE t (x int)"', True),
-            ('f"SELECT * FROM {table}"', True),
+            ('f"SELECT * FROM {table}"', False),
+            ('f"SELECT DISTINCT c FROM s WHERE k = ? {sql}"', False),
+            ('f"{sql} FROM t"', True),
+            ('f"DELETE FROM {table}"', True),
+            ('f"WITH r AS (SELECT 1) UPDATE {table} SET x = 1"', True),
             ("sql", True),
         ],
     )

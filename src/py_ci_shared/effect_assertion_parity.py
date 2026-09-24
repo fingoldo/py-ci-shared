@@ -171,7 +171,20 @@ def _statement_is_read(call: ast.Call) -> bool:
         if name in _READ_CONSTRUCTS:
             return True
     sql = _sql_literal(arg)
+    if sql is None:
+        sql = _sql_template(arg)
     return sql is not None and _sql_is_read(sql)
+
+
+def _sql_template(node: ast.AST) -> Optional[str]:
+    """An f-string statement whose literal text fixes the verb: ``f"SELECT ... {clause}"``. Each interpolation becomes a
+    neutral placeholder; one before the first word (``f"{verb} FROM t"``) makes the statement unknowable, so None."""
+    if not isinstance(node, ast.JoinedStr) or not node.values:
+        return None
+    first = node.values[0]
+    if not (isinstance(first, ast.Constant) and isinstance(first.value, str) and _strip_sql_noise(first.value).split()):
+        return None
+    return "".join(v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else " ? " for v in node.values)
 
 
 class _Parser:

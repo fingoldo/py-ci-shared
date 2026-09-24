@@ -334,3 +334,8 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 
 - **Finding:** self-CI's 3.9 job failed three tests after the 1.17.0 fixes: a conflicting --py-ci-refresh, `os.path.joinn` reported as undeclared instead of unresolvable, and write_text(newline=).
 
+### CANARY-51 (Low) -- effect_assertion_parity counted an f-string SELECT as a database write
+
+**Disposition:** RESOLVED -- an f-string statement whose literal text fixes the verb (`f"SELECT ... {clause}"`) is classified like a literal, each interpolation read as a neutral placeholder; an interpolation before the first word keeps it unknowable, and write verbs in the literal text still report; regression tests: the parametrised TestAReadIsNotAnEffect cases for f-strings; autopsia vocab/structure_drugs.py now has no reported read
+
+- **Finding:** found adopting 1.17.0 in autopsia: `db.execute(f"SELECT DISTINCT curie FROM surface WHERE ...{extra_clause}", ...)` stayed in its baseline.
