@@ -444,3 +444,8 @@ def f():
     assert reads["PROJ_B"][1:] == (5, "32")
     assert reads["PROJ_A"][0].name == "e.py"
 
+
+
+def test_documented_names_may_start_with_underscore(tmp_path):
+    readme = _write_readme(tmp_path, "_PRIVATE_SWITCH", "PUBLIC")
+    assert find_readme_documented_vars(readme) == {"_PRIVATE_SWITCH", "PUBLIC"}

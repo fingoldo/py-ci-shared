@@ -281,7 +281,7 @@ def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADIN
         cells = line.split("|")
         if len(cells) < 2:
             continue
-        names.update(re.findall(r"`([A-Za-z][A-Za-z0-9_]*)`", cells[1]))
+        names.update(re.findall(r"`([A-Za-z_][A-Za-z0-9_]*)`", cells[1]))
     return names
 
 
