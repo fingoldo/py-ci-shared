@@ -109,3 +109,527 @@ the same as running it.
 **The gate that caught its author.** Wiring 21-F6 immediately failed: this session had widened
 the operator set four times over while `HARNESS_VERSION` still read 3. That is the entire
 argument for the gate, demonstrated on the first run.
+
+## Round 2026-09-24 -- whole-package audit, six dimensions
+
+515 findings. Files: `30_scanners_a_to_l` (GA..GE, original G1..G5), `31_scanners_m_to_z` (MP, RS, TZ, MT, W, TS),
+`32_architecture` (ARCH), `33_adoption` (ADOPT), `34_test_suite` (SUITE), `35_new_meta_tests` (NEW, INFRA).
+Each file keeps the agent's original id on every finding.
+
+| Status | Sev | Id | Finding |
+|---|---|---|---|
+| **OPEN** | High | `GA-1` | =1 is treated as covering the whole one category, but in ru/uk/pl one also contains 21,... |
+| **OPEN** | Med | `GA-2` | The branch-head regex also scans branch bodies, so it finds fake branches |
+| **OPEN** | Med | `GA-3` | ARB files are read as utf-8, so a BOM causes a JSONDecodeError crash |
+| **OPEN** | Low | `GA-4` | The ICU # placeholder is not accepted (false positive) |
+| **OPEN** | Low | `GA-5` | A missing template locale raises a bare KeyError |
+| **OPEN** | Low | `GA-6` | The "plural" in value substring test skips the counted-phrase rule |
+| **OPEN** | Med | `GA-7` | Only a positional str constant is detected; f-strings, concatenation, variables and sql... |
+| **OPEN** | Med | `GA-8` | Unparseable or non-UTF8 migrations are skipped (fail-open) |
+| **OPEN** | Low | `GA-9` | async with autocommit_block() is not a guard (false positive) |
+| **OPEN** | Low | `GA-10` | The guard is lexical: a def nested in the with but called later passes; a bare-Name aut... |
+| **OPEN** | Low | `GA-11` | Baseline key file:line breaks on any edit above the call |
+| **OPEN** | Med | `GA-12` | The verdict regex misses common spellings; PARTIALLY RESOLVED parses as PARTIALLY |
+| **OPEN** | Med | `GA-13` | Backslash paths are ignored; absolute or . |
+| **OPEN** | Low | `GA-14` | A reversed migration range expands to nothing |
+| **OPEN** | Low | `GA-15` | The :\d+ strip is dead code (the regex cannot capture :) |
+| **OPEN** | Med | `GA-16` | The ratchet key splits on the first :; with root=None on Windows every key becomes C:<v... |
+| **OPEN** | Med | `GA-17` | Round names in os.path.join/Path args, + concatenation and f-strings are missed |
+| **OPEN** | Low | `GA-18` | Parse failures are skipped; a NUL byte raises ValueError (py<3.12) |
+| **OPEN** | Med | `GA-19` | A row shorter than the status column is dropped, neither open nor closed |
+| **OPEN** | Med | `GA-20` | The status mention check is case-sensitive |
+| **OPEN** | Low | `GA-21` | finding_problems re-reads every sibling .md for each file: O(n^2) |
+| **OPEN** | Low | `GA-22` | is_whole_file_read rejects any [ in the expression |
+| **OPEN** | Low | `GA-23` | ~~~ fences are ignored; a BOM hides the header row |
+| **OPEN** | Low | `GA-24` | min_trackers counts undated directories that the check then ignores |
+| **OPEN** | Med | `GA-25` | A missing or empty tests_dir passes; patterns are case-sensitive |
+| **OPEN** | Med | `GA-26` | A trailing --src-path raises IndexError, so exit 1 blocks the commit (the docstring say... |
+| **OPEN** | Med | `GA-27` | --src-path is not backslash-normalised, so it silently scans nothing; a substring prefi... |
+| **OPEN** | Low | `GA-28` | pip-audit runs (network) even when no .py is staged |
+| **OPEN** | Med | `GA-29` | The {"entries":[...]} shape is read as the single key entries, so real entries are neve... |
+| **OPEN** | Med | `GA-30` | The absolute-path regex misses /opt, /tmp, /root, /github/workspace, UNC paths and othe... |
+| **OPEN** | Low | `GA-31` | Words are counted with [A-Za-z], so a non-Latin note fails |
+| **OPEN** | Med | `GA-32` | No floor on found: a broken scanner returning {} exits 0 |
+| **OPEN** | Low | `GA-33` | A raising scan aborts run_rules; scans without a rule are never enforced |
+| **OPEN** | Med | `GA-34` | git log --follow crosses renames, but git show sha:<current path> fails before the rena... |
+| **OPEN** | Low | `GA-35` | Bare {key:note} counts as None; "moved" compares only the endpoints; a git failure exits 0 |
+| **OPEN** | Med | `GA-36` | Excluded dir names are matched against absolute ancestors, so a checkout under build/ s... |
+| **OPEN** | Med | `GA-37` | File-wide """ parity counts quotes inside strings, so every later fix is rejected and -... |
+| **OPEN** | Low | `GA-38` | No --stdin-filename (force-exclude and .pyi mode are ignored); a trailing --config rais... |
+| **OPEN** | High | `GB-1` | The pytest\s+ regex matches pip install pytest pytest-cov as a pathless run, so every s... |
+| **OPEN** | High | `GB-2` | YAML comments are scanned |
+| **OPEN** | Med | `GB-3` | Substring match: tests/unit is found in tests/unit_slow |
+| **OPEN** | Med | `GB-4` | The space form --ignore tests/gpu is not recognised and counts as an invocation |
+| **OPEN** | Med | `GB-5` | An ignore in one job applies globally (false positive) |
+| **OPEN** | Low | `GB-6` | \s+ crosses newlines, so the next line is read as pytest's args |
+| **OPEN** | High | `GB-7` | A job without a name inherits the previous step's name, so allowlisted names mask other... |
+| **OPEN** | Med | `GB-8` | with: name: (artifact input) is taken as the step name |
+| **OPEN** | Med | `GB-9` | Misses - continue-on-error: true and quoted 'true' |
+| **OPEN** | High | `GB-10` | Any indented uses: exempts the job as a reusable-workflow call, which covers most real... |
+| **OPEN** | Med | `GB-11` | A step-level timeout satisfies the job check (enshrined by a test) |
+| **OPEN** | Med | `GB-12` | jobs:  # comment finds no jobs, so the result is [] |
+| **OPEN** | Low | `GB-13` | The last job's block runs to EOF |
+| **OPEN** | Med | `GB-14` | permissions: read-all / {} are reported missing (false positive) |
+| **OPEN** | Med | `GB-15` | working-directory is never reset between steps/jobs (false negative) |
+| **OPEN** | Low | `GB-16` | A docker://…@sha256: digest is flagged as mutable |
+| **OPEN** | Low | `GB-17` | The script regex is applied to name/description lines |
+| **OPEN** | Low | `GB-18` | Dead repo_root recheck |
+| **OPEN** | High | `GB-19` | BOM or SyntaxError files are silently skipped |
+| **OPEN** | Med | `GB-20` | Keyword section=/key= calls are skipped |
+| **OPEN** | Med | `GB-21` | Binding only via Assign; AnnAssign, walrus and with .. |
+| **OPEN** | Low | `GB-22` | Bound names are file-wide, not scoped (false positive) |
+| **OPEN** | Med | `GB-23` | _const_in_file takes the first assignment and ignores AnnAssign |
+| **OPEN** | Med | `GB-24` | Relative imports are unresolved, so defaults are silently skipped |
+| **OPEN** | Low | `GB-25` | import a.b binds b (wrong) |
+| **OPEN** | Low | `GB-26` | 1 == True == 1.0 counts as agreement |
+| **OPEN** | Low | `GB-27` | sorted() on mixed-type keys raises TypeError |
+| **OPEN** | Low | `GB-28` | The min_checked guard is a bare assert (dropped under -O) |
+| **OPEN** | Low | `GB-29` | relative_to raises outside root; every assert re-parses all files; resolve runs twice |
+| **OPEN** | Med | `GB-30` | A missing baseline is seeded and the test skipped (green in CI; also writes into the tree) |
+| **OPEN** | Low | `GB-31` | An empty snippet falls back to a line{n} key |
+| **OPEN** | Med | `GB-32` | The hash concatenates contents without separators; an empty file list gives a constant... |
+| **OPEN** | Med | `GB-33` | Refresh via sys.argv is ignored under xdist |
+| **OPEN** | Med | `GB-34` | A missing baseline seeds and skips; any version change, including a revert, self-certif... |
+| **OPEN** | Low | `GB-35` | A title containing * is not a bullet; matching is a case-sensitive substring |
+| **OPEN** | Low | `GB-36` | A missing section or trigger produces a permanent skip |
+| **OPEN** | Low | `GB-37` | copytree into an existing dir raises; the str-prefix check accepts copy2; the return co... |
+| **OPEN** | Low | `GB-38` | Relative constants resolve against the CWD, not repo_root |
+| **OPEN** | Low | `GB-39` | A field missing in one repo is not reported as drift; a list-valued field raises TypeEr... |
+| **OPEN** | High | `GC-1` | A missing functions dir returns [] (a test enshrines it) |
+| **OPEN** | High | `GC-2` | Misses the psycopg cursor pattern |
+| **OPEN** | Med | `GC-3` | The key has no class, so same-named methods collide |
+| **OPEN** | Med | `GC-4` | BOM, non-UTF8 and SyntaxError files are silently skipped; no min_files |
+| **OPEN** | Med | `GC-5` | A BOM file is silently skipped |
+| **OPEN** | Med | `GC-6` | async def is not collected |
+| **OPEN** | Med | `GC-7` | The group key includes defaults, so a drifted default is never compared |
+| **OPEN** | Low | `GC-8` | Only tree.body is scanned; no stale-allow check; no min_files |
+| **OPEN** | Med | `GC-9` | A nested function's copy is reported under both outer and inner; allowing inner still f... |
+| **OPEN** | Med | `GC-10` | AnnAssign and walrus copies are missed |
+| **OPEN** | Low | `GC-11` | Passing the copy to a log call counts as an escape |
+| **OPEN** | Low | `GC-12` | relative_to raises; allowed is keyed by bare name, so it applies repo-wide |
+| **OPEN** | Med | `GC-13` | A missing baseline is rewritten and skipped; the write happens before min_lists (a test... |
+| **OPEN** | Low | `GC-14` | Refresh via sys.argv is ignored under xdist |
+| **OPEN** | Med | `GC-15` | Imports under module-level try/if are missed; relative level is ignored |
+| **OPEN** | Low | `GC-16` | Attribute exceptions count as 0 |
+| **OPEN** | Low | `GC-17` | A module function shadows a same-named method |
+| **OPEN** | Low | `GC-18` | A BOM makes the gate crash with SyntaxError |
+| **OPEN** | Med | `GC-19` | Aliased @dataclass is not recognised; no test file |
+| **OPEN** | Med | `GC-20` | Empty inputs pass; same-named classes merge |
+| **OPEN** | Med | `GC-21` | Rules are per file; a nested helper gets name lib, so the public array-cap rule is skipped |
+| **OPEN** | Med | `GC-22` | The IP-log regex stops at the first ); plain args are missed |
+| **OPEN** | Low | `GC-23` | Only new Response( is recognised |
+| **OPEN** | Low | `GC-24` | An emptiness check is flagged as timing-unsafe |
+| **OPEN** | Med | `GC-25` | uv run python tool.py --x marks the project's own flags foreign |
+| **OPEN** | Low | `GC-26` | ls-files quotes non-ASCII paths, so they drop out; relative_to raises |
+| **OPEN** | Med | `GC-27` | Any pkg[extra] is treated as a self-reference |
+| **OPEN** | Med | `GC-28` | Tokens keep .py or a trailing period (false positive) |
+| **OPEN** | Low | `GC-29` | every_declared is recomputed per group (O(n^2)); name(args) markers are misparsed; non-... |
+| **OPEN** | Med | `GC-30` | Table-row dispositions, backslash paths and parametrised ids are missed |
+| **OPEN** | Low | `GC-31` | .pyi is truncated to .py; ::Class::method is not class-scoped |
+| **OPEN** | Med | `GC-32` | Comment stripping runs inside strings, so a URL eats the rest of the line and hides the... |
+| **OPEN** | Med | `GC-33` | Keys are file#ordinal, so the ratchet cannot see a fixed finding being swapped for a ne... |
+| **OPEN** | Low | `GC-34` | The "try" in window substring matches entry/retry; prefs reached through an attribute a... |
+| **OPEN** | High | `GD-1` | A BOM makes ast.parse fail and the file is silently skipped |
+| **OPEN** | High | `GD-2` | Pre-commit hook args: are never inspected |
+| **OPEN** | High | `GD-3` | Decorator patches are credited to the LAST params, not the leading ones in bottom-up order |
+| **OPEN** | High | `GD-4` | Relative imports are ignored, so modules drop out of the map (fail-open) |
+| **OPEN** | High | `GD-5` | Misses pow, math.pow, /=, np.divide and 3+ term sums |
+| **OPEN** | Med | `GD-6` | Zero files scanned still passes |
+| **OPEN** | Med | `GD-7` | OR is a verb under IGNORECASE; nouns like set/see/use also match |
+| **OPEN** | Med | `GD-8` | Aliased/imported fail and reason= are unaudited |
+| **OPEN** | Low | `GD-9` | Parse failures are skipped; reports use path.name |
+| **OPEN** | Med | `GD-10` | A BOM drops the first assignment |
+| **OPEN** | Med | `GD-11` |  # inside quotes is truncated |
+| **OPEN** | Low | `GD-12` | export X= and X = v are skipped |
+| **OPEN** | Low | `GD-13` | AliasChoices/AliasPath are dropped |
+| **OPEN** | Med | `GD-14` | Same qualname overwrites (property setter, overload) |
+| **OPEN** | Low | `GD-15` | SyntaxError is skipped; relative_to raises |
+| **OPEN** | Low | `GD-16` | The refresh advice and write_length_baseline disagree for n <= limit |
+| **OPEN** | Med | `GD-17` | No boundary after the flag: --skip-without-db matches --skip= |
+| **OPEN** | Med | `GD-18` | The comment promises short flags but none are listed |
+| **OPEN** | Med | `GD-19` | Workflow keys lack job/step, so copies collapse |
+| **OPEN** | Med | `GD-20` | Config narrowing keys are incomplete |
+| **OPEN** | Med | `GD-21` | A missing pre-commit file or workflows dir gives {} and passes |
+| **OPEN** | Med | `GD-22` | The completion check is a raw substring of entry |
+| **OPEN** | Low | `GD-23` | The cov parity regex scans comments and skips templated values |
+| **OPEN** | Low | `GD-24` | Trigger paths-ignore is reported as a narrowing |
+| **OPEN** | Low | `GD-25` | Top-level pre-commit exclude:/files: are ignored |
+| **OPEN** | Med | `GD-26` | The config flag is searched across the whole multi-line run |
+| **OPEN** | Med | `GD-27` | scope is ignored for workflow steps; duplicate step names collide |
+| **OPEN** | Low | `GD-28` | Always-zero idioms are missed |
+| **OPEN** | Low | `GD-29` | Advisory words match as substrings |
+| **OPEN** | Low | `GD-30` | Stale detection is string-based, so a label rename churns entries |
+| **OPEN** | Med | `GD-31` | hasattr on a dotted attr or an extras suffix gives a false positive; an empty attr passes |
+| **OPEN** | Low | `GD-32` | 0 specs passes |
+| **OPEN** | Med | `GD-33` | Any from X import name is exempt as a local module; ast.Import aliases are ignored |
+| **OPEN** | Med | `GD-34` | No stale check on accepted entries; an empty map passes |
+| **OPEN** | Med | `GD-35` | Any sqlite3.connect in a test file credits all effects |
+| **OPEN** | Low | `GD-36` | Any importing test without a driver patch excuses a module |
+| **OPEN** | Low | `GD-37` | A multi-package src layout gives an empty map |
+| **OPEN** | Low | `GD-38` | A global functools.cache goes stale on edits and grows without bound |
+| **OPEN** | Med | `GD-39` | Misses keep.append((spec,0)), log.log(DEBUG,..), not isnan guards and module-level code |
+| **OPEN** | Low | `GD-40` | Scope is the bare name, so A.check/B.check collide |
+| **OPEN** | Low | `GD-41` | Parse errors are skipped; empty files passes; relative_to sits outside the try |
+| **OPEN** | Med | `GD-42` | Top-level names only (misses try/if defs, flags imports); a str _CANARY is iterated per... |
+| **OPEN** | Low | `GD-43` | initdb output goes to DEVNULL and the log is deleted; wrong arch wheel; fetch(dest) rmt... |
+| **OPEN** | Low | `GD-44` | No test_fail_message_quality.py; format_warn skips silently on an over-long Windows com... |
+| **OPEN** | Med | `GE-1` | covers() ignores schema/table |
+| **OPEN** | Med | `GE-2` | The cast strip ::[\w ]+ eats IS NOT NULL |
+| **OPEN** | Med | `GE-3` | UNIQUE is not tracked |
+| **OPEN** | Low | `GE-4` | INCLUDE is ignored |
+| **OPEN** | Low | `GE-5` | NULLS FIRST/LAST is dropped |
+| **OPEN** | Low | `GE-6` | Statement split ignores quotes and block comments |
+| **OPEN** | Med | `GE-7` | A sync anywhere in the region (even before the GPU work) suppresses it |
+| **OPEN** | Med | `GE-8` | A call in the chain means the sync is not recognised (false positive) |
+| **OPEN** | Med | `GE-9` | timeit.default_timer and aliased timers are missed |
+| **OPEN** | Low | `GE-10` | Module-level regions are not scanned |
+| **OPEN** | Low | `GE-11` | The sync regex matches _sync_to_disk |
+| **OPEN** | Low | `GE-12` | _iter_stmt_blocks is dead |
+| **OPEN** | Low | `GE-13` | BOM/SyntaxError files are skipped; no min_files |
+| **OPEN** | Med | `GE-14` | BOM files are dropped from both collection and scan |
+| **OPEN** | Low | `GE-15` | Tuple, if/try and class constants are missed |
+| **OPEN** | Low | `GE-16` | Constant names are global across files (false positive) |
+| **OPEN** | Med | `GE-17` | Name constructors, hashlib.new arg 2 and data= kwargs are missed |
+| **OPEN** | Low | `GE-18` | tobytes(order='F') is flagged, but the suggested fix changes the digest |
+| **OPEN** | Low | `GE-19` | BOM files are skipped; no min_files |
+| **OPEN** | Med | `GE-20` | Nested functions are reported twice |
+| **OPEN** | Low | `GE-21` | TryStar is not handled |
+| **OPEN** | Low | `GE-22` | builtins.Exception is not treated as broad; BOM files are skipped |
+| **OPEN** | Med | `GE-23` | Class bodies, decorators and defaults (all run at import) are skipped |
+| **OPEN** | Low | `GE-24` | An aliased environ is missed |
+| **OPEN** | Med | `GE-25` | Refresh via sys.argv is ignored under xdist |
+| **OPEN** | Med | `GE-26` | With first_party, a violation is attributed to the innermost frame, so a first-party re... |
+| **OPEN** | Low | `GE-27` | BOM/SyntaxError test files are skipped |
+| **OPEN** | Med | `GE-28` | bound walks the whole module, so function locals count as module attributes |
+| **OPEN** | Low | `GE-29` | A BOM module is dropped from the index |
+| **OPEN** | Low | `GE-30` | setattr, AnnAssign and tuple targets are missed |
+| **OPEN** | Low | `GE-31` | If recurses twice: O(2^depth) |
+| **OPEN** | Low | `GE-32` | Duplicate helpers kept only for a parity test |
+| **OPEN** | Med | `GE-33` | Depends on the user's diff prefix config |
+| **OPEN** | Low | `GE-34` | Untracked-file line count off by one |
+| **OPEN** | Low | `GE-35` | No --no-textconv |
+| **OPEN** | Med | `GE-36` | Extras and uv/poetry source tables are not scanned |
+| **OPEN** | Low | `GE-37` | Uppercase SHAs are reported as unpinned |
+| **OPEN** | Low | `GE-38` | No left boundary on the package name |
+| **OPEN** | Med | `GE-39` | _checkout_root climbs to any .git, including the consuming repo when a .venv is inside it |
+| **OPEN** | Low | `GE-40` | Unreadable files are skipped; min_pins=0 with no pins raises StopIteration |
+| **OPEN** | Med | `GE-41` | Counts are keyed by exact code, so a prefix ignore reads as 0 |
+| **OPEN** | Low | `GE-42` | Syntax-error items (code None) are dropped |
+| **OPEN** | Med | `GE-43` | Common staging-sweep forms are missed |
+| **OPEN** | Low | `GE-44` | Block ends at the first fi; split("else") splits substrings |
+| **OPEN** | Low | `GE-45` | lines.index picks the first duplicate; "SKIPPED" in a comment exempts the script |
+| **OPEN** | Med | `GE-46` | Python imports never match, yet the file counts as examined |
+| **OPEN** | Low | `GE-47` | Matches in comments; rglob walks .git, node_modules and .venv |
+| **OPEN** | Med | `GE-48` | A missing scanned dir gives 0 files and passes |
+| **OPEN** | Low | `GE-49` | BOM/non-UTF8 crashes; each file is parsed 3-4 times |
+| **OPEN** | Low | `GE-50` | The default SDK set misses .responses.create, .messages.stream and .chat.completions.pa... |
+| **OPEN** | Low | `GE-51` | A missing baseline re-seeds and skips (green) |
+| **OPEN** | Low | `GE-52` | _loc returns 0 on OSError and raises on non-UTF8; files=[] passes |
+| **OPEN** | Low | `GE-53` | git rev-parse --git-dir ignores core.hooksPath |
+| **OPEN** | Low | `GE-54` | read_text/write_text use the locale encoding and rewrite line endings |
+| **OPEN** | High | `MP-1` | BOM files are dropped: ast.parse rejects U+FEFF and the SyntaxError is swallowed |
+| **OPEN** | High | `MP-2` | any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes |
+| **OPEN** | Med | `MP-3` | only .utcnow() calls matched; default_factory=datetime.utcnow and utcfromtimestamp missed |
+| **OPEN** | Med | `MP-4` | no file-count floor; missing root passes |
+| **OPEN** | Med | `MP-5` | class-level markers, AnnAssign/class pytestmark, from pytest import mark missed |
+| **OPEN** | High | `MP-6` | positional tests (no /, no .py) not seen as path → "reaches everything" |
+| **OPEN** | Med | `MP-7` | ./tests not normalised; cd pkg && pytest tests/ never matches |
+| **OPEN** | Med | `MP-8` | first -m used, docstring says last wins; -m=/-mexpr not parsed |
+| **OPEN** | Med | `MP-9` | node-id runner reaches whole file; -k ignored |
+| **OPEN** | Med | `MP-10` | ratchet key is the file: new tests in a known file excused; node-id known reported stale |
+| **OPEN** | Low | `MP-11` | eval of marker expr; exception = "selects" (fail-open) |
+| **OPEN** | Med | `MP-12` | aliased reload, importlib as il, sys as _sys missed; substring prefilter drops files |
+| **OPEN** | High | `MP-13` | any sys.modules[...] = x counts as restore, including installing a fake |
+| **OPEN** | Med | `MP-14` | innermost-scope only (FP); conftest/usefixtures fixtures unseen (FP); one autouse resto... |
+| **OPEN** | Low | `MP-15` | any __dict__.update, addfinalizer, subprocess.run counts as restore |
+| **OPEN** | Low | `MP-16` | allowlist keyed on (path, line): drift, no stale check, missing roots skipped |
+| **OPEN** | Med | `MP-17` | success line + nonzero exit reported clean |
+| **OPEN** | Low | `MP-18` | --min-files w/o value IndexError; --min-files=200 passed to mypy; locale decoding on Wi... |
+| **OPEN** | Med | `MP-19` | _ENV_PROBE substring (os in loss); any enclosing Try exempts |
+| **OPEN** | Low | `MP-20` | reversed ranges, AnnAssign/walrus/with, from pytest import skip missed |
+| **OPEN** | High | `MP-21` | _unimportable discarded; walk_packages(onerror=lambda _: None) hides subpackages |
+| **OPEN** | Low | `MP-22` | plain prefix: pkg.io skips pkg.iostats |
+| **OPEN** | Med | `MP-23` | if not x, IfExp, while, assert, comprehension ifs missed |
+| **OPEN** | Med | `MP-24` | key uses path.name; no stale check; line-number keys |
+| **OPEN** | Low | `MP-25` | walk descends into nested defs; Annotated not unwrapped |
+| **OPEN** | Med | `MP-26` | from pkg.a import _impl and relative imports missed |
+| **OPEN** | Low | `MP-27` | relative_to ValueError when src outside root |
+| **OPEN** | Low | `MP-28` | non-recursive glob; parse errors silent; import_module("pkg._x") missed |
+| **OPEN** | Med | `MP-29` | # inside a string treated as comment (FP) |
+| **OPEN** | Med | `MP-30` | docstring parity flips on SQL = """ literals |
+| **OPEN** | Med | `MP-31` | declared head → Class.member never checked; a.b.c skipped |
+| **OPEN** | Low | `MP-32` | test files matched by basename over rglob incl .venv |
+| **OPEN** | Med | `MP-33` | also resolves vs repo root (FN); /x.md joined to drive root (FP) |
+| **OPEN** | Low | `MP-34` | anchors, queries, <..>, reference links, other extensions skipped; fences scanned |
+| **OPEN** | High | `MP-35` | required non-str fields get string sentinels → ValidationError read as "enforced"; stil... |
+| **OPEN** | Med | `MP-36` | only first bound probed; conint/Interval skipped |
+| **OPEN** | Low | `MP-37` | fractional bound on int field rejected by int parsing |
+| **OPEN** | Med | `MP-38` | [tool.pytest], pytest.toml, root conftest, non-literal addinivalue_line missed → false... |
+| **OPEN** | Low | `MP-39` | configparser error swallowed |
+| **OPEN** | Low | `MP-40` | pin regex needs "ruff==x"; pre-commit regex order/quote sensitive |
+| **OPEN** | Med | `MP-41` | $defs names reported as fields |
+| **OPEN** | Med | `MP-42` | DDL types lack INT/BOOL/FLOAT/CHAR/quoted names |
+| **OPEN** | Med | `MP-43` | unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash |
+| **OPEN** | Low | `MP-44` | Sequence[, Mapping[, frozenset[, Optional[list] treated as scalar |
+| **OPEN** | Low | `MP-45` | float(group(1)) crashes on groupless pattern, None group, 1.2k |
+| **OPEN** | High | `RS-1` | BOM files dropped; sql_verifier_coverage.py:63 crashes |
+| **OPEN** | High | `RS-2` | parse errors fail open; floors count inputs not parsed files |
+| **OPEN** | Med | `RS-3` | from os import environ/getenv, os as _os, os.environ["X"], getenv(key=) missed |
+| **OPEN** | Med | `RS-4` | missing baseline seeds and skips |
+| **OPEN** | Low | `RS-5` | baseline never tightens (test pins it) |
+| **OPEN** | Low | `RS-6` | refresh from sys.argv misses xdist/pytest.main |
+| **OPEN** | Med | `RS-7` | .coverage substring flags .coveragerc; /build/ flags packages named build |
+| **OPEN** | Med | `RS-8` | ls-files without -z: non-ASCII paths quoted, rules miss them |
+| **OPEN** | Med | `RS-9` | ${COV:-} accepted as guard |
+| **OPEN** | Low | `RS-10` | test -n "$COV" not a guard (FP) |
+| **OPEN** | Low | `RS-11` | per-line simple $X compares only |
+| **OPEN** | Med | `RS-12` | only arg-less .dispose() |
+| **OPEN** | Low | `RS-13` | substring protection; redispose() exempts module |
+| **OPEN** | Low | `RS-14` | constructor alias missed |
+| **OPEN** | Med | `RS-15` | decorator-factory inner deco flagged (FP) |
+| **OPEN** | High | `RS-16` | any name called at module scope (incl |
+| **OPEN** | Med | `RS-17` | collections.defaultdict/OrderedDict not recognised |
+| **OPEN** | Low | `RS-18` | registries under try/if; mod._REGISTRY[k]=; aliases missed |
+| **OPEN** | Low | `RS-19` | relative_to crash outside root |
+| **OPEN** | Med | `RS-20` | patch applied although target check found missing attrs |
+| **OPEN** | Low | `RS-21` | failed restore leaves concurrent edits only in patch file |
+| **OPEN** | Med | `RS-22` | rf"/F", .extend, +=, dynamic f-strings missed; comments matched |
+| **OPEN** | Med | `RS-23` | missing root → {} passes |
+| **OPEN** | Low | `RS-24` | strict utf-8 read crashes scan |
+| **OPEN** | Low | `RS-25` | re-run after moving clone keeps stale export; no tests |
+| **OPEN** | Low | `RS-26` | value not XML-escaped / shell-quoted; decode error uncaught |
+| **OPEN** | High | `RS-27` | SECURITY DEFINER after $$ body never seen |
+| **OPEN** | High | `RS-28` | quoted identifiers (pg_dump) / multi-line headers invisible |
+| **OPEN** | High | `RS-29` | commented-out REVOKE counts |
+| **OPEN** | High | `RS-30` | schema ignored; DROP+CREATE ordering ignored |
+| **OPEN** | Med | `RS-31` | search_path checked on every definition, not last (FP); O(n·m) re-reads |
+| **OPEN** | Low | `RS-32` | REVOKE w/o parens, ON ALL FUNCTIONS IN SCHEMA, default privileges missed (FP) |
+| **OPEN** | Med | `RS-33` | quote-led lines skipped incl |
+| **OPEN** | Med | `RS-34` | non-Python literal on line exempts; getsource as gs, open(__file__).read() missed |
+| **OPEN** | High | `RS-35` | fixtures, getsource as gs, dis.get_instructions, closures missed |
+| **OPEN** | Med | `RS-36` | key rel::func::kind: more claims of same kind never new |
+| **OPEN** | Med | `RS-37` | m = AsyncMock(); f(m), tuple unpack, patch() as s, spec=None missed |
+| **OPEN** | Med | `RS-38` | startswith w/o boundary (prose FPs); comment-led SQL missed; chained targets |
+| **OPEN** | Low | `RS-39` | pkg.__init__.X key; no dedicated test file |
+| **OPEN** | High | `RS-40` | check() commits every statement: writes persist |
+| **OPEN** | Med | `RS-41` | fetchall() on no-result statement → FAIL |
+| **OPEN** | Med | `RS-42` | psycopg2 with connect() does not close; no connect_timeout |
+| **OPEN** | Med | `RS-43` | every connect error → SKIPPED, exit 0 with --skip-without-db; +driver DSN not normalised |
+| **OPEN** | Low | `RS-44` | psycopg2 imported before DSN check |
+| **OPEN** | Low | `RS-45` | params={} always passed; % literal behaviour undetermined |
+| **OPEN** | Low | `RS-46` | Python slices flagged; quoted casts missed; comments/docstrings scanned |
+| **OPEN** | High | `RS-47` | blame failure → {} → all skipped; shallow clone makes gate a no-op |
+| **OPEN** | High | `RS-48` | trailing # TODO never checked |
+| **OPEN** | High | `RS-49` | issue-ref regex on whole line exempts foo(x), UTF-8 |
+| **OPEN** | Med | `RS-50` | commented-out code needs ;/,: Python dead calls missed |
+| **OPEN** | Low | `RS-51` | SHA-256 repos (64 hex) rejected |
+| **OPEN** | Low | `RS-52` | one -L per candidate (cmdline limit); locale decoding |
+| **OPEN** | High | `RS-53` | mock.patch and aliases not in _PATCH_NAMES |
+| **OPEN** | High | `RS-54` | routing exemption starts at def line, so stacked @patch flagged |
+| **OPEN** | Med | `RS-55` | new_callable and autospec=False count as autospecced |
+| **OPEN** | Low | `RS-56` | last-name match flags HTTP mocks; module pytestmark ignored |
+| **OPEN** | Low | `RS-57` | no floor; relative_to crash |
+| **OPEN** | Low | `RS-58` | no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing... |
+| **OPEN** | High | `TZ-1` | cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO... |
+| **OPEN** | High | `TZ-2` | ignored files (.env, data) never unsaved |
+| **OPEN** | High | `TZ-3` | failed git cherry → every branch "spare" |
+| **OPEN** | High | `TZ-4` | parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs |
+| **OPEN** | Med | `TZ-5` | __getattr__ substring anywhere marks module dynamic |
+| **OPEN** | Med | `TZ-6` | pkg prefix matches pkg_other |
+| **OPEN** | Med | `TZ-7` | type X=, with/for/walrus/match/global bindings missed (FP); walk over-binds nested loca... |
+| **OPEN** | Low | `TZ-8` | only missing[0] reported |
+| **OPEN** | Low | `TZ-9` | suppress(ImportError), tuple raises, BaseException guards unseen (FP) |
+| **OPEN** | Med | `TZ-10` | floor satisfied by assert in another floorless loop with same var |
+| **OPEN** | Med | `TZ-11` | nested function loops reported twice; duplicate keys |
+| **OPEN** | Med | `TZ-12` | continue/pass/raise/pytest.fail/with subtests bodies not assert-only |
+| **OPEN** | Low | `TZ-13` | [*m] treated non-empty |
+| **OPEN** | Low | `TZ-14` | cwd-relative keys; crash outside root |
+| **OPEN** | Med | `TZ-15` | identical asserts collapse into one key; 90-char truncation collisions |
+| **OPEN** | Low | `TZ-16` | bare Name/Attribute/Subscript always narrowing |
+| **OPEN** | Med | `TZ-17` | missing baseline seeds and skips |
+| **OPEN** | Med | `TZ-18` | self-recursion / same-name locals count as calls |
+| **OPEN** | Low | `TZ-19` | defs under module if/try not judged; no file floor |
+| **OPEN** | Med | `TZ-20` | self.x: T = p and chained assigns treated as used |
+| **OPEN** | Low | `TZ-21` | any string constant counts as read (__slots__) |
+| **OPEN** | Low | `TZ-22` | relative_to crash |
+| **OPEN** | Med | `TZ-23` | test.describe.skip, test.fixme, xit, xdescribe missed |
+| **OPEN** | Med | `TZ-24` | --project="Mobile Chrome" → "Mobile" |
+| **OPEN** | Med | `TZ-25` | any playwright test line without --project disables check |
+| **OPEN** | Med | `TZ-26` | absolute parts: any ancestor tests skips all |
+| **OPEN** | Med | `TZ-27` | missing runner/tag/config/spec paths → clean |
+| **OPEN** | Low | `TZ-28` | quoted/short tag flags, 4-space tags unparsed (fail-open) |
+| **OPEN** | Low | `TZ-29` | substring script match |
+| **OPEN** | Low | `TZ-30` | empty/stale allowlist reasons accepted |
+| **OPEN** | Med | `TZ-31` | guard counts headers in fences; rejects **Findings** |
+| **OPEN** | Low | `TZ-32` | non-backticked rows skipped; empty cells crash |
+| **OPEN** | Low | `TZ-33` | status column assumed first; other headers counted as findings |
+| **OPEN** | Med | `TZ-34` | ./scripts vs scripts string compare; ruff.toml not read (fail-open) |
+| **OPEN** | Low | `TZ-35` | only first component vs test dirs |
+| **OPEN** | Low | `TZ-36` | locale decoding; syntax-error files silently skipped (hypothesis) |
+| **OPEN** | Low | `TZ-37` | missing/unmatched source dropped silently |
+| **OPEN** | Med | `TZ-38` | wasted subprocess; any nonzero = "not ancestor"; missing git crash |
+| **OPEN** | Med | `TZ-39` | unanchored DOTALL regex: core: inside app_core:, path deps steal refs, quoted refs skipped |
+| **OPEN** | Low | `TZ-40` | first version = anywhere; suffixes truncated |
+| **OPEN** | Med | `TZ-41` | trailing --src-path IndexError blocks commit; = form unparsed |
+| **OPEN** | Med | `TZ-42` | env path \ not normalised; substring match |
+| **OPEN** | Low | `TZ-43` | any nonzero = findings (missing vulture) |
+| **OPEN** | Low | `TZ-44` | ~4 processes per file |
+| **OPEN** | Low | `TZ-45` | rename's old path token cut by [3:] |
+| **OPEN** | Low | `TZ-46` | no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases |
+| **OPEN** | High | `MT-1` | NEEDS-JUSTIFICATION: never rejected on the next run |
+| **OPEN** | High | `MT-2` | zero mutants (unparsable file, empty scope) passes |
+| **OPEN** | High | `MT-3` | BOM: AST operators return [] |
+| **OPEN** | Med | `MT-4` | generator lines consumed by fingerprint; whole file swept, cached under narrow key |
+| **OPEN** | Med | `MT-5` | lines=[] = whole file, same cache key as full run |
+| **OPEN** | Med | `MT-6` | twin verdicts not fanned out; accepted twins read stale |
+| **OPEN** | High | `MT-7` | worker reply desync after stray fd-1 output |
+| **OPEN** | High | `MT-8` | sweep_files(jobs>1) extra sandboxes not removed → FileExistsError on 2nd file |
+| **OPEN** | Low | `MT-9` | extra sandboxes copied from live repo, no cold baseline |
+| **OPEN** | Med | `MT-10` | warm-path crash kills undercounted |
+| **OPEN** | Low | `MT-11` | dead AssertionError entry |
+| **OPEN** | Med | `MT-12` | worker not restarted after timeout; timeout paid twice |
+| **OPEN** | Med | `MT-13` | wider-net timeout recorded as survivor |
+| **OPEN** | Med | `MT-14` | cache drops wider_net_note |
+| **OPEN** | Med | `MT-15` | unlocked RMW cache with fixed .tmp name |
+| **OPEN** | Med | `MT-16` | node-id test paths hashed as placeholder → stale replay |
+| **OPEN** | Low | `MT-17` | only test_*.py in fingerprint |
+| **OPEN** | Low | `MT-18` | string >= instead of ancestry |
+| **OPEN** | Med | `MT-19` | "dropped a not" eats a char: unparsable mutant counted as kill |
+| **OPEN** | Med | `MT-20` | emptying string: bytes type change / no-op on empty literals |
+| **OPEN** | Low | `MT-21` | min description says "max becomes min" (re-keys baseline) |
+| **OPEN** | Low | `MT-22` | sampled_containers wrong counts; AST operators skip sampling |
+| **OPEN** | Low | `MT-23` | non-UTF8 → UnicodeDecodeError not MutationHarnessError |
+| **OPEN** | Low | `MT-24` | unclosed open() handles (ResourceWarning; Windows locks) |
+| **OPEN** | Med | `MT-25` | no check the mutated module is imported from sandbox (editable install → all survive) |
+| **OPEN** | Med | `MT-26` | timeout kills only direct child; Windows grandchildren leak; rmtree errors ignored |
+| **OPEN** | Low | `MT-27` | last_timings/last_failed not reset on early return |
+| **OPEN** | Low | `MT-28` | 6-7 ast.parse per target; O(tokens×ranges) |
+| **OPEN** | Low | `MT-29` | non-range lines entries dropped from key but crash later |
+| **OPEN** | Low | `MT-30` | parent __init__.py not in import closure |
+| **OPEN** | Med | `MT-31` | refresh writes baseline before inconclusive/gap/truncation checks |
+| **OPEN** | Low | `MT-32` | truncated run passes with warning (documented) |
+| **OPEN** | Med | `W-1` | cwd/env/sys.path/argv not restored between runs → false kills |
+| **OPEN** | Low | `W-2` | namespace paths re-resolved per mutant |
+| **OPEN** | High | `TS-1` | pytest exit code/stderr ignored: usage/conftest errors → every case "NO TEETH" |
+| **OPEN** | Med | `TS-2` | timeout leaves xdist workers alive on Windows |
+| **OPEN** | Low | `TS-3` | one bad case aborts whole sweep |
+| **OPEN** | Low | `TS-4` | read-back check vacuous for empty/duplicated repl |
+| **OPEN** | Low | `TS-5` | CRLF old becomes \r\r\n |
+| **OPEN** | High | `ARCH-1` | Package version is 0.1.0 while releases are tagged up to v1.16.1 |
+| **OPEN** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
+| **OPEN** | High | `ARCH-3` | v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09... |
+| **OPEN** | High | `ARCH-4` | Reusable workflows git clone --depth 1 py-ci-shared default-branch tip to get configs/r... |
+| **OPEN** | Med | `ARCH-5` | 6 of 7 reusable workflows declare no permissions:; they inherit the caller's token scop... |
+| **OPEN** | Med | `ARCH-6` | pip-audit, import-linter, pydoclint, semgrep installed unpinned (uvx pip-audit, uv pip... |
+| **OPEN** | Med | `ARCH-7` | pyutilz-ref defaults to empty = unpinned pyutilz tip; the description itself documents... |
+| **OPEN** | Med | `ARCH-8` | requires-python >=3.9 but CI runs only 3.11 (matrix is OS only) and mypy checks as 3.10 |
+| **OPEN** | Med | `ARCH-9` | Manifest exposes one hook (mypy-full-manual, which is just python -m mypy), while 13 mo... |
+| **OPEN** | Med | `ARCH-10` | Only 3 console scripts; the other 10 CLIs are python -m only |
+| **OPEN** | Med | `ARCH-11` | 67 of 112 modules are not mentioned in README (e.g |
+| **OPEN** | Low | `ARCH-12` | Docstring describes the package as four scripts (black_filtered_apply, format_warn, ban... |
+| **OPEN** | Low | `ARCH-13` | Stale build/lib (22 modules, vs 112 in src) and build/bdist.win-amd64 exist on disk |
+| **OPEN** | High | `ARCH-14` | Corpus enumeration is inconsistent |
+| **OPEN** | High | `ARCH-15` | Seven divergent skip-dir sets |
+| **OPEN** | Med | `ARCH-16` | Every gate re-reads and re-parses the same files; a consumer running 40 gates in one py... |
+| **OPEN** | Med | `ARCH-17` | Unparsable files are silently dropped (continue/return []/return set()), so a file with... |
+| **OPEN** | Low | `ARCH-18` | read_text() without encoding=: locale-dependent on Windows (cp1251 here). |
+| **OPEN** | Med | `ARCH-19` | CLI conventions differ: argparse in 4 (baseline_trend, embedded_postgres, pinned_tool_v... |
+| **OPEN** | Med | `ARCH-20` | No common signature |
+| **OPEN** | Med | `ARCH-21` | Refresh mechanism duplicated six times, with 10 different flags; detection via REFRESH_... |
+| **OPEN** | Med | `ARCH-22` | Baseline formats and ratchet semantics differ: json vs orjson (orjson a hard dependency... |
+| **OPEN** | Med | `ARCH-23` | No per-repo configuration surface ([tool.py_ci_shared] appears nowhere) |
+| **OPEN** | Low | `ARCH-24` | Message quality varies: some gates print file:line plus fix (pinned_tool_versions, per... |
+| **OPEN** | Med | `ARCH-25` | Dogfooding is partial: self-ci runs pytest, ruff, mypy and the reusable workflows, but... |
+| **OPEN** | Low | `ARCH-26` | T201 ignores are listed per file (16 entries) and must be maintained by hand as CLIs ar... |
+| **OPEN** | Low | `ARCH-27` | orjson is a hard runtime dependency used only for baseline I/O in 5 modules, where stdl... |
+| **OPEN** | Low | `ARCH-28` | ruff-base.toml/ruff-tests.toml are not package data (pyproject comment), so every consu... |
+| **OPEN** | Info | `ARCH-29` | Convention document, not an API reference; claims are measurement-based (realtime_appli... |
+| **OPEN** | Info | `ARCH-30` | Only module over the 1k LOC limit used elsewhere in these repos. |
+| **OPEN** | High | `ADOPT-1` | CI installs .[test,llm] only; py-ci-shared is in [dev], so it is never installed |
+| **OPEN** | High | `ADOPT-2` | [dev] lists bare "py-ci-shared" with no direct URL |
+| **OPEN** | High | `ADOPT-3` | py-ci-shared is not a dependency, yet tests/test_meta/test_no_top_level_side_effects.py... |
+| **OPEN** | High | `ADOPT-4` | On ImportError these gates print "SKIPPED" and sys.exit(0): a missing install reads as... |
+| **OPEN** | High | `ADOPT-5` | _SHARED_AVAILABLE=False on ImportError silently drops 7 Dart scans from SCANS; the ratc... |
+| **OPEN** | Med | `ADOPT-6` | collect_ignore of the meta tests whenever import py_ci_shared fails |
+| **OPEN** | Med | `ADOPT-7` | pytest.importorskip("py_ci_shared..."): whole gate files turn SKIPPED when the package... |
+| **OPEN** | Med | `ADOPT-8` | Black-pin cross-check reads ../py-ci-shared/.github/workflows/black-filtered.yml from a... |
+| **OPEN** | Med | `ADOPT-9` | mypy_gate --min-files 150 dashboard \/\/ true: result and population floor both discard... |
+| **OPEN** | Med | `ADOPT-10` | mypy_gate --min-files floors hand-set per repo with no recorded measurement; mlframe an... |
+| **OPEN** | Med | `ADOPT-11` | One job installs the package at a49421c (152 behind) but clones unpinned master for con... |
+| **OPEN** | Med | `ADOPT-12` | CI installs @v1 (moving tag) while declared deps pin f103a36: local and CI run differen... |
+| **OPEN** | Med | `ADOPT-13` | Five different py-ci-shared SHAs in one repo (41cbadc, 64e2b6b, 915217a, 7195776, f5028... |
+| **OPEN** | Med | `ADOPT-14` | Two versions of the same upload-codecov action in one repo. |
+| **OPEN** | Med | `ADOPT-15` | Gate package floats on master while workflows are ~165-173 commits old; tool_versions.R... |
+| **OPEN** | Med | `ADOPT-16` | Pinned to v1.2.0 (~173 behind); no meta-test gates at all, only the three lint workflows. |
+| **OPEN** | Med | `ADOPT-17` | Unpinned git installs of master: any py-ci-shared push can break or silently change the... |
+| **OPEN** | Low | `ADOPT-18` | The moving tag v1 is 20 commits behind master, so @v1 repos run older workflows than SH... |
+| **OPEN** | Low | `ADOPT-19` | Local clone 4 commits behind origin/master; hooks in repos that use an editable sibling... |
+| **OPEN** | Low | `ADOPT-20` | extend = "../py-ci-shared/configs/ruff-base.toml" sibling path; ruff errors on any mach... |
+| **OPEN** | Low | `ADOPT-21` | Hook id pinned-tool-versions (python -m py_ci_shared.pinned_tool_versions) defined twic... |
+| **OPEN** | Med | `ADOPT-22` | Local copy of py_ci_shared.index_coverage (same class and 9 functions, cosmetic diffs o... |
+| **OPEN** | Med | `ADOPT-23` | Hand-copied scanner module, already drifted: flutter_app_core's _IMPORT regex (~line 29... |
+| **OPEN** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
+| **OPEN** | Med | `ADOPT-25` | Modules adopted by no consumer: baseline_trend, checkpoint_isolation, config_drift_chec... |
+| **OPEN** | Med | `ADOPT-26` | 28 modules with exactly one consumer; generic ones worth rolling out: fail_open_handler... |
+| **OPEN** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
+| **OPEN** | Low | `ADOPT-28` | autopsia calls lint-advisory but not lint-blocking; llm_bench and social call neither. |
+| **OPEN** | Low | `ADOPT-29` | Stale second clone of autopsia (2026-09-08, 15 days behind Redline/autopsia); greps and... |
+| **OPEN** | Info | `ADOPT-30` | Jobs are not starting: "recent account payments have failed or your spending limit need... |
+| **OPEN** | High | `SUITE-1` | CI tests only Python 3.11 while requires-python = ">=3.9" |
+| **OPEN** | High | `SUITE-2` | The floor-guard test itself does import tomllib at module level, so it fails at collect... |
+| **OPEN** | Med | `SUITE-3` | The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro... |
+| **OPEN** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
+| **OPEN** | High | `SUITE-5` | uv pip install -e ".[dev]" \/\/ uv pip install -e  |
+| **OPEN** | Med | `SUITE-6` | pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole... |
+| **OPEN** | High | `SUITE-7` | setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te... |
+| **OPEN** | Med | `SUITE-8` | No test references either module. |
+| **OPEN** | Med | `SUITE-9` | Covered only nominally (referenced, or 1 to 3 unrelated tests); their own branches (7,... |
+| **OPEN** | Med | `SUITE-10` | 9 gates share 3 grouped files at about 5 to 8 tests each |
+| **OPEN** | Med | `SUITE-11` | Thin tests relative to branches: runtime_registry_mutation 6/38, unread_init_params 6/3... |
+| **OPEN** | Med | `SUITE-12` | No meta-test asserts that every module has a test file, every gate has a README entry,... |
+| **OPEN** | Med | `SUITE-13` | Many of the repo's own gates are not run on itself (full list in section 2): ci_workflo... |
+| **OPEN** | Low | `SUITE-14` | The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this... |
+| **OPEN** | Med | `SUITE-15` | Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re... |
+| **OPEN** | Med | `SUITE-16` | Mutant F2 survives: async functions dropped from measurement |
+| **OPEN** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
+| **OPEN** | Low | `SUITE-18` | Survivor I4: a "%s" % x constant is not tested as stringish. |
+| **OPEN** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
+| **OPEN** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |
+| **OPEN** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
+| **OPEN** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |
+| **OPEN** | Low | `SUITE-23` | Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is... |
+| **OPEN** | Low | `SUITE-24` | The fake reader sleeps 30 s in a background thread that is left running after the test... |
+| **OPEN** | Low | `SUITE-25` | The real-server tests skip unless Postgres binaries are on PATH or PG_BIN; the GitHub r... |
+| **OPEN** | Low | `SUITE-26` | Every file does sys.path.insert(0, <repo>/src) |
+| **OPEN** | Low | `SUITE-27` | No shared fixtures (git repo factory, write helper), so each file re-implements _write/... |
+| **OPEN** | Info | `SUITE-28` | Portability is otherwise good: all tests use tmp_path (one tempfile.TemporaryDirectory... |
+| **OPEN** | High | `NEW-1` | gate `import_cycles` |
+| **OPEN** | High | `NEW-2` | gate `local_copy_report` (migrate locals onto existing central gates) |
+| **OPEN** | High | `NEW-3` | gate `swallowed_exceptions` |
+| **OPEN** | High | `NEW-4` | gate `pickle_state_completeness` (runtime + static) |
+| **OPEN** | High | `NEW-5` | gate `test_resource_leaks` (pytest plugin) |
+| **OPEN** | High | `NEW-6` | gate `atomic_write_staging` |
+| **OPEN** | High | `NEW-7` | gate `hash_key_determinism` |
+| **OPEN** | High | `NEW-8` | gate `sentinel_or_fallback` |
+| **OPEN** | High | `NEW-9` | gate `no_xfail_to_defer` |
+| **OPEN** | High | `NEW-10` | gate `timing_assertions` |
+| **OPEN** | Med | `NEW-11` | gate `stale_source_citations` |
+| **OPEN** | Med | `NEW-12` | gate `console_encoding_safety` |
+| **OPEN** | Med | `NEW-13` | gate `lf_file_writes` |
+| **OPEN** | Med | `NEW-14` | gate `module_cache_thread_safety` |
+| **OPEN** | Med | `NEW-15` | gate `machine_specific_paths` |
+| **OPEN** | Med | `NEW-16` | gate `hardcoded_token_ceilings` |
+| **OPEN** | Med | `NEW-17` | gate `coverage_config_parity` |
+| **OPEN** | Med | `NEW-18` | gate `pytest_addopts_path_runs` |
+| **OPEN** | Low | `NEW-19` | gate `rollback_then_continue` |
+| **OPEN** | Low | `NEW-20` | gate `reiterated_iterable_params` |
+| **OPEN** | Low | `NEW-21` | gate `numba_seed_range` |
+| **OPEN** | Low | `NEW-22` | gate `stdlib_json_ban` (opt-in) |
+| **OPEN** | Low | `NEW-23` | gate `polars_null_equality` |
+| **OPEN** | Low | `NEW-24` | gate `plotly_annotation_loop` |
+| **OPEN** | High | `INFRA-1` | pytest11 plugin py_ci_shared.pytest_plugin |
+| **OPEN** | High | `INFRA-2` | Gate-teeth self-check |
+| **OPEN** | High | `INFRA-3` | Canary corpus |
+| **OPEN** | High | `INFRA-4` | Per-gate runtime budget |
+| **OPEN** | Med | `INFRA-5` | Registry + README parity |
+| **OPEN** | Med | `INFRA-6` | Consumer adoption matrix |
