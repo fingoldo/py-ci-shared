@@ -105,3 +105,24 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- the test keeps the original subprocess.run as _REAL_RUN before the `runs` fixture patches it, so the POSIX branch executes sh for real; the quoting was confirmed separately by a sh round trip; regression test: TestShellProfile::test_the_value_is_shell_quoted (failed on ubuntu and macos CI, passed on Windows where the branch is skipped)
 
 - **Finding:** CI on Linux and macOS failed with `'' == '/home/u/a&b ...'` because the fixture's fake run returned empty stdout.
+
+### CANARY-18 (Med) -- embedded_postgres cannot start as an unprivileged user on Linux
+
+**Disposition:** RESOLVED -- the server is started with -k <throwaway data dir> on non-Windows, so the socket and its lock live in the temporary directory; regression tests: test_a_real_server_starts_accepts_a_connection_and_is_gone_after, test_run_hands_the_command_its_dsn (now executed in CI)
+
+- **Finding:** the server used the packaged socket directory /var/run/postgresql and died with 'could not create lock file ... Permission denied' once CI provided PG_BIN
+
+
+### CANARY-19 (Low) -- the leak-guard plugin test counted a message pytest prints twice under -rA
+
+**Disposition:** RESOLVED -- the test counts `ERROR at teardown of test_leaks_env` headers, one per reported error; regression test: test_the_table_loads_the_resource_leak_guard_only_when_asked
+
+- **Finding:** the error text appears in the error block and in the short summary, so the 'loaded once' assertion failed on every CI runner
+
+
+### CANARY-20 (Low) -- printed_advice fix landed without black and with unescaped match= patterns
+
+**Disposition:** RESOLVED -- formatted with the pinned black and raw match patterns; checked with the pinned ruff before pushing
+
+- **Finding:** the black-filtered and ruff-blocking (RUF043) CI jobs failed
+

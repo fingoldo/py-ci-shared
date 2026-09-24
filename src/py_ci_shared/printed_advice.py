@@ -90,9 +90,7 @@ def _scopes(tree: ast.Module) -> dict[int, str]:
     return out
 
 
-def find_printed_advice(
-    files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False
-) -> list[PrintedAdvice]:
+def find_printed_advice(files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False) -> list[PrintedAdvice]:
     """Every message literal that advises an action, in file order, keyed ``<path>::<scope>#<n>``.
 
     Raises ``UnparsedFilesError`` for a file that cannot be read or parsed (unless *allow_unparsed*), and

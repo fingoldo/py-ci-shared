@@ -105,7 +105,7 @@ def test_the_table_loads_the_resource_leak_guard_only_when_asked(tmp_path):
     assert "leaked resources past its teardown" in guarded.stdout and "PCS_LEAK_PROBE" in guarded.stdout, guarded.stdout
     # -p and the table together load it once, not twice.
     both = _pytest(on, "-p", "py_ci_shared.resource_leak_guard", "test_leaky.py")
-    assert both.returncode == 1 and both.stdout.count("leaked resources past its teardown") == 1, both.stdout + both.stderr
+    assert both.returncode == 1 and both.stdout.count("ERROR at teardown of test_leaks_env") == 1, both.stdout + both.stderr
 
 
 def test_a_non_boolean_resource_leak_guard_is_a_usage_error(tmp_path):

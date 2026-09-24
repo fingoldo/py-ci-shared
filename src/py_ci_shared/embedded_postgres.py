@@ -24,6 +24,7 @@ import argparse
 import contextlib
 import os
 import platform
+import shlex
 import shutil
 import socket
 import subprocess
@@ -95,8 +96,13 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
             check=True,
             log=data / "initdb.log",
         )
+        # The packaged default socket directory (/var/run/postgresql) is not writable for an unprivileged user, so the
+        # server would refuse to start; keep the socket inside the throwaway data directory. Windows has no such dir.
+        options = f"-p {port} -c listen_addresses=127.0.0.1"
+        if os.name != "nt":
+            options += f" -k {shlex.quote(str(data))}"
         _quiet(
-            [pg_ctl, "-D", str(data / "db"), "-o", f"-p {port} -c listen_addresses=127.0.0.1", "-l", str(data / "server.log"), "-w", "start"],
+            [pg_ctl, "-D", str(data / "db"), "-o", options, "-l", str(data / "server.log"), "-w", "start"],
             check=True,
             log=data / "pg_ctl.log",
             also=[data / "server.log"],
