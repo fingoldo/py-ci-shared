@@ -37,49 +37,94 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Optional
 
-_DEFAULT_SKIP_DIRS = ("__pycache__", ".git", ".venv", "build", "dist", ".mypy_cache", ".ruff_cache", ".pytest_cache")
+from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+
+#: Kept for callers that imported it; the walk now uses the shared ``_core.DEFAULT_EXCLUDE`` (a superset).
+_DEFAULT_SKIP_DIRS = tuple(sorted(DEFAULT_EXCLUDE))
+
+#: ``datetime`` methods that return a NAIVE value meant as UTC. ``utcfromtimestamp`` has the same deprecation
+#: and the same convention-carried frame as ``utcnow``.
+NAIVE_UTC_METHODS = frozenset({"utcnow", "utcfromtimestamp"})
+
+#: Libraries whose ``utcnow()`` returns an AWARE value, so the name is not the hazard there.
+_AWARE_LIBRARIES = frozenset({"arrow", "pendulum"})
+
+RULE = "naive-utcnow"
 
 
 def _is_utcnow_call(node: ast.AST) -> bool:
-    """`<anything>.utcnow()` -- `datetime.utcnow()`, `dt.datetime.utcnow()`, `_dt.datetime.utcnow()`.
-
-    Matched on the ATTRIBUTE rather than on the full dotted path, because the import spelling varies
-    across these repos (`import datetime as dt`, `from datetime import datetime`, `import datetime as
-    _dt`) and a check that enumerated the spellings would miss the next one.
-    """
+    """`<anything>.utcnow()` -- kept for callers; the scan itself also matches the uncalled reference."""
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "utcnow"
 
 
-def find_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = ()) -> list[str]:
-    """`path:line: source` for every real `.utcnow()` CALL under *root*.
+def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
+    """Every ``<x>.utcnow`` / ``<x>.utcfromtimestamp`` REFERENCE, called or not.
 
-    Comments and docstrings cannot match: they are not calls.
+    Matched on the ATTRIBUTE rather than on a full dotted path, because the import spelling varies across these
+    repos (``import datetime as dt``, ``from datetime import datetime``, ``import datetime as _dt``) and a check
+    that enumerated the spellings would miss the next one. Uncalled references matter as much as calls:
+    ``Field(default_factory=datetime.utcnow)`` produces the same naive value on every row. The one exclusion goes
+    through the import aliases: ``arrow.utcnow()``/``pendulum`` return aware values.
     """
-    skip = set(_DEFAULT_SKIP_DIRS) | set(skip_dir_names)
-    out: list[str] = []
-    for path in sorted(root.rglob("*.py")):
-        if set(path.relative_to(root).parts) & skip:
+    aliases = ImportAliases.from_tree(tree)
+    called: dict[int, ast.Call] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            called[id(node.func)] = node
+    out: list[ast.expr] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Attribute) and node.attr in NAIVE_UTC_METHODS):
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, SyntaxError, UnicodeDecodeError):  # pragma: no cover - unreadable file
+        qualified = aliases.qualified_name(node)
+        if qualified is not None and qualified.split(".", 1)[0] in _AWARE_LIBRARIES:
             continue
-        rel = path.relative_to(root).as_posix()
-        out.extend(f"{rel}:{getattr(node, chr(108) + chr(105) + chr(110) + chr(101) + chr(110) + chr(111), 0)}: {ast.unparse(node)}" for node in ast.walk(tree) if _is_utcnow_call(node))
-    return out
+        out.append(called.get(id(node), node))
+    return sorted(out, key=lambda n: (n.lineno, n.col_offset))
 
 
-def assert_no_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = ()) -> None:
-    """Fail if any module under *root* calls `.utcnow()`."""
+def collect_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), use_git: Optional[bool] = None) -> tuple[list[Finding], ScanResult]:
+    """``(findings, scan)`` for *root*. Unparsed files are in ``scan.unparsed``, not dropped."""
+    scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(skip_dir_names), use_git=use_git)
+    findings = [Finding(f.rel, node.lineno, RULE, ast.unparse(node)) for f in scan for node in _offending_nodes(f.tree)]
+    return findings, scan
+
+
+def find_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), use_git: Optional[bool] = None) -> list[str]:
+    """``path:line: source`` for every real ``.utcnow``/``.utcfromtimestamp`` reference under *root*.
+
+    Comments and docstrings cannot match: they are not in the tree. A file that cannot be read or parsed is
+    reported as ``path:line: unparsable: <why>`` (or ``unreadable``), never skipped: a BOM, an encoding error
+    or syntax newer than the interpreter used to make every AST gate pass that file vacuously. A missing *root*
+    raises ``py_ci_shared._core.CorpusError``.
+    """
+    findings, scan = collect_naive_utcnow(root, skip_dir_names=skip_dir_names, use_git=use_git)
+    out = [f"{f.path}:{f.line}: {f.message}" for f in findings] + [p.render() for p in scan.unparsed]
+    return sorted(out, key=lambda s: (s.split(":", 1)[0], int(s.split(":", 2)[1])))
+
+
+def assert_no_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), min_files: int = 1, use_git: Optional[bool] = None) -> None:
+    """Fail if any module under *root* references ``.utcnow``/``.utcfromtimestamp``, if any file could not be
+    parsed, or if fewer than *min_files* files parsed (a wrong root is a failure, not a clean tree)."""
     import pytest
 
-    offenders = find_naive_utcnow(root, skip_dir_names=skip_dir_names)
-    if offenders:
-        pytest.fail(
-            f"{len(offenders)} call(s) to `datetime.utcnow()`, which is deprecated (removal is "
-            "scheduled) and returns a NAIVE value whose UTC-ness lives in a comment rather than in "
-            "the expression. Use `datetime.now(datetime.UTC)`; when the output needs a `Z` suffix "
-            "use `.strftime('%Y-%m-%dT%H:%M:%SZ')`, because an AWARE `isoformat()` already emits "
-            "`+00:00` and appending `Z` produces `...+00:00Z`:\n  " + "\n  ".join(offenders)
+    findings, scan = collect_naive_utcnow(root, skip_dir_names=skip_dir_names, use_git=use_git)
+    scan.min_files = min_files
+    problems: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if scan.unparsed:
+        problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
+    if findings:
+        problems.append(
+            f"{len(findings)} use(s) of `datetime.utcnow()`/`utcfromtimestamp()`, which are deprecated (removal is "
+            "scheduled) and return a NAIVE value whose UTC-ness lives in a comment rather than in "
+            "the expression. Use `datetime.now(datetime.UTC)` / `datetime.fromtimestamp(ts, datetime.UTC)`; when the "
+            "output needs a `Z` suffix use `.strftime('%Y-%m-%dT%H:%M:%SZ')`, because an AWARE `isoformat()` already "
+            "emits `+00:00` and appending `Z` produces `...+00:00Z`:\n  " + "\n  ".join(f"{f.path}:{f.line}: {f.message}" for f in findings)
         )
+    if problems:
+        pytest.fail("\n".join(problems))

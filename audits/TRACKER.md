@@ -327,10 +327,10 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Low | `GE-52` | _loc returns 0 on OSError and raises on non-UTF8; files=[] passes |
 | **OPEN** | Low | `GE-53` | git rev-parse --git-dir ignores core.hooksPath |
 | **OPEN** | Low | `GE-54` | read_text/write_text use the locale encoding and rewrite line endings |
-| **OPEN** | High | `MP-1` | BOM files are dropped: ast.parse rejects U+FEFF and the SyntaxError is swallowed |
-| **OPEN** | High | `MP-2` | any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes |
-| **OPEN** | Med | `MP-3` | only .utcnow() calls matched; default_factory=datetime.utcnow and utcfromtimestamp missed |
-| **OPEN** | Med | `MP-4` | no file-count floor; missing root passes |
+| **RESOLVED** | High | `MP-1` | BOM files are dropped: ast.parse rejects U+FEFF and the SyntaxError is swallowed |
+| **RESOLVED** | High | `MP-2` | any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes |
+| **RESOLVED** | Med | `MP-3` | only .utcnow() calls matched; default_factory=datetime.utcnow and utcfromtimestamp missed |
+| **RESOLVED** | Med | `MP-4` | no file-count floor; missing root passes |
 | **OPEN** | Med | `MP-5` | class-level markers, AnnAssign/class pytestmark, from pytest import mark missed |
 | **OPEN** | High | `MP-6` | positional tests (no /, no .py) not seen as path → "reaches everything" |
 | **OPEN** | Med | `MP-7` | ./tests not normalised; cd pkg && pytest tests/ never matches |
@@ -352,8 +352,8 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Med | `MP-23` | if not x, IfExp, while, assert, comprehension ifs missed |
 | **OPEN** | Med | `MP-24` | key uses path.name; no stale check; line-number keys |
 | **OPEN** | Low | `MP-25` | walk descends into nested defs; Annotated not unwrapped |
-| **OPEN** | Med | `MP-26` | from pkg.a import _impl and relative imports missed |
-| **OPEN** | Low | `MP-27` | relative_to ValueError when src outside root |
+| **RESOLVED** | Med | `MP-26` | from pkg.a import _impl and relative imports missed |
+| **RESOLVED** | Low | `MP-27` | relative_to ValueError when src outside root |
 | **OPEN** | Low | `MP-28` | non-recursive glob; parse errors silent; import_module("pkg._x") missed |
 | **OPEN** | Med | `MP-29` | # inside a string treated as comment (FP) |
 | **OPEN** | Med | `MP-30` | docstring parity flips on SQL = """ literals |
@@ -433,7 +433,7 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | High | `TZ-1` | cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO... |
 | **OPEN** | High | `TZ-2` | ignored files (.env, data) never unsaved |
 | **OPEN** | High | `TZ-3` | failed git cherry → every branch "spare" |
-| **OPEN** | High | `TZ-4` | parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs |
+| **RESOLVED** | High | `TZ-4` | parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs |
 | **OPEN** | Med | `TZ-5` | __getattr__ substring anywhere marks module dynamic |
 | **OPEN** | Med | `TZ-6` | pkg prefix matches pkg_other |
 | **OPEN** | Med | `TZ-7` | type X=, with/for/walrus/match/global bindings missed (FP); walk over-binds nested loca... |
@@ -444,9 +444,9 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Med | `TZ-12` | continue/pass/raise/pytest.fail/with subtests bodies not assert-only |
 | **OPEN** | Low | `TZ-13` | [*m] treated non-empty |
 | **OPEN** | Low | `TZ-14` | cwd-relative keys; crash outside root |
-| **OPEN** | Med | `TZ-15` | identical asserts collapse into one key; 90-char truncation collisions |
-| **OPEN** | Low | `TZ-16` | bare Name/Attribute/Subscript always narrowing |
-| **OPEN** | Med | `TZ-17` | missing baseline seeds and skips |
+| **RESOLVED** | Med | `TZ-15` | identical asserts collapse into one key; 90-char truncation collisions |
+| **RESOLVED** | Low | `TZ-16` | bare Name/Attribute/Subscript always narrowing |
+| **RESOLVED** | Med | `TZ-17` | missing baseline seeds and skips |
 | **OPEN** | Med | `TZ-18` | self-recursion / same-name locals count as calls |
 | **OPEN** | Low | `TZ-19` | defs under module if/try not judged; no file floor |
 | **OPEN** | Med | `TZ-20` | self.x: T = p and chained assigns treated as used |
@@ -476,7 +476,7 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Low | `TZ-44` | ~4 processes per file |
 | **OPEN** | Low | `TZ-45` | rename's old path token cut by [3:] |
 | **OPEN** | Low | `TZ-46` | no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases |
-| **OPEN** | High | `MT-1` | NEEDS-JUSTIFICATION: never rejected on the next run |
+| **RESOLVED** | High | `MT-1` | NEEDS-JUSTIFICATION: never rejected on the next run |
 | **OPEN** | High | `MT-2` | zero mutants (unparsable file, empty scope) passes |
 | **OPEN** | High | `MT-3` | BOM: AST operators return [] |
 | **OPEN** | Med | `MT-4` | generator lines consumed by fingerprint; whole file swept, cached under narrow key |
@@ -589,13 +589,13 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Med | `SUITE-12` | No meta-test asserts that every module has a test file, every gate has a README entry,... |
 | **OPEN** | Med | `SUITE-13` | Many of the repo's own gates are not run on itself (full list in section 2): ci_workflo... |
 | **OPEN** | Low | `SUITE-14` | The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this... |
-| **OPEN** | Med | `SUITE-15` | Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re... |
+| **RESOLVED** | Med | `SUITE-15` | Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re... |
 | **OPEN** | Med | `SUITE-16` | Mutant F2 survives: async functions dropped from measurement |
 | **OPEN** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
 | **OPEN** | Low | `SUITE-18` | Survivor I4: a "%s" % x constant is not tested as stringish. |
 | **OPEN** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
-| **OPEN** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |
-| **OPEN** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
+| **RESOLVED** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |
+| **RESOLVED** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
 | **OPEN** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |
 | **OPEN** | Low | `SUITE-23` | Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is... |
 | **OPEN** | Low | `SUITE-24` | The fake reader sleeps 30 s in a background thread that is left running after the test... |

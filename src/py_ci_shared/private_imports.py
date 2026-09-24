@@ -23,11 +23,17 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable, Iterator
 from pathlib import Path
+from typing import Optional
+
+from ._core import DEFAULT_EXCLUDE, ScanResult, SourceProblem, package_of, relative_posix, resolve_relative, scan_python
 
 #: Path components that mark test-adjacent code, exempt from the rule.
 DEFAULT_EXEMPT_PARTS: tuple[str, ...] = ("tests", "_benchmarks", "__pycache__")
 #: File-name prefixes that mark white-box instrumentation.
 DEFAULT_EXEMPT_PREFIXES: tuple[str, ...] = ("_profile_", "_bench_")
+
+#: The ``module`` slot of a finding for a file that could not be parsed.
+UNPARSED_MARKER = "<unparsed>"
 
 
 def owning_package(module: str) -> "str | None":
@@ -39,18 +45,53 @@ def owning_package(module: str) -> "str | None":
     return None
 
 
-def _imports(tree: ast.AST) -> Iterator[str]:
+def _imports(tree: ast.AST, caller: str) -> Iterator[str]:
+    """Every dotted target an import in *tree* reaches, relative imports resolved against *caller*.
+
+    ``from pkg.a import _impl`` yields ``pkg.a._impl`` (the imported name may be a private submodule or a private
+    helper of a public module; either way it is internal to ``pkg.a``). ``from pkg.a._core import X`` yields just
+    ``pkg.a._core``: the reach is into the module, and the public name inside it adds nothing.
+    """
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            yield node.module
+        if isinstance(node, ast.ImportFrom):
+            module = resolve_relative(node.module, node.level, caller)
+            if module is None:
+                continue
+            if owning_package(module) is not None:
+                yield module
+                continue
+            for alias in node.names:
+                if alias.name != "*" and alias.name.startswith("_") and not alias.name.startswith("__"):
+                    yield f"{module}.{alias.name}"
         elif isinstance(node, ast.Import):
             for alias in node.names:
                 yield alias.name
 
 
 def _caller_package(py: Path, src_dir: Path, package: str) -> str:
-    rel = py.parent.relative_to(src_dir).as_posix()
-    return package if rel == "." else package + "." + rel.replace("/", ".")
+    return package_of(py, src_dir, package)
+
+
+def _scan(src_dir: Path, exempt_parts: Iterable[str], exempt_prefixes: Iterable[str], use_git: Optional[bool]) -> ScanResult:
+    prefixes = tuple(exempt_prefixes)
+    scan = scan_python(src_dir, exclude=DEFAULT_EXCLUDE | frozenset(exempt_parts), use_git=use_git)
+    scan.files = [f for f in scan.files if not f.path.name.startswith(prefixes)]
+    scan.unparsed = [p for p in scan.unparsed if not p.path.name.startswith(prefixes)]
+    return scan
+
+
+def _reaches(scan: ScanResult, src_dir: Path, package: str, repo_root: Path) -> set[tuple[str, str]]:
+    out: set[tuple[str, str]] = set()
+    for f in scan:
+        caller = _caller_package(f.path, src_dir, package)
+        for module in _imports(f.tree, caller):
+            if module != package and not module.startswith(package + "."):
+                continue
+            owner = owning_package(module)
+            if owner is None or caller == owner or caller.startswith(owner + "."):
+                continue
+            out.add((relative_posix(f.path, repo_root), module))
+    return out
 
 
 def find_private_cross_package_imports(
@@ -60,27 +101,21 @@ def find_private_cross_package_imports(
     *,
     exempt_parts: Iterable[str] = DEFAULT_EXEMPT_PARTS,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
+    use_git: Optional[bool] = None,
 ) -> set[tuple[str, str]]:
-    """``{(importer relative to repo_root, imported module)}`` for every reach into a foreign private module."""
-    skip_parts = set(exempt_parts)
-    prefixes = tuple(exempt_prefixes)
-    out: set[tuple[str, str]] = set()
-    for py in sorted(src_dir.rglob("*.py")):
-        if set(py.relative_to(src_dir).parts) & skip_parts or py.name.startswith(prefixes):
-            continue
-        try:
-            tree = ast.parse(py.read_text(encoding="utf-8", errors="ignore"))
-        except SyntaxError:
-            continue
-        caller = _caller_package(py, src_dir, package)
-        for module in _imports(tree):
-            if module != package and not module.startswith(package + "."):
-                continue
-            owner = owning_package(module)
-            if owner is None or caller == owner or caller.startswith(owner + "."):
-                continue
-            out.add((py.relative_to(repo_root).as_posix(), module))
-    return out
+    """``{(importer relative to repo_root, imported module)}`` for every reach into a foreign private module.
+
+    A file that cannot be read or parsed appears as ``(importer, "<unparsed>")`` rather than being skipped. An
+    importer outside *repo_root* is keyed by its absolute POSIX path. A missing *src_dir* raises ``CorpusError``.
+    """
+    scan = _scan(src_dir, exempt_parts, exempt_prefixes, use_git)
+    found = _reaches(scan, src_dir, package, repo_root)
+    found.update((relative_posix(p.path, repo_root), UNPARSED_MARKER) for p in scan.unparsed)
+    return found
+
+
+def _render_unparsed(problems: list[SourceProblem], repo_root: Path) -> str:
+    return "\n    ".join(f"{relative_posix(p.path, repo_root)}:{p.line}: {p.kind}: {p.message}" for p in problems)
 
 
 def assert_no_private_cross_package_imports(
@@ -91,13 +126,24 @@ def assert_no_private_cross_package_imports(
     allowlist: Iterable[tuple[str, str]] = (),
     exempt_parts: Iterable[str] = DEFAULT_EXEMPT_PARTS,
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
+    min_files: int = 1,
+    use_git: Optional[bool] = None,
 ) -> None:
-    """Fail on a reach not in *allowlist*, and on an allowlist entry that no longer occurs."""
+    """Fail on a reach not in *allowlist*, on an allowlist entry that no longer occurs, on an unparsable file,
+    and when fewer than *min_files* files parsed."""
     import pytest
 
     allowed = set(allowlist)
-    found = find_private_cross_package_imports(src_dir, package, repo_root, exempt_parts=exempt_parts, exempt_prefixes=exempt_prefixes)
+    scan = _scan(src_dir, exempt_parts, exempt_prefixes, use_git)
+    scan.min_files = min_files
+    found = _reaches(scan, src_dir, package, repo_root)
     problems = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if scan.unparsed:
+        problems.append("files that could not be parsed, so their imports were not checked:\n    " + _render_unparsed(scan.unparsed, repo_root))
     new = sorted(found - allowed)
     if new:
         problems.append(

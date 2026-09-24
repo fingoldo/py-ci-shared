@@ -223,7 +223,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-15 (Med) -- Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- mutant P7 (dropping the `ast.Import` branch) is now killed by a fixture whose only reach is a plain `import pkg.metrics._core`, with a public-import control. regression test: tests/test_private_imports.py::TestAuditRegressions::test_a_plain_import_alone_is_flagged
 
 - **Original id:** F-15
 - **Where:** tests/test_private_imports.py
@@ -273,7 +273,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-20 (Med) -- assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `assert_no_naive_utcnow(..., min_files=1)` is new; an empty root now fails. `test_a_clean_tree_passes` still passes because its tree contains one parsed file. regression test: tests/test_naive_utcnow.py::TestAuditRegressions::test_an_empty_root_fails_the_floor
 
 - **Original id:** F-20
 - **Where:** src/py_ci_shared/naive_utcnow.py:73
@@ -283,7 +283,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-21 (Low) -- getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `chr(108)+...` spelling is replaced by a plain `node.lineno`. No scanner in this repo flags `lineno`, so there was no scanner to fix. regression test: tests/test_naive_utcnow.py::TestAuditRegressions::test_line_numbers_are_read_plainly
 
 - **Original id:** F-21
 - **Where:** src/py_ci_shared/naive_utcnow.py:69

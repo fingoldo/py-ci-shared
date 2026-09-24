@@ -30,7 +30,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-1 (High) -- BOM files are dropped: ast.parse rejects U+FEFF and the SyntaxError is swallowed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_core.read_source` decodes `.py` files like the interpreter (`tokenize.detect_encoding`: BOM, PEP 263 cookie, UTF-8) and strips the BOM; naive_utcnow and private_imports now parse through `_core.scan_python`, so a BOM file is checked, not dropped. Other MP-1 sites (marker_runner_coverage, meta_private_imports, module_reload_safety, optional_truthiness, phantom_code_references, pytest_markers, prompt_field_parity) are left to the migration agents. regression test: tests/test_naive_utcnow.py::TestAuditRegressions::test_a_bom_file_is_checked_not_dropped, tests/test_private_imports.py::TestAuditRegressions::test_unparsable_and_bom_files, tests/test_core_source.py::TestReadSource::test_a_bom_is_stripped
 
 - **Where:** marker_runner_coverage.py:80-86, meta_private_imports.py:57, module_reload_safety.py:109-117, naive_utcnow.py:65, optional_truthiness.py:86, private_imports.py:72, phantom_code_references.py:95, pytest_markers.py:109, prompt_field_parity.py:93
 - **Finding:** BOM files are dropped: `ast.parse` rejects U+FEFF and the SyntaxError is swallowed
@@ -40,7 +40,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-2 (High) -- any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_core.scan_python` records each unreadable or unparsable file as a `SourceProblem` (path, line, kind, message) and never skips it. `find_naive_utcnow` lists it as `path:line: unparsable: ...`, `find_private_cross_package_imports` as `(path, "<unparsed>")`, and both `assert_*` entry points fail on it. The old test that required a silent skip (tests/test_naive_utcnow.py:78) now requires the file to be reported. regression test: tests/test_naive_utcnow.py::TestScoping::test_an_unparseable_file_is_reported_and_does_not_stop_the_walk, tests/test_naive_utcnow.py::TestScoping::test_an_unparseable_file_fails_the_entry_point
 
 - **Where:** same sites
 - **Finding:** any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes
@@ -50,7 +50,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-3 (Med) -- only .utcnow() calls matched; default_factory=datetime.utcnow and utcfromtimestamp missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- naive_utcnow matches every `.utcnow`/`.utcfromtimestamp` ATTRIBUTE, called or not (`Field(default_factory=datetime.utcnow)`), and reports a call once. `ImportAliases` resolves `arrow`/`pendulum` (whose `utcnow()` returns an aware value) so those are not flagged. regression test: tests/test_naive_utcnow.py::TestAuditRegressions::test_uncalled_references_and_utcfromtimestamp_are_caught, tests/test_naive_utcnow.py::TestAuditRegressions::test_aware_libraries_are_resolved_through_aliases_and_not_flagged
 
 - **Where:** naive_utcnow.py:44-51
 - **Finding:** only `.utcnow()` calls matched; `default_factory=datetime.utcnow` and `utcfromtimestamp` missed
@@ -60,7 +60,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-4 (Med) -- no file-count floor; missing root passes
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- for naive_utcnow and private_imports (module_reload_safety is left to migration): a missing root raises `_core.CorpusError`; `assert_no_naive_utcnow` and `assert_no_private_cross_package_imports` take `min_files=1`, which counts PARSED files. regression test: tests/test_naive_utcnow.py::TestAuditRegressions::test_an_empty_root_fails_the_floor, tests/test_naive_utcnow.py::TestAuditRegressions::test_a_missing_root_raises, tests/test_private_imports.py::TestAuditRegressions::test_the_floor_and_a_missing_root
 
 - **Where:** naive_utcnow.py:61, module_reload_safety.py:129, private_imports.py:68
 - **Finding:** no file-count floor; missing root passes
@@ -280,7 +280,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-26 (Med) -- from pkg.a import _impl and relative imports missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- private_imports resolves relative imports against the importer's package (`_core.resolve_relative`/`package_of`, same for `__init__.py`). It also judges `module.alias` for `from pkg.a import _impl`. When the module itself is already private, only the module is reported, so existing allowlists keep matching. regression test: tests/test_private_imports.py::TestAuditRegressions::test_a_private_name_from_a_public_module_is_flagged, tests/test_private_imports.py::TestAuditRegressions::test_relative_imports_are_resolved, tests/test_private_imports.py::TestAuditRegressions::test_a_relative_sibling_import_is_allowed
 
 - **Where:** private_imports.py:42-48,77-80
 - **Finding:** `from pkg.a import _impl` and relative imports missed
@@ -290,7 +290,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-27 (Low) -- relative_to ValueError when src outside root
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- importer paths go through `_core.relative_posix`, which returns the absolute POSIX path when the file is not under `repo_root`, so it no longer raises `ValueError`. regression test: tests/test_private_imports.py::TestAuditRegressions::test_src_outside_repo_root_does_not_raise
 
 - **Where:** private_imports.py:81
 - **Finding:** `relative_to` ValueError when src outside root
@@ -1090,7 +1090,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-4 (High) -- parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- for value_bearing_asserts (uncalled_functions, unread_init_params, unresolved_imports and vacuous_loop_assertions are left to migration): files are parsed through `_core.scan_python`, so a BOM is handled, and an unparsable file is listed by `find_value_bearing_asserts` and fails `assert_no_value_bearing_asserts`. A floor `min_files=1` on parsed files is added. regression test: tests/test_value_bearing_asserts.py::TestAuditRegressions::test_a_bom_file_is_scanned, tests/test_value_bearing_asserts.py::TestAuditRegressions::test_an_unparsable_file_is_listed_and_fails, tests/test_value_bearing_asserts.py::TestAuditRegressions::test_the_file_floor
 
 - **Where:** uncalled_functions.py:80-84; unread_init_params.py:101-104; unresolved_imports.py:49-53, 220-223; vacuous_loop_assertions.py:155-162; value_bearing_asserts.py:67-70
 - **Finding:** parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs
@@ -1200,7 +1200,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-15 (Med) -- identical asserts collapse into one key; 90-char truncation collisions
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the baseline is now the multiset `_core.Baseline`, so two identical asserts need two entries. Keys hold the full expression with no 90-char truncation. Old baselines keep working: JSON lists are read as multisets, and a pre-fix truncated key still matches when only that key is present. regression test: tests/test_value_bearing_asserts.py::TestAuditRegressions::test_duplicate_asserts_are_counted_not_collapsed, tests/test_value_bearing_asserts.py::TestAuditRegressions::test_long_expressions_are_keyed_in_full_and_legacy_keys_still_match, tests/test_core_baseline.py::TestMultiset::test_a_duplicate_finding_is_not_absorbed_by_one_entry
 
 - **Where:** value_bearing_asserts.py:80-83, 104
 - **Finding:** identical asserts collapse into one key; 90-char truncation collisions
@@ -1210,7 +1210,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-16 (Low) -- bare Name/Attribute/Subscript always narrowing
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- opt-in `strict=True` on `is_narrowing_assert` / `find_value_bearing_asserts` / `assert_no_value_bearing_asserts` treats bare `Name`/`Attribute`/`Subscript` truthiness as a value check. The default is unchanged, so consumers see no new failures. regression test: tests/test_value_bearing_asserts.py::TestAuditRegressions::test_strict_mode_treats_bare_truthiness_as_a_value_check
 
 - **Where:** value_bearing_asserts.py:43
 - **Finding:** bare Name/Attribute/Subscript always narrowing
@@ -1220,7 +1220,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-17 (Med) -- missing baseline seeds and skips
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- for value_bearing_asserts (uncalled_functions is left to migration): a missing baseline FAILS and names `--refresh-value-asserts-baseline` / `PY_CI_SHARED_REFRESH=value-asserts`. It is written only on refresh (`refresh=True`, the pytest option via `request=`, the env var, or argv), and never from a walk that failed its floor or had unparsed files. The old test that required seed-and-skip was re-framed. regression test: tests/test_value_bearing_asserts.py::TestTheRatchet::test_a_missing_baseline_fails_and_is_written_only_on_refresh, tests/test_value_bearing_asserts.py::TestTheRatchet::test_refresh_via_env_var_as_under_xdist, tests/test_core_baseline.py::TestMissingAndRefresh::test_a_missing_baseline_fails_naming_the_refresh_command
 
 - **Where:** uncalled_functions.py:192; value_bearing_asserts.py:105
 - **Finding:** missing baseline seeds and skips
@@ -1520,7 +1520,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-1 (High) -- NEEDS-JUSTIFICATION: never rejected on the next run
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `baseline_ratchet.Baseline.enforce` (used by mutation_teeth) and `_core.Baseline.enforce` both reject any entry whose note starts with `NEEDS-JUSTIFICATION`. A refresh followed by a normal run now fails until a human writes the reason. regression test: tests/test_core_baseline.py::TestUnjustified::test_baseline_ratchet_rejects_the_marker_too, tests/test_core_baseline.py::TestUnjustified::test_needs_justification_entries_fail_a_normal_run, tests/test_value_bearing_asserts.py::TestAuditRegressions::test_needs_justification_entries_are_rejected
 
 - **Where:** mutation_teeth.py:1993-2035; baseline_ratchet.py:98-127
 - **Finding:** `NEEDS-JUSTIFICATION:` never rejected on the next run

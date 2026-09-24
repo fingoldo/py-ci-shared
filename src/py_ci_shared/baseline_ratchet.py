@@ -42,6 +42,8 @@ import os
 import sys
 from collections.abc import Mapping
 
+from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified
+
 DEFAULT_DIRECTORY = os.path.join("tool", "meta", "baselines")
 DEFAULT_REFRESH_COMMAND = "python tool/meta/regen_baselines.py"
 
@@ -89,9 +91,8 @@ class Baseline:
             # Sorted so a regeneration produces a reviewable diff rather than a reshuffle.
             "accepted": dict(sorted(accepted.items())),
         }
-        with open(self.path, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, ensure_ascii=True, indent=2, sort_keys=True)
-            handle.write("\n")
+        # Atomic: an interrupted regeneration leaves the previous file, never half of one.
+        atomic_write_text(self.path, dump_json(payload))
 
     # ---- use ----
 
@@ -116,6 +117,15 @@ class Baseline:
                 f"If this one is a considered exception, add it to {self.path} with a note saying why.",
                 file=sys.stderr,
             )
+            return 1
+
+        unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note))
+        if unjustified:
+            # A refresh writes the marker as the note; an entry still carrying it was recorded, not accepted.
+            print(f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r}:", file=sys.stderr)
+            for key in unjustified:
+                print(f"  {key}", file=sys.stderr)
+            print("Replace each marker with the reason the entry is acceptable.", file=sys.stderr)
             return 1
 
         if stale:
