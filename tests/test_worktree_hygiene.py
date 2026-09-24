@@ -65,7 +65,7 @@ def test_a_copy_of_an_upstream_file_is_not_unsaved_work(origin_and_clone):
     """The copy a landing leaves behind reads as dirty forever; identical content is not work."""
     worktree = origin_and_clone.parent / "wt_copy"
     _git(origin_and_clone, "worktree", "add", "-q", "--detach", str(worktree), "origin/master")
-    (worktree / "kept.txt").write_text("upstream content\r\n", encoding="utf-8", newline="")
+    (worktree / "kept.txt").write_bytes(b"upstream content\r\n")
 
     assert unsaved_paths(origin_and_clone, worktree) == []
     assert worktree_findings(origin_and_clone)[0].verdict == REMOVABLE

@@ -197,7 +197,7 @@ class TestExternalDottedNames:
         monkeypatch.syspath_prepend(str(pkg))
         p = _write(tmp_path, "pkg/mod.py", "# `exploding_mod_c24.thing.x`\n")
         out = find_phantom_code_references([p], tmp_path, set())
-        assert out == ["pkg/mod.py:1: `exploding_mod_c24.thing.x` names nothing declared in this repo"]
+        assert out == ["pkg/mod.py:1: `exploding_mod_c24.thing.x` does not resolve by import"]
 
 
 def test_baseline_entries_match_on_file_and_name_not_line_or_wording(tmp_path: Path) -> None:

@@ -690,3 +690,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `CANARY-47` | lint-blocking.yml could not lint a monorepo subproject |
 | **RESOLVED** | Med | `CANARY-48` | machine_specific_paths baseline keys carried the absolute path they flag |
 | **RESOLVED** | Med | `CANARY-49` | self-CI could not install the dev extra once sqlalchemy 2.1.0 was released |
+| **RESOLVED** | Low | `CANARY-50` | Python 3.9: refresh option, stdlib head detection and a 3.10-only test API |

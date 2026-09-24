@@ -368,6 +368,16 @@ def _import_or_none(name: str) -> object:
 
 
 @functools.cache
+def _importable(name: str) -> bool:
+    """Is *name* a module this interpreter can import? Covers the stdlib on 3.9, which has no ``sys.stdlib_module_names``."""
+    import importlib.util
+
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def _resolves_by_import(dotted: str) -> bool:
     """Whether ``a.b.c`` names a real object of an installed module or of ``builtins``: import the longest importable
     prefix, then ``getattr`` the rest. Nothing runs beyond the import itself, and whatever the import raises counts
@@ -462,7 +472,7 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
                     # Not this repo's name: an installed module or a builtin decides, attribute by attribute.
                     if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
                         continue
-                    if head in known:
+                    if head in known or _importable(head):
                         violations.append(f"{rel}:{lineno}: `{token}` does not resolve by import")
                         continue
                 repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)

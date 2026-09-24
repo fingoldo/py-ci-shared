@@ -102,7 +102,21 @@ def register_refresh_options(parser: Any, flags: Iterable[str] = (), *, help_suf
         _add(parser, flag, action="store_true", default=False, help=f"rewrite the {help_suffix} instead of comparing")
 
 
+def _registered(parser: Any, name: str) -> bool:
+    """Does a pytest ``Parser`` already hold *name* in any group? pytest adds options to argparse only when it builds its
+    parser, so on some Python versions a duplicate surfaces there, after ``addoption`` returned."""
+    groups = [getattr(parser, "_anonymous", None), *getattr(parser, "_groups", ())]
+    for group in groups:
+        for option in getattr(group, "options", ()):
+            names = option.names() if callable(getattr(option, "names", None)) else ()
+            if name in names:
+                return True
+    return False
+
+
 def _add(parser: Any, name: str, **kwargs: Any) -> None:
+    if _registered(parser, name):
+        return
     try:
         parser.addoption(name, **kwargs)
     except (ValueError, argparse.ArgumentError):

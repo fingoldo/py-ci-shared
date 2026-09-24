@@ -328,3 +328,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 
 - **Finding:** every test job and mypy-full failed at `uv pip install -e .[dev]` with `duplicate normalized extra name mssql-pymssql`; black-filtered flagged stale_comment_age.py.
 
+### CANARY-50 (Low) -- Python 3.9: refresh option, stdlib head detection and a 3.10-only test API
+
+**Disposition:** RESOLVED -- register_refresh_options skips an option any pytest group already holds (pytest adds options to argparse late, so on 3.9 the duplicate surfaced after addoption); phantom_code_references recognises an importable head with importlib.util.find_spec where sys.stdlib_module_names is missing; test_worktree_hygiene writes bytes instead of write_text(newline=); verified by running the three test files under Python 3.9.25 (56 passed) and 3.14 (65 passed)
+
+- **Finding:** self-CI's 3.9 job failed three tests after the 1.17.0 fixes: a conflicting --py-ci-refresh, `os.path.joinn` reported as undeclared instead of unresolvable, and write_text(newline=).
+
