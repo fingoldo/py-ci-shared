@@ -17,6 +17,8 @@ from typing import Callable
 
 import pytest
 
+from py_ci_shared.randomly_seed_guard import bound_randomly_reseeders
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
@@ -97,3 +99,12 @@ def git_repo(tmp_path: Path) -> Callable[..., Path]:
         return repo
 
     return _make
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """pytest-randomly passes thinc's reseeder a seed past 2**32; bound it (see randomly_seed_guard).
+
+    The package's own pytest11 plugin does this too, but this suite must not depend on the package being installed
+    with its entry point registered.
+    """
+    bound_randomly_reseeders()

@@ -90,6 +90,29 @@ Then, in place of the old `python scripts/black_filtered_apply.py ...`:
 python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check src/mlframe
 ```
 
+### pytest-randomly and thinc: "Seed must be between 0 and 2**32 - 1"
+
+On an interpreter that has both pytest-randomly and spaCy (which brings thinc), roughly half of all tests error at setup
+and teardown with `ValueError: Seed must be between 0 and 2**32 - 1`, in any repository. pytest-randomly (4.0.1 through
+5.0.0, checked 2026-09-24) seeds each test with `randomly_seed + crc32(node id)`, which passes 2**32 about half the time;
+it reduces the value for its own numpy call but hands it raw to every `pytest_randomly.random_seeder` entry point, and
+thinc registers `fix_random_seed`, which calls `numpy.random.seed` with it. Upgrading pytest-randomly does not help, and
+`-p no:randomly` only hides it by throwing away test-order randomisation.
+
+`py_ci_shared.randomly_seed_guard.bound_randomly_reseeders()` reduces the seed the same way pytest-randomly already does
+for numpy, so ordering and per-test determinism are unchanged. The package's pytest plugin calls it in `pytest_configure`;
+a repository that does not load the plugin calls it from its own `conftest.py`:
+
+```python
+from py_ci_shared.randomly_seed_guard import bound_randomly_reseeders
+
+def pytest_configure(config):
+    bound_randomly_reseeders()
+```
+
+glossum, pyutilz and mlframe each carry an older copy of this fix in their `conftest.py` (a wrapper around
+`thinc.api.fix_random_seed`); they work, and can be replaced by the call above.
+
 `format_warn.py` is already fully generic. `bandit_warn.py` and `vulture_warn.py` take `--src-path src/mlframe` (required; the `PY_CI_SHARED_SRC_PATH` environment variable is the fallback), and `vulture_warn.py` also takes `--whitelist scripts/vulture_whitelist.py` (optional; `PY_CI_SHARED_VULTURE_WHITELIST` is its fallback). Pass them as the hook's `args:` in `.pre-commit-config.yaml`: pre-commit has no per-hook `env:` key, so the environment variables only help when the caller's shell exports them. `vulture_warn` does nothing at import and exits 2 on a bad command line.
 
 ## Gate catalogue

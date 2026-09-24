@@ -28,6 +28,7 @@ import pytest
 from ._core.config import ConfigError, GateRun, RepoConfig, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
+from .randomly_seed_guard import bound_randomly_reseeders
 
 _CONFIG_KEY = pytest.StashKey[Optional[RepoConfig]]()
 LEAK_GUARD_PLUGIN = "py_ci_shared.resource_leak_guard"
@@ -54,6 +55,7 @@ def _refresh_tokens(config: Any) -> list[str]:
 
 def pytest_configure(config: Any) -> None:
     config.addinivalue_line("markers", "py_ci_shared: a gate item generated from [tool.py_ci_shared]")
+    bound_randomly_reseeders()  # pytest-randomly hands thinc an out-of-range seed; see randomly_seed_guard
     tokens = _refresh_tokens(config)
     if tokens:
         before = os.environ.get(ENV_VAR)
