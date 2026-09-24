@@ -632,7 +632,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | High | `INFRA-3` | Canary corpus |
 | **RESOLVED** | High | `INFRA-4` | Per-gate runtime budget |
 | **RESOLVED** | Med | `INFRA-5` | Registry + README parity |
-| **OPEN** | Med | `INFRA-6` | Consumer adoption matrix |
+| **RESOLVED** | Med | `INFRA-6` | Consumer adoption matrix |
 | **RESOLVED** | Med | `CANARY-1` | env_flag_parsing skips a BOM file |
 | **RESOLVED** | Med | `CANARY-2` | env_flag_parsing passes an unparsable file |
 | **RESOLVED** | Med | `CANARY-3` | git_dependency_pins passes an unparsable pyproject.toml |

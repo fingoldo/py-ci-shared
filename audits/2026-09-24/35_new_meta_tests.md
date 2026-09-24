@@ -406,7 +406,7 @@ the pyutilz `code_audit` scanner (run via `code_audit_meta`).
 
 ### INFRA-6 (Med) -- Consumer adoption matrix
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `src/py_ci_shared/adoption_matrix.py` (registered as a `cli` module, `py-ci-shared tool adoption_matrix`) reads consumer repo roots (args or `--repos-file` TOML) read-only and reports pins per location (pyproject dependency tables, `[tool.uv.sources]`, ruff `extend`, requirements, `uv.lock`, pre-commit `rev`, workflow `uses:` refs, `py-ci-shared-ref` inputs, pip installs, `git clone`, `actions/checkout`), pin agreement (`--resolve-in` resolves tags and short SHAs through a py-ci-shared checkout), moving pins, module usage (imports, `python -m`, `py-ci-shared run`, `[tool.py_ci_shared]` tables), silent skips (importorskip, collect_ignore, exit 0, pytest.skip, availability flag nobody checks loudly, swallowed ImportError) and local copies via `local_copy_report.find_local_copies`. The output is a markdown summary, pin table, modules x repos matrix, workflow matrix and findings list. Exit 1 on disagreeing pins, moving pins or silent skips; `--advisory` exits 0. Real run: `audits/2026-09-24/adoption_matrix_2026-09-24.md`; regression test: tests/test_adoption_matrix.py
 
 - **Priority:** P2
 - **Proposal:** Extend `config_drift_check` to report which consumers run which gates and which
