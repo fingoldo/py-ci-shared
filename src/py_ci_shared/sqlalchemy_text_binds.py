@@ -11,6 +11,11 @@ glossum shipped thirty-nine such sites across nine modules, every batched UNNEST
 noticed because a mocked session accepts any string. ``CAST(...)`` is the fix to prefer over a space
 before ``::``: a space is invisible, and a tidy-up reintroduces the bug.
 
+In a ``.py`` file only string literals are scanned (docstrings excluded), so a slice such as ``xs[:n::step]``
+and a comment are never mistaken for SQL; in another suffix (``.sql``) the whole text is, minus ``#``/``--``
+comments. A quoted type (``:a::"MyEnum"``) counts. A root that does not exist, or a ``.py`` file that cannot be
+parsed, fails the check.
+
 Usage::
 
     from py_ci_shared.sqlalchemy_text_binds import assert_no_colon_cast_binds
@@ -21,39 +26,78 @@ Usage::
 
 from __future__ import annotations
 
+import ast
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-#: ``:name::type`` -- a bind parameter immediately followed by a cast. ``a::b::c`` is a chain of casts, not a bind.
-COLON_CAST_RE = re.compile(r"(?<![:\w]):([A-Za-z_][A-Za-z_0-9]*)::([A-Za-z_]+(?:\[\])?)")
+from ._core import DEFAULT_EXCLUDE, CorpusError, SourceError, iter_files, parse_source, read_source, relative_posix
+
+#: ``:name::type`` -- a bind parameter immediately followed by a cast. ``a::b::c`` is a chain of casts, not a bind,
+#: and ``x:a::int`` (a word before the colon) is not a bind either. The type may be a quoted identifier.
+COLON_CAST_RE = re.compile(r"""(?<![:\w]):([A-Za-z_][A-Za-z_0-9]*)::((?:"[^"\n]+"|[A-Za-z_]+)(?:\[\])?)""")
+_SQL_COMMENT_RE = re.compile(r"--[^\n]*")
 
 
 def colon_cast_binds(text: str) -> list[tuple[int, str]]:
-    """``(line number, match)`` for every ``:name::type`` outside a ``#`` comment line."""
+    """``(line number, match)`` for every ``:name::type`` in SQL-ish *text*, outside a ``#`` comment line and a
+    ``--`` comment."""
     out: list[tuple[int, str]] = []
     for number, line in enumerate(text.splitlines(), start=1):
         if line.lstrip().startswith("#"):
             continue
-        out.extend((number, m.group(0)) for m in COLON_CAST_RE.finditer(line))
+        out.extend((number, m.group(0)) for m in COLON_CAST_RE.finditer(_SQL_COMMENT_RE.sub("", line)))
     return out
 
 
+def _docstring_nodes(tree: ast.Module) -> set[int]:
+    return {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+
+
+def _string_parts(tree: ast.Module) -> Iterator[tuple[int, str]]:
+    """``(first line, text)`` for every string literal (f-string literal parts included) that is not a docstring."""
+    skip = _docstring_nodes(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
+            yield node.lineno, node.value
+
+
+def python_colon_cast_binds(source: str, tree: "ast.Module | None" = None) -> list[tuple[int, str]]:
+    """``(line number, match)`` for every ``:name::type`` inside a string literal of Python *source*."""
+    tree = tree if tree is not None else ast.parse(source)
+    out: list[tuple[int, str]] = []
+    for lineno, text in _string_parts(tree):
+        for offset, match in colon_cast_binds(text):
+            out.append((lineno + offset - 1, match))
+    return sorted(out)
+
+
 def find_colon_cast_binds(repo_root: Path, roots: Iterable[str], *, suffixes: Iterable[str] = (".py",)) -> "tuple[list[str], int]":
-    """(``path:line: match`` problems, number of files scanned) under the given roots."""
-    wanted = set(suffixes)
+    """(``path:line: match`` problems, number of files scanned) under the given roots. A missing root and a ``.py``
+    file that cannot be parsed are problems too; neither counts as scanned."""
+    patterns = tuple(f"*{s}" for s in suffixes)
     problems: list[str] = []
     scanned = 0
     for root in roots:
-        base = repo_root / root
-        if not base.exists():
+        base = Path(repo_root) / root
+        try:
+            files = iter_files(base, patterns, exclude=DEFAULT_EXCLUDE)
+        except CorpusError as exc:
+            problems.append(f"{root}: {exc} - nothing under it was checked")
             continue
-        for path in sorted(base.rglob("*")):
-            if not path.is_file() or path.suffix not in wanted or "__pycache__" in path.parts:
+        for path in files:
+            rel = relative_posix(path, repo_root)
+            try:
+                if path.suffix == ".py":
+                    source, tree = parse_source(path)
+                    found = python_colon_cast_binds(source, tree)
+                else:
+                    found = colon_cast_binds(read_source(path))
+            except SourceError as exc:
+                problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message} - not checked")
                 continue
             scanned += 1
-            for number, match in colon_cast_binds(path.read_text(encoding="utf-8", errors="replace")):
-                problems.append(f"{path.relative_to(repo_root).as_posix()}:{number}: {match}")
+            problems.extend(f"{rel}:{number}: {match}" for number, match in found)
     return problems, scanned
 
 

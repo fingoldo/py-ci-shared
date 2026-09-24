@@ -24,12 +24,27 @@ import ast
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from ._core import ParsedFile, ScanResult, scan_python
+
 __all__ = ["SurvivorshipScore", "DEFAULT_METRIC_NAMES", "find_survivorship_scoring", "assert_no_survivorship_scoring"]
 
-DEFAULT_METRIC_NAMES: frozenset[str] = frozenset({
-    "rmse", "mae", "mse", "r2", "r2_score", "mape", "smape", "logloss", "brier",
-    "mean_squared_error", "mean_absolute_error", "root_mean_squared_error", "mean_absolute_percentage_error",
-})
+DEFAULT_METRIC_NAMES: frozenset[str] = frozenset(
+    {
+        "rmse",
+        "mae",
+        "mse",
+        "r2",
+        "r2_score",
+        "mape",
+        "smape",
+        "logloss",
+        "brier",
+        "mean_squared_error",
+        "mean_absolute_error",
+        "root_mean_squared_error",
+        "mean_absolute_percentage_error",
+    }
+)
 # Filling the dropped rows before scoring is a remedy; so is reporting the fraction that was dropped as part of the
 # verdict. Merely counting the finite rows to reject a spec below a floor is not: the survivors are still scored alone.
 _REMEDY_MARKERS: tuple[str, ...] = ("fill", "dropped_frac", "dropped_fraction", "finite_frac", "coverage_frac")
@@ -65,9 +80,9 @@ def _finite_masks(func: ast.AST) -> set[str]:
         for node in ast.walk(func):
             if not (isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None):
                 continue
-            uses_finite = any(
-                isinstance(n, ast.Call) and _call_name(n) == "isfinite" for n in ast.walk(node.value)
-            ) or any(isinstance(n, ast.Name) and n.id in masks for n in ast.walk(node.value))
+            uses_finite = any(isinstance(n, ast.Call) and _call_name(n) == "isfinite" for n in ast.walk(node.value)) or any(
+                isinstance(n, ast.Name) and n.id in masks for n in ast.walk(node.value)
+            )
             if not uses_finite:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
@@ -99,17 +114,15 @@ def _has_remedy(func: ast.AST) -> bool:
     return False
 
 
-def find_survivorship_scoring(files: Iterable[Path], repo_root: Path,
-                              metric_names: Sequence[str] | frozenset[str] = DEFAULT_METRIC_NAMES) -> list[SurvivorshipScore]:
-    """Every metric call whose arguments are both indexed by a finite-mask, in a function that neither fills nor reports."""
+def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
+    return scan_python([Path(p) for p in files], root=repo_root)
+
+
+def _find(parsed: Iterable[ParsedFile], metric_names: Sequence[str] | frozenset[str]) -> list[SurvivorshipScore]:
     metrics = frozenset(metric_names)
     out: list[SurvivorshipScore] = []
-    for path in files:
-        try:
-            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-        except (SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
+    for f in parsed:
+        tree, rel = f.tree, f.rel
         for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             masks = _finite_masks(func)
             if not masks or _has_remedy(func):
@@ -123,29 +136,53 @@ def find_survivorship_scoring(files: Iterable[Path], repo_root: Path,
     return sorted(out, key=lambda s: (s.path, s.lineno))
 
 
-def assert_no_survivorship_scoring(files: Iterable[Path], repo_root: Path, allowed: Mapping[str, str] | None = None,
-                                   min_files: int = 1,
-                                   metric_names: Sequence[str] | frozenset[str] = DEFAULT_METRIC_NAMES) -> None:
+def find_survivorship_scoring(
+    files: Iterable[Path], repo_root: Path, metric_names: Sequence[str] | frozenset[str] = DEFAULT_METRIC_NAMES, *, allow_unparsed: bool = False
+) -> list[SurvivorshipScore]:
+    """Every metric call whose arguments are both indexed by a finite-mask, in a function that neither fills nor reports.
+
+    A file outside *repo_root* is keyed by its absolute path. A file that cannot be read or parsed raises
+    ``UnparsedFilesError`` (an ``AssertionError``) unless *allow_unparsed*.
+    """
+    scan = _scan(files, repo_root)
+    if not allow_unparsed:
+        scan.check_unparsed()
+    return _find(scan.files, metric_names)
+
+
+def assert_no_survivorship_scoring(
+    files: Iterable[Path],
+    repo_root: Path,
+    allowed: Mapping[str, str] | None = None,
+    min_files: int = 1,
+    metric_names: Sequence[str] | frozenset[str] = DEFAULT_METRIC_NAMES,
+) -> None:
     """Fail on a metric scored only where the prediction was finite.
 
     ``allowed`` maps ``path::function`` to the reason that site scores survivors on purpose; an empty reason is rejected,
     and an entry with nothing left to excuse must be removed.
     """
-    files = list(files)
-    if len(files) < min_files:
-        raise AssertionError(f"scanned only {len(files)} files (< {min_files}); the scan lost its subject")
+    scan = _scan(files, repo_root)
+    scan.min_files = min_files
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        raise AssertionError(f"the scan lost its subject: {exc}") from exc
+    scan.check_unparsed()
     allowed = dict(allowed or {})
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowed sites need a reason: {empty}")
-    found = find_survivorship_scoring(files, repo_root, metric_names)
+    found = _find(scan.files, metric_names)
     keys = {f"{s.path}::{s.function}" for s in found}
     bad = [s for s in found if f"{s.path}::{s.function}" not in allowed]
     stale = sorted(set(allowed) - keys)
     msgs = []
     if bad:
-        msgs.append("metrics scored only on the rows where the prediction was finite (the dropped rows are the failures, "
-                    "and the deployed predictor fills them instead): " + "; ".join(map(repr, bad)))
+        msgs.append(
+            "metrics scored only on the rows where the prediction was finite (the dropped rows are the failures, "
+            "and the deployed predictor fills them instead): " + "; ".join(map(repr, bad))
+        )
     if stale:
         msgs.append(f"allowed sites that no longer score survivors: {stale}")
     if msgs:

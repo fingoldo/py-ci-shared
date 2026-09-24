@@ -50,7 +50,9 @@ a dependency-free package and only a project that actually runs it needs the dri
 
 from __future__ import annotations
 
+import contextlib
 import os
+import re
 import sys
 from typing import Callable
 from collections.abc import Iterable, Sequence
@@ -61,6 +63,22 @@ SKIPPED = 2
 
 #: Read when the caller names none. The first non-empty one wins.
 DEFAULT_ENV_NAMES = ("DATABASE_URL",)
+
+#: ``postgresql+asyncpg://``, ``postgres+psycopg2://`` ...: the SQLAlchemy driver suffix psycopg2 cannot parse.
+_DRIVER_SUFFIX = re.compile(r"^(postgres(?:ql)?)\+[A-Za-z0-9_]+://")
+
+#: Connection errors that mean the server answered and refused THIS configuration: a wrong password, role or
+#: database is a broken setup to fix, not a missing database to skip.
+_CONFIG_ERROR_MARKERS = (
+    "authentication failed",
+    "password",
+    "does not exist",
+    "no pg_hba.conf entry",
+    "invalid dsn",
+    "invalid connection option",
+    "invalid uri",
+    "sslmode",
+)
 
 
 def dsn_from_env(env_names: Sequence[str] = DEFAULT_ENV_NAMES) -> str | None:
@@ -76,7 +94,7 @@ def dsn_from_env(env_names: Sequence[str] = DEFAULT_ENV_NAMES) -> str | None:
         raw = os.environ.get(name) or ""
         if raw.strip():
             dsn = raw.strip()
-            return dsn.replace("postgresql+asyncpg://", "postgresql://").replace("postgresql+psycopg://", "postgresql://")
+            return _DRIVER_SUFFIX.sub(r"\1://", dsn)
     return None
 
 
@@ -84,22 +102,41 @@ def check(conn, label: str, sql: str, params=None) -> bool:
     """Execute one statement, print a labelled OK/FAIL line, and never raise.
 
     Every failure is reported rather than the first one aborting the run: the value of a sweep is
-    the full list. The connection is rolled back after a failure so the remaining checks still run
-    -- without that, one bad statement would fail every later one with "transaction is aborted" and
-    the report would blame the wrong statements.
+    the full list. The connection is rolled back after EVERY statement, passed or failed: a verifier
+    only asks the server whether it accepts the SQL, so an ``UPDATE``/``INSERT`` it runs must never
+    persist, and after a failure the rollback also keeps one bad statement from failing every later
+    one with "transaction is aborted".
+
+    A statement that returns no result set (``INSERT`` without ``RETURNING``, DDL) is a pass with 0
+    rows, not a "no results to fetch" failure. Without *params* the statement is executed with no
+    parameter mapping at all, so a literal ``%`` in it is sent as written.
     """
     try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params if params is not None else {})
-            rows = cur.fetchall()
-        conn.commit()
+        try:
+            with conn.cursor() as cur:
+                if params is None:
+                    cur.execute(sql)
+                else:
+                    cur.execute(sql, params)
+                rows = cur.fetchall() if getattr(cur, "description", None) is not None else []
+        finally:
+            conn.rollback()
         head = tuple(str(v)[:40] for v in rows[0]) if rows else None
         print(f"OK   {label}: {len(rows)} row(s), first={head}")
         return True
     except Exception as exc:
-        conn.rollback()
         print(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
         return False
+
+
+def _is_unreachable(exc: BaseException, psycopg2: object) -> bool:
+    """True only for "there is no server to ask": a network/timeout error, not a refused configuration."""
+    operational = getattr(psycopg2, "OperationalError", None)
+    kinds: tuple[type, ...] = (OSError,) + ((operational,) if isinstance(operational, type) else ())
+    if not isinstance(exc, kinds):
+        return False
+    text = str(exc).lower()
+    return not any(marker in text for marker in _CONFIG_ERROR_MARKERS)
 
 
 def check_loader(conn, label: str, call: Callable[[], object]) -> bool:
@@ -152,30 +189,41 @@ def run_checks(
 
     Exit codes: 0 all passed, 1 something failed, `SKIPPED` there was no database -- unless
     ``--skip-without-db`` is in *argv*, which maps the last case to 0 so a pre-push hook lets the
-    push through.
+    push through. Only an unreachable server counts as "no database": a server that refuses the
+    credentials, or a DSN it cannot parse, is a broken configuration and exits 1 either way.
     """
     args = list(sys.argv if argv is None else argv)
     lenient = "--skip-without-db" in args
-
-    import psycopg2
 
     if dsn is None:
         dsn = dsn_from_env(env_names)
     if dsn is None:
         print(f"SKIPPED: none of {', '.join(env_names)} is set -- nothing to verify the SQL against.")
         return 0 if lenient else SKIPPED
+    dsn = _DRIVER_SUFFIX.sub(r"\1://", dsn)
+
+    import psycopg2
+
     try:
         probe = psycopg2.connect(dsn, connect_timeout=connect_timeout)
         probe.close()
     except Exception as exc:
-        print(f"SKIPPED: database unreachable ({type(exc).__name__}: {str(exc).strip()[:120]}).")
+        detail = f"{type(exc).__name__}: {str(exc).strip()[:120]}"
+        if not _is_unreachable(exc, psycopg2):
+            print(f"FAIL: the database refused the connection ({detail}); fix the configuration.")
+            return 1
+        print(f"SKIPPED: database unreachable ({detail}).")
         return 0 if lenient else SKIPPED
 
     runners = [checks] if callable(checks) else list(checks)
     ok = True
-    with psycopg2.connect(dsn) as conn:
-        for runner in runners:
-            ok &= bool(runner(conn))
+    # psycopg2's `with conn:` ends the transaction but leaves the connection open; closing() closes it.
+    with contextlib.closing(psycopg2.connect(dsn, connect_timeout=connect_timeout)) as conn:
+        try:
+            for runner in runners:
+                ok &= bool(runner(conn))
+        finally:
+            conn.rollback()
 
     print("\nALL OK" if ok else "\nSOMETHING FAILED")
     return 0 if ok else 1

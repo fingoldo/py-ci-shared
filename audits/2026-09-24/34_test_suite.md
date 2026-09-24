@@ -143,7 +143,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-7 (High) -- setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new tests/test_setup_env.py covers every platform branch (home directory, subprocess and platform replaced, nothing real touched), re-runs, awkward paths, failure exits and the `py-ci-setup-env` entry point; regression test: tests/test_setup_env.py::test_the_console_script_entry_point_resolves_to_main
 
 - **Original id:** F-07
 - **Where:** src/py_ci_shared/setup_env.py
@@ -243,7 +243,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-17 (Med) -- Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- one case per surviving mutant: S1 `x:a::int` is not a bind (with `(:a::int)` as positive control), S3 an indented `# :a::text` line is skipped, S5 a `__pycache__` file is not scanned, S7 `.sql`/`.txt` are not scanned by default but `.sql` is when asked; regression test: tests/test_sqlalchemy_text_binds.py::test_a_word_before_the_colon_is_not_a_bind, tests/test_sqlalchemy_text_binds.py::test_an_indented_comment_line_and_a_sql_comment_are_skipped, tests/test_sqlalchemy_text_binds.py::test_pycache_and_other_suffixes_are_not_scanned_by_default
 
 - **Original id:** F-17
 - **Where:** tests/test_sqlalchemy_text_binds.py

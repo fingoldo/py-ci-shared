@@ -6,6 +6,7 @@ before the restore, so the restore-patch no longer applies. Unpatched pre_commit
 abort the whole commit; the patched version must instead warn and let the `with` block exit
 cleanly, leaving the patch file on disk untouched.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -131,3 +132,54 @@ def test_patch_stash_restore_is_a_noop_when_pre_commit_missing(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", _blocked_import)
     assert safe_precommit.patch_stash_restore() is False
+
+
+def test_a_failed_restore_is_loud_and_keeps_a_copy_under_the_git_dir(tmp_path, monkeypatch, caplog, capsys):
+    """The unrestored edits must not live only in pre-commit's cache dir, and the report must not be a quiet warning."""
+    import logging
+
+    import pre_commit.staged_files_only as sfo
+
+    from py_ci_shared.safe_precommit import UNRESTORED_DIR, _patched_unstaged_changes_cleared
+
+    monkeypatch.setattr(sfo, "_unstaged_changes_cleared", _patched_unstaged_changes_cleared(sfo))
+    repo = _init_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    _unstaged_edit(repo)
+    patch_dir = tmp_path / "cache" / "patches"
+    with caplog.at_level(logging.INFO, logger="pre_commit"):
+        with sfo.staged_files_only(str(patch_dir)):
+            _concurrent_commit(repo)
+    kept = list((repo / ".git" / UNRESTORED_DIR).glob("patch*"))
+    assert len(kept) == 1 and "line_d_UNSTAGED_EDIT" in kept[0].read_text()
+    assert any(r.levelno == logging.ERROR and "Could not restore" in r.getMessage() for r in caplog.records)
+    err = capsys.readouterr().err
+    assert "UNSTAGED CHANGES WERE NOT RESTORED" in err and "git apply" in err and kept[0].name in err
+
+
+def test_a_clean_restore_keeps_no_copy_and_prints_nothing(tmp_path, monkeypatch, capsys):
+    import pre_commit.staged_files_only as sfo
+
+    from py_ci_shared.safe_precommit import UNRESTORED_DIR, _patched_unstaged_changes_cleared
+
+    monkeypatch.setattr(sfo, "_unstaged_changes_cleared", _patched_unstaged_changes_cleared(sfo))
+    repo = _init_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    _unstaged_edit(repo)
+    with sfo.staged_files_only(str(tmp_path / "cache")):
+        pass
+    assert "line_d_UNSTAGED_EDIT" in (repo / "tracked.py").read_text()
+    assert not (repo / ".git" / UNRESTORED_DIR).exists()
+    assert "NOT RESTORED" not in capsys.readouterr().err
+
+
+def test_the_patch_is_not_applied_when_an_attribute_it_calls_is_missing(monkeypatch):
+    import pre_commit.staged_files_only as sfo
+
+    from py_ci_shared import safe_precommit
+
+    original = sfo._unstaged_changes_cleared
+    monkeypatch.delattr(sfo, "_CHECKOUT_CMD")
+    assert safe_precommit.patch_stash_restore() is False
+    assert sfo._unstaged_changes_cleared is original
+    assert safe_precommit._verify_patch_target(sfo) == ["_CHECKOUT_CMD"]

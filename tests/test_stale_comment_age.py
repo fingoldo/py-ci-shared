@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
+from py_ci_shared import stale_comment_age as sca
 from py_ci_shared.stale_comment_age import assert_no_stale_todos, find_stale_comments
 
 _ENV_OLD = {
@@ -20,8 +21,9 @@ _ENV_OLD = {
 }
 
 
-def _repo(tmp_path: Path, rel: str, body: str, *, old: bool = True) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+def _repo(tmp_path: Path, rel: str, body: str, *, old: bool = True, init_args: tuple = ()) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "init", "-q", *init_args], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
     subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
     p = tmp_path / rel
@@ -71,9 +73,119 @@ class TestStaleComments:
         repo = _repo(tmp_path, "lib/a.dart", "// TODO: something\nvoid a() {}\n")
         assert find_stale_comments(repo, ["lib"], max_age_days=100000) == []
 
-    def test_missing_directory_is_skipped(self, tmp_path):
+    def test_a_missing_scan_directory_is_reported_not_skipped(self, tmp_path):
         repo = _repo(tmp_path, "lib/a.dart", "void a() {}\n")
-        assert find_stale_comments(repo, ["nope"], max_age_days=1) == []
+        problems = find_stale_comments(repo, ["nope"], max_age_days=1)
+        assert len(problems) == 1 and "nope: scan directory does not exist" in problems[0]
+        assert find_stale_comments(repo, ["lib"], max_age_days=1) == []
+
+
+class TestTrailingAndReferences:
+    def test_a_trailing_todo_is_checked(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.py", "x = 1  # TODO fix\ny = '# TODO not a comment'\n")
+        problems = find_stale_comments(repo, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and problems[0].startswith("lib/a.py:1: TODO"), problems
+
+    def test_a_trailing_todo_in_a_slash_language(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.ts", 'const u = "http://x"; // TODO drop this\nconst v = "// TODO in a string";\n')
+        problems = find_stale_comments(repo, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and problems[0].startswith("lib/a.ts:1: TODO"), problems
+
+    def test_a_call_elsewhere_in_the_comment_is_not_an_issue_reference(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.py", "# TODO: call foo(x) later\n# TODO: handle UTF-8 input\nx = 1\n")
+        assert len(find_stale_comments(repo, ["lib"], max_age_days=30)) == 2
+
+    def test_a_reference_right_after_the_marker_exempts(self, tmp_path):
+        body = "# TODO: #12 wire this\n# FIXME ABC-12: later\n# TODO - https://example.com/i/1\n# TODO(topic): later\nx = 1\n"
+        repo = _repo(tmp_path, "lib/a.py", body)
+        assert find_stale_comments(repo, ["lib"], max_age_days=30) == []
+        assert len(find_stale_comments(repo, ["lib"], max_age_days=30, require_issue_ref=False)) == 4
+
+    def test_a_python_dead_call_needs_no_terminator(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.py", "def f():\n    # foo(bar)\n    return 1\n")
+        problems = find_stale_comments(repo, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "commented-out code" in problems[0]
+
+    def test_a_dart_call_without_terminator_is_still_not_code(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.dart", "// foo(bar)\nvoid a() {}\n")
+        assert find_stale_comments(repo, ["lib"], max_age_days=30) == []
+
+
+class TestHistoryProblems:
+    def test_a_shallow_clone_fails_instead_of_passing(self, tmp_path):
+        src = _repo(tmp_path / "src", "lib/a.py", "# TODO: old\nx = 1\n")
+        (src / "lib" / "b.py").write_text("y = 2\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=src, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "new"], cwd=src, check=True)
+        clone = tmp_path / "clone"
+        subprocess.run(["git", "clone", "-q", "--depth", "1", src.resolve().as_uri(), str(clone)], check=True)
+        problems = find_stale_comments(clone, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "shallow clone" in problems[0]
+        assert len(find_stale_comments(src, ["lib"], max_age_days=30)) == 1
+
+    def test_a_root_outside_git_fails(self, tmp_path):
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "a.py").write_text("# TODO: x\n", encoding="utf-8")
+        problems = find_stale_comments(tmp_path, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "not a git work tree" in problems[0]
+
+    def test_a_blame_failure_is_reported(self, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "a.py").write_text("# TODO: x\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)  # staged, but no commit: blame has no HEAD
+        problems = find_stale_comments(tmp_path, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "git blame failed" in problems[0] and "could not be dated" in problems[0]
+
+    def test_an_untracked_file_is_not_blamed(self, tmp_path):
+        repo = _repo(tmp_path, "lib/a.py", "x = 1\n")
+        (repo / "lib" / "new.py").write_text("# TODO: brand new\n", encoding="utf-8")
+        assert find_stale_comments(repo, ["lib"], max_age_days=30) == []
+
+
+class TestBlameMechanics:
+    def test_many_candidates_are_batched_and_all_dated(self, tmp_path, monkeypatch):
+        body = "".join(f"# TODO: item {i}\nx{i} = {i}\n" for i in range(30))
+        repo = _repo(tmp_path, "lib/a.py", body)
+        monkeypatch.setattr(sca, "_BLAME_BATCH", 4)
+        calls = []
+        real = sca._git
+
+        def _spy(root, *args):
+            calls.append(args)
+            return real(root, *args)
+
+        monkeypatch.setattr(sca, "_git", _spy)
+        problems = find_stale_comments(repo, ["lib"], max_age_days=30)
+        assert len(problems) == 30
+        blames = [a for a in calls if a[0] == "blame"]
+        assert len(blames) == 8 and all(a.count("-L") <= 4 for a in blames)
+
+    def test_adjacent_lines_share_one_range(self):
+        assert sca._ranges([5, 3, 4, 9, 10, 12]) == [(3, 5), (9, 10), (12, 12)]
+
+    def test_non_ascii_author_and_text_are_decoded(self, tmp_path):
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "config", "user.name", "Анатолий Ёжиков"], cwd=tmp_path, check=True)
+        (tmp_path / "lib").mkdir()
+        (tmp_path / "lib" / "a.py").write_text("# TODO: проверить ✓\nx = 1\n", encoding="utf-8")
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env={**subprocess.os.environ, **_ENV_OLD})
+        problems = find_stale_comments(tmp_path, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "проверить" in problems[0]
+
+    def test_a_sha256_repository_is_dated(self, tmp_path):
+        probe = subprocess.run(["git", "init", "-q", "--object-format=sha256", str(tmp_path / "probe")], capture_output=True)
+        if probe.returncode != 0:
+            pytest.skip("this git cannot create a SHA-256 repository")
+        repo = _repo(tmp_path / "r", "lib/a.py", "# TODO: old\nx = 1\n", init_args=("--object-format=sha256",))
+        problems = find_stale_comments(repo, ["lib"], max_age_days=30)
+        assert len(problems) == 1 and "TODO" in problems[0]
+
+    def test_the_blame_header_accepts_sha1_and_sha256(self):
+        assert sca._BLAME_HEADER_RE.match("a" * 40 + " 1 3 1").group(1) == "3"
+        assert sca._BLAME_HEADER_RE.match("b" * 64 + " 1 7").group(1) == "7"
 
 
 class TestProseThatLooksLikeCode:

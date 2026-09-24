@@ -219,3 +219,60 @@ class TestTextFileScope:
         (tmp_path / "node_modules" / "x.json").write_bytes(b"\xef\xbb\xbf{}")
         (tmp_path / "a.json").write_bytes(b"\xef\xbb\xbf{}")
         assert repo_hygiene.find_text_files_with_a_bom(tmp_path) == ["a.json"]
+
+
+class TestGeneratedPatternsMatchComponents:
+    def test_coveragerc_is_not_coverage_output(self, tmp_path):
+        repo = _git_repo(tmp_path, ".coveragerc", "pkg/.coverage", ".coverage.host.123", "a/coverage/lcov.info")
+        hits = find_tracked_generated_files(repo)
+        assert sorted(h.split(" ")[0] for h in hits) == [".coverage.host.123", "a/coverage/lcov.info", "pkg/.coverage"]
+
+    def test_a_package_named_build_below_the_root_is_not_build_output(self, tmp_path):
+        repo = _git_repo(tmp_path, "src/pkg/build/__init__.py", "build/out.js", "tool/x.pyc", "tool/pyc_notes.md")
+        hits = sorted(h.split(" ")[0] for h in find_tracked_generated_files(repo))
+        assert hits == ["build/out.js", "tool/x.pyc"]
+
+    @pytest.mark.parametrize(
+        "rel, pattern, expected",
+        [
+            ("a/__pycache__/x.pyc", "__pycache__/", True),
+            ("a/my__pycache__/x", "__pycache__/", False),
+            ("build/x", "/build/", True),
+            ("src/build/x", "/build/", False),
+            ("coverage/lcov.info", "coverage/lcov.info", True),
+            ("mycoverage/lcov.info", "coverage/lcov.info", False),
+            (".coverage", ".coverage", True),
+            (".coveragerc", ".coverage", False),
+        ],
+    )
+    def test_matches_generated_pattern(self, rel, pattern, expected):
+        assert repo_hygiene.matches_generated_pattern(rel, pattern) is expected
+
+    def test_a_non_ascii_path_is_matched_and_reported_verbatim(self, tmp_path):
+        repo = _git_repo(tmp_path, "audits/проба.py", "tool/кэш/__pycache__/x.pyc")
+        assert repo_hygiene.find_scripts_in_audit_folders(repo) == ["audits/проба.py"]
+        hits = find_tracked_generated_files(repo)
+        assert len(hits) == 1 and hits[0].startswith("tool/кэш/__pycache__/x.pyc")
+
+
+class TestNumericGuardForms:
+    def _one(self, tmp_path, body: str) -> list:
+        return find_unguarded_numeric_gates(_workflows(tmp_path, "jobs:\n  a:\n    steps:\n      - run: |\n" + body))
+
+    def test_an_empty_default_is_not_a_guard(self, tmp_path):
+        problems = self._one(tmp_path, '          X="${COV:-}"\n          [ "${X:-}" -lt 80 ] && exit 1\n')
+        assert len(problems) == 1 and "$X" in problems[0]
+
+    def test_a_colon_question_or_non_empty_default_is_a_guard(self, tmp_path):
+        assert self._one(tmp_path, '          : "${COV:?coverage did not parse}"\n          [ "$COV" -lt 80 ] && exit 1\n') == []
+
+    def test_test_dash_n_is_a_guard(self, tmp_path):
+        assert self._one(tmp_path, '          test -n "$COV" || exit 1\n          [ "$COV" -lt 80 ] && exit 1\n') == []
+        assert self._one(tmp_path / "b", "          [[ -z $COV ]] && exit 1\n          [[ $COV -lt 80 ]] && exit 1\n") == []
+
+    def test_modified_expansions_and_reversed_operands_are_compared(self, tmp_path):
+        problems = self._one(tmp_path, r'          if (( $(echo "${COV%\%} < 80" | bc) )); then exit 1; fi' + "\n")
+        assert len(problems) == 1 and "$COV" in problems[0]
+        assert len(self._one(tmp_path / "b", '          [ 80 -gt "$COV" ] && exit 1\n')) == 1
+        assert len(self._one(tmp_path / "c", '          test "$COV" -lt 80 && exit 1\n')) == 1
+        assert self._one(tmp_path / "d", '          [ -n "$COV" ] || exit 1\n          [ 80 -gt "$COV" ] && exit 1\n') == []

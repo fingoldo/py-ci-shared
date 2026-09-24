@@ -480,7 +480,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-1 (High) -- BOM files dropped; sql_verifier_coverage.py:63 crashes
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every listed module now reads through `_core` (`read_source`/`parse_file`/`scan_python`, BOM stripped, interpreter-exact decoding): readme_env_var_parity, resource_release_paths, runtime_registry_mutation, source_text_claims, spec_bound_doubles, sql_verifier_coverage (a BOM verifier no longer crashes `verifier_lists`) and statement_compilation, plus survivorship_scoring, source_text_ban, save_failure_markers and sqlalchemy_text_binds; regression test: tests/test_readme_env_var_parity.py::TestReadForms::test_a_bom_file_is_read, tests/test_resource_release_paths.py::TestFindUnprotectedReleases::test_a_bom_file_is_parsed, tests/test_runtime_registry_mutation.py::test_a_file_outside_the_root_and_a_bom_file, tests/test_source_text_claims.py::TestResolutionFixturesAndClosures::test_a_bom_file_is_read_and_a_broken_one_raises, tests/test_spec_bound_doubles.py::TestFindUnboundDoubles::test_a_bom_file_is_parsed, tests/test_sql_verifier_coverage.py::test_bom_files_are_read_on_both_sides, tests/test_statement_compilation.py::test_a_file_outside_root_and_a_bom_file_are_checked
 
 - **Where:** readme_env_var_parity.py:131, resource_release_paths.py:71,90, runtime_registry_mutation.py:114, source_text_claims.py:272-283, spec_bound_doubles.py:70, sql_verifier_coverage.py:42, statement_compilation.py:103
 - **Finding:** BOM files dropped; sql_verifier_coverage.py:63 crashes
@@ -490,7 +490,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-2 (High) -- parse errors fail open; floors count inputs not parsed files
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- no module in the set skips an unparsable file any more: the find_* functions raise `SourceError`/`UnparsedFilesError` (an `allow_unparsed=True` kwarg opts out where a set is returned), the assert_* functions list the file as a problem, and every floor (`min_files`/`min_subjects`) counts PARSED files; tests that pinned the silent skip were re-framed; regression test: tests/test_readme_env_var_parity.py::TestUnparsedAndFloor::test_the_asserts_fail_on_an_unparsable_file_and_an_empty_corpus, tests/test_runtime_registry_mutation.py::test_an_unparsable_file_fails_and_the_floor_counts_parsed_files, tests/test_source_text_claims.py::TestTheRatchet::test_an_unparsable_or_undecodable_file_fails_and_the_floor_counts_checked_files, tests/test_resource_release_paths.py::test_the_assert_reports_an_unparsable_file_and_a_file_outside_the_root, tests/test_statement_compilation.py::test_an_empty_corpus_and_an_unparsable_file_are_reported, tests/test_sql_verifier_coverage.py::test_an_unparsable_file_fails_instead_of_being_skipped, tests/test_survivorship_scoring.py::test_an_unparsable_file_fails_and_the_floor_counts_parsed_files
 
 - **Where:** same + runtime_registry_mutation.py:139, source_text_claims.py:317
 - **Finding:** parse errors fail open; floors count inputs not parsed files
@@ -500,7 +500,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-3 (Med) -- from os import environ/getenv, os as _os, os.environ["X"], getenv(key=) missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- env reads are matched by import-resolved name (`_core.ImportAliases`): `from os import environ/getenv`, `import os as _os`, `os.environ["X"]` (load context only; a write is not a read), `setdefault`/`pop`, `"X" in os.environ` and `getenv(key="X")` are found, and an unrelated local `environ`/`getenv` is not; regression test: tests/test_readme_env_var_parity.py::TestReadForms::test_aliases_subscripts_and_keywords, tests/test_readme_env_var_parity.py::TestReadForms::test_an_unrelated_get_or_getenv_is_not_a_read
 
 - **Where:** readme_env_var_parity.py:36-37
 - **Finding:** `from os import environ/getenv`, `os as _os`, `os.environ["X"]`, `getenv(key=)` missed
@@ -510,7 +510,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-4 (Med) -- missing baseline seeds and skips
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `assert_no_new_undocumented_env_vars` enforces through `_core.Baseline`: a missing baseline fails and is written only by an explicit refresh (the tests that pinned auto-seeding were re-framed). source_text_claims' baseline got the same treatment (see RS-36); regression test: tests/test_readme_env_var_parity.py::TestAssertNoNewUndocumentedEnvVars::test_a_missing_baseline_fails_instead_of_seeding
 
 - **Where:** readme_env_var_parity.py:224, source_text_claims.py:363
 - **Finding:** missing baseline seeds and skips
@@ -520,7 +520,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-5 (Low) -- baseline never tightens (test pins it)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a baselined var that is now documented or no longer read fails as stale until a refresh prunes it, so the baseline only shrinks; the test that pinned the silent pass was re-framed; regression test: tests/test_readme_env_var_parity.py::TestAssertNoNewUndocumentedEnvVars::test_documenting_a_grandfathered_var_is_stale_until_the_baseline_shrinks
 
 - **Where:** readme_env_var_parity.py:232
 - **Finding:** baseline never tightens (test pins it)
@@ -530,7 +530,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-6 (Low) -- refresh from sys.argv misses xdist/pytest.main
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the refresh is read with `_core.refresh_requested` (pytest option via the new `request=` kwarg, `PY_CI_SHARED_REFRESH`, then `sys.argv`), and `register_refresh_option` is a thin wrapper over `register_refresh_options`; regression test: tests/test_readme_env_var_parity.py::TestAssertNoNewUndocumentedEnvVars::test_refresh_flag_reseeds_via_the_pytest_option
 
 - **Where:** readme_env_var_parity.py:224
 - **Finding:** refresh from `sys.argv` misses xdist/`pytest.main`
@@ -540,7 +540,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-7 (Med) -- .coverage substring flags .coveragerc; /build/ flags packages named build
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- generated-artefact patterns are matched on path components (new public `matches_generated_pattern`): `name/` is a directory at any depth, `/name/` only at the root, `a/b` a trailing component sequence, and a slash-less pattern the file name; `.coveragerc` and `src/pkg/build/` are no longer flagged, `.coverage.<suffix>` parallel files now are; regression test: tests/test_repo_hygiene.py::TestGeneratedPatternsMatchComponents::test_coveragerc_is_not_coverage_output, tests/test_repo_hygiene.py::TestGeneratedPatternsMatchComponents::test_a_package_named_build_below_the_root_is_not_build_output
 
 - **Where:** repo_hygiene.py:81,123
 - **Finding:** `.coverage` substring flags `.coveragerc`; `/build/` flags packages named build
@@ -550,7 +550,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-8 (Med) -- ls-files without -z: non-ASCII paths quoted, rules miss them
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_tracked_files` runs `git ls-files -z` and decodes with surrogateescape, so non-ASCII paths are not C-quoted and every rule sees them; the text-file walk now uses `_core.git_listing`; regression test: tests/test_repo_hygiene.py::TestGeneratedPatternsMatchComponents::test_a_non_ascii_path_is_matched_and_reported_verbatim
 
 - **Where:** repo_hygiene.py:102,262
 - **Finding:** `ls-files` without `-z`: non-ASCII paths quoted, rules miss them
@@ -560,7 +560,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-9 (Med) -- ${COV:-} accepted as guard
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only `${VAR:?...}` or `${VAR:-<non-empty default>}` count as expansion guards; `${VAR:-}` and `: "${VAR:-}"` do not; regression test: tests/test_repo_hygiene.py::TestNumericGuardForms::test_an_empty_default_is_not_a_guard
 
 - **Where:** repo_hygiene.py:95
 - **Finding:** `${COV:-}` accepted as guard
@@ -570,7 +570,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-10 (Low) -- test -n "$COV" not a guard (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `test -n/-z`, `[[ -n/-z ]]` and `[ "$X" = "" ]`/`==` are accepted guards; regression test: tests/test_repo_hygiene.py::TestNumericGuardForms::test_test_dash_n_is_a_guard
 
 - **Where:** repo_hygiene.py:91-97
 - **Finding:** `test -n "$COV"` not a guard (FP)
@@ -580,7 +580,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-11 (Low) -- per-line simple $X compares only
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the comparison regex accepts modified expansions (`${COV%\%}`, `${X#..}`, `${X:-..}`), the number on either side (`80 -gt "$X"`, `80 > $X`), `test` and `[[ ]]`; the check stays per line, with the guard searched across the whole run block; regression test: tests/test_repo_hygiene.py::TestNumericGuardForms::test_modified_expansions_and_reversed_operands_are_compared
 
 - **Where:** repo_hygiene.py:86-90
 - **Finding:** per-line simple `$X` compares only
@@ -590,7 +590,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-12 (Med) -- only arg-less .dispose()
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a release is any `Call` whose callee attribute is the release name, whatever its arguments (`await e.dispose(close=False)`); regression test: tests/test_resource_release_paths.py::TestFindUnprotectedReleases::test_a_release_with_arguments_is_a_release
 
 - **Where:** resource_release_paths.py:79
 - **Finding:** only arg-less `.dispose()`
@@ -600,7 +600,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-13 (Low) -- substring protection; redispose() exempts module
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- protection is decided on Call nodes, not unparsed substrings: a release inside a `finally`/`with` body protects releases of the SAME receiver only, so `fh.redispose()` or a protected `other.dispose()` no longer exempt the module; regression test: tests/test_resource_release_paths.py::TestFindUnprotectedReleases::test_protection_is_by_call_name_and_receiver_not_substring
 
 - **Where:** resource_release_paths.py:60,63
 - **Finding:** substring protection; `redispose()` exempts module
@@ -610,7 +610,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-14 (Low) -- constructor alias missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- constructors are matched by the spelled name and the last segment of the import-resolved name (`create_async_engine as cae`), while a local function merely named like the alias is not; regression test: tests/test_resource_release_paths.py::TestSubjects::test_an_aliased_constructor_makes_a_subject
 
 - **Where:** resource_release_paths.py:48
 - **Finding:** constructor alias missed
@@ -620,7 +620,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-15 (Med) -- decorator-factory inner deco flagged (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- functions are visited with their enclosing chain, and a function nested in an import-time helper inherits the exemption (a decorator factory's inner `deco`); a same-shaped factory never applied at import is still flagged; regression test: tests/test_runtime_registry_mutation.py::test_a_decorator_factory_inner_function_is_import_time
 
 - **Where:** runtime_registry_mutation.py:127
 - **Finding:** decorator-factory inner `deco` flagged (FP)
@@ -630,7 +630,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-16 (High) -- any name called at module scope (incl
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- calls under `if __name__ == "__main__":` are not import-time, and a helper is matched to its defining module (a local name to the same file, an imported name through `_core.ImportAliases` to the module it comes from, an attribute call on a module-level object to methods only), so a same-named function elsewhere is no longer exempt; regression test: tests/test_runtime_registry_mutation.py::test_a_main_guard_call_is_not_import_time, tests/test_runtime_registry_mutation.py::test_a_helper_is_matched_to_the_module_it_is_imported_from
 
 - **Where:** runtime_registry_mutation.py:84-88,127
 - **Finding:** any name called at module scope (incl. `__main__` guard) exempts that name everywhere
@@ -640,7 +640,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-17 (Med) -- collections.defaultdict/OrderedDict not recognised
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a registry's value is recognised by the import-resolved callee's last segment (`collections.defaultdict`, `collections.OrderedDict`, `OrderedDict as OD`, `Counter`, `ChainMap`, weak dicts); regression test: tests/test_runtime_registry_mutation.py::test_collections_dict_factories_are_registries
 
 - **Where:** runtime_registry_mutation.py:61
 - **Finding:** `collections.defaultdict/OrderedDict` not recognised
@@ -650,7 +650,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-18 (Low) -- registries under try/if; mod._REGISTRY[k]=; aliases missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- module-level registries are collected inside `if`/`try`/`with`/`for` blocks, and writes through `mod._REGISTRY[k]` or an import alias (`from reg import X_REGISTRY as R`) are found; regression test: tests/test_runtime_registry_mutation.py::test_registries_under_try_and_writes_through_a_module_or_alias
 
 - **Where:** runtime_registry_mutation.py:53,101-104
 - **Finding:** registries under try/if; `mod._REGISTRY[k]=`; aliases missed
@@ -660,7 +660,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-19 (Low) -- relative_to crash outside root
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- files are scanned with `_core.scan_python(root=repo_root)`, whose `rel` falls back to the absolute POSIX path for a file outside the root instead of raising; regression test: tests/test_runtime_registry_mutation.py::test_a_file_outside_the_root_and_a_bom_file
 
 - **Where:** runtime_registry_mutation.py:117
 - **Finding:** `relative_to` crash outside root
@@ -670,7 +670,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-20 (Med) -- patch applied although target check found missing attrs
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_verify_patch_target` returns the missing attributes and `patch_stash_restore` returns False without patching when ANY attribute the copy calls is missing (it used to patch unless only `_git_apply` was absent); regression test: tests/test_safe_precommit.py::test_the_patch_is_not_applied_when_an_attribute_it_calls_is_missing
 
 - **Where:** safe_precommit.py:150
 - **Finding:** patch applied although target check found missing attrs
@@ -680,7 +680,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-21 (Low) -- failed restore leaves concurrent edits only in patch file
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a failed restore is logged at ERROR, printed to stderr as a banner with the exact `git apply --3way` command, and the patch is copied to `.git/safe-precommit-unrestored/` so it survives pre-commit's cache cleanup; a clean restore prints nothing and keeps no copy; regression test: tests/test_safe_precommit.py::test_a_failed_restore_is_loud_and_keeps_a_copy_under_the_git_dir, tests/test_safe_precommit.py::test_a_clean_restore_keeps_no_copy_and_prints_nothing
 
 - **Where:** safe_precommit.py:101-115
 - **Finding:** failed restore leaves concurrent edits only in patch file
@@ -690,7 +690,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-22 (Med) -- rf"/F", .extend, +=, dynamic f-strings missed; comments matched
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the default detection reads the AST: strings/f-strings with any prefix (`rf"`, `F"`) passed to `.append/.extend/.insert/.add`, added with `+=`, or given as `marker=`; comments and docstrings never count; a marker whose name is interpolated is reported under its template (`{kind}_failed`) and must be listed in `non_fatal` with a reason. Explicit regex `patterns` still work and now run over the source with comments blanked; `DEFAULT_MARKER_PATTERNS` was widened to the same shapes; regression test: tests/test_save_failure_markers.py::test_every_emission_shape_is_found, tests/test_save_failure_markers.py::test_comments_docstrings_and_non_emissions_are_not_markers, tests/test_save_failure_markers.py::test_a_dynamic_marker_must_be_listed_with_a_reason
 
 - **Where:** save_failure_markers.py:31-32
 - **Finding:** `rf"`/`F"`, `.extend`, `+=`, dynamic f-strings missed; comments matched
@@ -700,7 +700,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-23 (Med) -- missing root → {} passes
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- files are enumerated with `_core.iter_files`, so a missing root raises `CorpusError`; `assert_markers_are_fatal` takes `min_markers` (default 1) and fails when fewer markers are found; regression test: tests/test_save_failure_markers.py::test_a_missing_root_raises_and_too_few_markers_fail
 
 - **Where:** save_failure_markers.py:40,65
 - **Finding:** missing root → `{}` passes
@@ -710,7 +710,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-24 (Low) -- strict utf-8 read crashes scan
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- files are read through `_core.scan_python` (interpreter-exact decoding, BOM stripped); an undecodable or unparsable file is reported (the assert lists it, `find_emitted_markers` raises `UnparsedFilesError` unless `allow_unparsed=True`) instead of crashing the scan with a raw `UnicodeDecodeError`; regression test: tests/test_save_failure_markers.py::test_an_undecodable_file_is_reported_not_a_crash
 
 - **Where:** save_failure_markers.py:43
 - **Finding:** strict utf-8 read crashes scan
@@ -720,7 +720,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-25 (Low) -- re-run after moving clone keeps stale export; no tests
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the profile export is tagged, and a re-run REPLACES the tagged line with the new path (no-op when unchanged); an untagged export the user wrote is left alone with a stderr notice; regression test: tests/test_setup_env.py::TestShellProfile::test_a_rerun_after_moving_the_clone_replaces_the_stale_line, tests/test_setup_env.py::TestShellProfile::test_a_user_written_export_is_left_alone
 
 - **Where:** setup_env.py:106
 - **Finding:** re-run after moving clone keeps stale export; no tests
@@ -730,7 +730,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-26 (Low) -- value not XML-escaped / shell-quoted; decode error uncaught
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the value is XML-escaped in the LaunchAgent plist, `shlex.quote`d in the profile export, and has backslash and `$` escaped in `environment.d`; the profile is read and written as bytes with surrogateescape (a non-UTF-8 profile round-trips instead of raising), and `main` also catches `UnicodeError`; regression test: tests/test_setup_env.py::TestPlatforms::test_macos_plist_is_valid_xml_with_the_exact_value, tests/test_setup_env.py::TestShellProfile::test_the_value_is_shell_quoted, tests/test_setup_env.py::TestPlatforms::test_linux_environment_d_escapes_dollar_and_backslash, tests/test_setup_env.py::TestShellProfile::test_a_profile_that_is_not_utf8_is_updated_byte_for_byte
 
 - **Where:** setup_env.py:70,109
 - **Finding:** value not XML-escaped / shell-quoted; decode error uncaught
@@ -740,7 +740,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-27 (High) -- SECURITY DEFINER after $$ body never seen
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the check now lexes each migration into statements (comments dropped, string and dollar-quoted literal contents blanked) and looks for `SECURITY DEFINER` / `SET search_path` in the whole CREATE statement, so options written after the `$$` body are seen and words inside the body are not; regression test: tests/test_sql_function_privileges.py::TestLexing::test_security_definer_after_the_body_is_seen
 
 - **Where:** sql_function_privileges.py:83-88
 - **Finding:** `SECURITY DEFINER` after `$$` body never seen
@@ -750,7 +750,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-28 (High) -- quoted identifiers (pg_dump) / multi-line headers invisible
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- identifiers accept pg_dump quoting (`"public"."Quoted"`, case kept; unquoted folds to lower case) and the statement-based lexer makes multi-line headers visible; regression test: tests/test_sql_function_privileges.py::TestLexing::test_pg_dump_quoted_identifiers_and_multi_line_headers
 
 - **Where:** sql_function_privileges.py:48
 - **Finding:** quoted identifiers (pg_dump) / multi-line headers invisible
@@ -760,7 +760,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-29 (High) -- commented-out REVOKE counts
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `--` and nested `/* */` comments and string literals are removed before any REVOKE/GRANT is matched; regression test: tests/test_sql_function_privileges.py::TestLexing::test_a_commented_out_revoke_does_not_count
 
 - **Where:** sql_function_privileges.py:96,129
 - **Finding:** commented-out REVOKE counts
@@ -770,7 +770,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-30 (High) -- schema ignored; DROP+CREATE ordering ignored
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- functions are keyed by (schema, name), unqualified names resolve through the file's `SET search_path`, and statements are replayed in order: DROP then CREATE restarts from the default PUBLIC grant, CREATE OR REPLACE keeps the ACL, a later GRANT undoes a REVOKE; regression test: tests/test_sql_function_privileges.py::TestReplay::test_a_revoke_in_another_schema_does_not_cover_this_one, tests/test_sql_function_privileges.py::TestReplay::test_drop_and_create_resets_to_the_default_public_grant
 
 - **Where:** sql_function_privileges.py:56,99
 - **Finding:** schema ignored; DROP+CREATE ordering ignored
@@ -780,7 +780,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-31 (Med) -- search_path checked on every definition, not last (FP); O(n·m) re-reads
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `search_path` is judged once, on the replayed final state of each function (last CREATE plus any `ALTER FUNCTION ... SET search_path`), and every file is read once; regression test: tests/test_sql_function_privileges.py::TestReplay::test_search_path_is_judged_on_the_last_definition_only
 
 - **Where:** sql_function_privileges.py:166-179
 - **Finding:** search_path checked on every definition, not last (FP); O(n·m) re-reads
@@ -790,7 +790,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-32 (Low) -- REVOKE w/o parens, ON ALL FUNCTIONS IN SCHEMA, default privileges missed (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- REVOKE/GRANT without an argument list, several targets in one statement, `ON ALL FUNCTIONS IN SCHEMA` (existing functions only), `ALTER DEFAULT PRIVILEGES ... ON FUNCTIONS` (functions created later) and `GRANT OPTION FOR` (no effect on EXECUTE) are modelled; regression test: tests/test_sql_function_privileges.py::TestRevokeForms::test_revoke_on_all_functions_in_schema, tests/test_sql_function_privileges.py::TestRevokeForms::test_default_privileges_cover_functions_created_later
 
 - **Where:** sql_function_privileges.py:56
 - **Finding:** REVOKE w/o parens, `ON ALL FUNCTIONS IN SCHEMA`, default privileges missed (FP)
@@ -800,7 +800,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-33 (Med) -- quote-led lines skipped incl
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- on a file that parses, the check runs on Call nodes and skips only bare-string statement ranges (docstrings) and comments, so a quote-led continuation line of a multi-line `assert` is caught while a string literal or trailing comment holding the text is not; an unparsable file falls back to the old line heuristic; regression test: tests/test_source_text_ban.py::TestCallsNotLines::test_a_multi_line_assert_continuation_is_caught, tests/test_source_text_ban.py::TestCallsNotLines::test_the_pattern_inside_a_string_or_trailing_comment_is_not_a_call
 
 - **Where:** source_text_ban.py:105
 - **Finding:** quote-led lines skipped incl. assert continuations
@@ -810,7 +810,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-34 (Med) -- non-Python literal on line exempts; getsource as gs, open(__file__).read() missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the non-Python-literal exemption is checked only on the path being read (the receiver of `.read_text()`, the argument of `open()`/`ast.parse()`), `getsource` is resolved through imports (`getsource as gs`), and `open(__file__).read()` counts as a read. The module stays (consumers call `offending_lines`); source_text_claims remains the AST-based superset; regression test: tests/test_source_text_ban.py::TestCallsNotLines::test_a_non_python_literal_elsewhere_on_the_line_does_not_exempt, tests/test_source_text_ban.py::TestCallsNotLines::test_getsource_under_an_alias_is_caught, tests/test_source_text_ban.py::TestCallsNotLines::test_open_dunder_file_read_is_caught
 
 - **Where:** source_text_ban.py:110
 - **Finding:** non-Python literal on line exempts; `getsource as gs`, `open(__file__).read()` missed
@@ -820,7 +820,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-35 (High) -- fixtures, getsource as gs, dis.get_instructions, closures missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- reader and `dis` calls resolve through `_core.ImportAliases` (`getsource as gs`, `from dis import get_instructions`), nested functions inherit the enclosing function's path and source-text names (closures), and a same-file `@pytest.fixture` that returns or yields source taints every test parameter of that name; a local function merely named like an alias is not a reader. Cross-file (conftest) fixtures remain out of reach of a per-file walk; regression test: tests/test_source_text_claims.py::TestResolutionFixturesAndClosures::test_an_aliased_getsource_is_a_claim, tests/test_source_text_claims.py::TestResolutionFixturesAndClosures::test_dis_functions_imported_by_name, tests/test_source_text_claims.py::TestResolutionFixturesAndClosures::test_a_same_file_fixture_that_returns_source_taints_the_test, tests/test_source_text_claims.py::TestResolutionFixturesAndClosures::test_a_closure_sees_the_outer_source_text
 
 - **Where:** source_text_claims.py:144,146,196
 - **Finding:** fixtures, `getsource as gs`, `dis.get_instructions`, closures missed
@@ -830,7 +830,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-36 (Med) -- key rel::func::kind: more claims of same kind never new
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the baseline is a `_core.Baseline` multiset: each `rel::function::kind` key accepts the number of claims it counted, so extra claims of the same kind are new and fewer are stale; a missing baseline fails and is written only by a refresh (`refresh_requested`, new `request=` kwarg); legacy JSON-list baselines still load; unreadable/unparsable files fail and the floor counts checked files. The test that pinned auto-seeding was re-framed; regression test: tests/test_source_text_claims.py::TestTheRatchet::test_more_claims_of_the_same_key_are_new, tests/test_source_text_claims.py::TestTheRatchet::test_a_missing_baseline_fails_and_only_a_refresh_writes_it
 
 - **Where:** source_text_claims.py:73-75
 - **Finding:** key `rel::func::kind`: more claims of same kind never new
@@ -840,7 +840,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-37 (Med) -- m = AsyncMock(); f(m), tuple unpack, patch() as s, spec=None missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- each scope is walked in source order tracking names bound to a bare mock: a bare mock reaching an entry point through ANY name (`m = AsyncMock(); claim_lock(m)`), tuple unpacking (`client, session = AsyncMock(), AsyncMock()`), `with patch(...) as session` without a truthy spec/autospec/new, and `spec=None`/`spec_set=None` are flagged; mock classes resolve through imports; unparsable files raise/are reported instead of being skipped (the test pinning the skip was re-framed); regression test: tests/test_spec_bound_doubles.py::TestFindUnboundDoubles::test_a_bare_mock_reaching_the_entry_point_through_any_name, tests/test_spec_bound_doubles.py::TestFindUnboundDoubles::test_tuple_unpacking_patch_as_and_spec_none, tests/test_spec_bound_doubles.py::TestIsBareMock::test_a_falsy_spec_is_bare
 
 - **Where:** spec_bound_doubles.py:81-89
 - **Finding:** `m = AsyncMock(); f(m)`, tuple unpack, `patch() as s`, `spec=None` missed
@@ -850,7 +850,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-38 (Med) -- startswith w/o boundary (prose FPs); comment-led SQL missed; chained targets
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a constant is SQL when, after leading `--`/`/* */` comments and an opening parenthesis, its first WORD is a statement keyword (`"Withdrawal failed"` no longer matches `WITH`, comment-led SQL now does), and chained targets `A = B = "SELECT ..."` define every name; regression test: tests/test_sql_verifier_coverage.py::test_prose_starting_with_a_keyword_prefix_is_not_sql, tests/test_sql_verifier_coverage.py::test_comment_led_and_parenthesised_sql_is_sql, tests/test_sql_verifier_coverage.py::test_chained_targets_define_every_name
 
 - **Where:** sql_verifier_coverage.py:50
 - **Finding:** `startswith` w/o boundary (prose FPs); comment-led SQL missed; chained targets
@@ -860,7 +860,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-39 (Low) -- pkg.__init__.X key; no dedicated test file
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `pkg/__init__.py` constants are keyed `pkg.NAME`; a dedicated tests/test_sql_verifier_coverage.py now exists; regression test: tests/test_sql_verifier_coverage.py::test_a_package_init_constant_is_keyed_by_the_package
 
 - **Where:** sql_verifier_coverage.py:45
 - **Finding:** `pkg.__init__.X` key; no dedicated test file
@@ -870,7 +870,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-40 (High) -- check() commits every statement: writes persist
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `check()` never commits: the connection is rolled back in a `finally` after every statement, passed or failed, and `run_checks` rolls back before closing; regression test: tests/test_sql_verify.py::TestCheck::test_a_passing_write_is_rolled_back_never_committed
 
 - **Where:** sql_verify.py:95
 - **Finding:** `check()` commits every statement: writes persist
@@ -880,7 +880,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-41 (Med) -- fetchall() on no-result statement → FAIL
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- rows are fetched only when `cur.description` is set, so a statement with no result set is a pass with 0 rows; regression test: tests/test_sql_verify.py::TestCheck::test_a_statement_without_a_result_set_is_a_pass
 
 - **Where:** sql_verify.py:94
 - **Finding:** `fetchall()` on no-result statement → FAIL
@@ -890,7 +890,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-42 (Med) -- psycopg2 with connect() does not close; no connect_timeout
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the working connection is opened with `connect_timeout` and wrapped in `contextlib.closing` (psycopg2's `with conn:` does not close); regression test: tests/test_sql_verify.py::TestRunChecks::test_the_working_connection_is_closed_and_rolled_back
 
 - **Where:** sql_verify.py:176
 - **Finding:** psycopg2 `with connect()` does not close; no connect_timeout
@@ -900,7 +900,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-43 (Med) -- every connect error → SKIPPED, exit 0 with --skip-without-db; +driver DSN not normalised
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only an unreachable server (OSError / OperationalError without an auth, role, database or DSN marker) is SKIPPED; a refused configuration exits 1 even with `--skip-without-db`. Any `postgres(ql)+<driver>://` DSN, env or explicit, is normalised; regression test: tests/test_sql_verify.py::TestRunChecks::test_a_refused_configuration_fails_even_with_skip_without_db
 
 - **Where:** sql_verify.py:167-172
 - **Finding:** every connect error → SKIPPED, exit 0 with `--skip-without-db`; `+driver` DSN not normalised
@@ -910,7 +910,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-44 (Low) -- psycopg2 imported before DSN check
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- psycopg2 is imported after the DSN check, so a checkout without a database or the driver can still skip; regression test: tests/test_sql_verify.py::TestRunChecks::test_no_driver_is_needed_to_skip_without_a_dsn
 
 - **Where:** sql_verify.py:160
 - **Finding:** psycopg2 imported before DSN check
@@ -920,7 +920,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-45 (Low) -- params={} always passed; % literal behaviour undetermined
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- without params the statement is executed with no parameter argument (psycopg2 only %-formats when a mapping is passed, so a literal `%` is sent verbatim); the test that pinned `{}` was re-framed; regression test: tests/test_sql_verify.py::TestCheck::test_no_params_executes_without_a_parameter_mapping
 
 - **Where:** sql_verify.py:93
 - **Finding:** `params={}` always passed; `%` literal behaviour undetermined
@@ -930,7 +930,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-46 (Low) -- Python slices flagged; quoted casts missed; comments/docstrings scanned
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- in `.py` files only string literals are scanned (docstrings excluded, line numbers mapped into multi-line strings), so Python code, slices and comments can never match; other suffixes are scanned as SQL text minus `#` lines and `--` comments; a quoted cast type (`:a::"MyEnum"`) is matched; a missing root and an unparsable file are reported; regression test: tests/test_sqlalchemy_text_binds.py::test_in_python_only_string_literals_are_scanned, tests/test_sqlalchemy_text_binds.py::test_a_quoted_type_is_a_cast, tests/test_sqlalchemy_text_binds.py::test_a_missing_root_and_an_unparsable_file_fail
 
 - **Where:** sqlalchemy_text_binds.py:29,36
 - **Finding:** Python slices flagged; quoted casts missed; comments/docstrings scanned
@@ -940,7 +940,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-47 (High) -- blame failure → {} → all skipped; shallow clone makes gate a no-op
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a failed `git blame` is reported per file ("could not be dated") instead of returning `{}`, a line blame returned no date for is reported, a shallow clone (`rev-parse --is-shallow-repository`) or a root outside git fails the gate, and a missing scan directory is reported (the test that pinned the silent skip was re-framed). Only tracked files are enumerated (via `_core.iter_files`), since an untracked file has no age; regression test: tests/test_stale_comment_age.py::TestHistoryProblems::test_a_shallow_clone_fails_instead_of_passing, tests/test_stale_comment_age.py::TestHistoryProblems::test_a_blame_failure_is_reported
 
 - **Where:** stale_comment_age.py:107,162
 - **Finding:** blame failure → `{}` → all skipped; shallow clone makes gate a no-op
@@ -950,7 +950,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-48 (High) -- trailing # TODO never checked
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- comments are extracted with `tokenize` for Python and with a quote-aware line scanner for the other languages, and the TODO rule runs on the comment text, so a trailing `x = 1 # TODO fix` is checked and a `# TODO` inside a string is not; regression test: tests/test_stale_comment_age.py::TestTrailingAndReferences::test_a_trailing_todo_is_checked
 
 - **Where:** stale_comment_age.py:38
 - **Finding:** trailing `# TODO` never checked
@@ -960,7 +960,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-49 (High) -- issue-ref regex on whole line exempts foo(x), UTF-8
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the issue reference must follow the marker directly (`TODO(x)`, `TODO: #12`, `TODO ABC-12`, `TODO - https://...`); `foo(x)` elsewhere in the comment no longer exempts it, and encoding/standard prefixes such as `UTF-8`, `SHA-256`, `RFC-...` are not tracker keys; regression test: tests/test_stale_comment_age.py::TestTrailingAndReferences::test_a_call_elsewhere_in_the_comment_is_not_an_issue_reference
 
 - **Where:** stale_comment_age.py:41,152
 - **Finding:** issue-ref regex on whole line exempts `foo(x)`, `UTF-8`
@@ -970,7 +970,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-50 (Med) -- commented-out code needs ;/,: Python dead calls missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- in `#`-comment languages (py, sh, yaml) a commented-out bare call needs no `;`/`,` terminator; `//` languages keep requiring one, and the prose-block filter still applies; regression test: tests/test_stale_comment_age.py::TestTrailingAndReferences::test_a_python_dead_call_needs_no_terminator
 
 - **Where:** stale_comment_age.py:40
 - **Finding:** commented-out code needs `;`/`,`: Python dead calls missed
@@ -980,7 +980,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-51 (Low) -- SHA-256 repos (64 hex) rejected
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the blame header accepts 7..64 hex digits, so SHA-256 repositories are dated; regression test: tests/test_stale_comment_age.py::TestBlameMechanics::test_a_sha256_repository_is_dated
 
 - **Where:** stale_comment_age.py:113
 - **Finding:** SHA-256 repos (64 hex) rejected
@@ -990,7 +990,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-52 (Low) -- one -L per candidate (cmdline limit); locale decoding
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- candidate lines are merged into ranges and blamed in batches of at most 200 `-L` ranges per call; git output is decoded as UTF-8 (errors replaced) instead of the locale code page; regression test: tests/test_stale_comment_age.py::TestBlameMechanics::test_many_candidates_are_batched_and_all_dated, tests/test_stale_comment_age.py::TestBlameMechanics::test_non_ascii_author_and_text_are_decoded
 
 - **Where:** stale_comment_age.py:103,106
 - **Finding:** one `-L` per candidate (cmdline limit); locale decoding
@@ -1000,7 +1000,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-53 (High) -- mock.patch and aliases not in _PATCH_NAMES
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a patch call is recognised by its import-resolved name (`_core.ImportAliases`): `mock.patch`, `unittest.mock.patch`, `m.patch` via `from unittest import mock as m`, `patch as p`, `mock.patch.object`, `monkeypatch.setattr` all count, while an HTTP client's `.patch()` does not; regression test: tests/test_statement_compilation.py::test_aliased_and_module_spellings_are_in_the_population, tests/test_statement_compilation.py::test_an_unrelated_patch_method_is_not_a_patch_call
 
 - **Where:** statement_compilation.py:33,109
 - **Finding:** `mock.patch` and aliases not in `_PATCH_NAMES`
@@ -1010,7 +1010,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-54 (High) -- routing exemption starts at def line, so stacked @patch flagged
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the routing exemption starts at the first decorator's line, so a stacked `@patch` above `@pytest.mark.routing` is covered; regression test: tests/test_statement_compilation.py::test_a_stacked_patch_above_the_routing_mark_is_exempt
 
 - **Where:** statement_compilation.py:89
 - **Finding:** routing exemption starts at def line, so stacked `@patch` flagged
@@ -1020,7 +1020,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-55 (Med) -- new_callable and autospec=False count as autospecced
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only `autospec`/`spec`/`spec_set` with a truthy value (or a `create_autospec` replacement) exempt a patch; `new_callable=MagicMock`, `autospec=False` and `spec=None` are flagged; regression test: tests/test_statement_compilation.py::test_only_a_truthy_autospec_keeps_the_signature
 
 - **Where:** statement_compilation.py:34,65
 - **Finding:** `new_callable` and `autospec=False` count as autospecced
@@ -1030,7 +1030,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-56 (Low) -- last-name match flags HTTP mocks; module pytestmark ignored
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the full target is kept: a method on a CapWords class (`httpx.AsyncClient.delete`, `patch.object(Session, "delete")`) and targets under HTTP/OS modules (`excluded_prefixes`) are not constructors, a new `module_prefixes` kwarg scopes the check, and a module- or class-level `pytestmark` carrying `routing` exempts its tests; regression test: tests/test_statement_compilation.py::test_http_and_method_targets_are_not_constructors, tests/test_statement_compilation.py::test_a_module_or_class_pytestmark_routing_exempts
 
 - **Where:** statement_compilation.py:31,54
 - **Finding:** last-name match flags HTTP mocks; module `pytestmark` ignored
@@ -1040,7 +1040,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-57 (Low) -- no floor; relative_to crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- files are scanned with `_core.scan_python` (BOM-safe, relative paths via `relative_posix`, so a file outside root no longer raises); unparsable files are reported and a `min_files` floor (default 1) reports an empty corpus; regression test: tests/test_statement_compilation.py::test_an_empty_corpus_and_an_unparsable_file_are_reported, tests/test_statement_compilation.py::test_a_file_outside_root_and_a_bom_file_are_checked
 
 - **Where:** statement_compilation.py:101-105,107
 - **Finding:** no floor; `relative_to` crash
@@ -1050,7 +1050,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### RS-58 (Low) -- no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- regression tests now exist for each named gap (BOM, aliases, decorator factories, post-body DEFINER, quoted identifiers, trailing TODOs, `mock.patch`), `setup_env` has tests/test_setup_env.py, and the tests that pinned questionable behaviour (auto-seeded baselines, silent skips of unparsable files and missing dirs, `params={}`, commit-per-statement) were re-framed; regression test: tests/test_sql_function_privileges.py::TestLexing::test_security_definer_after_the_body_is_seen, tests/test_sql_function_privileges.py::TestLexing::test_pg_dump_quoted_identifiers_and_multi_line_headers, tests/test_runtime_registry_mutation.py::test_a_decorator_factory_inner_function_is_import_time, tests/test_stale_comment_age.py::TestTrailingAndReferences::test_a_trailing_todo_is_checked, tests/test_statement_compilation.py::test_aliased_and_module_spellings_are_in_the_population, tests/test_setup_env.py::test_the_console_script_entry_point_resolves_to_main
 
 - **Where:** tests
 - **Finding:** no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing TODOs, `mock.patch`; `setup_env` untested; some tests pin questionable behaviour

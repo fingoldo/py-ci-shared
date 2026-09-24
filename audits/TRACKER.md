@@ -372,64 +372,64 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Med | `MP-43` | unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash |
 | **OPEN** | Low | `MP-44` | Sequence[, Mapping[, frozenset[, Optional[list] treated as scalar |
 | **OPEN** | Low | `MP-45` | float(group(1)) crashes on groupless pattern, None group, 1.2k |
-| **OPEN** | High | `RS-1` | BOM files dropped; sql_verifier_coverage.py:63 crashes |
-| **OPEN** | High | `RS-2` | parse errors fail open; floors count inputs not parsed files |
-| **OPEN** | Med | `RS-3` | from os import environ/getenv, os as _os, os.environ["X"], getenv(key=) missed |
-| **OPEN** | Med | `RS-4` | missing baseline seeds and skips |
-| **OPEN** | Low | `RS-5` | baseline never tightens (test pins it) |
-| **OPEN** | Low | `RS-6` | refresh from sys.argv misses xdist/pytest.main |
-| **OPEN** | Med | `RS-7` | .coverage substring flags .coveragerc; /build/ flags packages named build |
-| **OPEN** | Med | `RS-8` | ls-files without -z: non-ASCII paths quoted, rules miss them |
-| **OPEN** | Med | `RS-9` | ${COV:-} accepted as guard |
-| **OPEN** | Low | `RS-10` | test -n "$COV" not a guard (FP) |
-| **OPEN** | Low | `RS-11` | per-line simple $X compares only |
-| **OPEN** | Med | `RS-12` | only arg-less .dispose() |
-| **OPEN** | Low | `RS-13` | substring protection; redispose() exempts module |
-| **OPEN** | Low | `RS-14` | constructor alias missed |
-| **OPEN** | Med | `RS-15` | decorator-factory inner deco flagged (FP) |
-| **OPEN** | High | `RS-16` | any name called at module scope (incl |
-| **OPEN** | Med | `RS-17` | collections.defaultdict/OrderedDict not recognised |
-| **OPEN** | Low | `RS-18` | registries under try/if; mod._REGISTRY[k]=; aliases missed |
-| **OPEN** | Low | `RS-19` | relative_to crash outside root |
-| **OPEN** | Med | `RS-20` | patch applied although target check found missing attrs |
-| **OPEN** | Low | `RS-21` | failed restore leaves concurrent edits only in patch file |
-| **OPEN** | Med | `RS-22` | rf"/F", .extend, +=, dynamic f-strings missed; comments matched |
-| **OPEN** | Med | `RS-23` | missing root → {} passes |
-| **OPEN** | Low | `RS-24` | strict utf-8 read crashes scan |
-| **OPEN** | Low | `RS-25` | re-run after moving clone keeps stale export; no tests |
-| **OPEN** | Low | `RS-26` | value not XML-escaped / shell-quoted; decode error uncaught |
-| **OPEN** | High | `RS-27` | SECURITY DEFINER after $$ body never seen |
-| **OPEN** | High | `RS-28` | quoted identifiers (pg_dump) / multi-line headers invisible |
-| **OPEN** | High | `RS-29` | commented-out REVOKE counts |
-| **OPEN** | High | `RS-30` | schema ignored; DROP+CREATE ordering ignored |
-| **OPEN** | Med | `RS-31` | search_path checked on every definition, not last (FP); O(n·m) re-reads |
-| **OPEN** | Low | `RS-32` | REVOKE w/o parens, ON ALL FUNCTIONS IN SCHEMA, default privileges missed (FP) |
-| **OPEN** | Med | `RS-33` | quote-led lines skipped incl |
-| **OPEN** | Med | `RS-34` | non-Python literal on line exempts; getsource as gs, open(__file__).read() missed |
-| **OPEN** | High | `RS-35` | fixtures, getsource as gs, dis.get_instructions, closures missed |
-| **OPEN** | Med | `RS-36` | key rel::func::kind: more claims of same kind never new |
-| **OPEN** | Med | `RS-37` | m = AsyncMock(); f(m), tuple unpack, patch() as s, spec=None missed |
-| **OPEN** | Med | `RS-38` | startswith w/o boundary (prose FPs); comment-led SQL missed; chained targets |
-| **OPEN** | Low | `RS-39` | pkg.__init__.X key; no dedicated test file |
-| **OPEN** | High | `RS-40` | check() commits every statement: writes persist |
-| **OPEN** | Med | `RS-41` | fetchall() on no-result statement → FAIL |
-| **OPEN** | Med | `RS-42` | psycopg2 with connect() does not close; no connect_timeout |
-| **OPEN** | Med | `RS-43` | every connect error → SKIPPED, exit 0 with --skip-without-db; +driver DSN not normalised |
-| **OPEN** | Low | `RS-44` | psycopg2 imported before DSN check |
-| **OPEN** | Low | `RS-45` | params={} always passed; % literal behaviour undetermined |
-| **OPEN** | Low | `RS-46` | Python slices flagged; quoted casts missed; comments/docstrings scanned |
-| **OPEN** | High | `RS-47` | blame failure → {} → all skipped; shallow clone makes gate a no-op |
-| **OPEN** | High | `RS-48` | trailing # TODO never checked |
-| **OPEN** | High | `RS-49` | issue-ref regex on whole line exempts foo(x), UTF-8 |
-| **OPEN** | Med | `RS-50` | commented-out code needs ;/,: Python dead calls missed |
-| **OPEN** | Low | `RS-51` | SHA-256 repos (64 hex) rejected |
-| **OPEN** | Low | `RS-52` | one -L per candidate (cmdline limit); locale decoding |
-| **OPEN** | High | `RS-53` | mock.patch and aliases not in _PATCH_NAMES |
-| **OPEN** | High | `RS-54` | routing exemption starts at def line, so stacked @patch flagged |
-| **OPEN** | Med | `RS-55` | new_callable and autospec=False count as autospecced |
-| **OPEN** | Low | `RS-56` | last-name match flags HTTP mocks; module pytestmark ignored |
-| **OPEN** | Low | `RS-57` | no floor; relative_to crash |
-| **OPEN** | Low | `RS-58` | no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing... |
+| **RESOLVED** | High | `RS-1` | BOM files dropped; sql_verifier_coverage.py:63 crashes |
+| **RESOLVED** | High | `RS-2` | parse errors fail open; floors count inputs not parsed files |
+| **RESOLVED** | Med | `RS-3` | from os import environ/getenv, os as _os, os.environ["X"], getenv(key=) missed |
+| **RESOLVED** | Med | `RS-4` | missing baseline seeds and skips |
+| **RESOLVED** | Low | `RS-5` | baseline never tightens (test pins it) |
+| **RESOLVED** | Low | `RS-6` | refresh from sys.argv misses xdist/pytest.main |
+| **RESOLVED** | Med | `RS-7` | .coverage substring flags .coveragerc; /build/ flags packages named build |
+| **RESOLVED** | Med | `RS-8` | ls-files without -z: non-ASCII paths quoted, rules miss them |
+| **RESOLVED** | Med | `RS-9` | ${COV:-} accepted as guard |
+| **RESOLVED** | Low | `RS-10` | test -n "$COV" not a guard (FP) |
+| **RESOLVED** | Low | `RS-11` | per-line simple $X compares only |
+| **RESOLVED** | Med | `RS-12` | only arg-less .dispose() |
+| **RESOLVED** | Low | `RS-13` | substring protection; redispose() exempts module |
+| **RESOLVED** | Low | `RS-14` | constructor alias missed |
+| **RESOLVED** | Med | `RS-15` | decorator-factory inner deco flagged (FP) |
+| **RESOLVED** | High | `RS-16` | any name called at module scope (incl |
+| **RESOLVED** | Med | `RS-17` | collections.defaultdict/OrderedDict not recognised |
+| **RESOLVED** | Low | `RS-18` | registries under try/if; mod._REGISTRY[k]=; aliases missed |
+| **RESOLVED** | Low | `RS-19` | relative_to crash outside root |
+| **RESOLVED** | Med | `RS-20` | patch applied although target check found missing attrs |
+| **RESOLVED** | Low | `RS-21` | failed restore leaves concurrent edits only in patch file |
+| **RESOLVED** | Med | `RS-22` | rf"/F", .extend, +=, dynamic f-strings missed; comments matched |
+| **RESOLVED** | Med | `RS-23` | missing root → {} passes |
+| **RESOLVED** | Low | `RS-24` | strict utf-8 read crashes scan |
+| **RESOLVED** | Low | `RS-25` | re-run after moving clone keeps stale export; no tests |
+| **RESOLVED** | Low | `RS-26` | value not XML-escaped / shell-quoted; decode error uncaught |
+| **RESOLVED** | High | `RS-27` | SECURITY DEFINER after $$ body never seen |
+| **RESOLVED** | High | `RS-28` | quoted identifiers (pg_dump) / multi-line headers invisible |
+| **RESOLVED** | High | `RS-29` | commented-out REVOKE counts |
+| **RESOLVED** | High | `RS-30` | schema ignored; DROP+CREATE ordering ignored |
+| **RESOLVED** | Med | `RS-31` | search_path checked on every definition, not last (FP); O(n·m) re-reads |
+| **RESOLVED** | Low | `RS-32` | REVOKE w/o parens, ON ALL FUNCTIONS IN SCHEMA, default privileges missed (FP) |
+| **RESOLVED** | Med | `RS-33` | quote-led lines skipped incl |
+| **RESOLVED** | Med | `RS-34` | non-Python literal on line exempts; getsource as gs, open(__file__).read() missed |
+| **RESOLVED** | High | `RS-35` | fixtures, getsource as gs, dis.get_instructions, closures missed |
+| **RESOLVED** | Med | `RS-36` | key rel::func::kind: more claims of same kind never new |
+| **RESOLVED** | Med | `RS-37` | m = AsyncMock(); f(m), tuple unpack, patch() as s, spec=None missed |
+| **RESOLVED** | Med | `RS-38` | startswith w/o boundary (prose FPs); comment-led SQL missed; chained targets |
+| **RESOLVED** | Low | `RS-39` | pkg.__init__.X key; no dedicated test file |
+| **RESOLVED** | High | `RS-40` | check() commits every statement: writes persist |
+| **RESOLVED** | Med | `RS-41` | fetchall() on no-result statement → FAIL |
+| **RESOLVED** | Med | `RS-42` | psycopg2 with connect() does not close; no connect_timeout |
+| **RESOLVED** | Med | `RS-43` | every connect error → SKIPPED, exit 0 with --skip-without-db; +driver DSN not normalised |
+| **RESOLVED** | Low | `RS-44` | psycopg2 imported before DSN check |
+| **RESOLVED** | Low | `RS-45` | params={} always passed; % literal behaviour undetermined |
+| **RESOLVED** | Low | `RS-46` | Python slices flagged; quoted casts missed; comments/docstrings scanned |
+| **RESOLVED** | High | `RS-47` | blame failure → {} → all skipped; shallow clone makes gate a no-op |
+| **RESOLVED** | High | `RS-48` | trailing # TODO never checked |
+| **RESOLVED** | High | `RS-49` | issue-ref regex on whole line exempts foo(x), UTF-8 |
+| **RESOLVED** | Med | `RS-50` | commented-out code needs ;/,: Python dead calls missed |
+| **RESOLVED** | Low | `RS-51` | SHA-256 repos (64 hex) rejected |
+| **RESOLVED** | Low | `RS-52` | one -L per candidate (cmdline limit); locale decoding |
+| **RESOLVED** | High | `RS-53` | mock.patch and aliases not in _PATCH_NAMES |
+| **RESOLVED** | High | `RS-54` | routing exemption starts at def line, so stacked @patch flagged |
+| **RESOLVED** | Med | `RS-55` | new_callable and autospec=False count as autospecced |
+| **RESOLVED** | Low | `RS-56` | last-name match flags HTTP mocks; module pytestmark ignored |
+| **RESOLVED** | Low | `RS-57` | no floor; relative_to crash |
+| **RESOLVED** | Low | `RS-58` | no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing... |
 | **OPEN** | High | `TZ-1` | cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO... |
 | **OPEN** | High | `TZ-2` | ignored files (.env, data) never unsaved |
 | **OPEN** | High | `TZ-3` | failed git cherry → every branch "spare" |
@@ -581,7 +581,7 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
 | **OPEN** | High | `SUITE-5` | uv pip install -e ".[dev]" \/\/ uv pip install -e  |
 | **OPEN** | Med | `SUITE-6` | pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole... |
-| **OPEN** | High | `SUITE-7` | setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te... |
+| **RESOLVED** | High | `SUITE-7` | setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te... |
 | **OPEN** | Med | `SUITE-8` | No test references either module. |
 | **OPEN** | Med | `SUITE-9` | Covered only nominally (referenced, or 1 to 3 unrelated tests); their own branches (7,... |
 | **OPEN** | Med | `SUITE-10` | 9 gates share 3 grouped files at about 5 to 8 tests each |
@@ -591,7 +591,7 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Low | `SUITE-14` | The dogfood test pytest.skips if lint-advisory.yml is missing (it always exists in this... |
 | **RESOLVED** | Med | `SUITE-15` | Mutant P7 survives: removing the ast.Import branch (so import pkg.sub._priv is never re... |
 | **OPEN** | Med | `SUITE-16` | Mutant F2 survives: async functions dropped from measurement |
-| **OPEN** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
+| **RESOLVED** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
 | **OPEN** | Low | `SUITE-18` | Survivor I4: a "%s" % x constant is not tested as stringish. |
 | **OPEN** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
 | **RESOLVED** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |

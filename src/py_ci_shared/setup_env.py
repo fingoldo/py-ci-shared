@@ -22,16 +22,25 @@ once, after cloning:
     pip install -e /path/to/py-ci-shared
     python -m py_ci_shared.setup_env
 
-Idempotent -- safe to re-run (e.g. after moving the clone to a new path).
+Idempotent -- safe to re-run (e.g. after moving the clone to a new path): the export line this
+script wrote before is REPLACED with the new path, never duplicated or left stale. The path is
+XML-escaped in the plist, shell-quoted in the profile and escaped for ``environment.d``, so a
+clone under a directory containing ``&``, quotes or ``$`` is written exactly.
 """
+
 from __future__ import annotations
 
 import platform
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape as _xml_escape
 
 _VAR = "PY_CI_SHARED_DIR"
+_TAG = "# added by py_ci_shared.setup_env"
+_EXPORT_RE = re.compile(rf"^\s*export\s+{_VAR}=")
 
 
 def _repo_root() -> Path:
@@ -67,7 +76,7 @@ def _set_macos(value: str) -> None:
         "        <string>/bin/launchctl</string>\n"
         "        <string>setenv</string>\n"
         f"        <string>{_VAR}</string>\n"
-        f"        <string>{value}</string>\n"
+        f"        <string>{_xml_escape(value)}</string>\n"
         "    </array>\n"
         "    <key>RunAtLoad</key>\n"
         "    <true/>\n"
@@ -89,12 +98,37 @@ def _set_macos(value: str) -> None:
         )
 
 
+def _environment_d_value(value: str) -> str:
+    """*value* for an ``environment.d`` line: backslashes and ``$`` escaped so systemd neither unescapes nor expands them."""
+    return value.replace("\\", "\\\\").replace("$", "\\$")
+
+
 def _set_linux(value: str) -> None:
     env_dir = Path.home() / ".config" / "environment.d"
     env_dir.mkdir(parents=True, exist_ok=True)
     conf_path = env_dir / "50-py-ci-shared.conf"
-    conf_path.write_text(f"{_VAR}={value}\n", encoding="utf-8")
+    conf_path.write_text(f"{_VAR}={_environment_d_value(value)}\n", encoding="utf-8")
     print(f"Linux: wrote {conf_path} (systemd user-session mechanism -- picked up automatically at the " "next login on systemd-based desktops).")
+
+
+def _export_line(value: str) -> str:
+    return f"export {_VAR}={shlex.quote(value)}"
+
+
+def _update_profile_text(text: str, value: str) -> "tuple[str, str]":
+    """``(new_text, action)``: the export line this script tagged earlier is replaced; an untagged one the user
+    wrote is left alone (``action="user"``); none is appended. ``action`` is ``replaced``/``unchanged``/``appended``."""
+    lines = text.split("\n")
+    for i, line in enumerate(lines[:-1]):
+        if line.strip() == _TAG and _EXPORT_RE.match(lines[i + 1]):
+            if lines[i + 1] == _export_line(value):
+                return text, "unchanged"
+            lines[i + 1] = _export_line(value)
+            return "\n".join(lines), "replaced"
+    if any(_EXPORT_RE.match(line) for line in lines):
+        return text, "user"
+    sep = "" if text.endswith("\n") or not text else "\n"
+    return f"{text}{sep}\n{_TAG}\n{_export_line(value)}\n", "appended"
 
 
 def _append_to_shell_profile(value: str) -> None:
@@ -102,12 +136,15 @@ def _append_to_shell_profile(value: str) -> None:
         rc_path = Path.home() / rc_name
         if not rc_path.exists():
             continue
-        text = rc_path.read_text(encoding="utf-8")
-        if _VAR in text:
-            continue
-        with rc_path.open("a", encoding="utf-8") as fh:
-            fh.write(f'\n# added by py_ci_shared.setup_env\nexport {_VAR}="{value}"\n')
-        print(f"Appended {_VAR} export to {rc_path} (covers shell-only workflows too).")
+        # surrogateescape round-trips a profile that is not UTF-8 byte for byte instead of crashing on it.
+        text = rc_path.read_bytes().decode("utf-8", errors="surrogateescape")
+        new_text, action = _update_profile_text(text, value)
+        if action in ("appended", "replaced"):
+            rc_path.write_bytes(new_text.encode("utf-8", errors="surrogateescape"))
+            verb = "Appended" if action == "appended" else "Updated the stale"
+            print(f"{verb} {_VAR} export in {rc_path} (covers shell-only workflows too).")
+        elif action == "user":
+            print(f"{rc_path} already sets {_VAR} itself; left unchanged -- make sure it points at {value}.", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -130,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"Unrecognized platform {system!r} -- set {_VAR}={value} manually.", file=sys.stderr)
             return 1
-    except (subprocess.CalledProcessError, OSError) as exc:
+    except (subprocess.CalledProcessError, OSError, UnicodeError) as exc:
         print(f"Failed to persist {_VAR}: {exc}", file=sys.stderr)
         return 1
 

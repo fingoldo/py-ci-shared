@@ -12,11 +12,13 @@ making. Both read as "in progress" forever. Two real examples from the 2026-09-0
 
 The rule is age, not existence: a TODO written this week is a note; one that has survived a release
 cycle is a decision made by default. ``git blame`` gives the age, so the check needs no annotations
-and cannot be gamed by re-indenting. An issue reference (``TODO(#123)``, ``TODO(sourcemaps)``, a URL)
-exempts a line -- that is a tracked promise, which is the outcome this check wants.
+and cannot be gamed by re-indenting. An issue reference right after the marker (``TODO(#123)``,
+``TODO(sourcemaps)``, ``TODO: #123``, a URL) exempts the comment -- that is a tracked promise, which is
+the outcome this check wants. A gate that cannot date a line (shallow clone, blame failure, missing
+scan directory) fails instead of passing on nothing.
 
 Deliberately dependency-free (``git blame --line-porcelain`` via subprocess), language-agnostic:
-``//``, ``#``, ``--`` and ``/*`` comment markers are all recognised.
+``//``, ``#``, ``--`` and ``/*`` comment markers are all recognised, whole-line or trailing.
 
 Usage::
 
@@ -28,18 +30,35 @@ Usage::
 
 from __future__ import annotations
 
+import io
 import re
 import subprocess
 import time
+import tokenize
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Optional
 
-_COMMENT_PREFIX = r"(?://+|#|--|\*|/\*)"
-_TODO_RE = re.compile(rf"^\s*{_COMMENT_PREFIX}\s*(TODO|FIXME|HACK|XXX)\b(?P<ref>\([^)]*\))?", re.IGNORECASE)
-# A commented-out statement: a comment whose content is a call or an assignment ending in `;` or `,`.
-_COMMENTED_CODE_RE = re.compile(rf"^\s*(?://+|#)\s*(?!TODO|FIXME|HACK|XXX)[\w.]+\s*\([^;]*\)\s*[;,]\s*$", re.IGNORECASE)
-_ISSUE_REF_RE = re.compile(r"#\d+|https?://|\b[A-Z]{2,}-\d+\b|\(\w[\w-]*\)")
+from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source
+
+_MARKERS = r"(?:TODO|FIXME|HACK|XXX)"
+# Applied to a comment's TEXT (marker stripped), so a trailing `x = 1  # TODO fix` is seen as well as a whole-line one.
+_TODO_TEXT_RE = re.compile(rf"^\s*(?P<kw>{_MARKERS})\b(?P<ref>\([^)]*\))?(?P<after>.*)$", re.IGNORECASE | re.DOTALL)
+# A tracked reference written right after the marker: `TODO: #12`, `TODO - https://...`, `FIXME ABC-12:`.
+_LEADING_REF_RE = re.compile(r"^\s*[:\-]?\s*(?:#\d+\b|https?://\S+|(?P<key>[A-Z][A-Z0-9]+)-\d+\b)")
+# Upper-case prefixes that form `WORD-123` without being an issue tracker key.
+_NOT_ISSUE_KEYS = frozenset({"UTF", "UCS", "ISO", "SHA", "MD", "CP", "RFC", "PEP", "ECMA", "IEEE", "TLS", "SSL", "HTTP", "IPV", "CVE"})
+# A commented-out statement: a call ending in `;` or `,`. In `#`-comment languages (Python, shell, YAML) a
+# statement has no terminator, so a bare call is enough there.
+_COMMENTED_CODE_RE = re.compile(rf"^\s*(?://+|#)\s*(?!{_MARKERS})[\w.]+\s*\([^;]*\)\s*[;,]\s*$", re.IGNORECASE)
+_COMMENTED_HASH_CALL_RE = re.compile(rf"^\s*#\s*(?!{_MARKERS})[\w.]+\s*\([^;]*\)\s*[;,]?\s*$", re.IGNORECASE)
+_HASH_SUFFIXES = frozenset({".py", ".sh", ".yaml", ".yml"})
 _DEFAULT_SUFFIXES = (".dart", ".py", ".ts", ".tsx", ".js", ".mjs", ".sh", ".sql", ".yaml", ".yml")
+#: Directory names never scanned, on top of the shared default set.
+DEFAULT_SKIP_DIRS: frozenset[str] = DEFAULT_EXCLUDE | frozenset({".dart_tool"})
+_BLAME_HEADER_RE = re.compile(r"^[0-9a-f]{7,64}\s+\d+\s+(\d+)")
+#: Line ranges per `git blame` call: keeps the command line far below the Windows 32k limit.
+_BLAME_BATCH = 200
 
 # Words that carry an English sentence but essentially never stand alone as a token in code.
 # Deliberately conservative: keywords and plausible identifiers (`is`, `in`, `and`, `or`, `for`,
@@ -56,6 +75,10 @@ _COMMENT_LINE_RE = re.compile(r"^\s*(?://+|#)\s?(?P<body>.*)$")
 # A sentence-ending period, anchored so that `...`, a decimal and a dotted identifier do not count.
 _SENTENCE_END_RE = re.compile(r"[\w)\"'\]]\.$")
 _STRING_LITERAL_RE = re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`")
+
+
+class BlameError(RuntimeError):
+    """``git blame`` could not date a line, so the gate cannot tell a fresh TODO from a stale one."""
 
 
 def _comment_body(line: str) -> "str | None":
@@ -94,30 +117,162 @@ def _block_reads_as_prose(lines: Sequence[str], index: int) -> bool:
     return False
 
 
-def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, float]:
-    """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``."""
-    if not lines:
-        return {}
-    args = ["git", "blame", "--line-porcelain"]
-    for n in lines:
-        args += ["-L", f"{n},{n}"]
-    args += ["--", rel_path]
+def _markers_for(suffix: str) -> tuple[str, ...]:
+    if suffix in _HASH_SUFFIXES:
+        return ("#",)
+    if suffix == ".sql":
+        return ("--", "/*")
+    return ("//", "/*")
+
+
+def _line_comment(line: str, markers: Sequence[str]) -> Optional[str]:
+    """The comment text on *line* (marker stripped), found outside quoted strings; a block-comment continuation
+    line (leading ``*``) counts as a comment. ``None`` when the line carries no comment."""
+    stripped = line.lstrip()
+    if "/*" in markers and stripped.startswith("*") and not stripped.startswith("*/"):
+        return stripped[1:]
+    quote: Optional[str] = None
+    i = 0
+    while i < len(line):
+        ch = line[i]
+        if quote is not None:
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "\"'`":
+            quote = ch
+        else:
+            for marker in markers:
+                if line.startswith(marker, i) and (marker != "#" or i == 0 or line[i - 1].isspace()):
+                    text = line[i + len(marker) :]
+                    return text.lstrip("/") if marker == "//" else text
+        i += 1
+    return None
+
+
+def _python_comments(source: str) -> Optional[dict[int, str]]:
+    """``{line: comment text}`` from the tokenizer (exact for Python), or ``None`` when it cannot tokenize."""
+    out: dict[int, str] = {}
     try:
-        out = subprocess.run(args, cwd=repo_root, capture_output=True, text=True, check=True).stdout
-    except (OSError, subprocess.CalledProcessError):
+        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type == tokenize.COMMENT:
+                out[tok.start[0]] = tok.string[1:]
+    except (tokenize.TokenError, IndentationError, SyntaxError):
+        return None
+    return out
+
+
+def _comments(path: Path, source: str, lines: Sequence[str]) -> dict[int, str]:
+    if path.suffix == ".py":
+        found = _python_comments(source)
+        if found is not None:
+            return found
+    markers = _markers_for(path.suffix)
+    out: dict[int, str] = {}
+    for i, line in enumerate(lines, start=1):
+        text = _line_comment(line, markers)
+        if text is not None:
+            out[i] = text
+    return out
+
+
+def _has_issue_ref(match: "re.Match[str]") -> bool:
+    if match.group("ref"):
+        return True
+    lead = _LEADING_REF_RE.match(match.group("after"))
+    if lead is None:
+        return False
+    return lead.group("key") is None or lead.group("key") not in _NOT_ISSUE_KEYS
+
+
+def _todo(comment: str) -> Optional["re.Match[str]"]:
+    return _TODO_TEXT_RE.match(comment)
+
+
+def _ranges(lines: Sequence[int]) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    for n in sorted(set(lines)):
+        if out and n == out[-1][1] + 1:
+            out[-1] = (out[-1][0], n)
+        else:
+            out.append((n, n))
+    return out
+
+
+def _git(repo_root: Path, *args: str) -> "subprocess.CompletedProcess[str]":
+    return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+
+
+def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, float]:
+    """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``. Raises :class:`BlameError` when git fails."""
+    if not lines:
         return {}
     ages: dict[int, float] = {}
     now = time.time()
-    current_line: "int | None" = None
-    for line in out.splitlines():
-        m = re.match(r"^[0-9a-f]{7,40}\s+\d+\s+(\d+)", line)
-        if m:
-            current_line = int(m.group(1))
-            continue
-        if line.startswith("author-time ") and current_line is not None:
-            ages[current_line] = (now - int(line.split()[1])) / 86400.0
-            current_line = None
+    spans = _ranges(lines)
+    for start in range(0, len(spans), _BLAME_BATCH):
+        args = ["blame", "--line-porcelain"]
+        for a, b in spans[start : start + _BLAME_BATCH]:
+            args += ["-L", f"{a},{b}"]
+        args += ["--", rel_path]
+        try:
+            proc = _git(repo_root, *args)
+        except OSError as exc:
+            raise BlameError(f"{rel_path}: cannot run git blame: {exc}") from exc
+        if proc.returncode != 0:
+            raise BlameError(f"{rel_path}: git blame failed: {proc.stderr.strip()[:300]}")
+        current_line: "int | None" = None
+        for line in proc.stdout.splitlines():
+            m = _BLAME_HEADER_RE.match(line)
+            if m:
+                current_line = int(m.group(1))
+                continue
+            if line.startswith("author-time ") and current_line is not None:
+                ages[current_line] = (now - int(line.split()[1])) / 86400.0
+                current_line = None
     return ages
+
+
+def _history_problem(repo_root: Path) -> Optional[str]:
+    """Why ``git blame`` cannot give real ages here, or ``None``. A shallow clone attributes every line older than
+    its boundary to the boundary commit, so every TODO looks as young as the newest commit and the gate passes."""
+    try:
+        proc = _git(repo_root, "rev-parse", "--is-shallow-repository")
+    except OSError as exc:
+        return f"{repo_root}: cannot run git ({exc}); comment ages are unknown, so nothing was checked."
+    if proc.returncode != 0:
+        return f"{repo_root}: not a git work tree ({proc.stderr.strip()[:200]}); comment ages are unknown, so nothing was checked."
+    if proc.stdout.strip() == "true":
+        return (
+            f"{repo_root}: shallow clone. git blame dates every older line to the shallow boundary, so no TODO can "
+            "look stale and this check would pass having checked nothing. Fetch full history (actions/checkout "
+            "`fetch-depth: 0`, or `git fetch --unshallow`)."
+        )
+    return None
+
+
+def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str]]:
+    try:
+        source = read_source(path)
+    except SourceReadError:
+        source = path.read_bytes().decode("utf-8", errors="replace")  # comment text only; a lossy decode cannot hide a marker
+    file_lines = source.splitlines()
+    out: dict[int, tuple[str, str]] = {}
+    hash_lang = path.suffix in _HASH_SUFFIXES
+    for lineno, comment in sorted(_comments(path, source, file_lines).items()):
+        line = file_lines[lineno - 1] if lineno - 1 < len(file_lines) else comment
+        todo = _todo(comment)
+        if todo:
+            if require_issue_ref and _has_issue_ref(todo):
+                continue
+            out[lineno] = ("TODO", line.strip()[:100])
+            continue
+        code_re = _COMMENTED_HASH_CALL_RE if hash_lang else _COMMENTED_CODE_RE
+        if code_re.match(line) and not _block_reads_as_prose(file_lines, lineno - 1):
+            out[lineno] = ("commented-out code", line.strip()[:100])
+    return out
 
 
 def find_stale_comments(
@@ -127,41 +282,50 @@ def find_stale_comments(
     max_age_days: int = 30,
     suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
     require_issue_ref: bool = True,
+    skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
 ) -> list[str]:
     """Return one problem string per TODO/commented-out call older than ``max_age_days``.
 
-    A TODO carrying an issue reference, a URL or a parenthesised topic is exempt when
-    ``require_issue_ref`` is true: it is a tracked promise rather than a note to nobody.
+    A TODO carrying an issue reference right after its marker (``TODO(#12)``, ``TODO(topic)``, ``TODO: #12``,
+    ``TODO ABC-12``, a URL) is exempt when ``require_issue_ref`` is true: it is a tracked promise rather than a
+    note to nobody. Trailing comments count. Only tracked files are scanned (an untracked file has no age).
+
+    The gate reports, rather than passes, whatever stops it from dating a line: a scan directory that does not
+    exist, a root that is not a git work tree, a shallow clone, and a ``git blame`` that fails.
     """
     problems: list[str] = []
+    root = Path(repo_root)
+    history = _history_problem(root)
+    if history is not None:
+        return [history]
+    patterns = tuple(f"*{s}" for s in suffixes)
     for d in scan_dirs:
-        base = repo_root / d
+        base = root / d
         if not base.is_dir():
+            problems.append(f"{d}: scan directory does not exist under {root}; nothing in it was checked. Fix scan_dirs.")
             continue
-        for path in sorted(base.rglob("*")):
-            if not path.is_file() or path.suffix not in suffixes:
-                continue
-            rel = path.relative_to(repo_root).as_posix()
-            if "/.dart_tool/" in f"/{rel}" or "/node_modules/" in f"/{rel}":
-                continue
-            candidates: dict[int, str] = {}
-            file_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-            for i, line in enumerate(file_lines, start=1):
-                todo = _TODO_RE.match(line)
-                if todo:
-                    if require_issue_ref and _ISSUE_REF_RE.search(line):
-                        continue
-                    candidates[i] = line.strip()[:100]
-                elif _COMMENTED_CODE_RE.match(line) and not _block_reads_as_prose(file_lines, i - 1):
-                    candidates[i] = line.strip()[:100]
+        try:
+            files = iter_files(base, patterns, exclude=frozenset(skip_dirs), include_untracked=False, use_git=True)
+        except CorpusError as exc:
+            problems.append(f"{d}: {exc}")
+            continue
+        for path in files:
+            rel = path.relative_to(root).as_posix()
+            candidates = _candidates(path, require_issue_ref)
             if not candidates:
                 continue
-            ages = _blame_ages(repo_root, rel, sorted(candidates))
-            for lineno, text in sorted(candidates.items()):
+            try:
+                ages = _blame_ages(root, rel, sorted(candidates))
+            except BlameError as exc:
+                problems.append(f"{exc}; its {len(candidates)} candidate comment(s) could not be dated.")
+                continue
+            for lineno, (kind, text) in sorted(candidates.items()):
                 age = ages.get(lineno)
-                if age is None or age <= max_age_days:
+                if age is None:
+                    problems.append(f"{rel}:{lineno}: git blame returned no date for this line - `{text}`.")
                     continue
-                kind = "TODO" if _TODO_RE.match(text) else "commented-out code"
+                if age <= max_age_days:
+                    continue
                 problems.append(f"{rel}:{lineno}: {kind} {int(age)} days old - `{text}`. Do it, delete it, or " f"reference the issue that tracks it.")
     return problems
 
@@ -172,10 +336,13 @@ def assert_no_stale_todos(
     *,
     max_age_days: int = 30,
     require_issue_ref: bool = True,
+    suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
+    skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
 ) -> None:
-    """Fail on any TODO or commented-out call older than ``max_age_days``."""
+    """Fail on any TODO or commented-out call older than ``max_age_days``, and on anything that kept a line from
+    being dated (see :func:`find_stale_comments`)."""
     import pytest
 
-    problems = find_stale_comments(repo_root, scan_dirs, max_age_days=max_age_days, require_issue_ref=require_issue_ref)
+    problems = find_stale_comments(repo_root, scan_dirs, max_age_days=max_age_days, require_issue_ref=require_issue_ref, suffixes=suffixes, skip_dirs=skip_dirs)
     if problems:
         pytest.fail(f"{len(problems)} stale comment(s) older than {max_age_days} days:\n  " + "\n  ".join(problems))

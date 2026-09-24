@@ -88,3 +88,37 @@ class TestTheCallerCanAddItsOwnForms:
         path.write_text("value = dis.get_instructions(fn)\n", encoding="utf-8")
         assert not offending_lines(path)
         assert offending_lines(path, extra_patterns=(re.compile(r"\bdis\.get_instructions\s*\("),))
+
+
+class TestCallsNotLines:
+    def test_a_multi_line_assert_continuation_is_caught(self, tmp_path):
+        found = _probe(tmp_path, 'import inspect\n\n\ndef test_x():\n    assert (\n        "retry" in inspect.getsource(mod)\n    )\n')
+        assert [n for n, _ in found] == [6]
+
+    def test_getsource_under_an_alias_is_caught(self, tmp_path):
+        found = _probe(tmp_path, "from inspect import getsource as gs\n\n\ndef test_x():\n    assert 'x' in gs(f)\n")
+        assert [n for n, _ in found] == [5]
+
+    def test_open_dunder_file_read_is_caught(self, tmp_path):
+        found = _probe(tmp_path, "def test_x():\n    assert 'x' in open(__file__).read()\n")
+        assert [n for n, _ in found] == [2]
+
+    def test_a_non_python_literal_elsewhere_on_the_line_does_not_exempt(self, tmp_path):
+        found = _probe(tmp_path, 'def test_x():\n    assert "x.json" in Path(__file__).read_text()\n')
+        assert [n for n, _ in found] == [2]
+
+    def test_a_non_python_literal_in_the_path_still_exempts(self, tmp_path):
+        assert not _probe(tmp_path, 'data = json.loads(Path(__file__).with_name("x.json").read_text())\n')
+
+    def test_the_pattern_inside_a_string_or_trailing_comment_is_not_a_call(self, tmp_path):
+        body = 'CASE = "src = inspect.getsource(backfill._reader_loop)"\nx = 1  # was inspect.getsource(f)\n'
+        assert not _probe(tmp_path, body)
+
+    def test_a_bom_file_is_read(self, tmp_path):
+        path = tmp_path / "test_bom.py"
+        path.write_bytes(b"\xef\xbb\xbfsrc = inspect.getsource(f)\n")
+        assert [n for n, _ in offending_lines(path)] == [1]
+
+    def test_an_unparsable_file_falls_back_to_the_line_heuristic(self, tmp_path):
+        found = _probe(tmp_path, "def broken(:\nsrc = inspect.getsource(f)\n")
+        assert [n for n, _ in found] == [2]

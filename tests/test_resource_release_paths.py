@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
+from py_ci_shared._core import SourceError
 from py_ci_shared.resource_release_paths import (
     assert_released_on_every_path,
     find_unprotected_releases,
@@ -76,10 +77,47 @@ class TestFindUnprotectedReleases:
 
         assert find_unprotected_releases(path, "dispose") == []
 
-    def test_an_unparsable_file_is_skipped_rather_than_crashing(self, tmp_path):
+    def test_an_unparsable_file_raises_rather_than_reading_as_clean(self, tmp_path):
         path = _module(tmp_path, "broken.py", "def (:\n")
 
-        assert find_unprotected_releases(path, "dispose") == []
+        with pytest.raises(SourceError):
+            find_unprotected_releases(path, "dispose")
+
+    def test_a_release_with_arguments_is_a_release(self, tmp_path):
+        path = _module(
+            tmp_path,
+            "args.py",
+            """
+            async def main():
+                eng = create_async_engine(URL)
+                await eng.dispose(close=False)
+        """,
+        )
+        assert find_unprotected_releases(path, "dispose") == [4]
+
+    def test_protection_is_by_call_name_and_receiver_not_substring(self, tmp_path):
+        """`fh.redispose()` in a with body protects nothing, and a protected `other.dispose()` does not cover `eng`."""
+        path = _module(
+            tmp_path,
+            "sub.py",
+            """
+            async def main():
+                eng = create_async_engine(URL)
+                with open("f") as fh:
+                    fh.redispose()
+                try:
+                    pass
+                finally:
+                    await other.dispose()
+                await eng.dispose()
+        """,
+        )
+        assert find_unprotected_releases(path, "dispose") == [10]
+
+    def test_a_bom_file_is_parsed(self, tmp_path):
+        path = tmp_path / "bom.py"
+        path.write_bytes(b"\xef\xbb\xbf" + textwrap.dedent(_HAPPY_PATH_ONLY).encode())
+        assert find_unprotected_releases(path, "dispose") == [5]
 
 
 class TestSubjects:
@@ -89,6 +127,18 @@ class TestSubjects:
 
         assert subjects([bad, unrelated], ["create_async_engine"]) == [bad]
 
+    def test_an_aliased_constructor_makes_a_subject(self, tmp_path):
+        aliased = _module(
+            tmp_path,
+            "alias.py",
+            """
+            from sqlalchemy.ext.asyncio import create_async_engine as cae
+            eng = cae(URL)
+        """,
+        )
+        unrelated = _module(tmp_path, "other.py", "def cae():\n    return 1\ncae()\n")
+        assert subjects([aliased, unrelated], ["create_async_engine"]) == [aliased]
+
 
 class TestAssertReleasedOnEveryPath:
     def test_it_fails_on_an_unprotected_release(self, tmp_path):
@@ -96,14 +146,20 @@ class TestAssertReleasedOnEveryPath:
 
         with pytest.raises(pytest.fail.Exception, match="success path"):
             assert_released_on_every_path(
-                files=[path], constructors=["create_async_engine"], release="dispose", repo_root=tmp_path,
+                files=[path],
+                constructors=["create_async_engine"],
+                release="dispose",
+                repo_root=tmp_path,
             )
 
     def test_it_passes_when_every_release_is_protected(self, tmp_path):
         path = _module(tmp_path, "good.py", _IN_FINALLY)
 
         assert_released_on_every_path(
-            files=[path], constructors=["create_async_engine"], release="dispose", repo_root=tmp_path,
+            files=[path],
+            constructors=["create_async_engine"],
+            release="dispose",
+            repo_root=tmp_path,
         )
 
     def test_it_fails_when_the_scan_has_no_subject(self, tmp_path):
@@ -113,8 +169,11 @@ class TestAssertReleasedOnEveryPath:
 
         with pytest.raises(pytest.fail.Exception, match="lost its subject"):
             assert_released_on_every_path(
-                files=[path], constructors=["create_async_engine"], release="dispose",
-                repo_root=tmp_path, min_subjects=1,
+                files=[path],
+                constructors=["create_async_engine"],
+                release="dispose",
+                repo_root=tmp_path,
+                min_subjects=1,
             )
 
     def test_an_ignored_file_is_not_reported(self, tmp_path):
@@ -122,6 +181,21 @@ class TestAssertReleasedOnEveryPath:
         good = _module(tmp_path, "good.py", _IN_FINALLY)
 
         assert_released_on_every_path(
-            files=[bad, good], constructors=["create_async_engine"], release="dispose",
-            repo_root=tmp_path, ignore=[bad],
+            files=[bad, good],
+            constructors=["create_async_engine"],
+            release="dispose",
+            repo_root=tmp_path,
+            ignore=[bad],
         )
+
+
+def test_the_assert_reports_an_unparsable_file_and_a_file_outside_the_root(tmp_path):
+    root = tmp_path / "root"
+    root.mkdir()
+    good = _module(root, "good.py", _IN_FINALLY)
+    broken = _module(root, "broken.py", "def (:\n")
+    with pytest.raises(pytest.fail.Exception, match=r"broken\.py"):
+        assert_released_on_every_path(files=[good, broken], constructors=["create_async_engine"], release="dispose", repo_root=root)
+    outside = _module(tmp_path, "bad.py", _HAPPY_PATH_ONLY)
+    with pytest.raises(pytest.fail.Exception, match=r"bad\.py calls \.dispose"):
+        assert_released_on_every_path(files=[outside], constructors=["create_async_engine"], release="dispose", repo_root=root)

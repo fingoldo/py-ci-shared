@@ -65,12 +65,16 @@ Usage::
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 import subprocess
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from ._core import DEFAULT_EXCLUDE, git_listing
+
+#: Generated-artefact patterns, matched on path COMPONENTS, never as substrings (see :func:`matches_generated_pattern`).
 _DEFAULT_GENERATED_PATTERNS: tuple[str, ...] = (
     "__pycache__/",
     ".pyc",
@@ -79,48 +83,86 @@ _DEFAULT_GENERATED_PATTERNS: tuple[str, ...] = (
     ".pytest_cache/",
     "/build/",
     ".coverage",
+    ".coverage.*",
     "coverage/lcov.info",
 )
 _RUN_LINE_RE = re.compile(r"^\s*(?:-\s*)?run:\s*(?P<first>.*)$")
-# A numeric comparison of a shell variable: `$X < 80` inside bc, `[ "$X" -lt 80 ]`, `(( X < 80 ))`.
+# `$X`, `${X}` and `${X%\%}`-style expansions (a modifier after the name still expands X).
+_VAR = r"""\$\{{?(?P<{g}>\w+)(?:[%#:/^,][^}}]*)?\}}?"""
+_CMP = r"(?:<=|>=|<|>)"
+_TEST_OP = r"-(?:lt|gt|le|ge|eq|ne)"
+# A numeric comparison of a shell variable: `$X < 80` inside bc, `[ "$X" -lt 80 ]`, `test $X -lt 80`, `(( X < 80 ))`,
+# with the variable on either side.
 _NUMERIC_COMPARE_RE = re.compile(
-    r"""(?:\$\{?(?P<bc>\w+)\}?\s*(?:<|>|<=|>=)\s*[\d.]+)"""
-    r"""|(?:\[\s*[\"']?\$\{?(?P<test>\w+)\}?[\"']?\s+-(?:lt|gt|le|ge|eq|ne)\s+)"""
-    r"""|(?:\(\(\s*\$?\{?(?P<arith>\w+)\}?\s*(?:<|>|<=|>=)\s*[\d.]+)"""
+    rf"""(?:{_VAR.format(g="bc")}[\"']?\s*{_CMP}\s*[\d.]+)"""
+    rf"""|(?:[\d.]+\s*{_CMP}\s*[\"']?{_VAR.format(g="bc2")})"""
+    rf"""|(?:(?:\[\[?|\btest)\s*[\"']?{_VAR.format(g="test")}[\"']?\s+{_TEST_OP}\s+)"""
+    rf"""|(?:(?:\[\[?|\btest)\s*[\"']?[\d.]+[\"']?\s+{_TEST_OP}\s+[\"']?{_VAR.format(g="test2")})"""
+    rf"""|(?:\(\(\s*\$?\{{?(?P<arith>\w+)\}}?\s*{_CMP}\s*[\d.]+)"""
 )
+# What proves VAR non-empty before it is compared: `[ -n "$VAR" ]`, `[[ -z $VAR ]]`, `test -n "$VAR"`, `: "${VAR:?}"`,
+# `${VAR:-<non-empty default>}`, `[ "$VAR" = "" ]`. An EMPTY default (`${VAR:-}`) proves nothing.
 _EMPTINESS_GUARD_TMPL = (
-    r"""\[\s*-n\s+[\"']?\$\{{?{var}\}}?[\"']?\s*\]"""
-    r"""|\[\s*-z\s+[\"']?\$\{{?{var}\}}?[\"']?\s*\]"""
-    r"""|:\s*[\"']?\$\{{{var}:[?-]"""
-    r"""|\$\{{{var}:-"""
-    r"""|if\s+\[\s*[\"']?\$\{{?{var}\}}?[\"']?\s*=\s*[\"']{{2}}"""
+    r"""(?:\[\[?|\btest)\s+-[nz]\s+[\"']?\$\{{?{var}\}}?[\"']?"""
+    r"""|\$\{{{var}:\?"""
+    r"""|\$\{{{var}:-[^}}\s\"']"""
+    r"""|(?:\[\[?|\btest)\s+[\"']?\$\{{?{var}\}}?[\"']?\s*==?\s*[\"']{{2}}"""
 )
 
 
 def _tracked_files(repo_root: Path) -> list[str]:
+    """Tracked paths as git stores them: ``-z`` so a non-ASCII name is not C-quoted (``"audits/\320\277..."``)."""
     try:
         out = subprocess.run(
-            ["git", "ls-files"],
+            ["git", "ls-files", "-z"],
             cwd=repo_root,
             capture_output=True,
-            text=True,
             check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover - environment
         raise RuntimeError(f"git ls-files failed in {repo_root}: {exc}") from exc
-    return [line for line in out.splitlines() if line]
+    return [rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel]
+
+
+def matches_generated_pattern(rel: str, pattern: str) -> bool:
+    """Does repo-relative *rel* match a generated-artefact *pattern*? Matching is by path component:
+
+    * ``name/`` -- a directory component equal to ``name`` at any depth; ``/name/`` -- only at the repo root;
+    * ``a/b`` -- the path ends with the components ``a/b`` (``/a/b`` anchors it at the root);
+    * no ``/`` -- the file name: a glob when it has ``*?[``, otherwise equal to it or ending with it (``.pyc``).
+
+    So ``.coverage`` matches ``.coverage`` but not ``.coveragerc``, and ``/build/`` does not match a package that
+    happens to be named ``build`` below the root.
+    """
+    parts = rel.replace("\\", "/").split("/")
+    if "/" not in pattern:
+        name = parts[-1]
+        if any(c in pattern for c in "*?["):
+            return fnmatch.fnmatchcase(name, pattern)
+        return name == pattern or name.endswith(pattern)
+    anchored = pattern.startswith("/")
+    is_dir = pattern.endswith("/")
+    wanted = [p for p in pattern.strip("/").split("/") if p]
+    if not wanted:
+        return False
+    haystack = parts[:-1] if is_dir else parts
+    n = len(wanted)
+    if anchored:
+        return haystack[:n] == wanted
+    if is_dir:
+        return any(haystack[i : i + n] == wanted for i in range(len(haystack) - n + 1))
+    return haystack[-n:] == wanted
 
 
 def find_tracked_generated_files(
     repo_root: Path,
     patterns: Sequence[str] = _DEFAULT_GENERATED_PATTERNS,
 ) -> list[str]:
-    """Return every tracked path containing one of ``patterns`` (a generated artefact)."""
+    """Return every tracked path matching one of ``patterns`` (a generated artefact); see :func:`matches_generated_pattern`."""
     hits: list[str] = []
     for rel in _tracked_files(repo_root):
-        normalized = "/" + rel.replace("\\", "/")
         for pattern in patterns:
-            if pattern in normalized:
+            if matches_generated_pattern(rel, pattern):
                 hits.append(f"{rel} (matches {pattern!r})")
                 break
     return hits
@@ -137,20 +179,7 @@ DEFAULT_TEXT_SUFFIXES: "tuple[str, ...]" = (".py", ".md", ".sql", ".toml", ".yam
 
 
 #: Directories no rule here should descend into. Shared by rules 4 and 5.
-_DEFAULT_SKIP_DIRS: "tuple[str, ...]" = (
-    ".git",
-    "__pycache__",
-    ".hypothesis",
-    ".benchmarks",
-    ".pytest_cache",
-    ".ruff_cache",
-    ".mypy_cache",
-    "node_modules",
-    "build",
-    "dist",
-    "logs",
-    "checkpoints",
-)
+_DEFAULT_SKIP_DIRS: "tuple[str, ...]" = tuple(sorted(DEFAULT_EXCLUDE | {"logs", "checkpoints"}))
 
 
 def _candidate_files(repo_root: Path, skip: "set[str]") -> "list[str]":
@@ -160,16 +189,9 @@ def _candidate_files(repo_root: Path, skip: "set[str]") -> "list[str]":
     committed while ignored data, caches and outputs -- often ten times the repository -- are never read. Outside a
     checkout the walk prunes skipped directories instead of descending into them and filtering afterwards.
     """
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"],
-            cwd=repo_root,
-            capture_output=True,
-            check=True,
-        ).stdout
-        return sorted({rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel})
-    except (OSError, subprocess.CalledProcessError):
-        pass
+    listed = git_listing(repo_root)
+    if listed is not None:
+        return listed
     found: "list[str]" = []
     for dirpath, dirnames, filenames in os.walk(repo_root):
         dirnames[:] = [d for d in dirnames if d not in skip]
@@ -275,7 +297,7 @@ def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
             m = _NUMERIC_COMPARE_RE.search(line)
             if not m:
                 continue
-            var = m.group("bc") or m.group("test") or m.group("arith")
+            var = m.group("bc") or m.group("bc2") or m.group("test") or m.group("test2") or m.group("arith")
             if not var or var.isdigit():
                 continue
             # Look at the whole run block this line belongs to: the guard is usually a few lines up.

@@ -15,6 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from py_ci_shared._core import Baseline
 from py_ci_shared.source_text_claims import REFRESH_FLAG, assert_no_new_source_text_claims, find_source_text_claims
 
 
@@ -117,7 +118,7 @@ class TestWhatIsNotAClaim:
         assert _lines(tmp_path, body) == []
 
     def test_parsing_source_is_how_meta_linters_work(self, tmp_path):
-        body = 'import ast\ndef test_x():\n    tree = ast.parse(Path(m.__file__).read_text())\n    assert any(isinstance(n, ast.Try) for n in ast.walk(tree))\n'
+        body = "import ast\ndef test_x():\n    tree = ast.parse(Path(m.__file__).read_text())\n    assert any(isinstance(n, ast.Try) for n in ast.walk(tree))\n"
         assert _lines(tmp_path, body) == []
 
     @pytest.mark.parametrize("name", ["README.md", "config.toml", "cache.json", "prompt.txt"])
@@ -150,7 +151,7 @@ class TestReadMode:
         assert _lines(tmp_path, body, mode="read") == [4]
 
     def test_parsing_is_still_not_an_assertion(self, tmp_path):
-        body = 'import ast\ndef test_x():\n    tree = ast.parse(path.read_text())\n    assert any(isinstance(n, ast.Try) for n in ast.walk(tree))\n'
+        body = "import ast\ndef test_x():\n    tree = ast.parse(path.read_text())\n    assert any(isinstance(n, ast.Try) for n in ast.walk(tree))\n"
         assert _lines(tmp_path, body) == []
 
     def test_parsing_a_string_literal_is_not_a_read(self, tmp_path):
@@ -186,11 +187,51 @@ class TestTheRatchet:
         with pytest.raises(pytest.fail.Exception, match=re.escape("test_gone.py")):
             assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
 
-    def test_a_missing_baseline_is_written_and_skips(self, tmp_path):
+    def test_a_missing_baseline_fails_and_only_a_refresh_writes_it(self, tmp_path, monkeypatch):
         baseline = tmp_path / "baseline.json"
+        files = self._tree(tmp_path)
+        with pytest.raises(pytest.fail.Exception, match="does not exist"):
+            assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
+        assert not baseline.exists()
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "source-text")
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_source_text_claims(self._tree(tmp_path), tmp_path, baseline_path=baseline)
-        assert json.loads(baseline.read_text(encoding="utf-8")) == ["tests/test_bad.py::test_x::getsource()"]
+            assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH")
+        assert sorted(Baseline(baseline).load()[0].items()) == [("tests/test_bad.py::test_x::getsource()", 1)]
+        assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
+
+    def test_more_claims_of_the_same_key_are_new(self, tmp_path):
+        files = self._tree(tmp_path)
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text(json.dumps(["tests/test_bad.py::test_x::getsource()"]), encoding="utf-8")
+        body = "import inspect\ndef test_x():\n" + "".join(f"    assert '{i}' in inspect.getsource(f)\n" for i in range(6))
+        files[0].write_text(body, encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="5 more than the 1 accepted"):
+            assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
+
+    def test_the_refresh_is_read_from_the_pytest_config(self, tmp_path):
+        import types
+
+        baseline = tmp_path / "baseline.json"
+
+        class _Config:
+            def getoption(self, name):
+                return name == REFRESH_FLAG
+
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_source_text_claims(self._tree(tmp_path), tmp_path, baseline_path=baseline, request=types.SimpleNamespace(config=_Config()))
+        assert baseline.exists()
+
+    def test_an_unparsable_or_undecodable_file_fails_and_the_floor_counts_checked_files(self, tmp_path):
+        files = self._tree(tmp_path)
+        broken = tmp_path / "tests" / "test_broken.py"
+        broken.write_text("import inspect\ndef test_x(:\n    assert 'x' in inspect.getsource(f)\n", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match=r"test_broken\.py"):
+            assert_no_new_source_text_claims([*files, broken], tmp_path, allowlist={"tests/test_bad.py": "a meta-test that bans a pattern must read source"})
+        cp = tmp_path / "tests" / "test_cp.py"
+        cp.write_bytes("# \u0442\u0435\u0441\u0442\n".encode("cp1251"))
+        with pytest.raises(pytest.fail.Exception, match="lost its subject"):
+            assert_no_new_source_text_claims([broken, cp], tmp_path, min_files=1)
 
     def test_the_floor(self, tmp_path):
         with pytest.raises(pytest.fail.Exception, match="lost its subject"):
@@ -233,3 +274,42 @@ def test_source_accumulated_with_augassign_is_tainted(tmp_path):
     )
     claims = find_source_text_claims(f)
     assert [(c.function, c.kind) for c in claims] == [("test_marker_is_present", "text held in `src`")]
+
+
+class TestResolutionFixturesAndClosures:
+    def test_an_aliased_getsource_is_a_claim(self, tmp_path):
+        assert _lines(tmp_path, "from inspect import getsource as gs\ndef test_x():\n    assert 'x' in gs(f)\n") == [3]
+
+    def test_dis_functions_imported_by_name(self, tmp_path):
+        body = "from dis import get_instructions\ndef test_x():\n    assert 'LOAD_GLOBAL' in [i.opname for i in get_instructions(f)]\n"
+        assert _lines(tmp_path, body) == [3]
+
+    def test_a_same_file_fixture_that_returns_source_taints_the_test(self, tmp_path):
+        body = (
+            "import inspect\nimport pytest\n\n@pytest.fixture\ndef src():\n    return inspect.getsource(mod)\n\n"
+            "def test_x(src):\n    assert 'retry' in src\n\ndef test_y(other):\n    assert 'retry' in other\n"
+        )
+        assert _lines(tmp_path, body) == [9]
+
+    def test_a_yield_fixture_too(self, tmp_path):
+        body = "import inspect\nimport pytest\n\n@pytest.fixture\ndef src():\n    yield inspect.getsource(mod)\n\ndef test_x(src):\n    assert 'retry' in src\n"
+        assert _lines(tmp_path, body) == [9]
+
+    def test_a_closure_sees_the_outer_source_text(self, tmp_path):
+        body = "import inspect\ndef test_x():\n    src = inspect.getsource(mod)\n    def check():\n        assert 'retry' in src\n    check()\n"
+        claims = _claims(tmp_path, body)
+        assert [(c.line, c.function) for c in claims] == [(5, "check")]
+
+    def test_an_unrelated_local_named_like_a_reader_alias_is_not_a_claim(self, tmp_path):
+        assert _lines(tmp_path, "def gs(x):\n    return str(x)\n\ndef test_x():\n    assert 'x' in gs(f)\n") == []
+
+    def test_a_bom_file_is_read_and_a_broken_one_raises(self, tmp_path):
+        path = tmp_path / "test_bom.py"
+        path.write_bytes(b"\xef\xbb\xbfimport inspect\ndef test_x():\n    assert 'x' in inspect.getsource(f)\n")
+        assert [c.line for c in find_source_text_claims(path)] == [3]
+        broken = tmp_path / "test_broken.py"
+        broken.write_text("import inspect\ndef (:\n", encoding="utf-8")
+        from py_ci_shared._core import SourceError
+
+        with pytest.raises(SourceError):
+            find_source_text_claims(broken)

@@ -12,12 +12,16 @@ from __future__ import annotations
 import sys
 import types
 
+import pytest
+
 from py_ci_shared import sql_verify as sv
 
 
 class _Cursor:
-    def __init__(self, conn, rows, raises):
+    def __init__(self, conn, rows, raises, returns_rows=True):
         self._conn, self._rows, self._raises = conn, rows, raises
+        self.description = None
+        self._returns_rows = returns_rows
 
     def __enter__(self):
         return self
@@ -25,24 +29,28 @@ class _Cursor:
     def __exit__(self, *a):
         return False
 
-    def execute(self, sql, params=None):
-        self._conn.executed.append((sql, params))
+    def execute(self, sql, *args):
+        self._conn.executed.append((sql, *args))
         if self._raises is not None:
             raise self._raises
+        self.description = (("col",),) if self._returns_rows else None
 
     def fetchall(self):
+        if self.description is None:
+            raise RuntimeError("no results to fetch")
         return self._rows
 
 
 class _Conn:
     """Minimal psycopg2-shaped connection: enough to drive the harness, nothing more."""
 
-    def __init__(self, rows=(), raises=None):
-        self.rows, self.raises = list(rows), raises
+    def __init__(self, rows=(), raises=None, returns_rows=True):
+        self.rows, self.raises, self.returns_rows = list(rows), raises, returns_rows
         self.executed, self.commits, self.rollbacks = [], 0, 0
+        self.closed = False
 
     def cursor(self):
-        return _Cursor(self, self.rows, self.raises)
+        return _Cursor(self, self.rows, self.raises, self.returns_rows)
 
     def commit(self):
         self.commits += 1
@@ -77,6 +85,14 @@ class TestDsnFromEnv:
         monkeypatch.setenv("APP_DSN", "postgresql+psycopg://u@h/db")
         assert sv.dsn_from_env(("APP_DSN",)) == "postgresql://u@h/db"
 
+    def test_every_driver_suffix_is_stripped_not_only_two(self, monkeypatch):
+        monkeypatch.setenv("APP_DSN", "postgresql+psycopg2://u@h/db")
+        assert sv.dsn_from_env(("APP_DSN",)) == "postgresql://u@h/db"
+        monkeypatch.setenv("APP_DSN", "postgres+pg8000://u@h/db")
+        assert sv.dsn_from_env(("APP_DSN",)) == "postgres://u@h/db"
+        monkeypatch.setenv("APP_DSN", "postgresql://u@h/db?application_name=a+b")
+        assert sv.dsn_from_env(("APP_DSN",)) == "postgresql://u@h/db?application_name=a+b"
+
 
 class TestCheck:
     def test_a_statement_that_runs_is_reported_ok(self, capsys):
@@ -87,7 +103,7 @@ class TestCheck:
         assert out.startswith("OK   listing: 1 row(s)")
 
     def test_a_failing_statement_is_reported_not_raised(self, capsys):
-        conn = _Conn(raises=RuntimeError("syntax error at or near \"FROM\""))
+        conn = _Conn(raises=RuntimeError('syntax error at or near "FROM"'))
         assert sv.check(conn, "listing", "SELECT ,FROM t") is False
         assert "FAIL listing: RuntimeError: syntax error" in capsys.readouterr().out
 
@@ -98,10 +114,26 @@ class TestCheck:
         sv.check(conn, "bad", "SELECT 1")
         assert conn.rollbacks == 1 and conn.commits == 0
 
-    def test_no_params_passes_an_empty_mapping_not_none(self):
+    def test_a_passing_write_is_rolled_back_never_committed(self, capsys):
+        """A verifier asks whether the server accepts the SQL; an UPDATE it ran must not persist."""
+        conn = _Conn(rows=[(7,)])
+        assert sv.check(conn, "upd", "UPDATE t SET a=1 RETURNING id") is True
+        assert conn.commits == 0 and conn.rollbacks == 1
+        assert "OK   upd: 1 row(s)" in capsys.readouterr().out
+
+    def test_a_statement_without_a_result_set_is_a_pass(self, capsys):
+        conn = _Conn(returns_rows=False)
+        assert sv.check(conn, "ins", "INSERT INTO t VALUES (1)") is True
+        assert "OK   ins: 0 row(s), first=None" in capsys.readouterr().out
+        assert conn.commits == 0 and conn.rollbacks == 1
+
+    def test_no_params_executes_without_a_parameter_mapping(self):
+        """With a mapping psycopg2 %-formats the statement, so a literal % would break; without one it is sent verbatim."""
         conn = _Conn()
-        sv.check(conn, "l", "SELECT 1")
-        assert conn.executed == [("SELECT 1", {})]
+        sv.check(conn, "l", "SELECT 'a%'")
+        assert conn.executed == [("SELECT 'a%'",)]
+        sv.check(conn, "l", "SELECT %(a)s", {"a": 1})
+        assert conn.executed[-1] == ("SELECT %(a)s", {"a": 1})
 
     def test_an_empty_result_is_still_a_pass(self, capsys):
         assert sv.check(_Conn(rows=[]), "l", "SELECT 1 WHERE false") is True
@@ -135,6 +167,14 @@ class TestCheckLoader:
         assert "first=('1', '2')" in capsys.readouterr().out
 
 
+class _OperationalError(Exception):
+    pass
+
+
+class _ProgrammingError(Exception):
+    pass
+
+
 def _fake_psycopg2(monkeypatch, conn=None, connect_error=None):
     calls = []
 
@@ -144,7 +184,8 @@ def _fake_psycopg2(monkeypatch, conn=None, connect_error=None):
             raise connect_error
         return conn if conn is not None else _Conn()
 
-    monkeypatch.setitem(sys.modules, "psycopg2", types.SimpleNamespace(connect=_connect))
+    fake = types.SimpleNamespace(connect=_connect, OperationalError=_OperationalError, ProgrammingError=_ProgrammingError)
+    monkeypatch.setitem(sys.modules, "psycopg2", fake)
     return calls
 
 
@@ -189,7 +230,7 @@ class TestRunChecks:
         assert sv.run_checks(lambda conn: True, env_names=("NOT_SET",), argv=["--skip-without-db"]) == 0
 
     def test_an_unreachable_server_is_a_skip_not_a_failed_statement(self, monkeypatch, capsys):
-        _fake_psycopg2(monkeypatch, connect_error=OSError("connection refused"))
+        _fake_psycopg2(monkeypatch, connect_error=_OperationalError('connection to server at "h" failed: Connection refused'))
         assert sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=[]) == sv.SKIPPED
         assert "unreachable" in capsys.readouterr().out
         assert sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=["--skip-without-db"]) == 0
@@ -207,6 +248,36 @@ class TestRunChecks:
         calls = _fake_psycopg2(monkeypatch)
         sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=[], connect_timeout=3)
         assert calls[0][1] == {"connect_timeout": 3}
+        assert calls[1][1] == {"connect_timeout": 3}, "the working connection must be bounded too"
+
+    def test_a_refused_configuration_fails_even_with_skip_without_db(self, monkeypatch, capsys):
+        """Wrong credentials are a broken setup; mapping them to exit 0 would let every push through unverified."""
+        _fake_psycopg2(monkeypatch, connect_error=_OperationalError('FATAL:  password authentication failed for user "u"'))
+        assert sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=["--skip-without-db"]) == 1
+        assert "refused the connection" in capsys.readouterr().out
+        _fake_psycopg2(monkeypatch, connect_error=_ProgrammingError('invalid dsn: missing "="'))
+        assert sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=["--skip-without-db"]) == 1
+        _fake_psycopg2(monkeypatch, connect_error=OSError("timed out"))
+        assert sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=["--skip-without-db"]) == 0
+
+    def test_a_driver_suffixed_explicit_dsn_is_normalised(self, monkeypatch):
+        calls = _fake_psycopg2(monkeypatch)
+        sv.run_checks(lambda conn: True, dsn="postgresql+psycopg2://u@h/db", argv=[])
+        assert [c[0] for c in calls] == ["postgresql://u@h/db", "postgresql://u@h/db"]
+
+    def test_the_working_connection_is_closed_and_rolled_back(self, monkeypatch):
+        conn = _Conn()
+        _fake_psycopg2(monkeypatch, conn=conn)
+        sv.run_checks(lambda c: True, dsn="postgresql://h/db", argv=[])
+        assert conn.closed is True and conn.commits == 0 and conn.rollbacks >= 1
+
+    def test_no_driver_is_needed_to_skip_without_a_dsn(self, monkeypatch):
+        """A checkout with neither a database nor psycopg2 must still be able to skip."""
+        monkeypatch.setitem(sys.modules, "psycopg2", None)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        assert sv.run_checks(lambda conn: True, env_names=("NOT_SET",), argv=["--skip-without-db"]) == 0
+        with pytest.raises(ImportError):
+            sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=[])
 
     def test_sys_argv_is_read_when_argv_is_not_given(self, monkeypatch):
         _fake_psycopg2(monkeypatch)
@@ -221,4 +292,4 @@ def test_a_real_statement_would_reach_the_server(monkeypatch):
     _fake_psycopg2(monkeypatch, conn=conn)
     rc = sv.run_checks(lambda c: sv.check(c, "listing", "SELECT 1"), dsn="postgresql://h/db", argv=[])
     assert rc == 0
-    assert conn.executed == [("SELECT 1", {})]
+    assert conn.executed == [("SELECT 1",)]

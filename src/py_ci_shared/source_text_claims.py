@@ -24,15 +24,25 @@ Two modes. ``"assertion"`` (the default) flags an ``assert`` -- or an ``if`` who
 ``.fail(...)`` -- that tests source text's CONTENT (``in``, ``==``, ``.count``, a regex, ``.find`` /
 ``.index`` / ``.startswith``, or the truth of a regex match taken over the source). ``"read"`` flags every read of source in a test, asserted on or not,
 for a repo that wants the stricter rule.
+
+Names resolve through the file's imports (``from inspect import getsource as gs``, ``from dis import
+get_instructions``); a nested function sees the source-holding names of the functions around it; and a
+``@pytest.fixture`` in the same file that returns or yields source taints every test parameter named after it.
+
+The baseline is a multiset (``_core.Baseline``): a key ``rel::function::kind`` accepts as many claims as it
+counted when recorded, so a sixth claim of the same kind in the same function is new. A missing baseline fails,
+and a refresh is read with ``_core.refresh_requested`` (pytest option, ``PY_CI_SHARED_REFRESH`` or argv).
 """
 
 from __future__ import annotations
 
 import ast
-import sys
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import Baseline, ImportAliases, SourceError, parse_source, read_source, relative_posix
 
 __all__ = [
     "DEFAULT_READERS",
@@ -92,12 +102,15 @@ class _Detector:
     def __init__(self, tree: ast.Module, *, readers: frozenset[str], treat_sql_as_source: bool, follow_helpers: bool) -> None:
         self.tree = tree
         self.readers = readers
+        self.aliases = ImportAliases.from_tree(tree)
         self.suffixes = (".py", ".sql") if treat_sql_as_source else (".py",)
         self.dis_names = {"dis"} | {a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name == "dis"}
         self.module_paths = self._path_names(tree.body)
         self.helpers: set[str] = set()
+        self.fixtures: set[str] = set()
         if follow_helpers:
             self.helpers = self._reader_helpers()
+            self.fixtures = self._source_fixtures()
 
     # -- what counts as a path to source ------------------------------------------------------------
     def _is_source_path_expr(self, node: ast.AST, path_names: set[str]) -> bool:
@@ -141,10 +154,19 @@ class _Detector:
         for sub in ast.walk(node):
             if isinstance(sub, ast.Call):
                 name = _call_name(sub)
-                if name in self.readers:
-                    return f"{name}()"
-                if name in _DISASSEMBLERS and isinstance(sub.func, ast.Attribute) and isinstance(sub.func.value, ast.Name) and sub.func.value.id in self.dis_names:
+                qualified = self.aliases.qualified_name(sub) or name
+                resolved = qualified.rsplit(".", 1)[-1]
+                if name in self.readers or (resolved in self.readers and qualified != resolved):
+                    return f"{resolved if resolved in self.readers else name}()"
+                if (
+                    name in _DISASSEMBLERS
+                    and isinstance(sub.func, ast.Attribute)
+                    and isinstance(sub.func.value, ast.Name)
+                    and sub.func.value.id in self.dis_names
+                ):
                     return f"dis.{name}()"
+                if qualified.startswith("dis.") and resolved in _DISASSEMBLERS:
+                    return f"dis.{resolved}()"
                 if name in _FILE_READS and isinstance(sub.func, ast.Attribute) and self._is_source_path_expr(sub.func.value, path_names):
                     return "reads a source file"
                 if name == "open" and sub.args and self._is_source_path_expr(sub.args[0], path_names):
@@ -167,6 +189,25 @@ class _Detector:
                         out.add(node.name)
         return out
 
+    def _source_fixtures(self) -> set[str]:
+        """Same-file ``@pytest.fixture`` functions whose return or yield value is source text."""
+        out: set[str] = set()
+        for node in self.tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            decorators = [d.func if isinstance(d, ast.Call) else d for d in node.decorator_list]
+            if not any((self.aliases.qualified_name(d) or "").endswith("fixture") for d in decorators):
+                continue
+            paths = self._path_names(node.body, frozenset(self.module_paths) | _param_names(node))
+            tainted = self._tainted(node.body, paths, set())
+            for sub in _walk_scope(node.body):
+                value = sub.value if isinstance(sub, (ast.Return, ast.Yield)) else None
+                if isinstance(sub, ast.Expr) and isinstance(sub.value, ast.Yield):
+                    value = sub.value.value
+                if value is not None and (self.reader_kind(value, paths, tainted) or _uses(value, tainted)):
+                    out.add(node.name)
+        return out
+
     def _tainted(self, body: list[ast.stmt], path_names: set[str], inherited: set[str]) -> set[str]:
         """Names holding source text in this scope, propagated through derivations until nothing changes."""
         tainted = set(inherited)
@@ -179,7 +220,11 @@ class _Detector:
                         continue
                     if self.reader_kind(value, path_names, tainted) or _uses(value, tainted):
                         tainted.update(_target_names(node))
-                elif isinstance(node, (ast.For, ast.AsyncFor)) and _uses(node.iter, tainted) and not (isinstance(node.iter, ast.Call) and _call_name(node.iter) in _STRUCTURAL):
+                elif (
+                    isinstance(node, (ast.For, ast.AsyncFor))
+                    and _uses(node.iter, tainted)
+                    and not (isinstance(node.iter, ast.Call) and _call_name(node.iter) in _STRUCTURAL)
+                ):
                     tainted.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
             if len(tainted) == before:
                 break
@@ -190,10 +235,22 @@ class _Detector:
         """``(function name, body, source-path names, tainted names)`` for the module and every function."""
         module_tainted = self._tainted(self.tree.body, self.module_paths, set())
         yield "<module>", self.tree.body, self.module_paths, module_tainted
-        for node in ast.walk(self.tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                paths = self._path_names(node.body, frozenset(self.module_paths))
-                yield node.name, node.body, paths, self._tainted(node.body, paths, module_tainted)
+        yield from self._nested(self.tree.body, self.module_paths, module_tainted)
+
+    def _nested(self, body: list[ast.stmt], paths: set[str], tainted: set[str]) -> Iterator[tuple[str, list[ast.stmt], set[str], set[str]]]:
+        """Functions defined in *body* (through classes too), each inheriting the enclosing scope's names: a closure
+        reading its outer function's source text is the same claim."""
+        for node in _defs_in(body):
+            if isinstance(node, ast.ClassDef):
+                yield from self._nested(node.body, paths, tainted)
+                continue
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            params = _param_names(node) & self.fixtures
+            inner_paths = self._path_names(node.body, frozenset(paths))
+            inner_tainted = self._tainted(node.body, inner_paths, set(tainted) | set(params))
+            yield node.name, node.body, inner_paths, inner_tainted
+            yield from self._nested(node.body, inner_paths, inner_tainted)
 
 
 _NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
@@ -206,6 +263,19 @@ def _walk_scope(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
         node = stack.pop()
         yield node
         stack.extend(child for child in ast.iter_child_nodes(node) if not isinstance(child, _NESTED_SCOPES))
+
+
+def _defs_in(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
+    """Function and class definitions directly in *body* (inside if/try/with/for too), not inside other defs."""
+    stack: list[ast.AST] = list(body)
+    while stack:
+        node = stack.pop(0)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            yield node
+            continue
+        if isinstance(node, ast.Lambda):
+            continue
+        stack.extend(ast.iter_child_nodes(node))
 
 
 def _target_names(node: ast.AST) -> set[str]:
@@ -254,7 +324,9 @@ def _match_names(body: list[ast.stmt], det: _Detector, paths: set[str], tainted:
 
 
 def _fails_in_body(node: ast.If) -> bool:
-    return any(isinstance(s, ast.Expr) and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute) and s.value.func.attr == "fail" for s in node.body)
+    return any(
+        isinstance(s, ast.Expr) and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute) and s.value.func.attr == "fail" for s in node.body
+    )
 
 
 def find_source_text_claims(
@@ -265,23 +337,21 @@ def find_source_text_claims(
     treat_sql_as_source: bool = True,
     follow_helpers: bool = True,
 ) -> list[SourceTextClaim]:
-    """Every source-text claim in *path*, innermost function first, one per statement."""
+    """Every source-text claim in *path*, innermost function first, one per statement.
+
+    Raises ``SourceError`` for a file that cannot be read or decoded, and for one that names a reader or a file read
+    but does not parse: returning nothing for it would read as "no claims".
+    """
     if mode not in ("assertion", "read"):
         raise ValueError(f"mode must be 'assertion' or 'read', not {mode!r}")
     reader_names = frozenset(readers)
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    text = read_source(path)
+    # Every claim needs a reader, an import of one, or a file read somewhere in the file, so a file naming none of
+    # them is skipped unparsed: on mlframe's 3,597 test files that is the difference between a scan measured in
+    # minutes and one that fits a pre-commit hook. That skip is sound: such a file cannot hold a claim.
+    if not any(token in text for token in (*reader_names, *_TRIGGER_TOKENS, "inspect", "import dis", "from dis")):
         return []
-    # Every claim needs a reader or a file read somewhere in the file, so a file naming none of them is skipped
-    # unparsed: on mlframe's 3,597 test files that is the difference between a scan measured in minutes and one
-    # that fits a pre-commit hook.
-    if not any(token in text for token in (*reader_names, *_TRIGGER_TOKENS)):
-        return []
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return []
+    _, tree = parse_source(path)
     det = _Detector(tree, readers=reader_names, treat_sql_as_source=treat_sql_as_source, follow_helpers=follow_helpers)
     claims: dict[int, SourceTextClaim] = {}
     for function, body, paths, tainted in det.scopes():
@@ -312,22 +382,36 @@ def find_source_text_claims(
     return sorted(claims.values(), key=lambda c: c.line)
 
 
-def _keys(files: Iterable[Path], repo_root: Path, **kwargs: object) -> tuple[dict[str, list[int]], int]:
+def _keys(files: Iterable[Path], repo_root: Path, **kwargs: object) -> tuple[dict[str, list[int]], int, list[str]]:
+    """``(key -> claim lines, files checked, problems)``; a file that cannot be read or parsed is a problem."""
     found: dict[str, list[int]] = {}
     scanned = 0
+    problems: list[str] = []
     for path in files:
+        rel = relative_posix(path, repo_root)
+        try:
+            claims = find_source_text_claims(Path(path), **kwargs)  # type: ignore[arg-type]
+        except SourceError as exc:
+            problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message} - not checked")
+            continue
         scanned += 1
-        rel = path.relative_to(repo_root).as_posix() if path.is_relative_to(repo_root) else path.as_posix()
-        for claim in find_source_text_claims(path, **kwargs):  # type: ignore[arg-type]
+        for claim in claims:
             found.setdefault(claim.key(rel), []).append(claim.line)
-    return found, scanned
+    return found, scanned, problems
 
 
-def write_source_text_baseline(baseline_path: Path, keys: Iterable[str]) -> None:
-    """Record today's claims as accepted debt, sorted, one key per entry."""
-    import json
+def _baseline(baseline_path: Path) -> Baseline:
+    return Baseline(baseline_path, gate="source-text", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=source-text)")
 
-    baseline_path.write_text(json.dumps(sorted(set(keys)), indent=2) + "\n", encoding="utf-8")
+
+def write_source_text_baseline(baseline_path: Path, keys: "Iterable[str] | Mapping[str, Any]") -> None:
+    """Record today's claims as accepted debt. A mapping ``key -> lines`` records one count per claim; a plain
+    iterable of keys records one per occurrence."""
+    if isinstance(keys, Mapping):
+        items = [k for k, v in keys.items() for _ in range(len(v) if isinstance(v, (list, tuple, set)) else 1)]
+    else:
+        items = list(keys)
+    _baseline(baseline_path).regenerate(items)
 
 
 def assert_no_new_source_text_claims(
@@ -337,22 +421,27 @@ def assert_no_new_source_text_claims(
     allowlist: Mapping[str, str] | None = None,
     baseline_path: Path | None = None,
     min_files: int = 1,
+    request: Optional[Any] = None,
     **detector_kwargs: object,
 ) -> None:
     """Fail on any claim not accepted by *allowlist* (``rel path -> reason``, whole files) or *baseline_path*.
 
-    Both lists shrink only: an allowlisted file that no longer holds a claim, or a baseline key that no longer
-    matches one, fails too -- an entry that suppresses nothing would absorb the same claim if it came back.
-    ``REFRESH_FLAG`` on the pytest command line rewrites the baseline and skips.
+    Both lists shrink only: an allowlisted file that no longer holds a claim, or a baseline key that counts more
+    claims than exist, fails too -- an entry that suppresses nothing would absorb the same claim if it came back.
+    A refresh (``REFRESH_FLAG``, ``PY_CI_SHARED_REFRESH=source-text``; pass the pytest ``request`` for xdist and
+    ``pytest.main``) rewrites the baseline and skips; a missing baseline fails. A file that cannot be read or parsed
+    fails, and *min_files* counts files actually checked.
     """
-    import json
-
     import pytest
 
+    from ._core import refresh_requested
+
     files = list(files)
-    found, scanned = _keys(files, repo_root, **detector_kwargs)
+    found, scanned, unreadable = _keys(files, repo_root, **detector_kwargs)
     if scanned < min_files:
-        pytest.fail(f"only {scanned} file(s) scanned; expected at least {min_files} -- the file list lost its subject")
+        pytest.fail(
+            f"only {scanned} file(s) scanned; expected at least {min_files} -- the file list lost its subject" + "".join("\n    " + u for u in unreadable)
+        )
     allow = dict(allowlist or {})
     short = [f"allowlist entry has no reason: {rel}" for rel, why in allow.items() if len(why.strip()) < 20]
     by_file: dict[str, list[str]] = {}
@@ -361,14 +450,26 @@ def assert_no_new_source_text_claims(
     unallowed = {k: v for k, v in found.items() if k.split("::", 1)[0] not in allow}
     stale_allow = sorted(rel for rel in allow if rel not in by_file)
 
-    if baseline_path is not None and (REFRESH_FLAG in sys.argv or not baseline_path.exists()):
-        write_source_text_baseline(baseline_path, unallowed)
-        pytest.skip(f"source-text baseline written: {len(unallowed)} key(s) in {baseline_path.name}")
-    accepted = set(json.loads(baseline_path.read_text(encoding="utf-8"))) if baseline_path is not None else set()
-    new = sorted(f"{k} (line {', '.join(map(str, v))})" for k, v in unallowed.items() if k not in accepted)
-    stale_base = sorted(accepted - set(unallowed))
-
     problems: list[str] = []
+    if unreadable:
+        problems.append("file(s) that could not be read or parsed, so their claims are unknown:\n    " + "\n    ".join(unreadable))
+    new: list[str] = []
+    stale_base: list[str] = []
+    if baseline_path is not None:
+        baseline = _baseline(baseline_path)
+        if refresh_requested(REFRESH_FLAG, request):
+            write_source_text_baseline(baseline_path, unallowed)
+            pytest.skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
+        if not baseline.exists():
+            pytest.fail(f"source-text baseline {baseline_path} does not exist, so nothing is accepted. Create it with: {baseline.refresh_command}")
+        accepted, _notes = baseline.load()
+        for k, lines in sorted(unallowed.items()):
+            extra = len(lines) - accepted.get(k, 0)
+            if extra > 0:
+                new.append(f"{k} (line {', '.join(map(str, lines))}; {extra} more than the {accepted.get(k, 0)} accepted)")
+        stale_base = sorted(f"{k} ({n - len(unallowed.get(k, []))} fewer)" for k, n in accepted.items() if n > len(unallowed.get(k, [])))
+    else:
+        new = sorted(f"{k} (line {', '.join(map(str, v))})" for k, v in unallowed.items())
     if new:
         problems.append(
             f"{len(new)} test(s) assert on SOURCE TEXT -- they pass against dead code and against a comment. Call the code and "

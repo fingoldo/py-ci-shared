@@ -1,5 +1,5 @@
 """Shared check: every environment variable production code reads via
-``os.environ.get(...)``/``os.getenv(...)`` is documented in the project's
+``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's
 README.
 
 Generalizes a 2026-07-21 audit finding (O-13): an env var this code
@@ -12,10 +12,18 @@ auth check, a feature gate), the failure is silent. Two entry points:
 - ``assert_no_new_undocumented_env_vars`` -- baseline/grandfather style
   (same API shape as ``code_audit_meta``/``loc_budget``), for a repo
   adopting this check with existing undocumented-var debt: only a NEW
-  gap (introduced after the baseline was captured) fails.
+  gap (introduced after the baseline was captured) fails, and a
+  baselined var that is now documented (or no longer read) fails as
+  stale until the baseline is refreshed, so the baseline only shrinks.
 
-Deliberately dependency-light: ``pytest``/``orjson`` are imported lazily
-inside the functions, matching this package's other modules.
+Reads are recognised however ``os`` was imported (``import os as _os``,
+``from os import environ, getenv``), as a call, a subscript, a
+``setdefault`` or an ``in os.environ`` test, with the name positional or
+``key=``. A file that cannot be parsed fails the check rather than
+silently contributing nothing.
+
+Deliberately dependency-light: ``pytest`` is imported lazily inside the
+functions, matching this package's other modules.
 """
 
 from __future__ import annotations
@@ -24,18 +32,26 @@ import ast
 import re
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import Baseline, ImportAliases, ScanResult, refresh_requested, register_refresh_options, scan_python
 
 DEFAULT_HEADING = "## Environment variables"
 REFRESH_FLAG = "--refresh-readme-env-var-baseline"
 
+#: Import-resolved callables whose first (or ``key=``) argument is an env-var name.
+_READ_CALLS = frozenset({"os.environ.get", "os.getenv", "os.environ.setdefault", "os.environ.pop", "os.getenvb"})
+_ENVIRON = "os.environ"
 
-def _is_environ_call(node: ast.AST) -> bool:
+
+def _is_environ_call(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     if not isinstance(node, ast.Call):
         return False
-    func = node.func
-    is_environ_get = isinstance(func, ast.Attribute) and func.attr == "get" and isinstance(func.value, ast.Attribute) and func.value.attr == "environ"
-    is_getenv = isinstance(func, ast.Attribute) and func.attr == "getenv" and isinstance(func.value, ast.Name) and func.value.id == "os"
-    return is_environ_get or is_getenv
+    return (aliases or ImportAliases()).qualified_name(node) in _READ_CALLS
+
+
+def _is_environ(node: ast.AST, aliases: ImportAliases) -> bool:
+    return isinstance(node, (ast.Name, ast.Attribute)) and aliases.qualified_name(node) == _ENVIRON
 
 
 def _literal_str_elts(node: ast.expr) -> set[str] | None:
@@ -90,26 +106,53 @@ def _loop_var_literal_bindings(tree: ast.AST, name_literals: dict[str, set[str]]
     return loop_var_literals
 
 
-def _env_var_names_in_file(tree: ast.AST, loop_var_literals: dict[str, set[str]]) -> set[str]:
+def _names_of(arg: Optional[ast.expr], loop_var_literals: dict[str, set[str]]) -> set[str]:
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return {arg.value}
+    if isinstance(arg, ast.Name) and arg.id in loop_var_literals:
+        return set(loop_var_literals[arg.id])
+    return set()
+
+
+def _key_arg(call: ast.Call) -> Optional[ast.expr]:
+    if call.args:
+        return call.args[0]
+    return next((k.value for k in call.keywords if k.arg == "key"), None)
+
+
+def _env_var_names_in_file(tree: ast.AST, loop_var_literals: dict[str, set[str]], aliases: Optional[ImportAliases] = None) -> set[str]:
+    aliases = aliases if aliases is not None else ImportAliases.from_tree(tree)
     found: set[str] = set()
     for node in ast.walk(tree):
-        if not (_is_environ_call(node) and isinstance(node, ast.Call)):
-            continue
-        if not node.args:
-            continue
-        arg0 = node.args[0]
-        if isinstance(arg0, ast.Constant) and isinstance(arg0.value, str):
-            found.add(arg0.value)
-        elif isinstance(arg0, ast.Name) and arg0.id in loop_var_literals:
-            found.update(loop_var_literals[arg0.id])
+        if isinstance(node, ast.Call) and _is_environ_call(node, aliases):
+            found |= _names_of(_key_arg(node), loop_var_literals)
+        elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) and _is_environ(node.value, aliases):
+            found |= _names_of(node.slice, loop_var_literals)
+        elif isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.In, ast.NotIn)):
+            if _is_environ(node.comparators[0], aliases):
+                found |= _names_of(node.left, loop_var_literals)
     return found
 
 
-def find_env_vars_read(files: Iterable[Path]) -> set[str]:
-    """Every env-var name passed to ``os.environ.get(...)``/``os.getenv(...)``
-    across ``files``, AST-based. Handles two shapes:
+def _scan(files: Iterable[Path], min_files: int = 0) -> ScanResult:
+    return scan_python([Path(p) for p in files], min_files=min_files)
 
-    1. A literal string arg: ``os.environ.get("NAME")``.
+
+def _vars_in(scan: ScanResult) -> set[str]:
+    found: set[str] = set()
+    for parsed in scan:
+        name_literals = _module_level_name_literals(parsed.tree)
+        loop_var_literals = _loop_var_literal_bindings(parsed.tree, name_literals)
+        found.update(_env_var_names_in_file(parsed.tree, loop_var_literals, ImportAliases.from_tree(parsed.tree)))
+    return found
+
+
+def find_env_vars_read(files: Iterable[Path], *, allow_unparsed: bool = False) -> set[str]:
+    """Every env-var name production code reads across ``files``, AST-based. Handles:
+
+    1. A literal string name: ``os.environ.get("NAME")``, ``os.getenv(key="NAME")``,
+       ``os.environ["NAME"]``, ``os.environ.setdefault("NAME", ...)``, ``"NAME" in os.environ``,
+       with ``os``/``environ``/``getenv`` imported under any alias.
     2. A ``for name in (LITERAL, ...): ... os.environ.get(name)`` /
        ``[... for name in (LITERAL, ...) if os.environ.get(name)]`` shape
        (covers both a ``for`` statement and any comprehension form), where
@@ -124,24 +167,21 @@ def find_env_vars_read(files: Iterable[Path]) -> set[str]:
     file could over-associate) -- acceptable for a documentation-
     completeness linter where the failure mode is "one extra var to
     document," never a false negative on the shape that matters.
+
+    A file that cannot be read or parsed raises ``UnparsedFilesError`` (an ``AssertionError``) unless
+    *allow_unparsed*: its reads are unknown, and an empty contribution would read as "documented".
     """
-    found: set[str] = set()
-    for path in files:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        except (SyntaxError, UnicodeDecodeError, OSError):
-            continue
-        name_literals = _module_level_name_literals(tree)
-        loop_var_literals = _loop_var_literal_bindings(tree, name_literals)
-        found.update(_env_var_names_in_file(tree, loop_var_literals))
-    return found
+    scan = _scan(files)
+    if not allow_unparsed:
+        scan.check_unparsed()
+    return _vars_in(scan)
 
 
 def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADING) -> set[str]:
     """Every ```VAR``` documented in ``readme_path``'s markdown table under
     ``heading`` -- a row's first cell may list more than one name joined by
     e.g. " / " (``\\`GIT_SHA\\` / \\`COMMIT_SHA\\```)."""
-    lines = readme_path.read_text(encoding="utf-8").splitlines()
+    lines = readme_path.read_text(encoding="utf-8-sig").splitlines()
     start = next((i for i, line in enumerate(lines) if line.strip() == heading.strip()), None)
     if start is None:
         raise ValueError(f"{readme_path}'s {heading!r} section/table not found -- renamed, or heading doesn't match?")
@@ -167,21 +207,42 @@ def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADIN
     return names
 
 
+def _read_vars_or_fail(files: Iterable[Path], min_files: int) -> set[str]:
+    import pytest
+
+    scan = _scan(files, min_files)
+    problems = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    try:
+        scan.check_unparsed()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if problems:
+        pytest.fail("\n".join(problems), pytrace=False)
+    return _vars_in(scan)
+
+
 def assert_readme_documents_every_env_var(
     files: Iterable[Path],
     readme_path: Path,
     heading: str = DEFAULT_HEADING,
     third_party_vars: frozenset[str] = frozenset(),
+    *,
+    min_files: int = 1,
 ) -> None:
     """Fail if any env var read by production code (``files``) isn't
     documented in ``readme_path``'s table. ``third_party_vars`` excludes
     vars consumed only by a third-party library the project depends on
     (never read by the project's own code, so this AST scan can't find
     them anyway, and they're expected to be documented by hand instead).
+    Also fails when a file cannot be parsed or fewer than ``min_files`` parsed.
     """
     import pytest
 
-    read_vars = find_env_vars_read(files) - third_party_vars
+    read_vars = _read_vars_or_fail(files, min_files) - third_party_vars
     documented = find_readme_documented_vars(readme_path, heading)
     undocumented = sorted(read_vars - documented)
     if undocumented:
@@ -194,59 +255,43 @@ def assert_no_new_undocumented_env_vars(
     baseline_path: Path,
     heading: str = DEFAULT_HEADING,
     third_party_vars: frozenset[str] = frozenset(),
+    *,
+    request: Any = None,
+    min_files: int = 1,
 ) -> None:
     """Baseline/grandfather variant of ``assert_readme_documents_every_env_var``,
-    for a repo adopting this check with pre-existing undocumented-var debt:
-    seeds/refreshes ``baseline_path`` (first run, or the
-    ``--refresh-readme-env-var-baseline`` flag) with the CURRENT undocumented
-    set and ``pytest.skip()``s that run; otherwise fails only on a var
-    undocumented now that WASN'T in the baseline (a genuinely new gap),
-    never on a pre-existing one. Call directly as a ``test_*`` body.
+    for a repo adopting this check with pre-existing undocumented-var debt.
+
+    A refresh (``--refresh-readme-env-var-baseline``, ``PY_CI_SHARED_REFRESH=readme-env-var`` or ``all``;
+    pass the pytest ``request`` so the option is read under xdist and ``pytest.main``) writes the CURRENT
+    undocumented set to ``baseline_path`` and ``pytest.skip()``s that run. Otherwise the run fails on a var
+    undocumented now that is not in the baseline, on a baselined var that is now documented or no longer
+    read (stale: refresh to shrink the baseline), and on a missing baseline file (nothing would be
+    enforced). Call directly as a ``test_*`` body.
 
     Unlike ``assert_readme_documents_every_env_var``, a missing ``heading``
     section is NOT an error here -- a repo adopting this check may not have
     an env-var table at all yet, in which case every var it reads is
-    grandfathered into the baseline on first run (documenting them is then a
+    grandfathered into the baseline by the first refresh (documenting them is then a
     separate, deliberate improvement, not something this check demands
     up front).
     """
-    import orjson
-    import pytest
-    import sys
-
-    read_vars = find_env_vars_read(files) - third_party_vars
+    read_vars = _read_vars_or_fail(files, min_files) - third_party_vars
     try:
         documented = find_readme_documented_vars(readme_path, heading)
     except ValueError:
         documented = set()
     current_undocumented = sorted(read_vars - documented)
-
-    if REFRESH_FLAG in sys.argv or not baseline_path.exists():
-        baseline_path.write_text(
-            orjson.dumps(current_undocumented, option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8"),
-            encoding="utf-8",
-        )
-        pytest.skip(f"README env-var baseline refreshed at {baseline_path.name} ({len(current_undocumented)} grandfathered undocumented var(s))")
-
-    baseline: list[str] = orjson.loads(baseline_path.read_bytes())
-    new_undocumented = sorted(set(current_undocumented) - set(baseline))
-    if new_undocumented:
-        pytest.fail(
-            f"{len(new_undocumented)} NEW env var(s) read by production code but not documented in "
-            f"{readme_path}'s {heading!r} table (pre-existing undocumented vars are grandfathered in "
-            f"the baseline -- this is a genuinely new one):\n  " + "\n  ".join(new_undocumented)
-        )
+    baseline = Baseline(baseline_path, gate="readme-env-var", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=readme-env-var)")
+    outcome = baseline.enforce(
+        current_undocumented,
+        refresh=refresh_requested(REFRESH_FLAG, request),
+        guidance=f"env var(s) read by production code but not documented in {readme_path}'s {heading!r} table",
+    )
+    outcome.raise_for_pytest()
 
 
 def register_refresh_option(parser) -> None:
-    """Register ``--refresh-readme-env-var-baseline`` as a no-op boolean
-    flag. Call from a consuming repo's own ``pytest_addoption``."""
-    try:
-        parser.addoption(
-            REFRESH_FLAG,
-            action="store_true",
-            default=False,
-            help="rewrite the README env-var baseline JSON instead of comparing (intentional new-var doc backlog)",
-        )
-    except ValueError:
-        pass  # already registered
+    """Register ``--refresh-readme-env-var-baseline`` (and the generic ``--py-ci-refresh``) as boolean
+    flags. Call from a consuming repo's own ``pytest_addoption``."""
+    register_refresh_options(parser, [REFRESH_FLAG], help_suffix="README env-var baseline JSON")
