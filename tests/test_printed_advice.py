@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from py_ci_shared.printed_advice import find_printed_advice
+import pytest
+
+from py_ci_shared._core import EmptyScanError, UnparsedFilesError
+from py_ci_shared.printed_advice import assert_printed_advice_registered, find_printed_advice
 
 
 def _write(tmp_path, source, name="m.py"):
@@ -46,3 +49,42 @@ def test_keys_survive_moving_the_message(tmp_path):
     a = find_printed_advice([_write(tmp_path, "def f():\n    raise ValueError('Pass kfold=1 to use it')\n")], tmp_path)
     b = find_printed_advice([_write(tmp_path, "import os\n\n\ndef f():\n    x = 1\n    raise ValueError('Pass kfold=1 to use it')\n")], tmp_path)
     assert [x.key for x in a] == [x.key for x in b] and a[0].lineno != b[0].lineno
+
+
+_ADVICE = "def f():\n    raise ValueError('Pass kfold=1 to use it')\n"
+
+
+def test_a_bom_file_is_scanned_like_a_plain_one(tmp_path):
+    """A leading BOM must not hide the advice inside the file."""
+    plain = find_printed_advice([_write(tmp_path, _ADVICE, "a.py")], tmp_path)
+    bom = tmp_path / "b.py"
+    bom.write_bytes(b"\xef\xbb\xbf" + _ADVICE.encode("utf-8"))
+    found = find_printed_advice([bom], tmp_path)
+    assert [a.phrase for a in found] == [a.phrase for a in plain] and len(found) == 1
+
+
+def test_an_unparsable_file_is_reported_not_skipped(tmp_path):
+    good = _write(tmp_path, _ADVICE, "good.py")
+    bad = _write(tmp_path, "def (:\n", "bad.py")
+    with pytest.raises(UnparsedFilesError, match="bad.py"):
+        find_printed_advice([good, bad], tmp_path)
+    assert len(find_printed_advice([good, bad], tmp_path, allow_unparsed=True)) == 1
+    assert len(find_printed_advice([good], tmp_path)) == 1
+
+
+def test_an_empty_corpus_fails_the_floor(tmp_path):
+    with pytest.raises(EmptyScanError):
+        find_printed_advice([], tmp_path)
+    assert find_printed_advice([], tmp_path, min_files=0) == []
+
+
+def test_assert_registered_fails_on_missing_stale_and_empty_entries(tmp_path):
+    src = _write(tmp_path, _ADVICE)
+    key = find_printed_advice([src], tmp_path)[0].key
+    assert_printed_advice_registered([src], tmp_path, {key: "tests/test_x.py::test_kfold_one"})
+    with pytest.raises(AssertionError, match="no test for"):
+        assert_printed_advice_registered([src], tmp_path, {})
+    with pytest.raises(AssertionError, match="stale entry gone.py"):
+        assert_printed_advice_registered([src], tmp_path, {key: "t", "gone.py::f#1": "t"})
+    with pytest.raises(AssertionError, match="names no test or reason"):
+        assert_printed_advice_registered([src], tmp_path, {key: "  "})

@@ -649,6 +649,13 @@ since = "1.17.0"
 summary = "Advisory: polars comparisons whose null handling silently changes the answer"
 
 [[gate]]
+name = "printed_advice"
+kind = "gate"
+entries = ["assert_printed_advice_registered"]
+since = "1.17.0"
+summary = "Log and error messages that advise an action, each mapped to a test that follows the advice"
+
+[[gate]]
 name = "private_imports"
 kind = "gate"
 entries = ["assert_no_private_cross_package_imports"]

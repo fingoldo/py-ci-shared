@@ -12,21 +12,25 @@ fails on an unregistered or a stale key.
 
 Usage from a repository's meta tests::
 
-    from py_ci_shared.printed_advice import find_printed_advice
+    from py_ci_shared.printed_advice import assert_printed_advice_registered
 
     def test_every_printed_advice_has_a_test():
-        found = {a.key for a in find_printed_advice(SOURCE_FILES, REPO_ROOT)}
-        assert found == set(PRINTED_ADVICE_TESTS)
+        assert_printed_advice_registered(SOURCE_FILES, REPO_ROOT, PRINTED_ADVICE_TESTS)
+
+Sources are read the way the interpreter reads them (a BOM is fine), and a file that cannot be read or parsed is
+reported rather than skipped: advice inside it would otherwise vanish from the table unnoticed.
 """
 
 from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-__all__ = ["ADVICE_RE", "PrintedAdvice", "find_printed_advice"]
+from ._core import scan_python
+
+__all__ = ["ADVICE_RE", "PrintedAdvice", "assert_printed_advice_registered", "find_printed_advice"]
 
 ADVICE_RE = re.compile(
     r"pass (?:it|them) via|\bset \w+\s*=|\b(?:increase|decrease|raise|lower|reduce|disable|enable) (?:`|')?\w+(?:`|')? (?:to|or|and|if|so|for|\()"
@@ -86,15 +90,19 @@ def _scopes(tree: ast.Module) -> dict[int, str]:
     return out
 
 
-def find_printed_advice(files: Iterable[Path], repo_root: Path) -> list[PrintedAdvice]:
-    """Every message literal that advises an action, in file order, keyed ``<path>::<scope>#<n>``."""
+def find_printed_advice(
+    files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False
+) -> list[PrintedAdvice]:
+    """Every message literal that advises an action, in file order, keyed ``<path>::<scope>#<n>``.
+
+    Raises ``UnparsedFilesError`` for a file that cannot be read or parsed (unless *allow_unparsed*), and
+    ``EmptyScanError`` when fewer than *min_files* files parsed.
+    """
+    result = scan_python(files, root=repo_root, min_files=min_files)
+    result.assert_ok(allow_unparsed=allow_unparsed)
     out: list[PrintedAdvice] = []
-    for path in files:
-        try:
-            tree = ast.parse(Path(path).read_text(encoding="utf-8"))
-        except (OSError, SyntaxError, UnicodeDecodeError):
-            continue
-        rel = Path(path).resolve().relative_to(Path(repo_root).resolve()).as_posix()
+    for parsed in result.files:
+        tree, rel = parsed.tree, parsed.rel
         scopes = _scopes(tree)
         seen: dict[str, int] = {}
         calls = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Call) and _message_call(n)), key=lambda n: (n.lineno, n.col_offset))
@@ -107,3 +115,23 @@ def find_printed_advice(files: Iterable[Path], repo_root: Path) -> list[PrintedA
             seen[scope] = seen.get(scope, 0) + 1
             out.append(PrintedAdvice(rel, scope, call.lineno, m.group(0), f"{rel}::{scope}#{seen[scope]}"))
     return out
+
+
+def assert_printed_advice_registered(
+    files: Iterable[Path],
+    repo_root: Path,
+    registered: Mapping[str, str],
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+) -> None:
+    """Fail when an advising message has no entry in *registered* (key -> test or reason), or an entry is stale."""
+    found = {a.key: a for a in find_printed_advice(files, repo_root, min_files=min_files, allow_unparsed=allow_unparsed)}
+    missing = sorted(set(found) - set(registered))
+    stale = sorted(set(registered) - set(found))
+    empty = sorted(k for k, v in registered.items() if k in found and not str(v).strip())
+    problems = [f"no test for {found[k]!r}" for k in missing]
+    problems += [f"stale entry {k}: no such advising message any more" for k in stale]
+    problems += [f"entry {k} names no test or reason" for k in empty]
+    if problems:
+        raise AssertionError("printed advice without a test that follows it:\n  " + "\n  ".join(problems))

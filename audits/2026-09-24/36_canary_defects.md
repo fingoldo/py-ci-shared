@@ -93,3 +93,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- an explicit isinstance check raising TypeError; regression test: tests/test_self_gates.py value_bearing_asserts
 
 - **Finding:** value_bearing_asserts self-gate at resource_release_paths.py:80
+
+### CANARY-16 (Med) -- printed_advice skips BOM and unparsable files and has no floor
+
+**Disposition:** RESOLVED -- find_printed_advice reads through _core.scan_python (BOM handled, unparsable files raise UnparsedFilesError unless allow_unparsed, EmptyScanError below min_files); added assert_printed_advice_registered for the key-to-test table the docstring describes, registered the gate and gave it a canary; regression tests: test_a_bom_file_is_scanned_like_a_plain_one, test_an_unparsable_file_is_reported_not_skipped, test_an_empty_corpus_fails_the_floor, test_assert_registered_fails_on_missing_stale_and_empty_entries
+
+- **Finding:** a gate added to master during this round read with encoding=utf-8 and `continue`d on SyntaxError, the fail-open class the round removed everywhere else; found by the package inventory and teeth tests after the rebase.

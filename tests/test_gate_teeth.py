@@ -240,6 +240,7 @@ CANARIES: dict[str, Canary] = {
         Canary("hash_key_determinism", lambda d: _gate("hash_key_determinism").assert_hash_keys_are_deterministic(d, use_git=False)),
         Canary("no_xfail_to_defer", lambda d: _gate("no_xfail_to_defer").assert_no_xfail_to_defer(d / "tests", repo_root=d, use_git=False)),
         Canary("sentinel_or_fallback", lambda d: _gate("sentinel_or_fallback").assert_no_sentinel_or_fallback(d, use_git=False)),
+        Canary("printed_advice", lambda d: _gate("printed_advice").assert_printed_advice_registered(sorted(d.rglob("*.py")), d, {})),
         Canary("stale_source_citations", lambda d: _gate("stale_source_citations").assert_no_stale_source_citations(d, use_git=False)),
         Canary("pickle_state_completeness", lambda d: _gate("pickle_state_completeness").assert_no_pickle_state_gaps(d, use_git=False), token="_seed_cache"),
     ]

@@ -648,3 +648,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `CANARY-13` | test_docs_inventory_parity imports tomllib unguarded |
 | **RESOLVED** | Low | `CANARY-14` | phantom_markdown_links and tracker_summary_parity import private helpers of sibling modules |
 | **RESOLVED** | Low | `CANARY-15` | resource_release_paths narrows with assert isinstance, which python -O strips |
+| **RESOLVED** | Med | `CANARY-16` | printed_advice skips BOM and unparsable files and has no floor |
