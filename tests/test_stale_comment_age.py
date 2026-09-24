@@ -254,3 +254,48 @@ class TestAssert:
         repo = _repo(tmp_path, "lib/a.dart", "// FIXME: broken\nvoid a() {}\n")
         with pytest.raises(pytest.fail.Exception, match="FIXME"):
             assert_no_stale_todos(repo, ["lib"], max_age_days=30)
+
+
+_GLOSSED_PROSE = [
+    "# Upsert (handles race conditions at DB level too)",
+    "# Numbers (dates, versions)",
+    "# Cost (USD)",
+    "# Timing (seconds)",
+    "# Vowels (Italian has 7 vowels, very regular)",
+    "# mover (stem-changing o→ue)",
+    "# თქმა (to say)",
+    "# tok4 (ლამაზი): NOUN→ADJ, nsubj→conj of tok2",
+    "# DEFINITIONS (learner-friendly, multi-language)",
+    "# rejected_another_synset(3) / rejected_invented(4) / rejected_wrong_meaning(5) / rejected(7)",
+]
+_REAL_DEAD_CODE = [
+    '# ensure_installed("numpy")',
+    "# print(i, col)",
+    "# wcols.append(weighted_std)",
+    '#    update_values.append(field + "=" + x)',
+    "# .group_by(...).agg(...)",
+]
+
+
+class TestProseVersusCode:
+    """A parenthesised gloss after a heading word is English; a call is code. Judged per line, no git needed."""
+
+    @staticmethod
+    def _kinds(tmp_path: Path, comment: str, suffix: str = ".py") -> list[str]:
+        p = tmp_path / f"m{suffix}"
+        p.write_text("x = 1" + chr(10) + comment + chr(10) + "y = 2" + chr(10), encoding="utf-8")
+        return [kind for kind, _ in sca._candidates(p, require_issue_ref=True).values()]
+
+    @pytest.mark.parametrize("comment", _GLOSSED_PROSE)
+    def test_a_glossed_heading_is_not_code(self, tmp_path, comment):
+        assert self._kinds(tmp_path, comment) == []
+
+    @pytest.mark.parametrize("comment", _REAL_DEAD_CODE)
+    def test_real_dead_code_is_still_flagged(self, tmp_path, comment):
+        assert self._kinds(tmp_path, comment) == ["commented-out code"]
+
+    def test_a_glossed_heading_in_a_slash_language_is_not_code(self, tmp_path):
+        assert self._kinds(tmp_path, "// Timing (seconds);", ".dart") == []
+
+    def test_a_dart_dead_call_is_still_flagged(self, tmp_path):
+        assert self._kinds(tmp_path, "// buildCta(context, onLaunchSurvey);", ".dart") == ["commented-out code"]

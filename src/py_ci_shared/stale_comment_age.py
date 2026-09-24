@@ -30,6 +30,7 @@ Usage::
 
 from __future__ import annotations
 
+import ast
 import io
 import re
 import subprocess
@@ -75,6 +76,10 @@ _COMMENT_LINE_RE = re.compile(r"^\s*(?://+|#)\s?(?P<body>.*)$")
 # A sentence-ending period, anchored so that `...`, a decimal and a dotted identifier do not count.
 _SENTENCE_END_RE = re.compile(r"[\w)\"'\]]\.$")
 _STRING_LITERAL_RE = re.compile(r"\"[^\"]*\"|'[^']*'|`[^`]*`")
+# A heading with a parenthesised gloss: `# Upsert (handles race conditions)`, `# Cost (USD)`, `# mover (stem-changing)`.
+# Code is written `name(args)`; a bare word, a space, then `(` is how English glosses a term. Only a single bare
+# word counts, so a dotted `obj.method (x)` or a chained `.agg (...)` is still judged as code.
+_GLOSSED_WORD_RE = re.compile(r"^\s*[^\W\d]\w*\s+\(", re.UNICODE)
 
 
 class BlameError(RuntimeError):
@@ -85,6 +90,36 @@ def _comment_body(line: str) -> "str | None":
     """The text of ``line`` with its comment marker stripped, or None if it is not a comment."""
     m = _COMMENT_LINE_RE.match(line)
     return m.group("body") if m else None
+
+
+def _body_is_code(body: str, python: bool) -> bool:
+    """True when a comment body that matched the call shape is really a statement, not a glossed heading.
+
+    For Python the body must also parse: `# Upsert (handles race conditions at DB level too)` has
+    the regex's shape but is not a statement. A leading `.` (a commented-out continuation of a
+    method chain, `# .group_by(...).agg(...)`) is given a receiver before parsing.
+    """
+    if _GLOSSED_WORD_RE.match(body):
+        return False
+    if not python:
+        return True
+    text = body.strip().rstrip(";,").strip()
+    if text.startswith("."):
+        text = "_" + text
+    try:
+        tree = ast.parse(text)
+    except (SyntaxError, ValueError):
+        return False
+    if len(tree.body) != 1:
+        return False
+    stmt = tree.body[0]
+    # A bare expression that is not a call computes nothing, so nobody commented it out:
+    # `# rejected_invented(4) / rejected(7)` is a legend of status codes written in call syntax.
+    # A tuple of calls (`# a(x), b(y),`) is a commented-out argument list and still counts.
+    if not isinstance(stmt, ast.Expr):
+        return True
+    values = stmt.value.elts if isinstance(stmt.value, ast.Tuple) else [stmt.value]
+    return bool(values) and all(isinstance(v, (ast.Call, ast.Await)) for v in values)
 
 
 def _block_reads_as_prose(lines: Sequence[str], index: int) -> bool:
@@ -270,7 +305,11 @@ def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str
             out[lineno] = ("TODO", line.strip()[:100])
             continue
         code_re = _COMMENTED_HASH_CALL_RE if hash_lang else _COMMENTED_CODE_RE
-        if code_re.match(line) and not _block_reads_as_prose(file_lines, lineno - 1):
+        if (
+            code_re.match(line)
+            and _body_is_code(_comment_body(line) or "", python=path.suffix == ".py")
+            and not _block_reads_as_prose(file_lines, lineno - 1)
+        ):
             out[lineno] = ("commented-out code", line.strip()[:100])
     return out
 
