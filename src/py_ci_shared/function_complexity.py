@@ -48,6 +48,19 @@ def _def_lines(tree: ast.AST, rel: str) -> dict[int, str]:
     return out
 
 
+def _batches(paths: list, max_chars: int = 24000) -> list:
+    """Split ``paths`` into argv-sized groups (Windows caps a command line at 32767 characters)."""
+    out: list = [[]]
+    size = 0
+    for p in paths:
+        if out[-1] and size + len(p) + 1 > max_chars:
+            out.append([])
+            size = 0
+        out[-1].append(p)
+        size += len(p) + 1
+    return [b for b in out if b]
+
+
 def function_complexities(files: Iterable[Path], root: Path, *, limit: int) -> tuple[dict[str, int], set[str]]:
     """``({"path::Qual.name": complexity for every function over limit}, {every function key measured})``."""
     root = Path(root)
@@ -56,13 +69,16 @@ def function_complexities(files: Iterable[Path], root: Path, *, limit: int) -> t
     all_keys = {key for _rel, lines in by_file.values() for key in lines.values()}
     if not by_file:
         return {}, all_keys
-    cmd = [sys.executable, "-m", "ruff", "check", "--no-cache", "--isolated", "--select", "C901", "--config", f"lint.mccabe.max-complexity={int(limit)}",
-           "--output-format", "json", "--exit-zero", *[str(p) for p in by_file]]
-    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)  # nosec B603 - fixed argv, no shell
-    if proc.returncode != 0:
-        raise RuntimeError(f"ruff failed ({proc.returncode}): {proc.stderr.strip()[:2000]}")
+    base = [sys.executable, "-m", "ruff", "check", "--no-cache", "--isolated", "--select", "C901", "--config", f"lint.mccabe.max-complexity={int(limit)}",
+            "--output-format", "json", "--exit-zero"]
+    items: list = []
+    for batch in _batches([str(p) for p in by_file]):
+        proc = subprocess.run([*base, *batch], capture_output=True, text=True, check=False)  # nosec B603 - fixed argv, no shell
+        if proc.returncode != 0:
+            raise RuntimeError(f"ruff failed ({proc.returncode}): {proc.stderr.strip()[:2000]}")
+        items.extend(json.loads(proc.stdout or "[]"))
     out: dict[str, int] = {}
-    for item in json.loads(proc.stdout or "[]"):
+    for item in items:
         if item.get("code") != "C901":
             continue
         rel, lines = by_file.get(Path(item["filename"]).resolve(), (None, {}))

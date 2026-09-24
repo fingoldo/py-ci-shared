@@ -63,3 +63,12 @@ def test_assert_passes_on_a_matching_baseline_and_refreshes(tmp_path):
     baseline.write_text(json.dumps({}))
     with pytest.raises(pytest.fail.Exception, match=re.escape("big.py::big: complexity 31, over the limit of 25")):
         assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=False)
+
+
+def test_paths_are_batched_under_the_command_line_limit():
+    from py_ci_shared.function_complexity import _batches
+
+    paths = [f"D:/some/long/directory/structure/module_{i:05d}.py" for i in range(3000)]
+    batches = _batches(paths)
+    assert len(batches) > 1 and sum(map(len, batches)) == 3000
+    assert all(sum(len(p) + 1 for p in b) <= 24000 for b in batches)
