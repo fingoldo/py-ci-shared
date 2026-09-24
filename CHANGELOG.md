@@ -39,6 +39,8 @@ New:
 - The `py-ci-shared` command: `run`, `run-all`, `refresh`, `list`, `config-path`, `tool`.
 - `py_ci_shared.registry` lists every module; the README gate catalogue is generated from it.
 - The ruff configs ship as package data (`py-ci-shared config-path ruff-base`).
+- `adoption_matrix` reports, across consumer repos, where each pins py-ci-shared (and whether the pins agree or
+  move), which modules each runs, and where a gate skips itself when the package is missing.
 - Pre-commit hooks for `run-all`, `pinned_tool_versions`, `mypy_gate` and `worktree_hygiene`.
 - New gates: `atomic_write_staging`, `clock_day_boundary`, `coverage_config_parity`, `hash_key_determinism`,
   `import_cycles`, `local_copy_report`, `no_xfail_to_defer`, `numba_seed_range`, `pickle_state_completeness`

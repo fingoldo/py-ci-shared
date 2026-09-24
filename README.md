@@ -127,6 +127,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 
 | module | kind | since | entry | what it checks |
 |---|---|---|---|---|
+| [`adoption_matrix`](src/py_ci_shared/adoption_matrix.py) | cli | 1.17.0 | `main` | Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself |
 | [`advisory_warn`](src/py_ci_shared/advisory_warn.py) | cli | 1.0.0 | `main` | Warn-only advisory-taste check for the pre-commit hook |
 | [`alembic_concurrently`](src/py_ci_shared/alembic_concurrently.py) | gate | 1.8.0 | `assert_concurrently_is_in_autocommit_blocks` | An Alembic migration runs ``CONCURRENTLY`` only inside ``autocommit_block()`` |
 | [`arb_checks`](src/py_ci_shared/arb_checks.py) | gate | 1.3.6 | `assert_arb_catalogues_are_sound` | Shared checks over Flutter ``.arb`` localization catalogues |

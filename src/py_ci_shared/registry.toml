@@ -3,6 +3,13 @@
 # budget_s (runtime budget per call), cli (has a main), summary (one line for the README), tests (when not tests/test_<name>.py).
 
 [[gate]]
+name = "adoption_matrix"
+kind = "cli"
+since = "1.17.0"
+cli = true
+summary = "Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself"
+
+[[gate]]
 name = "advisory_warn"
 kind = "cli"
 since = "1.0.0"

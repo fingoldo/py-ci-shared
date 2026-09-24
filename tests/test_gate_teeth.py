@@ -257,6 +257,7 @@ CANARIES: dict[str, Canary] = {
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "adoption_matrix": "a multi-repo report over consumer pins and wiring, not a corpus scanner; covered by test_adoption_matrix.py",
     "arb_checks": "reads Flutter .arb JSON catalogues keyed by locale; its subject is catalogue parity, covered by test_arb_checks.py",
     "audit_disposition_parity": "cross-references audit prose against the repo tree; no seedable code shape",
     "audit_path_references": "cross-references code literals against audit round directories; subject is repo layout",
