@@ -244,6 +244,14 @@ workflow_path = ".github/workflows/black-filtered.yml"
 module = "ci_workflow_timeout_gate"
 workflow_path = ".github/workflows/config-drift-check.yml"
 
+[tool.py_ci_shared.gates.workflow_timeouts_consumer_pins]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/consumer-pins.yml"
+
+[tool.py_ci_shared.gates.workflow_timeouts_corpus_drift]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/corpus-drift.yml"
+
 [tool.py_ci_shared.gates.workflow_timeouts_docs]
 module = "ci_workflow_timeout_gate"
 workflow_path = ".github/workflows/docs.yml"

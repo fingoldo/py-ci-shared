@@ -155,6 +155,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`config_drift_check`](src/py_ci_shared/config_drift_check.py) | cli | 1.1.1 | `main` | Reports [tool.ruff]/[tool.mypy] config divergence across consumer repos |
 | [`config_getattr_default_parity`](src/py_ci_shared/config_getattr_default_parity.py) | gate | 1.17.0 | `assert_getattr_defaults_match_schema` | ``getattr(cfg, "field", <literal>)`` whose literal disagrees with the field's own default |
 | [`content_hash_version_bump_gate`](src/py_ci_shared/content_hash_version_bump_gate.py) | gate | 1.3.1 | `assert_version_bumped_with_content` | Shared harness for the "N files feed a version/cache-key constant that must be bumped by hand whenever those files change" meta-test pattern |
+| [`corpus_drift`](src/py_ci_shared/corpus_drift.py) | cli | 1.17.0 | `main` | Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them |
 | [`coverage_config_parity`](src/py_ci_shared/coverage_config_parity.py) | gate | 1.17.0 | `assert_coverage_config_parity` | Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see |
 | [`dart_scanners`](src/py_ci_shared/dart_scanners.py) | library | 1.3.6 |  | Shared structural scanners over Dart/Flutter source |
 | [`dataclass_case_completeness`](src/py_ci_shared/dataclass_case_completeness.py) | gate | 1.5.0 | `assert_every_dataclass_has_a_case` | Every dataclass of a given kind has a test case, or an exemption with a reason |
@@ -333,6 +334,7 @@ py-ci-shared run function_length       # the named gates only
 py-ci-shared refresh function_length   # rewrite that gate's baseline, then run it ("all" for every gate)
 py-ci-shared config-path ruff-base     # installed path of the shipped ruff config
 py-ci-shared tool worktree_hygiene -h  # a module's own command line (same as python -m py_ci_shared.worktree_hygiene)
+py-ci-shared new-gate my_gate --summary "..."  # scaffold a gate in a py-ci-shared checkout (see CLAUDE.md)
 ```
 
 The older console scripts (`safe-precommit`, `py-ci-install-safe-hook`, `py-ci-setup-env`) and every
@@ -1067,5 +1069,17 @@ An unregistered directory is judged by walking its files, not by asking git: `gi
 the enclosing repository and answers about that instead, reporting the directory clean whatever it holds.
 
 ## Keeping this repo in sync with consumers
+
+`configs/consumers.toml` lists every consumer (owner/repo, branch, private, corpus). Two scheduled workflows read it:
+
+- `consumer-pins.yml` (daily): shallow-clones each consumer and runs `adoption_matrix --resolve-in .`, failing on
+  disagreeing, moving or stale pins ("N releases behind vX.Y.Z") and silent skips. The matrix is in the job summary
+  and the `adoption-matrix` artifact. Private repos need the `CONSUMER_READ_TOKEN` secret (a fine-grained token with
+  contents: read on them); without it they are skipped with a warning.
+- `corpus-drift.yml` (nightly): `python -m py_ci_shared.corpus_drift` runs every corpus-bindable `find_*` over the
+  `corpus = true` repos and compares the counts with the last successful run's snapshot artifact. It fails when a
+  count grows by more than 20% and more than 5, drops to zero, or a finder starts to raise; run it by hand with
+  `accept: true` to take a reviewed change as the new baseline.
+
 
 A weekly scheduled workflow (`config-drift-check.yml`, running `py_ci_shared.config_drift_check`) fetches both consumer repos' `pyproject.toml` and reports (informationally, never failing the run) any divergence in their `[tool.ruff]`/`[tool.mypy]` fields that are meant to stay in sync — trigger it on demand via `workflow_dispatch`. It does not replace opening a matching PR when you change something here that consuming repos should also pick up — `git grep py-ci-shared` in each consumer finds every reference point.

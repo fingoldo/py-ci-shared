@@ -369,3 +369,70 @@ def test_repos_file_and_consumer_is_not_written(tmp_path):
     assert load_repo_list(listing) == [("repo", root.resolve()), ("alias", root.resolve())]
     assert main(["--repos-file", str(listing), "--advisory"]) == 0
     assert sorted(p.relative_to(root).as_posix() for p in root.rglob("*")) == before
+
+
+def _pcs_with_releases(tmp_path: Path) -> tuple[Path, list[str]]:
+    """A py-ci-shared checkout with releases v1.0.0, v1.1.0, v1.2.0 on three commits, plus a moving v1 and a pre-release."""
+    pcs = tmp_path / "pcs"
+    pcs.mkdir()
+    git = ["git", "-C", str(pcs), "-c", "user.email=t@e", "-c", "user.name=t"]
+    subprocess.run([*git, "init", "-q"], check=True, capture_output=True)
+    shas = []
+    for tag in ("v1.0.0", "v1.1.0", "v1.2.0"):
+        subprocess.run([*git, "commit", "-q", "--allow-empty", "-m", tag], check=True, capture_output=True)
+        subprocess.run([*git, "tag", tag], check=True, capture_output=True)
+        shas.append(subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip())
+    subprocess.run([*git, "tag", "v1"], check=True, capture_output=True)
+    subprocess.run([*git, "tag", "v1.3.0rc1", shas[0]], check=True, capture_output=True)
+    return pcs, shas
+
+
+def test_resolver_lists_releases_by_version_not_moving_or_pre_release_tags(tmp_path):
+    pcs, shas = _pcs_with_releases(tmp_path)
+    resolver = RefResolver(pcs)
+    assert resolver.releases() == ["v1.0.0", "v1.1.0", "v1.2.0"]
+    assert resolver.releases_behind(shas[0]) == (2, "v1.2.0")
+    assert resolver.releases_behind(shas[2]) == (0, "v1.2.0")
+    assert resolver.releases_behind("0" * 40) is None
+    assert RefResolver(None).releases_behind(shas[0]) is None
+
+
+def test_a_pin_older_than_the_latest_release_fails_and_says_how_far_behind(tmp_path):
+    pcs, shas = _pcs_with_releases(tmp_path)
+    old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[0]}\n"}, "old")
+    rep = scan_repo(old, local_copies=False, resolver=RefResolver(pcs))
+    assert rep.pins_agree and not rep.moving_pins and rep.failing
+    assert [(f.rule, f.message) for f in rep.findings()] == [("stale-pin", f"package pinned to {shas[0]}: 2 releases behind v1.2.0")]
+    assert "| old | 1 |" in render_markdown([rep]) and "| **2** |" in render_markdown([rep])
+    tolerated = scan_repo(old, local_copies=False, resolver=RefResolver(pcs), allow_behind=2)
+    assert not tolerated.failing and tolerated.behind[shas[0]] == (2, "v1.2.0")
+    unresolved = scan_repo(old, local_copies=False)
+    assert not unresolved.failing and unresolved.behind == {}
+
+
+def test_a_pin_at_the_latest_release_passes_and_one_release_behind_is_singular(tmp_path):
+    pcs, _ = _pcs_with_releases(tmp_path)
+    current = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@v1.2.0\n"}, "current")
+    rep = scan_repo(current, local_copies=False, resolver=RefResolver(pcs))
+    assert not rep.failing and rep.behind == {"v1.2.0": (0, "v1.2.0")}
+    one = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@v1.1.0\n"}, "one")
+    assert [f.message for f in scan_repo(one, local_copies=False, resolver=RefResolver(pcs)).findings()] == [
+        "package pinned to v1.1.0: 1 release behind v1.2.0"
+    ]
+
+
+def test_a_moving_pin_is_reported_as_moving_not_as_stale(tmp_path):
+    pcs, _ = _pcs_with_releases(tmp_path)
+    root = _repo(tmp_path, {".github/workflows/a.yml": "    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@v1\n"})
+    rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
+    assert [f.rule for f in rep.findings()] == ["moving-pin"] and rep.behind == {}
+
+
+def test_main_fails_a_stale_pin_unless_allowed(tmp_path, capsys):
+    pcs, shas = _pcs_with_releases(tmp_path)
+    old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
+    assert main([str(old), "--no-local-copies"]) == 0
+    assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
+    assert "stale-pin" in capsys.readouterr().out
+    assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs), "--allow-behind", "1"]) == 0
+    capsys.readouterr()

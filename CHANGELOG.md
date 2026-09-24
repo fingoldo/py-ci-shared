@@ -46,6 +46,9 @@ New:
 - The ruff configs ship as package data (`py-ci-shared config-path ruff-base`).
 - `adoption_matrix` reports, across consumer repos, where each pins py-ci-shared (and whether the pins agree or
   move), which modules each runs, and where a gate skips itself when the package is missing.
+- `adoption_matrix --resolve-in` counts how many releases each fixed pin is behind and fails a stale one (`--allow-behind N`).
+- `py-ci-shared new-gate <name>` scaffolds a gate: module on `_core`, failing test skeleton, canary, registry entry, README row.
+- `corpus_drift` counts every corpus-bindable finder over real consumer repos and fails a night whose counts jump, drop to zero or start to error.
 - Pre-commit hooks for `run-all`, `pinned_tool_versions`, `mypy_gate` and `worktree_hygiene`.
 - New gates: `atomic_write_staging`, `clock_day_boundary`, `coverage_config_parity`, `hash_key_determinism`,
   `import_cycles`, `local_copy_report`, `no_xfail_to_defer`, `numba_seed_range`, `pickle_state_completeness`
@@ -63,5 +66,6 @@ Release and CI:
   (`py-ci-shared-ref` input), not at master. They declare `permissions: contents: read`, and lint-advisory's
   tools are installed at exact versions.
 - `install-pyutilz` defaults to a pinned pyutilz commit instead of the branch tip.
+- Scheduled workflows: `consumer-pins.yml` (daily adoption matrix over the consumers in `configs/consumers.toml`) and `corpus-drift.yml` (nightly).
 - This repo's CI tests Python 3.9 to 3.13, installs the dev extra without a fallback, measures coverage and runs
   its own gates on itself with `py-ci-shared run-all`.

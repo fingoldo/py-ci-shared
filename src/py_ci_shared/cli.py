@@ -8,6 +8,8 @@ Subcommands::
     py-ci-shared refresh <gate>|all           rewrite the baselines of the named gates, then run them
     py-ci-shared config-path <name>           print the installed path of a shipped config (ruff-base, ruff-tests)
     py-ci-shared tool <module> [args ...]     run a module's own command line (``main``), e.g. ``tool worktree_hygiene``
+    py-ci-shared new-gate <name> [--kind gate|library] [--summary TEXT] [--repo DIR]
+                                              scaffold a gate in a py-ci-shared checkout (module, tests, canary, registry)
     py-ci-shared version
 
 Exit codes: 0 all passed, 1 a gate failed (or ran over budget with ``budget = "fail"``), 2 usage or configuration error.
@@ -115,6 +117,23 @@ def _cmd_tool(args: argparse.Namespace) -> int:
     return result if isinstance(result, int) else 0
 
 
+def _cmd_new_gate(args: argparse.Namespace) -> int:
+    from ._scaffold import ScaffoldError, find_checkout, new_gate
+
+    try:
+        root = find_checkout(Path(args.repo) if args.repo else Path.cwd())
+        done = new_gate(root, args.name, kind=args.kind, summary=args.summary or "")
+    except ScaffoldError as exc:
+        _print(f"py-ci-shared new-gate: {exc}", err=True)
+        return 2
+    for rel in done.created:
+        _print(f"created {rel}")
+    for rel in done.updated:
+        _print(f"updated {rel}")
+    _print("Every generated test and the canary fail until written; fill them in, then run tests/test_package_inventory.py and tests/test_gate_teeth.py.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="py-ci-shared", description="Run py-ci-shared gates and tools.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -131,6 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("tool", help="run a module's own command line")
     p.add_argument("module")
     p.add_argument("args", nargs=argparse.REMAINDER)
+    p = sub.add_parser("new-gate", help="scaffold a new gate or library in a py-ci-shared checkout")
+    p.add_argument("name", help="module name, e.g. unsorted_dict_keys")
+    p.add_argument("--kind", choices=("gate", "library"), default="gate", help="gate: find_* and assert_*; library: find_* only")
+    p.add_argument("--summary", help="one line for the registry and the README catalogue")
+    p.add_argument("--repo", help="the py-ci-shared checkout (default: nearest one above the current directory)")
     sub.add_parser("version", help="print the package version")
     return parser
 
@@ -152,6 +176,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
         if args.command == "tool":
             return _cmd_tool(args)
+        if args.command == "new-gate":
+            return _cmd_new_gate(args)
         _print(__version__)
         return 0
     except (ConfigError, KeyError) as exc:

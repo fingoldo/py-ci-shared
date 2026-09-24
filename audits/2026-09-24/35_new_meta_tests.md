@@ -369,6 +369,27 @@ the pyutilz `code_audit` scanner (run via `code_audit_meta`).
 - **Bug class:** Dart scan hand-copied into flutter_app_core and polyvocab_app tool/meta/scanners.py
 - **Repos:** flutter_app_core, polyvocab_app
 
+### NEW-36 (Med) -- scheduled consumer-pin check
+
+**Disposition:** RESOLVED -- `.github/workflows/consumer-pins.yml` runs daily and on `workflow_dispatch`: `python -m py_ci_shared._consumers checkout configs/consumers.toml` shallow-clones the 13 consumers read-only (`CONSUMER_READ_TOKEN` for the private ones; without it they are skipped with a `::warning::`, while a clone that should work and fails exits 1), then `adoption_matrix --resolve-in .` over the full-history checkout fails on disagreeing, moving or stale pins and silent skips. `adoption_matrix` now counts releases behind: `RefResolver.releases()`/`releases_behind()` compare a fixed pin's commit with the `vX.Y.Z` tags (`git tag --merged`), a pin lacking any is a `stale-pin` finding ("N releases behind vX.Y.Z"), `--allow-behind N` tolerates N. The markdown matrix goes to the job summary and an artifact; regression tests: tests/test_adoption_matrix.py::test_a_pin_older_than_the_latest_release_fails_and_says_how_far_behind, tests/test_adoption_matrix.py::test_main_fails_a_stale_pin_unless_allowed, tests/test_consumers.py::test_without_a_token_private_repos_are_skipped_and_public_ones_cloned, tests/test_consumers.py::test_main_warns_on_a_skip_and_fails_on_a_failed_clone
+
+- **Bug class:** a consumer pin drifts, moves or lags a release, and nobody looks until a consumer breaks
+- **Repos:** all consumers
+
+### NEW-37 (Med) -- gate scaffolder and CLAUDE.md
+
+**Disposition:** RESOLVED -- `py-ci-shared new-gate <name> [--kind gate|library] [--summary ...]` (`src/py_ci_shared/_scaffold.py`) writes the module on `_core` (`scan_python`, `Finding`, `Baseline`, `ImportAliases`, a `find_*`/`assert_*` pair with `min_files` and `allow_unparsed`), a test file whose seeded-violation, negative-control, BOM, unparsable and empty-corpus tests fail until written, `tests/canary/<name>/{violation,clean,bom,unparsable}/` placeholders with a `CANARIES` entry, the `registry.toml` entry (`since` from `pyproject.toml`) and the README catalogue; it checks every target first and refuses to overwrite. `CLAUDE.md` states the rules for adding a gate; regression tests: tests/test_scaffold.py::test_the_scaffold_passes_the_inventory_and_fails_until_filled_in, tests/test_scaffold.py::test_it_refuses_to_overwrite_and_changes_nothing
+
+- **Bug class:** a new gate that skips the `_core` reader, the canary or the registry
+- **Repos:** py-ci-shared
+
+### NEW-38 (Med) -- nightly real-corpus drift job
+
+**Disposition:** RESOLVED -- `src/py_ci_shared/corpus_drift.py` (registered `cli`) runs every `find_*` of the registered gate and library modules whose required parameters bind from a repo root (`BINDINGS`: root, roots, tracked Python files, tests dir) over the `corpus = true` consumers (mlframe, pyutilz, llm_bench), writes per-finder counts, errors and timings to a JSON snapshot, and `compare` fails when a count grows by more than 20% and more than 5 (both configurable), drops to zero from non-zero, or starts to raise. Finders a corpus cannot feed are listed in `NON_CORPUS` with reasons; a test fails on a finder that is neither bindable nor listed, and on a listing that is bindable. `.github/workflows/corpus-drift.yml` runs nightly and on dispatch, finds the last successful run with `gh api` and downloads its snapshot artifact by run id; `accept: true` makes a reviewed drift the next baseline. A local run over pyutilz and llm_bench counted 58 finders each, none errored; regression tests: tests/test_corpus_drift.py::test_thresholds_need_both_the_relative_and_the_absolute_jump, tests/test_corpus_drift.py::test_a_finder_that_starts_to_raise_fails_and_one_that_always_raised_does_not, tests/test_corpus_drift.py::test_every_finder_is_bindable_or_listed_with_a_reason
+
+- **Bug class:** false positives and blind spots that only real repositories trigger
+- **Repos:** mlframe, pyutilz, llm_bench
+
 ### INFRA-1 (High) -- pytest11 plugin py_ci_shared.pytest_plugin
 
 **Disposition:** RESOLVED -- `[project.entry-points.pytest11] py_ci_shared = "py_ci_shared.pytest_plugin"`: inert without `[tool.py_ci_shared]`; with it, a bare `pytest` (or `--py-ci-gates=on`) gets one `pyproject.toml::<gate>` item per enabled gate that calls the entry with the table's kwargs from the repo root; `--py-ci-refresh` is wired to `_core.refresh` through the env var; a malformed table is a usage error; regression test: tests/test_pytest_plugin.py::test_a_repo_without_the_table_sees_no_gate_items, tests/test_pytest_plugin.py::test_a_bare_run_adds_one_item_per_gate_and_reports_the_gates_text, tests/test_pytest_plugin.py::test_selecting_paths_leaves_gates_out_unless_forced, tests/test_pytest_plugin.py::test_a_malformed_table_is_a_usage_error

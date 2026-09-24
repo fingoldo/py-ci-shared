@@ -1,0 +1,85 @@
+# The repos that consume py-ci-shared, read by .github/workflows/consumer-pins.yml and corpus-drift.yml through
+# `python -m py_ci_shared._consumers checkout`. Fields: name, repo (owner/name on GitHub), branch (the one CI runs
+# on), private (needs the CONSUMER_READ_TOKEN secret; without it the repo is skipped with a warning), corpus (true:
+# also scanned by the nightly corpus-drift job; keep that set small, every scanning gate runs over each).
+
+[[consumer]]
+name = "autopsia"
+repo = "fingoldo/autopsia"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "mlframe"
+repo = "fingoldo/mlframe"
+branch = "master"
+private = false
+corpus = true
+
+[[consumer]]
+name = "pyutilz"
+repo = "fingoldo/pyutilz"
+branch = "master"
+private = false
+corpus = true
+
+[[consumer]]
+name = "social"
+repo = "fingoldo/social"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "dash_app_core"
+repo = "fingoldo/dash_app_core"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "llm_bench"
+repo = "fingoldo/llm_bench"
+branch = "main"
+private = false
+corpus = true
+
+[[consumer]]
+name = "glossum_backend_scripts"
+repo = "fingoldo/glossum_backend_scripts"
+branch = "main"
+private = true
+
+[[consumer]]
+name = "flutter_app_core"
+repo = "fingoldo/flutter_app_core"
+branch = "main"
+private = true
+
+[[consumer]]
+name = "polyvocab_app"
+repo = "fingoldo/polyvocab_app"
+branch = "staging"
+private = true
+
+[[consumer]]
+name = "noema_app"
+repo = "fingoldo/noema_app"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "flutter_uptime_monitor"
+repo = "fingoldo/flutter_uptime_monitor"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "algopacksimple"
+repo = "fingoldo/algopacksimple"
+branch = "master"
+private = true
+
+[[consumer]]
+name = "claude-usage-notifier"
+repo = "fingoldo/claude-usage-notifier"
+branch = "main"
+private = false

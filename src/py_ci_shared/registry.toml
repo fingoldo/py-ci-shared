@@ -200,6 +200,14 @@ since = "1.3.1"
 summary = "Shared harness for the \"N files feed a version/cache-key constant that must be bumped by hand whenever those files change\" meta-test pattern"
 
 [[gate]]
+name = "corpus_drift"
+kind = "cli"
+since = "1.17.0"
+cli = true
+budget_s = 3600
+summary = "Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them"
+
+[[gate]]
 name = "coverage_config_parity"
 kind = "gate"
 entries = ["assert_coverage_config_parity"]

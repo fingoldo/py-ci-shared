@@ -8,6 +8,8 @@ Given consumer repo roots, it reports per repo:
   lines, ``git clone`` of the repo and ``actions/checkout`` of it, plus a ruff ``extend`` into a sibling checkout.
   A pin is *moving* when it is a branch, a major/minor tag (``v1``), a bare name or git URL without a ref, or a
   sibling path. Pins *agree* when they all name one commit (resolved through ``--resolve-in`` when given).
+* **Release currency** (with ``--resolve-in``): a fixed pin whose commit lacks a release tag (``vX.Y.Z``) of that
+  checkout is *behind*: the report says "N releases behind vX.Y.Z". ``--allow-behind N`` tolerates N.
 * **Modules**: ``py_ci_shared.<module>`` in imports, ``python -m`` lines, ``importorskip`` strings and paths, plus the
   gates ``[tool.py_ci_shared]`` enables. Markdown files and ``audits/`` directories are not read.
 * **Silent skips**: ``pytest.importorskip("py_ci_shared...")``, and a ``try`` importing py_ci_shared whose
@@ -15,8 +17,8 @@ Given consumer repo roots, it reports per repo:
   returns: a missing or too-old install then reads as a pass.
 * **Local copies**: :func:`py_ci_shared.local_copy_report.find_local_copies` over each ``tests`` directory.
 
-It only reads consumer repos. The exit status is 1 when a repo has disagreeing pins, moving pins or silent skips;
-``--advisory`` reports the same and exits 0.
+It only reads consumer repos. The exit status is 1 when a repo has disagreeing pins, moving pins, silent skips or a
+pin behind the latest release; ``--advisory`` reports the same and exits 0.
 
 Usage::
 
@@ -67,6 +69,7 @@ SILENT_RULES = ("importorskip", "collect-ignore", "exit-0", "skip", "availabilit
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 _RELEASE = re.compile(r"^v?\d+\.\d+\.\d+([.-]?[0-9A-Za-z.]+)?$")
 _MOVING_TAG = re.compile(r"^v?\d+(\.\d+)?$")
+_FULL_RELEASE = re.compile(r"^v\d+\.\d+\.\d+$")
 _PKG_NAME = re.compile(r"^\s*py[-_.]ci[-_.]shared\b", re.IGNORECASE)
 _GIT_URL = re.compile(r"git\+(?:https?|ssh)://(?:git@)?github\.com[/:][\w.-]+/py-ci-shared(?:\.git)?(?:@([^\s\"'#;,\]\)]+))?", re.IGNORECASE)
 _USES = re.compile(r"\buses:\s*['\"]?[\w.-]+/py-ci-shared(/[^@\s'\"]*)?@([^\s'\"#]+)")
@@ -126,6 +129,35 @@ class RefResolver:
     def __init__(self, repo: Optional[PathLike]) -> None:
         self.repo = Path(repo) if repo is not None else None
         self._cache: dict[str, Optional[str]] = {}
+        self._releases: Optional[list[str]] = None
+
+    def _git(self, *args: str) -> Optional[str]:
+        if self.repo is None:
+            return None
+        try:
+            proc = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=False)
+        except OSError:
+            return None
+        return proc.stdout if proc.returncode == 0 else None
+
+    def releases(self) -> list[str]:
+        """The checkout's ``vX.Y.Z`` tags, oldest first by version (``v1`` and pre-releases are not releases)."""
+        if self._releases is None:
+            out = self._git("tag", "--list", "v*")
+            tags = [t.strip() for t in (out or "").splitlines() if _FULL_RELEASE.match(t.strip())]
+            self._releases = sorted(tags, key=lambda t: tuple(int(x) for x in t[1:].split(".")))
+        return self._releases
+
+    def releases_behind(self, sha: str) -> Optional[tuple[int, str]]:
+        """``(n, latest)``: how many release tags the commit *sha* does not contain; None without releases or history."""
+        releases = self.releases()
+        if not releases:
+            return None
+        merged = self._git("tag", "--list", "v*", "--merged", sha)
+        if merged is None:
+            return None
+        have = {t.strip() for t in merged.splitlines()}
+        return sum(t not in have for t in releases), releases[-1]
 
     def __call__(self, ref: str) -> Optional[str]:
         if self.repo is None:
@@ -639,6 +671,8 @@ class RepoReport:
     silent_skips: list[Finding] = field(default_factory=list)
     local_copies: list[Finding] = field(default_factory=list)
     resolved: dict[str, Optional[str]] = field(default_factory=dict)
+    behind: dict[str, tuple[int, str]] = field(default_factory=dict)  # pin ref -> (releases behind, latest release)
+    allow_behind: int = 0
 
     def pin_key(self, pin: Pin) -> str:
         """The identity two pins must share to agree: resolved SHA, else the SHA's 7-char prefix, else the label."""
@@ -662,8 +696,13 @@ class RepoReport:
         return [p for p in self.pins if p.moving]
 
     @property
+    def stale_pins(self) -> list[Pin]:
+        """Fixed pins more than ``allow_behind`` releases behind the latest release tag."""
+        return [p for p in self.pins if p.ref is not None and not p.moving and self.behind.get(p.ref, (0, ""))[0] > self.allow_behind]
+
+    @property
     def failing(self) -> bool:
-        return not self.pins_agree or bool(self.moving_pins) or bool(self.silent_skips)
+        return not self.pins_agree or bool(self.moving_pins) or bool(self.silent_skips) or bool(self.stale_pins)
 
     def findings(self) -> list[Finding]:
         out: list[Finding] = []
@@ -679,6 +718,9 @@ class RepoReport:
         out.extend(
             Finding(p.path, p.line, "moving-pin", f"{p.target} pinned to {p.label()} ({p.kind}): it changes without a commit here") for p in self.moving_pins
         )
+        for p in self.stale_pins:
+            n, latest = self.behind[p.ref or ""]
+            out.append(Finding(p.path, p.line, "stale-pin", f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}"))
         out.extend(self.silent_skips)
         return out
 
@@ -690,8 +732,9 @@ def scan_repo(
     modules: Optional[Iterable[str]] = None,
     resolver: Optional[Callable[[str], Optional[str]]] = None,
     local_copies: bool = True,
+    allow_behind: int = 0,
 ) -> RepoReport:
-    """Read one consumer repo. *resolver* maps a ref to a full SHA (see :class:`RefResolver`)."""
+    """Read one consumer repo. *resolver* maps a ref to a full SHA; a :class:`RefResolver` also dates each pin."""
     root = Path(repo_root)
     if not root.is_dir():
         raise CoreError(f"repo root is not a directory: {root}")
@@ -704,9 +747,17 @@ def scan_repo(
         unknown_modules=unknown,
         silent_skips=find_silent_skips(root),
         local_copies=_local_copies(root) if local_copies else [],
+        allow_behind=allow_behind,
     )
     if resolver is not None:
         report.resolved = {p.ref: resolver(p.ref) for p in report.pins if p.ref is not None}
+    if isinstance(resolver, RefResolver):
+        for p in report.pins:
+            full = report.resolved.get(p.ref) if p.ref is not None else None
+            if p.ref is not None and full and not p.moving:
+                lag = resolver.releases_behind(full)
+                if lag is not None:
+                    report.behind[p.ref] = lag
     return report
 
 
@@ -721,14 +772,17 @@ def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable
     lines += [
         "## Summary",
         "",
-        "| repo | pins | distinct refs | pins agree | moving pins | silent skips | local copies | modules used |",
-        "|---|---|---|---|---|---|---|---|",
+        "| repo | pins | distinct refs | pins agree | moving pins | releases behind | silent skips | local copies | modules used |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for r in reports:
         refs = ", ".join(f"`{k}`" for k in r.distinct_refs) or "none"
         agree = "yes" if r.pins_agree else "**no**"
+        lag = max((n for n, _ in r.behind.values()), default=None)
+        lag_cell = "?" if lag is None else (f"**{lag}**" if r.stale_pins else str(lag))
         lines.append(
-            f"| {r.name} | {len(r.pins)} | {refs} | {agree} | {len(r.moving_pins)} | {len(r.silent_skips)} | {len(r.local_copies)} | {len(r.modules)} |"
+            f"| {r.name} | {len(r.pins)} | {refs} | {agree} | {len(r.moving_pins)} | {lag_cell} | {len(r.silent_skips)} | {len(r.local_copies)} |"
+            f" {len(r.modules)} |"
         )
     lines += ["", "## Pins", "", "| repo | where | location | target | ref | kind |", "|---|---|---|---|---|---|"]
     for r in reports:
@@ -804,6 +858,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--output", help="also write the markdown report to this file")
     parser.add_argument("--advisory", action="store_true", help="report only; exit 0 even when a repo fails")
     parser.add_argument("--no-local-copies", action="store_true", help="skip the local-copy scan")
+    parser.add_argument("--allow-behind", type=int, default=0, help="releases a fixed pin may lag the latest tag (default 0; needs --resolve-in)")
     args = parser.parse_args(argv)
     roots: list[tuple[str, Path]] = [(Path(r).resolve().name, Path(r).resolve()) for r in args.repos]
     if args.repos_file:
@@ -816,14 +871,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     resolver = RefResolver(args.resolve_in) if args.resolve_in else None
     modules = known_modules()
-    reports = [scan_repo(root, name=name, modules=modules, resolver=resolver, local_copies=not args.no_local_copies) for name, root in _unique_names(roots)]
+    reports = [
+        scan_repo(root, name=name, modules=modules, resolver=resolver, local_copies=not args.no_local_copies, allow_behind=args.allow_behind)
+        for name, root in _unique_names(roots)
+    ]
     text = render_markdown(reports, modules=[m for m in modules if not m.startswith("_")])
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
     sys.stdout.write(text)
     failing = [r.name for r in reports if r.failing]
     if failing:
-        sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing/moving pins or silent skips: {', '.join(failing)}\n")
+        sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing/moving/stale pins or silent skips: {', '.join(failing)}\n")
     return 0 if args.advisory or not failing else 1
 
 

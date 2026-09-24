@@ -73,11 +73,13 @@ class GateSpec:
 INTERNAL_MODULES: dict[str, str] = {
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",
     "_gate_run": "the shared assert_* tail of the AST gates",
+    "_consumers": "the consumer repo list and the read-only checkout the scheduled consumer jobs run",
     "_core": "shared reader, corpus, scan, baseline, refresh, aliases and config every gate builds on",
     "_mutation_fingerprint": "private part of mutation_teeth",
     "_mutation_model": "private part of mutation_teeth",
     "_mutation_operators": "private part of mutation_teeth",
     "_mutation_runner": "private part of mutation_teeth",
+    "_scaffold": "the ``py-ci-shared new-gate`` scaffolder",
     "_mutation_worker": "subprocess worker of mutation_teeth; its stdout is the protocol",
     "_toml_compat": "tomllib on 3.11+, tomli before",
     "cli": "the ``py-ci-shared`` console script",
@@ -137,15 +139,15 @@ def _md(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def render_catalogue(repo_url: str = "src/py_ci_shared") -> str:
-    """The README gate catalogue: one table row per registered module, between the catalogue markers."""
+def render_catalogue(repo_url: str = "src/py_ci_shared", gates: Optional[tuple[GateSpec, ...]] = None) -> str:
+    """The README gate catalogue: one table row per module of *gates* (default :data:`GATES`), between the markers."""
     lines = [
         CATALOGUE_START,
         "",
         "| module | kind | since | entry | what it checks |",
         "|---|---|---|---|---|",
     ]
-    for spec in GATES:
+    for spec in GATES if gates is None else gates:
         entry = f"`{spec.default_entry}`" if spec.default_entry else ("`main`" if spec.cli else "")
         if len(spec.entries) > 1:
             entry += f" (+{len(spec.entries) - 1})"
