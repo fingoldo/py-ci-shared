@@ -193,6 +193,21 @@ class TestAuditRegressions:
         g = _write(tmp_path, "n.py", "def helper():\n    return 1\n\ndef user():\n    def inner():\n        return helper()\n    return inner()\n\nuser()\n")
         assert find_uncalled_functions([g], tmp_path) == {}
 
+    def test_a_function_imported_inside_the_calling_function_is_called(self, tmp_path):
+        """A lazy import binds the name locally, but to the function itself: it is a reference, not a shadow.
+
+        Reading it as shadowing reported every lazily imported function as dead -- 49 in one consuming project,
+        where ``from pkg.ids import make_id`` inside a CLI command is the normal way to keep start-up cheap.
+        """
+        f = _write(tmp_path, "ids.py", "def make_id():\n    return 1\n")
+        g = _write(tmp_path, "cli.py", "def command():\n    from ids import make_id\n    return make_id()\n\ncommand()\n")
+        assert find_uncalled_functions([f, g], tmp_path) == {}
+
+    def test_a_function_imported_under_an_alias_inside_a_function_is_called(self, tmp_path):
+        f = _write(tmp_path, "ids.py", "def make_id():\n    return 1\n")
+        g = _write(tmp_path, "cli.py", "def command():\n    from ids import make_id as mk\n    return mk()\n\ncommand()\n")
+        assert find_uncalled_functions([f, g], tmp_path) == {}
+
     def test_defs_under_module_if_and_try_are_judged(self, tmp_path):
         f = _write(
             tmp_path,

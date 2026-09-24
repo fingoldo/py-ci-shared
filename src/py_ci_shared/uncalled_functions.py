@@ -125,7 +125,10 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
         elif isinstance(node, ast.Lambda):
             continue
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            bound.update((a.asname or a.name).split(".", 1)[0] for a in node.names)
+            # Not a shadow: a local import binds the name to the imported object itself, so ``from ids import
+            # make_id`` inside a function followed by ``make_id()`` IS a call of make_id. Counting it as a local
+            # binding reported every lazily imported function as dead (49 in glossum on 2026-09-24).
+            pass
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
         stack.extend(ast.iter_child_nodes(node))
