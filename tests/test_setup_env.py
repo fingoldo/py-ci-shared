@@ -12,6 +12,9 @@ import pytest
 
 from py_ci_shared import setup_env
 
+# The `runs` fixture replaces subprocess.run for setup_env; a test that must really run a shell keeps the original.
+_REAL_RUN = subprocess.run
+
 _TRICKY = '/home/u/a&b "q" $HOME/it\'s <x>'
 
 
@@ -79,7 +82,7 @@ class TestShellProfile:
         _main_on(monkeypatch, "Linux", _TRICKY)
         line = next(ln for ln in (home / ".bashrc").read_text(encoding="utf-8").splitlines() if ln.startswith("export"))
         if sys.platform != "win32":
-            out = subprocess.run(["sh", "-c", line + '; printf %s "$PY_CI_SHARED_DIR"'], capture_output=True, text=True, check=True).stdout
+            out = _REAL_RUN(["sh", "-c", line + '; printf %s "$PY_CI_SHARED_DIR"'], capture_output=True, text=True, check=True).stdout
             assert out == _TRICKY
         assert line == "export PY_CI_SHARED_DIR=" + setup_env.shlex.quote(_TRICKY)
 

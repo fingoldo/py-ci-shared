@@ -99,3 +99,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- find_printed_advice reads through _core.scan_python (BOM handled, unparsable files raise UnparsedFilesError unless allow_unparsed, EmptyScanError below min_files); added assert_printed_advice_registered for the key-to-test table the docstring describes, registered the gate and gave it a canary; regression tests: test_a_bom_file_is_scanned_like_a_plain_one, test_an_unparsable_file_is_reported_not_skipped, test_an_empty_corpus_fails_the_floor, test_assert_registered_fails_on_missing_stale_and_empty_entries
 
 - **Finding:** a gate added to master during this round read with encoding=utf-8 and `continue`d on SyntaxError, the fail-open class the round removed everywhere else; found by the package inventory and teeth tests after the rebase.
+
+### CANARY-17 (Low) -- test_setup_env's shell round trip ran through the stubbed subprocess.run
+
+**Disposition:** RESOLVED -- the test keeps the original subprocess.run as _REAL_RUN before the `runs` fixture patches it, so the POSIX branch executes sh for real; the quoting was confirmed separately by a sh round trip; regression test: TestShellProfile::test_the_value_is_shell_quoted (failed on ubuntu and macos CI, passed on Windows where the branch is skipped)
+
+- **Finding:** CI on Linux and macOS failed with `'' == '/home/u/a&b ...'` because the fixture's fake run returned empty stdout.
