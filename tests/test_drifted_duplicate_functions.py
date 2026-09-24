@@ -137,3 +137,56 @@ def test_a_file_that_does_not_parse_is_skipped_rather_than_raising(tmp_path: Pat
     _write(tmp_path, "a.py", _baseline())
     _write(tmp_path, "b.py", _baseline("    scaled = scaled * 2"))
     assert len(find_drifted_duplicate_functions([tmp_path])) == 1
+
+
+def test_an_unparsable_file_fails_the_assertion(tmp_path: Path):
+    """find() stays usable on a tree with a broken file, but the gate refuses to vouch for what it did not read."""
+    _write(tmp_path, "a.py", _baseline())
+    _write(tmp_path, "c.py", ["def other():", "    return 1"])
+    assert_no_drifted_duplicate_functions([tmp_path])
+    _write(tmp_path, "broken.py", ["def f(:"])
+    with pytest.raises(AssertionError, match=r"broken.py"):
+        assert_no_drifted_duplicate_functions([tmp_path])
+
+
+def test_a_bom_file_is_compared(tmp_path: Path):
+    _write(tmp_path, "b.py", _baseline("    scaled = scaled * 2"))
+    (tmp_path / "a.py").write_bytes(b"\xef\xbb\xbf" + (NEWLINE.join(_baseline()) + NEWLINE).encode("utf-8"))
+    assert [g.name for g in find_drifted_duplicate_functions([tmp_path])] == ["_fit_baseline"]
+
+
+def test_async_copies_that_drifted_are_reported(tmp_path: Path):
+    _write(tmp_path, "a.py", ["async " + line if line.startswith("def ") else line for line in _baseline()])
+    _write(tmp_path, "b.py", ["async " + line if line.startswith("def ") else line for line in _baseline("    scaled = scaled * 2")])
+    assert [g.name for g in find_drifted_duplicate_functions([tmp_path])] == ["_fit_baseline"]
+    _write(tmp_path, "b.py", ["async " + line if line.startswith("def ") else line for line in _baseline()])
+    assert find_drifted_duplicate_functions([tmp_path]) == []
+
+
+def test_a_drifted_default_is_compared_not_split(tmp_path: Path):
+    _write(tmp_path, "a.py", [line.replace("seed)", "seed, n=5)") for line in _baseline()])
+    _write(tmp_path, "b.py", [line.replace("seed)", "seed, n=10)") for line in _baseline()])
+    groups = find_drifted_duplicate_functions([tmp_path])
+    assert [(g.name, len(g.sites)) for g in groups] == [("_fit_baseline", 2)]
+    _write(tmp_path, "b.py", [line.replace("seed)", "seed, n=5)") for line in _baseline()])
+    assert find_drifted_duplicate_functions([tmp_path]) == []
+
+
+def test_a_fallback_def_under_try_is_collected(tmp_path: Path):
+    fallback = ["try:", "    from fast import _fit_baseline", "except ImportError:"] + ["    " + line for line in _baseline("    scaled = scaled * 2")]
+    _write(tmp_path, "a.py", _baseline())
+    _write(tmp_path, "b.py", fallback)
+    assert [g.name for g in find_drifted_duplicate_functions([tmp_path])] == ["_fit_baseline"]
+
+
+def test_a_stale_allow_entry_fails(tmp_path: Path):
+    _write(tmp_path, "a.py", _baseline())
+    _write(tmp_path, "b.py", _baseline())
+    with pytest.raises(AssertionError, match="no longer name a drifted group"):
+        assert_no_drifted_duplicate_functions([tmp_path], allow=["_fit_baseline"])
+    assert_no_drifted_duplicate_functions([tmp_path])
+
+
+def test_an_empty_corpus_fails(tmp_path: Path):
+    with pytest.raises(AssertionError, match="parsed"):
+        assert_no_drifted_duplicate_functions([tmp_path])

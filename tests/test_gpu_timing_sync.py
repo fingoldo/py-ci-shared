@@ -280,3 +280,74 @@ def measure(a, b):
 def test_unparseable_file_is_skipped(tmp_path: Path) -> None:
     path = _write(tmp_path, "broken.py", "def measure(:\n")
     assert find_unsynchronized_gpu_timings([path]) == []
+
+
+_BODY = """
+import time
+import cupy as cp
+import torch
+
+
+def measure(a, b):
+    t0 = time.perf_counter()
+{lines}
+    return time.perf_counter() - t0
+"""
+
+
+def _measure(tmp_path: Path, *lines: str) -> list:
+    path = _write(tmp_path, f"m{len(list(tmp_path.glob('m*.py')))}.py", _BODY.format(lines="\n".join("    " + line for line in lines)))
+    return find_unsynchronized_gpu_timings([path])
+
+
+def test_a_sync_before_the_gpu_work_does_not_count(tmp_path: Path) -> None:
+    assert [f.shape for f in _measure(tmp_path, "cp.cuda.Device().synchronize()", "cp.matmul(a, b)")] == ["direct-gpu-call"]
+    assert _measure(tmp_path, "cp.matmul(a, b)", "cp.cuda.Device().synchronize()") == []
+
+
+def test_a_sync_reached_through_a_call_is_recognised(tmp_path: Path) -> None:
+    assert _measure(tmp_path, "cp.matmul(a, b)", "torch.cuda.current_stream().synchronize()") == []
+
+
+def test_a_file_flush_named_sync_is_not_a_device_sync(tmp_path: Path) -> None:
+    assert [f.shape for f in _measure(tmp_path, "cp.matmul(a, b)", "_sync_to_disk(a)")] == ["direct-gpu-call"]
+    assert _measure(tmp_path, "cp.matmul(a, b)", "_gpu_sync()") == []
+
+
+@pytest.mark.parametrize(
+    "imports,start,stop",
+    [
+        ("from time import perf_counter as pc", "pc()", "pc()"),
+        ("import timeit", "timeit.default_timer()", "timeit.default_timer()"),
+        ("from timeit import default_timer as clock_fn", "clock_fn()", "clock_fn()"),
+    ],
+)
+def test_aliased_and_timeit_timers_are_timers(tmp_path: Path, imports: str, start: str, stop: str) -> None:
+    source = f"{imports}\nimport cupy as cp\n\n\ndef measure(a, b):\n    t0 = {start}\n    cp.matmul(a, b)\n    return {stop} - t0\n"
+    path = _write(tmp_path, "m.py", source)
+    assert [f.shape for f in find_unsynchronized_gpu_timings([path])] == ["direct-gpu-call"]
+
+
+def test_module_level_benchmark_is_scanned(tmp_path: Path) -> None:
+    path = _write(tmp_path, "bench.py", "import time\nimport cupy as cp\n\nt0 = time.perf_counter()\ncp.matmul(a, b)\nprint(time.perf_counter() - t0)\n")
+    findings = find_unsynchronized_gpu_timings([path])
+    assert [(f.function, f.shape) for f in findings] == [("<module>", "direct-gpu-call")]
+    fixed = _write(
+        tmp_path,
+        "bench_fixed.py",
+        "import time\nimport cupy as cp\n\nt0 = time.perf_counter()\ncp.matmul(a, b)\ncp.cuda.Device().synchronize()\nprint(time.perf_counter() - t0)\n",
+    )
+    assert find_unsynchronized_gpu_timings([fixed]) == []
+
+
+def test_bom_and_unparsable_files_and_the_floor(tmp_path: Path) -> None:
+    bom = tmp_path / "bom.py"
+    bom.write_bytes(b"\xef\xbb\xbf" + _BODY.format(lines="    cp.matmul(a, b)").lstrip("\n").encode("utf-8"))
+    assert [f.shape for f in find_unsynchronized_gpu_timings([bom])] == ["direct-gpu-call"]
+    ok = _write(tmp_path, "ok.py", "x = 1\n")
+    assert_no_unsynchronized_gpu_timings([ok], root=tmp_path)
+    broken = _write(tmp_path, "broken.py", "def measure(:\n")
+    with pytest.raises(BaseException, match=r"broken.py"):
+        assert_no_unsynchronized_gpu_timings([ok, broken], root=tmp_path)
+    with pytest.raises(BaseException, match="parsed"):
+        assert_no_unsynchronized_gpu_timings([], root=tmp_path)

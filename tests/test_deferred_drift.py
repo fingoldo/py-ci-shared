@@ -40,12 +40,42 @@ def _meta(tmp_path: Path, entries: int) -> Path:
 
 
 class TestTheRatchet:
-    def test_a_missing_baseline_is_written_and_skips(self, tmp_path):
+    def test_a_missing_baseline_fails_and_is_not_written(self, tmp_path):
+        meta = _meta(tmp_path, 2)
+        baseline = tmp_path / "b.json"
+        with pytest.raises(pytest.fail.Exception, match="does not exist"):
+            assert_deferred_lists_not_grown(meta, baseline)
+        assert not baseline.exists()
+
+    def test_a_refresh_writes_the_baseline_and_skips(self, tmp_path):
         meta = _meta(tmp_path, 2)
         baseline = tmp_path / "b.json"
         with pytest.raises(pytest.skip.Exception):
-            assert_deferred_lists_not_grown(meta, baseline)
+            assert_deferred_lists_not_grown(meta, baseline, refresh=True)
         assert json.loads(baseline.read_text(encoding="utf-8")) == {"test_thing::_USER_DEFERRED_THINGS": 2}
+        assert_deferred_lists_not_grown(meta, baseline)
+
+    def test_the_env_refresh_reaches_xdist_workers(self, tmp_path, monkeypatch):
+        """An xdist worker's sys.argv never carries the flag; the env var (inherited by workers) does."""
+        meta = _meta(tmp_path, 3)
+        baseline = tmp_path / "b.json"
+        baseline.write_text(json.dumps({"test_thing::_USER_DEFERRED_THINGS": 2}), encoding="utf-8")
+        monkeypatch.setattr(sys, "argv", ["-c"])
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "debt")
+        with pytest.raises(pytest.skip.Exception):
+            assert_deferred_lists_not_grown(meta, baseline)
+        assert json.loads(baseline.read_text(encoding="utf-8")) == {"test_thing::_USER_DEFERRED_THINGS": 3}
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH")
+        assert_deferred_lists_not_grown(meta, baseline)
+
+    def test_the_floor_is_checked_before_a_refresh_writes(self, tmp_path):
+        meta = tmp_path / "test_meta"
+        meta.mkdir()
+        (meta / "test_empty.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+        baseline = tmp_path / "b.json"
+        with pytest.raises(pytest.fail.Exception, match="lost its subject"):
+            assert_deferred_lists_not_grown(meta, baseline, refresh=True)
+        assert not baseline.exists()
 
     def test_growth_fails_and_a_matching_baseline_passes(self, tmp_path):
         baseline = tmp_path / "b.json"

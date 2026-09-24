@@ -33,13 +33,18 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import SourceReadError, read_source, relative_posix
 
 # A git URL dependency, PEP 508 direct-reference form: `name @ git+URL[@ref]`. Captures the
 # WHOLE URL blob (ref, if any, still embedded) -- ref extraction is done separately in
 # _extract_ref, since a regex alone can't reliably tell an auth '@' (`git+https://user@host/...`)
 # apart from a ref '@' (`git+https://host/...@ref`) when only ONE '@' is present in the blob.
-_GIT_DEP_RE = re.compile(r"^\s*[\"']?[\w.-]+\s*@\s*(git\+[^\s\"'#]+)", re.MULTILINE)
-_FULL_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+# The name may carry extras (`foo[cli] @ git+...`).
+_GIT_DEP_RE = re.compile(r"^\s*[\"']?[\w.-]+(?:\s*\[[^\]]*\])?\s*@\s*(git\+[^\s\"'#]+)", re.MULTILINE)
+# Git accepts a SHA in either case; an uppercase one is still a full pin.
+_FULL_SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def _extract_ref(git_url: str) -> str | None:
@@ -108,7 +113,7 @@ def find_unpinned_git_dependencies(
         arrays are typically short enough that this is enough to locate
         the line.
     """
-    text = pyproject_path.read_text(encoding="utf-8")
+    text = read_source(pyproject_path)
     violations = []
     for m in _GIT_DEP_RE.finditer(text):
         git_url = m.group(1)
@@ -119,7 +124,42 @@ def find_unpinned_git_dependencies(
             violations.append("<no ref>")
         elif not _FULL_SHA_RE.match(ref):
             violations.append(ref)
+    violations.extend(_source_table_violations(text, allow_unpinned_url_prefixes))
     return violations
+
+
+def _source_table_violations(text: str, allow_unpinned_url_prefixes: Sequence[str]) -> list[str]:
+    """Git sources declared as tables: ``[tool.uv.sources] foo = { git = "...", rev = "..." }`` and poetry's
+    ``foo = { git = "...", branch/tag/rev = "..." }`` in ``[tool.poetry.*dependencies]`` / group dependencies. Only a
+    full-SHA ``rev`` pins; ``branch``/``tag`` or nothing is reported as ``name: branch=main``."""
+    from ._toml_compat import tomllib
+
+    try:
+        data = tomllib.loads(text)
+    except ValueError:
+        return []
+    tool = data.get("tool", {}) if isinstance(data, dict) else {}
+    tables: list[Any] = [tool.get("uv", {}).get("sources", {})]
+    poetry = tool.get("poetry", {})
+    tables += [poetry.get("dependencies", {}), poetry.get("dev-dependencies", {})]
+    tables += [group.get("dependencies", {}) for group in (poetry.get("group", {}) or {}).values() if isinstance(group, dict)]
+    out: list[str] = []
+    for table in tables:
+        if not isinstance(table, dict):
+            continue
+        for name, spec in table.items():
+            for entry in spec if isinstance(spec, list) else [spec]:
+                if not (isinstance(entry, dict) and "git" in entry):
+                    continue
+                url = str(entry["git"])
+                if any(url.startswith(prefix) or f"git+{url}".startswith(prefix) for prefix in allow_unpinned_url_prefixes):
+                    continue
+                rev = entry.get("rev")
+                if isinstance(rev, str) and _FULL_SHA_RE.match(rev):
+                    continue
+                how = next((f"{key}={entry[key]}" for key in ("rev", "branch", "tag") if key in entry), "<no ref>")
+                out.append(f"{name}: {how}")
+    return out
 
 
 def assert_all_git_dependencies_pinned(
@@ -162,11 +202,12 @@ def assert_all_git_dependencies_pinned(
 # was 8 commits behind master, so baselines refreshed that day were built with scanners no pin used.
 # ---------------------------------------------------------------------------------------------------------------------
 
-_SHA40 = r"([0-9a-f]{40})"
+_SHA40 = r"([0-9a-fA-F]{40})(?![0-9a-fA-F])"
 
 
 def _pin_patterns(name: str) -> list[re.Pattern[str]]:
-    n = re.escape(name)
+    # The name must start where a name starts: `notpyutilz.git@<sha>` is not a pin of `pyutilz`.
+    n = r"(?<![\w.-])" + re.escape(name)
     return [
         re.compile(rf"{n}\.git@{_SHA40}"),
         re.compile(rf"{n}\.git#{_SHA40}"),
@@ -175,32 +216,42 @@ def _pin_patterns(name: str) -> list[re.Pattern[str]]:
     ]
 
 
-def pinned_shas(files: Sequence[Path], name: str, *, root: Path | None = None) -> dict[str, list[str]]:
+def pinned_shas(files: Sequence[Path], name: str, *, root: Path | None = None, unreadable: Optional[list[str]] = None) -> dict[str, list[str]]:
     """``{sha: ["file:line", ...]}`` for every pin of *name* in *files*: ``<name>.git@<sha>``, ``<name>.git#<sha>``
-    (a uv.lock source), ``<name>-ref: <sha>`` (an action input) and ``git -C <name> checkout <sha>``."""
+    (a uv.lock source), ``<name>-ref: <sha>`` (an action input) and ``git -C <name> checkout <sha>``. SHAs are
+    lower-cased so one commit in two spellings is one pin. A file that cannot be read is appended to *unreadable*
+    (``path: why``) when given; it is never silently treated as holding no pins by the assert."""
     found: dict[str, list[str]] = {}
     patterns = _pin_patterns(name)
     for path in files:
+        rel = relative_posix(path, root) if root is not None else Path(path).as_posix()
         try:
-            text = path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
+            text = read_source(path)
+        except SourceReadError as exc:
+            if unreadable is not None:
+                unreadable.append(f"{rel}: {exc.message}")
             continue
-        rel = path.relative_to(root).as_posix() if root is not None and path.is_relative_to(root) else path.as_posix()
         for lineno, line in enumerate(text.splitlines(), 1):
             for pattern in patterns:
                 for sha in pattern.findall(line):
-                    found.setdefault(sha, []).append(f"{rel}:{lineno}")
+                    found.setdefault(sha.lower(), []).append(f"{rel}:{lineno}")
     return found
 
 
 def assert_pins_agree(files: Sequence[Path], name: str, *, root: Path | None = None, min_pins: int = 1) -> str:
-    """Fail unless every pin of *name* in *files* names one commit, and at least *min_pins* were found; return it."""
+    """Fail unless every pin of *name* in *files* names one commit, every file could be read, and at least *min_pins*
+    were found; return the commit ("" when *min_pins* is 0 and there are none)."""
     import pytest
 
-    found = pinned_shas(list(files), name, root=root)
+    unreadable: list[str] = []
+    found = pinned_shas(list(files), name, root=root, unreadable=unreadable)
+    if unreadable:
+        pytest.fail(f"{len(unreadable)} file(s) could not be read, so their pins of {name} are unknown -- Fix them:\n  " + "\n  ".join(unreadable))
     total = sum(len(v) for v in found.values())
     if total < min_pins:
         pytest.fail(f"found {total} pin(s) of {name}, expected at least {min_pins} -- Check the file list and the pin spellings")
+    if not found:
+        return ""
     if len(found) > 1:
         detail = "\n".join(f"  {sha[:12]}: {', '.join(where)}" for sha, where in sorted(found.items(), key=lambda kv: -len(kv[1])))
         pytest.fail(f"{name} is pinned to {len(found)} different commits; Update every pin to one commit:\n{detail}")
@@ -221,9 +272,23 @@ def _git(args: list[str], cwd: Path):
     return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
 
 
+_INSTALL_DIRS = frozenset({"site-packages", "dist-packages"})
+
+
 def _checkout_root(path: Path) -> Path | None:
+    """The git checkout that OWNS *path*, or None.
+
+    Climbing to the nearest ``.git`` is not enough: a package installed into ``repo/.venv/.../site-packages`` sits under
+    the CONSUMING repository's ``.git``, and reading that repository's HEAD as the dependency's was wrong. So the climb
+    stops at an install directory, and the checkout found must track the file.
+    """
     for parent in [path, *path.parents]:
+        if parent.name in _INSTALL_DIRS:
+            return None
         if (parent / ".git").exists():
+            probe = path if path.is_file() else next((c for c in sorted(path.glob("*.py"))), path)
+            if _git(["ls-files", "--error-unmatch", "--", relative_posix(probe, parent)], parent).returncode != 0:
+                return None
             return parent
     return None
 
@@ -259,7 +324,10 @@ def installed_pin_problem(package: str, pinned_sha: str, *, dist: str | None = N
         if _git(["cat-file", "-e", f"{pinned_sha}^{{commit}}"], root).returncode != 0:
             return f"{package} is an editable checkout at {root} ({head[:12]}) without the pinned commit {pinned_sha[:12]}; Fetch and update it", None
         if _git(["merge-base", "--is-ancestor", pinned_sha, "HEAD"], root).returncode != 0:
-            return f"{package} at {root} is at {head[:12]}, which does not include the pinned commit {pinned_sha[:12]}; Update the checkout to the pin or past it", None
+            return (
+                f"{package} at {root} is at {head[:12]}, which does not include the pinned commit {pinned_sha[:12]}; Update the checkout to the pin or past it",
+                None,
+            )
         return None, None
     commit = _direct_url_commit(dist or package)
     if commit is None:

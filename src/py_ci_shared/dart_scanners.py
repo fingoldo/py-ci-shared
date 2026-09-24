@@ -45,6 +45,7 @@ Usage (from a repo's own ``tool/meta/scanners.py``)::
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable, Iterable, Sequence
 
@@ -59,14 +60,93 @@ def _line_of(source: str, index: int) -> int:
 
 
 def _key(found: dict, rel: str) -> str:
-    """Ordinal-within-file key, so an edit above a violation does not renumber every entry."""
-    ordinal = sum(1 for k in found if k.startswith(rel + "#"))
-    return f"{rel}#{ordinal}"
+    """A provisional, unique key while a scanner collects; :func:`_rekey` turns it into the stable one."""
+    return f"{rel}#{len(found)}"
+
+
+_LINE_REF_RE = re.compile(r"\(line \d+\)")
+
+
+def _rekey(found: dict) -> dict:
+    """``{rel#<hash of the finding>[#n]: description}``: the ratchet sees WHAT was found, not only how many.
+
+    A key built from an ordinal alone let a fixed finding be swapped for a new one in the same file with no change
+    to the key set. The hash covers the description minus its ``(line N)``, and the description names the matched
+    text where the rule has one, so an edit above a finding keeps its key while a changed finding gets a new one.
+    """
+    out: dict[str, str] = {}
+    seen: dict[str, int] = {}
+    for key, description in found.items():
+        rel = key.rsplit("#", 1)[0]
+        digest = hashlib.sha1(_LINE_REF_RE.sub("", description).encode("utf-8")).hexdigest()[:10]
+        base = f"{rel}#{digest}"
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        out[base if n == 0 else f"{base}#{n}"] = description
+    return out
 
 
 def _strip_comments(source: str) -> str:
-    source = re.sub(r"/\*.*?\*/", "", source, flags=re.DOTALL)
-    return re.sub(r"//[^\n]*", "", source)
+    """*source* with ``//`` and (nestable) ``/* */`` comments removed, string literals left intact.
+
+    A regex strip ran inside strings, so ``Text('Visit https://x.com now')`` lost the rest of its line and hid any
+    finding on it. Newlines inside a removed block comment are kept, so line numbers still match the file.
+    """
+    out: list[str] = []
+    i, n = 0, len(source)
+    while i < n:
+        c = source[i]
+        if source.startswith("//", i):
+            end = source.find("\n", i)
+            i = n if end == -1 else end
+            continue
+        if source.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if source.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif source.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            out.append("\n" * source.count("\n", i, j))
+            i = j
+            continue
+        if c in "'\"":
+            j = _string_end(source, i)
+            out.append(source[i:j])
+            i = j
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _string_end(source: str, i: int) -> int:
+    """Index just past the Dart string literal opening at *i* (single/double, triple, raw ``r'...'``)."""
+    raw = i > 0 and source[i - 1] == "r" and (i < 2 or not (source[i - 2].isalnum() or source[i - 2] == "_"))
+    quote = source[i] * 3 if source.startswith(source[i] * 3, i) else source[i]
+    j = i + len(quote)
+    n = len(source)
+    while j < n:
+        if not raw and source[j] == "\\":
+            j += 2
+            continue
+        if source.startswith(quote, j):
+            return j + len(quote)
+        if len(quote) == 1 and source[j] == "\n":
+            return j
+        if not raw and source.startswith("${", j):
+            depth, j = 1, j + 2
+            while j < n and depth:
+                if source[j] in "'\"":
+                    j = _string_end(source, j)
+                    continue
+                depth += {"{": 1, "}": -1}.get(source[j], 0)
+                j += 1
+            continue
+        j += 1
+    return n
 
 
 def _balanced_body(source: str, open_index: int, opener: str = "{", closer: str = "}") -> str:
@@ -145,7 +225,7 @@ def scan_painter_animation(files: Iterable[str], read: Reader) -> dict:
                 f"{_line_of(clean, activate.start())}) - on the web Enter maps to ButtonActivateIntent, "
                 f"so the key does nothing there"
             )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -179,7 +259,7 @@ def scan_repaint_isolation(files: Iterable[str], read: Reader) -> dict:
                     f"AnimatedBuilder rebuilding an image with no `child:` slot (line "
                     f"{_line_of(clean, ab.start())}) - the static subtree is rebuilt every frame"
                 )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -251,7 +331,7 @@ def scan_hardcoded_ui_strings(
                 found[_key(found, rel)] = (
                     f"raw {m.group(0)} (line {_line_of(clean, m.start())}) outside a palette - it " f"cannot follow the theme and no contrast check can see it"
                 )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -348,7 +428,7 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
                 found[_key(found, rel)] = (
                     f"tooltip duplicates the semantics label (line {_line_of(clean, m.start())}) " f"with no excludeFromSemantics - the name is announced twice"
                 )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -382,7 +462,7 @@ def scan_non_directional_layout(files: Iterable[str], read: Reader, *, skip_mark
                 f"physical side, so the "
                 f"layout does not mirror in a right-to-left locale. Use the Directional form."
             )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -391,6 +471,7 @@ def scan_non_directional_layout(files: Iterable[str], read: Reader, *, skip_mark
 _ISO_WITHOUT_UTC = re.compile(r"(?<!toUtc\(\))\.toIso8601String\(\)")
 _TO_UTC_ISO = re.compile(r"\.toUtc\(\)\s*\.toIso8601String\(\)")
 _JSON_DECODE = re.compile(r"\bjsonDecode\s*\(")
+_TRY_BLOCK_RE = re.compile(r"\btry\s*\{")
 # `orElse: () => Type.value` is an enum default; `orElse: () => list.first` is a list fallback,
 # which is ordinary and correct. The capitalised head is what distinguishes them.
 _ENUM_DEFAULT = re.compile(r"orElse:\s*\(\)\s*=>\s*[A-Z]\w*\.\w+")
@@ -428,7 +509,7 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
 
         for m in _JSON_DECODE.finditer(clean):
             window = clean[max(0, m.start() - 600) : m.start()]
-            if "try" not in window:
+            if not _TRY_BLOCK_RE.search(window):
                 found[_key(found, rel)] = f"jsonDecode outside a try (line {_line_of(clean, m.start())}) - one corrupt " f"record throws past the caller"
 
         for m in _ENUM_DEFAULT.finditer(clean):
@@ -451,7 +532,7 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
                 f"{_line_of(clean, socket_hit.start())}) - the web build never throws SocketException, so "
                 f"this branch is dead there"
             )
-    return found
+    return _rekey(found)
 
 
 # --------------------------------------------------------------------------------------------
@@ -460,7 +541,7 @@ def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
 _DATETIME_NOW = re.compile(r"\bDateTime\.now\(\)")
 # A write that is returned (`=> _prefs.setBool(...)`, `return prefs.setString(...)`) hands the
 # future to the caller, which is as awaited as awaiting it here.
-_PREFS_WRITE = re.compile(r"(?<![\w.])((?:await\s+|unawaited\(\s*|=>\s*|return\s+)?)\w*[Pp]refs\.set\w+\(")
+_PREFS_WRITE = re.compile(r"(?<![\w.])((?:await\s+|unawaited\(\s*|=>\s*|return\s+)?)(?:\w+(?:\([^()]*\))?\.)*\w*[Pp]refs\.set\w+\(")
 _TOSTRING_PII = re.compile(r"String\s+toString\(\)[^;{]*(?:=>|\{)[^;}]*\$\{?(?:\w+\.)?(displayName|email|avatarUrl|fullName)")
 
 
@@ -498,7 +579,7 @@ def scan_provider_state_hygiene(
                 f"toString() interpolates {m.group(1)} (line {_line_of(clean, m.start())}) - "
                 f"personal data lands in every log line and crash report that prints this object"
             )
-    return found
+    return _rekey(found)
 
 
 SCANNERS: dict[str, Callable[..., dict]] = {

@@ -37,15 +37,21 @@ conftest.py)::
     def pytest_addoption(parser):
         register_refresh_option(parser)
 
-Deliberately dependency-light: ``pytest`` and ``orjson`` are imported
-LAZILY inside the functions below, matching ``code_audit_meta.py``'s own
-convention, so importing ``py_ci_shared`` itself never requires them.
+Deliberately dependency-light: ``pytest`` is imported LAZILY inside the functions below, matching
+``code_audit_meta.py``'s own convention, so importing ``py_ci_shared`` itself never requires it.
+
+A missing baseline FAILS; it is created only by a refresh (``--refresh-loc-budget-baseline``, the
+``PY_CI_SHARED_REFRESH=loc-budget`` env var that xdist workers inherit, or ``refresh=True``).
 """
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import SourceReadError, atomic_write_text, dump_json, read_source, refresh_requested, register_refresh_options, relative_posix
 
 REFRESH_FLAG = "--refresh-loc-budget-baseline"
 
@@ -61,46 +67,52 @@ def register_refresh_option(parser) -> None:
     consuming repo's conftest.py must call this from its own
     ``pytest_addoption``.
     """
-    try:
-        parser.addoption(
-            REFRESH_FLAG,
-            action="store_true",
-            default=False,
-            help="rewrite the LOC-budget baseline JSON instead of comparing (intentional split/shrink)",
-        )
-    except ValueError:
-        pass  # already registered (e.g. a repo with more than one conftest.py in the chain)
+    register_refresh_options(parser, [REFRESH_FLAG], help_suffix="LOC-budget baseline JSON (intentional split/shrink)")
 
 
-def _refresh_requested() -> bool:
-    import sys
-
-    return REFRESH_FLAG in sys.argv
+def _refresh_requested(request: Any = None) -> bool:
+    return refresh_requested(REFRESH_FLAG, request)
 
 
 def _loc(path: Path) -> int:
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            return sum(1 for _ in fh)
-    except OSError:
-        return 0
+    """Lines in *path*, decoded as the interpreter would (BOM stripped). Raises ``SourceReadError`` for a file that
+    cannot be read or decoded: a missing or undecodable file is not a zero-line file."""
+    text = read_source(path)
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
+
+
+def _measure(files: Iterable[Path], root: Path, limit: int) -> "tuple[dict[str, int], list[str], int]":
+    """``(oversized {relpath: loc}, unreadable "relpath: why", files measured)``."""
+    out: "dict[str, int]" = {}
+    unreadable: "list[str]" = []
+    measured = 0
+    for p in files:
+        rel = relative_posix(p, root)
+        try:
+            n = _loc(Path(p))
+        except SourceReadError as exc:
+            unreadable.append(f"{rel}: {exc.message}")
+            continue
+        measured += 1
+        if n > limit:
+            out[rel] = n
+    return out, unreadable, measured
 
 
 def oversized_files(files: Iterable[Path], root: Path, limit: int = DEFAULT_LOC_LIMIT) -> "dict[str, int]":
-    """``{path relative to root: loc}`` for every file over *limit* -- the map a baseline records."""
+    """``{path relative to root: loc}`` for every file over *limit* -- the map a baseline records. Raises
+    ``SourceReadError`` on a file that cannot be read."""
     out: "dict[str, int]" = {}
     for p in files:
-        n = _loc(p)
+        n = _loc(Path(p))
         if n > limit:
-            out[p.relative_to(root).as_posix()] = n
+            out[relative_posix(p, root)] = n
     return out
 
 
 def write_loc_baseline(path: Path, current: "dict[str, int]") -> None:
-    """Write *current* as the baseline, keys sorted, for a repo's own ``regenerate_baseline`` or a refresh."""
-    import orjson
-
-    path.write_text(orjson.dumps(dict(sorted(current.items())), option=orjson.OPT_INDENT_2 | orjson.OPT_SORT_KEYS).decode("utf-8"), encoding="utf-8")
+    """Write *current* as the baseline, keys sorted, atomically, for a repo's own ``regenerate_baseline`` or a refresh."""
+    atomic_write_text(path, dump_json(dict(sorted(current.items()))))
 
 
 def ratchet_problems(
@@ -150,13 +162,18 @@ def assert_no_new_oversized_file(
     limit: int = DEFAULT_LOC_LIMIT,
     growth_slack: int = DEFAULT_GROWTH_SLACK,
     one_way: bool = True,
+    *,
+    min_files: int = 1,
+    refresh: Optional[bool] = None,
+    request: Any = None,
 ) -> None:
     """Fail if any file in ``files`` exceeds ``limit`` lines UNLESS it's
     already in the baseline (grandfathered), or fail if a grandfathered
     file grew by more than ``growth_slack`` lines past its captured size.
-    Seeds/refreshes ``baseline_path`` (first run, or the ``--refresh-loc-budget-baseline``
-    flag) and ``pytest.skip()``s that run instead of comparing. Call this
-    directly as the body of a ``test_*`` function.
+    Also fails on a file that cannot be read, on fewer than *min_files* measured files, and on a missing
+    baseline. A refresh (*refresh*, the ``--refresh-loc-budget-baseline`` flag via *request* or argv, or
+    ``PY_CI_SHARED_REFRESH``) rewrites ``baseline_path`` and ``pytest.skip()``s that run instead of comparing.
+    Call this directly as the body of a ``test_*`` function.
 
     Args:
         files: every production ``.py`` file to consider -- the caller
@@ -176,16 +193,21 @@ def assert_no_new_oversized_file(
             or dropped under the limit, so its ceiling follows it down (see
             ``ratchet_problems``). On by default; False keeps the two original rules.
     """
-    import orjson
     import pytest
 
-    current = oversized_files(files, root, limit)
+    current, unreadable, measured = _measure(files, root, limit)
+    if measured < min_files:
+        pytest.fail(f"only {measured} file(s) measured; expected at least {min_files} -- Check the file list, this would check nothing")
+    if unreadable:
+        pytest.fail(f"{len(unreadable)} file(s) could not be read, so their size is unknown -- Fix them:\n  " + "\n  ".join(unreadable))
 
-    if _refresh_requested() or not baseline_path.exists():
+    if refresh if refresh is not None else _refresh_requested(request):
         write_loc_baseline(baseline_path, current)
         pytest.skip(f"LOC-budget baseline refreshed at {baseline_path.name} ({len(current)} grandfathered file(s))")
+    if not baseline_path.is_file():
+        pytest.fail(f"LOC-budget baseline {baseline_path} does not exist, so nothing was compared. Create it with {REFRESH_FLAG}")
 
-    baseline: dict[str, int] = orjson.loads(baseline_path.read_bytes())
+    baseline: dict[str, int] = json.loads(baseline_path.read_text(encoding="utf-8-sig"))
 
     problems = ratchet_problems(baseline, current, limit=limit, growth_slack=growth_slack, one_way=one_way)
 

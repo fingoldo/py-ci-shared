@@ -92,3 +92,40 @@ def test_assert_is_shrink_only(project):
         assert_disposition_tests_exist([audit], project)
     with pytest.raises(pytest.fail.Exception, match="now resolve"):
         assert_disposition_tests_exist([_audit(project, "**Disposition:** RESOLVED by `TestGuard`.\n")], project, known=known)
+
+
+def test_a_table_row_disposition_is_checked(project):
+    audit = _audit(project, "| id | text |\n|----|------|\n| Disposition: fixed, test `test_ghost` |\n| X-2 | Disposition: fixed, test `test_free` |\n")
+    assert find_missing_test_references([audit], project) == ["01.md: `test_ghost`: no test of that name in tests/"]
+
+
+def test_a_backslash_path_is_normalised(project):
+    audit = _audit(project, "**Disposition:** RESOLVED in `tests\\test_guard.py::TestGuard::test_refuses` and `tests\\test_gone.py`.\n")
+    assert find_missing_test_references([audit], project) == ["01.md: `tests/test_gone.py`: no such test file"]
+
+
+def test_a_parametrised_id_names_its_test(project):
+    audit = _audit(project, "**Disposition:** RESOLVED by `test_free[case-1]` and `tests/test_guard.py::test_free[x]` and `test_ghost[y]`.\n")
+    assert find_missing_test_references([audit], project) == ["01.md: `test_ghost`: no test of that name in tests/"]
+
+
+def test_a_pyi_path_is_not_read_as_a_py_file(project):
+    (project / "tests" / "stubs.pyi").write_text("def f() -> int: ...\n", encoding="utf-8")
+    audit = _audit(project, "**Disposition:** RESOLVED; typed in `tests/stubs.pyi`.\n")
+    assert find_missing_test_references([audit], project) == []
+
+
+def test_class_member_references_are_class_scoped(project):
+    (project / "tests" / "test_b.py").write_text("class TestA:\n    pass\n\n\nclass TestB:\n    def test_b(self):\n        pass\n", encoding="utf-8")
+    audit = _audit(project, "**Disposition:** RESOLVED by `tests/test_b.py::TestA::test_b` and `TestA::test_b` and `TestB::test_b`.\n")
+    assert find_missing_test_references([audit], project) == [
+        "01.md: `TestA::test_b`: no test of that name in tests/",
+        "01.md: `tests/test_b.py::test_b`: not defined in that file",
+    ]
+
+
+def test_an_unparsable_test_file_is_reported(project):
+    (project / "tests" / "test_broken.py").write_text("def test_x(:\n", encoding="utf-8")
+    audit = _audit(project, "**Disposition:** RESOLVED by `TestGuard`.\n")
+    problems = find_missing_test_references([audit], project)
+    assert len(problems) == 1 and "test_broken.py: cannot be parsed" in problems[0]

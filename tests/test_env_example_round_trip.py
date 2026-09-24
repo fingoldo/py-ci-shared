@@ -95,3 +95,32 @@ def test_a_check_that_tried_nothing_fails(tmp_path: Path) -> None:
 def test_the_assert_names_the_line(tmp_path: Path) -> None:
     with pytest.raises(pytest.fail.Exception, match=r"\.env\.example:2: LOG_LEVEL='LOUD'"):
         assert_env_example_loads(Fixed, _env(tmp_path, "# comment\nLOG_LEVEL=LOUD\n"), base_env=BASE)
+
+
+def test_a_bom_does_not_drop_the_first_assignment(tmp_path: Path) -> None:
+    path = tmp_path / ".env.example"
+    path.write_bytes(b"\xef\xbb\xbfFIRST=1\nSECOND=2\n")
+    assert [(n, v) for _, n, v in documented_values(path)] == [("FIRST", "1"), ("SECOND", "2")]
+
+
+def test_a_hash_inside_quotes_is_part_of_the_value(tmp_path: Path) -> None:
+    env = _env(tmp_path, "X=\"a #b\"   # note\nY='c #d'\nZ=e #f\n")
+    assert [(n, v) for _, n, v in documented_values(env)] == [("X", "a #b"), ("Y", "c #d"), ("Z", "e")]
+
+
+def test_export_and_spaced_assignments_are_read(tmp_path: Path) -> None:
+    env = _env(tmp_path, "export Y=2\nX = v\n# export Z = 3\nlower=4\n")
+    assert [(n, v) for _, n, v in documented_values(env)] == [("Y", "2"), ("X", "v"), ("Z", "3")]
+
+
+def test_alias_choices_and_alias_path_are_env_names() -> None:
+    from pydantic import AliasChoices, AliasPath, Field
+
+    class Aliased(BaseSettings):
+        db_url: str = Field("x", validation_alias=AliasChoices("DB_URL", "DATABASE_URL"))
+        nested: str = Field("y", validation_alias=AliasPath("NESTED_JSON", "key"))
+        plain: str = "z"
+
+    from py_ci_shared.env_example_round_trip import env_names
+
+    assert env_names(Aliased) == {"DB_URL": "db_url", "DATABASE_URL": "db_url", "NESTED_JSON": "nested", "PLAIN": "plain"}

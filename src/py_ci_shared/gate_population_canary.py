@@ -49,6 +49,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+from ._core import SourceError, parse_file
+
 CANDIDATE_FUNCTION = "_candidate_files"
 CANDIDATE_CONSTANT = "_CANDIDATE_FILES"
 CANARY = "_CANARY"
@@ -57,24 +59,39 @@ OFFENDING_FUNCTION = "_build_offending_set"
 MIN_REASON_LENGTH = 20
 
 
+_TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
+
+
 def _module_level_names(path: Path) -> set[str]:
-    """Every name a module binds at module level: functions, classes and plain assignments.
+    """Every name a module binds at module level: functions, classes, assignments and imports, including those under a
+    module-level ``if``/``try``/``with`` (``try: from _shared import _candidate_files``).
 
     Read from the source rather than by importing, so the convention check costs one parse per gate and cannot be
-    defeated by a module that fails to import in the checking environment.
+    defeated by a module that fails to import in the checking environment. Raises ``py_ci_shared._core.SourceError``
+    when the file cannot be read or parsed: an unreadable gate is not a gate without a population.
     """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError):
-        return set()
+    tree = parse_file(path)
     names: set[str] = set()
-    for node in tree.body:
+    stack: list[ast.stmt] = list(tree.body)
+    while stack:
+        node = stack.pop(0)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
         elif isinstance(node, ast.Assign):
-            names |= {t.id for t in node.targets if isinstance(t, ast.Name)}
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names |= {n.id for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            names |= {(a.asname or a.name).split(".", 1)[0] for a in node.names if a.name != "*"}
+        elif isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+            stack.extend(node.body)
+            stack.extend(getattr(node, "orelse", []))
+        elif isinstance(node, _TRY_TYPES):
+            stack.extend(getattr(node, "body", []))
+            for handler in getattr(node, "handlers", []):
+                stack.extend(handler.body)
+            stack.extend(getattr(node, "orelse", []))
+            stack.extend(getattr(node, "finalbody", []))
     return names
 
 
@@ -86,11 +103,18 @@ def gate_modules(tests_dir: Path) -> list[Path]:
 def find_gates_without_population(tests_dir: Path, exempt: frozenset[str] = frozenset()) -> list[str]:
     """Gate modules that build an offending set without declaring the population they built it from."""
     declared = {CANDIDATE_FUNCTION, CANDIDATE_CONSTANT, EXPECTED_EMPTY}
-    return [
-        path.name
-        for path in gate_modules(tests_dir)
-        if path.name not in exempt and OFFENDING_FUNCTION in (names := _module_level_names(path)) and not (names & declared)
-    ]
+    out: list[str] = []
+    for path in gate_modules(tests_dir):
+        if path.name in exempt:
+            continue
+        try:
+            names = _module_level_names(path)
+        except SourceError as exc:
+            out.append(f"{path.name} ({exc.kind} at line {exc.line or 1}: {exc.message})")
+            continue
+        if OFFENDING_FUNCTION in names and not (names & declared):
+            out.append(path.name)
+    return out
 
 
 def load_gate(path: Path) -> ModuleType:
@@ -142,7 +166,10 @@ def gate_canaries(tests_dir: Path) -> list[tuple[Path, str]]:
     for path in gate_modules(tests_dir):
         if CANARY not in _module_level_names(path):
             continue
-        out.extend((path, canary) for canary in getattr(load_gate(path), CANARY, ()))
+        canaries = getattr(load_gate(path), CANARY, ())
+        if isinstance(canaries, (str, bytes)):
+            raise TypeError(f"{path.name}: {CANARY} must be a tuple/list of strings; a bare string would be checked one character at a time")
+        out.extend((path, canary) for canary in canaries)
     return out
 
 

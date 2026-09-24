@@ -168,3 +168,71 @@ def test_a_file_that_does_not_parse_is_skipped_rather_than_raising(tmp_path: Pat
     _module(tmp_path, _probe("_GPU_AVAILABLE = None"), name="good.py")
     found = find_latched_availability_flags([tmp_path])
     assert [f.path.name for f in found] == ["good.py"]
+
+
+def test_a_nested_probe_is_reported_once_under_its_own_function(tmp_path: Path):
+    lines = [
+        "_GPU_AVAILABLE = None",
+        "",
+        "",
+        "def outer():",
+        "    def inner():",
+        "        global _GPU_AVAILABLE",
+        "        try:",
+        "            import cupy",
+        "        except Exception:",
+        "            _GPU_AVAILABLE = False",
+        "    return inner",
+    ]
+    found = find_latched_availability_flags([_module(tmp_path, lines)])
+    assert [(f.flag, f.function, f.lineno) for f in found] == [("_GPU_AVAILABLE", "outer.<locals>.inner", 10)]
+
+
+def test_an_outer_global_does_not_reach_into_a_nested_function(tmp_path: Path):
+    lines = [
+        "_GPU_AVAILABLE = None",
+        "",
+        "",
+        "def outer():",
+        "    global _GPU_AVAILABLE",
+        "    def inner():",
+        "        try:",
+        "            import cupy",
+        "        except Exception:",
+        "            _GPU_AVAILABLE = False",
+        "    return inner",
+    ]
+    assert find_latched_availability_flags([_module(tmp_path, lines)]) == []
+
+
+def test_except_star_is_a_broad_handler_too(tmp_path: Path):
+    import sys
+
+    if sys.version_info < (3, 11):
+        pytest.skip("except* needs Python 3.11")
+    found = find_latched_availability_flags([_module(tmp_path, _probe("_GPU_AVAILABLE = None", handler="except* Exception:"))])
+    assert [f.flag for f in found] == ["_GPU_AVAILABLE"]
+
+
+@pytest.mark.parametrize("handler", ["except builtins.Exception:", "except (ValueError, builtins.BaseException):", "except E:"])
+def test_builtins_and_aliased_exception_are_broad(tmp_path: Path, handler: str):
+    lines = ["import builtins", "from builtins import Exception as E", *_probe("_GPU_AVAILABLE = None", handler=handler)]
+    assert [f.flag for f in find_latched_availability_flags([_module(tmp_path, lines)])] == ["_GPU_AVAILABLE"]
+
+
+def test_a_narrow_attribute_handler_is_not_broad(tmp_path: Path):
+    lines = ["import requests", *_probe("_GPU_AVAILABLE = None", handler="except requests.Timeout:")]
+    assert find_latched_availability_flags([_module(tmp_path, lines)]) == []
+
+
+def test_bom_unparsable_and_empty_corpora(tmp_path: Path):
+    (tmp_path / "bom.py").write_bytes(b"\xef\xbb\xbf" + (NEWLINE.join(_probe("_GPU_AVAILABLE = None")) + NEWLINE).encode("utf-8"))
+    assert [f.flag for f in find_latched_availability_flags([tmp_path])] == ["_GPU_AVAILABLE"]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(AssertionError, match="parsed"):
+        assert_no_latched_availability_flags([empty])
+    _module(empty, ["def f(:"], name="broken.py")
+    _module(empty, ["x = 1"], name="ok.py")
+    with pytest.raises(AssertionError, match=r"broken.py"):
+        assert_no_latched_availability_flags([empty])

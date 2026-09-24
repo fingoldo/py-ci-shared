@@ -22,25 +22,62 @@ import re
 from pathlib import Path
 from collections.abc import Iterable, Mapping, Sequence
 
-__all__ = ["assert_every_dataclass_has_a_case", "find_dataclasses"]
+from ._core import ImportAliases, ScanResult, scan_python
+
+__all__ = ["assert_every_dataclass_has_a_case", "find_dataclass_sites", "find_dataclasses"]
 
 
-def _is_dataclass_decorator(node: ast.expr) -> bool:
+def _is_dataclass_decorator(node: ast.expr, aliases: ImportAliases | None = None) -> bool:
+    """``@dataclass``, ``@dataclasses.dataclass`` (with or without arguments), and any alias of either
+    (``from dataclasses import dataclass as dc``, ``import dataclasses as dcs``, ``pydantic.dataclasses.dataclass``)."""
     target = node.func if isinstance(node, ast.Call) else node
-    if isinstance(target, ast.Name):
-        return target.id == "dataclass"
-    return isinstance(target, ast.Attribute) and target.attr == "dataclass"
+    qualified = (aliases or ImportAliases()).qualified_name(target)
+    if qualified is None:
+        return False
+    return qualified == "dataclass" or qualified.endswith(".dataclass")
+
+
+def _scan(paths: Iterable[Path]) -> ScanResult:
+    return scan_python([Path(p) for p in paths])
+
+
+def _sites(scan: ScanResult, name_pattern: str) -> list[tuple[str, Path, int]]:
+    rx = re.compile(name_pattern)
+    out: list[tuple[str, Path, int]] = []
+    for parsed in scan:
+        aliases = ImportAliases.from_tree(parsed.tree)
+        out.extend(
+            (node.name, parsed.path, node.lineno)
+            for node in ast.walk(parsed.tree)
+            if isinstance(node, ast.ClassDef) and rx.fullmatch(node.name) and any(_is_dataclass_decorator(d, aliases) for d in node.decorator_list)
+        )
+    return out
+
+
+def find_dataclass_sites(paths: Iterable[Path], name_pattern: str = r".*") -> list[tuple[str, str]]:
+    """``[(class name, "path:line")]`` for every matching ``@dataclass`` class, same-named classes kept apart."""
+    return [(name, f"{path.as_posix()}:{line}") for name, path, line in _sites(_scan(paths), name_pattern)]
 
 
 def find_dataclasses(paths: Iterable[Path], name_pattern: str = r".*") -> dict[str, str]:
-    """``{class name: "path:line"}`` for every ``@dataclass`` class whose name fully matches ``name_pattern``."""
-    rx = re.compile(name_pattern)
+    """``{class name: "path:line"}`` for every ``@dataclass`` class whose name fully matches ``name_pattern``.
+
+    Two classes with one name keep the first site here; :func:`find_dataclass_sites` lists both, and
+    :func:`assert_every_dataclass_has_a_case` requires each to be named by path.
+    """
     out: dict[str, str] = {}
-    for path in sorted(paths):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.ClassDef) and rx.fullmatch(node.name) and any(_is_dataclass_decorator(d) for d in node.decorator_list):
-                out[node.name] = f"{path.as_posix()}:{node.lineno}"
+    for name, where in find_dataclass_sites(paths, name_pattern):
+        out.setdefault(name, where)
     return out
+
+
+def _names(entry: str, path: Path, name: str) -> bool:
+    """Whether a covered/exempt *entry* names the class *name* declared in *path*: ``Name`` or ``<path suffix>::Name``."""
+    if "::" not in entry:
+        return entry == name
+    where, _, cls = entry.rpartition("::")
+    posix = path.as_posix()
+    return cls == name and (posix == where or posix.endswith("/" + where.lstrip("/")))
 
 
 def assert_every_dataclass_has_a_case(
@@ -49,16 +86,50 @@ def assert_every_dataclass_has_a_case(
     *,
     name_pattern: str = r".*",
     exempt: Mapping[str, str] = {},
+    min_files: int = 1,
 ) -> None:
-    """Fail unless every matching dataclass is in ``covered`` or in ``exempt`` with a reason."""
-    declared = find_dataclasses(paths, name_pattern)
-    covered_set, exempt_set = set(covered), set(exempt)
-    missing = {name: where for name, where in declared.items() if name not in covered_set | exempt_set}
+    """Fail unless every matching dataclass is in ``covered`` or in ``exempt`` with a reason.
+
+    An entry is the class name, or ``path::Name`` (any trailing part of the path) when two files declare a class of
+    that name: a bare name is then ambiguous and fails. Also fails when fewer than *min_files* files parsed and when
+    any file could not be parsed.
+    """
+    scan = _scan(paths)
+    scan.min_files = min_files
+    messages: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        messages.append(str(exc))
+    if scan.unparsed:
+        messages.append("these files could not be parsed, so their dataclasses were not checked: " + "; ".join(p.render() for p in scan.unparsed))
+    sites = _sites(scan, name_pattern)
+    per_name: dict[str, int] = {}
+    for name, _, _ in sites:
+        per_name[name] = per_name.get(name, 0) + 1
+    entries = list(covered) + list(exempt)
+    missing: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    used: set[str] = set()
+    for name, path, line in sites:
+        hits = [e for e in entries if _names(e, path, name)]
+        qualified = [e for e in hits if "::" in e]
+        if per_name[name] > 1 and not qualified:
+            if hits:
+                ambiguous.add(name)
+            else:
+                missing[f"{path.as_posix()}::{name}"] = f"{path.as_posix()}:{line}"
+            used.update(hits)
+            continue
+        if not hits:
+            missing[name] = f"{path.as_posix()}:{line}"
+        used.update(hits)
     blank = [name for name, reason in exempt.items() if not reason.strip()]
-    stale = sorted((covered_set | exempt_set) - set(declared))
-    messages = []
+    stale = sorted(set(entries) - used)
     if missing:
         messages.append(f"these dataclasses have no case; add one, or an exemption with the reason: {missing}")
+    if ambiguous:
+        messages.append(f"these names are declared by more than one dataclass; name each as 'path::Name': {sorted(ambiguous)}")
     if blank:
         messages.append(f"every exemption needs a reason: {blank}")
     if stale:

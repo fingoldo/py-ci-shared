@@ -45,6 +45,8 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from ._core import SourceReadError, read_source
+
 # `[ -f x ] && cmd`, `[ -x x ] && cmd`, `command -v x >/dev/null && cmd` on one line: the `&&` form
 # has no else branch at all, so a missing file is indistinguishable from a passing check.
 _INLINE_GUARD_RE = re.compile(r"^\s*(?:\[\s*-[fxe]\s+[^\]]+\]|command\s+-v\s+\S+[^&|]*)\s*&&\s*\S")
@@ -53,7 +55,13 @@ _IF_GUARD_RE = re.compile(r"^\s*if\s+(?:\[\s*-[fxe]\s+|command\s+-v\s+)")
 _ELSE_RE = re.compile(r"^\s*else\b")
 _FI_RE = re.compile(r"^\s*fi\b")
 _LOUD_RE = re.compile(r"\bexit\s+[1-9]|\bWARNING\b|\bERROR\b|\bMISSING\b", re.IGNORECASE)
-_GIT_ADD_ALL_RE = re.compile(r"^\s*git\s+add\s+(-u|-A|--all|--update)\b")
+# A sweep, wherever it sits on the line: `git add -u/-A/--all/--update`, a combined flag carrying A or u (`-Av`),
+# `git add .` / `:/` / `*`, with any `git -C dir` / `-c k=v` before the subcommand; and `git commit -a/--all`, which
+# stages every tracked modification as it commits.
+_GIT_PREFIX = r"(?:^|[;&|(]\s*|\bthen\s+|\bdo\s+)git(?:\s+-[Cc]\s+\S+)*\s+"
+_GIT_ADD_ALL_RE = re.compile(_GIT_PREFIX + r"add\s+(?:[^\n;&|]*?\s)?(?:-[A-Za-z]*[Au][A-Za-z]*|--all|--update|\.|:/|\*)(?=\s|$|[;&|)])")
+_GIT_COMMIT_ALL_RE = re.compile(_GIT_PREFIX + r"commit\s+(?:[^\n;&|]*?\s)?(?:-[A-Za-z]*a[A-Za-z]*|--all)(?=\s|$|[;&|)])")
+_IF_OPEN_RE = re.compile(r"^\s*if\b")
 _GREP_VERDICT_RE = re.compile(r"""(?:analyze|lint|test|check)[^\n|]*\|\s*grep\s+[^|\n]*["'](?:error|warning)\b""")
 _CHECK_SCRIPT_RE = re.compile(r"(tool/[\w.-]*check[\w.-]*\.(?:sh|py))")
 # The path a `[ -f ... ]` / `if [ -f ... ]` conditional is testing for.
@@ -67,6 +75,38 @@ def _hook_files(hooks_dir: Path) -> list[Path]:
     if not hooks_dir.is_dir():
         return []
     return sorted(p for p in hooks_dir.iterdir() if p.is_file() and not p.name.endswith(".sample"))
+
+
+def _else_branch(lines: list[str], start: int) -> "list[str] | None":
+    """The lines of the ``else`` branch of the ``if`` at *start* (its own else, not a nested block's), or None.
+
+    The block ends at the ``fi`` that closes THIS ``if``: a nested ``if ... fi`` inside it no longer ends it early, and
+    the branch is found by an ``else`` line at this depth, not by the substring "else" (``elsewhere``).
+    """
+    depth = 0
+    branch: "list[str] | None" = None
+    for index in range(start, len(lines)):
+        line = lines[index]
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        if _IF_OPEN_RE.match(line):
+            depth += 1
+            if index == start:
+                if re.search(r"[;\s]fi\s*$", line):  # a one-line `if ...; then ...; else ...; fi`
+                    tail = re.split(r"[;\s]else[;\s]", line, maxsplit=1)
+                    return [tail[1]] if len(tail) == 2 else None
+                continue
+        if _FI_RE.match(line) or re.search(r"[;\s]fi\s*$", line):
+            depth -= 1
+            if depth == 0:
+                return branch
+        if depth == 1 and _ELSE_RE.match(line):
+            branch = [line[line.index("else") + 4 :]]
+            continue
+        if branch is not None:
+            branch.append(line)
+    return branch
 
 
 def find_hook_hygiene_problems(
@@ -88,7 +128,11 @@ def find_hook_hygiene_problems(
     hook_guards: set[str] = set()
 
     for path in hooks:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        try:
+            lines = read_source(path).splitlines()
+        except SourceReadError as exc:
+            problems.append(f"{path.name}: cannot be read, so it was not checked: {exc.message}")
+            continue
         for i, line in enumerate(lines, start=1):
             stripped = line.strip()
             if stripped.startswith("#"):
@@ -108,19 +152,13 @@ def find_hook_hygiene_problems(
                     f"coverage forever. Fail (or print a WARNING) in the missing case."
                 )
             if _IF_GUARD_RE.match(line) and "check" in line and not guard_exists:
-                block: list[str] = []
-                for follow in lines[i - 1 :]:
-                    block.append(follow)
-                    if _FI_RE.match(follow) and len(block) > 1:
-                        break
-                joined = "\n".join(block)
-                has_else = any(_ELSE_RE.match(b) for b in block)
-                if not has_else or not _LOUD_RE.search(joined.split("else", 1)[-1]):
+                else_branch = _else_branch(lines, i - 1)
+                if else_branch is None or not _LOUD_RE.search("\n".join(else_branch)):
                     problems.append(
                         f"{path.name}:{i}: `if [ -f ... ]` around a guard with no else that fails "
                         f"or warns. A missing guard must be louder than a passing one."
                     )
-            if _GIT_ADD_ALL_RE.match(line):
+            if _GIT_ADD_ALL_RE.search(line) or _GIT_COMMIT_ALL_RE.search(line):
                 problems.append(
                     f"{path.name}:{i}: `{stripped}` stages every modified file, sweeping unrelated "
                     f"working-tree edits into the commit under review. Re-stage only paths that "

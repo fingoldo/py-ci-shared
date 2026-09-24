@@ -76,6 +76,42 @@ class TestAssertAllEntryPointsResolvable:
         with pytest.raises(pytest.fail.Exception, match=r"_scratch_mod_missing_xyz"):
             assert_all_entry_points_resolvable(p)
 
-    def test_passes_when_clean(self, tmp_path):
-        p = _write_pyproject(tmp_path, "")
+    def test_passes_when_clean(self, tmp_path, monkeypatch):
+        _install_fake_module(monkeypatch, "_scratch_mod_clean", main=lambda: None)
+        p = _write_pyproject(tmp_path, '[project.scripts]\nscratch-cli = "_scratch_mod_clean:main"\n')
         assert_all_entry_points_resolvable(p)  # does not raise
+
+    def test_zero_entry_points_fail(self, tmp_path):
+        p = _write_pyproject(tmp_path, '[project.script]\nscratch-cli = "json:loads"\n')
+        with pytest.raises(pytest.fail.Exception, match="only 0 entry point"):
+            assert_all_entry_points_resolvable(p)
+        assert_all_entry_points_resolvable(p, min_entries=0)
+
+
+class TestAttributeResolution:
+    def test_a_dotted_attribute_is_walked(self, tmp_path):
+        p = _write_pyproject(tmp_path, '[project.scripts]\nok = "json:JSONDecoder.decode"\nbad = "json:JSONDecoder.nope"\n')
+        (violation,) = find_unresolvable_entry_points(p)
+        assert violation.startswith("[project.scripts] bad") and "'nope' is missing" in violation
+
+    def test_an_extras_suffix_is_not_part_of_the_attribute(self, tmp_path):
+        p = _write_pyproject(tmp_path, '[project.scripts]\nok = "json:loads [cli, extra]"\nbad = "json:nope [cli]"\n')
+        (violation,) = find_unresolvable_entry_points(p)
+        assert violation.startswith("[project.scripts] bad")
+
+    @pytest.mark.parametrize("spec", ["json:", ":loads", "json: "])
+    def test_an_empty_side_is_a_violation(self, tmp_path, spec):
+        p = _write_pyproject(tmp_path, f'[project.scripts]\nx = "{spec}"\n')
+        (violation,) = find_unresolvable_entry_points(p)
+        assert "module:attr" in violation
+
+    def test_gui_scripts_are_checked_too(self, tmp_path):
+        p = _write_pyproject(tmp_path, '[project.gui-scripts]\nx = "json:nope"\n')
+        assert len(find_unresolvable_entry_points(p)) == 1
+
+
+def test_a_plugin_entry_point_may_name_a_whole_module(tmp_path, monkeypatch):
+    _install_fake_module(monkeypatch, "_scratch_plugin_module")
+    p = _write_pyproject(tmp_path, '[project.entry-points.pytest11]\nplug = "_scratch_plugin_module"\nmissing = "_scratch_no_such_plugin"\n')
+    (violation,) = find_unresolvable_entry_points(p)
+    assert violation.startswith("[project.entry-points.pytest11] missing") and "cannot import" in violation

@@ -28,26 +28,22 @@ def _cover(expected, *live):
 class TestRedundancyIsRecognised:
     def test_a_primary_key_covers_an_index_on_the_same_column(self):
         cover = _cover(
-            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_job_embeddings_job_uid "
-            "ON new_upwork.job_embeddings (job_uid)",
+            "CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_job_embeddings_job_uid " "ON new_upwork.job_embeddings (job_uid)",
             "CREATE UNIQUE INDEX job_embeddings_pkey ON new_upwork.job_embeddings USING btree (job_uid)",
         )
         assert cover is not None and cover.name == "job_embeddings_pkey"
 
     def test_a_renamed_partial_index_covers_its_twin(self):
         cover = _cover(
-            "CREATE INDEX idx_jobs_details_ts_desc_has_details ON new_upwork.jobs_details (ts DESC) "
-            "WHERE details IS NOT NULL",
-            "CREATE INDEX idx_jobs_details_ts_desc_not_null ON new_upwork.jobs_details "
-            "USING btree (ts DESC) WHERE (details IS NOT NULL)",
+            "CREATE INDEX idx_jobs_details_ts_desc_has_details ON new_upwork.jobs_details (ts DESC) " "WHERE details IS NOT NULL",
+            "CREATE INDEX idx_jobs_details_ts_desc_not_null ON new_upwork.jobs_details " "USING btree (ts DESC) WHERE (details IS NOT NULL)",
         )
         assert cover is not None and cover.name == "idx_jobs_details_ts_desc_not_null"
 
     def test_a_wider_index_covers_a_prefix_of_itself(self):
         cover = _cover(
             "CREATE INDEX idx_jhs_job_uid_ts_desc ON new_upwork.jobs_hist_stats (job_uid, ts DESC)",
-            "CREATE INDEX idx_jhs_job_ts_status ON new_upwork.jobs_hist_stats "
-            "USING btree (job_uid, ts DESC) INCLUDE (status)",
+            "CREATE INDEX idx_jhs_job_ts_status ON new_upwork.jobs_hist_stats " "USING btree (job_uid, ts DESC) INCLUDE (status)",
         )
         assert cover is not None and cover.name == "idx_jhs_job_ts_status"
 
@@ -74,8 +70,7 @@ class TestItRefusesToOverClaim:
         assert (
             _cover(
                 "CREATE INDEX want ON new_upwork.freelancers_jobs (client_team_uid)",
-                "CREATE INDEX live ON new_upwork.freelancers_jobs USING btree (client_team_uid) "
-                "WHERE (client_team_uid IS NOT NULL)",
+                "CREATE INDEX live ON new_upwork.freelancers_jobs USING btree (client_team_uid) " "WHERE (client_team_uid IS NOT NULL)",
             )
             is None
         )
@@ -161,3 +156,43 @@ class TestParsing:
 
     def test_a_statement_that_is_not_an_index_parses_to_nothing(self):
         assert parse("CREATE TABLE t (a int)") is None
+
+
+class TestAuditRegressions:
+    def test_an_index_on_another_table_does_not_cover(self):
+        assert _cover("CREATE INDEX want ON s.t1 (a)", "CREATE INDEX live ON s.t2 USING btree (a)") is None
+        assert _cover("CREATE INDEX want ON s1.t (a)", "CREATE INDEX live ON s2.t USING btree (a)") is None
+        assert _cover("CREATE INDEX want ON t (a)", "CREATE INDEX live ON s.t USING btree (a)").name == "live"
+
+    def test_a_cast_strip_keeps_the_rest_of_the_predicate(self):
+        assert parse("CREATE INDEX i ON t (a) WHERE x::int IS NOT NULL").predicate == "x is not null"
+        assert _cover("CREATE INDEX want ON t (a) WHERE x::int IS NOT NULL", "CREATE INDEX live ON t USING btree (a) WHERE x::integer IS NULL") is None
+        assert parse("CREATE INDEX i ON t (a) WHERE (s)::character varying(20) = 'x'::text").predicate == "(s) = 'x'"
+
+    def test_a_non_unique_index_does_not_cover_a_unique_one(self):
+        assert _cover("CREATE UNIQUE INDEX want ON t (a)", "CREATE INDEX live ON t USING btree (a)") is None
+        assert _cover("CREATE UNIQUE INDEX want ON t (a)", "CREATE UNIQUE INDEX live ON t USING btree (a, b)") is None
+        assert _cover("CREATE UNIQUE INDEX want ON t (a)", "CREATE UNIQUE INDEX live ON t USING btree (a)").name == "live"
+        assert parse("CREATE UNIQUE INDEX u ON t (a)").unique and not parse("CREATE INDEX n ON t (a)").unique
+
+    def test_include_columns_of_the_expectation_must_be_carried(self):
+        assert parse("CREATE INDEX i ON t (x) INCLUDE (y, z)").include == ("y", "z")
+        assert _cover("CREATE INDEX want ON t (x) INCLUDE (y)", "CREATE INDEX live ON t USING btree (x)") is None
+        assert _cover("CREATE INDEX want ON t (x) INCLUDE (y)", "CREATE INDEX live ON t USING btree (x) INCLUDE (y)").name == "live"
+        assert _cover("CREATE INDEX want ON t (x) INCLUDE (y)", "CREATE INDEX live ON t USING btree (x, y)").name == "live"
+
+    def test_nulls_ordering_is_part_of_the_order(self):
+        assert _cover("CREATE INDEX want ON t (x DESC)", "CREATE INDEX live ON t USING btree (x DESC NULLS LAST)") is None
+        assert _cover("CREATE INDEX want ON t (x DESC)", "CREATE INDEX live ON t USING btree (x DESC NULLS FIRST)").name == "live"
+        assert _cover("CREATE INDEX want ON t (x DESC)", "CREATE INDEX live ON t USING btree (x)").name == "live"
+        assert _cover("CREATE INDEX want ON t (x DESC NULLS LAST)", "CREATE INDEX live ON t USING btree (x)") is None
+
+    def test_the_split_respects_quotes_and_block_comments(self):
+        sql = "/* CREATE INDEX idx_x ON t (wrong);\n*/\n" "CREATE INDEX idx_y ON t (a) WHERE note <> 'a;b -- c';\n" "CREATE INDEX idx_x ON t (right_col);\n"
+        assert find_definition(sql, "idx_x").columns == ("right_col",)
+        assert find_definition(sql, "idx_y").predicate == "note <> 'a;b -- c'"
+        assert len(list(statements(sql))) == 2
+
+    def test_a_dollar_quoted_body_is_one_statement(self):
+        sql = "CREATE FUNCTION f() RETURNS int AS $body$ SELECT 1; $body$ LANGUAGE sql;\nCREATE INDEX i ON t (a);"
+        assert len(list(statements(sql))) == 2

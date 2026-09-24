@@ -42,6 +42,8 @@ import ast
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, scan_python
+
 __all__ = [
     "Finding",
     "assert_no_epsilon_padded_power_denominators",
@@ -52,7 +54,10 @@ __all__ = [
 _EPSILON_CEILING = 1e-6
 
 # Calls that produce a geometrically-shrinking quantity just as ``**`` does.
-_POWER_CALLS = frozenset({"power", "square", "float_power"})
+_POWER_CALLS = frozenset({"power", "square", "float_power", "pow"})
+
+# ``np.divide(a, b)`` / ``torch.div`` / ``operator.truediv``: a division spelled as a call.
+_DIVIDE_CALLS = frozenset({"divide", "true_divide", "div", "truediv"})
 
 
 class Finding:
@@ -71,7 +76,9 @@ class Finding:
 
 def _is_small_positive_literal(node: ast.AST) -> bool:
     """A numeric constant small enough to be a guard rather than a term."""
-    return isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool) and 0 < abs(node.value) <= _EPSILON_CEILING
+    return (
+        isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool) and 0 < abs(node.value) <= _EPSILON_CEILING
+    )
 
 
 def _falls_off_geometrically(node: ast.AST) -> bool:
@@ -85,9 +92,24 @@ def _falls_off_geometrically(node: ast.AST) -> bool:
             return ast.unparse(node.left) == ast.unparse(node.right)
         except Exception:
             return False
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _POWER_CALLS:
-        return True
+    if isinstance(node, ast.Call):
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        return name in _POWER_CALLS
     return False
+
+
+def _add_terms(node: ast.AST) -> list[ast.expr]:
+    """The operands of a (possibly chained) ``+``: ``a + b + c`` -> ``[a, b, c]``."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        return _add_terms(node.left) + _add_terms(node.right)
+    return [node]  # type: ignore[list-item]
+
+
+def _is_padded_power(denominator: ast.AST) -> bool:
+    """A sum with a small literal term and a geometrically-shrinking term, however many terms it has."""
+    terms = _add_terms(denominator)
+    return len(terms) > 1 and any(_is_small_positive_literal(t) for t in terms) and any(_falls_off_geometrically(t) for t in terms)
 
 
 class _Visitor(ast.NodeVisitor):
@@ -98,19 +120,49 @@ class _Visitor(ast.NodeVisitor):
         self.path = path
         self.findings: list[Finding] = []
 
+    def _report(self, node: ast.AST) -> None:
+        try:
+            rendered = ast.unparse(node)
+        except Exception:
+            rendered = "<unrenderable>"
+        self.findings.append(Finding(self.path, getattr(node, "lineno", 0), rendered[:160]))
+
     def visit_BinOp(self, node: ast.BinOp) -> None:
         """Flag a division whose denominator is a power with a small literal added to it."""
-        if isinstance(node.op, ast.Div) and isinstance(node.right, ast.BinOp) and isinstance(node.right.op, ast.Add):
-            left, right = node.right.left, node.right.right
-            for eps, other in ((left, right), (right, left)):
-                if _is_small_positive_literal(eps) and _falls_off_geometrically(other):
-                    try:
-                        rendered = ast.unparse(node)
-                    except Exception:
-                        rendered = "<unrenderable>"
-                    self.findings.append(Finding(self.path, node.lineno, rendered[:160]))
-                    break
+        if isinstance(node.op, ast.Div) and _is_padded_power(node.right):
+            self._report(node)
         self.generic_visit(node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        """``x /= r**d + 1e-12``."""
+        if isinstance(node.op, ast.Div) and _is_padded_power(node.value):
+            self._report(node)
+        self.generic_visit(node)
+
+    def visit_Call(self, node: ast.Call) -> None:
+        """``np.divide(k, r**d + 1e-12)`` and friends: the second argument is the denominator."""
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        if name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1]):
+            self._report(node)
+        self.generic_visit(node)
+
+
+def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
+    excluded = tuple(exclude)
+    files: list[Path] = []
+    for root in roots:
+        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
+    return scan_python(files)
+
+
+def _findings(scan: ScanResult) -> list[Finding]:
+    findings: list[Finding] = []
+    for parsed in scan:
+        visitor = _Visitor(parsed.path)
+        visitor.visit(parsed.tree)
+        findings.extend(visitor.findings)
+    return findings
 
 
 def find_epsilon_padded_power_denominators(
@@ -121,50 +173,52 @@ def find_epsilon_padded_power_denominators(
 
     ``exclude`` holds path fragments to skip, matched against the POSIX form of each file's path --
     benchmark and vendored-baseline trees are the usual entries, since a frozen copy is meant to keep the
-    shape it was frozen with.
+    shape it was frozen with. A missing root raises ``py_ci_shared._core.CorpusError``; files that cannot be parsed
+    are not in this list, and :func:`assert_no_epsilon_padded_power_denominators` fails on them.
     """
-    excluded = tuple(exclude)
-    findings: list[Finding] = []
-    for root in roots:
-        for path in sorted(Path(root).rglob("*.py")):
-            posix = path.as_posix()
-            if any(fragment in posix for fragment in excluded):
-                continue
-            try:
-                tree = ast.parse(path.read_bytes().decode("utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
-                continue
-            visitor = _Visitor(path)
-            visitor.visit(tree)
-            findings.extend(visitor.findings)
-    return findings
+    return _findings(_scan(roots, exclude))
 
 
 def assert_no_epsilon_padded_power_denominators(
     roots: Sequence[Path],
     exclude: Iterable[str] = (),
     allow: Iterable[str] = (),
+    *,
+    min_files: int = 1,
 ) -> None:
     """Raise ``AssertionError`` listing every padded power denominator that is not explicitly allowed.
 
     ``allow`` holds ``path:line`` strings for sites a reader has judged safe. Prefer fixing the site: the
     safe rewrite -- clamping with ``np.maximum(denominator, tiny)`` -- is usually one line and removes the
-    need for a judgement call entirely.
+    need for a judgement call entirely. Also fails when fewer than *min_files* files parsed (a typo'd root is
+    not a clean tree) and when any file could not be parsed.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    findings = [f for f in find_epsilon_padded_power_denominators(roots, exclude) if f"{f.path.as_posix()}:{f.lineno}" not in allowed]
-    if not findings:
-        return
+    scan = _scan(roots, exclude)
+    scan.min_files = min_files
     newline = chr(10)
-    listing = (newline + "  ").join(str(f) for f in findings)
-    raise AssertionError(
-        newline.join(
-            [
-                f"{len(findings)} denominator(s) guarded by an additive epsilon under a power.",
-                "  A power falls off geometrically, so a fixed pad stops being negligible at ordinary inputs and",
-                "  starts deciding the result -- silently, since nothing raises. Clamp instead:",
-                "      np.maximum(denominator, np.finfo(np.float64).tiny)",
-                f"  {listing}",
-            ]
+    problems: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if scan.unparsed:
+        problems.append(
+            f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {u.render()}" for u in scan.unparsed)
         )
-    )
+    findings = [f for f in _findings(scan) if f"{f.path.as_posix()}:{f.lineno}" not in allowed]
+    if findings:
+        listing = (newline + "  ").join(str(f) for f in findings)
+        problems.append(
+            newline.join(
+                [
+                    f"{len(findings)} denominator(s) guarded by an additive epsilon under a power.",
+                    "  A power falls off geometrically, so a fixed pad stops being negligible at ordinary inputs and",
+                    "  starts deciding the result -- silently, since nothing raises. Clamp instead:",
+                    "      np.maximum(denominator, np.finfo(np.float64).tiny)",
+                    f"  {listing}",
+                ]
+            )
+        )
+    if problems:
+        raise AssertionError(newline.join(problems))

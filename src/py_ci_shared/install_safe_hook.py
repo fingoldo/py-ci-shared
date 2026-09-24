@@ -25,6 +25,7 @@ Usage::
 
     python -m py_ci_shared.install_safe_hook
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -41,6 +42,14 @@ def _git_dir() -> Path:
     return Path(out.stdout.strip())
 
 
+def _hooks_dir() -> Path:
+    """The directory git runs hooks from: ``core.hooksPath`` when set, else ``<git-dir>/hooks`` (``--git-path hooks``
+    answers both, and a linked worktree's shared hooks too)."""
+    out = subprocess.run(["git", "rev-parse", "--git-path", "hooks"], capture_output=True, text=True, check=True)
+    path = Path(out.stdout.strip())
+    return path if path.is_absolute() else Path.cwd() / path
+
+
 def _patch_one(hook_path: Path) -> int:
     if not hook_path.exists():
         # pre-merge-commit is optional (only created by an explicit `--hook-type` install) -- not
@@ -51,26 +60,27 @@ def _patch_one(hook_path: Path) -> int:
         print(f"{hook_path} does not exist (run `pre-commit install --hook-type pre-merge-commit` to add it) -- skipped.")
         return 0
 
-    text = hook_path.read_text()
-    if _REPLACEMENT in text:
+    # Bytes, not text: the hook keeps its own encoding and line endings (a locale codec or newline translation would
+    # rewrite a non-ASCII hook, or turn LF into CRLF on Windows and break the shebang line).
+    data = hook_path.read_bytes()
+    if _REPLACEMENT.encode("utf-8") in data:
         print(f"{hook_path} is already patched.")
         return 0
-    if _TARGET not in text:
+    if _TARGET.encode("utf-8") not in data:
         print(
             f"Could not find `{_TARGET}` in {hook_path} (unexpected pre-commit hook template); " "leaving it untouched.",
             file=sys.stderr,
         )
         return 1
 
-    patched = text.replace(_TARGET, _REPLACEMENT)
-    hook_path.write_text(patched)
+    hook_path.write_bytes(data.replace(_TARGET.encode("utf-8"), _REPLACEMENT.encode("utf-8")))
     print(f"Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.")
     return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     try:
-        hooks_dir = _git_dir() / "hooks"
+        hooks_dir = _hooks_dir()
     except subprocess.CalledProcessError:
         print("Not inside a git repository.", file=sys.stderr)
         return 1

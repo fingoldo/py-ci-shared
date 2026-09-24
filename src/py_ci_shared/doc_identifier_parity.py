@@ -33,11 +33,12 @@ Usage::
 from __future__ import annotations
 
 import re
-import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
 from py_ci_shared.phantom_markdown_links import tracked_markdown_files
+
+from ._core import DEFAULT_EXCLUDE, SourceReadError, iter_files, read_source, relative_posix
 
 _FLAG = re.compile(r"`(--[a-z][a-z0-9-]{2,})`")
 _IDENT = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})`")
@@ -47,11 +48,49 @@ DEFAULT_CORPUS_SUFFIXES: tuple[str, ...] = (".py", ".pyi", ".toml", ".cfg", ".in
 DEFAULT_EXTERNAL_COMMANDS: frozenset[str] = frozenset(
     {"pip", "pip3", "uv", "uvx", "pipx", "git", "gh", "npm", "npx", "yarn", "docker", "conda", "brew", "apt", "apt-get", "curl", "wget"}
 )
+_PYTHONS = frozenset({"python", "python3", "py"})
+#: ``<runner> [options] <program> ...``: the runner's own flags are external, the program decides the rest.
+_RUNNERS: dict[tuple[str, ...], bool] = {
+    ("uv", "run"): False,
+    ("poetry", "run"): False,
+    ("pdm", "run"): False,
+    ("hatch", "run"): False,
+    ("uvx",): True,
+    ("npx",): True,
+    ("pipx", "run"): True,
+}
+#: Runner options that take a separate value (``uv run --with rich python x.py``).
+_RUNNER_VALUE_OPTIONS = frozenset(
+    {"--with", "--python", "-p", "--extra", "--group", "--directory", "--project", "--package", "--from", "--env-file", "--index", "--spec"}
+)
 
 
 def _without_html_comments(text: str) -> str:
     """*text* with every HTML comment blanked, newlines kept so line numbers still match the file."""
     return _HTML_COMMENT.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def _program(words: list[str]) -> tuple[str, bool, int]:
+    """``(program, runs_a_tool, index of the program word)`` for a command line, looking through runners.
+
+    ``uv run python tool.py --x`` runs the project's own ``tool.py``, so ``--x`` is ours; ``uvx ruff --fix`` and
+    ``npx prettier --write`` run a separately installed tool, whose flags are not. ``python -m pip`` is pip.
+    """
+    i = 0
+    tool = False
+    for runner, runs_tool in _RUNNERS.items():
+        if tuple(words[: len(runner)]) == runner:
+            i = len(runner)
+            tool = runs_tool
+            while i < len(words) and words[i].startswith("-"):
+                i += 2 if words[i] in _RUNNER_VALUE_OPTIONS else 1
+            break
+    if i >= len(words):
+        return (words[0] if words else ""), False, 0
+    program = words[i]
+    if program in _PYTHONS and i + 2 < len(words) and words[i + 1] == "-m":
+        return words[i + 2], False, i + 2
+    return program, tool, i
 
 
 def _external_flags(lines: list[str], external: frozenset[str]) -> set[str]:
@@ -65,9 +104,10 @@ def _external_flags(lines: list[str], external: frozenset[str]) -> set[str]:
         if not fenced:
             continue
         words = line.strip().lstrip("$> ").split()
-        head = words[1] if len(words) > 2 and words[0] in {"python", "python3", "py"} and words[1] == "-m" else None
-        command = words[2] if head == "-m" else (words[0] if words else "")
-        if command in external:
+        program, runs_tool, at = _program(words)
+        if at > 0 and not (runs_tool or program in external):
+            flags.update(re.findall(r"(?<![\w-])(--[a-z][a-z0-9-]{2,})", " ".join(words[:at])))  # the runner's own flags
+        elif runs_tool or program in external:
             flags.update(re.findall(r"(?<![\w-])(--[a-z][a-z0-9-]{2,})", line))
     return flags
 
@@ -78,22 +118,10 @@ def default_corpus_files(repo_root: Path) -> list[Path]:
     An ``rglob`` read every gitignored file too, and glossum keeps an 861 MB Wiktextract dump under a
     gitignored ``data/``: joining it into the corpus raised MemoryError on every run. Ignored data is not
     where a document's identifiers are defined. Untracked files still count, so a new module is found
-    before it is added. Falls back to the walk (outside hidden and virtualenv folders) when git is unavailable.
+    before it is added. The listing is ``git ls-files -z`` (non-ASCII names are not quoted away) through
+    ``_core.iter_files``, which falls back to a pruned walk when git is unavailable.
     """
-    try:
-        out = subprocess.run(
-            ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
-            cwd=repo_root, capture_output=True, text=True, encoding="utf-8", check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return [
-            p
-            for p in repo_root.rglob("*")
-            if p.suffix in DEFAULT_CORPUS_SUFFIXES
-            and p.is_file()
-            and not any(part.startswith(".") or part in {"node_modules", "venv", "__pycache__"} for part in p.relative_to(repo_root).parts)
-        ]
-    return [p for rel in out.splitlines() if rel and (p := repo_root / rel).suffix in DEFAULT_CORPUS_SUFFIXES and p.is_file()]
+    return iter_files(repo_root, tuple(f"*{suffix}" for suffix in DEFAULT_CORPUS_SUFFIXES), exclude=DEFAULT_EXCLUDE)
 
 
 def find_absent_doc_identifiers(
@@ -114,15 +142,20 @@ def find_absent_doc_identifiers(
     docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
     if corpus_files is None:
         corpus_files = default_corpus_files(root)
-    corpus = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in corpus_files)
+    corpus = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in corpus_files)
     skipped = set(exclude_docs)
     ignored = set(ignore)
     problems: list[str] = []
     for doc in docs:
-        rel = doc.resolve().relative_to(root).as_posix()
+        rel = relative_posix(doc.resolve(), root)
         if rel in skipped or any(rel.startswith(s) for s in skipped if s.endswith("/")):
             continue
-        lines = _without_html_comments(doc.read_text(encoding="utf-8", errors="replace")).split("\n")
+        try:
+            text = read_source(doc)
+        except SourceReadError as exc:
+            problems.append(f"{rel}:{exc.line or 1}: unreadable, so its names were not checked: {exc.message}")
+            continue
+        lines = _without_html_comments(text).split("\n")
         foreign = _external_flags(lines, external_commands)
         for lineno, line in enumerate(lines, start=1):
             for token in _FLAG.findall(line) + _IDENT.findall(line):

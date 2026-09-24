@@ -9,8 +9,8 @@ gap. When such a number is then persisted (a kernel-tuning cache, a chosen-backe
 wrong backend is locked in across sessions and across projects, long after the run that measured
 it is gone.
 
-Two shapes are flagged, both requiring the absence of any device synchronization inside the timed
-region:
+Two shapes are flagged, both requiring the absence of a device synchronization AFTER the last timed work
+inside the timed region (a synchronize before the kernel waits for nothing being measured):
 
 1. A *direct* GPU call in the timed region -- a callee whose dotted name is rooted at ``cuda``,
    ``cupy``, ``cp``, ``torch.cuda``, ``numba.cuda``, ``cudf``, ``cuml``, or a numba-cuda kernel
@@ -34,6 +34,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+from ._core import ImportAliases, ScanResult, scan_python
+
 # Suppression marker for a DELIBERATE launch-latency (async) measurement, placed as a comment
 # anywhere in the timed region. Such a measurement is legitimate but must say so: an unlabelled
 # unsynchronized timer is indistinguishable from the bug.
@@ -44,18 +46,34 @@ _GPU_ROOTS = frozenset({"cuda", "cupy", "cp", "cudf", "cuml"})
 _GPU_DOTTED_PREFIXES = ("torch.cuda.", "numba.cuda.")
 
 # Timer readers whose result is a wall-clock instant.
-_TIMER_ATTRS = frozenset({"perf_counter", "perf_counter_ns", "time", "monotonic", "monotonic_ns", "process_time"})
-_TIMER_NAMES = frozenset({"timer", "perf_counter", "monotonic", "clock", "_timer"})
+_TIMER_ATTRS = frozenset({"perf_counter", "perf_counter_ns", "time", "time_ns", "monotonic", "monotonic_ns", "process_time", "default_timer"})
+_TIMER_NAMES = frozenset({"timer", "perf_counter", "monotonic", "clock", "_timer", "default_timer"})
+#: Fully qualified timers, matched through the module's imports (``from time import perf_counter as pc``).
+_TIMER_QUALIFIED = frozenset(
+    {
+        "time.perf_counter",
+        "time.perf_counter_ns",
+        "time.time",
+        "time.time_ns",
+        "time.monotonic",
+        "time.monotonic_ns",
+        "time.process_time",
+        "timeit.default_timer",
+    }
+)
 
-# Text-level prefilter: a call to any timer name above. A file it does not match cannot contain a timed region, so it
-# is skipped before parsing; it is a superset of ``_is_timer_read`` (a match only means "parse and look").
-_TIMER_CALL_TEXT_RE = re.compile(r"\b(?:" + "|".join(sorted(_TIMER_ATTRS | _TIMER_NAMES, key=len, reverse=True)) + r")\s*\(")
+# Text-level prefilter: a call to any timer name above, or an import from time/timeit (which is how an aliased timer
+# arrives). A file it does not match cannot contain a timed region, so it is not scanned; a match only means "look".
+_TIMER_CALL_TEXT_RE = re.compile(
+    r"\b(?:" + "|".join(sorted(_TIMER_ATTRS | _TIMER_NAMES, key=len, reverse=True)) + r")\s*\(|\bfrom\s+(?:time|timeit)\s+import\b|\bimport\s+(?:time|timeit)\b"
+)
 
-# A call counts as a device synchronization when its resolved name looks like one. Deliberately
-# name-based and generous: a project's own wrapper (``_gpu_sync``, ``synchronize_gpu_if_available``,
-# ``ev.synchronize``) is the normal way this is spelled, and an unrecognized sync name would produce
-# a false POSITIVE on correct code, which is the costlier direction for a blocking gate.
-_SYNC_RE = re.compile(r"(?i)(?:^|[._])(?:sync|synchronize|synchronise)(?:[._]|$)|synchroniz|synchronis")
+# The words that make a name a device synchronization. A project's own wrapper (``_gpu_sync``,
+# ``synchronize_gpu_if_available``, ``ev.synchronize``) is the normal way this is spelled, and an unrecognized sync name
+# would produce a false POSITIVE on correct code, so any ``synchroniz*``/``synchronis*`` word counts. A bare ``sync``
+# word counts only alone or next to a device word: ``_sync_to_disk`` is a file flush, not a device barrier.
+_SYNC_WORD_RE = re.compile(r"(?i)synchroni[sz]")
+_DEVICE_WORDS = frozenset({"gpu", "gpus", "cuda", "device", "devices", "stream", "streams", "torch", "cp", "cupy", "all", "event", "ev"})
 
 # Evidence that a module deals with GPUs at all, gating shape 2. Matched as whole words against the
 # file's source text, so an unrelated module that merely spells "group" is not GPU-aware.
@@ -90,10 +108,14 @@ def _dotted_name(node: ast.AST) -> Optional[str]:
     return ".".join(reversed(parts))
 
 
-def _is_timer_read(node: ast.AST) -> bool:
+def _is_timer_read(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     if not isinstance(node, ast.Call):
         return False
     func = node.func
+    if aliases is not None:
+        qualified = aliases.qualified_name(func)
+        if qualified in _TIMER_QUALIFIED:
+            return True
     if isinstance(func, ast.Attribute):
         return func.attr in _TIMER_ATTRS
     if isinstance(func, ast.Name):
@@ -101,8 +123,8 @@ def _is_timer_read(node: ast.AST) -> bool:
     return False
 
 
-def _contains_timer_read(node: ast.AST) -> bool:
-    return any(_is_timer_read(sub) for sub in ast.walk(node))
+def _contains_timer_read(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
+    return any(_is_timer_read(sub, aliases) for sub in ast.walk(node))
 
 
 def _gpu_call_name(node: ast.Call) -> Optional[str]:
@@ -122,11 +144,22 @@ def _gpu_call_name(node: ast.Call) -> Optional[str]:
     return None
 
 
+def _is_sync_name(name: str) -> bool:
+    if _SYNC_WORD_RE.search(name):
+        return True
+    words = [w for w in re.split(r"[^a-z0-9]+", name.lower()) if w]
+    return "sync" in words and (len(words) == 1 or bool(_DEVICE_WORDS.intersection(words)))
+
+
 def _is_sync_call(node: ast.Call) -> bool:
-    name = _dotted_name(node.func)
-    if name is None:
-        return False
-    return bool(_SYNC_RE.search(name))
+    """Judged on the called name itself, so a call earlier in the chain does not hide it
+    (``torch.cuda.current_stream().synchronize()``)."""
+    func = node.func
+    if isinstance(func, ast.Attribute):
+        return _is_sync_name(func.attr)
+    if isinstance(func, ast.Name):
+        return _is_sync_name(func.id)
+    return False
 
 
 def _param_names(func: ast.AST) -> set[str]:
@@ -141,7 +174,7 @@ def _param_names(func: ast.AST) -> set[str]:
     return names
 
 
-def _timed_regions(body: list[ast.stmt]) -> list[tuple[int, list[ast.stmt]]]:
+def _timed_regions(body: list[ast.stmt], aliases: Optional[ImportAliases] = None) -> list[tuple[int, list[ast.stmt]]]:
     """``(start_lineno, statements)`` for every ``t0 = <timer>()`` ... ``<timer>()`` window in ``body``.
 
     The window closes at the first later statement that reads the timer again -- that read is the
@@ -150,25 +183,15 @@ def _timed_regions(body: list[ast.stmt]) -> list[tuple[int, list[ast.stmt]]]:
     """
     regions: list[tuple[int, list[ast.stmt]]] = []
     for i, stmt in enumerate(body):
-        if not (isinstance(stmt, (ast.Assign, ast.AnnAssign)) and stmt.value is not None and _is_timer_read(stmt.value)):
+        if not (isinstance(stmt, (ast.Assign, ast.AnnAssign)) and stmt.value is not None and _is_timer_read(stmt.value, aliases)):
             continue
         end = len(body)
         for j in range(i + 1, len(body)):
-            if _contains_timer_read(body[j]):
+            if _contains_timer_read(body[j], aliases):
                 end = j + 1
                 break
         regions.append((stmt.lineno, body[i + 1 : end]))
     return regions
-
-
-def _iter_stmt_blocks(node: ast.AST) -> Iterator[list[ast.stmt]]:
-    """Every statement list under ``node``, so a timed region nested in a ``for``/``with``/``try``
-    is seen as its own block rather than lost."""
-    for sub in ast.walk(node):
-        for field in ("body", "orelse", "finalbody"):
-            block = getattr(sub, field, None)
-            if isinstance(block, list) and block and all(isinstance(s, ast.stmt) for s in block):
-                yield block
 
 
 def _region_is_suppressed(region: list[ast.stmt], start_lineno: int, source_lines: list[str]) -> bool:
@@ -176,8 +199,9 @@ def _region_is_suppressed(region: list[ast.stmt], start_lineno: int, source_line
     return any(SUPPRESSION_MARKER in line for line in source_lines[start_lineno - 1 : end])
 
 
-def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], path: Path) -> Iterator[GpuTimingFinding]:
-    """Walk every function, carrying the parameter names of its lexically enclosing functions.
+def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], path: Path, aliases: Optional[ImportAliases] = None) -> Iterator[GpuTimingFinding]:
+    """Walk the module body (as ``<module>``, a benchmark script's timed loop) and every function, carrying the
+    parameter names of its lexically enclosing functions.
 
     The enclosing names matter because a nested helper (``def _run(...)`` inside
     ``def time_backend(fn, ...)``) calls the OUTER function's parameters, and it is those that make
@@ -188,50 +212,74 @@ def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], pat
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 params = visible_params | _param_names(child)
-                yield from _scan_one_function(child, params, gpu_aware, source_lines, path)
+                yield from _scan_one_function(child, params, gpu_aware, source_lines, path, aliases)
                 yield from visit(child, params, child.name)
             else:
                 yield from visit(child, visible_params, func_name)
 
+    if isinstance(tree, ast.Module):
+        yield from _scan_one_function(tree, set(), gpu_aware, source_lines, path, aliases)
     yield from visit(tree, set(), None)
 
 
-def _scan_one_function(func: ast.AST, visible_params: set[str], gpu_aware: bool, source_lines: list[str], path: Path) -> Iterator[GpuTimingFinding]:
-    if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+def _position(node: ast.AST) -> tuple[int, int]:
+    return getattr(node, "lineno", 0), getattr(node, "col_offset", 0)
+
+
+def _end(node: ast.AST) -> tuple[int, int]:
+    """Where a call finishes: ``cp.cuda.Device().synchronize()`` ends after the ``cp.cuda.Device()`` it contains."""
+    line = getattr(node, "end_lineno", None) or getattr(node, "lineno", None) or 0
+    col = getattr(node, "end_col_offset", None) or 0
+    return int(line), int(col)
+
+
+def _scan_one_function(
+    func: ast.AST, visible_params: set[str], gpu_aware: bool, source_lines: list[str], path: Path, aliases: Optional[ImportAliases] = None
+) -> Iterator[GpuTimingFinding]:
+    if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
         return
+    name = func.name if not isinstance(func, ast.Module) else "<module>"
     # Only this function's OWN statement blocks: a nested def is scanned separately, with its own
     # (wider) parameter scope, so scanning it here too would double-report.
     for block in _own_stmt_blocks(func):
-        for start_lineno, region in _timed_regions(block):
-            calls = [c for stmt in region for c in ast.walk(stmt) if isinstance(c, ast.Call)]
-            if any(_is_sync_call(c) for c in calls):
-                continue
+        for start_lineno, region in _timed_regions(block, aliases):
+            calls = sorted((c for stmt in region for c in ast.walk(stmt) if isinstance(c, ast.Call)), key=_position)
             if _region_is_suppressed(region, start_lineno, source_lines):
                 continue
-            gpu_calls = [n for n in (_gpu_call_name(c) for c in calls) if n]
-            if gpu_calls:
-                yield GpuTimingFinding(
-                    path, start_lineno, func.name, "direct-gpu-call", f"times {gpu_calls[0]}() with no device synchronize before the timer stop"
-                )
-                continue
-            if not gpu_aware:
-                continue
+            gpu_calls = [c for c in calls if _gpu_call_name(c) and not _is_sync_call(c)]
             # The injected timer itself is excluded: an injectable ``timer`` parameter is how the
             # clock is read, not the work being clocked, so counting it would flag every
             # timer-overridable measurement in the file.
-            injected = [c.func.id for c in calls if isinstance(c.func, ast.Name) and c.func.id in visible_params and not _is_timer_read(c)]
-            if injected:
+            injected = [
+                c for c in calls if isinstance(c.func, ast.Name) and c.func.id in visible_params and not _is_timer_read(c, aliases) and not _is_sync_call(c)
+            ]
+            work = gpu_calls or (injected if gpu_aware else [])
+            if not work:
+                continue
+            # A synchronize only counts when it runs AFTER the last timed work: one before the kernel waits for
+            # nothing that is being measured.
+            last_work = max(_end(c) for c in work)
+            if any(_is_sync_call(c) and _end(c) > last_work for c in calls):
+                continue
+            if gpu_calls:
                 yield GpuTimingFinding(
-                    path,
-                    start_lineno,
-                    func.name,
-                    "injected-callable-in-gpu-module",
-                    f"times caller-supplied {injected[0]}() in a GPU-aware module with no device synchronize before the timer stop",
+                    path, start_lineno, name, "direct-gpu-call", f"times {_gpu_call_name(gpu_calls[0])}() with no device synchronize before the timer stop"
                 )
+                continue
+            first = injected[0].func
+            first_name = first.id if isinstance(first, ast.Name) else "<callable>"
+            yield GpuTimingFinding(
+                path,
+                start_lineno,
+                name,
+                "injected-callable-in-gpu-module",
+                f"times caller-supplied {first_name}() in a GPU-aware module with no device synchronize before the timer stop",
+            )
 
 
 def _own_stmt_blocks(func: ast.AST) -> Iterator[list[ast.stmt]]:
-    """``_iter_stmt_blocks`` restricted to ``func``'s own body, stopping at any nested function."""
+    """Every statement list under ``func`` (so a timed region nested in a ``for``/``with``/``try`` is seen as its own
+    block), stopping at any nested function or class."""
     stack: list[ast.AST] = [func]
     seen_root = False
     while stack:
@@ -249,38 +297,32 @@ def _own_stmt_blocks(func: ast.AST) -> Iterator[list[ast.stmt]]:
             stack.extend(child for child in getattr(node, field, None) or () if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
 
 
+def _scan(files: Iterable[Path], root: Optional[Path]) -> tuple[list[GpuTimingFinding], ScanResult]:
+    scan = scan_python([Path(p) for p in files], root=root)
+    findings: list[GpuTimingFinding] = []
+    for parsed in scan:
+        source = parsed.source
+        if not _TIMER_CALL_TEXT_RE.search(source):
+            continue
+        rel = Path(parsed.rel) if root is not None else parsed.path
+        aliases = ImportAliases.from_tree(parsed.tree)
+        findings.extend(_scan_functions(parsed.tree, bool(_GPU_AWARE_RE.search(source)), source.splitlines(), rel, aliases))
+    return sorted(set(findings), key=lambda f: (f.path.as_posix(), f.lineno)), scan
+
+
 def find_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None) -> list[GpuTimingFinding]:
     """Every timed region across ``files`` that measures GPU work without synchronizing first.
 
     ``root``, when given, makes each finding's path relative to it so allowlist keys stay stable
-    across checkouts.
+    across checkouts. Files that cannot be parsed are not in this list; :func:`assert_no_unsynchronized_gpu_timings`
+    fails on them.
     """
-    findings: list[GpuTimingFinding] = []
-    for path in files:
-        try:
-            source = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        if not _TIMER_CALL_TEXT_RE.search(source):
-            continue
-        try:
-            tree = ast.parse(source, filename=str(path))
-        except SyntaxError:
-            continue
-        gpu_aware = bool(_GPU_AWARE_RE.search(source))
-        source_lines = source.splitlines()
-        rel = path
-        if root is not None:
-            try:
-                rel = path.relative_to(root)
-            except ValueError:
-                rel = path
-        findings.extend(_scan_functions(tree, gpu_aware, source_lines, rel))
-    return sorted(set(findings), key=lambda f: (f.path.as_posix(), f.lineno))
+    return _scan(files, root)[0]
 
 
-def assert_no_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None, allowlist: frozenset = frozenset()) -> None:
-    """Fail the calling pytest run on any unsynchronized GPU timing outside ``allowlist``.
+def assert_no_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None, allowlist: frozenset = frozenset(), *, min_files: int = 1) -> None:
+    """Fail the calling pytest run on any unsynchronized GPU timing outside ``allowlist``, on any file that could not be
+    parsed, and when fewer than *min_files* files parsed.
 
     ``allowlist`` holds ``"<relative/path.py>::<function>"`` keys (see ``GpuTimingFinding.key``);
     prefer the in-source ``gpu-timing-async-intentional`` marker, which keeps the justification next
@@ -288,10 +330,21 @@ def assert_no_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[P
     """
     import pytest
 
-    findings = [f for f in find_unsynchronized_gpu_timings(files, root=root) if f.key not in allowlist]
+    found, scan = _scan(files, root)
+    scan.min_files = min_files
+    problems: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if scan.unparsed:
+        problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n" + "\n".join(f"  {u.render()}" for u in scan.unparsed))
+    findings = [f for f in found if f.key not in allowlist]
     if findings:
         lines = [f"  {f.path.as_posix()}:{f.lineno} in {f.function}() [{f.shape}] -- {f.detail}" for f in findings]
-        pytest.fail(
+        problems.append(
             f"{len(findings)} GPU timing measurement(s) taken without a device synchronize -- the timer stops at kernel LAUNCH, not "
             f"completion, so the number is a phantom (measured up to ~1900x under-count) and poisons anything that persists it:\n" + "\n".join(lines)
         )
+    if problems:
+        pytest.fail("\n".join(problems))

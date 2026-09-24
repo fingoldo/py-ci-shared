@@ -212,10 +212,7 @@ class TestTheOtherMockingIdiom:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "from unittest.mock import patch\n\nimport store\n\n\n"
-            "@patch('store.commit')\n"
-            "def test_it(fake):\n"
-            "    fake.assert_called_once()\n",
+            "from unittest.mock import patch\n\nimport store\n\n\n" "@patch('store.commit')\n" "def test_it(fake):\n" "    fake.assert_called_once()\n",
         )
 
         assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
@@ -264,9 +261,7 @@ class TestTheAsyncInspectionNames:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "import store\n\n\nasync def test_it(session):\n"
-            "    await store.save(session)\n"
-            f"    assert session.execute.{reader}\n",
+            "import store\n\n\nasync def test_it(session):\n" "    await store.save(session)\n" f"    assert session.execute.{reader}\n",
         )
 
         assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
@@ -278,8 +273,7 @@ class TestTheAsyncInspectionNames:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "import store\n\n\nasync def test_it(session, notifier):\n"
-            "    await store.save(session)\n    assert notifier.await_count == 1\n",
+            "import store\n\n\nasync def test_it(session, notifier):\n" "    await store.save(session)\n    assert notifier.await_count == 1\n",
         )
 
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
@@ -376,8 +370,7 @@ class TestAModuleThatOpensItsOwnConnection:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it():\n"
-            "    with patch('sqlite3.connect'):\n        store.install('x')\n",
+            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it():\n" "    with patch('sqlite3.connect'):\n        store.install('x')\n",
         )
 
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == [
@@ -427,7 +420,11 @@ class TestATestThatRunsAgainstARealDatabase:
     """
 
     def test_opening_a_database_counts_as_exercising_every_effect(self, tmp_path):
-        _write(tmp_path, "store.py", "import sqlite3\n\n\ndef install(path):\n    db = sqlite3.connect(path)\n    db.execute('CREATE TABLE t (a)')\n    db.executemany('INSERT INTO t VALUES (?)', [(1,)])\n    db.commit()\n")
+        _write(
+            tmp_path,
+            "store.py",
+            "import sqlite3\n\n\ndef install(path):\n    db = sqlite3.connect(path)\n    db.execute('CREATE TABLE t (a)')\n    db.executemany('INSERT INTO t VALUES (?)', [(1,)])\n    db.commit()\n",
+        )
         _write(
             tmp_path,
             "tests/test_store.py",
@@ -457,8 +454,7 @@ class TestATestThatRunsAgainstARealDatabase:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it(conn):\n"
-            "    with patch('sqlite3.connect'):\n        store.save(conn)\n",
+            "from unittest.mock import patch\n\nimport store\n\n\ndef test_it(conn):\n" "    with patch('sqlite3.connect'):\n        store.save(conn)\n",
         )
 
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
@@ -521,8 +517,7 @@ class TestAnExtractedAssertionHelperStillCounts:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "import store\n\n\ndef statements(conn):\n    return []\n\n\ndef test_it(conn):\n"
-            "    store.save(conn)\n    assert statements(conn) == []\n",
+            "import store\n\n\ndef statements(conn):\n    return []\n\n\ndef test_it(conn):\n" "    store.save(conn)\n    assert statements(conn) == []\n",
         )
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
@@ -552,8 +547,7 @@ class TestAnExtractedAssertionHelperStillCounts:
         _write(
             tmp_path,
             "tests/test_store.py",
-            "import store\nfrom tests.test_other import statements\n\n\ndef test_it(conn):\n"
-            "    store.save(conn)\n    assert statements(conn) == []\n",
+            "import store\nfrom tests.test_other import statements\n\n\ndef test_it(conn):\n" "    store.save(conn)\n    assert statements(conn) == []\n",
         )
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
@@ -605,15 +599,20 @@ class TestASrcLayoutResolvesWithoutBeingTold:
 
         assert "store.py" in build_import_map(tmp_path)
 
-    def test_two_packages_under_src_are_left_to_the_caller(self, tmp_path: Path):
-        """Guessing between them would silently pick one and drop the other's modules, which is the
-        same empty-population failure wearing a different shape."""
+    def test_two_packages_under_src_are_both_mapped(self, tmp_path: Path):
+        """Every package under src is importable by its own name, so every one is mapped; leaving the
+        layout to the caller gave an empty map, the empty-population failure this detection exists for."""
         _write(tmp_path, "src/one/__init__.py", "")
         _write(tmp_path, "src/two/__init__.py", "")
         _write(tmp_path, "src/one/store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "src/two/load.py", "def load(conn):\n    conn.execute('x')\n")
         _write(tmp_path, "tests/test_store.py", "from one.store import save\n\n\ndef test_it(conn):\n    assert save(conn) is None\n")
+        _write(tmp_path, "tests/test_load.py", "from two import load\n\n\ndef test_it(conn):\n    assert load.load(conn) is None\n")
 
-        assert build_import_map(tmp_path) == {} or "src/one/store.py" not in build_import_map(tmp_path)
+        import_map = build_import_map(tmp_path)
+        assert import_map["src/one/store.py"] == ["tests/test_store.py"]
+        assert import_map["src/two/load.py"] == ["tests/test_load.py"]
+        assert set(find_unasserted_effects(tmp_path, import_map)) == {"src/one/store.py::commit", "src/two/load.py::execute"}
 
 
 class TestExecuteIsAlsoAnOrdinaryWord:
@@ -626,7 +625,11 @@ class TestExecuteIsAlsoAnOrdinaryWord:
     """
 
     def test_a_module_calling_its_own_execute_is_not_reported(self, tmp_path: Path):
-        _write(tmp_path, "client.py", "def execute(query):\n    return _send(query)\n\n\ndef _send(q):\n    return q\n\n\ndef run():\n    return execute('{ a }')\n")
+        _write(
+            tmp_path,
+            "client.py",
+            "def execute(query):\n    return _send(query)\n\n\ndef _send(q):\n    return q\n\n\ndef run():\n    return execute('{ a }')\n",
+        )
         _write(tmp_path, "tests/test_client.py", "import client\n\n\ndef test_it():\n    assert client.run() == '{ a }'\n")
 
         assert find_unasserted_effects(tmp_path, {"client.py": ["tests/test_client.py"]}) == {}
@@ -647,7 +650,11 @@ class TestExecuteIsAlsoAnOrdinaryWord:
 
     def test_a_driver_helper_imported_by_name_is_still_reported(self, tmp_path: Path):
         """`execute_values(cur, sql, rows)` from psycopg2.extras is a bare call AND a real effect."""
-        _write(tmp_path, "store.py", "from psycopg2.extras import execute_values\n\n\ndef save(cur, rows):\n    execute_values(cur, 'INSERT INTO t VALUES %s', rows)\n")
+        _write(
+            tmp_path,
+            "store.py",
+            "from psycopg2.extras import execute_values\n\n\ndef save(cur, rows):\n    execute_values(cur, 'INSERT INTO t VALUES %s', rows)\n",
+        )
         _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(cur):\n    assert store.save(cur, []) is None\n")
 
         assert "store.py::execute_values" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
@@ -763,12 +770,120 @@ class TestANestedCheckoutIsNotThisRepository:
         _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
         _write(tmp_path, "tests/test_store.py", "import store\n")
 
-        parity._cached_imported_names.cache_clear()
         reads: list = []
-        real = parity._imported_names
-        monkeypatch.setattr(parity, "_imported_names", lambda p: reads.append(p) or real(p))
+        real = parity._import_records
+        monkeypatch.setattr(parity, "_import_records", lambda p: reads.append(p) or real(p))
 
         build_import_map(tmp_path, package_name="pkg", src_dir="src")
 
         store_reads = [p for p in reads if p.name == "store.py"]
         assert len(store_reads) == 1, f"store.py was parsed {len(store_reads)} times"
+
+
+class TestAuditRegressions:
+    def test_a_decorator_patch_binds_the_leading_parameter(self, tmp_path):
+        """`@patch` injects into the LEADING parameters, bottom decorator first; `tmp_path` is a fixture."""
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n@patch('store.commit')\ndef test_it(mock_commit, tmp_path):\n    tmp_path.assert_called_once()\n",
+        )
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "from unittest.mock import patch\n\nimport store\n\n\n@patch('store.commit')\ndef test_it(mock_commit, tmp_path):\n    mock_commit.assert_called_once()\n",
+        )
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_stacked_patches_map_bottom_up_and_new_injects_nothing(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        body = (
+            "from unittest.mock import patch\n\nimport store\n\n\n"
+            "@patch('store.commit')\n@patch('store.notify', new=None)\n@patch('store.log')\n"
+            "def test_it(mock_log, {second}):\n    {second}.assert_called_once()\n"
+        )
+        _write(tmp_path, "tests/test_store.py", body.format(second="mock_commit"))
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+        _write(tmp_path, "tests/test_store.py", body.replace("def test_it(mock_log, {second})", "def test_it({second}, mock_commit)").format(second="mock_log"))
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+    def test_a_relative_import_in_a_package_init_is_an_edge(self, tmp_path):
+        _write(tmp_path, "pkg/__init__.py", "from . import writer\n")
+        _write(tmp_path, "pkg/writer.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_pkg.py", "import pkg\n\n\ndef test_it():\n    assert pkg\n")
+        import_map = build_import_map(tmp_path)
+        assert import_map.get("pkg/writer.py") == ["tests/test_pkg.py"]
+        assert "pkg/writer.py::commit" in find_unasserted_effects(tmp_path, import_map)
+
+    def test_an_object_imported_from_a_first_party_module_is_not_a_module(self, tmp_path):
+        _write(tmp_path, "pkg/__init__.py", "")
+        _write(tmp_path, "pkg/db.py", "conn = None\n")
+        _write(tmp_path, "pkg/store.py", "from pkg.db import conn\n\n\ndef save():\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from pkg import store\n\n\ndef test_it():\n    store.save()\n")
+        assert list(find_unasserted_effects(tmp_path, {"pkg/store.py": ["tests/test_store.py"]})) == ["pkg/store.py::commit"]
+
+    def test_an_imported_first_party_module_is_still_exempt_by_either_import_form(self, tmp_path):
+        _write(tmp_path, "pkg/__init__.py", "")
+        _write(tmp_path, "pkg/client.py", "def execute(q):\n    return q\n")
+        _write(tmp_path, "pkg/a.py", "from pkg import client\n\n\ndef f():\n    return client.execute('x')\n")
+        _write(tmp_path, "pkg/b.py", "import pkg.client as gql\n\n\ndef f():\n    return gql.execute('x')\n")
+        _write(tmp_path, "tests/test_ab.py", "from pkg import a, b\n\n\ndef test_it():\n    assert a.f() == b.f()\n")
+        assert find_unasserted_effects(tmp_path, {"pkg/a.py": ["tests/test_ab.py"], "pkg/b.py": ["tests/test_ab.py"]}) == {}
+
+    def test_an_unrelated_sqlite_fixture_does_not_credit_the_module(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import sqlite3\n\nimport pytest\n\nimport store\n\n\n@pytest.fixture\ndef cache_db(tmp_path):\n    return sqlite3.connect(tmp_path / 'c.db')\n\n\n"
+            "def test_cache(cache_db):\n    assert cache_db\n\n\ndef test_save(conn):\n    store.save(conn)\n",
+        )
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+
+    def test_a_test_that_uses_the_database_and_the_module_is_credited(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(
+            tmp_path,
+            "tests/test_store.py",
+            "import sqlite3\n\nimport store\n\n\ndef test_save(tmp_path):\n    conn = sqlite3.connect(tmp_path / 'c.db')\n    store.save(conn)\n",
+        )
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_importing_a_constant_does_not_excuse_a_self_connecting_module(self, tmp_path):
+        _write(tmp_path, "store.py", "import sqlite3\n\nTABLE = 't'\n\n\ndef install(p):\n    db = sqlite3.connect(p)\n    db.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "from store import TABLE\n\n\ndef test_it():\n    assert TABLE == 't'\n")
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+        _write(tmp_path, "tests/test_store.py", "from store import install\n\n\ndef test_it(tmp_path):\n    install(tmp_path / 'v.db')\n")
+        assert find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]}) == {}
+
+    def test_an_edit_between_calls_is_seen(self, tmp_path):
+        """A process-wide memo of a module's imports kept the first answer after the file changed."""
+        import os
+
+        pipeline = _write(tmp_path, "pipeline.py", "X = 1\n")
+        _write(tmp_path, "replay.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_pipeline.py", "import pipeline\n\n\ndef test_it():\n    assert pipeline\n")
+        assert "replay.py" not in build_import_map(tmp_path)
+        pipeline.write_text("import replay\n", encoding="utf-8")
+        st = pipeline.stat()
+        os.utime(pipeline, ns=(st.st_atime_ns, st.st_mtime_ns + 10_000_000))
+        assert build_import_map(tmp_path)["replay.py"] == ["tests/test_pipeline.py"]
+
+    def test_a_bom_module_is_read_and_an_unparsable_one_is_reported(self, tmp_path):
+        (tmp_path / "store.py").write_bytes(b"\xef\xbb\xbfdef save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    store.save(conn)\n")
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::commit"]
+        _write(tmp_path, "broken.py", "def save(conn:\n")
+        problems = find_unasserted_effects(tmp_path, {"broken.py": ["tests/test_store.py"]})
+        assert list(problems) == ["broken.py::<unparsable>"]
+
+    def test_the_ratchet_fails_on_a_stale_entry_and_an_empty_map(self, tmp_path):
+        _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+        _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    store.save(conn)\n    conn.commit.assert_called_once()\n")
+        assert_effects_are_asserted(tmp_path, {"store.py": ["tests/test_store.py"]})
+        with pytest.raises(pytest.fail.Exception, match="no longer found"):
+            assert_effects_are_asserted(tmp_path, {"store.py": ["tests/test_store.py"]}, accepted=["store.py::commit"])
+        with pytest.raises(pytest.fail.Exception, match="0 module"):
+            assert_effects_are_asserted(tmp_path, {})

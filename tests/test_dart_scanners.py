@@ -365,3 +365,56 @@ class TestRefinements:
         files, read = _reader({"lib/a.dart": src})
         problems = scan_tappable_semantics(files, read)
         assert any("announced role" in v for v in problems.values())
+
+
+class TestCommentStrippingAndKeys:
+    def test_a_url_in_a_string_does_not_hide_the_rest_of_the_line(self):
+        files, read = _reader({"lib/w.dart": "Text('Visit https://x.com now'); final c = Color(0xFF112233);"})
+        found = scan_hardcoded_ui_strings(files, read)
+        assert any("Visit https://x.com now" in d for d in found.values())
+        assert any("Color(0xFF112233)" in d for d in found.values())
+
+    def test_real_comments_are_still_stripped(self):
+        files, read = _reader({"lib/w.dart": "// Text('Hello world')\n/* Text('Other text') /* nested */ still comment */\nfinal x = 1;"})
+        assert scan_hardcoded_ui_strings(files, read) == {}
+
+    def test_line_numbers_survive_a_block_comment(self):
+        files, read = _reader({"lib/w.dart": "/*\n\n*/\nText('Hello world');"})
+        (description,) = scan_hardcoded_ui_strings(files, read).values()
+        assert "(line 4)" in description
+
+    def test_a_changed_finding_gets_a_new_key(self):
+        files, read = _reader({"lib/k.dart": "Text('Hello there');"})
+        before = set(scan_hardcoded_ui_strings(files, read))
+        files, read = _reader({"lib/k.dart": "Text('Goodbye now');"})
+        after = set(scan_hardcoded_ui_strings(files, read))
+        assert len(before) == len(after) == 1 and before != after
+
+    def test_an_edit_above_a_finding_keeps_its_key(self):
+        files, read = _reader({"lib/k.dart": "Text('Hello there');"})
+        before = set(scan_hardcoded_ui_strings(files, read))
+        files, read = _reader({"lib/k.dart": "final a = 1;\n\nText('Hello there');"})
+        assert set(scan_hardcoded_ui_strings(files, read)) == before
+
+    def test_identical_findings_in_one_file_get_distinct_keys(self):
+        files, read = _reader({"lib/k.dart": "Text('Hello there');\nText('Hello there');"})
+        keys = sorted(scan_hardcoded_ui_strings(files, read))
+        assert len(keys) == 2 and keys[1] == keys[0] + "#1" and keys[0].startswith("lib/k.dart#")
+
+
+class TestTryAndPrefsRegressions:
+    def test_a_word_containing_try_is_not_a_try_block(self):
+        files, read = _reader({"lib/j.dart": "final entry = 1; final retry = 2;\nfinal v = jsonDecode(s);"})
+        assert any("jsonDecode outside a try" in d for d in scan_parse_serialize_catch(files, read).values())
+
+    def test_a_real_try_block_passes(self):
+        files, read = _reader({"lib/j.dart": "try {\n  final v = jsonDecode(s);\n} catch (e) {}"})
+        assert scan_parse_serialize_catch(files, read) == {}
+
+    def test_prefs_reached_through_an_attribute_are_checked(self):
+        files, read = _reader({"lib/p.dart": "void f() {\n  widget.prefs.setBool('k', true);\n  ref.read(x).prefs.setInt('n', 1);\n}"})
+        assert len(scan_provider_state_hygiene(files, read)) == 2
+
+    def test_awaited_prefs_through_an_attribute_pass(self):
+        files, read = _reader({"lib/p.dart": "Future<void> f() async {\n  await widget.prefs.setBool('k', true);\n}"})
+        assert scan_provider_state_hygiene(files, read) == {}

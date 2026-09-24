@@ -14,27 +14,50 @@ become perfect.
 from __future__ import annotations
 
 import ast
+import os
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
+from typing import Optional
+
+from ._core import ImportAliases, scan_python
 
 __all__ = ["ACTIONABLE_RE", "assert_fail_messages_actionable", "fail_message_problems"]
 
-#: A fix verb, or a ``<placeholder>`` -- the actionable part of a templated message. A bare colon or path is not.
-ACTIONABLE_RE = re.compile(
-    r"<[^>]+>|\b(Add|Either|Refresh|Whitelist|Fix|Run|Update|Remove|Delete|Document|Check|See|Replace|Carve|Regenerate|Rename|Move|Improve|Drain|Lower|Call|Use|Set|Install|OR)\b",
-    re.IGNORECASE,
+_VERBS = (
+    "Add|Either|Refresh|Whitelist|Fix|Run|Update|Remove|Delete|Document|Check|See|Replace|Carve|Regenerate|Rename|Move|Improve|Drain|Lower|Call|Use|Set|Install"
 )
+
+#: A fix verb, or a ``<placeholder>`` -- the actionable part of a templated message. A bare colon or path is not.
+#: Case matters: a capitalised verb reads as an instruction anywhere, a lower-case one only where a sentence or
+#: clause starts (``...; run X``, ``-- update the baseline``). Otherwise nouns (``the set of``, ``see also``, ``use``)
+#: and ``or`` in ``wrong or missing`` counted as instructions.
+ACTIONABLE_RE = re.compile(r"<[^>]+>|\b(?:" + _VERBS + r")\b|(?:^|[.;:!?]\s+|\s--?\s+|\n\s*)(?:" + _VERBS.lower() + r")\b")
+
+_FAIL_TARGETS = frozenset({"pytest.fail", "_pytest.outcomes.fail"})
+_MESSAGE_KWARGS = ("reason", "msg")
+
+
+def _message_node(node: ast.Call) -> Optional[ast.expr]:
+    if node.args:
+        return node.args[0]
+    for kw in node.keywords:
+        if kw.arg in _MESSAGE_KWARGS:
+            return kw.value
+    return None
 
 
 def _fail_calls(tree: ast.AST) -> Iterator[tuple[int, str, bool]]:
-    """``(line, static text, has a runtime part)`` for every ``pytest.fail(...)`` call."""
+    """``(line, static text, has a runtime part)`` for every ``pytest.fail(...)`` call, however ``fail`` was imported
+    (``from pytest import fail``, ``import pytest as pt``) and whether the message is positional or ``reason=``."""
+    aliases = ImportAliases.from_tree(tree)
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "fail"):
+        if not (isinstance(node, ast.Call) and aliases.qualified_name(node) in _FAIL_TARGETS):
             continue
-        if not (isinstance(node.func.value, ast.Name) and node.func.value.id == "pytest") or not node.args:
+        first = _message_node(node)
+        if first is None:
+            yield node.lineno, "", False
             continue
-        first = node.args[0]
         dynamic = not isinstance(first, ast.Constant)
         chunks: list[str] = []
         for sub in ast.walk(first):
@@ -45,23 +68,35 @@ def _fail_calls(tree: ast.AST) -> Iterator[tuple[int, str, bool]]:
         yield node.lineno, " ".join(chunks), dynamic
 
 
-def fail_message_problems(files: Iterable[Path], *, pattern: re.Pattern[str] = ACTIONABLE_RE) -> tuple[int, list[str]]:
-    """``(calls audited, ["file:line -> text", ...])`` for static messages the pattern does not accept."""
+def _common_root(files: list[Path]) -> Optional[Path]:
+    if not files:
+        return None
+    try:
+        return Path(os.path.commonpath([str(p.resolve().parent) for p in files]))
+    except ValueError:  # different drives
+        return None
+
+
+def fail_message_problems(files: Iterable[Path], *, pattern: re.Pattern[str] = ACTIONABLE_RE, root: Optional[Path] = None) -> tuple[int, list[str]]:
+    """``(calls audited, ["path:line -> text", ...])`` for static messages the pattern does not accept.
+
+    Paths are relative to *root* (default: the files' common directory). A file that cannot be parsed is itself a
+    problem, never skipped.
+    """
+    paths = [Path(p) for p in files]
+    base = root if root is not None else _common_root(paths)
+    scan = scan_python([p.resolve() for p in paths], root=base.resolve() if base is not None else None)
     audited = 0
-    bad: list[str] = []
-    for path in files:
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, SyntaxError):
-            continue
-        for line, text, dynamic in _fail_calls(tree):
+    bad: list[str] = [f"{u.rel}:{u.line} ({u.kind}: {u.message})" for u in scan.unparsed]
+    for parsed in scan:
+        for line, text, dynamic in _fail_calls(parsed.tree):
             audited += 1
             if dynamic:
                 continue
             if not text:
-                bad.append(f"{path.name}:{line} (empty message)")
+                bad.append(f"{parsed.rel}:{line} (empty message)")
             elif not pattern.search(text):
-                bad.append(f"{path.name}:{line} -> {text[:80]!r}")
+                bad.append(f"{parsed.rel}:{line} -> {text[:80]!r}")
     return audited, bad
 
 
@@ -72,12 +107,13 @@ def assert_fail_messages_actionable(
     exclude: Iterable[str] = (),
     min_audited: int = 1,
 ) -> None:
-    """Fail on a ``pytest.fail`` message under *meta_dir* with no fix verb and no placeholder."""
+    """Fail on a ``pytest.fail`` message under *meta_dir* with no fix verb and no placeholder, or a file that cannot
+    be parsed."""
     import pytest
 
     skip = set(exclude)
     files = sorted(p for p in meta_dir.glob("test_*.py") if p.name not in skip)
-    audited, bad = fail_message_problems(files, pattern=pattern)
+    audited, bad = fail_message_problems(files, pattern=pattern, root=meta_dir)
     if audited < min_audited:
         pytest.fail(f"only {audited} pytest.fail call(s) found under {meta_dir}; Check the collector -- it has stopped finding them")
     if bad:

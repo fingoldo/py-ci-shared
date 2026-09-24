@@ -48,8 +48,12 @@ the code. Prefer adding a guard to widening a scanner.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
+from ._core import DEFAULT_EXCLUDE, iter_files, relative_posix, scan_python
 
 __all__ = ["Finding", "ModuleFacts", "module_index", "scan"]
 
@@ -96,37 +100,11 @@ class ModuleFacts:
 
 
 def _module_name(path: Path, root: Path) -> str:
-    rel = path.relative_to(root).with_suffix("")
+    rel = Path(relative_posix(path, root)).with_suffix("")
     parts = list(rel.parts)
     if parts and parts[-1] == "__init__":
         parts.pop()
     return ".".join(parts)
-
-
-def _forwards_dynamically(tree: ast.AST) -> bool:
-    """Does this module decide its own attributes at run time?
-
-    Three shapes, all of which defeat a source-level answer and all of which are legitimate:
-    `globals()[...] = ...` (a re-export loop), a module-level `__getattr__` (PEP 562 lazy
-    attributes), and a `__setattr__` on a custom module class (a proxy that forwards assignment to
-    another module). Any of them means "do not guess about this module".
-    """
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"__getattr__", "__setattr__"}:
-            return True
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if (
-                    isinstance(target, ast.Subscript)
-                    and isinstance(target.value, ast.Call)
-                    and isinstance(target.value.func, ast.Name)
-                    and target.value.func.id == "globals"
-                ):
-                    return True
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "update":
-            if isinstance(node.func.value, ast.Call) and isinstance(node.func.value.func, ast.Name) and node.func.value.func.id == "globals":
-                return True
-    return False
 
 
 def _bound_names(target: ast.expr) -> "list[str]":
@@ -146,50 +124,86 @@ def _bound_names(target: ast.expr) -> "list[str]":
     return []
 
 
-def _module_level_names(tree: ast.AST) -> tuple[set[str], set[str]]:
-    """(bound, defined) for one module.
+_TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
-    Walks the whole tree rather than just `body`, because these projects put bindings inside
-    `try:`/`if TYPE_CHECKING:`/`if sys.platform` blocks and a module-body-only scan reports those as
-    missing -- which is a false positive on exactly the carved-up modules this check is for.
-    """
-    bound: set[str] = set()
-    imported: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                imported.add((alias.asname or alias.name).split(".")[0])
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            bound.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                bound.update(_bound_names(target))
-        elif isinstance(node, ast.AnnAssign):
-            bound.update(_bound_names(node.target))
-    bound |= imported
-    return bound, bound - imported
+
+def _module_scope(body: "list[ast.stmt]") -> Iterator[ast.stmt]:
+    """Statements that bind at MODULE scope: the body and every ``if``/``try``/``with``/loop body in it -- these
+    projects put bindings inside `try:`/`if TYPE_CHECKING:`/`if sys.platform` blocks -- but never a function's or a
+    class's body, whose names are locals or class attributes, not module attributes."""
+    stack = list(body)
+    while stack:
+        node = stack.pop(0)
+        yield node
+        if isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+            stack.extend(node.body)
+            stack.extend(getattr(node, "orelse", []))
+        elif isinstance(node, _TRY_TYPES):
+            stack.extend(getattr(node, "body", []))
+            for handler in getattr(node, "handlers", []):
+                stack.extend(handler.body)
+            stack.extend(getattr(node, "orelse", []))
+            stack.extend(getattr(node, "finalbody", []))
+
+
+def _globals_assigned_in_functions(tree: ast.AST) -> "set[str]":
+    """Names a function declares ``global`` and assigns: those are module attributes too."""
+    out: set[str] = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        declared = {n for node in ast.walk(fn) if isinstance(node, ast.Global) for n in node.names}
+        if not declared:
+            continue
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in declared:
+                out.add(node.id)
+    return out
 
 
 def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
-    """``(bound, defined, forwards_dynamically)`` from ONE walk of *tree*.
+    """``(bound, defined, forwards_dynamically)`` for one module.
 
-    The three answers come from the same node types, and walking a module twice to get them separately was half the
-    index build on a package of a few thousand modules.
+    ``bound``/``defined`` come from module-scope statements only (plus names a function declares ``global``): a
+    function's local ``NAME = 1`` is not ``module.NAME``, and counting it let ``m.NAME = 2`` in a test pass as setting
+    an attribute the module has. ``forwards`` still looks everywhere, because a ``globals()[...]`` loop or a
+    ``__getattr__``/``__setattr__`` decides the module's attributes wherever it sits.
     """
     bound: set[str] = set()
     imported: set[str] = set()
     forwards = False
-    for node in ast.walk(tree):
+    body = tree.body if isinstance(tree, ast.Module) else []
+    for node in _module_scope(body):
         if isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
-                imported.add((alias.asname or alias.name).split(".")[0])
+                if alias.name != "*":
+                    imported.add((alias.asname or alias.name).split(".")[0])
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"__getattr__", "__setattr__"}:
-                forwards = True
             bound.add(node.name)
         elif isinstance(node, ast.Assign):
             for target in node.targets:
                 bound.update(_bound_names(target))
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            bound.update(_bound_names(node.target))
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            bound.update(_bound_names(node.target))
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                if item.optional_vars is not None:
+                    bound.update(_bound_names(item.optional_vars))
+        if isinstance(node, _TRY_TYPES):
+            bound.update(h.name for h in getattr(node, "handlers", []) if h.name)
+        # A walrus at module scope binds a module name too.
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            for sub in ast.iter_child_nodes(node):
+                if not isinstance(sub, ast.stmt):
+                    bound.update(n.target.id for n in ast.walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
+    bound |= _globals_assigned_in_functions(tree)
+    for walked in ast.walk(tree):
+        if isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef)) and walked.name in {"__getattr__", "__setattr__"}:
+            forwards = True
+        elif isinstance(walked, ast.Assign):
+            for target in walked.targets:
                 if (
                     isinstance(target, ast.Subscript)
                     and isinstance(target.value, ast.Call)
@@ -197,29 +211,28 @@ def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
                     and target.value.func.id == "globals"
                 ):
                     forwards = True
-        elif isinstance(node, ast.AnnAssign):
-            bound.update(_bound_names(node.target))
-        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "update":
-            if isinstance(node.func.value, ast.Call) and isinstance(node.func.value.func, ast.Name) and node.func.value.func.id == "globals":
+        elif isinstance(walked, ast.Call) and isinstance(walked.func, ast.Attribute) and walked.func.attr == "update":
+            if isinstance(walked.func.value, ast.Call) and isinstance(walked.func.value.func, ast.Name) and walked.func.value.func.id == "globals":
                 forwards = True
     bound |= imported
     return bound, bound - imported, forwards
 
 
-def module_index(roots: "list[Path]", *, package_root: Path) -> "dict[str, ModuleFacts]":
-    """Module-level names for every first-party module under *roots*, keyed by dotted name."""
+def module_index(roots: "list[Path]", *, package_root: Path, unparsed: "Optional[list[str]]" = None) -> "dict[str, ModuleFacts]":
+    """Module-level names for every first-party module under *roots*, keyed by dotted name.
+
+    Files are decoded BOM-safe. A module that cannot be parsed has no entry (so tests patching it cannot be checked);
+    pass *unparsed* to collect those files as ``path:line: why`` and report them.
+    """
     index: dict[str, ModuleFacts] = {}
     for root in roots:
-        for path in sorted(root.rglob("*.py")):
-            if "__pycache__" in path.parts:
-                continue
-            try:
-                tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-            except SyntaxError:
-                continue
-            bound, defined, forwards = _module_facts(tree)
-            name = _module_name(path, package_root)
-            index[name] = ModuleFacts(name=name, path=path, bound=frozenset(bound), defined=frozenset(defined), forwards=forwards)
+        result = scan_python(iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE), root=package_root)
+        if unparsed is not None:
+            unparsed.extend(u.render() for u in result.unparsed)
+        for parsed in result:
+            bound, defined, forwards = _module_facts(parsed.tree)
+            name = _module_name(parsed.path, package_root)
+            index[name] = ModuleFacts(name=name, path=parsed.path, bound=frozenset(bound), defined=frozenset(defined), forwards=forwards)
     return index
 
 
@@ -314,29 +327,58 @@ def _sentinel_names_for(body: "list[ast.stmt]", attr: str) -> "set[str]":
     return names
 
 
+def _attribute_targets(target: ast.expr) -> "list[ast.Attribute]":
+    """``m.X`` targets of an assignment, including inside tuple/list/starred unpacking (``m.A, m.B = 1, 2``)."""
+    if isinstance(target, ast.Attribute):
+        return [target]
+    if isinstance(target, ast.Starred):
+        return _attribute_targets(target.value)
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [a for element in target.elts for a in _attribute_targets(element)]
+    return []
+
+
+def _statement_sets(node: ast.stmt, aliases: "dict[str, str]"):
+    """``(lineno, dotted_module, attr)`` for every module attribute *node* itself sets: ``m.X = ...`` (plain, annotated,
+    augmented or unpacked) and ``setattr(m, "X", ...)``."""
+    targets: list[ast.expr] = []
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+        targets = [node.target]
+    for target in targets:
+        for attr in _attribute_targets(target):
+            if isinstance(attr.value, ast.Name) and attr.value.id in aliases:
+                yield node.lineno, aliases[attr.value.id], attr.attr
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+        call = node.value
+        if (
+            isinstance(call.func, ast.Name)
+            and call.func.id == "setattr"
+            and len(call.args) >= 3
+            and isinstance(call.args[0], ast.Name)
+            and call.args[0].id in aliases
+            and isinstance(call.args[1], ast.Constant)
+            and isinstance(call.args[1].value, str)
+        ):
+            yield node.lineno, aliases[call.args[0].id], call.args[1].value
+
+
 def _module_assignments(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str, str]"):
     """Yield `(lineno, dotted_module, attr)` for `mod.NAME = ...` visible in this scope and below."""
     aliases = _aliases_in(body, known, inherited)
     for node in body:
-        if isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
-                    dotted = aliases.get(target.value.id)
-                    if dotted:
-                        yield node.lineno, dotted, target.attr
+        yield from _statement_sets(node, aliases)
         inner = getattr(node, "body", None)
         if isinstance(inner, list):
             # An `if` whose test checks whether the module HAS the attribute is the careful shape,
-            # not the defect: the assignment under it cannot invent anything.
+            # not the defect: the assignment under it cannot invent anything. The branch is walked once.
+            hits = list(_module_assignments(inner, known, aliases))
             if isinstance(node, ast.If):
-                guarded = {
-                    a
-                    for _l, _d, a in _module_assignments(inner, known, aliases)
-                    if _guards_presence_of(node.test, a) or _FILE_SENTINELS.get(a, frozenset()) & _names_in(node.test)
-                }
-                yield from (t for t in _module_assignments(inner, known, aliases) if t[2] not in guarded)
+                guarded = {a for _l, _d, a in hits if _guards_presence_of(node.test, a) or _FILE_SENTINELS.get(a, frozenset()) & _names_in(node.test)}
+                yield from (t for t in hits if t[2] not in guarded)
             else:
-                yield from _module_assignments(inner, known, aliases)
+                yield from hits
         for extra in ("orelse", "finalbody"):
             branch = getattr(node, extra, None)
             if isinstance(branch, list) and branch:
@@ -346,16 +388,18 @@ def _module_assignments(body: "list[ast.stmt]", known: "set[str]", inherited: "d
 
 
 def scan(test_paths: "list[Path]", index: "dict[str, ModuleFacts]") -> "list[Finding]":
-    """Report `module.NAME = ...` in tests where the module has no `NAME` to set."""
+    """Report `module.NAME = ...` (or `setattr(module, "NAME", ...)`) in tests where the module has no `NAME` to set.
+
+    A test file that cannot be parsed is reported as a finding with target ``<unparsable>``: nothing in it was checked.
+    """
     findings: list[Finding] = []
     known = set(index)
-    for path in sorted(test_paths):
-        if "__pycache__" in path.parts:
-            continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        except SyntaxError:
-            continue
+    result = scan_python([p for p in test_paths if "__pycache__" not in Path(p).parts])
+    findings.extend(
+        Finding(path=u.path, lineno=u.line, target="<unparsable>", detail=f"{u.kind}: {u.message} -- nothing in this file was checked") for u in result.unparsed
+    )
+    for parsed in result:
+        path, tree = parsed.path, parsed.tree
 
         _FILE_SENTINELS.clear()
         for node in ast.walk(tree):

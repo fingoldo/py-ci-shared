@@ -21,12 +21,7 @@ _FULL_SHA = "1fd408df105f2a7d22d36a239d94a39ef888305a"
 def _write_pyproject(tmp_path: Path, deps_line: str) -> Path:
     p = tmp_path / "pyproject.toml"
     p.write_text(
-        "[project]\n"
-        "name = \"scratch\"\n"
-        "dependencies = [\n"
-        '    "numpy>=1.0",\n'
-        f"    {deps_line}\n"
-        "]\n",
+        "[project]\n" 'name = "scratch"\n' "dependencies = [\n" '    "numpy>=1.0",\n' f"    {deps_line}\n" "]\n",
         encoding="utf-8",
     )
     return p
@@ -129,3 +124,33 @@ def test_this_repos_own_pyproject_toml_is_clean():
     """py-ci-shared's own pyproject.toml, dogfooding the check."""
     own_pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     assert find_unpinned_git_dependencies(own_pyproject) == []
+
+
+class TestAuditRegressions:
+    def test_a_dependency_with_extras_is_scanned(self, tmp_path):
+        p = _write_pyproject(tmp_path, '"foo[extra] @ git+https://github.com/o/foo.git@main",')
+        assert find_unpinned_git_dependencies(p) == ["main"]
+        p = _write_pyproject(tmp_path, f'"foo[extra,cli] @ git+https://github.com/o/foo.git@{_FULL_SHA}",')
+        assert find_unpinned_git_dependencies(p) == []
+
+    def test_an_uppercase_sha_is_a_full_pin(self, tmp_path):
+        p = _write_pyproject(tmp_path, f'"foo @ git+https://github.com/o/foo.git@{_FULL_SHA.upper()}",')
+        assert find_unpinned_git_dependencies(p) == []
+
+    def test_uv_and_poetry_source_tables_are_scanned(self, tmp_path):
+        p = tmp_path / "pyproject.toml"
+        p.write_text(
+            '[project]\nname = "x"\n\n'
+            "[tool.uv.sources]\n"
+            'a = { git = "https://github.com/o/a", branch = "main" }\n'
+            f'b = {{ git = "https://github.com/o/b", rev = "{_FULL_SHA}" }}\n'
+            'c = { git = "https://github.com/o/c" }\n'
+            'd = { path = "../d" }\n\n'
+            "[tool.poetry.dependencies]\n"
+            'e = { git = "https://github.com/o/e.git", tag = "v1.0" }\n\n'
+            "[tool.poetry.group.dev.dependencies]\n"
+            'f = { git = "https://github.com/o/f.git", rev = "abc123" }\n',
+            encoding="utf-8",
+        )
+        assert find_unpinned_git_dependencies(p) == ["a: branch=main", "c: <no ref>", "e: tag=v1.0", "f: rev=abc123"]
+        assert find_unpinned_git_dependencies(p, allow_unpinned_url_prefixes=["https://github.com/o/"]) == []

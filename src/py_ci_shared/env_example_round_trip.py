@@ -37,35 +37,71 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
 
-#: ``NAME=VALUE`` or ``# NAME=VALUE``; NAME in the shell's own shape.
-_ASSIGNMENT = re.compile(r"^\s*(?:#\s*)?(?P<name>[A-Z][A-Z0-9_]*)=(?P<value>.*)$")
+from ._core import read_source
+
+#: ``NAME=VALUE``, ``# NAME=VALUE``, ``export NAME=VALUE`` and ``NAME = VALUE`` (dotenv accepts all four); NAME in the
+#: shell's own shape.
+_ASSIGNMENT = re.compile(r"^\s*(?:#\s*)?(?:export\s+)?(?P<name>[A-Z][A-Z0-9_]*)\s*=\s*(?P<value>.*)$")
 #: A dotenv inline comment: whitespace, then ``#`` to the end of the line.
 _INLINE_COMMENT = re.compile(r"\s+#.*$")
 DEFAULT_PLACEHOLDER = re.compile(r"^$|\.\.\.|^<.*>$|<[^>]+>|^your[-_]|changeme", re.IGNORECASE)
 
 
 def documented_values(env_path: Path) -> list[tuple[int, str, str]]:
-    """``(line number, NAME, value)`` for every assignment, commented out or not, inline comment stripped."""
+    """``(line number, NAME, value)`` for every assignment, commented out or not, inline comment stripped.
+
+    A quoted value is read up to its closing quote first, so ``X="a #b"  # note`` is ``a #b``; an unquoted value loses
+    an inline comment (whitespace, then ``#``). The file is decoded BOM-safe, so the first assignment is not lost.
+    """
     out = []
-    for lineno, line in enumerate(env_path.read_text(encoding="utf-8").splitlines(), start=1):
+    for lineno, line in enumerate(read_source(env_path).splitlines(), start=1):
         m = _ASSIGNMENT.match(line)
         if not m:
             continue
-        value = _INLINE_COMMENT.sub("", m.group("value")).strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
-            value = value[1:-1]
-        out.append((lineno, m.group("name"), value))
+        out.append((lineno, m.group("name"), _value(m.group("value"))))
     return out
 
 
+def _value(raw: str) -> str:
+    raw = raw.strip()
+    if raw[:1] in ("'", '"'):
+        quote = raw[0]
+        i = 1
+        while i < len(raw):
+            if raw[i] == "\\" and quote == '"':
+                i += 2
+                continue
+            if raw[i] == quote:
+                return raw[1:i]
+            i += 1
+    return _INLINE_COMMENT.sub("", raw).strip()
+
+
 def env_names(settings_cls: type) -> dict[str, str]:
-    """``{ENV_NAME: field}``: the prefix rule, a string validation alias where one is set, upper-cased."""
+    """``{ENV_NAME: field}``: the prefix rule, or the validation alias where one is set, upper-cased. An
+    ``AliasChoices`` contributes every choice, and an ``AliasPath`` its first element (the variable it reads)."""
     prefix = str(getattr(settings_cls, "model_config", {}).get("env_prefix", "") or "")
     names = {}
     for field, info in settings_cls.model_fields.items():  # type: ignore[attr-defined]
-        alias = getattr(info, "validation_alias", None)
-        names[(alias if isinstance(alias, str) else prefix + field).upper()] = field
+        aliases = _alias_names(getattr(info, "validation_alias", None))
+        for name in aliases or [prefix + field]:
+            names[name.upper()] = field
     return names
+
+
+def _alias_names(alias: object) -> list[str]:
+    """The environment names a pydantic validation alias reads: a str, ``AliasChoices(...).choices``, ``AliasPath``."""
+    if alias is None:
+        return []
+    if isinstance(alias, str):
+        return [alias]
+    choices = getattr(alias, "choices", None)
+    if isinstance(choices, (list, tuple)):
+        return [n for choice in choices for n in _alias_names(choice)]
+    path = getattr(alias, "path", None)
+    if isinstance(path, (list, tuple)) and path and isinstance(path[0], str):
+        return [path[0]]
+    return []
 
 
 @contextmanager

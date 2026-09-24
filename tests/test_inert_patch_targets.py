@@ -63,9 +63,7 @@ class TestWhatMustStayQuiet:
         The source cannot answer, and it is where the author is most likely doing this on purpose --
         an early version reported twelve findings against exactly such a package."""
         tmp_path, pkg, tests = project
-        (pkg / "_proxy.py").write_text(
-            "import pkg._owner as _o\n\n\ndef __getattr__(name):\n    return getattr(_o, name)\n", encoding="utf-8"
-        )
+        (pkg / "_proxy.py").write_text("import pkg._owner as _o\n\n\ndef __getattr__(name):\n    return getattr(_o, name)\n", encoding="utf-8")
         assert not _scan(tmp_path, tests, "import pkg._proxy as p\n\n\ndef test_x():\n    p._SINGLETON = None\n")
 
     def test_an_alias_rebound_in_another_function_is_not_that_module(self, project):
@@ -103,9 +101,11 @@ class TestATupleUnpackingBindsEveryNameInIt:
         tmp_path, pkg, tests = project
 
         found = self._with_state(
-            tmp_path, pkg, tests,
-            'm_app, m_ip = None, None\n',
-            'import pkg._state as state\n\n\ndef test_it():\n    state.m_ip = 0\n',
+            tmp_path,
+            pkg,
+            tests,
+            "m_app, m_ip = None, None\n",
+            "import pkg._state as state\n\n\ndef test_it():\n    state.m_ip = 0\n",
         )
 
         assert found == [], [f.target for f in found]
@@ -114,9 +114,11 @@ class TestATupleUnpackingBindsEveryNameInIt:
         tmp_path, pkg, tests = project
 
         found = self._with_state(
-            tmp_path, pkg, tests,
-            'a, b, c, d = 1, 2, 3, 4\n',
-            'import pkg._state as state\n\n\ndef test_it():\n    state.a = 9\n    state.b = 9\n    state.c = 9\n    state.d = 9\n',
+            tmp_path,
+            pkg,
+            tests,
+            "a, b, c, d = 1, 2, 3, 4\n",
+            "import pkg._state as state\n\n\ndef test_it():\n    state.a = 9\n    state.b = 9\n    state.c = 9\n    state.d = 9\n",
         )
 
         assert found == [], [f.target for f in found]
@@ -125,9 +127,11 @@ class TestATupleUnpackingBindsEveryNameInIt:
         tmp_path, pkg, tests = project
 
         found = self._with_state(
-            tmp_path, pkg, tests,
-            'first, *rest = 1, 2, 3\n',
-            'import pkg._state as state\n\n\ndef test_it():\n    state.first = 9\n    state.rest = []\n',
+            tmp_path,
+            pkg,
+            tests,
+            "first, *rest = 1, 2, 3\n",
+            "import pkg._state as state\n\n\ndef test_it():\n    state.first = 9\n    state.rest = []\n",
         )
 
         assert found == [], [f.target for f in found]
@@ -137,9 +141,11 @@ class TestATupleUnpackingBindsEveryNameInIt:
         tmp_path, pkg, tests = project
 
         found = self._with_state(
-            tmp_path, pkg, tests,
-            'a, b = 1, 2\n',
-            'import pkg._state as state\n\n\ndef test_it():\n    state.never_defined = 9\n',
+            tmp_path,
+            pkg,
+            tests,
+            "a, b = 1, 2\n",
+            "import pkg._state as state\n\n\ndef test_it():\n    state.never_defined = 9\n",
         )
 
         assert [f.target for f in found] == ["pkg._state.never_defined"]
@@ -160,13 +166,18 @@ class TestAPresenceGuardedAssignmentInventsNothing:
     @staticmethod
     def _run(tmp_path, pkg, tests, test_body):
         """Write a state module with no `absent` attribute, then scan *test_body*."""
-        (pkg / "_state.py").write_text('_MTIME = 0\n', encoding="utf-8")
+        (pkg / "_state.py").write_text("_MTIME = 0\n", encoding="utf-8")
         return _scan(tmp_path, tests, test_body)
 
     def test_a_sentinel_guarded_set_and_restore_is_not_reported(self, project):
         tmp_path, pkg, tests = project
 
-        found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\n_SENTINEL = object()\n\n\ndef test_it():\n    saved = getattr(state, 'absent', _SENTINEL)\n    if saved is not _SENTINEL:\n        state.absent = 0\n    try:\n        pass\n    finally:\n        if saved is not _SENTINEL:\n            state.absent = saved\n")
+        found = self._run(
+            tmp_path,
+            pkg,
+            tests,
+            "import pkg._state as state\n\n\n_SENTINEL = object()\n\n\ndef test_it():\n    saved = getattr(state, 'absent', _SENTINEL)\n    if saved is not _SENTINEL:\n        state.absent = 0\n    try:\n        pass\n    finally:\n        if saved is not _SENTINEL:\n            state.absent = saved\n",
+        )
 
         assert found == [], [f.target for f in found]
 
@@ -182,7 +193,9 @@ class TestAPresenceGuardedAssignmentInventsNothing:
         the attribute and leaves it behind for the process."""
         tmp_path, pkg, tests = project
 
-        found = self._run(tmp_path, pkg, tests, "import pkg._state as state\n\n\ndef test_it():\n    saved = getattr(state, 'absent', 0)\n    state.absent = saved\n")
+        found = self._run(
+            tmp_path, pkg, tests, "import pkg._state as state\n\n\ndef test_it():\n    saved = getattr(state, 'absent', 0)\n    state.absent = saved\n"
+        )
 
         assert [f.target for f in found] == ["pkg._state.absent"]
 
@@ -203,9 +216,7 @@ class TestAPlainImportOfASubmoduleStillBindsThePackage:
         """`pkg` re-exports `_SOURCES` from `pkg.queries`; `pkg.vocabulary` is an unrelated sibling."""
         pkg = tmp_path / "pkg"
         pkg.mkdir()
-        (pkg / "__init__.py").write_text(
-            "from pkg.queries import _SOURCES\n\n__all__ = ['_SOURCES']\n", encoding="utf-8"
-        )
+        (pkg / "__init__.py").write_text("from pkg.queries import _SOURCES\n\n__all__ = ['_SOURCES']\n", encoding="utf-8")
         (pkg / "queries.py").write_text("_SOURCES = ('a',)\n", encoding="utf-8")
         # An UNRELATED sibling, and the one the test ALSO imports -- the real shape. The defect
         # resolved the bare package name to this module, which has nothing to do with `_SOURCES`.
@@ -217,28 +228,14 @@ class TestAPlainImportOfASubmoduleStillBindsThePackage:
     def test_a_reexported_name_set_on_the_package_is_not_reported(self, tmp_path):
         """The shape the checker was wrong about: the submodule import must not steal the name."""
         tests = self._project(tmp_path)
-        body = (
-            "import pkg\n"
-            "import pkg.vocabulary\n"
-            "\n"
-            "\n"
-            "def test_the_reexport_is_a_live_alias():\n"
-            "    pkg._SOURCES = ('sentinel',)\n"
-        )
+        body = "import pkg\n" "import pkg.vocabulary\n" "\n" "\n" "def test_the_reexport_is_a_live_alias():\n" "    pkg._SOURCES = ('sentinel',)\n"
 
         assert not _scan(tmp_path, tests, body)
 
     def test_a_name_absent_from_the_package_is_still_reported(self, tmp_path):
         """The fix must not buy quiet by resolving the bare name to nothing at all."""
         tests = self._project(tmp_path)
-        body = (
-            "import pkg\n"
-            "import pkg.vocabulary\n"
-            "\n"
-            "\n"
-            "def test_it():\n"
-            "    pkg.never_defined = 1\n"
-        )
+        body = "import pkg\n" "import pkg.vocabulary\n" "\n" "\n" "def test_it():\n" "    pkg.never_defined = 1\n"
 
         assert [f.target for f in _scan(tmp_path, tests, body)] == ["pkg.never_defined"]
 
@@ -250,24 +247,79 @@ class TestAPlainImportOfASubmoduleStillBindsThePackage:
         assert [f.target for f in _scan(tmp_path, tests, body)] == ["pkg.vocabulary.never_defined"]
 
 
-def test_one_walk_agrees_with_the_two_it_replaced(tmp_path):
-    """module_index derives bound names, defined names and dynamic forwarding from a single walk.
+class TestAuditRegressions:
+    def _index_and_scan(self, tmp_path, module: str, test: str, name: str = "_state.py"):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir(exist_ok=True)
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / name).write_bytes(module.encode("utf-8") if isinstance(module, str) else module)
+        tests = tmp_path / "tests"
+        tests.mkdir(exist_ok=True)
+        path = tests / "test_probe.py"
+        path.write_text(test, encoding="utf-8")
+        return scan([path], module_index([tmp_path], package_root=tmp_path))
 
-    The three answers come from the same node types; walking each module twice to get them separately was half the
-    index build. The combined pass must return exactly what the two separate ones did.
-    """
-    import ast
+    def test_a_function_local_is_not_a_module_attribute(self, tmp_path):
+        found = self._index_and_scan(tmp_path, "def f():\n    NAME = 1\n    return NAME\n", "import pkg._state as m\n\n\ndef test_it():\n    m.NAME = 2\n")
+        assert [f.target for f in found] == ["pkg._state.NAME"]
 
-    from py_ci_shared.inert_patch_targets import _forwards_dynamically, _module_facts, _module_level_names
+    def test_module_scope_bindings_under_if_try_with_for_and_global_count(self, tmp_path):
+        module = (
+            "import contextlib\n"
+            "if FLAG:\n    A = 1\n"
+            "try:\n    B = 2\nexcept ImportError as C:\n    pass\n"
+            "with contextlib.nullcontext() as D:\n    pass\n"
+            "for E in range(1):\n    pass\n"
+            "def f():\n    global G\n    G = 1\n"
+            "if (H := 3):\n    pass\n"
+        )
+        test = "import pkg._state as m\n\n\ndef test_it():\n" + "".join(f"    m.{n} = 0\n" for n in "ABCDEGH")
+        assert self._index_and_scan(tmp_path, module, test) == []
 
-    for source in (
-        "import os\nfrom x import y as z\nA, B = 1, 2\nC: int = 3\ndef f(): pass\nclass K: pass\n",
-        "def __getattr__(name):\n    return 1\n",
-        "globals()['a'] = 1\n",
-        "globals().update({'b': 2})\n",
-        "try:\n    import numpy as np\nexcept ImportError:\n    np = None\n",
-    ):
-        tree = ast.parse(source)
-        bound, defined, forwards = _module_facts(tree)
-        assert (bound, defined) == _module_level_names(tree)
-        assert forwards == _forwards_dynamically(tree)
+    def test_a_bom_module_is_indexed(self, tmp_path):
+        found = self._index_and_scan(
+            tmp_path, b"\xef\xbb\xbfNAME = 1\n", "import pkg._bom as m\n\n\ndef test_it():\n    m.NAME = 2\n    m.OTHER = 3\n", name="_bom.py"
+        )
+        assert [f.target for f in found] == ["pkg._bom.OTHER"]
+
+    @pytest.mark.parametrize(
+        "line,target",
+        [
+            ("setattr(m, 'ZZZ', 1)", "pkg._state.ZZZ"),
+            ("m.ZZZ: int = 1", "pkg._state.ZZZ"),
+            ("m.ZZZ, m.NAME = 1, 2", "pkg._state.ZZZ"),
+            ("m.ZZZ += 1", "pkg._state.ZZZ"),
+        ],
+    )
+    def test_other_ways_of_setting_an_attribute_are_seen(self, tmp_path, line, target):
+        found = self._index_and_scan(tmp_path, "NAME = 1\n", f"import pkg._state as m\n\n\ndef test_it():\n    {line}\n")
+        assert [f.target for f in found] == [target]
+
+    def test_setattr_of_an_existing_name_is_fine(self, tmp_path):
+        assert self._index_and_scan(tmp_path, "NAME = 1\n", "import pkg._state as m\n\n\ndef test_it():\n    setattr(m, 'NAME', 1)\n") == []
+
+    def test_deeply_nested_ifs_are_walked_once(self, tmp_path, monkeypatch):
+        import py_ci_shared.inert_patch_targets as ipt
+
+        depth = 20
+        body = "".join("    " * (i + 1) + "if x:\n" for i in range(depth)) + "    " * (depth + 1) + "m.ZZZ = 1\n"
+        test = "import pkg._state as m\n\n\ndef test_it():\n" + "".join("    " + line + "\n" for line in body.splitlines())
+        calls = []
+        real = ipt._module_assignments
+        monkeypatch.setattr(ipt, "_module_assignments", lambda *a: calls.append(1) or real(*a))
+        found = self._index_and_scan(tmp_path, "NAME = 1\n", test)
+        assert [f.target for f in found] == ["pkg._state.ZZZ"]
+        assert len(calls) < 100, f"{len(calls)} walks for {depth} nested ifs"
+
+    def test_an_unparsable_test_file_is_a_finding(self, tmp_path):
+        found = self._index_and_scan(tmp_path, "NAME = 1\n", "def test_it(:\n")
+        assert [f.target for f in found] == ["<unparsable>"]
+
+    def test_an_unparsable_module_is_collected(self, tmp_path):
+        pkg = tmp_path / "pkg"
+        pkg.mkdir()
+        (pkg / "__init__.py").write_text("", encoding="utf-8")
+        (pkg / "broken.py").write_text("def f(:\n", encoding="utf-8")
+        unparsed: list = []
+        index = module_index([tmp_path], package_root=tmp_path, unparsed=unparsed)
+        assert "pkg.broken" not in index and len(unparsed) == 1 and "broken.py" in unparsed[0]

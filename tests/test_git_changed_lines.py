@@ -174,3 +174,33 @@ def _git_env() -> dict[str, str]:
     import os
 
     return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+
+@pytest.mark.parametrize("config", [("diff.noprefix", "true"), ("diff.mnemonicPrefix", "true")])
+def test_the_users_diff_prefix_config_does_not_change_the_paths(repo: Path, config) -> None:
+    _git(repo, "config", *config)
+    text = (repo / "a.py").read_text(encoding="utf-8").split("\n")
+    text[2] = "CHANGED"
+    (repo / "a.py").write_text("\n".join(text), encoding="utf-8")
+    result = changed_lines(repo, include_untracked=False)
+    assert list(result) == [Path("a.py")] and result[Path("a.py")] == [range(3, 4)]
+
+
+@pytest.mark.parametrize("content,expected", [("e\n", range(1, 2)), ("one\ntwo", range(1, 3)), ("one\ntwo\n", range(1, 3))])
+def test_an_untracked_file_has_exactly_its_lines(repo: Path, content: str, expected: range) -> None:
+    (repo / "new.py").write_bytes(content.encode("utf-8"))
+    assert lines_for(changed_lines(repo), "new.py") == [expected]
+
+
+def test_an_empty_untracked_file_has_no_lines(repo: Path) -> None:
+    (repo / "empty.py").write_bytes(b"")
+    assert lines_for(changed_lines(repo), "empty.py") == []
+
+
+def test_a_textconv_driver_does_not_rewrite_the_diff(repo: Path) -> None:
+    (repo / ".gitattributes").write_text("*.py diff=upper\n", encoding="utf-8")
+    _git(repo, "config", "diff.upper.textconv", 'python -c "import sys; print(open(sys.argv[1]).read().upper()*3)"')
+    text = (repo / "a.py").read_text(encoding="utf-8").split("\n")
+    text[4] = "CHANGED"
+    (repo / "a.py").write_text("\n".join(text), encoding="utf-8")
+    assert lines_for(changed_lines(repo, include_untracked=False), "a.py") == [range(5, 6)]

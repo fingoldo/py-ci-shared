@@ -131,3 +131,33 @@ def test_a_module_that_is_not_a_gate_is_left_alone(tmp_path: Path):
     assert population_problem(path) is None
     assert gate_canaries(tmp_path) == []
     assert find_gates_without_population(tmp_path) == []
+
+
+def test_a_population_declared_under_try_or_imported_counts(tmp_path: Path):
+    _write(
+        tmp_path,
+        "test_try.py",
+        "try:\n    def _candidate_files():\n        return []\nexcept ImportError:\n    pass\n\n\ndef _build_offending_set():\n    return set()\n",
+    )
+    _write(tmp_path, "test_imported.py", "from _shared import _candidate_files\n\n\ndef _build_offending_set():\n    return set()\n")
+    _write(tmp_path, "test_undeclared.py", "import re\n\n\ndef _build_offending_set():\n    return set()\n")
+    assert find_gates_without_population(tmp_path) == ["test_undeclared.py"]
+
+
+def test_an_imported_offending_set_needs_a_population_too(tmp_path: Path):
+    _write(tmp_path, "test_reexport.py", "from _shared import _build_offending_set\n")
+    assert find_gates_without_population(tmp_path) == ["test_reexport.py"]
+
+
+def test_a_string_canary_is_rejected_not_iterated(tmp_path: Path):
+    _write(tmp_path, "test_str.py", _HEALTHY_GATE.replace('_CANARY = (".messages.create(", ".messages.create = AsyncMock(")', '_CANARY = ".messages.create("'))
+    with pytest.raises(TypeError, match="bare string"):
+        gate_canaries(tmp_path)
+
+
+def test_a_bom_gate_is_read_and_an_unparsable_one_is_reported(tmp_path: Path):
+    (tmp_path / "test_bom.py").write_bytes(b"\xef\xbb\xbfimport re\n\n\ndef _build_offending_set():\n    return set()\n")
+    assert find_gates_without_population(tmp_path) == ["test_bom.py"]
+    _write(tmp_path, "test_broken.py", "def _build_offending_set(:\n")
+    problems = find_gates_without_population(tmp_path)
+    assert problems[0] == "test_bom.py" and problems[1].startswith("test_broken.py (unparsable")

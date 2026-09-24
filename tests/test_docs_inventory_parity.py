@@ -4,6 +4,8 @@ concrete documentation-audit finding shape on a scratch repo."""
 from __future__ import annotations
 
 import sys
+
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -42,7 +44,9 @@ class TestExtrasDocumentationDrift:
 
     def test_a_bullet_naming_a_non_member_is_reported(self, tmp_path):
         """The 'lists three packages that are now core' shape."""
-        pyproject, readme = _repo(tmp_path, "pip install mypkg[web]  # selenium + requests + grequests + anthropic\npip install mypkg[llm]  # anthropic + httpx\n")
+        pyproject, readme = _repo(
+            tmp_path, "pip install mypkg[web]  # selenium + requests + grequests + anthropic\npip install mypkg[llm]  # anthropic + httpx\n"
+        )
         problems = find_extras_documentation_drift(pyproject, readme, _BULLET, undocumented_groups=["all"])
         assert len(problems) == 1 and "names ['anthropic']" in problems[0]
 
@@ -226,3 +230,53 @@ class TestUndocumentedModules:
         doc = tmp_path / "README.md"
         doc.write_text("See `pkg.stats`.\n", encoding="utf-8")
         assert "pkg._private" not in find_undocumented_modules(package, [doc])
+
+
+class TestAuditRegressions:
+    def test_another_packages_extras_are_that_package(self, tmp_path):
+        pyproject = '[project]\nname = "mypkg"\n\n[project.optional-dependencies]\nnet = ["requests[socks]>=2"]\nall = ["mypkg[net]"]\n'
+        pyproject_path, _ = _repo(tmp_path, "", pyproject)
+        from py_ci_shared._toml_compat import tomllib
+
+        data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        assert resolve_extras_group(data["project"]["optional-dependencies"], "net", project_name="mypkg") == {"requests"}
+        assert resolve_extras_group(data["project"]["optional-dependencies"], "all", project_name="mypkg") == {"requests"}
+
+    def test_without_a_project_name_only_declared_groups_are_followed(self):
+        deps = {"net": ["requests[socks]"], "all": ["mypkg[net]"]}
+        assert resolve_extras_group(deps, "net") == {"requests"}
+        assert resolve_extras_group(deps, "all") == {"requests"}
+
+    def test_a_bullet_omitting_an_extras_package_is_reported(self, tmp_path):
+        pyproject = '[project]\nname = "mypkg"\n\n[project.optional-dependencies]\nnet = ["requests[socks]>=2", "httpx"]\n'
+        pyproject_path, readme = _repo(tmp_path, "pip install mypkg[net]  # httpx\n", pyproject)
+        problems = find_extras_documentation_drift(pyproject_path, readme, _BULLET)
+        assert len(problems) == 1 and "requests" in problems[0]
+        readme.write_text("pip install mypkg[net]  # httpx and requests\n", encoding="utf-8")
+        assert find_extras_documentation_drift(pyproject_path, readme, _BULLET) == []
+
+    @pytest.mark.parametrize("mention", ["`normality.py`", "see normality."])
+    def test_a_module_named_with_its_suffix_or_a_full_stop_is_documented(self, tmp_path, mention):
+        package = tmp_path / "pkg"
+        package.mkdir()
+        (package / "__init__.py").write_text("", encoding="utf-8")
+        (package / "normality.py").write_text("", encoding="utf-8")
+        doc = tmp_path / "README.md"
+        doc.write_text(f"Modules: {mention}\n", encoding="utf-8")
+        assert find_undocumented_modules(package, [doc]) == []
+        doc.write_text("Modules: see the index.\n", encoding="utf-8")
+        assert find_undocumented_modules(package, [doc]) == ["pkg.normality"]
+
+    def test_a_marker_with_arguments_is_declared_by_its_name(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text('[tool.pytest.ini_options]\nmarkers = ["foo(x): takes an arg"]\n', encoding="utf-8")
+        doc = tmp_path / "CONTRIBUTING.md"
+        doc.write_text("Use @pytest.mark.foo and @pytest.mark.bar.\n", encoding="utf-8")
+        problems = find_undeclared_markers([doc], tmp_path / "pyproject.toml")
+        assert len(problems) == 1 and "mark.bar" in problems[0]
+
+    def test_a_non_utf8_doc_is_reported_not_raised(self, tmp_path):
+        (tmp_path / "pyproject.toml").write_text("[tool.pytest.ini_options]\nmarkers = []\n", encoding="utf-8")
+        doc = tmp_path / "CONTRIBUTING.md"
+        doc.write_bytes(b"caf\xe9 @pytest.mark.slow\n")
+        problems = find_undeclared_markers([doc], tmp_path / "pyproject.toml")
+        assert len(problems) == 1 and "unreadable" in problems[0]

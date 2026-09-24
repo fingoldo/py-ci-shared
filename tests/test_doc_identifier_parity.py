@@ -92,3 +92,44 @@ def test_the_default_corpus_skips_gitignored_files_and_keeps_untracked_ones(tmp_
     names = {p.name for p in default_corpus_files(tmp_path)}
     assert "new_module.py" in names
     assert "dump.json" not in names
+
+
+@pytest.mark.parametrize("runner", ["uv run", "uv run --with rich", "poetry run"])
+def test_a_runner_does_not_make_our_own_script_flags_foreign(tmp_path: Path, runner: str):
+    doc = f"```\n{runner} python tool.py --mispeled-flag\n```\nPass `--mispeled-flag`.\n"
+    root, docs, corpus = _repo(tmp_path, doc, source="parser.add_argument('--misspelled-flag')\n")
+    assert len(_find(root, docs, corpus)) == 1
+
+
+def test_a_runner_launching_an_external_tool_still_excuses_its_flags(tmp_path: Path):
+    doc = "```\nuv run python -m pip install --upgrade-strategy eager x\nuvx ruff check --output-format github\nuv run --with rich python x.py\n```\n"
+    doc += "`--upgrade-strategy`, `--output-format` and `--with` are other tools' flags.\n"
+    root, docs, corpus = _repo(tmp_path, doc)
+    assert _find(root, docs, corpus) == []
+
+
+def test_a_non_ascii_untracked_file_is_in_the_default_corpus(tmp_path):
+    import subprocess
+
+    from py_ci_shared.doc_identifier_parity import default_corpus_files
+
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / "déjà.py").write_text("x = 1\n", encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    assert "déjà.py" in {p.name for p in default_corpus_files(tmp_path)}
+
+
+def test_a_doc_outside_the_root_does_not_raise(tmp_path: Path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "run.py").write_text("", encoding="utf-8")
+    doc = tmp_path / "elsewhere.md"
+    doc.write_text("Pass `--absent-flag`.\n", encoding="utf-8")
+    problems = _find(root, [doc], [root / "run.py"])
+    assert len(problems) == 1 and "elsewhere.md:1:" in problems[0]
+
+
+def test_a_bom_doc_is_read(tmp_path: Path):
+    root, docs, corpus = _repo(tmp_path, "")
+    docs[0].write_bytes(b"\xef\xbb\xbf`--absent-flag` on line one\n")
+    assert [p.split(": ", 1)[0] for p in _find(root, docs, corpus)] == ["README.md:1"]

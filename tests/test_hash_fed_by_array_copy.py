@@ -132,3 +132,43 @@ def test_the_recommended_rewrite_works_on_every_dtype_including_datetime64():
     for arr in (np.array([1, 2, 3], dtype="datetime64[ns]"), np.array([1, 2, 3], dtype="timedelta64[ns]")):
         with pytest.raises(ValueError, match="buffer"):
             memoryview(np.ascontiguousarray(arr).data)
+
+
+MORE_FLAGGED = [
+    ("bare_imported_constructor", "from hashlib import sha256", "d = sha256(a.tobytes())"),
+    ("aliased_constructor", "from hashlib import blake2b as b2", "d = b2(a.tobytes())"),
+    ("aliased_module", "import hashlib as hl", "d = hl.md5(a.tobytes())"),
+    ("hashlib_new_second_arg", "import hashlib", "d = hashlib.new('sha256', a.tobytes())"),
+    ("data_keyword", "import hashlib", "d = hashlib.blake2b(data=a.tobytes(), digest_size=8)"),
+    ("new_data_keyword", "import hashlib", "d = hashlib.new('md5', data=a.tobytes())"),
+    ("explicit_c_order", "import hashlib", "h.update(a.tobytes(order='C'))"),
+]
+
+
+@pytest.mark.parametrize("label,imports,line", MORE_FLAGGED, ids=[label for label, _, _ in MORE_FLAGGED])
+def test_every_way_of_reaching_a_hash_constructor_is_reported(tmp_path: Path, label: str, imports: str, line: str):
+    (tmp_path / "m.py").write_text(f"{imports}\n\n\ndef f(a, h):\n    {line}\n", encoding="utf-8")
+    assert [x.lineno for x in find_hashes_fed_by_array_copy([tmp_path])] == [5], label
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["h.update(a.tobytes(order='F'))", "h.update(a.tobytes(order='A'))", "d = hashlib.new(a.tobytes())", "d = new(a.tobytes())"],
+)
+def test_other_orders_and_non_data_positions_are_not_reported(tmp_path: Path, line: str):
+    (tmp_path / "m.py").write_text(f"import hashlib\n\n\ndef f(a, h):\n    {line}\n", encoding="utf-8")
+    assert find_hashes_fed_by_array_copy([tmp_path]) == []
+
+
+def test_bom_unparsable_and_empty_corpora(tmp_path: Path):
+    (tmp_path / "bom.py").write_bytes(b"\xef\xbb\xbfh.update(a.tobytes())\n")
+    assert [x.lineno for x in find_hashes_fed_by_array_copy([tmp_path])] == [1]
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(AssertionError, match="parsed"):
+        assert_no_hash_fed_by_array_copy([empty])
+    (tmp_path / "bom.py").unlink()
+    (tmp_path / "broken.py").write_text("def f(:\n", encoding="utf-8")
+    (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match=r"broken.py"):
+        assert_no_hash_fed_by_array_copy([tmp_path])

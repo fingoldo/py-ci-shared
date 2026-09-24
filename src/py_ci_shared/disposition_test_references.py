@@ -25,42 +25,78 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file, read_source
+
+# A paragraph opener, or a markdown table row with a `Disposition` cell (`| X-1 | Disposition: fixed, `test_y` |`).
 _DISPOSITION_START = re.compile(r"^\s*(?:-\s*)?(?:\*\*Disposition|Disposition:)")
-_TEST_PATH = re.compile(r"(?<![\w/])((?:[\w.\-]+/)*tests/[\w./\-]+?\.py)(?:::(\w+))?(?:::(\w+))?")
-_TEST_NAME = re.compile(r"`((?:Test[A-Z]\w*)|(?:test_\w+))(?:::(\w+))?`")
+_TABLE_DISPOSITION = re.compile(r"^\s*\|(?:.*\|)?\s*(?:\*\*)?Disposition\b")
+# `.py` must end the path (`tests/x.pyi` is not `tests/x.py`); a parametrised id (`::test_x[case]`) keeps its name.
+_TEST_PATH = re.compile(r"(?<![\w/])((?:[\w.\-]+/)*tests/[\w./\-]+?\.py)(?![\w])(?:::(\w+)(?:\[[^\]`\s]*\])?)?(?:::(\w+)(?:\[[^\]`\s]*\])?)?")
+_TEST_NAME = re.compile(r"`((?:Test[A-Z]\w*)|(?:test_\w+))(?:\[[^\]`]*\])?(?:::(\w+)(?:\[[^\]`]*\])?)?`")
+
+
+class _Defined:
+    """Top-level-or-nested def/class names of one file, and each class's own members."""
+
+    def __init__(self, names: set[str], members: dict[str, set[str]]) -> None:
+        self.names = names
+        self.members = members
+
+
+def _definitions(path: Path) -> _Defined:
+    """Raises ``SourceError`` for a file that cannot be read or parsed (it is reported, never read as empty)."""
+    tree = parse_file(path)
+    names = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    members: dict[str, set[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef):
+            members.setdefault(node.name, set()).update(c.name for c in node.body if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+    return _Defined(names, members)
 
 
 def _defined_names(path: Path) -> set[str]:
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
+        return _definitions(path).names
+    except SourceError:
         return set()
-    return {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
 
 
 def disposition_paragraphs(text: str) -> list[str]:
-    """Every disposition paragraph in a round file, fenced blocks excluded."""
+    """Every disposition paragraph in a round file, fenced blocks excluded. A table row with a ``Disposition``
+    cell is a paragraph of its own. Windows path separators are normalised to ``/``."""
     out: list[str] = []
     current: list[str] = []
     fenced = False
-    for line in text.splitlines():
+    for line in text.replace("\\", "/").splitlines():
         if line.lstrip().startswith("```"):
             fenced = not fenced
             continue
         if fenced:
             continue
         if current:
-            if line.strip() == "" or line.startswith("#"):
+            if line.strip() == "" or line.startswith("#") or line.lstrip().startswith("|"):
                 out.append(" ".join(current))
                 current = []
             else:
                 current.append(line.strip())
                 continue
-        if _DISPOSITION_START.match(line):
+        if _TABLE_DISPOSITION.match(line):
+            out.append(line.strip())
+        elif _DISPOSITION_START.match(line):
             current = [line.strip()]
     if current:
         out.append(" ".join(current))
     return out
+
+
+def _member_problems(where: str, ref: str, first: str, second: str, defined: _Defined) -> set[str]:
+    """``first`` must be defined; ``second`` (when given) must be a member of the CLASS ``first``."""
+    if first not in defined.names:
+        missing = [first] + ([second] if second and second not in defined.names else [])
+        return {f"{where}: `{ref}::{part}`: not defined in that file" for part in missing}
+    if second and second not in defined.members.get(first, set()):
+        return {f"{where}: `{ref}::{second}`: not defined in that file"}
+    return set()
 
 
 def _path_reference_problems(where: str, para: str, project_root: Path, tests_dir: str, other_roots: "tuple[Path, ...]" = ()) -> set[str]:
@@ -82,16 +118,27 @@ def _path_reference_problems(where: str, para: str, project_root: Path, tests_di
         if path is None:
             problems.add(f"{where}: `{rel}`: no such test file")
             continue
-        names = _defined_names(path)
-        problems |= {f"{where}: `{rel}::{part}`: not defined in that file" for part in (first, second) if part and part not in names}
+        if not first:
+            continue
+        try:
+            defined = _definitions(path)
+        except SourceError as exc:
+            problems.add(f"{where}: `{rel}`: cannot be parsed, so its tests cannot be confirmed ({exc.message})")
+            continue
+        problems |= _member_problems(where, rel, first, second, defined)
     return problems
 
 
-def _name_reference_problems(where: str, para: str, all_names: set[str], tests_dir: str) -> set[str]:
-    """Backticked `TestX` / `test_x` (optionally `::member`) in one paragraph that no test file defines."""
+def _name_reference_problems(where: str, para: str, all_names: set[str], tests_dir: str, class_members: "dict[str, set[str]] | None" = None) -> set[str]:
+    """Backticked `TestX` / `test_x` (optionally `TestX::member`, member of that class) that no test file defines."""
     problems: set[str] = set()
     for name, member in _TEST_NAME.findall(para):
-        missing = name if name not in all_names else member if member and member not in all_names else None
+        if name not in all_names:
+            missing: "str | None" = name
+        elif member and (member not in class_members.get(name, set()) if class_members is not None else member not in all_names):
+            missing = member
+        else:
+            missing = None
         if missing:
             ref = f"{name}::{member}" if member else name
             problems.add(f"{where}: `{ref}`: no test of that name in {tests_dir}/")
@@ -103,16 +150,27 @@ def find_missing_test_references(audit_files: Iterable[Path], project_root: Path
 
     *other_roots* are sibling projects a disposition may cite: their test files resolve a
     `sibling/tests/x.py` path, and the names they define count for a bare `TestX` too -- a fix that
-    landed in the sibling is tested there.
+    landed in the sibling is tested there. A test file that cannot be parsed is itself a problem: the names
+    it would define cannot be confirmed.
     """
     siblings = tuple(other_roots)
-    test_files = [f for r in (project_root, *siblings) if (r / tests_dir).is_dir() for f in sorted((r / tests_dir).rglob("*.py"))]
-    all_names: set[str] = set().union(*(_defined_names(f) for f in test_files)) if test_files else set()
+    test_files = [f for r in (project_root, *siblings) if (r / tests_dir).is_dir() for f in iter_files(r / tests_dir, ("*.py",), exclude=DEFAULT_EXCLUDE)]
+    all_names: set[str] = set()
+    class_members: dict[str, set[str]] = {}
     problems: set[str] = set()
+    for f in test_files:
+        try:
+            defined = _definitions(f)
+        except SourceError as exc:
+            problems.add(f"{f.name}: cannot be parsed, so the tests it defines cannot be confirmed ({exc.message})")
+            continue
+        all_names |= defined.names
+        for cls, members in defined.members.items():
+            class_members.setdefault(cls, set()).update(members)
     for audit in audit_files:
-        for para in disposition_paragraphs(audit.read_text(encoding="utf-8", errors="replace")):
+        for para in disposition_paragraphs(read_source(audit)):
             problems |= _path_reference_problems(audit.name, para, project_root, tests_dir, siblings)
-            problems |= _name_reference_problems(audit.name, para, all_names, tests_dir)
+            problems |= _name_reference_problems(audit.name, para, all_names, tests_dir, class_members)
     return sorted(problems)
 
 

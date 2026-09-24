@@ -36,10 +36,11 @@ no test currently inspects.
 from __future__ import annotations
 
 import ast
-import os
-from functools import cache
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
+from typing import Optional
+
+from ._core import DEFAULT_EXCLUDE, ImportAliases, SourceError, iter_files, parse_file, relative_posix, resolve_relative
 
 __all__ = [
     "DEFAULT_EFFECTS",
@@ -57,7 +58,22 @@ __all__ = [
 #: hang rather than as a directory that should never have been entered. ``.tox`` and
 #: ``site-packages`` are the same mistake wearing different names.
 _SKIP_DIRS = frozenset(
-    {".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache", "build", "dist", ".claude", ".tox", ".eggs", "site-packages"}
+    {
+        ".git",
+        "__pycache__",
+        ".venv",
+        "venv",
+        "node_modules",
+        ".pytest_cache",
+        ".mypy_cache",
+        ".ruff_cache",
+        "build",
+        "dist",
+        ".claude",
+        ".tox",
+        ".eggs",
+        "site-packages",
+    }
 )
 
 #: The effects worth pairing by default: a transaction boundary and a statement execution. Each is a
@@ -86,13 +102,89 @@ _INSPECTIONS = (
 #: driver effect rather than a call into a sibling module. Deliberately a small allow-list of the
 #: database libraries this check is about: anything else is treated as possibly-first-party, which
 #: errs toward NOT reporting -- the direction that sends nobody to write a wrong assertion.
-_THIRD_PARTY_ROOTS = frozenset({
-    "sqlalchemy", "psycopg2", "psycopg", "asyncpg", "sqlite3", "pymysql", "MySQLdb", "duckdb",
-    "databases", "aiomysql", "aiosqlite", "cx_Oracle", "pyodbc",
-})
+_THIRD_PARTY_ROOTS = frozenset(
+    {
+        "sqlalchemy",
+        "psycopg2",
+        "psycopg",
+        "asyncpg",
+        "sqlite3",
+        "pymysql",
+        "MySQLdb",
+        "duckdb",
+        "databases",
+        "aiomysql",
+        "aiosqlite",
+        "cx_Oracle",
+        "pyodbc",
+    }
+)
 
 
-def _performs(path: Path, effects: Sequence[str]) -> set[str]:
+class _Parser:
+    """Parses through ``_core.parse_file`` (BOM-safe, cached on mtime) and remembers every file it could not parse, so
+    the caller reports them instead of treating an unreadable file as one with nothing in it."""
+
+    def __init__(self, repo_root: Optional[Path] = None) -> None:
+        self.repo_root = repo_root
+        self.unparsed: dict[str, str] = {}
+
+    def __call__(self, path: Path) -> Optional[ast.Module]:
+        try:
+            return parse_file(path)
+        except SourceError as exc:
+            rel = relative_posix(path, self.repo_root) if self.repo_root is not None else Path(path).as_posix()
+            self.unparsed[rel] = f"{exc.kind} at line {exc.line or 1}: {exc.message}"
+            return None
+
+
+def _tree(path: Path) -> Optional[ast.Module]:
+    try:
+        return parse_file(path)
+    except SourceError:
+        return None
+
+
+def _binds_a_module(repo_root: Path, module_path: Path, node: ast.ImportFrom, name: str) -> bool:
+    """Whether ``from <node.module> import <name>`` in *module_path* names a MODULE FILE of this repository."""
+    parts = node.module.split(".") if node.module else []
+    if node.level:
+        base = module_path.parent
+        for _ in range(node.level - 1):
+            base = base.parent
+        roots = [base]
+    else:
+        roots = [repo_root, repo_root / "src"]
+        if parts and parts[0] == repo_root.name:
+            roots.append(repo_root.parent)
+    for root in roots:
+        target = root.joinpath(*parts, name)
+        if target.with_suffix(".py").is_file() or (target / "__init__.py").is_file():
+            return True
+    return False
+
+
+def _local_module_names(tree: ast.AST, path: Path, repo_root: Optional[Path]) -> set[str]:
+    """Names bound to a first-party MODULE: ``from . import graphql``, ``from pkg import graphql``, ``import pkg.graphql
+    as graphql``, ``import helpers``. ``from pkg.db import conn`` binds whatever ``conn`` is -- an object, not a module --
+    unless ``pkg/db/conn.py`` exists; without *repo_root* every non-driver ``from`` import is assumed to be a module."""
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] not in _THIRD_PARTY_ROOTS):
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                if repo_root is None or _binds_a_module(repo_root, path, node, alias.name):
+                    names.add(alias.asname or alias.name)
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in _THIRD_PARTY_ROOTS:
+                    continue
+                names.add(alias.asname or alias.name.split(".")[0])
+    return names
+
+
+def _performs(path: Path, effects: Sequence[str], *, repo_root: Optional[Path] = None, tree: Optional[ast.Module] = None) -> set[str]:
     """Effects this module performs, as method calls: ``conn.commit()``, ``cur.execute(sql)``.
 
     ``execute`` is also an ordinary word. A module that DEFINES ``def execute(...)`` -- a GraphQL
@@ -102,22 +194,17 @@ def _performs(path: Path, effects: Sequence[str]) -> set[str]:
     "fix that does not apply" failure this module already avoids for ``hash()`` and dict keys.
 
     So a name the file defines itself is not an effect, and neither is an attribute call whose base
-    is a module the file imports from the project. Everything else is unchanged: ``cur.execute(...)``
-    on a parameter or an attribute is still an effect, and so is a bare ``execute_values(...)``
-    imported from psycopg2.
+    is a first-party module the file imports (see :func:`_local_module_names`). Everything else is unchanged:
+    ``cur.execute(...)`` on a parameter or an attribute is still an effect, and so is a bare ``execute_values(...)``
+    imported from psycopg2, and so is ``conn.commit()`` on an object imported from a first-party module.
     """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
-        return set()
+    if tree is None:
+        tree = _tree(path)
+        if tree is None:
+            return set()
 
     defined_here = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects}
-    # `from . import graphql` / `from pkg import graphql` / `import pkg.graphql as graphql`: the bound
-    # name refers to a first-party MODULE, so `graphql.execute(...)` is a project call, not a driver.
-    local_modules: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] not in _THIRD_PARTY_ROOTS):
-            local_modules.update(alias.asname or alias.name for alias in node.names)
+    local_modules = _local_module_names(tree, path, repo_root)
 
     found: set[str] = set()
     for node in ast.walk(tree):
@@ -135,6 +222,21 @@ def _performs(path: Path, effects: Sequence[str]) -> set[str]:
     return found
 
 
+def _patch_kind(func: ast.AST) -> Optional[str]:
+    """``"patch"`` / ``"object"`` for ``patch(...)`` / ``patch.object(...)`` (any receiver: ``mock.patch``), ``"other"``
+    for ``patch.dict``/``patch.multiple`` (which inject no positional mock), else None."""
+    if isinstance(func, ast.Name) and func.id == "patch":
+        return "patch"
+    if isinstance(func, ast.Attribute):
+        if func.attr == "patch":
+            return "patch"
+        receiver = func.value
+        on_patch = (isinstance(receiver, ast.Name) and receiver.id == "patch") or (isinstance(receiver, ast.Attribute) and receiver.attr == "patch")
+        if on_patch:
+            return "object" if func.attr == "object" else "other"
+    return None
+
+
 def _patch_target(call: ast.Call, effects: Sequence[str]) -> str | None:
     """The effect a ``patch(...)`` call replaces, if it replaces one.
 
@@ -142,14 +244,10 @@ def _patch_target(call: ast.Call, effects: Sequence[str]) -> str | None:
     names it in the second argument. Anything else -- a patch of something that is not an effect, or
     one built from a variable -- answers None.
     """
-    func = call.func
-    is_patch = (isinstance(func, ast.Name) and func.id == "patch") or (
-        isinstance(func, ast.Attribute) and (func.attr == "patch" or (func.attr == "object" and isinstance(func.value, ast.Name) and func.value.id == "patch"))
-    )
-    if not is_patch:
+    kind = _patch_kind(call.func)
+    if kind not in ("patch", "object"):
         return None
-    is_object = isinstance(func, ast.Attribute) and func.attr == "object"
-    index = 1 if is_object else 0
+    index = 1 if kind == "object" else 0
     if len(call.args) <= index:
         return None
     arg = call.args[index]
@@ -157,6 +255,16 @@ def _patch_target(call: ast.Call, effects: Sequence[str]) -> str | None:
         return None
     name = arg.value.rsplit(".", 1)[-1]
     return name if name in effects else None
+
+
+def _injects_a_mock(call: ast.Call) -> bool:
+    """Whether a ``@patch``/``@patch.object`` decorator passes a mock to the test: not when ``new`` is given."""
+    kind = _patch_kind(call.func)
+    if kind not in ("patch", "object"):
+        return False
+    if any(k.arg == "new" for k in call.keywords):
+        return False
+    return len(call.args) < (3 if kind == "object" else 2)
 
 
 def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
@@ -167,9 +275,10 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
     says nothing about which effect it is. Without this the check reported an effect as uninspected
     while a well-written test three lines away asserted the cursor, the SQL and the rows.
 
-    Decorator form (``@patch("mod.commit")``) binds the mock to a PARAMETER instead, injected
-    bottom-up, so the parameters are credited as a set rather than positionally -- the alternative is
-    silently wrong whenever a test stacks two patches and inspects only one.
+    Decorator form (``@patch("mod.commit")``) binds the mock to a PARAMETER instead. ``unittest.mock`` injects the
+    BOTTOM decorator's mock first, into the leading parameters (after ``self``/``cls``), and every injecting patch takes
+    one -- including patches of things that are not effects, and not ``new=`` patches, which inject nothing. Mapping
+    them onto the trailing parameters credited a fixture such as ``tmp_path`` with the mock.
     """
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
@@ -179,19 +288,27 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
                 if effect:
                     aliases[node.optional_vars.id] = effect
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            patched = [_patch_target(d, effects) for d in node.decorator_list if isinstance(d, ast.Call)]
-            named = [e for e in patched if e]
-            if not named:
+            injecting = [d for d in reversed(node.decorator_list) if isinstance(d, ast.Call) and _injects_a_mock(d)]
+            if not injecting:
                 continue
-            params = [a.arg for a in node.args.args if a.arg not in {"self", "cls"}]
-            for param in params[-len(named) :] if len(params) >= len(named) else params:
-                for effect in named:
+            params = [a.arg for a in (*node.args.posonlyargs, *node.args.args) if a.arg not in {"self", "cls"}]
+            for param, decorator in zip(params, injecting):
+                effect = _patch_target(decorator, effects)
+                if effect:
                     aliases.setdefault(param, effect)
     return aliases
 
 
 #: Drivers whose ``connect`` a test only calls when it means to talk to a REAL database.
 _REAL_DB_MODULES = frozenset({"sqlite3", "psycopg2", "duckdb", "pymysql", "MySQLdb"})
+
+
+def _is_real_connect(node: ast.AST) -> bool:
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "connect"):
+        return False
+    root = node.func.value
+    # `sqlite3.connect`, and `psycopg2.extras.connect`-style chains / `from x import y; y.db.connect()`.
+    return (isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES) or (isinstance(root, ast.Attribute) and root.attr in _REAL_DB_MODULES)
 
 
 def _exercises_against_a_real_database(tree: ast.AST) -> bool:
@@ -210,51 +327,26 @@ def _exercises_against_a_real_database(tree: ast.AST) -> bool:
     The signal is deliberately narrow -- a `connect` on a real driver, called BY THE TEST. A mocking
     test patches `connect` instead, and `patch("sqlite3.connect")` is a call to `patch`, not to
     `connect`. Same limitation as everything else here: it answers "does anything exercise this",
-    not "does the assertion afterwards check the right thing".
+    not "does the assertion afterwards check the right thing". :func:`_real_database_tests` narrows it to the test
+    functions that also call into the module under test.
     """
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "connect":
-            root = func.value
-            if isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES:
-                return True
-            # `psycopg2.extras.connect`-style chains, and `from x import y; y.db.connect()`.
-            if isinstance(root, ast.Attribute) and root.attr in _REAL_DB_MODULES:
-                return True
-    return False
+    return any(_is_real_connect(node) for node in ast.walk(tree))
 
 
 #: How a fixture says it is building a real database handle, beyond a driver's own ``connect``.
 _REAL_DB_FACTORIES = frozenset({"create_engine", "create_async_engine"})
 
 
-def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
-    """Fixture names in *conftest* that hand out a handle to a REAL database.
+def _is_fixture(node: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
+    for decorator in node.decorator_list:
+        target = decorator.func if isinstance(decorator, ast.Call) else decorator
+        name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
+        if name == "fixture":
+            return True
+    return False
 
-    The third shape of the same false report, and the one with the best evidence behind it. A
-    project with a `db_session` fixture bound to a live server -- glossum requires `_test` in the
-    URL and wraps every test in a SAVEPOINT it rolls back -- exercises its writes against Postgres
-    itself. There is no mock anywhere to assert on, and the check reported all 55 of its effects.
 
-    Resolved one level: a fixture that opens the database, and a fixture that merely REQUESTS one
-    that does. That covers the ordinary `_db_engine` -> `db_session` split without turning this into
-    a dependency solver.
-    """
-    try:
-        tree = ast.parse(conftest.read_text(encoding="utf-8", errors="replace"))
-    except (OSError, SyntaxError):
-        return set()
-
-    def _is_fixture(node: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
-        for decorator in node.decorator_list:
-            target = decorator.func if isinstance(decorator, ast.Call) else decorator
-            name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", "")
-            if name == "fixture":
-                return True
-        return False
-
+def _fixtures_backed_by_a_real_database_in(tree: ast.AST) -> set[str]:
     direct: set[str] = set()
     functions = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_fixture(n)]
     for node in functions:
@@ -277,22 +369,66 @@ def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
     return backed
 
 
+def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
+    """Fixture names in *conftest* that hand out a handle to a REAL database.
+
+    The third shape of the same false report, and the one with the best evidence behind it. A
+    project with a `db_session` fixture bound to a live server -- glossum requires `_test` in the
+    URL and wraps every test in a SAVEPOINT it rolls back -- exercises its writes against Postgres
+    itself. There is no mock anywhere to assert on, and the check reported all 55 of its effects.
+
+    Resolved one level: a fixture that opens the database, and a fixture that merely REQUESTS one
+    that does. That covers the ordinary `_db_engine` -> `db_session` split without turning this into
+    a dependency solver.
+    """
+    tree = _tree(conftest)
+    return set() if tree is None else _fixtures_backed_by_a_real_database_in(tree)
+
+
+def _test_functions(tree: ast.AST) -> list["ast.FunctionDef | ast.AsyncFunctionDef"]:
+    return [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")]
+
+
 def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -> bool:
     """True when a test function in *tree* asks for one of *fixtures* by parameter name."""
     if not fixtures:
         return False
-    for node in ast.walk(tree):
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
-        if not node.name.startswith("test"):
-            continue
+    for node in _test_functions(tree):
         params = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
         if params & fixtures:
             return True
     return False
 
 
-def _owns_its_connection(path: Path) -> bool:
+def _calls_into(node: ast.AST, aliases: ImportAliases, module_names: Collection[str]) -> bool:
+    """Whether *node* calls something that resolves into one of *module_names* (``store.save(...)``, ``save(...)`` after
+    ``from pkg.store import save``)."""
+    for call in ast.walk(node):
+        if isinstance(call, ast.Call):
+            target = aliases.qualified_name(call)
+            if target and any(target == m or target.startswith(m + ".") for m in module_names):
+                return True
+    return False
+
+
+def _real_database_tests(tree: ast.Module, db_fixtures: frozenset[str], module_names: Collection[str]) -> bool:
+    """True when ONE test function both runs against a real database (its own driver ``connect``, or a real-database
+    fixture from conftest or this file) and calls into the module under test.
+
+    A file-wide answer credited every module the file imports whenever any fixture in it opened SQLite, including a
+    module whose test only reads a constant.
+    """
+    fixtures = frozenset(db_fixtures) | frozenset(_fixtures_backed_by_a_real_database_in(tree))
+    aliases = ImportAliases.from_tree(tree)
+    for fn in _test_functions(tree):
+        params = {a.arg for a in fn.args.args} | {a.arg for a in fn.args.kwonlyargs}
+        runs_real = bool(params & fixtures) or any(_is_real_connect(n) for n in ast.walk(fn))
+        if runs_real and _calls_into(fn, aliases, module_names):
+            return True
+    return False
+
+
+def _owns_its_connection(path: Path, tree: Optional[ast.Module] = None) -> bool:
     """True when the MODULE opens its own database rather than being handed one.
 
     This is a structural fact about the code, and it decides what evidence is even possible. A
@@ -310,10 +446,10 @@ def _owns_its_connection(path: Path) -> bool:
     `_exercises_against_a_real_database` is not what credits it -- `_patches_a_real_driver` below
     takes that case back out.
     """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
-        return False
+    if tree is None:
+        tree = _tree(path)
+        if tree is None:
+            return False
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "connect":
             root = node.func.value
@@ -345,7 +481,7 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
     return False
 
 
-def _inspection_helpers(repo_root: Path, effects: Sequence[str]) -> dict[str, set[str]]:
+def _inspection_helpers(repo_root: Path, effects: Sequence[str], parse: Optional[_Parser] = None) -> dict[str, set[str]]:
     """``{helper name: effects it inspects}`` for helpers defined in non-test modules of the tree.
 
     A suite that grows past a handful of effect tests extracts its session doubles and its statement
@@ -360,13 +496,13 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str]) -> dict[str, se
     to the repository's own files, so an unrelated third-party function of the same name cannot
     silently satisfy the check.
     """
+    parse = parse or _Parser(repo_root)
     helpers: dict[str, set[str]] = {}
     for path in _py_files(repo_root):
         if path.name.startswith("test_"):
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-        except (SyntaxError, OSError):
+        tree = parse(path)
+        if tree is None:
             continue
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -387,25 +523,7 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str]) -> dict[str, se
     return helpers
 
 
-def _inspects(
-    path: Path,
-    effects: Sequence[str],
-    db_fixtures: frozenset[str] = frozenset(),
-    helpers: Mapping[str, Collection[str]] | None = None,
-) -> set[str]:
-    """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
-
-    Matched on the ATTRIBUTE CHAIN rather than on text, so ``# commit is asserted below`` in a comment
-    and a local variable called ``commit`` are both correctly ignored.
-    """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
-        return set()
-    # A test that opens its own database is exercising every effect the module performs, and
-    # observing the ROWS rather than the call. Nothing more specific is needed or available.
-    if _exercises_against_a_real_database(tree) or _requests_a_real_database_fixture(tree, db_fixtures):
-        return set(effects)
+def _mock_inspections(tree: ast.Module, effects: Sequence[str], helpers: Optional[Mapping[str, Collection[str]]]) -> set[str]:
     found: set[str] = set()
     aliases = _patch_aliases(tree, effects)
     # A call to a helper the suite extracted counts as whatever that helper inspects. Restricted to
@@ -437,52 +555,84 @@ def _inspects(
     return found
 
 
-@cache
-def _cached_imported_names(path: Path) -> frozenset[str]:
-    """`_imported_names` memoised on the path.
+def _inspects(
+    path: Path,
+    effects: Sequence[str],
+    db_fixtures: frozenset[str] = frozenset(),
+    helpers: Mapping[str, Collection[str]] | None = None,
+    *,
+    module_names: Optional[Collection[str]] = None,
+) -> set[str]:
+    """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
 
-    `by_module` maps up to three names to one file -- the flat name, the package-qualified
-    name, and the src-stripped one -- and the edge pass walks that mapping, so without this
-    every source file is read and parsed up to three times over.
+    Matched on the ATTRIBUTE CHAIN rather than on text, so ``# commit is asserted below`` in a comment
+    and a local variable called ``commit`` are both correctly ignored. With *module_names* (the dotted names of the
+    module under test) a real-database run is credited only when one test function both runs against the database and
+    calls into that module; without it, any real-database use in the file credits every effect.
     """
+    tree = _tree(path)
+    if tree is None:
+        return set()
+    # A test that opens its own database is exercising every effect the module performs, and
+    # observing the ROWS rather than the call. Nothing more specific is needed or available.
+    if module_names is not None:
+        if _real_database_tests(tree, db_fixtures, module_names):
+            return set(effects)
+    elif _exercises_against_a_real_database(tree) or _requests_a_real_database_fixture(tree, db_fixtures):
+        return set(effects)
+    return _mock_inspections(tree, effects, helpers)
+
+
+def _cached_imported_names(path: Path) -> frozenset[str]:
+    """``_imported_names`` for *path* (absolute imports only). Kept for callers; parsing is cached by ``_core``."""
     return frozenset(_imported_names(path))
 
 
 def _py_files(root: Path) -> "list[Path]":
-    """Every ``.py`` under *root*, with skipped directories never entered.
-
-    ``rglob`` descends into everything and filters afterwards, so a repository holding agent
-    worktrees under ``.claude/`` pays the full walk of every copy -- and this module walked the tree
-    four separate times. Pruning ``dirnames`` in place makes the directory tree itself smaller
-    instead of discarding paths after the cost is already sunk.
-    """
-    found: "list[Path]" = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
-        for name in filenames:
-            if name.endswith(".py"):
-                found.append(Path(dirpath) / name)
-    return sorted(found)
+    """Every ``.py`` under *root*, with skipped directories never entered (``_core.iter_files``: git's listing inside a
+    work tree, a pruned walk outside one)."""
+    return iter_files(root, ("*.py",), exclude=DEFAULT_EXCLUDE | _SKIP_DIRS)
 
 
-def _imported_names(path: Path) -> set[str]:
+_ImportRecord = tuple[int, Optional[str], tuple[str, ...]]
+
+
+def _import_records(path: Path) -> list[_ImportRecord]:
+    """``(level, module, names)`` per import statement; ``ast.Import`` gives level 0, module None."""
+    tree = _tree(path)
+    if tree is None:
+        return []
+    records: list[_ImportRecord] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            records.append((0, None, tuple(alias.name for alias in node.names)))
+        elif isinstance(node, ast.ImportFrom):
+            records.append((node.level, node.module, tuple(alias.name for alias in node.names if alias.name != "*")))
+    return records
+
+
+def _names_from_records(records: Sequence[_ImportRecord], package: Optional[str] = None) -> set[str]:
+    names: set[str] = set()
+    for level, module, imported in records:
+        if module is None and level == 0:
+            names.update(imported)
+            continue
+        base = resolve_relative(module, level, package) if level else module
+        if not base:
+            continue
+        names.add(base)
+        names.update(f"{base}.{name}" for name in imported)
+    return names
+
+
+def _imported_names(path: Path, package: Optional[str] = None) -> set[str]:
     """Every dotted name the file imports, in both forms.
 
     `from pipeline import replay` names a MODULE when the submodule exists, so `pipeline.replay` is
-    emitted alongside `pipeline` and the caller resolves both against the real file set.
+    emitted alongside `pipeline` and the caller resolves both against the real file set. A relative import
+    (`from . import writer`) is resolved against *package*, the importing module's package; without it, it is skipped.
     """
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
-    except SyntaxError:
-        return set()
-    names: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            names.update(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
-            names.add(node.module)
-            names.update(f"{node.module}.{alias.name}" for alias in node.names)
-    return names
+    return _names_from_records(_import_records(path), package)
 
 
 def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = "") -> dict[str, list[str]]:
@@ -494,15 +644,16 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     "does any test even look at this module", the import edge is the honest relation.
 
     One level of transitivity through the project's own modules, so a test importing ``pipeline`` is
-    credited with ``pipeline/replay.py`` as well. *package_name* covers repositories whose tests
-    import themselves as a package (``from dashboard import data``); *src_dir* covers a src layout,
-    where the file at ``src/pkg/x.py`` is imported as ``pkg.x``.
+    credited with ``pipeline/replay.py`` as well; relative imports inside the package count as edges.
+    *package_name* covers repositories whose tests import themselves as a package (``from dashboard import data``);
+    *src_dir* covers a src layout, where the file at ``src/pkg/x.py`` is imported as ``pkg.x``.
 
     Both are DETECTED when not given, because forgetting them is silent and total. A src-layout repo
     passed ``build_import_map(root)`` and got an empty map: no module resolved, so no module could be
     reported, so the check passed having examined nothing. That is the failure mode the check itself
     exists to prevent, and it was reported as a clean result on a repository with seven real
-    findings. Detection makes the default correct; an explicit argument still wins.
+    findings. Detection makes the default correct; an explicit argument still wins. A src directory holding several
+    packages maps every one of them.
     """
     # A repository that IS a package -- `dashboard/__init__.py` at its root, tests importing
     # `from dashboard import data` -- maps its files as bare `data.py` while every test names
@@ -513,8 +664,9 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
         package_name = repo_root.name
     if not src_dir and (repo_root / "src").is_dir():
         packages = [d for d in (repo_root / "src").iterdir() if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))]
-        if len(packages) == 1:
+        if packages:
             src_dir = "src"
+        if len(packages) == 1:
             package_name = package_name or packages[0].name
 
     def module_name(path: Path) -> str:
@@ -524,8 +676,9 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
             parts.pop()
         return ".".join(parts)
 
-    sources = [p for p in _py_files(repo_root) if "tests" not in p.relative_to(repo_root).parts]
-    tests = [p for p in _py_files(repo_root) if p.name.startswith("test_")]
+    files = _py_files(repo_root)
+    sources = [p for p in files if "tests" not in p.relative_to(repo_root).parts]
+    tests = [p for p in files if p.name.startswith("test_")]
 
     by_module: dict[str, Path] = {}
     for path in sources:
@@ -536,28 +689,43 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
         if src_dir and flat.startswith(f"{src_dir}."):
             by_module[flat[len(src_dir) + 1 :]] = path
 
-    own_edges = {name: {i for i in _cached_imported_names(path) if i in by_module} for name, path in by_module.items()}
+    records: dict[Path, list[_ImportRecord]] = {}
+
+    def records_of(path: Path) -> list[_ImportRecord]:
+        if path not in records:
+            records[path] = _import_records(path)
+        return records[path]
+
+    def package_of(name: str, path: Path) -> str:
+        return name if path.stem == "__init__" else name.rpartition(".")[0]
+
+    own_edges = {name: {i for i in _names_from_records(records_of(path), package_of(name, path)) if i in by_module} for name, path in by_module.items()}
 
     hits: dict[str, set[str]] = {}
     for test in tests:
-        reached = {i for i in _imported_names(test) if i in by_module}
+        reached = {i for i in _names_from_records(records_of(test)) if i in by_module}
         reached |= {n for m in list(reached) for n in own_edges.get(m, set())}
         for name in reached:
             hits.setdefault(by_module[name].relative_to(repo_root).as_posix(), set()).add(test.relative_to(repo_root).as_posix())
     return {source: sorted(found) for source, found in sorted(hits.items())}
 
 
-@cache
 def _patches_a_real_driver_cached(path: Path) -> bool:
-    """`_patches_a_real_driver` memoised on the path.
+    """``_patches_a_real_driver`` for a file (parsing is cached by ``_core`` on the file's mtime and size)."""
+    tree = _tree(path)
+    return False if tree is None else _patches_a_real_driver(tree)
 
-    The caller asks this per (module, importing test), so a conftest-heavy test imported by a
-    hundred modules was parsed a hundred times. On mlframe that was most of a nine-minute run.
-    """
-    try:
-        return _patches_a_real_driver(ast.parse(path.read_text(encoding="utf-8", errors="replace")))
-    except SyntaxError:
-        return False
+
+def _module_dotted_names(module: str, repo_root: Path) -> set[str]:
+    """The dotted names a test may import *module* (a repo-relative path) by: flat, src-stripped, package-prefixed."""
+    parts = list(Path(module).with_suffix("").parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    names = {".".join(parts)} if parts else set()
+    if len(parts) > 1 and parts[0] == "src":
+        names.add(".".join(parts[1:]))
+    names.add(".".join([repo_root.name, *parts]))
+    return {n for n in names if n}
 
 
 def find_unasserted_effects(
@@ -570,39 +738,58 @@ def find_unasserted_effects(
 
     *import_map* is ``{module path: [test paths that import it]}``, both relative to *repo_root*. The
     importing tests are the right population rather than all tests: a suite-wide "somebody somewhere
-    asserts on commit" would be satisfied by one unrelated test and would gate nothing.
+    asserts on commit" would be satisfied by one unrelated test and would gate nothing. A module or test that cannot
+    be parsed is reported as ``"<path>::<unparsable>"``: nothing about it can be vouched for.
     """
-    inspected: dict[str, set[str]] = {}
-    helpers = _inspection_helpers(repo_root, effects)
+    parse = _Parser(repo_root)
+    mock_inspected: dict[str, set[str]] = {}
+    helpers = _inspection_helpers(repo_root, effects, parse)
     problems: dict[str, str] = {}
     # Every conftest in the tree, because a `db_session` may be defined in the root one and used
     # three packages down. Collected once: this is an AST parse per conftest, not per test.
-    db_fixtures = frozenset(
-        name for conftest in _py_files(repo_root) if conftest.name == "conftest.py" for name in _fixture_names_backed_by_a_real_database(conftest)
-    )
+    db_fixtures: set[str] = set()
+    for conftest in _py_files(repo_root):
+        if conftest.name == "conftest.py":
+            tree = parse(conftest)
+            if tree is not None:
+                db_fixtures |= _fixtures_backed_by_a_real_database_in(tree)
+    fixtures = frozenset(db_fixtures)
+    patches_driver: dict[str, bool] = {}
 
     for module, tests in sorted(import_map.items()):
         module_path = repo_root / module
         if not module_path.is_file():
             continue
-        performed = _performs(module_path, effects)
+        module_tree = parse(module_path)
+        if module_tree is None:
+            continue
+        performed = _performs(module_path, effects, repo_root=repo_root, tree=module_tree)
         if not performed:
             continue
+        module_names = _module_dotted_names(module, repo_root)
+        test_trees: dict[str, ast.Module] = {}
+        for test in tests:
+            test_path = repo_root / test
+            if test_path.is_file():
+                tree = parse(test_path)
+                if tree is not None:
+                    test_trees[test] = tree
         # A module that opens its own connection offers no seam to hand a mock through, so a test
         # either patches the driver -- visibly -- or runs the real thing. One importing test that
-        # does neither of those two things is still running it, and the assertion it makes will be
+        # does neither, and actually CALLS into the module, is running it, and the assertion it makes will be
         # about the ROWS, through the module's own reader. See `_owns_its_connection`.
-        if _owns_its_connection(module_path) and any((repo_root / test).is_file() and not _patches_a_real_driver_cached(repo_root / test) for test in tests):
-            continue
+        if _owns_its_connection(module_path, module_tree):
+            for test, tree in test_trees.items():
+                if test not in patches_driver:
+                    patches_driver[test] = _patches_a_real_driver(tree)
+            if any(not patches_driver[t] and _calls_into(tree, ImportAliases.from_tree(tree), module_names) for t, tree in test_trees.items()):
+                continue
         for effect in sorted(performed):
             checked_by = None
-            for test in tests:
-                test_path = repo_root / test
-                if not test_path.is_file():
-                    continue
-                if test not in inspected:
-                    inspected[test] = _inspects(test_path, effects, db_fixtures, helpers)
-                if effect in inspected[test]:
+            for test, tree in test_trees.items():
+                if test not in mock_inspected:
+                    mock_inspected[test] = _mock_inspections(tree, effects, helpers)
+                if effect in mock_inspected[test] or _real_database_tests(tree, fixtures, module_names):
                     checked_by = test
                     break
             if checked_by is None:
@@ -610,6 +797,8 @@ def find_unasserted_effects(
                     f"{module} calls `{effect}(...)` and none of its {len(tests)} importing test(s) "
                     f"ever inspects that call, so deleting it would not fail a single one"
                 )
+    for rel, why in sorted(parse.unparsed.items()):
+        problems[f"{rel}::<unparsable>"] = f"{rel} could not be parsed ({why}), so its effects and inspections are unknown"
     return problems
 
 
@@ -619,18 +808,31 @@ def assert_effects_are_asserted(
     accepted: Iterable[str] = (),
     *,
     effects: Sequence[str] = DEFAULT_EFFECTS,
+    min_modules: int = 1,
 ) -> None:
     """Fail on an unasserted effect that is not already accepted. Ratchet, not a gate.
 
     *accepted* is the baseline: what was already true when the check was wired. Existing debt does not
-    block a commit, a NEW unasserted effect does, and the set can only shrink.
+    block a commit, a NEW unasserted effect does, and the set can only shrink: an accepted entry that is no longer
+    found fails until it is removed. An *import_map* with fewer than *min_modules* modules fails too -- an empty map
+    means nothing was examined, not that everything is inspected.
     """
     import pytest
 
+    if len(import_map) < min_modules:
+        pytest.fail(
+            f"the import map holds {len(import_map)} module(s), expected at least {min_modules}; check the repo root and layout passed to build_import_map"
+        )
     found = find_unasserted_effects(repo_root, import_map, effects=effects)
     accepted = set(accepted)
     new = {key: why for key, why in found.items() if key not in accepted}
+    stale = sorted(accepted - set(found))
+    messages: list[str] = []
     if new:
-        pytest.fail(
+        messages.append(
             f"{len(new)} effect(s) performed but inspected by no importing test:\n  " + "\n  ".join(f"{key}: {why}" for key, why in sorted(new.items()))
         )
+    if stale:
+        messages.append(f"{len(stale)} accepted entr(ies) no longer found -- remove them so the list keeps shrinking:\n  " + "\n  ".join(stale))
+    if messages:
+        pytest.fail("\n".join(messages))

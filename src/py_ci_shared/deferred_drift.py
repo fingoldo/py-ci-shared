@@ -13,10 +13,11 @@ is refreshed to the smaller number (``fail_on_shrink=False`` restores the old be
 
 from __future__ import annotations
 
-import json
-import sys
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import Baseline, BaselineError, atomic_write_text, dump_json, refresh_requested
 
 __all__ = ["DEFAULT_REFRESH_FLAG", "assert_deferred_lists_not_grown", "drift_problems"]
 
@@ -47,22 +48,31 @@ def assert_deferred_lists_not_grown(
     fail_on_shrink: bool = True,
     refresh_flag: str = DEFAULT_REFRESH_FLAG,
     min_lists: int = 1,
+    refresh: Optional[bool] = None,
+    request: Any = None,
 ) -> None:
     """Compare every deferred list under *meta_dir* with *baseline_path* and fail on any drift.
 
-    A missing baseline, or *refresh_flag* on the pytest command line, writes the current counts and skips.
-    *min_lists* is the floor: a counter that finds no list at all has stopped reading the directory.
+    A refresh (*refresh*, *refresh_flag* on the pytest command line or in ``request.config``, or the
+    ``PY_CI_SHARED_REFRESH`` env var, which xdist workers inherit) writes the current counts and skips. A missing
+    baseline FAILS: it is only created by a refresh. *min_lists* is the floor, checked before anything is written:
+    a counter that finds no list at all has stopped reading the directory.
     """
     import pytest
     from pyutilz.dev.meta_test_utils import count_user_deferred_entries
 
     current = count_user_deferred_entries(meta_dir, extra_prefixes=tuple(extra_prefixes))
-    if refresh_flag in sys.argv or not baseline_path.exists():
-        baseline_path.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        pytest.skip(f"debt baseline written: {len(current)} list(s), {sum(current.values())} entr(ies) in {baseline_path.name}")
     if len(current) < min_lists:
         pytest.fail(f"only {len(current)} deferred list(s) found under {meta_dir}; expected at least {min_lists} -- the counter lost its subject")
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
+    if refresh if refresh is not None else refresh_requested(refresh_flag, request):
+        atomic_write_text(baseline_path, dump_json(dict(current)))
+        pytest.skip(f"debt baseline written: {len(current)} list(s), {sum(current.values())} entr(ies) in {baseline_path.name}")
+    if not Path(baseline_path).is_file():
+        pytest.fail(f"debt baseline {baseline_path} does not exist, so nothing was compared. Create it with: pytest ... {refresh_flag}")
+    try:
+        baseline = dict(Baseline(baseline_path, gate="deferred-debt").load()[0])
+    except BaselineError as exc:
+        pytest.fail(str(exc))
     problems = drift_problems(baseline, current, fail_on_shrink=fail_on_shrink)
     if problems:
         net = sum(current.values()) - sum(baseline.values())

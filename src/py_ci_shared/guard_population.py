@@ -36,6 +36,8 @@ import subprocess
 from collections.abc import Iterable
 from pathlib import Path
 
+from ._core import SourceReadError, read_source
+
 # The first file-SELECTING command in a guard: `grep -rl PATTERN DIR` (list the files to
 # examine), `find DIR -name ...`, `ls DIR/*.dart`. Captured whole so it can be re-run verbatim.
 #
@@ -48,6 +50,20 @@ _SELF_ASSERT_RE = re.compile(
     r"examining nothing|examined nothing|SKIPPED|no files to check|population is empty",
     re.IGNORECASE,
 )
+# The admission only counts where the script SAYS it (an echo/printf/die/fail line, or one that exits): the same words
+# in a comment (`# SKIPPED legacy`) teach the guard nothing.
+_SAYS_RE = re.compile(r"\b(?:echo|printf|die|fail|warn|exit)\b")
+
+
+def _self_asserts(text: str) -> bool:
+    """Whether a non-comment line of *text* reports an empty population out loud."""
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if _SAYS_RE.search(stripped) and _SELF_ASSERT_RE.search(stripped):
+            return True
+    return False
 
 
 _ASSIGNMENT_RE = re.compile(r"^\s*(\w+)=(?!\s)(\S.*)$")
@@ -102,7 +118,7 @@ def _population_command(text: str) -> "str | None":
     """
     assignments: list[str] = []
     lines = text.splitlines()
-    for line in lines:
+    for index, line in enumerate(lines):
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -123,8 +139,8 @@ def _population_command(text: str) -> "str | None":
             command = line[m.start(1) :].strip()
             # A guard's selection command routinely spans lines with a trailing backslash; taking
             # the first line alone leaves an unbalanced `\(` and matches nothing.
-            idx = lines.index(line) if line in lines else -1
-            while command.endswith("\\") and idx != -1 and idx + 1 < len(lines):
+            idx = index
+            while command.endswith("\\") and idx + 1 < len(lines):
                 idx += 1
                 command = command[:-1].strip() + " " + lines[idx].strip()
             command = command.rstrip("\\").strip()
@@ -184,8 +200,12 @@ def find_guards_with_empty_population(
     for path in scripts:
         if path.name in skip_names:
             continue
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if _SELF_ASSERT_RE.search(text):
+        try:
+            text = read_source(path)
+        except SourceReadError as exc:
+            problems.append(f"{path.name}: cannot be read, so its population is unknown: {exc.message}")
+            continue
+        if _self_asserts(text):
             continue
         command = _population_command(text)
         if not command:

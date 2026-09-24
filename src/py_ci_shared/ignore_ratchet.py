@@ -28,12 +28,17 @@ Usage::
 
 from __future__ import annotations
 
-import collections
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+
+from ._core import atomic_write_text, dump_json, read_source
+
+#: A rule code (``F401``, ``PLR0913``). A syntax error comes back with no code (older ruff) or ``invalid-syntax``.
+_RULE_CODE = re.compile(r"^[A-Z]+[0-9]*$")
 
 
 def _split_codes(value: str) -> list[str]:
@@ -44,7 +49,7 @@ def workflow_input_codes(workflow: Path, *, job: str, key: str = "ignore") -> li
     """The comma-separated codes a reusable-workflow job passes as ``with: <key>``."""
     import yaml
 
-    data = yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(read_source(workflow)) or {}
     value = (((data.get("jobs") or {}).get(job) or {}).get("with") or {}).get(key, "")
     return _split_codes(str(value))
 
@@ -53,7 +58,7 @@ def precommit_arg_codes(precommit: Path, *, hook: str, flag: str = "--ignore") -
     """The codes a pre-commit hook (matched by ``id`` or ``alias``) passes after *flag*."""
     import yaml
 
-    data = yaml.safe_load(precommit.read_text(encoding="utf-8")) or {}
+    data = yaml.safe_load(read_source(precommit)) or {}
     hooks = [h for repo in data.get("repos", []) or [] for h in repo.get("hooks", []) or [] if hook in (h.get("id"), h.get("alias"))]
     if len(hooks) != 1:
         raise LookupError(f"{precommit.name}: {len(hooks)} hooks named {hook!r}, expected exactly one")
@@ -68,7 +73,12 @@ def precommit_arg_codes(precommit: Path, *, hook: str, flag: str = "--ignore") -
 
 
 def ruff_counts(root: Path, codes: Iterable[str], *, target: str = ".", ruff: Sequence[str] = (sys.executable, "-m", "ruff")) -> dict[str, int]:
-    """How many findings each code has in *root* under the project's own ruff config."""
+    """How many findings each code has in *root* under the project's own ruff config.
+
+    An ignored code is often a PREFIX (``E``, ``PLR09``) or ``ALL``: every finding whose code starts with it counts
+    toward it, so ``ignore = "E"`` hiding 500 ``E501`` findings reads 500, not 0. A file ruff cannot parse reports a
+    finding with no code; that raises, because the ignored codes cannot be counted in a file that was not checked.
+    """
     wanted = sorted(set(codes))
     if not wanted:
         return {}
@@ -76,8 +86,12 @@ def ruff_counts(root: Path, codes: Iterable[str], *, target: str = ".", ruff: Se
     out = subprocess.run(cmd, cwd=root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
     if out.returncode not in (0, 1):
         raise RuntimeError(f"ruff failed ({out.returncode}): {out.stderr.strip()[:400]}")
-    counts = collections.Counter(item.get("code") for item in json.loads(out.stdout or "[]"))
-    return {code: counts.get(code, 0) for code in wanted}
+    items = json.loads(out.stdout or "[]")
+    unparsed = sorted({str(item.get("filename", "?")) for item in items if not _RULE_CODE.match(str(item.get("code") or ""))})
+    if unparsed:
+        raise RuntimeError(f"ruff could not parse {len(unparsed)} file(s), so the ignored codes cannot be counted there -- Fix them: {unparsed[:20]}")
+    codes_found = [str(item["code"]) for item in items]
+    return {code: sum(1 for found in codes_found if code == "ALL" or found.startswith(code)) for code in wanted}
 
 
 def ratchet_problems(codes: Iterable[str], counts: dict[str, int], baseline: dict[str, int]) -> list[str]:
@@ -99,7 +113,7 @@ def ratchet_problems(codes: Iterable[str], counts: dict[str, int], baseline: dic
 
 
 def write_ignore_baseline(path: Path, counts: dict[str, int]) -> None:
-    path.write_text(json.dumps(dict(sorted(counts.items())), indent=2) + "\n", encoding="utf-8")
+    atomic_write_text(path, dump_json(dict(sorted(counts.items()))))
 
 
 def assert_ignore_list_only_shrinks(codes: Iterable[str], counts: dict[str, int], baseline_path: Path) -> None:
@@ -108,7 +122,7 @@ def assert_ignore_list_only_shrinks(codes: Iterable[str], counts: dict[str, int]
     codes = list(codes)
     if not codes:
         pytest.fail("the gate's ignore list parsed as empty -- the workflow moved or the key changed, and this would check nothing")
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.is_file() else {}
+    baseline = json.loads(read_source(baseline_path)) if baseline_path.is_file() else {}
     problems = ratchet_problems(codes, counts, baseline)
     if problems:
         pytest.fail(f"{len(problems)} problem(s) with the gate's ignore list ({baseline_path.name}):\n  " + "\n  ".join(problems))

@@ -59,9 +59,11 @@ Usage::
 from __future__ import annotations
 
 import ast
-import json
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, refresh_requested, scan_python
 
 __all__ = [
     "DEFAULT_HANDLE_NAMES",
@@ -81,32 +83,36 @@ DEFAULT_EXECUTE_NAMES = frozenset({"execute", "executemany", "execute_values"})
 
 DEFAULT_COMPLETE_NAMES = frozenset({"commit", "rollback"})
 
-_SKIP_DIRS = frozenset({".git", "__pycache__", ".venv", "venv", "node_modules", ".pytest_cache", ".mypy_cache", ".ruff_cache", "build", "dist", ".claude", ".tox", ".eggs", "site-packages"})
+#: Kept for callers that imported it; enumeration now goes through ``_core.iter_files`` and ``DEFAULT_EXCLUDE``.
+_SKIP_DIRS = DEFAULT_EXCLUDE
+
+#: Methods on a handle that return a cursor bound to the handle's transaction (psycopg/sqlite3/DB-API).
+_CURSOR_FACTORIES = frozenset({"cursor"})
+
+REFRESH_FLAG = "--refresh-db-transaction-baseline"
 
 
 class IncompleteTransaction:
-    __slots__ = ("function", "handle", "lineno", "path")
+    __slots__ = ("function", "handle", "lineno", "path", "qualname")
 
-    def __init__(self, path: str, function: str, lineno: int, handle: str) -> None:
+    def __init__(self, path: str, function: str, lineno: int, handle: str, qualname: Optional[str] = None) -> None:
         self.path = path
         self.function = function
         self.lineno = lineno
         self.handle = handle
+        self.qualname = qualname or function
 
     @property
     def key(self) -> str:
-        """``path::function::handle`` -- stable across line shifts, for a baseline entry."""
-        return f"{self.path}::{self.function}::{self.handle}"
+        """``path::qualname::handle`` -- stable across line shifts, and ``A.run``/``B.run`` stay apart."""
+        return f"{self.path}::{self.qualname}::{self.handle}"
 
     def __repr__(self) -> str:  # pragma: no cover -- debugging aid only
         return f"IncompleteTransaction({self.key} at line {self.lineno})"
 
 
 def _iter_py_files(root: Path) -> Iterable[Path]:
-    for p in root.rglob("*.py"):
-        if any(part in _SKIP_DIRS for part in p.parts):
-            continue
-        yield p
+    return iter_files(root, ("*.py",), exclude=DEFAULT_EXCLUDE)
 
 
 def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
@@ -135,18 +141,102 @@ def _with_bound_names(fn: ast.FunctionDef | ast.AsyncFunctionDef, autocommitting
     return bound
 
 
-def _called_methods(fn: ast.FunctionDef | ast.AsyncFunctionDef, on_names: set[str], methods: frozenset[str]) -> set[str]:
-    """`{handle_name}` for every `<handle_name>.<method in methods>(...)` call found in *fn*."""
+def _cursor_of(value: Optional[ast.AST], handles: set[str]) -> Optional[str]:
+    """The handle *value* opens a cursor on (``conn.cursor(...)``), else None."""
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Attribute)
+        and value.func.attr in _CURSOR_FACTORIES
+        and isinstance(value.func.value, ast.Name)
+        and value.func.value.id in handles
+    ):
+        return value.func.value.id
+    return None
+
+
+def _cursor_aliases(fn: ast.FunctionDef | ast.AsyncFunctionDef, handles: set[str]) -> dict[str, str]:
+    """``{cursor name: handle}`` for ``cur = conn.cursor()`` and ``with conn.cursor() as cur:`` in *fn*.
+
+    A statement run on the cursor runs in the handle's transaction, so it needs the handle's commit just the same.
+    """
+    aliases: dict[str, str] = {}
+    for node in ast.walk(fn):
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            handle = _cursor_of(node.value, handles)
+            if handle is not None:
+                aliases.update({t.id: handle for t in targets if isinstance(t, ast.Name)})
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                handle = _cursor_of(item.context_expr, handles)
+                if handle is not None and isinstance(item.optional_vars, ast.Name):
+                    aliases[item.optional_vars.id] = handle
+    return aliases
+
+
+def _called_methods(
+    fn: ast.FunctionDef | ast.AsyncFunctionDef, on_names: set[str], methods: frozenset[str], aliases: Optional[dict[str, str]] = None
+) -> set[str]:
+    """`{handle_name}` for every `<handle_name or its cursor>.<method in methods>(...)` call found in *fn*."""
+    aliases = aliases or {}
     found: set[str] = set()
     for node in ast.walk(fn):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
-        receiver = node.func.value
-        if not isinstance(receiver, ast.Name) or receiver.id not in on_names:
+        if node.func.attr not in methods:
             continue
-        if node.func.attr in methods:
-            found.add(receiver.id)
+        receiver = node.func.value
+        if isinstance(receiver, ast.Name):
+            if receiver.id in on_names:
+                found.add(receiver.id)
+            elif aliases.get(receiver.id) in on_names:
+                found.add(aliases[receiver.id])
+        else:
+            handle = _cursor_of(receiver, on_names)  # conn.cursor().execute(...)
+            if handle is not None:
+                found.add(handle)
     return found
+
+
+def _functions_with_qualnames(tree: ast.Module) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
+    out: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
+
+    def visit(node: ast.AST, prefix: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                qual = f"{prefix}{child.name}"
+                out.append((qual, child))
+                visit(child, f"{qual}.<locals>.")
+            elif isinstance(child, ast.ClassDef):
+                visit(child, f"{prefix}{child.name}.")
+            else:
+                visit(child, prefix)
+
+    visit(tree, "")
+    return out
+
+
+def _find_in_scan(
+    scan: ScanResult,
+    *,
+    handle_names: frozenset[str],
+    execute_names: frozenset[str],
+    complete_names: frozenset[str],
+    autocommitting_context_managers: frozenset[str],
+) -> list[IncompleteTransaction]:
+    out: list[IncompleteTransaction] = []
+    for parsed in scan:
+        for qual, node in _functions_with_qualnames(parsed.tree):
+            params = _param_names(node) & handle_names
+            with_bound = _with_bound_names(node, autocommitting_context_managers)
+            candidates = params - with_bound
+            if not candidates:
+                continue
+            aliases = _cursor_aliases(node, candidates)
+            executed = _called_methods(node, candidates, execute_names, aliases)
+            completed = _called_methods(node, candidates, complete_names)
+            out.extend(IncompleteTransaction(parsed.rel, node.name, node.lineno, handle, qual) for handle in sorted(executed - completed))
+    return out
 
 
 def find_incomplete_transactions(
@@ -158,53 +248,62 @@ def find_incomplete_transactions(
     complete_names: frozenset[str] = DEFAULT_COMPLETE_NAMES,
     autocommitting_context_managers: frozenset[str] = frozenset(),
 ) -> list[IncompleteTransaction]:
-    """Every function whose own db-handle PARAMETER is `.execute(...)`-d but never
-    `.commit(`/`.rollback(`-ed in the same body, and is not delegated via
-    `autocommitting_context_managers`."""
-    out: list[IncompleteTransaction] = []
-    for path in files:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        rel = path.relative_to(repo_root).as_posix() if path.is_absolute() else path.as_posix()
-        for node in ast.walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
-            params = _param_names(node) & handle_names
-            with_bound = _with_bound_names(node, autocommitting_context_managers)
-            candidates = params - with_bound
-            if not candidates:
-                continue
-            executed = _called_methods(node, candidates, execute_names)
-            completed = _called_methods(node, candidates, complete_names)
-            out.extend(IncompleteTransaction(rel, node.name, node.lineno, handle) for handle in sorted(executed - completed))
-    return out
+    """Every function whose own db-handle PARAMETER (or a cursor opened on it) is `.execute(...)`-d but never
+    `.commit(`/`.rollback(`-ed in the same body, and is not delegated via `autocommitting_context_managers`.
+
+    Files that cannot be read or parsed are not in this list; :func:`assert_no_new_incomplete_transaction`
+    reports them as failures."""
+    scan = scan_python(list(files), root=repo_root)
+    return _find_in_scan(
+        scan,
+        handle_names=handle_names,
+        execute_names=execute_names,
+        complete_names=complete_names,
+        autocommitting_context_managers=autocommitting_context_managers,
+    )
 
 
 def assert_no_new_incomplete_transaction(
     files: Iterable[Path],
     repo_root: Path,
     baseline_path: Path,
-    **find_kwargs,
+    *,
+    min_files: int = 1,
+    refresh: Optional[bool] = None,
+    request: Any = None,
+    **find_kwargs: Any,
 ) -> None:
     """Fail on an incomplete transaction not already in *baseline_path*. Ratchet, not a gate:
-    the baseline records what was already true, and the list can only shrink from here."""
-    accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
-    found = find_incomplete_transactions(files, repo_root, **find_kwargs)
-    new = {t.key: t for t in found if t.key not in accepted}
-    if new:
-        lines = "\n  ".join(f"{t.key} (line {t.lineno})" for t in sorted(new.values(), key=lambda t: t.key))
-        raise AssertionError(
-            f"{len(new)} function(s) execute a statement on their own db-handle parameter and never "
-            f"commit or rollback it -- the connection is left in an open transaction on return:\n  {lines}\n"
-            "Add `<handle>.commit()` (or `.rollback()`), or if the caller genuinely owns the transaction, "
-            "record it in the baseline with a reason."
-        )
-    stale = sorted(k for k in accepted if k not in {t.key for t in found})
-    if stale:
-        raise AssertionError(f"these baseline entries no longer describe an incomplete transaction -- remove them: {stale}")
+    the baseline records what was already true, and the list can only shrink from here.
+
+    Also fails when fewer than *min_files* files parsed, when any file could not be parsed, and when the baseline
+    is missing (create it with ``--refresh-db-transaction-baseline`` or ``PY_CI_SHARED_REFRESH=db-transaction``).
+    """
+    import pytest
+
+    scan = scan_python(list(files), root=repo_root, min_files=min_files)
+    found = _find_in_scan(
+        scan,
+        handle_names=find_kwargs.pop("handle_names", DEFAULT_HANDLE_NAMES),
+        execute_names=find_kwargs.pop("execute_names", DEFAULT_EXECUTE_NAMES),
+        complete_names=find_kwargs.pop("complete_names", DEFAULT_COMPLETE_NAMES),
+        autocommitting_context_managers=find_kwargs.pop("autocommitting_context_managers", frozenset()),
+    )
+    if find_kwargs:
+        raise TypeError(f"unexpected keyword argument(s): {sorted(find_kwargs)}")
+    scan.assert_ok()
+    do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
+    outcome = Baseline(baseline_path, gate="db-transaction", refresh_command=f"pytest {REFRESH_FLAG}").enforce(
+        [t.key for t in found],
+        refresh=do_refresh,
+        describe={t.key: f"{t.key} (line {t.lineno})" for t in found},
+        guidance=(
+            "these functions execute a statement on their own db-handle parameter and never commit or rollback it -- "
+            "the connection is left in an open transaction on return. Add `<handle>.commit()` (or `.rollback()`), or if the "
+            "caller genuinely owns the transaction, record it in the baseline with a reason."
+        ),
+    )
+    if outcome.refreshed:
+        pytest.skip(outcome.message)
+    if not outcome.ok or outcome.stale:
+        raise AssertionError(outcome.message)

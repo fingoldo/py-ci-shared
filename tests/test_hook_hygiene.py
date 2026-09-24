@@ -168,3 +168,56 @@ class TestAssert:
         d = _hooks(tmp_path, "#!/bin/sh\n[ -f tool/check-x.sh ] && sh tool/check-x.sh\n")
         with pytest.raises(pytest.fail.Exception, match="else branch"):
             assert_hooks_are_honest(d)
+
+
+class TestAuditRegressions:
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "git add .",
+            "git add -Av",
+            "git -C . add -A",
+            "git commit -a -m wip",
+            "git commit -am wip",
+            "git commit --all",
+            "ruff format && git add -u",
+            "git add :/",
+        ],
+    )
+    def test_every_staging_sweep_is_flagged(self, tmp_path, line):
+        d = _hooks(tmp_path, f"#!/bin/sh\n{line}\n", name="pre-commit")
+        problems = find_hook_hygiene_problems(d)
+        assert len(problems) == 1 and "stages every modified file" in problems[0]
+
+    @pytest.mark.parametrize(
+        "line", ["git add -p", "git add -- $(git diff --cached --name-only)", "git commit -m 'msg'", "git commit --amend --no-edit", "git status"]
+    )
+    def test_targeted_staging_is_not_flagged(self, tmp_path, line):
+        d = _hooks(tmp_path, f"#!/bin/sh\n{line}\n", name="pre-commit")
+        assert find_hook_hygiene_problems(d) == []
+
+    def test_a_nested_if_does_not_end_the_guard_block_early(self, tmp_path):
+        body = (
+            "#!/bin/sh\n"
+            "if [ -f tool/check-x.sh ]; then\n"
+            '  if [ -n "$CI" ]; then\n    echo ci\n  fi\n'
+            "  sh tool/check-x.sh\n"
+            "else\n"
+            "  echo 'ERROR: guard missing'; exit 1\n"
+            "fi\n"
+        )
+        assert find_hook_hygiene_problems(_hooks(tmp_path, body)) == []
+
+    def test_a_nested_else_is_not_the_guards_else(self, tmp_path):
+        body = (
+            "#!/bin/sh\n"
+            "if [ -f tool/check-x.sh ]; then\n"
+            "  if [ -n \"$CI\" ]; then\n    echo ci\n  else\n    echo 'ERROR: local'; exit 1\n  fi\n"
+            "  sh tool/check-x.sh\n"
+            "fi\n"
+        )
+        assert len(find_hook_hygiene_problems(_hooks(tmp_path, body))) == 1
+
+    def test_the_word_elsewhere_is_not_an_else(self, tmp_path):
+        body = "#!/bin/sh\nif [ -f tool/check-x.sh ]; then\n  echo 'runs elsewhere: exit 1 on failure'\n  sh tool/check-x.sh\nfi\n"
+        assert len(find_hook_hygiene_problems(_hooks(tmp_path, body))) == 1

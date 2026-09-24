@@ -12,6 +12,7 @@ large diffs that collide with concurrent work. To actually apply changes, run
 
 Shared across projects via the py-ci-shared package.
 """
+
 import subprocess
 import sys
 
@@ -26,19 +27,46 @@ import sys
 # tests/test_format_warn_ignore_subset.py pins that relationship so drift between the two fails a
 # test instead of silently nagging about deliberately-kept idioms.
 _RESELECTED_IGNORE = [
-    "E501", "E401", "E402", "E701", "E702",  # pycodestyle idioms the base config deliberately keeps
+    "E501",
+    "E401",
+    "E402",
+    "E701",
+    "E702",  # pycodestyle idioms the base config deliberately keeps
     "I001",  # isort-vs-black conflict
-    "N802", "N803", "N806",  # sklearn/matplotlib/legacy naming conventions
-    "UP006", "UP007", "UP015", "UP031", "UP037", "UP045",  # pre-3.10 / logging-format idioms
+    "N802",
+    "N803",
+    "N806",  # sklearn/matplotlib/legacy naming conventions
+    "UP006",
+    "UP007",
+    "UP015",
+    "UP031",
+    "UP037",
+    "UP045",  # pre-3.10 / logging-format idioms
 ]
 
-def main() -> None:
-    files = [a for a in sys.argv[1:] if a.endswith(".py")]
-    if not files:
-        return
+#: Characters of file arguments per command. Windows caps a whole command line at 32767 characters, and a commit
+#: touching ~2000 files went past it: CreateProcess failed and the hook printed one "skipped" line per tool.
+_MAX_ARG_CHARS = 8000
 
-    warned = False
-    for cmd in (
+
+def _chunks(files: list[str], limit: int = _MAX_ARG_CHARS) -> list[list[str]]:
+    """*files* split into runs whose joined length stays under *limit* (a file longer than *limit* goes alone)."""
+    out: list[list[str]] = []
+    current: list[str] = []
+    size = 0
+    for f in files:
+        if current and size + len(f) + 1 > limit:
+            out.append(current)
+            current, size = [], 0
+        current.append(f)
+        size += len(f) + 1
+    if current:
+        out.append(current)
+    return out
+
+
+def _commands(files: list[str]) -> list[list[str]]:
+    return [
         # taste only: formatting + pycodestyle/naming/pyupgrade/import-order. Real
         # problems (pyflakes F + bugbear B) are a SEPARATE blocking hook, not here.
         [sys.executable, "-m", "ruff", "format", "--check", "--diff", *files],
@@ -50,12 +78,22 @@ def main() -> None:
         # filtered-Black-clean across several commits with zero local signal). --check never
         # writes, so it's safe to run warn-only here alongside the raw-black manual-only policy.
         [sys.executable, "-m", "py_ci_shared.black_filtered_apply", "--config", "pyproject.toml", "--check", *files],
-    ):
-        try:
-            if subprocess.run(cmd).returncode != 0:
-                warned = True
-        except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
-            print(f"[format-warn] skipped {' '.join(cmd[2:4])}: {e}", file=sys.stderr)
+    ]
+
+
+def main() -> None:
+    files = [a for a in sys.argv[1:] if a.endswith(".py")]
+    if not files:
+        return
+
+    warned = False
+    for chunk in _chunks(files):
+        for cmd in _commands(chunk):
+            try:
+                if subprocess.run(cmd).returncode != 0:
+                    warned = True
+            except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
+                print(f"[format-warn] skipped {' '.join(cmd[2:4])}: {e}", file=sys.stderr)
 
     if warned:
         print(

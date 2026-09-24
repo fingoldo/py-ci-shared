@@ -15,8 +15,9 @@ A rule is ``from_glob !-> to_glob`` with an optional reason and an allowlist of 
 relative (``../../providers/x.dart``) and absolute (``package:app/providers/x.dart``) imports are
 resolved to a repo-relative path, so a rule cannot be evaded by changing import style.
 
-Deliberately regex-based, no language parser: an import line is one of a handful of shapes in every
-language this account ships (Dart ``import '...'``, Python ``from x import``, TS ``from '...'``).
+Dart/TS/JS import lines are read with regexes after comments are removed (an import named in a ``//`` or
+``/* */`` comment is not an import). Python files are read with ``ast``, since a Python import names a MODULE, not a
+path: ``from ..providers import p`` and ``from pkg.providers import p`` are resolved to the repo-relative file.
 
 Usage::
 
@@ -34,11 +35,14 @@ Usage::
 
 from __future__ import annotations
 
+import ast
 import fnmatch
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
 
 # Dart: `import '...'` / `export '...'`; TS/JS: `import {x} from '...'`, `export * from '...'`,
 # `require('...')`; Python-style `from x import y` is matched by the same `from` form when the
@@ -90,6 +94,107 @@ def _repo_relative_target(importer: Path, raw: str, repo_root: Path, package_roo
     return None
 
 
+def _strip_comments(text: str) -> str:
+    """*text* with ``//`` line comments and ``/* */`` block comments removed outside string literals; newlines kept."""
+    out: list[str] = []
+    i, n = 0, len(text)
+    quote = ""
+    while i < n:
+        ch = text[i]
+        if quote:
+            out.append(ch)
+            if ch == "\\" and i + 1 < n:
+                out.append(text[i + 1])
+                i += 2
+                continue
+            if ch == quote or ch == "\n":
+                quote = ""
+            i += 1
+            continue
+        if ch in "'\"`":
+            quote = ch
+            out.append(ch)
+            i += 1
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            i = n if end == -1 else end
+            continue
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            stop = n if end == -1 else end + 2
+            out.append("\n" * text.count("\n", i, stop))
+            i = stop
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _python_module_file(module: str, base_dirs: Sequence[Path]) -> "Path | None":
+    """The file a dotted *module* names under the first base dir holding it (``a/b.py`` or ``a/b/__init__.py``)."""
+    parts = [part for part in module.split(".") if part]
+    for base in base_dirs:
+        for candidate in (base.joinpath(*parts).with_suffix(".py"), base.joinpath(*parts, "__init__.py")):
+            if parts and candidate.is_file():
+                return candidate
+    return None
+
+
+def _python_targets(path: Path, repo_root: Path, package_roots: "dict[str, str]") -> Iterator[tuple[int, str]]:
+    """``(line, repo-relative target)`` for every import in a Python file that resolves inside the repository: the
+    submodule an imported name is, when it is one, else the module imported from. Raises ``SourceError``."""
+    _source, tree = parse_source(path)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            requests: list[tuple[int, str, list[str]]] = [(0, alias.name, []) for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            requests = [(node.level, node.module or "", [alias.name for alias in node.names if alias.name != "*"])]
+        else:
+            continue
+        seen: set[str] = set()
+        for level, module, names in requests:
+            if level:
+                anchor = path.parent
+                for _ in range(level - 1):
+                    anchor = anchor.parent
+                bases = [anchor]
+            else:
+                head, _, rest = module.partition(".")
+                if head in package_roots:
+                    bases = [repo_root / package_roots[head]]
+                    module = rest
+                else:
+                    bases = [repo_root, repo_root / "src"]
+            found = [f for f in (_python_module_file(f"{module}.{n}" if module else n, bases) for n in names) if f is not None]
+            if not found:
+                own = _python_module_file(module, bases) if module else next((b / "__init__.py" for b in bases if (b / "__init__.py").is_file()), None)
+                if own is None and not level and module and not any((b / module.split(".")[0]).exists() for b in bases):
+                    continue  # a third-party or stdlib module: not a path in this repository
+                found = [own if own is not None else bases[0].joinpath(*module.split(".")).with_suffix(".py")]
+            for target in found:
+                rel = relative_posix(target, repo_root)
+                if rel not in seen:
+                    seen.add(rel)
+                    yield node.lineno, rel
+
+
+def _text_targets(path: Path, repo_root: Path, package_roots: "dict[str, str]") -> Iterator[tuple[int, str]]:
+    text = _strip_comments(read_source(path))
+    for i, line in enumerate(text.splitlines(), start=1):
+        raw = None
+        for pattern in _IMPORT_RES:
+            m = pattern.search(line)
+            if m:
+                raw = m.group(1)
+                break
+        if raw is None:
+            continue
+        target = _repo_relative_target(path, raw, repo_root, package_roots)
+        if target is not None:
+            yield i, target
+
+
 def find_layering_violations(
     repo_root: Path,
     rules: Iterable[LayerRule],
@@ -108,29 +213,20 @@ def find_layering_violations(
     problems: list[str] = []
     examined = 0
 
-    for path in sorted(repo_root.rglob("*")):
-        if not path.is_file() or path.suffix not in source_suffixes:
-            continue
-        rel = path.relative_to(repo_root).as_posix()
-        if "/.dart_tool/" in f"/{rel}" or "/node_modules/" in f"/{rel}" or "/build/" in f"/{rel}":
-            continue
+    for path in iter_files(repo_root, tuple(f"*{suffix}" for suffix in source_suffixes), exclude=DEFAULT_EXCLUDE | {".dart_tool"}):
+        rel = relative_posix(path, repo_root)
         applicable = [r for r in rules if fnmatch.fnmatch(rel, r.from_glob)]
         if not applicable:
             continue
         examined += 1
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-        for i, line in enumerate(lines, start=1):
-            raw = None
-            for pattern in _IMPORT_RES:
-                m = pattern.search(line)
-                if m:
-                    raw = m.group(1)
-                    break
-            if raw is None:
-                continue
-            target = _repo_relative_target(path, raw, repo_root, package_roots)
-            if target is None:
-                continue
+        try:
+            targets = list(_python_targets(path, repo_root, package_roots) if path.suffix == ".py" else _text_targets(path, repo_root, package_roots))
+        except SourceError as exc:
+            problems.append(
+                f"{rel}:{exc.line or 1}: cannot be {'parsed' if exc.kind == 'unparsable' else 'read'}, so its imports were not checked: {exc.message}"
+            )
+            continue
+        for i, target in targets:
             for rule in applicable:
                 if rel in rule.allow_files:
                     continue

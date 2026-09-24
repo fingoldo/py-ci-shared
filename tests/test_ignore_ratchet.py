@@ -85,3 +85,20 @@ def test_assert_reports_against_the_committed_baseline(tmp_path):
     assert_ignore_list_only_shrinks(["F401"], {"F401": 1}, baseline)
     with pytest.raises(pytest.fail.Exception, match="up from 1"):
         assert_ignore_list_only_shrinks(["F401"], {"F401": 2}, baseline)
+
+
+def test_a_prefix_ignore_counts_every_code_under_it(tmp_path):
+    (tmp_path / "a.py").write_text("import os\nimport sys\n\n\ndef f(x):\n    return x == None\n", encoding="utf-8")
+    counts = ruff_counts(tmp_path, ["F", "E711", "F401"])
+    assert counts == {"E711": 1, "F": 2, "F401": 2}
+    problems = ratchet_problems(["F"], counts, {"F": 2})
+    assert problems == []
+    assert "0 findings left" in ratchet_problems(["F"], {"F": 0}, {"F": 2})[0]
+
+
+def test_a_file_ruff_cannot_parse_raises(tmp_path):
+    (tmp_path / "a.py").write_text("import os\n", encoding="utf-8")
+    assert ruff_counts(tmp_path, ["F401"]) == {"F401": 1}
+    (tmp_path / "broken.py").write_text("def f(:\n", encoding="utf-8")
+    with pytest.raises(RuntimeError, match=r"broken.py"):
+        ruff_counts(tmp_path, ["F401"])

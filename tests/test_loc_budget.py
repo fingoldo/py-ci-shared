@@ -28,7 +28,7 @@ def _write_lines(path: Path, n: int) -> None:
 
 
 class TestAssertNoNewOversizedFile:
-    def test_first_run_seeds_baseline_and_skips(self, tmp_path):
+    def test_a_refresh_seeds_the_baseline_and_skips(self, tmp_path):
         src = tmp_path / "src"
         src.mkdir()
         big = src / "big.py"
@@ -36,7 +36,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
+            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, refresh=True)
 
         assert baseline.exists()
         seeded = orjson.loads(baseline.read_bytes())
@@ -50,7 +50,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[small], root=src, baseline_path=baseline, limit=10)
+            assert_no_new_oversized_file(files=[small], root=src, baseline_path=baseline, limit=10, refresh=True)
         assert orjson.loads(baseline.read_bytes()) == {}
 
     def test_unchanged_tree_passes_after_seeding(self, tmp_path):
@@ -61,7 +61,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
+            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, refresh=True)
 
         # No pytest.fail/skip on the second call -- returning normally is the pass.
         assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
@@ -71,8 +71,10 @@ class TestAssertNoNewOversizedFile:
         src.mkdir()
         baseline = tmp_path / "_loc_baseline.json"
 
+        small = src / "small.py"
+        _write_lines(small, 5)
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[], root=src, baseline_path=baseline, limit=10)
+            assert_no_new_oversized_file(files=[small], root=src, baseline_path=baseline, limit=10, refresh=True)
 
         big = src / "big.py"
         _write_lines(big, 20)
@@ -87,7 +89,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, growth_slack=5)
+            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, growth_slack=5, refresh=True)
 
         _write_lines(big, 24)  # +4, within the 5-line slack
         assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, growth_slack=5)
@@ -100,7 +102,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, growth_slack=5)
+            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, growth_slack=5, refresh=True)
 
         _write_lines(big, 30)  # +10, beyond the 5-line slack
         with pytest.raises(pytest.fail.Exception, match="GREW"):
@@ -116,7 +118,7 @@ class TestAssertNoNewOversizedFile:
         baseline = tmp_path / "_loc_baseline.json"
 
         with pytest.raises(pytest.skip.Exception):
-            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
+            assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10, refresh=True)
 
         _write_lines(big, 15)  # still over the limit, but shrunk from baseline
         assert_no_new_oversized_file(files=[big], root=src, baseline_path=baseline, limit=10)
@@ -153,3 +155,52 @@ class TestRegisterRefreshOption:
         parser = self._make_parser()
         register_refresh_option(parser)
         register_refresh_option(parser)  # must not raise (pytest.Parser raises ValueError on conflict)
+
+
+class TestAuditRegressions:
+    def test_a_missing_baseline_fails_instead_of_reseeding(self, tmp_path):
+        big = tmp_path / "big.py"
+        _write_lines(big, 20)
+        baseline = tmp_path / "_loc_baseline.json"
+        with pytest.raises(pytest.fail.Exception, match="does not exist"):
+            assert_no_new_oversized_file(files=[big], root=tmp_path, baseline_path=baseline, limit=10)
+        assert not baseline.exists()
+
+    def test_the_env_refresh_reaches_an_xdist_worker(self, tmp_path, monkeypatch):
+        big = tmp_path / "big.py"
+        _write_lines(big, 20)
+        baseline = tmp_path / "_loc_baseline.json"
+        monkeypatch.setattr(sys, "argv", ["-c"])
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "loc-budget")
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_oversized_file(files=[big], root=tmp_path, baseline_path=baseline, limit=10)
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH")
+        assert orjson.loads(baseline.read_bytes()) == {"big.py": 20}
+        assert_no_new_oversized_file(files=[big], root=tmp_path, baseline_path=baseline, limit=10)
+
+    def test_an_unreadable_file_fails_rather_than_counting_zero(self, tmp_path):
+        baseline = tmp_path / "_loc_baseline.json"
+        baseline.write_text("{}", encoding="utf-8")
+        ok = tmp_path / "ok.py"
+        _write_lines(ok, 3)
+        bad = tmp_path / "latin.py"
+        bad.write_bytes(b"x = '\xe9'\n" * 30)
+        missing = tmp_path / "gone.py"
+        assert_no_new_oversized_file(files=[ok], root=tmp_path, baseline_path=baseline, limit=10)
+        with pytest.raises(pytest.fail.Exception, match=r"latin.py"):
+            assert_no_new_oversized_file(files=[ok, bad], root=tmp_path, baseline_path=baseline, limit=10)
+        with pytest.raises(pytest.fail.Exception, match=r"gone.py"):
+            assert_no_new_oversized_file(files=[ok, missing], root=tmp_path, baseline_path=baseline, limit=10)
+
+    def test_no_files_fails(self, tmp_path):
+        baseline = tmp_path / "_loc_baseline.json"
+        baseline.write_text("{}", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="only 0 file"):
+            assert_no_new_oversized_file(files=[], root=tmp_path, baseline_path=baseline, limit=10)
+
+    def test_a_bom_and_a_missing_final_newline_count_true_lines(self, tmp_path):
+        from py_ci_shared.loc_budget import oversized_files
+
+        f = tmp_path / "bom.py"
+        f.write_bytes(b"\xef\xbb\xbf" + b"x = 1\n" * 11 + b"y = 2")
+        assert oversized_files([f], tmp_path, limit=10) == {"bom.py": 12}

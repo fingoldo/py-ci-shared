@@ -135,3 +135,50 @@ class TestAssert:
         )
         with pytest.raises(pytest.fail.Exception, match=r"lib/core/a\.dart"):
             assert_layering(root, [_CORE_RULE])
+
+
+class TestAuditRegressions:
+    _PY_RULE = LayerRule("pkg/core/**", ["pkg/providers/**"])
+
+    @pytest.mark.parametrize(
+        "source",
+        ["from ..providers import p\n", "from ..providers.p import thing\n", "from pkg.providers import p\n", "import pkg.providers.p as p\n"],
+    )
+    def test_python_imports_across_the_boundary_are_flagged(self, tmp_path, source):
+        root = _tree(tmp_path, **{"pkg__core__a.py": source, "pkg__providers__p.py": "thing = 1\n", "pkg__providers____init__.py": "", "pkg____init__.py": ""})
+        problems = find_layering_violations(root, [self._PY_RULE])
+        assert len(problems) == 1 and "pkg/core/a.py:1: imports pkg/providers/" in problems[0]
+
+    @pytest.mark.parametrize("source", ["from . import b\n", "import os\nfrom pathlib import Path\n", "from pkg.core import b\n"])
+    def test_python_imports_inside_the_layer_or_external_pass(self, tmp_path, source):
+        root = _tree(tmp_path, **{"pkg__core__a.py": source, "pkg__core__b.py": "", "pkg____init__.py": "", "pkg__core____init__.py": ""})
+        assert find_layering_violations(root, [self._PY_RULE]) == []
+
+    def test_an_unparsable_python_file_is_reported(self, tmp_path):
+        root = _tree(tmp_path, **{"pkg__core__a.py": "from .. import (\n"})
+        problems = find_layering_violations(root, [self._PY_RULE])
+        assert len(problems) == 1 and "cannot be parsed" in problems[0]
+
+    @pytest.mark.parametrize(
+        "source",
+        ["// see from '../../providers/x'\n", "/* import '../providers/theme.dart';\n*/\n", "const url = 'http://x'; // import '../providers/theme.dart';\n"],
+    )
+    def test_imports_named_in_comments_are_not_imports(self, tmp_path, source):
+        root = _tree(tmp_path, **{"lib__core__a.dart": source, "lib__providers__theme.dart": "// provider\n"})
+        assert find_layering_violations(root, [_CORE_RULE]) == []
+
+    def test_a_real_import_after_a_block_comment_keeps_its_line(self, tmp_path):
+        root = _tree(tmp_path, **{"lib__core__a.dart": "/*\n  header\n*/\nimport '../providers/theme.dart';\n", "lib__providers__theme.dart": ""})
+        (problem,) = find_layering_violations(root, [_CORE_RULE])
+        assert problem.startswith("lib/core/a.dart:4:")
+
+    def test_excluded_directories_are_not_walked(self, tmp_path):
+        root = _tree(
+            tmp_path,
+            **{
+                "lib__core__a.dart": "import 'package:flutter/material.dart';\n",
+                "node_modules__lib__core__b.ts": "import '../../providers/x';\n",
+                ".venv__lib__core__c.py": "from ..providers import x\n",
+            },
+        )
+        assert find_layering_violations(root, [LayerRule("**/lib/core/**", ["**/providers/**"]), _CORE_RULE]) == []

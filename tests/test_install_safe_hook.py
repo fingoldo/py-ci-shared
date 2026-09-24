@@ -1,6 +1,7 @@
 """Behavioral tests for py_ci_shared.install_safe_hook: rewrites .git/hooks/pre-commit to invoke
 safe_precommit instead of raw pre_commit, idempotently.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -98,3 +99,31 @@ def test_install_safe_hook_skips_missing_pre_merge_commit_without_failing(tmp_pa
     monkeypatch.chdir(repo)
     assert main([]) == 0
     assert not (repo / ".git" / "hooks" / "pre-merge-commit").exists()
+
+
+def test_a_configured_hooks_path_is_patched(tmp_path, monkeypatch):
+    from py_ci_shared.install_safe_hook import main
+
+    repo = _init_repo_with_hook(tmp_path)
+    custom = repo / ".githooks"
+    custom.mkdir()
+    (custom / "pre-commit").write_bytes(_TEMPLATE.encode("utf-8"))
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=repo, check=True)
+    monkeypatch.chdir(repo)
+    assert main([]) == 0
+    assert b"-m py_ci_shared.safe_precommit" in (custom / "pre-commit").read_bytes()
+    assert b"-mpre_commit" in (repo / ".git" / "hooks" / "pre-commit").read_bytes()
+
+
+def test_encoding_and_line_endings_are_preserved(tmp_path, monkeypatch):
+    from py_ci_shared.install_safe_hook import main
+
+    repo = _init_repo_with_hook(tmp_path)
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    original = ("# héllo — déjà\n" + _TEMPLATE).encode("utf-8")
+    hook.write_bytes(original)
+    monkeypatch.chdir(repo)
+    assert main([]) == 0
+    after = hook.read_bytes()
+    assert after == original.replace(b"-mpre_commit", b"-m py_ci_shared.safe_precommit")
+    assert b"\r\n" not in after

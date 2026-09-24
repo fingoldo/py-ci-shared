@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import os
+import platform
 import shutil
 import socket
 import subprocess
@@ -62,9 +63,24 @@ def free_port() -> int:
         return int(s.getsockname()[1])
 
 
-def _quiet(cmd: list[str], *, check: bool) -> None:
-    """Run with DEVNULL on every stream: the server outlives pg_ctl, and an inherited pipe would hold the call open."""
-    subprocess.run(cmd, check=check, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+def _quiet(cmd: list[str], *, check: bool, log: "Path | None" = None, also: Sequence[Path] = ()) -> None:
+    """Run with no inherited pipe (the server outlives pg_ctl, and a pipe would hold the call open).
+
+    Output goes to *log* (a FILE, which does not hold the call open) or to DEVNULL. With *check*, a failure raises a
+    ``RuntimeError`` carrying the tail of *log* and of every file in *also* (the server log), since the data directory
+    holding them is deleted on the way out.
+    """
+    with open(log, "ab") if log is not None else open(os.devnull, "wb") as out:
+        code = subprocess.run(cmd, check=False, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT).returncode
+    if check and code != 0:
+        tails = []
+        for path in ([log] if log is not None else []) + list(also):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            tails.append(f"--- {path.name} ---\n" + "\n".join(text.splitlines()[-40:]))
+        raise RuntimeError(f"{Path(cmd[0]).name} failed with exit code {code}:\n" + ("\n".join(tails) or "(no output)"))
 
 
 @contextlib.contextmanager
@@ -74,8 +90,17 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
     data = Path(tempfile.mkdtemp(prefix="pg-embedded-"))
     pg_ctl = str(bin_dir / f"pg_ctl{_EXE}")
     try:
-        _quiet([str(bin_dir / f"initdb{_EXE}"), "-D", str(data / "db"), "-U", user, "-A", "trust", "-E", "UTF8", "--no-locale"], check=True)
-        _quiet([pg_ctl, "-D", str(data / "db"), "-o", f"-p {port} -c listen_addresses=127.0.0.1", "-l", str(data / "server.log"), "-w", "start"], check=True)
+        _quiet(
+            [str(bin_dir / f"initdb{_EXE}"), "-D", str(data / "db"), "-U", user, "-A", "trust", "-E", "UTF8", "--no-locale"],
+            check=True,
+            log=data / "initdb.log",
+        )
+        _quiet(
+            [pg_ctl, "-D", str(data / "db"), "-o", f"-p {port} -c listen_addresses=127.0.0.1", "-l", str(data / "server.log"), "-w", "start"],
+            check=True,
+            log=data / "pg_ctl.log",
+            also=[data / "server.log"],
+        )
         try:
             yield f"host=127.0.0.1 port={port} user={user} dbname=postgres"
         finally:
@@ -113,7 +138,28 @@ def run(argv: Sequence[str], *, env_var: str, bin_dir: "Path | None", missing_ex
 #: The pgserver wheel carries a relocatable PostgreSQL build; its binaries do not depend on the Python it was
 #: built for, so a cp312 wheel serves any interpreter.
 PGSERVER_VERSION = "0.1.4"
-_WHEEL_PLATFORM = {"win32": "win_amd64", "linux": "manylinux_2_17_x86_64", "darwin": "macosx_11_0_arm64"}
+#: (sys.platform prefix, normalised machine) -> wheel platform tag. The machine matters: an x86-64 Mac or an arm64 Linux
+#: box given the other architecture's binaries fails at the first exec.
+_WHEEL_PLATFORM = {
+    ("win32", "x86_64"): "win_amd64",
+    ("linux", "x86_64"): "manylinux_2_17_x86_64",
+    ("linux", "aarch64"): "manylinux_2_17_aarch64",
+    ("darwin", "arm64"): "macosx_11_0_arm64",
+    ("darwin", "x86_64"): "macosx_10_9_x86_64",
+}
+_MACHINE_ALIASES = {"amd64": "x86_64", "x64": "x86_64", "arm64": "arm64", "aarch64": "aarch64"}
+
+
+def wheel_platform(sys_platform: "str | None" = None, machine: "str | None" = None) -> "str | None":
+    """The pgserver wheel platform tag for this OS and CPU, or None when no wheel is known for the pair."""
+    sys_platform = sys_platform or sys.platform
+    raw = (machine or platform.machine() or "").lower()
+    arch = _MACHINE_ALIASES.get(raw, raw)
+    if sys_platform.startswith("darwin") and arch == "aarch64":
+        arch = "arm64"
+    if sys_platform.startswith("linux") and arch == "arm64":
+        arch = "aarch64"
+    return next((tag for (key, cpu), tag in _WHEEL_PLATFORM.items() if sys_platform.startswith(key) and cpu == arch), None)
 
 
 def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Path:
@@ -123,9 +169,9 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
     bin_dir = dest or cache_bin_dir()
     if (bin_dir / f"initdb{_EXE}").is_file():
         return bin_dir
-    platform = next((tag for key, tag in _WHEEL_PLATFORM.items() if sys.platform.startswith(key)), None)
-    if platform is None:
-        raise RuntimeError(f"no pgserver wheel known for {sys.platform}; set PG_BIN instead")
+    tag = wheel_platform()
+    if tag is None:
+        raise RuntimeError(f"no pgserver wheel known for {sys.platform}/{platform.machine()}; set PG_BIN instead")
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(
             [
@@ -139,7 +185,7 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
                 "--python-version",
                 "3.12",
                 "--platform",
-                platform,
+                tag,
                 "-d",
                 tmp,
                 "-q",
@@ -151,8 +197,16 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
             members = [m for m in zf.namelist() if m.startswith("pgserver/pginstall/")]
             zf.extractall(tmp, members)
         target = bin_dir.parent
-        shutil.rmtree(target, ignore_errors=True)
-        shutil.copytree(Path(tmp) / "pgserver" / "pginstall", target)
+        unpacked = Path(tmp) / "pgserver" / "pginstall"
+        # Replace only what the wheel brings (bin/, lib/, share/...): *dest* may be a caller's own directory, and its
+        # parent must not be wiped along with the previous unpack.
+        for entry in unpacked.iterdir():
+            existing = target / entry.name
+            if existing.is_dir() and not existing.is_symlink():
+                shutil.rmtree(existing)
+            elif existing.exists() or existing.is_symlink():
+                existing.unlink()
+        shutil.copytree(unpacked, target, dirs_exist_ok=True)
     return bin_dir
 
 
@@ -169,7 +223,8 @@ def main(args: "Sequence[str] | None" = None) -> int:
     if ns.cmd == "fetch":
         sys.stdout.write(f"{fetch()}\n")
         return 0
-    command = [c for c in ns.command if c != "--"]
+    # Only the separator itself: a `--` further on belongs to the command (`pytest -- -x`, `git log -- path`).
+    command = list(ns.command[1:] if ns.command[:1] == ["--"] else ns.command)
     if not command:
         parser.error("no command given after --")
     return run(command, env_var=ns.env, bin_dir=find_pg_bin(ns.pg_bin), missing_exit=ns.missing_exit)

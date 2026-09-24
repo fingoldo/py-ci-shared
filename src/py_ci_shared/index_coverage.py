@@ -28,9 +28,13 @@ primary key it duplicates.
 DELIBERATELY CONSERVATIVE. Predicate implication is not decidable here, so coverage is claimed only
 when redundancy is provable by inspection:
 
-  * same access method, and
-  * the live index's leading key columns are exactly the expected index's key columns, and
-  * the live index is unconditional, or carries a textually identical predicate.
+  * same table (and schema, when both statements name one), and same access method, and
+  * the live index's leading key columns are exactly the expected index's key columns, with the same
+    direction and NULLS ordering (or a whole-index reversal of both, for a btree), and
+  * the live index is unconditional, or carries a textually identical predicate, and
+  * every INCLUDE column of the expected index is a key or INCLUDE column of the live one, and
+  * a UNIQUE expectation is met only by a UNIQUE live index on exactly the same key columns and predicate:
+    a wider or non-unique index does not enforce the constraint.
 
 Anything short of that stays `[MISSING]`. A partial live index does NOT cover an unconditional
 expectation -- `idx_fj_client_team_uid_nn ... WHERE client_team_uid IS NOT NULL` is left reported
@@ -45,7 +49,7 @@ import re
 from dataclasses import dataclass
 
 _CREATE = re.compile(
-    r"CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"
+    r"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"
     r"(?P<name>[\w.\"]+)\s+ON\s+(?:ONLY\s+)?(?P<target>[\w.\"]+)\s*"
     r"(?:USING\s+(?P<method>\w+)\s*)?"
     r"\((?P<cols>.*)",
@@ -53,6 +57,12 @@ _CREATE = re.compile(
 )
 _TRAILING_DIRECTION = re.compile(
     r"\s+(?:ASC|DESC)(?:\s+NULLS\s+(?:FIRST|LAST))?$|\s+NULLS\s+(?:FIRST|LAST)$",
+    re.IGNORECASE,
+)
+# A cast's TYPE only: `x::int IS NOT NULL` keeps its `IS NOT NULL`. Multi-word type names are listed explicitly.
+_CAST = re.compile(
+    r"::\s*(?:character\s+varying|double\s+precision|bit\s+varying|"
+    r"(?:timestamp|time)(?:\s*\(\d+\))?\s+with(?:out)?\s+time\s+zone|\"[^\"]+\"|[\w.]+)(?:\s*\(\s*\d+(?:\s*,\s*\d+)?\s*\))?(?:\[\])*",
     re.IGNORECASE,
 )
 
@@ -68,15 +78,29 @@ class Index:
     descending: tuple[bool, ...] = ()
     schema: str | None = None
     table: str | None = None
+    unique: bool = False
+    include: tuple[str, ...] = ()
+    #: Per key column, whether NULLs sort first (explicit NULLS FIRST/LAST, else Postgres' default: first for DESC).
+    nulls_first: tuple[bool, ...] = ()
+
+    def same_target(self, other: "Index") -> bool:
+        """Same table, and same schema when both name one (an unqualified name resolves through search_path)."""
+        if self.table is not None and other.table is not None and self.table != other.table:
+            return False
+        return self.schema is None or other.schema is None or self.schema == other.schema
 
     def covers(self, other: "Index") -> bool:
         """True when `other` would be redundant given this index already exists."""
-        if self.method != other.method:
+        if self.method != other.method or not self.same_target(other):
             return False
         width = len(other.columns)
         if self.columns[:width] != other.columns:
             return False
         if not self._orders_agree(other, width):
+            return False
+        if not set(other.include) <= set(self.columns) | set(self.include):
+            return False
+        if other.unique and not (self.unique and self.columns == other.columns and self.predicate == other.predicate):
             return False
         return self.predicate is None or self.predicate == other.predicate
 
@@ -88,10 +112,17 @@ class Index:
         scan produces that order, and treating the two as equal would report a genuinely missing
         index as already covered -- the one error mode this module must not have.
         """
+        mine = self._order_keys(width)
+        theirs = other._order_keys(width)
         if self.method != "btree" or not self.descending or not other.descending:
-            return self.descending[:width] == other.descending[:width]
-        mine, theirs = self.descending[:width], other.descending[:width]
-        return mine == theirs or all(a != b for a, b in zip(mine, theirs))
+            return mine == theirs
+        # A backward scan flips both the direction and the NULLS placement of every column at once.
+        return mine == theirs or all(a[0] != b[0] and a[1] != b[1] for a, b in zip(mine, theirs))
+
+    def _order_keys(self, width: int) -> tuple[tuple[bool, bool], ...]:
+        descending = self.descending[:width]
+        nulls = self.nulls_first[:width] if len(self.nulls_first) >= len(descending) else descending
+        return tuple(zip(descending, nulls))
 
 
 def _split_top_level(text: str) -> list[str]:
@@ -142,18 +173,26 @@ def _balanced_prefix(text: str) -> tuple[str, str]:
 
 def _normalise(column: str) -> tuple[str, bool]:
     """The column expression and whether it sorts DESC, with quoting and whitespace normalised."""
+    expression, descending, _nulls_first = _normalise_key(column)
+    return expression, descending
+
+
+def _normalise_key(column: str) -> tuple[str, bool, bool]:
+    """``(expression, DESC?, NULLS FIRST?)`` for one key column; NULLS defaults to FIRST for DESC, LAST for ASC."""
     column = " ".join(column.split())
     # Read the direction off the trailing keyword only; a bare `\bDESC\b` search would also fire on
     # the word inside an expression's string literal.
     trailing = _TRAILING_DIRECTION.search(column)
-    descending = trailing is not None and "desc" in trailing.group(0).lower()
+    words = trailing.group(0).lower() if trailing is not None else ""
+    descending = "desc" in words
+    nulls_first = "nulls first" in words or (descending and "nulls last" not in words)
     column = _TRAILING_DIRECTION.sub("", column).strip()
     while column.startswith("(") and column.endswith(")"):
         inner, rest = _balanced_prefix(column[1:])
         if rest:
             break
         column = inner.strip()
-    return column.replace('"', "").lower(), descending
+    return column.replace('"', "").lower(), descending, nulls_first
 
 
 def parse(statement: str) -> Index | None:
@@ -174,7 +213,15 @@ def parse(statement: str) -> Index | None:
     where = re.search(r"\bWHERE\b(?P<pred>.*)$", rest, re.IGNORECASE | re.DOTALL)
     if where:
         predicate = _normalise_predicate(where.group("pred"))
-    normalised = [_normalise(c) for c in _split_top_level(columns_text)]
+    include: tuple[str, ...] = ()
+    included = re.match(r"\s*INCLUDE\s*\(", rest, re.IGNORECASE)
+    if included:
+        try:
+            include_text, _ = _balanced_prefix(rest[included.end() :])
+        except ValueError:
+            return None
+        include = tuple(_normalise_key(c)[0] for c in _split_top_level(include_text))
+    keys = [_normalise_key(c) for c in _split_top_level(columns_text)]
     # The statement names its own target, so nothing downstream has to guess it. An ad-hoc regex
     # over a whole .sql file for "the table near this index name" matched a query ALIAS and
     # reported `new_upwork.a`; the definition is the only place that answer is reliable.
@@ -182,11 +229,14 @@ def parse(statement: str) -> Index | None:
     return Index(
         name=match.group("name").split(".")[-1].replace('"', ""),
         method=(match.group("method") or "btree").lower(),
-        columns=tuple(expression for expression, _ in normalised),
+        columns=tuple(expression for expression, _, _ in keys),
         predicate=predicate,
-        descending=tuple(descending for _, descending in normalised),
-        schema=target[0].lower() if len(target) > 1 else None,
+        descending=tuple(descending for _, descending, _ in keys),
+        schema=target[-2].lower() if len(target) > 1 else None,
         table=target[-1].lower(),
+        unique=bool(match.group("unique")),
+        include=include,
+        nulls_first=tuple(nulls for _, _, nulls in keys),
     )
 
 
@@ -198,7 +248,7 @@ def _normalise_predicate(predicate: str) -> str:
         if rest:
             break
         predicate = inner.strip()
-    return re.sub(r"::[\w ]+", "", predicate).replace('"', "").lower()
+    return " ".join(_CAST.sub("", predicate).split()).replace('"', "").lower()
 
 
 def find_cover(expected: Index, live: list[Index]) -> Index | None:
@@ -210,16 +260,67 @@ def find_cover(expected: Index, live: list[Index]) -> Index | None:
 
 
 def statements(sql_text: str):
-    """Yield each statement of a .sql file with `--` comments removed.
+    """Yield each statement of a .sql file with `--` and `/* */` comments removed.
 
     Comment stripping is not cosmetic. `sql/audit_wave3_migrations.sql` carries a fully
     commented-out `idx_fj_fluid_clientteam_ts` block whose own header reads "do NOT uncomment" --
     it names a column that does not exist. A scan that ignores comments reads that dead block as
     the live definition and reports the wrong columns for an index defined correctly elsewhere.
+    The split is quote-aware: a `;` or `--` inside a string literal, a quoted identifier or a
+    dollar-quoted body is text, not syntax.
     """
-    for raw in re.split(r";", re.sub(r"--[^\n]*", "", sql_text)):
-        if raw.strip():
-            yield raw.strip()
+    current: list[str] = []
+    i, n = 0, len(sql_text)
+    while i < n:
+        ch = sql_text[i]
+        if sql_text.startswith("--", i):
+            end = sql_text.find("\n", i)
+            i = n if end == -1 else end
+            continue
+        if sql_text.startswith("/*", i):
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if sql_text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif sql_text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            current.append(" ")
+            i = j
+            continue
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if sql_text[j] == ch:
+                    if j + 1 < n and sql_text[j + 1] == ch:  # doubled quote is an escaped quote
+                        j += 2
+                        continue
+                    break
+                j += 1
+            current.append(sql_text[i : j + 1])
+            i = j + 1
+            continue
+        dollar = re.match(r"\$(?:[A-Za-z_]\w*)?\$", sql_text[i:]) if ch == "$" else None
+        if dollar:
+            tag = dollar.group(0)
+            end = sql_text.find(tag, i + len(tag))
+            stop = n if end == -1 else end + len(tag)
+            current.append(sql_text[i:stop])
+            i = stop
+            continue
+        if ch == ";":
+            text = "".join(current).strip()
+            if text:
+                yield text
+            current = []
+            i += 1
+            continue
+        current.append(ch)
+        i += 1
+    text = "".join(current).strip()
+    if text:
+        yield text
 
 
 def find_definition(sql_text: str, index_name: str) -> Index | None:

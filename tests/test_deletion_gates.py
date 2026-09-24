@@ -76,3 +76,38 @@ class TestExceptionHandlers:
         p = _write(tmp_path, "# the `except ImportError: pass` here was unreachable, so it is gone\nx = 1\n")
 
         assert exception_handlers(p, "ImportError") == 0
+
+
+class TestAuditRegressions:
+    def test_imports_under_module_level_try_and_if_count(self, tmp_path):
+        p = _write(tmp_path, "try:\n    import torch\nexcept ImportError:\n    torch = None\nif FLAG:\n    from numpy import array\n")
+        assert imported_top_level(p) == {"torch", "numpy"}
+
+    def test_a_relative_import_is_not_a_top_level_package(self, tmp_path):
+        p = _write(tmp_path, "from .numpy_helpers import y\nfrom . import z\nimport os\n")
+        assert imported_top_level(p) == {"os"}
+
+    def test_imports_in_a_function_under_try_still_do_not_count(self, tmp_path):
+        p = _write(tmp_path, "try:\n    def f():\n        import torch\nexcept Exception:\n    pass\n")
+        assert imported_top_level(p) == set()
+
+    def test_an_attribute_exception_is_counted(self, tmp_path):
+        p = _write(tmp_path, "try:\n    x()\nexcept requests.Timeout:\n    pass\nexcept (OSError, socket.Timeout):\n    pass\n")
+        assert exception_handlers(p, "Timeout") == 2
+        assert exception_handlers(p, "requests.Timeout") == 1
+        assert exception_handlers(p, "ValueError") == 0
+
+    def test_a_module_function_does_not_shadow_a_method(self, tmp_path):
+        p = _write(tmp_path, "def run(x):\n    pass\n\nclass A:\n    def run(self, sql_file):\n        pass\n")
+        with pytest.raises(AssertionError, match="ambiguous"):
+            function_parameters(p, "run")
+        assert function_parameters(p, "A.run") == {"self", "sql_file"}
+
+    def test_a_unique_bare_name_still_resolves(self, tmp_path):
+        p = _write(tmp_path, "class A:\n    def run(self, sql_file):\n        pass\n")
+        assert function_parameters(p, "run") == {"self", "sql_file"}
+
+    def test_a_bom_file_parses(self, tmp_path):
+        p = tmp_path / "bom.py"
+        p.write_bytes(b"\xef\xbb\xbfdef f(a, b):\n    pass\n")
+        assert function_parameters(p, "f") == {"a", "b"}

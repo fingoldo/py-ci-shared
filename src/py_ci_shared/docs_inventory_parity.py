@@ -27,6 +27,9 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
+from typing import Any, Optional
+
+from ._core import DEFAULT_EXCLUDE, SourceReadError, iter_files, read_source
 
 # Package names as they appear in a dependency spec, stripped of version/marker/extras.
 _REQUIREMENT_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -53,12 +56,56 @@ def _requirement_name(spec: str) -> str:
     return match.group(1) if match else spec.strip()
 
 
-def resolve_extras_group(optional_dependencies: dict[str, list[str]], group: str, _seen: set[str] | None = None) -> set[str]:
+def _self_extras(head: str, optional_dependencies: Mapping[str, Any], project_name: Optional[str]) -> Optional[list[str]]:
+    """The extras groups *head* pulls from THIS project (``mypkg[a,b]``), or None for any other package's extras.
+
+    With *project_name* only that name is followed, so ``requests[socks]`` is the package ``requests``. Without it
+    (a caller that has only the extras table) a spec is self-referential only when every extra it names is a group
+    declared here.
+    """
+    match = _SELF_EXTRA_RE.match(head)
+    if not match:
+        return None
+    referenced = [name.strip() for name in match.group(1).split(",") if name.strip()]
+    if project_name is not None:
+        return referenced if _normalize(_requirement_name(head)) == _normalize(project_name) else None
+    return referenced if referenced and all(name in optional_dependencies for name in referenced) else None
+
+
+def _project_name(data: Mapping[str, Any]) -> Optional[str]:
+    name = data.get("project", {}).get("name")
+    return name if isinstance(name, str) and name else None
+
+
+def _load_pyproject(pyproject_path: Path) -> dict[str, Any]:
+    from ._toml_compat import tomllib
+
+    data: dict[str, Any] = tomllib.loads(read_source(pyproject_path))
+    return data
+
+
+def _read_doc(doc_path: Path, problems: list[str]) -> Optional[str]:
+    """The text of *doc_path* (BOM stripped), or None after appending a problem when it cannot be decoded."""
+    try:
+        return read_source(doc_path)
+    except SourceReadError as exc:
+        problems.append(f"{doc_path.name}: unreadable, so it was not checked: {exc.message}")
+        return None
+
+
+def resolve_extras_group(
+    optional_dependencies: dict[str, list[str]],
+    group: str,
+    _seen: set[str] | None = None,
+    *,
+    project_name: Optional[str] = None,
+) -> set[str]:
     """Return the fully-resolved, normalized package set for one extras group.
 
     Self-referential specs (``mypkg[a,b]``) are followed transitively, which is the whole
     point: a README calling ``[all,dev]`` the recommended install is making a claim about
-    what ``[all]`` RESOLVES to, not about the one line that declares it.
+    what ``[all]`` RESOLVES to, not about the one line that declares it. Another package's
+    extras (``requests[socks]``) are that package, not a reference (see :func:`_self_extras`).
     """
     seen = _seen if _seen is not None else set()
     if group in seen or group not in optional_dependencies:
@@ -67,10 +114,10 @@ def resolve_extras_group(optional_dependencies: dict[str, list[str]], group: str
     members: set[str] = set()
     for spec in optional_dependencies[group]:
         head = spec.split(";")[0].strip()
-        self_extra = _SELF_EXTRA_RE.match(head)
-        if self_extra:
-            for referenced in self_extra.group(1).split(","):
-                members |= resolve_extras_group(optional_dependencies, referenced.strip(), seen)
+        referenced = _self_extras(head, optional_dependencies, project_name)
+        if referenced is not None:
+            for name in referenced:
+                members |= resolve_extras_group(optional_dependencies, name, seen, project_name=project_name)
         else:
             members.add(_normalize(_requirement_name(head)))
     return members
@@ -100,31 +147,34 @@ def find_extras_documentation_drift(
     does not contain (the "now core, still advertised" shape), and a bullet omitting a
     package the group does contain (the "two heaviest members missing" shape).
     """
-    from ._toml_compat import tomllib
-
-    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    data = _load_pyproject(pyproject_path)
     optional_dependencies = data.get("project", {}).get("optional-dependencies", {})
+    project = _project_name(data)
     ignored = {_normalize(name) for name in ignore_packages}
     exempt_groups = set(undocumented_groups)
 
+    problems: list[str] = []
+    text = _read_doc(doc_path, problems)
+    if text is None:
+        return problems
     documented: dict[str, str] = {}
-    for match in re.finditer(bullet_pattern, doc_path.read_text(encoding="utf-8")):
+    for match in re.finditer(bullet_pattern, text):
         documented[match.group(1)] = match.group(2)
 
-    problems: list[str] = []
+    resolved = {group: resolve_extras_group(optional_dependencies, group, project_name=project) for group in optional_dependencies}
+    # A prose token counts as a package claim only if it names a package declared
+    # SOMEWHERE in the file's extras -- otherwise every ordinary English word in the
+    # description would read as a phantom dependency.
+    every_declared = set().union(*resolved.values()) if resolved else set()
     for group in sorted(optional_dependencies):
         if group in exempt_groups:
             continue
         if group not in documented:
             problems.append(f"{doc_path.name}: extras group [{group}] is declared in pyproject.toml but documented nowhere in the install block")
             continue
-        actual = resolve_extras_group(optional_dependencies, group) - ignored
+        actual = resolved[group] - ignored
         prose_tokens = {_normalize(token) for token in _PROSE_TOKEN_RE.findall(documented[group])}
         missing = sorted(name for name in actual if name not in prose_tokens)
-        # A prose token counts as a package claim only if it names a package declared
-        # SOMEWHERE in the file's extras -- otherwise every ordinary English word in the
-        # description would read as a phantom dependency.
-        every_declared = {name for other in optional_dependencies for name in resolve_extras_group(optional_dependencies, other)}
         phantom = sorted(token for token in prose_tokens if token in every_declared and token not in actual and token not in ignored)
         if missing:
             problems.append(f"{doc_path.name}: [{group}] description omits {missing} (declared in pyproject.toml)")
@@ -153,19 +203,21 @@ def find_aggregate_group_drift(pyproject_path: Path, doc_path: Path, pattern: st
         pattern: a regex with two capture groups, ``(group_name)`` and a comma-separated
             ``(member_group_list)``, matching the prose that states the composition.
     """
-    from ._toml_compat import tomllib
-
-    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    data = _load_pyproject(pyproject_path)
     optional_dependencies = data.get("project", {}).get("optional-dependencies", {})
+    project = _project_name(data)
     problems: list[str] = []
-    for match in re.finditer(pattern, doc_path.read_text(encoding="utf-8")):
+    text = _read_doc(doc_path, problems)
+    if text is None:
+        return problems
+    for match in re.finditer(pattern, text):
         group, stated_list = match.group(1), match.group(2)
         stated = {name.strip() for name in stated_list.split(",") if name.strip()}
         actual: set[str] = set()
         for spec in optional_dependencies.get(group, []):
-            self_extra = _SELF_EXTRA_RE.match(spec.split(";")[0].strip())
-            if self_extra:
-                actual |= {name.strip() for name in self_extra.group(1).split(",")}
+            referenced = _self_extras(spec.split(";")[0].strip(), optional_dependencies, project)
+            if referenced is not None:
+                actual |= set(referenced)
         if stated != actual:
             problems.append(f"{doc_path.name}: [{group}] is documented as {sorted(stated)} but pyproject.toml resolves it to {sorted(actual)}")
     return problems
@@ -188,11 +240,20 @@ def find_undocumented_modules(
     package that documents them.
     """
     exempt = set(undocumented_by_design)
-    corpus = "\n".join(path.read_text(encoding="utf-8") for path in doc_paths if path.is_file())
-    documented_words = set(re.findall(r"[A-Za-z_][\w.]*", corpus))
+    unreadable: list[str] = []
+    corpus = "\n".join(text for path in doc_paths if path.is_file() for text in [_read_doc(path, unreadable)] if text is not None)
+    if unreadable:
+        raise AssertionError("; ".join(unreadable))
+    documented_words: set[str] = set()
+    for word in re.findall(r"[A-Za-z_][\w.]*", corpus):
+        # `pythonlib.py` and a sentence-final `utils.` both name the module, so the suffix and the full stop go.
+        word = word.rstrip(".")
+        documented_words.add(word)
+        if word.endswith((".py", ".pyi")):
+            documented_words.add(word.rsplit(".", 1)[0])
     package_name = package_dir.name
     undocumented: list[str] = []
-    for module_path in sorted(package_dir.rglob("*.py")):
+    for module_path in iter_files(package_dir, ("*.py",), exclude=DEFAULT_EXCLUDE):
         relative = module_path.relative_to(package_dir)
         parts = list(relative.parts[:-1]) + ([] if relative.stem == "__init__" else [relative.stem])
         if not parts or any(part.startswith("_") for part in parts):
@@ -252,7 +313,10 @@ def find_phantom_doc_paths(
     for doc_path in doc_paths:
         if not doc_path.is_file():
             continue
-        lines = doc_path.read_text(encoding="utf-8").splitlines()
+        text = _read_doc(doc_path, problems)
+        if text is None:
+            continue
+        lines = text.splitlines()
         keep = (recent_sections or {}).get(doc_path.name)
         if keep is not None:
             seen = 0
@@ -299,16 +363,18 @@ def find_undeclared_markers(doc_paths: Sequence[Path], pyproject_path: Path) -> 
     Under ``--strict-markers`` an undeclared marker is a collection ERROR, so a contributor
     following the documentation cannot run the suite at all.
     """
-    from ._toml_compat import tomllib
-
-    data = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-    declared = {entry.split(":")[0].strip() for entry in data.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", [])}
+    data = _load_pyproject(pyproject_path)
+    # A marker line is `name: description` or `name(args): description`.
+    declared = {re.split(r"[:(]", entry, maxsplit=1)[0].strip() for entry in data.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", [])}
     declared |= _PYTEST_BUILTIN_MARKERS
     problems: list[str] = []
     for doc_path in doc_paths:
         if not doc_path.is_file():
             continue
-        for line_number, line in enumerate(doc_path.read_text(encoding="utf-8").splitlines(), start=1):
+        text = _read_doc(doc_path, problems)
+        if text is None:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
             problems.extend(
                 f"{doc_path.name}:{line_number}: @pytest.mark.{marker} is documented but not declared in [tool.pytest.ini_options] markers -- a collection ERROR under --strict-markers"
                 for marker in _MARKER_MENTION_RE.findall(line)

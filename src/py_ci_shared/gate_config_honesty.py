@@ -22,13 +22,21 @@ import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from ._core import read_source
+
 #: tool -> (pyproject table that holds its config, flags that pass it). Only tools that do NOT find
 #: pyproject.toml by themselves belong here; ruff and mypy do.
 DEFAULT_TOOLS: Mapping[str, tuple[str, tuple[str, ...]]] = {"bandit": ("bandit", ("-c", "--configfile"))}
-_ADVISORY_WORDS = ("warn", "advisory", "report", "informational")
+#: Whole words (a gate named "check-warnings" is not advisory because it contains "warn"). "report" is not one: a
+#: step called "Coverage report" is still the coverage gate, and `|| true` behind it disarms it.
+_ADVISORY_WORDS = ("warn", "advisory", "informational", "non-blocking", "nonblocking", "optional")
 #: `--exit-zero` is the tool's own way of never failing (ruff, flake8, pylint): a gate carrying it in its
 #: `args` passes whatever it finds, exactly like `|| true`, and reads as a blocking hook.
-_ALWAYS_ZERO = re.compile(r"\|\|\s*true\b|;\s*exit\s+0\b|\bpy_ci_shared\.\w*_warn\b|(?<!\S)--exit-zero\b")
+#: `|| :`, `|| exit 0`, `|| echo ...` and `set +e` (the script then ends on whatever runs last) are the same thing.
+_ALWAYS_ZERO = re.compile(
+    r"\|\|\s*(?:true\b|:(?![\w:/-])|exit\s+0\b|echo\b)|;\s*exit\s+0\b|(?:^|[;&|]\s*)set\s+\+e\b|\bpy_ci_shared\.\w*_warn\b|(?<!\S)--exit-zero\b"
+)
+_SET_PLUS_E = re.compile(r"(?:^|[;&|])\s*set\s+\+e\b")
 #: What makes a workflow step a GATE: a shell line in a workflow is often plumbing (`git fetch ... || true`),
 #: so `|| true` there counts only on a line that runs one of these.
 _GATE_TOOL = re.compile(r"\b(?:pytest|ruff|mypy|bandit|black|flake8|pylint|pre-commit|vulture|interrogate|codespell|py_ci_shared)\b")
@@ -44,13 +52,22 @@ def _mentions(scope: "str | None", *texts: str) -> bool:
     return scope is None or any(scope in t for t in texts)
 
 
+def _commands_in(command: str) -> list[str]:
+    """One entry per shell command: lines, and ``&&``/``||``/``;``/``|`` splits within a line."""
+    return [c for line in command.splitlines() for c in re.split(r"&&|\|\||;|\|", line) if c.strip()]
+
+
+def _words(text: str) -> set[str]:
+    return set(re.findall(r"[a-z]+(?:-[a-z]+)*|[a-z]+", text.lower())) | set(re.findall(r"[a-z]+", text.lower()))
+
+
 def gate_commands(precommit_path: "Path | None", workflows: Iterable[Path], *, scope: "str | None" = None) -> dict[str, tuple[str, str]]:
     """``{label: (command, the gate's own name text)}`` for every hook and workflow step, within *scope*."""
     import yaml
 
     found: dict[str, tuple[str, str]] = {}
-    if precommit_path is not None and precommit_path.is_file():
-        data = yaml.safe_load(precommit_path.read_text(encoding="utf-8")) or {}
+    if precommit_path is not None:
+        data = yaml.safe_load(read_source(precommit_path)) or {}
         for repo in data.get("repos", []) or []:
             for hook in repo.get("hooks", []) or []:
                 if "manual" in (hook.get("stages") or []) and len(hook.get("stages") or []) == 1:
@@ -60,15 +77,25 @@ def gate_commands(precommit_path: "Path | None", workflows: Iterable[Path], *, s
                 if command and _mentions(scope, str(hook.get("files", "")), command):
                     found[f"pre-commit::{hook.get('alias') or hook.get('id')}"] = (command, names)
     for workflow in workflows:
-        data = yaml.safe_load(workflow.read_text(encoding="utf-8")) or {}
+        data = yaml.safe_load(read_source(workflow)) or {}
         for job_id, job in (data.get("jobs") or {}).items():
-            for step in (job or {}).get("steps", []) or []:
+            job = job or {}
+            job_dir = str(((job.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "")
+            seen: dict[str, int] = {}
+            for step in job.get("steps", []) or []:
                 run = str(step.get("run", "") or "")
                 if not run.strip():
                     continue
                 name = str(step.get("name", "") or run.splitlines()[0])
+                step_dir = str(step.get("working-directory", "") or "")
+                if not _mentions(scope, run, name, step_dir, job_dir):
+                    continue
                 advisory = " advisory" if step.get("continue-on-error") else ""
-                found[f"{workflow.name}::{job_id}::{name}"] = (run, name + advisory)
+                label = f"{workflow.name}::{job_id}::{name}"
+                seen[label] = seen.get(label, 0) + 1
+                if seen[label] > 1:
+                    label = f"{label}#{seen[label]}"
+                found[label] = (run, name + advisory)
     return found
 
 
@@ -78,15 +105,16 @@ def find_tools_run_without_their_config(
     """Commands that invoke a configured tool without passing its config."""
     from ._toml_compat import tomllib
 
-    config = tomllib.loads(pyproject.read_text(encoding="utf-8")) if pyproject.is_file() else {}
+    config = tomllib.loads(read_source(pyproject))
     configured = {tool for tool, (table, _flags) in tools.items() if table in (config.get("tool") or {})}
     problems: list[str] = []
     for label, (command, _names) in sorted(commands.items()):
         for tool in sorted(configured):
-            if not _invokes(tool, command):
-                continue
             flags = tools[tool][1]
-            if not any(re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", command) for f in flags):
+            # The flag must be on the command that runs the tool: a `-c` on another line of the same `run:` block
+            # configures some other program.
+            bare = [c for c in _commands_in(command) if _invokes(tool, c) and not any(re.search(rf"(?<![\w-]){re.escape(f)}(?![\w-])", c) for f in flags)]
+            if bare:
                 problems.append(f"{label}: runs {tool} without {'/'.join(flags)}, so [tool.{tools[tool][0]}] in {pyproject.name} does not apply")
     return problems
 
@@ -101,7 +129,16 @@ def find_gates_that_cannot_fail(commands: Mapping[str, tuple[str, str]], *, advi
             (m for line in command.splitlines() for m in [_ALWAYS_ZERO.search(line)] if m and (is_hook or _GATE_TOOL.search(line))),
             None,
         )
-        if zero and not any(w in names.lower() or w in label.lower() for w in words):
+        if zero is None:
+            # `set +e` on its own line disarms every tool run after it in the same script.
+            lines = command.splitlines()
+            for i, line in enumerate(lines):
+                m = _SET_PLUS_E.search(line)
+                if m and any(_GATE_TOOL.search(later) for later in lines[i:]):
+                    zero = m
+                    break
+        said = _words(names) | _words(label)
+        if zero and not any(w in said for w in words):
             problems.append(f"{label}: always exits 0 ({zero.group(0)}) but is not named as advisory -- it reads as a gate and blocks nothing")
     return problems
 
@@ -109,6 +146,12 @@ def find_gates_that_cannot_fail(commands: Mapping[str, tuple[str, str]], *, advi
 def assert_gates_honest(
     precommit_path: "Path | None", workflows: Iterable[Path], pyproject: Path, *, scope: "str | None" = None, known: Iterable[str] = ()
 ) -> None:
+    """Fail on a tool run without its config or a gate that cannot fail, beyond the shrink-only *known* list.
+
+    *known* holds problem strings, which carry the gate's label (hook id/alias, or ``workflow::job::step name``). Renaming
+    a hook or a step therefore changes its problem string: the old entry is reported as no longer reproducing and the
+    new one as new, so a rename is one edit to *known* -- which is also the point at which someone re-reads the reason.
+    """
     import pytest
 
     commands = gate_commands(precommit_path, list(workflows), scope=scope)

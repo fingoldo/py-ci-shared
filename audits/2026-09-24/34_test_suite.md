@@ -233,7 +233,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-16 (Med) -- Mutant F2 survives: async functions dropped from measurement
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- added an `async def` over the limit (kills mutant F2) and a baseline write with functions at, over and under the limit asserting only the one strictly over is written (kills mutant F4); regression test: test_function_length.py::TestAuditRegressions::test_an_async_function_over_the_limit_is_measured_and_reported, test_the_baseline_write_excludes_a_function_exactly_at_the_limit
 
 - **Original id:** F-16
 - **Where:** tests/test_function_length.py
@@ -253,7 +253,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-18 (Low) -- Survivor I4: a "%s" % x constant is not tested as stringish.
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- added a `"SELECT %s" % "x"` module constant compared with `is` (reported) next to an `int % int` constant (not reported), which kills the mutant that drops `ast.Mod`; regression test: test_identity_comparisons.py::test_a_percent_formatted_constant_is_stringish
 
 - **Original id:** F-18
 - **Where:** tests/test_identity_comparisons.py

@@ -4,6 +4,7 @@ convention as this package's other tests.
 
 from __future__ import annotations
 
+import codecs
 import sys
 from pathlib import Path
 
@@ -116,11 +117,81 @@ class TestSecretsAndLogging:
 
 
 class TestAssert:
-    def test_missing_directory_is_a_no_op(self, tmp_path):
-        assert find_edge_function_problems(tmp_path / "nope") == []
+    def test_missing_directory_is_a_problem_not_a_pass(self, tmp_path):
+        problems = find_edge_function_problems(tmp_path / "nope")
+        assert len(problems) == 1 and "examined nothing" in problems[0]
+        with pytest.raises(pytest.fail.Exception, match="examined nothing"):
+            assert_edge_functions_are_sound(tmp_path / "nope")
+
+    def test_existing_clean_directory_passes(self, tmp_path):
+        root = _functions(tmp_path, ok="export const x = 1;")
+        assert find_edge_function_problems(root) == []
+
+    def test_bom_source_is_read_and_checked(self, tmp_path):
+        root = tmp_path / "functions" / "enrich"
+        root.mkdir(parents=True)
+        (root / "index.ts").write_bytes(codecs.BOM_UTF8 + b"console.log(`resolved ${ip}`);")
+        assert any("raw IP" in p for p in find_edge_function_problems(tmp_path / "functions"))
 
     def test_assert_fails(self, tmp_path):
         body = 'try { x(); } catch (e) { return new Response("{}", { status: 200 }); }'
         root = _functions(tmp_path, log_login=body)
         with pytest.raises(pytest.fail.Exception, match="succeeded when it failed"):
             assert_edge_functions_are_sound(root)
+
+
+class TestFunctionScopedRules:
+    def test_nested_helper_belongs_to_its_public_function(self, tmp_path):
+        root = tmp_path / "functions"
+        (root / "pub" / "lib").mkdir(parents=True)
+        (root / "pub" / "index.ts").write_text("const MAX_TEXT = 512;\nconst d = await req.json();\nawait h(d);", encoding="utf-8")
+        (root / "pub" / "lib" / "h.ts").write_text("export const h = (d) => client.from('t').insert(d.reports.map(r => r));", encoding="utf-8")
+        problems = find_edge_function_problems(root, public_functions=["pub"])
+        assert any("array-length cap" in p for p in problems)
+        assert find_edge_function_problems(root, public_functions=["other"]) == []
+
+    def test_cap_in_a_helper_module_counts_for_the_function(self, tmp_path):
+        root = tmp_path / "functions"
+        (root / "f").mkdir(parents=True)
+        (root / "f" / "index.ts").write_text("const d = await req.json();\nawait client.from('t').insert(clip(d));", encoding="utf-8")
+        (root / "f" / "clip.ts").write_text("export const clip = (d) => ({v: d.v.slice(0, MAX_TEXT)});", encoding="utf-8")
+        assert find_edge_function_problems(root) == []
+        (root / "f" / "clip.ts").write_text("export const clip = (d) => d;", encoding="utf-8")
+        assert any("no size cap" in p for p in find_edge_function_problems(root))
+
+
+class TestIpLogging:
+    def test_interpolation_after_a_nested_call_is_flagged(self, tmp_path):
+        root = _functions(tmp_path, enrich="console.log(`${String(x)} ${ip}`);")
+        assert any("raw IP" in p for p in find_edge_function_problems(root))
+
+    def test_plain_ip_argument_is_flagged(self, tmp_path):
+        root = _functions(tmp_path, enrich='console.log("ip", ip);')
+        assert any("raw IP" in p for p in find_edge_function_problems(root))
+
+    def test_ip_only_inside_a_string_literal_passes(self, tmp_path):
+        root = _functions(tmp_path, enrich='console.log("ip lookup failed", count);')
+        assert find_edge_function_problems(root) == []
+
+    def test_plain_redacted_argument_passes(self, tmp_path):
+        root = _functions(tmp_path, enrich='console.log("ip", redactIp(ip));')
+        assert find_edge_function_problems(root) == []
+
+
+class TestResponseJsonAndPresenceChecks:
+    def test_response_json_in_a_catch_is_flagged(self, tmp_path):
+        root = _functions(tmp_path, f="try { await x(); } catch (e) { return Response.json({ok: true}); }")
+        assert any("succeeded when it failed" in p for p in find_edge_function_problems(root))
+
+    def test_response_json_with_error_status_passes(self, tmp_path):
+        root = _functions(tmp_path, f="try { await x(); } catch (e) { return Response.json({ok: false}, { status: 500 }); }")
+        assert find_edge_function_problems(root) == []
+
+    @pytest.mark.parametrize("cmp", ['apiKey === ""', "apiKey == null", "undefined !== apiKey", "apiKey === ''"])
+    def test_emptiness_check_is_not_a_secret_comparison(self, tmp_path, cmp):
+        root = _functions(tmp_path, f=f"if ({cmp}) {{ return bad(); }}")
+        assert find_edge_function_problems(root) == []
+
+    def test_real_secret_comparison_still_flagged(self, tmp_path):
+        root = _functions(tmp_path, f="if (apiKey === provided) { ok(); }")
+        assert any("string equality" in p for p in find_edge_function_problems(root))

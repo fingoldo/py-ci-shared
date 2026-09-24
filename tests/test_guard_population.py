@@ -121,3 +121,13 @@ class TestAssert:
         tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'Nope' lib\n", "lib/a.dart")
         with pytest.raises(pytest.fail.Exception, match=r"check-x\.sh"):
             assert_guards_examine_something(tool, root)
+
+
+class TestAuditRegressions:
+    def test_a_comment_saying_skipped_does_not_exempt_the_guard(self, tmp_path):
+        tool, root = _repo(tmp_path, "#!/bin/sh\n# SKIPPED legacy\ngrep -rl 'NeverAppears' lib\necho ok\n", "lib/a.dart")
+        assert len(find_guards_with_empty_population(tool, root)) == 1
+
+    def test_an_echoed_skipped_still_exempts_it(self, tmp_path):
+        tool, root = _repo(tmp_path, "#!/bin/sh\ngrep -rl 'NeverAppears' lib || echo 'SKIPPED: nothing to check'\n", "lib/a.dart")
+        assert find_guards_with_empty_population(tool, root) == []

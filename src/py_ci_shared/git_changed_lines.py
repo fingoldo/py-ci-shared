@@ -98,7 +98,10 @@ def changed_lines(
     failed", which raises.
     """
     root = Path(repo_root).resolve()
-    args = ["git", "-C", str(root), "diff", "--unified=0", "--no-color", "--no-ext-diff"]
+    # Explicit prefixes: `diff.noprefix` / `diff.mnemonicPrefix` in the user's config would otherwise change the header
+    # paths (no `b/`, or `w/`/`i/`), and the prefix strip below would keep or cut the wrong characters. `--no-textconv`
+    # keeps a configured textconv driver from diffing a rendering of the file instead of its lines.
+    args = ["git", "-C", str(root), "diff", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
     if rev:
         args.append(rev)
     else:
@@ -131,7 +134,7 @@ def changed_lines(
                 current = None
             else:
                 text = target.decode("utf-8", "surrogateescape")
-                current = Path(text[2:] if text.startswith(("a/", "b/")) else text)
+                current = Path(text[2:] if text.startswith("b/") else text)
                 out.setdefault(current, [])
         elif current is not None and (match := _HUNK_RE.match(raw)):
             start = int(match.group(1))
@@ -152,7 +155,7 @@ def changed_lines(
             path = Path(entry.decode("utf-8", "surrogateescape"))
             absolute = root / path
             try:
-                line_count = absolute.read_text(encoding="utf-8", errors="replace").count("\n") + 1
+                data = absolute.read_bytes()
             except OSError as exc:
                 # Skipping in silence made an unreadable new file look like an unchanged one, and a
                 # sweep scoped by this result then covers everything except the file nobody could
@@ -160,7 +163,10 @@ def changed_lines(
                 # silent either.
                 warnings.warn(f"changed_lines: cannot read untracked {path}: {exc}", stacklevel=2)
                 continue
-            out.setdefault(path, []).append(range(1, line_count + 1))
+            # "a\nb\n" is two lines and "a\nb" is two lines too; an empty file has none.
+            line_count = data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+            if line_count:
+                out.setdefault(path, []).append(range(1, line_count + 1))
 
     return {path: ranges for path, ranges in out.items() if ranges}
 
@@ -179,6 +185,7 @@ def lines_for(changed: dict[Path, list[range]], path: Path | str) -> list[range]
         if key == wanted or key.parts[-len(wanted.parts) :] == wanted.parts:
             return ranges
     return []
+
 
 def _git_env() -> dict[str, str]:
     """The ambient environment minus every ``GIT_*`` variable.
