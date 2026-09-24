@@ -14,7 +14,10 @@ from py_ci_shared.worktree_hygiene import (
     ORPHAN_DIR,
     REMOVABLE,
     REVIEW,
+    GitQueryError,
+    _hash,
     branches_without_unique_commits,
+    main,
     orphan_directories,
     registered_worktrees,
     report,
@@ -181,3 +184,116 @@ def test_registered_worktrees_lists_the_main_checkout_first(origin_and_clone):
 
     assert listed[0].resolve() == origin_and_clone.resolve()
     assert [f.path.resolve() for f in worktree_findings(origin_and_clone)] == [worktree.resolve()]
+
+
+class TestAuditRegressions:
+    """Staged, ignored and unanswerable-git cases: none may ever yield REMOVABLE or "spare"."""
+
+    def _worktree(self, clone: Path, name: str) -> Path:
+        worktree = clone.parent / name
+        _git(clone, "worktree", "add", "-q", "--detach", str(worktree), "origin/master")
+        return worktree
+
+    def test_staged_only_work_is_unsaved_even_though_its_blob_exists(self, origin_and_clone):
+        worktree = self._worktree(origin_and_clone, "wt_staged")
+        (worktree / "new.py").write_text("print('staged, never committed')\n", encoding="utf-8")
+        _git(worktree, "add", "new.py")
+        blob = _git(worktree, "rev-parse", ":new.py").strip()
+        assert subprocess.run(["git", "-C", str(origin_and_clone), "cat-file", "-e", blob]).returncode == 0
+
+        finding = worktree_findings(origin_and_clone)[0]
+
+        assert finding.verdict == REVIEW
+        assert finding.residual == ("new.py",)
+
+    def test_staged_content_differing_from_the_working_file_is_judged(self, origin_and_clone):
+        worktree = self._worktree(origin_and_clone, "wt_staged_then_reverted")
+        (worktree / "kept.txt").write_text("staged edit nobody committed\n", encoding="utf-8")
+        _git(worktree, "add", "kept.txt")
+        (worktree / "kept.txt").write_text("upstream content\n", encoding="utf-8")  # working file back to upstream
+
+        assert unsaved_paths(origin_and_clone, worktree) == ["kept.txt"]
+
+    def test_staged_content_already_on_a_ref_is_saved(self, origin_and_clone):
+        worktree = self._worktree(origin_and_clone, "wt_staged_known")
+        (worktree / "copy.txt").write_text("upstream content\n", encoding="utf-8")
+        _git(worktree, "add", "copy.txt")
+
+        assert unsaved_paths(origin_and_clone, worktree) == []
+        assert worktree_findings(origin_and_clone)[0].verdict == REMOVABLE
+
+    def test_an_ignored_file_is_unsaved_work(self, origin_and_clone):
+        worktree = self._worktree(origin_and_clone, "wt_ignored")
+        (worktree / ".gitignore").write_text(".env\ndata/\n", encoding="utf-8")
+        (worktree / ".env").write_text("SECRET=only-here\n", encoding="utf-8")
+        (worktree / "data").mkdir()
+        (worktree / "data" / "rows.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        assert _git(worktree, "check-ignore", ".env").strip() == ".env"
+
+        finding = worktree_findings(origin_and_clone)[0]
+
+        assert finding.verdict == REVIEW
+        assert set(finding.residual) >= {".env", "data/rows.csv"}
+
+    def test_an_ignored_cache_directory_is_still_skipped(self, origin_and_clone):
+        worktree = self._worktree(origin_and_clone, "wt_ignored_cache")
+        (worktree / ".gitignore").write_text("__pycache__/\n", encoding="utf-8")
+        _git(worktree, "add", ".gitignore")
+        _git(worktree, "commit", "-q", "-m", "ignore")
+        _git(worktree, "push", "-q", "origin", "HEAD:master")
+        (worktree / "__pycache__").mkdir()
+        (worktree / "__pycache__" / "m.cpython-311.pyc").write_bytes(b"\x00\x01")
+
+        assert unsaved_paths(origin_and_clone, worktree) == []
+
+    def test_a_rename_source_is_not_read_as_an_entry(self, origin_and_clone):
+        (origin_and_clone / "a.py").write_text("x = 1\n", encoding="utf-8")
+        _git(origin_and_clone, "add", "a.py")
+        _git(origin_and_clone, "commit", "-q", "-m", "a")
+        _git(origin_and_clone, "push", "-q", "origin", "master")
+        worktree = self._worktree(origin_and_clone, "wt_rename")
+        _git(worktree, "mv", "a.py", "bb.py")
+        (worktree / "py").write_text("unrelated unsaved file whose name is the [3:] cut of 'a.py'\n", encoding="utf-8")
+
+        unsaved = unsaved_paths(origin_and_clone, worktree)
+
+        assert unsaved == ["py"]  # bb.py holds committed content; the old path token "a.py" is not an entry
+
+    def test_a_bad_ref_raises_instead_of_calling_every_branch_spare(self, origin_and_clone):
+        _git(origin_and_clone, "branch", "has-its-own", "origin/master")
+        with pytest.raises(GitQueryError, match="origin/nope"):
+            branches_without_unique_commits(origin_and_clone, ref="origin/nope")
+        with pytest.raises(GitQueryError):
+            worktree_findings(origin_and_clone, ref="origin/nope")
+        assert "has-its-own" in branches_without_unique_commits(origin_and_clone)
+
+    def test_the_cli_reports_a_bad_ref_with_exit_2(self, origin_and_clone, capsys):
+        assert main([str(origin_and_clone), "--ref", "origin/nope"]) == 2
+        assert "origin/nope" in capsys.readouterr().err
+        assert main([str(origin_and_clone)]) == 0
+
+    def test_blob_ids_match_git_hash_object(self, origin_and_clone):
+        data = b"line one\r\nline two\n\x00binary"
+        expected = (
+            subprocess.run(["git", "-C", str(origin_and_clone), "hash-object", "--stdin"], input=data, capture_output=True, check=True).stdout.decode().strip()
+        )
+        assert _hash(origin_and_clone, data) == expected
+        assert _hash(origin_and_clone, data + b"!") != expected
+
+    def test_no_git_process_is_spawned_per_file(self, origin_and_clone, monkeypatch):
+        leftover = origin_and_clone / ".claude" / "worktrees" / "big-orphan"
+        leftover.mkdir(parents=True)
+        for i in range(40):
+            (leftover / f"f{i}.txt").write_text(f"file {i}\n", encoding="utf-8")
+        calls: list[tuple[str, ...]] = []
+        real_run = subprocess.run
+
+        def counting_run(cmd, *args, **kwargs):
+            calls.append(tuple(cmd))
+            return real_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", counting_run)
+        findings = worktree_findings(origin_and_clone)
+
+        assert findings[0].verdict == ORPHAN_DIR and len(findings[0].residual) == 40
+        assert len(calls) < 15

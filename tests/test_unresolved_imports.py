@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
+
+import pytest
 
 from py_ci_shared.unresolved_imports import ModuleIndex, find_unresolved_from_imports
 
@@ -188,3 +191,97 @@ def test_guard_detection_is_one_walk_not_one_per_import(tmp_path):
     guarded = _guarded_import_ids(tree)
     assert [id(n) in guarded for n in imports] == [_absence_is_expected(tree, n) for n in imports]
     assert sum(id(n) in guarded for n in imports) == 2
+
+
+class TestAuditRegressions:
+    def test_a_class_getattr_does_not_make_the_module_dynamic(self, tmp_path):
+        root = _pkg(
+            tmp_path,
+            "pkg",
+            {
+                "__init__.py": "",
+                "proxy.py": "class Lazy:\n    def __getattr__(self, name):\n        return name\n# mentions exec( and globals()[ in a comment\n",
+                "consumer.py": "from pkg.proxy import Lazy, Gone\n",
+            },
+        )
+        assert _scan(root) == [f"{(root / 'pkg' / 'consumer.py').as_posix()}:1: 'pkg.proxy' does not define 'Gone' (module scope)"]
+
+    def test_a_module_getattr_or_import_time_globals_write_is_dynamic(self, tmp_path):
+        root = _pkg(
+            tmp_path,
+            "pkg",
+            {
+                "__init__.py": "",
+                "lazy.py": "def __getattr__(name):\n    return name\n",
+                "reg.py": "globals().update({'a': 1})\n",
+                "consumer.py": "from pkg.lazy import anything\nfrom pkg.reg import a\n",
+            },
+        )
+        assert _scan(root) == []
+
+    def test_a_prefix_is_matched_on_a_dotted_boundary(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "consumer.py": "from pkg_other import X\nfrom pkg.missing import Y\n"})
+        problems = _scan(root)
+        assert len(problems) == 1 and "module 'pkg.missing' does not exist" in problems[0]
+
+    @pytest.mark.parametrize(
+        "source",
+        [
+            "with open(__file__) as item:\n    pass\n",
+            "for item in range(2):\n    pass\n",
+            "if (item := 3):\n    pass\n",
+            "def setup():\n    global item\n    item = 1\n",
+            "try:\n    pass\nexcept ValueError as item:\n    pass\n",
+        ],
+        ids=["with", "for", "walrus", "global", "except-as"],
+    )
+    def test_every_module_level_binding_counts(self, tmp_path, source):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "m.py": source, "consumer.py": "from pkg.m import item\n"})
+        assert _scan(root) == []
+
+    @pytest.mark.skipif(sys.version_info < (3, 12), reason="`type X = ...` is 3.12 syntax")
+    def test_a_type_alias_binds_its_name(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "m.py": "type Alias = int\n", "consumer.py": "from pkg.m import Alias\n"})
+        assert _scan(root) == []
+
+    def test_a_local_inside_a_guarded_def_is_not_a_module_name(self, tmp_path):
+        root = _pkg(
+            tmp_path,
+            "pkg",
+            {
+                "__init__.py": "",
+                "m.py": "import sys\nif sys.version_info >= (3, 9):\n    def f():\n        local_only = 1\n        return local_only\n",
+                "consumer.py": "from pkg.m import f, local_only\n",
+            },
+        )
+        assert _scan(root) == [f"{(root / 'pkg' / 'consumer.py').as_posix()}:1: 'pkg.m' does not define 'local_only' (module scope)"]
+
+    def test_every_missing_name_is_reported(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "a.py": "C = 1\n", "consumer.py": "from pkg.a import A, B, C\n"})
+        (problem,) = _scan(root)
+        assert "'A', 'B'" in problem and "'C'" not in problem
+
+    @pytest.mark.parametrize(
+        "guard",
+        [
+            "with contextlib.suppress(ImportError):\n    from pkg.absent import x\n",
+            "with suppress(ModuleNotFoundError):\n    from pkg.absent import x\n",
+            "try:\n    from pkg.absent import x\nexcept (ImportError, AttributeError):\n    x = None\n",
+            "try:\n    from pkg.absent import x\nexcept BaseException:\n    x = None\n",
+            "with pytest.raises((ImportError, AttributeError)):\n    from pkg.absent import x\n",
+        ],
+        ids=["suppress", "suppress-bare", "tuple-handler", "base-exception", "tuple-raises"],
+    )
+    def test_every_guard_shape_is_recognised(self, tmp_path, guard):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "consumer.py": "import contextlib\nfrom contextlib import suppress\nimport pytest\n" + guard})
+        assert _scan(root) == []
+
+    def test_an_unguarded_twin_is_still_reported(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "consumer.py": "with open('x') as f:\n    from pkg.absent import x\n"})
+        assert len(_scan(root)) == 1
+
+    def test_bom_and_unparsable_files(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "consumer.py": "from pkg.bom import thing\n", "broken.py": "def (:\n"})
+        (root / "pkg" / "bom.py").write_bytes(b"\xef\xbb\xbfthing = 1\n")
+        problems = _scan(root)
+        assert len(problems) == 1 and "broken.py:1: unparsable" in problems[0]

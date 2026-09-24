@@ -7,6 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+import pytest
+
 from py_ci_shared.prose_numeric_claims import NumericClaim, find_stale_claims, find_undated_volatile_claims
 
 
@@ -60,3 +62,38 @@ class TestFindUndatedVolatileClaims:
     def test_a_reviewed_line_is_suppressed(self, tmp_path):
         doc = _write(tmp_path / "CONTRIBUTING.md", "Aim for >80% coverage for new code.\n")
         assert find_undated_volatile_claims([doc], covered_patterns=[r"Aim for >80% coverage"]) == []
+
+
+class TestAuditRegressions:
+    def _doc(self, tmp_path, text):
+        path = tmp_path / "README.md"
+        path.write_text(text, encoding="utf-8")
+        return path
+
+    @pytest.mark.parametrize("pattern", [r"\d+ tests", r"(\d+) of (\d+) tests"], ids=["no-group", "two-groups"])
+    def test_a_pattern_without_exactly_one_group_is_a_problem_not_a_crash(self, tmp_path, pattern):
+        path = self._doc(tmp_path, "3 of 3 tests\n")
+        (problem,) = find_stale_claims([NumericClaim(path, pattern, lambda: 3, "tests")])
+        assert "exactly one" in problem
+
+    def test_a_group_that_did_not_participate_is_a_problem(self, tmp_path):
+        path = self._doc(tmp_path, "tests: none\n")
+        (problem,) = find_stale_claims([NumericClaim(path, r"tests: (?:(\d+)|none)", lambda: 3, "tests")])
+        assert "None" in problem and "not a number" in problem
+
+    def test_suffixed_numbers_are_read(self, tmp_path):
+        path = self._doc(tmp_path, "about 1.2k tests\n")
+        claim = NumericClaim(path, r"about ([\d.]+k) tests", lambda: 1200, "tests")
+        assert find_stale_claims([claim]) == []
+        wrong = NumericClaim(path, r"about ([\d.]+k) tests", lambda: 1300, "tests")
+        assert "states 1.2k but the repo has 1300" in find_stale_claims([wrong])[0]
+
+    def test_a_non_numeric_capture_is_reported(self, tmp_path):
+        path = self._doc(tmp_path, "about many tests\n")
+        (problem,) = find_stale_claims([NumericClaim(path, r"about (\w+) tests", lambda: 3, "tests")])
+        assert "'many'" in problem
+
+    def test_a_bom_file_is_read(self, tmp_path):
+        path = tmp_path / "README.md"
+        path.write_bytes(b"\xef\xbb\xbf12 tests\n")
+        assert find_stale_claims([NumericClaim(path, r"^(\d+) tests", lambda: 12, "tests")]) == []

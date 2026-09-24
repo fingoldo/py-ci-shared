@@ -5,9 +5,13 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
+
+from py_ci_shared._core import UnparsedFilesError
 from py_ci_shared.prompt_field_parity import (
     accessor_keys,
     consumed_names,
+    ddl_columns,
     declared_scalar_fields,
     invisible_keys,
     keys_in_schema,
@@ -15,9 +19,10 @@ from py_ci_shared.prompt_field_parity import (
     persisted_names_sql,
     persisted_names_writer_keys,
     prompt_keys,
+    string_literals,
     structural_names_prompted,
-    undemonstrated_fields,
     unconsumed_prompt_keys,
+    undemonstrated_fields,
     unpersisted_prompt_fields,
 )
 
@@ -38,7 +43,11 @@ class TestWhereFieldsComeFrom:
         assert keys_in_source(PROMPT) == {"word", "verdict", "ipa_correct"}
 
     def test_a_json_schema_dict_gives_its_property_names_not_its_vocabulary(self) -> None:
-        schema = {"type": "object", "properties": {"claim": {"type": "string"}, "moderator": {"type": "object", "properties": {"value": {"type": "string"}}}}, "required": ["claim"]}
+        schema = {
+            "type": "object",
+            "properties": {"claim": {"type": "string"}, "moderator": {"type": "object", "properties": {"value": {"type": "string"}}}},
+            "required": ["claim"],
+        }
 
         assert keys_in_schema(schema) == {"claim", "moderator", "value"}
 
@@ -82,12 +91,16 @@ class TestWhatCountsAsReading:
 class TestWhatCountsAsStored:
     def test_a_declared_field_that_reaches_no_column_is_reported(self, tmp_path: Path) -> None:
         """The productivity shape: parsed onto an object, written to no column."""
-        _write(tmp_path, "pkg/models.py", "class Verdict:\n    productivity: str | None = None\n    ipa_correct: bool | None = None\n    items: list[str] = []\n")
+        _write(
+            tmp_path, "pkg/models.py", "class Verdict:\n    productivity: str | None = None\n    ipa_correct: bool | None = None\n    items: list[str] = []\n"
+        )
         ddl = _write(tmp_path, "schema.sql", "CREATE TABLE t (\n    id SERIAL,\n    validation_ipa_correct BOOLEAN\n);\n")
         declared = declared_scalar_fields([tmp_path / "pkg"])
         persisted = persisted_names_sql([ddl], [])
 
-        found = unpersisted_prompt_fields({"productivity": ["p.py"], "ipa_correct": ["p.py"], "items": ["p.py"]}, declared, persisted, column_prefixes=("validation_",))
+        found = unpersisted_prompt_fields(
+            {"productivity": ["p.py"], "ipa_correct": ["p.py"], "items": ["p.py"]}, declared, persisted, column_prefixes=("validation_",)
+        )
 
         assert declared == {"productivity", "ipa_correct"}
         assert found == {"productivity": ["p.py"]}
@@ -107,3 +120,59 @@ class TestTheGatesOwnBlindSpots:
 
     def test_a_structural_name_the_prompt_asks_for_is_reported(self) -> None:
         assert structural_names_prompted(['P = """{"description": "fill this in"}"""\n']) == {"description"}
+
+
+class TestAuditRegressions:
+    def test_defs_names_are_definitions_not_fields(self) -> None:
+        schema = {
+            "type": "object",
+            "properties": {"outer": {"$ref": "#/$defs/Inner"}},
+            "$defs": {"Inner": {"type": "object", "properties": {"leaf": {"type": "string"}}}},
+            "definitions": {"Legacy": {"type": "object", "properties": {"old_leaf": {"type": "integer"}}}},
+        }
+        assert keys_in_schema(schema) == {"outer", "leaf", "old_leaf"}
+
+    def test_ddl_columns_of_any_type_and_quoted_names(self, tmp_path: Path) -> None:
+        ddl = _write(
+            tmp_path,
+            "schema.sql",
+            'CREATE TABLE t (\n  id SERIAL PRIMARY KEY,\n  score INT NOT NULL,\n  "Flag Col" BOOL,\n  ratio FLOAT,\n'
+            "  code CHAR(2),\n  price NUMERIC(10, 2),\n  CONSTRAINT pk PRIMARY KEY (id)\n);\n"
+            "ALTER TABLE t ADD COLUMN IF NOT EXISTS extra TINYINT;\n-- CREATE TABLE ghost (commented_out INT);\n",
+        )
+        assert persisted_names_sql([ddl], []) == {"id", "score", "flag col", "ratio", "code", "price", "extra"}
+        assert ddl_columns("SELECT a FROM b") == set()
+
+    def test_an_unparsable_prompt_module_raises_instead_of_contributing_nothing(self, tmp_path: Path) -> None:
+        _write(tmp_path, "prompts/ok.py", PROMPT)
+        _write(tmp_path, "prompts/newer.py", 'PROMPT = """{"lost_field": 1}"""\ndef (:\n')
+        with pytest.raises(UnparsedFilesError, match=re.escape("newer.py")):
+            prompt_keys([tmp_path / "prompts"])
+        with pytest.raises(UnparsedFilesError):
+            consumed_names([tmp_path / "prompts"])
+        with pytest.raises(SyntaxError):
+            string_literals("def (:\n", strict=True)
+        assert string_literals("def (:\n") == []
+
+    def test_non_utf8_files_raise_a_located_error_not_a_bare_decode_error(self, tmp_path: Path) -> None:
+        (tmp_path / "w").mkdir()
+        (tmp_path / "w" / "writer.py").write_bytes(b"row = {'claim': 1}  # \xff\n")
+        with pytest.raises(UnparsedFilesError, match=re.escape("writer.py")):
+            persisted_names_writer_keys([tmp_path / "w"])
+        with pytest.raises(UnparsedFilesError, match=re.escape("writer.py")):
+            accessor_keys([tmp_path / "w"], re.compile(r"(x)_(y)"))
+
+    def test_a_bom_prompt_module_is_read(self, tmp_path: Path) -> None:
+        (tmp_path / "p").mkdir()
+        (tmp_path / "p" / "prompt.py").write_bytes(b"\xef\xbb\xbf" + PROMPT.encode("utf-8"))
+        assert "ipa_correct" in prompt_keys([tmp_path / "p"])
+
+    def test_abstract_and_optional_containers_are_not_scalars(self, tmp_path: Path) -> None:
+        _write(
+            tmp_path,
+            "pkg/models.py",
+            "from typing import Optional, Sequence, Mapping, Annotated\n"
+            "class V:\n    tags: Sequence[str] = ()\n    extra: Mapping[str, int] = {}\n    kinds: frozenset[str] = frozenset()\n"
+            "    maybe: Optional[list] = None\n    ann: Annotated[list[int], 'x'] = []\n    score: Optional[int] = None\n    listing_id: int = 0\n",
+        )
+        assert declared_scalar_fields([tmp_path / "pkg"]) == {"score", "listing_id"}

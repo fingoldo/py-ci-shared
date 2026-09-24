@@ -39,6 +39,9 @@ import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
+from ._core import SourceError, read_source
 
 # `as of 2026-09-02`, `(measured 2026-09-02)`, `on 2026-09-02` -- any ISO date near the claim.
 _DATE_QUALIFIER_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
@@ -75,15 +78,47 @@ class NumericClaim:
     allow_multiple: bool = True
 
 
+_SCALE = {"k": 1e3, "K": 1e3, "m": 1e6, "M": 1e6, "b": 1e9, "B": 1e9, "bn": 1e9}
+_NUMBER_RE = re.compile(r"\s*([0-9][0-9,_]*(?:\.[0-9]+)?|\.[0-9]+)\s*(k|K|m|M|bn|b|B)?\s*")
+
+
+def parse_stated_number(raw: str) -> Optional[float]:
+    """The number a claim states: thousands separators allowed, and a ``k``/``M``/``B`` suffix scales it
+    (``1.2k`` -> 1200). ``None`` when *raw* is not a number at all."""
+    match = _NUMBER_RE.fullmatch(raw)
+    if match is None:
+        return None
+    return float(match.group(1).replace(",", "").replace("_", "")) * _SCALE.get(match.group(2) or "", 1.0)
+
+
 def find_stale_claims(claims: Iterable[NumericClaim]) -> list[str]:
-    """Return one message per claim whose anchor is missing or whose number is wrong."""
+    """Return one message per claim whose anchor is missing or whose number is wrong.
+
+    A pattern without exactly one capture group, an occurrence where the group did not participate, and a
+    captured text that is not a number are each reported as a problem with the claim, never raised.
+    """
     problems: list[str] = []
     for claim in claims:
         if not claim.path.is_file():
             problems.append(f"{claim.path}: file does not exist, so the claim {claim.description!r} cannot be checked")
             continue
-        text = claim.path.read_text(encoding="utf-8")
-        matches = list(re.finditer(claim.pattern, text))
+        try:
+            compiled = re.compile(claim.pattern)
+        except re.error as exc:
+            problems.append(f"{claim.path.name}: the claim {claim.description!r} has an invalid pattern {claim.pattern!r}: {exc}")
+            continue
+        if compiled.groups != 1:
+            problems.append(
+                f"{claim.path.name}: the claim {claim.description!r} pattern {claim.pattern!r} has {compiled.groups} capture "
+                "group(s); it needs exactly one, capturing the number (use (?:...) for any other grouping)"
+            )
+            continue
+        try:
+            text = read_source(claim.path)
+        except SourceError as exc:
+            problems.append(f"{claim.path.name}: {exc.kind}: {exc.message}, so the claim {claim.description!r} cannot be checked")
+            continue
+        matches = list(compiled.finditer(text))
         if not matches:
             problems.append(
                 f"{claim.path.name}: the claim {claim.description!r} no longer matches its anchor "
@@ -96,10 +131,17 @@ def find_stale_claims(claims: Iterable[NumericClaim]) -> list[str]:
             continue
         truth = claim.compute()
         for match in matches:
-            stated = float(match.group(1).replace(",", ""))
+            line = text[: match.start()].count("\n") + 1
+            raw = match.group(1)
+            stated = parse_stated_number(raw) if raw is not None else None
+            if stated is None:
+                problems.append(
+                    f"{claim.path.name}:{line}: {claim.description}: the capture group matched {raw!r}, which is not a number; "
+                    "fix the pattern so it captures only the figure"
+                )
+                continue
             if abs(stated - truth) > claim.tolerance:
-                line = text[: match.start()].count("\n") + 1
-                problems.append(f"{claim.path.name}:{line}: {claim.description} states {match.group(1)} but the repo has {truth:g}")
+                problems.append(f"{claim.path.name}:{line}: {claim.description} states {raw} but the repo has {truth:g}")
     return problems
 
 
@@ -125,7 +167,11 @@ def find_undated_volatile_claims(paths: Iterable[Path], covered_patterns: Sequen
     for path in paths:
         if not path.is_file():
             continue
-        lines = path.read_text(encoding="utf-8").splitlines()
+        try:
+            lines = read_source(path).splitlines()
+        except SourceError as exc:
+            findings.append(f"{path.name}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            continue
         for index, line in enumerate(lines):
             if any(pattern.search(line) for pattern in covered):
                 continue
@@ -135,6 +181,8 @@ def find_undated_volatile_claims(paths: Iterable[Path], covered_patterns: Sequen
                     continue
                 window = "\n".join(lines[max(0, index - context_lines) : index + context_lines + 1])
                 if not _DATE_QUALIFIER_RE.search(window):
-                    findings.append(f"{path.name}:{index + 1}: undated volatile figure {match.group(0).strip()!r} -- add an 'as of YYYY-MM-DD' qualifier or make it computed")
+                    findings.append(
+                        f"{path.name}:{index + 1}: undated volatile figure {match.group(0).strip()!r} -- add an 'as of YYYY-MM-DD' qualifier or make it computed"
+                    )
                 break
     return findings

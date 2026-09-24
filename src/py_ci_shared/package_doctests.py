@@ -35,6 +35,13 @@ def _has_example(module_name: str) -> bool:
         return True
 
 
+def _under(name: str, prefix: str) -> bool:
+    """*name* is *prefix* or a module under it (dotted boundary); a prefix ending in ``.`` matches raw."""
+    if prefix.endswith("."):
+        return name.startswith(prefix)
+    return name == prefix or name.startswith(prefix + ".")
+
+
 def run_package_doctests(
     package: ModuleType | str,
     *,
@@ -44,26 +51,34 @@ def run_package_doctests(
 ) -> tuple[int, list[str], list[str]]:
     """``(examples attempted, failures, modules that would not import)`` over *package* and every module under it.
 
-    *package* may also be a plain module. ``__init__`` modules are included. *skip_parts* drops any module whose
-    dotted name has one of them as a segment (``"_benchmarks"`` skips every nested benchmark package, which a
+    *package* may also be a plain module. ``__init__`` modules are included. *skip_prefixes* match on dotted
+    boundaries (``pkg.io`` skips ``pkg.io`` and ``pkg.io.x``, not ``pkg.iostats``). *skip_parts* drops any module
+    whose dotted name has one of them as a segment (``"_benchmarks"`` skips every nested benchmark package, which a
     prefix cannot express). A module whose source has no ``>>>`` is not imported: importing a large package's
     every module only to find nothing to run is the expensive part, and some modules are scripts that run on import.
+    A subpackage that fails to import while being walked is listed as unimportable (``<name>: cannot walk``): every
+    module below it is invisible, so it is never silently dropped.
     """
     pkg = importlib.import_module(package) if isinstance(package, str) else package
     skip = tuple(skip_prefixes)
     parts = frozenset(skip_parts)
+
+    def skipped(name: str) -> bool:
+        return bool(parts and parts.intersection(name.split("."))) or any(_under(name, p) for p in skip)
+
     names = [pkg.__name__]
+    unwalkable: list[str] = []
     if hasattr(pkg, "__path__"):
         names += [
             info.name
-            for info in pkgutil.walk_packages(pkg.__path__, prefix=f"{pkg.__name__}.", onerror=lambda _name: None)
+            for info in pkgutil.walk_packages(pkg.__path__, prefix=f"{pkg.__name__}.", onerror=unwalkable.append)
             if not (parts and parts.intersection(info.name.split(".")))
         ]
     attempted = 0
     failures: list[str] = []
-    unimportable: list[str] = []
+    unimportable: list[str] = [f"{name}: cannot walk (import failed)" for name in unwalkable if not skipped(name)]
     for name in names:
-        if (skip and name.startswith(skip)) or not _has_example(name):
+        if skipped(name) or not _has_example(name):
             continue
         try:
             module = importlib.import_module(name)
@@ -84,12 +99,31 @@ def assert_package_doctests_pass(
     skip_parts: Iterable[str] = (),
     min_examples: int = 1,
     optionflags: int = doctest.ELLIPSIS | doctest.NORMALIZE_WHITESPACE,
+    tolerate_unimportable: Iterable[str] = (),
 ) -> None:
-    """Fail on a failing doctest, or when fewer than *min_examples* ran."""
+    """Fail on a failing doctest, on a module with examples (or a subpackage) that will not import, or when fewer
+    than *min_examples* ran.
+
+    *tolerate_unimportable* names modules (dotted-boundary prefixes) known not to import here, e.g. behind an optional
+    dependency; an entry that no longer matches an unimportable module fails too, so the list cannot rot.
+    """
     import pytest
 
-    attempted, failures, _unimportable = run_package_doctests(package, skip_prefixes=skip_prefixes, skip_parts=skip_parts, optionflags=optionflags)
+    attempted, failures, unimportable = run_package_doctests(package, skip_prefixes=skip_prefixes, skip_parts=skip_parts, optionflags=optionflags)
+    tolerated = list(tolerate_unimportable)
+    blocking = [u for u in unimportable if not any(_under(u.split(":", 1)[0], t) for t in tolerated)]
+    stale = [t for t in tolerated if not any(_under(u.split(":", 1)[0], t) for u in unimportable)]
+    problems: list[str] = []
     if failures:
-        pytest.fail("doctests failed; Fix the example or the function:\n  " + "\n  ".join(failures))
+        problems.append("doctests failed; Fix the example or the function:\n  " + "\n  ".join(failures))
+    if blocking:
+        problems.append(
+            "module(s) with doctests that will not import, so their examples never ran; fix the import or name them in "
+            "tolerate_unimportable:\n  " + "\n  ".join(blocking)
+        )
+    if stale:
+        problems.append("tolerate_unimportable entr(ies) that now import fine -- remove them:\n  " + "\n  ".join(stale))
+    if problems:
+        pytest.fail("\n".join(problems))
     if attempted < min_examples:
         pytest.fail(f"only {attempted} doctest example(s) ran; expected at least {min_examples}. Check skip_prefixes and imports -- an empty run is not a pass")

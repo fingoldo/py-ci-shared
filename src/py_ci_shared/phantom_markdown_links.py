@@ -30,17 +30,57 @@ this package's other modules.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
+from urllib.parse import unquote
 
-# [text](path/to/thing.ext) -- captures the link target. Scoped to a small,
-# explicit extension allowlist (not "any non-space run") to avoid matching
-# inline-code spans or other bracket-paren text that isn't really a link.
-_MD_LINK_RE = re.compile(r"\]\(([\w./-]+\.(?:py|md|sql|yml|yaml|json|toml|cfg|ini|txt))\)")
+from ._core import SourceError, read_source, relative_posix
+
+# An inline link or image: [text](target) / ![alt](target), the target optionally in <...> and optionally followed
+# by a "title". Text may hold one level of nested brackets (a badge image inside a link).
+_MD_LINK_RE = re.compile(r"!?\[(?:[^\[\]]|\[[^\]]*\])*\]\(\s*(<[^>\n]*>|[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)")
+# A reference definition: [id]: target "title"
+_MD_REF_DEF_RE = re.compile(r"^ {0,3}\[(?!\^)[^\]]+\]:\s*(<[^>\n]*>|\S+)")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_CODE_SPAN_RE = re.compile(r"(`+)(?:(?!\1).)+?\1")
+_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*:")
 
 
 def _is_external(target: str) -> bool:
-    return target.startswith(("http://", "https://", "git+", "mailto:"))
+    return bool(_SCHEME_RE.match(target)) or target.startswith("//")
+
+
+def _link_targets(source: str) -> "list[tuple[int, str]]":
+    """``(line, target)`` for every inline link, image and reference definition outside fenced code and code spans."""
+    out: list[tuple[int, str]] = []
+    fence: "str | None" = None
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        opener = _FENCE_RE.match(line)
+        if fence is not None:
+            if opener and opener.group(1)[0] == fence[0] and len(opener.group(1)) >= len(fence) and not line.strip()[len(opener.group(1)) :].strip():
+                fence = None
+            continue
+        if opener:
+            fence = opener.group(1)
+            continue
+        text = _CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), line)
+        out.extend((lineno, m.group(1)) for m in _MD_LINK_RE.finditer(text))
+        ref = _MD_REF_DEF_RE.match(text)
+        if ref:
+            out.append((lineno, ref.group(1)))
+    return out
+
+
+def _local_path(target: str) -> "str | None":
+    """The file part of a relative target (``<>`` removed, ``#fragment``/``?query`` dropped, ``%20`` decoded), or
+    ``None`` for an external link or a same-page anchor."""
+    target = target.strip()
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+    if not target or target.startswith("#") or _is_external(target):
+        return None
+    target = re.split(r"[#?]", target, maxsplit=1)[0]
+    return unquote(target) if target else None
 
 
 def tracked_markdown_files(repo_root: Path) -> list[Path]:
@@ -58,28 +98,31 @@ def tracked_markdown_files(repo_root: Path) -> list[Path]:
 
 
 def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> list[str]:
-    """Return ``"<rel_path>:<line>: dead markdown-link target '<target>'"``
-    for every markdown-link target that resolves against neither
-    ``repo_root`` nor the referencing file's own directory. External links
-    (http(s)://, git+, mailto:) are never checked."""
+    """Return ``"<rel_path>:<line>: dead markdown-link target '<target>'"`` for every link target that does not
+    resolve the way a markdown renderer resolves it: relative to the referencing file's own directory, or, for a
+    target starting with ``/``, relative to ``repo_root``.
+
+    Covered: inline links and images (any extension, directories too), ``<...>`` targets, titles, reference-style
+    definitions; a ``#fragment`` or ``?query`` is dropped before the file is checked. Skipped: external links (any
+    ``scheme:``), same-page anchors, and anything inside fenced code blocks or code spans. An unreadable file is
+    reported, not skipped.
+    """
     violations: list[str] = []
     for path in md_files:
+        rel = relative_posix(path, repo_root)
         try:
-            rel = str(path.relative_to(repo_root))
-        except ValueError:
-            rel = str(path)
-        try:
-            source = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
+            source = read_source(path)
+        except SourceError as exc:
+            violations.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message}")
             continue
-        for lineno, line in enumerate(source.splitlines(), start=1):
-            for m in _MD_LINK_RE.finditer(line):
-                target = m.group(1)
-                if _is_external(target):
-                    continue
-                if (repo_root / target).exists() or (path.parent / target).exists():
-                    continue
-                violations.append(f"{rel}:{lineno}: dead markdown-link target {target!r}")
+        for lineno, raw in _link_targets(source):
+            local = _local_path(raw)
+            if local is None:
+                continue
+            resolved = repo_root / local.lstrip("/") if local.startswith("/") else path.parent / local
+            if resolved.exists():
+                continue
+            violations.append(f"{rel}:{lineno}: dead markdown-link target {raw.strip('<>')!r}")
     return violations
 
 

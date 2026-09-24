@@ -31,6 +31,7 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source, relative_posix
 from ._toml_compat import tomllib
 
 #: Markers pytest and the plugins these repos use provide without registration.
@@ -59,14 +60,29 @@ def _marker_name(entry: str) -> str:
     return entry.split(":", 1)[0].split("(", 1)[0].strip()
 
 
+def _names(raw: object) -> set[str]:
+    entries = raw.splitlines() if isinstance(raw, str) else raw if isinstance(raw, list) else []
+    return {name for entry in entries if isinstance(entry, str) and (name := _marker_name(entry))}
+
+
 def pyproject_markers(pyproject: Path) -> set[str]:
-    """Marker names registered in ``[tool.pytest.ini_options].markers``; empty if the file is absent."""
+    """Marker names registered in ``[tool.pytest.ini_options].markers`` or pytest 9's native ``[tool.pytest].markers``;
+    empty if the file is absent."""
     if not pyproject.is_file():
         return set()
-    with pyproject.open("rb") as fh:
-        data = tomllib.load(fh)
-    raw = data.get("tool", {}).get("pytest", {}).get("ini_options", {}).get("markers", []) or []
-    return {name for entry in raw if isinstance(entry, str) and (name := _marker_name(entry))}
+    data = tomllib.loads(read_source(pyproject))
+    table = data.get("tool", {}).get("pytest", {})
+    return _names(table.get("ini_options", {}).get("markers", [])) | _names(table.get("markers", []))
+
+
+def toml_markers(repo_root: Path) -> set[str]:
+    """Marker names registered in pytest 9's ``pytest.toml`` / ``.pytest.toml`` (``[pytest].markers``) at *repo_root*."""
+    out: set[str] = set()
+    for filename in ("pytest.toml", ".pytest.toml"):
+        path = repo_root / filename
+        if path.is_file():
+            out |= _names(tomllib.loads(read_source(path)).get("pytest", {}).get("markers", []))
+    return out
 
 
 #: ini files pytest reads its ``markers`` from, with the section each uses.
@@ -86,11 +102,17 @@ def ini_markers(repo_root: Path) -> set[str]:
         path = repo_root / filename
         if not path.is_file():
             continue
+        text = read_source(path)
         parser = configparser.ConfigParser(interpolation=None)
         try:
-            parser.read(path, encoding="utf-8")
-        except configparser.Error:
-            continue
+            parser.read_string(text, source=str(path))
+        except (configparser.DuplicateOptionError, configparser.DuplicateSectionError) as exc:
+            if exc.section == section:
+                raise ValueError(f"{path}: {exc}; pytest cannot load this section either") from exc
+            parser = configparser.ConfigParser(interpolation=None, strict=False)  # a duplicate in another tool's section
+            parser.read_string(text, source=str(path))
+        except configparser.Error as exc:
+            raise ValueError(f"{path} is not a readable ini file, so its pytest markers are unknown: {exc}") from exc
         if parser.has_option(section, "markers"):
             for line in parser.get(section, "markers").splitlines():
                 name = _marker_name(line)
@@ -99,25 +121,97 @@ def ini_markers(repo_root: Path) -> set[str]:
     return out
 
 
-def conftest_markers(tests_dir: Path) -> set[str]:
-    """Marker names registered through ``config.addinivalue_line("markers", "...")`` in any conftest."""
+def _string_values(node: ast.AST, constants: "dict[str, list[str]]", loops: "dict[str, list[str]]") -> "list[str] | None":
+    """Literal strings an ``addinivalue_line`` argument can take: a constant, a module-level string (or tuple/list
+    of strings) bound to a name, the loop variable of a ``for`` over literals, or the constant head of an f-string
+    / ``%`` / ``+`` expression that holds the marker name. ``None`` when it cannot be resolved."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.Name):
+        return loops.get(node.id) or constants.get(node.id)
+    if isinstance(node, ast.JoinedStr) and node.values and isinstance(node.values[0], ast.Constant) and isinstance(node.values[0].value, str):
+        head = node.values[0].value
+        return [head] if (":" in head or "(" in head) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):
+        left = _string_values(node.left, constants, loops)
+        heads = [v for v in left or () if ":" in v or "(" in v]
+        return heads or None
+    return None
+
+
+def _literal_strings(node: ast.AST) -> "list[str] | None":
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
+        values = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+        return values if len(values) == len(node.elts) else None
+    return None
+
+
+def conftest_registrations(tree: ast.Module) -> "tuple[set[str], list[int]]":
+    """``(marker names, lines of registrations that could not be resolved)`` for one conftest module."""
+    constants: dict[str, list[str]] = {}
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
+            values = _literal_strings(statement.value)
+            if values is not None:
+                constants[statement.targets[0].id] = values
+    loops: dict[str, list[str]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+            values = _literal_strings(node.iter)
+            if values is None and isinstance(node.iter, ast.Name):
+                values = constants.get(node.iter.id)
+            if values is not None:
+                loops[node.target.id] = values
+    names: set[str] = set()
+    unresolved: list[int] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "addinivalue_line"):
+            continue
+        if len(node.args) < 2:
+            continue
+        first = _string_values(node.args[0], constants, loops)
+        if first != ["markers"]:
+            if first is None:
+                unresolved.append(node.lineno)
+            continue
+        values = _string_values(node.args[1], constants, loops)
+        if values is None:
+            unresolved.append(node.lineno)
+            continue
+        found = {name for value in values if (name := _marker_name(value)).isidentifier()}
+        if not found:
+            unresolved.append(node.lineno)
+        names |= found
+    return names, unresolved
+
+
+def _conftests(tests_dir: Path, repo_root: "Path | None") -> list[Path]:
+    found = list(iter_files(tests_dir, ("conftest.py",), exclude=DEFAULT_EXCLUDE)) if tests_dir.is_dir() else []
+    if repo_root is not None and (repo_root / "conftest.py").is_file():
+        found.append(repo_root / "conftest.py")
+    return sorted({p.resolve(): p for p in found}.values())
+
+
+def conftest_markers(tests_dir: Path, *, repo_root: "Path | None" = None, unresolved: "list[str] | None" = None) -> set[str]:
+    """Marker names registered through ``config.addinivalue_line("markers", ...)`` in any conftest under *tests_dir*
+    (and *repo_root*'s own ``conftest.py`` when given). Registrations whose value cannot be resolved statically are
+    appended to *unresolved* as ``path:line``. Raises ``UnparsedFilesError`` on an unparsable conftest."""
     out: set[str] = set()
-    for conftest in sorted(tests_dir.rglob("conftest.py")):
-        if "__pycache__" in conftest.parts:
-            continue
+    problems: list[str] = []
+    for conftest in _conftests(tests_dir, repo_root):
         try:
-            tree = ast.parse(conftest.read_text(encoding="utf-8"))
-        except (OSError, UnicodeDecodeError, SyntaxError):
+            _, tree = parse_source(conftest)
+        except SourceError as exc:
+            problems.append(str(exc))
             continue
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "addinivalue_line"):
-                continue
-            if len(node.args) < 2:
-                continue
-            first, second = node.args[0], node.args[1]
-            if isinstance(first, ast.Constant) and first.value == "markers" and isinstance(second, ast.Constant) and isinstance(second.value, str):
-                if name := _marker_name(second.value):
-                    out.add(name)
+        names, lines = conftest_registrations(tree)
+        out |= names
+        if unresolved is not None:
+            unresolved.extend(f"{conftest}:{line}" for line in lines)
+    if problems:
+        raise UnparsedFilesError("conftest file(s) could not be parsed, so their marker registrations are unknown:\n  " + "\n  ".join(problems))
     return out
 
 
@@ -125,13 +219,32 @@ def used_markers(tests_dir: Path, repo_root: Path, *, exclude: Iterable[Path] = 
     """``{marker: [files that name it]}`` for every ``pytest.mark.<name>`` under *tests_dir*."""
     skip = {p.resolve() for p in exclude}
     seen: dict[str, list[str]] = {}
-    for path in sorted(tests_dir.rglob("*.py")):
-        if "__pycache__" in path.parts or path.resolve() in skip:
+    problems: list[str] = []
+    for path in iter_files(tests_dir, ("*.py",), exclude=DEFAULT_EXCLUDE):
+        if path.resolve() in skip:
             continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
+        try:
+            text = read_source(path)
+        except SourceError as exc:
+            problems.append(str(exc))
+            continue
         for name in sorted(set(_MARK_RE.findall(text))):
-            seen.setdefault(name, []).append(path.relative_to(repo_root).as_posix())
+            seen.setdefault(name, []).append(relative_posix(path, repo_root))
+    if problems:
+        raise UnparsedFilesError("test file(s) could not be read, so their markers are unknown:\n  " + "\n  ".join(problems))
     return seen
+
+
+def registered_markers(repo_root: Path, *, tests_dir: "Path | None" = None, unresolved: "list[str] | None" = None) -> set[str]:
+    """Every marker the repo registers: pyproject (both tables), ``pytest.toml``, the ini files, and the conftests under
+    the tests directory plus the root ``conftest.py``."""
+    tests = tests_dir or repo_root / "tests"
+    return (
+        pyproject_markers(repo_root / "pyproject.toml")
+        | toml_markers(repo_root)
+        | ini_markers(repo_root)
+        | conftest_markers(tests, repo_root=repo_root, unresolved=unresolved)
+    )
 
 
 def find_unregistered_markers(
@@ -143,7 +256,7 @@ def find_unregistered_markers(
 ) -> dict[str, list[str]]:
     """Markers used under the tests directory that nothing registers, with the files naming each."""
     tests = tests_dir or repo_root / "tests"
-    registered = pyproject_markers(repo_root / "pyproject.toml") | ini_markers(repo_root) | conftest_markers(tests) | BUILTIN_MARKERS | set(extra_registered)
+    registered = registered_markers(repo_root, tests_dir=tests) | BUILTIN_MARKERS | set(extra_registered)
     return {name: files for name, files in used_markers(tests, repo_root, exclude=exclude).items() if name not in registered}
 
 
@@ -164,7 +277,8 @@ def assert_markers_registered(
     import pytest
 
     tests = tests_dir or repo_root / "tests"
-    registered = pyproject_markers(repo_root / "pyproject.toml") | ini_markers(repo_root) | conftest_markers(tests)
+    unresolved: list[str] = []
+    registered = registered_markers(repo_root, tests_dir=tests, unresolved=unresolved)
     missing = sorted(set(expect_registered) - registered)
     if missing:
         pytest.fail(f"expected registered marker(s) not found by the parser: {missing} -- pyproject or conftest moved, or the parser broke")
@@ -174,4 +288,10 @@ def assert_markers_registered(
             "Unregistered pytest markers (an error under --strict-markers, a silent no-op without it):\n"
             + "\n".join(f"  {name}: {files[:5]}" for name, files in sorted(unregistered.items()))
             + "\nRegister them in pyproject.toml [tool.pytest.ini_options].markers or a conftest pytest_configure."
+            + (
+                "\nThese addinivalue_line registrations could not be read statically and may register some of them "
+                "(use literal strings, or pass the names in extra_registered):\n  " + "\n  ".join(unresolved)
+                if unresolved
+                else ""
+            )
         )

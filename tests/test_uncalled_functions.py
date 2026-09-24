@@ -7,10 +7,12 @@ what most of these tests pin.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
 
+from py_ci_shared._core import UnparsedFilesError
 from py_ci_shared.uncalled_functions import assert_no_new_uncalled_function, find_uncalled_functions
 
 
@@ -109,20 +111,35 @@ class TestScope:
         f = _write(tmp_path, "m.py", "class C:\n    def method(self):\n        return 1\n")
         assert find_uncalled_functions([f], tmp_path) == {}
 
-    def test_a_syntax_error_is_skipped_rather_than_raised(self, tmp_path):
-        """A CI helper must not take the suite down over one unparseable file."""
-        bad = _write(tmp_path, "bad.py", "def (:\n")
+    def test_a_syntax_error_raises_unless_the_caller_allows_it(self, tmp_path):
+        """An unparsable file's call sites are unknown, so every function it calls would read as dead."""
+        bad = _write(tmp_path, "bad.py", "from good import orphan\norphan()\ndef (:\n")
         good = _write(tmp_path, "good.py", "def orphan():\n    return 1\n")
-        assert find_uncalled_functions([bad, good], tmp_path) == {"good.py::orphan": "orphan"}
+        with pytest.raises(UnparsedFilesError, match=re.escape("bad.py")):
+            find_uncalled_functions([bad, good], tmp_path)
+        assert find_uncalled_functions([bad, good], tmp_path, allow_unparsed=True) == {"good.py::orphan": "orphan"}
 
 
 class TestTheRatchet:
-    def test_it_seeds_a_baseline_and_skips(self, tmp_path):
+    def test_a_missing_baseline_fails_and_is_written_only_on_refresh(self, tmp_path, monkeypatch):
+        """Seeding on a missing file turned a deleted or mistyped baseline into a permanent pass."""
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH", raising=False)
         f = _write(tmp_path, "m.py", "def orphan():\n    return 1\n")
         baseline = tmp_path / "baseline.json"
-        with pytest.raises(BaseException) as excinfo:  # pytest.skip raises Skipped
+        with pytest.raises(pytest.fail.Exception, match="does not exist"):
             assert_no_new_uncalled_function([f], tmp_path, baseline)
-        assert "Skipped" in type(excinfo.value).__name__
+        assert not baseline.exists()
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_uncalled_function([f], tmp_path, baseline, refresh=True)
+        assert baseline.exists()
+        assert_no_new_uncalled_function([f], tmp_path, baseline)
+
+    def test_refresh_via_env_var_as_under_xdist(self, tmp_path, monkeypatch):
+        f = _write(tmp_path, "m.py", "def orphan():\n    return 1\n")
+        baseline = tmp_path / "baseline.json"
+        monkeypatch.setenv("PY_CI_SHARED_REFRESH", "uncalled-functions")
+        with pytest.raises(pytest.skip.Exception):
+            assert_no_new_uncalled_function([f], tmp_path, baseline)
         assert baseline.exists()
 
     def test_a_baselined_function_does_not_fail(self, tmp_path):
@@ -157,3 +174,46 @@ class TestTheRatchet:
         baseline = tmp_path / "baseline.json"
         baseline.write_text("[]", encoding="utf-8")
         assert_no_new_uncalled_function([f], tmp_path, baseline, ignore=["public_api"])
+
+
+class TestAuditRegressions:
+    def test_self_recursion_is_not_a_call(self, tmp_path):
+        f = _write(tmp_path, "m.py", "def countdown(n):\n    return countdown(n - 1) if n else 0\n")
+        assert find_uncalled_functions([f], tmp_path) == {"m.py::countdown": "countdown"}
+        g = _write(tmp_path, "n.py", "from m import countdown\n\ndef main():\n    return countdown(3)\n\nmain()\n")
+        assert find_uncalled_functions([f, g], tmp_path) == {}
+
+    def test_a_same_name_local_is_not_a_call(self, tmp_path):
+        f = _write(
+            tmp_path,
+            "m.py",
+            "def helper():\n    return 1\n\ndef other(helper=None):\n    return helper\n\ndef third():\n    helper = 2\n    return helper\n\nother()\nthird()\n",
+        )
+        assert find_uncalled_functions([f], tmp_path) == {"m.py::helper": "helper"}
+        g = _write(tmp_path, "n.py", "def helper():\n    return 1\n\ndef user():\n    def inner():\n        return helper()\n    return inner()\n\nuser()\n")
+        assert find_uncalled_functions([g], tmp_path) == {}
+
+    def test_defs_under_module_if_and_try_are_judged(self, tmp_path):
+        f = _write(
+            tmp_path,
+            "m.py",
+            "import sys\nif sys.platform == 'win32':\n    def win_only():\n        return 1\nelse:\n    def posix_only():\n        return 2\n"
+            "try:\n    import fast\nexcept ImportError:\n    def fallback():\n        return 3\n\nposix_only()\n",
+        )
+        assert find_uncalled_functions([f], tmp_path) == {"m.py::win_only": "win_only", "m.py::fallback": "fallback"}
+
+    def test_the_file_floor(self, tmp_path):
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="parsed"):
+            assert_no_new_uncalled_function([], tmp_path, baseline)
+
+    def test_a_bom_file_is_parsed_and_an_unparsable_one_fails_the_entry_point(self, tmp_path):
+        bom = tmp_path / "bom.py"
+        bom.write_bytes(b"\xef\xbb\xbfdef orphan():\n    return 1\n")
+        assert find_uncalled_functions([bom], tmp_path) == {"bom.py::orphan": "orphan"}
+        bad = _write(tmp_path, "bad.py", "def (:\n")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text('["bom.py::orphan"]', encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="could not be read or parsed"):
+            assert_no_new_uncalled_function([bom, bad], tmp_path, baseline)

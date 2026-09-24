@@ -47,41 +47,47 @@ as a call.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
+from typing import Any, Optional, Union
+
+from ._core import Baseline, UnparsedFilesError, refresh_requested, register_refresh_options, relative_posix, scan_python
 
 REFRESH_FLAG = "--refresh-uncalled-functions-baseline"
+_FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
-def register_refresh_option(parser) -> None:
-    """Register ``--refresh-uncalled-functions-baseline`` as a no-op boolean flag.
+def register_refresh_option(parser) -> None:  # type: ignore[no-untyped-def]
+    """Register ``--refresh-uncalled-functions-baseline`` (and the generic ``--py-ci-refresh``) on pytest's parser.
 
     Same rationale as ``code_audit_meta.register_refresh_option``: pytest rejects unrecognized CLI
     options before test code runs, so every consuming repo's conftest.py must call this from its own
     ``pytest_addoption``.
     """
-    try:
-        parser.addoption(
-            REFRESH_FLAG,
-            action="store_true",
-            default=False,
-            help="Rewrite the uncalled-function baseline instead of asserting against it.",
-        )
-    except Exception:
-        pass
+    register_refresh_options(parser, [REFRESH_FLAG])
 
 
-def _refresh_requested() -> bool:
-    import sys
-
-    return REFRESH_FLAG in sys.argv
+def _refresh_requested(request: Optional[Any] = None) -> bool:
+    return refresh_requested(REFRESH_FLAG, request)
 
 
-def _parse(path: Path) -> ast.Module | None:
-    try:
-        return ast.parse(path.read_text(encoding="utf-8", errors="replace"), filename=str(path))
-    except (OSError, SyntaxError):
-        return None
+def _module_level_defs(body: "list[ast.stmt]") -> Iterator[_FuncDef]:
+    """Functions defined at module level, including under a module-level ``if``/``try``/``with`` (a platform or
+    optional-dependency switch still defines a module function); never inside a class or another function."""
+    for node in body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node
+        elif isinstance(node, (ast.If, ast.While, ast.For, ast.AsyncFor)):
+            yield from _module_level_defs(node.body)
+            yield from _module_level_defs(node.orelse)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            yield from _module_level_defs(node.body)
+        elif isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
+            yield from _module_level_defs(node.body)  # type: ignore[attr-defined]
+            for handler in node.handlers:  # type: ignore[attr-defined]
+                yield from _module_level_defs(handler.body)
+            yield from _module_level_defs(node.orelse)  # type: ignore[attr-defined]
+            yield from _module_level_defs(node.finalbody)  # type: ignore[attr-defined]
 
 
 def _definitions(tree: ast.Module, path: Path, root: Path) -> dict[str, str]:
@@ -94,22 +100,51 @@ def _definitions(tree: ast.Module, path: Path, root: Path) -> dict[str, str]:
     enclosing function is itself in scope here.
     """
     out: dict[str, str] = {}
-    rel = path.relative_to(root).as_posix() if path.is_relative_to(root) else path.name
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            out[node.name] = f"{rel}::{node.name}"
+    rel = relative_posix(path, root)
+    for node in _module_level_defs(tree.body):
+        out[node.name] = f"{rel}::{node.name}"
     return out
 
 
+def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
+    """Names *fn* binds in its own scope (parameters, assignments, loop/with/except targets, local imports and
+    defs), minus those it declares ``global``/``nonlocal``."""
+    args = fn.args
+    bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs, *(a for a in (args.vararg, args.kwarg) if a)]}
+    declared_outer: set[str] = set()
+    stack: list[ast.AST] = list(fn.body) if isinstance(fn.body, list) else [fn.body]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Global, ast.Nonlocal)):
+            declared_outer.update(node.names)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            bound.add(node.id)
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound.add(node.name)
+            continue  # its body is its own scope
+        elif isinstance(node, ast.Lambda):
+            continue
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            bound.update((a.asname or a.name).split(".", 1)[0] for a in node.names)
+        elif isinstance(node, ast.ExceptHandler) and node.name:
+            bound.add(node.name)
+        stack.extend(ast.iter_child_nodes(node))
+    return bound - declared_outer
+
+
 def _referenced_names(tree: ast.Module) -> set[str]:
-    """Every name this module LOADS, by any mechanism that could reach a function.
+    """Every module-level name this module LOADS, by any mechanism that could reach a function.
 
     Deliberately generous about what counts as a reference, because a false "this is dead" is far
     more expensive than a missed one: it invites someone to delete working code. A bare mention as a
     value -- ``handlers = [f]``, ``partial(f, x)``, ``@f``, ``getattr(mod, "f")`` -- all count.
 
-    ``getattr``/``hasattr`` with a literal name is included for that reason: dynamic dispatch is a
-    real call site even though no ``Name`` node names it.
+    Two loads do NOT count, since neither reaches the module function: a load inside a function of a name that
+    function (or an enclosing one) binds locally, and a function's load of its OWN name (self-recursion: a
+    function that only calls itself is still never called).
+
+    ``getattr``/``hasattr`` with a literal name is included: dynamic dispatch is a real call site even though no
+    ``Name`` node names it.
 
     ALIASED IMPORTS resolve to the original name. ``from secrets_scrub import redact_secrets as
     _redact_secrets`` followed by ``_redact_secrets(...)`` is a call to ``redact_secrets``, and the
@@ -119,9 +154,11 @@ def _referenced_names(tree: ast.Module) -> set[str]:
     """
     loaded: set[str] = set()
     aliases: dict[str, str] = {}
-    for node in ast.walk(tree):
+
+    def visit(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]") -> None:
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            loaded.add(node.id)
+            if node.id not in shadowed and node.id not in own:
+                loaded.add(node.id)
         elif isinstance(node, ast.Attribute):
             loaded.add(node.attr)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
@@ -134,10 +171,27 @@ def _referenced_names(tree: ast.Module) -> set[str]:
                 for arg in node.args[1:2]:
                     if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                         loaded.add(arg.value)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            outer_parts: list[ast.expr] = [*getattr(node, "decorator_list", []), *node.args.defaults, *(d for d in node.args.kw_defaults if d is not None)]
+            for part in outer_parts:
+                visit(part, shadowed, own)  # evaluated in the ENCLOSING scope
+            for param in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
+                if param.annotation is not None:
+                    visit(param.annotation, shadowed, own)
+            inner_shadow = shadowed | _local_bindings(node)
+            inner_own = own | ({node.name} if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else set())
+            body: list[ast.AST] = list(node.body) if isinstance(node.body, list) else [node.body]
+            for statement in body:
+                visit(statement, frozenset(inner_shadow), frozenset(inner_own))
+            return
+        for child in ast.iter_child_nodes(node):
+            visit(child, shadowed, own)
+
+    visit(tree, frozenset(), frozenset())
     return loaded | {original for local, original in aliases.items() if local in loaded}
 
 
-def find_uncalled_functions(files: Iterable[Path], root: Path) -> dict[str, str]:
+def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed: bool = False) -> dict[str, str]:
     """Return ``{"rel/path.py::name": name}`` for module-level functions nothing in *files* loads.
 
     *files* is the PRODUCTION set: the caller decides what that means, and must exclude tests. A
@@ -145,23 +199,22 @@ def find_uncalled_functions(files: Iterable[Path], root: Path) -> dict[str, str]
     this module generalises stayed hidden, both of them fully covered by tests.
 
     The defining module is included when counting references, so a private helper used elsewhere in
-    its own file is correctly seen as live.
+    its own file is correctly seen as live. A file that cannot be read or parsed raises
+    :class:`py_ci_shared._core.UnparsedFilesError`: its call sites are unknown, so every function it calls would be
+    reported dead. ``allow_unparsed=True`` restores the old skip for callers that report problems themselves.
     """
-    paths = [p for p in files]
-    trees: dict[Path, ast.Module] = {}
-    for path in paths:
-        tree = _parse(path)
-        if tree is not None:
-            trees[path] = tree
+    scan = scan_python([Path(p) for p in files], min_files=0, root=root)
+    if scan.unparsed and not allow_unparsed:
+        scan.check_unparsed()
 
     definitions: dict[str, str] = {}
-    for path, tree in trees.items():
-        for name, key in _definitions(tree, path, root).items():
+    for parsed in scan:
+        for name, key in _definitions(parsed.tree, parsed.path, root).items():
             definitions.setdefault(key, name)
 
     referenced: set[str] = set()
-    for tree in trees.values():
-        referenced |= _referenced_names(tree)
+    for parsed in scan:
+        referenced |= _referenced_names(parsed.tree)
 
     return {key: name for key, name in definitions.items() if name not in referenced}
 
@@ -171,41 +224,60 @@ def assert_no_new_uncalled_function(
     root: Path,
     baseline_path: Path,
     ignore: Iterable[str] = (),
+    *,
+    min_files: int = 1,
+    refresh: Optional[bool] = None,
+    request: Optional[Any] = None,
 ) -> None:
     """Fail if a module-level function has no production call site, unless it is baselined.
 
-    Seeds or refreshes ``baseline_path`` (first run, or ``--refresh-uncalled-functions-baseline``)
-    and ``pytest.skip()``s that run instead of comparing, mirroring ``loc_budget`` and
-    ``code_audit_meta``.
+    The baseline is a committed multiset (``_core.Baseline``). A MISSING baseline fails and names the refresh
+    command; it is written only when a refresh is requested (``refresh=True``, ``--refresh-uncalled-functions-baseline``
+    via the pytest *request* or command line, or env ``PY_CI_SHARED_REFRESH=uncalled-functions``), then the run is
+    skipped. A walk that parsed fewer than *min_files* files, or hit an unparsable one, fails and never writes.
 
     ``ignore`` takes bare function NAMES for the cases this check cannot judge and should not guess
     at: a library's public API, a framework callback invoked by name from outside the repo, a
     plugin hook. Prefer listing those over lowering the bar, so the entries stay readable as
     decisions rather than as noise.
     """
-    import orjson
     import pytest
 
+    paths = [Path(p) for p in files]
+    scan = scan_python(paths, min_files=min_files, root=root)
+    problems: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    try:
+        scan.check_unparsed()
+    except UnparsedFilesError as exc:
+        problems.append(str(exc))
+    if problems:  # never write or compare a baseline from a broken walk
+        pytest.fail("\n".join(problems), pytrace=False)
+
     ignored = set(ignore)
-    current = {k: v for k, v in find_uncalled_functions(files, root).items() if v not in ignored}
-
-    if _refresh_requested() or not baseline_path.exists():
-        baseline_path.write_text(
-            orjson.dumps(sorted(current), option=orjson.OPT_INDENT_2).decode("utf-8"),
-            encoding="utf-8",
-        )
+    current = {k: v for k, v in find_uncalled_functions(paths, root).items() if v not in ignored}
+    do_refresh = refresh if refresh is not None else _refresh_requested(request)
+    baseline = Baseline(baseline_path, gate="uncalled-functions", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=uncalled-functions)")
+    outcome = baseline.enforce(sorted(current), refresh=do_refresh)
+    if outcome.refreshed:
         pytest.skip(f"uncalled-function baseline refreshed at {baseline_path.name} ({len(current)} entry/entries)")
-
-    baseline = set(orjson.loads(baseline_path.read_bytes()))
-    new = sorted(set(current) - baseline)
-    if new:
+    if outcome.missing:
+        pytest.fail(outcome.message, pytrace=False)
+    if outcome.new:
         pytest.fail(
             "these functions are defined and never called by production code, so whatever they "
-            "enforce is not enforced:\n  " + "\n  ".join(new) + "\n\nA test calling it is not a production call site, and neither is an `__all__` "
+            "enforce is not enforced:\n  " + "\n  ".join(outcome.new) + "\n\nA test calling it is not a production call site, and neither is an `__all__` "
             "entry or a doctest -- that is how this class of dead control hides. Either wire it in, "
-            "delete it, or add its name to `ignore` with a reason."
+            "delete it, or add its name to `ignore` with a reason.",
+            pytrace=False,
         )
-
-    stale = sorted(baseline - set(current))
-    if stale:
-        pytest.fail("these are no longer uncalled and must be dropped from the baseline, or it stops " "meaning anything for them:\n  " + "\n  ".join(stale))
+    if outcome.unjustified:
+        pytest.fail(outcome.message, pytrace=False)
+    if outcome.stale:
+        pytest.fail(
+            "these are no longer uncalled and must be dropped from the baseline, or it stops " "meaning anything for them:\n  " + "\n  ".join(outcome.stale),
+            pytrace=False,
+        )

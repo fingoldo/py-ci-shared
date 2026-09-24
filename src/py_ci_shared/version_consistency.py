@@ -24,31 +24,65 @@ import importlib
 import re
 from collections.abc import Iterable
 from pathlib import Path
+from typing import Optional
 
 from ._toml_compat import tomllib
 
 _VERSION_RE = re.compile(r"""^__version__\s*(?::\s*str\s*)?=\s*["']([^"']+)["']""", re.MULTILINE)
 
 
-def version_sources(repo_root: Path, *, files: Iterable[str] = (), modules: Iterable[str] = (), pyproject: bool = True) -> dict[str, str]:
-    """``{source label: version}`` for every source that states one."""
+def version_sources(
+    repo_root: Path,
+    *,
+    files: Iterable[str] = (),
+    modules: Iterable[str] = (),
+    pyproject: bool = True,
+    problems: Optional[list[str]] = None,
+) -> dict[str, str]:
+    """``{source label: version}`` for every source that states one.
+
+    Every source the caller NAMED (each file, each module, and pyproject when ``pyproject=True``) that is missing,
+    unreadable, or states no version is appended to *problems* when a list is given: a typo'd path must not
+    simply leave the comparison one source shorter.
+    """
     out: dict[str, str] = {}
+    missing: list[str] = []
     toml = repo_root / "pyproject.toml"
-    if pyproject and toml.is_file():
-        with toml.open("rb") as fh:
-            v = tomllib.load(fh).get("project", {}).get("version")
-        if isinstance(v, str):
-            out["pyproject.toml [project].version"] = v
+    if pyproject:
+        if not toml.is_file():
+            missing.append("pyproject.toml: file does not exist")
+        else:
+            data = tomllib.loads(toml.read_text(encoding="utf-8-sig"))
+            v = data.get("project", {}).get("version")
+            if isinstance(v, str):
+                out["pyproject.toml [project].version"] = v
+            elif "version" in data.get("project", {}).get("dynamic", []):
+                missing.append("pyproject.toml: [project].version is dynamic, so it states nothing to compare")
+            else:
+                missing.append("pyproject.toml: no [project].version")
     for rel in files:
         path = repo_root / rel
-        if path.is_file():
-            m = _VERSION_RE.search(path.read_text(encoding="utf-8", errors="replace"))
-            if m:
-                out[f"{rel} __version__"] = m.group(1)
+        if not path.is_file():
+            missing.append(f"{rel}: file does not exist")
+            continue
+        try:
+            text = path.read_text(encoding="utf-8-sig")
+        except (OSError, UnicodeDecodeError) as exc:
+            missing.append(f"{rel}: unreadable ({exc})")
+            continue
+        m = _VERSION_RE.search(text)
+        if m:
+            out[f"{rel} __version__"] = m.group(1)
+        else:
+            missing.append(f'{rel}: no `__version__ = "..."` line')
     for name in modules:
         v = getattr(importlib.import_module(name), "__version__", None)
         if isinstance(v, str):
             out[f"{name}.__version__"] = v
+        else:
+            missing.append(f"{name}: no string __version__ attribute")
+    if problems is not None:
+        problems.extend(missing)
     return out
 
 
@@ -72,7 +106,10 @@ def assert_versions_agree(
     """
     import pytest
 
-    sources = version_sources(repo_root, files=files, modules=modules, pyproject=pyproject)
+    missing: list[str] = []
+    sources = version_sources(repo_root, files=files, modules=modules, pyproject=pyproject, problems=missing)
+    if missing:
+        pytest.fail("version source(s) that were asked for and state no version:\n  " + "\n  ".join(missing))
     if len(sources) < min_sources:
         pytest.fail(f"only {len(sources)} version source(s) found ({sorted(sources)}); expected at least {min_sources}, so nothing is being compared")
     if len({_norm(v, normalize_separators) for v in sources.values()}) > 1:

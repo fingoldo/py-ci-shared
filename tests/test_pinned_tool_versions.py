@@ -40,7 +40,7 @@ class TestFindProblems:
         assert "not runnable" in ptv.find_problems(_PIN, installed=lambda m: None)[0]
 
     def test_a_marker_after_the_pin_does_not_leak_into_the_version(self) -> None:
-        assert ptv.pinned_version('"ruff==0.16.1 ; python_version >= \'3.9\'"', "ruff") == "0.16.1"
+        assert ptv.pinned_version("\"ruff==0.16.1 ; python_version >= '3.9'\"", "ruff") == "0.16.1"
 
 
 def test_main_reads_the_given_pyproject(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
@@ -95,4 +95,40 @@ def test_no_workflow_hardcodes_a_ruff_version() -> None:
 def test_each_ruff_workflow_resolves_the_shared_version(workflow: str) -> None:
     text = (REPO / ".github" / "workflows" / workflow).read_text(encoding="utf-8")
 
-    assert "tool_versions.py" in text and 'ruff==${RUFF_VERSION}' in text
+    assert "tool_versions.py" in text and "ruff==${RUFF_VERSION}" in text
+
+
+class TestAuditRegressions:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "[project.optional-dependencies]\ndev = ['ruff=={v}']\n",
+            '[project.optional-dependencies]\ndev = ["ruff == {v}"]\n',
+            "[dependency-groups]\nlint = [\"Ruff[extra]=={v}; python_version >= '3.9'\"]\n",
+            "  'ruff=={v}',\n",
+        ],
+        ids=["single-quotes", "spaces", "group-extra-marker", "fragment"],
+    )
+    def test_every_pin_spelling_is_read(self, text: str) -> None:
+        assert ptv.pinned_version(text.format(v=RUFF_VERSION), "ruff") == RUFF_VERSION
+
+    def test_a_pin_in_a_comment_or_of_another_dist_is_not_read(self) -> None:
+        text = '[project]\ndependencies = ["ruff-lsp==0.0.1"]\n# was "ruff==0.0.2"\n'
+        assert ptv.pinned_version(text, "ruff") is None
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            "repos:\n  - rev: v{v}\n    repo: https://github.com/astral-sh/ruff-pre-commit\n",
+            "repos:\n  - repo: 'https://github.com/astral-sh/ruff-pre-commit.git'\n    hooks: [{{id: ruff}}]\n    rev: 'v{v}'\n",
+            "repos: [{{repo: https://github.com/astral-sh/ruff-pre-commit, rev: {v}}}]\n",
+        ],
+        ids=["rev-first", "quoted-dotgit-rev-last", "flow-style"],
+    )
+    def test_pre_commit_revs_are_read_in_any_order_or_quoting(self, config: str) -> None:
+        assert ptv.precommit_ruff_revs(config.format(v="0.1.0")) == ["0.1.0"]
+
+    def test_other_repos_are_ignored_and_invalid_yaml_is_an_error(self) -> None:
+        assert ptv.precommit_ruff_revs("repos:\n  - repo: https://github.com/psf/black\n    rev: 24.1.0\n") == []
+        with pytest.raises(ValueError, match="not valid YAML"):
+            ptv.precommit_ruff_revs("repos: [unclosed\n")

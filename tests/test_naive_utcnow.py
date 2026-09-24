@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
-from py_ci_shared._core import CorpusError
+from py_ci_shared._core import DEFAULT_EXCLUDE, CorpusError
 from py_ci_shared.naive_utcnow import assert_no_naive_utcnow, find_naive_utcnow
 
 
@@ -188,3 +188,25 @@ def test_the_entry_point_names_the_replacement(tmp_path):
 def test_a_clean_tree_passes(tmp_path):
     (tmp_path / "m.py").write_text("from datetime import UTC, datetime\nx = datetime.now(UTC)\n", encoding="utf-8")
     assert_no_naive_utcnow(tmp_path)
+
+
+class TestDefaultSkipDirsArePinned:
+    """Every default skip dir is pinned by name: dropping one from the list must fail a test, not only `build`."""
+
+    def test_the_default_list_is_the_shared_canonical_set(self):
+        from py_ci_shared.naive_utcnow import _DEFAULT_SKIP_DIRS
+
+        assert set(_DEFAULT_SKIP_DIRS) == set(DEFAULT_EXCLUDE)
+        assert {"build", "dist", ".venv", "venv", "site-packages", "node_modules", "__pycache__", ".tox"} <= set(_DEFAULT_SKIP_DIRS)
+
+    @pytest.mark.parametrize("skip_dir", sorted(DEFAULT_EXCLUDE))
+    def test_each_default_skip_dir_is_skipped_and_a_sibling_is_not(self, tmp_path, skip_dir):
+        naive = "from datetime import datetime\nx = datetime.utcnow()\n"
+        (tmp_path / skip_dir).mkdir()
+        (tmp_path / skip_dir / "copy.py").write_text(naive, encoding="utf-8")
+        (tmp_path / "real").mkdir()
+        (tmp_path / "real" / "code.py").write_text(naive, encoding="utf-8")
+
+        found = find_naive_utcnow(tmp_path, use_git=False)
+
+        assert [f.split(":")[0] for f in found] == ["real/code.py"]

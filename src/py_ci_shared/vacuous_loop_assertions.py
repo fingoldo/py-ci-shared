@@ -55,8 +55,11 @@ from __future__ import annotations
 
 import ast
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
+from typing import Union
+
+from ._core import relative_posix, scan_python
 
 __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loop"]
 
@@ -86,25 +89,100 @@ class FloorlessLoop:
         return f"FloorlessLoop({self.key})"
 
 
+_FAIL_CALLS = frozenset({"fail"})
+
+
+def _is_check(s: ast.stmt) -> bool:
+    """A statement that can only ever VERIFY: ``assert``, ``raise``, or a bare ``pytest.fail(...)``-style call."""
+    if isinstance(s, (ast.Assert, ast.Raise)):
+        return True
+    if isinstance(s, ast.Expr) and isinstance(s.value, ast.Call):
+        func = s.value.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        return name in _FAIL_CALLS
+    return False
+
+
+def _only_checks(stmts: "list[ast.stmt]") -> "tuple[bool, bool]":
+    """``(every statement verifies or is flow control, at least one verifies)`` for a block."""
+    any_check = False
+    for s in stmts:
+        if _is_check(s):
+            any_check = True
+        elif isinstance(s, (ast.Pass, ast.Continue, ast.Break)):
+            continue
+        elif isinstance(s, ast.Expr) and isinstance(s.value, ast.Constant):
+            continue  # a docstring-like string statement
+        elif isinstance(s, ast.If):
+            body_ok, body_any = _only_checks(s.body)
+            else_ok, else_any = _only_checks(s.orelse)
+            if not (body_ok and else_ok):
+                return False, False
+            any_check = any_check or body_any or else_any
+        elif isinstance(s, (ast.With, ast.AsyncWith)):  # `with subtests.test(...)`, `with pytest.raises(...)`
+            ok, inner_any = _only_checks(s.body)
+            if not ok:
+                return False, False
+            any_check = any_check or inner_any
+        else:
+            return False, False
+    return True, any_check
+
+
 def _is_assert_only(stmts: list[ast.stmt]) -> bool:
-    """True if every statement is an `assert`, or an `if` whose own branches are assert-only.
-    A single `pass`/docstring-only body is not assert-only -- an empty loop body is not this
-    finding's shape, it is a no-op the reader can already see."""
+    """True if the block only verifies: ``assert``/``raise``/``pytest.fail``, guarded by ``if``, inside a ``with``
+    (``subtests``), with ``continue``/``pass``/``break`` for flow. A body with no check at all (a bare ``pass``) is not
+    this finding's shape: an empty loop body is a no-op the reader can already see."""
     if not stmts:
         return False
-    for s in stmts:
-        if isinstance(s, ast.Assert):
-            continue
-        if isinstance(s, ast.If) and _is_assert_only(s.body) and _is_assert_only(s.orelse or [ast.Assert(test=ast.Constant(value=True))]):
-            continue
-        return False
-    return True
+    ok, any_check = _only_checks(stmts)
+    return ok and any_check
 
 
-def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | ast.AsyncFor) -> bool:
+_Loop = Union[ast.For, ast.AsyncFor, ast.While]
+_FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
+
+
+def _own_nodes(fn: _FuncDef) -> Iterator[ast.AST]:
+    """Nodes of *fn*'s own body; a nested ``def``/``lambda``/``class`` is its own scope and is not entered."""
+    scoped = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+    stack: list[ast.AST] = [n for n in fn.body if not isinstance(n, scoped)]
+    while stack:
+        node = stack.pop()
+        yield node
+        stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, scoped))
+
+
+def _enclosing_loops(fn: _FuncDef) -> "dict[int, frozenset[int]]":
+    """``id(node) -> ids of the loops whose BODY contains it`` for every node of *fn*'s own body."""
+    out: dict[int, frozenset[int]] = {}
+    scoped = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+
+    def visit(node: ast.AST, loops: "frozenset[int]") -> None:
+        out[id(node)] = loops
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
+            for child in ast.iter_child_nodes(node):
+                in_body = any(child is s for s in [*node.body, *node.orelse])
+                if not isinstance(child, scoped):
+                    visit(child, loops | {id(node)} if in_body else loops)
+            return
+        for child in ast.iter_child_nodes(node):
+            if not isinstance(child, scoped):
+                visit(child, loops)
+
+    for stmt in fn.body:
+        if not isinstance(stmt, scoped):
+            visit(stmt, frozenset())
+    return out
+
+
+def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | ast.AsyncFor, enclosing: "dict[int, frozenset[int]] | None" = None) -> bool:
     """An `assert` OUTSIDE the loop that mentions the iterable's own source text, `len(...)` of
     it, or the loop variable's name -- see the module docstring for what this does and does not
-    prove."""
+    prove. An assert inside ANOTHER loop that does not also enclose this one is not a floor: that loop can run
+    zero times too (two floorless ``for x in ...`` loops used to vouch for each other)."""
+    enclosing = enclosing if enclosing is not None else _enclosing_loops(fn)
+    allowed_loops = enclosing.get(id(loop), frozenset())
     try:
         iter_src = ast.unparse(loop.iter)
     except Exception:  # unparse is best-effort; missing it just narrows the check
@@ -112,8 +190,10 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
     var_names = {n.id for n in ast.walk(loop.target) if isinstance(n, ast.Name)}
 
     loop_ids = {id(n) for n in ast.walk(loop)}
-    for node in ast.walk(fn):
+    for node in _own_nodes(fn):
         if id(node) in loop_ids or not isinstance(node, ast.Assert):
+            continue
+        if not enclosing.get(id(node), frozenset()) <= allowed_loops:
             continue
         try:
             test_src = ast.unparse(node.test)
@@ -143,36 +223,43 @@ def _iterates_a_nonempty_literal(loop) -> bool:
     if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Name):
         if iterable.func.id in {"enumerate", "sorted", "reversed", "list", "tuple", "set"} and iterable.args:
             iterable = iterable.args[0]
-    return isinstance(iterable, (ast.Tuple, ast.List, ast.Set)) and bool(iterable.elts)
+    # `[*m]` is as empty as `m`: only an element that is not unpacked guarantees an iteration.
+    return isinstance(iterable, (ast.Tuple, ast.List, ast.Set)) and any(not isinstance(e, ast.Starred) for e in iterable.elts)
 
 
 def find_floorless_loops(
     files: Iterable[Path],
     repo_root: Path,
+    *,
+    allow_unparsed: bool = False,
 ) -> list[FloorlessLoop]:
+    """Every floorless assert-only loop in *files*, each reported once, under the function that owns it (a loop in a
+    nested function belongs to that function, not also to the outer one).
+
+    Keys are relative to *repo_root* whatever the working directory (a relative path is resolved first), or the
+    absolute POSIX path for a file outside it. An unreadable or unparsable file raises
+    :class:`py_ci_shared._core.UnparsedFilesError` unless ``allow_unparsed=True``.
+    """
+    scan = scan_python([Path(p).resolve() for p in files], min_files=0, root=Path(repo_root).resolve())
+    if scan.unparsed and not allow_unparsed:
+        scan.check_unparsed()
     out: list[FloorlessLoop] = []
-    for path in files:
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
-            continue
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            continue
-        rel = path.relative_to(repo_root).as_posix() if path.is_absolute() else path.as_posix()
+    for parsed in scan:
+        tree = parsed.tree
+        rel = relative_posix(parsed.path, Path(repo_root).resolve())
         per_file: list[tuple[str, int]] = []
         for fn in ast.walk(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            for node in ast.walk(fn):
+            enclosing = _enclosing_loops(fn)
+            for node in _own_nodes(fn):
                 if not isinstance(node, (ast.For, ast.AsyncFor)):
                     continue
                 if not _is_assert_only(node.body):
                     continue
                 if _iterates_a_nonempty_literal(node):
                     continue
-                if _floor_exists(fn, node):
+                if _floor_exists(fn, node, enclosing):
                     continue
                 per_file.append((fn.name, node.lineno))
         seen: dict[str, int] = {}
@@ -192,9 +279,9 @@ def assert_no_new_floorless_loop(
     repo_root: Path,
     baseline_path: Path,
 ) -> None:
-    """Fail on a floorless loop not already in *baseline_path*. Ratchet, not a gate: the
-    baseline records what was already true, and the list can only shrink from here."""
-    accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
+    """Fail on a floorless loop not already in *baseline_path*, and on a test file that cannot be parsed. Ratchet,
+    not a gate: the baseline records what was already true, and the list can only shrink from here."""
+    accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8-sig")) if baseline_path.exists() else {}
     found = find_floorless_loops(files, repo_root)
     # Counted per function: a function may keep as many floorless loops as the baseline lists for it. That is what
     # both key forms can express, and it survives edits that move a loop without adding one.

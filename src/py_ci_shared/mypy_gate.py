@@ -23,6 +23,8 @@ Exit codes: 0 only on a completed, clean run; 1 otherwise.
 
 from __future__ import annotations
 
+import argparse
+import os
 import re
 import subprocess
 import sys
@@ -51,6 +53,8 @@ def check_mypy_output(output: str, returncode: int, min_files: int = 0) -> str |
     """
     match = SUCCESS_RE.search(output)
     found = FOUND_RE.search(output)
+    if match is not None and found is None and returncode != 0:
+        return f"mypy printed its success line but exited {returncode}; a clean, completed run exits 0, so something else failed."
     if match is None and found is None:
         if "INTERNAL ERROR" in output:
             return "mypy aborted with an INTERNAL ERROR: it did not finish, so its findings are a function of traversal order, not of the code."
@@ -73,16 +77,21 @@ def check_mypy_output(output: str, returncode: int, min_files: int = 0) -> str |
     return None
 
 
+def _split_args(args: list[str]) -> tuple[int, list[str]]:
+    """``(min_files, the arguments left for mypy)``. ``--min-files N`` and ``--min-files=N`` are both consumed."""
+    parser = argparse.ArgumentParser(prog="py_ci_shared.mypy_gate", add_help=False, allow_abbrev=False)
+    parser.add_argument("--min-files", type=int, default=0)
+    known, rest = parser.parse_known_args(args)
+    return known.min_files, rest
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run mypy with the given arguments and gate on its completion line."""
     args = list(sys.argv[1:] if argv is None else argv)
-    min_files = 0
-    if "--min-files" in args:
-        index = args.index("--min-files")
-        min_files = int(args[index + 1])
-        del args[index : index + 2]
+    min_files, args = _split_args(args)
 
-    result = subprocess.run([sys.executable, "-m", "mypy", *args], capture_output=True, text=True)
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run([sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
     output = (result.stdout or "") + (result.stderr or "")
     sys.stdout.write(output)
     problem = check_mypy_output(output, result.returncode, min_files=min_files)

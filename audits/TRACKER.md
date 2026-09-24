@@ -331,47 +331,47 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | High | `MP-2` | any SyntaxError/decode error is a silent skip; newer syntax than the interpreter passes |
 | **RESOLVED** | Med | `MP-3` | only .utcnow() calls matched; default_factory=datetime.utcnow and utcfromtimestamp missed |
 | **RESOLVED** | Med | `MP-4` | no file-count floor; missing root passes |
-| **OPEN** | Med | `MP-5` | class-level markers, AnnAssign/class pytestmark, from pytest import mark missed |
-| **OPEN** | High | `MP-6` | positional tests (no /, no .py) not seen as path → "reaches everything" |
-| **OPEN** | Med | `MP-7` | ./tests not normalised; cd pkg && pytest tests/ never matches |
-| **OPEN** | Med | `MP-8` | first -m used, docstring says last wins; -m=/-mexpr not parsed |
-| **OPEN** | Med | `MP-9` | node-id runner reaches whole file; -k ignored |
-| **OPEN** | Med | `MP-10` | ratchet key is the file: new tests in a known file excused; node-id known reported stale |
-| **OPEN** | Low | `MP-11` | eval of marker expr; exception = "selects" (fail-open) |
-| **OPEN** | Med | `MP-12` | aliased reload, importlib as il, sys as _sys missed; substring prefilter drops files |
-| **OPEN** | High | `MP-13` | any sys.modules[...] = x counts as restore, including installing a fake |
-| **OPEN** | Med | `MP-14` | innermost-scope only (FP); conftest/usefixtures fixtures unseen (FP); one autouse resto... |
-| **OPEN** | Low | `MP-15` | any __dict__.update, addfinalizer, subprocess.run counts as restore |
-| **OPEN** | Low | `MP-16` | allowlist keyed on (path, line): drift, no stale check, missing roots skipped |
-| **OPEN** | Med | `MP-17` | success line + nonzero exit reported clean |
-| **OPEN** | Low | `MP-18` | --min-files w/o value IndexError; --min-files=200 passed to mypy; locale decoding on Wi... |
-| **OPEN** | Med | `MP-19` | _ENV_PROBE substring (os in loss); any enclosing Try exempts |
-| **OPEN** | Low | `MP-20` | reversed ranges, AnnAssign/walrus/with, from pytest import skip missed |
-| **OPEN** | High | `MP-21` | _unimportable discarded; walk_packages(onerror=lambda _: None) hides subpackages |
-| **OPEN** | Low | `MP-22` | plain prefix: pkg.io skips pkg.iostats |
-| **OPEN** | Med | `MP-23` | if not x, IfExp, while, assert, comprehension ifs missed |
-| **OPEN** | Med | `MP-24` | key uses path.name; no stale check; line-number keys |
-| **OPEN** | Low | `MP-25` | walk descends into nested defs; Annotated not unwrapped |
+| **RESOLVED** | Med | `MP-5` | class-level markers, AnnAssign/class pytestmark, from pytest import mark missed |
+| **RESOLVED** | High | `MP-6` | positional tests (no /, no .py) not seen as path → "reaches everything" |
+| **RESOLVED** | Med | `MP-7` | ./tests not normalised; cd pkg && pytest tests/ never matches |
+| **RESOLVED** | Med | `MP-8` | first -m used, docstring says last wins; -m=/-mexpr not parsed |
+| **RESOLVED** | Med | `MP-9` | node-id runner reaches whole file; -k ignored |
+| **RESOLVED** | Med | `MP-10` | ratchet key is the file: new tests in a known file excused; node-id known reported stale |
+| **RESOLVED** | Low | `MP-11` | eval of marker expr; exception = "selects" (fail-open) |
+| **RESOLVED** | Med | `MP-12` | aliased reload, importlib as il, sys as _sys missed; substring prefilter drops files |
+| **RESOLVED** | High | `MP-13` | any sys.modules[...] = x counts as restore, including installing a fake |
+| **RESOLVED** | Med | `MP-14` | innermost-scope only (FP); conftest/usefixtures fixtures unseen (FP); one autouse resto... |
+| **RESOLVED** | Low | `MP-15` | any __dict__.update, addfinalizer, subprocess.run counts as restore |
+| **RESOLVED** | Low | `MP-16` | allowlist keyed on (path, line): drift, no stale check, missing roots skipped |
+| **RESOLVED** | Med | `MP-17` | success line + nonzero exit reported clean |
+| **RESOLVED** | Low | `MP-18` | --min-files w/o value IndexError; --min-files=200 passed to mypy; locale decoding on Wi... |
+| **RESOLVED** | Med | `MP-19` | _ENV_PROBE substring (os in loss); any enclosing Try exempts |
+| **RESOLVED** | Low | `MP-20` | reversed ranges, AnnAssign/walrus/with, from pytest import skip missed |
+| **RESOLVED** | High | `MP-21` | _unimportable discarded; walk_packages(onerror=lambda _: None) hides subpackages |
+| **RESOLVED** | Low | `MP-22` | plain prefix: pkg.io skips pkg.iostats |
+| **RESOLVED** | Med | `MP-23` | if not x, IfExp, while, assert, comprehension ifs missed |
+| **RESOLVED** | Med | `MP-24` | key uses path.name; no stale check; line-number keys |
+| **RESOLVED** | Low | `MP-25` | walk descends into nested defs; Annotated not unwrapped |
 | **RESOLVED** | Med | `MP-26` | from pkg.a import _impl and relative imports missed |
 | **RESOLVED** | Low | `MP-27` | relative_to ValueError when src outside root |
-| **OPEN** | Low | `MP-28` | non-recursive glob; parse errors silent; import_module("pkg._x") missed |
-| **OPEN** | Med | `MP-29` | # inside a string treated as comment (FP) |
-| **OPEN** | Med | `MP-30` | docstring parity flips on SQL = """ literals |
-| **OPEN** | Med | `MP-31` | declared head → Class.member never checked; a.b.c skipped |
-| **OPEN** | Low | `MP-32` | test files matched by basename over rglob incl .venv |
-| **OPEN** | Med | `MP-33` | also resolves vs repo root (FN); /x.md joined to drive root (FP) |
-| **OPEN** | Low | `MP-34` | anchors, queries, <..>, reference links, other extensions skipped; fences scanned |
-| **OPEN** | High | `MP-35` | required non-str fields get string sentinels → ValidationError read as "enforced"; stil... |
-| **OPEN** | Med | `MP-36` | only first bound probed; conint/Interval skipped |
-| **OPEN** | Low | `MP-37` | fractional bound on int field rejected by int parsing |
-| **OPEN** | Med | `MP-38` | [tool.pytest], pytest.toml, root conftest, non-literal addinivalue_line missed → false... |
-| **OPEN** | Low | `MP-39` | configparser error swallowed |
-| **OPEN** | Low | `MP-40` | pin regex needs "ruff==x"; pre-commit regex order/quote sensitive |
-| **OPEN** | Med | `MP-41` | $defs names reported as fields |
-| **OPEN** | Med | `MP-42` | DDL types lack INT/BOOL/FLOAT/CHAR/quoted names |
-| **OPEN** | Med | `MP-43` | unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash |
-| **OPEN** | Low | `MP-44` | Sequence[, Mapping[, frozenset[, Optional[list] treated as scalar |
-| **OPEN** | Low | `MP-45` | float(group(1)) crashes on groupless pattern, None group, 1.2k |
+| **RESOLVED** | Low | `MP-28` | non-recursive glob; parse errors silent; import_module("pkg._x") missed |
+| **RESOLVED** | Med | `MP-29` | # inside a string treated as comment (FP) |
+| **RESOLVED** | Med | `MP-30` | docstring parity flips on SQL = """ literals |
+| **RESOLVED** | Med | `MP-31` | declared head → Class.member never checked; a.b.c skipped |
+| **RESOLVED** | Low | `MP-32` | test files matched by basename over rglob incl .venv |
+| **RESOLVED** | Med | `MP-33` | also resolves vs repo root (FN); /x.md joined to drive root (FP) |
+| **RESOLVED** | Low | `MP-34` | anchors, queries, <..>, reference links, other extensions skipped; fences scanned |
+| **RESOLVED** | High | `MP-35` | required non-str fields get string sentinels → ValidationError read as "enforced"; stil... |
+| **RESOLVED** | Med | `MP-36` | only first bound probed; conint/Interval skipped |
+| **RESOLVED** | Low | `MP-37` | fractional bound on int field rejected by int parsing |
+| **RESOLVED** | Med | `MP-38` | [tool.pytest], pytest.toml, root conftest, non-literal addinivalue_line missed → false... |
+| **RESOLVED** | Low | `MP-39` | configparser error swallowed |
+| **RESOLVED** | Low | `MP-40` | pin regex needs "ruff==x"; pre-commit regex order/quote sensitive |
+| **RESOLVED** | Med | `MP-41` | $defs names reported as fields |
+| **RESOLVED** | Med | `MP-42` | DDL types lack INT/BOOL/FLOAT/CHAR/quoted names |
+| **RESOLVED** | Med | `MP-43` | unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash |
+| **RESOLVED** | Low | `MP-44` | Sequence[, Mapping[, frozenset[, Optional[list] treated as scalar |
+| **RESOLVED** | Low | `MP-45` | float(group(1)) crashes on groupless pattern, None group, 1.2k |
 | **RESOLVED** | High | `RS-1` | BOM files dropped; sql_verifier_coverage.py:63 crashes |
 | **RESOLVED** | High | `RS-2` | parse errors fail open; floors count inputs not parsed files |
 | **RESOLVED** | Med | `RS-3` | from os import environ/getenv, os as _os, os.environ["X"], getenv(key=) missed |
@@ -430,52 +430,52 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `RS-56` | last-name match flags HTTP mocks; module pytestmark ignored |
 | **RESOLVED** | Low | `RS-57` | no floor; relative_to crash |
 | **RESOLVED** | Low | `RS-58` | no tests for BOM, aliases, decorator factories, post-body DEFINER, quoted ids, trailing... |
-| **OPEN** | High | `TZ-1` | cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO... |
-| **OPEN** | High | `TZ-2` | ignored files (.env, data) never unsaved |
-| **OPEN** | High | `TZ-3` | failed git cherry → every branch "spare" |
+| **RESOLVED** | High | `TZ-1` | cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO... |
+| **RESOLVED** | High | `TZ-2` | ignored files (.env, data) never unsaved |
+| **RESOLVED** | High | `TZ-3` | failed git cherry → every branch "spare" |
 | **RESOLVED** | High | `TZ-4` | parse/decode failures dropped; BOM; uncalled_functions loses call sites → FPs |
-| **OPEN** | Med | `TZ-5` | __getattr__ substring anywhere marks module dynamic |
-| **OPEN** | Med | `TZ-6` | pkg prefix matches pkg_other |
-| **OPEN** | Med | `TZ-7` | type X=, with/for/walrus/match/global bindings missed (FP); walk over-binds nested loca... |
-| **OPEN** | Low | `TZ-8` | only missing[0] reported |
-| **OPEN** | Low | `TZ-9` | suppress(ImportError), tuple raises, BaseException guards unseen (FP) |
-| **OPEN** | Med | `TZ-10` | floor satisfied by assert in another floorless loop with same var |
-| **OPEN** | Med | `TZ-11` | nested function loops reported twice; duplicate keys |
-| **OPEN** | Med | `TZ-12` | continue/pass/raise/pytest.fail/with subtests bodies not assert-only |
-| **OPEN** | Low | `TZ-13` | [*m] treated non-empty |
-| **OPEN** | Low | `TZ-14` | cwd-relative keys; crash outside root |
+| **RESOLVED** | Med | `TZ-5` | __getattr__ substring anywhere marks module dynamic |
+| **RESOLVED** | Med | `TZ-6` | pkg prefix matches pkg_other |
+| **RESOLVED** | Med | `TZ-7` | type X=, with/for/walrus/match/global bindings missed (FP); walk over-binds nested loca... |
+| **RESOLVED** | Low | `TZ-8` | only missing[0] reported |
+| **RESOLVED** | Low | `TZ-9` | suppress(ImportError), tuple raises, BaseException guards unseen (FP) |
+| **RESOLVED** | Med | `TZ-10` | floor satisfied by assert in another floorless loop with same var |
+| **RESOLVED** | Med | `TZ-11` | nested function loops reported twice; duplicate keys |
+| **RESOLVED** | Med | `TZ-12` | continue/pass/raise/pytest.fail/with subtests bodies not assert-only |
+| **RESOLVED** | Low | `TZ-13` | [*m] treated non-empty |
+| **RESOLVED** | Low | `TZ-14` | cwd-relative keys; crash outside root |
 | **RESOLVED** | Med | `TZ-15` | identical asserts collapse into one key; 90-char truncation collisions |
 | **RESOLVED** | Low | `TZ-16` | bare Name/Attribute/Subscript always narrowing |
 | **RESOLVED** | Med | `TZ-17` | missing baseline seeds and skips |
-| **OPEN** | Med | `TZ-18` | self-recursion / same-name locals count as calls |
-| **OPEN** | Low | `TZ-19` | defs under module if/try not judged; no file floor |
-| **OPEN** | Med | `TZ-20` | self.x: T = p and chained assigns treated as used |
-| **OPEN** | Low | `TZ-21` | any string constant counts as read (__slots__) |
-| **OPEN** | Low | `TZ-22` | relative_to crash |
-| **OPEN** | Med | `TZ-23` | test.describe.skip, test.fixme, xit, xdescribe missed |
-| **OPEN** | Med | `TZ-24` | --project="Mobile Chrome" → "Mobile" |
-| **OPEN** | Med | `TZ-25` | any playwright test line without --project disables check |
-| **OPEN** | Med | `TZ-26` | absolute parts: any ancestor tests skips all |
-| **OPEN** | Med | `TZ-27` | missing runner/tag/config/spec paths → clean |
-| **OPEN** | Low | `TZ-28` | quoted/short tag flags, 4-space tags unparsed (fail-open) |
-| **OPEN** | Low | `TZ-29` | substring script match |
-| **OPEN** | Low | `TZ-30` | empty/stale allowlist reasons accepted |
-| **OPEN** | Med | `TZ-31` | guard counts headers in fences; rejects **Findings** |
-| **OPEN** | Low | `TZ-32` | non-backticked rows skipped; empty cells crash |
-| **OPEN** | Low | `TZ-33` | status column assumed first; other headers counted as findings |
-| **OPEN** | Med | `TZ-34` | ./scripts vs scripts string compare; ruff.toml not read (fail-open) |
-| **OPEN** | Low | `TZ-35` | only first component vs test dirs |
-| **OPEN** | Low | `TZ-36` | locale decoding; syntax-error files silently skipped (hypothesis) |
-| **OPEN** | Low | `TZ-37` | missing/unmatched source dropped silently |
-| **OPEN** | Med | `TZ-38` | wasted subprocess; any nonzero = "not ancestor"; missing git crash |
-| **OPEN** | Med | `TZ-39` | unanchored DOTALL regex: core: inside app_core:, path deps steal refs, quoted refs skipped |
-| **OPEN** | Low | `TZ-40` | first version = anywhere; suffixes truncated |
-| **OPEN** | Med | `TZ-41` | trailing --src-path IndexError blocks commit; = form unparsed |
-| **OPEN** | Med | `TZ-42` | env path \ not normalised; substring match |
-| **OPEN** | Low | `TZ-43` | any nonzero = findings (missing vulture) |
-| **OPEN** | Low | `TZ-44` | ~4 processes per file |
-| **OPEN** | Low | `TZ-45` | rename's old path token cut by [3:] |
-| **OPEN** | Low | `TZ-46` | no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases |
+| **RESOLVED** | Med | `TZ-18` | self-recursion / same-name locals count as calls |
+| **RESOLVED** | Low | `TZ-19` | defs under module if/try not judged; no file floor |
+| **RESOLVED** | Med | `TZ-20` | self.x: T = p and chained assigns treated as used |
+| **RESOLVED** | Low | `TZ-21` | any string constant counts as read (__slots__) |
+| **RESOLVED** | Low | `TZ-22` | relative_to crash |
+| **RESOLVED** | Med | `TZ-23` | test.describe.skip, test.fixme, xit, xdescribe missed |
+| **RESOLVED** | Med | `TZ-24` | --project="Mobile Chrome" → "Mobile" |
+| **RESOLVED** | Med | `TZ-25` | any playwright test line without --project disables check |
+| **RESOLVED** | Med | `TZ-26` | absolute parts: any ancestor tests skips all |
+| **RESOLVED** | Med | `TZ-27` | missing runner/tag/config/spec paths → clean |
+| **RESOLVED** | Low | `TZ-28` | quoted/short tag flags, 4-space tags unparsed (fail-open) |
+| **RESOLVED** | Low | `TZ-29` | substring script match |
+| **RESOLVED** | Low | `TZ-30` | empty/stale allowlist reasons accepted |
+| **RESOLVED** | Med | `TZ-31` | guard counts headers in fences; rejects **Findings** |
+| **RESOLVED** | Low | `TZ-32` | non-backticked rows skipped; empty cells crash |
+| **RESOLVED** | Low | `TZ-33` | status column assumed first; other headers counted as findings |
+| **RESOLVED** | Med | `TZ-34` | ./scripts vs scripts string compare; ruff.toml not read (fail-open) |
+| **RESOLVED** | Low | `TZ-35` | only first component vs test dirs |
+| **RESOLVED** | Low | `TZ-36` | locale decoding; syntax-error files silently skipped (hypothesis) |
+| **RESOLVED** | Low | `TZ-37` | missing/unmatched source dropped silently |
+| **RESOLVED** | Med | `TZ-38` | wasted subprocess; any nonzero = "not ancestor"; missing git crash |
+| **RESOLVED** | Med | `TZ-39` | unanchored DOTALL regex: core: inside app_core:, path deps steal refs, quoted refs skipped |
+| **RESOLVED** | Low | `TZ-40` | first version = anywhere; suffixes truncated |
+| **RESOLVED** | Med | `TZ-41` | trailing --src-path IndexError blocks commit; = form unparsed |
+| **RESOLVED** | Med | `TZ-42` | env path \ not normalised; substring match |
+| **RESOLVED** | Low | `TZ-43` | any nonzero = findings (missing vulture) |
+| **RESOLVED** | Low | `TZ-44` | ~4 processes per file |
+| **RESOLVED** | Low | `TZ-45` | rename's old path token cut by [3:] |
+| **RESOLVED** | Low | `TZ-46` | no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases |
 | **RESOLVED** | High | `MT-1` | NEEDS-JUSTIFICATION: never rejected on the next run |
 | **RESOLVED** | High | `MT-2` | zero mutants (unparsable file, empty scope) passes |
 | **RESOLVED** | High | `MT-3` | BOM: AST operators return [] |
@@ -593,7 +593,7 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Med | `SUITE-16` | Mutant F2 survives: async functions dropped from measurement |
 | **RESOLVED** | Med | `SUITE-17` | Survivors: S3 (an indented # :a::text comment line is not tested), S5 (__pycache__ skip... |
 | **OPEN** | Low | `SUITE-18` | Survivor I4: a "%s" % x constant is not tested as stringish. |
-| **OPEN** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
+| **RESOLVED** | Low | `SUITE-19` | Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs... |
 | **RESOLVED** | Med | `SUITE-20` | assert_no_naive_utcnow has no empty-scan guard (no min_files), unlike every sibling gate |
 | **RESOLVED** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
 | **OPEN** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |

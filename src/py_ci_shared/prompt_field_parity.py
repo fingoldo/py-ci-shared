@@ -40,11 +40,14 @@ from pathlib import Path
 from re import Pattern
 from typing import Any
 
+from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source
+
 __all__ = [
     "DEFAULT_KEY",
     "DEFAULT_STRUCTURAL",
     "accessor_keys",
     "consumed_names",
+    "ddl_columns",
     "declared_scalar_fields",
     "invisible_keys",
     "keys_in_schema",
@@ -66,14 +69,42 @@ DEFAULT_KEY: Pattern[str] = re.compile(r'"([a-z][a-z0-9_]{2,})"\s*:')
 #: this to names no prompt asks the model to FILL: :func:`structural_names_prompted` fails if one is.
 DEFAULT_STRUCTURAL: frozenset[str] = frozenset({"properties", "required", "description", "content", "model", "messages", "schema", "format", "enum", "default"})
 _SCHEMA_VOCABULARY = frozenset(
-    {"type", "properties", "required", "items", "enum", "description", "additionalProperties", "$schema", "$ref", "anyOf", "oneOf", "allOf",
-     "minimum", "maximum", "minItems", "maxItems", "minLength", "maxLength", "pattern", "default", "title", "format", "$defs", "definitions",
-     "const", "nullable", "examples"}
+    {
+        "type",
+        "properties",
+        "required",
+        "items",
+        "enum",
+        "description",
+        "additionalProperties",
+        "$schema",
+        "$ref",
+        "anyOf",
+        "oneOf",
+        "allOf",
+        "minimum",
+        "maximum",
+        "minItems",
+        "maxItems",
+        "minLength",
+        "maxLength",
+        "pattern",
+        "default",
+        "title",
+        "format",
+        "$defs",
+        "definitions",
+        "const",
+        "nullable",
+        "examples",
+    }
 )
 _ANY_KEY = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"\s*:')
 _BIND = re.compile(r":([a-z][a-z0-9_]{2,})\b")
 _NAME = re.compile(r"[a-z][a-z0-9_]{2,}")
-_SKIP_DIRS = frozenset({"__pycache__", ".git", ".venv", "venv", "node_modules"})
+#: Schema keywords whose value maps NAMES to sub-schemas: the names are definitions, not fields; only the values
+#: are searched.
+_NAME_MAPS = frozenset({"$defs", "definitions", "patternProperties", "dependentSchemas"})
 
 
 def _py_files(paths: Iterable[Path]) -> list[Path]:
@@ -83,17 +114,41 @@ def _py_files(paths: Iterable[Path]) -> list[Path]:
         if p.is_file():
             out.append(p)
         elif p.is_dir():
-            out.extend(f for f in p.rglob("*.py") if not (_SKIP_DIRS & set(f.parts)))
+            out.extend(iter_files(p, ("*.py",), exclude=DEFAULT_EXCLUDE))
     return sorted(set(out))
 
 
-def string_literals(src: str) -> list[str]:
-    """Every string constant in a module's source; an unparsable module yields none."""
-    try:
-        tree = ast.parse(src)
-    except SyntaxError:
-        return []
+def _parsed(paths: Iterable[Path]) -> "list[tuple[Path, str, ast.Module]]":
+    """``(path, source, tree)`` per Python file. Raises :class:`UnparsedFilesError` naming every file that cannot be
+    read or parsed: a prompt module on newer syntax than CI's interpreter must fail the gate, not contribute nothing."""
+    out: list[tuple[Path, str, ast.Module]] = []
+    problems: list[str] = []
+    for path in _py_files(paths):
+        try:
+            source, tree = parse_source(path)
+        except SourceError as exc:
+            problems.append(str(exc))
+            continue
+        out.append((path, source, tree))
+    if problems:
+        raise UnparsedFilesError("prompt_field_parity cannot read these files, so their fields are unknown:\n  " + "\n  ".join(problems))
+    return out
+
+
+def _literals(tree: ast.AST) -> list[str]:
     return [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+
+
+def string_literals(src: str, *, strict: bool = False) -> list[str]:
+    """Every string constant in a module's source; an unparsable module yields none, or raises ``SyntaxError``
+    when *strict*. The file-reading functions here always behave as *strict*."""
+    try:
+        tree = ast.parse(src[1:] if src.startswith("\ufeff") else src)
+    except SyntaxError:
+        if strict:
+            raise
+        return []
+    return _literals(tree)
 
 
 def keys_in_source(src: str, *, key: Pattern[str] = DEFAULT_KEY, structural: Iterable[str] = DEFAULT_STRUCTURAL) -> set[str]:
@@ -128,7 +183,10 @@ def keys_in_schema(schema: Any) -> set[str]:
                 for sub in props.values():
                     found |= keys_in_schema(sub)
             for k, v in schema.items():
-                if k != "properties" and str(k) in _SCHEMA_VOCABULARY:
+                if str(k) in _NAME_MAPS and isinstance(v, Mapping):
+                    for sub in v.values():
+                        found |= keys_in_schema(sub)
+                elif k != "properties" and str(k) in _SCHEMA_VOCABULARY:
                     found |= keys_in_schema(v)
         else:
             for k, v in schema.items():
@@ -149,8 +207,9 @@ def prompt_keys(
 ) -> dict[str, set[str]]:
     """``{field: {source, ...}}`` over prompt modules (by literal scan) and named dict ``schemas``."""
     out: dict[str, set[str]] = {}
-    for path in _py_files(prompt_files):
-        for k in keys_in_source(path.read_text(encoding="utf-8"), key=key, structural=structural):
+    skip_structural = set(structural)
+    for path, _source, tree in _parsed(prompt_files):
+        for k in {k for lit in _literals(tree) for k in key.findall(lit) if k not in skip_structural}:
             out.setdefault(k, set()).add(path.name)
     skip = set(structural)
     for name, schema in schemas.items():
@@ -176,16 +235,15 @@ def consumed_names(
     excluded = {Path(p).resolve() for p in exclude}
     parts, fragments = set(exclude_parts), tuple(exclude_name_fragments)
     names: set[str] = set()
+    kept = []
     for path in _py_files(source_roots):
         resolved = path.resolve()
         if resolved in excluded or any(e in resolved.parents for e in excluded):
             continue
         if parts & set(path.parts) or (fragments and any(f in path.name for f in fragments)):
             continue
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
+        kept.append(path)
+    for _path, _source, tree in _parsed(kept):
         for node in ast.walk(tree):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 names.add(node.target.id)
@@ -201,8 +259,8 @@ def consumed_names(
 def accessor_keys(source_roots: Iterable[Path], accessor: Pattern[str]) -> set[str]:
     """Keys code builds at run time: ``accessor`` must capture ``(prefix, field)``, giving ``prefix_field``."""
     keys: set[str] = set()
-    for path in _py_files(source_roots):
-        keys.update(f"{prefix}_{field}" for prefix, field in accessor.findall(path.read_text(encoding="utf-8")))
+    for _path, source, _tree in _parsed(source_roots):
+        keys.update(f"{prefix}_{field}" for prefix, field in accessor.findall(source))
     return keys
 
 
@@ -230,8 +288,56 @@ def unconsumed_prompt_keys(
     return out
 
 
-_DDL_COLUMN = re.compile(r"^\s+(\w+)\s+(?:TEXT|BOOLEAN|INTEGER|SMALLINT|BIGINT|REAL|DOUBLE|NUMERIC|JSONB?|TIMESTAMP|DATE|UUID|SERIAL|BIGSERIAL|VARCHAR)", re.MULTILINE | re.IGNORECASE)
-_ADD_COLUMN = re.compile(r"ADD COLUMN(?:\s+IF NOT EXISTS)?\s+(\w+)", re.IGNORECASE)
+_CREATE_TABLE = re.compile(r"\bCREATE\s+(?:(?:GLOBAL|LOCAL)\s+)?(?:(?:TEMP|TEMPORARY|UNLOGGED)\s+)?TABLE\b[^(;]*\(", re.IGNORECASE)
+_ADD_COLUMN = re.compile(r"\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(\"(?:[^\"]|\"\")+\"|`[^`]+`|\[[^\]]+\]|\w+)\s+[A-Za-z]", re.IGNORECASE)
+_COLUMN_HEAD = re.compile(r"\s*(\"(?:[^\"]|\"\")+\"|`[^`]+`|\[[^\]]+\]|[A-Za-z_]\w*)\s+[A-Za-z]")
+_TABLE_CONSTRAINTS = frozenset({"constraint", "primary", "foreign", "unique", "check", "exclude", "index", "key", "like", "fulltext", "spatial", "period"})
+
+
+def _unquote_identifier(name: str) -> str:
+    if name[:1] == '"' and name[-1:] == '"':
+        return name[1:-1].replace('""', '"')
+    if name[:1] in ("`", "[") and len(name) > 1:
+        return name[1:-1]
+    return name
+
+
+def _strip_sql_comments(sql: str) -> str:
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*", " ", sql)
+
+
+def ddl_columns(ddl: str) -> set[str]:
+    """Column names a DDL script creates: every column definition of every ``CREATE TABLE`` (any type, quoted or
+    not; table constraints skipped) and every ``ALTER TABLE ... ADD [COLUMN]``."""
+    sql = _strip_sql_comments(ddl)
+    names: set[str] = set()
+    for match in _CREATE_TABLE.finditer(sql):
+        depth, start, items = 1, match.end(), []
+        i = start
+        while i < len(sql) and depth:
+            ch = sql[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    items.append(sql[start:i])
+            elif ch == "," and depth == 1:
+                items.append(sql[start:i])
+                start = i + 1
+            elif ch in "'\"":
+                end = sql.find(ch, i + 1)
+                i = end if end != -1 else len(sql)
+            i += 1
+        for item in items:
+            head = _COLUMN_HEAD.match(item)
+            if head and head.group(1).lower() not in _TABLE_CONSTRAINTS:
+                names.add(_unquote_identifier(head.group(1)))
+    names.update(_unquote_identifier(m) for m in _ADD_COLUMN.findall(sql) if m.lower() not in _TABLE_CONSTRAINTS)
+    return names
+
+
 _DICT_KEY = re.compile(r'["\']([a-z][a-z0-9_]{2,})["\']\s*:')
 
 
@@ -239,11 +345,8 @@ def persisted_names_sql(ddl_files: Iterable[Path], writer_roots: Iterable[Path])
     """Names that reach a SQL database: DDL column names, and ``:bind`` names and dict keys in the writers."""
     names: set[str] = set()
     for f in ddl_files:
-        ddl = Path(f).read_text(encoding="utf-8")
-        names.update(_DDL_COLUMN.findall(ddl))
-        names.update(_ADD_COLUMN.findall(ddl))
-    for path in _py_files(writer_roots):
-        src = path.read_text(encoding="utf-8")
+        names.update(ddl_columns(read_source(Path(f))))
+    for _path, src, _tree in _parsed(writer_roots):
         names.update(_BIND.findall(src))
         names.update(_DICT_KEY.findall(src))
     return {n.lower() for n in names}
@@ -252,21 +355,74 @@ def persisted_names_sql(ddl_files: Iterable[Path], writer_roots: Iterable[Path])
 def persisted_names_writer_keys(writer_roots: Iterable[Path]) -> set[str]:
     """Names that reach a file store: dict keys written by the writer modules, as literals or ``dict(k=...)``."""
     names: set[str] = set()
-    for path in _py_files(writer_roots):
-        src = path.read_text(encoding="utf-8")
+    for _path, src, tree in _parsed(writer_roots):
         names.update(_DICT_KEY.findall(src))
-        try:
-            tree = ast.parse(src)
-        except SyntaxError:
-            continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict":
                 names.update(kw.arg for kw in node.keywords if kw.arg)
     return names
 
 
-_CONTAINER_PREFIXES = ("list", "dict", "set", "tuple", "List", "Dict", "Set", "Tuple")
-_CONTAINER_FRAGMENTS = ("list[", "dict[", "List[", "Dict[")
+_CONTAINERS = frozenset(
+    {
+        "list",
+        "dict",
+        "set",
+        "tuple",
+        "frozenset",
+        "List",
+        "Dict",
+        "Set",
+        "Tuple",
+        "FrozenSet",
+        "Sequence",
+        "MutableSequence",
+        "Mapping",
+        "MutableMapping",
+        "AbstractSet",
+        "MutableSet",
+        "Collection",
+        "Iterable",
+        "Iterator",
+        "Deque",
+        "deque",
+        "DefaultDict",
+        "defaultdict",
+        "OrderedDict",
+        "Counter",
+        "ChainMap",
+    }
+)
+_WRAPPERS = frozenset({"Optional", "Union", "Annotated", "ClassVar", "Final", "Required", "NotRequired", "ReadOnly"})
+
+
+def _annotation_members(node: ast.AST) -> "list[ast.AST]":
+    """Union members of an annotation, with ``Optional``/``Union``/``Annotated``/``ClassVar``... unwrapped."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        try:
+            node = ast.parse(node.value, mode="eval").body
+        except SyntaxError:
+            return [node]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _annotation_members(node.left) + _annotation_members(node.right)
+    if isinstance(node, ast.Subscript):
+        origin = ast.unparse(node.value).split(".")[-1]
+        if origin in _WRAPPERS:
+            inner = node.slice
+            elts = inner.elts if isinstance(inner, ast.Tuple) else [inner]
+            if origin == "Annotated":
+                elts = elts[:1]
+            return [m for e in elts for m in _annotation_members(e)]
+    return [node]
+
+
+def _is_container(annotation: ast.AST) -> bool:
+    """Is any non-None member of *annotation* a container (``Sequence[str]``, ``Optional[list]``, ``frozenset[int]``)?"""
+    for member in _annotation_members(annotation):
+        target = member.value if isinstance(member, ast.Subscript) else member
+        if isinstance(target, (ast.Name, ast.Attribute)) and ast.unparse(target).split(".")[-1] in _CONTAINERS:
+            return True
+    return False
 
 
 def _scalar_annotations(cls: ast.ClassDef) -> list[tuple[str, str]]:
@@ -275,7 +431,7 @@ def _scalar_annotations(cls: ast.ClassDef) -> list[tuple[str, str]]:
     for stmt in cls.body:
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
             ann = ast.unparse(stmt.annotation) if stmt.annotation else ""
-            if not (ann.startswith(_CONTAINER_PREFIXES) or any(c in ann for c in _CONTAINER_FRAGMENTS)):
+            if not _is_container(stmt.annotation):
                 out.append((stmt.target.id, ann))
     return out
 
@@ -289,11 +445,7 @@ def declared_scalar_fields(source_roots: Iterable[Path]) -> set[str]:
     """
     class_names: set[str] = set()
     candidates: list[tuple[str, str]] = []
-    for path in _py_files(source_roots):
-        try:
-            tree = ast.parse(path.read_text(encoding="utf-8"))
-        except SyntaxError:
-            continue
+    for _path, _source, tree in _parsed(source_roots):
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
                 class_names.add(node.name)

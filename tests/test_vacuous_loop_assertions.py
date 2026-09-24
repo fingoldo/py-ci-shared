@@ -4,6 +4,7 @@ this package's convention."""
 from __future__ import annotations
 
 import json
+import re
 import sys
 import textwrap
 from pathlib import Path
@@ -221,3 +222,94 @@ class TestALiteralIterableNeedsNoFloor:
         path = _module(tmp_path, "bad.py", _EMPTY_LITERAL_IS_STILL_THE_SHAPE)
 
         assert len(find_floorless_loops([path], tmp_path)) == 1
+
+
+class TestAuditRegressions:
+    def test_an_assert_in_another_floorless_loop_is_not_a_floor(self, tmp_path):
+        path = _module(
+            tmp_path,
+            "t.py",
+            """
+            def test_two_loops():
+                for x in load_a():
+                    assert x > 0
+                for x in load_b():
+                    assert x < 9
+            """,
+        )
+        assert [loop.lineno for loop in find_floorless_loops([path], tmp_path)] == [3, 5]
+
+    def test_a_floor_in_an_enclosing_loop_still_counts(self, tmp_path):
+        path = _module(
+            tmp_path,
+            "t.py",
+            """
+            def test_nested():
+                for case in cases():
+                    rows = run(case)
+                    assert rows
+                    for row in rows:
+                        assert row.ok
+            """,
+        )
+        assert find_floorless_loops([path], tmp_path) == []
+
+    def test_a_nested_function_s_loop_is_reported_once_under_its_owner(self, tmp_path):
+        path = _module(
+            tmp_path,
+            "t.py",
+            """
+            def test_outer():
+                def inner():
+                    for x in load():
+                        assert x
+                inner()
+            """,
+        )
+        found = find_floorless_loops([path], tmp_path)
+        assert [(loop.function, loop.lineno) for loop in found] == [("inner", 4)]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "if not i:\n            continue\n        assert i > 0",
+            "if i is None:\n            raise AssertionError('none')",
+            "if i < 0:\n            pytest.fail('negative')\n        pass",
+            "with subtests.test(i=i):\n            assert i > 0",
+        ],
+        ids=["continue", "raise", "pytest-fail", "subtests"],
+    )
+    def test_flow_control_raise_fail_and_subtests_bodies_are_assert_only(self, tmp_path, body):
+        path = _module(tmp_path, "t.py", f"def test_x(subtests):\n    for i in load():\n        {body}\n")
+        assert len(find_floorless_loops([path], tmp_path)) == 1
+
+    def test_a_body_without_any_check_is_still_not_the_shape(self, tmp_path):
+        path = _module(tmp_path, "t.py", "def test_x():\n    for i in load():\n        if not i:\n            continue\n        pass\n")
+        assert find_floorless_loops([path], tmp_path) == []
+
+    def test_an_unpacked_literal_is_not_a_non_empty_one(self, tmp_path):
+        path = _module(tmp_path, "t.py", "def test_x(m):\n    for q in [*m]:\n        assert q\n    for r in [0, *m]:\n        assert r in m\n")
+        assert [loop.lineno for loop in find_floorless_loops([path], tmp_path)] == [2]
+
+    def test_keys_do_not_depend_on_the_working_directory(self, tmp_path, monkeypatch):
+        repo = tmp_path / "repo"
+        (repo / "tests").mkdir(parents=True)
+        path = _module(repo / "tests", "t.py", "def test_x():\n    for i in load():\n        assert i\n")
+        monkeypatch.chdir(repo)
+        (from_repo,) = find_floorless_loops([Path("tests/t.py")], repo)
+        monkeypatch.chdir(repo / "tests")
+        (from_tests,) = find_floorless_loops([Path("t.py")], repo)
+        assert from_repo.key == from_tests.key == "tests/t.py::test_x::#1"
+        outside = _module(tmp_path, "t_out.py", "def test_y():\n    for i in load():\n        assert i\n")
+        (loop,) = find_floorless_loops([outside], repo)
+        assert loop.path.endswith("/t_out.py")
+        assert path.exists()
+
+    def test_bom_and_unparsable_files(self, tmp_path):
+        bom = tmp_path / "t_bom.py"
+        bom.write_bytes(b"\xef\xbb\xbfdef test_x():\n    for i in load():\n        assert i\n")
+        assert len(find_floorless_loops([bom], tmp_path)) == 1
+        bad = _module(tmp_path, "t_bad.py", "def (:\n")
+        with pytest.raises(AssertionError, match=re.escape("t_bad.py")):
+            find_floorless_loops([bom, bad], tmp_path)
+        assert len(find_floorless_loops([bom, bad], tmp_path, allow_unparsed=True)) == 1

@@ -59,9 +59,12 @@ def test_a_backticked_name_that_is_declared_passes_and_an_undeclared_one_fails(t
         "# uses `Foo.bar()` and `Ghost` and `Foo.anything` and `some prose here`\nclass Foo:\n    def bar(self):\n        pass\n",
     )
     out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
-    # `Foo.anything`: declared head, unknown member - a library-member shape, not a claim this module can
-    # resolve, so it passes; `some prose here` is not an identifier and is skipped.
-    assert out == ["pkg/mod.py:1: `Ghost` names nothing declared in this repo"]
+    # `Foo.anything`: Foo is a class of this repo whose members are all known, so an undeclared member is a
+    # phantom; `some prose here` is not an identifier and is skipped.
+    assert out == [
+        "pkg/mod.py:1: `Ghost` names nothing declared in this repo",
+        "pkg/mod.py:1: `Foo.anything` names a member `Foo` does not declare",
+    ]
 
 
 def test_dart_comments_are_read_and_language_words_are_never_references(tmp_path: Path) -> None:
@@ -105,3 +108,62 @@ def test_assert_count_claims_fails_with_the_location(tmp_path: Path) -> None:
     bad = _write(tmp_path, "a.py", "# the two forms:\n#   1. a\n")
     with pytest.raises(pytest.fail.Exception, match="says 2, lists 1"):
         assert_no_count_claim_mismatches([bad])
+
+
+class TestAuditRegressions:
+    def test_a_hash_inside_a_string_is_not_a_comment(self, tmp_path: Path) -> None:
+        p = _write(tmp_path, "pkg/mod.py", 'URL = "http://a#`Ghost()`"\n# but this `Phantom()` is a comment\n')
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == ["pkg/mod.py:2: `Phantom()` names nothing declared in this repo"]
+
+    def test_an_assigned_triple_quoted_literal_does_not_flip_docstring_parity(self, tmp_path: Path) -> None:
+        p = _write(
+            tmp_path,
+            "pkg/mod.py",
+            'SQL = """\nSELECT `Ghost()` FROM t\n"""\n\n\ndef f():\n    """Calls `Missing()`."""\n    x = 1  # and `AlsoMissing()`\n',
+        )
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == [
+            "pkg/mod.py:7: `Missing()` names nothing declared in this repo",
+            "pkg/mod.py:8: `AlsoMissing()` names nothing declared in this repo",
+        ]
+
+    def test_members_of_repo_classes_are_checked_and_open_classes_are_not(self, tmp_path: Path) -> None:
+        p = _write(
+            tmp_path,
+            "pkg/mod.py",
+            "from pydantic import BaseModel\n"
+            "# `Foo.renamed_method()` `Foo.method()` `Foo.attr` `Child.method()` `Model.model_dump()` `Foo.method.extra`\n"
+            "class Foo:\n    def __init__(self):\n        self.attr = 1\n    def method(self):\n        pass\n"
+            "class Child(Foo):\n    pass\n"
+            "class Model(BaseModel):\n    x: int = 0\n",
+        )
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == ["pkg/mod.py:2: `Foo.renamed_method()` names a member `Foo` does not declare"]
+
+    def test_a_three_part_dotted_name_is_judged_on_its_first_member(self, tmp_path: Path) -> None:
+        p = _write(tmp_path, "pkg/mod.py", "# `Foo.gone.x` and `Ghost.a.b`\nclass Foo:\n    pass\n")
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == [
+            "pkg/mod.py:1: `Foo.gone.x` names a member `Foo` does not declare",
+            "pkg/mod.py:1: `Ghost.a.b` names nothing declared in this repo",
+        ]
+
+    def test_test_files_are_matched_by_path_and_excluded_dirs_do_not_count(self, tmp_path: Path) -> None:
+        p = _write(tmp_path, "pkg/mod.py", "# `tests/unit/test_foo.py` `tests/test_foo.py` `test_vendored.py`\n")
+        _write(tmp_path, "tests/test_foo.py", "")
+        _write(tmp_path, ".venv/lib/test_vendored.py", "")
+        out = find_phantom_code_references([p], tmp_path, python_declarations([p]))
+        assert out == [
+            "pkg/mod.py:1: `tests/unit/test_foo.py` names a test file that does not exist",
+            "pkg/mod.py:1: `test_vendored.py` names a test file that does not exist",
+        ]
+
+    def test_bom_and_unparsable_files(self, tmp_path: Path) -> None:
+        bom = tmp_path / "bom.py"
+        bom.write_bytes(b"\xef\xbb\xbf# `Ghost()`\nclass Real:\n    pass\n")
+        bad = _write(tmp_path, "bad.py", "# `Real`\ndef (:\n")
+        out = find_phantom_code_references([bom, bad], tmp_path, python_declarations([bom, bad]))
+        assert out[0] == "bom.py:1: `Ghost()` names nothing declared in this repo"
+        assert out[1].startswith("bad.py:2: unparsable:")
+        assert "Real" in python_declarations([bom])

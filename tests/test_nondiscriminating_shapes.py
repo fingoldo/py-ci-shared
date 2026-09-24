@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
+from py_ci_shared._core import ImportAliases
 from py_ci_shared.nondiscriminating_shapes import shape_reasons
 
 
@@ -73,3 +74,44 @@ def test_a_data_dependent_skip_is_found():
 )
 def test_environment_probe_skips_are_not_flagged(src):
     assert _reasons(src) == []
+
+
+class TestAuditRegressions:
+    def test_an_identifier_containing_os_is_not_an_environment_probe(self):
+        src = "def test_x():\n    loss = train()\n    if loss is None:\n        pytest.skip('no loss')\n    assert loss < 1\n"
+        assert _reasons(src) == ["late-skip"]
+        probe = "def test_x():\n    loss = train()\n    if os.environ.get('CI'):\n        pytest.skip('ci')\n    assert loss < 1\n"
+        assert _reasons(probe) == []
+
+    @pytest.mark.parametrize("cond", ["not HAS_TORCH", "not torch.cuda.is_available()", "shutil.which('dot') is None", "not TORCH_AVAILABLE"])
+    def test_real_probes_are_still_recognised(self, cond):
+        assert _reasons(f"def test_x():\n    x = run()\n    if {cond}:\n        pytest.skip('env')\n    assert x\n") == []
+
+    def test_a_skip_in_a_try_body_is_not_exempt_but_one_in_an_except_is(self):
+        body = "def test_x():\n    x = run()\n    try:\n        if not x:\n            pytest.skip('empty')\n    finally:\n        pass\n    assert x\n"
+        assert _reasons(body) == ["late-skip"]
+        handler = "def test_x():\n    x = run()\n    try:\n        import torch\n    except ImportError:\n        pytest.skip('torch')\n    assert x\n"
+        assert _reasons(handler) == []
+
+    @pytest.mark.parametrize("cmp", ["100 > rmse > 0", "50 >= r >= -1"])
+    def test_reversed_wide_ranges_are_found(self, cmp):
+        assert _reasons(f"def test_x():\n    assert {cmp}\n") == ["wide-literal-range"]
+
+    def test_a_reversed_narrow_range_is_not_flagged(self):
+        assert _reasons("def test_x():\n    assert 1.1 > ratio > 0.9\n") == []
+
+    @pytest.mark.parametrize(
+        "compute",
+        ["result: Frame = run()", "if (result := run()) is None:\n        pass", "with run() as result:\n        pass"],
+        ids=["annassign", "walrus", "with"],
+    )
+    def test_annassign_walrus_and_with_count_as_computing(self, compute):
+        src = f"def test_x():\n    {compute}\n    if not result:\n        pytest.skip('no data')\n    assert result\n"
+        assert _reasons(src) == ["late-skip"]
+
+    def test_from_pytest_import_skip_is_resolved_with_aliases(self):
+        module = ast.parse("from pytest import skip\n\ndef test_x():\n    x = run()\n    if not x:\n        skip('empty')\n    assert x\n")
+        func = module.body[1]
+        assert shape_reasons(func, aliases=ImportAliases.from_tree(module)) == ["late-skip"]
+        other = ast.parse("from unittest import skip\n\ndef test_x():\n    x = run()\n    if not x:\n        skip('empty')\n    assert x\n")
+        assert shape_reasons(other.body[1], aliases=ImportAliases.from_tree(other)) == []

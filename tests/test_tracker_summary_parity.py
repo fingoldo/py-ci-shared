@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
-from py_ci_shared.tracker_summary_parity import assert_tracker_summaries_agree, heading_status_problems, summary_problems
+from py_ci_shared.tracker_summary_parity import assert_tracker_summaries_agree, heading_status_problems, summary_problems, summary_table_count
 
 _TRACKER = """# Tracker
 
@@ -80,3 +80,41 @@ def test_assert_refuses_a_tracker_with_no_summary(tmp_path):
     p.write_text("# nothing\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="summary table"):
         assert_tracker_summaries_agree(tmp_path, p)
+
+
+class TestAuditRegressions:
+    def test_a_fenced_example_header_does_not_satisfy_the_floor_and_bold_headers_count(self, tmp_path):
+        fenced = tmp_path / "fenced.md"
+        fenced.write_text("# T\n\n```md\n| File | Findings | RESOLVED |\n| --- | --- | --- |\n```\n", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="fewer than 1 summary"):
+            assert_tracker_summaries_agree(tmp_path, fenced)
+        bold = _tracker(tmp_path).read_text(encoding="utf-8").replace("| File | Findings |", "| **File** | **Findings** |")
+        (tmp_path / "bold.md").write_text(bold, encoding="utf-8")
+        assert summary_table_count(tmp_path / "bold.md") == 1
+        assert_tracker_summaries_agree(tmp_path, tmp_path / "bold.md")
+
+    def test_a_row_without_backticks_is_checked_and_a_short_row_is_reported_not_a_crash(self, tmp_path):
+        text = _tracker(tmp_path, n1=5).read_text(encoding="utf-8").replace("| `implemented/2026-01-01/01.md` |", "| implemented/2026-01-01/01.md |")
+        (tmp_path / "plain.md").write_text(text, encoding="utf-8")
+        assert any("says 5 findings" in p for p in summary_problems(tmp_path / "plain.md"))
+        short = (
+            _tracker(tmp_path).read_text(encoding="utf-8").replace("| `implemented/2026-01-01/02.md` | 1 | 0 | 1 | 0 |", "| `implemented/2026-01-01/02.md` |")
+        )
+        (tmp_path / "short.md").write_text(short, encoding="utf-8")
+        problems = summary_problems(tmp_path / "short.md")
+        assert any("has 1 cell(s)" in p for p in problems)
+        unnamed = _tracker(tmp_path).read_text(encoding="utf-8").replace("| `implemented/2026-01-01/02.md` |", "| round two |")
+        (tmp_path / "unnamed.md").write_text(unnamed, encoding="utf-8")
+        assert any("names no round file" in p for p in summary_problems(tmp_path / "unnamed.md"))
+
+    def test_the_status_column_is_found_by_header_and_any_header_row_is_skipped(self, tmp_path):
+        text = _tracker(tmp_path).read_text(encoding="utf-8")
+        text = text.replace(
+            "| Status | Sev | Finding |\n| --- | --- | --- |\n| **RESOLVED** | P2 | `AA-1` one |\n| **RESOLVED** (5/6) | P3 | `AA-2` two |\n| **DEFERRED** | P3 | `AA-3` three |",
+            "| ID | State | Finding |\n| --- | --- | --- |\n| `AA-1` | **RESOLVED** | one |\n| `AA-2` | **RESOLVED** (5/6) | two |\n| `AA-3` | **DEFERRED** | three |",
+        )
+        (tmp_path / "moved.md").write_text(text, encoding="utf-8")
+        assert summary_problems(tmp_path / "moved.md") == []
+        wrong = text.replace("| `AA-3` | **DEFERRED** | three |", "| `AA-3` | **RESOLVED** | three |")
+        (tmp_path / "wrong.md").write_text(wrong, encoding="utf-8")
+        assert any("says 1 DEFERRED, its rows say 0" in p for p in summary_problems(tmp_path / "wrong.md"))

@@ -122,3 +122,35 @@ def test_the_entry_point_reports_every_problem_at_once(tmp_path):
     message = str(excinfo.value)
     assert "3 timezone problem(s)" in message
     assert "['scripts']" in message and "('app.py', 'DTZ005')" in message and "gone.py" in message
+
+
+class TestAuditRegressions:
+    def test_dot_slash_and_trailing_slash_spellings_are_the_same_directory(self, tmp_path):
+        root = _tree(tmp_path, {"scripts/job.py": _HONEST}, ruff_config='exclude = ["./scripts/"]')
+        assert excluded_code_dirs(root) == ["scripts"]
+        assert timezone_problems(root, scan_paths=(".", "./scripts")) == []
+        assert timezone_problems(root, scan_paths=(".",))  # still refused when it is not scanned at all
+
+    @pytest.mark.parametrize("config_name", ["ruff.toml", ".ruff.toml"])
+    def test_a_ruff_toml_exclude_is_read(self, tmp_path, config_name):
+        root = _tree(tmp_path, {"scripts/job.py": _NAIVE})
+        (root / config_name).write_text('exclude = ["scripts"]\n', encoding="utf-8")
+        assert excluded_code_dirs(root) == ["scripts"]
+        (root / config_name).unlink()
+        assert excluded_code_dirs(root) == []
+
+    def test_a_nested_tests_directory_is_out_of_scope_but_a_file_named_tests_is_not(self, tmp_path):
+        root = _tree(tmp_path, {"src/pkg/tests/test_a.py": _NAIVE, "src/pkg/core.py": _NAIVE})
+        found = dtz_findings(root)
+        assert found == {("src/pkg/core.py", "DTZ005")}
+
+    def test_a_syntax_error_file_is_an_error_not_a_clean_skip(self, tmp_path):
+        root = _tree(tmp_path, {"pkg/naive.py": _NAIVE, "pkg/bad.py": "import datetime\ndef f(:\n    pass\n"})
+        with pytest.raises(RuntimeError, match="could not check"):
+            dtz_findings(root)
+        (root / "pkg" / "bad.py").write_text(_HONEST, encoding="utf-8")
+        assert dtz_findings(root) == {("pkg/naive.py", "DTZ005")}
+
+    def test_a_non_ascii_path_is_decoded_as_utf8(self, tmp_path):
+        root = _tree(tmp_path, {"pkg/модуль.py": _NAIVE})
+        assert dtz_findings(root) == {("pkg/модуль.py", "DTZ005")}

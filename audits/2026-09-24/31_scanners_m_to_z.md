@@ -70,7 +70,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-5 (Med) -- class-level markers, AnnAssign/class pytestmark, from pytest import mark missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- marker_runner_coverage resolves markers through `_core.ImportAliases` (`from pytest import mark`, `import pytest as pt`, called marks, module-level `x = pytest.mark.y` names), reads module and class `pytestmark` as Assign or AnnAssign, and applies `Test*` class decorators to their methods (keys `file::Class::test`). The file is also parsed via `_core.scan_python` (BOM read, unparsable file reported as `<file>::<unparsed>`, `marked_tests` raises). regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_class_markers_class_pytestmark_annassign_and_from_pytest_import_mark, tests/test_marker_runner_coverage.py::TestAuditRegressions::test_a_bom_file_is_read_and_an_unparsable_one_is_reported
 
 - **Where:** marker_runner_coverage.py:95-100
 - **Finding:** class-level markers, AnnAssign/class `pytestmark`, `from pytest import mark` missed
@@ -80,7 +80,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-6 (High) -- positional tests (no /, no .py) not seen as path → "reaches everything"
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every non-option positional after `pytest` is a path (`pytest tests`), numeric option values are not, value-taking long options (`--cov`, `--durations`...) consume their value, and the invocation is cut at the first shell separator (`&&`, `;`, `|`, redirects). regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_a_bare_positional_directory_is_a_path_not_everything, tests/test_marker_runner_coverage.py::TestAuditRegressions::test_a_directory_outside_the_marked_file_does_not_reach_it
 
 - **Where:** marker_runner_coverage.py:117
 - **Finding:** positional `tests` (no `/`, no `.py`) not seen as path → "reaches everything"
@@ -90,7 +90,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-7 (Med) -- ./tests not normalised; cd pkg && pytest tests/ never matches
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- paths are `posixpath.normpath`-ed (`./tests/` -> `tests`) and a `cd dir &&` before the command is kept as `Runner.cwd`; paths are joined to it when `repo_root/dir` exists (otherwise the command runs from an enclosing directory whose `dir` is the root, the monorepo-hook shape the existing tests pin). regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_dot_slash_and_cd_are_normalised
 
 - **Where:** marker_runner_coverage.py:118,167
 - **Finding:** `./tests` not normalised; `cd pkg && pytest tests/` never matches
@@ -100,7 +100,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-8 (Med) -- first -m used, docstring says last wins; -m=/-mexpr not parsed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `-m`/`-k` are read from the token stream, the LAST one wins as the docstring says, and `-m expr`, `-m=expr` and `-mexpr` all parse. regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_the_last_dash_m_wins_and_every_spelling_parses
 
 - **Where:** marker_runner_coverage.py:119
 - **Finding:** first `-m` used, docstring says last wins; `-m=`/`-mexpr` not parsed
@@ -110,7 +110,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-9 (Med) -- node-id runner reaches whole file; -k ignored
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a `file::node` argument reaches only that node (and a class node its methods); a whole-file entry carries its member tests and is reached only when every member is. `-k` is evaluated with pytest's substring semantics over file, class, test and marker names. regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_a_node_id_runner_reaches_only_that_test, tests/test_marker_runner_coverage.py::TestAuditRegressions::test_dash_k_is_applied
 
 - **Where:** marker_runner_coverage.py:167
 - **Finding:** node-id runner reaches whole file; `-k` ignored
@@ -120,7 +120,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-10 (Med) -- ratchet key is the file: new tests in a known file excused; node-id known reported stale
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the ratchet key is the reported `<file>::<test>` (split on `": "`, not the first colon); a legacy bare-file `known` entry no longer excuses the whole file and is reported stale with a migration hint. The old shrink-only test used file keys and was re-framed to node keys. regression test: tests/test_marker_runner_coverage.py::TestAuditRegressions::test_the_ratchet_is_keyed_by_test_not_by_file, tests/test_marker_runner_coverage.py::test_assert_is_shrink_only
 
 - **Where:** marker_runner_coverage.py:211-212
 - **Finding:** ratchet key is the file: new tests in a known file excused; node-id `known` reported stale
@@ -130,7 +130,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-11 (Low) -- eval of marker expr; exception = "selects" (fail-open)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `eval` is replaced by a recursive-descent parser for pytest's `and`/`or`/`not`/parentheses grammar; an unparsable `-m`/`-k` raises `ValueError`, and `find_unselected_marked_tests` reports the runner as `<label>::<bad expression>` and counts it as selecting nothing. The test that pinned the fail-open was re-framed. regression test: tests/test_marker_runner_coverage.py::test_an_unparsable_expression_is_rejected_not_read_as_selecting, tests/test_marker_runner_coverage.py::TestAuditRegressions::test_expression_parser_matches_pytest_grammar
 
 - **Where:** marker_runner_coverage.py:159-161
 - **Finding:** `eval` of marker expr; exception = "selects" (fail-open)
@@ -140,7 +140,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-12 (Med) -- aliased reload, importlib as il, sys as _sys missed; substring prefilter drops files
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `reload_primitive(node, aliases)` resolves `from importlib import reload`, `importlib as il`, `sys as _sys` and `from sys import modules` through `_core.ImportAliases`; the substring prefilter is gone (files come from `_core.scan_python`, which also reads BOM files and reports unparsable ones as sites). regression test: tests/test_module_reload_safety.py::TestAuditRegressions::test_aliased_primitives_are_found, tests/test_module_reload_safety.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** module_reload_safety.py:49-58, 31
 - **Finding:** aliased `reload`, `importlib as il`, `sys as _sys` missed; substring prefilter drops files
@@ -150,7 +150,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-13 (High) -- any sys.modules[...] = x counts as restore, including installing a fake
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a `sys.modules[...] = v`, `sys.modules.update(v)` or `mod.__dict__.update(v)` counts as a restore only when `v` uses a SNAPSHOT name, one bound in the enclosing functions from a `sys.modules`, `__dict__` or `vars(...)` read; installing a fake is a plain write. regression test: tests/test_module_reload_safety.py::TestAuditRegressions::test_installing_a_fake_is_not_a_restore
 
 - **Where:** module_reload_safety.py:64
 - **Finding:** any `sys.modules[...] = x` counts as restore, including installing a fake
@@ -160,7 +160,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-14 (Med) -- innermost-scope only (FP); conftest/usefixtures fixtures unseen (FP); one autouse resto...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every enclosing function is searched (not just the innermost), restoring fixtures from `conftest.py` files between the test file and the tests root are visible, `usefixtures` marks on functions, classes and module `pytestmark` count as requests, and an autouse restore applies only to its scope (a class's autouse to that class, a module's to the file, a conftest's to its directory). regression test: tests/test_module_reload_safety.py::TestAuditRegressions::test_an_enclosing_function_s_finally_pairs_a_nested_reload, tests/test_module_reload_safety.py::TestAuditRegressions::test_conftest_and_usefixtures_fixtures_are_seen, tests/test_module_reload_safety.py::TestAuditRegressions::test_an_autouse_restore_in_one_class_does_not_clear_the_file
 
 - **Where:** module_reload_safety.py:98-104, 150
 - **Finding:** innermost-scope only (FP); conftest/usefixtures fixtures unseen (FP); one autouse restore clears whole file (FN)
@@ -170,7 +170,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-15 (Low) -- any __dict__.update, addfinalizer, subprocess.run counts as restore
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `addfinalizer(f)` counts only when `f` (a lambda, a def in the file, or `functools.partial(sys.modules.update, snapshot)`) itself restores or reloads; `__dict__.update` needs a snapshot argument; `subprocess.run` beside an in-process reload no longer counts (it isolates nothing), so the parametrized case that pinned it was removed and the autouse case now restores for real. regression test: tests/test_module_reload_safety.py::TestAuditRegressions::test_look_alike_restores_do_not_count, tests/test_module_reload_safety.py::TestAuditRegressions::test_real_finalizer_and_dict_restores_count
 
 - **Where:** module_reload_safety.py:70-73
 - **Finding:** any `__dict__.update`, `addfinalizer`, `subprocess.run` counts as restore
@@ -180,7 +180,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-16 (Low) -- allowlist keyed on (path, line): drift, no stale check, missing roots skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `find_reloads_in_code` accepts `(path, statement text)` allowlist entries (whitespace-collapsed source of the primitive, stable under edits above it) as well as the older `(path, line)`; the new `assert_no_reloads_in_code` also fails on entries that match no site; a missing root raises `CorpusError` instead of being skipped. regression test: tests/test_module_reload_safety.py::TestAuditRegressions::test_production_allowlist_by_statement_text_with_stale_check, tests/test_module_reload_safety.py::TestAuditRegressions::test_a_missing_root_raises
 
 - **Where:** module_reload_safety.py:156-174
 - **Finding:** allowlist keyed on (path, line): drift, no stale check, missing roots skipped
@@ -190,7 +190,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-17 (Med) -- success line + nonzero exit reported clean
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `check_mypy_output` fails a run that printed the success line but exited nonzero. The parametrized test that expected `SUCCESS` to pass at exit 1/2 pinned the defect and was re-framed. regression test: tests/test_mypy_gate.py::TestAuditRegressions::test_a_success_line_with_a_nonzero_exit_is_not_clean
 
 - **Where:** mypy_gate.py:52-73
 - **Finding:** success line + nonzero exit reported clean
@@ -200,7 +200,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-18 (Low) -- --min-files w/o value IndexError; --min-files=200 passed to mypy; locale decoding on Wi...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `--min-files` is consumed by an argparse pre-parser (`_split_args`, `parse_known_args`, `allow_abbrev=False`): both `--min-files N` and `--min-files=N` are removed before mypy runs, and a dangling flag is a usage error (exit 2) instead of an IndexError. mypy's output is decoded as UTF-8 with `errors="replace"` and the child gets `PYTHONIOENCODING=utf-8`. regression test: tests/test_mypy_gate.py::TestAuditRegressions::test_min_files_is_consumed_in_both_spellings, tests/test_mypy_gate.py::TestAuditRegressions::test_a_dangling_min_files_is_a_usage_error_not_an_index_error, tests/test_mypy_gate.py::TestAuditRegressions::test_main_decodes_as_utf8_and_never_forwards_min_files
 
 - **Where:** mypy_gate.py:80-85
 - **Finding:** `--min-files` w/o value IndexError; `--min-files=200` passed to mypy; locale decoding on Windows
@@ -210,7 +210,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-19 (Med) -- _ENV_PROBE substring (os in loss); any enclosing Try exempts
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the environment probe matches whole identifier PARTS (Name ids and attribute names split on `_` and case, plus the `HAS_*` convention) against a set of probe words, so `loss` no longer matches `os`; only an `except` handler exempts a skip, a `try` body does not. regression test: tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_an_identifier_containing_os_is_not_an_environment_probe, tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_real_probes_are_still_recognised, tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_a_skip_in_a_try_body_is_not_exempt_but_one_in_an_except_is
 
 - **Where:** nondiscriminating_shapes.py:34,114-123
 - **Finding:** `_ENV_PROBE` substring (`os` in `loss`); any enclosing Try exempts
@@ -220,7 +220,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-20 (Low) -- reversed ranges, AnnAssign/walrus/with, from pytest import skip missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `100 > x > 0` (Gt/GtE chains) is read as the same range reversed; AnnAssign, walrus and `with f() as x` count as computing; `shape_reasons(func, aliases=ImportAliases.from_tree(module))` recognises `from pytest import skip` / `import pytest as pt`. regression test: tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_reversed_wide_ranges_are_found, tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_a_reversed_narrow_range_is_not_flagged, tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_annassign_walrus_and_with_count_as_computing, tests/test_nondiscriminating_shapes.py::TestAuditRegressions::test_from_pytest_import_skip_is_resolved_with_aliases
 
 - **Where:** nondiscriminating_shapes.py:50,97,91
 - **Finding:** reversed ranges, AnnAssign/walrus/with, `from pytest import skip` missed
@@ -230,7 +230,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-21 (High) -- _unimportable discarded; walk_packages(onerror=lambda _: None) hides subpackages
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `walk_packages(onerror=...)` now records every subpackage that fails to import during the walk (`<name>: cannot walk (import failed)`), and `assert_package_doctests_pass` fails on any unimportable module with examples or unwalkable subpackage, unless named in the new `tolerate_unimportable` (dotted-boundary prefixes), whose stale entries also fail. regression test: tests/test_package_doctests.py::TestAuditRegressions::test_a_module_with_examples_that_will_not_import_fails_the_assert, tests/test_package_doctests.py::TestAuditRegressions::test_a_subpackage_that_fails_during_the_walk_is_reported, tests/test_package_doctests.py::TestAuditRegressions::test_a_stale_tolerance_fails
 
 - **Where:** package_doctests.py:91
 - **Finding:** `_unimportable` discarded; `walk_packages(onerror=lambda _: None)` hides subpackages
@@ -240,7 +240,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-22 (Low) -- plain prefix: pkg.io skips pkg.iostats
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `skip_prefixes` match on a dotted boundary (`name == p or name.startswith(p + ".")`); a prefix ending in `.` keeps raw-prefix matching for callers who want it. regression test: tests/test_package_doctests.py::TestAuditRegressions::test_skip_prefixes_match_on_a_dotted_boundary
 
 - **Where:** package_doctests.py:66
 - **Finding:** plain prefix: `pkg.io` skips `pkg.iostats`
@@ -250,7 +250,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-23 (Med) -- if not x, IfExp, while, assert, comprehension ifs missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- truth tests are collected from `if`, `while`, conditional expressions, `assert`, comprehension filters, `and`/`or` and `not`, unwrapping `not` and nested bool ops. The file is parsed via `_core.parse_file` (BOM handled; an unparsable file becomes an `unparsable` finding that fails the assert). regression test: tests/test_optional_truthiness.py::TestAuditRegressions::test_not_ifexp_while_assert_and_comprehension_filters_are_tests_for_truth, tests/test_optional_truthiness.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** optional_truthiness.py:97-108
 - **Finding:** `if not x`, IfExp, while, assert, comprehension ifs missed
@@ -260,7 +260,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-24 (Med) -- key uses path.name; no stale check; line-number keys
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `find_truthiness_tests(path, repo_root=...)` reports repo-relative paths (the assert passes its `repo_root`, which it previously ignored); duplicates are kept; the baseline is compared as a multiset on the line-free key (`finding_key`), so a line shift does not invalidate it and an entry that matches nothing fails as stale. regression test: tests/test_optional_truthiness.py::TestAuditRegressions::test_findings_are_repo_relative_and_duplicates_are_kept, tests/test_optional_truthiness.py::TestAuditRegressions::test_a_baseline_entry_survives_a_line_shift_and_a_stale_one_fails
 
 - **Where:** optional_truthiness.py:104,127-132
 - **Finding:** key uses `path.name`; no stale check; line-number keys
@@ -270,7 +270,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-25 (Low) -- walk descends into nested defs; Annotated not unwrapped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- each function is scanned over its own body only; a nested def or lambda inherits the enclosing optionals minus the names it rebinds as parameters, and `Annotated[T, ...]` is unwrapped to `T`. regression test: tests/test_optional_truthiness.py::TestAuditRegressions::test_a_nested_def_rebinding_the_name_is_judged_on_its_own_parameter, tests/test_optional_truthiness.py::TestAuditRegressions::test_annotated_is_unwrapped
 
 - **Where:** optional_truthiness.py:97
 - **Finding:** walk descends into nested defs; `Annotated` not unwrapped
@@ -300,7 +300,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-28 (Low) -- non-recursive glob; parse errors silent; import_module("pkg._x") missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `assert_no_private_meta_imports` enumerates `test_*.py` recursively through `_core.iter_files` (kwarg `recursive=False` keeps the old view; a missing dir raises `CorpusError`); `private_meta_imports` parses through `_core.scan_python`, so a BOM file is checked and an unparsable one is returned as `<stem>::<unparsed>` and fails the assert; `imported_names` also returns the literal target of `importlib.import_module(...)` / `__import__(...)`, resolved through `ImportAliases`. regression test: tests/test_meta_private_imports.py::TestAuditRegressions::test_a_meta_test_in_a_subdirectory_is_scanned, tests/test_meta_private_imports.py::TestAuditRegressions::test_an_unparsable_meta_test_fails_instead_of_being_skipped, tests/test_meta_private_imports.py::TestAuditRegressions::test_import_module_with_a_literal_private_name_is_caught, tests/test_meta_private_imports.py::TestAuditRegressions::test_a_bom_file_is_parsed
 
 - **Where:** meta_private_imports.py:84,57-59
 - **Finding:** non-recursive glob; parse errors silent; `import_module("pkg._x")` missed
@@ -310,7 +310,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-29 (Med) -- # inside a string treated as comment (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- Python comments come from `tokenize` COMMENT tokens, so a `#` inside a string literal is not a comment. Files are read through `_core.parse_source`/`read_source` (BOM handled); an unreadable or unparsable file is reported as `<rel>:<line>: unparsable: ...` instead of contributing nothing. regression test: tests/test_phantom_code_references.py::TestAuditRegressions::test_a_hash_inside_a_string_is_not_a_comment, tests/test_phantom_code_references.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** phantom_code_references.py:181-182
 - **Finding:** `#` inside a string treated as comment (FP)
@@ -320,7 +320,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-30 (Med) -- docstring parity flips on SQL = """ literals
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- documentation lines are the AST spans of bare string statements (docstrings and attribute docstrings), not a triple-quote parity count, so an assigned `SQL = """..."""` literal is code and cannot flip the state of later lines. regression test: tests/test_phantom_code_references.py::TestAuditRegressions::test_an_assigned_triple_quoted_literal_does_not_flip_docstring_parity
 
 - **Where:** phantom_code_references.py:166-180
 - **Finding:** docstring parity flips on `SQL = """` literals
@@ -330,7 +330,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-31 (Med) -- declared head → Class.member never checked; a.b.c skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `python_declarations` records each class's members (methods, class attributes, nested classes, `self.x` assignments), inherits them from bases declared in the same files, and marks a class with any undeclared base as open (`Class.*`). A `Class.member` reference to a closed repo class must name a declared member; `a.b.c` is now tokenised and judged on its first member. The existing test that accepted `Foo.anything` pinned the defect and was re-framed. regression test: tests/test_phantom_code_references.py::TestAuditRegressions::test_members_of_repo_classes_are_checked_and_open_classes_are_not, tests/test_phantom_code_references.py::TestAuditRegressions::test_a_three_part_dotted_name_is_judged_on_its_first_member, tests/test_phantom_code_references.py::test_a_backticked_name_that_is_declared_passes_and_an_undeclared_one_fails
 
 - **Where:** phantom_code_references.py:226-231
 - **Finding:** declared head → `Class.member` never checked; `a.b.c` skipped
@@ -340,7 +340,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-32 (Low) -- test files matched by basename over rglob incl .venv
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- test files are indexed with `_core.iter_files` (git-tracked plus untracked-not-ignored, `DEFAULT_EXCLUDE` pruned, so `.venv` copies never count); a token with a directory must match that repo-relative path (or a path ending in it), a bare name matches a basename. regression test: tests/test_phantom_code_references.py::TestAuditRegressions::test_test_files_are_matched_by_path_and_excluded_dirs_do_not_count
 
 - **Where:** phantom_code_references.py:205,217
 - **Finding:** test files matched by basename over rglob incl .venv
@@ -350,7 +350,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-33 (Med) -- also resolves vs repo root (FN); /x.md joined to drive root (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a target resolves only the way a renderer resolves it: relative to the referencing file's directory, and a leading `/` relative to `repo_root` (not the drive root); the fallback to the repo root that hid `docs/guide.md -> README.md` is gone. regression test: tests/test_phantom_markdown_links.py::TestAuditRegressions::test_a_link_resolves_against_its_own_directory_not_the_repo_root, tests/test_phantom_markdown_links.py::TestAuditRegressions::test_a_leading_slash_is_the_repo_root_not_the_drive_root
 
 - **Where:** phantom_markdown_links.py:80
 - **Finding:** also resolves vs repo root (FN); `/x.md` joined to drive root (FP)
@@ -360,7 +360,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-34 (Low) -- anchors, queries, <..>, reference links, other extensions skipped; fences scanned
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- links and images with any extension (or a directory) are checked; `#fragment`/`?query` are dropped before the check, `<...>` targets, titles, `%20` and reference definitions (`[id]: path`, footnotes excluded) are handled; fenced blocks and code spans are skipped; any `scheme:` is external. The file is read via `_core.read_source` and an unreadable one is reported. regression test: tests/test_phantom_markdown_links.py::TestAuditRegressions::test_fragments_queries_angle_brackets_titles_and_other_extensions, tests/test_phantom_markdown_links.py::TestAuditRegressions::test_fenced_code_and_code_spans_are_not_links, tests/test_phantom_markdown_links.py::TestAuditRegressions::test_an_unreadable_file_is_reported
 
 - **Where:** phantom_markdown_links.py:39
 - **Finding:** anchors, queries, `<..>`, reference links, other extensions skipped; fences scanned
@@ -370,7 +370,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-35 (High) -- required non-str fields get string sentinels → ValidationError read as "enforced"; stil...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- probes start from a VALID instance: `_valid_base` fills every required field with typed candidates (Literal members, values inside the field's own bounds, then generic scalars), advancing only the fields a `ValidationError` blames; a rejection counts as "enforced" only when the error's `loc` names the probed field. A probe that cannot be made conclusive is no longer counted as audited; it is collected via the new `inconclusive=` list, shown in the floor failure, and fails with `assert_field_bounds_enforced(..., allow_inconclusive=False)`. regression test: tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_a_required_int_field_does_not_make_every_probe_look_enforced, tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_required_bounded_and_literal_fields_are_filled_validly, tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_an_unfillable_model_is_inconclusive_and_fails_the_floor
 
 - **Where:** pydantic_field_bounds.py:43-44,67-77,93
 - **Finding:** required non-str fields get string sentinels → ValidationError read as "enforced"; still counted as audited
@@ -380,7 +380,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-36 (Med) -- only first bound probed; conint/Interval skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every bound of a field is its own probe (`ge=0, le=1` is two), and bounds are read from any metadata object carrying `gt`/`ge`/`lt`/`le`, so `conint`/`confloat` (`annotated_types.Interval`) are probed. regression test: tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_every_bound_is_probed, tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_conint_interval_is_probed
 
 - **Where:** pydantic_field_bounds.py:90
 - **Finding:** only first bound probed; `conint`/Interval skipped
@@ -390,7 +390,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-37 (Low) -- fractional bound on int field rejected by int parsing
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- for an `int`/`Optional[int]` field the violating value is an integer (`ge b -> ceil(b)-1`, `gt -> floor(b)`, `le -> floor(b)+1`, `lt -> ceil(b)`), so int parsing can never be what rejects the probe. pydantic 2.13 itself now refuses `int` with `lt=0.5` at schema build, so the fractional case is pinned on the helper, with an integral-bound model as the end-to-end check. regression test: tests/test_pydantic_field_bounds.py::TestAuditRegressions::test_a_fractional_bound_on_an_int_field_uses_an_integer_violation
 
 - **Where:** pydantic_field_bounds.py:57-58
 - **Finding:** fractional bound on int field rejected by int parsing
@@ -400,7 +400,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-38 (Med) -- [tool.pytest], pytest.toml, root conftest, non-literal addinivalue_line missed → false...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `registered_markers` also reads pytest 9's native `[tool.pytest].markers`, `pytest.toml`/`.pytest.toml` (`[pytest].markers`) and the repo-root `conftest.py`; `conftest_registrations` resolves `addinivalue_line` values that are module-level string constants (or tuples of them), `for` loop variables over literals, and f-string/`%`/`+` heads that hold the name, and a registration it still cannot resolve is named in the failure message. Conftests are parsed via `_core.parse_source` (BOM handled; an unparsable one raises). The test that used `[tool.pytest]` as its unreadable table pinned the gap and now uses a truly moved table. regression test: tests/test_pytest_markers.py::TestAuditRegressions::test_native_toml_tables_and_pytest_toml_register, tests/test_pytest_markers.py::TestAuditRegressions::test_the_root_conftest_and_non_literal_registrations_count, tests/test_pytest_markers.py::TestAuditRegressions::test_an_unresolvable_registration_is_named_in_the_failure, tests/test_pytest_markers.py::TestAuditRegressions::test_bom_and_unparsable_conftests
 
 - **Where:** pytest_markers.py:62-69,73,105
 - **Finding:** `[tool.pytest]`, `pytest.toml`, root conftest, non-literal `addinivalue_line` missed → false "unregistered"
@@ -410,7 +410,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-39 (Low) -- configparser error swallowed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `ini_markers` no longer swallows `configparser.Error`: a duplicate option or section in the pytest section raises `ValueError` naming the file, since pytest cannot load it either; a duplicate in another tool's section is re-read with `strict=False` so the markers are still found; any other parse error raises. regression test: tests/test_pytest_markers.py::TestAuditRegressions::test_a_duplicate_markers_option_in_the_pytest_section_is_surfaced, tests/test_pytest_markers.py::TestAuditRegressions::test_a_duplicate_in_another_tool_s_section_does_not_hide_the_markers
 
 - **Where:** pytest_markers.py:90-93
 - **Finding:** configparser error swallowed
@@ -420,7 +420,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-40 (Low) -- pin regex needs "ruff==x"; pre-commit regex order/quote sensitive
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `pinned_version` parses pyproject as TOML and reads every string value as a requirement (PEP 503 name match, single or double quotes, extras, markers, spaces around `==`); a comment no longer counts, and a non-TOML fragment is read string by string. `precommit_ruff_revs` parses the config with `yaml.safe_load` (PyYAML is a hard dependency), so key order, quoting, flow style and `.git`/`git@` URLs all work; invalid YAML raises `ValueError`, which the CLI reports as a problem. regression test: tests/test_pinned_tool_versions.py::TestAuditRegressions::test_every_pin_spelling_is_read, tests/test_pinned_tool_versions.py::TestAuditRegressions::test_a_pin_in_a_comment_or_of_another_dist_is_not_read, tests/test_pinned_tool_versions.py::TestAuditRegressions::test_pre_commit_revs_are_read_in_any_order_or_quoting, tests/test_pinned_tool_versions.py::TestAuditRegressions::test_other_repos_are_ignored_and_invalid_yaml_is_an_error
 
 - **Where:** pinned_tool_versions.py:37,55
 - **Finding:** pin regex needs `"ruff==x"`; pre-commit regex order/quote sensitive
@@ -430,7 +430,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-41 (Med) -- $defs names reported as fields
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `keys_in_schema` treats `$defs`, `definitions`, `patternProperties` and `dependentSchemas` as name-to-schema maps: it searches only their values, so definition names are no longer reported as fields. regression test: tests/test_prompt_field_parity.py::TestAuditRegressions::test_defs_names_are_definitions_not_fields
 
 - **Where:** prompt_field_parity.py:130-132
 - **Finding:** `$defs` names reported as fields
@@ -440,7 +440,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-42 (Med) -- DDL types lack INT/BOOL/FLOAT/CHAR/quoted names
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the new `ddl_columns` parses each `CREATE TABLE (...)` body by top-level commas (comments stripped, strings skipped): every column definition counts whatever its type (`INT`, `BOOL`, `FLOAT`, `CHAR(n)`, `TINYINT`...), with `"quoted"`, backtick or bracket names, and table constraints are skipped. It also reads `ALTER TABLE ... ADD [COLUMN] [IF NOT EXISTS]`. `persisted_names_sql` uses it. regression test: tests/test_prompt_field_parity.py::TestAuditRegressions::test_ddl_columns_of_any_type_and_quoted_names
 
 - **Where:** prompt_field_parity.py:233
 - **Finding:** DDL types lack INT/BOOL/FLOAT/CHAR/quoted names
@@ -450,7 +450,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-43 (Med) -- unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- every file-reading function (`prompt_keys`, `consumed_names`, `accessor_keys`, `persisted_names_*`, `declared_scalar_fields`) reads through `_core.parse_source`/`read_source`, so a BOM is handled, and raises `UnparsedFilesError` naming each unreadable or unparsable file instead of dropping it or crashing with a bare `UnicodeDecodeError`. Directories are enumerated with `_core.iter_files`. `string_literals(src, strict=True)` raises on bad source. regression test: tests/test_prompt_field_parity.py::TestAuditRegressions::test_an_unparsable_prompt_module_raises_instead_of_contributing_nothing, tests/test_prompt_field_parity.py::TestAuditRegressions::test_non_utf8_files_raise_a_located_error_not_a_bare_decode_error, tests/test_prompt_field_parity.py::TestAuditRegressions::test_a_bom_prompt_module_is_read
 
 - **Where:** prompt_field_parity.py:93-95,153
 - **Finding:** unparsable prompt module contributes nothing (fail-open); unguarded non-UTF8 reads crash
@@ -460,7 +460,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-44 (Low) -- Sequence[, Mapping[, frozenset[, Optional[list] treated as scalar
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- container detection parses the annotation: `Optional`/`Union`/`Annotated`/`ClassVar`... are unwrapped, and a member whose origin is any concrete or abstract container (`Sequence`, `Mapping`, `frozenset`, `Iterable`, `deque`, bare `list`...) makes the field a container. The old prefix test missed these and also caught names such as `listing_id`. regression test: tests/test_prompt_field_parity.py::TestAuditRegressions::test_abstract_and_optional_containers_are_not_scalars
 
 - **Where:** prompt_field_parity.py:278
 - **Finding:** `Sequence[`, `Mapping[`, `frozenset[`, `Optional[list]` treated as scalar
@@ -470,7 +470,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MP-45 (Low) -- float(group(1)) crashes on groupless pattern, None group, 1.2k
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `find_stale_claims` compiles the pattern and reports (never raises) a pattern that is invalid or does not have exactly one capture group, an occurrence whose group did not take part, and a capture that is not a number. `parse_stated_number` reads thousands separators and `k`/`M`/`B` suffixes (`1.2k` is 1200). Files are read via `_core.read_source` (BOM stripped; an undecodable file is reported). regression test: tests/test_prose_numeric_claims.py::TestAuditRegressions::test_a_pattern_without_exactly_one_group_is_a_problem_not_a_crash, tests/test_prose_numeric_claims.py::TestAuditRegressions::test_a_group_that_did_not_participate_is_a_problem, tests/test_prose_numeric_claims.py::TestAuditRegressions::test_suffixed_numbers_are_read, tests/test_prose_numeric_claims.py::TestAuditRegressions::test_a_non_numeric_capture_is_reported
 
 - **Where:** prose_numeric_claims.py:99
 - **Finding:** `float(group(1))` crashes on groupless pattern, None group, `1.2k`
@@ -1060,7 +1060,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-1 (High) -- cat-file -e = object exists, not reachable: staged-only work counts as committed → REMO...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- worktree_hygiene judges content by REACHABILITY (`reachable_objects`: `git rev-list --objects --branches --tags --remotes [refs/stash]`, worktree HEADs deliberately not roots), not by `cat-file -e` existence; it also judges the STAGED blob of every index change (`ls-files -s`), so staged-only work and a staged edit whose working file was reverted are unsaved. Proven with real repos in tmp_path; regression test: tests/test_worktree_hygiene.py::TestAuditRegressions::test_staged_only_work_is_unsaved_even_though_its_blob_exists, tests/test_worktree_hygiene.py::TestAuditRegressions::test_staged_content_differing_from_the_working_file_is_judged, tests/test_worktree_hygiene.py::TestAuditRegressions::test_staged_content_already_on_a_ref_is_saved
 
 - **Where:** worktree_hygiene.py:117-119, 141
 - **Finding:** `cat-file -e` = object exists, not reachable: staged-only work counts as committed → REMOVABLE
@@ -1070,7 +1070,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-2 (High) -- ignored files (.env, data) never unsaved
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `git status` runs with `--ignored=matching`; an ignored file is judged like an untracked one and an ignored directory (`data/`) is expanded file by file, while SKIP_PARTS caches (`__pycache__`, `.venv`...) are still skipped. regression test: tests/test_worktree_hygiene.py::TestAuditRegressions::test_an_ignored_file_is_unsaved_work, tests/test_worktree_hygiene.py::TestAuditRegressions::test_an_ignored_cache_directory_is_still_skipped
 
 - **Where:** worktree_hygiene.py:130
 - **Finding:** ignored files (`.env`, data) never unsaved
@@ -1080,7 +1080,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-3 (High) -- failed git cherry → every branch "spare"
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `verify_ref` (`rev-parse --verify --quiet <ref>^{commit}`) runs first in `branches_without_unique_commits` and `worktree_findings` and raises `GitQueryError`; the CLI prints it and exits 2; a branch whose own `git cherry` fails is never called spare. regression test: tests/test_worktree_hygiene.py::TestAuditRegressions::test_a_bad_ref_raises_instead_of_calling_every_branch_spare, tests/test_worktree_hygiene.py::TestAuditRegressions::test_the_cli_reports_a_bad_ref_with_exit_2
 
 - **Where:** worktree_hygiene.py:214, 219
 - **Finding:** failed `git cherry` → every branch "spare"
@@ -1100,7 +1100,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-5 (Med) -- __getattr__ substring anywhere marks module dynamic
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a module counts as dynamic only on AST evidence at module scope: a module-level `def __getattr__`, `globals()[...]=`/`vars()[...]=`/`globals().update(...)` outside a function, an import-time `exec`, or `setattr(sys.modules[...], ...)`. A class's `__getattr__` method, or the words in a comment, no longer switch the check off for the whole module. regression test: tests/test_unresolved_imports.py::TestAuditRegressions::test_a_class_getattr_does_not_make_the_module_dynamic, tests/test_unresolved_imports.py::TestAuditRegressions::test_a_module_getattr_or_import_time_globals_write_is_dynamic
 
 - **Where:** unresolved_imports.py:33, 54
 - **Finding:** `__getattr__` substring anywhere marks module dynamic
@@ -1110,7 +1110,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-6 (Med) -- pkg prefix matches pkg_other
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `resolvable_prefixes` match on a dotted boundary (`target == p or target.startswith(p + ".")`), so `pkg` no longer judges `pkg_other`. regression test: tests/test_unresolved_imports.py::TestAuditRegressions::test_a_prefix_is_matched_on_a_dotted_boundary
 
 - **Where:** unresolved_imports.py:187
 - **Finding:** `pkg` prefix matches `pkg_other`
@@ -1120,7 +1120,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-7 (Med) -- type X=, with/for/walrus/match/global bindings missed (FP); walk over-binds nested loca...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_bound_names` walks the MODULE scope only: statements and compound bodies (`if`/`try`/`with`/`for`/`match`...), never function or class bodies, so a local inside a guarded def is no longer a module name. It also binds `with ... as`, `for` targets, walrus, `except ... as`, match captures, `type X = ...` (3.12+) and names a function declares `global`. regression test: tests/test_unresolved_imports.py::TestAuditRegressions::test_every_module_level_binding_counts, tests/test_unresolved_imports.py::TestAuditRegressions::test_a_type_alias_binds_its_name, tests/test_unresolved_imports.py::TestAuditRegressions::test_a_local_inside_a_guarded_def_is_not_a_module_name
 
 - **Where:** unresolved_imports.py:145-153
 - **Finding:** `type X=`, with/for/walrus/match/global bindings missed (FP); walk over-binds nested locals (FN)
@@ -1130,7 +1130,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-8 (Low) -- only missing[0] reported
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the problem line names every missing name of the import (`does not define 'A', 'B'`), not only the first. regression test: tests/test_unresolved_imports.py::TestAuditRegressions::test_every_missing_name_is_reported
 
 - **Where:** unresolved_imports.py:201
 - **Finding:** only `missing[0]` reported
@@ -1140,7 +1140,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-9 (Low) -- suppress(ImportError), tuple raises, BaseException guards unseen (FP)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- guard detection is one shared predicate for `_guarded_import_ids` and `_absence_is_expected`: `except` types are read through tuples and attributes and include `BaseException`, `with (contextlib.)suppress(ImportError | ModuleNotFoundError | Exception | BaseException)` tolerates the failure, and `pytest.raises((ImportError, ...))` asserts it. A `with` of anything else still leaves the import judged. regression test: tests/test_unresolved_imports.py::TestAuditRegressions::test_every_guard_shape_is_recognised, tests/test_unresolved_imports.py::TestAuditRegressions::test_an_unguarded_twin_is_still_reported
 
 - **Where:** unresolved_imports.py:244, 272
 - **Finding:** `suppress(ImportError)`, tuple raises, BaseException guards unseen (FP)
@@ -1150,7 +1150,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-10 (Med) -- floor satisfied by assert in another floorless loop with same var
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a floor assert must not sit inside a loop that does not also enclose the judged loop (`_enclosing_loops`): an assert inside a sibling floorless loop could run zero times too, so two `for x in ...` loops no longer vouch for each other, while a floor in an enclosing loop still counts. regression test: tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_an_assert_in_another_floorless_loop_is_not_a_floor, tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_a_floor_in_an_enclosing_loop_still_counts
 
 - **Where:** vacuous_loop_assertions.py:112, 124
 - **Finding:** floor satisfied by assert in another floorless loop with same var
@@ -1160,7 +1160,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-11 (Med) -- nested function loops reported twice; duplicate keys
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- each function is walked over its own body only (a nested def/lambda/class is not entered), so a loop in a nested function is reported once, under the function that owns it, and floors are looked up in that function. regression test: tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_a_nested_function_s_loop_is_reported_once_under_its_owner
 
 - **Where:** vacuous_loop_assertions.py:165-168
 - **Finding:** nested function loops reported twice; duplicate keys
@@ -1170,7 +1170,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-12 (Med) -- continue/pass/raise/pytest.fail/with subtests bodies not assert-only
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a loop body counts as verify-only when every statement is a check (`assert`, `raise`, a bare `pytest.fail(...)`) or flow control (`continue`/`pass`/`break`, string statements), possibly under `if`/`else` or inside a `with` block (`subtests.test(...)`), and at least one check is present, so a body with no check at all is still not the shape. regression test: tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_flow_control_raise_fail_and_subtests_bodies_are_assert_only, tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_a_body_without_any_check_is_still_not_the_shape
 
 - **Where:** vacuous_loop_assertions.py:89-101
 - **Finding:** `continue`/`pass`/`raise`/`pytest.fail`/`with subtests` bodies not assert-only
@@ -1180,7 +1180,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-13 (Low) -- [*m] treated non-empty
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a literal iterable is known non-empty only when it has an element that is not `*`-unpacked; `[*m]` is as empty as `m`. regression test: tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_an_unpacked_literal_is_not_a_non_empty_one
 
 - **Where:** vacuous_loop_assertions.py:146
 - **Finding:** `[*m]` treated non-empty
@@ -1190,7 +1190,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-14 (Low) -- cwd-relative keys; crash outside root
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- files are resolved before keying and keyed by `_core.relative_posix` against the resolved `repo_root`, so a key is the same from any working directory and a file outside the root gets its absolute POSIX path instead of raising. Parsing goes through `_core.scan_python` (BOM handled); an unparsable test file raises `UnparsedFilesError` (opt out with `allow_unparsed=True`), which also fails `assert_no_new_floorless_loop`. regression test: tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_keys_do_not_depend_on_the_working_directory, tests/test_vacuous_loop_assertions.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** vacuous_loop_assertions.py:163
 - **Finding:** cwd-relative keys; crash outside root
@@ -1230,7 +1230,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-18 (Med) -- self-recursion / same-name locals count as calls
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_referenced_names` is scope-aware: a function's load of its OWN name (self-recursion) and a load of a name the function or an enclosing one binds locally (parameter, assignment, loop/with/except target, local import or def, unless declared `global`/`nonlocal`) no longer count as calls to the module function. Decorators, defaults and annotations are still read in the enclosing scope. regression test: tests/test_uncalled_functions.py::TestAuditRegressions::test_self_recursion_is_not_a_call, tests/test_uncalled_functions.py::TestAuditRegressions::test_a_same_name_local_is_not_a_call
 
 - **Where:** uncalled_functions.py:122-124
 - **Finding:** self-recursion / same-name locals count as calls
@@ -1240,7 +1240,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-19 (Low) -- defs under module if/try not judged; no file floor
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- functions defined under a module-level `if`/`else`, `try`/`except`/`finally`, `with` or loop are judged as module functions (never those inside classes or other functions), and `assert_no_new_uncalled_function` takes `min_files=1`, which counts PARSED files (`_core.scan_python`). regression test: tests/test_uncalled_functions.py::TestAuditRegressions::test_defs_under_module_if_and_try_are_judged, tests/test_uncalled_functions.py::TestAuditRegressions::test_the_file_floor
 
 - **Where:** uncalled_functions.py:98, 150
 - **Finding:** defs under module if/try not judged; no file floor
@@ -1250,7 +1250,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-20 (Med) -- self.x: T = p and chained assigns treated as used
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_store_targets` treats `self.x: T = p` (AnnAssign) and chained `self.a = self.b = p` as plain stores: every stored attribute is recorded, and a parameter counts as used only by loads beyond those stores. regression test: tests/test_unread_init_params.py::TestAuditRegressions::test_an_annotated_store_is_a_plain_store, tests/test_unread_init_params.py::TestAuditRegressions::test_a_chained_store_is_a_plain_store_into_both_attributes
 
 - **Where:** unread_init_params.py:70-74
 - **Finding:** `self.x: T = p` and chained assigns treated as used
@@ -1260,7 +1260,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-21 (Low) -- any string constant counts as read (__slots__)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- string constants that declare names rather than read them (`__slots__` and `__all__` entries, module/class/function docstrings) no longer count as reads; any other string literal (a `get_params` key list, a config dict) still does. regression test: tests/test_unread_init_params.py::TestAuditRegressions::test_a_slots_or_all_entry_or_a_docstring_is_not_a_read
 
 - **Where:** unread_init_params.py:92
 - **Finding:** any string constant counts as read (`__slots__`)
@@ -1270,7 +1270,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-22 (Low) -- relative_to crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- paths go through `_core.relative_posix`, so a file outside `repo_root` (a site-packages copy) is reported by its absolute POSIX path instead of raising `ValueError`. Files are parsed via `_core.scan_python` (BOM handled); an unparsable file raises `UnparsedFilesError` from `find_unread_init_params` (opt out with `allow_unparsed=True`) and fails `assert_no_unread_init_params`, whose `min_files` now counts parsed files. regression test: tests/test_unread_init_params.py::TestAuditRegressions::test_a_file_outside_the_repo_root_does_not_raise, tests/test_unread_init_params.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** unread_init_params.py:105
 - **Finding:** `relative_to` crash
@@ -1280,7 +1280,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-23 (Med) -- test.describe.skip, test.fixme, xit, xdescribe missed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the disabled-test pattern now covers `test.describe.skip`, `test.fixme`, `test.describe.fixme` (with `.serial`/`.parallel`), `xit`, `xdescribe`, `xtest` and `xcontext`, still requiring a title as first argument so a conditional platform guard is not flagged. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_every_disabled_test_spelling_is_found, tests/test_test_partition_reachability.py::TestAuditRegressions::test_a_conditional_fixme_is_still_a_guard
 
 - **Where:** test_partition_reachability.py:56
 - **Finding:** `test.describe.skip`, `test.fixme`, `xit`, `xdescribe` missed
@@ -1290,7 +1290,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-24 (Med) -- --project="Mobile Chrome" → "Mobile"
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `--project` values are captured double-quoted, single-quoted or bare, with `=` or a space, so `--project="Mobile Chrome"` is the whole name. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_a_quoted_project_name_with_a_space_is_read_whole
 
 - **Where:** test_partition_reachability.py:50
 - **Finding:** `--project="Mobile Chrome"` → "Mobile"
@@ -1300,7 +1300,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-25 (Med) -- any playwright test line without --project disables check
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- runner text is read as logical lines: shell `\` continuations are joined and `#` comment lines dropped, so only a real `playwright test` invocation with no `--project` of its own disables the check. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_a_continuation_or_a_comment_does_not_disable_the_check
 
 - **Where:** test_partition_reachability.py:52
 - **Finding:** any `playwright test` line without `--project` disables check
@@ -1310,7 +1310,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-26 (Med) -- absolute parts: any ancestor tests skips all
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `skip_dir_names` are matched against the parts BELOW each script dir (`path.relative_to(d).parts[:-1]`), so a checkout or script dir living under a directory named `tests` is no longer skipped whole. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_skip_dir_names_are_matched_below_the_script_dir_only
 
 - **Where:** test_partition_reachability.py:130
 - **Finding:** absolute `parts`: any ancestor `tests` skips all
@@ -1320,7 +1320,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-27 (Med) -- missing runner/tag/config/spec paths → clean
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `assert_partitions_reachable` fails, listing them, when any given runner, tag file, config, index, script dir or spec dir does not exist; the `find_*` functions raise `FileNotFoundError` instead of returning an empty, passing result. Files are read via `_core.read_source`. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_missing_paths_fail_instead_of_passing_clean
 
 - **Where:** test_partition_reachability.py:60-71, 77, 105
 - **Finding:** missing runner/tag/config/spec paths → clean
@@ -1330,7 +1330,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-28 (Low) -- quoted/short tag flags, 4-space tags unparsed (fail-open)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `dart_test.yaml` is parsed with `yaml.safe_load` (any indentation, map or list); tag flags accept quoted values, `=`/space, boolean selector lists (`'a || b'`), and dart's `-t`/`-x` short flags, the latter only on `dart test`/`flutter test` lines so `docker build -t` is not read as a tag. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_quoted_and_short_tag_flags_and_deeper_indentation
 
 - **Where:** test_partition_reachability.py:48-49, 43
 - **Finding:** quoted/short tag flags, 4-space tags unparsed (fail-open)
@@ -1340,7 +1340,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-29 (Low) -- substring script match
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a script counts as referenced only when its file name appears as a whole name (no word, `.` or `-` character on either side), so `prerun.py` no longer references `run.py`. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_a_script_name_inside_a_longer_name_is_not_a_reference
 
 - **Where:** test_partition_reachability.py:135
 - **Finding:** substring script match
@@ -1350,7 +1350,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-30 (Low) -- empty/stale allowlist reasons accepted
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- an `allowed` entry with an empty reason fails, and so does one that excused nothing on this run (stale). `test_assert_passes` carried an allowance for a tag that was never unreachable; its runner now excludes that tag so the allowance is doing work. regression test: tests/test_test_partition_reachability.py::TestAuditRegressions::test_empty_and_stale_allowlist_reasons_fail, tests/test_test_partition_reachability.py::TestAssert::test_assert_passes
 
 - **Where:** test_partition_reachability.py:169-189
 - **Finding:** empty/stale allowlist reasons accepted
@@ -1360,7 +1360,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-31 (Med) -- guard counts headers in fences; rejects **Findings**
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the `min_summaries` floor counts summary tables with the check's own header rule (`summary_table_count`) over the tracker with fenced blocks blanked, so a fenced example header no longer satisfies it and a `| **Findings** |` header is no longer rejected. regression test: tests/test_tracker_summary_parity.py::TestAuditRegressions::test_a_fenced_example_header_does_not_satisfy_the_floor_and_bold_headers_count
 
 - **Where:** tracker_summary_parity.py:162
 - **Finding:** guard counts headers in fences; rejects `**Findings**`
@@ -1370,7 +1370,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-32 (Low) -- non-backticked rows skipped; empty cells crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a summary row naming its round file without backticks is matched and checked; a row naming no round file, an empty row and a row with fewer cells than the header needs are each reported as a problem instead of being skipped or raising `IndexError`. regression test: tests/test_tracker_summary_parity.py::TestAuditRegressions::test_a_row_without_backticks_is_checked_and_a_short_row_is_reported_not_a_crash
 
 - **Where:** tracker_summary_parity.py:100-102, 92
 - **Finding:** non-backticked rows skipped; empty cells crash
@@ -1380,7 +1380,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-33 (Low) -- status column assumed first; other headers counted as findings
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- inside a `### <file>` section, a row directly followed by a separator row is the table header whatever its words: it is skipped, and it names the status column (`Status`/`Disposition`/`State`, else the first). Every other row counts as a finding. regression test: tests/test_tracker_summary_parity.py::TestAuditRegressions::test_the_status_column_is_found_by_header_and_any_header_row_is_skipped
 
 - **Where:** tracker_summary_parity.py:50
 - **Finding:** status column assumed first; other headers counted as findings
@@ -1390,7 +1390,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-34 (Med) -- ./scripts vs scripts string compare; ruff.toml not read (fail-open)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- scan paths, `not_code` names and exclude entries are normalised (`posixpath.normpath`, `\` to `/`, `./scripts/` is `scripts`), a scan path also covers directories below it, and the exclude list is read from every ruff config ruff itself honours: `[tool.ruff]` in pyproject plus the top level of `ruff.toml` and `.ruff.toml`. regression test: tests/test_timezone_honest.py::TestAuditRegressions::test_dot_slash_and_trailing_slash_spellings_are_the_same_directory, tests/test_timezone_honest.py::TestAuditRegressions::test_a_ruff_toml_exclude_is_read
 
 - **Where:** timezone_honest.py:136
 - **Finding:** `./scripts` vs `scripts` string compare; ruff.toml not read (fail-open)
@@ -1400,7 +1400,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-35 (Low) -- only first component vs test dirs
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a finding is out of scope when ANY directory component of its path is a test dir name (`src/pkg/tests/test_a.py`), not only the first; the file name itself is never matched. regression test: tests/test_timezone_honest.py::TestAuditRegressions::test_a_nested_tests_directory_is_out_of_scope_but_a_file_named_tests_is_not
 
 - **Where:** timezone_honest.py:116
 - **Finding:** only first component vs test dirs
@@ -1410,7 +1410,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-36 (Low) -- locale decoding; syntax-error files silently skipped (hypothesis)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the hypothesis was verified with ruff 0.16.1: `--select DTZ` still prints a syntax-error file as `bad.py:2:7: invalid-syntax: ...`, which the old parser dropped while it returned the other files' findings. Any located diagnostic that is not a DTZ finding now raises `RuntimeError` ("could not check"), and ruff's output is decoded as UTF-8 (`errors="replace"`) instead of the locale code page. regression test: tests/test_timezone_honest.py::TestAuditRegressions::test_a_syntax_error_file_is_an_error_not_a_clean_skip, tests/test_timezone_honest.py::TestAuditRegressions::test_a_non_ascii_path_is_decoded_as_utf8
 
 - **Where:** timezone_honest.py:93-98
 - **Finding:** locale decoding; syntax-error files silently skipped (hypothesis)
@@ -1420,7 +1420,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-37 (Low) -- missing/unmatched source dropped silently
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `version_sources(..., problems=[...])` records every source the caller named that is missing, unreadable, or states no version (including a dynamic or absent `[project].version` when `pyproject=True`), and `assert_versions_agree` fails listing them before comparing, so a typo'd path no longer just shortens the comparison. Files are read as `utf-8-sig`. The one-source test now expects this clearer message, and the floor is still tested on its own. regression test: tests/test_version_consistency.py::TestAuditRegressions::test_a_missing_or_unmatched_requested_source_is_reported, tests/test_version_consistency.py::TestAuditRegressions::test_a_missing_pyproject_version_is_reported_when_pyproject_is_requested, tests/test_version_consistency.py::test_a_comparison_of_one_is_refused
 
 - **Where:** version_consistency.py:44
 - **Finding:** missing/unmatched source dropped silently
@@ -1430,7 +1430,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-38 (Med) -- wasted subprocess; any nonzero = "not ancestor"; missing git crash
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- one `git merge-base --is-ancestor` run (the duplicate call is gone): exit 0 is an ancestor, exit 1 is not, any other exit is reported as "cannot determine" (with a `fetch-depth: 0` hint in a shallow clone), and a missing git binary or a failed `git tag` becomes a reported problem (`VersionCheckError`) instead of a crash or a false "no matching tag". regression test: tests/test_version_tag_currency.py::TestAuditRegressions::test_a_git_failure_is_cannot_determine_not_not_an_ancestor, tests/test_version_tag_currency.py::TestAuditRegressions::test_missing_git_is_reported_not_raised
 
 - **Where:** version_tag_currency.py:90-95
 - **Finding:** wasted subprocess; any nonzero = "not ancestor"; missing git crash
@@ -1440,7 +1440,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-39 (Med) -- unanchored DOTALL regex: core: inside app_core:, path deps steal refs, quoted refs skipped
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `pinned_ref` parses the consumer pubspec with `yaml.safe_load` and reads `git.ref` of exactly the named package under `dependencies`/`dev_dependencies`/`dependency_overrides` (an override to a path or hosted source clears it), so `core:` no longer matches inside `app_core:`, a path dependency cannot take another package's ref, and quoted refs are read. regression test: tests/test_version_tag_currency.py::TestAuditRegressions::test_the_pin_is_read_from_the_named_dependency_only
 
 - **Where:** version_tag_currency.py:113
 - **Finding:** unanchored DOTALL regex: `core:` inside `app_core:`, path deps steal refs, quoted refs skipped
@@ -1450,7 +1450,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-40 (Low) -- first version = anywhere; suffixes truncated
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `declared_version` parses the manifest: TOML reads `[project].version` (or `[tool.poetry].version`), not the first `version =` of any table; YAML reads the top-level `version`. A prerelease suffix is kept and only build metadata (`+45`) is dropped. Prerelease tags (`v0.6.0-beta.1`) are listed and sort before their release. regression test: tests/test_version_tag_currency.py::TestAuditRegressions::test_the_project_version_is_read_not_the_first_version_key, tests/test_version_tag_currency.py::TestAuditRegressions::test_a_prerelease_needs_its_own_tag_and_sorts_before_its_release
 
 - **Where:** version_tag_currency.py:36-37
 - **Finding:** first `version =` anywhere; suffixes truncated
@@ -1460,7 +1460,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-41 (Med) -- trailing --src-path IndexError blocks commit; = form unparsed
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- vulture_warn is now a `main(argv)` behind `if __name__ == "__main__"` (it no longer parses `sys.argv` at import) with an argparse pre-parser: `--src-path X` and `--src-path=X` (and `--whitelist`) both work, and a trailing flag is a usage error (exit 2, naming the flag) instead of an IndexError traceback. regression test: tests/test_vulture_warn.py::TestAuditRegressions::test_both_flag_spellings_are_parsed, tests/test_vulture_warn.py::TestAuditRegressions::test_a_trailing_flag_is_a_usage_error_not_an_index_error, tests/test_vulture_warn.py::TestAuditRegressions::test_importing_the_module_runs_nothing
 
 - **Where:** vulture_warn.py:32, 43
 - **Finding:** trailing `--src-path` IndexError blocks commit; `=` form unparsed
@@ -1470,7 +1470,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-42 (Med) -- env path \ not normalised; substring match
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `in_scope` compares normalised POSIX paths on a component boundary (`src\mlframe` from the env matches `src/mlframe/x.py`; `src/mlframe` does not match `src/mlframe_extra/x.py` or `tests/src/mlframe/x.py`). regression test: tests/test_vulture_warn.py::TestAuditRegressions::test_scope_is_a_normalised_path_prefix_not_a_substring
 
 - **Where:** vulture_warn.py:48
 - **Finding:** env path `\` not normalised; substring match
@@ -1480,7 +1480,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-43 (Low) -- any nonzero = findings (missing vulture)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only vulture's exit 3 (dead code found) prints the findings warning; any other nonzero exit (1 invalid input or missing module, 2 bad arguments) prints that the files were NOT checked. The hook still exits 0 (warn-only). regression test: tests/test_vulture_warn.py::TestAuditRegressions::test_exit_3_is_findings_and_other_nonzero_is_a_scan_that_did_not_happen
 
 - **Where:** vulture_warn.py:56
 - **Finding:** any nonzero = findings (missing vulture)
@@ -1490,7 +1490,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-44 (Low) -- ~4 processes per file
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- blob ids are computed in-process (`hashlib`, `blob <len>\0` header, sha1 or sha256 per `rev-parse --show-object-format`) and reachability is one set built once per report, so no git process is spawned per file. regression test: tests/test_worktree_hygiene.py::TestAuditRegressions::test_blob_ids_match_git_hash_object, tests/test_worktree_hygiene.py::TestAuditRegressions::test_no_git_process_is_spawned_per_file
 
 - **Where:** worktree_hygiene.py:140, 162
 - **Finding:** ~4 processes per file
@@ -1500,7 +1500,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-45 (Low) -- rename's old path token cut by [3:]
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_status_entries` parses `-z` output as records and consumes the source-path token that follows an R/C entry, instead of reading it as an entry cut by `[3:]`. regression test: tests/test_worktree_hygiene.py::TestAuditRegressions::test_a_rename_source_is_not_read_as_an_entry
 
 - **Where:** worktree_hygiene.py:133
 - **Finding:** rename's old path token cut by `[3:]`
@@ -1510,7 +1510,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TZ-46 (Low) -- no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new test files tests/test_vulture_warn.py and tests/test_tool_versions.py (version shape, the shared constant used by `TOOLS`, the repo's own pin read through TOML), plus new ones for modules that had none (tests/test_meta_private_imports.py, tests/test_pydantic_field_bounds.py). BOM, non-UTF-8/unparsable and missing-baseline cases were added to every migrated module this agent owns (marker_runner_coverage, meta_private_imports, module_reload_safety, optional_truthiness, phantom_code_references, phantom_markdown_links, prompt_field_parity, prose_numeric_claims, pytest_markers, timezone_honest, uncalled_functions, unread_init_params, unresolved_imports, vacuous_loop_assertions, version_consistency). regression test: tests/test_vulture_warn.py::TestAuditRegressions::test_exit_3_is_findings_and_other_nonzero_is_a_scan_that_did_not_happen, tests/test_tool_versions.py::test_ruff_version_is_an_exact_release, tests/test_uncalled_functions.py::TestTheRatchet::test_a_missing_baseline_fails_and_is_written_only_on_refresh, tests/test_unresolved_imports.py::TestAuditRegressions::test_bom_and_unparsable_files
 
 - **Where:** tests
 - **Finding:** no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases

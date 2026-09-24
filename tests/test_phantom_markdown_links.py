@@ -93,3 +93,50 @@ def test_tracked_markdown_files_skips_an_untracked_virtualenv(tmp_path):
     assert sorted(p.relative_to(tmp_path).as_posix() for p in files) == ["README.md", "docs/guide.md"]
     assert find_phantom_markdown_links(files, tmp_path) == []
     assert find_phantom_markdown_links([venv_doc], tmp_path), "the planted .venv link must be dead, or the test above proves nothing"
+
+
+class TestAuditRegressions:
+    def test_a_link_resolves_against_its_own_directory_not_the_repo_root(self, tmp_path):
+        (tmp_path / "docs").mkdir()
+        _write(tmp_path, "README.md", "root readme\n")
+        guide = _write(tmp_path, "docs/guide.md", "[a](README.md)\n[b](../README.md)\n")
+        assert find_phantom_markdown_links([guide], tmp_path) == ["docs/guide.md:1: dead markdown-link target 'README.md'"]
+
+    def test_a_leading_slash_is_the_repo_root_not_the_drive_root(self, tmp_path):
+        (tmp_path / "docs").mkdir()
+        _write(tmp_path, "docs/x.md", "x\n")
+        guide = _write(tmp_path, "docs/guide.md", "[a](/docs/x.md)\n[b](/missing.md)\n")
+        assert find_phantom_markdown_links([guide], tmp_path) == ["docs/guide.md:2: dead markdown-link target '/missing.md'"]
+
+    def test_fragments_queries_angle_brackets_titles_and_other_extensions(self, tmp_path):
+        _write(tmp_path, "real.md", "x\n")
+        _write(tmp_path, "logo.png", "x\n")
+        (tmp_path / "sub dir").mkdir()
+        readme = _write(
+            tmp_path,
+            "README.md",
+            "[c](missing.md#sec) [d](real.md#sec) [e](real.md?x=1) [f](<sub dir>) [g](sub%20dir)\n"
+            '![logo](logo.png "Logo") ![gone](gone.png) [h](#local-anchor) [i](notes.rst)\n'
+            "[ref]: missing_ref.md\n[ok]: real.md\n[^1]: a footnote, not a link\n",
+        )
+        out = find_phantom_markdown_links([readme], tmp_path)
+        assert out == [
+            "README.md:1: dead markdown-link target 'missing.md#sec'",
+            "README.md:2: dead markdown-link target 'gone.png'",
+            "README.md:2: dead markdown-link target 'notes.rst'",
+            "README.md:3: dead markdown-link target 'missing_ref.md'",
+        ]
+
+    def test_fenced_code_and_code_spans_are_not_links(self, tmp_path):
+        readme = _write(
+            tmp_path,
+            "README.md",
+            "```md\n[x](inside_fence.md)\n```\n~~~\n[y](tilde_fence.md)\n~~~\nuse `[z](span.md)` literally\n[real](after_fence.md)\n",
+        )
+        assert find_phantom_markdown_links([readme], tmp_path) == ["README.md:8: dead markdown-link target 'after_fence.md'"]
+
+    def test_an_unreadable_file_is_reported(self, tmp_path):
+        bad = tmp_path / "bad.md"
+        bad.write_bytes(b"[x](y.md) \xff\xfe\n")
+        (out,) = find_phantom_markdown_links([bad], tmp_path)
+        assert "unreadable" in out

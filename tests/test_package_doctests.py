@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 import textwrap
 
@@ -83,3 +84,34 @@ def test_an_empty_run_fails(tree):
     tree("sub/__init__.py", "")
     with pytest.raises(pytest.fail.Exception, match="an empty run is not a pass"):
         assert_package_doctests_pass("dtpkg.sub", min_examples=1)
+
+
+class TestAuditRegressions:
+    def test_a_module_with_examples_that_will_not_import_fails_the_assert(self, tree):
+        tree("broken.py", "import definitely_not_installed_xyz\n" + _GOOD)
+        _, _, unimportable = run_package_doctests("dtpkg")
+        assert unimportable == ["dtpkg.broken: ModuleNotFoundError"]
+        with pytest.raises(pytest.fail.Exception, match="will not import"):
+            assert_package_doctests_pass("dtpkg")
+        assert_package_doctests_pass("dtpkg", tolerate_unimportable=("dtpkg.broken",))
+
+    def test_a_stale_tolerance_fails(self, tree):
+        with pytest.raises(pytest.fail.Exception, match="now import fine"):
+            assert_package_doctests_pass("dtpkg", tolerate_unimportable=("dtpkg.gone",))
+
+    def test_a_subpackage_that_fails_during_the_walk_is_reported(self, tree):
+        tree("sub/__init__.py", "raise ImportError('boom')\n")
+        tree("sub/mod.py", _BAD)
+        _, failures, unimportable = run_package_doctests("dtpkg")
+        assert failures == []
+        assert "dtpkg.sub: cannot walk (import failed)" in unimportable
+        with pytest.raises(pytest.fail.Exception, match=re.escape("dtpkg.sub")):
+            assert_package_doctests_pass("dtpkg")
+
+    def test_skip_prefixes_match_on_a_dotted_boundary(self, tree):
+        tree("io.py", _GOOD)
+        tree("iostats.py", _BAD)
+        _, failures, _ = run_package_doctests("dtpkg", skip_prefixes=("dtpkg.io",))
+        assert failures == ["dtpkg.iostats: 1 of 1 failed"]
+        _, raw, _ = run_package_doctests("dtpkg", skip_prefixes=("dtpkg.io.", "dtpkg.iostats"))
+        assert raw == []

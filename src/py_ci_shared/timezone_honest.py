@@ -34,6 +34,7 @@ Usage::
 
 from __future__ import annotations
 
+import posixpath
 import re
 import subprocess
 import sys
@@ -48,22 +49,41 @@ _NEVER_CODE = frozenset({"build", "dist", "__pycache__", "node_modules", "site-p
 
 #: `scripts\rollup.py:698:19: DTZ007 Naive datetime constructed ...` (ruff's `concise` format).
 _FINDING = re.compile(r"^(?P<path>.+?):\d+:\d+: (?P<rule>DTZ\d{3})\b")
+#: Any located diagnostic ruff prints: `bad.py:2:7: invalid-syntax: Expected ...`. One that is not a DTZ finding
+#: means ruff could not check that file (a syntax error it cannot parse past), so it must not read as clean.
+_DIAGNOSTIC = re.compile(r"^(?P<path>.+?):\d+:\d+: (?P<code>[\w-]+)\b")
+
+
+def _normalise(name: str) -> str:
+    """``./scripts/`` and ``scripts`` are the same directory; so are ``scripts\\x`` and ``scripts/x``."""
+    cleaned = posixpath.normpath(name.replace("\\", "/").strip())
+    return "." if cleaned in ("", ".") else cleaned
+
+
+def _ruff_excludes(root: Path) -> list[str]:
+    """``exclude`` + ``extend-exclude`` from every ruff config at *root*: ``[tool.ruff]`` in ``pyproject.toml`` and the
+    top level of ``ruff.toml`` / ``.ruff.toml`` (ruff reads the dot-file first; any of them can hide a directory)."""
+    names: list[str] = []
+    sources = [(root / "pyproject.toml", True), (root / "ruff.toml", False), (root / ".ruff.toml", False)]
+    for path, nested in sources:
+        if not path.is_file():
+            continue
+        data = tomllib.loads(path.read_text(encoding="utf-8-sig"))
+        table = data.get("tool", {}).get("ruff", {}) if nested else data
+        names += [*table.get("exclude", []), *table.get("extend-exclude", [])]
+    return names
 
 
 def excluded_code_dirs(root: Path) -> list[str]:
-    """Directories named in `[tool.ruff] exclude` / `extend-exclude` that contain Python files.
+    """Directories named in ruff's `exclude` / `extend-exclude` (pyproject, `ruff.toml`, `.ruff.toml`) that contain
+    Python files, normalised (`./scripts/` is `scripts`).
 
     Glob patterns (`*.md`) and dot-directories are skipped: neither is a source directory someone
     forgot to scan.
     """
-    config_path = root / "pyproject.toml"
-    if not config_path.is_file():
-        return []
-    ruff = tomllib.loads(config_path.read_text(encoding="utf-8")).get("tool", {}).get("ruff", {})
-    names = [*ruff.get("exclude", []), *ruff.get("extend-exclude", [])]
-
     out = []
-    for name in names:
+    for raw in _ruff_excludes(root):
+        name = _normalise(raw)
         if any(ch in name for ch in "*?[") or name.startswith(".") or name in _NEVER_CODE:
             continue
         directory = root / name
@@ -85,7 +105,7 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
     return code; the missing path is caught before ruff runs, and ruff's own warning is treated as an
     error in case some other path fails to lint for a different reason.
     """
-    scan = tuple(scan_paths)
+    scan = tuple(_normalise(p) for p in scan_paths)
     missing = [p for p in scan if not (root / p).exists()]
     if missing:
         raise RuntimeError(f"scan path(s) {missing} do not exist under {root}. ruff would report them as clean.")
@@ -95,6 +115,8 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if result.returncode not in (0, 1):
         raise RuntimeError(f"ruff exited {result.returncode}: {result.stderr.strip()[:500]}")
@@ -106,6 +128,10 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
     if "Failed to lint" in result.stderr:
         raise RuntimeError(f"ruff skipped input it was given: {result.stderr.strip()[:500]}")
 
+    unchecked = sorted({line.strip() for line in result.stdout.splitlines() if _DIAGNOSTIC.match(line.strip()) and not _FINDING.match(line.strip())})
+    if unchecked:
+        raise RuntimeError("ruff could not check file(s) it was given, so their DTZ result is unknown:\n  " + "\n  ".join(unchecked[:50]))
+
     tests = set(test_dir_names)
     found = set()
     for line in result.stdout.splitlines():
@@ -113,7 +139,7 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
         if not match:
             continue
         path = match["path"].replace("\\", "/").removeprefix("./")
-        if path.split("/", 1)[0] in tests:
+        if tests.intersection(path.split("/")[:-1]):
             continue
         found.add((path, match["rule"]))
     return found
@@ -128,12 +154,17 @@ def timezone_problems(
     test_dir_names: Iterable[str] = ("tests",),
 ) -> list[str]:
     """Every reason the check fails, as sentences. Empty means it passes."""
-    scan = tuple(scan_paths)
+    scan = tuple(_normalise(p) for p in scan_paths)
     allowed = dict(allowed or {})
     tests = tuple(test_dir_names)
     problems = []
+    declared_not_code = {_normalise(n) for n in not_code}
 
-    unscanned = [d for d in excluded_code_dirs(root) if d not in scan and d not in set(not_code) and d not in tests]
+    unscanned = [
+        d
+        for d in excluded_code_dirs(root)
+        if not any(d == s or d.startswith(s + "/") for s in scan if s != ".") and d not in declared_not_code and not set(d.split("/")) & set(tests)
+    ]
     if unscanned:
         problems.append(
             f"{unscanned} {'is' if len(unscanned) == 1 else 'are'} excluded from ruff and contain Python, but "

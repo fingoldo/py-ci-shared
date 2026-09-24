@@ -22,11 +22,13 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from py_ci_shared._core import read_source
 from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, _table_cells, closing_word, round_files, without_fenced_blocks
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 _SUBSECTION = re.compile(r"^###\s+`([^`]+)`\s*$")
-_FILE_CELL = re.compile(r"`([^`]+\.md)`")
+_FILE_CELL = re.compile(r"`([^`]+\.md)`|(?<![\w./-])([\w./-]+\.md)\b")
+_STATUS_HEADERS = ("status", "disposition", "state")
 _HEADING = re.compile(r"^###\s+(.+?)\s*$", re.M)
 
 
@@ -34,21 +36,37 @@ def _status_of(cell: str, statuses: tuple[str, ...]) -> "str | None":
     return closing_word(cell, statuses)
 
 
+def _is_separator(cells: list[str]) -> bool:
+    return bool(cells) and all(c and set(c) <= set("-: ") for c in cells)
+
+
 def _finding_sections(lines: list[str]) -> dict[str, list[str]]:
-    """``{file: [status cell of each row in its ### `<file>` subsection]}``."""
+    """``{file: [status cell of each row in its ### `<file>` subsection]}``.
+
+    A table row directly followed by a separator row is that table's HEADER, whatever its words, and names the
+    status column (``Status`` / ``Disposition`` / ``State``, else the first); every other row is a finding.
+    """
     sections: dict[str, list[str]] = {}
     current = None
-    for line in lines:
+    status_col = 0
+    for index, line in enumerate(lines):
         m = _SUBSECTION.match(line.strip())
         if m:
             current = m.group(1)
             sections.setdefault(current, [])
+            status_col = 0
         elif line.startswith("## ") or line.startswith("### "):
             current = None
         elif current and line.lstrip().startswith("|"):
             cells = _table_cells(line)
-            if cells and not all(set(c) <= set("-: ") for c in cells) and cells[0].lower() not in ("status", "disposition"):
-                sections[current].append(cells[0])
+            if not cells or _is_separator(cells):
+                continue
+            following = lines[index + 1] if index + 1 < len(lines) else ""
+            if following.lstrip().startswith("|") and _is_separator(_table_cells(following)):
+                lowered = [c.strip("* ").lower() for c in cells]
+                status_col = next((i for i, c in enumerate(lowered) if c in _STATUS_HEADERS), 0)
+                continue
+            sections[current].append(cells[status_col] if status_col < len(cells) else "")
     return sections
 
 
@@ -86,9 +104,16 @@ def _table_problems(lines: list[str], start: int, sections: dict[str, list[str]]
     totals = {w: 0 for w in columns}
     total_findings = 0
     j = start + 2
+    width = max([findings_col, *columns.values()]) + 1
     while j < len(lines) and lines[j].lstrip().startswith("|"):
         cells = _table_cells(lines[j])
         j += 1
+        if not cells or not any(cells):
+            problems.append(f"{where}: an empty summary row at line {j}")
+            continue
+        if len(cells) < width:
+            problems.append(f"{where}: summary row at line {j} has {len(cells)} cell(s), the header needs {width}: {lines[j - 1].strip()}")
+            continue
         if "total" in cells[0].lower():
             said = {w: cells[c].strip("* ") for w, c in columns.items() if c < len(cells)}
             expect = {w: str(totals[w]) for w in columns}
@@ -99,8 +124,9 @@ def _table_problems(lines: list[str], start: int, sections: dict[str, list[str]]
             continue
         m = _FILE_CELL.search(cells[0])
         if m is None:
+            problems.append(f"{where}: summary row at line {j} names no round file, so it cannot be checked: {lines[j - 1].strip()}")
             continue
-        name = m.group(1)
+        name = m.group(1) or m.group(2)
         if name not in sections:
             problems.append(f"{where}: summary row `{name}` has no ### `{name}` section to count")
             continue
@@ -111,9 +137,17 @@ def _table_problems(lines: list[str], start: int, sections: dict[str, list[str]]
     return problems, j
 
 
+def summary_table_count(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES) -> int:
+    """Summary tables in *tracker* outside fenced blocks, recognised by the same header rule the check applies
+    (``**Findings**`` included)."""
+    words = tuple(statuses)
+    lines = without_fenced_blocks(read_source(tracker)).splitlines()
+    return sum(1 for line in lines if _summary_columns(line, words) is not None)
+
+
 def summary_problems(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES) -> list[str]:
     words = tuple(statuses)
-    lines = without_fenced_blocks(tracker.read_text(encoding="utf-8", errors="replace")).splitlines()
+    lines = without_fenced_blocks(read_source(tracker)).splitlines()
     sections = _finding_sections(lines)
     problems: list[str] = []
     i = 0
@@ -137,7 +171,7 @@ def heading_status_problems(
     words = tuple(statuses)
     suffix = re.compile(r"(?:--|—|-)\s*(" + "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True)) + r")\s*$")
     tracked: dict[str, str] = {}
-    for line in tracker.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in read_source(tracker).splitlines():
         m = tracker_row_re.match(line)
         if m:
             status = _status_of(_table_cells(line)[0], words)
@@ -145,7 +179,7 @@ def heading_status_problems(
                 tracked[m.group(1)] = status
     problems: list[str] = []
     for path in round_files(audits_dir):
-        for heading in _HEADING.findall(without_fenced_blocks(path.read_text(encoding="utf-8", errors="replace"))):
+        for heading in _HEADING.findall(without_fenced_blocks(read_source(path))):
             fid = finding_id_re.match(heading)
             end = suffix.search(heading)
             if fid and end and fid.group(1) in tracked and tracked[fid.group(1)] != end.group(1):
@@ -158,8 +192,7 @@ def assert_tracker_summaries_agree(
 ) -> None:
     import pytest
 
-    text = tracker.read_text(encoding="utf-8", errors="replace").lower()
-    if text.count("| findings |") < min_summaries:
+    if summary_table_count(tracker, statuses=statuses) < min_summaries:
         pytest.fail(f"fewer than {min_summaries} summary table(s) found in {tracker.name} -- the header format moved and this would check nothing")
     found = set(summary_problems(tracker, statuses=statuses) + heading_status_problems(audits_dir, tracker, statuses=statuses))
     new, stale = sorted(found - set(known)), sorted(set(known) - found)

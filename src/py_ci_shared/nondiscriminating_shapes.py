@@ -20,6 +20,9 @@ from __future__ import annotations
 
 import ast
 import re
+from typing import Optional
+
+from ._core import ImportAliases
 
 __all__ = ["shape_reasons", "SHAPE_HELP"]
 
@@ -31,7 +34,31 @@ SHAPE_HELP = {
 }
 
 _ROUNDTRIP_NAME = re.compile(r"round_?trip|inverse", re.IGNORECASE)
-_ENV_PROBE = re.compile(r"sys|platform|os|environ|importlib|find_spec|shutil|which|cuda|gpu|GPU|HAS_|_AVAILABLE|available|installed|version", re.IGNORECASE)
+#: Identifier parts (split on ``_`` and case) that mark an ``if`` as probing the environment rather than the data.
+_ENV_PARTS = frozenset(
+    {
+        "sys",
+        "platform",
+        "os",
+        "environ",
+        "importlib",
+        "spec",
+        "shutil",
+        "which",
+        "cuda",
+        "gpu",
+        "gpus",
+        "mps",
+        "available",
+        "installed",
+        "version",
+        "win32",
+        "linux",
+        "darwin",
+        "ci",
+    }
+)
+_IDENT_PART = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
 
 
 def _num(node: ast.AST) -> float | None:
@@ -47,9 +74,14 @@ def _num(node: ast.AST) -> float | None:
 def _wide_literal_range(test: ast.AST) -> bool:
     """``lo < x < hi`` (or ``<=``) with literal ``lo``/``hi`` spanning a factor of 20, or from <= 0 to >= 10."""
     for node in ast.walk(test):
-        if not (isinstance(node, ast.Compare) and len(node.ops) == 2 and all(isinstance(o, (ast.Lt, ast.LtE)) for o in node.ops)):
+        if not (isinstance(node, ast.Compare) and len(node.ops) == 2):
             continue
-        lo, hi = _num(node.left), _num(node.comparators[1])
+        if all(isinstance(o, (ast.Lt, ast.LtE)) for o in node.ops):
+            lo, hi = _num(node.left), _num(node.comparators[1])
+        elif all(isinstance(o, (ast.Gt, ast.GtE)) for o in node.ops):
+            lo, hi = _num(node.comparators[1]), _num(node.left)  # ``100 > x > 0`` is the same range written backwards
+        else:
+            continue
         if lo is None or hi is None or hi <= 1.0:
             continue
         if (lo > 0 and hi / lo >= 20) or (lo <= 0 and hi >= 10):
@@ -59,8 +91,11 @@ def _wide_literal_range(test: ast.AST) -> bool:
 
 def _is_min_max_call(node: ast.AST) -> bool:
     """``x.min()`` / ``x.max()`` / ``np.min(x)`` / ``np.max(x)`` (and the nan- variants)."""
-    return isinstance(node, ast.Call) and isinstance(node.func, (ast.Attribute, ast.Name)) and getattr(node.func, "attr", getattr(node.func, "id", "")) in {
-        "min", "max", "nanmin", "nanmax", "amin", "amax"}
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, (ast.Attribute, ast.Name))
+        and getattr(node.func, "attr", getattr(node.func, "id", "")) in {"min", "max", "nanmin", "nanmax", "amin", "amax"}
+    )
 
 
 def _envelope_assert(test: ast.AST) -> bool:
@@ -86,15 +121,28 @@ def _median_error(test: ast.AST) -> bool:
     return False
 
 
-def _is_skip_call(node: ast.AST) -> bool:
-    """``pytest.skip(...)``."""
-    return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "skip" and isinstance(node.func.value, ast.Name) and node.func.value.id == "pytest"
+def _is_skip_call(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
+    """``pytest.skip(...)``, however ``pytest`` or ``skip`` was imported when *aliases* is given."""
+    if not isinstance(node, ast.Call):
+        return False
+    if aliases is not None:
+        return aliases.qualified_name(node) == "pytest.skip"
+    return isinstance(node.func, ast.Attribute) and node.func.attr == "skip" and isinstance(node.func.value, ast.Name) and node.func.value.id == "pytest"
 
 
-def _late_skip(func: ast.AST) -> bool:
+def _computes(node: ast.AST) -> bool:
+    """A statement or expression that binds a name from a call: ``x = f()``, ``x: T = f()``, ``(x := f())``, ``with f() as x``."""
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
+        return isinstance(node.value, ast.Call)
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return any(item.optional_vars is not None and isinstance(item.context_expr, ast.Call) for item in node.items)
+    return False
+
+
+def _late_skip(func: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     """A ``pytest.skip`` after the function assigned from a call, outside an ``if`` that probes the environment."""
     body = getattr(func, "body", [])
-    first_compute = min((n.lineno for n in ast.walk(func) if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call)), default=None)
+    first_compute = min((getattr(n, "lineno", 0) for n in ast.walk(func) if _computes(n)), default=None)
     if first_compute is None:
         return False
     parents: dict[int, ast.AST] = {}
@@ -102,29 +150,53 @@ def _late_skip(func: ast.AST) -> bool:
         for c in ast.iter_child_nodes(p):
             parents[id(c)] = p
     for node in ast.walk(func):
-        if not _is_skip_call(node) or node.lineno <= first_compute:
+        line = getattr(node, "lineno", 0)
+        if not _is_skip_call(node, aliases) or line <= first_compute:
             continue
-        if body and getattr(body[0], "lineno", None) == node.lineno:
+        if body and getattr(body[0], "lineno", None) == line:
             continue
         if not _under_environment_probe(node, parents):
             return True
     return False
 
 
+def _identifier_parts(test: ast.AST) -> set[str]:
+    parts: set[str] = set()
+    for sub in ast.walk(test):
+        name = sub.id if isinstance(sub, ast.Name) else sub.attr if isinstance(sub, ast.Attribute) else None
+        if name is None:
+            continue
+        if name.startswith("HAS_"):
+            parts.add("available")  # the HAS_TORCH / HAS_CUDA constant convention
+        for piece in name.split("_"):
+            parts.update(m.lower() for m in _IDENT_PART.findall(piece))
+    return parts
+
+
+def _probes_environment(test: ast.AST) -> bool:
+    """Does an ``if`` test read the environment? Matched on whole identifier parts: ``loss`` is not ``os``."""
+    return bool(_identifier_parts(test) & _ENV_PARTS)
+
+
 def _under_environment_probe(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
-    """True when an enclosing ``if`` probes the environment, or an enclosing ``try`` handles a missing dependency."""
+    """True when an enclosing ``if`` probes the environment, or the skip sits in an ``except`` handler (a missing
+    dependency). A ``try`` BODY is not exempt: a skip there is still decided by the data."""
     cur = node
     while id(cur) in parents:
         cur = parents[id(cur)]
-        if isinstance(cur, ast.If) and _ENV_PROBE.search(ast.unparse(cur.test)):
+        if isinstance(cur, ast.If) and _probes_environment(cur.test):
             return True
-        if isinstance(cur, (ast.ExceptHandler, ast.Try)):  # a skip on ImportError / a missing optional dependency
+        if isinstance(cur, ast.ExceptHandler):
             return True
     return False
 
 
-def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
-    """The nondiscriminating shapes one test function exhibits, as slugs (see ``SHAPE_HELP``)."""
+def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Optional[ImportAliases] = None) -> list[str]:
+    """The nondiscriminating shapes one test function exhibits, as slugs (see ``SHAPE_HELP``).
+
+    Pass *aliases* (``ImportAliases.from_tree(module)``) so ``from pytest import skip`` / ``import pytest as pt``
+    skips are recognised; without it only the literal ``pytest.skip`` is.
+    """
     asserts = [n.test for n in ast.walk(func) if isinstance(n, ast.Assert)]
     out: list[str] = []
     if any(_wide_literal_range(t) for t in asserts):
@@ -133,6 +205,6 @@ def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef) -> list[str]:
         out.append("envelope-assert")
     if _ROUNDTRIP_NAME.search(func.name) and any(_median_error(t) for t in asserts):
         out.append("median-roundtrip")
-    if _late_skip(func):
+    if _late_skip(func, aliases):
         out.append("late-skip")
     return out

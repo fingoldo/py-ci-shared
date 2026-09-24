@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -118,8 +119,17 @@ def test_expression_evaluation_covers_the_shapes_in_use():
     assert expression_selects("integration and not (gpu or flaky)", ["integration"])
 
 
-def test_an_unparsable_expression_does_not_manufacture_a_finding():
-    assert expression_selects("integration and", ["integration"])
+def test_an_unparsable_expression_is_rejected_not_read_as_selecting(project):
+    """A typo pytest itself rejects must not count as "selects everything"."""
+    with pytest.raises(ValueError, match="ends early"):
+        expression_selects("integration and", ["integration"])
+    problems = find_unselected_marked_tests(
+        project / "tests", project, marker="integration", commands=[("typo.yml", 'pytest -m "slow andd integration"')], addopts=""
+    )
+    assert any(p.startswith("typo.yml::<bad expression>") for p in problems)
+    assert {p.split(": ")[0] for p in problems} >= {"tests/test_named.py::test_wire", "tests/integration/test_llm.py::<whole file>"}
+    ok = find_unselected_marked_tests(project / "tests", project, marker="integration", commands=[("ok.yml", 'pytest -m "integration"')], addopts="")
+    assert ok == []
 
 
 def test_no_commands_is_refused_rather_than_reporting_everything(project):
@@ -136,6 +146,126 @@ def test_assert_is_shrink_only(project):
     kwargs = {"marker": "integration", "commands": [_NIGHTLY, _HOOK], "addopts": _DEFAULT_ADDOPTS}
     with pytest.raises(pytest.fail.Exception, match="no runner selects"):
         assert_every_marked_test_is_selected(project / "tests", project, **kwargs)
-    assert_every_marked_test_is_selected(project / "tests", project, known={"tests/integration/test_db.py"}, **kwargs)
+    assert_every_marked_test_is_selected(project / "tests", project, known={"tests/integration/test_db.py::<whole file>"}, **kwargs)
     with pytest.raises(pytest.fail.Exception, match="now selected"):
-        assert_every_marked_test_is_selected(project / "tests", project, known={"tests/test_named.py"}, **kwargs)
+        assert_every_marked_test_is_selected(
+            project / "tests", project, known={"tests/integration/test_db.py::<whole file>", "tests/test_named.py::test_wire"}, **kwargs
+        )
+
+
+class TestAuditRegressions:
+    def test_class_markers_class_pytestmark_annassign_and_from_pytest_import_mark(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_shapes.py").write_text(
+            "import pytest\n"
+            "from pytest import mark\n"
+            "import pytest as pt\n"
+            "slow_db = pytest.mark.integration\n\n"
+            "def test_a():\n    pass\n\n"
+            "@pytest.mark.integration\nclass TestDecorated:\n    def test_b(self):\n        pass\n\n"
+            "class TestBody:\n    pytestmark = [pytest.mark.integration]\n    def test_c(self):\n        pass\n\n"
+            "@mark.integration\ndef test_d():\n    pass\n\n"
+            "@pt.mark.integration(reason='x')\ndef test_e():\n    pass\n\n"
+            "@slow_db\ndef test_f():\n    pass\n\n"
+            "@pytest.mark.other\ndef test_g():\n    pass\n",
+            encoding="utf-8",
+        )
+        (tests / "test_ann.py").write_text("import pytest\npytestmark: list = [pytest.mark.integration]\n\ndef test_h():\n    pass\n", encoding="utf-8")
+
+        keys = {t.key for t in marked_tests(tests, tmp_path, marker="integration")}
+
+        assert keys == {
+            "tests/test_shapes.py::TestDecorated::test_b",
+            "tests/test_shapes.py::TestBody::test_c",
+            "tests/test_shapes.py::test_d",
+            "tests/test_shapes.py::test_e",
+            "tests/test_shapes.py::test_f",
+            "tests/test_ann.py::<whole file>",
+        }
+
+    def test_a_bom_file_is_read_and_an_unparsable_one_is_reported(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_bom.py").write_bytes(b"\xef\xbb\xbfimport pytest\n\n@pytest.mark.integration\ndef test_x():\n    pass\n")
+        (tests / "test_broken.py").write_text("import pytest\npytestmark = pytest.mark.integration\ndef (:\n", encoding="utf-8")
+
+        problems = find_unselected_marked_tests(tests, tmp_path, marker="integration", commands=[("ci", "pytest tests -m 'not integration'")])
+
+        assert {p.split(": ")[0] for p in problems} == {"tests/test_bom.py::test_x", "tests/test_broken.py::<unparsed>"}
+        with pytest.raises(AssertionError, match=re.escape("test_broken.py")):
+            marked_tests(tests, tmp_path, marker="integration")
+
+    def test_a_bare_positional_directory_is_a_path_not_everything(self):
+        (runner,) = runners([("ci", "pytest tests -m 'not integration'")])
+        assert runner.paths == ("tests",) and not runner.is_pathless
+        (chained,) = runners([("ci", "pytest unit && echo done > log.txt")])
+        assert chained.paths == ("unit",)
+
+    def test_a_directory_outside_the_marked_file_does_not_reach_it(self, project):
+        problems = find_unselected_marked_tests(
+            project / "tests", project, marker="integration", commands=[("ci", "pytest tests/integration -m integration")], addopts=""
+        )
+        assert [p.split(": ")[0] for p in problems] == ["tests/test_named.py::test_wire"]
+
+    def test_dot_slash_and_cd_are_normalised(self, project):
+        (dotted,) = runners([("ci", "pytest ./tests/ -m integration")])
+        assert dotted.paths == ("tests",)
+        (sub,) = runners([("ci", "cd tests && pytest integration -m integration")])
+        assert sub.cwd == "tests" and sub.paths == ("integration",)
+        problems = find_unselected_marked_tests(
+            project / "tests", project, marker="integration", commands=[("ci", "cd tests && pytest integration -m integration")]
+        )
+        assert [p.split(": ")[0] for p in problems] == ["tests/test_named.py::test_wire"]
+        assert find_unselected_marked_tests(project / "tests", project, marker="integration", commands=[("ci", "cd tests && pytest . -m integration")]) == []
+
+    def test_the_last_dash_m_wins_and_every_spelling_parses(self):
+        (runner,) = runners([("ci", "pytest tests -m integration -m 'not integration'")])
+        assert runner.expression == "not integration"
+        (equals,) = runners([("ci", "pytest tests -m=integration")])
+        assert equals.expression == "integration"
+        (glued,) = runners([("ci", "pytest tests -mintegration")])
+        assert glued.expression == "integration"
+
+    def test_a_node_id_runner_reaches_only_that_test(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_a.py").write_text(
+            "import pytest\n\n@pytest.mark.integration\ndef test_x():\n    pass\n\n@pytest.mark.integration\ndef test_y():\n    pass\n", encoding="utf-8"
+        )
+        problems = find_unselected_marked_tests(tests, tmp_path, marker="integration", commands=[("hook", "pytest tests/test_a.py::test_x")])
+        assert [p.split(": ")[0] for p in problems] == ["tests/test_a.py::test_y"]
+
+    def test_dash_k_is_applied(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_a.py").write_text(
+            "import pytest\npytestmark = pytest.mark.integration\n\ndef test_fast():\n    pass\n\ndef test_slowpath():\n    pass\n", encoding="utf-8"
+        )
+        (tests / "test_b.py").write_text("import pytest\n\n@pytest.mark.integration\ndef test_q():\n    pass\n", encoding="utf-8")
+        problems = find_unselected_marked_tests(tests, tmp_path, marker="integration", commands=[("ci", "pytest tests -k 'not slowpath'")])
+        assert [p.split(": ")[0] for p in problems] == ["tests/test_a.py::<whole file>"]
+        assert find_unselected_marked_tests(tests, tmp_path, marker="integration", commands=[("ci", "pytest tests -k 'test_'")]) == []
+
+    def test_the_ratchet_is_keyed_by_test_not_by_file(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_a.py").write_text(
+            "import pytest\n\n@pytest.mark.integration\ndef test_x():\n    pass\n\n@pytest.mark.integration\ndef test_new():\n    pass\n", encoding="utf-8"
+        )
+        cmd = [("ci", "pytest tests -m 'not integration'")]
+        with pytest.raises(pytest.fail.Exception, match="test_new"):
+            assert_every_marked_test_is_selected(tests, tmp_path, marker="integration", commands=cmd, known={"tests/test_a.py::test_x"})
+        with pytest.raises(pytest.fail.Exception, match="file-level keys"):
+            assert_every_marked_test_is_selected(tests, tmp_path, marker="integration", commands=cmd, known={"tests/test_a.py"})
+        assert_every_marked_test_is_selected(
+            tests, tmp_path, marker="integration", commands=cmd, known={"tests/test_a.py::test_x", "tests/test_a.py::test_new"}
+        )
+
+    def test_expression_parser_matches_pytest_grammar(self):
+        assert expression_selects("(slow or gpu) and not flaky", ["gpu"])
+        assert not expression_selects("(slow or gpu) and not flaky", ["gpu", "flaky"])
+        assert expression_selects("not not integration", ["integration"])
+        for bad in ("slow andd integration", "(slow", "slow)", "and slow", "__import__('os')"):
+            with pytest.raises(ValueError):
+                expression_selects(bad, ["slow", "integration"])

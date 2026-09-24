@@ -43,8 +43,10 @@ def test_a_comparison_of_one_is_refused(tmp_path):
     (repo / "pkg" / "__init__.py").write_text("VERSION = get_it_from_somewhere()\n", encoding="utf-8")
 
     assert version_sources(repo, files=["pkg/__init__.py"]) == {"pyproject.toml [project].version": "1.0.0"}
-    with pytest.raises(pytest.fail.Exception, match="nothing is being compared"):
+    with pytest.raises(pytest.fail.Exception, match=re.escape("pkg/__init__.py: no `__version__")):
         assert_versions_agree(repo, files=["pkg/__init__.py"])
+    with pytest.raises(pytest.fail.Exception, match="nothing is being compared"):
+        assert_versions_agree(repo)
 
 
 def test_a_module_re_export_is_read_by_import(tmp_path, monkeypatch):
@@ -55,3 +57,26 @@ def test_a_module_re_export_is_read_by_import(tmp_path, monkeypatch):
         assert version_sources(repo, modules=["zz_version_probe"], pyproject=False) == {"zz_version_probe.__version__": "3.1.0"}
     finally:
         sys.modules.pop("zz_version_probe", None)
+
+
+class TestAuditRegressions:
+    def test_a_missing_or_unmatched_requested_source_is_reported(self, tmp_path):
+        repo = _repo(tmp_path, "1.0.0", "1.0.0")
+        (repo / "pkg" / "version.py").write_text('__version__ = "1.0.0"\n', encoding="utf-8")
+        problems: list = []
+        found = version_sources(repo, files=["pkg/__init__.py", "pkg/verison.py"], problems=problems)
+        assert len(found) == 2 and problems == ["pkg/verison.py: file does not exist"]
+        with pytest.raises(pytest.fail.Exception, match=re.escape("pkg/verison.py: file does not exist")):
+            assert_versions_agree(repo, files=["pkg/__init__.py", "pkg/verison.py"])
+        assert_versions_agree(repo, files=["pkg/__init__.py", "pkg/version.py"])
+
+    def test_a_missing_pyproject_version_is_reported_when_pyproject_is_requested(self, tmp_path):
+        repo = _repo(tmp_path, "1.0.0", "1.0.0")
+        (repo / "pyproject.toml").write_text('[project]\nname = "p"\ndynamic = ["version"]\n', encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="dynamic"):
+            assert_versions_agree(repo, files=["pkg/__init__.py"])
+
+    def test_a_bom_file_is_read(self, tmp_path):
+        repo = _repo(tmp_path, "1.0.0", "1.0.0")
+        (repo / "pkg" / "__init__.py").write_bytes(b'\xef\xbb\xbf__version__ = "1.0.0"\n')
+        assert_versions_agree(repo, files=["pkg/__init__.py"])

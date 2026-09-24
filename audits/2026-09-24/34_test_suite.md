@@ -263,7 +263,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-19 (Low) -- Survivor N3: the default skip-dir list (build) is not pinned; only user-given skip dirs...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- naive_utcnow's default skip list is now `_core.DEFAULT_EXCLUDE` (migrated by the core agent). A test pins the list against the canonical set and names the directories that matter, and a test parametrized over every entry proves each one is skipped while a sibling source directory is still scanned, so dropping any entry (not only `build`) fails a named test. regression test: tests/test_naive_utcnow.py::TestDefaultSkipDirsArePinned::test_the_default_list_is_the_shared_canonical_set, tests/test_naive_utcnow.py::TestDefaultSkipDirsArePinned::test_each_default_skip_dir_is_skipped_and_a_sibling_is_not
 
 - **Original id:** F-19
 - **Where:** tests/test_naive_utcnow.py

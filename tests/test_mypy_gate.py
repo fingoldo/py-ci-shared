@@ -7,9 +7,12 @@ where the gate itself got it wrong.
 
 from __future__ import annotations
 
+import subprocess
+
 import pytest
 
-from py_ci_shared.mypy_gate import check_mypy_output
+from py_ci_shared import mypy_gate
+from py_ci_shared.mypy_gate import _split_args, check_mypy_output
 
 SUCCESS = "Success: no issues found in 317 source files"
 WITH_ERRORS = "dashboard/db.py:12: error: Incompatible types\nFound 366 errors in 138 files (checked 165 source files)"
@@ -82,4 +85,41 @@ class TestARunThatNeverFinished:
         """The whole premise: an exit code cannot tell a clean run from a run that never happened,
         so the gate reads the output rather than the status."""
         assert check_mypy_output("", returncode=returncode) is not None
-        assert check_mypy_output(SUCCESS, returncode=returncode) is None
+
+
+class TestAuditRegressions:
+    def test_a_success_line_with_a_nonzero_exit_is_not_clean(self):
+        assert check_mypy_output(SUCCESS, returncode=0) is None
+        for returncode in (1, 2):
+            message = check_mypy_output(SUCCESS, returncode=returncode)
+            assert message is not None and f"exited {returncode}" in message
+
+    @pytest.mark.parametrize(
+        ("argv", "expected"),
+        [
+            (["--min-files", "200", "src/pkg"], (200, ["src/pkg"])),
+            (["--min-files=200", "src/pkg"], (200, ["src/pkg"])),
+            (["src/pkg", "--strict"], (0, ["src/pkg", "--strict"])),
+        ],
+    )
+    def test_min_files_is_consumed_in_both_spellings(self, argv, expected):
+        assert _split_args(argv) == expected
+
+    def test_a_dangling_min_files_is_a_usage_error_not_an_index_error(self):
+        with pytest.raises(SystemExit) as info:
+            _split_args(["--min-files"])
+        assert info.value.code == 2
+
+    def test_main_decodes_as_utf8_and_never_forwards_min_files(self, monkeypatch, capsys):
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen["cmd"], seen["kwargs"] = cmd, kwargs
+            return subprocess.CompletedProcess(cmd, 0, "Success: no issues found in 300 source files\n", "")
+
+        monkeypatch.setattr(mypy_gate.subprocess, "run", fake_run)
+        assert mypy_gate.main(["--min-files=200", "src/pkg"]) == 0
+        assert seen["cmd"][-1] == "src/pkg" and not any("min-files" in c for c in seen["cmd"])
+        assert seen["kwargs"]["encoding"] == "utf-8" and seen["kwargs"]["errors"] == "replace"
+        assert seen["kwargs"]["env"]["PYTHONIOENCODING"] == "utf-8"
+        assert mypy_gate.main(["--min-files=400", "src/pkg"]) == 1

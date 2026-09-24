@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from py_ci_shared.pytest_markers import (
     assert_markers_registered,
     conftest_markers,
     find_unregistered_markers,
+    ini_markers,
     pyproject_markers,
 )
 
@@ -91,7 +93,7 @@ class TestAssertion:
 
     def test_it_fails_when_the_parser_cannot_see_an_expected_registration(self, tmp_path):
         """The guard every local copy kept as its own smoke test: a moved pyproject table must not read as clean."""
-        repo = _tree(tmp_path, {"pyproject.toml": "[tool.pytest]\nmarkers = ['slow: moved']\n", "tests/test_a.py": "def test_x():\n    pass\n"})
+        repo = _tree(tmp_path, {"pyproject.toml": "[tool.pytest.options]\nmarkers = ['slow: moved']\n", "tests/test_a.py": "def test_x():\n    pass\n"})
 
         with pytest.raises(pytest.fail.Exception, match="expected registered"):
             assert_markers_registered(repo, expect_registered=("slow",))
@@ -100,3 +102,68 @@ class TestAssertion:
         repo = _tree(tmp_path, {"pyproject.toml": _PYPROJECT, "tests/test_a.py": "import pytest\n@pytest.mark.slow\ndef test_x():\n    pass\n"})
 
         assert_markers_registered(repo, expect_registered=("slow", "integration"))
+
+
+class TestAuditRegressions:
+    _USE = "import pytest\n@pytest.mark.alpha\n@pytest.mark.beta\n@pytest.mark.gamma\n@pytest.mark.delta\ndef test_x():\n    pass\n"
+
+    def test_native_toml_tables_and_pytest_toml_register(self, tmp_path):
+        repo = _tree(
+            tmp_path,
+            {
+                "pyproject.toml": "[tool.pytest]\nmarkers = ['alpha: native pytest 9 table']\n",
+                "pytest.toml": "[pytest]\nmarkers = ['beta: pytest.toml']\n",
+                "tests/test_a.py": "import pytest\n@pytest.mark.alpha\n@pytest.mark.beta\ndef test_x():\n    pass\n",
+            },
+        )
+        assert find_unregistered_markers(repo) == {}
+        (repo / "pytest.toml").unlink()
+        assert find_unregistered_markers(repo) == {"beta": ["tests/test_a.py"]}
+
+    def test_the_root_conftest_and_non_literal_registrations_count(self, tmp_path):
+        repo = _tree(
+            tmp_path,
+            {
+                "conftest.py": 'def pytest_configure(config):\n    config.addinivalue_line("markers", "alpha: root conftest")\n',
+                "tests/conftest.py": (
+                    'MARKERS = ("beta: from a constant", "gamma(n): too")\n'
+                    'DELTA = "delta: named constant"\n'
+                    "def pytest_configure(config):\n"
+                    "    for line in MARKERS:\n"
+                    '        config.addinivalue_line("markers", line)\n'
+                    '    config.addinivalue_line("markers", DELTA)\n'
+                ),
+                "tests/test_a.py": self._USE,
+            },
+        )
+        assert find_unregistered_markers(repo) == {}
+
+    def test_an_unresolvable_registration_is_named_in_the_failure(self, tmp_path):
+        repo = _tree(
+            tmp_path,
+            {
+                "tests/conftest.py": "def pytest_configure(config):\n    for line in load():\n        config.addinivalue_line('markers', line)\n",
+                "tests/test_a.py": "import pytest\n@pytest.mark.alpha\ndef test_x():\n    pass\n",
+            },
+        )
+        with pytest.raises(pytest.fail.Exception, match=r"could not be read statically(.|\n)*conftest.py:3"):
+            assert_markers_registered(repo)
+
+    def test_a_duplicate_markers_option_in_the_pytest_section_is_surfaced(self, tmp_path):
+        repo = _tree(tmp_path, {"tox.ini": "[pytest]\nmarkers =\n    alpha: a\nmarkers =\n    beta: b\n", "tests/test_a.py": "def test_x():\n    pass\n"})
+        with pytest.raises(ValueError, match=re.escape("tox.ini")):
+            ini_markers(repo)
+
+    def test_a_duplicate_in_another_tool_s_section_does_not_hide_the_markers(self, tmp_path):
+        repo = _tree(tmp_path, {"tox.ini": "[testenv]\ndeps = a\ndeps = b\n[pytest]\nmarkers =\n    alpha: a\n"})
+        assert ini_markers(repo) == {"alpha"}
+
+    def test_bom_and_unparsable_conftests(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "conftest.py").write_bytes(b'\xef\xbb\xbfdef pytest_configure(config):\n    config.addinivalue_line("markers", "alpha: a")\n')
+        assert conftest_markers(tests) == {"alpha"}
+        (tests / "sub").mkdir()
+        (tests / "sub" / "conftest.py").write_text("def (:\n", encoding="utf-8")
+        with pytest.raises(AssertionError, match="could not be parsed"):
+            conftest_markers(tests)
