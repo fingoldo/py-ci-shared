@@ -634,6 +634,17 @@ def test_conceded_defect_pins_do_not_grow():
     assert len(find_conceded_defect_pins(TEST_FILES, REPO_ROOT)) <= RECORDED_COUNT
 ```
 
+## Advice in messages must be tested (`printed_advice`)
+
+A log line or error that tells the reader to act - "raise mi_sample_n or lower mi_nbins", "pass it via base_candidates=[...]", "Set drop_invalid_rows=True" - is read only after something went wrong, so advice naming a renamed knob, or one that does not change what it promises, goes unnoticed. `find_printed_advice(files, repo_root)` returns every such message literal passed to a logging call, `warnings.warn`, `print` or an exception, keyed `<path>::<enclosing function>#<n>` so the key survives line moves. Keep a table from each key to the test that follows the advice and observes its effect, and fail on unregistered or stale keys.
+
+```python
+from py_ci_shared.printed_advice import find_printed_advice
+
+def test_every_printed_advice_has_a_test():
+    assert {a.key for a in find_printed_advice(SOURCE_FILES, REPO_ROOT)} == set(PRINTED_ADVICE_TESTS)
+```
+
 ## Using the shared ruff config
 
 Ruff natively supports `extend = "<path>"` pointing at another ruff config file — a real merge (select/ignore/per-file-ignores/pep8-naming all combine), not copy-paste. `configs/ruff-base.toml` is NOT shipped inside the pip package (ruff needs a real filesystem path, and `extend` is resolved at ruff-invocation time, not import time) — but ruff DOES expand `~` and environment variables in that path (docs.astral.sh/ruff/settings), so consuming repos point at an env var instead of a fixed relative location:
