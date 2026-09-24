@@ -153,3 +153,16 @@ class TestCorpusAndBaseline:
         (src / "n.py").write_text("def g(cache, d):\n    cache.write_bytes(d)\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="in-place-rewrite"):
             assert_atomic_write_staging(src, baseline_path=bl, use_git=False)
+
+
+class TestAListOfDirectories:
+    def test_two_directories_report_what_two_calls_report(self, tmp_path):
+        dirs = [tmp_path / "a", tmp_path / "b"]
+        for d in dirs:
+            d.mkdir()
+            (d / f"{d.name}.py").write_text("def store(self, cache_file, data):\n    cache_file.write_text(data)\n", encoding="utf-8")
+        together, scan = find_atomic_write_staging(dirs, use_git=False)
+        apart = [f for d in dirs for f in find_atomic_write_staging(d, use_git=False)[0]]
+        assert [(f.path, f.rule, f.line) for f in together] == [("a.py", RULE_REWRITE, 2), ("b.py", RULE_REWRITE, 2)]
+        assert [(f.path, f.rule, f.line) for f in apart] == [(f.path, f.rule, f.line) for f in together]
+        assert len(scan.files) == 2

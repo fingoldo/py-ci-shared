@@ -666,3 +666,5 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `NEW-30` | upstream Dart scanner timed-dismissal |
 | **RESOLVED** | Med | `NEW-31` | upstream Dart scanner double-error-reports |
 | **RESOLVED** | Med | `NEW-32` | upstream Dart scanner unused-test-seams |
+| **RESOLVED** | Med | `CANARY-26` | gates handed a list of directories treated each directory as a file |
+| **RESOLVED** | Med | `CANARY-27` | effect_assertion_parity reported SELECT-only reads as unchecked database effects |

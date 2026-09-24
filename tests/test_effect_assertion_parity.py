@@ -661,7 +661,7 @@ class TestExecuteIsAlsoAnOrdinaryWord:
 
     def test_a_third_party_session_execute_is_still_reported(self, tmp_path: Path):
         """The base being an imported NAME is not enough -- only a first-party module is exempt."""
-        _write(tmp_path, "store.py", "import sqlalchemy\n\n\ndef save(session):\n    session.execute(sqlalchemy.text('SELECT 1'))\n")
+        _write(tmp_path, "store.py", "import sqlalchemy\n\n\ndef save(session):\n    session.execute(sqlalchemy.text('DELETE FROM t'))\n")
         _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(session):\n    assert store.save(session) is None\n")
 
         assert "store.py::execute" in find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
@@ -887,3 +887,36 @@ class TestAuditRegressions:
             assert_effects_are_asserted(tmp_path, {"store.py": ["tests/test_store.py"]}, accepted=["store.py::commit"])
         with pytest.raises(pytest.fail.Exception, match="0 module"):
             assert_effects_are_asserted(tmp_path, {})
+
+
+class TestAReadIsNotAnEffect:
+    _TEST = "import store\n\n\ndef test_it(cur):\n    store.run(cur)\n"
+
+    @pytest.mark.parametrize(
+        ("statement", "reported"),
+        [
+            ('"SELECT id FROM t WHERE x = %s"', False),
+            ('"  -- lookup\\n/* hint */ select 1"', False),
+            ('"WITH r AS (SELECT 1) SELECT * FROM r"', False),
+            ('"SELECT * FROM t FOR UPDATE"', False),
+            ('text("SELECT 1")', False),
+            ("select(Model)", False),
+            ('"WITH r AS (SELECT 1) INSERT INTO t SELECT * FROM r"', True),
+            ('"WITH d AS (DELETE FROM t RETURNING *) SELECT * FROM d"', True),
+            ('"SELECT * INTO backup FROM t"', True),
+            ('"INSERT INTO t VALUES (1)"', True),
+            ('"CREATE TABLE t (x int)"', True),
+            ('f"SELECT * FROM {table}"', True),
+            ("sql", True),
+        ],
+    )
+    def test_only_writes_and_unreadable_statements_are_reported(self, tmp_path, statement, reported):
+        _write(tmp_path, "store.py", f"def run(cur, table='t', sql='x'):\n    cur.execute({statement})\n")
+        _write(tmp_path, "tests/test_store.py", self._TEST)
+        problems = find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})
+        assert list(problems) == (["store.py::execute"] if reported else [])
+
+    def test_a_select_beside_a_write_still_reports_the_write(self, tmp_path):
+        _write(tmp_path, "store.py", "def run(cur):\n    cur.execute('SELECT 1')\n    cur.execute('UPDATE t SET x = 1')\n")
+        _write(tmp_path, "tests/test_store.py", self._TEST)
+        assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::execute"]

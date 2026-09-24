@@ -221,3 +221,35 @@ class TestCorpusAndBaseline:
         (src / "n.py").write_text("def g(p):\n    try:\n        p.write_text('x')\n    except OSError:\n        pass\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match=r"n.py"):
             assert_no_swallowed_exceptions(src, baseline_path=bl, use_git=False)
+
+
+class TestAListOfDirectories:
+    _BODY = "def f(p, data):\n    try:\n        p.write_text(data)\n    except OSError:\n        pass\n"
+
+    def _two_dirs(self, tmp_path: Path) -> tuple[Path, Path]:
+        a, b = tmp_path / "a", tmp_path / "b"
+        for d, name in ((a, "one.py"), (b, "two.py")):
+            d.mkdir()
+            (d / name).write_text(self._BODY, encoding="utf-8")
+        return a, b
+
+    def test_two_directories_report_what_two_calls_report(self, tmp_path):
+        a, b = self._two_dirs(tmp_path)
+        together, scan = find_swallowed_exceptions([a, b], use_git=False)
+        apart = find_swallowed_exceptions(a, use_git=False)[0] + find_swallowed_exceptions(b, use_git=False)[0]
+        assert [(f.path, f.line) for f in together] == [("one.py", 4), ("two.py", 4)]
+        assert sorted((f.path, f.line) for f in apart) == [(f.path, f.line) for f in together]
+        assert len(scan.files) == 2
+
+    def test_a_directory_and_a_file_mix(self, tmp_path):
+        a, b = self._two_dirs(tmp_path)
+        findings, _ = find_swallowed_exceptions([a, b / "two.py"], use_git=False)
+        assert sorted(f.path for f in findings) == sorted(["one.py", (b / "two.py").as_posix()])
+        assert [f.line for f in findings] == [4, 4]
+
+    def test_a_missing_entry_raises(self, tmp_path):
+        from py_ci_shared._core import CorpusError
+
+        a, _ = self._two_dirs(tmp_path)
+        with pytest.raises(CorpusError, match="does not exist"):
+            find_swallowed_exceptions([a, tmp_path / "nope"], use_git=False)

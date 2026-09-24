@@ -160,3 +160,17 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- an unquoted flag value stops at whitespace, quotes and the shell metacharacters ( ) ; | & < > and backtick; quoted names with spaces are still read whole; regression test: test_test_partition_reachability.py::test_an_unquoted_name_stops_at_a_shell_metacharacter (the exact polyvocab_app line), test_a_subshell_selection_still_reports_a_project_nobody_runs (negative control)
 
 - **Finding:** polyvocab_app ci.yml:531 `(cd e2e && npx playwright test --project=chromium-desktop)` was read as project `chromium-desktop)`, so the real chromium-desktop project was reported as never run
+
+
+### CANARY-26 (Med) -- gates handed a list of directories treated each directory as a file
+
+**Disposition:** RESOLVED -- _core.scan_python, which every _gate_run gate reads through, now takes a directory, an iterable of files, or an iterable mixing files and directories: each directory entry is enumerated with iter_files under the same patterns and exclusions, its findings keep paths relative to that directory (so a list reports what one call per directory reports), a file named twice is parsed once, and a missing entry raises CorpusError; signatures unchanged; regression test: test_core_scan.py::TestMixedCorpus, test_swallowed_exceptions.py::TestAListOfDirectories (two directories equal two calls, a mixed list, a missing entry raises), test_atomic_write_staging.py::TestAListOfDirectories
+
+- **Finding:** scan_python's iterable branch passed every entry straight to the parser, so swallowed_exceptions, atomic_write_staging and the other gates typed `Iterable[Union[str, Path]]` reported a directory entry as an unreadable file; autopsia had to call each gate once per directory
+
+
+### CANARY-27 (Med) -- effect_assertion_parity reported SELECT-only reads as unchecked database effects
+
+**Disposition:** RESOLVED -- an execute-like call (execute, executemany, execute_values, execute_batch, exec_driver_sql) whose statement is a SQL literal (plain, concatenated, or wrapped in text()/SQL()) that only reads is not an effect: SELECT, SHOW, VALUES, TABLE, DESCRIBE, EXPLAIN without ANALYZE and `WITH ... SELECT`, after comments and quoted values are stripped; a CTE that writes, `SELECT ... INTO` and any write keyword still count (row locks `FOR UPDATE` do not), a sqlalchemy select(...) construct is a read, and a statement built at run time (f-string, variable) keeps the old behaviour; regression test: test_effect_assertion_parity.py::TestAReadIsNotAnEffect (SELECT, commented select, CTE SELECT, FOR UPDATE, text(), select() pass; CTE INSERT, data-modifying CTE, SELECT INTO, INSERT, CREATE, f-string and variable SQL are reported; a SELECT beside an UPDATE still reports)
+
+- **Finding:** every execute() counted as an effect, so a module that only queried was told to assert on a database write it never makes

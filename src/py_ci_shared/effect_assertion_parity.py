@@ -36,6 +36,7 @@ no test currently inspects.
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Optional
@@ -102,6 +103,75 @@ _THIRD_PARTY_ROOTS = frozenset(
         "pyodbc",
     }
 )
+
+
+#: Calls whose argument holds a statement execute() runs: ``cur.execute(sql)``, ``session.execute(text(sql))``.
+_STATEMENT_CALLS = frozenset({"execute", "executemany", "execute_values", "execute_batch", "exec_driver_sql"})
+_STATEMENT_KEYWORDS = ("sql", "statement", "query", "operation")
+#: One-argument wrappers that carry a SQL literal through unchanged.
+_SQL_WRAPPERS = frozenset({"text", "SQL", "literal_column"})
+#: SQLAlchemy statement constructors, read for what they build.
+_READ_CONSTRUCTS = frozenset({"select"})
+_READ_LEADS = frozenset({"SELECT", "SHOW", "VALUES", "TABLE", "DESCRIBE", "DESC"})
+_WRITE_WORD = re.compile(r"\b(INSERT|UPDATE|DELETE|MERGE|UPSERT|TRUNCATE|COPY|CREATE|ALTER|DROP|GRANT|REVOKE)\b")
+_ROW_LOCK = re.compile(r"\bFOR\s+(NO\s+KEY\s+)?(UPDATE|SHARE|KEY\s+SHARE)\b")
+
+
+def _sql_literal(node: ast.AST) -> Optional[str]:
+    """The SQL text of a literal statement argument, or None when it is built at run time (f-string, name, call)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _sql_literal(node.left), _sql_literal(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.Call) and len(node.args) == 1 and not node.keywords:
+        func = node.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        if name in _SQL_WRAPPERS:
+            return _sql_literal(node.args[0])
+    return None
+
+
+def _strip_sql_noise(sql: str) -> str:
+    """*sql* without comments and quoted literals, upper-cased, so keywords are read and data is not."""
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)
+    sql = re.sub(r"--[^\n]*", " ", sql)
+    sql = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    return sql.upper()
+
+
+def _sql_is_read(sql: str) -> bool:
+    """True when a literal statement only reads. ``WITH ... SELECT`` reads; a CTE that writes, ``SELECT ... INTO``,
+    ``EXPLAIN ANALYZE`` and anything not recognised count as writes."""
+    text = _strip_sql_noise(sql).lstrip(" \t\r\n(;")
+    words = text.split(None, 3)
+    if not words or words[0] not in _READ_LEADS | {"WITH", "EXPLAIN"}:
+        return False
+    if words[0] == "EXPLAIN" and "ANALYZE" in words[1:3]:
+        return False  # EXPLAIN ANALYZE runs the statement
+    return not _WRITE_WORD.search(_ROW_LOCK.sub(" ", text)) and not re.search(r"\bINTO\b", text)
+
+
+def _statement_is_read(call: ast.Call) -> bool:
+    """True when this execute-like call's statement is a literal (or ``select(...)`` construct) that only reads."""
+    arg: Optional[ast.AST] = call.args[0] if call.args else None
+    if arg is None:
+        arg = next((kw.value for kw in call.keywords if kw.arg in _STATEMENT_KEYWORDS), None)
+    if isinstance(call.func, ast.Name) and len(call.args) >= 2:
+        arg = call.args[1]  # execute_values(cur, sql, rows)
+    if arg is None:
+        return False
+    if isinstance(arg, ast.Call):
+        head = arg.func
+        while isinstance(head, ast.Call):
+            head = head.func
+        while isinstance(head, ast.Attribute) and isinstance(head.value, ast.Call):
+            head = head.value.func
+        name = head.attr if isinstance(head, ast.Attribute) else head.id if isinstance(head, ast.Name) else ""
+        if name in _READ_CONSTRUCTS:
+            return True
+    sql = _sql_literal(arg)
+    return sql is not None and _sql_is_read(sql)
 
 
 class _Parser:
@@ -180,6 +250,10 @@ def _performs(path: Path, effects: Sequence[str], *, repo_root: Optional[Path] =
     is a first-party module the file imports (see :func:`_local_module_names`). Everything else is unchanged:
     ``cur.execute(...)`` on a parameter or an attribute is still an effect, and so is a bare ``execute_values(...)``
     imported from psycopg2, and so is ``conn.commit()`` on an object imported from a first-party module.
+
+    A read is not an effect: an execute-like call whose statement is a SQL literal that only reads (``SELECT``,
+    ``WITH ... SELECT``, ``SHOW``) or a ``select(...)`` construct is skipped. A statement built at run time (an
+    f-string, a variable) cannot be read, so it still counts.
     """
     if tree is None:
         tree = _tree(path)
@@ -195,11 +269,15 @@ def _performs(path: Path, effects: Sequence[str], *, repo_root: Optional[Path] =
             base = node.func.value
             if isinstance(base, ast.Name) and base.id in local_modules:
                 continue
+            if node.func.attr in _STATEMENT_CALLS and _statement_is_read(node):
+                continue
             found.add(node.func.attr)
         # A bare call, `execute_values(cur, sql, rows)`, is an effect too -- unless this module is
         # the one that defines it.
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in effects:
             if node.func.id in defined_here:
+                continue
+            if node.func.id in _STATEMENT_CALLS and _statement_is_read(node):
                 continue
             found.add(node.func.id)
     return found

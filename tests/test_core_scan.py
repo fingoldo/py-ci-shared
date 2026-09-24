@@ -71,3 +71,29 @@ def test_excluded_dirs_do_not_count_toward_the_floor(tmp_path):
     with pytest.raises(EmptyScanError):
         scan_python(tmp_path, use_git=False).check_floor()
     scan_python(tmp_path, exclude=(), use_git=False).check_floor()
+
+
+def _write_one(d: Path, name: str, body: str) -> Path:
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text(body, encoding="utf-8")
+    return d / name
+
+
+class TestMixedCorpus:
+    def test_directories_in_a_list_are_expanded_under_the_same_exclusions(self, tmp_path):
+        _write_one(tmp_path / "a", "x.py", "x = 1\n")
+        _write_one(tmp_path / "a" / "__pycache__", "junk.py", "x = 1\n")
+        _write_one(tmp_path / "b", "y.py", "y = 1\n")
+        loose = _write_one(tmp_path, "z.py", "z = 1\n")
+        result = scan_python([tmp_path / "a", str(tmp_path / "b"), loose], use_git=False)
+        assert sorted(f.rel for f in result.files) == sorted(["x.py", "y.py", loose.as_posix()])
+
+    def test_a_file_named_twice_is_parsed_once(self, tmp_path):
+        f = _write_one(tmp_path / "a", "x.py", "x = 1\n")
+        assert len(scan_python([tmp_path / "a", f], use_git=False).files) == 1
+
+    def test_a_missing_entry_raises(self, tmp_path):
+        from py_ci_shared._core import CorpusError
+
+        with pytest.raises(CorpusError, match="does not exist"):
+            scan_python([tmp_path / "missing.py"])

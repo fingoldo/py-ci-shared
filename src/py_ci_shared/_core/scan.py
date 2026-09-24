@@ -16,7 +16,7 @@ from typing import Optional, Union
 from collections.abc import Iterable, Iterator, Sequence
 
 from .corpus import DEFAULT_EXCLUDE, iter_files, relative_posix
-from .errors import EmptyScanError, SourceError, UnparsedFilesError
+from .errors import CorpusError, EmptyScanError, SourceError, UnparsedFilesError
 from .findings import UNPARSED_RULE, Finding
 from .source import parse_source
 
@@ -109,22 +109,41 @@ def scan_python(
 ) -> ScanResult:
     """Parse every Python file in a corpus.
 
-    *files_or_root* is a directory (enumerated with :func:`iter_files`) or an explicit iterable of files. *root*
-    is what ``rel`` paths are relative to: defaults to the directory, and for an explicit file list may be given;
-    a file outside *root* gets its absolute POSIX path rather than a ``ValueError``. This function does NOT raise
-    on the floor; call ``result.check_floor()``/``assert_ok()`` (a gate usually wants to report its findings and
-    the floor together).
+    *files_or_root* is a directory (enumerated with :func:`iter_files`), or an iterable whose entries are files or
+    directories; each directory entry is enumerated with :func:`iter_files` under the same *patterns* and *exclude*.
+    A missing entry raises :class:`CorpusError`. *root* is what ``rel`` paths are relative to: defaults to the
+    directory (for a directory entry of an iterable, to that entry, so a list of directories reports the same paths
+    as one call per directory); an explicit file with no *root* gets its absolute POSIX path. This function does
+    NOT raise on the floor; call ``result.check_floor()``/``assert_ok()`` (a gate usually wants to report its
+    findings and the floor together).
     """
+    rel_root: Optional[Path] = Path(root) if root is not None else None
+    pairs: list[tuple[Path, Optional[Path]]] = []
     if isinstance(files_or_root, (str, os.PathLike)):
         base = Path(files_or_root)
-        paths: list[Path] = iter_files(base, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)
-        rel_root: Optional[Path] = Path(root) if root is not None else base
+        if rel_root is None:
+            rel_root = base
+        pairs = [(p, rel_root) for p in iter_files(base, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)]
     else:
-        paths = sorted(Path(p) for p in files_or_root)
-        rel_root = Path(root) if root is not None else None
+        seen: set[Path] = set()
+        for entry in (Path(e) for e in files_or_root):
+            new_pairs: list[tuple[Path, Optional[Path]]]
+            if entry.is_dir():
+                entry_root = rel_root if rel_root is not None else entry
+                found = iter_files(entry, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)
+                new_pairs = [(p, entry_root) for p in found]
+            elif entry.exists():
+                new_pairs = [(entry, rel_root)]
+            else:
+                raise CorpusError(f"corpus entry does not exist: {entry}")
+            for found_path, found_base in new_pairs:
+                if found_path not in seen:
+                    seen.add(found_path)
+                    pairs.append((found_path, found_base))
+        pairs.sort(key=lambda pr: pr[0])
     result = ScanResult(root=rel_root, min_files=min_files)
-    for path in paths:
-        item = _parse_one(path, relative_posix(path, rel_root))
+    for path, rel_base in pairs:
+        item = _parse_one(path, relative_posix(path, rel_base))
         if isinstance(item, ParsedFile):
             result.files.append(item)
         else:
