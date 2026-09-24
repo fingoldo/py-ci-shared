@@ -313,7 +313,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-24 (Low) -- The fake reader sleeps 30 s in a background thread that is left running after the test...
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_WarmRunner` now reads replies through one pump thread per process into a queue, and the test's fake reader blocks on an `Event` that the test sets in `finally`, then asserts the reader thread has exited; regression test: test_mutation_teeth.py::TestAnUnmeasuredMutantIsNotReportedAsMeasured::test_the_warm_reader_gives_up_rather_than_blocking_forever
 
 - **Original id:** F-24
 - **Where:** tests/test_mutation_teeth.py:590

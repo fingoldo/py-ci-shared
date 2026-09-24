@@ -1530,7 +1530,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-2 (High) -- zero mutants (unparsable file, empty scope) passes
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `generate_mutants` parses the target once and raises `MutationHarnessError` for a file that does not parse; `find_surviving_mutants` raises when the scope yields no mutant to run, unless the new `allow_empty=True` is passed. The refusal comes before any pytest run is paid for; regression test: test_mutation_teeth_regressions.py::TestZeroMutantsIsNotAPass::test_an_unparsable_target_raises, ::test_an_empty_scope_raises_unless_allowed, ::test_a_scope_with_mutants_runs_normally
 
 - **Where:** mutation_teeth.py:2006-2035
 - **Finding:** zero mutants (unparsable file, empty scope) passes
@@ -1540,7 +1540,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-3 (High) -- BOM: AST operators return []
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- targets are read through `_core.read_source` (interpreter decoding, BOM stripped) by `_mutation_model.read_target`, which records the BOM and encoding; every mutant, restore and revert is written with `write_target`, which re-adds the BOM and re-encodes; regression test: test_mutation_teeth_regressions.py::TestBomAndEncodings::test_a_bom_file_gets_the_same_mutants, ::test_a_mutant_is_written_back_with_its_bom, ::test_a_file_without_a_bom_is_written_without_one
 
 - **Where:** mutation_teeth.py:848 (1513, 2067)
 - **Finding:** BOM: AST operators return `[]`
@@ -1550,7 +1550,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-4 (Med) -- generator lines consumed by fingerprint; whole file swept, cached under narrow key
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_normalise_lines` materialises `lines` once at the top of `find_surviving_mutants`; the same list feeds the fingerprint scope and `generate_mutants`, so a generator scopes the sweep and caches under its own key; regression test: test_mutation_teeth_regressions.py::TestTheLineScope::test_a_generator_is_read_once_and_scopes_the_sweep, ::test_a_generator_run_is_cached_under_its_own_scope
 
 - **Where:** mutation_teeth.py:1670 → 1760, 863
 - **Finding:** generator `lines` consumed by fingerprint; whole file swept, cached under narrow key
@@ -1560,7 +1560,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-5 (Med) -- lines=[] = whole file, same cache key as full run
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `None` means the whole file and `[]` selects nothing, in both `generate_mutants` and the fingerprint scope (`_scope_of` keeps them distinct); an empty scope then hits the MT-2 refusal unless `allow_empty`; regression test: test_mutation_teeth_regressions.py::TestTheLineScope::test_an_empty_scope_and_the_whole_file_key_differently, ::test_an_empty_scope_generates_nothing
 
 - **Where:** mutation_teeth.py:860-863, 879; 1670
 - **Finding:** `lines=[]` = whole file, same cache key as full run
@@ -1570,7 +1570,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-6 (Med) -- twin verdicts not fanned out; accepted twins read stale
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- only one representative per byte-identical mutated file is run, and `_merge_verdicts` fans its verdict (survivor, gap, inconclusive, kill, crash, killer category) to every twin, so each twin's baseline key is reported and counted; regression test: test_mutation_teeth_regressions.py::TestTwinsShareOneVerdict::test_a_surviving_twin_reports_both_keys, ::test_a_killed_twin_kills_both
 
 - **Where:** mutation_teeth.py:1767-1771, 1815-1830
 - **Finding:** twin verdicts not fanned out; accepted twins read stale
@@ -1580,7 +1580,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-7 (High) -- worker reply desync after stray fd-1 output
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the worker moves the protocol to a private dup of fd 1 and points fd 1 at the null device (`_claim_protocol_channel`), so `os.write(1, ...)` and child processes cannot reach the channel; every request carries an `id` and `_WarmRunner` skips any line that is not the reply to its own request; regression test: test_mutation_worker.py::TestTheProtocolChannelIsPrivate::test_a_raw_fd_1_write_cannot_forge_a_reply, ::test_a_failing_run_still_reports_its_own_code, test_mutation_teeth_regressions.py::TestWarmRunnerState::test_a_reply_to_another_request_is_skipped
 
 - **Where:** mutation_teeth.py:1356-1361; _mutation_worker.py:136
 - **Finding:** worker reply desync after stray fd-1 output
@@ -1590,7 +1590,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-8 (High) -- sweep_files(jobs>1) extra sandboxes not removed → FileExistsError on 2nd file
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- extra sandboxes for `jobs>1` are created by `_run_partitions` in a `mkdtemp` directory owned by that call and removed in its `finally`, so a second file in `sweep_files` no longer hits `FileExistsError` and nothing is left in the temp dir; regression test: test_mutation_teeth_regressions.py::TestExtraSandboxes::test_sweep_files_with_jobs_cleans_up_and_handles_a_second_file
 
 - **Where:** mutation_teeth.py:1781-1784
 - **Finding:** `sweep_files(jobs>1)` extra sandboxes not removed → FileExistsError on 2nd file
@@ -1600,7 +1600,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-9 (Low) -- extra sandboxes copied from live repo, no cold baseline
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- extra sandboxes are copied from the verified sandbox, not the live repo, and each runs its own cold unmutated baseline (`_sweep_partition(verify_baseline=True)`) and refuses if it fails; regression test: test_mutation_teeth_regressions.py::TestExtraSandboxes::test_extras_are_copied_from_the_verified_sandbox_and_verified, ::test_an_extra_sandbox_whose_baseline_fails_is_refused
 
 - **Where:** mutation_teeth.py:1727, 1783
 - **Finding:** extra sandboxes copied from live repo, no cold baseline
@@ -1610,7 +1610,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-10 (Med) -- warm-path crash kills undercounted
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the worker's `_FirstFailure` plugin classifies the first failure's crash line with the shared `is_crash_message` and replies `crash`; the warm path counts a crash from that flag or from exit codes 2-5, and the cold path counts 2-5 or a crash line, so warm and cold agree; regression test: test_mutation_worker.py::TestCrashesAreToldApart::test_a_type_error_is_a_crash_and_an_assertion_is_not, ::test_the_plugin_reads_the_crash_line, test_mutation_teeth_regressions.py::TestWarmCrashesAreCounted::test_a_type_error_kill_in_the_warm_worker_is_a_crash, ::test_an_assertion_kill_is_not
 
 - **Where:** mutation_teeth.py:1579-1584
 - **Finding:** warm-path crash kills undercounted
@@ -1620,7 +1620,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-11 (Low) -- dead AssertionError entry
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the dead `AssertionError` entry is removed; the crash list now lives in `_mutation_worker._CRASH_EXCEPTIONS` (re-exported by `mutation_teeth`) and assertions are decided first by `is_crash_message`; regression test: test_mutation_teeth_regressions.py::TestWarmCrashesAreCounted::test_the_crash_list_has_no_dead_entry
 
 - **Where:** mutation_teeth.py:1170 vs 1195
 - **Finding:** dead `AssertionError` entry
@@ -1630,7 +1630,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-12 (Med) -- worker not restarted after timeout; timeout paid twice
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_WarmRunner.run` sets `last_timed_out`; a warm timeout is recorded INCONCLUSIVE without a cold re-run, and the worker is replaced with `restart()` for the next mutant; a worker that died is restarted too, after the cold fallback; regression test: test_mutation_teeth_regressions.py::TestTimeoutsAreInconclusive::test_a_warm_timeout_is_not_re_run_cold_and_the_worker_is_replaced, ::test_a_dead_worker_falls_back_cold_and_is_restarted
 
 - **Where:** mutation_teeth.py:1350-1355, 1340
 - **Finding:** worker not restarted after timeout; timeout paid twice
@@ -1640,7 +1640,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-13 (Med) -- wider-net timeout recorded as survivor
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_wider_net` returns "no answer" for a warm timeout (and restarts the worker) or a cold timeout, and the mutant is recorded INCONCLUSIVE instead of a survivor; regression test: test_mutation_teeth_regressions.py::TestTimeoutsAreInconclusive::test_a_wider_net_timeout_is_inconclusive_not_a_survivor, ::test_a_cold_wider_net_timeout_is_inconclusive_too
 
 - **Where:** mutation_teeth.py:1607-1609
 - **Finding:** wider-net timeout recorded as survivor
@@ -1650,7 +1650,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-14 (Med) -- cache drops wider_net_note
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_store_cached_run` writes `wider_net_note` and `_load_cached_run` replays it, so a replay still says WIDER NET UNUSED; regression test: test_mutation_teeth_regressions.py::TestTheCache::test_the_wider_net_note_is_replayed, ::test_a_run_without_a_note_replays_without_one
 
 - **Where:** mutation_teeth.py:1871-1896 vs 1682-1705
 - **Finding:** cache drops `wider_net_note`
@@ -1660,7 +1660,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-15 (Med) -- unlocked RMW cache with fixed .tmp name
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the cache read-modify-write runs under `_cache_lock` (an exclusive `msvcrt`/`fcntl` lock on a sibling `.lock` file, stdlib only, with a timeout) and writes through `_core.atomic_write_text` (unique `mkstemp` file + `os.replace`); a lock timeout skips the store with a warning; regression test: test_mutation_teeth_regressions.py::TestTheCache::test_concurrent_writers_keep_every_entry, ::test_the_lock_excludes_a_second_holder
 
 - **Where:** mutation_teeth.py:1867-1902
 - **Finding:** unlocked RMW cache with fixed `.tmp` name
@@ -1670,7 +1670,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-16 (Med) -- node-id test paths hashed as placeholder → stale replay
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `fingerprint` hashes the file part of a node id (`tests/x.py::test_f` -> `tests/x.py`, `_test_file_of`) and walks its conftests; regression test: test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_a_node_id_hashes_its_file, ::test_an_unrelated_file_does_not_move_a_node_id_key
 
 - **Where:** mutation_teeth.py:1011-1020, 1046-1051
 - **Finding:** node-id test paths hashed as placeholder → stale replay
@@ -1680,7 +1680,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-17 (Low) -- only test_*.py in fingerprint
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- a test directory expands by the repo's `python_files` (read from `pytest.ini`, `pyproject.toml`, `tox.ini` or `setup.cfg` in pytest's order; default `test_*.py *_test.py`); regression test: test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_the_default_python_files_include_suffix_style, ::test_a_configured_python_files_is_honoured
 
 - **Where:** mutation_teeth.py:1017
 - **Finding:** only `test_*.py` in fingerprint
@@ -1690,7 +1690,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-18 (Low) -- string >= instead of ancestry
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the conftest walk uses `Path.is_relative_to(repo_root)`, so a test outside the repo never walks outside conftests whatever their names sort to, and the repo's own conftest still counts; regression test: test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_conftests_outside_the_repo_are_never_walked
 
 - **Where:** mutation_teeth.py:1022
 - **Finding:** string `>=` instead of ancestry
@@ -1700,7 +1700,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-19 (Med) -- "dropped a not" eats a char: unparsable mutant counted as kill
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- "dropped a `not`" removes the token and only the whitespace up to the next token on the same line (`not(x)` -> `(x)`), and the operator is in `_SYNTAX_RISKY_PREFIXES`, so an unparsable result is never emitted; regression test: test_mutation_teeth_regressions.py::TestOperatorsProduceTheMutantTheyName::test_dropping_a_not_before_a_paren_keeps_the_paren, ::test_dropping_a_spaced_not_removes_the_space
 
 - **Where:** mutation_teeth.py:749, 335
 - **Finding:** "dropped a not" eats a char: unparsable mutant counted as kill
@@ -1710,7 +1710,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-20 (Med) -- emptying string: bytes type change / no-op on empty literals
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_string_emptied` evaluates the literal: bytes empty to `b""`, str to `""`, and a literal whose value is already empty (`r''`, `u''`) gets no mutant; regression test: test_mutation_teeth_regressions.py::TestOperatorsProduceTheMutantTheyName::test_emptying_bytes_keeps_them_bytes, ::test_an_empty_literal_is_not_emptied
 
 - **Where:** mutation_teeth.py:765-774
 - **Finding:** emptying string: bytes type change / no-op on empty literals
@@ -1720,7 +1720,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-21 (Low) -- min description says "max becomes min" (re-keys baseline)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `min` now describes itself as "min becomes max"; `HARNESS_VERSION` bumped to 11 (this and the other generation changes re-key baselines and caches), and the version gate's baseline re-pinned; regression test: test_mutation_teeth_regressions.py::TestOperatorsProduceTheMutantTheyName::test_min_and_max_describe_their_own_direction, test_mutation_harness_version_is_bumped.py::test_the_harness_version_tracks_the_harness
 
 - **Where:** mutation_teeth.py:303
 - **Finding:** `min` description says "max becomes min" (re-keys baseline)
@@ -1730,7 +1730,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-22 (Low) -- sampled_containers wrong counts; AST operators skip sampling
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_container_rows` samples ROWS (a dict key and its value together) and reports `(rows kept, rows in the table)`; the sampling is applied in `generate_mutants` to every operator's candidates, not only token ones; regression test: test_mutation_teeth_regressions.py::TestSamplingCountsRowsAndCoversEveryOperator::test_a_six_entry_dict_reports_six_rows, ::test_a_small_table_is_not_sampled, ::test_ast_operators_are_sampled_too, ::test_a_key_and_its_value_are_kept_or_dropped_together
 
 - **Where:** mutation_teeth.py:921, 450-453
 - **Finding:** `sampled_containers` wrong counts; AST operators skip sampling
@@ -1740,7 +1740,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-23 (Low) -- non-UTF8 → UnicodeDecodeError not MutationHarnessError
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `read_target` turns `SourceReadError`/`OSError` into `MutationHarnessError`; a declared PEP 263 encoding is honoured and round-trips byte-exact; regression test: test_mutation_teeth_regressions.py::TestBomAndEncodings::test_undecodable_bytes_are_a_harness_error, ::test_a_declared_encoding_is_honoured_and_round_trips
 
 - **Where:** mutation_teeth.py:848, 1513
 - **Finding:** non-UTF8 → UnicodeDecodeError not MutationHarnessError
@@ -1750,7 +1750,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-24 (Low) -- unclosed open() handles (ResourceWarning; Windows locks)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- no bare `open()` remains in the harness: reads go through `read_target`/`_core.parse_file`, writes through `write_target` (`Path.write_bytes`) and the cache through `atomic_write_text`; regression test: test_mutation_teeth_regressions.py::TestBomAndEncodings::test_no_file_handle_is_leaked
 
 - **Where:** mutation_teeth.py:848, 932, 1513, ... 2086
 - **Finding:** unclosed `open()` handles (ResourceWarning; Windows locks)
@@ -1760,7 +1760,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-25 (Med) -- no check the mutated module is imported from sandbox (editable install → all survive)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the warm baseline run asks the worker where the target's dotted names (`_module_names`) were actually loaded from; if they came from outside the sandbox (editable install, PYTHONPATH to the checkout) the sweep raises `MutationHarnessError`. A cold-only run (`use_warm_worker=False`) does one warm probe for the same check; regression test: test_mutation_teeth_regressions.py::TestTheImportMustComeFromTheSandbox::test_end_to_end_a_shadowing_copy_is_detected, ::test_a_foreign_origin_is_refused, ::test_the_sandbox_origin_is_accepted, ::test_a_cold_only_run_checks_too, ::test_module_names_never_include_a_bare_name_inside_a_package, test_mutation_worker.py::TestModuleOrigin
 
 - **Where:** mutation_teeth.py:1134-1136; _mutation_worker.py:95
 - **Finding:** no check the mutated module is imported from sandbox (editable install → all survive)
@@ -1770,7 +1770,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-26 (Med) -- timeout kills only direct child; Windows grandchildren leak; rmtree errors ignored
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- cold runs and the warm worker start in their own process group/session; a timeout kills the whole tree (`taskkill /T /F` on Windows, `killpg` elsewhere, stdlib only) via `run_with_deadline`/`_kill_tree`; sandboxes are removed by `_remove_tree`, which clears read-only bits, retries and warns about what it could not remove instead of `ignore_errors=True`; regression test: test_mutation_teeth_regressions.py::TestTimeoutsKillTheTree::test_a_grandchild_dies_with_its_parent, ::test_a_finished_run_returns_its_output, ::test_a_sandbox_that_cannot_be_removed_is_reported, ::test_a_read_only_file_does_not_stop_removal
 
 - **Where:** mutation_teeth.py:1274-1283, 1847, 2099
 - **Finding:** timeout kills only direct child; Windows grandchildren leak; rmtree errors ignored
@@ -1780,7 +1780,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-27 (Low) -- last_timings/last_failed not reset on early return
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_WarmRunner.run` resets `last_failed`, `last_timings`, `last_crash`, `last_timed_out` and `last_origin` before anything can return early; regression test: test_mutation_teeth_regressions.py::TestWarmRunnerState::test_a_dead_worker_resets_the_last_run
 
 - **Where:** mutation_teeth.py:1340-1361, 1562-1569
 - **Finding:** `last_timings`/`last_failed` not reset on early return
@@ -1790,7 +1790,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-28 (Low) -- 6-7 ast.parse per target; O(tokens×ranges)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `generate_mutants` parses once and passes the tree to every operator (each still accepts source alone); exclusion containment uses merged intervals with `bisect` (`_Intervals`), and sampled-row and line lookups use `bisect`; regression test: test_mutation_teeth_regressions.py::TestParsedOnce::test_the_target_is_parsed_once, ::test_interval_containment_matches_a_scan
 
 - **Where:** mutation_teeth.py:381, 433, 506, 552, 604, 810, 1215, 697, 716
 - **Finding:** 6-7 `ast.parse` per target; O(tokens×ranges)
@@ -1800,7 +1800,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-29 (Low) -- non-range lines entries dropped from key but crash later
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_normalise_lines` rejects any non-`range` entry with `TypeError` before the fingerprint or any copy; regression test: test_mutation_teeth_regressions.py::TestTheLineScope::test_a_non_range_entry_is_rejected_up_front
 
 - **Where:** mutation_teeth.py:1670 vs 881
 - **Finding:** non-range `lines` entries dropped from key but crash later
@@ -1810,7 +1810,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-30 (Low) -- parent __init__.py not in import closure
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_first_party_imports` adds every package `__init__.py` between a reached module and the repo root (and follows their imports); regression test: test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_a_package_init_is_in_the_closure
 
 - **Where:** mutation_teeth.py:941-975
 - **Finding:** parent `__init__.py` not in import closure
@@ -1820,7 +1820,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-31 (Med) -- refresh writes baseline before inconclusive/gap/truncation checks
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `assert_no_new_surviving_mutant` checks inconclusive mutants, coverage gaps and truncation before a refresh and refuses to rewrite the baseline from a partial run; a complete run still writes the keys with the `NEEDS-JUSTIFICATION:` marker. The refresh flag now goes through `_core.refresh_requested` (option, `PY_CI_SHARED_REFRESH`, argv), and a `_core.Baseline` is accepted as well as a `baseline_ratchet.Baseline`; regression test: test_mutation_teeth_regressions.py::TestTheRatchet::test_a_partial_run_never_rewrites_the_baseline, ::test_a_complete_run_refreshes_with_the_marker, ::test_a_core_baseline_is_accepted_and_needs_justification
 
 - **Where:** mutation_teeth.py:1994-1999 vs 2006-2015
 - **Finding:** refresh writes baseline before inconclusive/gap/truncation checks
@@ -1830,7 +1830,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### MT-32 (Low) -- truncated run passes with warning (documented)
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- new keyword `fail_on_truncation=False` on `assert_no_new_surviving_mutant`: a truncated run fails when it is set and warns otherwise, as documented; regression test: test_mutation_teeth_regressions.py::TestTheRatchet::test_truncation_fails_only_when_asked
 
 - **Where:** mutation_teeth.py:2006-2011
 - **Finding:** truncated run passes with warning (documented)
@@ -1840,7 +1840,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### W-1 (Med) -- cwd/env/sys.path/argv not restored between runs → false kills
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- the worker snapshots cwd, `os.environ`, `sys.path` and `sys.argv` at startup and restores them (plus `importlib.invalidate_caches()`) before every run (`_ProcessState`). Every warm SURVIVOR was already re-checked cold; a warm kill that a cold run would not make comes from state outside these four and the module purge, which this does not claim to cover; regression test: test_mutation_worker.py::TestProcessStateIsRestoredBetweenRuns::test_cwd_env_path_and_argv_do_not_leak_into_the_next_run, ::test_restore_undoes_each_change
 
 - **Where:** _mutation_worker.py:111-160
 - **Finding:** cwd/env/sys.path/argv not restored between runs → false kills
@@ -1850,7 +1850,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### W-2 (Low) -- namespace paths re-resolved per mutant
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- namespace-package verdicts are memoised in `_IS_LOCAL_NAMESPACE`, keyed on the root and the `__path__` entries; regression test: test_mutation_worker.py::TestNamespaceVerdictsAreCached::test_a_namespace_package_is_resolved_once
 
 - **Where:** _mutation_worker.py:83-91
 - **Finding:** namespace paths re-resolved per mutant
@@ -1860,7 +1860,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TS-1 (High) -- pytest exit code/stderr ignored: usage/conftest errors → every case "NO TEETH"
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `outcome_of` decides from the exit code: 0/1 are verdicts (an exit 1 naming no test still fails), anything else is "PYTEST DID NOT RUN" and the case is ERRORED, never NO TEETH; `_suite_command` adds `-n`, `--no-cov` and `-p no:anyio` only when that plugin is installed; regression test: test_teeth_sweep_regressions.py::TestTheExitCodeDecides, ::TestPluginFlagsOnlyWhenInstalled::test_a_real_run_without_xdist_is_not_read_as_green, ::test_no_plugin_no_flag, ::test_installed_plugins_get_their_flags, ::TestOneBadCaseDoesNotAbortTheSweep::test_a_case_whose_suite_did_not_run_is_errored_not_toothless
 
 - **Where:** teeth_sweep.py:291-304, 254-281
 - **Finding:** pytest exit code/stderr ignored: usage/conftest errors → every case "NO TEETH"
@@ -1870,7 +1870,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TS-2 (Med) -- timeout leaves xdist workers alive on Windows
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_run_suite` runs through `_mutation_runner.run_with_deadline`, which starts pytest in its own process group and kills the whole tree (xdist workers included) on the 900 s timeout; regression test: test_teeth_sweep_regressions.py::TestTimeoutsKillTheTree::test_the_suite_runs_under_a_tree_killing_deadline, test_mutation_teeth_regressions.py::TestTimeoutsKillTheTree::test_a_grandchild_dies_with_its_parent
 
 - **Where:** teeth_sweep.py:291-303
 - **Finding:** timeout leaves xdist workers alive on Windows
@@ -1880,7 +1880,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TS-3 (Low) -- one bad case aborts whole sweep
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- each case runs in `_sweep_case` inside a per-case `try`; a failing case is reported ERRORED (exit 1) and the sweep continues, the target still restored; `_apply` reports an undecodable target as not applied; regression test: test_teeth_sweep_regressions.py::TestOneBadCaseDoesNotAbortTheSweep::test_the_next_case_still_runs, ::test_a_latin_1_target_is_not_applied_rather_than_crashing
 
 - **Where:** teeth_sweep.py:242, 344-347
 - **Finding:** one bad case aborts whole sweep
@@ -1890,7 +1890,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TS-4 (Low) -- read-back check vacuous for empty/duplicated repl
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `_apply` compares the bytes read back with the exact expected bytes, and refuses an empty needle and a no-op substitution; regression test: test_teeth_sweep_regressions.py::TestTheReadBackIsExact::test_an_empty_replacement_is_verified, ::test_a_write_that_did_not_land_is_caught_even_when_the_replacement_already_exists, ::test_a_no_op_substitution_is_refused
 
 - **Where:** teeth_sweep.py:249
 - **Finding:** read-back check vacuous for empty/duplicated repl
@@ -1900,7 +1900,7 @@ Caveats: look up `_run_pytest`/`_WarmRunner`/`_classify*` through the `mutation_
 
 ### TS-5 (Low) -- CRLF old becomes \r\r\n
 
-**Disposition:** OPEN
+**Disposition:** RESOLVED -- `old`/`new` are normalised to LF before being converted to the file's line ending, so a CRLF needle matches CRLF and LF files without producing `\r\r\n`; regression test: test_teeth_sweep_regressions.py::TestCrlfCases::test_a_crlf_needle_matches_a_crlf_file, ::test_a_crlf_needle_matches_an_lf_file
 
 - **Where:** teeth_sweep.py:244
 - **Finding:** CRLF `old` becomes `\r\r\n`

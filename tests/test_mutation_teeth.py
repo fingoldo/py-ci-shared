@@ -11,6 +11,7 @@ import ast
 import time
 import tokenize
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -47,7 +48,7 @@ class TestTheSpliceLandsWhereItShould:
 
     @pytest.mark.parametrize(
         "prefix",
-        ['x = "\U0001F600\U0001F600"; ', 'x = "——"; ', "т = 1; "],
+        ['x = "\U0001f600\U0001f600"; ', 'x = "——"; ', "т = 1; "],
         ids=["emoji", "em-dashes", "cyrillic-identifier"],
     )
     def test_non_ascii_earlier_on_the_line_does_not_move_the_edit(self, tmp_path, prefix):
@@ -73,11 +74,7 @@ class TestTheSpliceLandsWhereItShould:
             assert mutants
             text = mutants[0].mutated_file_text
             assert "# keep me" in text and "# and me" in text
-            changed = [
-                (a, b)
-                for a, b in zip(source.split("\n"), text.split("\n"))
-                if a != b
-            ]
+            changed = [(a, b) for a, b in zip(source.split("\n"), text.split("\n")) if a != b]
             assert len(changed) == 1, f"a single-token mutation changed {len(changed)} lines"
 
 
@@ -182,7 +179,7 @@ class TestRegexFragmentsAreMutatedOnPurpose:
 
 class TestLimitAndScope:
     def test_truncation_is_reported_rather_than_silent(self, tmp_path):
-        """"No survivors" from a truncated run used to be indistinguishable from "no survivors" from
+        """ "No survivors" from a truncated run used to be indistinguishable from "no survivors" from
         a complete one."""
         path = _write(tmp_path, "def f(a, b):\n" + "".join(f"    x{i} = a > b\n" for i in range(10)))
 
@@ -330,9 +327,7 @@ class TestAKillIsNotAlwaysEvidence:
         assert _killed_by_crash(output) is False
 
     def test_the_summary_says_how_many_kills_were_free(self):
-        run = MutationRun(
-            survivors=[], mutants_run=10, killed=10, truncated=False, candidates_total=10, killed_by_crash=4
-        )
+        run = MutationRun(survivors=[], mutants_run=10, killed=10, truncated=False, candidates_total=10, killed_by_crash=4)
 
         assert "4 of the kills were CRASHES" in run.summary()
 
@@ -341,7 +336,7 @@ class TestReprCoupledConstantsAreOptional:
     """``text[: max_len - 3] + "..."`` states one decision twice, so mutating both halves makes a
     reader think about it twice to learn it once."""
 
-    SOURCE = 'def clip(text, max_len):' + chr(10) + '    return text[: max_len - 3] + "..."' + chr(10)
+    SOURCE = "def clip(text, max_len):" + chr(10) + '    return text[: max_len - 3] + "..."' + chr(10)
 
     def test_it_is_off_by_default(self, tmp_path):
         """What the filter hides is real -- the case where the two have DRIFTED and only one
@@ -411,10 +406,18 @@ class TestTheWorkerProtocolSurvivesTestOutput:
         from py_ci_shared.mutation_teeth import _WarmRunner
 
         noisy = (
-            "def test_prints_json():" + chr(10)
-            + '    print(chr(34) + "a bare json string" + chr(34))' + chr(10)
-            + "    print('{" + chr(34) + "rc" + chr(34) + ": 999}')" + chr(10)
-            + "    assert True" + chr(10)
+            "def test_prints_json():"
+            + chr(10)
+            + '    print(chr(34) + "a bare json string" + chr(34))'
+            + chr(10)
+            + "    print('{"
+            + chr(34)
+            + "rc"
+            + chr(34)
+            + ": 999}')"
+            + chr(10)
+            + "    assert True"
+            + chr(10)
         )
         open(tmp_path / "test_noisy.py", "w", encoding="utf-8", newline="").write(noisy)
 
@@ -422,8 +425,7 @@ class TestTheWorkerProtocolSurvivesTestOutput:
             codes = [warm.run(["test_noisy.py"]) for _ in range(3)]
 
         assert codes == [0, 0, 0], (
-            f"the worker returned {codes}; a 999 would mean the printed line was read as the reply, "
-            "and a None that the channel was lost"
+            f"the worker returned {codes}; a 999 would mean the printed line was read as the reply, " "and a None that the channel was lost"
         )
 
     def test_a_reply_without_rc_is_treated_as_worker_unavailable(self):
@@ -447,13 +449,16 @@ class TestTheWorkerProtocolSurvivesTestOutput:
                     return None
 
             class stdout:  # noqa: N801 - stands in for Popen.stdout, so it must carry that name
-                @staticmethod
-                def readline():
-                    return '"a bare json string"' + chr(10)
+                lines: ClassVar[list[str]] = ['"a bare json string"' + chr(10), '{"rc": 999}' + chr(10)]
+
+                @classmethod
+                def readline(cls):
+                    return cls.lines.pop(0) if cls.lines else ""
 
         runner.process = _Fake()
 
         assert runner.run(["tests"]) is None
+        assert runner.last_timed_out is False, "an EOF is a dead worker, not a timeout"
 
 
 class TestTheFingerprintSeesWhatTheAnswerDependsOn:
@@ -464,9 +469,7 @@ class TestTheFingerprintSeesWhatTheAnswerDependsOn:
         pkg.mkdir()
         (pkg / "__init__.py").write_text("", encoding="utf-8")
         (pkg / "helper.py").write_text("def shorten(s):\n    return s[:10]\n", encoding="utf-8")
-        (pkg / "main.py").write_text(
-            "from .helper import shorten\n\n\ndef go(s):\n    return shorten(s)\n", encoding="utf-8"
-        )
+        (pkg / "main.py").write_text("from .helper import shorten\n\n\ndef go(s):\n    return shorten(s)\n", encoding="utf-8")
         (tmp_path / "test_it.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
         return pkg
 
@@ -525,10 +528,7 @@ class TestABaselineEntryNamesOnePlace:
         tests killed. An accepted mutant is a claim about one place."""
         src = tmp_path / "m.py"
         src.write_text(
-            "import secrets\n\n\ndef go():\n"
-            "    first = secrets.token_hex(8)\n"
-            "    second = secrets.token_hex(8)\n"
-            "    return first, second\n",
+            "import secrets\n\n\ndef go():\n" "    first = secrets.token_hex(8)\n" "    second = secrets.token_hex(8)\n" "    return first, second\n",
             encoding="utf-8",
         )
         mutants, _total, _s = mutation_teeth.generate_mutants(src)
@@ -555,13 +555,22 @@ class TestAnUnmeasuredMutantIsNotReportedAsMeasured:
 
     def _mutant(self, line=1):
         return mutation_teeth.Mutant(
-            path=Path("m.py"), line=line, column=0, description="constant: 1 becomes 2",
-            original_span="1", mutated_span="2", context="x = 1",
+            path=Path("m.py"),
+            line=line,
+            column=0,
+            description="constant: 1 becomes 2",
+            original_span="1",
+            mutated_span="2",
+            context="x = 1",
         )
 
     def test_the_summary_says_the_sweep_is_incomplete(self):
         run = mutation_teeth.MutationRun(
-            survivors=[], mutants_run=3, killed=3, truncated=False, candidates_total=4,
+            survivors=[],
+            mutants_run=3,
+            killed=3,
+            truncated=False,
+            candidates_total=4,
             inconclusive=[self._mutant()],
         )
         text = run.summary()
@@ -571,9 +580,7 @@ class TestAnUnmeasuredMutantIsNotReportedAsMeasured:
 
     def test_a_clean_run_says_nothing_about_inconclusive_mutants(self):
         """The counterweight: the notice must not become background noise on every report."""
-        run = mutation_teeth.MutationRun(
-            survivors=[], mutants_run=4, killed=4, truncated=False, candidates_total=4
-        )
+        run = mutation_teeth.MutationRun(survivors=[], mutants_run=4, killed=4, truncated=False, candidates_total=4)
 
         assert "INCONCLUSIVE" not in run.summary()
 
@@ -581,22 +588,31 @@ class TestAnUnmeasuredMutantIsNotReportedAsMeasured:
         """`readline()` on a pipe has no deadline, so the stored timeout was never applied and one
         non-terminating mutant hung the sweep with no output. A `<` -> `<=` mutation can produce
         exactly that."""
+        import threading
         import types
+
+        release = threading.Event()
 
         class NeverAnswers:
             def readline(self):
-                import time
-
-                time.sleep(30)
-                return "{}"
+                release.wait(30)
+                return ""
 
         runner = mutation_teeth._WarmRunner(Path("."), timeout=600)
         runner.process = types.SimpleNamespace(stdout=NeverAnswers(), stdin=None)
         started = time.perf_counter()
-        got = runner._readline_within(0.3)
+        try:
+            got = runner._readline_within(0.3)
+        finally:
+            # The blocked reader is released rather than left sleeping past the test.
+            release.set()
 
         assert got is None
         assert time.perf_counter() - started < 10, "the reader waited on the blocked pipe"
+        readers = [t for t in threading.enumerate() if t.name == "mutation-worker-reader"]
+        for reader in readers:
+            reader.join(5)
+        assert not any(t.is_alive() for t in readers), "the pipe reader outlived the test"
 
 
 class TestTheCacheReplaysEveryCaveat:
@@ -605,8 +621,13 @@ class TestTheCacheReplaysEveryCaveat:
         was dropped would key differently from a freshly measured one and silently stop matching
         its accepted entry."""
         original = mutation_teeth.Mutant(
-            path=Path("pkg/m.py"), line=7, column=4, description="constant: 8 becomes 9",
-            original_span="8", mutated_span="9", category="noise",
+            path=Path("pkg/m.py"),
+            line=7,
+            column=4,
+            description="constant: 8 becomes 9",
+            original_span="8",
+            mutated_span="9",
+            category="noise",
             context="    nonce = secrets.token_hex(8)",
         )
         restored = mutation_teeth._mutant_from_json(mutation_teeth._mutant_json(original))
@@ -854,6 +875,7 @@ class TestSubstitutionNeedsARuleAndHasOne:
 
         assert not swaps
 
+
 #: Raw string bodies. A backslash-b inside an ordinary Python string is the BACKSPACE
 #: escape, and an earlier version of these tests handed the harness that control character
 #: and then reported that no widening was produced -- true, and about nothing. Four separate
@@ -894,14 +916,7 @@ class TestConcurrencyChangesSpeedAndNothingElse:
         repo = tmp_path / "repo"
         (repo / "tests").mkdir(parents=True)
         open(repo / "m.py", "w", encoding="utf-8", newline="").write(
-            "def clamp(n, cap):\n"
-            "    if n > cap:\n"
-            "        return cap\n"
-            "    return n\n"
-            "\n"
-            "\n"
-            "def unchecked(n):\n"
-            "    return n * 2 + 1\n"
+            "def clamp(n, cap):\n" "    if n > cap:\n" "        return cap\n" "    return n\n" "\n" "\n" "def unchecked(n):\n" "    return n * 2 + 1\n"
         )
         open(repo / "tests" / "test_m.py", "w", encoding="utf-8", newline="").write(
             "from m import clamp\n"
@@ -916,12 +931,8 @@ class TestConcurrencyChangesSpeedAndNothingElse:
 
     def test_four_workers_reach_the_same_verdict_as_one(self, tmp_path):
         repo = self._repo(tmp_path)
-        serial = mutation_teeth.find_surviving_mutants(
-            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False
-        )
-        parallel = mutation_teeth.find_surviving_mutants(
-            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=4
-        )
+        serial = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+        parallel = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=4)
 
         assert serial.mutants_run == parallel.mutants_run
         assert serial.killed == parallel.killed
@@ -931,16 +942,14 @@ class TestConcurrencyChangesSpeedAndNothingElse:
         """Merged from several partitions, so completion order is arbitrary. A survivor list that
         reorders itself between runs is a diff nobody can read, and a baseline that churns."""
         repo = self._repo(tmp_path)
-        outcome = mutation_teeth.find_surviving_mutants(
-            "m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=3
-        )
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False, jobs=3)
 
         lines = [m.line for m in outcome.survivors]
         assert lines == sorted(lines), lines
 
 
 class TestACoverageGapNamesItsKiller:
-    """"Fix the map" is only actionable if the report says WHICH file to add.
+    """ "Fix the map" is only actionable if the report says WHICH file to add.
 
     A real sweep produced 96 coverage-map gaps, 65 of them in one file whose wider net holds 61
     test files. Adding all 61 is exactly what the map exists to avoid, so without a name the
@@ -969,14 +978,17 @@ class TestACoverageGapNamesItsKiller:
         in one file usually point at a handful of tests, not 65 of them."""
         gaps = [
             mutation_teeth.Mutant(
-                path=Path("models.py"), line=n, column=0, description="d",
-                original_span="1", mutated_span="2", category=f"killed-by:tests/test_{name}.py",
+                path=Path("models.py"),
+                line=n,
+                column=0,
+                description="d",
+                original_span="1",
+                mutated_span="2",
+                category=f"killed-by:tests/test_{name}.py",
             )
             for n, name in ((1, "b"), (2, "a"), (3, "a"))
         ]
-        run = mutation_teeth.MutationRun(
-            survivors=[], mutants_run=3, killed=3, truncated=False, candidates_total=3, coverage_gaps=gaps
-        )
+        run = mutation_teeth.MutationRun(survivors=[], mutants_run=3, killed=3, truncated=False, candidates_total=3, coverage_gaps=gaps)
         text = run.summary()
 
         assert "add tests/test_a.py, tests/test_b.py" in text, text
@@ -1059,9 +1071,7 @@ class TestIdenticalMutantsRunOnce:
         """A de-duplicated twin was never a candidate for a separate run, so counting it as omitted
         would raise TRUNCATED on a complete sweep -- the false-alarm direction this module already
         had to fix once, when the candidate counter included non-compiling edits."""
-        run = mutation_teeth.MutationRun(
-            survivors=[], mutants_run=5, killed=5, truncated=False, candidates_total=5
-        )
+        run = mutation_teeth.MutationRun(survivors=[], mutants_run=5, killed=5, truncated=False, candidates_total=5)
 
         assert "TRUNCATED" not in run.summary()
 

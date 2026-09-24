@@ -9,7 +9,8 @@ That is the right trade here: the cost of an unnecessary bump is one cache miss,
 missed bump is a survivor list that silently describes a set of mutants nobody generates any more.
 
 `_mutation_worker.py` is in the set because the worker decides what a mutant run MEANS -- its purge
-and its exit-code plumbing are as much a part of a verdict as the operator table is.
+and its exit-code plumbing are as much a part of a verdict as the operator table is. The four
+`_mutation_*` modules split out of `mutation_teeth.py` are the same harness in more files.
 """
 
 from __future__ import annotations
@@ -24,7 +25,14 @@ _SRC = Path(__file__).resolve().parents[1] / "src" / "py_ci_shared"
 
 def test_the_harness_version_tracks_the_harness():
     assert_version_bumped_with_content(
-        files=[_SRC / "mutation_teeth.py", _SRC / "_mutation_worker.py"],
+        files=[
+            _SRC / "mutation_teeth.py",
+            _SRC / "_mutation_worker.py",
+            _SRC / "_mutation_model.py",
+            _SRC / "_mutation_operators.py",
+            _SRC / "_mutation_fingerprint.py",
+            _SRC / "_mutation_runner.py",
+        ],
         version=HARNESS_VERSION,
         baseline_path=Path(__file__).parent / "_mutation_harness_version_baseline.json",
     )

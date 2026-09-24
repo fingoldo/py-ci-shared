@@ -63,25 +63,53 @@ CQ-8's green was predicted in writing by its own disposition and is a confirmati
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import pathlib
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
+from typing import Any
+
+from ._mutation_runner import run_with_deadline
+
+#: pytest exit codes that are a verdict: 0 all passed, 1 some failed. Anything else (2 interrupted,
+#: 3 internal error, 4 usage error, 5 nothing collected) means the suite did not run.
+_VERDICT_CODES = (0, 1)
+
+#: Marks a `failed` entry that stands for a run that did not happen, rather than for a test.
+_DID_NOT_RUN = "<pytest did not run"
 
 
 def _apply(path: pathlib.Path, old: str, new: str) -> str | None:
-    """Substitute, or return why it could not be done. Never leaves a partial edit."""
-    raw = path.read_bytes().decode("utf-8")
+    """Substitute, or return why it could not be done. Never leaves a partial edit.
+
+    The case's own line endings are normalised to LF first and then to the file's, so a CRLF needle
+    does not become ``\\r\\r\\n``. The write is verified byte for byte against the expected content:
+    checking that the replacement merely APPEARS in the file is vacuous for an empty replacement, or
+    for one the file already contained elsewhere.
+    """
+    try:
+        raw = path.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        return f"cannot read the target: {exc}"
     nl = "\r\n" if "\r\n" in raw else "\n"
-    needle, repl = old.replace("\n", nl), new.replace("\n", nl)
+
+    def native(text: str) -> str:
+        return text.replace("\r\n", "\n").replace("\n", nl)
+
+    needle, repl = native(old), native(new)
+    if not needle:
+        return "the needle is empty"
     found = raw.count(needle)
     if found != 1:
         return f"needle matched {found} times"
-    path.write_bytes(raw.replace(needle, repl).encode("utf-8"))
-    if repl not in path.read_bytes().decode("utf-8"):
+    expected = raw.replace(needle, repl).encode("utf-8")
+    if expected == raw.encode("utf-8"):
+        return "the substitution changes nothing (old and new are the same)"
+    path.write_bytes(expected)
+    if path.read_bytes() != expected:
         return "substitution did not survive the write"
     return None
 
@@ -116,44 +144,109 @@ def read_pytest_outcome(stdout: str) -> tuple[str, list[str]]:
     return summary, [ln.strip() for ln in lines if ln.startswith(("FAILED", "ERROR "))]
 
 
+def outcome_of(returncode: int, stdout: str, stderr: str = "") -> tuple[str, list[str], bool]:
+    """``(summary, failed, ran)`` of one pytest run, decided by its exit code as well as its output.
+
+    Exit 0 and 1 are verdicts. Any other code means the suite did not run -- a usage error from a
+    flag for a plugin that is not installed, a conftest that fails to import, nothing collected --
+    and reading that run's output as "nothing failed" reported every case as having no teeth.
+    An exit 1 that names no test still counts as a failure, under a placeholder name.
+    """
+    summary, failed = read_pytest_outcome(stdout)
+    if returncode not in _VERDICT_CODES:
+        tail = " | ".join((stderr or stdout).strip().splitlines()[-3:])
+        return f"PYTEST DID NOT RUN (exit {returncode}): {tail}", [f"{_DID_NOT_RUN} (exit {returncode})>"], False
+    if returncode == 1 and not failed:
+        return summary, [f"<pytest exited 1 without naming a test: {summary}>"], True
+    return summary, failed, True
+
+
+def _suite_command(jobs: int) -> list[str]:
+    """The pytest command, with a plugin's flags only when that plugin is installed.
+
+    ``-n`` without pytest-xdist and ``--no-cov`` without pytest-cov are usage errors (exit 4).
+    """
+    cmd = [sys.executable, "-m", "pytest", "-q"]
+    if importlib.util.find_spec("xdist") is not None:
+        cmd += ["-n", str(jobs)]
+    if importlib.util.find_spec("pytest_cov") is not None:
+        cmd.append("--no-cov")
+    if importlib.util.find_spec("anyio") is not None:
+        cmd += ["-p", "no:anyio"]
+    return cmd
+
+
 def _run_suite(repo: pathlib.Path, jobs: int) -> tuple[str, list[str]]:
     """Run the WHOLE suite and return its summary line plus the names that failed.
 
     Whole, not targeted: "no teeth" is a claim about the entire suite, and three of the five
-    misses this script was written for sat in files whose own tests were green.
+    misses this script was written for sat in files whose own tests were green. A run that did not
+    happen is returned with a `failed` entry starting with ``<pytest did not run``.
     """
-    try:
-        proc = subprocess.run(
-            [sys.executable, "-m", "pytest", "-n", str(jobs), "-p", "no:anyio", "-q", "--no-cov"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            # A MUTATION CAN HANG THE SUITE, and without a bound it hangs the whole sweep with it.
-            # Seen 2026-09-07 in the sibling package: disabling a cache-eviction cadence left a test
-            # waiting for an eviction that could no longer happen, and the run sat there. Fifteen
-            # minutes is roughly four times the slowest honest run measured here.
-            timeout=900,
-        )
-    except subprocess.TimeoutExpired:
+    # A MUTATION CAN HANG THE SUITE, and without a bound it hangs the whole sweep with it.
+    # Seen 2026-09-07 in the sibling package: disabling a cache-eviction cadence left a test
+    # waiting for an eviction that could no longer happen, and the run sat there. Fifteen
+    # minutes is roughly four times the slowest honest run measured here. The whole process
+    # tree is killed on a timeout: pytest-xdist's workers outlived a plain kill on Windows.
+    proc = run_with_deadline(_suite_command(jobs), cwd=repo, env=None, timeout=900)
+    if proc is None:
         return "TIMED OUT -- the mutation hangs the suite; that is a finding, not a pass", ["<suite timed out>"]
-    return read_pytest_outcome(proc.stdout)
+    summary, failed, _ran = outcome_of(proc.returncode, proc.stdout, proc.stderr)
+    return summary, failed
 
 
-def main() -> int:
+def _did_not_run(failed: list[str]) -> bool:
+    return any(name.startswith(_DID_NOT_RUN) for name in failed)
+
+
+def _sweep_case(repo: pathlib.Path, case: dict[str, Any], backups: pathlib.Path, jobs: int) -> str:
+    """Mutate, run and restore one case. Returns ``"teeth"``, ``"toothless"``, ``"skipped"`` or ``"error"``."""
+    target = repo / case["file"]
+    print(f"\n=== {case['id']}: {case['what']}", flush=True)
+    backup = backups / f"{case['id']}_{target.name}"
+    shutil.copy2(target, backup)
+    try:
+        why = _apply(target, case["old"], case["new"])
+        if why is not None:
+            print(f"    NOT APPLIED ({why}) -- this case proves nothing and is not a pass")
+            return "skipped"
+        started = time.monotonic()
+        summary, failed = _run_suite(repo, jobs)
+        print(f"    {summary}   [{time.monotonic() - started:.0f}s]")
+        if _did_not_run(failed):
+            print("    the suite did not RUN with this mutation applied -- not a kill and not a pass")
+            return "error"
+        if failed:
+            for name in failed[:3]:
+                print(f"      {name[:110]}")
+            if len(failed) > 3:
+                print(f"      ... and {len(failed) - 3} more")
+            return "teeth"
+        print("    NO TEETH: the defect is back and the whole suite is green")
+        return "toothless"
+    finally:
+        shutil.copy2(backup, target)
+
+
+def _case_id(case: object) -> str:
+    return str(case.get("id", "?")) if isinstance(case, dict) else "?"
+
+
+def main(argv: list[str] | None = None) -> int:
     """Mutate each case in turn, run the suite, restore, and report which fixes nothing watches."""
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cases", required=True, help="JSON file of mutations")
     ap.add_argument("--repo", required=True, help="repository root the paths in the case file are relative to")
     ap.add_argument("--only", nargs="*", default=None, help="run just these finding ids")
     ap.add_argument("--jobs", type=int, default=4, help="pytest -n (default 4, a quarter of 16 physical cores)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     repo = pathlib.Path(args.repo).resolve()
 
     cases = json.loads(pathlib.Path(args.cases).read_text(encoding="utf-8"))
     if args.only:
         wanted = set(args.only)
-        cases = [c for c in cases if c["id"] in wanted]
-        missing = wanted - {c["id"] for c in cases}
+        cases = [c for c in cases if _case_id(c) in wanted]
+        missing = wanted - {_case_id(c) for c in cases}
         if missing:
             print(f"no such case: {', '.join(sorted(missing))}", file=sys.stderr)
             return 2
@@ -173,40 +266,31 @@ def main() -> int:
 
     toothless: list[str] = []
     skipped: list[str] = []
+    errored: list[str] = []
     backups = pathlib.Path(tempfile.mkdtemp(prefix="teeth_sweep_"))
 
     for case in cases:
-        target = repo / case["file"]
-        print(f"\n=== {case['id']}: {case['what']}", flush=True)
-        backup = backups / f"{case['id']}_{target.name}"
-        shutil.copy2(target, backup)
         try:
-            why = _apply(target, case["old"], case["new"])
-            if why is not None:
-                print(f"    NOT APPLIED ({why}) -- this case proves nothing and is not a pass")
-                skipped.append(case["id"])
-                continue
-            started = time.monotonic()
-            summary, failed = _run_suite(repo, args.jobs)
-            print(f"    {summary}   [{time.monotonic() - started:.0f}s]")
-            if failed:
-                for name in failed[:3]:
-                    print(f"      {name[:110]}")
-                if len(failed) > 3:
-                    print(f"      ... and {len(failed) - 3} more")
-            else:
-                print("    NO TEETH: the defect is back and the whole suite is green")
-                toothless.append(case["id"])
-        finally:
-            shutil.copy2(backup, target)
+            outcome = _sweep_case(repo, case, backups, args.jobs)
+        except Exception as exc:  # one bad case must not cost every later case its answer
+            print(f"    ERROR ({type(exc).__name__}: {exc}) -- this case proves nothing and is not a pass")
+            outcome = "error"
+        if outcome == "toothless":
+            toothless.append(_case_id(case))
+        elif outcome == "skipped":
+            skipped.append(_case_id(case))
+        elif outcome == "error":
+            errored.append(_case_id(case))
 
-    print(f"\n{'=' * 70}\n{len(cases)} cases, {len(toothless)} with no teeth, {len(skipped)} not applied")
+    print(f"\n{'=' * 70}\n{len(cases)} cases, {len(toothless)} with no teeth, {len(skipped)} not applied, {len(errored)} errored")
     if toothless:
         print("NO TEETH: " + ", ".join(toothless))
     if skipped:
         print("NOT APPLIED (fix the needle and re-run; do NOT read these as passes): " + ", ".join(skipped))
+    if errored:
+        print("ERRORED (the case could not be run; do NOT read these as passes): " + ", ".join(errored))
     print(f"backups kept at {backups}")
-    return 1 if toothless or skipped else 0
+    return 1 if toothless or skipped or errored else 0
 
 
 if __name__ == "__main__":

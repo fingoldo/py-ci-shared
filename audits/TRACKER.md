@@ -477,44 +477,44 @@ Each file keeps the agent's original id on every finding.
 | **OPEN** | Low | `TZ-45` | rename's old path token cut by [3:] |
 | **OPEN** | Low | `TZ-46` | no tests for vulture_warn/tool_versions; no BOM/non-UTF8/missing-baseline cases |
 | **RESOLVED** | High | `MT-1` | NEEDS-JUSTIFICATION: never rejected on the next run |
-| **OPEN** | High | `MT-2` | zero mutants (unparsable file, empty scope) passes |
-| **OPEN** | High | `MT-3` | BOM: AST operators return [] |
-| **OPEN** | Med | `MT-4` | generator lines consumed by fingerprint; whole file swept, cached under narrow key |
-| **OPEN** | Med | `MT-5` | lines=[] = whole file, same cache key as full run |
-| **OPEN** | Med | `MT-6` | twin verdicts not fanned out; accepted twins read stale |
-| **OPEN** | High | `MT-7` | worker reply desync after stray fd-1 output |
-| **OPEN** | High | `MT-8` | sweep_files(jobs>1) extra sandboxes not removed → FileExistsError on 2nd file |
-| **OPEN** | Low | `MT-9` | extra sandboxes copied from live repo, no cold baseline |
-| **OPEN** | Med | `MT-10` | warm-path crash kills undercounted |
-| **OPEN** | Low | `MT-11` | dead AssertionError entry |
-| **OPEN** | Med | `MT-12` | worker not restarted after timeout; timeout paid twice |
-| **OPEN** | Med | `MT-13` | wider-net timeout recorded as survivor |
-| **OPEN** | Med | `MT-14` | cache drops wider_net_note |
-| **OPEN** | Med | `MT-15` | unlocked RMW cache with fixed .tmp name |
-| **OPEN** | Med | `MT-16` | node-id test paths hashed as placeholder → stale replay |
-| **OPEN** | Low | `MT-17` | only test_*.py in fingerprint |
-| **OPEN** | Low | `MT-18` | string >= instead of ancestry |
-| **OPEN** | Med | `MT-19` | "dropped a not" eats a char: unparsable mutant counted as kill |
-| **OPEN** | Med | `MT-20` | emptying string: bytes type change / no-op on empty literals |
-| **OPEN** | Low | `MT-21` | min description says "max becomes min" (re-keys baseline) |
-| **OPEN** | Low | `MT-22` | sampled_containers wrong counts; AST operators skip sampling |
-| **OPEN** | Low | `MT-23` | non-UTF8 → UnicodeDecodeError not MutationHarnessError |
-| **OPEN** | Low | `MT-24` | unclosed open() handles (ResourceWarning; Windows locks) |
-| **OPEN** | Med | `MT-25` | no check the mutated module is imported from sandbox (editable install → all survive) |
-| **OPEN** | Med | `MT-26` | timeout kills only direct child; Windows grandchildren leak; rmtree errors ignored |
-| **OPEN** | Low | `MT-27` | last_timings/last_failed not reset on early return |
-| **OPEN** | Low | `MT-28` | 6-7 ast.parse per target; O(tokens×ranges) |
-| **OPEN** | Low | `MT-29` | non-range lines entries dropped from key but crash later |
-| **OPEN** | Low | `MT-30` | parent __init__.py not in import closure |
-| **OPEN** | Med | `MT-31` | refresh writes baseline before inconclusive/gap/truncation checks |
-| **OPEN** | Low | `MT-32` | truncated run passes with warning (documented) |
-| **OPEN** | Med | `W-1` | cwd/env/sys.path/argv not restored between runs → false kills |
-| **OPEN** | Low | `W-2` | namespace paths re-resolved per mutant |
-| **OPEN** | High | `TS-1` | pytest exit code/stderr ignored: usage/conftest errors → every case "NO TEETH" |
-| **OPEN** | Med | `TS-2` | timeout leaves xdist workers alive on Windows |
-| **OPEN** | Low | `TS-3` | one bad case aborts whole sweep |
-| **OPEN** | Low | `TS-4` | read-back check vacuous for empty/duplicated repl |
-| **OPEN** | Low | `TS-5` | CRLF old becomes \r\r\n |
+| **RESOLVED** | High | `MT-2` | zero mutants (unparsable file, empty scope) passes |
+| **RESOLVED** | High | `MT-3` | BOM: AST operators return [] |
+| **RESOLVED** | Med | `MT-4` | generator lines consumed by fingerprint; whole file swept, cached under narrow key |
+| **RESOLVED** | Med | `MT-5` | lines=[] = whole file, same cache key as full run |
+| **RESOLVED** | Med | `MT-6` | twin verdicts not fanned out; accepted twins read stale |
+| **RESOLVED** | High | `MT-7` | worker reply desync after stray fd-1 output |
+| **RESOLVED** | High | `MT-8` | sweep_files(jobs>1) extra sandboxes not removed → FileExistsError on 2nd file |
+| **RESOLVED** | Low | `MT-9` | extra sandboxes copied from live repo, no cold baseline |
+| **RESOLVED** | Med | `MT-10` | warm-path crash kills undercounted |
+| **RESOLVED** | Low | `MT-11` | dead AssertionError entry |
+| **RESOLVED** | Med | `MT-12` | worker not restarted after timeout; timeout paid twice |
+| **RESOLVED** | Med | `MT-13` | wider-net timeout recorded as survivor |
+| **RESOLVED** | Med | `MT-14` | cache drops wider_net_note |
+| **RESOLVED** | Med | `MT-15` | unlocked RMW cache with fixed .tmp name |
+| **RESOLVED** | Med | `MT-16` | node-id test paths hashed as placeholder → stale replay |
+| **RESOLVED** | Low | `MT-17` | only test_*.py in fingerprint |
+| **RESOLVED** | Low | `MT-18` | string >= instead of ancestry |
+| **RESOLVED** | Med | `MT-19` | "dropped a not" eats a char: unparsable mutant counted as kill |
+| **RESOLVED** | Med | `MT-20` | emptying string: bytes type change / no-op on empty literals |
+| **RESOLVED** | Low | `MT-21` | min description says "max becomes min" (re-keys baseline) |
+| **RESOLVED** | Low | `MT-22` | sampled_containers wrong counts; AST operators skip sampling |
+| **RESOLVED** | Low | `MT-23` | non-UTF8 → UnicodeDecodeError not MutationHarnessError |
+| **RESOLVED** | Low | `MT-24` | unclosed open() handles (ResourceWarning; Windows locks) |
+| **RESOLVED** | Med | `MT-25` | no check the mutated module is imported from sandbox (editable install → all survive) |
+| **RESOLVED** | Med | `MT-26` | timeout kills only direct child; Windows grandchildren leak; rmtree errors ignored |
+| **RESOLVED** | Low | `MT-27` | last_timings/last_failed not reset on early return |
+| **RESOLVED** | Low | `MT-28` | 6-7 ast.parse per target; O(tokens×ranges) |
+| **RESOLVED** | Low | `MT-29` | non-range lines entries dropped from key but crash later |
+| **RESOLVED** | Low | `MT-30` | parent __init__.py not in import closure |
+| **RESOLVED** | Med | `MT-31` | refresh writes baseline before inconclusive/gap/truncation checks |
+| **RESOLVED** | Low | `MT-32` | truncated run passes with warning (documented) |
+| **RESOLVED** | Med | `W-1` | cwd/env/sys.path/argv not restored between runs → false kills |
+| **RESOLVED** | Low | `W-2` | namespace paths re-resolved per mutant |
+| **RESOLVED** | High | `TS-1` | pytest exit code/stderr ignored: usage/conftest errors → every case "NO TEETH" |
+| **RESOLVED** | Med | `TS-2` | timeout leaves xdist workers alive on Windows |
+| **RESOLVED** | Low | `TS-3` | one bad case aborts whole sweep |
+| **RESOLVED** | Low | `TS-4` | read-back check vacuous for empty/duplicated repl |
+| **RESOLVED** | Low | `TS-5` | CRLF old becomes \r\r\n |
 | **OPEN** | High | `ARCH-1` | Package version is 0.1.0 while releases are tagged up to v1.16.1 |
 | **OPEN** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
 | **OPEN** | High | `ARCH-3` | v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09... |
@@ -598,7 +598,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `SUITE-21` | getattr(node, chr(108)+chr(105)+...) spells "lineno" through chr() concatenation, appar... |
 | **OPEN** | Low | `SUITE-22` | Real git commit in tmp repos inherits the developer's global git config (commit.gpgsign... |
 | **OPEN** | Low | `SUITE-23` | Only 10 calls pass timeout=; git and python subprocesses have no deadline, and there is... |
-| **OPEN** | Low | `SUITE-24` | The fake reader sleeps 30 s in a background thread that is left running after the test... |
+| **RESOLVED** | Low | `SUITE-24` | The fake reader sleeps 30 s in a background thread that is left running after the test... |
 | **OPEN** | Low | `SUITE-25` | The real-server tests skip unless Postgres binaries are on PATH or PG_BIN; the GitHub r... |
 | **OPEN** | Low | `SUITE-26` | Every file does sys.path.insert(0, <repo>/src) |
 | **OPEN** | Low | `SUITE-27` | No shared fixtures (git repo factory, write helper), so each file re-implements _write/... |
