@@ -321,3 +321,10 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- a finding's baseline key is `rule::file::<sha256 of the matched text, 16 hex>`, so a refreshed baseline names no machine path and passes baseline_hygiene; the report still shows the path; existing baselines re-key on the next refresh; regression test: test_machine_specific_paths.py::test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygiene (a changed path is still new)
 
 - **Finding:** the key was `rule::file::<matched path>`, which baseline_hygiene rejects by design, so the gate could not be baselined (glossum)
+
+### CANARY-49 (Med) -- self-CI could not install the dev extra once sqlalchemy 2.1.0 was released
+
+**Disposition:** RESOLVED -- the dev extra excludes sqlalchemy 2.1.0 (`>=2.0,!=2.1.0`), whose sdist pyproject declares a duplicate normalized extra that uv refuses to build; stale_comment_age.py reformatted with the pinned black; verified by the next self-CI run
+
+- **Finding:** every test job and mypy-full failed at `uv pip install -e .[dev]` with `duplicate normalized extra name mssql-pymssql`; black-filtered flagged stale_comment_age.py.
+

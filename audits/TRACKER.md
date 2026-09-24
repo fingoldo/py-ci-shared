@@ -689,3 +689,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `CANARY-46` | config default parity compared a default before the call's own numeric cast |
 | **RESOLVED** | Med | `CANARY-47` | lint-blocking.yml could not lint a monorepo subproject |
 | **RESOLVED** | Med | `CANARY-48` | machine_specific_paths baseline keys carried the absolute path they flag |
+| **RESOLVED** | Med | `CANARY-49` | self-CI could not install the dev extra once sqlalchemy 2.1.0 was released |

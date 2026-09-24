@@ -305,11 +305,7 @@ def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str
             out[lineno] = ("TODO", line.strip()[:100])
             continue
         code_re = _COMMENTED_HASH_CALL_RE if hash_lang else _COMMENTED_CODE_RE
-        if (
-            code_re.match(line)
-            and _body_is_code(_comment_body(line) or "", python=path.suffix == ".py")
-            and not _block_reads_as_prose(file_lines, lineno - 1)
-        ):
+        if code_re.match(line) and _body_is_code(_comment_body(line) or "", python=path.suffix == ".py") and not _block_reads_as_prose(file_lines, lineno - 1):
             out[lineno] = ("commented-out code", line.strip()[:100])
     return out
 
