@@ -9,7 +9,9 @@ guard. ruff's F632 catches ``is`` against a LITERAL, not against a name bound to
 
 The rule: an ``is`` / ``is not`` where either side is a name (or attribute) bound at module level, in
 the module it comes from (or at class level), to a string or bytes value -- a literal, an f-string, or a ``+``/``%`` of those.
-Sentinel objects (``_MISSING = object()``), ``None`` and booleans are untouched.
+Sentinel objects (``_MISSING = object()``), ``None`` and booleans are untouched, and so is an ``is`` whose other
+side is ``None``/``True``/``False``/``...``, a member of an ``Enum`` class (its class-level values are members, not
+strings), or a name imported from a module outside the scan (``p.kind is inspect.Parameter.VAR_KEYWORD``).
 """
 
 from __future__ import annotations
@@ -84,14 +86,26 @@ def _pairs(target: ast.AST, value: ast.AST, known: set[str]) -> set[str]:
     return set()
 
 
+_ENUM_BASES = frozenset({"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "ReprEnum"})
+
+
+def _is_enum_class(node: ast.ClassDef) -> bool:
+    """A class deriving from an ``enum`` base (by its last dotted part): its class-level assignments are members."""
+    for base in node.bases:
+        name = base.attr if isinstance(base, ast.Attribute) else base.id if isinstance(base, ast.Name) else ""
+        if name in _ENUM_BASES:
+            return True
+    return False
+
+
 class _ModuleConstants:
-    """One module's string constants: module-level names, and class-level ones per class."""
+    """One module's string constants: module-level names, and class-level ones per class (not per Enum class)."""
 
     def __init__(self, tree: ast.Module) -> None:
         self.module = _bound_strings(tree.body)
         self.classes: dict[str, set[str]] = {}
         for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
+            if isinstance(node, ast.ClassDef) and not _is_enum_class(node):
                 self.classes.setdefault(node.name, set()).update(_bound_strings(node.body))
 
     @property
@@ -160,6 +174,17 @@ class _Index:
             return node.attr in here.class_names or node.attr in self.all_class_names
         return False
 
+    def is_external(self, node: ast.AST, aliases: ImportAliases) -> bool:
+        """A dotted read rooted at an import of a module outside the scan (``inspect.Parameter.VAR_KEYWORD``)."""
+        head: ast.AST = node
+        while isinstance(head, ast.Attribute):
+            head = head.value
+        if not (isinstance(head, ast.Name) and aliases.is_imported(head.id)):
+            return False
+        qualified = aliases.qualified_name(node) or ""
+        parts = qualified.split(".")
+        return not any(".".join(parts[:i]) in self.by_module for i in range(1, len(parts) + 1))
+
     def _qualified(self, qualified: Optional[str]) -> bool:
         if not qualified or "." not in qualified:
             return False
@@ -178,10 +203,12 @@ def _find(scan: ScanResult, base: Optional[Path], names: "set[str] | None", root
             if not isinstance(node, ast.Compare) or not any(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops):
                 continue
             sides = (node.left, *node.comparators)
+            if any(isinstance(side, ast.Constant) and (side.value is None or side.value is Ellipsis or isinstance(side.value, bool)) for side in sides):
+                continue
             if names is not None:
                 hit = any(_name(side) in names for side in sides)
             else:
-                hit = any(index.is_string_constant(side, here, aliases) for side in sides)
+                hit = any(index.is_string_constant(side, here, aliases) for side in sides) and not any(index.is_external(side, aliases) for side in sides)
             if hit:
                 rel = relative_posix(parsed.path, root) if root else parsed.path.as_posix()
                 problems.append(f"{rel}:{node.lineno}: `{ast.unparse(node)[:100]}` compares a string constant by identity -- use ==")

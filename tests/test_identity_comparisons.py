@@ -89,3 +89,21 @@ def test_bom_and_unparsable_files(tmp_path):
     (tmp_path / "broken.py").write_text("def f(:\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match=r"broken.py"):
         assert_no_identity_comparisons([tmp_path / "ok.py", tmp_path / "broken.py"])
+
+
+def test_singletons_enum_members_and_external_names_are_not_string_identity(tmp_path):
+    (tmp_path / "defs.py").write_text(
+        "import enum\nimport inspect\n\n\nclass Outcome(enum.Enum):\n    BREAK = 'break'\n\n\nclass Cfg:\n"
+        "    kind = 'k'\n    score: str = 'x'\n    SQL = 'SELECT 1'\n\n\n"
+        "def f(self, p, outcome, s):\n"
+        "    a = self.score is None\n    b = self.score is not None\n    c = p.kind is inspect.Parameter.VAR_KEYWORD\n"
+        "    d = outcome is Outcome.BREAK\n    e = self.kind is True\n    g = s is self.SQL\n    return a, b, c, d, e, g\n",
+        encoding="utf-8",
+    )
+    problems = find_identity_comparisons([tmp_path / "defs.py"], root=tmp_path)
+    assert [p.split("`")[1] for p in problems] == ["s is self.SQL"]
+
+
+def test_a_string_sentinel_default_is_still_reported(tmp_path):
+    (tmp_path / "cfg.py").write_text("_UNSET = '<unset>'\n\n\ndef get(env_file=_UNSET):\n    return env_file is _UNSET\n", encoding="utf-8")
+    assert len(find_identity_comparisons([tmp_path / "cfg.py"], root=tmp_path)) == 1

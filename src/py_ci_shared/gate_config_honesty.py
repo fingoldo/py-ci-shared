@@ -78,9 +78,11 @@ def gate_commands(precommit_path: "Path | None", workflows: Iterable[Path], *, s
                     found[f"pre-commit::{hook.get('alias') or hook.get('id')}"] = (command, names)
     for workflow in workflows:
         data = yaml.safe_load(read_source(workflow)) or {}
+        # A job without its own `defaults.run.working-directory` runs in the workflow's.
+        workflow_dir = str(((data.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "")
         for job_id, job in (data.get("jobs") or {}).items():
             job = job or {}
-            job_dir = str(((job.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "")
+            job_dir = str(((job.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "") or workflow_dir
             seen: dict[str, int] = {}
             for step in job.get("steps", []) or []:
                 run = str(step.get("run", "") or "")

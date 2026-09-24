@@ -266,3 +266,33 @@ class TestAuditRegressions:
         for bad in ("slow andd integration", "(slow", "slow)", "and slow", "__import__('os')"):
             with pytest.raises(ValueError):
                 expression_selects(bad, ["slow", "integration"])
+
+
+class TestShellAndActionsWords:
+    """A shell variable or Actions expression is not a path, and a Python argument list is tokenised as one."""
+
+    def test_sharding_values_and_template_tokens_are_not_paths(self):
+        cmd = 'pytest -m "not gpu" \\\n  --splits "$SHARD_SPLITS" --group "$SHARD_GROUP" --junitxml=j-${{ matrix.group }}.xml $EXTRA tests/a.py::$t\n'
+        cmd += "pytest tests/b.py --splits 4 --group ${{ matrix.group }} -n 1\n"
+        got = runners([("ci", cmd)])
+        assert [(r.paths, r.expression) for r in got] == [(("tests/a.py",), "not gpu"), (("tests/b.py",), None)]
+
+    def test_a_python_heredoc_contributes_its_subprocess_argument_list(self):
+        cmd = (
+            "python - <<'PY'\nimport subprocess, sys\nprint('pytest wrote one.')\n"
+            'sys.exit(subprocess.call([sys.executable, "-m", "pytest", "-m", "gpu", "--no-cov", "-n", "0", "tests/gpu"]))\nPY\n'
+        )
+        got = runners([("gpu", cmd)])
+        assert [(r.paths, r.expression) for r in got] == [(("tests/gpu",), "gpu")]
+
+    def test_a_heredoc_body_that_is_not_python_is_not_read_as_commands(self):
+        assert runners([("s", "cat > notes.md <<END\npytest -m slow ran here\nEND\necho done\n")]) == []
+
+    def test_sharded_runner_still_selects_and_a_deselecting_one_still_reports(self, tmp_path):
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_s.py").write_text("import pytest\n\n\n@pytest.mark.slow\ndef test_x():\n    pass\n", encoding="utf-8")
+        sharded = [("deep", 'pytest -m "not gpu" --splits 20 --group "$SHARD_GROUP" -n auto')]
+        assert find_unselected_marked_tests(tests, tmp_path, marker="slow", commands=sharded) == []
+        deselecting = [("ci", 'pytest -m "not slow" --splits "$S" --group "$G" $ARGS')]
+        assert len(find_unselected_marked_tests(tests, tmp_path, marker="slow", commands=deselecting)) == 1

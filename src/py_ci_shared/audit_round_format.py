@@ -54,13 +54,17 @@ def tracker_rows(tracker: Path) -> list[str]:
 def status_problems(tracker: Path, statuses: Iterable[str] = DEFAULT_STATUSES) -> "tuple[list[str], list[str]]":
     """(problems, parsed status words). A cell that MENTIONS a status word must be the bold form of one."""
     words = tuple(statuses)
-    mention = re.compile("|".join(re.escape(s) for s in words), re.IGNORECASE)
+    # A status is named by the upper-case WORD standing alone (`docs`, `gap-closed`, `partial_fit` name nothing), or
+    # by a cell that is nothing but one status in another case (`Resolved`, `**Deferred**`), which is a miswritten status.
+    alternatives = "|".join(re.escape(s) for s in sorted(words, key=len, reverse=True))
+    mention = re.compile(rf"(?<![\w'’-])(?:{alternatives})(?![\w'’-])")
+    whole = re.compile(rf"^\**\s*(?:{alternatives})\s*\**$", re.IGNORECASE)
     problems, parsed = [], []
     for line in tracker_rows(tracker):
         if line.count("|") < 2:
             continue
         cell = line.split("|")[1].strip()
-        if not mention.search(cell):
+        if not (mention.search(cell) or whole.match(cell)):
             continue
         m = _BOLD_ANY_CASE_RE.match(line)
         if not m:

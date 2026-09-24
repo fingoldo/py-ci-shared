@@ -132,3 +132,23 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
     _write(src, "m.py", 'X = "D:/Temp/a"\nY = "D:/Temp/a"\n')
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
+
+
+def test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygiene(tmp_path: Path) -> None:
+    import json
+
+    from py_ci_shared.baseline_hygiene import find_baseline_problems
+
+    src = tmp_path / "src"
+    _write(src, "m.py", 'X = "C:/Users/alice/data"\nY = "/home/bob/cache/x"\n')
+    baseline = tmp_path / "b.json"
+    with pytest.raises(pytest.skip.Exception):
+        assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=True, use_git=False)
+    text = baseline.read_text(encoding="utf-8")
+    assert "alice" not in text and "bob" not in text and "m.py" in text
+    assert [p for p in find_baseline_problems(baseline, require_notes=False) if "absolute path" in p] == []
+    assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
+    _write(src, "m.py", 'X = "C:/Users/alice/data"\nY = "/home/carol/cache/x"\n')
+    with pytest.raises(pytest.fail.Exception, match="1 new finding"):
+        assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
+    assert json.loads(text)

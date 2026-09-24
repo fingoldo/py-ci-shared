@@ -174,3 +174,150 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- an execute-like call (execute, executemany, execute_values, execute_batch, exec_driver_sql) whose statement is a SQL literal (plain, concatenated, or wrapped in text()/SQL()) that only reads is not an effect: SELECT, SHOW, VALUES, TABLE, DESCRIBE, EXPLAIN without ANALYZE and `WITH ... SELECT`, after comments and quoted values are stripped; a CTE that writes, `SELECT ... INTO` and any write keyword still count (row locks `FOR UPDATE` do not), a sqlalchemy select(...) construct is a read, and a statement built at run time (f-string, variable) keeps the old behaviour; regression test: test_effect_assertion_parity.py::TestAReadIsNotAnEffect (SELECT, commented select, CTE SELECT, FOR UPDATE, text(), select() pass; CTE INSERT, data-modifying CTE, SELECT INTO, INSERT, CREATE, f-string and variable SQL are reported; a SELECT beside an UPDATE still reports)
 
 - **Finding:** every execute() counted as an effect, so a module that only queried was told to assert on a database write it never makes
+
+
+### CANARY-28 (Med) -- git_dependency_pins could no longer read a requirements file
+
+**Disposition:** RESOLVED -- find_unpinned_git_dependencies reads a pip requirements file (`.txt`/`.in`, or a file whose first content line is not TOML) as pip does: comments stripped (a `#` that starts the line or follows whitespace, so a `.git#egg=` fragment stays), backslash continuations joined, `-r`/`-c` includes followed relative to the including file and each file read once, `-e` and a bare `git+URL#egg=name` line read as a git dependency; a `.toml` file is still parsed as TOML and an invalid one still fails; regression test: test_git_dependency_pins.py::TestRequirementsFiles (a pinned file with comments, markers, includes and an editable line is clean; an unpinned line in the file or its include, and a bare URL with no ref, are reported; an include cycle is read once; an invalid pyproject still fails)
+
+- **Finding:** since 1.17.0 the input was always parsed as TOML, so `requirements-dev.txt` raised TOMLDecodeError and both mlframe and pyutilz had to check their git lines by hand. Real trees: mlframe and pyutilz requirements-dev.txt went from a parse failure to 0 unpinned (their pyproject results are unchanged: mlframe `pyutilz: branch=master`, pyutilz none)
+
+
+### CANARY-29 (Med) -- audit_round_format read status words inside other words as status mentions
+
+**Disposition:** RESOLVED -- status_problems counts a cell as naming a status only when the upper-case word stands alone (not preceded or followed by a letter, digit, `_`, `-` or apostrophe), or when the whole cell is one status word in another case, bold or not (`Resolved`, `**Partial**`), which is still reported as a miswritten status; regression test: test_audit_round_format.py::test_a_status_word_inside_another_word_or_prose_is_not_a_status_mention (`docs`, `gap-closed`, `partial_fit`, `A fixed PIT seed` pass), test_a_standalone_status_word_outside_the_bold_form_is_still_reported, test_a_status_mention_in_any_case_must_be_the_bold_upper_form
+
+- **Finding:** the mention regex became case-insensitive with no word boundary, so `docs` matched DOC and `partial_fit` PARTIAL; four mlframe trackers failed. Real trees with mlframe's 19 status words: mlframe 5 problems before, 0 after; pyutilz 0 and 0
+
+
+### CANARY-30 (Med) -- identity_comparisons reported `is None` and enum-member identity as string identity
+
+**Disposition:** RESOLVED -- a comparison with `None`, `True`, `False` or `...` on either side is never reported; class-level assignments of a class deriving from an Enum base (`Enum`, `IntEnum`, `StrEnum`, `Flag`, `IntFlag`, `ReprEnum`) are members, not string constants; and a comparison whose other side is a dotted name rooted at an import of a module outside the scan (`inspect.Parameter.VAR_KEYWORD`) is not reported through the instance-attribute fallback; a module-level string sentinel compared with `is` is still reported; regression test: test_identity_comparisons.py::test_singletons_enum_members_and_external_names_are_not_string_identity, test_a_string_sentinel_default_is_still_reported. Also covers the glossum/social report `self.profile_path is None` flagged because a pydantic model declares `profile_path: str = "..."` (merged)
+
+- **Finding:** an attribute read through an instance was matched against every class-level string in the corpus, so `self.score is None`, `p.kind is inspect.Parameter.VAR_KEYWORD` and `outcome is IterationOutcome.BREAK` counted. Real trees: mlframe 10 before, 0 after; pyutilz 1 and 1 (`env_file is _UNSET_ENV_FILE` against `_UNSET_ENV_FILE = "<unset>"`, a real string-sentinel identity check)
+
+
+### CANARY-31 (Med) -- gpu_timing_sync reported a region that synchronizes before the timer stops
+
+**Disposition:** RESOLVED -- a GPU-rooted blocking device-to-host copy (`cp.asnumpy(...)`) is a synchronization, not timed work, so a region ending `deviceSynchronize(); cp.asnumpy(d_R)` is synchronized; work launched after the last blocking copy is still reported; regression test: test_gpu_timing_sync.py::test_a_blocking_device_to_host_copy_after_a_synchronize_ends_the_region, test_a_kernel_after_the_last_blocking_copy_is_still_reported
+
+- **Finding:** `cp.asnumpy` counted as the last GPU work, after the synchronize, so mlframe `_auto_tune_sweeps_b.py:408` was reported. Real trees: mlframe 3 before, 2 after (`_pairs_score.py:655` injected callable, `_screen_predictors.py:384` `cp.random.seed`, both outside this finding); pyutilz 0 and 0
+
+
+### CANARY-32 (Med) -- marker_runner_coverage read shell variables, Actions expressions and a Python argument list as runner paths
+
+**Disposition:** RESOLVED -- a `${{ ... }}` expression is one opaque word; a positional word holding a shell variable or Actions expression is not a path and narrows nothing (`tests/f.py::$t` keeps its file); pytest-split's `--splits`/`--group`/`--splitting-algorithm`, `--durations-path` and `--timeout-method` take a value; a here-document body is data for its command, not shell lines, and a body fed to `python` contributes the pytest invocations its argument lists spell (`subprocess.call([sys.executable, "-m", "pytest", "-m", "gpu", ...])`); regression test: test_marker_runner_coverage.py::TestShellAndActionsWords (sharding values and template tokens are not paths, a Python heredoc's argument list is one invocation with `-m gpu`, a non-Python heredoc is not a command, a sharded runner selects while a deselecting one still reports)
+
+- **Finding:** `$SHARD_GROUP`, `${{`, `matrix.group` and `}}` were read as test paths, so every sharded runner reached nothing, and the gpu-matrix runner's argument list parsed as the expression `,`. Real trees: mlframe unselected slow/gpu/fuzz 337/174/2 before, 0/0/0 after; pyutilz 0/0/0 and 0/0/0
+
+
+### CANARY-33 (Med) -- vacuous_loop_assertions ignored guard asserts and flagged constant iterables
+
+**Disposition:** RESOLVED -- a floor may assert any way the iterable can be shown non-empty: the iterable, what it passes through unchanged in size (`sorted(x)`, `x.items()`, `dict(x)`, `x.splitlines()`), either side of a concatenation or union (`a + b`, `{**a, **b}`, `a | b`), every argument of a `zip`, or the value a local name was bound to once (`lines = src.splitlines()` after `assert "x" in src`); identifiers match as names, not substrings; a loop over a constant non-empty collection needs no floor (`range` over integer literals that yields something, a dict literal, `dict(k=v)`, a non-empty string, `.items()` of one, or a local bound once to one); negative scans without a guard, `range(0)`, `range(n)`, a zip with one side guarded and a loop under `if injected:` are still reported; regression test: test_vacuous_loop_assertions.py::TestFloorsAndConstantIterables
+
+- **Finding:** 1.17.0 rightly stopped letting asserts in unrelated loops vouch for each other, which exposed that guard asserts on the parts of the iterable never counted and constant iterables other than literal tuples were flagged. Real trees: mlframe 26 before, 15 after; pyutilz 49 before, 36 after. The remaining ones are unguarded (zip over two computed arrays, loops over computed dicts, source scans with no floor); one became visible: mlframe `test_mrmr_hermite_injection.py:121` loops under `if injected:`, which the old substring match excused through an unrelated `injected_names`
+
+
+### CANARY-34 (Low) -- stale_comment_age read prose with parentheses as commented-out code
+
+**Disposition:** RESOLVED -- already fixed by a2f452c (a bare word, a space and a parenthesis is a glossed heading; in Python files the comment body must parse as one statement, a bare expression must be a call); verified here with the ad2 shapes and the glossum/social shape `# Vowels (Spanish has 5 pure vowels)` (merged); regression test: test_stale_comment_age.py::test_prose_with_parentheses_is_not_commented_out_code, test_commented_out_calls_are_still_code
+
+- **Finding:** `# identity (NaN-aware)` and `# F_q(s) per (q, s)` were candidates. Real trees (commented-out-code candidates before dating): 03cfff1 mlframe 75, pyutilz 47, glossum 115; at a2f452c mlframe 37, pyutilz 46, glossum 5, all remaining ones code-shaped (`print(...)`, `ensure_installed(...)`, three shape labels such as `# isinstance(X, T)` above the branch that matches it)
+
+
+### CANARY-35 (Med) -- readme_env_var_parity counted environment writes as reads
+
+**Disposition:** RESOLVED -- `os.environ.setdefault(...)` and `os.environ.pop(...)` used as a statement (the value discarded) write the environment and are not reads; the same calls whose value is used still are; assignments and `del` through `os.environ[...]` and a `{**os.environ, "X": ...}` literal were already not reads; regression test: test_readme_env_var_parity.py::test_environment_writes_are_not_reads. Also covers the glossum report of `PYTHONIOENCODING` (merged): its read was `os.environ.setdefault("PYTHONIOENCODING", "utf-8")` in scripts/_refsuite_run.py; its `PGPASSWORD` is a real read (`os.environ["PGPASSWORD"]` in scripts/_audit_quality.py:11) and stays reported
+
+- **Finding:** thread-count defaults set by benchmarks became documentation debt. Real trees (names read): mlframe 269 before, 259 after; pyutilz 21 and 21
+
+
+### CANARY-36 (Low) -- optional_truthiness flagged guards whose zero case a sibling comparison spells out
+
+**Disposition:** RESOLVED -- a truth test of an optional number is not reported when a sibling operand of the same boolean compares that name with a number and agrees with the truth test at 0: `not n or n <= 0` (0 goes where the comparison sends it), `n and n > 0`, `0 >= n or not n`; `not n or n > 5`, `m and m >= 0` and `n if n else 3` are still reported; `n is None or n < 1` was never a truth test; regression test: test_optional_truthiness.py::test_a_truth_test_whose_zero_case_a_sibling_comparison_spells_out_is_not_reported, test_a_sibling_comparison_that_disagrees_at_zero_does_not_excuse_it
+
+- **Finding:** the `<= 0` co-check collapses 0 with None on purpose. Real trees: mlframe 30 before, 26 after; pyutilz 4 and 4. `x if x else default` stays reported: it sends a deliberate 0 to the default, which is the bug class
+
+
+### CANARY-37 (Med) -- a one-or-many path parameter configured with a directory string became a one-file list
+
+**Disposition:** RESOLVED -- _core.config reads an annotation that names `Path` outside a collection (`Union[str, Path, Iterable[...]]`) as one path or many: a plain string stays one path (a directory the gate enumerates), a glob or a list becomes a list; a list-only parameter still gets a list; regression test: test_cli.py::TestResolveKwargs::test_a_one_or_many_parameter_keeps_a_plain_string_as_one_directory, test_the_real_gate_reads_a_tests_root_string_as_a_directory
+
+- **Finding:** `tests_root = "tests"` became `[repo/tests]` and no_xfail_to_defer and clock_day_boundary reported `tests:1: unreadable` (social/llm_bench adopters worked around it with a glob)
+
+
+### CANARY-38 (High) -- a consumer's refresh-option registration stopped pytest once the plugin was installed
+
+**Disposition:** RESOLVED -- already fixed by d9b0b8a (_core.refresh._add treats argparse.ArgumentError, raised for a clash across option groups, as already registered); verified here with a consumer-shaped conftest calling three gates' register_refresh_option (one twice) under `-p py_ci_shared.pytest_plugin`: 03cfff1 exits with `argparse.ArgumentError: argument --py-ci-refresh: conflicting option string`, the tree passes and `--py-ci-refresh` still reaches the test; regression test: test_core_refresh.py (d9b0b8a)
+
+- **Finding:** every consumer using the documented helpers broke on upgrade to 1.17.0
+
+
+### CANARY-39 (Med) -- import_cycles reported `from . import sibling` as a cycle through the parent package
+
+**Disposition:** RESOLVED -- a from-import out of an ancestor package that asks for no name the package binds (every name is a submodule, reached as its own edge) is no edge to the ancestor, like `import a.b.c` inside `a.b.x`; `from . import NAME` of a name the package binds stays an edge; regression test: test_import_cycles.py::test_a_sibling_reached_through_the_package_is_not_a_cycle (checked against a real interpreter), test_a_name_the_parent_binds_imported_relatively_is_still_a_cycle
+
+- **Finding:** `pkg/sub/b.py: from . import a as av` gave `pkg.sub -> pkg.sub.b -> pkg.sub` although `import pkg.sub.b` loads. Real trees: mlframe 18 cycles before, 17 after; glossum 5 and 3; pyutilz 0 and 0
+
+
+### CANARY-40 (Med) -- gate_commands ignored a workflow-level working directory
+
+**Disposition:** RESOLVED -- a job without its own `defaults.run.working-directory` is scoped by the workflow's `defaults.run.working-directory`; regression test: test_gate_config_honesty.py::test_a_workflow_level_working_directory_scopes_every_job_without_its_own (a job's own default still wins)
+
+- **Finding:** every step of a workflow scoped only at workflow level was dropped by `scope=`, so marker_runner_coverage reported nightly tests as never run (social realtime_applications)
+
+
+### CANARY-41 (Med) -- private_imports treated a module's private helper as foreign to its sibling modules
+
+**Disposition:** RESOLVED -- a private name imported from a plain module (`from pkg.db.models import _helper`, `pkg/db/models.py` a file) belongs to the package holding that module, so modules of `pkg.db` and below share it; a module in another package is still reported, and a private name of a package (`from pkg.metrics import _core`) keeps the package as owner; regression test: test_private_imports.py::test_a_private_helper_of_a_module_is_shared_with_its_siblings_not_with_other_packages
+
+- **Finding:** the owner was the module itself, contradicting the module doc; glossum 250 pairs before, 82 after (the 168 sibling pairs the adopter counted)
+
+
+### CANARY-42 (Med) -- coverage_config_parity missed a --cov-config passed through a shell variable or array
+
+**Disposition:** RESOLVED -- an invocation expanding `$name`/`${name[@]}` has its own config when that variable or array is assigned `--cov-config`/`--rcfile`/`--cov-fail-under` in the same step (`name=(...)` across lines, `name+=`, `export name="..."`); an array holding only `--cov` still reports; regression test: test_coverage_config_parity.py::test_whole_suite_own_config_or_non_blocking_runs_are_not_flagged (three array/variable cases), test_narrow_coverage_run_inheriting_fail_under_is_flagged (config in a different array)
+
+- **Finding:** `--cov` was followed through the array, `--cov-config` was not (glossum)
+
+
+### CANARY-43 (Low) -- the pinned black version was not importable
+
+**Disposition:** RESOLVED -- tool_versions.BLACK_VERSION = "26.5.1", the version black-filtered.yml runs; regression test: test_pinned_tool_versions.py::test_black_version_is_the_one_the_shared_workflow_runs (every `black==` in the workflow equals it)
+
+- **Finding:** only RUFF_VERSION was exported, so a consumer could not hold its own `black==` pin to the shared workflow's
+
+
+### CANARY-44 (Low) -- the package shipped no py.typed
+
+**Disposition:** RESOLVED -- src/py_ci_shared/py.typed added and listed in package data; regression test: test_package_inventory.py::test_the_package_is_marked_typed, test_package_data_ships_the_configs
+
+- **Finding:** consumers' mypy reported `import-untyped` on every py_ci_shared import
+
+
+### CANARY-45 (Med) -- source_text_claims read a deserialised report keyed by .py paths as source text
+
+**Disposition:** RESOLVED -- the value of a deserialiser (`json.loads`/`json.load`, `orjson.loads`, `tomllib`/`tomli` `load(s)`, `yaml.safe_load`/`load`/`safe_load_all`) is data, so a read wrapped in one neither taints a name nor makes a helper a source reader; a helper returning a `.py` file's text is still a reader; regression test: test_source_text_claims.py::test_a_deserialised_report_keyed_by_py_paths_is_data_not_source
+
+- **Finding:** llm_bench `test_branch_coverage_ratchet.py` had 4 claims over a coverage.json; 4 before, 0 after
+
+
+### CANARY-46 (Low) -- config default parity compared a default before the call's own numeric cast
+
+**Disposition:** RESOLVED -- config_call_site_parity compares a call-site default as the accessor returns it: `get(..., 7, float)` is 7.0 and `get(..., 7.0, int)` is 7, for both the schema check and the cross-site check; bool and str casts, and non-numeric values, are left alone; regression test: test_config_call_site_parity.py::test_an_int_default_cast_to_float_by_the_call_equals_a_float_schema_default, test_an_int_default_without_a_float_cast_or_a_different_number_still_disagrees
+
+- **Finding:** `get(..., 7, float)` was reported against a schema default of 7.0 (social realtime_applications wrote floats to pass)
+
+
+### CANARY-47 (Med) -- lint-blocking.yml could not lint a monorepo subproject
+
+**Disposition:** RESOLVED -- new inputs `working-directory` (default "."; codespell, bandit, vulture, interrogate and deptry run there), `codespell-toml` (default "pyproject.toml"), `bandit-config` (-c) and `bandit-exclude` (-x); actionlint, zizmor and yamllint stay at the repository root; defaults keep every existing caller's behaviour; regression test: test_reusable_workflows.py::test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_the_root
+
+- **Finding:** the workflow ran every tool from the repository root with a fixed `--toml pyproject.toml` and no bandit config or exclusions (blocked social ADOPT-28)
+
+
+### CANARY-48 (Med) -- machine_specific_paths baseline keys carried the absolute path they flag
+
+**Disposition:** RESOLVED -- a finding's baseline key is `rule::file::<sha256 of the matched text, 16 hex>`, so a refreshed baseline names no machine path and passes baseline_hygiene; the report still shows the path; existing baselines re-key on the next refresh; regression test: test_machine_specific_paths.py::test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygiene (a changed path is still new)
+
+- **Finding:** the key was `rule::file::<matched path>`, which baseline_hygiene rejects by design, so the gate could not be baselined (glossum)

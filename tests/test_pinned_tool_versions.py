@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared import pinned_tool_versions as ptv
-from py_ci_shared.tool_versions import RUFF_VERSION
+from py_ci_shared.tool_versions import BLACK_VERSION, RUFF_VERSION
 
 REPO = Path(__file__).resolve().parent.parent
 _PIN = f'    "ruff=={RUFF_VERSION}",  # a comment\n'
@@ -132,3 +132,9 @@ class TestAuditRegressions:
         assert ptv.precommit_ruff_revs("repos:\n  - repo: https://github.com/psf/black\n    rev: 24.1.0\n") == []
         with pytest.raises(ValueError, match="not valid YAML"):
             ptv.precommit_ruff_revs("repos: [unclosed\n")
+
+
+def test_black_version_is_the_one_the_shared_workflow_runs():
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "black-filtered.yml").read_text(encoding="utf-8")
+    pins = re.findall(r"black==([0-9][0-9.]*)", workflow)
+    assert pins and set(pins) == {BLACK_VERSION}, f"black-filtered.yml runs black {sorted(set(pins))}, tool_versions says {BLACK_VERSION}"

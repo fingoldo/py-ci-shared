@@ -38,6 +38,7 @@ def _rules(root: Path, **kw: object) -> list[str]:
         "python -m pytest --lf --cov=src/pkg",
         "NUMBA_DISABLE_JIT=1 pytest tests/unit --cov=src/pkg \\\n  --cov-report=term",
         'cov_args=(--cov=pkg --cov-report=xml)\npytest tests/ --splits 3 --group 2 "${cov_args[@]}"',
+        'other=(--cov-config=.rc)\ncov_args=(--cov=pkg)\npytest tests/unit "${cov_args[@]}"',
         "coverage combine data\ncoverage xml -o out.xml",
         "coverage report",
     ],
@@ -61,6 +62,9 @@ def test_narrow_coverage_run_inheriting_fail_under_is_flagged(tmp_path: Path, ru
         "pytest tests/unit --cov=src/pkg || true",
         "pip install pytest pytest-cov coverage",
         "pytest --cov=src/pkg\ncoverage xml",
+        'cov_args=(--cov=pkg --cov-config=.coveragerc.narrow)\npytest tests/ --splits 3 --group 2 "${cov_args[@]}"',
+        'cov_args=(\n  --cov=pkg\n  --cov-config="$DERIVED"\n)\npytest tests/unit "${cov_args[@]}"',
+        'export COV="--cov=pkg --rcfile=.rc"\npytest tests/unit $COV',
     ],
 )
 def test_whole_suite_own_config_or_non_blocking_runs_are_not_flagged(tmp_path: Path, run: str) -> None:

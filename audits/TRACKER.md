@@ -668,3 +668,24 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `NEW-32` | upstream Dart scanner unused-test-seams |
 | **RESOLVED** | Med | `CANARY-26` | gates handed a list of directories treated each directory as a file |
 | **RESOLVED** | Med | `CANARY-27` | effect_assertion_parity reported SELECT-only reads as unchecked database effects |
+| **RESOLVED** | Med | `CANARY-28` | git_dependency_pins could no longer read a requirements file |
+| **RESOLVED** | Med | `CANARY-29` | audit_round_format read status words inside other words as status mentions |
+| **RESOLVED** | Med | `CANARY-30` | identity_comparisons reported `is None` and enum-member identity as string identity |
+| **RESOLVED** | Med | `CANARY-31` | gpu_timing_sync reported a region that synchronizes before the timer stops |
+| **RESOLVED** | Med | `CANARY-32` | marker_runner_coverage read shell variables, Actions expressions and a Python argument list as runner paths |
+| **RESOLVED** | Med | `CANARY-33` | vacuous_loop_assertions ignored guard asserts and flagged constant iterables |
+| **RESOLVED** | Low | `CANARY-34` | stale_comment_age read prose with parentheses as commented-out code |
+| **RESOLVED** | Med | `CANARY-35` | readme_env_var_parity counted environment writes as reads |
+| **RESOLVED** | Low | `CANARY-36` | optional_truthiness flagged guards whose zero case a sibling comparison spells out |
+| **RESOLVED** | Med | `CANARY-37` | a one-or-many path parameter configured with a directory string became a one-file list |
+| **RESOLVED** | High | `CANARY-38` | a consumer's refresh-option registration stopped pytest once the plugin was installed |
+| **RESOLVED** | Med | `CANARY-39` | import_cycles reported `from . import sibling` as a cycle through the parent package |
+| **RESOLVED** | Med | `CANARY-40` | gate_commands ignored a workflow-level working directory |
+| **RESOLVED** | Med | `CANARY-41` | private_imports treated a module's private helper as foreign to its sibling modules |
+| **RESOLVED** | Med | `CANARY-42` | coverage_config_parity missed a --cov-config passed through a shell variable or array |
+| **RESOLVED** | Low | `CANARY-43` | the pinned black version was not importable |
+| **RESOLVED** | Low | `CANARY-44` | the package shipped no py.typed |
+| **RESOLVED** | Med | `CANARY-45` | source_text_claims read a deserialised report keyed by .py paths as source text |
+| **RESOLVED** | Low | `CANARY-46` | config default parity compared a default before the call's own numeric cast |
+| **RESOLVED** | Med | `CANARY-47` | lint-blocking.yml could not lint a monorepo subproject |
+| **RESOLVED** | Med | `CANARY-48` | machine_specific_paths baseline keys carried the absolute path they flag |

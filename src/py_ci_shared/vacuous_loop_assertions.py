@@ -183,10 +183,7 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
     zero times too (two floorless ``for x in ...`` loops used to vouch for each other)."""
     enclosing = enclosing if enclosing is not None else _enclosing_loops(fn)
     allowed_loops = enclosing.get(id(loop), frozenset())
-    try:
-        iter_src = ast.unparse(loop.iter)
-    except Exception:  # unparse is best-effort; missing it just narrows the check
-        iter_src = None
+    alternatives = _floor_sources(loop.iter, _assignments(fn), 0)
     var_names = {n.id for n in ast.walk(loop.target) if isinstance(n, ast.Name)}
 
     loop_ids = {id(n) for n in ast.walk(loop)}
@@ -199,14 +196,101 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
             test_src = ast.unparse(node.test)
         except Exception:  # unparse is best-effort, as above
             continue
-        if iter_src and iter_src in test_src:
+        mentioned = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+        if any(all((src in mentioned) if src.isidentifier() else (src in test_src) for src in needed) for needed in alternatives):
             return True
         if var_names & {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}:
             return True
     return False
 
 
-def _iterates_a_nonempty_literal(loop) -> bool:
+_PASS_THROUGH_CALLS = frozenset({"enumerate", "sorted", "reversed", "list", "tuple", "set", "dict", "iter", "frozenset"})
+_PASS_THROUGH_METHODS = frozenset({"items", "keys", "values", "splitlines", "split", "copy", "tolist"})
+
+
+def _assignments(fn: _FuncDef) -> "dict[str, list[ast.expr]]":
+    """Values bound to each plain name in *fn*'s own body (``lines = src.splitlines()``)."""
+    out: dict[str, list[ast.expr]] = {}
+    for node in _own_nodes(fn):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            out.setdefault(node.targets[0].id, []).append(node.value)
+    return out
+
+
+def _src(node: ast.AST) -> "str | None":
+    try:
+        return ast.unparse(node)
+    except Exception:  # unparse is best-effort; missing it just narrows the check
+        return None
+
+
+def _floor_sources(node: ast.expr, assigned: "dict[str, list[ast.expr]]", depth: int) -> "list[tuple[str, ...]]":
+    """Ways an assert can show the iterable is not empty: each tuple lists sources that must ALL be mentioned.
+
+    The iterable itself; what it passes through unchanged in size (``sorted(x)``, ``x.items()``, ``dict(x)``); either
+    side of a concatenation or union (``a + b``, ``{**a, **b}``, ``a | b``), since one non-empty side makes it iterate;
+    every argument of a ``zip``; and the value a plain local name was bound to once (``lines = src.splitlines()``).
+    """
+    own = _src(node)
+    out: list[tuple[str, ...]] = [(own,)] if own else []
+    if depth > 4:
+        return out
+    inner: "list[ast.expr]" = []
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _PASS_THROUGH_CALLS and node.args:
+        inner = [node.args[0]]
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _PASS_THROUGH_METHODS:
+        inner = [node.func.value]
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.BitOr)):
+        inner = [node.left, node.right]
+    elif isinstance(node, ast.Dict) and node.keys and all(k is None for k in node.keys):
+        inner = list(node.values)
+    elif isinstance(node, ast.Name) and len(assigned.get(node.id, ())) == 1:
+        inner = [assigned[node.id][0]]
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "zip" and node.args and not node.keywords:
+        needed = tuple(src for src in (_src(a) for a in node.args) if src)
+        if len(needed) == len(node.args):
+            out.append(needed)
+    for sub in inner:
+        out.extend(_floor_sources(sub, assigned, depth + 1))
+    return out
+
+
+def _int_literal(node: ast.expr) -> "int | None":
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return node.value
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        value = _int_literal(node.operand)
+        return -value if value is not None else None
+    return None
+
+
+def _nonempty_constant(iterable: ast.expr, assigned: "dict[str, list[ast.expr]] | None" = None) -> bool:
+    """A collection spelled out at the loop with at least one element: a tuple/list/set/dict literal, ``dict(k=v)``, a
+    non-empty string, ``range`` over integer literals that yields something, ``.items()``/``.keys()``/``.values()`` of
+    one of those, or a local name bound once to one of those (``cfg = dict(a=1)`` ... ``for k, v in cfg.items()``)."""
+    if isinstance(iterable, ast.Name) and assigned is not None and len(assigned.get(iterable.id, ())) == 1:
+        return _nonempty_constant(assigned[iterable.id][0])
+    if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Name) and iterable.func.id == "dict" and not iterable.args:
+        return any(k.arg is not None for k in iterable.keywords)
+    if isinstance(iterable, (ast.Tuple, ast.List, ast.Set)):
+        # `[*m]` is as empty as `m`: only an element that is not unpacked guarantees an iteration.
+        return any(not isinstance(e, ast.Starred) for e in iterable.elts)
+    if isinstance(iterable, ast.Dict):
+        return any(k is not None for k in iterable.keys)
+    if isinstance(iterable, ast.Constant):
+        return isinstance(iterable.value, (str, bytes)) and len(iterable.value) > 0
+    if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Attribute) and iterable.func.attr in ("items", "keys", "values"):
+        return not iterable.args and _nonempty_constant(iterable.func.value, assigned)
+    if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Name) and iterable.func.id == "range" and not iterable.keywords:
+        bounds = [_int_literal(a) for a in iterable.args]
+        if not bounds or len(bounds) > 3 or any(b is None for b in bounds):
+            return False
+        ints = [int(b) for b in bounds if b is not None]
+        return len(range(*ints)) > 0 if ints[-1] != 0 or len(ints) < 3 else False
+    return False
+
+
+def _iterates_a_nonempty_literal(loop, assigned: "dict[str, list[ast.expr]] | None" = None) -> bool:
     """True when the loop's iterable is a literal collection with elements in it.
 
     `for x in ("a", "b"): assert x in thing` needs no floor: the iterable is written out at the
@@ -223,8 +307,7 @@ def _iterates_a_nonempty_literal(loop) -> bool:
     if isinstance(iterable, ast.Call) and isinstance(iterable.func, ast.Name):
         if iterable.func.id in {"enumerate", "sorted", "reversed", "list", "tuple", "set"} and iterable.args:
             iterable = iterable.args[0]
-    # `[*m]` is as empty as `m`: only an element that is not unpacked guarantees an iteration.
-    return isinstance(iterable, (ast.Tuple, ast.List, ast.Set)) and any(not isinstance(e, ast.Starred) for e in iterable.elts)
+    return _nonempty_constant(iterable, assigned)
 
 
 def find_floorless_loops(
@@ -257,12 +340,13 @@ def _floorless_loops(files: Iterable[Path], repo_root: Path, *, allow_unparsed: 
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             enclosing = _enclosing_loops(fn)
+            assigned = _assignments(fn)
             for node in _own_nodes(fn):
                 if not isinstance(node, (ast.For, ast.AsyncFor)):
                     continue
                 if not _is_assert_only(node.body):
                     continue
-                if _iterates_a_nonempty_literal(node):
+                if _iterates_a_nonempty_literal(node, assigned):
                     continue
                 if _floor_exists(fn, node, enclosing):
                     continue

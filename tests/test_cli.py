@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Union
 
 import pytest
 
@@ -78,6 +80,25 @@ class TestResolveKwargs:
         assert kwargs["out_path"] == tmp_path / "b.json"
         assert kwargs["label"] == "a/*.py", "a str-annotated value must not become a path"
         assert kwargs["repo_root"] == tmp_path, "an omitted repo_root is filled in"
+
+    def test_a_one_or_many_parameter_keeps_a_plain_string_as_one_directory(self, tmp_path):
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_a.py").write_text("", encoding="utf-8")
+
+        def gate(tests_root: "Union[str, Path, Iterable[Union[str, Path]]]", files: "list[Path]") -> None: ...
+
+        kwargs = resolve_kwargs(gate, {"tests_root": "tests", "files": "tests"}, tmp_path)
+        assert kwargs["tests_root"] == tmp_path / "tests", "a directory given as a string is one path, not a one-file list"
+        assert kwargs["files"] == [tmp_path / "tests"], "a list-only parameter still gets a list"
+        kwargs = resolve_kwargs(gate, {"tests_root": "tests/*.py"}, tmp_path)
+        assert kwargs["tests_root"] == [tmp_path / "tests" / "test_a.py"], "a glob still expands"
+
+    def test_the_real_gate_reads_a_tests_root_string_as_a_directory(self, tmp_path):
+        from py_ci_shared.no_xfail_to_defer import assert_no_xfail_to_defer
+
+        (tmp_path / "tests").mkdir()
+        (tmp_path / "tests" / "test_a.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+        assert_no_xfail_to_defer(**resolve_kwargs(assert_no_xfail_to_defer, {"tests_root": "tests"}, tmp_path))
 
     def test_names_decide_when_there_is_no_annotation(self, tmp_path):
         def gate(md_files, tests_dir, pattern):  # type: ignore[no-untyped-def]

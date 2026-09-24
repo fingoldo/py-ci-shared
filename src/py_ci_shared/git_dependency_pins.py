@@ -116,9 +116,15 @@ def find_unpinned_git_dependencies(
     Raises:
         PyprojectParseError: the file is not valid TOML, so no dependency in it could be checked.
     """
-    data = _load_toml(Path(pyproject_path))
+    path = Path(pyproject_path)
+    data: dict[str, Any] = {}
+    if _is_requirements_file(path):
+        requirements = _requirement_lines(path, set())
+    else:
+        data = _load_toml(path)
+        requirements = _strings(data)
     violations = []
-    for requirement in _strings(data):
+    for requirement in requirements:
         m = _GIT_DEP_RE.match(requirement)
         if m is None:
             continue
@@ -132,6 +138,55 @@ def find_unpinned_git_dependencies(
             violations.append(ref)
     violations.extend(_source_table_violations(data, allow_unpinned_url_prefixes))
     return violations
+
+
+def _is_requirements_file(path: Path) -> bool:
+    """A pip requirements file (``requirements*.txt``, ``*.in``, ``constraints*.txt``) rather than TOML; a file with
+    another suffix is TOML when its name says so, else it is sniffed: a ``[table]`` header or ``key = value`` line
+    means TOML."""
+    suffix = path.suffix.lower()
+    if suffix == ".toml":
+        return False
+    if suffix in (".txt", ".in"):
+        return True
+    try:
+        text = read_source(path)
+    except SourceReadError:
+        return False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        return not re.match(r"^(\[.*\]|[\w.\"'-]+\s*=[^=])", stripped)
+    return False
+
+
+_INCLUDE_RE = re.compile(r"^(?:-r|--requirement|-c|--constraint)(?:\s+|=)(\S+)")
+
+
+def _requirement_lines(path: Path, seen: set[Path]) -> list[str]:
+    """Every requirement line of a pip requirements file with comments stripped, backslash continuations joined and
+    ``-r``/``-c`` includes followed (relative to the including file, each file once)."""
+    resolved = path.resolve()
+    if resolved in seen:
+        return []
+    seen.add(resolved)
+    text = read_source(path)
+    out: list[str] = []
+    for raw in re.sub(r"\\r?\n", " ", text).splitlines():
+        # A comment starts at a '#' that begins the line or follows whitespace; a URL fragment ('.git#egg=') stays.
+        line = re.sub(r"(^|\s)#.*$", "", raw).strip()
+        if not line:
+            continue
+        include = _INCLUDE_RE.match(line)
+        if include:
+            out.extend(_requirement_lines(path.parent / include.group(1), seen))
+            continue
+        if line.startswith("-e ") or line.startswith("--editable "):
+            line = line.split(None, 1)[1]
+        # A bare URL line (`git+https://...@sha#egg=name`) names its project in the fragment; read it as `name @ URL`.
+        out.append(f"_ @ {line}" if line.startswith("git+") else line)
+    return out
 
 
 class PyprojectParseError(SourceParseError):

@@ -18,15 +18,20 @@ being passed silently. The [README](README.md#baselines-refresh-and-what-now-fai
   `min_files=1` (`module_reload_safety`, `vacuous_loop_assertions`, `config_call_site_parity`, `unresolved_imports`,
   `phantom_markdown_links`, `pytest_markers`, `env_flag_parsing`).
 - `git_dependency_pins` parses the TOML and checks every dependency string (single-line arrays, extras, groups,
-  build requires); invalid TOML fails. `prompt_field_parity.string_literals` is strict by default, and the
+  build requires); invalid TOML fails. A requirements file is read as pip reads it (comments, continuations,
+  `-r`/`-c` includes, `-e` and bare `git+` lines). `prompt_field_parity.string_literals` is strict by default, and the
   `llm_call_archive_gate` finders raise on unparsable files.
+- The package ships `py.typed`, and `tool_versions.BLACK_VERSION` names the black `black-filtered.yml` runs.
+  `lint-blocking.yml` takes `working-directory`, `codespell-toml`, `bandit-config` and `bandit-exclude`, so it can
+  lint a monorepo subproject.
 - **orjson is no longer a dependency**: baselines go through the stdlib `json` module (`_core.load_json` /
   `dump_json`), with the on-disk format unchanged.
 - **Refresh works under pytest-xdist.** Refresh requests travel through the `PY_CI_SHARED_REFRESH` environment
   variable, which workers inherit, instead of `sys.argv`, which they do not.
 - **Some baseline and allowlist keys changed** (`alembic_concurrently`, `dart_scanners`, `marker_runner_coverage`,
   `value_bearing_asserts`, `db_transaction_completeness`, `fail_open_handlers`, `discarded_model_copy`,
-  `gate_integrity`): refresh or rewrite those once.
+  `gate_integrity`, `machine_specific_paths`, whose keys now carry a digest of the flagged path instead of the path):
+  refresh or rewrite those once.
 - `mutation_teeth` fails on a scope with zero mutants unless `allow_empty=True` (`HARNESS_VERSION` 11);
   `teeth_sweep` reports unrunnable cases as `ERRORED`; `worktree_hygiene` never calls staged or ignored work
   `REMOVABLE`.

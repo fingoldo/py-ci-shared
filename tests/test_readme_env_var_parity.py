@@ -399,7 +399,10 @@ class TestRegisterRefreshOption:
 
 
 def test_find_env_vars_read_resolves_string_constants(tmp_path):
-    f = _write(tmp_path, "c.py", """
+    f = _write(
+        tmp_path,
+        "c.py",
+        """
 import os
 
 _ENV_VAR = "PROJ_ALLOW_UNSAFE"
@@ -409,12 +412,16 @@ _TWICE = "PROJ_B"
 
 def f():
     return os.environ.get(_ENV_VAR), os.getenv(_OTHER), os.environ.get(_TWICE), os.environ[_ENV_VAR]
-""")
+""",
+    )
     assert find_env_vars_read([f]) == {"PROJ_ALLOW_UNSAFE", "PROJ_OTHER"}
 
 
 def test_find_env_vars_read_project_reader_funcs(tmp_path):
-    f = _write(tmp_path, "d.py", """
+    f = _write(
+        tmp_path,
+        "d.py",
+        """
 from proj.env import env_flag, env_int
 from proj import env
 
@@ -422,7 +429,8 @@ _NAME = "PROJ_CONST"
 
 def f():
     return env_flag("PROJ_SWITCH"), env_int("PROJ_N", 5), env.env_float(_NAME, 0.5), unrelated("NOT_A_VAR")
-""")
+""",
+    )
     assert find_env_vars_read([f]) == set()
     assert find_env_vars_read([f], reader_funcs={"env_flag", "env_int", "env_float"}) == {"PROJ_SWITCH", "PROJ_N", "PROJ_CONST"}
 
@@ -430,7 +438,10 @@ def f():
 def test_find_env_var_reads_first_site_and_default(tmp_path):
     from py_ci_shared.readme_env_var_parity import find_env_var_reads
 
-    f = _write(tmp_path, "e.py", """
+    f = _write(
+        tmp_path,
+        "e.py",
+        """
 import os
 
 def f():
@@ -438,14 +449,28 @@ def f():
     b = env_int("PROJ_B", 32, minimum=2)
     c = os.environ.get("PROJ_A")
     return a, b, c
-""")
+""",
+    )
     reads = find_env_var_reads([f], reader_funcs={"env_int"})
     assert reads["PROJ_A"][1:] == (4, "'0.05'")
     assert reads["PROJ_B"][1:] == (5, "32")
     assert reads["PROJ_A"][0].name == "e.py"
 
 
-
 def test_documented_names_may_start_with_underscore(tmp_path):
     readme = _write_readme(tmp_path, "_PRIVATE_SWITCH", "PUBLIC")
     assert find_readme_documented_vars(readme) == {"_PRIVATE_SWITCH", "PUBLIC"}
+
+
+def test_environment_writes_are_not_reads(tmp_path):
+    from py_ci_shared.readme_env_var_parity import find_env_vars_read
+
+    src = tmp_path / "m.py"
+    src.write_text(
+        "import os\nimport subprocess\n\n"
+        'os.environ.setdefault("OMP_NUM_THREADS", "1")\nos.environ.pop("STALE", None)\nos.environ["PYTHONIOENCODING"] = "utf-8"\n'
+        'del os.environ["GONE"]\nsubprocess.run(["x"], env={**os.environ, "PGPASSWORD": "p"})\n'
+        'a = os.environ.setdefault("READ_BY_SETDEFAULT", "1")\nb = os.environ.pop("READ_BY_POP", None)\nc = os.environ["READ_BY_SUBSCRIPT"]\n',
+        encoding="utf-8",
+    )
+    assert find_env_vars_read([src]) == {"READ_BY_SETDEFAULT", "READ_BY_POP", "READ_BY_SUBSCRIPT"}

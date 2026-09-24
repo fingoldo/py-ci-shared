@@ -120,3 +120,15 @@ def test_assert_uses_a_shrink_only_known_list(tmp_path):
         assert_gates_honest(pc, [], py)
     with pytest.raises(pytest.fail.Exception, match="no longer reproduce"):
         assert_gates_honest(pc, [], py, known=[problem, "stale entry"])
+
+
+def test_a_workflow_level_working_directory_scopes_every_job_without_its_own(tmp_path):
+    wf = tmp_path / "nightly.yml"
+    wf.write_text(
+        "defaults:\n  run:\n    working-directory: projA\njobs:\n"
+        "  deep:\n    steps:\n      - run: pytest -m slow\n"
+        "  other:\n    defaults:\n      run:\n        working-directory: projB\n    steps:\n      - run: pytest -m fast\n",
+        encoding="utf-8",
+    )
+    assert set(gate_commands(None, [wf], scope="projA")) == {"nightly.yml::deep::pytest -m slow"}
+    assert set(gate_commands(None, [wf], scope="projB")) == {"nightly.yml::other::pytest -m fast"}

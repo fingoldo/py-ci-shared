@@ -160,12 +160,37 @@ def _annotation(param: Optional[inspect.Parameter]) -> str:
     return ann if isinstance(ann, str) else repr(ann)
 
 
+_COLLECTION_WORDS = ("Iterable", "Sequence", "list", "List", "tuple", "Tuple", "set", "Set", "Collection")
+
+
+def _outside_collections(ann: str) -> str:
+    """*ann* with every ``Iterable[...]``/``list[...]``/... subscript cut out, brackets matched."""
+    out, i = [], 0
+    while i < len(ann):
+        word = next((w for w in _COLLECTION_WORDS if ann.startswith(w + "[", i) and (i == 0 or not (ann[i - 1].isalnum() or ann[i - 1] == "_"))), None)
+        if word is None:
+            out.append(ann[i])
+            i += 1
+            continue
+        depth, j = 0, i + len(word)
+        while j < len(ann):
+            depth += {"[": 1, "]": -1}.get(ann[j], 0)
+            j += 1
+            if depth == 0:
+                break
+        i = j
+    return "".join(out)
+
+
 def _wants_paths(key: str, param: Optional[inspect.Parameter]) -> tuple[bool, bool]:
-    """``(one path, list of paths)`` for *key*: from the parameter's annotation when it names ``Path``, else its name."""
+    """``(one path, list of paths)`` for *key*: from the parameter's annotation when it names ``Path``, else its name.
+
+    Both are true for ``Union[str, Path, Iterable[...]]``: one path or many, so a plain string stays one path (a
+    directory the gate enumerates) and only a glob or a list becomes a list."""
     ann = _annotation(param)
     if "Path" in ann:
-        many = any(word in ann for word in ("Iterable", "Sequence", "list", "List", "tuple", "Tuple", "set", "Set", "Collection"))
-        return (not many, many)
+        many = any(word in ann for word in _COLLECTION_WORDS)
+        return ((not many) or "Path" in _outside_collections(ann), many)
     return (_is_path_key(key), key in _PATH_LIST_KEYS)
 
 
@@ -193,7 +218,7 @@ def resolve_kwargs(func: Callable[..., Any], kwargs: dict[str, Any], repo_root: 
     for key, value in kwargs.items():
         one, many = _wants_paths(key, params.get(key))
         if isinstance(value, str) and (one or many):
-            out[key] = repo_root / value if one else _expand(repo_root, value)
+            out[key] = repo_root / value if one and not (many and any(ch in value for ch in "*?[")) else _expand(repo_root, value)
         elif isinstance(value, list) and (one or many) and all(isinstance(v, str) for v in value):
             out[key] = [p for v in value for p in _expand(repo_root, v)]
         else:

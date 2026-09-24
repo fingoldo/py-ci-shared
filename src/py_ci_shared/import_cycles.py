@@ -315,8 +315,10 @@ class _Simulation:
 
 
 def _is_implicit_parent(name: str, event: ImportEvent) -> bool:
-    """``import a.b.c`` inside ``a.b.x`` also names ``a`` and ``a.b``: they are already loading, so that is no edge."""
-    return event.names is None and name.startswith(event.target + ".")
+    """``import a.b.c`` inside ``a.b.x`` also names ``a`` and ``a.b``: they are already loading, so that is no edge. Nor is
+    ``from . import sibling`` inside ``a.b.x``: it reaches the submodule ``a.b.sibling`` (its own edge) through the
+    package, and asks the package for no name it binds. ``from . import NAME`` of a name ``a.b`` binds stays an edge."""
+    return not event.names and name.startswith(event.target + ".")
 
 
 def _ancestors_in(name: str, members: set[str]) -> list[str]:

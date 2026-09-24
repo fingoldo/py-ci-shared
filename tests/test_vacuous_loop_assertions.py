@@ -310,3 +310,86 @@ class TestAuditRegressions:
         with pytest.raises(AssertionError, match=re.escape("t_bad.py")):
             find_floorless_loops([bom, bad], tmp_path)
         assert len(find_floorless_loops([bom, bad], tmp_path, allow_unparsed=True)) == 1
+
+
+class TestFloorsAndConstantIterables:
+    def _found(self, tmp_path, body):
+        f = tmp_path / "test_x.py"
+        f.write_text(textwrap.dedent(body), encoding="utf-8")
+        return [loop.lineno for loop in find_floorless_loops([f], tmp_path)]
+
+    def test_guard_asserts_on_the_parts_of_the_iterable_are_floors(self, tmp_path):
+        assert (
+            self._found(
+                tmp_path,
+                """
+            def test_a(a, b):
+                assert a
+                assert b
+                for p in a + b:
+                    assert p
+
+            def test_b(r):
+                preds = r.get("p") or {}
+                probs = r.get("q") or {}
+                assert preds or probs
+                for k, v in {**preds, **probs}.items():
+                    assert v
+
+            def test_c(src):
+                assert "x" in src
+                lines = src.splitlines()
+                for line in lines:
+                    if "bad" in line:
+                        raise AssertionError(line)
+            """,
+            )
+            == []
+        )
+
+    def test_constant_non_empty_iterables_need_no_floor(self, tmp_path):
+        assert (
+            self._found(
+                tmp_path,
+                """
+            def test_a(xs):
+                for i in range(5):
+                    assert xs[i]
+                for i in range(5, 10):
+                    assert xs[i]
+                for k, v in {"a": 1}.items():
+                    assert xs[k] == v
+                cfg = dict(a=1, b=2)
+                for k, v in cfg.items():
+                    assert xs[k] == v
+            """,
+            )
+            == []
+        )
+
+    def test_unguarded_scans_and_empty_ranges_are_still_reported(self, tmp_path):
+        assert (
+            self._found(
+                tmp_path,
+                """
+            import pytest
+
+            def test_a(src, n, a, b):
+                for line in src.splitlines():
+                    if "bad" in line:
+                        pytest.fail(line)
+                for i in range(0):
+                    assert i
+                for i in range(n):
+                    assert i
+                assert a
+                for x, y in zip(a, b):
+                    assert x == y
+                injected = src.get("k")
+                if injected:
+                    for e in injected:
+                        assert e
+            """,
+            )
+            == [5, 8, 10, 13, 17]
+        )

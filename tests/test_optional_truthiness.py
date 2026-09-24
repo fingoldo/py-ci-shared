@@ -256,3 +256,41 @@ class TestAuditRegressions:
         assert "unparsable" in problem
         with pytest.raises(pytest.fail.Exception, match="could not be parsed"):
             assert_optionals_test_for_none(files=[bad, bom], repo_root=tmp_path, baseline=find_truthiness_tests(bom, repo_root=tmp_path))
+
+
+def test_a_truth_test_whose_zero_case_a_sibling_comparison_spells_out_is_not_reported(tmp_path):
+    f = tmp_path / "m.py"
+    f.write_text(
+        textwrap.dedent("""
+            from typing import Optional
+
+            def a(n: Optional[int] = None):
+                if not n or n <= 0:
+                    return 0
+                if n and n > 0:
+                    return n
+                if n is None or n < 1:
+                    return 1
+                return 0 >= n or not n
+            """),
+        encoding="utf-8",
+    )
+    assert find_truthiness_tests(f) == []
+
+
+def test_a_sibling_comparison_that_disagrees_at_zero_does_not_excuse_it(tmp_path):
+    f = tmp_path / "m.py"
+    f.write_text(
+        textwrap.dedent("""
+            from typing import Optional
+
+            def a(n: Optional[int] = None, m: Optional[int] = None):
+                if not n or n > 5:
+                    return 0
+                if m and m >= 0:
+                    return 1
+                return n if n else 3
+            """),
+        encoding="utf-8",
+    )
+    assert [re.search(r":(\d+):", x).group(1) for x in find_truthiness_tests(f)] == ["5", "7", "9"]

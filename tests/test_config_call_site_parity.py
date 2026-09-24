@@ -464,3 +464,28 @@ def test_frozen_cli_default_with_keywords_and_a_syntax_error(tmp_path):
     bad = _write(tmp_path, "bad.py", "def (:\n")
     with pytest.raises(pytest.fail.Exception, match=r"bad\.py"):
         assert_no_module_scope_frozen_cli_defaults(tmp_path, [p, bad], known_intentional_freezes={("traffic", "workers"): "x"})
+
+
+class _Timing(BaseModel):
+    interval_hours: float = 7.0
+
+
+class _TimedConfig(BaseModel):
+    timing: _Timing = _Timing()
+
+
+def test_an_int_default_cast_to_float_by_the_call_equals_a_float_schema_default(tmp_path):
+    _write(tmp_path, "a.py", 'cfg().get("timing", "interval_hours", 7, float)\n')
+    _write(tmp_path, "b.py", 'cfg().get("timing", "interval_hours", 7.0, float)\n')
+    files = [tmp_path / "a.py", tmp_path / "b.py"]
+    assert_call_site_defaults_match_schema_defaults(tmp_path, files, _TimedConfig, min_checked=2)
+    assert_no_divergent_cfg_get_call_site_defaults(tmp_path, files)
+
+
+def test_an_int_default_without_a_float_cast_or_a_different_number_still_disagrees(tmp_path):
+    _write(tmp_path, "a.py", 'cfg().get("timing", "interval_hours", 7)\n')
+    with pytest.raises(pytest.fail.Exception, match="disagree"):
+        assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _TimedConfig, min_checked=1)
+    _write(tmp_path, "a.py", 'cfg().get("timing", "interval_hours", 8, float)\n')
+    with pytest.raises(pytest.fail.Exception, match="disagree"):
+        assert_call_site_defaults_match_schema_defaults(tmp_path, [tmp_path / "a.py"], _TimedConfig, min_checked=1)

@@ -132,3 +132,18 @@ class TestAuditRegressions:
             assert_no_private_cross_package_imports(tmp_path / "missing", "pkg", tmp_path)
         (tmp_path / "src" / "pkg" / "a.py").write_text("x = 1\n", encoding="utf-8")
         assert_no_private_cross_package_imports(tmp_path / "src" / "pkg", "pkg", tmp_path)
+
+
+def test_a_private_helper_of_a_module_is_shared_with_its_siblings_not_with_other_packages(tmp_path):
+    root = _pkg(
+        tmp_path,
+        {
+            "__init__.py": "",
+            "db/__init__.py": "",
+            "db/models.py": "def _helper():\n    return 1\n",
+            "db/queries.py": "from pkg.db.models import _helper\nfrom .models import _helper as h\n",
+            "db/sub/deep.py": "from pkg.db.models import _helper\n",
+            "web/views.py": "from pkg.db.models import _helper\n",
+        },
+    )
+    assert find_private_cross_package_imports(root / "src" / "pkg", "pkg", root) == {("src/pkg/web/views.py", "pkg.db.models._helper")}

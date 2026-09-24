@@ -56,6 +56,15 @@ _PLACEHOLDER_SECRET = re.compile(r"[<>{}$%*]|^\.\.\.$")
 _MAX_SHOWN = 100
 
 
+def _finding(rel: str, line: int, rule: str, shown: str) -> Finding:
+    """A finding whose baseline key names the file and a digest of the matched text, never the text: the text IS a
+    machine-specific path, and a baseline carrying one fails baseline_hygiene's absolute-path rule by design."""
+    import hashlib
+
+    digest = hashlib.sha256(shown.encode("utf-8")).hexdigest()[:16]
+    return Finding(rel, line, rule, shown, key=f"{rule}::{rel}::{digest}")
+
+
 def _docstring_ids(tree: ast.Module) -> set[int]:
     out: set[int] = set()
     for node in ast.walk(tree):
@@ -110,7 +119,7 @@ def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> li
             line = node.lineno + node.value.count("\n", 0, offset)
             if line_has_marker(lines, line, MARKER) or line_has_marker(lines, node.lineno, MARKER):
                 continue
-            out.append(Finding(parsed.rel, line, rule, shown))
+            out.append(_finding(parsed.rel, line, rule, shown))
     return out
 
 
@@ -129,7 +138,7 @@ def _config_findings(tf: TextFile, allow: Sequence[re.Pattern[str]]) -> list[Fin
         if line_has_marker(lines, number, MARKER):
             continue
         for _, rule, shown in _hits(_strip_config_comment(raw), allow, workflow=tf.rel.startswith(_WORKFLOW_DIR)):
-            out.append(Finding(tf.rel, number, rule, shown))
+            out.append(_finding(tf.rel, number, rule, shown))
     return out
 
 

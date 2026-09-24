@@ -42,6 +42,9 @@ REFRESH_FLAG = "--refresh-readme-env-var-baseline"
 #: Import-resolved callables whose first (or ``key=``) argument is an env-var name.
 _READ_CALLS = frozenset({"os.environ.get", "os.getenv", "os.environ.setdefault", "os.environ.pop", "os.getenvb"})
 _ENVIRON = "os.environ"
+#: Calls that WRITE the environment and only read it through their return value: ``os.environ.setdefault("OMP_NUM_THREADS",
+#: "1")`` as a statement sets a default for a child process, and ``os.environ.pop("X", None)`` as a statement removes one.
+_WRITE_WHEN_DISCARDED = frozenset({"os.environ.setdefault", "os.environ.pop"})
 
 
 def _is_environ_call(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
@@ -164,8 +167,11 @@ def _env_var_reads_in_file(
     aliases = aliases if aliases is not None else ImportAliases.from_tree(tree)
     consts = _module_level_str_constants(tree)
     found: list[tuple[str, ast.AST]] = []
+    discarded = {id(stmt.value) for stmt in ast.walk(tree) if isinstance(stmt, ast.Expr)}
     for node in ast.walk(tree):
         names: set[str] = set()
+        if isinstance(node, ast.Call) and id(node) in discarded and aliases.qualified_name(node) in _WRITE_WHEN_DISCARDED:
+            continue
         if isinstance(node, ast.Call) and (_is_environ_call(node, aliases) or _is_reader_call(node, reader_funcs)):
             names = _names_of(_key_arg(node), loop_var_literals, consts)
         elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load) and _is_environ(node.value, aliases):

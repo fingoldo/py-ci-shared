@@ -89,6 +89,15 @@ class TestCycles:
         root = _pkg(tmp_path, {"__init__.py": "from pkg import x\n", "x.py": "import pkg.y\n", "y.py": "Y = 1\n"})
         assert _rules(root) == []
 
+    def test_a_sibling_reached_through_the_package_is_not_a_cycle(self, tmp_path):
+        root = _pkg(tmp_path, {"__init__.py": "", "sub/__init__.py": "from . import a, b\n", "sub/a.py": "X = 1\n", "sub/b.py": "from . import a as av\n"})
+        assert _rules(root) == []
+        assert _imports_first(tmp_path, "pkg.sub.b") and _imports_first(tmp_path, "pkg.sub")
+
+    def test_a_name_the_parent_binds_imported_relatively_is_still_a_cycle(self, tmp_path):
+        root = _pkg(tmp_path, {"__init__.py": "", "sub/__init__.py": "C = 1\nfrom . import b\n", "sub/b.py": "from . import C\n"})
+        assert [r[0] for r in _rules(root)] == [RULE_CYCLE]
+
     def test_importing_names_from_the_parent_package_is_a_cycle(self, tmp_path):
         root = _pkg(tmp_path, {"__init__.py": "C = 1\nfrom pkg.x import X\n", "x.py": "from pkg import C\nX = C\n"})
         assert [r[0] for r in _rules(root)] == [RULE_CYCLE]

@@ -25,7 +25,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ScanResult, SourceProblem, package_of, relative_posix, resolve_relative, scan_python
+from ._core import DEFAULT_EXCLUDE, ScanResult, SourceProblem, module_of, package_of, relative_posix, resolve_relative, scan_python
 
 #: Path components that mark test-adjacent code, exempt from the rule.
 DEFAULT_EXEMPT_PARTS: tuple[str, ...] = ("tests", "_benchmarks", "__pycache__")
@@ -80,14 +80,24 @@ def _scan(src_dir: Path, exempt_parts: Iterable[str], exempt_prefixes: Iterable[
     return scan
 
 
+def _owner(module: str, plain_modules: "set[str]") -> "str | None":
+    """The package *module* is internal to. A private NAME of a plain module (``pkg.mod._helper``, where ``pkg/mod.py``
+    is a file) belongs to the package holding that module, ``pkg``, like the module itself: its siblings share it."""
+    owner = owning_package(module)
+    if owner is not None and owner in plain_modules and module.count(".") == owner.count(".") + 1:
+        return owner.rpartition(".")[0] or owner
+    return owner
+
+
 def _reaches(scan: ScanResult, src_dir: Path, package: str, repo_root: Path) -> set[tuple[str, str]]:
     out: set[tuple[str, str]] = set()
+    plain_modules = {module_of(f.path, src_dir, package) for f in scan if f.path.name != "__init__.py"}
     for f in scan:
         caller = _caller_package(f.path, src_dir, package)
         for module in _imports(f.tree, caller):
             if module != package and not module.startswith(package + "."):
                 continue
-            owner = owning_package(module)
+            owner = _owner(module, plain_modules)
             if owner is None or caller == owner or caller.startswith(owner + "."):
                 continue
             out.add((relative_posix(f.path, repo_root), module))

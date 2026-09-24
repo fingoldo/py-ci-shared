@@ -77,12 +77,23 @@ _VALUE_TAKING = frozenset(
         "--log-level",
         "--randomly-seed",
         "--reruns",
+        "--splits",
+        "--group",
+        "--splitting-algorithm",
+        "--durations-path",
+        "--timeout-method",
     }
 )
 #: Where a shell command line ends and the next begins; the pytest invocation stops there.
 _SHELL_BREAK = re.compile(r"&&|\|\||[;|<>]")
 _PYTEST = re.compile(r"(?<![\w./\\-])pytest(?![\w./\\-])")
 _CD = re.compile(r"\bcd\s+(\"[^\"]+\"|'[^']+'|[^\s;&|]+)\s*(?:&&|;)")
+#: A GitHub Actions expression, spaces and all (`${{ matrix.group }}`): one opaque word, never three.
+_ACTIONS_EXPR = re.compile(r"\$\{\{.*?\}\}")
+#: A here-document: the introducing line, its delimiter and its body. The body is data for the command it feeds
+#: (a Python script, a file), not shell lines, so a `pytest` word in it is not an invocation.
+_HEREDOC = re.compile(r"^([^\n]*?)<<-?[ \t]*(['\"]?)(\w+)\2[^\n]*\n(.*?)^[ \t]*\3[ \t]*$", re.MULTILINE | re.DOTALL)
+_PYTHON_CMD = re.compile(r"(?<![\w.-])python[\d.]*(?![\w.-])")
 _WHOLE_FILE = "<whole file>"
 _UNPARSED = "<unparsed>"
 
@@ -234,8 +245,20 @@ def _normalise(path: str) -> str:
     return f"{cleaned}::{node}" if node else cleaned
 
 
+def _path_argument(tok: str) -> "str | None":
+    """A positional argument as a path, or None. A shell variable or Actions expression is not a path: its value is
+    unknown, so it narrows nothing (``$SHARD_GROUP``); a node id whose test part is one keeps its file (``f.py::$t``)."""
+    if "$" not in tok:
+        return tok
+    head = tok.split("$", 1)[0]
+    if head.endswith("::") and len(head) > 2:
+        return head[:-2]
+    return None
+
+
 def _parse_invocation(command: str) -> "tuple[tuple[str, ...], str | None, str | None]":
     """``(paths, -m expression, -k expression)`` of one ``pytest ...`` invocation. The LAST ``-m``/``-k`` wins."""
+    command = _ACTIONS_EXPR.sub("$ACTIONS_EXPR", command)
     command = _SHELL_BREAK.split(command, 1)[0]
     tokens = [t.strip("\"'") if t[:1] in "\"'" else t for t in _TOKEN.findall(command)]
     if tokens and _PYTEST.fullmatch(tokens[0]):
@@ -260,15 +283,51 @@ def _parse_invocation(command: str) -> "tuple[tuple[str, ...], str | None, str |
         i += 1
         if tok.startswith("-") or tok.isdigit():
             continue
-        tok = tok.rstrip("\"'")
-        if tok:
-            paths.append(_normalise(tok))
+        path = _path_argument(tok.rstrip("\"'"))
+        if path:
+            paths.append(_normalise(path))
     return tuple(paths), expression, keyword
 
 
 def _paths_and_expression(command: str) -> "tuple[tuple[str, ...], str | None]":
     paths, expression, _ = _parse_invocation(command)
     return paths, expression
+
+
+def _python_invocations(source: str) -> "list[str]":
+    """``pytest ...`` command lines a Python script runs as an argument list
+    (``subprocess.call([sys.executable, "-m", "pytest", "-m", "gpu", ...])``): the string elements after the ``pytest``
+    element, each quoted as one word. Elements that are not string literals are unknown and left out."""
+    import shlex
+
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return []
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.List, ast.Tuple)):
+            continue
+        words = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None for e in node.elts]
+        start = next((i for i, w in enumerate(words) if w is not None and _PYTEST.fullmatch(w)), None)
+        if start is None:
+            continue
+        out.append("pytest " + " ".join(shlex.quote(w) for w in words[start + 1 :] if w is not None))
+    return out
+
+
+def _shell_lines(command: str) -> "list[str]":
+    """The command's shell lines with here-document bodies taken out; a body fed to ``python`` contributes the pytest
+    invocations its argument lists spell, as extra lines."""
+    extra: list[str] = []
+
+    def lift(match: "re.Match[str]") -> str:
+        if _PYTHON_CMD.search(match.group(1)):
+            extra.extend(_python_invocations(match.group(4)))
+        return match.group(1)
+
+    text = _HEREDOC.sub(lift, command)
+    return [*re.sub(r"\\s*\n\s*", " ", text).splitlines(), *extra]
 
 
 def runners(commands: "Iterable[tuple[str, str]]", *, addopts: str = "") -> list[Runner]:
@@ -287,7 +346,7 @@ def runners(commands: "Iterable[tuple[str, str]]", *, addopts: str = "") -> list
         # Fold shell line-continuations first, as `ci_test_dir_reachability` does: an install step's
         # `pip install foo \` + newline + `  pytest pytest-cov` puts the word `pytest` on a line that
         # no longer carries `install`, so a per-line rule reads the continuation as its own command.
-        for line in re.sub(r"\\\s*\n\s*", " ", command).splitlines():
+        for line in _shell_lines(command):
             if _INSTALL.search(line):
                 continue
             for match in _PYTEST.finditer(line):

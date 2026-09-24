@@ -13,10 +13,30 @@ name: Lint (blocking bundle, reusable)
 on:
   workflow_call:
     inputs:
+      working-directory:
+        description: >-
+          Directory of the project to lint, relative to the repository root (a monorepo subproject, e.g.
+          "packages/api"). codespell, bandit, vulture, interrogate and deptry run there, so every path input
+          below is relative to it; actionlint, zizmor and yamllint always read the repository's own
+          .github/workflows. Default "." (the repository root).
+        type: string
+        default: "."
       source-path:
         description: 'Path to the package source, e.g. "src/mlframe" -- used by bandit/vulture'
         required: true
         type: string
+      codespell-toml:
+        description: "The TOML file codespell reads its [tool.codespell] config from, relative to working-directory."
+        type: string
+        default: "pyproject.toml"
+      bandit-config:
+        description: 'Config file for bandit (-c), e.g. "pyproject.toml" for a [tool.bandit] table. Empty: bandit defaults.'
+        type: string
+        default: ""
+      bandit-exclude:
+        description: 'Comma-separated paths bandit skips (-x), e.g. "tests,scripts". Empty: nothing excluded.'
+        type: string
+        default: ""
       codespell-paths:
         description: "Space-separated paths for codespell to scan (config/ignore-words-list comes from [tool.codespell] in pyproject.toml)"
         required: true
@@ -49,7 +69,7 @@ on:
         default: ""
       deptry-install-command:
         description: >-
-          Shell command(s) to install the package + its real extras, run from repo root, so
+          Shell command(s) to install the package + its real extras, run from working-directory, so
           deptry's DEP001/DEP002 rules have an accurate environment to check against. Empty
           string skips deptry entirely (repo not yet triaged for it).
         type: string
@@ -110,6 +130,9 @@ jobs:
   lint-blocking:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -128,6 +151,7 @@ jobs:
       # reach master even via --no-verify. actionlint-version pins the actionlint-py PACKAGE
       # (--from), not a binary named "actionlint" -- the two are unrelated version strings.
       - name: Actionlint (workflow files)
+        working-directory: .
         run: |
           # shellcheck disable=SC2086
           if [ -n "$PIN" ]; then uvx --from "actionlint-py==$PIN" actionlint; else uvx --from actionlint-py actionlint; fi
@@ -141,6 +165,7 @@ jobs:
       # pinning to reach 0 findings the same day it was added). Opt-in (see run-zizmor above).
       - name: Zizmor (workflow security scan)
         if: inputs.run-zizmor
+        working-directory: .
         run: |
           if [ -n "$PIN" ]; then uvx "zizmor==$PIN" .; else uvx zizmor .; fi
         env:
@@ -152,12 +177,14 @@ jobs:
         # bug, so this stays unquoted unlike the single-path vars below.
         run: |
           # shellcheck disable=SC2086
-          if [ -n "$PIN" ]; then uvx "codespell==$PIN" --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}; else uvx codespell --toml pyproject.toml ${INPUTS_CODESPELL_PATHS}; fi
+          if [ -n "$PIN" ]; then uvx "codespell==$PIN" --toml "$CODESPELL_TOML" ${INPUTS_CODESPELL_PATHS}; else uvx codespell --toml "$CODESPELL_TOML" ${INPUTS_CODESPELL_PATHS}; fi
         env:
           INPUTS_CODESPELL_PATHS: ${{ inputs.codespell-paths }}
+          CODESPELL_TOML: ${{ inputs.codespell-toml }}
           PIN: ${{ inputs.codespell-version }}
 
       - name: yamllint workflow files
+        working-directory: .
         run: |
           if [ -n "$PIN" ]; then uvx "yamllint==$PIN" .github/workflows .pre-commit-config.yaml; else uvx yamllint .github/workflows .pre-commit-config.yaml; fi
         env:
@@ -167,9 +194,14 @@ jobs:
       # no artifact download needed to diagnose a blocking failure.
       - name: Bandit security scan
         run: |
-          if [ -n "$PIN" ]; then uvx "bandit==$PIN" -r "$INPUTS_SOURCE_PATH" -ll; else uvx bandit -r "$INPUTS_SOURCE_PATH" -ll; fi
+          args=(-r "$INPUTS_SOURCE_PATH" -ll)
+          if [ -n "$BANDIT_CONFIG" ]; then args+=(-c "$BANDIT_CONFIG"); fi
+          if [ -n "$BANDIT_EXCLUDE" ]; then args+=(-x "$BANDIT_EXCLUDE"); fi
+          if [ -n "$PIN" ]; then uvx "bandit==$PIN" "${args[@]}"; else uvx bandit "${args[@]}"; fi
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
+          BANDIT_CONFIG: ${{ inputs.bandit-config }}
+          BANDIT_EXCLUDE: ${{ inputs.bandit-exclude }}
           PIN: ${{ inputs.bandit-version }}
 
       - name: Vulture dead-code scan

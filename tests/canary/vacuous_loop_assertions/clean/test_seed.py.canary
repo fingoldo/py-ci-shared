@@ -1,5 +1,5 @@
 def test_seed():
-    items = [1]
+    items = load_items()
     assert items
     for x in items:
         assert x

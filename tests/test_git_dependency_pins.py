@@ -151,3 +151,41 @@ class TestAuditRegressions:
         )
         assert find_unpinned_git_dependencies(p) == ["a: branch=main", "c: <no ref>", "e: tag=v1.0", "f: rev=abc123"]
         assert find_unpinned_git_dependencies(p, allow_unpinned_url_prefixes=["https://github.com/o/"]) == []
+
+
+class TestRequirementsFiles:
+    """A requirements file is read as pip reads it, not as TOML."""
+
+    def test_a_pinned_requirements_file_with_comments_markers_and_includes_is_clean(self, tmp_path):
+        (tmp_path / "base.txt").write_text(f"lib @ git+https://github.com/org/lib@{_FULL_SHA}  # v1\n", encoding="utf-8")
+        req = tmp_path / "requirements-dev.txt"
+        req.write_text(
+            "# a comment with name @ git+https://x/y in it\n-r base.txt\npytest>=8\n"
+            f"py-ci-shared @ git+https://github.com/o/py-ci-shared@{_FULL_SHA} ; python_version >= '3.9'  # v1.17.0\n"
+            f"-e git+https://github.com/o/tool.git@{_FULL_SHA}#egg=tool\n",
+            encoding="utf-8",
+        )
+        assert find_unpinned_git_dependencies(req) == []
+        assert_all_git_dependencies_pinned(req)
+
+    def test_an_unpinned_line_in_a_requirements_file_or_its_include_is_reported(self, tmp_path):
+        (tmp_path / "base.txt").write_text("lib @ git+https://github.com/org/lib@main\n", encoding="utf-8")
+        req = tmp_path / "requirements.txt"
+        req.write_text(
+            "-r base.txt\ntool @ git+https://github.com/org/tool@v1.2 \\\n    ; python_version >= '3.9'\ngit+https://github.com/o/x.git#egg=x\n",
+            encoding="utf-8",
+        )
+        assert find_unpinned_git_dependencies(req) == ["main", "v1.2", "<no ref>"]
+        with pytest.raises(pytest.fail.Exception, match="not pinned"):
+            assert_all_git_dependencies_pinned(req)
+
+    def test_an_include_cycle_is_read_once(self, tmp_path):
+        (tmp_path / "a.txt").write_text("-r b.txt\nlib @ git+https://h/o/lib@main\n", encoding="utf-8")
+        (tmp_path / "b.txt").write_text("-r a.txt\n", encoding="utf-8")
+        assert find_unpinned_git_dependencies(tmp_path / "a.txt") == ["main"]
+
+    def test_pyproject_is_still_parsed_as_toml(self, tmp_path):
+        bad = tmp_path / "pyproject.toml"
+        bad.write_text("[project\n", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="not valid TOML"):
+            assert_all_git_dependencies_pinned(bad)

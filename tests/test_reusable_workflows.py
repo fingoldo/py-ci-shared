@@ -104,3 +104,18 @@ def test_release_moves_the_major_tag_only_after_verification():
     publish = data["jobs"]["publish"]
     assert publish["needs"] == "verify" and publish["permissions"] == {"contents": "write"}
     assert "git push -f origin" in "\n".join(str(s.get("run", "")) for s in publish["steps"])
+
+
+def test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_the_root():
+    """A monorepo subproject: the project checks run in `working-directory`, the workflow-file checks at the root."""
+    wf = _load(REPO / ".github" / "workflows" / "lint-blocking.yml")
+    inputs = wf[True]["workflow_call"]["inputs"]
+    assert inputs["working-directory"]["default"] == "." and inputs["codespell-toml"]["default"] == "pyproject.toml"
+    assert inputs["bandit-config"]["default"] == "" and inputs["bandit-exclude"]["default"] == ""
+    job = wf["jobs"]["lint-blocking"]
+    assert job["defaults"]["run"]["working-directory"] == "${{ inputs.working-directory }}"
+    steps = {s.get("name"): s for s in job["steps"]}
+    at_root = {n for n, s in steps.items() if s.get("working-directory") == "."}
+    assert at_root == {"Actionlint (workflow files)", "Zizmor (workflow security scan)", "yamllint workflow files"}
+    assert '--toml "$CODESPELL_TOML"' in steps["Codespell"]["run"]
+    assert '-c "$BANDIT_CONFIG"' in steps["Bandit security scan"]["run"] and '-x "$BANDIT_EXCLUDE"' in steps["Bandit security scan"]["run"]

@@ -299,3 +299,15 @@ class TestProseVersusCode:
 
     def test_a_dart_dead_call_is_still_flagged(self, tmp_path):
         assert self._kinds(tmp_path, "// buildCta(context, onLaunchSurvey);", ".dart") == ["commented-out code"]
+
+
+@pytest.mark.parametrize("body", ["identity (NaN-aware)", "F_q(s) per (q, s)", "Vowels (Spanish has 5 pure vowels)"])
+def test_prose_with_parentheses_is_not_commented_out_code(body):
+    line = f"# {body}"
+    matched = sca._COMMENTED_HASH_CALL_RE.match(line) is not None
+    assert not (matched and sca._body_is_code(body, python=True))
+
+
+@pytest.mark.parametrize("body", ["print(i, col)", 'ensure_installed("numpy")', "fig.suptitle(title)"])
+def test_commented_out_calls_are_still_code(body):
+    assert sca._COMMENTED_HASH_CALL_RE.match(f"# {body}") and sca._body_is_code(body, python=True)

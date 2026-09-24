@@ -82,9 +82,10 @@ where = ["src"]
 
 # The ruff configs ship as package data too, so an installed package can point ruff's `extend` at them:
 # `py-ci-shared config-path ruff-base` prints the path. configs/ at the repo root stays the copy consumers reach through
-# PY_CI_SHARED_DIR; tests/test_package_inventory.py keeps the two byte-identical.
+# PY_CI_SHARED_DIR; tests/test_package_inventory.py keeps the two byte-identical. py.typed (PEP 561) lets a consumer's mypy
+# read this package's annotations instead of reporting every import as untyped.
 [tool.setuptools.package-data]
-py_ci_shared = ["configs/*.toml", "registry.toml"]
+py_ci_shared = ["configs/*.toml", "registry.toml", "py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

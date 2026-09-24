@@ -491,6 +491,18 @@ def to_hashable(value: Any) -> Any:
     return value
 
 
+def _as_read(value: Any, type_src: Optional[str]) -> Any:
+    """The default as the accessor hands it back: ``get(..., 7, float)`` returns ``7.0``, so it equals a schema's ``7.0``.
+    Only the numeric casts are applied, and only to numbers; ``bool``/``str`` casts depend on the accessor."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return value
+    if type_src == "float":
+        return float(value)
+    if type_src == "int" and float(value).is_integer():
+        return int(value)
+    return value
+
+
 def schema_section_field_map(schema_cls: type[BaseModel]) -> dict[str, set[str]]:
     """Top-level section name -> its sub-model's real field names, for a 2-level
     Pydantic schema (``schema_cls.model_fields`` maps each section to a field whose
@@ -655,7 +667,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
         resolvable_calls = [c for c, _ in resolvable]
         if len(resolvable_calls) < 2:
             continue  # a genuinely dynamic (unresolvable) default at one site can't be compared at all -- not a divergence
-        resolved_defaults = {to_hashable(v) for _, v in resolvable}
+        resolved_defaults = {to_hashable(_as_read(v, default_type_repr if c.type_src is None else c.type_src)) for c, v in resolvable}
         types = {(default_type_repr if c.type_src is None else c.type_src) for c in resolvable_calls}
         if len(resolved_defaults) > 1 or len(types) > 1:
             sites = ", ".join(
@@ -707,7 +719,7 @@ def assert_call_site_defaults_match_schema_defaults(
             continue
         checked += 1
         schema_default = schema_defaults.get((call.section, call.key), "<key not declared in schema>")
-        if to_hashable(resolved) != to_hashable(schema_default):
+        if to_hashable(_as_read(resolved, call.type_src)) != to_hashable(schema_default):
             mismatches.append(f"{call.file}:{call.line}  [{call.section}].{call.key}  call-site default={resolved!r}  schema default={schema_default!r}")
 
     if checked < min_checked:

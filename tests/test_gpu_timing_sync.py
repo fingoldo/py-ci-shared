@@ -348,3 +348,21 @@ def test_bom_and_unparsable_files_and_the_floor(tmp_path: Path) -> None:
         assert_no_unsynchronized_gpu_timings([ok, broken], root=tmp_path)
     with pytest.raises(BaseException, match="parsed"):
         assert_no_unsynchronized_gpu_timings([], root=tmp_path)
+
+
+def test_a_blocking_device_to_host_copy_after_a_synchronize_ends_the_region(tmp_path):
+    src = (
+        "import time\nimport cupy as cp\n\n\ndef bench(d_X, d_W):\n    t0 = time.perf_counter()\n    d_R = d_X @ d_W\n"
+        "    cp.cuda.runtime.deviceSynchronize()\n    _ = cp.asnumpy(d_R)\n    return time.perf_counter() - t0\n"
+    )
+    (tmp_path / "b.py").write_text(src, encoding="utf-8")
+    assert find_unsynchronized_gpu_timings([tmp_path / "b.py"]) == []
+
+
+def test_a_kernel_after_the_last_blocking_copy_is_still_reported(tmp_path):
+    src = (
+        "import time\nimport cupy as cp\n\n\ndef bench(d_X):\n    t0 = time.perf_counter()\n    _ = cp.asnumpy(d_X)\n"
+        "    cp.matmul(d_X, d_X)\n    return time.perf_counter() - t0\n"
+    )
+    (tmp_path / "b.py").write_text(src, encoding="utf-8")
+    assert [f.detail.split("(")[0] for f in find_unsynchronized_gpu_timings([tmp_path / "b.py"])] == ["times cp.matmul"]

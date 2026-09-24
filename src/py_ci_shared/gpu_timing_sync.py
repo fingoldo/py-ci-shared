@@ -151,11 +151,18 @@ def _is_sync_name(name: str) -> bool:
     return "sync" in words and (len(words) == 1 or bool(_DEVICE_WORDS.intersection(words)))
 
 
+# A device-to-host copy blocks until the device has finished the work it reads, so it ends a timed region the way a
+# synchronize does (``cp.asnumpy(d_R)`` after the matmul).
+_BLOCKING_COPIES = frozenset({"asnumpy"})
+
+
 def _is_sync_call(node: ast.Call) -> bool:
     """Judged on the called name itself, so a call earlier in the chain does not hide it
     (``torch.cuda.current_stream().synchronize()``)."""
     func = node.func
     if isinstance(func, ast.Attribute):
+        if func.attr in _BLOCKING_COPIES and _gpu_call_name(node):
+            return True
         return _is_sync_name(func.attr)
     if isinstance(func, ast.Name):
         return _is_sync_name(func.id)

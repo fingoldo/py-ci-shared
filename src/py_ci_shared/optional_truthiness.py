@@ -139,6 +139,56 @@ def _tests_in(node: ast.AST) -> "list[ast.AST]":
     return []
 
 
+_COMPARE_AT_ZERO = {
+    ast.Lt: lambda a, b: a < b,
+    ast.LtE: lambda a, b: a <= b,
+    ast.Gt: lambda a, b: a > b,
+    ast.GtE: lambda a, b: a >= b,
+    ast.Eq: lambda a, b: a == b,
+    ast.NotEq: lambda a, b: a != b,
+}
+
+
+def _number(node: ast.AST) -> "float | None":
+    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
+        return float(node.value)
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        inner = _number(node.operand)
+        return None if inner is None else (-inner if isinstance(node.op, ast.USub) else inner)
+    return None
+
+
+def _holds_at_zero(compare: ast.AST, name: str) -> "bool | None":
+    """What ``name <op> constant`` (or ``constant <op> name``) evaluates to when *name* is 0; None for any other shape."""
+    if not (isinstance(compare, ast.Compare) and len(compare.ops) == 1 and type(compare.ops[0]) in _COMPARE_AT_ZERO):
+        return None
+    left, right, op = compare.left, compare.comparators[0], _COMPARE_AT_ZERO[type(compare.ops[0])]
+    if isinstance(left, ast.Name) and left.id == name and _number(right) is not None:
+        return bool(op(0.0, _number(right)))
+    if isinstance(right, ast.Name) and right.id == name and _number(left) is not None:
+        return bool(op(_number(left), 0.0))
+    return None
+
+
+def _zero_handled(fn: _FuncLike) -> "set[int]":
+    """Truth tests whose collapse of 0 with None is spelled out by a sibling comparison: in ``not x or x <= 0`` 0 takes
+    the same branch the comparison sends it to, and so it does in ``x and x > 0``. Returns the ids of those ``x`` nodes."""
+    out: set[int] = set()
+    for node in _own_nodes(fn):
+        if not isinstance(node, ast.BoolOp):
+            continue
+        is_or = isinstance(node.op, ast.Or)
+        for value in node.values:
+            negated = isinstance(value, ast.UnaryOp) and isinstance(value.op, ast.Not)
+            target = value.operand if isinstance(value, ast.UnaryOp) and negated else value
+            if not isinstance(target, ast.Name) or negated != is_or:
+                continue
+            # `not x or ...` treats 0 as True; `x and ...` treats 0 as False. A sibling comparison that agrees at 0 says so.
+            if any(_holds_at_zero(other, target.id) is is_or for other in node.values if other is not value):
+                out.add(id(target))
+    return out
+
+
 def _message(rel: str, line: int, name: str) -> str:
     return (
         f"{rel}:{line}: `{name}` is an optional number tested for "
@@ -150,7 +200,7 @@ def _message(rel: str, line: int, name: str) -> str:
 def _scan_function(fn: _FuncLike, inherited: "frozenset[str]", rel: str, out: "list[str]") -> None:
     own = {a.arg for a in _all_params(fn)}
     optional = (set(inherited) - own) | (_optional_params(fn) if not isinstance(fn, ast.Lambda) else set())
-    seen: set[int] = set()
+    seen: set[int] = _zero_handled(fn) if optional else set()
     if optional:
         for node in _own_nodes(fn):
             for tested in _tests_in(node):

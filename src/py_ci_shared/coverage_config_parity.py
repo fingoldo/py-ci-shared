@@ -150,6 +150,29 @@ def _has_option(words: Sequence[str], names: Iterable[str]) -> bool:
     return any(w == n or w.startswith(n + "=") for w in words for n in names)
 
 
+_VAR_REF = re.compile(r"\$\{?([A-Za-z_]\w*)")
+
+
+def _shell_value(run: str, name: str) -> str:
+    """Everything assigned to shell variable or array *name* in *run*: ``name=(...)`` (across lines), ``name+=(...)``,
+    ``name="..."``, with ``export``/``local``/``declare`` prefixes."""
+    pattern = rf"(?m)^\s*(?:(?:export|local|declare(?:\s+-\w+)*|readonly)\s+)?{re.escape(name)}\+?=(\([^)]*\)|[^\n]*)"
+    return " ".join(m.group(1) for m in re.finditer(pattern, run))
+
+
+def _passes_own_config(inv: _Invocation, run: str) -> bool:
+    """The invocation names its own config: on its line, or in a shell variable or array it expands (``"${cov_args[@]}"``
+    set to ``(--cov=src --cov-config=.coveragerc.narrow)`` earlier in the step)."""
+    if _has_option(inv.words, _OWN_CONFIG):
+        return True
+    for word in inv.words:
+        for name in _VAR_REF.findall(word):
+            value = _shell_value(run, name)
+            if value and _has_option([t for w in _tokens(value.strip("()")) for t in w.split()], _OWN_CONFIG):
+                return True
+    return False
+
+
 def _narrow_reason(inv: _Invocation, testpaths: set[str]) -> Optional[str]:
     """Why a ``pytest --cov`` run is narrow, or ``None`` for a whole-suite run."""
     words = inv.words
@@ -189,6 +212,7 @@ class _Step:
     invocations: list[_Invocation]
     env: dict[str, Any]
     continue_on_error: bool
+    run: str = ""
 
 
 def _line_of(text: str, needle: str) -> int:
@@ -217,7 +241,7 @@ def _steps(workflow: Path, rel: str) -> list[_Step]:
             env = {**job_env, **dict(step.get("env") or {})}
             name = str(step.get("name") or run.strip().splitlines()[0])
             coe = str(step.get("continue-on-error", job.get("continue-on-error", False))).lower() == "true"
-            out.append(_Step(rel, str(job_id), name, _line_of(text, run), invocations, env, coe))
+            out.append(_Step(rel, str(job_id), name, _line_of(text, run), invocations, env, coe, run))
     return out
 
 
@@ -228,7 +252,7 @@ def _narrow_findings(steps: list[_Step], fail_under: float, testpaths: set[str])
         if s.continue_on_error or "COVERAGE_RCFILE" in s.env:
             continue
         for inv in s.invocations:
-            if not inv.may_fail or _has_option(inv.words, _OWN_CONFIG):
+            if not inv.may_fail or _passes_own_config(inv, s.run):
                 continue
             if inv.kind == "pytest":
                 why = _narrow_reason(inv, testpaths)

@@ -266,3 +266,20 @@ def test_min_trackers_counts_only_dated_rounds(tmp_path):
         assert_rounds_filed(audits)
     _write(audits / "2026-09-01" / "TRACKER.md", "| ID | Status |\n|---|---|\n| A-1 | OPEN |\n")
     assert_rounds_filed(audits)
+
+
+def test_a_status_word_inside_another_word_or_prose_is_not_a_status_mention(tmp_path):
+    words = ("RESOLVED", "DOC", "CLOSED", "PARTIAL", "FIXED")
+    tracker = _write(
+        tmp_path / "TRACKER.md",
+        "| docs updated for the new API | Med | `A-1` x |\n| gap-closed by the refactor | Med | `A-2` y |\n"
+        "| partial_fit kept | Med | `A-3` z |\n| A fixed PIT seed | Med | `A-4` w |\n| **RESOLVED** | Med | `A-5` v |\n",
+    )
+    assert status_problems(tracker, words) == ([], ["RESOLVED"])
+
+
+def test_a_standalone_status_word_outside_the_bold_form_is_still_reported(tmp_path):
+    tracker = _write(tmp_path / "TRACKER.md", "| DOC only | Med | `A-1` x |\n| Closed | Med | `A-2` y |\n| **Partial** | Med | `A-3` z |\n")
+    problems, parsed = status_problems(tracker, ("DOC", "CLOSED", "PARTIAL"))
+    assert parsed == ["Partial"]
+    assert len(problems) == 3 and all("`**WORD**`" in p for p in problems[:2]) and "'Partial'" in problems[2]

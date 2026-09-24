@@ -65,6 +65,21 @@ _FILE_READS = frozenset({"read_text", "read_bytes", "read", "readlines"})
 #: Results of these are structure, not text: parsing is how a meta-linter works, and a regex over source
 #: that yields a list of matches has already stopped being a substring claim.
 _STRUCTURAL = frozenset({"parse", "walk", "iter_child_nodes", "literal_eval", "findall", "finditer", "splitlines"})
+#: Deserialisers: what they return is data (a coverage.json whose keys happen to be ``.py`` paths), not program text.
+_DESERIALISERS = frozenset(
+    {
+        "json.loads",
+        "json.load",
+        "orjson.loads",
+        "tomllib.loads",
+        "tomllib.load",
+        "tomli.loads",
+        "tomli.load",
+        "yaml.safe_load",
+        "yaml.load",
+        "yaml.safe_load_all",
+    }
+)
 _CONTENT_METHODS = frozenset({"count", "search", "match", "fullmatch", "findall", "index", "find", "rfind", "rindex", "startswith", "endswith"})
 #: Substrings at least one of which any claim's file must contain: the file reads, `open(`, the code attributes and
 #: the `dis` functions. Reader names are added per call.
@@ -149,9 +164,22 @@ class _Detector:
         return names
 
     # -- what counts as reading source --------------------------------------------------------------
+    def _is_deserialiser(self, node: ast.AST) -> bool:
+        return isinstance(node, ast.Call) and (self.aliases.qualified_name(node) or "") in _DESERIALISERS
+
+    def _walk_text(self, node: ast.AST) -> Iterator[ast.AST]:
+        """``ast.walk`` that does not enter a deserialiser call: ``json.loads(p.read_text())`` hands back data."""
+        stack = [node]
+        while stack:
+            sub = stack.pop()
+            if self._is_deserialiser(sub):
+                continue
+            yield sub
+            stack.extend(ast.iter_child_nodes(sub))
+
     def reader_kind(self, node: ast.AST, path_names: set[str], tainted: set[str]) -> str | None:
         """How *node* yields source text, or None. Checks readers, file reads, helpers and tainted names."""
-        for sub in ast.walk(node):
+        for sub in self._walk_text(node):
             if isinstance(sub, ast.Call):
                 name = _call_name(sub)
                 qualified = self.aliases.qualified_name(sub) or name
@@ -216,7 +244,7 @@ class _Detector:
             for node in _walk_scope(body):
                 if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.AugAssign)) and node.value is not None:
                     value = node.value
-                    if isinstance(value, ast.Call) and _call_name(value) in _STRUCTURAL:
+                    if isinstance(value, ast.Call) and (_call_name(value) in _STRUCTURAL or self._is_deserialiser(value)):
                         continue
                     if self.reader_kind(value, path_names, tainted) or _uses(value, tainted):
                         tainted.update(_target_names(node))

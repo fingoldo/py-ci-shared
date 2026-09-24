@@ -310,3 +310,16 @@ class TestResolutionFixturesAndClosures:
 
         with pytest.raises(SourceError):
             find_source_text_claims(broken)
+
+
+def test_a_deserialised_report_keyed_by_py_paths_is_data_not_source(tmp_path):
+    body = (
+        "import json\nfrom pathlib import Path\n\n\n"
+        "def _load(cov_json_path):\n    data = json.loads(cov_json_path.read_text(encoding='utf-8'))\n"
+        "    return {k: set(v['executed_lines']) for k, v in data['files'].items()}\n\n\n"
+        "def _read(rel):\n    return Path(rel).read_text()\n\n\n"
+        "def test_report(tmp_path):\n    p = tmp_path / 'cov.json'\n    p.write_text(json.dumps({'files': {'src/a.py': {'executed_lines': [1]}}}))\n"
+        "    covered = _load(p)\n    assert covered['src/a.py'] == {1}\n\n\n"
+        "def test_source():\n    src = _read('pkg/mod.py')\n    assert 'def f' in src\n"
+    )
+    assert [c.function for c in _claims(tmp_path, body)] == ["test_source"]

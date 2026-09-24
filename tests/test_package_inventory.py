@@ -108,7 +108,12 @@ def test_shipped_configs_are_byte_identical_to_the_repo_copies():
 
 
 def test_package_data_ships_the_configs():
-    assert _pyproject()["tool"]["setuptools"]["package-data"]["py_ci_shared"] == ["configs/*.toml", "registry.toml"]
+    assert _pyproject()["tool"]["setuptools"]["package-data"]["py_ci_shared"] == ["configs/*.toml", "registry.toml", "py.typed"]
+
+
+def test_the_package_is_marked_typed():
+    """PEP 561: without py.typed a consumer's mypy reports every py_ci_shared import as import-untyped."""
+    assert (REPO / "src" / "py_ci_shared" / "py.typed").is_file()
 
 
 def test_every_pre_commit_hook_runs_a_module_that_has_a_main():
