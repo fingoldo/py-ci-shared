@@ -351,3 +351,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- the publish job checks out with secrets.RELEASE_TOKEN (fine-grained, contents + workflows write), creates the GitHub release before moving the major tag, and fails with the exact manual command when the secret is missing; v1.17.0's v1 was moved by hand and its release created; verified with actionlint and tests/test_reusable_workflows.py
 
 - **Finding:** the first real release run (v1.17.0) failed at `git push -f origin refs/tags/v1`: `refusing to allow a GitHub App to create or update workflow ... without workflows permission`.
+
+### CANARY-54 (High) -- randomly_seed_guard crashed pytest on Python 3.9: entry_points(group=...) exists only from 3.10
+
+**Disposition:** RESOLVED -- entry points are read through a helper that uses .select() where it exists and the 3.9 dict shape otherwise; regression tests: test_entry_points_are_read_the_same_way_on_every_python (both shapes) and test_the_real_entry_point_api_is_called_without_error_on_this_interpreter (no monkeypatch, so the self-CI 3.9 leg exercises the real API); verified under Python 3.9.25. Ships in 1.18.0
+
+- **Finding:** pyutilz's Python 3.9 CI legs failed with INTERNALERROR at pytest_configure after pinning v1.17.0; self-CI missed it because pytest-randomly is not installed there, so the guard returned before the call.

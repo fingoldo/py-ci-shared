@@ -41,3 +41,29 @@ def test_a_seed_in_range_is_passed_unchanged(monkeypatch: pytest.MonkeyPatch) ->
     pytest_randomly.entrypoint_reseeds[0](123)
 
     assert seen == [123]
+
+
+def test_entry_points_are_read_the_same_way_on_every_python(monkeypatch):
+    from py_ci_shared import randomly_seed_guard as guard
+
+    class _Ep:
+        name = "x"
+
+    class _Selectable:
+        def select(self, group):
+            return [_Ep()] if group == "g" else []
+
+    monkeypatch.setattr(guard, "entry_points", lambda: _Selectable())
+    assert [e.name for e in guard._entry_points_in("g")] == ["x"]
+    assert guard._entry_points_in("other") == []
+    monkeypatch.setattr(guard, "entry_points", lambda: {"g": [_Ep()]})  # the 3.9 dict shape
+    assert [e.name for e in guard._entry_points_in("g")] == ["x"]
+    assert guard._entry_points_in("other") == []
+
+
+def test_the_real_entry_point_api_is_called_without_error_on_this_interpreter():
+    """No monkeypatch: the 3.9 self-CI leg runs this against the interpreter's own importlib.metadata."""
+    from py_ci_shared import randomly_seed_guard as guard
+
+    found = guard._entry_points_in("pytest11")
+    assert any(ep.value.startswith("py_ci_shared") for ep in found), [ep.value for ep in found]

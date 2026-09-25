@@ -13,7 +13,7 @@ seed the same way pytest-randomly already does for numpy, so ordering and per-te
 from __future__ import annotations
 
 from collections.abc import Callable
-from importlib.metadata import entry_points
+from importlib.metadata import EntryPoint, entry_points
 
 _SEED_SPACE = 2**32
 
@@ -24,6 +24,15 @@ def _bounded(reseed: Callable[[int], None]) -> Callable[[int], None]:
 
     bounded.__wrapped__ = reseed  # type: ignore[attr-defined]
     return bounded
+
+
+def _entry_points_in(group: str) -> list[EntryPoint]:
+    """Entry points of *group* on every supported Python: ``entry_points(group=...)`` exists only from 3.10, and 3.9
+    returns a dict of groups instead."""
+    found = entry_points()
+    if hasattr(found, "select"):
+        return list(found.select(group=group))
+    return list(found.get(group, ()))  # type: ignore[union-attr]
 
 
 def bound_randomly_reseeders() -> bool:
@@ -41,6 +50,6 @@ def bound_randomly_reseeders() -> bool:
         return False  # a version without the cache: nothing here knows how to intercept it
     loaded = pytest_randomly.entrypoint_reseeds
     if loaded is None:
-        loaded = [ep.load() for ep in entry_points(group="pytest_randomly.random_seeder")]
+        loaded = [ep.load() for ep in _entry_points_in("pytest_randomly.random_seeder")]
     pytest_randomly.entrypoint_reseeds = [r if hasattr(r, "__wrapped__") else _bounded(r) for r in loaded]
     return bool(loaded)
