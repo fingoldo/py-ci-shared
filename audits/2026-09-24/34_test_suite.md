@@ -113,7 +113,7 @@ See the findings table. In short: there is no coverage config at all; there is n
 
 ### SUITE-4 (High) -- There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra...
 
-**Disposition:** DEFERRED -- done: `[tool.pytest.ini_options]` (testpaths, pythonpath, `-ra --strict-markers`, a 300 s pytest-timeout, the plugin marker), `[tool.coverage.run]` (branch, source) and a coverage run on the ubuntu 3.11 leg. Waiting: `[tool.coverage.report] fail_under`, which must be the floor of a measured full-suite total; it waits on the first full CI run of this change (the coordinator reads the total from the ubuntu 3.11 log and sets it).
+**Disposition:** RESOLVED -- `[tool.pytest.ini_options]` (testpaths, pythonpath, `-ra --strict-markers`, a 300 s pytest-timeout, the plugin marker), `[tool.coverage.run]` (branch, source), a coverage run on the ubuntu 3.11 leg only, and `[tool.coverage.report] fail_under = 89`, the floor of the green run at 6a8e382 (TOTAL 90%, branch coverage: 21524 statements, 1911 missed, 9816 branches, 884 partial). fail_under applies to every coverage report, so no other job runs --cov; regression test: tests/test_reusable_workflows.py::test_the_coverage_floor_is_enforced_only_by_the_full_suite_run
 
 - **Original id:** F-04
 - **Where:** pyproject.toml (no `[tool.pytest.ini_options]`, no `[tool.coverage.*]`); self-ci.yml:59

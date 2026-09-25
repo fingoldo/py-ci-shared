@@ -10,6 +10,12 @@ import pytest
 from py_ci_shared.function_length import assert_functions_do_not_grow, function_lengths, length_problems, write_length_baseline
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _module(tmp_path: Path, body_lines: int) -> Path:
     body = "\n".join("    x = 1" for _ in range(body_lines))
     p = tmp_path / "m.py"

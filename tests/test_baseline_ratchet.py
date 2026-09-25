@@ -11,6 +11,12 @@ import pytest
 from py_ci_shared.baseline_ratchet import Baseline, run_rules
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def make(tmp_path: Path, name: str = "rule") -> Baseline:
     return Baseline(name, directory=str(tmp_path), refresh_command="python tool/meta/regen_baselines.py")
 

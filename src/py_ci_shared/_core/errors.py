@@ -55,3 +55,11 @@ class UnparsedFilesError(CoreError, AssertionError):
 
 class BaselineError(CoreError, AssertionError):
     """The baseline is missing, malformed, or rejects the current findings."""
+
+
+class BaselineGrowthError(BaselineError):
+    """A refresh would add baseline entries (or raise counts/ceilings) without the growth opt-in. ``grown`` names them."""
+
+    def __init__(self, message: str, grown: "list[str]") -> None:
+        super().__init__(message)
+        self.grown = list(grown)

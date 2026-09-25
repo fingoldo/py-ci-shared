@@ -6,6 +6,7 @@ Subcommands::
     py-ci-shared run <gate> [<gate> ...]      run gates enabled in [tool.py_ci_shared] of the repo
     py-ci-shared run-all                      run every enabled gate
     py-ci-shared refresh <gate>|all           rewrite the baselines of the named gates, then run them
+                                              (shrink-only; --grow lets the refresh add entries)
     py-ci-shared config-path <name>           print the installed path of a shipped config (ruff-base, ruff-tests)
     py-ci-shared tool <module> [args ...]     run a module's own command line (``main``), e.g. ``tool worktree_hygiene``
     py-ci-shared new-gate <name> [--kind gate|library] [--summary TEXT] [--repo DIR]
@@ -75,6 +76,7 @@ def _report(results: Sequence[GateResult], mode: str) -> int:
 
 
 def _cmd_run(args: argparse.Namespace, *, everything: bool, refresh: bool = False) -> int:
+    grow = bool(getattr(args, "grow", False))
     config = _load(args.repo)
     if everything:
         runs = list(config.gates)
@@ -86,7 +88,7 @@ def _cmd_run(args: argparse.Namespace, *, everything: bool, refresh: bool = Fals
             runs = [config.gate(n) for n in names]
     if not runs:
         raise ConfigError("no gates enabled in [tool.py_ci_shared]")
-    return _report([run_gate(config, r, refresh=refresh) for r in runs], config.budget)
+    return _report([run_gate(config, r, refresh=refresh, grow=grow) for r in runs], config.budget)
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -143,6 +145,8 @@ def build_parser() -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=helptext)
         p.add_argument("gates", nargs="+")
         p.add_argument("--repo", help="repo root (default: nearest pyproject.toml)")
+        if name == "refresh":
+            p.add_argument("--grow", action="store_true", help="let the refresh ADD entries and raise counts, not only drop stale ones")
     p = sub.add_parser("run-all", help="run every gate enabled in [tool.py_ci_shared]")
     p.add_argument("--repo", help="repo root (default: nearest pyproject.toml)")
     p = sub.add_parser("config-path", help="print the installed path of a shipped config")

@@ -24,6 +24,12 @@ from py_ci_shared.readme_env_var_parity import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _write(tmp_path: Path, name: str, content: str) -> Path:
     p = tmp_path / name
     p.write_text(content.lstrip("\n"), encoding="utf-8")

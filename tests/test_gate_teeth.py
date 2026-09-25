@@ -197,6 +197,11 @@ CANARIES: dict[str, Canary] = {
             token="seed_long",
         ),
         Canary(
+            "complexity_ratchet",
+            lambda d: _gate("complexity_ratchet").assert_complexity_does_not_grow(_py(d), d, _baseline(d), limit=2, min_functions=1, refresh=False),
+            token="seed_branchy",
+        ),
+        Canary(
             "loc_budget",
             lambda d: _gate("loc_budget").assert_no_new_oversized_file(_py(d), d, _baseline(d), limit=5, refresh=False),
             parses=False,  # counts lines; a syntax error is not its subject

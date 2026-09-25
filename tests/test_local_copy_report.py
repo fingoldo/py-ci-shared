@@ -13,6 +13,12 @@ from py_ci_shared.local_copy_report import assert_local_copies_do_not_grow, cent
 _WALKER = "import ast\nfrom pathlib import Path\n\ndef test_x():\n    for p in Path('.').rglob('*.py'):\n        ast.walk(ast.parse(p.read_text()))\n"
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     for rel, body in files.items():
         p = tmp_path / rel

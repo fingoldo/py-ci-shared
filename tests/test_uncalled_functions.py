@@ -16,6 +16,12 @@ from py_ci_shared._core import UnparsedFilesError
 from py_ci_shared.uncalled_functions import assert_no_new_uncalled_function, find_uncalled_functions
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _write(tmp_path: Path, name: str, body: str) -> Path:
     path = tmp_path / name
     path.parent.mkdir(parents=True, exist_ok=True)

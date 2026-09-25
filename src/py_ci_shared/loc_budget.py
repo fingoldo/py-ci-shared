@@ -51,7 +51,16 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import SourceReadError, atomic_write_text, dump_json, read_source, refresh_requested, register_refresh_options, relative_posix
+from ._core import (
+    BaselineGrowthError,
+    SourceReadError,
+    dump_json,
+    read_source,
+    refresh_requested,
+    register_refresh_options,
+    relative_posix,
+    write_ratchet,
+)
 
 REFRESH_FLAG = "--refresh-loc-budget-baseline"
 
@@ -110,9 +119,15 @@ def oversized_files(files: Iterable[Path], root: Path, limit: int = DEFAULT_LOC_
     return out
 
 
-def write_loc_baseline(path: Path, current: "dict[str, int]") -> None:
-    """Write *current* as the baseline, keys sorted, atomically, for a repo's own ``regenerate_baseline`` or a refresh."""
-    atomic_write_text(path, dump_json(dict(sorted(current.items()))))
+def write_loc_baseline(path: Path, current: "dict[str, int]", *, grow: Optional[bool] = None, request: Any = None, slack: int = 0) -> None:
+    """Write *current* as the baseline, keys sorted, atomically, for a repo's own ``regenerate_baseline`` or a refresh.
+
+    Shrink-only unless growth is allowed (see ``_core.write_ratchet``): a new oversized file, or a ceiling raised by
+    more than *slack*, raises ``BaselineGrowthError`` after the removals are written."""
+    previous = json.loads(Path(path).read_text(encoding="utf-8-sig")) if Path(path).is_file() else None
+    write_ratchet(
+        path, current, gate="loc-budget", previous=previous, render=lambda kept: dump_json(dict(sorted(kept.items()))), grow=grow, request=request, slack=slack
+    )
 
 
 def ratchet_problems(
@@ -166,6 +181,7 @@ def assert_no_new_oversized_file(
     min_files: int = 1,
     refresh: Optional[bool] = None,
     request: Any = None,
+    grow: Optional[bool] = None,
 ) -> None:
     """Fail if any file in ``files`` exceeds ``limit`` lines UNLESS it's
     already in the baseline (grandfathered), or fail if a grandfathered
@@ -202,7 +218,10 @@ def assert_no_new_oversized_file(
         pytest.fail(f"{len(unreadable)} file(s) could not be read, so their size is unknown -- Fix them:\n  " + "\n  ".join(unreadable))
 
     if refresh if refresh is not None else _refresh_requested(request):
-        write_loc_baseline(baseline_path, current)
+        try:
+            write_loc_baseline(baseline_path, current, grow=grow, request=request, slack=growth_slack)
+        except BaselineGrowthError as exc:
+            pytest.fail(str(exc), pytrace=False)
         pytest.skip(f"LOC-budget baseline refreshed at {baseline_path.name} ({len(current)} grandfathered file(s))")
     if not baseline_path.is_file():
         pytest.fail(f"LOC-budget baseline {baseline_path} does not exist, so nothing was compared. Create it with {REFRESH_FLAG}")

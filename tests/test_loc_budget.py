@@ -21,6 +21,12 @@ from py_ci_shared.loc_budget import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _write_lines(path: Path, n: int) -> None:
     path.write_text("\n".join(f"x{i} = {i}" for i in range(n)) + "\n", encoding="utf-8")
 

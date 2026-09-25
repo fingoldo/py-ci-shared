@@ -16,6 +16,12 @@ from py_ci_shared._core import Baseline
 from py_ci_shared.source_text_claims import REFRESH_FLAG, assert_no_new_source_text_claims, find_source_text_claims
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _claims(tmp_path: Path, body: str, **kwargs):
     path = tmp_path / "test_probe.py"
     path.write_text(body, encoding="utf-8")
@@ -323,3 +329,42 @@ def test_a_deserialised_report_keyed_by_py_paths_is_data_not_source(tmp_path):
         "def test_source():\n    src = _read('pkg/mod.py')\n    assert 'def f' in src\n"
     )
     assert [c.function for c in _claims(tmp_path, body)] == ["test_source"]
+
+
+class TestArbitraryFileReads:
+    """A file read through a path the detector cannot place is judged by how its text is checked."""
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "def test_x(p):\n    assert p.read_text().find('token') > 10\n",
+            "def test_x(p):\n    text = p.read_text()\n    assert text.index('token') == 42\n",
+            "def test_x(p):\n    text = p.read_text()\n    pos = text.rfind('return')\n    assert pos > 0\n",
+            "def test_x(p):\n    assert 'def helper(' in p.read_text()\n",
+            "def test_x(root, name):\n    src = (root / name).read_text()\n    assert 'self._cache' in src\n",
+            "def test_x(p):\n    assert open(p).read().count('import os') == 1\n",
+            "def _where(p):\n    return p.read_text().find('x = 1')\n",
+        ],
+        ids=["inline find", "bound index", "position via a name", "code-like in", "code-like self attr", "open().read() count", "returned position"],
+    )
+    def test_position_and_code_like_checks_are_claims(self, tmp_path, body):
+        assert _claims(tmp_path, body)
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "def test_x(p):\n    content = p.read_text()\n    assert 'PROMPT TEXT' in content\n",
+            "import re\ndef test_x(p):\n    text = p.read_text()\n    m = re.search(r'version = \"(.*)\"', text)\n    assert m is not None\n",
+            "def test_x(tmp_path):\n    out = tmp_path / 'gen'\n    run(out)\n    assert 'def main(' in out.read_text()\n",
+            "README = ROOT / 'README.md'\ndef test_x():\n    assert 'foo(' in README.read_text()\n",
+            "import json\ndef test_x(p):\n    assert 'def x(' in json.loads(p.read_text())\n",
+            "def test_x(p):\n    text = p.read_text()\n    assert len(text.splitlines()) < 50\n",
+        ],
+        ids=["prose literal", "regex extraction", "tmp_path output", "data-suffix constant", "deserialised", "line count"],
+    )
+    def test_data_reads_and_prose_checks_are_not(self, tmp_path, body):
+        assert _claims(tmp_path, body) == []
+
+    def test_a_name_bound_to_an_in_check_over_source_is_a_claim(self, tmp_path):
+        body = "import inspect\ndef test_x():\n    found = 'x' in inspect.getsource(f)\n    assert found\n"
+        assert _lines(tmp_path, body) == [4]

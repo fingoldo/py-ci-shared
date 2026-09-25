@@ -11,6 +11,12 @@ import pytest
 from py_ci_shared.deferred_drift import assert_deferred_lists_not_grown, drift_problems
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 class TestTheRules:
     def test_unchanged_is_silent(self):
         assert drift_problems({"a::_X": 3}, {"a::_X": 3}) == []

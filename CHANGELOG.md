@@ -11,6 +11,14 @@ being passed silently. The [README](README.md#baselines-refresh-and-what-now-fai
   and names its refresh command. Refresh once with `pytest --py-ci-refresh=<gate>`,
   `PY_CI_SHARED_REFRESH=<gate>` or `py-ci-shared refresh <gate>`. A refresh never writes after a failed floor or an
   unparsable file, and a `NEEDS-JUSTIFICATION` note fails until someone writes the reason.
+- **A refresh only shrinks a baseline.** It drops entries that no longer fire and lowers counts; adding an entry,
+  raising a count or seeding a missing baseline with findings fails and names them unless growth is opted into
+  (`--py-ci-refresh-grow`, `PY_CI_SHARED_REFRESH_ALLOW_GROW=1`, `py-ci-shared refresh --grow`, `grow=True`).
+- **New gate `complexity_ratchet`.** No new function over ruff's C901 limit, and the ones over it may not grow; the
+  number is ruff's mccabe count computed from the AST (identical to ruff on every function in this repo).
+- **`source_text_claims` judges arbitrary file reads.** Text read from a path it cannot place is a claim when an
+  assertion takes a substring's position in it or searches it for a code-like literal; a `return` of a content
+  check over source, and an `assert` over a name bound to one, are claims too.
 - **An unparsable or unreadable file is a finding.** AST gates read sources the way the interpreter does (BOM,
   PEP 263 cookie) and report a file they cannot parse instead of skipping it. `allow_unparsed=True` exists where
   that is expected.

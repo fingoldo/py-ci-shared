@@ -11,6 +11,12 @@ from py_ci_shared._core import UNJUSTIFIED_MARKER, Baseline, BaselineError, Find
 from py_ci_shared._core import baseline as baseline_mod
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _f(msg: str, line: int = 1, path: str = "a.py") -> Finding:
     return Finding(path, line, "rule", msg)
 
@@ -162,3 +168,69 @@ class TestFormatsAndWrites:
         assert target.read_text(encoding="utf-8") == "old\n"
         assert sorted(p.name for p in tmp_path.iterdir()) == ["b.json"]
         assert not any(name.endswith(".tmp") for name in os.listdir(tmp_path))
+
+
+class TestShrinkOnlyRefresh:
+    """A refresh drops what no longer fires; adding, raising or seeding needs the growth opt-in."""
+
+    @pytest.fixture(autouse=True)
+    def _no_grow(self, monkeypatch):
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", raising=False)
+
+    def _base(self, tmp_path, entries):
+        b = Baseline(tmp_path / "b.json", gate="g")
+        if entries is not None:
+            b.save(entries, {k: "why" for k in entries})
+        return b
+
+    def test_refresh_drops_stale_entries_and_lowers_counts_without_opt_in(self, tmp_path):
+        b = self._base(tmp_path, {"k1": 3, "gone": 1})
+        outcome = b.enforce(["k1"], refresh=True)
+        assert outcome.refreshed and outcome.ok
+        counts, notes = b.load()
+        assert dict(counts) == {"k1": 1} and notes == {"k1": "why"}
+
+    def test_refresh_with_a_new_violation_fails_names_it_and_still_prunes(self, tmp_path):
+        b = self._base(tmp_path, {"k1": 1, "gone": 1})
+        outcome = b.enforce(["k1", "k1", "fresh"], refresh=True)
+        assert not outcome.ok and not outcome.refreshed
+        assert sorted(outcome.new) == ["fresh", "k1"]
+        assert "fresh  (new: 1)" in outcome.message and "k1  (1 -> 2)" in outcome.message
+        assert "PY_CI_SHARED_REFRESH_ALLOW_GROW=1" in outcome.message and "--py-ci-refresh-grow" in outcome.message
+        assert dict(b.load()[0]) == {"k1": 1}, "the removal lands, the growth does not"
+
+    @pytest.mark.parametrize("how", ["kwarg", "env"])
+    def test_the_opt_in_lets_it_grow(self, tmp_path, monkeypatch, how):
+        b = self._base(tmp_path, {"k1": 1})
+        if how == "env":
+            monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+        outcome = b.enforce(["k1", "k1", "fresh"], refresh=True, grow=True if how == "kwarg" else None)
+        assert outcome.refreshed
+        assert dict(b.load()[0]) == {"k1": 2, "fresh": 1}
+
+    def test_seeding_a_missing_baseline_needs_the_opt_in(self, tmp_path):
+        b = self._base(tmp_path, None)
+        outcome = b.enforce(["k1"], refresh=True)
+        assert outcome.new == ["k1"] and "does not exist, and seeding it" in outcome.message
+        assert not b.exists(), "a refused seeding writes nothing, so the next run still fails as missing"
+        assert b.enforce(["k1"], refresh=True, grow=True).refreshed and b.exists()
+
+    def test_an_empty_baseline_may_always_be_seeded(self, tmp_path):
+        b = self._base(tmp_path, None)
+        assert b.enforce([], refresh=True).refreshed and b.exists()
+
+    def test_baseline_ratchet_regenerate_is_shrink_only_too(self, tmp_path):
+        from py_ci_shared._core import BaselineGrowthError
+        from py_ci_shared.baseline_ratchet import Baseline as RatchetBaseline
+
+        b = RatchetBaseline("rule", directory=str(tmp_path))
+        b.regenerate({"a": "x", "b": "y"}, grow=True)
+        with pytest.raises(BaselineGrowthError, match=r"c  \(new: 1\)"):
+            b.regenerate({"a": "x", "c": "z"})
+        assert b.load() == {"a": "x"}
+
+    def test_write_ratchet_slack_keeps_the_lower_ceiling_without_failing(self, tmp_path):
+        from py_ci_shared._core import dump_json, write_ratchet
+
+        kept = write_ratchet(tmp_path / "c.json", {"f": 105}, gate="g", previous={"f": 100}, render=dump_json, slack=10)
+        assert kept == {"f": 100}

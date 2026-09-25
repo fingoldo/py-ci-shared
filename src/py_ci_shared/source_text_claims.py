@@ -16,6 +16,15 @@ This module is the union, as an AST walk rather than a regex so that aliases, sc
 resolve. ``.sql`` counts as source: a SQL-substring assertion passes against a constant the call site
 never uses, which is how one of the two shipped defects that started all this happened.
 
+A file read through a path the detector cannot place (a parameter, ``ROOT / name``) is source only by how it is
+checked: the claim fires when the assertion takes the POSITION of a substring in that text (``.find`` / ``.index`` /
+``.rfind`` / ``.rindex``, directly or through a name bound to one), or searches it for a code-like literal (``"def "``,
+``"import "``, ``"self."``, ``"name("``). A data suffix (``.json``, ``.md`` ...), a deserialiser, and a path under
+pytest's ``tmp_path`` / ``tmpdir`` (output the code under test wrote) keep such a read out.
+
+A claim is also a ``return`` of such a check (a helper that answers "is this substring in the source" for a caller's
+assert), and a later ``assert found`` / ``assert idx > 0`` over a name bound to one.
+
 What is deliberately NOT a claim: ``ast.parse(text)`` and a walk over its nodes. That is how every
 meta-linter in these repositories works, and a rule that flagged it would be switched off the day it
 landed. Reading a fixture, a JSON cache, a README or a prompt file is not a claim either.
@@ -37,12 +46,13 @@ and a refresh is read with ``_core.refresh_requested`` (pytest option, ``PY_CI_S
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import Baseline, ImportAliases, SourceError, parse_source, read_source, relative_posix
+from ._core import Baseline, BaselineError, ImportAliases, SourceError, parse_source, read_source, relative_posix
 
 __all__ = [
     "DEFAULT_READERS",
@@ -84,6 +94,16 @@ _CONTENT_METHODS = frozenset({"count", "search", "match", "fullmatch", "findall"
 #: Substrings at least one of which any claim's file must contain: the file reads, `open(`, the code attributes and
 #: the `dis` functions. Reader names are added per call.
 _TRIGGER_TOKENS = ("read_text", "read_bytes", "readlines", ".read(", "open(", "co_code", "co_consts", "co_names", "get_instructions", "code_info", "dis(")
+_POSITION_METHODS = frozenset({"find", "index", "rfind", "rindex"})
+#: Pytest fixtures whose paths hold output the code under test wrote: reading it back is a behavioural check.
+_TMP_ROOTS = frozenset({"tmp_path", "tmpdir", "tmp_path_factory", "tmpdir_factory"})
+_CODE_LIKE = re.compile(
+    r"^\s*(?:async\s+def|def|class|import|from\s+[\w.]+\s+import|return|raise|await|yield|lambda|with|if\s+__name__)\b"
+    r"|^\s*@\w"
+    r"|\bself\.\w"
+    r"|(?<![\\\w])[A-Za-z_][\w.]*\("
+    r"|\b[a-z_]\w*\s*(?:=|\+=|-=|:=)\s*\S"
+)
 _NON_SOURCE_SUFFIXES = (".json", ".toml", ".md", ".txt", ".csv", ".ini", ".cfg", ".yml", ".yaml", ".html", ".css", ".js", ".log", ".env", ".lock", ".jsonl")
 
 
@@ -258,27 +278,100 @@ class _Detector:
                 break
         return tainted
 
-    # -- scopes -------------------------------------------------------------------------------------
-    def scopes(self) -> Iterator[tuple[str, list[ast.stmt], set[str], set[str]]]:
-        """``(function name, body, source-path names, tainted names)`` for the module and every function."""
-        module_tainted = self._tainted(self.tree.body, self.module_paths, set())
-        yield "<module>", self.tree.body, self.module_paths, module_tainted
-        yield from self._nested(self.tree.body, self.module_paths, module_tainted)
+    # -- arbitrary file reads ----------------------------------------------------------------------
+    def _is_other_path(self, node: ast.AST, tmp_names: set[str]) -> bool:
+        """A path that is neither known source nor data nor pytest temp output: its text is judged by its use."""
+        if any(lit.lower().endswith(_NON_SOURCE_SUFFIXES) for lit in _string_constants(node)):
+            return False
+        return not any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in tmp_names) for sub in ast.walk(node))
 
-    def _nested(self, body: list[ast.stmt], paths: set[str], tainted: set[str]) -> Iterator[tuple[str, list[ast.stmt], set[str], set[str]]]:
-        """Functions defined in *body* (through classes too), each inheriting the enclosing scope's names: a closure
+    def file_read(self, node: ast.AST, tmp_names: set[str], file_tainted: set[str]) -> bool:
+        """Does *node* yield an arbitrary file's text: ``p.read_text()``, ``p.read_bytes()``, ``open(p).read()``, or a
+        name holding one? Deserialised and structural results are data, as for source reads."""
+        for sub in self._walk_text(node):
+            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute):
+                name, owner = sub.func.attr, sub.func.value
+                if name in ("read_text", "read_bytes") and self._is_other_path(owner, tmp_names):
+                    return True
+                if name == "read" and isinstance(owner, ast.Call) and _call_name(owner) == "open" and owner.args:
+                    if self._is_other_path(owner.args[0], tmp_names):
+                        return True
+        return _uses(node, file_tainted)
+
+    def tmp_names(self, body: list[ast.stmt], inherited: set[str]) -> set[str]:
+        """Names bound to a path whose text is not program text: under a pytest temp fixture (``out = tmp_path / "x"``)
+        or ending in a data suffix (``README = ROOT / "README.md"``), through derivations."""
+        names = set(inherited)
+        for _ in range(3):
+            before = len(names)
+            for node in _walk_scope(body):
+                if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None and not _contains_read(node.value):
+                    value = node.value
+                    if any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in names) for sub in ast.walk(value)) or any(
+                        lit.lower().endswith(_NON_SOURCE_SUFFIXES) for lit in _string_constants(value)
+                    ):
+                        names.update(_target_names(node))
+            if len(names) == before:
+                break
+        return names
+
+    def file_tainted(self, body: list[ast.stmt], tmp_names: set[str], inherited: set[str]) -> set[str]:
+        """Names holding an arbitrary file's text in this scope, propagated like :meth:`_tainted`."""
+        tainted = set(inherited)
+        for _ in range(6):
+            before = len(tainted)
+            for node in _walk_scope(body):
+                if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.AugAssign)) and node.value is not None:
+                    value = node.value
+                    if isinstance(value, ast.Call) and (
+                        _call_name(value) in _STRUCTURAL | _POSITION_METHODS | _CONTENT_METHODS or self._is_deserialiser(value)
+                    ):
+                        continue
+                    if isinstance(value, ast.Compare):
+                        continue
+                    if self.file_read(value, tmp_names, tainted):
+                        tainted.update(_target_names(node))
+            if len(tainted) == before:
+                break
+        return tainted
+
+    # -- scopes -------------------------------------------------------------------------------------
+    def scopes(self) -> Iterator[_Scope]:
+        """One :class:`_Scope` for the module and one for every function."""
+        module_tainted = self._tainted(self.tree.body, self.module_paths, set())
+        tmp = self.tmp_names(self.tree.body, set())
+        scope = _Scope("<module>", self.tree.body, self.module_paths, module_tainted, tmp, self.file_tainted(self.tree.body, tmp, set()))
+        yield scope
+        yield from self._nested(scope)
+
+    def _nested(self, outer: _Scope) -> Iterator[_Scope]:
+        """Functions defined in *outer* (through classes too), each inheriting the enclosing scope's names: a closure
         reading its outer function's source text is the same claim."""
-        for node in _defs_in(body):
+        for node in _defs_in(outer.body):
             if isinstance(node, ast.ClassDef):
-                yield from self._nested(node.body, paths, tainted)
+                yield from self._nested(_Scope(outer.function, node.body, outer.paths, outer.tainted, outer.tmp, outer.file_tainted))
                 continue
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             params = _param_names(node) & self.fixtures
-            inner_paths = self._path_names(node.body, frozenset(paths))
-            inner_tainted = self._tainted(node.body, inner_paths, set(tainted) | set(params))
-            yield node.name, node.body, inner_paths, inner_tainted
-            yield from self._nested(node.body, inner_paths, inner_tainted)
+            inner_paths = self._path_names(node.body, frozenset(outer.paths))
+            inner_tainted = self._tainted(node.body, inner_paths, set(outer.tainted) | set(params))
+            tmp = self.tmp_names(node.body, set(outer.tmp))
+            scope = _Scope(node.name, node.body, inner_paths, inner_tainted, tmp, self.file_tainted(node.body, tmp, set(outer.file_tainted)))
+            yield scope
+            yield from self._nested(scope)
+
+
+@dataclass
+class _Scope:
+    """One function (or the module): its body and the names that hold source paths, source text, temp paths and file text."""
+
+    function: str
+    body: list[ast.stmt]
+    paths: set[str]
+    tainted: set[str]
+    tmp: set[str]
+    file_tainted: set[str]
 
 
 _NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
@@ -341,20 +434,93 @@ def _tests_content(test: ast.AST) -> bool:
 _MATCHERS = frozenset({"search", "match", "fullmatch"})
 
 
+def _is_content_check(value: ast.AST) -> bool:
+    """A regex match, a ``.find`` / ``.count`` style call, or an ``in`` / ``==`` comparison: its result says what the text holds."""
+    if isinstance(value, ast.Call):
+        return _call_name(value) in _MATCHERS | _CONTENT_METHODS
+    return isinstance(value, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in value.ops)
+
+
 def _match_names(body: list[ast.stmt], det: _Detector, paths: set[str], tainted: set[str]) -> set[str]:
-    """Names bound to a regex match over source: ``m = re.search(pat, src)`` makes a bare ``assert m`` a content check."""
+    """Names bound to a content check over source: ``m = re.search(pat, src)``, ``i = src.find("def f")`` or
+    ``ok = "x" in src`` makes a bare ``assert m`` (or ``assert i > 0``) a content check."""
     out: set[str] = set()
     for node in _walk_scope(body):
-        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and isinstance(node.value, ast.Call) and _call_name(node.value) in _MATCHERS:
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None and _is_content_check(node.value):
             if det.reader_kind(node.value, paths, tainted) or _uses(node.value, tainted):
                 out.update(_target_names(node))
     return out
+
+
+def _position_calls(node: ast.AST) -> Iterator[ast.Call]:
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in _POSITION_METHODS:
+            yield sub
+
+
+def _literal_search(node: ast.AST) -> bool:
+    """A literal substring test (``in``, ``==``, ``.count``, ``.startswith`` ...), not a regex: over an arbitrary file a
+    regex is usually EXTRACTING a value (a version, a code block to run), which is how the text gets used for real."""
+    for sub in ast.walk(node):
+        if isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in sub.ops):
+            return True
+        if isinstance(sub, ast.Call) and _call_name(sub) in _CONTENT_METHODS - _MATCHERS - {"findall"}:
+            return True
+    return False
+
+
+def _code_like(node: ast.AST) -> bool:
+    return any(_CODE_LIKE.search(lit) for lit in _string_constants(node))
+
+
+def _file_checks(det: _Detector, scope: _Scope) -> tuple[set[str], set[str]]:
+    """``(position names, code-search names)``: names bound to a position taken in, or a code-like search of, file text."""
+    positions: set[str] = set()
+    searches: set[str] = set()
+    for node in _walk_scope(scope.body):
+        if not isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) or node.value is None or not _is_content_check(node.value):
+            continue
+        if any(det.file_read(c.func.value, scope.tmp, scope.file_tainted) for c in _position_calls(node.value)):  # type: ignore[attr-defined]
+            positions.update(_target_names(node))
+        elif _literal_search(node.value) and det.file_read(node.value, scope.tmp, scope.file_tainted) and _code_like(node.value):
+            searches.update(_target_names(node))
+    return positions, searches
+
+
+def _file_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, positions: set[str], searches: set[str]) -> Optional[str]:
+    """How *test* claims something about an arbitrary file's text, or None (see the module docstring)."""
+    if any(det.file_read(c.func.value, scope.tmp, scope.file_tainted) for c in _position_calls(test)) or _uses(test, positions):  # type: ignore[attr-defined]
+        return "position of a substring in a file's text"
+    if _uses(test, searches) or (det.file_read(test, scope.tmp, scope.file_tainted) and _literal_search(test) and _code_like(test)):
+        return "code-like text searched in a file"
+    return None
 
 
 def _fails_in_body(node: ast.If) -> bool:
     return any(
         isinstance(s, ast.Expr) and isinstance(s.value, ast.Call) and isinstance(s.value.func, ast.Attribute) and s.value.func.attr == "fail" for s in node.body
     )
+
+
+def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: set[str]) -> Optional[str]:
+    """How *test* checks the content of source text (a reader call or a name holding its text), or None."""
+    kind = det.reader_kind(test, scope.paths, scope.tainted)
+    if kind is None:
+        used = next((s.id for s in ast.walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted), None)
+        kind = f"text held in `{used}`" if used and _uses(test, scope.tainted) else None
+    return kind if kind and (_tests_content(test) or _uses(test, matches)) else None
+
+
+def _claim_site(node: ast.AST, function: str) -> Optional[ast.expr]:
+    """The expression a claim would test at *node*: an ``assert``'s test, an ``if`` whose body fails, or a function's
+    ``return`` value when it is itself a content check (a helper answering an assert elsewhere)."""
+    if isinstance(node, ast.Assert):
+        return node.test
+    if isinstance(node, ast.If) and _fails_in_body(node):
+        return node.test
+    if isinstance(node, ast.Return) and function != "<module>" and node.value is not None and _is_content_check(node.value):
+        return node.value
+    return None
 
 
 def find_source_text_claims(
@@ -382,8 +548,10 @@ def find_source_text_claims(
     _, tree = parse_source(path)
     det = _Detector(tree, readers=reader_names, treat_sql_as_source=treat_sql_as_source, follow_helpers=follow_helpers)
     claims: dict[int, SourceTextClaim] = {}
-    for function, body, paths, tainted in det.scopes():
+    for scope in det.scopes():
+        function, body, paths, tainted = scope.function, scope.body, scope.paths, scope.tainted
         matches = _match_names(body, det, paths, tainted)
+        positions, searches = _file_checks(det, scope) if mode == "assertion" else (set(), set())
         for node in _walk_scope(body):
             if mode == "read":
                 if isinstance(node, (ast.Call, ast.Attribute)) and node.lineno not in claims:
@@ -398,14 +566,11 @@ def find_source_text_claims(
             # `node.test` is read through the isinstance itself, not through an `is_check` flag: mypy
             # narrows the former and not the latter, and the flag hid that the branch also accepts an
             # `ast.If` whose body fails.
-            if not isinstance(node, (ast.Assert, ast.If)) or (isinstance(node, ast.If) and not _fails_in_body(node)) or node.lineno in claims:
+            test = _claim_site(node, function)
+            if test is None or not isinstance(node, ast.stmt) or node.lineno in claims:
                 continue
-            test = node.test
-            kind = det.reader_kind(test, paths, tainted)
-            if kind is None:
-                used = next((s.id for s in ast.walk(test) if isinstance(s, ast.Name) and s.id in tainted), None)
-                kind = f"text held in `{used}`" if used and _uses(test, tainted) else None
-            if kind and (_tests_content(test) or _uses(test, matches)):
+            kind = _source_claim_kind(det, test, scope, matches) or _file_claim_kind(det, test, scope, positions, searches)
+            if kind:
                 claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
     return sorted(claims.values(), key=lambda c: c.line)
 
@@ -432,14 +597,14 @@ def _baseline(baseline_path: Path) -> Baseline:
     return Baseline(baseline_path, gate="source-text", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=source-text)")
 
 
-def write_source_text_baseline(baseline_path: Path, keys: "Iterable[str] | Mapping[str, Any]") -> None:
+def write_source_text_baseline(baseline_path: Path, keys: "Iterable[str] | Mapping[str, Any]", *, grow: Optional[bool] = None, request: Any = None) -> None:
     """Record today's claims as accepted debt. A mapping ``key -> lines`` records one count per claim; a plain
-    iterable of keys records one per occurrence."""
+    iterable of keys records one per occurrence. Shrink-only unless growth is allowed (``BaselineGrowthError``)."""
     if isinstance(keys, Mapping):
         items = [k for k, v in keys.items() for _ in range(len(v) if isinstance(v, (list, tuple, set)) else 1)]
     else:
         items = list(keys)
-    _baseline(baseline_path).regenerate(items)
+    _baseline(baseline_path).regenerate(items, grow=grow, request=request)
 
 
 def assert_no_new_source_text_claims(
@@ -486,7 +651,10 @@ def assert_no_new_source_text_claims(
     if baseline_path is not None:
         baseline = _baseline(baseline_path)
         if refresh_requested(REFRESH_FLAG, request):
-            write_source_text_baseline(baseline_path, unallowed)
+            try:
+                write_source_text_baseline(baseline_path, unallowed, request=request)
+            except BaselineError as exc:
+                pytest.fail(str(exc), pytrace=False)
             pytest.skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
         if not baseline.exists():
             pytest.fail(f"source-text baseline {baseline_path} does not exist, so nothing is accepted. Create it with: {baseline.refresh_command}")

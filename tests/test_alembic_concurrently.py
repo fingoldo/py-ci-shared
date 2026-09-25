@@ -39,6 +39,12 @@ def _versions(tmp_path: Path, **files: str) -> Path:
     return d
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def test_both_spellings_inside_the_block_pass(tmp_path):
     assert find_unguarded_concurrently(_versions(tmp_path, a=_GUARDED)) == set()
 

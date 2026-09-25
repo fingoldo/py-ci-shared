@@ -150,6 +150,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
+| [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.17.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
 | [`conceded_defect_pins`](src/py_ci_shared/conceded_defect_pins.py) | library | 1.17.0 |  | Tests that say the behaviour is wrong and then pin it exactly |
 | [`config_call_site_parity`](src/py_ci_shared/config_call_site_parity.py) | gate | 1.3.0 | `assert_every_cfg_get_call_resolves_to_a_schema_field` (+4) | Shared checks for the "``cfg().get(section, key, default, type_)`` call-site vs Pydantic schema" consistency pattern |
 | [`config_drift_check`](src/py_ci_shared/config_drift_check.py) | cli | 1.1.1 | `main` | Reports [tool.ruff]/[tool.mypy] config divergence across consumer repos |
@@ -374,6 +375,22 @@ The per-gate flags (`--refresh-code-audit-baseline`, `--refresh-value-asserts-ba
 `--refresh-db-transaction-baseline`, `--refresh-fail-open-baseline`, `--refresh-function-length-baseline` ...)
 work where a conftest registers them, with `py_ci_shared._core.register_refresh_options(parser, flags)` in
 `pytest_addoption`; `PY_CI_SHARED_REFRESH` and `--py-ci-refresh` work without any registration. Use `=`: `--py-ci-refresh tests/x.py` would read the path as the gate list.
+
+A refresh only **shrinks** a baseline: it drops entries that no longer fire and lowers counts and ceilings. When the
+scan finds something the baseline does not accept (a new entry, a higher count, or any finding while the baseline
+does not exist yet), the refresh writes the removals, fails, and names each refused entry. Growing it is a
+deliberate opt-in, three equivalent ways:
+
+```bash
+pytest --py-ci-refresh=function_length --py-ci-refresh-grow
+PY_CI_SHARED_REFRESH=function-length PY_CI_SHARED_REFRESH_ALLOW_GROW=1 pytest ...
+py-ci-shared refresh function_length --grow
+```
+
+or `grow=True` on `_core.Baseline.regenerate/enforce`, `baseline_ratchet.Baseline.regenerate` and the gates' `write_*`
+helpers. Gates that keep their own file shapes use `_core.write_ratchet` for the same rule. Two writers are
+exempt on purpose: `mutation_teeth` writes every new survivor with a `NEEDS-JUSTIFICATION` note that fails the next
+run anyway, and `content_hash_version_bump_gate` pins one version to one hash, which has nothing to grow.
 
 Keys changed in 1.17.0 for some gates, so their baselines or allowlists need one update after upgrading:
 `alembic_concurrently`; `dart_scanners` (keys are a hash of the finding without its line number, so an edit

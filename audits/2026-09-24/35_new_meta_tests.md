@@ -390,6 +390,27 @@ the pyutilz `code_audit` scanner (run via `code_audit_meta`).
 - **Bug class:** false positives and blind spots that only real repositories trigger
 - **Repos:** mlframe, pyutilz, llm_bench
 
+### NEW-33 (Med) -- C901 complexity ratchet
+
+**Disposition:** RESOLVED -- `py_ci_shared.complexity_ratchet.assert_complexity_does_not_grow` (registered gate, canary tests/canary/complexity_ratchet/): ruff's mccabe number computed from the AST (identical to `ruff check --select C901` on all 5061 functions in src/ and tests/), a committed `{"path::Qual.name": complexity}` baseline; a new function over the limit (default 10) or a grown entry fails, a shrunk, fixed or deleted entry fails until a refresh lowers or drops it. Dogfooded in `[tool.py_ci_shared.gates.complexity_ratchet]` over src/ and tests/ with tests/baselines/complexity_ratchet.json (70 entries, the 70 ruff reports); regression tests: tests/test_complexity_ratchet.py::test_parity_with_ruff_on_this_package, tests/test_complexity_ratchet.py::test_a_new_complex_function_fails_and_a_baselined_one_passes, tests/test_self_gates.py::test_gate_passes_on_this_repo
+
+- **Bug class:** ruff C901 findings (70 in src and tests) that nothing gated: the rule was ignored wholesale, so any new function could join the backlog
+- **Repos:** py-ci-shared, every consumer that ignores C901
+
+### NEW-34 (High) -- Shrink-only baseline refresh
+
+**Disposition:** RESOLVED -- `_core.baseline.write_ratchet` / `shrink_only`: a refresh drops entries that no longer fire and lowers counts and ceilings; an addition, a raised count or seeding a missing baseline with findings writes only the removals and fails naming each refused entry and the opt-in (`--py-ci-refresh-grow`, `PY_CI_SHARED_REFRESH_ALLOW_GROW=1`, `py-ci-shared refresh --grow`, `grow=True`). Routed through `_core.Baseline.regenerate/enforce` and every gate that writes its own file (function_length, loc_budget with its growth slack, complexity_ratchet, fail_open_handlers, deferred_drift, code_audit_meta, import_side_effects, ignore_ratchet, audit_wave_filenames, baseline_ratchet.Baseline.regenerate, source_text_claims); exempt with reason: mutation_teeth (every new key carries NEEDS-JUSTIFICATION, which fails the next run) and content_hash_version_bump_gate (a version-to-hash pin, nothing to grow); regression tests: tests/test_core_baseline.py::TestShrinkOnlyRefresh, tests/test_complexity_ratchet.py::test_refresh_is_shrink_only_by_default, tests/test_complexity_ratchet.py::test_seeding_a_missing_baseline_needs_the_opt_in
+
+- **Bug class:** "refresh" doubling as "accept everything": a refresh rewrote the baseline to whatever the scan found, silently accepting new real violations
+- **Repos:** every consumer with a baselined gate
+
+### NEW-35 (Med) -- source_text_claims: arbitrary-file reads
+
+**Disposition:** RESOLVED -- `source_text_claims` now judges text read from a path it cannot place (`p.read_text()`, `read_bytes()`, `open(p).read()`): a claim when the assertion takes a substring's position in it (`find`/`index`/`rfind`/`rindex`, inline or via a bound name) or searches it with a literal (`in`, `==`, `count`, `startswith`) for a code-like string; data suffixes, deserialisers, regex extraction and pytest `tmp_path`/`tmpdir` outputs stay out. Also new: a `return` of a content check over source, and an assert over a name bound to one (`found = "x" in src; assert found`). Parity with llm_bench's local tests/test_meta/test_no_source_text_proxy_assertions.py: on llm_bench's 69 real test files 0 local / 0 central hits; on the 19 synthetic shapes of its own regression class 19/19 identical; regression tests: tests/test_source_text_claims.py::TestArbitraryFileReads
+
+- **Bug class:** source-text proxy assertions through an arbitrary path (`Path(x).read_text().find(...)`) that the central gate missed, so llm_bench kept a local copy
+- **Repos:** llm_bench (local copy can now retire), every consumer of source_text_claims
+
 ### INFRA-1 (High) -- pytest11 plugin py_ci_shared.pytest_plugin
 
 **Disposition:** RESOLVED -- `[project.entry-points.pytest11] py_ci_shared = "py_ci_shared.pytest_plugin"`: inert without `[tool.py_ci_shared]`; with it, a bare `pytest` (or `--py-ci-gates=on`) gets one `pyproject.toml::<gate>` item per enabled gate that calls the entry with the table's kwargs from the repo root; `--py-ci-refresh` is wired to `_core.refresh` through the env var; a malformed table is a usage error; regression test: tests/test_pytest_plugin.py::test_a_repo_without_the_table_sees_no_gate_items, tests/test_pytest_plugin.py::test_a_bare_run_adds_one_item_per_gate_and_reports_the_gates_text, tests/test_pytest_plugin.py::test_selecting_paths_leaves_gates_out_unless_forced, tests/test_pytest_plugin.py::test_a_malformed_table_is_a_usage_error

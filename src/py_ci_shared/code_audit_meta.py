@@ -46,7 +46,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
+from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested, register_refresh_options, write_ratchet
 
 if TYPE_CHECKING:
     from pyutilz.dev.code_audit import Finding
@@ -200,7 +200,18 @@ def assert_no_new_code_audit_findings(
     current_keys = set(current_by_key)
 
     if _refresh_requested(request):
-        atomic_write_text(baseline_path, dump_json(sorted(current_keys)))
+        previous = dict.fromkeys(load_json(baseline_path), 1) if baseline_path.exists() else None
+        try:
+            write_ratchet(
+                baseline_path,
+                dict.fromkeys(current_keys, 1),
+                gate="code-audit",
+                previous=previous,
+                render=lambda kept: dump_json(sorted(kept)),
+                request=request,
+            )
+        except BaselineGrowthError as exc:
+            pytest.fail(str(exc), pytrace=False)
         pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
     if not baseline_path.exists():
         pytest.fail(

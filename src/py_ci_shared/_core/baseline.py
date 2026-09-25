@@ -11,6 +11,11 @@ What the dozen per-gate writers got wrong (audit 2026-09-24 ARCH-22, TZ-15, TZ-1
   ``new_note=UNJUSTIFIED_MARKER + ": ..."``, so a refresh writes the marker as each new entry's note; a normal run
   rejects any entry still carrying it (always, whatever the gate), so "refresh" cannot be used as "accept
   everything" (mutation_teeth's marker was previously never checked).
+* **Refresh shrinks only.** A refresh drops entries that no longer fire and lowers counts; it never adds an entry or
+  raises a count unless growth is opted into (``grow=True``, ``--py-ci-refresh-grow``, ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``).
+  Without the opt-in it writes the shrunk baseline and fails naming what it refused, so "refresh" cannot silently
+  accept a new violation. Seeding a missing baseline with findings is growth too; an empty one may always be written.
+  :func:`write_ratchet` applies the same rule to the gates that keep their own file shapes.
 * **Atomic, byte-stable writes.** ``mkstemp`` in the target directory + ``os.replace``; UTF-8, ``\\n`` newlines,
   ``sort_keys``, sorted entries, trailing newline. An interrupted write leaves the old file, never half of one.
 
@@ -31,11 +36,12 @@ import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 from collections.abc import Iterable, Mapping
 
-from .errors import BaselineError
+from .errors import BaselineError, BaselineGrowthError
 from .findings import Finding
+from .refresh import grow_hint, grow_requested
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -131,6 +137,73 @@ def _parse_entries(data: Any, path: Path) -> tuple["Counter[str]", dict[str, str
     return counts, notes
 
 
+def shrink_only(
+    previous: Optional[Mapping[str, int]], current: Mapping[str, int], *, slack: int = 0
+) -> tuple[dict[str, int], dict[str, tuple[Optional[int], int]]]:
+    """``(kept, grown)`` for a refresh without the growth opt-in.
+
+    *kept* holds each key present in both with the smaller value (a count or a ceiling), so an entry that no longer
+    fires is dropped and a lowered value is locked in. *grown* maps every key the refresh refused to ``(old, new)``:
+    a key not in *previous* (``old`` None) or one whose value rose by more than *slack*. ``previous=None`` means no
+    baseline exists yet, so every current key is growth.
+    """
+    before = dict(previous or {})
+    kept: dict[str, int] = {}
+    grown: dict[str, tuple[Optional[int], int]] = {}
+    for key, value in current.items():
+        if value <= 0:
+            continue
+        if key not in before:
+            grown[key] = (None, int(value))
+            continue
+        kept[key] = min(int(before[key]), int(value))
+        if value > before[key] + slack:
+            grown[key] = (int(before[key]), int(value))
+    return kept, grown
+
+
+def growth_message(gate: str, path: PathLike, grown: Mapping[str, tuple[Optional[int], int]], *, seeding: bool = False) -> str:
+    """The failure a refused growing refresh reports: what it would have added, and the opt-in that allows it."""
+    lines = "\n    ".join(f"{k}  (new: {new})" if old is None else f"{k}  ({old} -> {new})" for k, (old, new) in sorted(grown.items()))
+    if seeding:
+        head = f"{gate}: baseline {path} does not exist, and seeding it would accept {len(grown)} current finding(s)"
+    else:
+        head = f"{gate}: refresh wrote only the removals to {path}; it refused {len(grown)} addition(s) or increase(s)"
+    return f"{head}:\n    {lines}\nFix them, or accept them deliberately: {grow_hint()}."
+
+
+def write_ratchet(
+    path: PathLike,
+    current: Mapping[str, int],
+    *,
+    gate: str,
+    previous: Optional[Mapping[str, int]],
+    render: Callable[[dict[str, int]], str],
+    grow: Optional[bool] = None,
+    request: Any = None,
+    slack: int = 0,
+) -> dict[str, int]:
+    """Refresh a baseline kept in a gate's own shape under the shrink-only rule; return what was written.
+
+    *previous* is the committed ``{key: count or ceiling}`` (None when the file is missing), *render* turns the mapping
+    to write into the file text. With growth allowed (*grow*, else :func:`grow_requested` on *request*) *current* is
+    written as is. Otherwise the :func:`shrink_only` result is written, and :class:`BaselineGrowthError` is raised
+    after the write when anything was refused, so the removals land and the additions are named. A missing baseline
+    is written only when nothing was refused (an empty one), so a refused seeding leaves no file behind.
+    """
+    allow = grow_requested(request) if grow is None else grow
+    grown: dict[str, tuple[Optional[int], int]]
+    if allow:
+        kept, grown = {k: int(v) for k, v in current.items() if v > 0}, {}
+    else:
+        kept, grown = shrink_only(previous, current, slack=slack)
+    if previous is not None or not grown:
+        atomic_write_text(path, render(kept))
+    if grown:
+        raise BaselineGrowthError(growth_message(gate, path, grown, seeding=previous is None), sorted(grown))
+    return kept
+
+
 @dataclass
 class BaselineOutcome:
     """What one enforcement found. ``ok`` is False when the gate must fail."""
@@ -187,17 +260,34 @@ class Baseline:
     def count(found: Iterable[Union[Finding, str]]) -> "Counter[str]":
         return Counter(f.key if isinstance(f, Finding) else f for f in found)
 
-    def regenerate(self, found: Iterable[Union[Finding, str]]) -> "Counter[str]":
-        """Write today's findings, keeping existing notes; new keys get ``self.new_note``."""
+    def regenerate(self, found: Iterable[Union[Finding, str]], *, grow: Optional[bool] = None, request: Any = None) -> "Counter[str]":
+        """Write today's findings, keeping existing notes; new keys get ``self.new_note``.
+
+        Shrink-only unless growth is allowed (*grow*, else :func:`grow_requested`): see :func:`write_ratchet`, whose
+        :class:`BaselineGrowthError` this raises after writing the removals.
+        """
         current = self.count(found)
-        previous: dict[str, str] = {}
+        previous_counts: Optional[Counter[str]] = None
+        notes: dict[str, str] = {}
         if self.exists():
             try:
-                previous = self.load()[1]
+                previous_counts, notes = self.load()
             except BaselineError:
-                previous = {}
-        self.save(current, {k: previous.get(k) or self.new_note for k in current})
-        return current
+                previous_counts = None
+
+        def render(kept: dict[str, int]) -> str:
+            entries = {k: {"count": n, "note": notes.get(k) or self.new_note} for k, n in sorted(kept.items())}
+            return dump_json({"schema": SCHEMA_VERSION, "gate": self.gate, "entries": entries})
+
+        kept = write_ratchet(self.path, current, gate=self.gate, previous=previous_counts, render=render, grow=grow, request=request)
+        return Counter(kept)
+
+    def _refresh(self, found: list[Union[Finding, str]], *, grow: Optional[bool], request: Any) -> BaselineOutcome:
+        try:
+            current = self.regenerate(found, grow=grow, request=request)
+        except BaselineGrowthError as exc:
+            return BaselineOutcome(new=exc.grown, message=str(exc))
+        return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.path}")
 
     def enforce(
         self,
@@ -206,10 +296,14 @@ class Baseline:
         refresh: bool = False,
         describe: Optional[Mapping[str, str]] = None,
         guidance: str = "",
+        grow: Optional[bool] = None,
+        request: Any = None,
     ) -> BaselineOutcome:
         """Compare *found* against the baseline (or rewrite it when *refresh*). Never raises on a finding.
 
         *describe* maps a key to what the reader should see for it (e.g. ``path:line  expr``); defaults to the key.
+        A refresh is shrink-only unless *grow* (or :func:`grow_requested` on *request*); a refused growth is a failed
+        outcome whose ``new`` lists the refused keys.
         """
         found = list(found)
         describe = dict(describe or {})
@@ -217,8 +311,7 @@ class Baseline:
             if isinstance(f, Finding):
                 describe.setdefault(f.key, f.render())
         if refresh:
-            current = self.regenerate(found)
-            return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.path}")
+            return self._refresh(found, grow=grow, request=request)
         if not self.exists():
             return BaselineOutcome(
                 missing=True,

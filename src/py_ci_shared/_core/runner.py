@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from .config import ConfigError, GateRun, RepoConfig, resolve_kwargs
-from .refresh import ENV_VAR
+from .refresh import ENV_VAR, GROW_ENV_VAR
 
 __all__ = ["GateResult", "budget_verdict", "resolve_gate", "run_gate"]
 
@@ -52,19 +52,20 @@ def resolve_gate(run: GateRun) -> tuple[Callable[..., Any], float]:
 
 
 @contextmanager
-def _refresh_env(refresh: bool) -> Iterator[None]:
-    if not refresh:
-        yield
-        return
-    old = os.environ.get(ENV_VAR)
-    os.environ[ENV_VAR] = "all"
+def _refresh_env(refresh: bool, grow: bool = False) -> Iterator[None]:
+    wanted = {ENV_VAR: "all"} if refresh else {}
+    if refresh and grow:
+        wanted[GROW_ENV_VAR] = "1"
+    old = {k: os.environ.get(k) for k in wanted}
+    os.environ.update(wanted)
     try:
         yield
     finally:
-        if old is None:
-            os.environ.pop(ENV_VAR, None)
-        else:
-            os.environ[ENV_VAR] = old
+        for key, value in old.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _outcome_types() -> tuple[tuple[type[BaseException], ...], tuple[type[BaseException], ...]]:
@@ -75,10 +76,12 @@ def _outcome_types() -> tuple[tuple[type[BaseException], ...], tuple[type[BaseEx
     return (AssertionError, Failed), (Skipped,)
 
 
-def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False) -> GateResult:
+def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
     """Call *run*'s entry with its resolved kwargs from the repo root, never raising for a gate's own failure.
 
     ``refresh`` sets ``PY_CI_SHARED_REFRESH=all`` for the call and passes ``refresh=True`` when the entry takes it.
+    ``grow`` (with ``refresh``) also sets ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1`` and passes ``grow=True`` when taken, so
+    the refresh may add entries; without it a refresh only removes the ones that no longer fire.
     A config problem is an ERROR result, a gate's assertion a FAILED one; the returned message is the gate's text.
     """
     failed_types, skipped_types = _outcome_types()
@@ -89,10 +92,12 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False) -> Gate
         kwargs = resolve_kwargs(func, dict(run.kwargs), config.repo_root)
         if refresh and "refresh" in inspect.signature(func).parameters:
             kwargs["refresh"] = True
+        if refresh and grow and "grow" in inspect.signature(func).parameters:
+            kwargs["grow"] = True
         cwd = os.getcwd()
         os.chdir(config.repo_root)
         try:
-            with _refresh_env(refresh):
+            with _refresh_env(refresh, grow):
                 func(**kwargs)
         finally:
             os.chdir(cwd)

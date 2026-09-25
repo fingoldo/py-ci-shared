@@ -34,8 +34,9 @@ import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Optional
 
-from ._core import atomic_write_text, dump_json, read_source
+from ._core import dump_json, read_source, write_ratchet
 
 #: A rule code (``F401``, ``PLR0913``). A syntax error comes back with no code (older ruff) or ``invalid-syntax``.
 _RULE_CODE = re.compile(r"^[A-Z]+[0-9]*$")
@@ -112,8 +113,10 @@ def ratchet_problems(codes: Iterable[str], counts: dict[str, int], baseline: dic
     return problems
 
 
-def write_ignore_baseline(path: Path, counts: dict[str, int]) -> None:
-    atomic_write_text(path, dump_json(dict(sorted(counts.items()))))
+def write_ignore_baseline(path: Path, counts: dict[str, int], *, grow: Optional[bool] = None) -> None:
+    """Record *counts*; shrink-only unless growth is allowed (``BaselineGrowthError`` names a new code or a higher count)."""
+    previous = json.loads(read_source(path)) if Path(path).is_file() else None
+    write_ratchet(path, counts, gate="ignore-ratchet", previous=previous, render=lambda kept: dump_json(dict(sorted(kept.items()))), grow=grow)
 
 
 def assert_ignore_list_only_shrinks(codes: Iterable[str], counts: dict[str, int], baseline_path: Path) -> None:

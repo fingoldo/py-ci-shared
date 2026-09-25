@@ -65,4 +65,4 @@ def enforce_findings(
         pytest.fail(f"{gate}:\n" + "\n".join(problems), pytrace=False)
     do_refresh = refresh if refresh is not None else refresh_requested(flag, request)
     baseline = Baseline(baseline_path, gate=gate, refresh_command=f"pytest {flag} (or PY_CI_SHARED_REFRESH={gate})")
-    baseline.enforce(findings, refresh=do_refresh, guidance=guidance).raise_for_pytest()
+    baseline.enforce(findings, refresh=do_refresh, guidance=guidance, request=request).raise_for_pytest()

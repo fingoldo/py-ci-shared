@@ -11,6 +11,12 @@ import pytest
 from py_ci_shared.fail_open_handlers import assert_no_new_fail_open_handlers, find_fail_open_handlers
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _module(tmp_path: Path, body: str, name: str = "mod.py") -> Path:
     p = tmp_path / name
     p.write_text(textwrap.dedent(body), encoding="utf-8")

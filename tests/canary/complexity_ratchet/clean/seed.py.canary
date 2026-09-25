@@ -1,0 +1,4 @@
+def seed_branchy(a):
+    if a:
+        return 1
+    return 0

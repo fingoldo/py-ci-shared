@@ -16,6 +16,12 @@ from py_ci_shared.db_transaction_completeness import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _module(tmp_path: Path, name: str, body: str) -> Path:
     p = tmp_path / name
     p.write_text(textwrap.dedent(body), encoding="utf-8")

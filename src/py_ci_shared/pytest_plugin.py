@@ -8,6 +8,8 @@ Options:
 
 - ``--py-ci-refresh[=<gate>[,<gate>]|all]``: rewrite baselines instead of comparing. Sets ``PY_CI_SHARED_REFRESH``
   for the whole session, so xdist workers, subprocesses and a consumer's own hand-written gate tests all see it.
+- ``--py-ci-refresh-grow``: let that refresh ADD baseline entries and raise counts (it only drops stale ones otherwise).
+  Sets ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1`` for the session the same way.
 - ``--py-ci-gates=auto|on|off``: whether to add the gate items (``auto``: only when pytest was given no paths).
 
 ``resource_leak_guard = true`` in the table also loads :mod:`py_ci_shared.resource_leak_guard`, the opt-in plugin that
@@ -26,7 +28,7 @@ from typing import Any, Optional
 import pytest
 
 from ._core.config import ConfigError, GateRun, RepoConfig, load_config
-from ._core.refresh import ENV_VAR, GENERIC_OPTION, register_refresh_options
+from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
 
@@ -53,9 +55,29 @@ def _refresh_tokens(config: Any) -> list[str]:
     return [token for value in values for token in str(value).split(",") if token.strip()]
 
 
+def _export_grow(config: Any) -> None:
+    try:
+        wanted = bool(config.getoption(GROW_OPTION))
+    except ValueError:
+        return
+    if not wanted:
+        return
+    before = os.environ.get(GROW_ENV_VAR)
+    os.environ[GROW_ENV_VAR] = "1"
+
+    def _restore() -> None:
+        if before is None:
+            os.environ.pop(GROW_ENV_VAR, None)
+        else:
+            os.environ[GROW_ENV_VAR] = before
+
+    config.add_cleanup(_restore)
+
+
 def pytest_configure(config: Any) -> None:
     config.addinivalue_line("markers", "py_ci_shared: a gate item generated from [tool.py_ci_shared]")
     bound_randomly_reseeders()  # pytest-randomly hands thinc an out-of-range seed; see randomly_seed_guard
+    _export_grow(config)
     tokens = _refresh_tokens(config)
     if tokens:
         before = os.environ.get(ENV_VAR)

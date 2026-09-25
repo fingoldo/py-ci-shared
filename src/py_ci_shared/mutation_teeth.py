@@ -812,7 +812,10 @@ def sweep_files(
 
 
 def _regenerate(baseline: Any, found: dict[str, str]) -> None:
-    """Write the survivors' keys, each marked unjustified unless a human already wrote its note."""
+    """Write the survivors' keys, each marked unjustified unless a human already wrote its note.
+
+    Always allowed to grow: every new key is written with the unjustified marker, which fails the next run until a
+    human replaces it with a reason, so this refresh cannot accept a survivor on its own (the shrink-only rule's aim)."""
     if isinstance(baseline, CoreBaseline):
         notes: dict[str, str] = {}
         if baseline.exists():
@@ -822,7 +825,7 @@ def _regenerate(baseline: Any, found: dict[str, str]) -> None:
                 notes = {}
         baseline.save(Counter(found.keys()), {k: notes.get(k) or v for k, v in found.items()})
     else:
-        baseline.regenerate(found)
+        baseline.regenerate(found, grow=True)
 
 
 def assert_no_new_surviving_mutant(

@@ -90,7 +90,7 @@ def test_register_refresh_options_is_idempotent():
     parser = Parser()
     register_refresh_options(parser, [FLAG])
     register_refresh_options(parser, [FLAG, "--refresh-other-baseline"])
-    assert parser.names == [REFRESH_OPTION, FLAG, "--refresh-other-baseline"]
+    assert parser.names == [REFRESH_OPTION, "--py-ci-refresh-grow", FLAG, "--refresh-other-baseline"]
 
 
 def test_registering_after_the_plugin_group_on_a_real_pytest_parser_is_not_an_error():

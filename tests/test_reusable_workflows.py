@@ -98,6 +98,18 @@ def test_self_ci_covers_the_python_floor_and_installs_dev_without_a_fallback():
     assert "PG_BIN=" in runs, "without PG_BIN the embedded-Postgres tests skip on the runners"
 
 
+def test_the_coverage_floor_is_enforced_only_by_the_full_suite_run():
+    """fail_under applies to every coverage report, so every --cov run in any workflow must be the whole suite."""
+    from py_ci_shared._toml_compat import tomllib
+
+    report = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["coverage"]["report"]
+    assert report.get("fail_under", 0) >= 89, "the measured floor (TOTAL 90% at 6a8e382) is gone or lowered"
+    cov_lines = [line.strip() for wf in WORKFLOWS for line in wf.read_text(encoding="utf-8").splitlines() if "--cov" in line and "pytest" in line]
+    assert cov_lines, "no workflow measures coverage, so the floor is never enforced"
+    narrow = [line for line in cov_lines if "pytest tests/ " not in line or re.search(r"\s-[km]\s|::", line.split("pytest", 1)[1])]
+    assert not narrow, f"a --cov run over a subset would fail the floor it cannot reach: {narrow}"
+
+
 def test_release_moves_the_major_tag_only_after_verification():
     data = _load(REPO / ".github" / "workflows" / "release.yml")
     assert data[True]["push"]["tags"] == ["v[0-9]+.[0-9]+.[0-9]+"]

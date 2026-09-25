@@ -26,9 +26,9 @@ import json
 import re
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
-from ._core import Baseline, atomic_write_text, iter_files, refresh_requested
+from ._core import Baseline, iter_files, refresh_requested, write_ratchet
 
 REFRESH_FLAG = "--refresh-audit-wave-filenames-baseline"
 
@@ -71,9 +71,18 @@ def _read_baseline(baseline: "Path | None") -> set[str]:
     return set(data)
 
 
-def write_baseline(baseline: Path, offenders: Iterable[str]) -> None:
-    """Record the current offenders as grandfathered. For adoption only; not called by the assertion."""
-    atomic_write_text(baseline, json.dumps(sorted(offenders), indent=2) + "\n")
+def write_baseline(baseline: Path, offenders: Iterable[str], *, grow: Optional[bool] = None) -> None:
+    """Record the current offenders as grandfathered. For adoption only; not called by the assertion. Shrink-only unless
+    growth is allowed, so adopting (seeding) needs ``grow=True`` or ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``."""
+    previous = dict.fromkeys(_read_baseline(baseline), 1) if baseline.is_file() else None
+    write_ratchet(
+        baseline,
+        dict.fromkeys(offenders, 1),
+        gate="audit-wave-filenames",
+        previous=previous,
+        render=lambda kept: json.dumps(sorted(kept), indent=2) + "\n",
+        grow=grow,
+    )
 
 
 def assert_no_new_audit_wave_filenames(
@@ -99,5 +108,5 @@ def assert_no_new_audit_wave_filenames(
             pytest.fail(f"{len(current)} {guidance}:\n    " + "\n    ".join(current[:30]))
         return
     Baseline(baseline, gate="audit-wave-filenames", refresh_command=f"pytest {REFRESH_FLAG}").enforce(
-        current, refresh=refresh_requested(REFRESH_FLAG, request), guidance=guidance
+        current, refresh=refresh_requested(REFRESH_FLAG, request), guidance=guidance, request=request
     ).raise_for_pytest(fail_on_stale=fail_on_stale)

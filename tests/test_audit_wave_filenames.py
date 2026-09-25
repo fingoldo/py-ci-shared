@@ -11,6 +11,12 @@ import pytest
 from py_ci_shared.audit_wave_filenames import assert_no_new_audit_wave_filenames, find_audit_wave_test_files, write_baseline
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _tests(tmp_path: Path, *names: str) -> Path:
     for name in names:
         p = tmp_path / "tests" / name

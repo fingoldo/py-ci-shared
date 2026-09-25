@@ -21,6 +21,12 @@ from py_ci_shared.code_audit_meta import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 class _RefreshConfig:
     def getoption(self, name, default=None):
         return name == REFRESH_FLAG
@@ -323,4 +329,4 @@ def test_register_refresh_option_also_registers_the_shared_generic_flag():
     parser = _Parser()
     register_refresh_option(parser)
     register_refresh_option(parser)
-    assert parser.names == ["--py-ci-refresh", REFRESH_FLAG]
+    assert parser.names == ["--py-ci-refresh", "--py-ci-refresh-grow", REFRESH_FLAG]

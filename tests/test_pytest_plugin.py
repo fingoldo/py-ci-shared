@@ -14,6 +14,7 @@ CLEAN = "SQL = 'SELECT 1'\n\n\ndef f(x):\n    return x == SQL\n"
 DIRTY = "SQL = 'SELECT 1'\n\n\ndef f(x):\n    return x is SQL\n"
 IDENTITY = '[tool.py_ci_shared.gates.identity_comparisons]\nfiles = ["pkg/**/*.py"]\n'
 ENV_PROBE = "import os\n\n\ndef test_probe():\n    print('REFRESH=' + os.environ.get('PY_CI_SHARED_REFRESH', '<unset>'))\n"
+ENV_PROBE += "    print('GROW=' + os.environ.get('PY_CI_SHARED_REFRESH_ALLOW_GROW', '<unset>'))\n"
 
 
 def _repo(tmp_path: Path, table: str, module: str = CLEAN) -> Path:
@@ -26,7 +27,7 @@ def _repo(tmp_path: Path, table: str, module: str = CLEAN) -> Path:
 
 
 def _pytest(repo: Path, *args: str) -> subprocess.CompletedProcess:
-    env = {k: v for k, v in os.environ.items() if k != ENV_VAR}
+    env = {k: v for k, v in os.environ.items() if k not in (ENV_VAR, "PY_CI_SHARED_REFRESH_ALLOW_GROW")}
     env["PYTHONPATH"] = str(SRC) + os.pathsep + env.get("PYTHONPATH", "")
     env["PYTEST_DISABLE_PLUGIN_AUTOLOAD"] = "1"  # only the plugin under test, loaded once by -p
     cmd = [sys.executable, "-m", "pytest", "-p", "py_ci_shared.pytest_plugin", "-p", "no:cacheprovider", "-rA", "-s", *args]
@@ -68,13 +69,15 @@ def test_refresh_writes_a_missing_baseline_and_reaches_every_test_through_the_en
     missing = _pytest(repo)
     assert missing.returncode == 1 and "FAILED pyproject.toml::loc_budget" in missing.stdout, missing.stdout
     assert not (repo / "b.json").exists()
-    refreshed = _pytest(repo, "--py-ci-refresh=loc_budget")
+    refreshed = _pytest(repo, "--py-ci-refresh=loc_budget")  # no oversized file: an empty baseline needs no growth opt-in
     assert (repo / "b.json").is_file(), refreshed.stdout
     assert "REFRESH=loc_budget" in refreshed.stdout, "the option must set the env var every test and xdist worker reads"
     after = _pytest(repo)
     assert after.returncode == 0 and "REFRESH=<unset>" in after.stdout, after.stdout
     bare = _pytest(repo, "test_probe.py", "--py-ci-refresh")
-    assert "REFRESH=all" in bare.stdout, bare.stdout
+    assert "REFRESH=all" in bare.stdout and "GROW=<unset>" in bare.stdout, bare.stdout
+    grow = _pytest(repo, "test_probe.py", "--py-ci-refresh", "--py-ci-refresh-grow")
+    assert "GROW=1" in grow.stdout, "--py-ci-refresh-grow must reach every test and xdist worker through the env"
 
 
 def test_a_gate_over_budget_warns_and_fails_in_fail_mode(tmp_path):

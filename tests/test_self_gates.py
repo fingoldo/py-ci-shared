@@ -30,6 +30,7 @@ def test_the_dogfood_set_covers_the_gates_this_repo_can_break():
         "value_bearing_asserts",
         "loc_budget",
         "function_length",
+        "complexity_ratchet",
         "fail_open_handlers",
         "fail_message_quality",
         "audit_round_format",

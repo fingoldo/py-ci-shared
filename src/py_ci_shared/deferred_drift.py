@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import Baseline, BaselineError, atomic_write_text, dump_json, refresh_requested
+from ._core import Baseline, BaselineError, BaselineGrowthError, dump_json, refresh_requested, write_ratchet
 
 __all__ = ["DEFAULT_REFRESH_FLAG", "assert_deferred_lists_not_grown", "drift_problems"]
 
@@ -65,7 +65,11 @@ def assert_deferred_lists_not_grown(
     if len(current) < min_lists:
         pytest.fail(f"only {len(current)} deferred list(s) found under {meta_dir}; expected at least {min_lists} -- the counter lost its subject")
     if refresh if refresh is not None else refresh_requested(refresh_flag, request):
-        atomic_write_text(baseline_path, dump_json(dict(current)))
+        previous = dict(Baseline(baseline_path, gate="deferred-debt").load()[0]) if Path(baseline_path).is_file() else None
+        try:
+            write_ratchet(baseline_path, dict(current), gate="deferred-debt", previous=previous, render=dump_json, request=request)
+        except BaselineGrowthError as exc:
+            pytest.fail(str(exc), pytrace=False)
         pytest.skip(f"debt baseline written: {len(current)} list(s), {sum(current.values())} entr(ies) in {baseline_path.name}")
     if not Path(baseline_path).is_file():
         pytest.fail(f"debt baseline {baseline_path} does not exist, so nothing was compared. Create it with: pytest ... {refresh_flag}")

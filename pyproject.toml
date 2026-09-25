@@ -101,7 +101,9 @@ source = ["py_ci_shared"]
 branch = true
 
 [tool.coverage.report]
-# fail_under is set from the first full measured run of the ubuntu 3.11 leg (floor of its line+branch total), never guessed.
+# fail_under is the floor of the first full measured run of the ubuntu 3.11 leg (TOTAL 90%, line+branch, at 6a8e382), never guessed.
+# It applies to every coverage report, so only that leg runs --cov (self-ci.yml); a narrow local `pytest --cov <file>` will fail it by design.
+fail_under = 89
 show_missing = false
 skip_covered = true
 
@@ -225,6 +227,11 @@ baseline_path = "tests/baselines/loc_budget.json"
 files = ["src/**/*.py"]
 root = "."
 baseline_path = "tests/baselines/function_length.json"
+
+[tool.py_ci_shared.gates.complexity_ratchet]
+files = ["src/**/*.py", "tests/**/*.py"]
+root = "."
+baseline_path = "tests/baselines/complexity_ratchet.json"
 
 # uncalled_functions is not enabled: every public assert_*/find_* here is called by consumers, never by this package, so
 # it would list the public API itself.

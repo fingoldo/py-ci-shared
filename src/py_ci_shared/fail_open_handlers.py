@@ -34,7 +34,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import ScanResult, atomic_write_text, dump_json, refresh_requested, scan_python
+from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
 
@@ -282,6 +282,7 @@ def assert_no_new_fail_open_handlers(
     min_files: int = 1,
     refresh: Optional[bool] = None,
     request: Any = None,
+    grow: Optional[bool] = None,
 ) -> None:
     """Fail on a fail-open handler beyond what *baseline_path* accepts for its ``path::function::rule``, and on stale entries.
 
@@ -301,13 +302,27 @@ def assert_no_new_fail_open_handlers(
     exists = Path(baseline_path).is_file()
     accepted: dict[str, str] = json.loads(Path(baseline_path).read_text(encoding="utf-8-sig")) if exists else {}
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
-        entries: dict[str, str] = {}
-        for scope, hs in sorted(by_scope.items()):
-            for i in range(len(hs)):
-                key = scope if i == 0 else f"{scope}#{i + 1}"
-                entries[key] = accepted.get(key) or "NEEDS-JUSTIFICATION: why this fallback cannot disable the gate"
-        atomic_write_text(baseline_path, dump_json(entries))
-        pytest.skip(f"fail-open baseline written: {len(entries)} entr(ies) in {baseline_path}")
+        before: Optional[dict[str, int]] = None
+        if exists:
+            before = {}
+            for key in accepted:
+                before[key.split("#", 1)[0]] = before.get(key.split("#", 1)[0], 0) + 1
+
+        def render(kept: dict[str, int]) -> str:
+            entries: dict[str, str] = {}
+            for scope, n in sorted(kept.items()):
+                for i in range(n):
+                    key = scope if i == 0 else f"{scope}#{i + 1}"
+                    entries[key] = accepted.get(key) or "NEEDS-JUSTIFICATION: why this fallback cannot disable the gate"
+            return dump_json(entries)
+
+        try:
+            kept = write_ratchet(
+                baseline_path, {s: len(hs) for s, hs in by_scope.items()}, gate="fail-open", previous=before, render=render, grow=grow, request=request
+            )
+        except BaselineGrowthError as exc:
+            pytest.fail(str(exc), pytrace=False)
+        pytest.skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
     allowed: dict[str, int] = {}
     for key in accepted:
         scope = key.split("#", 1)[0]

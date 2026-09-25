@@ -19,6 +19,12 @@ from py_ci_shared.import_side_effects import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _lines(source: str) -> list[int]:
     return [line for line, _ in import_time_env_mutations(ast.parse(source))]
 

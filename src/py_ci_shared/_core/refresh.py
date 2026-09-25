@@ -7,6 +7,10 @@
 2. env var ``PY_CI_SHARED_REFRESH``: comma list of flags (``--refresh-x-baseline``, ``refresh-x-baseline`` or the
    short gate name ``x``) or ``all``. Environment is inherited by xdist workers and subprocesses;
 3. ``sys.argv``, as a last resort for callers that pass nothing.
+
+A refresh only SHRINKS a baseline (drops entries that no longer fire, lowers counts and ceilings). Growing it, which
+includes seeding a missing one with findings, needs the separate opt-in :func:`grow_requested` reads: the pytest option
+``--py-ci-refresh-grow``, env ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1`` or ``py-ci-shared refresh --grow``.
 """
 
 from __future__ import annotations
@@ -19,6 +23,9 @@ from collections.abc import Iterable
 
 ENV_VAR = "PY_CI_SHARED_REFRESH"
 GENERIC_OPTION = "--py-ci-refresh"
+GROW_ENV_VAR = "PY_CI_SHARED_REFRESH_ALLOW_GROW"
+GROW_OPTION = "--py-ci-refresh-grow"
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 
 def _aliases(flag: str) -> set[str]:
@@ -84,6 +91,21 @@ def refresh_requested(flag: str, request_or_config: Optional[Any] = None) -> boo
     return _hit(_tokens(generic), flag)
 
 
+def grow_requested(request_or_config: Optional[Any] = None) -> bool:
+    """True when a refresh may ADD baseline entries or raise counts: ``--py-ci-refresh-grow`` (pytest option or argv) or
+    ``PY_CI_SHARED_REFRESH_ALLOW_GROW`` set to 1/true/yes/on. Without it a refresh only removes what no longer fires."""
+    if request_or_config is not None and _getoption(_config_of(request_or_config), GROW_OPTION):
+        return True
+    if os.environ.get(GROW_ENV_VAR, "").strip().lower() in _TRUTHY:
+        return True
+    return GROW_OPTION in sys.argv[1:]
+
+
+def grow_hint() -> str:
+    """How to opt into a growing refresh, for failure messages."""
+    return f"set {GROW_ENV_VAR}=1, pass {GROW_OPTION} to pytest or --grow to `py-ci-shared refresh`, or call with grow=True"
+
+
 def register_refresh_options(parser: Any, flags: Iterable[str] = (), *, help_suffix: str = "baseline") -> None:
     """Register ``--py-ci-refresh`` and each named flag on a pytest ``parser`` (from ``pytest_addoption``).
 
@@ -97,6 +119,13 @@ def register_refresh_options(parser: Any, flags: Iterable[str] = (), *, help_suf
         const="all",
         default=[],
         help=f"py-ci-shared: comma list of baseline flags/gate names to rewrite; bare or 'all' for every one (env: {ENV_VAR})",
+    )
+    _add(
+        parser,
+        GROW_OPTION,
+        action="store_true",
+        default=False,
+        help=f"py-ci-shared: let a refresh ADD baseline entries and raise counts, not only drop stale ones (env: {GROW_ENV_VAR}=1)",
     )
     for flag in flags:
         _add(parser, flag, action="store_true", default=False, help=f"rewrite the {help_suffix} instead of comparing")

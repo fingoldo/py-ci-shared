@@ -23,6 +23,9 @@ What the copies learned, kept here:
 * **A scan that finds nothing while the baseline holds entries fails.** Every accepted entry going stale at once
   is far more often a scan that stopped matching (a moved glob, a renamed directory) than a backlog paid off in
   one commit; regenerating the baseline says which. ``min_found`` puts an explicit floor on a scan.
+* **Regeneration shrinks only.** It drops entries no longer found; adding one needs ``regenerate(found, grow=True)``
+  or ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``, else it writes the removals and raises ``BaselineGrowthError`` naming the
+  additions, so a regeneration cannot quietly accept a new violation.
 * **Keys are repo-relative.** An absolute path in a committed baseline matches on exactly one machine and
   silently accepts everything everywhere else.
 
@@ -46,7 +49,7 @@ import sys
 from collections.abc import Mapping
 from typing import Optional
 
-from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified
+from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified, write_ratchet
 
 DEFAULT_DIRECTORY = os.path.join("tool", "meta", "baselines")
 DEFAULT_REFRESH_COMMAND = "python tool/meta/regen_baselines.py"
@@ -86,6 +89,10 @@ class Baseline:
 
     def save(self, accepted: Mapping[str, str]) -> None:
         os.makedirs(self.directory, exist_ok=True)
+        # Atomic: an interrupted regeneration leaves the previous file, never half of one.
+        atomic_write_text(self.path, self._render(accepted))
+
+    def _render(self, accepted: Mapping[str, str]) -> str:
         payload = {
             "_comment": (
                 f"Accepted pre-existing violations for {self.name}. Managed by "
@@ -95,8 +102,7 @@ class Baseline:
             # Sorted so a regeneration produces a reviewable diff rather than a reshuffle.
             "accepted": dict(sorted(accepted.items())),
         }
-        # Atomic: an interrupted regeneration leaves the previous file, never half of one.
-        atomic_write_text(self.path, dump_json(payload))
+        return dump_json(payload)
 
     # ---- use ----
 
@@ -153,10 +159,17 @@ class Baseline:
         print(f"{label}: no new violations ({len(accepted)} accepted, baselined)")
         return 0
 
-    def regenerate(self, found: Mapping[str, str]) -> None:
-        """Freeze the current findings, keeping the note already written for any entry that survives."""
+    def regenerate(self, found: Mapping[str, str], *, grow: Optional[bool] = None) -> None:
+        """Freeze the current findings, keeping the note already written for any entry that survives.
+
+        Shrink-only unless *grow* (or ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``): see ``_core.write_ratchet``."""
         previous = self.load()
-        self.save({key: previous.get(key, value) for key, value in found.items()})
+        before = dict.fromkeys(previous, 1) if os.path.exists(self.path) else None
+
+        def render(kept: dict[str, int]) -> str:
+            return self._render({key: previous.get(key, found[key]) for key in kept})
+
+        write_ratchet(self.path, dict.fromkeys(found, 1), gate=self.name, previous=before, render=render, grow=grow)
 
 
 def run_rules(

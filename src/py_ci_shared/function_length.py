@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import ScanResult, atomic_write_text, dump_json, refresh_requested, scan_python
+from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-function-length-baseline"
 
@@ -74,10 +74,14 @@ def length_problems(lengths: dict[str, int], baseline: dict[str, int], *, limit:
     return problems
 
 
-def write_length_baseline(path: Path, lengths: dict[str, int], *, limit: int) -> None:
-    """Write every function over *limit* (strictly) with its length as its ceiling; atomic, sorted, LF."""
+def write_length_baseline(path: Path, lengths: dict[str, int], *, limit: int, grow: Optional[bool] = None, request: Any = None) -> None:
+    """Write every function over *limit* (strictly) with its length as its ceiling; atomic, sorted, LF.
+
+    Shrink-only unless growth is allowed (see ``_core.write_ratchet``): a new long function or a raised ceiling raises
+    ``BaselineGrowthError`` after the removals are written."""
     over = {k: v for k, v in sorted(lengths.items()) if v > limit}
-    atomic_write_text(path, dump_json(over))
+    previous = json.loads(Path(path).read_text(encoding="utf-8-sig")) if Path(path).is_file() else None
+    write_ratchet(path, over, gate="function-length", previous=previous, render=dump_json, grow=grow, request=request)
 
 
 def assert_functions_do_not_grow(
@@ -89,10 +93,11 @@ def assert_functions_do_not_grow(
     min_functions: int = 50,
     refresh: Optional[bool] = None,
     request: Any = None,
+    grow: Optional[bool] = None,
 ) -> None:
     """Fail on the rules in the module docstring, on any unparsable file, and on a missing baseline (a clean repo
     commits ``{}``). A refresh (*refresh*, ``--refresh-function-length-baseline`` or ``PY_CI_SHARED_REFRESH=
-    function-length``) rewrites the baseline and skips."""
+    function-length``) rewrites the baseline and skips; it only drops and lowers entries unless *grow* is allowed."""
     import pytest
 
     scan = scan_python([Path(f) for f in files], root=Path(root))
@@ -103,7 +108,10 @@ def assert_functions_do_not_grow(
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         if problems:
             pytest.fail("cannot refresh the function-length baseline while files are unparsable:\n  " + "\n  ".join(problems))
-        write_length_baseline(baseline_path, lengths, limit=limit)
+        try:
+            write_length_baseline(baseline_path, lengths, limit=limit, grow=grow, request=request)
+        except BaselineGrowthError as exc:
+            pytest.fail(str(exc), pytrace=False)
         pytest.skip(f"function-length baseline written to {baseline_path}")
     if not baseline_path.is_file():
         pytest.fail(f"function-length baseline {baseline_path} does not exist; create it with {REFRESH_FLAG} (a clean repo commits {{}})")

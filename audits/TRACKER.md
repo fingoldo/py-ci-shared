@@ -578,7 +578,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | High | `SUITE-1` | CI tests only Python 3.11 while requires-python = ">=3.9" |
 | **RESOLVED** | High | `SUITE-2` | The floor-guard test itself does import tomllib at module level, so it fails at collect... |
 | **RESOLVED** | Med | `SUITE-3` | The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro... |
-| **DEFERRED** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
+| **RESOLVED** | High | `SUITE-4` | There is no coverage measurement, no fail_under and no pytest config (no testpaths, -ra... |
 | **RESOLVED** | High | `SUITE-5` | uv pip install -e ".[dev]" \/\/ uv pip install -e  |
 | **RESOLVED** | Med | `SUITE-6` | pytest.importorskip("pre_commit"), but pre-commit is not in the dev extra, so the whole... |
 | **RESOLVED** | High | `SUITE-7` | setup_env is a [project.scripts] entry point (py-ci-setup-env) with 143 LOC and zero te... |
@@ -695,3 +695,6 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `NEW-36` | scheduled consumer-pin check |
 | **RESOLVED** | Med | `NEW-37` | gate scaffolder and CLAUDE.md |
 | **RESOLVED** | Med | `NEW-38` | nightly real-corpus drift job |
+| **RESOLVED** | Med | `NEW-33` | C901 complexity ratchet |
+| **RESOLVED** | High | `NEW-34` | Shrink-only baseline refresh |
+| **RESOLVED** | Med | `NEW-35` | source_text_claims: arbitrary-file reads |

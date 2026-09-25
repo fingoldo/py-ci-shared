@@ -166,6 +166,14 @@ budget_s = 180
 summary = "Shared harness for the \"code-audit baseline\" meta-test pattern"
 
 [[gate]]
+name = "complexity_ratchet"
+kind = "gate"
+entries = ["assert_complexity_does_not_grow"]
+since = "1.17.0"
+budget_s = 60
+summary = "No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow"
+
+[[gate]]
 name = "conceded_defect_pins"
 kind = "library"
 since = "1.17.0"
