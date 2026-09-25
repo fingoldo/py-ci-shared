@@ -79,7 +79,7 @@ Migration order: (1) `_core.corpus` + `ast_cache` and move the 39 rglob gates ov
 
 ### ARCH-2 (High) -- Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1...
 
-**Disposition:** DEFERRED -- this repo's side is done: README "Pinning and releases" fixes one policy (`@v1`, or a full SHA with the exact tag as comment, never `# v1` next to a SHA, never mixed in one repo), and the reusable workflows now fetch their own release so either pin is reproducible. The mixed SHA pins with false `# v1` comments live in mlframe/pyutilz; re-pinning them waits on the consumer adoption phase (33_adoption, INFRA-6).
+**Disposition:** RESOLVED -- every consumer (13 repos) now names one SHA, 6a8e382 = v1.17.0, in every place py-ci-shared is referenced (dependencies, reusable-workflow uses:, py-ci-shared-ref inputs, pre-commit rev), with the release comment; README states the pinning policy (exact SHA with a release comment, bumped by search-replace); consumer-pins.yml runs adoption_matrix daily and fails on disagreeing, moving or stale pins.
 
 - **Original id:** A2
 - **Where:** README.md:48, pyutilz/.github/workflows/black-filtered.yml:20, mlframe/.github/workflows/*.yml

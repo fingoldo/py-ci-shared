@@ -516,7 +516,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `TS-4` | read-back check vacuous for empty/duplicated repl |
 | **RESOLVED** | Low | `TS-5` | CRLF old becomes \r\r\n |
 | **RESOLVED** | High | `ARCH-1` | Package version is 0.1.0 while releases are tagged up to v1.16.1 |
-| **DEFERRED** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
+| **RESOLVED** | High | `ARCH-2` | Consumer pinning is inconsistent: README policy is the moving @v1 tag; pyutilz uses @v1... |
 | **RESOLVED** | High | `ARCH-3` | v1 -> 71cf6d0, v1.16.1 -> 797f045; 32 commits on master since v1.16.1 (last tag 2026-09... |
 | **RESOLVED** | High | `ARCH-4` | Reusable workflows git clone --depth 1 py-ci-shared default-branch tip to get configs/r... |
 | **RESOLVED** | Med | `ARCH-5` | 6 of 7 reusable workflows declare no permissions:; they inherit the caller's token scop... |
@@ -545,36 +545,36 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `ARCH-28` | ruff-base.toml/ruff-tests.toml are not package data (pyproject comment), so every consu... |
 | **RESOLVED** | Info | `ARCH-29` | Convention document, not an API reference; claims are measurement-based (realtime_appli... |
 | **RESOLVED** | Info | `ARCH-30` | Only module over the 1k LOC limit used elsewhere in these repos. |
-| **OPEN** | High | `ADOPT-1` | CI installs .[test,llm] only; py-ci-shared is in [dev], so it is never installed |
-| **OPEN** | High | `ADOPT-2` | [dev] lists bare "py-ci-shared" with no direct URL |
-| **OPEN** | High | `ADOPT-3` | py-ci-shared is not a dependency, yet tests/test_meta/test_no_top_level_side_effects.py... |
-| **OPEN** | High | `ADOPT-4` | On ImportError these gates print "SKIPPED" and sys.exit(0): a missing install reads as... |
-| **OPEN** | High | `ADOPT-5` | _SHARED_AVAILABLE=False on ImportError silently drops 7 Dart scans from SCANS; the ratc... |
-| **OPEN** | Med | `ADOPT-6` | collect_ignore of the meta tests whenever import py_ci_shared fails |
-| **OPEN** | Med | `ADOPT-7` | pytest.importorskip("py_ci_shared..."): whole gate files turn SKIPPED when the package... |
-| **OPEN** | Med | `ADOPT-8` | Black-pin cross-check reads ../py-ci-shared/.github/workflows/black-filtered.yml from a... |
-| **OPEN** | Med | `ADOPT-9` | mypy_gate --min-files 150 dashboard \/\/ true: result and population floor both discard... |
-| **OPEN** | Med | `ADOPT-10` | mypy_gate --min-files floors hand-set per repo with no recorded measurement; mlframe an... |
-| **OPEN** | Med | `ADOPT-11` | One job installs the package at a49421c (152 behind) but clones unpinned master for con... |
-| **OPEN** | Med | `ADOPT-12` | CI installs @v1 (moving tag) while declared deps pin f103a36: local and CI run differen... |
-| **OPEN** | Med | `ADOPT-13` | Five different py-ci-shared SHAs in one repo (41cbadc, 64e2b6b, 915217a, 7195776, f5028... |
-| **OPEN** | Med | `ADOPT-14` | Two versions of the same upload-codecov action in one repo. |
-| **OPEN** | Med | `ADOPT-15` | Gate package floats on master while workflows are ~165-173 commits old; tool_versions.R... |
-| **OPEN** | Med | `ADOPT-16` | Pinned to v1.2.0 (~173 behind); no meta-test gates at all, only the three lint workflows. |
-| **OPEN** | Med | `ADOPT-17` | Unpinned git installs of master: any py-ci-shared push can break or silently change the... |
-| **OPEN** | Low | `ADOPT-18` | The moving tag v1 is 20 commits behind master, so @v1 repos run older workflows than SH... |
-| **OPEN** | Low | `ADOPT-19` | Local clone 4 commits behind origin/master; hooks in repos that use an editable sibling... |
-| **OPEN** | Low | `ADOPT-20` | extend = "../py-ci-shared/configs/ruff-base.toml" sibling path; ruff errors on any mach... |
-| **OPEN** | Low | `ADOPT-21` | Hook id pinned-tool-versions (python -m py_ci_shared.pinned_tool_versions) defined twic... |
-| **OPEN** | Med | `ADOPT-22` | Local copy of py_ci_shared.index_coverage (same class and 9 functions, cosmetic diffs o... |
-| **OPEN** | Med | `ADOPT-23` | Hand-copied scanner module, already drifted: flutter_app_core's _IMPORT regex (~line 29... |
-| **OPEN** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
-| **OPEN** | Med | `ADOPT-25` | Modules adopted by no consumer: baseline_trend, checkpoint_isolation, config_drift_chec... |
-| **OPEN** | Med | `ADOPT-26` | 28 modules with exactly one consumer; generic ones worth rolling out: fail_open_handler... |
-| **OPEN** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
-| **OPEN** | Low | `ADOPT-28` | autopsia calls lint-advisory but not lint-blocking; llm_bench and social call neither. |
-| **OPEN** | Low | `ADOPT-29` | Stale second clone of autopsia (2026-09-08, 15 days behind Redline/autopsia); greps and... |
-| **OPEN** | Info | `ADOPT-30` | Jobs are not starting: "recent account payments have failed or your spending limit need... |
+| **RESOLVED** | High | `ADOPT-1` | CI installs .[test,llm] only; py-ci-shared is in [dev], so it is never installed |
+| **RESOLVED** | High | `ADOPT-2` | [dev] lists bare "py-ci-shared" with no direct URL |
+| **RESOLVED** | High | `ADOPT-3` | py-ci-shared is not a dependency, yet tests/test_meta/test_no_top_level_side_effects.py... |
+| **RESOLVED** | High | `ADOPT-4` | On ImportError these gates print "SKIPPED" and sys.exit(0): a missing install reads as... |
+| **RESOLVED** | High | `ADOPT-5` | _SHARED_AVAILABLE=False on ImportError silently drops 7 Dart scans from SCANS; the ratc... |
+| **RESOLVED** | Med | `ADOPT-6` | collect_ignore of the meta tests whenever import py_ci_shared fails |
+| **RESOLVED** | Med | `ADOPT-7` | pytest.importorskip("py_ci_shared..."): whole gate files turn SKIPPED when the package... |
+| **RESOLVED** | Med | `ADOPT-8` | Black-pin cross-check reads ../py-ci-shared/.github/workflows/black-filtered.yml from a... |
+| **RESOLVED** | Med | `ADOPT-9` | mypy_gate --min-files 150 dashboard \/\/ true: result and population floor both discard... |
+| **RESOLVED** | Med | `ADOPT-10` | mypy_gate --min-files floors hand-set per repo with no recorded measurement; mlframe an... |
+| **RESOLVED** | Med | `ADOPT-11` | One job installs the package at a49421c (152 behind) but clones unpinned master for con... |
+| **RESOLVED** | Med | `ADOPT-12` | CI installs @v1 (moving tag) while declared deps pin f103a36: local and CI run differen... |
+| **RESOLVED** | Med | `ADOPT-13` | Five different py-ci-shared SHAs in one repo (41cbadc, 64e2b6b, 915217a, 7195776, f5028... |
+| **RESOLVED** | Med | `ADOPT-14` | Two versions of the same upload-codecov action in one repo. |
+| **RESOLVED** | Med | `ADOPT-15` | Gate package floats on master while workflows are ~165-173 commits old; tool_versions.R... |
+| **RESOLVED** | Med | `ADOPT-16` | Pinned to v1.2.0 (~173 behind); no meta-test gates at all, only the three lint workflows. |
+| **RESOLVED** | Med | `ADOPT-17` | Unpinned git installs of master: any py-ci-shared push can break or silently change the... |
+| **RESOLVED** | Low | `ADOPT-18` | The moving tag v1 is 20 commits behind master, so @v1 repos run older workflows than SH... |
+| **RESOLVED** | Low | `ADOPT-19` | Local clone 4 commits behind origin/master; hooks in repos that use an editable sibling... |
+| **RESOLVED** | Low | `ADOPT-20` | extend = "../py-ci-shared/configs/ruff-base.toml" sibling path; ruff errors on any mach... |
+| **RESOLVED** | Low | `ADOPT-21` | Hook id pinned-tool-versions (python -m py_ci_shared.pinned_tool_versions) defined twic... |
+| **RESOLVED** | Med | `ADOPT-22` | Local copy of py_ci_shared.index_coverage (same class and 9 functions, cosmetic diffs o... |
+| **RESOLVED** | Med | `ADOPT-23` | Hand-copied scanner module, already drifted: flutter_app_core's _IMPORT regex (~line 29... |
+| **DEFERRED** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
+| **NOT A DEFECT** | Med | `ADOPT-25` | Modules adopted by no consumer: baseline_trend, checkpoint_isolation, config_drift_chec... |
+| **RESOLVED** | Med | `ADOPT-26` | 28 modules with exactly one consumer; generic ones worth rolling out: fail_open_handler... |
+| **DEFERRED** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
+| **RESOLVED** | Low | `ADOPT-28` | autopsia calls lint-advisory but not lint-blocking; llm_bench and social call neither. |
+| **RESOLVED** | Low | `ADOPT-29` | Stale second clone of autopsia (2026-09-08, 15 days behind Redline/autopsia); greps and... |
+| **RESOLVED** | Info | `ADOPT-30` | Jobs are not starting: "recent account payments have failed or your spending limit need... |
 | **RESOLVED** | High | `SUITE-1` | CI tests only Python 3.11 while requires-python = ">=3.9" |
 | **RESOLVED** | High | `SUITE-2` | The floor-guard test itself does import tomllib at module level, so it fails at collect... |
 | **RESOLVED** | Med | `SUITE-3` | The tomllib ban matches only the exact line import tomllib; import tomllib as t and fro... |
@@ -604,7 +604,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `SUITE-27` | No shared fixtures (git repo factory, write helper), so each file re-implements _write/... |
 | **NOT A DEFECT** | Info | `SUITE-28` | Portability is otherwise good: all tests use tmp_path (one tempfile.TemporaryDirectory... |
 | **RESOLVED** | High | `NEW-1` | gate `import_cycles` |
-| **DEFERRED** | High | `NEW-2` | gate `local_copy_report` (migrate locals onto existing central gates) |
+| **RESOLVED** | High | `NEW-2` | gate `local_copy_report` (migrate locals onto existing central gates) |
 | **RESOLVED** | High | `NEW-3` | gate `swallowed_exceptions` |
 | **RESOLVED** | High | `NEW-4` | gate `pickle_state_completeness` (runtime + static) |
 | **RESOLVED** | High | `NEW-5` | gate `test_resource_leaks` (pytest plugin) |
