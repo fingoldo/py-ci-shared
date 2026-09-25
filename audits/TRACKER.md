@@ -698,3 +698,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `NEW-33` | C901 complexity ratchet |
 | **RESOLVED** | High | `NEW-34` | Shrink-only baseline refresh |
 | **RESOLVED** | Med | `NEW-35` | source_text_claims: arbitrary-file reads |
+| **RESOLVED** | Low | `CANARY-52` | two C901 ratchets: function_complexity (ruff subprocess) and complexity_ratchet |

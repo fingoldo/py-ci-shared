@@ -339,3 +339,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- an f-string statement whose literal text fixes the verb (`f"SELECT ... {clause}"`) is classified like a literal, each interpolation read as a neutral placeholder; an interpolation before the first word keeps it unknowable, and write verbs in the literal text still report; regression tests: the parametrised TestAReadIsNotAnEffect cases for f-strings; autopsia vocab/structure_drugs.py now has no reported read
 
 - **Finding:** found adopting 1.17.0 in autopsia: `db.execute(f"SELECT DISTINCT curie FROM surface WHERE ...{extra_clause}", ...)` stayed in its baseline.
+
+### CANARY-52 (Low) -- two C901 ratchets: function_complexity (ruff subprocess) and complexity_ratchet
+
+**Disposition:** RESOLVED -- function_complexity keeps its API and baseline format (mlframe calls it) but measures through complexity_ratchet's AST mccabe, which matches ruff on all 5110 functions here, and refreshes shrink-only like every other baseline; registered, with an EXEMPT reason pointing at complexity_ratchet's canary; the ruff-argv batching test went with the subprocess; regression test: test_a_seeding_refresh_needs_growth_allowed
+
+- **Finding:** another session added function_complexity while this round added complexity_ratchet; it was unregistered, so master's inventory and teeth tests failed.

@@ -274,6 +274,7 @@ EXEMPT: dict[str, str] = {
     "ci_test_dir_reachability": "compares a tests/ tree against workflow commands; subject is repo layout",
     "ci_workflow_paths": "checks that workflow-referenced paths exist in a repo; subject is repo layout",
     "code_audit_meta": "wraps pyutilz code_audit checks behind a baseline; the checks live in pyutilz",
+    "function_complexity": "a compatibility API over complexity_ratchet, whose canary seeds the same measurement",
     "coverage_config_parity": "compares [tool.coverage] config against workflow coverage commands; CI configuration",
     "pytest_addopts_path_runs": "compares hook/workflow pytest commands against addopts; CI configuration",
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",

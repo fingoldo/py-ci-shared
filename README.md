@@ -178,6 +178,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`fail_message_quality`](src/py_ci_shared/fail_message_quality.py) | gate | 1.12.0 | `assert_fail_messages_actionable` | Every ``pytest.fail`` message in a meta-test directory tells the reviewer what to do |
 | [`fail_open_handlers`](src/py_ci_shared/fail_open_handlers.py) | gate | 1.17.0 | `assert_no_new_fail_open_handlers` | Fail-open exception handlers in gate code |
 | [`format_warn`](src/py_ci_shared/format_warn.py) | cli | 1.0.0 | `main` | Warn-only formatting / lint check for the pre-commit hook |
+| [`function_complexity`](src/py_ci_shared/function_complexity.py) | gate | 1.17.0 | `assert_complexity_does_not_grow` | C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet |
 | [`function_length`](src/py_ci_shared/function_length.py) | gate | 1.17.0 | `assert_functions_do_not_grow` | No NEW long function, and the long ones already there may not grow |
 | [`gate_config_honesty`](src/py_ci_shared/gate_config_honesty.py) | gate | 1.17.0 | `assert_gates_honest` | A gate runs its tool the way the project configured it, and a "blocking" gate can block |
 | [`gate_integrity`](src/py_ci_shared/gate_integrity.py) | gate | 1.3.6 | `assert_narrowings_declared` (+2) | A gate that is DECLARED blocking must actually be able to block |

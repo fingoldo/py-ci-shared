@@ -362,6 +362,13 @@ cli = true
 summary = "Warn-only formatting / lint check for the pre-commit hook"
 
 [[gate]]
+name = "function_complexity"
+kind = "gate"
+entries = ["assert_complexity_does_not_grow"]
+since = "1.17.0"
+summary = "C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet"
+
+[[gate]]
 name = "function_length"
 kind = "gate"
 entries = ["assert_functions_do_not_grow"]

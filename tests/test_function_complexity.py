@@ -33,7 +33,18 @@ def _repo(tmp_path: Path, files: dict) -> list:
 
 
 def test_measures_over_limit_functions_with_qualnames(tmp_path):
-    files = _repo(tmp_path, {"pkg/a.py": _branchy("simple", 3) + "\nclass K:\n" + _branchy("method", 10, "    ") + "\n" + "def outer():\n" + _branchy("inner", 8, "    ") + "    return inner\n"})
+    files = _repo(
+        tmp_path,
+        {
+            "pkg/a.py": _branchy("simple", 3)
+            + "\nclass K:\n"
+            + _branchy("method", 10, "    ")
+            + "\n"
+            + "def outer():\n"
+            + _branchy("inner", 8, "    ")
+            + "    return inner\n"
+        },
+    )
     got, keys = function_complexities(files, tmp_path, limit=5)
     # ruff counts a nested function's branches into its parent as well, so ``outer`` is over the limit too.
     assert got == {"pkg/a.py::K.method": 11, "pkg/a.py::outer.<locals>.inner": 9, "pkg/a.py::outer": 10}
@@ -57,7 +68,7 @@ def test_assert_passes_on_a_matching_baseline_and_refreshes(tmp_path):
     files = _repo(tmp_path, {f"m{i}.py": _branchy(f"f{i}", 2) for i in range(3)} | {"big.py": _branchy("big", 30)})
     baseline = tmp_path / "b.json"
     with pytest.raises(pytest.skip.Exception):
-        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=True)
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=True, grow=True)
     assert json.loads(baseline.read_text()) == {"big.py::big": 31}
     assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=False)
     baseline.write_text(json.dumps({}))
@@ -65,10 +76,9 @@ def test_assert_passes_on_a_matching_baseline_and_refreshes(tmp_path):
         assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=False)
 
 
-def test_paths_are_batched_under_the_command_line_limit():
-    from py_ci_shared.function_complexity import _batches
-
-    paths = [f"D:/some/long/directory/structure/module_{i:05d}.py" for i in range(3000)]
-    batches = _batches(paths)
-    assert len(batches) > 1 and sum(map(len, batches)) == 3000
-    assert all(sum(len(p) + 1 for p in b) <= 24000 for b in batches)
+def test_a_seeding_refresh_needs_growth_allowed(tmp_path):
+    files = _repo(tmp_path, {"big.py": _branchy("big", 30)})
+    baseline = tmp_path / "b.json"
+    with pytest.raises(pytest.fail.Exception, match="ALLOW_GROW|refresh-grow|grow"):
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=1, refresh=True, grow=False)
+    assert not baseline.exists()
