@@ -15,4 +15,4 @@ Public API: every module listed in the registry, and within it the names without
 The shared ruff configs ship as package data (``py-ci-shared config-path ruff-base``).
 """
 
-__version__ = "1.17.0"
+__version__ = "1.18.0"

@@ -20,7 +20,7 @@ on:
           workflow file belongs to (bumped with the version in every release commit), so a caller pinned to a tag or SHA
           gets that release's config rather than master's. A ref that cannot be fetched falls back to master with a warning.
         type: string
-        default: "v1.17.0"
+        default: "v1.18.0"
       ignore:
         description: 'Extra --ignore codes on top of the extended config (e.g. "C901" to keep complexity advisory-only)'
         type: string

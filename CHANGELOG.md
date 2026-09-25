@@ -2,15 +2,8 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## 1.17.0 (unreleased)
+## 1.18.0 (unreleased)
 
-Stricter by default. Every item below can turn a green consumer run red on upgrade, each for a defect that was
-being passed silently. The [README](README.md#baselines-refresh-and-what-now-fails) lists the affected gates.
-
-- **A missing baseline fails.** A baselined gate no longer seeds its baseline on first run and passes; it fails
-  and names its refresh command. Refresh once with `pytest --py-ci-refresh=<gate>`,
-  `PY_CI_SHARED_REFRESH=<gate>` or `py-ci-shared refresh <gate>`. A refresh never writes after a failed floor or an
-  unparsable file, and a `NEEDS-JUSTIFICATION` note fails until someone writes the reason.
 - **A refresh only shrinks a baseline.** It drops entries that no longer fire and lowers counts; adding an entry,
   raising a count or seeding a missing baseline with findings fails and names them unless growth is opted into
   (`--py-ci-refresh-grow`, `PY_CI_SHARED_REFRESH_ALLOW_GROW=1`, `py-ci-shared refresh --grow`, `grow=True`).
@@ -19,6 +12,22 @@ being passed silently. The [README](README.md#baselines-refresh-and-what-now-fai
 - **`source_text_claims` judges arbitrary file reads.** Text read from a path it cannot place is a claim when an
   assertion takes a substring's position in it or searches it for a code-like literal; a `return` of a content
   check over source, and an `assert` over a name bound to one, are claims too.
+- `adoption_matrix --resolve-in` counts how many releases each fixed pin is behind and fails a stale one (`--allow-behind N`).
+- `py-ci-shared new-gate <name>` scaffolds a gate: module on `_core`, failing test skeleton, canary, registry entry, README row.
+- `corpus_drift` counts every corpus-bindable finder over real consumer repos and fails a night whose counts jump, drop to zero or start to error.
+- Scheduled workflows: `consumer-pins.yml` (daily adoption matrix over the consumers in `configs/consumers.toml`) and `corpus-drift.yml` (nightly).
+- `function_complexity` keeps its API and baseline format but measures through `complexity_ratchet` and refreshes shrink-only.
+- This repo's full-suite CI run enforces coverage `fail_under = 89`.
+
+## 1.17.0
+
+Stricter by default. Every item below can turn a green consumer run red on upgrade, each for a defect that was
+being passed silently. The [README](README.md#baselines-refresh-and-what-now-fails) lists the affected gates.
+
+- **A missing baseline fails.** A baselined gate no longer seeds its baseline on first run and passes; it fails
+  and names its refresh command. Refresh once with `pytest --py-ci-refresh=<gate>`,
+  `PY_CI_SHARED_REFRESH=<gate>` or `py-ci-shared refresh <gate>`. A refresh never writes after a failed floor or an
+  unparsable file, and a `NEEDS-JUSTIFICATION` note fails until someone writes the reason.
 - **An unparsable or unreadable file is a finding.** AST gates read sources the way the interpreter does (BOM,
   PEP 263 cookie) and report a file they cannot parse instead of skipping it. `allow_unparsed=True` exists where
   that is expected.
@@ -54,9 +63,6 @@ New:
 - The ruff configs ship as package data (`py-ci-shared config-path ruff-base`).
 - `adoption_matrix` reports, across consumer repos, where each pins py-ci-shared (and whether the pins agree or
   move), which modules each runs, and where a gate skips itself when the package is missing.
-- `adoption_matrix --resolve-in` counts how many releases each fixed pin is behind and fails a stale one (`--allow-behind N`).
-- `py-ci-shared new-gate <name>` scaffolds a gate: module on `_core`, failing test skeleton, canary, registry entry, README row.
-- `corpus_drift` counts every corpus-bindable finder over real consumer repos and fails a night whose counts jump, drop to zero or start to error.
 - Pre-commit hooks for `run-all`, `pinned_tool_versions`, `mypy_gate` and `worktree_hygiene`.
 - New gates: `atomic_write_staging`, `clock_day_boundary`, `coverage_config_parity`, `hash_key_determinism`,
   `import_cycles`, `local_copy_report`, `no_xfail_to_defer`, `numba_seed_range`, `pickle_state_completeness`
@@ -74,6 +80,5 @@ Release and CI:
   (`py-ci-shared-ref` input), not at master. They declare `permissions: contents: read`, and lint-advisory's
   tools are installed at exact versions.
 - `install-pyutilz` defaults to a pinned pyutilz commit instead of the branch tip.
-- Scheduled workflows: `consumer-pins.yml` (daily adoption matrix over the consumers in `configs/consumers.toml`) and `corpus-drift.yml` (nightly).
 - This repo's CI tests Python 3.9 to 3.13, installs the dev extra without a fallback, measures coverage and runs
   its own gates on itself with `py-ci-shared run-all`.

@@ -150,13 +150,13 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
-| [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.17.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
+| [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.18.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
 | [`conceded_defect_pins`](src/py_ci_shared/conceded_defect_pins.py) | library | 1.17.0 |  | Tests that say the behaviour is wrong and then pin it exactly |
 | [`config_call_site_parity`](src/py_ci_shared/config_call_site_parity.py) | gate | 1.3.0 | `assert_every_cfg_get_call_resolves_to_a_schema_field` (+4) | Shared checks for the "``cfg().get(section, key, default, type_)`` call-site vs Pydantic schema" consistency pattern |
 | [`config_drift_check`](src/py_ci_shared/config_drift_check.py) | cli | 1.1.1 | `main` | Reports [tool.ruff]/[tool.mypy] config divergence across consumer repos |
 | [`config_getattr_default_parity`](src/py_ci_shared/config_getattr_default_parity.py) | gate | 1.17.0 | `assert_getattr_defaults_match_schema` | ``getattr(cfg, "field", <literal>)`` whose literal disagrees with the field's own default |
 | [`content_hash_version_bump_gate`](src/py_ci_shared/content_hash_version_bump_gate.py) | gate | 1.3.1 | `assert_version_bumped_with_content` | Shared harness for the "N files feed a version/cache-key constant that must be bumped by hand whenever those files change" meta-test pattern |
-| [`corpus_drift`](src/py_ci_shared/corpus_drift.py) | cli | 1.17.0 | `main` | Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them |
+| [`corpus_drift`](src/py_ci_shared/corpus_drift.py) | cli | 1.18.0 | `main` | Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them |
 | [`coverage_config_parity`](src/py_ci_shared/coverage_config_parity.py) | gate | 1.17.0 | `assert_coverage_config_parity` | Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see |
 | [`dart_scanners`](src/py_ci_shared/dart_scanners.py) | library | 1.3.6 |  | Shared structural scanners over Dart/Flutter source |
 | [`dataclass_case_completeness`](src/py_ci_shared/dataclass_case_completeness.py) | gate | 1.5.0 | `assert_every_dataclass_has_a_case` | Every dataclass of a given kind has a test case, or an exemption with a reason |
@@ -178,7 +178,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`fail_message_quality`](src/py_ci_shared/fail_message_quality.py) | gate | 1.12.0 | `assert_fail_messages_actionable` | Every ``pytest.fail`` message in a meta-test directory tells the reviewer what to do |
 | [`fail_open_handlers`](src/py_ci_shared/fail_open_handlers.py) | gate | 1.17.0 | `assert_no_new_fail_open_handlers` | Fail-open exception handlers in gate code |
 | [`format_warn`](src/py_ci_shared/format_warn.py) | cli | 1.0.0 | `main` | Warn-only formatting / lint check for the pre-commit hook |
-| [`function_complexity`](src/py_ci_shared/function_complexity.py) | gate | 1.17.0 | `assert_complexity_does_not_grow` | C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet |
+| [`function_complexity`](src/py_ci_shared/function_complexity.py) | gate | 1.18.0 | `assert_complexity_does_not_grow` | C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet |
 | [`function_length`](src/py_ci_shared/function_length.py) | gate | 1.17.0 | `assert_functions_do_not_grow` | No NEW long function, and the long ones already there may not grow |
 | [`gate_config_honesty`](src/py_ci_shared/gate_config_honesty.py) | gate | 1.17.0 | `assert_gates_honest` | A gate runs its tool the way the project configured it, and a "blocking" gate can block |
 | [`gate_integrity`](src/py_ci_shared/gate_integrity.py) | gate | 1.3.6 | `assert_narrowings_declared` (+2) | A gate that is DECLARED blocking must actually be able to block |

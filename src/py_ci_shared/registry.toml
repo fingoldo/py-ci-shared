@@ -169,7 +169,7 @@ summary = "Shared harness for the \"code-audit baseline\" meta-test pattern"
 name = "complexity_ratchet"
 kind = "gate"
 entries = ["assert_complexity_does_not_grow"]
-since = "1.17.0"
+since = "1.18.0"
 budget_s = 60
 summary = "No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow"
 
@@ -210,7 +210,7 @@ summary = "Shared harness for the \"N files feed a version/cache-key constant th
 [[gate]]
 name = "corpus_drift"
 kind = "cli"
-since = "1.17.0"
+since = "1.18.0"
 cli = true
 budget_s = 3600
 summary = "Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them"
@@ -365,7 +365,7 @@ summary = "Warn-only formatting / lint check for the pre-commit hook"
 name = "function_complexity"
 kind = "gate"
 entries = ["assert_complexity_does_not_grow"]
-since = "1.17.0"
+since = "1.18.0"
 summary = "C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet"
 
 [[gate]]

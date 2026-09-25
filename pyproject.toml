@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-ci-shared"
-version = "1.17.0"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
+version = "1.18.0"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
 description = "Shared CI/lint tooling (scripts + ruff base config + reusable GitHub Actions workflows) for fingoldo Python projects."
 authors = [{name = "Anatoly Alexeev", email = "fingoldo@gmail.com"}]
 license = "MIT"
