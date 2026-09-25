@@ -345,3 +345,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- function_complexity keeps its API and baseline format (mlframe calls it) but measures through complexity_ratchet's AST mccabe, which matches ruff on all 5110 functions here, and refreshes shrink-only like every other baseline; registered, with an EXEMPT reason pointing at complexity_ratchet's canary; the ruff-argv batching test went with the subprocess; regression test: test_a_seeding_refresh_needs_growth_allowed
 
 - **Finding:** another session added function_complexity while this round added complexity_ratchet; it was unregistered, so master's inventory and teeth tests failed.
+
+### CANARY-53 (Med) -- release.yml could not move v1: GITHUB_TOKEN may not update a ref to a commit that changes workflows
+
+**Disposition:** RESOLVED -- the publish job checks out with secrets.RELEASE_TOKEN (fine-grained, contents + workflows write), creates the GitHub release before moving the major tag, and fails with the exact manual command when the secret is missing; v1.17.0's v1 was moved by hand and its release created; verified with actionlint and tests/test_reusable_workflows.py
+
+- **Finding:** the first real release run (v1.17.0) failed at `git push -f origin refs/tags/v1`: `refusing to allow a GitHub App to create or update workflow ... without workflows permission`.

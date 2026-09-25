@@ -65,17 +65,26 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           fetch-depth: 0
-
-      - name: Move the major tag
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          major="${TAG%%.*}"
-          git tag -f "$major" "$TAG^{commit}"
-          git push -f origin "refs/tags/$major"
+          # The major tag points at commits that change .github/workflows, and GITHUB_TOKEN may never update such a
+          # ref (it has no `workflows` permission). RELEASE_TOKEN is a fine-grained token with contents and workflows
+          # write on this repository.
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+
+      - name: Move the major tag
+        env:
+          TAG: ${{ github.ref_name }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+            echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved (GITHUB_TOKEN may not update a ref to a commit that changes workflows). Add the secret, or move it by hand: git tag -f ${TAG%%.*} $TAG^{commit} && git push -f origin refs/tags/${TAG%%.*}"
+            exit 1
+          fi
+          major="${TAG%%.*}"
+          git tag -f "$major" "$TAG^{commit}"
+          git push -f origin "refs/tags/$major"
