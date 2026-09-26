@@ -39,6 +39,19 @@ class TestWhatCountsAsUncalled:
         b = _write(tmp_path, "b.py", "from a import helper\n\n\ndef go():\n    return helper()\n")
         assert "a.py::helper" not in find_uncalled_functions([a, b], tmp_path)
 
+    def test_a_call_through_a_re_export_alias_chain_counts(self, tmp_path):
+        """``_impl._helper`` re-exported by ``shared`` as ``helper`` and imported by its consumer as ``_probe``:
+        the only call site names neither the definition's name nor a same-file alias of it."""
+        impl = _write(tmp_path, "_impl.py", "def _helper():\n    return 1\n")
+        shared = _write(tmp_path, "shared.py", "from _impl import _helper as helper  # noqa: F401\n")
+        user = _write(tmp_path, "user.py", "from shared import helper as _probe\n\n\ndef go():\n    return _probe()\n")
+        assert "_impl.py::_helper" not in find_uncalled_functions([impl, shared, user], tmp_path)
+
+    def test_a_re_exported_function_nobody_calls_is_still_reported(self, tmp_path):
+        impl = _write(tmp_path, "_impl.py", "def _helper():\n    return 1\n")
+        shared = _write(tmp_path, "shared.py", "from _impl import _helper as helper  # noqa: F401\n")
+        assert "_impl.py::_helper" in find_uncalled_functions([impl, shared], tmp_path)
+
     def test_a_function_called_only_within_its_own_module_is_not(self, tmp_path):
         """A private helper used by its own file is live. Excluding the defining module from the
         reference scan would report every one of them."""

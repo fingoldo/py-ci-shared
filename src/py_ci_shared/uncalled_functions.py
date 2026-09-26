@@ -135,7 +135,7 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
     return bound - declared_outer
 
 
-def _referenced_names(tree: ast.Module) -> set[str]:
+def _references(tree: ast.Module) -> "tuple[set[str], dict[str, str]]":
     """Every module-level name this module LOADS, by any mechanism that could reach a function.
 
     Deliberately generous about what counts as a reference, because a false "this is dead" is far
@@ -153,7 +153,8 @@ def _referenced_names(tree: ast.Module) -> set[str]:
     _redact_secrets`` followed by ``_redact_secrets(...)`` is a call to ``redact_secrets``, and the
     first version of this module reported that function as dead because the two names never met.
     An import is not itself a use -- importing something and never calling it is exactly the state
-    this check hunts -- so the alias only counts when the LOCAL name is loaded somewhere.
+    this check hunts -- so the alias only counts when the LOCAL name is loaded somewhere. Returns the loaded names and the
+    ``{local: original}`` aliases, which :func:`find_uncalled_functions` resolves across files.
     """
     loaded: set[str] = set()
     aliases: dict[str, str] = {}
@@ -191,6 +192,12 @@ def _referenced_names(tree: ast.Module) -> set[str]:
             visit(child, shadowed, own)
 
     visit(tree, frozenset(), frozenset())
+    return loaded, aliases
+
+
+def _referenced_names(tree: ast.Module) -> set[str]:
+    """Names *tree* loads, with its own aliased imports resolved to the original name (see :func:`_references`)."""
+    loaded, aliases = _references(tree)
     return loaded | {original for local, original in aliases.items() if local in loaded}
 
 
@@ -216,8 +223,21 @@ def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed
             definitions.setdefault(key, name)
 
     referenced: set[str] = set()
+    alias_edges: set[tuple[str, str]] = set()
     for parsed in scan:
-        referenced |= _referenced_names(parsed.tree)
+        loaded, aliases = _references(parsed.tree)
+        referenced |= loaded
+        alias_edges |= set(aliases.items())
+    # An alias counts when its local name is loaded ANYWHERE, not only in the importing file: a re-export module
+    # (``from ._impl import _helper as helper``) is loaded through by its consumers, which may alias it once more
+    # (``from pkg.shared import helper as _helper``). Follow such chains to a fixpoint.
+    changed = True
+    while changed:
+        changed = False
+        for local, original in alias_edges:
+            if local in referenced and original not in referenced:
+                referenced.add(original)
+                changed = True
 
     return {key: name for key, name in definitions.items() if name not in referenced}
 
