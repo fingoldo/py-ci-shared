@@ -9,6 +9,12 @@ from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.module_cache_thread_safety import RULE_CACHE, RULE_IMPORT, assert_thread_safe_module_caches, find_thread_unsafe_module_state
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _write(root: Path, rel: str, body: str, *, bom: bool = False) -> Path:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -18,6 +18,12 @@ from py_ci_shared.no_xfail_to_defer import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _found(tmp_path: Path, body: str, **kw: object) -> list[tuple[str, int]]:
     tests = tmp_path / "tests"
     tests.mkdir(exist_ok=True)

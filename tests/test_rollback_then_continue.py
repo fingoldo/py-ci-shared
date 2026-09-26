@@ -8,6 +8,13 @@ import pytest
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.rollback_then_continue import RULE, assert_no_rollback_then_continue, find_rollback_then_continue
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 BAD = """
 def importer(session, rows):
     imported = 0

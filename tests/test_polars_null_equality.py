@@ -16,6 +16,13 @@ from py_ci_shared.polars_null_equality import (
     find_polars_null_equality,
 )
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 HEADER = "import numpy as np\nimport polars as pl\nimport polars.selectors as cs\n"
 
 

@@ -716,7 +716,7 @@ class _RatchetBaseline:
         self.path = path
         self.regenerated: Optional[dict[str, str]] = None
 
-    def regenerate(self, found):
+    def regenerate(self, found, grow=None):
         self.regenerated = dict(found)
         self.path.write_text(json.dumps(found), encoding="utf-8")
 

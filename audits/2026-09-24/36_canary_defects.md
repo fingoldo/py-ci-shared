@@ -357,3 +357,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- entry points are read through a helper that uses .select() where it exists and the 3.9 dict shape otherwise; regression tests: test_entry_points_are_read_the_same_way_on_every_python (both shapes) and test_the_real_entry_point_api_is_called_without_error_on_this_interpreter (no monkeypatch, so the self-CI 3.9 leg exercises the real API); verified under Python 3.9.25. Ships in 1.18.0
 
 - **Finding:** pyutilz's Python 3.9 CI legs failed with INTERNALERROR at pytest_configure after pinning v1.17.0; self-CI missed it because pytest-randomly is not installed there, so the guard returned before the call.
+
+### CANARY-55 (Med) -- the shrink-only refresh left 27 tests red: gate tests seeded baselines without the growth opt-in
+
+**Disposition:** RESOLVED -- the 22 gate test files that seed baselines opt into growth with the same module fixture the refresh change used elsewhere (the shrink-only rule keeps its own tests), mutation_teeth's ratchet test double accepts grow=, HARNESS_VERSION 13 records the refresh change, and test_function_complexity uses a raw match pattern and no sys.path insert; 607 tests pass in the affected files
+
+- **Finding:** self-CI on master failed on every leg after the shrink-only refresh landed: the change was verified on a subset of files and missed the gate tests added the same day; ruff RUF043 and test_test_harness also failed on test_function_complexity.py.

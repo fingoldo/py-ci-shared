@@ -8,6 +8,13 @@ import pytest
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.numba_seed_range import RULE, assert_numba_seeds_fit_int64, find_wide_numba_seeds
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 HEADER = "import os, struct, random, secrets, hashlib\nimport numpy as np\nfrom mylib import set_numba_random_seed\n"
 
 

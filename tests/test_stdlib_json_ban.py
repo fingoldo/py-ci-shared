@@ -8,6 +8,12 @@ from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.stdlib_json_ban import RULE, assert_no_stdlib_json, find_stdlib_json_imports
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _write(root: Path, rel: str, text: str, *, bom: bool = False) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)

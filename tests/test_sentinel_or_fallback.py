@@ -10,6 +10,12 @@ import pytest
 from py_ci_shared.sentinel_or_fallback import assert_no_sentinel_or_fallback, find_sentinel_or_fallback
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _found(tmp_path: Path, expr: str, **kw: object) -> list[str]:
     (tmp_path / "m.py").write_text(f"def f(x, d, body, seed, DEFAULT):\n    return {expr}\n", encoding="utf-8")
     findings, _ = find_sentinel_or_fallback(tmp_path, use_git=False, **kw)  # type: ignore[arg-type]

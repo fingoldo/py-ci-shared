@@ -11,6 +11,12 @@ import pytest
 from py_ci_shared.swallowed_exceptions import assert_no_swallowed_exceptions, find_swallowed_exceptions
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _lines(tmp_path: Path, body: str, name: str = "m.py", **kw: object) -> list[int]:
     (tmp_path / name).write_text(textwrap.dedent(body), encoding="utf-8")
     findings, _ = find_swallowed_exceptions(tmp_path, use_git=False, **kw)  # type: ignore[arg-type]

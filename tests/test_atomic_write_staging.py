@@ -12,6 +12,12 @@ import pytest
 from py_ci_shared.atomic_write_staging import RULE_NPSAVE, RULE_REWRITE, assert_atomic_write_staging, find_atomic_write_staging
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _found(tmp_path: Path, body: str, **kw: object) -> list[tuple[str, int]]:
     (tmp_path / "m.py").write_text(textwrap.dedent(body), encoding="utf-8")
     findings, _ = find_atomic_write_staging(tmp_path, use_git=False, **kw)  # type: ignore[arg-type]

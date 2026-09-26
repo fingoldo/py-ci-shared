@@ -12,6 +12,12 @@ import pytest
 from py_ci_shared.hash_key_determinism import assert_hash_keys_are_deterministic, find_unsorted_hash_keys
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _lines(tmp_path: Path, body: str) -> list[int]:
     (tmp_path / "m.py").write_text(textwrap.dedent(body), encoding="utf-8")
     findings, _ = find_unsorted_hash_keys(tmp_path, use_git=False)

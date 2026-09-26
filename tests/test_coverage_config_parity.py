@@ -7,6 +7,13 @@ import pytest
 
 from py_ci_shared.coverage_config_parity import RULE_NARROW, RULE_NUMBA, assert_coverage_config_parity, coverage_fail_under, find_coverage_config_violations
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 PYPROJECT = '[tool.coverage.report]\nfail_under = 80\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
 
 

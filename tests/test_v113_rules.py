@@ -22,6 +22,12 @@ from py_ci_shared.import_side_effects import (
 from py_ci_shared.meta_private_imports import assert_no_private_meta_imports, private_meta_imports
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 class TestPrivateMetaImports:
     def _meta(self, tmp_path, body):
         (tmp_path / "test_a.py").write_text(textwrap.dedent(body), encoding="utf-8")

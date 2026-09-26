@@ -13,6 +13,12 @@ import pytest
 from py_ci_shared.import_cycles import RULE_CYCLE, RULE_ORDER, assert_no_import_cycles, find_import_cycles
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _pkg(tmp_path: Path, files: dict[str, str], name: str = "pkg") -> Path:
     root = tmp_path / name
     for rel, body in files.items():

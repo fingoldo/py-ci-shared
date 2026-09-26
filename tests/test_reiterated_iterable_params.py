@@ -8,6 +8,13 @@ import pytest
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.reiterated_iterable_params import RULE, assert_no_reiterated_iterable_params, find_reiterated_iterable_params
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 HEADER = "from typing import Iterable, Iterator, Optional, Sequence, Union\nimport collections.abc as cabc\n"
 
 

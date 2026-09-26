@@ -17,6 +17,12 @@ from py_ci_shared.stale_source_citations import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 def _tree(tmp_path: Path, files: dict[str, str]) -> Path:
     for rel, body in files.items():
         p = tmp_path / rel

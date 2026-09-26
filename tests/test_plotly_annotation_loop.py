@@ -8,6 +8,13 @@ import pytest
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.plotly_annotation_loop import RULE, SLOW_METHODS, assert_no_plotly_annotation_loops, find_plotly_annotation_loops
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 HEADER = "import plotly.graph_objects as go\n"
 
 

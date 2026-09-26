@@ -10,6 +10,13 @@ import pytest
 
 from py_ci_shared.clock_day_boundary import assert_no_clock_day_boundary, find_clock_day_boundary
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 _INCIDENT = """
     import time
     def test_it_still_works_later_the_same_day(client):

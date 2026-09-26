@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import pytest
 
@@ -79,6 +77,6 @@ def test_assert_passes_on_a_matching_baseline_and_refreshes(tmp_path):
 def test_a_seeding_refresh_needs_growth_allowed(tmp_path):
     files = _repo(tmp_path, {"big.py": _branchy("big", 30)})
     baseline = tmp_path / "b.json"
-    with pytest.raises(pytest.fail.Exception, match="ALLOW_GROW|refresh-grow|grow"):
+    with pytest.raises(pytest.fail.Exception, match=r"ALLOW_GROW|refresh-grow|grow"):
         assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=1, refresh=True, grow=False)
     assert not baseline.exists()

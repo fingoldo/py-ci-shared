@@ -6,6 +6,13 @@ import pytest
 
 from py_ci_shared.pytest_addopts_path_runs import RULE, assert_path_runs_select_tests, find_path_runs_selecting_nothing, read_addopts
 
+
+@pytest.fixture(autouse=True)
+def _refresh_may_grow(monkeypatch):
+    """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
+
+
 PYPROJECT = "[tool.pytest.ini_options]\naddopts = \"-ra -m 'not integration'\"\n"
 
 

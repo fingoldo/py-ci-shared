@@ -701,3 +701,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `CANARY-52` | two C901 ratchets: function_complexity (ruff subprocess) and complexity_ratchet |
 | **RESOLVED** | Med | `CANARY-53` | release.yml could not move v1: GITHUB_TOKEN may not update a ref to a commit that changes workflows |
 | **RESOLVED** | High | `CANARY-54` | randomly_seed_guard crashed pytest on Python 3.9: entry_points(group=...) exists only from 3.10 |
+| **RESOLVED** | Med | `CANARY-55` | the shrink-only refresh left 27 tests red: gate tests seeded baselines without the growth opt-in |
