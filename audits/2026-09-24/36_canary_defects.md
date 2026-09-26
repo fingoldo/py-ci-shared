@@ -363,3 +363,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- the 22 gate test files that seed baselines opt into growth with the same module fixture the refresh change used elsewhere (the shrink-only rule keeps its own tests), mutation_teeth's ratchet test double accepts grow=, HARNESS_VERSION 13 records the refresh change, and test_function_complexity uses a raw match pattern and no sys.path insert; 607 tests pass in the affected files
 
 - **Finding:** self-CI on master failed on every leg after the shrink-only refresh landed: the change was verified on a subset of files and missed the gate tests added the same day; ruff RUF043 and test_test_harness also failed on test_function_complexity.py.
+
+### CANARY-56 (Low) -- self-CI mypy failed after the AST node index landed: nodes_of returns list[AST]
+
+**Disposition:** RESOLVED -- unresolved_imports casts the ast.ImportFrom-only result at its call site (nodes_of takes several types, so a generic return would need overloads); mypy clean, 31 unresolved_imports tests pass
+
+- **Finding:** commit 4f6961d (another session's perf change) left `_judge_import(..., node, ...)` receiving ast.AST where ast.ImportFrom is declared; the 3.11 legs' mypy step failed.

@@ -20,6 +20,7 @@ with the skip recorded so a reader can tell "checked and clean" from "not checke
 from __future__ import annotations
 
 import ast
+from typing import cast
 import functools
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
@@ -312,7 +313,7 @@ def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple
                 problems.append(f"{path.as_posix()}:{exc.line or 1}: {exc.kind}: {exc.message}")
                 continue
             parsed_count += 1
-            imports = nodes_of(tree, ast.ImportFrom)
+            imports = cast("list[ast.ImportFrom]", nodes_of(tree, ast.ImportFrom))
             if imports:
                 guarded = _guarded_import_ids(tree)
                 for node in imports:
