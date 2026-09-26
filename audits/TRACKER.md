@@ -568,7 +568,7 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Low | `ADOPT-21` | Hook id pinned-tool-versions (python -m py_ci_shared.pinned_tool_versions) defined twic... |
 | **RESOLVED** | Med | `ADOPT-22` | Local copy of py_ci_shared.index_coverage (same class and 9 functions, cosmetic diffs o... |
 | **RESOLVED** | Med | `ADOPT-23` | Hand-copied scanner module, already drifted: flutter_app_core's _IMPORT regex (~line 29... |
-| **DEFERRED** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
+| **RESOLVED** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
 | **NOT A DEFECT** | Med | `ADOPT-25` | Modules adopted by no consumer: baseline_trend, checkpoint_isolation, config_drift_chec... |
 | **RESOLVED** | Med | `ADOPT-26` | 28 modules with exactly one consumer; generic ones worth rolling out: fail_open_handler... |
 | **RESOLVED** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
@@ -715,3 +715,4 @@ Each file keeps the agent's original id on every finding.
 | **WON'T FIX** | Med | `NEW-47` | vacuous_loop_assertions: shapes its pyutilz counterpart catches |
 | **RESOLVED** | Med | `NEW-48` | nondiscriminating_shapes: shapes its pyutilz counterpart catches |
 | **WON'T FIX** | Med | `NEW-49` | inert_patch_targets: shapes its pyutilz counterpart catches |
+| **RESOLVED** | Low | `CANARY-58` | complexity_ratchet caught a new over-limit function in config_getattr_default_parity |

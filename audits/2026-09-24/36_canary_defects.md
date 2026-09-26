@@ -375,3 +375,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- nodes_of has typed overloads (one type -> list[that type], two -> list of their union, more -> list[AST]), so callers get precise types without casts; mypy clean on all 170 source files; node-index, vacuous-loop and unresolved-imports tests pass; imports on Python 3.9
 
 - **Finding:** commits 4f6961d and 2104a87 (another session's perf work) broke self-CI's mypy step twice with the same arg-type error at new call sites.
+
+### CANARY-58 (Low) -- complexity_ratchet caught a new over-limit function in config_getattr_default_parity
+
+**Disposition:** RESOLVED -- _mismatches (complexity 11) split into _config_getattrs, _judge_default and _literal_or_none; the self-gate passes; the ratchet did its job on the first function added after it landed
+
+- **Finding:** self-CI on 790555b failed test_gate_passes_on_this_repo[complexity_ratchet]: the dataclass_classes addition pushed _mismatches to 11.

@@ -383,7 +383,7 @@ The three modules on remote master after local HEAD (`env_flag_parsing`, `config
 
 ### ADOPT-24 (Med) -- Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato...
 
-**Disposition:** DEFERRED -- the pair-by-pair mapping of pyutilz dev/code_audit scanners to py-ci-shared gates is recorded (ad2.md), and the consolidation (delegate where the gate provably covers the scanner without re-keying consumer baselines, otherwise cross-reference and upstream the missing shapes) was started but interrupted by the API weekly limit; its partial, uncommitted edits are in a pyutilz worktree. Waiting on: that resumed run (after 2026-10-01), then a baseline re-key check across the code_audit_meta consumers (pyutilz, mlframe, social, llm_bench, algopacksimple, autopsia, glossum, dash_app_core).
+**Disposition:** RESOLVED -- all 18 pyutilz dev/code_audit scanner / py-ci-shared gate pairs were compared on pyutilz and mlframe; none could delegate without changing a consumer's code_audit findings, so both are kept and cross-referenced: every scanner's docstring names its gate and how they differ, pyutilz registry.py holds a SHARED_GATE_COUNTERPARTS table pinned by tests in both directions (pyutilz 69b34b6), and each gate's docstring names its pyutilz counterpart. The shapes only the scanners caught were measured against the gates (NEW-39..NEW-49): four gates gained them as opt-in additions, five already covered them, two were rejected on measured false-positive rates (py-ci-shared 790555b). verified by: pyutilz tests/test_meta + tests/code_audit (1031 passed) and each consumer's code-audit baseline test unchanged.
 
 - **Original id:** A-24
 - **Where:** pyutilz `src/pyutilz/dev/code_audit/*` vs py_ci_shared

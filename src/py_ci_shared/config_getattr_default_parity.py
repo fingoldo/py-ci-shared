@@ -30,9 +30,9 @@ from __future__ import annotations
 
 import ast
 import dataclasses
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Optional
 
 from ._core import ScanResult, UnparsedFilesError, scan_python
 from ._core.node_index import walk as _fast_walk
@@ -165,31 +165,47 @@ def _mismatches(
     declared = schema_field_defaults(schema_classes)
     out: list[GetattrDefault] = []
     for parsed in scan:
-        tree, rel = parsed.tree, parsed.rel
-        for node in _fast_walk(tree):
-            if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" and len(node.args) == 3):
-                continue
-            receiver, name_node, default_node = node.args
-            if not _is_config_receiver(_receiver_name(receiver), receiver_names, receiver_suffixes):
-                continue
-            if not (isinstance(name_node, ast.Constant) and isinstance(name_node.value, str)):
-                continue
-            field = name_node.value
-            if field not in declared:
-                if dataclass_fields and field not in dataclass_fields:
-                    try:
-                        literal = ast.literal_eval(default_node)
-                    except (ValueError, SyntaxError, TypeError):
-                        literal = None
-                    out.append(GetattrDefault(rel, node.lineno, field, literal, UNDECLARED))
-                continue
-            try:
-                literal = ast.literal_eval(default_node)
-            except (ValueError, SyntaxError, TypeError):
-                continue  # a computed fallback is not a competing default
-            if literal != declared[field] or type(literal) is not type(declared[field]):
-                out.append(GetattrDefault(rel, node.lineno, field, literal, declared[field]))
+        for node, field, default_node in _config_getattrs(parsed.tree, receiver_names, receiver_suffixes):
+            found = _judge_default(parsed.rel, node.lineno, field, default_node, declared, dataclass_fields)
+            if found is not None:
+                out.append(found)
     return sorted(out, key=lambda g: (g.path, g.lineno, g.field))
+
+
+def _config_getattrs(tree: ast.AST, receiver_names: frozenset[str], receiver_suffixes: Sequence[str]) -> Iterator[tuple[ast.Call, str, ast.expr]]:
+    """``(call, field, default)`` for every three-argument ``getattr(<config>, "field", default)`` in *tree*."""
+    for node in _fast_walk(tree):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" and len(node.args) == 3):
+            continue
+        receiver, name_node, default_node = node.args
+        if not _is_config_receiver(_receiver_name(receiver), receiver_names, receiver_suffixes):
+            continue
+        if isinstance(name_node, ast.Constant) and isinstance(name_node.value, str):
+            yield node, name_node.value, default_node
+
+
+def _literal_or_none(node: ast.expr) -> Any:
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, SyntaxError, TypeError):
+        return None
+
+
+def _judge_default(
+    rel: str, lineno: int, field: str, default_node: ast.expr, declared: Mapping[str, Any], dataclass_fields: frozenset[str]
+) -> Optional[GetattrDefault]:
+    """The mismatch one ``getattr`` default makes against the schema, or None."""
+    if field not in declared:
+        if dataclass_fields and field not in dataclass_fields:
+            return GetattrDefault(rel, lineno, field, _literal_or_none(default_node), UNDECLARED)
+        return None
+    try:
+        literal = ast.literal_eval(default_node)
+    except (ValueError, SyntaxError, TypeError):
+        return None  # a computed fallback is not a competing default
+    if literal != declared[field] or type(literal) is not type(declared[field]):
+        return GetattrDefault(rel, lineno, field, literal, declared[field])
+    return None
 
 
 def assert_getattr_defaults_match_schema(

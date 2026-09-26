@@ -1,0 +1,4 @@
+# ADOPT-24 final disposition
+
+### ADOPT-24
+**Disposition:** RESOLVED -- all 18 pyutilz dev/code_audit scanner / py-ci-shared gate pairs were compared on pyutilz and mlframe; none could delegate without changing a consumer's code_audit findings, so both are kept and cross-referenced: every scanner's docstring names its gate and how they differ, pyutilz registry.py holds a SHARED_GATE_COUNTERPARTS table pinned by tests in both directions (pyutilz 69b34b6), and each gate's docstring names its pyutilz counterpart. The shapes only the scanners caught were measured against the gates (NEW-39..NEW-49): four gates gained them as opt-in additions, five already covered them, two were rejected on measured false-positive rates (py-ci-shared 790555b). verified by: pyutilz tests/test_meta + tests/code_audit (1031 passed) and each consumer's code-audit baseline test unchanged.
