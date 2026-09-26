@@ -208,6 +208,20 @@ def _files_under(directory: Path) -> list[Path]:
     return sorted(path for path in directory.rglob("*") if path.is_file())
 
 
+def _file_content_ids(repo: Path, path: Path, object_format: str) -> set[str]:
+    """`_content_ids` of the file at *path*, or the empty set when this process cannot read it.
+
+    An unreadable file -- one a running browser holds open in its profile cache, say -- must come out UNSAVED:
+    nothing proves its content is anywhere else, and the verdict it feeds decides deletion. No id matches the empty
+    set, so it does. Reading it used to raise, and one locked file aborted the report for every worktree.
+    """
+    try:
+        content = path.read_bytes()
+    except OSError:
+        return set()
+    return _content_ids(repo, content, object_format)
+
+
 def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reachable: frozenset[str] | None = None) -> list[str]:
     """Changed paths in *worktree* whose content is neither in *ref* nor reachable from any ref of this repo.
 
@@ -241,12 +255,12 @@ def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reach
         if code == "!!" and candidate.is_dir():
             for inner in _files_under(candidate):
                 inner_rel = inner.relative_to(worktree).as_posix()
-                if not _skipped(inner_rel) and not saved(inner_rel, _content_ids(repo, inner.read_bytes(), object_format)):
+                if not _skipped(inner_rel) and not saved(inner_rel, _file_content_ids(repo, inner, object_format)):
                     unsaved.append(inner_rel)
             continue
         if not candidate.is_file():
             continue
-        if not saved(relative, _content_ids(repo, candidate.read_bytes(), object_format)):
+        if not saved(relative, _file_content_ids(repo, candidate, object_format)):
             unsaved.append(relative)
     return unsaved
 

@@ -294,3 +294,31 @@ class TestAuditRegressions:
 
         assert findings[0].verdict == ORPHAN_DIR and len(findings[0].residual) == 40
         assert len(calls) < 15
+
+
+def test_an_unreadable_file_is_unsaved_work_not_a_crash(origin_and_clone, monkeypatch):
+    """A running browser keeps its profile cache locked; reading it raised PermissionError and aborted the report for
+    every worktree. An unreadable file is judged unsaved, so the worktree holding it is kept for review."""
+    worktree = origin_and_clone.parent / "wt_locked"
+    _git(origin_and_clone, "worktree", "add", "-q", "--detach", str(worktree), "origin/master")
+    (worktree / ".gitignore").write_text("cache/\n", encoding="utf-8")
+    (worktree / "cache").mkdir()
+    locked_in_ignored_dir = worktree / "cache" / "data_0"
+    locked_in_ignored_dir.write_bytes(b"held open by a browser")
+    locked_untracked = worktree / "open.log"
+    locked_untracked.write_bytes(b"held open too")
+    locked = {locked_in_ignored_dir.resolve(), locked_untracked.resolve()}
+    real_read_bytes = Path.read_bytes
+
+    def read_bytes(self):
+        if self.resolve() in locked:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_read_bytes(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+
+    unsaved = unsaved_paths(origin_and_clone, worktree)
+
+    assert {"cache/data_0", "open.log"} <= set(unsaved)
+    assert worktree_findings(origin_and_clone)[0].verdict == REVIEW
+

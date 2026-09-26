@@ -414,7 +414,7 @@ Other behaviour changes in 1.17.0:
 - `entry_points_resolvable` accepts a bare module as an entry point (the `pytest11` form).
 - `uncalled_functions` never writes a missing baseline: register its refresh flag or set
   `PY_CI_SHARED_REFRESH=uncalled-functions`.
-- `worktree_hygiene` exits 2 on a bad ref and never marks staged or ignored work `REMOVABLE`.
+- `worktree_hygiene` exits 2 on a bad ref and never marks staged or ignored work `REMOVABLE`, nor a file it cannot read (a browser profile held open by a running browser): that is unsaved work, not a crash.
 - New keyword arguments: `pydantic_field_bounds` `allow_inconclusive=`, `meta_private_imports`
   `recursive=`, `find_truthiness_tests(repo_root=)`, and `module_reload_safety.assert_no_reloads_in_code`
   with a statement-text allowlist.
