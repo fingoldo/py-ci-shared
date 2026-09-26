@@ -307,3 +307,30 @@ class TestBaselineFile:
         baseline = tmp_path / "_version_baseline.json"
         _seed([src], "v1", baseline)
         assert_version_bumped_with_content(files=[src], version="v1", baseline_path=baseline)
+
+
+class TestIntegerVersionConstants:
+    """A version constant may be an int (``ALGO_VERSION = 4``); JSON history keys always load back as strings."""
+
+    def test_an_int_bump_re_pins_and_keeps_the_history(self, tmp_path):
+        src = tmp_path / "algo.py"
+        _write(src, "def select(): return 1\n")
+        baseline = tmp_path / "_version_baseline.json"
+        _seed([src], 4, baseline)
+
+        _write(src, "def select(): return 2\n")
+        assert_version_bumped_with_content(files=[src], version=5, baseline_path=baseline)
+        pinned = json.loads(baseline.read_text(encoding="utf-8"))
+        assert pinned["version"] == 5 and set(pinned["history"]) == {"4", "5"}
+
+    def test_going_back_to_an_old_int_version_with_new_content_fails(self, tmp_path):
+        src = tmp_path / "algo.py"
+        _write(src, "def select(): return 1\n")
+        baseline = tmp_path / "_version_baseline.json"
+        _seed([src], 4, baseline)
+        _write(src, "def select(): return 2\n")
+        assert_version_bumped_with_content(files=[src], version=5, baseline_path=baseline)
+
+        _write(src, "def select(): return 3\n")
+        with pytest.raises(pytest.fail.Exception, match="already pinned to different content"):
+            assert_version_bumped_with_content(files=[src], version=4, baseline_path=baseline)

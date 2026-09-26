@@ -130,7 +130,7 @@ def _legacy_content_hash(paths: "list[Path]") -> str:
 
 
 def _write(baseline_path: Path, version: str, current_hash: str, history: "dict[str, str]") -> None:
-    payload = {"version": version, "content_hash": current_hash, "hash_format": HASH_FORMAT, "history": {**history, version: current_hash}}
+    payload = {"version": version, "content_hash": current_hash, "hash_format": HASH_FORMAT, "history": {**history, str(version): current_hash}}
     atomic_write_text(baseline_path, dump_json(payload))
 
 
@@ -199,9 +199,9 @@ def assert_version_bumped_with_content(
     comparable_hash = _legacy_content_hash(paths) if legacy else current_hash
 
     if version != baseline_version:
-        if version in history and history[version] != current_hash:
+        if str(version) in history and history[str(version)] != current_hash:
             pytest.fail(
-                f"{version!r} was already pinned to different content (hash {history[version]}; now {current_hash}). "
+                f"{version!r} was already pinned to different content (hash {history[str(version)]}; now {current_hash}). "
                 f"Going back to an old version string with new content reuses every cache entry keyed on it. "
                 f"Bump to a version that has never been used."
             )
