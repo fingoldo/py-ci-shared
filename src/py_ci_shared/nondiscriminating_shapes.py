@@ -7,8 +7,9 @@ Each shape below passed a test through a real defect:
   probability bound is the whole contract there.
 * ``envelope-assert``: ``assert pred.min() > 0.5 * y.min()`` / ``pred.max() < 1.5 * y.max()``: an envelope a constant
   prediction satisfies.
-* ``median-roundtrip``: ``np.median(np.abs(a - b)) < tol`` in a round-trip / inverse test, which passes while up to half
-  the rows are wrong: the shape of a tail- or level-only defect.
+* ``median-roundtrip``: ``np.median(np.abs(a - b)) < tol`` as the SOLE verdict of a round-trip / inverse test, which
+  passes while up to half the rows are wrong: the shape of a tail- or level-only defect. A median next to a real
+  per-element check (``assert_allclose``, another ``assert``) is a canary and is not flagged.
 * ``late-skip``: ``pytest.skip(...)`` after the test has computed something, outside an environment probe: the data decided
   to skip, so the regression that changes the data also turns the test off.
 * ``nonempty-only-assert`` (opt-in via ``extra_shapes=["nonempty-only-assert"]``, so existing baselines do not
@@ -70,6 +71,7 @@ _ENV_PARTS = frozenset(
         "linux",
         "darwin",
         "ci",
+        "exists",  # Path.exists() / os.path.exists(): a baseline-file-not-written-yet probe, not a data decision
     }
 )
 _IDENT_PART = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
@@ -133,6 +135,21 @@ def _median_error(test: ast.AST) -> bool:
             if any(isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in {"abs", "absolute", "fabs"} for n in _fast_walk(node)):
                 return True
     return False
+
+
+def _median_is_the_only_check(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """A median-of-absolute-differences assertion that nothing else backs up.
+
+    A median check next to a real per-element check (``np.testing.assert_allclose``, ``assert_array_equal``, another
+    ``assert`` that is not itself a median) is a canary or precondition -- "this fixture does amplify" -- not the
+    round-trip's pass/fail criterion; only a median that is the SOLE verdict passes while half the rows are wrong.
+    """
+    median_asserts = [n for n in _fast_walk(func) if isinstance(n, ast.Assert) and _median_error(n.test)]
+    if not median_asserts:
+        return False
+    other_asserts = [n for n in _fast_walk(func) if isinstance(n, ast.Assert) and not _median_error(n.test)]
+    assert_calls = [n for n in _fast_walk(func) if isinstance(n, ast.Call) and _call_name(n).startswith("assert_")]
+    return not other_asserts and not assert_calls
 
 
 def _call_name(node: ast.AST) -> str:
@@ -245,7 +262,7 @@ def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Opti
         out.append("wide-literal-range")
     if any(_envelope_assert(t) for t in asserts):
         out.append("envelope-assert")
-    if _ROUNDTRIP_NAME.search(func.name) and any(_median_error(t) for t in asserts):
+    if _ROUNDTRIP_NAME.search(func.name) and _median_is_the_only_check(func):
         out.append("median-roundtrip")
     if _late_skip(func, aliases):
         out.append("late-skip")

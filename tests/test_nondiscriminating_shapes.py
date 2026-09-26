@@ -93,6 +93,36 @@ class TestAuditRegressions:
     def test_reversed_wide_ranges_are_found(self, cmp):
         assert _reasons(f"def test_x():\n    assert {cmp}\n") == ["wide-literal-range"]
 
+    def test_a_median_canary_next_to_a_per_element_check_is_not_flagged(self):
+        """``assert median(...) > 2  # canary: the fixture amplifies`` followed by ``assert_allclose(moved, isolated)`` is a
+        precondition plus a real check; only a median that is the sole verdict hides half-wrong rows."""
+        canary = (
+            "def test_inverse_is_local():\n"
+            "    assert np.median(np.abs(dense) / np.abs(sparse)) > 2.0\n"
+            "    np.testing.assert_allclose(moved, isolated, rtol=1e-6)\n"
+        )
+        assert _reasons(canary) == []
+        assert_next = "def test_inverse_is_local():\n    assert np.median(np.abs(a - b)) < 1e-6\n    assert a.shape == b.shape\n"
+        assert _reasons(assert_next) == []
+
+    def test_a_sole_median_verdict_in_an_inverse_test_is_still_flagged(self):
+        src = "def test_roundtrip():\n    assert np.median(np.abs(back - x)) < 1e-6\n"
+        assert _reasons(src) == ["median-roundtrip"]
+
+    def test_a_baseline_file_existence_check_is_an_environment_probe(self):
+        """The write-baseline-on-first-run convention (``if not BASELINE_PATH.exists(): write(); pytest.skip(...)``)
+        used by dozens of meta-gates checks filesystem state, not what the computed data says; it must not be
+        flagged as a late-skip like a data-decided one."""
+        src = (
+            "def test_x():\n"
+            "    current = compute()\n"
+            "    if refresh_requested() or not BASELINE_PATH.exists():\n"
+            "        BASELINE_PATH.write_text(dump(current))\n"
+            "        pytest.skip('baseline written')\n"
+            "    assert current <= load_baseline()\n"
+        )
+        assert _reasons(src) == []
+
     def test_a_reversed_narrow_range_is_not_flagged(self):
         assert _reasons("def test_x():\n    assert 1.1 > ratio > 0.9\n") == []
 
