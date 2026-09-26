@@ -4,6 +4,11 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.18.0 (unreleased)
 
+- `uncalled_functions` follows import aliases across files (a re-export module `from ._impl import _h as h`, loaded by a
+  consumer as `from pkg.shared import h as _probe`), and a name a function imports locally stays the imported function
+  even when an `except ImportError: f = None` fallback also assigns it. Both were reported as dead code.
+- `content_hash_version_bump_gate` keys its history by `str(version)`: an int version constant crashed the re-pin in
+  `json.dump(sort_keys=True)` and never matched the rule that refuses reusing an old version for new content.
 - **Gates walk each tree once.** `_core.nodes_of(tree, *types)` returns a tree's nodes of those types in `ast.walk` order from one
   cached walk, and `_core.tree_memo` keeps any per-tree derived value; both live as long as the parse cache. `ImportAliases.from_tree`,
   `unresolved_imports` and `marker_runner_coverage` use them, and every gate walks with `_core.walk` (the `ast.walk` order, about 1.5x

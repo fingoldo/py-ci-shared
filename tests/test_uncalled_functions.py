@@ -251,3 +251,16 @@ class TestAuditRegressions:
         baseline.write_text('["bom.py::orphan"]', encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="could not be read or parsed"):
             assert_no_new_uncalled_function([bom, bad], tmp_path, baseline)
+
+
+class TestGuardedLocalImport:
+    def test_a_lazily_imported_function_with_an_import_error_fallback_is_called(self, tmp_path):
+        """``try: from a import f`` / ``except ImportError: f = None`` then ``f()``: the fallback assignment must not turn
+        the imported name into a local shadow."""
+        a = _write(tmp_path, "a.py", "def f():\n    return 1\n")
+        b = _write(
+            tmp_path,
+            "b.py",
+            "def g():\n    try:\n        from a import f\n    except ImportError:\n        f = None\n    if f is not None:\n        return f()\n",
+        )
+        assert "a.py::f" not in find_uncalled_functions([a, b], tmp_path)

@@ -112,6 +112,7 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
     args = fn.args
     bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs, *(a for a in (args.vararg, args.kwarg) if a)]}
     declared_outer: set[str] = set()
+    imported: set[str] = set()
     stack: list[ast.AST] = list(fn.body) if isinstance(fn.body, list) else [fn.body]
     while stack:
         node = stack.pop()
@@ -128,11 +129,13 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
             # Not a shadow: a local import binds the name to the imported object itself, so ``from ids import
             # make_id`` inside a function followed by ``make_id()`` IS a call of make_id. Counting it as a local
             # binding reported every lazily imported function as dead (49 in glossum on 2026-09-24).
-            pass
+            imported.update((a.asname or a.name).split(".")[0] for a in node.names)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
         stack.extend(ast.iter_child_nodes(node))
-    return bound - declared_outer
+    # A name the function imports is the imported object on the path that imported it, even when a fallback also assigns
+    # it (``try: from x import f`` / ``except ImportError: f = None``); treating it as a shadow reported f as dead.
+    return bound - declared_outer - imported
 
 
 def _references(tree: ast.Module) -> "tuple[set[str], dict[str, str]]":
