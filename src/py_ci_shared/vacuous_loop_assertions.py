@@ -59,7 +59,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Union
 
-from ._core import relative_posix, scan_python
+from ._core import nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loop"]
@@ -337,16 +337,14 @@ def _floorless_loops(files: Iterable[Path], repo_root: Path, *, allow_unparsed: 
         tree = parsed.tree
         rel = relative_posix(parsed.path, Path(repo_root).resolve())
         per_file: list[tuple[str, int]] = []
-        for fn in _fast_walk(tree):
-            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        for fn in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
+            # Most functions have no assert-only loop: find those first, and build the per-function maps only for the rest.
+            candidates = [node for node in _own_nodes(fn) if isinstance(node, (ast.For, ast.AsyncFor)) and _is_assert_only(node.body)]
+            if not candidates:
                 continue
             enclosing = _enclosing_loops(fn)
             assigned = _assignments(fn)
-            for node in _own_nodes(fn):
-                if not isinstance(node, (ast.For, ast.AsyncFor)):
-                    continue
-                if not _is_assert_only(node.body):
-                    continue
+            for node in candidates:
                 if _iterates_a_nonempty_literal(node, assigned):
                     continue
                 if _floor_exists(fn, node, enclosing):

@@ -41,7 +41,7 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, SourceError, iter_files, parse_file, relative_posix, resolve_relative
+from ._core import DEFAULT_EXCLUDE, ImportAliases, SourceError, iter_files, nodes_of, parse_file, relative_posix, resolve_relative
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -236,7 +236,7 @@ def _local_module_names(tree: ast.AST, path: Path, repo_root: Optional[Path]) ->
     as graphql``, ``import helpers``. ``from pkg.db import conn`` binds whatever ``conn`` is -- an object, not a module --
     unless ``pkg/db/conn.py`` exists; without *repo_root* every non-driver ``from`` import is assumed to be a module."""
     names: set[str] = set()
-    for node in _fast_walk(tree):
+    for node in nodes_of(tree, ast.Import, ast.ImportFrom):
         if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] not in _THIRD_PARTY_ROOTS):
             for alias in node.names:
                 if alias.name == "*":
@@ -274,11 +274,11 @@ def _performs(path: Path, effects: Sequence[str], *, repo_root: Optional[Path] =
         if tree is None:
             return set()
 
-    defined_here = {node.name for node in _fast_walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects}
+    defined_here = {node.name for node in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef) if node.name in effects}
     local_modules = _local_module_names(tree, path, repo_root)
 
     found: set[str] = set()
-    for node in _fast_walk(tree):
+    for node in nodes_of(tree, ast.Call):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in effects:
             base = node.func.value
             if isinstance(base, ast.Name) and base.id in local_modules:
@@ -579,9 +579,7 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str], parse: Optional
         tree = parse(path)
         if tree is None:
             continue
-        for node in _fast_walk(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                continue
+        for node in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
             inspected: set[str] = set()
             for inner in _fast_walk(node):
                 if not isinstance(inner, ast.Attribute):
@@ -678,7 +676,7 @@ def _import_records(path: Path) -> list[_ImportRecord]:
     if tree is None:
         return []
     records: list[_ImportRecord] = []
-    for node in _fast_walk(tree):
+    for node in nodes_of(tree, ast.Import, ast.ImportFrom):
         if isinstance(node, ast.Import):
             records.append((0, None, tuple(alias.name for alias in node.names)))
         elif isinstance(node, ast.ImportFrom):

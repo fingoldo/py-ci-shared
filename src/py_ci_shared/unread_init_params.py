@@ -23,7 +23,7 @@ import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from ._core import relative_posix, scan_python
+from ._core import nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["UnreadParam", "find_unread_init_params", "assert_no_unread_init_params"]
@@ -89,7 +89,7 @@ def _declaration_strings(tree: ast.Module) -> set[int]:
     """``id()`` of string constants that DECLARE names rather than read them: ``__slots__``/``__all__`` entries and
     docstrings. ``__slots__ = ("alpha",)`` makes ``alpha`` storable, it does not read it."""
     out: set[int] = set()
-    for node in _fast_walk(tree):
+    for node in nodes_of(tree, ast.Assign, ast.AnnAssign, ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             if node.value is not None and any(isinstance(t, ast.Name) and t.id in ("__slots__", "__all__") for t in targets):
@@ -110,7 +110,7 @@ def _read_attributes(trees: Iterable[ast.Module]) -> set[str]:
     names: set[str] = set()
     for tree in trees:
         declarations = _declaration_strings(tree)
-        for node in _fast_walk(tree):
+        for node in nodes_of(tree, ast.Attribute, ast.Call, ast.Constant):
             if id(node) in declarations:
                 continue
             if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):

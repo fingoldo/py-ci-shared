@@ -9,6 +9,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   `unresolved_imports` and `marker_runner_coverage` use them, and every gate walks with `_core.walk` (the `ast.walk` order, about 1.5x
   faster). On mlframe's meta suite: the marker check 70 s -> 29 s for the first marker and 5.5 s for each further one, the import check
   143 s -> 34 s. Mutation harness version 14.
+- `effect_assertion_parity`, `vacuous_loop_assertions`, `inert_patch_targets` and `unread_init_params` read their node types
+  through `nodes_of`; `vacuous_loop_assertions` builds its per-function maps only for functions with an assert-only loop, and
+  `inert_patch_targets` skips the per-function `global` walk in modules that declare none. On mlframe: 50 -> 20 s, 31 -> 15 s,
+  21 -> 14 s, 17 -> 13 s; findings unchanged.
 - **A refresh only shrinks a baseline.** It drops entries that no longer fire and lowers counts; adding an entry,
   raising a count or seeding a missing baseline with findings fails and names them unless growth is opted into
   (`--py-ci-refresh-grow`, `PY_CI_SHARED_REFRESH_ALLOW_GROW=1`, `py-ci-shared refresh --grow`, `grow=True`).

@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, iter_files, relative_posix, scan_python
+from ._core import DEFAULT_EXCLUDE, iter_files, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["Finding", "ModuleFacts", "module_index", "scan"]
@@ -150,9 +150,9 @@ def _module_scope(body: "list[ast.stmt]") -> Iterator[ast.stmt]:
 def _globals_assigned_in_functions(tree: ast.AST) -> "set[str]":
     """Names a function declares ``global`` and assigns: those are module attributes too."""
     out: set[str] = set()
-    for fn in _fast_walk(tree):
-        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            continue
+    if not nodes_of(tree, ast.Global):
+        return out  # the common case: no function in this module declares anything global
+    for fn in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
         declared = {n for node in _fast_walk(fn) if isinstance(node, ast.Global) for n in node.names}
         if not declared:
             continue
@@ -200,7 +200,7 @@ def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
                 if not isinstance(sub, ast.stmt):
                     bound.update(n.target.id for n in _fast_walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
     bound |= _globals_assigned_in_functions(tree)
-    for walked in _fast_walk(tree):
+    for walked in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign, ast.Call):
         if isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef)) and walked.name in {"__getattr__", "__setattr__"}:
             forwards = True
         elif isinstance(walked, ast.Assign):

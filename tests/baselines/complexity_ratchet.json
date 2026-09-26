@@ -28,7 +28,7 @@
   "src/py_ci_shared/dataclass_case_completeness.py::assert_every_dataclass_has_a_case": 13,
   "src/py_ci_shared/docs_inventory_parity.py::find_phantom_doc_paths": 14,
   "src/py_ci_shared/edge_function_hygiene.py::find_edge_function_problems": 15,
-  "src/py_ci_shared/effect_assertion_parity.py::_inspection_helpers": 12,
+  "src/py_ci_shared/effect_assertion_parity.py::_inspection_helpers": 11,
   "src/py_ci_shared/effect_assertion_parity.py::build_import_map": 15,
   "src/py_ci_shared/effect_assertion_parity.py::find_unasserted_effects": 21,
   "src/py_ci_shared/env_flag_parsing.py::_boolean_contexts": 13,
@@ -66,7 +66,6 @@
   "src/py_ci_shared/uncalled_functions.py::_referenced_names.<locals>.visit": 17,
   "src/py_ci_shared/unresolved_imports.py::_is_dynamic_module": 11,
   "src/py_ci_shared/unresolved_imports.py::_names_bound_by": 13,
-  "src/py_ci_shared/vacuous_loop_assertions.py::_floorless_loops": 11,
   "src/py_ci_shared/version_consistency.py::version_sources": 12,
   "src/py_ci_shared/worktree_hygiene.py::unsaved_paths": 13
 }
