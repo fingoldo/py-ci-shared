@@ -15,19 +15,31 @@ allowlist judgement is needed):
   whose path matches no file or several files is not judged (pyutilz's ``stale_source_citation`` reports vanished
   files); a bare ``file:line`` with no symbol is not judged either: nothing says what should be there.
 
+``line-past-end`` and ``symbol-not-at-line`` also read *extra_globs* (``"*.md"``, ``"*.sql"``, ``"*.toml"``, ``"*.yaml"``):
+a non-Python file's citation of a ``.py`` source in the SAME corpus rots exactly like a comment's does, and neither
+Python's tokenizer nor a docstring boundary applies to it, so every line is read as plain text. ``self-citation`` stays
+Python-only, since it is specifically about a string a logger emits from the file it names. Resolution still requires
+the cited path to match exactly one file in the (Python) corpus; a citing file outside that corpus is not itself judged.
+
+Scope *extra_globs* away from a dated, closed audit-report archive with *exclude_parts* (``("audits",)``, say): a
+report's prose cites the line a finding sat on AT THE TIME it was written, which the code moving on is EXPECTED to
+make stale -- that is a historical record, not a live-documentation defect, and scanning one produced ~100 such
+findings on a real tree, none of them a live doc pointing at the wrong place.
+
 Fix by citing the symbol instead of the line (``see `_mah._fit` ``), which ``phantom_code_references`` then validates.
 """
 
 from __future__ import annotations
 
 import io
+import os
 import re
 import tokenize
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, scan_python
+from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, SourceError, iter_files, read_source, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -169,14 +181,86 @@ def _past_end_findings(f: ParsedFile, index: _Index) -> list[Finding]:
     return out
 
 
+def _roots(root: Union[str, Path, Iterable[Union[str, Path]]]) -> list[Path]:
+    if isinstance(root, (str, os.PathLike)):
+        return [Path(root)]
+    return [Path(entry) for entry in root]
+
+
+def _extra_past_end_findings(rel: str, source: str, index: _Index) -> list[Finding]:
+    out: list[Finding] = []
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        for m in _ANY_CITATION.finditer(line):
+            target = index.resolve(m.group("path"))
+            if target is None:
+                continue
+            n_lines = len(target.source.splitlines())
+            if int(m.group("line")) > n_lines:
+                message = f"cites {m.group(0)}, but {target.rel} has {n_lines} lines; cite the symbol, not the line"
+                out.append(Finding(rel, lineno, RULE_PAST_END, message, key=f"{RULE_PAST_END}::{rel}::{m.group(0)}"))
+    return out
+
+
+def _extra_symbol_findings(rel: str, source: str, index: _Index) -> list[Finding]:
+    out: list[Finding] = []
+    for lineno, line in enumerate(source.splitlines(), start=1):
+        for pattern in _CITATIONS:
+            for m in pattern.finditer(line):
+                target = index.resolve(m.group("path"))
+                if target is None:
+                    continue
+                cite_line = int(m.group("line"))
+                target_lines = target.source.splitlines()
+                leaf = m.group("sym").rsplit(".", 1)[-1]
+                window = target_lines[max(0, cite_line - 1 - WINDOW) : cite_line + WINDOW]
+                if cite_line <= len(target_lines) and any(re.search(r"\b" + re.escape(leaf) + r"\b", ln) for ln in window):
+                    continue
+                where = "past the end of the file" if cite_line > len(target_lines) else f"not within {WINDOW} lines of it"
+                message = f"cites `{m.group('sym')}` at {m.group('path')}:{cite_line}, but it is {where}; cite the symbol, not the line"
+                out.append(Finding(rel, lineno, RULE_SYMBOL, message, key=f"{RULE_SYMBOL}::{rel}::{m.group('sym')}@{m.group('path')}:{cite_line}"))
+    return out
+
+
+def _extra_findings(
+    root: Union[str, Path, Iterable[Union[str, Path]]], exclude_parts: Iterable[str], extra_globs: Iterable[str], wanted: set[str], index: _Index
+) -> list[Finding]:
+    """Findings from non-Python files (``*.md``, ``*.sql``, ...) that cite a ``.py`` source in the same corpus.
+
+    Best-effort: a file that cannot be read is skipped rather than raised, unlike the Python corpus's strict
+    contract, since *extra_globs* is an opt-in extra rather than the gate's primary subject.
+    """
+    globs = tuple(extra_globs)
+    if not globs:
+        return []
+    out: list[Finding] = []
+    exclude = DEFAULT_EXCLUDE | frozenset(exclude_parts)
+    for base in _roots(root):
+        for path in iter_files(base, globs, exclude=exclude):
+            try:
+                source = read_source(path)
+            except SourceError:
+                continue
+            rel = relative_posix(path, base)
+            if RULE_PAST_END in wanted:
+                out.extend(_extra_past_end_findings(rel, source, index))
+            if RULE_SYMBOL in wanted:
+                out.extend(_extra_symbol_findings(rel, source, index))
+    return out
+
+
 def find_stale_source_citations(
     root: Union[str, Path, Iterable[Union[str, Path]]],
     *,
     exclude_parts: Iterable[str] = (),
     rules: Iterable[str] = (RULE_SELF, RULE_PAST_END, RULE_SYMBOL),
     use_git: Optional[bool] = None,
+    extra_globs: Iterable[str] = (),
 ) -> tuple[list[Finding], ScanResult]:
-    """``(findings, scan)``; cited paths are resolved against the same corpus."""
+    """``(findings, scan)``; cited paths are resolved against the same corpus.
+
+    *extra_globs* (e.g. ``("*.md", "*.sql", "*.toml", "*.yaml")``) also scans matching non-Python files for a
+    ``.py`` citation gone stale; see the module docstring for what that widens and what it still leaves out.
+    """
     wanted = set(rules)
     scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
     index = _Index(scan)
@@ -188,6 +272,7 @@ def find_stale_source_citations(
             findings.extend(_past_end_findings(f, index))
         if RULE_SYMBOL in wanted:
             findings.extend(_symbol_findings(f, index))
+    findings.extend(_extra_findings(root, exclude_parts, extra_globs, wanted, index))
     unique = {(x.path, x.line, x.key): x for x in findings}
     return sorted(unique.values(), key=lambda x: (x.path, x.line, x.rule)), scan
 
@@ -202,10 +287,11 @@ def assert_no_stale_source_citations(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    extra_globs: Iterable[str] = (),
 ) -> None:
     """Fail on a stale citation not accepted by *baseline_path*. Missing baseline fails; refresh with ``REFRESH_FLAG``
     or ``PY_CI_SHARED_REFRESH=stale-source-citations``."""
-    findings, scan = find_stale_source_citations(root, exclude_parts=exclude_parts, rules=rules, use_git=use_git)
+    findings, scan = find_stale_source_citations(root, exclude_parts=exclude_parts, rules=rules, use_git=use_git, extra_globs=extra_globs)
     enforce_findings(
         findings,
         scan,

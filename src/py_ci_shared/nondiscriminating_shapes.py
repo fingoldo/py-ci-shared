@@ -11,12 +11,24 @@ Each shape below passed a test through a real defect:
   the rows are wrong: the shape of a tail- or level-only defect.
 * ``late-skip``: ``pytest.skip(...)`` after the test has computed something, outside an environment probe: the data decided
   to skip, so the regression that changes the data also turns the test off.
+* ``nonempty-only-assert`` (opt-in via ``extra_shapes=["nonempty-only-assert"]``, so existing baselines do not
+  change): the function's ONLY assertion is ``len(x) > 0`` / ``len(x) >= 1`` (or the ``< 0`` / ``<= 1`` form written the other way round): true for one bad element exactly as it is for a whole correct collection, so it
+  cannot fail on a wrong-but-nonempty result. Scoped to a SOLE assertion, not any non-emptiness check: a test that also
+  asserts a value already has a real floor, and reporting it too would make every ``assert x; assert len(x) > 0``
+  combination noise.
 
 ``shape_reasons(func)`` returns the slugs one test function exhibits; a repository's own meta test decides scope and
 baseline (see mlframe's ``test_no_nondiscriminating_assert.py``).
+
+Counterpart: ``pyutilz.dev.code_audit.nondiscriminating_test`` also flags an assertion whose both sides come from the
+identical call expression (always true by construction); this module does not attempt that shape, since resolving
+"the identical call" without false positives on two calls that happen to render the same needs the wider scanner's
+heuristics.
 """
 
 from __future__ import annotations
+
+from collections.abc import Iterable
 
 import ast
 import re
@@ -32,6 +44,7 @@ SHAPE_HELP = {
     "envelope-assert": "a min/max envelope a constant prediction satisfies; assert an error metric instead",
     "median-roundtrip": "median error in a round-trip test passes while half the rows are wrong; assert the max error",
     "late-skip": "pytest.skip after computing: the data decides to skip, so the regression that changes it also disables the test",
+    "nonempty-only-assert": "the only assertion checks non-emptiness; true for a wrong result exactly as for a right one, assert a value too",
 }
 
 _ROUNDTRIP_NAME = re.compile(r"round_?trip|inverse", re.IGNORECASE)
@@ -122,6 +135,31 @@ def _median_error(test: ast.AST) -> bool:
     return False
 
 
+def _call_name(node: ast.AST) -> str:
+    func = getattr(node, "func", None)
+    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+
+
+def _len_nonempty_target(test: ast.AST) -> Optional[ast.expr]:
+    """The collection a ``len(x) > 0`` / ``len(x) >= 1`` (either side) assertion checks, or None."""
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1):
+        return None
+    left, op, right = test.left, test.ops[0], test.comparators[0]
+    if isinstance(left, ast.Call) and _call_name(left) == "len" and left.args:
+        if (isinstance(op, ast.Gt) and _num(right) == 0) or (isinstance(op, ast.GtE) and _num(right) == 1):
+            return left.args[0]
+    if isinstance(right, ast.Call) and _call_name(right) == "len" and right.args:
+        if (isinstance(op, ast.Lt) and _num(left) == 0) or (isinstance(op, ast.LtE) and _num(left) == 1):
+            return right.args[0]
+    return None
+
+
+def _nonempty_only_assert(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    """The function's SOLE assertion is a non-emptiness check: true for any bad-but-present result too."""
+    asserts = [n for n in _fast_walk(func) if isinstance(n, ast.Assert)]
+    return len(asserts) == 1 and _len_nonempty_target(asserts[0].test) is not None
+
+
 def _is_skip_call(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     """``pytest.skip(...)``, however ``pytest`` or ``skip`` was imported when *aliases* is given."""
     if not isinstance(node, ast.Call):
@@ -192,7 +230,10 @@ def _under_environment_probe(node: ast.AST, parents: dict[int, ast.AST]) -> bool
     return False
 
 
-def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Optional[ImportAliases] = None) -> list[str]:
+OPT_IN_SHAPES = frozenset({"nonempty-only-assert"})
+
+
+def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Optional[ImportAliases] = None, extra_shapes: Iterable[str] = ()) -> list[str]:
     """The nondiscriminating shapes one test function exhibits, as slugs (see ``SHAPE_HELP``).
 
     Pass *aliases* (``ImportAliases.from_tree(module)``) so ``from pytest import skip`` / ``import pytest as pt``
@@ -208,4 +249,6 @@ def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Opti
         out.append("median-roundtrip")
     if _late_skip(func, aliases):
         out.append("late-skip")
+    if "nonempty-only-assert" in extra_shapes and _nonempty_only_assert(func):
+        out.append("nonempty-only-assert")
     return out

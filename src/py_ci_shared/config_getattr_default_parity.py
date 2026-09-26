@@ -9,17 +9,27 @@ The check resolves each site's field against the schema classes the caller suppl
 field's declared default, and reports the mismatches. A field that no schema declares is ignored: the receiver is named
 by convention, and the alternative would be a false report for every unrelated ``getattr(obj, "x", 0)``.
 
+A caller may also pass ``dataclass_classes``: plain ``@dataclass``-decorated configs have no default-mismatch to
+compare (a dataclass field's default is always what the class already gives you), but a ``getattr`` field that
+NONE of them declare at all is a typo of a real one and is reported by name, on the same receiver-name scoping as
+the pydantic check.
+
 Usage from a repository's meta tests::
 
     from py_ci_shared.config_getattr_default_parity import assert_getattr_defaults_match_schema
 
     def test_getattr_defaults_match_the_config():
         assert_getattr_defaults_match_schema(files=SRC_FILES, repo_root=REPO_ROOT, schema_classes=[MyConfig], allowed={})
+
+Counterpart: ``pyutilz.dev.code_audit.getattr_literal_on_known_dataclass`` judges a plain-dataclass ``getattr`` site
+directly; this module folds the same undeclared-field case in via ``dataclass_classes``, while keeping its own
+default-value mismatch check pydantic-only.
 """
 
 from __future__ import annotations
 
 import ast
+import dataclasses
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -33,14 +43,19 @@ if TYPE_CHECKING:  # pydantic is a test-time dependency here, as in this package
 __all__ = [
     "GetattrDefault",
     "schema_field_defaults",
+    "dataclass_field_names",
     "find_getattr_default_mismatches",
     "assert_getattr_defaults_match_schema",
     "DEFAULT_RECEIVER_NAMES",
     "DEFAULT_RECEIVER_SUFFIXES",
+    "UNDECLARED",
 ]
 
 DEFAULT_RECEIVER_NAMES: frozenset[str] = frozenset({"config", "cfg", "self.config", "self.cfg", "self._config"})
 DEFAULT_RECEIVER_SUFFIXES: tuple[str, ...] = ("_config", "_cfg", ".config", ".cfg")
+
+#: ``declared`` sentinel for a field none of the supplied dataclasses declare at all (a typo, not a mismatch).
+UNDECLARED = object()
 
 
 class GetattrDefault:
@@ -56,6 +71,8 @@ class GetattrDefault:
         self.declared = declared
 
     def __repr__(self) -> str:
+        if self.declared is UNDECLARED:
+            return f"{self.path}:{self.lineno} {self.field}={self.literal!r}: no dataclass here declares `{self.field}`"
         return f"{self.path}:{self.lineno} {self.field}={self.literal!r} vs the config's {self.declared!r}"
 
 
@@ -98,21 +115,36 @@ def schema_field_defaults(schema_classes: Sequence[type["BaseModel"]]) -> dict[s
     return {k: v for k, v in seen.items() if k not in conflicting}
 
 
+def dataclass_field_names(dataclass_classes: Sequence[type]) -> frozenset[str]:
+    """The union of field names declared by every plain ``@dataclass`` in *dataclass_classes*.
+
+    Unioned rather than intersected, matching :func:`schema_field_defaults`'s treatment of same-named fields
+    across models: a field is undeclared only when NONE of the caller's dataclasses has it.
+    """
+    names: set[str] = set()
+    for cls in dataclass_classes:
+        if dataclasses.is_dataclass(cls):
+            names.update(f.name for f in dataclasses.fields(cls))
+    return frozenset(names)
+
+
 def find_getattr_default_mismatches(
     files: Iterable[Path],
     repo_root: Path,
     schema_classes: Sequence[type["BaseModel"]],
     receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
     receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES,
+    dataclass_classes: Sequence[type] = (),
 ) -> list[GetattrDefault]:
-    """Every ``getattr(<config>, "<field>", <literal>)`` whose literal differs from the field's declared default.
+    """Every ``getattr(<config>, "<field>", <literal>)`` whose literal differs from the field's declared default,
+    plus (when *dataclass_classes* is given) every site naming a field none of those dataclasses declares at all.
 
     A file that cannot be read or parsed raises ``_core.UnparsedFilesError`` instead of being skipped.
     """
     scan = _scan(files, repo_root)
     if scan.unparsed:
         raise UnparsedFilesError(_unparsed_message(scan))
-    return _mismatches(scan, schema_classes, receiver_names, receiver_suffixes)
+    return _mismatches(scan, schema_classes, receiver_names, receiver_suffixes, dataclass_field_names(dataclass_classes))
 
 
 def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
@@ -124,7 +156,11 @@ def _unparsed_message(scan: ScanResult) -> str:
 
 
 def _mismatches(
-    scan: ScanResult, schema_classes: Sequence[type["BaseModel"]], receiver_names: frozenset[str], receiver_suffixes: Sequence[str]
+    scan: ScanResult,
+    schema_classes: Sequence[type["BaseModel"]],
+    receiver_names: frozenset[str],
+    receiver_suffixes: Sequence[str],
+    dataclass_fields: frozenset[str] = frozenset(),
 ) -> list[GetattrDefault]:
     declared = schema_field_defaults(schema_classes)
     out: list[GetattrDefault] = []
@@ -140,6 +176,12 @@ def _mismatches(
                 continue
             field = name_node.value
             if field not in declared:
+                if dataclass_fields and field not in dataclass_fields:
+                    try:
+                        literal = ast.literal_eval(default_node)
+                    except (ValueError, SyntaxError, TypeError):
+                        literal = None
+                    out.append(GetattrDefault(rel, node.lineno, field, literal, UNDECLARED))
                 continue
             try:
                 literal = ast.literal_eval(default_node)
@@ -158,8 +200,10 @@ def assert_getattr_defaults_match_schema(
     min_files: int = 1,
     receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
     receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES,
+    dataclass_classes: Sequence[type] = (),
 ) -> None:
-    """Fail on a ``getattr`` fallback that contradicts the config's own default.
+    """Fail on a ``getattr`` fallback that contradicts the config's own default, or that names a field none of
+    *dataclass_classes* declares at all.
 
     ``allowed`` maps a field name to the reason its sites may differ (a deliberately stricter fallback for a duck-typed
     caller, say); an empty reason is rejected, and an entry with nothing left to excuse must be removed.
@@ -171,7 +215,7 @@ def assert_getattr_defaults_match_schema(
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowed fields need a reason: {empty}")
-    found = _mismatches(scan, schema_classes, receiver_names, receiver_suffixes)
+    found = _mismatches(scan, schema_classes, receiver_names, receiver_suffixes, dataclass_field_names(dataclass_classes))
     bad = [g for g in found if g.field not in allowed]
     stale = sorted(set(allowed) - {g.field for g in found})
     msgs = []

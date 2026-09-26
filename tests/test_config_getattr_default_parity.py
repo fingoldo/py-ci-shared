@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import pytest
 from pydantic import BaseModel, Field
 
 from py_ci_shared.config_getattr_default_parity import (
+    UNDECLARED,
     assert_getattr_defaults_match_schema,
+    dataclass_field_names,
     find_getattr_default_mismatches,
     schema_field_defaults,
 )
@@ -27,6 +31,36 @@ class Other(BaseModel):
 
     enabled: bool = False
     only_here: int = 7
+
+
+@dataclass
+class RunConfig:
+    """A plain dataclass config with no pydantic schema."""
+
+    seed: int = 0
+
+
+def test_a_field_no_dataclass_declares_is_reported(tmp_path):
+    """A typo'd field name (``random_seed`` for ``seed``) is flagged when it names no dataclass field at all."""
+    p = _write(tmp_path, "def f(cfg):\n    return getattr(cfg, 'random_seed', 0)\n")
+    found = find_getattr_default_mismatches([p], tmp_path, [], dataclass_classes=[RunConfig])
+    assert [(g.field, g.declared) for g in found] == [("random_seed", UNDECLARED)]
+    with pytest.raises(AssertionError, match="no dataclass here declares"):
+        assert_getattr_defaults_match_schema([p], tmp_path, [], dataclass_classes=[RunConfig])
+
+
+def test_a_real_dataclass_field_is_left_alone(tmp_path):
+    """The nearest correct code -- reading the field the dataclass actually declares -- stays clean."""
+    p = _write(tmp_path, "def f(cfg):\n    return getattr(cfg, 'seed', 0)\n")
+    assert find_getattr_default_mismatches([p], tmp_path, [], dataclass_classes=[RunConfig]) == []
+    assert dataclass_field_names([RunConfig]) == frozenset({"seed"})
+    assert_getattr_defaults_match_schema([p], tmp_path, [], dataclass_classes=[RunConfig])
+
+
+def test_no_dataclass_classes_means_no_undeclared_check(tmp_path):
+    """Without ``dataclass_classes`` the gate keeps its old pydantic-only behaviour, no new false positives."""
+    p = _write(tmp_path, "def f(cfg):\n    return getattr(cfg, 'random_seed', 0)\n")
+    assert find_getattr_default_mismatches([p], tmp_path, [Schema]) == []
 
 
 def _write(tmp_path, source, name="m.py"):

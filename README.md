@@ -219,7 +219,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`optional_truthiness`](src/py_ci_shared/optional_truthiness.py) | gate | 1.4.0 | `assert_optionals_test_for_none` | An optional parameter tested for truth rather than for absence |
 | [`order_losing_filters`](src/py_ci_shared/order_losing_filters.py) | gate | 1.17.0 | `assert_no_order_losing_filters` | Row selections by an index-built mask whose positional twin returns the rows in index order |
 | [`package_doctests`](src/py_ci_shared/package_doctests.py) | gate | 1.12.0 | `assert_package_doctests_pass` | The doctests a package ships actually run, and there are some to run |
-| [`phantom_code_references`](src/py_ci_shared/phantom_code_references.py) | gate | 1.3.6 | `assert_no_phantom_code_references` (+1) | A comment that names a test file, a class or a function must name one that exists |
+| [`phantom_code_references`](src/py_ci_shared/phantom_code_references.py) | gate | 1.3.6 | `assert_no_phantom_code_references` (+2) | A comment that names a test file, a class or a function must name one that exists |
 | [`phantom_markdown_links`](src/py_ci_shared/phantom_markdown_links.py) | gate | 1.3.1 | `assert_no_phantom_markdown_links` | Every markdown-link target in a repo's .md files resolves to a real file |
 | [`pickle_state_completeness`](src/py_ci_shared/pickle_state_completeness.py) | gate | 1.17.0 | `assert_no_pickle_state_gaps` (+1) | Runtime caches and live handles that a pickle round trip (joblib fan-out, a saved model) cannot carry |
 | [`pinned_tool_versions`](src/py_ci_shared/pinned_tool_versions.py) | cli | 1.4.1 | `main` | Fail when a repo's ruff pin, or the ruff its interpreter runs, differs from the shared version |

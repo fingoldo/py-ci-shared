@@ -35,6 +35,11 @@ Usage (a consuming repo's ``tests/test_meta/test_comments_name_real_things.py``)
         )
 
 Deliberately dependency-light: ``pytest`` is imported lazily, matching the package's other modules.
+
+Counterpart: ``pyutilz.dev.code_audit.comment_names_missing_symbol`` also runs ``scan_comment_cites_absolute_line``,
+which flags EVERY absolute-line citation unconditionally (the practice itself is the risk, not just a currently-stale
+instance); :func:`find_stale_absolute_line_citations` here only reports one that is ALREADY wrong, which is what a
+self-verifying, no-allowlist check can state without judging the many still-correct ones.
 """
 
 from __future__ import annotations
@@ -531,6 +536,42 @@ def count_claim_mismatches(files: Iterable[Path]) -> list[str]:
     return violations
 
 
+#: Deliberately narrow to an EXPLICIT self-reference ("of this file" / "in this file"), not bare "line N": a
+#: real-tree run of the wider `` line\s+\d+ `` form found two false-positive classes bare digits cannot tell
+#: apart from a genuine self-citation -- a pasted traceback frame (``File "...", line 212 in __call__``) and
+#: prose that names a DIFFERENT file a few words earlier ("the path in _cross_target.py around line 521").
+#: Neither says "of/in this file", so requiring that phrase removes both without giving up the proposal's
+#: own example, which does say it.
+_ABSOLUTE_LINE_RE = re.compile(r"\bline\s+(\d+)\s+(?:of|in)\s+this\s+file\b", re.IGNORECASE)
+
+
+def find_stale_absolute_line_citations(files: Iterable[Path]) -> list[str]:
+    """``"<rel>:<line>: cites line N, but this file has only M lines"`` for every comment or docstring naming
+    an absolute line of ITS OWN file (``# the retry budget is computed on line 482 of this file``) where N is
+    past the file's actual end. Self-verifying like the count-claim check above: no allowlist needed, since a
+    line number bigger than the file cannot ever be right.
+
+    Scoped to the EXPLICIT "of this file" / "in this file" phrasing (see :data:`_ABSOLUTE_LINE_RE`); a bare
+    "line N" is not judged; the same is true for a citation naming another file (``a.py:12``), which is
+    ``stale_source_citations``'s shape -- it resolves those, filename and all, and can also tell a correct
+    one from a stale one rather than only a past-the-end one."""
+    violations: list[str] = []
+    for path in files:
+        lines, problem = _comment_lines_checked(path)
+        if problem is not None:
+            continue
+        try:
+            n_lines = len(read_source(path).splitlines())
+        except SourceError:
+            continue
+        for lineno, text in lines:
+            for m in _ABSOLUTE_LINE_RE.finditer(text):
+                cited = int(m.group(1))
+                if cited > n_lines:
+                    violations.append(f"{path}:{lineno}: cites line {cited}, but this file has only {n_lines} lines")
+    return violations
+
+
 def assert_no_phantom_code_references(
     files: Iterable[Path],
     repo_root: Path,
@@ -572,3 +613,13 @@ def assert_no_count_claim_mismatches(files: Iterable[Path]) -> None:
     violations = count_claim_mismatches(files)
     if violations:
         pytest.fail("comments whose stated count disagrees with the list under it:\n  " + "\n  ".join(violations))
+
+
+def assert_no_stale_absolute_line_citations(files: Iterable[Path]) -> None:
+    """Fail on any comment citing an absolute line of its own file that is past the file's end. No baseline:
+    a line number bigger than the file cannot ever be right."""
+    import pytest
+
+    violations = find_stale_absolute_line_citations(files)
+    if violations:
+        pytest.fail("comments citing an absolute line of their own file past its end (cite the symbol instead):\n  " + "\n  ".join(violations))

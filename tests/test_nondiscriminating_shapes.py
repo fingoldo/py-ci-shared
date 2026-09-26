@@ -11,9 +11,9 @@ from py_ci_shared._core import ImportAliases
 from py_ci_shared.nondiscriminating_shapes import shape_reasons
 
 
-def _reasons(src: str) -> list[str]:
+def _reasons(src: str, extra_shapes=("nonempty-only-assert",)) -> list[str]:
     fn = ast.parse(textwrap.dedent(src)).body[0]
-    return shape_reasons(fn)
+    return shape_reasons(fn, extra_shapes=extra_shapes)
 
 
 @pytest.mark.parametrize("cmp", ["0 < rmse < 100", "0.5 < rmse < 50", "-1 <= r <= 10"])
@@ -111,3 +111,23 @@ class TestAuditRegressions:
         assert shape_reasons(func, aliases=ImportAliases.from_tree(module)) == ["late-skip"]
         other = ast.parse("from unittest import skip\n\ndef test_x():\n    x = run()\n    if not x:\n        skip('empty')\n    assert x\n")
         assert shape_reasons(other.body[1], aliases=ImportAliases.from_tree(other)) == []
+
+
+class TestNonemptyOnlyAssert:
+    @pytest.mark.parametrize("cmp", ["len(result) > 0", "len(result) >= 1", "0 < len(result)", "1 <= len(result)"])
+    def test_a_sole_nonemptiness_assertion_is_found(self, cmp):
+        src = f"def test_dedup_removes_duplicates():\n    result = dedup([1, 1, 2])\n    assert {cmp}\n"
+        assert _reasons(src) == ["nonempty-only-assert"]
+
+    def test_a_nonemptiness_assertion_alongside_a_value_assertion_is_not_flagged(self):
+        """The nearest correct code: a second assertion on an actual value already gives it a real floor."""
+        src = "def test_dedup_removes_duplicates():\n    result = dedup([1, 1, 2])\n    assert len(result) > 0\n    assert result == [1, 2]\n"
+        assert _reasons(src) == []
+
+    def test_the_shape_is_off_unless_asked_for(self):
+        src = "def test_dedup_removes_duplicates():\n    result = dedup([1, 1, 2])\n    assert len(result) > 0\n"
+        assert _reasons(src, extra_shapes=()) == []
+        assert _reasons(src) == ["nonempty-only-assert"]
+
+    def test_a_value_assertion_alone_is_not_flagged(self):
+        assert _reasons("def test_x():\n    result = dedup([1, 1, 2])\n    assert result == [1, 2]\n") == []

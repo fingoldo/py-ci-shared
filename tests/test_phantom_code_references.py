@@ -11,9 +11,11 @@ import pytest
 from py_ci_shared.phantom_code_references import (
     assert_no_count_claim_mismatches,
     assert_no_phantom_code_references,
+    assert_no_stale_absolute_line_citations,
     count_claim_mismatches,
     dart_declarations,
     find_phantom_code_references,
+    find_stale_absolute_line_citations,
     python_declarations,
 )
 
@@ -108,6 +110,21 @@ def test_assert_count_claims_fails_with_the_location(tmp_path: Path) -> None:
     bad = _write(tmp_path, "a.py", "# the two forms:\n#   1. a\n")
     with pytest.raises(pytest.fail.Exception, match="says 2, lists 1"):
         assert_no_count_claim_mismatches([bad])
+
+
+def test_a_stale_absolute_line_citation_of_the_files_own_line_count_is_reported(tmp_path: Path) -> None:
+    """The proposal's shape: prose citing a line number past the end of the file it sits in."""
+    bad = _write(tmp_path, "backfill.py", "# the retry budget is computed on line 482 of this file\nX = 1\n")
+    assert find_stale_absolute_line_citations([bad]) == [f"{bad}:1: cites line 482, but this file has only 2 lines"]
+    with pytest.raises(pytest.fail.Exception, match="line 482"):
+        assert_no_stale_absolute_line_citations([bad])
+
+
+def test_a_line_citation_within_the_files_length_is_not_reported(tmp_path: Path) -> None:
+    """The nearest correct code: citing a line the file actually has stays clean (a name would still be better)."""
+    good = _write(tmp_path, "backfill.py", "# the retry budget is computed on line 2 of this file\nX = 1\n")
+    assert find_stale_absolute_line_citations([good]) == []
+    assert_no_stale_absolute_line_citations([good])
 
 
 class TestAuditRegressions:

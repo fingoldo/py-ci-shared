@@ -652,7 +652,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 [[gate]]
 name = "phantom_code_references"
 kind = "gate"
-entries = ["assert_no_phantom_code_references", "assert_no_count_claim_mismatches"]
+entries = ["assert_no_phantom_code_references", "assert_no_count_claim_mismatches", "assert_no_stale_absolute_line_citations"]
 since = "1.3.6"
 summary = "A comment that names a test file, a class or a function must name one that exists"
 

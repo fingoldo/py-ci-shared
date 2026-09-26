@@ -411,6 +411,189 @@ the pyutilz `code_audit` scanner (run via `code_audit_meta`).
 - **Bug class:** source-text proxy assertions through an arbitrary path (`Path(x).read_text().find(...)`) that the central gate missed, so llm_bench kept a local copy
 - **Repos:** llm_bench (local copy can now retire), every consumer of source_text_claims
 
+### NEW-39 (Med) -- epsilon_padded_denominators: shapes its pyutilz counterpart catches
+
+**Disposition:** NOT A DEFECT -- the proposal asked for a pad on a non-power denominator (`d + eps`, not
+`d**k + eps`) to be flagged too. The gate's own docstring already measures and rejects this exact widening:
+on a ~3500-module repository the general additive-pad rule matched 109 sites, "nearly all of them legitimate
+relative-error denominators," against 2 true bugs for the power-only rule. `pyutilz.additive_epsilon_denominator`
+is the wider, unconditional rule and stays for exactly this reason (its own docstring: "This scanner is the
+wider rule and reports every additive pad, so it stays"). No change.
+
+- **Bug class:** additive-epsilon pad on a denominator that is not a power
+- **Repos:** none (won't-fix, pre-existing evidence in the gate's own docstring)
+
+### NEW-40 (Med) -- swallowed_exceptions: shapes its pyutilz counterpart catches
+
+**Disposition:** NOT A DEFECT -- both proposed shapes (a bare/`BaseException` handler in `scripts/`; a broad
+handler that only logs below WARNING) are existing, documented opt-in knobs, not gaps: `exclude_parts=()`
+already includes `scripts/` in scope, and `quiet_log_is_silent=True` already treats a DEBUG/INFO-only log
+call as silent. Verified: `find_swallowed_exceptions(root, exclude_parts=(), quiet_log_is_silent=False)`
+misses a `scripts/backfill.py`-shaped `except: logging.debug(...)` fixture; `quiet_log_is_silent=True` finds
+it immediately. No change.
+
+- **Bug class:** silent exception handler outside the gate's default-on scope
+- **Repos:** none (won't-fix, existing opt-in parameters already cover it)
+
+### NEW-41 (Med) -- sentinel_or_fallback: shapes its pyutilz counterpart catches
+
+**Disposition:** NOT A DEFECT -- `find_sentinel_or_fallback`/`assert_no_sentinel_or_fallback` already take a
+`names` parameter for exactly the proposed generalisation past the fixed settings list. Verified:
+`group_id or DEFAULT_GROUP_ID` is not reported with the default `names`, but is reported immediately with
+`names=DEFAULT_SENTINEL_NAMES | {"group_id"}`. No change.
+
+- **Bug class:** `value or fallback` on a setting outside the built-in name list
+- **Repos:** none (won't-fix, existing `names` parameter already covers it)
+
+### NEW-42 (Med) -- phantom_code_references: shapes its pyutilz counterpart catches
+
+**Disposition:** RESOLVED -- new `find_stale_absolute_line_citations`/`assert_no_stale_absolute_line_citations`:
+flags a comment/docstring citing an absolute line of ITS OWN file with the explicit "line N of this file" /
+"line N in this file" phrasing, where N is past the file's actual line count. Self-verifying, no baseline.
+Narrowed from an initial bare `line \d+` form after the real-tree run found two false-positive classes: a
+pasted traceback frame (`File "...", line 212 in __call__`, a citation of a DIFFERENT library's line) and
+prose naming a different file a few words earlier in the same sentence; neither uses "of/in this file"
+phrasing, so requiring it removes both. Left out (WON'T FIX, different philosophy): an unconditional ban on
+citing any line number at all, which is what `pyutilz.dev.code_audit.comment_names_missing_symbol`'s
+`scan_comment_cites_absolute_line` already does and is named in this gate's own docstring as staying for
+that reason -- this module's other checks are all self-verifying (only report what is ALREADY wrong).
+real-corpus run (this new check only): pyutilz/src 0, mlframe/src 0, after narrowing (first pass before
+narrowing: pyutilz 1, mlframe 19, two of which were the false positives above). regression tests:
+tests/test_phantom_code_references.py
+
+- **Bug class:** a comment citing an absolute line number of its own file instead of a name
+- **Method:** regex over comment/docstring text for the explicit "line N of/in this file" phrasing, compared
+  against the file's own line count
+- **False-positive risk:** a bare "line N" (traceback frames, prose naming another file) was excluded by
+  requiring the explicit self-reference phrase; verified 0 findings, true or false, on two real trees after
+- **Repos:** all
+- **Evidence:** adopt24_upstream.md proposal 4; pyutilz's `comment_names_missing_symbol.py` docstring names
+  the same recurrence ("one 92 lines out of date... a RECURRENCE of an identical finding closed in an
+  earlier round")
+
+### NEW-43 (Med) -- config_getattr_default_parity: shapes its pyutilz counterpart catches
+
+**Disposition:** RESOLVED -- new `dataclass_field_names()` helper and `dataclass_classes` parameter on
+`find_getattr_default_mismatches`/`assert_getattr_defaults_match_schema`: a `getattr(cfg, "field", default)`
+naming a field none of the supplied plain `@dataclass`es declare (and no pydantic schema declares either) is
+reported via a new `UNDECLARED` sentinel, alongside the existing pydantic default-mismatch check. Omitting
+`dataclass_classes` reproduces the old pydantic-only behaviour exactly (verified by test). Counterpart named
+in the module docstring: `pyutilz.dev.code_audit.getattr_literal_on_known_dataclass` reports a dataclass-typo
+site directly; this module folds the same case in via an opt-in parameter. Not corpus-scanning (the gate
+takes an explicit file + schema list per caller), so no consumer's result changes without opting in.
+regression tests: tests/test_config_getattr_default_parity.py
+
+- **Bug class:** `getattr` fallback naming a field a plain dataclass config does not declare at all (a typo)
+- **Method:** AST: union of `dataclasses.fields()` names across the caller's dataclasses; a `getattr` field
+  in neither that set nor the pydantic schema defaults is reported by name
+- **False-positive risk:** opt-in parameter, defaults to off; no change to existing behaviour when omitted
+- **Repos:** all
+- **Evidence:** adopt24_upstream.md proposal 5
+
+### NEW-44 (Med) -- pickle_state_completeness: shapes its pyutilz counterpart catches
+
+**Disposition:** NOT A DEFECT -- the gate's own docstring already names this exact split: the
+`unpicklable-without-getstate` rule is scoped to a lock/handle/etc. assigned OUTSIDE `__init__`, and states
+"Inside `__init__` this is pyutilz's `unpicklable_resource_state` scanner; the lazily created one is what it
+misses." The proposal's example (`self._lock = threading.Lock()` inside `__init__`) is precisely the half
+already assigned to the pyutilz scanner. No change.
+
+- **Bug class:** a lock/handle assigned in `__init__` on a class with no `__getstate__`/`__setstate__`
+- **Repos:** none (won't-fix, pre-existing documented split; pyutilz's `unpicklable_resource_state` covers it)
+
+### NEW-45 (Med) -- stale_source_citations: shapes its pyutilz counterpart catches
+
+**Disposition:** RESOLVED (for the past-end/stale-line half); NOT A DEFECT for the vanished-file half. Added
+an `extra_globs` parameter (e.g. `("*.md", "*.sql", "*.toml", "*.yaml")`): `line-past-end` and
+`symbol-not-at-line` now also scan matching non-Python files for a stale `.py` citation, reading every line
+as plain text since neither Python's tokenizer nor a docstring boundary applies outside `.py`; `self-citation`
+stays Python-only (it is specifically about a string a logger emits from the file it names). The vanished-file
+half was already explicitly out of scope by the gate's own pre-existing docstring ("a citation whose path
+matches no file or several files is not judged (pyutilz's `stale_source_citation` reports vanished files)"),
+confirmed from the pyutilz side too (its docstring: "It leaves a cited file that no longer exists to this
+scanner... so it stays (opt-in)"). real-corpus run (pyutilz repo root, `*.md`/`*.sql`/`*.toml`/`*.yaml`/`*.yml`):
+before (parameter omitted) 0 new findings (unchanged); after (parameter passed, no `exclude_parts`) 115
+findings, ~110 of them inside dated, closed `audits/2026-07-21_*` and `audits/implemented/*` reports whose
+prose correctly cited the line a finding sat on AT THE TIME the report was written -- expected staleness in a
+historical record, not a live-doc defect; re-run with the PRE-EXISTING `exclude_parts=("audits",)` drops this
+to 0. Documented in the module docstring as the scoping a consumer must apply, the same way `tests/`/
+`benchmarks/` are already scoped away for the Python-only case. regression tests:
+tests/test_stale_source_citations.py::TestExtraGlobs
+
+- **Bug class:** a non-Python doc/config file citing a stale line of a `.py` source in the same corpus
+- **Method:** plain-text line scan of caller-chosen globs, resolved against the same Python-corpus index the
+  gate already builds
+- **False-positive risk:** high if pointed at a dated audit-report archive (its prose is EXPECTED to go stale
+  as code moves); mitigated by the existing `exclude_parts` parameter, not a new one -- documented, not coded
+  around, since scoping the corpus is already this gate's (and the whole package's) existing idiom
+- **Repos:** all
+- **Evidence:** adopt24_upstream.md proposal 7; pyutilz's `stale_source_citations.py` docstring confirms the
+  same split from its side
+
+### NEW-46 (Med) -- clock_day_boundary: shapes its pyutilz counterpart catches
+
+**Disposition:** NOT A DEFECT -- the gate's own docstring already names this exact split: "The single-shot
+timing half of the original proposal (`assert elapsed < 5.0`) is pyutilz's `wall_clock_assertion` scanner,
+run by `code_audit_meta`." An exact-equality assertion against a freshly-read, un-shifted `time.time()` (no
+day-boundary shift at all) is that same disjoint shape. No change.
+
+- **Bug class:** a test asserting on a bare, unshifted wall-clock read
+- **Repos:** none (won't-fix, pre-existing documented split, already wired via `code_audit_meta`)
+
+### NEW-47 (Med) -- vacuous_loop_assertions: shapes its pyutilz counterpart catches
+
+**Disposition:** WON'T FIX -- wrong bug class, not this gate's scope. Verified empirically:
+`find_floorless_loops` returns `[]` for a loop whose body is `expected = compute_from(row); assert
+row.value == expected`. This is correct per the gate's own definition: the body is NOT "assert-only" (it
+also assigns), so it is out of scope by design -- the gate's job is "did the loop run at all," not "is the
+per-iteration assertion tautological." The proposal's actual defect (the floor is derived from the same row
+it is compared against, so the assertion can never fail) is a DIFFERENT bug class -- a self-referential /
+tautological assertion, which is `nondiscriminating_shapes`' territory (see NEW-48), not
+`vacuous_loop_assertions`'. Widening this gate to also judge assertion tautology would conflate two
+independently-tracked bug classes. No change here; redirected to NEW-48's gate instead.
+
+- **Bug class:** (misfiled) tautological per-iteration assertion, not a zero-iteration loop
+- **Repos:** none (won't-fix as filed; the underlying concern is addressed by NEW-48 instead)
+
+### NEW-48 (Med) -- nondiscriminating_shapes: shapes its pyutilz counterpart catches
+
+**Disposition:** RESOLVED (one of two proposed shapes); WON'T FIX for the other. Added a
+`nonempty-only-assert` shape: a test function's SOLE assertion is `len(x) > 0` / `len(x) >= 1` (either
+operand order) -- true for a single bad element exactly as for a correct collection, so it cannot fail on a
+wrong-but-nonempty result. Scoped to a SOLE assertion so `assert len(x) > 0; assert x == [1, 2]` (a real
+floor alongside it) stays clean. Left out (WON'T FIX, false-positive risk): "an assertion whose both sides
+come from the same call" -- distinguishing "the identical call, so always true" from "two calls that render
+identically but are not the same invocation" needs heuristics beyond a scoped AST shape (purity, intervening
+mutable state); `pyutilz.dev.code_audit.nondiscriminating_test` already carries that heuristic weight and
+stays the documented home for it. real-corpus run (`nonempty-only-assert` only, existing shapes unchanged):
+pyutilz 15 new findings, mlframe 90 new findings; reviewed all 15 pyutilz hits and a sample of the mlframe
+ones -- every one is a test whose only assertion is a bare non-emptiness/length check on a result the same
+test just computed, matching the shape as defined; no false positives found. This is an opt-in addition to
+the list `shape_reasons()` returns (a consumer's own meta-test decides scope, per the module's existing
+design), so no consumer's enforced result changes without adding the new slug. regression tests:
+tests/test_nondiscriminating_shapes.py::TestNonemptyOnlyAssert
+
+- **Bug class:** a test's only assertion checks container non-emptiness after a mutation the test itself performed
+- **Method:** AST: the function has exactly one `ast.Assert`, and its test is `len(x) > 0`/`>= 1` in either operand order
+- **False-positive risk:** none found in a real-tree sample of 15 (pyutilz) plus a spot-check of 90 (mlframe); scoped to a SOLE assertion to avoid flagging a non-emptiness check alongside a real value assertion
+- **Repos:** all
+- **Evidence:** adopt24_upstream.md proposal 10; pyutilz's `nondiscriminating_test.py` registry entry
+
+### NEW-49 (Med) -- inert_patch_targets: shapes its pyutilz counterpart catches
+
+**Disposition:** WON'T FIX -- documented, measured false-positive rate, by design. The gate's own docstring
+is an extended argument for why exactly this shape (`mock.patch("pkg.mod.NAME")` where `NAME` is a
+re-export) was implemented and then REMOVED: "That rule was removed after it reported 337 findings on its
+first real tree, and the reason is not that it needed tuning. A patch is very often placed precisely so that
+something is NOT called, and 'nothing reads this name' is then the intended state rather than a defect. The
+two cases are indistinguishable from the source." Re-adding it would reproduce the same 337-finding
+false-positive rate already measured and rejected. `pyutilz.dev.code_audit.reexport_patch_target` /
+`patch_target_is_a_reexport` are named in the proposal itself as already covering it (decision b: pyutilz
+keeps every scanner regardless of gate overlap). No change.
+
+- **Bug class:** `mock.patch` of a re-exported name rather than its defining module
+- **Repos:** none (won't-fix, 337-finding false-positive rate measured and documented in the gate's own history)
+
 ### INFRA-1 (High) -- pytest11 plugin py_ci_shared.pytest_plugin
 
 **Disposition:** RESOLVED -- `[project.entry-points.pytest11] py_ci_shared = "py_ci_shared.pytest_plugin"`: inert without `[tool.py_ci_shared]`; with it, a bare `pytest` (or `--py-ci-gates=on`) gets one `pyproject.toml::<gate>` item per enabled gate that calls the entry with the table's kwargs from the repo root; `--py-ci-refresh` is wired to `_core.refresh` through the env var; a malformed table is a usage error; regression test: tests/test_pytest_plugin.py::test_a_repo_without_the_table_sees_no_gate_items, tests/test_pytest_plugin.py::test_a_bare_run_adds_one_item_per_gate_and_reports_the_gates_text, tests/test_pytest_plugin.py::test_selecting_paths_leaves_gates_out_unless_forced, tests/test_pytest_plugin.py::test_a_malformed_table_is_a_usage_error

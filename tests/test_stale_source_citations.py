@@ -100,6 +100,24 @@ class TestSymbolAtLine:
         assert [r for r, _, _ in _found(root, rules=[RULE_SYMBOL])] == [RULE_SYMBOL]
 
 
+class TestExtraGlobs:
+    def test_a_markdown_citation_past_the_end_of_a_py_source_is_reported(self, tmp_path):
+        """A ``.md`` doc citing a stale line of a ``.py`` source in the same corpus is caught, opt-in."""
+        root = _tree(tmp_path, {"pkg/a.py": _TARGET, "docs/ARCHITECTURE.md": "See `pkg/a.py:400` for the routing table.\n"})
+        assert _found(root) == []  # not scanned by default
+        assert _found(root, extra_globs=["*.md"]) == [(RULE_PAST_END, "docs/ARCHITECTURE.md", 1)]
+
+    def test_a_markdown_citation_that_still_resolves_stays_clean(self, tmp_path):
+        """The nearest correct code: the same doc citing a line the target file still has."""
+        root = _tree(tmp_path, {"pkg/a.py": _TARGET, "docs/ARCHITECTURE.md": "See `pkg/a.py:1` for the header.\n"})
+        assert _found(root, extra_globs=["*.md"]) == []
+
+    def test_a_deleted_file_citation_in_markdown_is_not_this_gates_job(self, tmp_path):
+        """A citation of a file that no longer exists at all is pyutilz's ``stale_source_citation`` territory."""
+        root = _tree(tmp_path, {"pkg/a.py": _TARGET, "docs/ARCHITECTURE.md": "See `src/pkg/_old_router.py` for the routing table.\n"})
+        assert _found(root, extra_globs=["*.md"]) == []
+
+
 class TestCorpusAndBaseline:
     def test_bom_unparsable_empty_and_the_ratchet(self, tmp_path):
         root = tmp_path / "src"

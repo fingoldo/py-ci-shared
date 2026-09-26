@@ -704,3 +704,14 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `CANARY-55` | the shrink-only refresh left 27 tests red: gate tests seeded baselines without the growth opt-in |
 | **RESOLVED** | Low | `CANARY-56` | self-CI mypy failed after the AST node index landed: nodes_of returns list[AST] |
 | **RESOLVED** | Low | `CANARY-57` | nodes_of returned list[AST], so every gate moved onto the shared node index failed mypy |
+| **NOT A DEFECT** | Med | `NEW-39` | epsilon_padded_denominators: shapes its pyutilz counterpart catches |
+| **NOT A DEFECT** | Med | `NEW-40` | swallowed_exceptions: shapes its pyutilz counterpart catches |
+| **NOT A DEFECT** | Med | `NEW-41` | sentinel_or_fallback: shapes its pyutilz counterpart catches |
+| **RESOLVED** | Med | `NEW-42` | phantom_code_references: shapes its pyutilz counterpart catches |
+| **RESOLVED** | Med | `NEW-43` | config_getattr_default_parity: shapes its pyutilz counterpart catches |
+| **NOT A DEFECT** | Med | `NEW-44` | pickle_state_completeness: shapes its pyutilz counterpart catches |
+| **RESOLVED** | Med | `NEW-45` | stale_source_citations: shapes its pyutilz counterpart catches |
+| **NOT A DEFECT** | Med | `NEW-46` | clock_day_boundary: shapes its pyutilz counterpart catches |
+| **WON'T FIX** | Med | `NEW-47` | vacuous_loop_assertions: shapes its pyutilz counterpart catches |
+| **RESOLVED** | Med | `NEW-48` | nondiscriminating_shapes: shapes its pyutilz counterpart catches |
+| **WON'T FIX** | Med | `NEW-49` | inert_patch_targets: shapes its pyutilz counterpart catches |
