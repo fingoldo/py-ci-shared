@@ -5,6 +5,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ## 1.18.0 (unreleased)
 
 - `nondiscriminating_shapes`: two false positives removed. `late-skip` no longer flags the write-the-baseline-on-first-run skip (`if not BASELINE.exists(): write(); pytest.skip(...)`, used by dozens of meta-gates): an `.exists()` check is a filesystem-state probe, not the data deciding. `median-roundtrip` now fires only when the median is the test's SOLE verdict; a median canary next to `assert_allclose` or another assert is a precondition, not the pass/fail criterion.
+- `nondiscriminating_shapes`: the environment-probe vocabulary of `late-skip` also recognises `supported` (`not callbacks_supported()`), `vram` and `major`/`minor` (a compute-capability or version tuple). Whole identifier parts only, so `majority_share` and `n_supporters` stay data and are still flagged.
 - `uncalled_functions` follows import aliases across files (a re-export module `from ._impl import _h as h`, loaded by a
   consumer as `from pkg.shared import h as _probe`), and a name a function imports locally stays the imported function
   even when an `except ImportError: f = None` fallback also assigns it. Both were reported as dead code.

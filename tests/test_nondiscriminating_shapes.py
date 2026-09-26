@@ -79,7 +79,18 @@ class TestAuditRegressions:
         probe = "def test_x():\n    loss = train()\n    if os.environ.get('CI'):\n        pytest.skip('ci')\n    assert loss < 1\n"
         assert _reasons(probe) == []
 
-    @pytest.mark.parametrize("cond", ["not HAS_TORCH", "not torch.cuda.is_available()", "shutil.which('dot') is None", "not TORCH_AVAILABLE"])
+    @pytest.mark.parametrize(
+        "cond",
+        [
+            "not HAS_TORCH",
+            "not torch.cuda.is_available()",
+            "shutil.which('dot') is None",
+            "not TORCH_AVAILABLE",
+            "not callbacks_supported()",
+            "(int(major), int(minor)) < (7, 0)",
+            "vram_total < 4 * 1024**3",
+        ],
+    )
     def test_real_probes_are_still_recognised(self, cond):
         assert _reasons(f"def test_x():\n    x = run()\n    if {cond}:\n        pytest.skip('env')\n    assert x\n") == []
 
@@ -92,6 +103,13 @@ class TestAuditRegressions:
     @pytest.mark.parametrize("cmp", ["100 > rmse > 0", "50 >= r >= -1"])
     def test_reversed_wide_ranges_are_found(self, cmp):
         assert _reasons(f"def test_x():\n    assert {cmp}\n") == ["wide-literal-range"]
+
+    @pytest.mark.parametrize("cond", ["majority_share < 0.1", "minority_count == 0", "n_supporters < 3", "total_rows < 100"])
+    def test_data_decided_skips_with_similar_words_are_still_flagged(self, cond):
+        """``supported``/``major``/``minor``/``vram`` are matched as WHOLE identifier parts: ``majority_share``,
+        ``minority_count`` and ``n_supporters`` are data, and skipping on them still disables the test with the data."""
+        src = f"def test_x():\n    result = run()\n    if {cond}:\n        pytest.skip('degenerate data')\n    assert result\n"
+        assert _reasons(src) == ["late-skip"]
 
     def test_a_median_canary_next_to_a_per_element_check_is_not_flagged(self):
         """``assert median(...) > 2  # canary: the fixture amplifies`` followed by ``assert_allclose(moved, isolated)`` is a

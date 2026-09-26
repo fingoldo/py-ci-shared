@@ -66,6 +66,10 @@ _ENV_PARTS = frozenset(
         "mps",
         "available",
         "installed",
+        "supported",  # ``not backend_supported()`` / ``callbacks_supported``: a feature probe of the installed library
+        "vram",  # ``if vram_total < 4 GiB``: a device-capacity probe
+        "major",  # ``(major, minor) < (7, 0)``: a compute-capability / version tuple
+        "minor",
         "version",
         "win32",
         "linux",
