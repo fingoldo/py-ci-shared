@@ -369,3 +369,9 @@ Found while resolving INFRA-2/INFRA-3 (tests/test_gate_teeth.py) and ARCH D1 (te
 **Disposition:** RESOLVED -- unresolved_imports casts the ast.ImportFrom-only result at its call site (nodes_of takes several types, so a generic return would need overloads); mypy clean, 31 unresolved_imports tests pass
 
 - **Finding:** commit 4f6961d (another session's perf change) left `_judge_import(..., node, ...)` receiving ast.AST where ast.ImportFrom is declared; the 3.11 legs' mypy step failed.
+
+### CANARY-57 (Low) -- nodes_of returned list[AST], so every gate moved onto the shared node index failed mypy
+
+**Disposition:** RESOLVED -- nodes_of has typed overloads (one type -> list[that type], two -> list of their union, more -> list[AST]), so callers get precise types without casts; mypy clean on all 170 source files; node-index, vacuous-loop and unresolved-imports tests pass; imports on Python 3.9
+
+- **Finding:** commits 4f6961d and 2104a87 (another session's perf work) broke self-CI's mypy step twice with the same arg-type error at new call sites.

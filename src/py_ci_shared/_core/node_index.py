@@ -19,9 +19,11 @@ import heapq
 import threading
 from collections import deque
 from collections.abc import Callable, Hashable, Iterator
-from typing import Any, TypeVar
+from typing import Any, TypeVar, Union, overload
 
 T = TypeVar("T")
+_A = TypeVar("_A", bound=ast.AST)
+_B = TypeVar("_B", bound=ast.AST)
 
 # id(tree) -> (tree, {node type: ([walk positions], [nodes])})
 _INDEX: "dict[int, tuple[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]]" = {}
@@ -70,7 +72,19 @@ def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
     return by_type
 
 
-def nodes_of(tree: ast.AST, *types: type) -> "list[ast.AST]":
+@overload
+def nodes_of(tree: ast.AST, node_type: "type[_A]", /) -> "list[_A]": ...
+
+
+@overload
+def nodes_of(tree: ast.AST, node_type: "type[_A]", other_type: "type[_B]", /) -> "list[Union[_A, _B]]": ...
+
+
+@overload
+def nodes_of(tree: ast.AST, *types: type) -> "list[ast.AST]": ...
+
+
+def nodes_of(tree: ast.AST, *types: type) -> "list[Any]":
     """Every node of *tree* that is an instance of one of *types*, in ``ast.walk`` order. Subclasses count, as with
     ``isinstance``. The returned list is shared: do not mutate it."""
     by_type = _index(tree)

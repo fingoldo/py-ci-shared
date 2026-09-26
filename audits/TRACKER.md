@@ -703,3 +703,4 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | High | `CANARY-54` | randomly_seed_guard crashed pytest on Python 3.9: entry_points(group=...) exists only from 3.10 |
 | **RESOLVED** | Med | `CANARY-55` | the shrink-only refresh left 27 tests red: gate tests seeded baselines without the growth opt-in |
 | **RESOLVED** | Low | `CANARY-56` | self-CI mypy failed after the AST node index landed: nodes_of returns list[AST] |
+| **RESOLVED** | Low | `CANARY-57` | nodes_of returned list[AST], so every gate moved onto the shared node index failed mypy |
