@@ -54,8 +54,8 @@ import contextlib
 import os
 import re
 import sys
-from typing import Callable
 from collections.abc import Iterable, Sequence
+from typing import Callable
 
 #: Distinct from 1 (a statement failed) so a CI job can tell "not verified" from "verified clean".
 #: ``--skip-without-db`` maps it to 0, which is what a pre-push hook wants.

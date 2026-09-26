@@ -21,9 +21,9 @@ from __future__ import annotations
 import fnmatch
 import os
 import subprocess
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Optional, Union
-from collections.abc import Iterable, Iterator, Sequence
 
 from .errors import CorpusError
 

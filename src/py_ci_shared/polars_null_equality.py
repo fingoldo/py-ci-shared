@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = [
@@ -141,11 +142,11 @@ def _call_findings(node: ast.Call, aliases: ImportAliases) -> list[tuple[str, st
 def _single_assignments(tree: ast.Module) -> dict[int, dict[str, ast.expr]]:
     """``{id(function): {name: value}}`` for names assigned exactly once in a function (a rebound name is ambiguous)."""
     out: dict[int, dict[str, ast.expr]] = {}
-    for func in ast.walk(tree):
+    for func in _fast_walk(tree):
         if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         seen: dict[str, list[ast.expr]] = {}
-        for n in ast.walk(func):
+        for n in _fast_walk(func):
             if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
                 seen.setdefault(n.targets[0].id, []).append(n.value)
         out[id(func)] = {k: v[0] for k, v in seen.items() if len(v) == 1}
@@ -174,7 +175,7 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
     out: list[Finding] = []
     local_by_scope = _single_assignments(parsed.tree)
     scope_of = _scope_ids(parsed.tree)
-    for node in ast.walk(parsed.tree):
+    for node in _fast_walk(parsed.tree):
         if isinstance(node, ast.Compare):
             hits = _compare_findings(node, aliases, local_by_scope.get(scope_of.get(id(node), 0), {}))
         elif isinstance(node, ast.Call):

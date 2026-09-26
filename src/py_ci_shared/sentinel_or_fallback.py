@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["DEFAULT_SENTINEL_NAMES", "REFRESH_FLAG", "assert_no_sentinel_or_fallback", "find_sentinel_or_fallback", "sentinel_read"]
@@ -74,7 +75,7 @@ def find_sentinel_or_fallback(
     findings: list[Finding] = []
     for f in scan:
         lines = f.source.splitlines()
-        for node in ast.walk(f.tree):
+        for node in _fast_walk(f.tree):
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
             if 1 <= node.lineno <= len(lines) and _MARKER.search(lines[node.lineno - 1]):

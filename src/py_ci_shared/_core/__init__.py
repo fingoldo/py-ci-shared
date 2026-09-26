@@ -31,6 +31,7 @@ from .errors import (
     UnparsedFilesError,
 )
 from .findings import UNPARSED_RULE, Finding
+from .node_index import nodes_of, tree_memo, walk
 from .refresh import ENV_VAR as REFRESH_ENV_VAR
 from .refresh import GENERIC_OPTION as REFRESH_OPTION
 from .refresh import GROW_ENV_VAR as REFRESH_GROW_ENV_VAR
@@ -65,6 +66,9 @@ __all__ = [
     "UnparsedFilesError",
     "atomic_write_text",
     "clear_parse_cache",
+    "nodes_of",
+    "tree_memo",
+    "walk",
     "dump_json",
     "git_listing",
     "grow_requested",

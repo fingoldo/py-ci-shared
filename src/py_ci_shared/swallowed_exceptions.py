@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "assert_no_swallowed_exceptions", "find_swallowed_exceptions", "is_silent_handler"]
@@ -186,7 +187,7 @@ def _is_best_effort(body: list[ast.stmt]) -> bool:
 
 def _is_fallback(body: list[ast.stmt]) -> bool:
     """The ``try`` body returns on success, so a failure falls through to the code after it (a cache read, then a rebuild)."""
-    return any(isinstance(n, ast.Return) and n.value is not None for stmt in body for n in ast.walk(stmt))
+    return any(isinstance(n, ast.Return) and n.value is not None for stmt in body for n in _fast_walk(stmt))
 
 
 def _marked(lines: list[str], handler: ast.ExceptHandler) -> bool:

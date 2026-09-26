@@ -64,6 +64,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, refresh_requested, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "DEFAULT_HANDLE_NAMES",
@@ -127,7 +128,7 @@ def _with_bound_names(fn: ast.FunctionDef | ast.AsyncFunctionDef, autocommitting
     """Names bound by a ``with <autocommitting-call>(...) as name:`` inside *fn* -- these are
     treated as already-committed on exit, so a bare-handle check for them is suppressed."""
     bound: set[str] = set()
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if not isinstance(node, (ast.With, ast.AsyncWith)):
             continue
         for item in node.items:
@@ -160,7 +161,7 @@ def _cursor_aliases(fn: ast.FunctionDef | ast.AsyncFunctionDef, handles: set[str
     A statement run on the cursor runs in the handle's transaction, so it needs the handle's commit just the same.
     """
     aliases: dict[str, str] = {}
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             handle = _cursor_of(node.value, handles)
@@ -180,7 +181,7 @@ def _called_methods(
     """`{handle_name}` for every `<handle_name or its cursor>.<method in methods>(...)` call found in *fn*."""
     aliases = aliases or {}
     found: set[str] = set()
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
         if node.func.attr not in methods:

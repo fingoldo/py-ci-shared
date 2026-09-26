@@ -32,6 +32,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceError, iter_files, parse_source, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 #: ``:name::type`` -- a bind parameter immediately followed by a cast. ``a::b::c`` is a chain of casts, not a bind,
 #: and ``x:a::int`` (a word before the colon) is not a bind either. The type may be a quoted identifier.
@@ -51,13 +52,13 @@ def colon_cast_binds(text: str) -> list[tuple[int, str]]:
 
 
 def _docstring_nodes(tree: ast.Module) -> set[int]:
-    return {id(n.value) for n in ast.walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
+    return {id(n.value) for n in _fast_walk(tree) if isinstance(n, ast.Expr) and isinstance(n.value, ast.Constant)}
 
 
 def _string_parts(tree: ast.Module) -> Iterator[tuple[int, str]]:
     """``(first line, text)`` for every string literal (f-string literal parts included) that is not a docstring."""
     skip = _docstring_nodes(tree)
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip:
             yield node.lineno, node.value
 

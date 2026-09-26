@@ -33,11 +33,12 @@ whose target was renamed must fail loudly, not pass by finding nothing.
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Union
-from collections.abc import Iterator
 
 from ._core import parse_file
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "exception_handlers",
@@ -154,7 +155,7 @@ def exception_handlers(path: Path | str, exception: str) -> int:
     ``except requests.Timeout``) or dotted (``requests.Timeout`` matches only that spelling).
     """
     found = 0
-    for node in ast.walk(parse(path)):
+    for node in _fast_walk(parse(path)):
         if not isinstance(node, ast.ExceptHandler) or node.type is None:
             continue
         caught = node.type.elts if isinstance(node.type, ast.Tuple) else [node.type]

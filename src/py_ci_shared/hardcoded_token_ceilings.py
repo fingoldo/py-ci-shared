@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["DEFAULT_NAMES", "RULE", "REFRESH_FLAG", "find_hardcoded_token_ceilings", "assert_no_hardcoded_token_ceilings"]
@@ -118,7 +119,7 @@ def _default_sites(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda
 
 def _sites(tree: ast.Module, names: frozenset[str]) -> Iterator[_Site]:
     """``(node, name, literal, shape)`` for every literal ceiling in *tree*."""
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call):
             yield from _call_sites(node, names)
         elif isinstance(node, ast.Dict):

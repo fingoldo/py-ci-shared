@@ -23,7 +23,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from py_ci_shared._core import read_source
-from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, closing_word, table_cells, round_files, without_fenced_blocks
+from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, closing_word, round_files, table_cells, without_fenced_blocks
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 _SUBSECTION = re.compile(r"^###\s+`([^`]+)`\s*$")

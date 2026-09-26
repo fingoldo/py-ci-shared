@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "assert_no_clock_day_boundary", "find_clock_day_boundary"]
@@ -97,7 +98,7 @@ def _is_frozen(fn: _FunctionNode, aliases: ImportAliases) -> bool:
         return True
     if any(a.arg in _FREEZER_FIXTURES for a in fn.args.args):
         return True
-    for n in ast.walk(fn):
+    for n in _fast_walk(fn):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "setattr" and n.args:
             target = ast.unparse(n.args[0]) + (ast.unparse(n.args[1]) if len(n.args) > 1 else "")
             if "time" in target or "datetime" in target:
@@ -121,23 +122,23 @@ def _text_of(node: ast.AST) -> str:
 
 def _speaks_of_days(fn: _FunctionNode) -> bool:
     """The test's name, docstring, identifiers or strings use a calendar-day word (split on ``_`` and non-letters)."""
-    words = {w for n in ast.walk(fn) for w in re.split(r"[^a-z]+", _text_of(n).lower()) if w}
+    words = {w for n in _fast_walk(fn) for w in re.split(r"[^a-z]+", _text_of(n).lower()) if w}
     return bool(words & _DAY_WORDS)
 
 
 def _clock_names(fn: _FunctionNode, aliases: ImportAliases) -> set[str]:
     names: set[str] = set()
-    for n in ast.walk(fn):
+    for n in _fast_walk(fn):
         if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name) and _is_clock(n.value, aliases, names):
             names.add(n.targets[0].id)
     return names
 
 
 def _in_lifetime_claim(fn: _FunctionNode, node: ast.AST) -> bool:
-    for holder in ast.walk(fn):
+    for holder in _fast_walk(fn):
         if isinstance(holder, ast.Dict):
             for key, value in zip(holder.keys, holder.values):
-                if isinstance(key, ast.Constant) and key.value in _LIFETIME_CLAIMS and any(sub is node for sub in ast.walk(value)):
+                if isinstance(key, ast.Constant) and key.value in _LIFETIME_CLAIMS and any(sub is node for sub in _fast_walk(value)):
                     return True
     return False
 
@@ -147,7 +148,7 @@ def _fn_findings(rel: str, fn: _FunctionNode, aliases: ImportAliases, lines: lis
         return []
     clocks = _clock_names(fn, aliases)
     out: list[Finding] = []
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if not (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub))):
             continue
         for reading, offset in ((node.left, node.right), (node.right, node.left)):
@@ -174,7 +175,7 @@ def find_clock_day_boundary(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         lines = f.source.splitlines()
-        for fn in (n for n in ast.walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for fn in (n for n in _fast_walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             findings.extend(_fn_findings(f.rel, fn, aliases, lines))
     findings.sort(key=lambda x: (x.path, x.line))
     return findings, scan

@@ -31,6 +31,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ._core import scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["OrderLosingFilter", "assert_no_order_losing_filters", "find_order_losing_filters"]
 
@@ -56,13 +57,13 @@ class OrderLosingFilter:
 
 def _names_in(node: ast.AST) -> set[str]:
     """Every bare name read inside ``node``."""
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    return {n.id for n in _fast_walk(node) if isinstance(n, ast.Name)}
 
 
 def _index_masks(func: ast.AST) -> dict[str, set[str]]:
     """``{mask name: the index names it was built from}`` for boolean masks built from an index array inside ``func``."""
     masks: dict[str, set[str]] = {}
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         if not isinstance(node, ast.Assign):
             continue
         # m[idx] = True
@@ -81,7 +82,7 @@ def _index_masks(func: ast.AST) -> dict[str, set[str]]:
 def _positional_indices(func: ast.AST) -> set[str]:
     """Index names ``func`` selects rows with positionally: ``.iloc[i]``, ``.take(i)``, ``.gather(i)``."""
     out: set[str] = set()
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         if isinstance(node, ast.Subscript) and getattr(node.value, "attr", None) == "iloc":
             out |= _names_in(node.slice)
         if isinstance(node, ast.Call) and getattr(node.func, "attr", None) in ("take", "gather") and node.args:
@@ -98,7 +99,7 @@ def _selections(func: ast.AST, masks: dict[str, set[str]]):
             arg = arg.args[0]
         return arg.id if isinstance(arg, ast.Name) and arg.id in masks else None
 
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "filter" and node.args and mask_of(node.args[0]):
             yield node.lineno, mask_of(node.args[0])
         if isinstance(node, ast.Subscript) and not isinstance(node.ctx, ast.Store) and mask_of(node.slice):

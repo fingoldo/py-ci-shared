@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
 
@@ -99,7 +100,7 @@ def _log_call_level(node: ast.AST) -> Optional[str]:
 
 def _logs_loudly(handler: ast.ExceptHandler) -> bool:
     """True when the handler raises, or logs at WARNING or above (a ``logging.WARNING`` argument counts)."""
-    for n in ast.walk(handler):
+    for n in _fast_walk(handler):
         if isinstance(n, ast.Raise):
             return True
         if _call_attr(n) in _LOUD_LEVELS:
@@ -114,12 +115,12 @@ def _logs_loudly(handler: ast.ExceptHandler) -> bool:
 
 def _logs_quietly(handler: ast.ExceptHandler) -> bool:
     """True when the handler logs at DEBUG or INFO (``log.debug(..)``, or ``log.log(logging.DEBUG, ..)``)."""
-    return any(_call_attr(n) in _QUIET_LEVELS or _log_call_level(n) in _QUIET_LEVEL_NAMES for n in ast.walk(handler))
+    return any(_call_attr(n) in _QUIET_LEVELS or _log_call_level(n) in _QUIET_LEVEL_NAMES for n in _fast_walk(handler))
 
 
 def _assigns_a_value(handler: ast.ExceptHandler) -> bool:
     """True when the handler assigns something (a fallback value or a fallback call)."""
-    return any(isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)) for n in ast.walk(handler))
+    return any(isinstance(n, (ast.Assign, ast.AnnAssign, ast.AugAssign)) for n in _fast_walk(handler))
 
 
 def _marked_best_effort(lines: list[str], handler: ast.ExceptHandler) -> bool:
@@ -154,7 +155,7 @@ def _reports_the_error(value: ast.expr, exc_name: Optional[str]) -> bool:
         return True
     if exc_name is None or not isinstance(value, ast.Call):
         return False
-    return any(isinstance(a, ast.Name) and a.id == exc_name for a in ast.walk(value))
+    return any(isinstance(a, ast.Name) and a.id == exc_name for a in _fast_walk(value))
 
 
 def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
@@ -165,13 +166,13 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
     value that carries the caught exception (``problems.append(f"{path}: {exc}")``) or is a formatted message string
     reports the failure, whatever the list is called, and is not an admission.
     """
-    for n in ast.walk(handler):
+    for n in _fast_walk(handler):
         if (
             isinstance(n, ast.Call)
             and isinstance(n.func, ast.Attribute)
             and n.func.attr == "append"
             and len(n.args) == 1
-            and any(isinstance(a, ast.Name) and a.id in names for a in ast.walk(n.args[0]))
+            and any(isinstance(a, ast.Name) and a.id in names for a in _fast_walk(n.args[0]))
             and not _reports_the_error(n.args[0], handler.name)
         ):
             target = n.func.value
@@ -183,7 +184,7 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
 
 def _returns_true(handler: ast.ExceptHandler) -> bool:
     """True when the handler contains ``return True``."""
-    return any(isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and n.value.value is True for n in ast.walk(handler))
+    return any(isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and n.value.value is True for n in _fast_walk(handler))
 
 
 def _is_finite_test(node: ast.AST) -> bool:
@@ -202,7 +203,7 @@ def _is_finite_guarded_reject(node: ast.If) -> bool:
     has_cmp = any(isinstance(v, ast.Compare) and any(isinstance(o, (ast.Gt, ast.GtE, ast.Lt, ast.LtE)) for o in v.ops) for v in test.values)
     if not (has_finite and has_cmp):
         return False
-    for n in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+    for n in _fast_walk(ast.Module(body=node.body, type_ignores=[])):
         if isinstance(n, ast.Continue):
             return True
         if isinstance(n, ast.Call) and "reject" in (_call_attr(n) or "").lower():
@@ -222,7 +223,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
                 continue
             vars_here = loop_vars
             if isinstance(child, (ast.For, ast.AsyncFor)):
-                vars_here = loop_vars | {n.id for n in ast.walk(child.target) if isinstance(n, ast.Name)}
+                vars_here = loop_vars | {n.id for n in _fast_walk(child.target) if isinstance(n, ast.Name)}
             if isinstance(child, ast.ExceptHandler):
                 if loop_vars and _appends_name(child, set(loop_vars)):
                     found.append(

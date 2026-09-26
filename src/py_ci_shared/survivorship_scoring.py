@@ -25,6 +25,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from ._core import ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["SurvivorshipScore", "DEFAULT_METRIC_NAMES", "find_survivorship_scoring", "assert_no_survivorship_scoring"]
 
@@ -77,16 +78,16 @@ def _finite_masks(func: ast.AST) -> set[str]:
     masks: set[str] = set()
     for _ in range(3):
         before = len(masks)
-        for node in ast.walk(func):
+        for node in _fast_walk(func):
             if not (isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and node.value is not None):
                 continue
-            uses_finite = any(isinstance(n, ast.Call) and _call_name(n) == "isfinite" for n in ast.walk(node.value)) or any(
-                isinstance(n, ast.Name) and n.id in masks for n in ast.walk(node.value)
+            uses_finite = any(isinstance(n, ast.Call) and _call_name(n) == "isfinite" for n in _fast_walk(node.value)) or any(
+                isinstance(n, ast.Name) and n.id in masks for n in _fast_walk(node.value)
             )
             if not uses_finite:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            masks.update(n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name))
+            masks.update(n.id for t in targets for n in _fast_walk(t) if isinstance(n, ast.Name))
         if len(masks) == before:
             break
     return masks
@@ -101,7 +102,7 @@ def _masked_arg(node: ast.expr, masks: set[str]) -> str | None:
 
 def _has_remedy(func: ast.AST) -> bool:
     """True when the function fills the dropped rows or reports how many there were."""
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         name = None
         if isinstance(node, ast.Name):
             name = node.id
@@ -123,11 +124,11 @@ def _find(parsed: Iterable[ParsedFile], metric_names: Sequence[str] | frozenset[
     out: list[SurvivorshipScore] = []
     for f in parsed:
         tree, rel = f.tree, f.rel
-        for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for func in (n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             masks = _finite_masks(func)
             if not masks or _has_remedy(func):
                 continue
-            for node in ast.walk(func):
+            for node in _fast_walk(func):
                 if not (isinstance(node, ast.Call) and _call_name(node) in metrics and len(node.args) >= 2):
                     continue
                 first, second = _masked_arg(node.args[0], masks), _masked_arg(node.args[1], masks)

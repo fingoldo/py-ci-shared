@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["DiscardedCopy", "find_discarded_model_copies", "assert_no_discarded_model_copy"]
 
@@ -64,7 +65,7 @@ def _is_update_copy(node: Optional[ast.AST]) -> bool:
 
 def _mentions(node: ast.AST | None, name: str) -> bool:
     """Whether ``name`` is loaded anywhere under ``node``."""
-    return node is not None and any(isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Load) for n in ast.walk(node))
+    return node is not None and any(isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Load) for n in _fast_walk(node))
 
 
 def _dotted(node: ast.AST) -> str:
@@ -107,7 +108,7 @@ def _hands_on(node: ast.AST, name: str) -> bool:
 def _escapes(func: ast.AST, name: str, _seen: frozenset[str] = frozenset()) -> bool:
     """Whether ``name`` (or a local it is aliased to) reaches anything inside ``func`` (see :func:`_hands_on`)."""
     seen = _seen | {name}
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         if _hands_on(node, name):
             return True
         # ``alias = name`` (or ``alias = name if c else other``) forwards the question to the alias.

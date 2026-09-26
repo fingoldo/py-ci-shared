@@ -19,10 +19,11 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 
 from ._core import ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["assert_every_dataclass_has_a_case", "find_dataclass_sites", "find_dataclasses"]
 
@@ -48,7 +49,7 @@ def _sites(scan: ScanResult, name_pattern: str) -> list[tuple[str, Path, int]]:
         aliases = ImportAliases.from_tree(parsed.tree)
         out.extend(
             (node.name, parsed.path, node.lineno)
-            for node in ast.walk(parsed.tree)
+            for node in _fast_walk(parsed.tree)
             if isinstance(node, ast.ClassDef) and rx.fullmatch(node.name) and any(_is_dataclass_decorator(d, aliases) for d in node.decorator_list)
         )
     return out

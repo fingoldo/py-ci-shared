@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, iter_files, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "Finding",
@@ -75,7 +76,7 @@ def _module_level_names(tree: ast.Module) -> set[str]:
     while stack:
         node = stack.pop()
         if isinstance(node, ast.Assign):
-            names |= {n.id for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+            names |= {n.id for t in node.targets for n in _fast_walk(t) if isinstance(n, ast.Name)}
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
         elif isinstance(node, (ast.If, ast.With, ast.AsyncWith)):

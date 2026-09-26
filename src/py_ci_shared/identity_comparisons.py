@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, ParsedFile, ScanResult, relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
@@ -104,7 +105,7 @@ class _ModuleConstants:
     def __init__(self, tree: ast.Module) -> None:
         self.module = _bound_strings(tree.body)
         self.classes: dict[str, set[str]] = {}
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, ast.ClassDef) and not _is_enum_class(node):
                 self.classes.setdefault(node.name, set()).update(_bound_strings(node.body))
 
@@ -199,7 +200,7 @@ def _find(scan: ScanResult, base: Optional[Path], names: "set[str] | None", root
     for parsed in scan:
         here = index.by_file[parsed.path]
         aliases = ImportAliases.from_tree(parsed.tree)
-        for node in ast.walk(parsed.tree):
+        for node in _fast_walk(parsed.tree):
             if not isinstance(node, ast.Compare) or not any(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops):
                 continue
             sides = (node.left, *node.comparators)

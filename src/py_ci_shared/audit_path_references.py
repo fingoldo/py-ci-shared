@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 from ._core import scan_python
+from ._core.node_index import walk as _fast_walk
 
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -36,7 +37,7 @@ def open_round_names(audits_dirs: Iterable[Path], *, implemented: str = "impleme
 
 def _docstring_nodes(tree: ast.AST) -> set[int]:
     ids: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
@@ -57,7 +58,7 @@ def _path_chains(tree: ast.AST) -> dict[int, list[str]]:
     A path expression is an ``a / "b" / "c"`` chain or the arguments of ``os.path.join(...)``/``Path(...)``.
     """
     chains: dict[int, list[str]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         parts: list[ast.AST] = []
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
             stack: list[ast.AST] = [node]
@@ -98,7 +99,7 @@ def _folded_strings(tree: ast.AST) -> list[tuple[ast.expr, str]]:
     """``(node, folded text)`` for every OUTERMOST f-string or string concatenation."""
     inner: set[int] = set()
     out: list[tuple[ast.expr, str]] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if id(node) in inner or not isinstance(node, (ast.JoinedStr, ast.BinOp)):
             continue
         if isinstance(node, ast.BinOp) and not isinstance(node.op, ast.Add):
@@ -107,7 +108,7 @@ def _folded_strings(tree: ast.AST) -> list[tuple[ast.expr, str]]:
         if text is None:
             continue
         out.append((node, text))
-        inner.update(id(n) for n in ast.walk(node))
+        inner.update(id(n) for n in _fast_walk(node))
     return out
 
 
@@ -124,7 +125,7 @@ def _used_as_a_path(tree: ast.AST) -> set[int]:
     date sitting in a tuple of expected values is not.
     """
     ids: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         args: list[tuple[ast.Constant, str]] = [
@@ -182,7 +183,7 @@ def collect_open_round_literals(
         chains = _path_chains(tree)
         as_path = _used_as_a_path(tree) | set(chains)
         found: set[tuple[int, str]] = set()
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if (
                 isinstance(node, ast.Constant)
                 and isinstance(node.value, str)

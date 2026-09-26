@@ -25,6 +25,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
 from ._core import ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["EnvFlagRead", "find_hand_parsed_env_flags", "assert_env_flags_use_one_parser"]
 
@@ -75,7 +76,7 @@ def _env_var_name(node: ast.AST, prefixes: Sequence[str]) -> str | None:
 
 def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
     """Yield ``(node, var, shape)`` for each env read that is used as a boolean."""
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
             var = _env_var_name(node.operand, prefixes)
             if var:
@@ -103,8 +104,8 @@ def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
 
 def _reads_in(tree: ast.Module, rel: str, prefixes: Sequence[str]) -> list[EnvFlagRead]:
     owner: dict[int, str] = {}
-    for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
-        for child in ast.walk(func):
+    for func in (n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for child in _fast_walk(func):
             owner.setdefault(id(child), func.name)
     return [EnvFlagRead(rel, owner.get(id(node), "<module>"), node.lineno, var, shape) for node, var, shape in _boolean_contexts(tree, prefixes)]
 

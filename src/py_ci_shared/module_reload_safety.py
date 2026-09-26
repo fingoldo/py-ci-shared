@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 _RELOADERS = frozenset({"importlib.reload", "imp.reload"})
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
@@ -80,7 +81,7 @@ def reload_primitive(node: ast.AST, aliases: Optional[ImportAliases] = None) -> 
 
 def _mentions_snapshot_source(node: ast.AST, aliases: ImportAliases) -> bool:
     """Does *node* read ``sys.modules`` or a module ``__dict__`` / ``vars(module)``? Such a value is a snapshot."""
-    for sub in ast.walk(node):
+    for sub in _fast_walk(node):
         if _is_sys_modules(sub, aliases):
             return True
         if isinstance(sub, ast.Attribute) and sub.attr == "__dict__":
@@ -91,7 +92,7 @@ def _mentions_snapshot_source(node: ast.AST, aliases: ImportAliases) -> bool:
 
 
 def _bound_names(target: ast.AST) -> Iterator[str]:
-    for sub in ast.walk(target):
+    for sub in _fast_walk(target):
         if isinstance(sub, ast.Name):
             yield sub.id
 
@@ -99,7 +100,7 @@ def _bound_names(target: ast.AST) -> Iterator[str]:
 def _snapshots(scope: ast.AST, aliases: ImportAliases) -> set[str]:
     """Names bound in *scope* from a ``sys.modules`` or module-``__dict__`` read."""
     out: set[str] = set()
-    for sub in ast.walk(scope):
+    for sub in _fast_walk(scope):
         if isinstance(sub, ast.Assign) and _mentions_snapshot_source(sub.value, aliases):
             for target in sub.targets:
                 out.update(_bound_names(target))
@@ -109,7 +110,7 @@ def _snapshots(scope: ast.AST, aliases: ImportAliases) -> set[str]:
 
 
 def _uses(node: ast.AST, names: set[str]) -> bool:
-    return any(isinstance(sub, ast.Name) and sub.id in names for sub in ast.walk(node))
+    return any(isinstance(sub, ast.Name) and sub.id in names for sub in _fast_walk(node))
 
 
 class _Restores:
@@ -118,13 +119,13 @@ class _Restores:
     def __init__(self, tree: ast.AST, aliases: ImportAliases) -> None:
         self.aliases = aliases
         self.defs: dict[str, list[_FuncDef]] = {}
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self.defs.setdefault(node.name, []).append(node)
 
     def has_restore(self, scope: ast.AST, snapshots: Optional[set[str]] = None, *, in_finalizer: bool = False, depth: int = 0) -> bool:
         snaps = set(snapshots or ()) | _snapshots(scope, self.aliases)
-        for sub in ast.walk(scope):
+        for sub in _fast_walk(scope):
             if in_finalizer and reload_primitive(sub, self.aliases) == "importlib.reload":
                 return True
             if isinstance(sub, ast.Assign) and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, self.aliases) for t in sub.targets):
@@ -140,7 +141,7 @@ class _Restores:
                 if f.attr == "dict" and self.aliases.qualified_name(f) in ("unittest.mock.patch.dict", "mock.patch.dict"):
                     if sub.args and _is_sys_modules(sub.args[0], self.aliases):
                         return True
-            if isinstance(sub, ast.Try) and any(reload_primitive(n, self.aliases) == "importlib.reload" for fin in sub.finalbody for n in ast.walk(fin)):
+            if isinstance(sub, ast.Try) and any(reload_primitive(n, self.aliases) == "importlib.reload" for fin in sub.finalbody for n in _fast_walk(fin)):
                 return True
         return False
 
@@ -177,7 +178,7 @@ def _fixture_flags(func: _FuncDef, aliases: Optional[ImportAliases] = None) -> "
 def _usefixtures(decorators: "list[ast.expr]", aliases: ImportAliases) -> set[str]:
     out: set[str] = set()
     for dec in decorators:
-        for sub in ast.walk(dec):
+        for sub in _fast_walk(dec):
             if isinstance(sub, ast.Call) and (aliases.qualified_name(sub) or "").endswith("mark.usefixtures"):
                 out.update(a.value for a in sub.args if isinstance(a, ast.Constant) and isinstance(a.value, str))
     return out
@@ -211,7 +212,7 @@ def _conftest_fixtures(tests_dir: Path, parsed_by_path: "dict[Path, tuple[ast.Mo
 
 def _parents(tree: ast.AST) -> "dict[ast.AST, ast.AST]":
     parents: dict[ast.AST, ast.AST] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         for child in ast.iter_child_nodes(node):
             parents[child] = node
     return parents
@@ -270,7 +271,7 @@ def find_unpaired_reloads(
         if rel in exempt:
             continue
         tree, aliases = parsed_by_path[parsed.path]
-        sites = [(node, prim) for node in ast.walk(tree) for prim in [reload_primitive(node, aliases)] if prim is not None]
+        sites = [(node, prim) for node in _fast_walk(tree) for prim in [reload_primitive(node, aliases)] if prim is not None]
         if not sites:
             continue
         restores = _Restores(tree, aliases)
@@ -350,7 +351,7 @@ def _reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterabl
         for parsed in scan:
             aliases = ImportAliases.from_tree(parsed.tree)
             rel = relative_posix(parsed.path, repo_root)
-            for node in ast.walk(parsed.tree):
+            for node in _fast_walk(parsed.tree):
                 prim = reload_primitive(node, aliases)
                 if prim is None:
                     continue

@@ -29,8 +29,8 @@ Usage::
 
 from __future__ import annotations
 
-import re
 import os
+import re
 import shutil
 import subprocess
 from collections.abc import Iterable

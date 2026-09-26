@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._core import ScanResult, UnparsedFilesError, scan_python
+from ._core.node_index import walk as _fast_walk
 
 if TYPE_CHECKING:  # pydantic is a test-time dependency here, as in this package's other schema checks
     from pydantic import BaseModel
@@ -129,7 +130,7 @@ def _mismatches(
     out: list[GetattrDefault] = []
     for parsed in scan:
         tree, rel = parsed.tree, parsed.rel
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if not (isinstance(node, ast.Call) and getattr(node.func, "id", None) == "getattr" and len(node.args) == 3):
                 continue
             receiver, name_node, default_node = node.args

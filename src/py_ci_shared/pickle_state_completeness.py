@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = [
@@ -167,7 +168,7 @@ def assert_pickle_round_trips(
 
 def _self_attr_targets(node: ast.AST) -> Iterable[tuple[str, ast.expr, int]]:
     """``(name, value, line)`` for each ``self.<name> = value`` (plain, annotated or augmented) under *node*."""
-    for n in ast.walk(node):
+    for n in _fast_walk(node):
         if isinstance(n, ast.Assign):
             targets, value = n.targets, n.value
         elif isinstance(n, (ast.AnnAssign, ast.AugAssign)) and n.value is not None:
@@ -180,7 +181,7 @@ def _self_attr_targets(node: ast.AST) -> Iterable[tuple[str, ast.expr, int]]:
 
 
 def _is_copy_form(getstate: ast.FunctionDef) -> bool:
-    for n in ast.walk(getstate):
+    for n in _fast_walk(getstate):
         if isinstance(n, ast.Attribute) and n.attr == "__dict__":
             return True
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "vars":
@@ -197,8 +198,8 @@ def _string_collections(body: Iterable[ast.stmt]) -> dict[str, set[str]]:
         target = stmt.targets[0] if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 else getattr(stmt, "target", None)
         value = getattr(stmt, "value", None)
         if isinstance(target, ast.Name) and value is not None and not isinstance(stmt, ast.AugAssign):
-            strings = {n.value for n in ast.walk(value) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
-            for ref in ast.walk(value):
+            strings = {n.value for n in _fast_walk(value) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+            for ref in _fast_walk(value):
                 if isinstance(ref, ast.Name) and ref.id in out:
                     strings |= out[ref.id]
             if strings:
@@ -209,7 +210,7 @@ def _string_collections(body: Iterable[ast.stmt]) -> dict[str, set[str]]:
 def _names_in(getstate: ast.FunctionDef, collections: Mapping[str, set[str]]) -> set[str]:
     """Every name ``__getstate__`` mentions, with a referenced constant collection expanded to its strings."""
     out: set[str] = set()
-    for n in ast.walk(getstate):
+    for n in _fast_walk(getstate):
         if isinstance(n, ast.Constant) and isinstance(n.value, str):
             out.add(n.value)
         elif isinstance(n, (ast.Attribute, ast.Name)):
@@ -263,7 +264,7 @@ def find_pickle_state_gaps(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         module_collections = _string_collections(f.tree.body)
-        for node in ast.walk(f.tree):
+        for node in _fast_walk(f.tree):
             if isinstance(node, ast.ClassDef):
                 findings.extend(_class_findings(f.rel, node, aliases, module_collections))
     findings.sort(key=lambda x: (x.path, x.line))

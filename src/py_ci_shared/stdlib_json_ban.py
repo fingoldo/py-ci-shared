@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE", "REFRESH_FLAG", "find_stdlib_json_imports", "assert_no_stdlib_json"]
@@ -46,7 +47,7 @@ def _is_json(module: Optional[str]) -> bool:
 def _imports(tree: ast.Module) -> list[tuple[int, str]]:
     aliases = ImportAliases.from_tree(tree)
     out: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Import):
             out += [(node.lineno, f"import {a.name}" + (f" as {a.asname}" if a.asname else "")) for a in node.names if _is_json(a.name)]
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and _is_json(node.module):

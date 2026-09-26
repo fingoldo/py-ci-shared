@@ -32,11 +32,12 @@ functions, matching this package's other modules.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 
 from ._core import SourceError, SourceProblem, UnparsedFilesError, parse_file, relative_posix, resolve_relative, scan_python
+from ._core.node_index import walk as _fast_walk
 
 if TYPE_CHECKING:
     # Type-only: pydantic is a [dev] test dependency here (schema_cls is always a real
@@ -138,7 +139,7 @@ def _scope_bindings(scope: ast.AST, cfg_function_names: frozenset[str]) -> "tupl
                 if isinstance(item.optional_vars, ast.Name):
                     (cfg_names if _is_cfg_call(item.context_expr, cfg_function_names) else other).add(item.optional_vars.id)
         elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
-            other.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
+            other.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             other.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
@@ -765,7 +766,7 @@ def _argparse_default_use_lines(tree: ast.Module, var_names: frozenset[str]) -> 
     """``var_name -> [line, ...]`` for every ``<parser>.add_argument(..., default=<Name>)`` call
     anywhere in the file whose ``default=`` value is a bare reference to one of ``var_names``."""
     out: dict[str, list[int]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument"):
             continue
         default_val = next((kw.value for kw in node.keywords if kw.arg == "default"), None)

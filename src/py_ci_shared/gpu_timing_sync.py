@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 
 from ._core import ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 # Suppression marker for a DELIBERATE launch-latency (async) measurement, placed as a comment
 # anywhere in the timed region. Such a measurement is legitimate but must say so: an unlabelled
@@ -124,7 +125,7 @@ def _is_timer_read(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bo
 
 
 def _contains_timer_read(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
-    return any(_is_timer_read(sub, aliases) for sub in ast.walk(node))
+    return any(_is_timer_read(sub, aliases) for sub in _fast_walk(node))
 
 
 def _gpu_call_name(node: ast.Call) -> Optional[str]:
@@ -250,7 +251,7 @@ def _scan_one_function(
     # (wider) parameter scope, so scanning it here too would double-report.
     for block in _own_stmt_blocks(func):
         for start_lineno, region in _timed_regions(block, aliases):
-            calls = sorted((c for stmt in region for c in ast.walk(stmt) if isinstance(c, ast.Call)), key=_position)
+            calls = sorted((c for stmt in region for c in _fast_walk(stmt) if isinstance(c, ast.Call)), key=_position)
             if _region_is_suppressed(region, start_lineno, source_lines):
                 continue
             gpu_calls = [c for c in calls if _gpu_call_name(c) and not _is_sync_call(c)]

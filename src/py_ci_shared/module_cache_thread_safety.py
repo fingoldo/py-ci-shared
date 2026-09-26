@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE_CACHE", "RULE_IMPORT", "REFRESH_FLAG", "find_thread_unsafe_module_state", "assert_thread_safe_module_caches"]
@@ -88,7 +89,7 @@ def _module_caches(tree: ast.Module, aliases: ImportAliases, name_re: re.Pattern
 
 
 def _constructs_lock(tree: ast.Module, aliases: ImportAliases) -> bool:
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call):
             qualified = aliases.qualified_name(node) or ""
             if qualified.rsplit(".", 1)[-1] in _LOCKS:
@@ -97,18 +98,18 @@ def _constructs_lock(tree: ast.Module, aliases: ImportAliases) -> bool:
 
 
 def _functions(tree: ast.Module) -> Iterator[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             yield node
 
 
 def _locally_bound(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> set[str]:
     """Names the function binds locally (parameters and plain assignments) that are not declared ``global``."""
-    declared_global = {n for node in ast.walk(func) if isinstance(node, ast.Global) for n in node.names}
+    declared_global = {n for node in _fast_walk(func) if isinstance(node, ast.Global) for n in node.names}
     args = func.args
     params = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]}
     params |= {a.arg for a in (args.vararg, args.kwarg) if a is not None}
-    assigned = {t.id for node in ast.walk(func) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
+    assigned = {t.id for node in _fast_walk(func) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
     return (params | assigned) - declared_global
 
 
@@ -203,7 +204,7 @@ def _writers(tree: ast.Module, caches: dict[str, int], strict: bool) -> dict[str
     for func in _functions(tree):
         if isinstance(func, ast.AsyncFunctionDef):
             continue
-        declared_global = {n for node in ast.walk(func) if isinstance(node, ast.Global) for n in node.names}
+        declared_global = {n for node in _fast_walk(func) if isinstance(node, ast.Global) for n in node.names}
         shadowed = _locally_bound(func)
         live = {name: line for name, line in caches.items() if name not in shadowed or name in declared_global}
         for name, kinds in _operations(func, live, declared_global).items():
@@ -227,7 +228,7 @@ def _cache_findings(parsed: ParsedFile, aliases: ImportAliases, name_re: re.Patt
 
 def _delayed_callees(tree: ast.Module, aliases: ImportAliases) -> set[str]:
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call) or not node.args:
             continue
         qualified = aliases.qualified_name(node) or ""
@@ -251,7 +252,7 @@ def _import_findings(parsed: ParsedFile, aliases: ImportAliases) -> list[Finding
     for func in _functions(parsed.tree):
         if func.name not in callees:
             continue
-        for node in ast.walk(func):
+        for node in _fast_walk(func):
             if not isinstance(node, ast.ImportFrom) or node.module == "__future__" or id(node) in seen:
                 continue
             seen.add(id(node))

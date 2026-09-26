@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE", "REFRESH_FLAG", "find_rollback_then_continue", "assert_no_rollback_then_continue"]
@@ -115,7 +116,7 @@ def _writes(nodes: Sequence[ast.AST]) -> bool:
 
 def _is_batch_condition(test: ast.expr) -> bool:
     """``i % 100 == 0``, ``len(batch) >= n``, ``pending > BATCH_SIZE``: a commit every N items, not every item."""
-    for n in ast.walk(test):
+    for n in _fast_walk(test):
         if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Mod):
             return True
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "len":
@@ -150,7 +151,7 @@ _TRY_TYPES: tuple[type, ...] = (ast.Try, *((ast.TryStar,) if hasattr(ast, "TrySt
 def _loop_trys(tree: ast.AST) -> Iterator[tuple[Any, Any]]:
     """``(outermost enclosing loop, try)`` for every ``try`` (and ``try``/``except*``) inside a loop body, in the loop's function."""
     outer: dict[int, tuple[Any, Any]] = {}
-    for loop in ast.walk(tree):
+    for loop in _fast_walk(tree):
         if not isinstance(loop, (ast.For, ast.AsyncFor, ast.While)):
             continue
         for node in _walk_own(loop.body):

@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE", "REFRESH_FLAG", "find_wide_numba_seeds", "assert_numba_seeds_fit_int64"]
@@ -146,7 +147,7 @@ def _wide_call(node: ast.Call, aliases: ImportAliases) -> Optional[str]:
 
 def _njit_seeders(tree: ast.Module, aliases: ImportAliases) -> set[str]:
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.FunctionDef) and _SINK_NAME.search(node.name):
             for deco in node.decorator_list:
                 target = deco.func if isinstance(deco, ast.Call) else deco

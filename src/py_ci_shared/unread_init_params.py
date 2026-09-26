@@ -24,6 +24,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ._core import relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["UnreadParam", "find_unread_init_params", "assert_no_unread_init_params"]
 
@@ -66,10 +67,10 @@ def _store_targets(init: ast.FunctionDef, param: str) -> set[str] | None:
     The attribute is often renamed on the way in (``self._sampler = sampler``), so the stored-under name is what the rest
     of the package reads - checking the parameter's own name there would report every renamed store as dead.
     """
-    uses = sum(1 for n in ast.walk(init) if isinstance(n, ast.Name) and n.id == param and isinstance(n.ctx, ast.Load))
+    uses = sum(1 for n in _fast_walk(init) if isinstance(n, ast.Name) and n.id == param and isinstance(n.ctx, ast.Load))
     stored: set[str] = set()
     plain_stores = 0
-    for node in ast.walk(init):
+    for node in _fast_walk(init):
         if isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
@@ -88,11 +89,11 @@ def _declaration_strings(tree: ast.Module) -> set[int]:
     """``id()`` of string constants that DECLARE names rather than read them: ``__slots__``/``__all__`` entries and
     docstrings. ``__slots__ = ("alpha",)`` makes ``alpha`` storable, it does not read it."""
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             if node.value is not None and any(isinstance(t, ast.Name) and t.id in ("__slots__", "__all__") for t in targets):
-                out.update(id(n) for n in ast.walk(node.value) if isinstance(n, ast.Constant))
+                out.update(id(n) for n in _fast_walk(node.value) if isinstance(n, ast.Constant))
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
@@ -109,7 +110,7 @@ def _read_attributes(trees: Iterable[ast.Module]) -> set[str]:
     names: set[str] = set()
     for tree in trees:
         declarations = _declaration_strings(tree)
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if id(node) in declarations:
                 continue
             if isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load):
@@ -137,7 +138,7 @@ def find_unread_init_params(files: Iterable[Path], repo_root: Path, *, allow_unp
     read = _read_attributes(tree for _p, tree in parsed)
     out: list[UnreadParam] = []
     for rel, tree in parsed:
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if not isinstance(node, ast.ClassDef):
                 continue
             init = _init_of(node)

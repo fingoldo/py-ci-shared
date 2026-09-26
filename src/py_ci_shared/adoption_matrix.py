@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ImportAliases, iter_files, read_source
+from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
 
 __all__ = [
@@ -471,7 +472,7 @@ def _mentions(path: Path, needles: Sequence[bytes]) -> bool:
 
 
 def _imports_shared(stmts: Sequence[ast.stmt]) -> bool:
-    for node in (n for s in stmts for n in ast.walk(s)):
+    for node in (n for s in stmts for n in _fast_walk(s)):
         if isinstance(node, ast.Import) and any(a.name.split(".")[0] == "py_ci_shared" for a in node.names):
             return True
         if isinstance(node, ast.ImportFrom) and node.level == 0 and (node.module or "").split(".")[0] == "py_ci_shared":
@@ -515,7 +516,7 @@ def _exit_code_zero(call: ast.Call) -> bool:
 def _silent_shape(body: Sequence[ast.stmt]) -> Optional[str]:
     """The silent-skip rule a fallback body matches, or None when it fails loudly (raise, non-zero exit, pytest.fail)."""
     shapes: set[str] = set()
-    for node in (n for s in body for n in ast.walk(s)):
+    for node in (n for s in body for n in _fast_walk(s)):
         if isinstance(node, ast.Raise):
             call = node.exc
             if isinstance(call, ast.Call) and _call_name(call) == "SystemExit" and _exit_code_zero(call):
@@ -561,12 +562,12 @@ _SHAPE_TEXT = {
 
 
 def _is_find_spec_guard(test: ast.expr) -> bool:
-    return any(isinstance(n, ast.Call) and _call_name(n).endswith("find_spec") and n.args and _str_arg_is_shared(n.args[0]) for n in ast.walk(test))
+    return any(isinstance(n, ast.Call) and _call_name(n).endswith("find_spec") and n.args and _str_arg_is_shared(n.args[0]) for n in _fast_walk(test))
 
 
 def _flag_names(body: Sequence[ast.stmt]) -> list[str]:
     out: list[str] = []
-    for node in (n for s in body for n in ast.walk(s)):
+    for node in (n for s in body for n in _fast_walk(s)):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and node.value.value in (False, None):
             out.extend(t.id for t in node.targets if isinstance(t, ast.Name))
     return out
@@ -575,7 +576,7 @@ def _flag_names(body: Sequence[ast.stmt]) -> list[str]:
 def _loudly_checked_flags(tree: ast.AST) -> set[str]:
     """Names tested as ``if not NAME:`` (or ``NAME is False``/``is None``) where that branch fails loudly."""
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.If):
             continue
         test = node.test
@@ -593,7 +594,7 @@ def _loudly_checked_flags(tree: ast.AST) -> set[str]:
 
 def _skips_in_tree(tree: ast.AST, rel: str) -> list[Finding]:
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and _call_name(node).split(".")[-1] == "importorskip" and node.args and _str_arg_is_shared(node.args[0]):
             mod = node.args[0].value if isinstance(node.args[0], ast.Constant) else ""
             out.append(Finding(rel, node.lineno, "importorskip", f"importorskip({mod!r}): the gate turns SKIPPED when the install is missing or too old"))

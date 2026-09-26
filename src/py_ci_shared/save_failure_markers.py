@@ -34,6 +34,7 @@ from re import Pattern
 from typing import Callable, Optional
 
 from ._core import DEFAULT_EXCLUDE, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["DEFAULT_MARKER_PATTERNS", "assert_markers_are_fatal", "find_emitted_markers"]
 
@@ -95,7 +96,7 @@ def _ast_markers(parsed: ParsedFile) -> list[tuple[str, int]]:
         if name:
             out.append((name, node.lineno))
 
-    for node in ast.walk(parsed.tree):
+    for node in _fast_walk(parsed.tree):
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute) and node.func.attr in _ADDERS:
                 for arg in node.args:

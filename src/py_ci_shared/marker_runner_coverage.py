@@ -32,6 +32,7 @@ marker expression selects it?
 from __future__ import annotations
 
 import ast
+import functools
 import posixpath
 import re
 from collections.abc import Iterable, Sequence
@@ -39,7 +40,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, UnparsedFilesError, relative_posix, scan_python
+from ._core import DEFAULT_EXCLUDE, ImportAliases, UnparsedFilesError, relative_posix, scan_python, tree_memo
+from ._core.node_index import walk as _fast_walk
 
 _TOKEN = re.compile(r"\"[^\"]*\"|'[^']*'|[^\s|&;><]+")
 #: A dependency-install line NAMES pytest without running it (`pip install pytest pytest-cov ...`).
@@ -142,7 +144,7 @@ def _markers_in(node: ast.AST, aliases: ImportAliases, named: "dict[str, frozens
     """Marker names applied by an expression: ``pytest.mark.x``, ``mark.x(...)``, aliases, lists of them, or a
     module-level name bound to one (``slow = pytest.mark.slow``)."""
     out: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in _fast_walk(node):
         if isinstance(sub, ast.Attribute):
             qualified = aliases.qualified_name(sub)
             if qualified and qualified.startswith("pytest.mark.") and qualified.count(".") == 2:
@@ -189,19 +191,25 @@ def _tests_in(
     return out
 
 
+def _file_marks(tree: ast.Module) -> "tuple[frozenset[str], list[tuple[str, frozenset[str]]]]":
+    """``(module markers, [(test name, its markers)])`` of one test file: independent of the marker asked about, so
+    one analysis serves every marker a suite checks."""
+    aliases = ImportAliases.from_tree(tree)
+    named = _named_marks(tree, aliases)
+    module_markers: set[str] = set()
+    for statement in tree.body:
+        value = _pytestmark_value(statement)
+        if value is not None:
+            module_markers |= _markers_in(value, aliases, named)
+    return frozenset(module_markers), _tests_in(tree.body, "", frozenset(module_markers), aliases, named)
+
+
 def _collect(tests_dir: Path, repo_root: Path, marker: str) -> "tuple[list[MarkedTest], list[str]]":
     scan = scan_python(tests_dir, min_files=0, patterns=("test_*.py", "*_test.py"), exclude=DEFAULT_EXCLUDE)
     found: list[MarkedTest] = []
     for parsed in scan:
         rel = relative_posix(parsed.path, repo_root)
-        aliases = ImportAliases.from_tree(parsed.tree)
-        named = _named_marks(parsed.tree, aliases)
-        module_markers: set[str] = set()
-        for statement in parsed.tree.body:
-            value = _pytestmark_value(statement)
-            if value is not None:
-                module_markers |= _markers_in(value, aliases, named)
-        tests = _tests_in(parsed.tree.body, "", frozenset(module_markers), aliases, named)
+        module_markers, tests = tree_memo(parsed.tree, "marker_runner_coverage._file_marks", functools.partial(_file_marks, parsed.tree))
         if marker in module_markers:
             found.append(MarkedTest(rel, _WHOLE_FILE, frozenset(module_markers), tuple(name for name, _ in tests)))
             continue
@@ -305,7 +313,7 @@ def _python_invocations(source: str) -> "list[str]":
     except (SyntaxError, ValueError):
         return []
     out: list[str] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, (ast.List, ast.Tuple)):
             continue
         words = [e.value if isinstance(e, ast.Constant) and isinstance(e.value, str) else None for e in node.elts]

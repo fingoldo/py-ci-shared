@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["RegistryWrite", "find_runtime_registry_writes", "assert_writes_have_replay"]
 
@@ -160,7 +161,7 @@ def _import_time_helpers(trees: Iterable[Union[ast.Module, tuple[str, ast.Module
         main_bodies: set[int] = set()
         for node in _module_level_statements(tree.body):
             if _is_main_guard(node):
-                main_bodies.update(id(n) for n in ast.walk(node))
+                main_bodies.update(id(n) for n in _fast_walk(node))
                 continue
             if id(node) in main_bodies:
                 continue
@@ -169,7 +170,7 @@ def _import_time_helpers(trees: Iterable[Union[ast.Module, tuple[str, ast.Module
                 if helper:
                     out.append(helper)
             if isinstance(node, (ast.Expr, ast.Assign, ast.AnnAssign, ast.AugAssign)):
-                for sub in ast.walk(node):
+                for sub in _fast_walk(node):
                     if isinstance(sub, ast.Call):
                         helper = _helper_of(sub, aliases, rel)
                         if helper:
@@ -231,7 +232,7 @@ def _writes_in(func: ast.AST, registries: set[str], local_aliases: Optional[Mapp
 def _import_aliases_of(tree: ast.Module, registries: set[str]) -> dict[str, str]:
     """``{"REG": "_REGISTRY"}`` for ``from x import _REGISTRY as REG``."""
     out: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 if alias.name in registries and alias.asname:

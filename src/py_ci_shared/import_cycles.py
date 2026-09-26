@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ScanResult, module_of, package_of, resolve_relative, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "ImportEvent", "assert_no_import_cycles", "build_import_graph", "find_import_cycles"]
@@ -110,15 +111,15 @@ def _catches_import_error(handler: ast.ExceptHandler) -> bool:
 def _guarded_lines(tree: ast.Module) -> set[int]:
     """Lines of statements inside a ``try`` whose handler catches ImportError: a failed import there is survived."""
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Try) and any(_catches_import_error(h) for h in node.handlers):
             for stmt in node.body:
-                out.update(getattr(n, "lineno", 0) for n in ast.walk(stmt))
+                out.update(getattr(n, "lineno", 0) for n in _fast_walk(stmt))
     return out
 
 
 def _target_names(target: ast.expr) -> Iterable[str]:
-    for node in ast.walk(target):
+    for node in _fast_walk(target):
         if isinstance(node, ast.Name):
             yield node.id
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file
+from ._core.node_index import walk as _fast_walk
 
 #: pytest's own default for ``python_files``.
 _DEFAULT_PYTHON_FILES = ("test_*.py", "*_test.py")
@@ -50,7 +51,7 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
         # cached verdict that was measured without it.
         return seen
     names: list[str] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Import):
             names += [a.name for a in node.names]
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:

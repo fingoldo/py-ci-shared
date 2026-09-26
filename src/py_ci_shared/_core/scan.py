@@ -10,10 +10,10 @@ from __future__ import annotations
 
 import ast
 import os
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
-from collections.abc import Iterable, Iterator, Sequence
 
 from .corpus import DEFAULT_EXCLUDE, iter_files, relative_posix
 from .errors import CorpusError, EmptyScanError, SourceError, UnparsedFilesError

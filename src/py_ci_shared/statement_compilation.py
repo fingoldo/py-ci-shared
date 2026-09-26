@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 # The names that BUILD a statement. Mocking one of these means no SQL is ever compiled; mocking `session`,
 # `engine` or `connection` does not, and is the normal way to keep a unit test off the database.
@@ -147,9 +148,9 @@ def _enclosing_marked(tree: ast.Module) -> set[int]:
     """Line numbers covered by a routing-marked function or class, decorators included (a stacked ``@patch`` sits
     above the ``def`` line); every line when the module sets a routing ``pytestmark``."""
     if _pytestmark_is_routing(tree.body):
-        return set(range(1, max((getattr(n, "end_lineno", 0) or 0) for n in ast.walk(tree)) + 2))
+        return set(range(1, max((getattr(n, "end_lineno", 0) or 0) for n in _fast_walk(tree)) + 2))
     covered: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, _Marked) and _routing_marked(node):
             start = min([node.lineno, *(d.lineno for d in node.decorator_list)])
             covered |= set(range(start, (node.end_lineno or node.lineno) + 1))
@@ -186,7 +187,7 @@ def find_mocked_statement_constructors(
     for parsed in scan:
         aliases = ImportAliases.from_tree(parsed.tree)
         marked = _enclosing_marked(parsed.tree)
-        for node in ast.walk(parsed.tree):
+        for node in _fast_walk(parsed.tree):
             if not isinstance(node, ast.Call) or not _is_patch_call(node, aliases):
                 continue
             target = _target(node)

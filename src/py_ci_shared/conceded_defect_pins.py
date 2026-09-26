@@ -25,6 +25,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import UnparsedFilesError, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ConcededPin", "CONCESSION_RE", "find_conceded_defect_pins"]
 
@@ -89,13 +90,13 @@ def find_conceded_defect_pins(files: Iterable[Path], repo_root: Path) -> list[Co
     for parsed in scan:
         tree, rel = parsed.tree, parsed.rel
         lines = parsed.source.splitlines()
-        for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for func in (n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             if not func.name.startswith("test_") or func.name.startswith(_KNOWN_DEFECT_PREFIX):
                 continue
             prose = (ast.get_docstring(func) or "") + "\n" + _comment_lines_above(lines, func.lineno)
             match = CONCESSION_RE.search(prose)
             if match is None:
                 continue
-            if any(_is_exact_pin(n) for n in ast.walk(func)):
+            if any(_is_exact_pin(n) for n in _fast_walk(func)):
                 out.append(ConcededPin(rel, func.name, func.lineno, match.group(0)))
     return sorted(out, key=lambda c: (c.path, c.lineno))

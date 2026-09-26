@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 # A backticked token. Kept narrow on purpose: identifiers, dotted members, a trailing "(" and test-file
 # names; anything with spaces, operators or quotes is prose in code font, not a reference.
@@ -231,7 +232,7 @@ def python_declarations(files: Iterable[Path]) -> set[str]:
             _, tree = parse_source(path)
         except SourceError:
             continue
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, ast.ClassDef):
                 names.add(node.name)
                 own = members.setdefault(node.name, set())
@@ -248,7 +249,7 @@ def python_declarations(files: Iterable[Path]) -> set[str]:
                     elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
                         own.add(child.target.id)
                         names.add(child.target.id)
-                for sub in ast.walk(node):
+                for sub in _fast_walk(node):
                     if isinstance(sub, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
                         targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target]
                         for target in targets:
@@ -327,7 +328,7 @@ def _python_comment_lines(source: str, tree: ast.Module) -> list[tuple[int, str]
     and attribute docstrings; an assigned triple-quoted literal such as ``SQL = ...`` is code, not documentation)."""
     lines = source.splitlines()
     out: dict[int, str] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             for lineno in range(node.lineno, (node.end_lineno or node.lineno) + 1):
                 out[lineno] = lines[lineno - 1] if lineno - 1 < len(lines) else ""

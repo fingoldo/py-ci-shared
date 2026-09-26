@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 from ._toml_compat import tomllib
 
@@ -107,7 +108,7 @@ def _reason(call: Optional[ast.Call], positional_reason: bool) -> Optional[str]:
     node = _reason_node(call, positional_reason)
     if node is None:
         return None
-    return " ".join(str(n.value) for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str))
+    return " ".join(str(n.value) for n in _fast_walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str))
 
 
 def _reason_is_computed(call: Optional[ast.Call], positional_reason: bool) -> bool:
@@ -118,7 +119,7 @@ def _reason_is_computed(call: Optional[ast.Call], positional_reason: bool) -> bo
     if not _reason(call, positional_reason):
         return True
     # ``XFAIL_REASON + f" | {counts}"``, ``f"{gap} [still open]"``: the words live in a variable defined elsewhere
-    idents = [n.id if isinstance(n, ast.Name) else n.attr for n in ast.walk(node) if isinstance(n, (ast.Name, ast.Attribute))]
+    idents = [n.id if isinstance(n, ast.Name) else n.attr for n in _fast_walk(node) if isinstance(n, (ast.Name, ast.Attribute))]
     return any(_REASON_VARIABLE.search(i) for i in idents)
 
 
@@ -183,8 +184,8 @@ def find_xfail_to_defer(
     findings: list[Finding] = []
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
-        parents = {id(c): n for n in ast.walk(f.tree) for c in ast.iter_child_nodes(n)}
-        for node in ast.walk(f.tree):
+        parents = {id(c): n for n in _fast_walk(f.tree) for c in ast.iter_child_nodes(n)}
+        for node in _fast_walk(f.tree):
             if isinstance(node, ast.Call) and isinstance(parents.get(id(node)), ast.Attribute):
                 continue  # ``pytest.mark.xfail(...).with_args`` and similar: the outer call is judged
             results = _node_findings(node, aliases, parents, xfail_strict, ext)

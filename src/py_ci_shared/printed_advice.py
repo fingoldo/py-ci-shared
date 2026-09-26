@@ -29,6 +29,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ._core import scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ADVICE_RE", "PrintedAdvice", "assert_printed_advice_registered", "find_printed_advice"]
 
@@ -103,7 +104,7 @@ def find_printed_advice(files: Iterable[Path], repo_root: Path, *, min_files: in
         tree, rel = parsed.tree, parsed.rel
         scopes = _scopes(tree)
         seen: dict[str, int] = {}
-        calls = sorted((n for n in ast.walk(tree) if isinstance(n, ast.Call) and _message_call(n)), key=lambda n: (n.lineno, n.col_offset))
+        calls = sorted((n for n in _fast_walk(tree) if isinstance(n, ast.Call) and _message_call(n)), key=lambda n: (n.lineno, n.col_offset))
         for call in calls:
             text = " ".join(_text_of(a) for a in [*call.args, *(k.value for k in call.keywords)])
             m = ADVICE_RE.search(text)

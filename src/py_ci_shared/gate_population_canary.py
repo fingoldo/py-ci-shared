@@ -50,6 +50,7 @@ from types import ModuleType
 from typing import Any
 
 from ._core import SourceError, parse_file
+from ._core.node_index import walk as _fast_walk
 
 CANDIDATE_FUNCTION = "_candidate_files"
 CANDIDATE_CONSTANT = "_CANDIDATE_FILES"
@@ -78,7 +79,7 @@ def _module_level_names(path: Path) -> set[str]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             names.add(node.name)
         elif isinstance(node, ast.Assign):
-            names |= {n.id for t in node.targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+            names |= {n.id for t in node.targets for n in _fast_walk(t) if isinstance(n, ast.Name)}
         elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
             names.add(node.target.id)
         elif isinstance(node, (ast.Import, ast.ImportFrom)):

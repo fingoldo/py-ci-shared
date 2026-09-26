@@ -23,6 +23,7 @@ import re
 from typing import Optional
 
 from ._core import ImportAliases
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["shape_reasons", "SHAPE_HELP"]
 
@@ -73,7 +74,7 @@ def _num(node: ast.AST) -> float | None:
 
 def _wide_literal_range(test: ast.AST) -> bool:
     """``lo < x < hi`` (or ``<=``) with literal ``lo``/``hi`` spanning a factor of 20, or from <= 0 to >= 10."""
-    for node in ast.walk(test):
+    for node in _fast_walk(test):
         if not (isinstance(node, ast.Compare) and len(node.ops) == 2):
             continue
         if all(isinstance(o, (ast.Lt, ast.LtE)) for o in node.ops):
@@ -100,7 +101,7 @@ def _is_min_max_call(node: ast.AST) -> bool:
 
 def _envelope_assert(test: ast.AST) -> bool:
     """``a.min() > k * b.min()`` / ``a.max() < k * b.max()``: both sides a min/max, one scaled by a literal."""
-    for node in ast.walk(test):
+    for node in _fast_walk(test):
         if not (isinstance(node, ast.Compare) and len(node.ops) == 1 and isinstance(node.ops[0], (ast.Gt, ast.GtE, ast.Lt, ast.LtE))):
             continue
         left, right = node.left, node.comparators[0]
@@ -113,10 +114,10 @@ def _envelope_assert(test: ast.AST) -> bool:
 
 def _median_error(test: ast.AST) -> bool:
     """A median over an absolute difference: ``np.median(np.abs(a - b))``."""
-    for node in ast.walk(test):
+    for node in _fast_walk(test):
         name = getattr(getattr(node, "func", None), "attr", getattr(getattr(node, "func", None), "id", ""))
         if isinstance(node, ast.Call) and name in {"median", "nanmedian"}:
-            if any(isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in {"abs", "absolute", "fabs"} for n in ast.walk(node)):
+            if any(isinstance(n, ast.Call) and getattr(n.func, "attr", getattr(n.func, "id", "")) in {"abs", "absolute", "fabs"} for n in _fast_walk(node)):
                 return True
     return False
 
@@ -142,14 +143,14 @@ def _computes(node: ast.AST) -> bool:
 def _late_skip(func: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     """A ``pytest.skip`` after the function assigned from a call, outside an ``if`` that probes the environment."""
     body = getattr(func, "body", [])
-    first_compute = min((getattr(n, "lineno", 0) for n in ast.walk(func) if _computes(n)), default=None)
+    first_compute = min((getattr(n, "lineno", 0) for n in _fast_walk(func) if _computes(n)), default=None)
     if first_compute is None:
         return False
     parents: dict[int, ast.AST] = {}
-    for p in ast.walk(func):
+    for p in _fast_walk(func):
         for c in ast.iter_child_nodes(p):
             parents[id(c)] = p
-    for node in ast.walk(func):
+    for node in _fast_walk(func):
         line = getattr(node, "lineno", 0)
         if not _is_skip_call(node, aliases) or line <= first_compute:
             continue
@@ -162,7 +163,7 @@ def _late_skip(func: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
 
 def _identifier_parts(test: ast.AST) -> set[str]:
     parts: set[str] = set()
-    for sub in ast.walk(test):
+    for sub in _fast_walk(test):
         name = sub.id if isinstance(sub, ast.Name) else sub.attr if isinstance(sub, ast.Attribute) else None
         if name is None:
             continue
@@ -197,7 +198,7 @@ def shape_reasons(func: ast.FunctionDef | ast.AsyncFunctionDef, *, aliases: Opti
     Pass *aliases* (``ImportAliases.from_tree(module)``) so ``from pytest import skip`` / ``import pytest as pt``
     skips are recognised; without it only the literal ``pytest.skip`` is.
     """
-    asserts = [n.test for n in ast.walk(func) if isinstance(n, ast.Assert)]
+    asserts = [n.test for n in _fast_walk(func) if isinstance(n, ast.Assert)]
     out: list[str] = []
     if any(_wide_literal_range(t) for t in asserts):
         out.append("wide-literal-range")

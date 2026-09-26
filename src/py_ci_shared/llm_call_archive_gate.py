@@ -27,11 +27,12 @@ and also fails for an allowed entry that no longer matches anything, so an exemp
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, ImportAliases, SourceError, UnparsedFilesError, iter_files, parse_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "DEFAULT_GENERATE_METHODS",
@@ -109,7 +110,7 @@ def _tree_of(source_or_tree: "str | ast.Module") -> ast.Module:
 
 def _sdk_call_lines(source: "str | ast.Module", sdk_methods: frozenset[tuple[str | None, str]]) -> list[int]:
     lines = []
-    for node in ast.walk(_tree_of(source)):
+    for node in _fast_walk(_tree_of(source)):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
             continue
         owner = node.func.value.attr if isinstance(node.func.value, ast.Attribute) else None
@@ -138,7 +139,7 @@ def _unwrapped_provider_lines(
     tree = _tree_of(source)
     aliases = ImportAliases.from_tree(tree)
     lines = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
@@ -178,13 +179,13 @@ def find_unwrapped_providers(
 
 def _generate_call_lines(source: "str | ast.Module", methods: frozenset[str]) -> list[int]:
     return sorted(
-        node.lineno for node in ast.walk(_tree_of(source)) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in methods
+        node.lineno for node in _fast_walk(_tree_of(source)) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in methods
     )
 
 
 def _names_in(source: "str | ast.Module") -> set[str]:
     names: set[str] = set()
-    for node in ast.walk(_tree_of(source)):
+    for node in _fast_walk(_tree_of(source)):
         if isinstance(node, ast.Name):
             names.add(node.id)
         elif isinstance(node, ast.Attribute):

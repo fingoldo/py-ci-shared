@@ -32,6 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
 
 #: Markers pytest and the plugins these repos use provide without registration.
@@ -157,7 +158,7 @@ def conftest_registrations(tree: ast.Module) -> "tuple[set[str], list[int]]":
             if values is not None:
                 constants[statement.targets[0].id] = values
     loops: dict[str, list[str]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.For) and isinstance(node.target, ast.Name):
             values = _literal_strings(node.iter)
             if values is None and isinstance(node.iter, ast.Name):
@@ -166,7 +167,7 @@ def conftest_registrations(tree: ast.Module) -> "tuple[set[str], list[int]]":
                 loops[node.target.id] = values
     names: set[str] = set()
     unresolved: list[int] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "addinivalue_line"):
             continue
         if len(node.args) < 2:

@@ -29,6 +29,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, iter_files, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["assert_no_private_meta_imports", "imported_names", "private_meta_imports"]
 
@@ -40,7 +41,7 @@ def imported_names(tree: ast.AST) -> list[str]:
     ``importlib.import_module("X")`` / ``__import__("X")``; relative imports are skipped."""
     out: list[str] = []
     aliases = ImportAliases.from_tree(tree)
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Import):
             out.extend(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0:

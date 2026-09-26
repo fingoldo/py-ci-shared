@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 # Dart: `import '...'` / `export '...'`; TS/JS: `import {x} from '...'`, `export * from '...'`,
 # `require('...')`; Python-style `from x import y` is matched by the same `from` form when the
@@ -145,7 +146,7 @@ def _python_targets(path: Path, repo_root: Path, package_roots: "dict[str, str]"
     """``(line, repo-relative target)`` for every import in a Python file that resolves inside the repository: the
     submodule an imported name is, when it is one, else the module imported from. Raises ``SourceError``."""
     _source, tree = parse_source(path)
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Import):
             requests: list[tuple[int, str, list[str]]] = [(0, alias.name, []) for alias in node.names]
         elif isinstance(node, ast.ImportFrom):

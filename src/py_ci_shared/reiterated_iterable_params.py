@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE", "REFRESH_FLAG", "ONE_SHOT_TYPES", "find_reiterated_iterable_params", "assert_no_reiterated_iterable_params"]
@@ -162,7 +163,7 @@ class _Counter:
 
 
 def _rebound(func: _FunctionNode, name: str) -> bool:
-    for n in ast.walk(func):
+    for n in _fast_walk(func):
         if isinstance(n, ast.Assign) and any(_is_p(t, name) or (isinstance(t, ast.Tuple) and any(_is_p(e, name) for e in t.elts)) for t in n.targets):
             return True
         if isinstance(n, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr)) and _is_p(n.target, name):
@@ -177,7 +178,7 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
     lines = parsed.source.splitlines()
     names = enclosing_functions(parsed.tree)
     out: list[Finding] = []
-    for func in ast.walk(parsed.tree):
+    for func in _fast_walk(parsed.tree):
         if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         args = func.args

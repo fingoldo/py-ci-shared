@@ -4,6 +4,11 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.18.0 (unreleased)
 
+- **Gates walk each tree once.** `_core.nodes_of(tree, *types)` returns a tree's nodes of those types in `ast.walk` order from one
+  cached walk, and `_core.tree_memo` keeps any per-tree derived value; both live as long as the parse cache. `ImportAliases.from_tree`,
+  `unresolved_imports` and `marker_runner_coverage` use them, and every gate walks with `_core.walk` (the `ast.walk` order, about 1.5x
+  faster). On mlframe's meta suite: the marker check 70 s -> 29 s for the first marker and 5.5 s for each further one, the import check
+  143 s -> 34 s. Mutation harness version 14.
 - **A refresh only shrinks a baseline.** It drops entries that no longer fire and lowers counts; adding an entry,
   raising a count or seeding a missing baseline with findings fails and names them unless growth is opted into
   (`--py-ci-refresh-grow`, `PY_CI_SHARED_REFRESH_ALLOW_GROW=1`, `py-ci-shared refresh --grow`, `grow=True`).

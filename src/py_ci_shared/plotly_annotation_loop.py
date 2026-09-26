@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["RULE", "REFRESH_FLAG", "SLOW_METHODS", "find_plotly_annotation_loops", "assert_no_plotly_annotation_loops"]
@@ -70,7 +71,7 @@ def _own(nodes: Iterable[ast.AST]) -> Iterator[ast.AST]:
 def _looped_calls(tree: ast.AST, limit: int) -> Iterator[ast.Call]:
     """Slow plotly calls that run once per item of a loop or comprehension in their own function."""
     seen: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, (ast.For, ast.AsyncFor)):
             if _small_literal(node.iter, limit):
                 continue

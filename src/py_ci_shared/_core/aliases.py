@@ -63,8 +63,14 @@ class ImportAliases:
     def from_tree(cls, tree: ast.AST, *, package: Optional[str] = None) -> "ImportAliases":
         """Collect every import in *tree*. *package* (the module's own package) resolves relative imports;
         without it a relative import is recorded with its leading dots (``.sub.x``) so it stays matchable."""
+        from .node_index import nodes_of, tree_memo
+
+        return tree_memo(tree, ("ImportAliases.from_tree", package), lambda: cls(cls._collect(nodes_of(tree, ast.Import, ast.ImportFrom), package)))
+
+    @staticmethod
+    def _collect(imports: "list[ast.AST]", package: Optional[str]) -> dict[str, str]:
         out: dict[str, str] = {}
-        for node in ast.walk(tree):
+        for node in imports:
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.asname:
@@ -81,7 +87,7 @@ class ImportAliases:
                         continue
                     sep = "" if base.endswith(".") or not base else "."
                     out[alias.asname or alias.name] = f"{base}{sep}{alias.name}"
-        return cls(out)
+        return out
 
     def qualified_name(self, node: ast.AST) -> Optional[str]:
         """Dotted target of a ``Name``/``Attribute`` chain (``il.reload`` -> ``importlib.reload``); for a ``Call``, of

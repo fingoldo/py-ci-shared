@@ -53,6 +53,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import Baseline, BaselineError, ImportAliases, SourceError, parse_source, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "DEFAULT_READERS",
@@ -128,7 +129,7 @@ def _call_name(node: ast.Call) -> str:
 
 
 def _string_constants(node: ast.AST) -> Iterator[str]:
-    for sub in ast.walk(node):
+    for sub in _fast_walk(node):
         if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
             yield sub.value
 
@@ -139,7 +140,7 @@ class _Detector:
         self.readers = readers
         self.aliases = ImportAliases.from_tree(tree)
         self.suffixes = (".py", ".sql") if treat_sql_as_source else (".py",)
-        self.dis_names = {"dis"} | {a.asname or a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name == "dis"}
+        self.dis_names = {"dis"} | {a.asname or a.name for n in _fast_walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name == "dis"}
         self.module_paths = self._path_names(tree.body)
         self.helpers: set[str] = set()
         self.fixtures: set[str] = set()
@@ -154,7 +155,7 @@ class _Detector:
             return True
         if any(lit.lower().endswith(_NON_SOURCE_SUFFIXES) for lit in literals):
             return False
-        for sub in ast.walk(node):
+        for sub in _fast_walk(node):
             if isinstance(sub, ast.Name) and (sub.id == "__file__" or sub.id in path_names):
                 return True
             if isinstance(sub, ast.Attribute) and sub.attr == "__file__":  # `Path(module.__file__)`
@@ -175,12 +176,12 @@ class _Detector:
                         expr = item.context_expr
                         if item.optional_vars is not None and isinstance(expr, ast.Call) and _call_name(expr) == "open" and expr.args:
                             if self._is_source_path_expr(expr.args[0], names):
-                                names.update(n.id for n in ast.walk(item.optional_vars) if isinstance(n, ast.Name))
+                                names.update(n.id for n in _fast_walk(item.optional_vars) if isinstance(n, ast.Name))
                 elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
                     # `ast.comprehension` covers `"".join(p.read_text() for p in DIR.glob("*.py"))`, which reads the same files.
-                    globs = [c for c in ast.walk(node.iter) if isinstance(c, ast.Call) and _call_name(c) in ("glob", "rglob", "iterdir")]
+                    globs = [c for c in _fast_walk(node.iter) if isinstance(c, ast.Call) and _call_name(c) in ("glob", "rglob", "iterdir")]
                     if any(lit.lower().endswith(self.suffixes) for c in globs for lit in _string_constants(c)):
-                        names.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
+                        names.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
         return names
 
     # -- what counts as reading source --------------------------------------------------------------
@@ -232,7 +233,7 @@ class _Detector:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 paths = self._path_names(node.body, frozenset(self.module_paths) | _param_names(node))
                 tainted = self._tainted(node.body, paths, set())
-                for ret in ast.walk(node):
+                for ret in _fast_walk(node):
                     if isinstance(ret, ast.Return) and ret.value is not None and (self.reader_kind(ret.value, paths, tainted) or _uses(ret.value, tainted)):
                         out.add(node.name)
         return out
@@ -273,7 +274,7 @@ class _Detector:
                     and _uses(node.iter, tainted)
                     and not (isinstance(node.iter, ast.Call) and _call_name(node.iter) in _STRUCTURAL)
                 ):
-                    tainted.update(n.id for n in ast.walk(node.target) if isinstance(n, ast.Name))
+                    tainted.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
             if len(tainted) == before:
                 break
         return tainted
@@ -283,7 +284,7 @@ class _Detector:
         """A path that is neither known source nor data nor pytest temp output: its text is judged by its use."""
         if any(lit.lower().endswith(_NON_SOURCE_SUFFIXES) for lit in _string_constants(node)):
             return False
-        return not any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in tmp_names) for sub in ast.walk(node))
+        return not any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in tmp_names) for sub in _fast_walk(node))
 
     def file_read(self, node: ast.AST, tmp_names: set[str], file_tainted: set[str]) -> bool:
         """Does *node* yield an arbitrary file's text: ``p.read_text()``, ``p.read_bytes()``, ``open(p).read()``, or a
@@ -307,7 +308,7 @@ class _Detector:
             for node in _walk_scope(body):
                 if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None and not _contains_read(node.value):
                     value = node.value
-                    if any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in names) for sub in ast.walk(value)) or any(
+                    if any(isinstance(sub, ast.Name) and (sub.id in _TMP_ROOTS or sub.id in names) for sub in _fast_walk(value)) or any(
                         lit.lower().endswith(_NON_SOURCE_SUFFIXES) for lit in _string_constants(value)
                     ):
                         names.update(_target_names(node))
@@ -402,7 +403,7 @@ def _defs_in(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
 def _target_names(node: ast.AST) -> set[str]:
     """The names a binding statement writes to; ``src += path.read_text()`` taints ``src`` exactly as a plain assign would."""
     targets = node.targets if isinstance(node, ast.Assign) else [node.target]  # type: ignore[attr-defined]
-    return {n.id for t in targets for n in ast.walk(t) if isinstance(n, ast.Name)}
+    return {n.id for t in targets for n in _fast_walk(t) if isinstance(n, ast.Name)}
 
 
 def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
@@ -411,19 +412,19 @@ def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> frozenset[str]:
 
 
 def _contains_read(node: ast.AST) -> bool:
-    return any(isinstance(s, ast.Call) and _call_name(s) in _FILE_READS | {"open"} for s in ast.walk(node))
+    return any(isinstance(s, ast.Call) and _call_name(s) in _FILE_READS | {"open"} for s in _fast_walk(node))
 
 
 def _uses(node: ast.AST, names: set[str]) -> bool:
     """Does *node* read one of *names* without CALLING it -- calling a name exercises behaviour."""
     if not names:
         return False
-    called = {c.func.id for c in ast.walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
-    return any(isinstance(s, ast.Name) and s.id in names and s.id not in called for s in ast.walk(node))
+    called = {c.func.id for c in _fast_walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    return any(isinstance(s, ast.Name) and s.id in names and s.id not in called for s in _fast_walk(node))
 
 
 def _tests_content(test: ast.AST) -> bool:
-    for sub in ast.walk(test):
+    for sub in _fast_walk(test):
         if isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in sub.ops):
             return True
         if isinstance(sub, ast.Call) and _call_name(sub) in _CONTENT_METHODS:
@@ -453,7 +454,7 @@ def _match_names(body: list[ast.stmt], det: _Detector, paths: set[str], tainted:
 
 
 def _position_calls(node: ast.AST) -> Iterator[ast.Call]:
-    for sub in ast.walk(node):
+    for sub in _fast_walk(node):
         if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in _POSITION_METHODS:
             yield sub
 
@@ -461,7 +462,7 @@ def _position_calls(node: ast.AST) -> Iterator[ast.Call]:
 def _literal_search(node: ast.AST) -> bool:
     """A literal substring test (``in``, ``==``, ``.count``, ``.startswith`` ...), not a regex: over an arbitrary file a
     regex is usually EXTRACTING a value (a version, a code block to run), which is how the text gets used for real."""
-    for sub in ast.walk(node):
+    for sub in _fast_walk(node):
         if isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in sub.ops):
             return True
         if isinstance(sub, ast.Call) and _call_name(sub) in _CONTENT_METHODS - _MATCHERS - {"findall"}:
@@ -506,7 +507,7 @@ def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: se
     """How *test* checks the content of source text (a reader call or a name holding its text), or None."""
     kind = det.reader_kind(test, scope.paths, scope.tainted)
     if kind is None:
-        used = next((s.id for s in ast.walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted), None)
+        used = next((s.id for s in _fast_walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted), None)
         kind = f"text held in `{used}`" if used and _uses(test, scope.tainted) else None
     return kind if kind and (_tests_content(test) or _uses(test, matches)) else None
 

@@ -60,6 +60,7 @@ from pathlib import Path
 from typing import Union
 
 from ._core import relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loop"]
 
@@ -184,9 +185,9 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
     enclosing = enclosing if enclosing is not None else _enclosing_loops(fn)
     allowed_loops = enclosing.get(id(loop), frozenset())
     alternatives = _floor_sources(loop.iter, _assignments(fn), 0)
-    var_names = {n.id for n in ast.walk(loop.target) if isinstance(n, ast.Name)}
+    var_names = {n.id for n in _fast_walk(loop.target) if isinstance(n, ast.Name)}
 
-    loop_ids = {id(n) for n in ast.walk(loop)}
+    loop_ids = {id(n) for n in _fast_walk(loop)}
     for node in _own_nodes(fn):
         if id(node) in loop_ids or not isinstance(node, ast.Assert):
             continue
@@ -196,10 +197,10 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
             test_src = ast.unparse(node.test)
         except Exception:  # unparse is best-effort, as above
             continue
-        mentioned = {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}
+        mentioned = {n.id for n in _fast_walk(node.test) if isinstance(n, ast.Name)}
         if any(all((src in mentioned) if src.isidentifier() else (src in test_src) for src in needed) for needed in alternatives):
             return True
-        if var_names & {n.id for n in ast.walk(node.test) if isinstance(n, ast.Name)}:
+        if var_names & {n.id for n in _fast_walk(node.test) if isinstance(n, ast.Name)}:
             return True
     return False
 
@@ -336,7 +337,7 @@ def _floorless_loops(files: Iterable[Path], repo_root: Path, *, allow_unparsed: 
         tree = parsed.tree
         rel = relative_posix(parsed.path, Path(repo_root).resolve())
         per_file: list[tuple[str, int]] = []
-        for fn in ast.walk(tree):
+        for fn in _fast_walk(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             enclosing = _enclosing_loops(fn)

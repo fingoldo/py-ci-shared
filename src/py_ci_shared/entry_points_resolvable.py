@@ -61,6 +61,7 @@ def find_unresolvable_entry_points(pyproject_path: Path) -> list[str]:
     module, or whose module lacks the named (possibly dotted) attribute. An extras suffix (``[cli]``) is
     ignored; an empty module or attribute is a violation."""
     import importlib
+
     from ._toml_compat import tomllib
 
     data = tomllib.loads(read_source(pyproject_path))
@@ -96,6 +97,7 @@ def assert_all_entry_points_resolvable(pyproject_path: Path, *, min_entries: int
     unconditionally wrong (there's no legitimate "grandfathered" broken
     console script)."""
     import pytest
+
     from ._toml_compat import tomllib
 
     found = len(_iter_entry_specs(tomllib.loads(read_source(pyproject_path))))

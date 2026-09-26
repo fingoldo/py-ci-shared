@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import Baseline, ImportAliases, ScanResult, refresh_requested, register_refresh_options, scan_python
+from ._core.node_index import walk as _fast_walk
 
 DEFAULT_HEADING = "## Environment variables"
 REFRESH_FLAG = "--refresh-readme-env-var-baseline"
@@ -77,7 +78,7 @@ def _module_level_name_literals(tree: ast.AST) -> dict[str, set[str]]:
     """``{"KEY_NAMES": {"A", "B"}}`` for every ``NAME = (LITERAL, ...)``-shaped
     assignment anywhere in ``tree``."""
     name_literals: dict[str, set[str]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             literals = _literal_str_elts(node.value)
             if literals is not None:
@@ -90,7 +91,7 @@ def _loop_var_literal_bindings(tree: ast.AST, name_literals: dict[str, set[str]]
     target is a bare name and whose iterable resolves (directly, or via
     ``name_literals``) to a literal string tuple/list/set."""
     loop_var_literals: dict[str, set[str]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.For):
             pairs = [(node.target, node.iter)]
         elif isinstance(node, (ast.ListComp, ast.SetComp, ast.GeneratorExp, ast.DictComp)):
@@ -118,7 +119,7 @@ def _module_level_str_constants(tree: ast.AST) -> dict[str, str]:
     """
     consts: dict[str, str] = {}
     ambiguous: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Assign) and len(node.targets) == 1:
             target, value = node.targets[0], node.value
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
@@ -167,8 +168,8 @@ def _env_var_reads_in_file(
     aliases = aliases if aliases is not None else ImportAliases.from_tree(tree)
     consts = _module_level_str_constants(tree)
     found: list[tuple[str, ast.AST]] = []
-    discarded = {id(stmt.value) for stmt in ast.walk(tree) if isinstance(stmt, ast.Expr)}
-    for node in ast.walk(tree):
+    discarded = {id(stmt.value) for stmt in _fast_walk(tree) if isinstance(stmt, ast.Expr)}
+    for node in _fast_walk(tree):
         names: set[str] = set()
         if isinstance(node, ast.Call) and id(node) in discarded and aliases.qualified_name(node) in _WRITE_WHEN_DISCARDED:
             continue

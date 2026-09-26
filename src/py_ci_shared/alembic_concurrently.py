@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import Baseline, Finding, ScanResult, refresh_requested, scan_python
+from ._core.node_index import walk as _fast_walk
 
 RULE = "alembic-concurrently"
 REFRESH_FLAG = "--refresh-alembic-concurrently-baseline"
@@ -70,7 +71,7 @@ def _uses_concurrently(node: ast.Call, names: "Optional[dict[str, list[str]]]" =
 def _string_bindings(tree: ast.AST) -> "dict[str, list[str]]":
     """``name -> [string fragments]`` for every ``name = <str expr>`` / ``name: T = <str expr>`` in the file."""
     out: "dict[str, list[str]]" = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         targets: list[ast.expr] = []
         value: Optional[ast.expr] = None
         if isinstance(node, ast.Assign):
@@ -79,7 +80,7 @@ def _string_bindings(tree: ast.AST) -> "dict[str, list[str]]":
             targets, value = [node.target], node.value
         if value is None:
             continue
-        texts = [n.value for n in ast.walk(value) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+        texts = [n.value for n in _fast_walk(value) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
         for target in targets:
             if isinstance(target, ast.Name) and texts:
                 out.setdefault(target.id, []).extend(texts)

@@ -19,7 +19,8 @@ from ._core import SourceError, read_source
 #: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
-HARNESS_VERSION = "13"  # 13: a ratchet refresh writes survivors under the shrink-only baseline rule with growth allowed
+HARNESS_VERSION = "14"  # 14: the tracked files walk ASTs with _core.walk (same order as ast.walk, faster)
+# 13: a ratchet refresh writes survivors under the shrink-only baseline rule with growth allowed
 # 12: the fingerprint walks test dirs with DEFAULT_EXCLUDE (pytest's norecursedirs), so a .venv or
 # build/ copy of a test no longer enters it
 # 11: `min` describes itself as "min becomes max", `not` removal keeps the next token, emptied bytes stay bytes,

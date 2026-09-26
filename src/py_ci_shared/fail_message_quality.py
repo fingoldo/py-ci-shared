@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ACTIONABLE_RE", "assert_fail_messages_actionable", "fail_message_problems"]
 
@@ -51,7 +52,7 @@ def _fail_calls(tree: ast.AST) -> Iterator[tuple[int, str, bool]]:
     """``(line, static text, has a runtime part)`` for every ``pytest.fail(...)`` call, however ``fail`` was imported
     (``from pytest import fail``, ``import pytest as pt``) and whether the message is positional or ``reason=``."""
     aliases = ImportAliases.from_tree(tree)
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not (isinstance(node, ast.Call) and aliases.qualified_name(node) in _FAIL_TARGETS):
             continue
         first = _message_node(node)
@@ -60,7 +61,7 @@ def _fail_calls(tree: ast.AST) -> Iterator[tuple[int, str, bool]]:
             continue
         dynamic = not isinstance(first, ast.Constant)
         chunks: list[str] = []
-        for sub in ast.walk(first):
+        for sub in _fast_walk(first):
             if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
                 chunks.append(sub.value)
             elif isinstance(sub, ast.FormattedValue) or (sub is not first and isinstance(sub, (ast.Name, ast.Attribute, ast.Subscript, ast.Call))):

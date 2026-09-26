@@ -18,8 +18,8 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from typing import Any, Optional
 from collections.abc import Iterable
+from typing import Any, Optional
 
 ENV_VAR = "PY_CI_SHARED_REFRESH"
 GENERIC_OPTION = "--py-ci-refresh"

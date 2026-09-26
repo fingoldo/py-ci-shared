@@ -20,10 +20,12 @@ with the skip recorded so a reader can tell "checked and clean" from "not checke
 from __future__ import annotations
 
 import ast
+import functools
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, nodes_of, parse_source, tree_memo
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "ModuleIndex",
@@ -110,7 +112,7 @@ class ModuleIndex:
                     continue
                 if _is_dynamic_module(tree):
                     self._dynamic.add(dotted)
-                self._names[dotted] = _bound_names(tree)
+                self._names[dotted] = tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree))
 
         # A package's SUBMODULES are importable names too: `from a.b import c` is valid whenever a/b/c.py
         # exists, even though b/__init__.py binds no name `c`. Without this every subpackage facade reads
@@ -216,9 +218,8 @@ def _bound_names(tree: ast.Module) -> set[str]:
     out: set[str] = set()
     for node in _module_level_nodes(tree.body):
         out |= _names_bound_by(node)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Global):
-            out.update(node.names)
+    for node in nodes_of(tree, ast.Global):
+        out.update(node.names)  # type: ignore[attr-defined]
     return out
 
 
@@ -311,7 +312,7 @@ def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple
                 problems.append(f"{path.as_posix()}:{exc.line or 1}: {exc.kind}: {exc.message}")
                 continue
             parsed_count += 1
-            imports = [node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)]
+            imports = nodes_of(tree, ast.ImportFrom)
             if imports:
                 guarded = _guarded_import_ids(tree)
                 for node in imports:
@@ -328,7 +329,7 @@ def _names_in(node: "ast.AST | None") -> set[str]:
     """Exception names an ``except`` type or a ``raises``/``suppress`` argument mentions (tuples included)."""
     if node is None:
         return set()
-    return {n.id if isinstance(n, ast.Name) else n.attr for n in ast.walk(node) if isinstance(n, (ast.Name, ast.Attribute))}
+    return {n.id if isinstance(n, ast.Name) else n.attr for n in _fast_walk(node) if isinstance(n, (ast.Name, ast.Attribute))}
 
 
 def _handler_expects_import_failure(handler: ast.ExceptHandler) -> bool:
@@ -351,6 +352,9 @@ def _with_expects_import_failure(node: "ast.With | ast.AsyncWith") -> bool:
     return False
 
 
+_GUARD_TYPES: "tuple[type, ...]" = (ast.Try, ast.With, ast.AsyncWith) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())
+
+
 def _guard_bodies(node: ast.AST) -> "list[ast.stmt] | None":
     if isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
         if any(_handler_expects_import_failure(h) for h in node.handlers):  # type: ignore[attr-defined]
@@ -367,10 +371,10 @@ def _guarded_import_ids(tree: ast.Module) -> "set[int]":
     it per import is quadratic in the file (measured: 170 s of a 235 s scan of mlframe's src).
     """
     guarded: "set[int]" = set()
-    for node in ast.walk(tree):
+    for node in nodes_of(tree, *_GUARD_TYPES):
         bodies = _guard_bodies(node)
         if bodies is not None:
-            guarded.update(id(inner) for stmt in bodies for inner in ast.walk(stmt) if isinstance(inner, ast.ImportFrom))
+            guarded.update(id(inner) for stmt in bodies for inner in _fast_walk(stmt) if isinstance(inner, ast.ImportFrom))
     return guarded
 
 
@@ -385,9 +389,9 @@ def _absence_is_expected(tree: ast.Module, target: ast.ImportFrom) -> bool:
     * ``with pytest.raises(ImportError)`` (or a tuple including it) -- a test whose whole point is that the name is
       NOT importable. Reporting that one would be actively wrong: the finding IS the contract.
     """
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         bodies = _guard_bodies(node)
-        if bodies is not None and any(inner is target for stmt in bodies for inner in ast.walk(stmt)):
+        if bodies is not None and any(inner is target for stmt in bodies for inner in _fast_walk(stmt)):
             return True
     return False
 

@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, SourceError, parse_file, read_source, relative_posix
+from ._core.node_index import walk as _fast_walk
 
 DEFAULT_MOCK_NAMES = frozenset({"Mock", "MagicMock", "AsyncMock", "NonCallableMock"})
 #: ``patch(...)`` spellings whose ``as`` target is a MagicMock unless given a spec.
@@ -98,7 +99,7 @@ def _is_bare_patch(node: ast.AST, aliases: ImportAliases) -> bool:
 def _scopes(tree: ast.Module) -> Iterator[list[ast.AST]]:
     """The nodes of the module scope and of every function, each without its nested scopes, in source order."""
     bodies: list[list[ast.stmt]] = [tree.body]
-    bodies += [n.body for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    bodies += [n.body for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
     for body in bodies:
         nodes: list[ast.AST] = []
         stack: list[ast.AST] = [n for n in body if not isinstance(n, _NESTED)]

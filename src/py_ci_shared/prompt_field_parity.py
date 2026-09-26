@@ -41,6 +41,7 @@ from re import Pattern
 from typing import Any
 
 from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "DEFAULT_KEY",
@@ -136,7 +137,7 @@ def _parsed(paths: Iterable[Path]) -> "list[tuple[Path, str, ast.Module]]":
 
 
 def _literals(tree: ast.AST) -> list[str]:
-    return [n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    return [n.value for n in _fast_walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
 def string_literals(src: str, *, strict: bool = True) -> list[str]:
@@ -244,7 +245,7 @@ def consumed_names(
             continue
         kept.append(path)
     for _path, _source, tree in _parsed(kept):
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 names.add(node.target.id)
             elif isinstance(node, ast.Attribute):
@@ -357,7 +358,7 @@ def persisted_names_writer_keys(writer_roots: Iterable[Path]) -> set[str]:
     names: set[str] = set()
     for _path, src, tree in _parsed(writer_roots):
         names.update(_DICT_KEY.findall(src))
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict":
                 names.update(kw.arg for kw in node.keywords if kw.arg)
     return names
@@ -446,7 +447,7 @@ def declared_scalar_fields(source_roots: Iterable[Path]) -> set[str]:
     class_names: set[str] = set()
     candidates: list[tuple[str, str]] = []
     for _path, _source, tree in _parsed(source_roots):
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if isinstance(node, ast.ClassDef):
                 class_names.add(node.name)
                 candidates.extend(_scalar_annotations(node))

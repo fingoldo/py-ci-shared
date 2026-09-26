@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Union
 
 from ._core import scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ForwardingFinding", "find_available_but_not_passed", "find_delegate_state_loss", "find_dropped_variant_params"]
 
@@ -107,7 +108,7 @@ def _is_self_call(f: ast.expr, name: str | None = None) -> bool:
 
 def _calls_to(fn: _Func, name: str) -> list[ast.Call]:
     """Calls inside ``fn`` to ``name(...)``, ``self.name(...)`` or ``cls.name(...)``."""
-    return [n for n in ast.walk(fn) if isinstance(n, ast.Call) and ((isinstance(n.func, ast.Name) and n.func.id == name) or _is_self_call(n.func, name))]
+    return [n for n in _fast_walk(fn) if isinstance(n, ast.Call) and ((isinstance(n.func, ast.Name) and n.func.id == name) or _is_self_call(n.func, name))]
 
 
 def _passed(call: ast.Call, callee: _Func) -> tuple[set[str], bool]:
@@ -167,7 +168,7 @@ def _variant_pairs(trees: dict[str, ast.Module], delegates: Mapping[str, str]):
         funcs = _functions(tree)
         for fname, fn in funcs.items():
             owner, _, short = fname.rpartition(".")
-            for node in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+            for node in (n for n in _fast_walk(fn) if isinstance(n, ast.Call)):
                 hit = _resolve_call(node, owner, tree, funcs)
                 if hit is not None and hit[1] is not fn and short.startswith(hit[0].rpartition(".")[2] + "_"):
                     yield path, fname, fn, f"{path}::{hit[0]}", hit[1]
@@ -224,7 +225,7 @@ def find_available_but_not_passed(
         funcs = _functions(tree)
         for fname, fn in funcs.items():
             have = _params(fn)
-            for node in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+            for node in (n for n in _fast_walk(fn) if isinstance(n, ast.Call)):
                 target = _call_target(node, path, fname, fname.rpartition(".")[0], tree, funcs, trees, delegates or {})
                 if target is None or target[1] is fn:
                     continue
@@ -246,7 +247,7 @@ def find_available_but_not_passed(
 def _self_attrs(fn: _Func, *, stored: bool) -> set[str]:
     """Private ``self._x`` attributes ``fn`` stores (``stored=True``) or reads, including ``getattr(self, "_x", ...)``."""
     out: set[str] = set()
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if (
             isinstance(node, ast.Attribute)
             and isinstance(node.value, ast.Name)
@@ -275,10 +276,10 @@ class _Index:
         for t in trees.values():
             for node in (n for n in t.body if isinstance(n, _FUNC_TYPES)):
                 self.top.setdefault(node.name, []).append(node)
-        self.aliases = {a.asname: a.name for t in trees.values() for n in ast.walk(t) if isinstance(n, ast.ImportFrom) for a in n.names if a.asname}
+        self.aliases = {a.asname: a.name for t in trees.values() for n in _fast_walk(t) if isinstance(n, ast.ImportFrom) for a in n.names if a.asname}
         self.bound = dict(self._bound_methods())
         self.injected = self._injected()
-        self.fn_path = {id(n): p for p, t in trees.items() for n in ast.walk(t) if isinstance(n, _FUNC_TYPES)}
+        self.fn_path = {id(n): p for p, t in trees.items() for n in _fast_walk(t) if isinstance(n, _FUNC_TYPES)}
 
     def unique(self, name: str) -> _Func | None:
         """The one module-level function called ``name`` (through its import alias), or None when absent or ambiguous."""
@@ -304,7 +305,7 @@ class _Index:
         """Private attribute names assigned on some object other than ``self``."""
         out: set[str] = set()
         for t in self.trees.values():
-            for n in ast.walk(t):
+            for n in _fast_walk(t):
                 if (
                     isinstance(n, ast.Attribute)
                     and isinstance(n.ctx, ast.Store)
@@ -357,7 +358,7 @@ class _Index:
 
     def _callees(self, fn: _Func, cls: str, tree: ast.Module):
         """Defs ``fn`` calls with its own object."""
-        for node in (n for n in ast.walk(fn) if isinstance(n, ast.Call)):
+        for node in (n for n in _fast_walk(fn) if isinstance(n, ast.Call)):
             f = node.func
             if isinstance(f, ast.Attribute) and getattr(f.value, "id", None) == "self":
                 target = self.method(cls, f.attr, tree)
@@ -372,7 +373,7 @@ class _Index:
 def _loop_constants(fn: _Func) -> dict[str, set[str]]:
     """Names a for-loop binds to a tuple / list of string constants: ``for a in ("_x", "_y"): ...``."""
     out: dict[str, set[str]] = {}
-    for n in ast.walk(fn):
+    for n in _fast_walk(fn):
         if isinstance(n, ast.For) and isinstance(n.target, ast.Name) and isinstance(n.iter, (ast.Tuple, ast.List)):
             out.setdefault(n.target.id, set()).update(str(e.value) for e in n.iter.elts if isinstance(e, ast.Constant) and isinstance(e.value, str))
     return out
@@ -380,10 +381,10 @@ def _loop_constants(fn: _Func) -> dict[str, set[str]]:
 
 def _delegate_vars(fn: _Func, cls: str) -> list[str]:
     """Local names bound to a new instance of ``cls`` (directly or through an import alias) inside ``fn``."""
-    names = {cls} | {a.asname for n in ast.walk(fn) if isinstance(n, ast.ImportFrom) for a in n.names if a.name == cls and a.asname}
+    names = {cls} | {a.asname for n in _fast_walk(fn) if isinstance(n, ast.ImportFrom) for a in n.names if a.name == cls and a.asname}
     return [
         n.targets[0].id
-        for n in ast.walk(fn)
+        for n in _fast_walk(fn)
         if isinstance(n, ast.Assign)
         and len(n.targets) == 1
         and isinstance(n.targets[0], ast.Name)
@@ -396,7 +397,7 @@ def _set_on(fn: _Func, var: str) -> set[str]:
     """Attributes ``fn`` sets on ``var``: ``var._x = ...``, ``setattr(var, "_x", ...)`` and a copy loop over constant names."""
     loops = _loop_constants(fn)
     out: set[str] = set()
-    for node in ast.walk(fn):
+    for node in _fast_walk(fn):
         if isinstance(node, ast.Attribute) and getattr(node.value, "id", None) == var and isinstance(node.ctx, ast.Store):
             out.add(node.attr)
         elif isinstance(node, ast.Call) and getattr(node.func, "id", None) == "setattr" and len(node.args) >= 2 and getattr(node.args[0], "id", None) == var:
@@ -411,7 +412,7 @@ def _lost_state(idx: _Index, cls: ast.ClassDef, tree: ast.Module, fname: str, fn
     init_set = _self_attrs(init, stored=True) if init else set()
     for var in _delegate_vars(fn, cls.name):
         given = _set_on(fn, var)
-        for node in ast.walk(fn):
+        for node in _fast_walk(fn):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and getattr(node.func.value, "id", None) == var):
                 continue
             m = idx.method(cls.name, node.func.attr, tree)

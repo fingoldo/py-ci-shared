@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "WINDOW", "assert_no_stale_source_citations", "find_stale_source_citations"]
@@ -68,7 +69,7 @@ def _statement_span(f: ParsedFile, line: int) -> tuple[int, int]:
     import ast
 
     best = (line, line)
-    for node in ast.walk(f.tree):
+    for node in _fast_walk(f.tree):
         if isinstance(node, ast.stmt) and node.lineno <= line <= (node.end_lineno or node.lineno):
             span = (node.lineno, node.end_lineno or node.lineno)
             if best == (line, line) or span[1] - span[0] < best[1] - best[0]:
@@ -80,7 +81,7 @@ def _docstring_lines(f: ParsedFile) -> set[int]:
     import ast
 
     out: set[int] = set()
-    for node in ast.walk(f.tree):
+    for node in _fast_walk(f.tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):

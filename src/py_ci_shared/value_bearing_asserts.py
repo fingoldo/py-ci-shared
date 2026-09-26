@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import DEFAULT_EXCLUDE, Baseline, Finding, ScanResult, refresh_requested, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "REFRESH_FLAG",
@@ -77,7 +78,7 @@ def collect_value_bearing_asserts(
     findings: list[Finding] = []
     seen = 0
     for f in scan:
-        for node in ast.walk(f.tree):
+        for node in _fast_walk(f.tree):
             if isinstance(node, ast.Assert):
                 seen += 1
                 if not is_narrowing_assert(node.test, allow_isinstance=allow_isinstance, strict=strict):

@@ -26,6 +26,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file, read_source
+from ._core.node_index import walk as _fast_walk
 
 # A paragraph opener, or a markdown table row with a `Disposition` cell (`| X-1 | Disposition: fixed, `test_y` |`).
 _DISPOSITION_START = re.compile(r"^\s*(?:-\s*)?(?:\*\*Disposition|Disposition:)")
@@ -46,9 +47,9 @@ class _Defined:
 def _definitions(path: Path) -> _Defined:
     """Raises ``SourceError`` for a file that cannot be read or parsed (it is reported, never read as empty)."""
     tree = parse_file(path)
-    names = {n.name for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+    names = {n.name for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
     members: dict[str, set[str]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.ClassDef):
             members.setdefault(node.name, set()).update(c.name for c in node.body if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
     return _Defined(names, members)

@@ -110,9 +110,12 @@ def parse_file(path: PathLike) -> ast.Module:
 
 
 def clear_parse_cache() -> None:
-    """Drop every cached tree (frees memory in long-lived processes; correctness never depends on it)."""
+    """Drop every cached tree and what was derived from it (frees memory in long-lived processes; correctness never depends on it)."""
+    from . import node_index
+
     with _LOCK:
         _CACHE.clear()
+    node_index.clear()
 
 
 def parse_cache_size() -> int:

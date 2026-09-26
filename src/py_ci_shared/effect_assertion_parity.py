@@ -42,6 +42,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, SourceError, iter_files, parse_file, relative_posix, resolve_relative
+from ._core.node_index import walk as _fast_walk
 
 __all__ = [
     "DEFAULT_EFFECTS",
@@ -235,7 +236,7 @@ def _local_module_names(tree: ast.AST, path: Path, repo_root: Optional[Path]) ->
     as graphql``, ``import helpers``. ``from pkg.db import conn`` binds whatever ``conn`` is -- an object, not a module --
     unless ``pkg/db/conn.py`` exists; without *repo_root* every non-driver ``from`` import is assumed to be a module."""
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.ImportFrom) and (node.level or (node.module or "").split(".")[0] not in _THIRD_PARTY_ROOTS):
             for alias in node.names:
                 if alias.name == "*":
@@ -273,11 +274,11 @@ def _performs(path: Path, effects: Sequence[str], *, repo_root: Optional[Path] =
         if tree is None:
             return set()
 
-    defined_here = {node.name for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects}
+    defined_here = {node.name for node in _fast_walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in effects}
     local_modules = _local_module_names(tree, path, repo_root)
 
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in effects:
             base = node.func.value
             if isinstance(base, ast.Name) and base.id in local_modules:
@@ -355,7 +356,7 @@ def _patch_aliases(tree: ast.AST, effects: Sequence[str]) -> dict[str, str]:
     them onto the trailing parameters credited a fixture such as ``tmp_path`` with the mock.
     """
     aliases: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.withitem):
             if isinstance(node.context_expr, ast.Call) and isinstance(node.optional_vars, ast.Name):
                 effect = _patch_target(node.context_expr, effects)
@@ -404,7 +405,7 @@ def _exercises_against_a_real_database(tree: ast.AST) -> bool:
     not "does the assertion afterwards check the right thing". :func:`_real_database_tests` narrows it to the test
     functions that also call into the module under test.
     """
-    return any(_is_real_connect(node) for node in ast.walk(tree))
+    return any(_is_real_connect(node) for node in _fast_walk(tree))
 
 
 #: How a fixture says it is building a real database handle, beyond a driver's own ``connect``.
@@ -422,9 +423,9 @@ def _is_fixture(node: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
 
 def _fixtures_backed_by_a_real_database_in(tree: ast.AST) -> set[str]:
     direct: set[str] = set()
-    functions = [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_fixture(n)]
+    functions = [n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and _is_fixture(n)]
     for node in functions:
-        for call in ast.walk(node):
+        for call in _fast_walk(node):
             if not isinstance(call, ast.Call):
                 continue
             func = call.func
@@ -460,7 +461,7 @@ def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
 
 
 def _test_functions(tree: ast.AST) -> list["ast.FunctionDef | ast.AsyncFunctionDef"]:
-    return [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")]
+    return [n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")]
 
 
 def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -> bool:
@@ -477,7 +478,7 @@ def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -
 def _calls_into(node: ast.AST, aliases: ImportAliases, module_names: Collection[str]) -> bool:
     """Whether *node* calls something that resolves into one of *module_names* (``store.save(...)``, ``save(...)`` after
     ``from pkg.store import save``)."""
-    for call in ast.walk(node):
+    for call in _fast_walk(node):
         if isinstance(call, ast.Call):
             target = aliases.qualified_name(call)
             if target and any(target == m or target.startswith(m + ".") for m in module_names):
@@ -496,7 +497,7 @@ def _real_database_tests(tree: ast.Module, db_fixtures: frozenset[str], module_n
     aliases = ImportAliases.from_tree(tree)
     for fn in _test_functions(tree):
         params = {a.arg for a in fn.args.args} | {a.arg for a in fn.args.kwonlyargs}
-        runs_real = bool(params & fixtures) or any(_is_real_connect(n) for n in ast.walk(fn))
+        runs_real = bool(params & fixtures) or any(_is_real_connect(n) for n in _fast_walk(fn))
         if runs_real and _calls_into(fn, aliases, module_names):
             return True
     return False
@@ -524,7 +525,7 @@ def _owns_its_connection(path: Path, tree: Optional[ast.Module] = None) -> bool:
         tree = _tree(path)
         if tree is None:
             return False
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "connect":
             root = node.func.value
             if isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES:
@@ -539,7 +540,7 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
     distinguishable from calling `connect` itself. Without this, a self-connecting module would be
     excused by the very tests that mock it away.
     """
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         for arg in node.args:
@@ -578,11 +579,11 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str], parse: Optional
         tree = parse(path)
         if tree is None:
             continue
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             inspected: set[str] = set()
-            for inner in ast.walk(node):
+            for inner in _fast_walk(node):
                 if not isinstance(inner, ast.Attribute):
                     continue
                 if not (inner.attr.startswith("assert_") or inner.attr in _INSPECTIONS):
@@ -604,11 +605,11 @@ def _mock_inspections(tree: ast.Module, effects: Sequence[str], helpers: Optiona
     # helpers this file actually IMPORTS: a same-named local function is a different function, and
     # crediting it would let a rename quietly satisfy the check.
     if helpers:
-        imported_here = {alias.asname or alias.name for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
-        for node in ast.walk(tree):
+        imported_here = {alias.asname or alias.name for node in _fast_walk(tree) if isinstance(node, ast.ImportFrom) for alias in node.names}
+        for node in _fast_walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in imported_here:
                 found.update(helpers.get(node.func.id, ()))
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Attribute):
             continue
         if not (node.attr.startswith("assert_") or node.attr in _INSPECTIONS):
@@ -677,7 +678,7 @@ def _import_records(path: Path) -> list[_ImportRecord]:
     if tree is None:
         return []
     records: list[_ImportRecord] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Import):
             records.append((0, None, tuple(alias.name for alias in node.names)))
         elif isinstance(node, ast.ImportFrom):

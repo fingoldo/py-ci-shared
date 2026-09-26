@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, ScanResult, SourceProblem, module_of, package_of, relative_posix, resolve_relative, scan_python
+from ._core.node_index import walk as _fast_walk
 
 #: Path components that mark test-adjacent code, exempt from the rule.
 DEFAULT_EXEMPT_PARTS: tuple[str, ...] = ("tests", "_benchmarks", "__pycache__")
@@ -52,7 +53,7 @@ def _imports(tree: ast.AST, caller: str) -> Iterator[str]:
     helper of a public module; either way it is internal to ``pkg.a``). ``from pkg.a._core import X`` yields just
     ``pkg.a._core``: the reach is into the module, and the public name inside it adds nothing.
     """
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.ImportFrom):
             module = resolve_relative(node.module, node.level, caller)
             if module is None:

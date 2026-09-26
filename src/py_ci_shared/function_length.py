@@ -21,8 +21,8 @@ its setter, ``typing.overload`` stubs) report the LONGEST, so a short setter can
 
 from __future__ import annotations
 
-import json
 import ast
+import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional

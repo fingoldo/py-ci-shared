@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ParsedFile, SourceProblem
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import TextFile, line_has_marker, read_text_corpus, report, scan_tree, skip_set
 
 __all__ = ["DEFAULT_CONFIG_PATTERNS", "REFRESH_FLAG", "RULES", "find_machine_specific_paths", "assert_no_machine_specific_paths"]
@@ -67,7 +68,7 @@ def _finding(rel: str, line: int, rule: str, shown: str) -> Finding:
 
 def _docstring_ids(tree: ast.Module) -> set[int]:
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
@@ -112,7 +113,7 @@ def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> li
     docstrings = _docstring_ids(parsed.tree)
     lines = parsed.source.splitlines()
     out: list[Finding] = []
-    for node in ast.walk(parsed.tree):
+    for node in _fast_walk(parsed.tree):
         if not isinstance(node, ast.Constant) or not isinstance(node.value, str) or id(node) in docstrings:
             continue
         for offset, rule, shown in _hits(node.value, allow):

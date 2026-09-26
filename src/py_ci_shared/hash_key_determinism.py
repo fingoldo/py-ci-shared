@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "assert_hash_keys_are_deterministic", "find_unsorted_hash_keys"]
@@ -61,7 +62,7 @@ def _sorts_keys(call: ast.Call, name: str) -> bool:
 
 
 def _order_is_the_value(payload: ast.expr) -> bool:
-    if any(isinstance(n, (ast.Dict, ast.DictComp)) for n in ast.walk(payload)):
+    if any(isinstance(n, (ast.Dict, ast.DictComp)) for n in _fast_walk(payload)):
         return False
     if isinstance(payload, (ast.List, ast.Tuple, ast.ListComp, ast.GeneratorExp, ast.Constant, ast.JoinedStr)):
         return True
@@ -80,7 +81,7 @@ def _is_hash_sink(call: ast.Call, aliases: ImportAliases) -> bool:
 
 def _arg_nodes(call: ast.Call) -> Iterable[ast.AST]:
     for a in [*call.args, *(k.value for k in call.keywords)]:
-        yield from ast.walk(a)
+        yield from _fast_walk(a)
 
 
 class _Scope:
@@ -169,7 +170,7 @@ def find_unsorted_hash_keys(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         lines = f.source.splitlines()
-        scopes: list[_FunctionNode] = [f.tree, *(n for n in ast.walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
+        scopes: list[_FunctionNode] = [f.tree, *(n for n in _fast_walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
         for fn in scopes:
             findings.extend(_scope_findings(f, fn, aliases, lines))
     findings.sort(key=lambda x: (x.path, x.line))

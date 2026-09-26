@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, iter_files, relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["Finding", "ModuleFacts", "module_index", "scan"]
 
@@ -149,13 +150,13 @@ def _module_scope(body: "list[ast.stmt]") -> Iterator[ast.stmt]:
 def _globals_assigned_in_functions(tree: ast.AST) -> "set[str]":
     """Names a function declares ``global`` and assigns: those are module attributes too."""
     out: set[str] = set()
-    for fn in ast.walk(tree):
+    for fn in _fast_walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        declared = {n for node in ast.walk(fn) if isinstance(node, ast.Global) for n in node.names}
+        declared = {n for node in _fast_walk(fn) if isinstance(node, ast.Global) for n in node.names}
         if not declared:
             continue
-        for node in ast.walk(fn):
+        for node in _fast_walk(fn):
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in declared:
                 out.add(node.id)
     return out
@@ -197,9 +198,9 @@ def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             for sub in ast.iter_child_nodes(node):
                 if not isinstance(sub, ast.stmt):
-                    bound.update(n.target.id for n in ast.walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
+                    bound.update(n.target.id for n in _fast_walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
     bound |= _globals_assigned_in_functions(tree)
-    for walked in ast.walk(tree):
+    for walked in _fast_walk(tree):
         if isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef)) and walked.name in {"__getattr__", "__setattr__"}:
             forwards = True
         elif isinstance(walked, ast.Assign):
@@ -268,7 +269,7 @@ def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str,
                 if candidate in known:
                     aliases[alias.asname or alias.name] = candidate
         elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.For, ast.With)):
-            for sub in ast.walk(node):
+            for sub in _fast_walk(node):
                 if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                     aliases.pop(sub.id, None)
     return aliases
@@ -282,7 +283,7 @@ _FILE_SENTINELS: "dict[str, set[str]]" = {}
 
 def _names_in(node: ast.expr) -> "set[str]":
     """Every bare name mentioned in an expression."""
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)}
+    return {n.id for n in _fast_walk(node) if isinstance(n, ast.Name)}
 
 
 def _guards_presence_of(test: ast.expr, attr: str) -> bool:
@@ -303,7 +304,7 @@ def _guards_presence_of(test: ast.expr, attr: str) -> bool:
     Recognised: a `hasattr(..., "NAME")` test, and a sentinel comparison against a name that a
     `getattr(..., "NAME", sentinel)` produced in the same scope.
     """
-    for node in ast.walk(test):
+    for node in _fast_walk(test):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hasattr":
             if len(node.args) >= 2 and isinstance(node.args[1], ast.Constant) and node.args[1].value == attr:
                 return True
@@ -315,7 +316,7 @@ def _guards_presence_of(test: ast.expr, attr: str) -> bool:
 def _sentinel_names_for(body: "list[ast.stmt]", attr: str) -> "set[str]":
     """Names assigned from ``getattr(mod, attr, <sentinel>)`` anywhere in this scope."""
     names: set[str] = set()
-    for node in ast.walk(ast.Module(body=list(body), type_ignores=[])):
+    for node in _fast_walk(ast.Module(body=list(body), type_ignores=[])):
         if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
             continue
         call = node.value
@@ -402,7 +403,7 @@ def scan(test_paths: "list[Path]", index: "dict[str, ModuleFacts]") -> "list[Fin
         path, tree = parsed.path, parsed.tree
 
         _FILE_SENTINELS.clear()
-        for node in ast.walk(tree):
+        for node in _fast_walk(tree):
             if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
                 continue
             call = node.value

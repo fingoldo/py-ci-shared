@@ -34,10 +34,10 @@ import json
 import os
 import tempfile
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
-from collections.abc import Iterable, Mapping
 
 from .errors import BaselineError, BaselineGrowthError
 from .findings import Finding

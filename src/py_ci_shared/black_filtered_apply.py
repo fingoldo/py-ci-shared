@@ -36,14 +36,14 @@ Reports which files still have non-excluded-class Black findings, and exits 1
 if any do (0 if the tree/file-set is fully filtered-Black-clean).
 """
 
-import sys
-import os
-import io
-import shlex
-import re
-import subprocess
 import difflib
+import io
+import os
 import pathlib
+import re
+import shlex
+import subprocess
+import sys
 import tokenize
 
 from py_ci_shared._core import CorpusError, iter_files

@@ -43,6 +43,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 from ._core import ImportAliases, parse_file, relative_posix, scan_python
+from ._core.node_index import walk as _fast_walk
 
 
 def _callee_names(call: ast.Call, aliases: ImportAliases) -> set[str]:
@@ -58,7 +59,7 @@ def _callee_names(call: ast.Call, aliases: ImportAliases) -> set[str]:
 
 def _calls(tree: ast.AST) -> Iterable[str]:
     aliases = ImportAliases.from_tree(tree)
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call):
             yield from _callee_names(node, aliases)
 
@@ -71,7 +72,7 @@ def creates_resource(tree: ast.AST, constructors: frozenset[str]) -> bool:
 def _release_calls(nodes: Iterable[ast.AST], release: str) -> Iterator[ast.Call]:
     """Every ``<receiver>.<release>(...)`` call under *nodes*, whatever its arguments (``dispose(close=False)``)."""
     for top in nodes:
-        for node in ast.walk(top):
+        for node in _fast_walk(top):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == release:
                 yield node
 
@@ -86,7 +87,7 @@ def _receiver(call: ast.Call) -> str:
 def _protected_calls(tree: ast.AST, release: str) -> list[ast.Call]:
     """Release calls that sit in a ``finally`` block or a ``with``/``async with`` body."""
     out: list[ast.Call] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         finalbody = getattr(node, "finalbody", None)  # ast.Try, and ast.TryStar on 3.11+
         if finalbody:
             out.extend(_release_calls(finalbody, release))

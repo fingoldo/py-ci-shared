@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
 __all__ = ["DEFAULT_LF_SUFFIXES", "RULE", "REFRESH_FLAG", "find_crlf_writes", "assert_no_crlf_writes"]
@@ -117,7 +118,7 @@ class _Resolver:
         out = [expr]
         if depth >= 6:
             return out
-        for sub in ast.walk(expr):
+        for sub in _fast_walk(expr):
             if isinstance(sub, ast.Name):
                 for scope in scopes:
                     for value in self.assigned.get(scope, {}).get(sub.id, []):
@@ -135,8 +136,8 @@ class _Resolver:
         if self.name_re is not None:
             # Matched against identifiers only: `baseline_path` names a committed ratchet file, while a literal
             # such as "bench_baseline.json" usually names a benchmark subject.
-            names = {n.id for e in chain for n in ast.walk(e) if isinstance(n, ast.Name)}
-            names |= {n.attr for e in chain for n in ast.walk(e) if isinstance(n, ast.Attribute)}
+            names = {n.id for e in chain for n in _fast_walk(e) if isinstance(n, ast.Name)}
+            names |= {n.attr for e in chain for n in _fast_walk(e) if isinstance(n, ast.Attribute)}
             return any(self.name_re.search(n) for n in names)
         return False
 
@@ -188,7 +189,7 @@ def _file_findings(parsed: ParsedFile, suffixes: Sequence[str], name_pattern: Op
     functions = enclosing_functions(tree)
     lines = parsed.source.splitlines()
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         target = _target(node, aliases)

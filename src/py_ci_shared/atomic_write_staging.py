@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "assert_atomic_write_staging", "find_atomic_write_staging"]
@@ -190,7 +191,7 @@ def find_atomic_write_staging(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         lines = f.source.splitlines()
-        for fn in (n for n in ast.walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        for fn in (n for n in _fast_walk(f.tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             nodes = _own_nodes(fn)
             if RULE_NPSAVE in wanted:
                 findings.extend(_npsave_findings(f, fn, nodes, aliases))

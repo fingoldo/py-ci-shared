@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.node_index import walk as _fast_walk
 from ._mutation_model import _CONTAINER_SAMPLE, Mutant, MutationHarnessError, read_target
 
 Candidate = tuple[int, int, int, str, str, str]
@@ -88,8 +89,8 @@ def _has_constant(node: ast.AST | None) -> bool:
     if node is None:
         return False
     return any(
-        isinstance(sub, ast.Subscript) and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in ast.walk(sub.slice))
-        for sub in ast.walk(node)
+        isinstance(sub, ast.Subscript) and any(isinstance(inner, ast.Constant) and inner.value is not None for inner in _fast_walk(sub.slice))
+        for sub in _fast_walk(node)
     )
 
 
@@ -164,7 +165,7 @@ def _excluded_ranges(source: str, tree: Optional[ast.AST] = None) -> list[tuple[
         )
 
     out: list[tuple[int, int]] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         # Any bare string statement, not only the first one in a body.
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             if (s := span(node)) is not None:
@@ -215,7 +216,7 @@ def _container_rows(source: str, tree: Optional[ast.AST] = None) -> tuple[list[t
     seed = int(hashlib.sha256(source.encode("utf-8")).hexdigest()[:8], 16)
     out: list[tuple[int, int, str]] = []
     totals: dict[str, tuple[int, int]] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         # AnnAssign as well as Assign: a module constant written `_BANNED: frozenset = {...}` is
         # the SAME data table, and matching only the unannotated form meant the annotated ones were
         # exhausted instead of sampled -- the whole survivor list then fills with rows of one table
@@ -240,7 +241,7 @@ def _container_rows(source: str, tree: Optional[ast.AST] = None) -> tuple[list[t
         # content-hash seed means the same rows would stay suppressed until the file changed. The
         # line is the presence of an expression that DOES something, which is exactly the
         # difference between a data table and a table of behaviour.
-        if any(isinstance(sub, ast.Call) for first, last in rows for part in {id(first): first, id(last): last}.values() for sub in ast.walk(part)):
+        if any(isinstance(sub, ast.Call) for first, last in rows for part in {id(first): first, id(last): last}.values() for sub in _fast_walk(part)):
             continue
         keep = {(seed + i) % len(rows) for i in range(_CONTAINER_SAMPLE)}
         totals[name] = (len(keep), len(rows))
@@ -288,7 +289,7 @@ def _argument_transpositions(source: str, tree: Optional[ast.AST] = None) -> lis
         return []
     starts = _line_starts(source)
     out: list[Candidate] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call) or len(node.args) < 2:
             continue
         if any(isinstance(a, ast.Starred) for a in node.args):
@@ -333,7 +334,7 @@ def _slice_bound_candidates(source: str, tree: Optional[ast.AST] = None) -> list
         return []
     starts = _line_starts(source)
     out: list[Candidate] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Slice):
             continue
         for bound, side in ((node.lower, "lower"), (node.upper, "upper")):
@@ -367,7 +368,7 @@ _REGEX_WIDENINGS = (
 def _string_literal_sites(tree: ast.AST) -> list[tuple[ast.Constant, bool]]:
     """Every string constant, paired with whether it is used as a regular expression."""
     sites: list[tuple[ast.Constant, bool]] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         name = node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", "")
@@ -622,7 +623,7 @@ def _statement_call_candidates(source: str, tree: Optional[ast.AST] = None) -> l
         return []
     starts = _line_starts(source)
     out: list[Candidate] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Expr):
             continue
         inner = node.value
@@ -655,7 +656,7 @@ def _repr_coupled_lines(source: str, tree: Optional[ast.AST] = None) -> set[int]
         return set()
     numbers: dict[int, int] = {}
     strings: dict[int, int] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Constant) or getattr(node, "lineno", None) is None:
             continue
         if isinstance(node.value, bool):

@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+from ._core.node_index import walk as _fast_walk
 
 #: Kept for callers that imported it; the walk now uses the shared ``_core.DEFAULT_EXCLUDE`` (a superset).
 _DEFAULT_SKIP_DIRS = tuple(sorted(DEFAULT_EXCLUDE))
@@ -70,11 +71,11 @@ def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
     """
     aliases = ImportAliases.from_tree(tree)
     called: dict[int, ast.Call] = {}
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             called[id(node.func)] = node
     out: list[ast.expr] = []
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not (isinstance(node, ast.Attribute) and node.attr in NAIVE_UTC_METHODS):
             continue
         qualified = aliases.qualified_name(node)

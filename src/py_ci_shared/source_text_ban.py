@@ -36,6 +36,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, SourceError, parse_source, read_source
+from ._core.node_index import walk as _fast_walk
 
 __all__ = ["offending_lines", "READ_CALL", "PY_PATH_ON_LINE", "NON_PY_LITERAL", "GETSOURCE"]
 
@@ -104,7 +105,7 @@ def _binds_python_source(lines: list[str]) -> set[str]:
 def _docstring_lines(tree: ast.Module) -> set[int]:
     """Lines of every bare string statement (docstrings and prose blocks): they DISCUSS code, never run it."""
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             out.update(range(node.lineno, (node.end_lineno or node.lineno) + 1))
     return out
@@ -148,7 +149,7 @@ def _ast_offending(tree: ast.Module, lines: list[str], extra_patterns: tuple[re.
     code = _without_comments("\n".join(lines))
     py_names = _binds_python_source(code)
     hits: set[int] = set()
-    for node in ast.walk(tree):
+    for node in _fast_walk(tree):
         if not isinstance(node, ast.Call) or node.lineno in skip:
             continue
         if aliases.qualified_name(node) in _GETSOURCE_NAMES:
