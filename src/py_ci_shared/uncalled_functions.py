@@ -161,41 +161,49 @@ def _references(tree: ast.Module) -> "tuple[set[str], dict[str, str]]":
     """
     loaded: set[str] = set()
     aliases: dict[str, str] = {}
-
-    def visit(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]") -> None:
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-            if node.id not in shadowed and node.id not in own:
-                loaded.add(node.id)
-        elif isinstance(node, ast.Attribute):
-            loaded.add(node.attr)
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                if alias.asname:
-                    aliases[alias.asname] = alias.name.rsplit(".", 1)[-1]
-        elif isinstance(node, ast.Call):
-            func = node.func
-            if isinstance(func, ast.Name) and func.id in {"getattr", "hasattr", "setattr"}:
-                for arg in node.args[1:2]:
-                    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                        loaded.add(arg.value)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            outer_parts: list[ast.expr] = [*getattr(node, "decorator_list", []), *node.args.defaults, *(d for d in node.args.kw_defaults if d is not None)]
-            for part in outer_parts:
-                visit(part, shadowed, own)  # evaluated in the ENCLOSING scope
-            for param in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
-                if param.annotation is not None:
-                    visit(param.annotation, shadowed, own)
-            inner_shadow = shadowed | _local_bindings(node)
-            inner_own = own | ({node.name} if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else set())
-            body: list[ast.AST] = list(node.body) if isinstance(node.body, list) else [node.body]
-            for statement in body:
-                visit(statement, frozenset(inner_shadow), frozenset(inner_own))
-            return
-        for child in ast.iter_child_nodes(node):
-            visit(child, shadowed, own)
-
-    visit(tree, frozenset(), frozenset())
+    _visit_references(tree, frozenset(), frozenset(), loaded, aliases)
     return loaded, aliases
+
+
+def _record_reference(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]") -> None:
+    """Record what one node loads or aliases (its children are visited by the caller)."""
+    if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+        if node.id not in shadowed and node.id not in own:
+            loaded.add(node.id)
+    elif isinstance(node, ast.Attribute):
+        loaded.add(node.attr)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        aliases.update({alias.asname: alias.name.rsplit(".", 1)[-1] for alias in node.names if alias.asname})
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"getattr", "hasattr", "setattr"}:
+        loaded.update(arg.value for arg in node.args[1:2] if isinstance(arg, ast.Constant) and isinstance(arg.value, str))
+
+
+def _visit_function_scope(
+    node: "Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda]",
+    shadowed: "frozenset[str]",
+    own: "frozenset[str]",
+    loaded: "set[str]",
+    aliases: "dict[str, str]",
+) -> None:
+    """Decorators, defaults and annotations in the ENCLOSING scope; the body with the function's own bindings shadowed."""
+    outer_parts: list[ast.AST] = [*getattr(node, "decorator_list", []), *node.args.defaults, *(d for d in node.args.kw_defaults if d is not None)]
+    outer_parts += [param.annotation for param in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs] if param.annotation is not None]
+    for part in outer_parts:
+        _visit_references(part, shadowed, own, loaded, aliases)
+    inner_shadow = frozenset(shadowed | _local_bindings(node))
+    inner_own = frozenset(own | ({node.name} if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else set()))
+    body: list[ast.AST] = list(node.body) if isinstance(node.body, list) else [node.body]
+    for statement in body:
+        _visit_references(statement, inner_shadow, inner_own, loaded, aliases)
+
+
+def _visit_references(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]") -> None:
+    _record_reference(node, shadowed, own, loaded, aliases)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        _visit_function_scope(node, shadowed, own, loaded, aliases)
+        return
+    for child in ast.iter_child_nodes(node):
+        _visit_references(child, shadowed, own, loaded, aliases)
 
 
 def _referenced_names(tree: ast.Module) -> set[str]:

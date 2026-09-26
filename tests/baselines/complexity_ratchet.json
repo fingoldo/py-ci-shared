@@ -62,8 +62,6 @@
   "src/py_ci_shared/stale_comment_age.py::find_stale_comments": 11,
   "src/py_ci_shared/teeth_sweep.py::main": 14,
   "src/py_ci_shared/test_partition_reachability.py::assert_partitions_reachable": 14,
-  "src/py_ci_shared/uncalled_functions.py::_referenced_names": 18,
-  "src/py_ci_shared/uncalled_functions.py::_referenced_names.<locals>.visit": 17,
   "src/py_ci_shared/unresolved_imports.py::_is_dynamic_module": 11,
   "src/py_ci_shared/unresolved_imports.py::_names_bound_by": 13,
   "src/py_ci_shared/version_consistency.py::version_sources": 12,
