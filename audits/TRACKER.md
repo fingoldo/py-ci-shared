@@ -571,7 +571,7 @@ Each file keeps the agent's original id on every finding.
 | **DEFERRED** | Med | `ADOPT-24` | Same bug classes implemented twice with no cross-reference: additive_epsilon_denominato... |
 | **NOT A DEFECT** | Med | `ADOPT-25` | Modules adopted by no consumer: baseline_trend, checkpoint_isolation, config_drift_chec... |
 | **RESOLVED** | Med | `ADOPT-26` | 28 modules with exactly one consumer; generic ones worth rolling out: fail_open_handler... |
-| **DEFERRED** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
+| **RESOLVED** | Med | `ADOPT-27` | audit_round_format (required in every Python project) missing in pyutilz, llm_bench, da... |
 | **RESOLVED** | Low | `ADOPT-28` | autopsia calls lint-advisory but not lint-blocking; llm_bench and social call neither. |
 | **RESOLVED** | Low | `ADOPT-29` | Stale second clone of autopsia (2026-09-08, 15 days behind Redline/autopsia); greps and... |
 | **RESOLVED** | Info | `ADOPT-30` | Jobs are not starting: "recent account payments have failed or your spending limit need... |
