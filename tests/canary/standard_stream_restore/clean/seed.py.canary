@@ -1,0 +1,11 @@
+import sys
+
+
+def seed_quiet(devnull):
+    old = sys.stderr
+    sys.stderr = devnull
+    try:
+        pass
+    finally:
+        if sys.stderr is devnull:
+            sys.stderr = old

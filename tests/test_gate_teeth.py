@@ -107,6 +107,7 @@ CANARIES: dict[str, Canary] = {
             token="SEED_FLAG",
         ),
         Canary("epsilon_padded_denominators", lambda d: _gate("epsilon_padded_denominators").assert_no_epsilon_padded_power_denominators([d])),
+        Canary("standard_stream_restore", lambda d: _gate("standard_stream_restore").assert_standard_streams_restored_only_if_still_ours([d])),
         Canary(
             "fail_open_handlers",
             lambda d: _gate("fail_open_handlers").assert_no_new_fail_open_handlers(_py(d), d, _baseline(d), refresh=False),
