@@ -285,3 +285,52 @@ class TestAuditRegressions:
         (root / "pkg" / "bom.py").write_bytes(b"\xef\xbb\xbfthing = 1\n")
         problems = _scan(root)
         assert len(problems) == 1 and "broken.py:1: unparsable" in problems[0]
+
+
+class TestStarImportsAreResolved:
+    """A facade built on ``from .core import *`` used to mark the whole package unresolvable, so a name it never carried
+    (mlframe: ``from mlframe.metrics import show_plots_unless_agg``, imported by training code, absent from metrics) passed."""
+
+    FACADE = {
+        "__init__.py": "",
+        "core.py": "from .parts import *\n\ndef fast():\n    return 1\n\ndef _private():\n    return 2\n",
+        "parts.py": "def part():\n    return 3\n",
+        "facade.py": "from pkg.core import *\n",
+    }
+
+    def test_a_name_the_star_chain_does_not_provide_is_caught(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {**self.FACADE, "user.py": "from pkg.facade import missing_name\n"})
+        problems = _scan(root)
+        assert any("does not define 'missing_name'" in p for p in problems), problems
+
+    def test_names_provided_through_a_two_link_chain_resolve(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {**self.FACADE, "user.py": "from pkg.facade import fast, part\n"})
+        assert _scan(root) == []
+
+    def test_a_private_name_is_not_republished_by_a_star(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {**self.FACADE, "user.py": "from pkg.facade import _private\n"})
+        assert any("does not define '_private'" in p for p in _scan(root)), _scan(root)
+
+    def test_a_literal_dunder_all_decides_what_a_star_exports(self, tmp_path):
+        files = {
+            "__init__.py": "",
+            "core.py": "__all__ = ['listed']\n\ndef listed():\n    return 1\n\ndef unlisted():\n    return 2\n",
+            "facade.py": "from pkg.core import *\n",
+            "ok.py": "from pkg.facade import listed\n",
+            "bad.py": "from pkg.facade import unlisted\n",
+        }
+        problems = _scan(_pkg(tmp_path, "pkg", files))
+        assert len(problems) == 1 and "bad.py" in problems[0] and "'unlisted'" in problems[0], problems
+
+    def test_a_star_from_outside_the_parsed_tree_stays_unjudged(self, tmp_path):
+        root = _pkg(tmp_path, "pkg", {"__init__.py": "", "facade.py": "from numpy import *\n", "user.py": "from pkg.facade import anything_numpy_has\n"})
+        assert _scan(root) == []
+
+    def test_a_dynamic_star_source_stays_unjudged(self, tmp_path):
+        files = {
+            "__init__.py": "",
+            "core.py": "def __getattr__(name):\n    return 1\n",
+            "facade.py": "from pkg.core import *\n",
+            "user.py": "from pkg.facade import whatever\n",
+        }
+        assert _scan(_pkg(tmp_path, "pkg", files)) == []

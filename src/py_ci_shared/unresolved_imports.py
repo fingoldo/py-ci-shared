@@ -86,6 +86,35 @@ def _is_dynamic_module(tree: ast.Module) -> bool:
     return False
 
 
+def _star_import_sources(tree: ast.Module, importing: str, *, is_package: bool) -> list[str | None]:
+    """The dotted module of every module-level ``from X import *`` (None when a relative import cannot be resolved)."""
+    out: list[str | None] = []
+    for node in _module_level_nodes(tree.body):
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
+            out.append(_resolve_relative(importing, node, is_package=is_package))
+    return out
+
+
+def _literal_dunder_all(tree: ast.Module) -> set[str] | None:
+    """The names of a module's ``__all__`` when it is one plain list/tuple of string literals; None otherwise (absent, built up with
+    ``+=``/``.extend``, or computed), in which case a star import is read as every public name."""
+    found: set[str] | None = None
+    for node in tree.body:
+        if isinstance(node, (ast.AugAssign, ast.AnnAssign)) and getattr(node.target, "id", "") == "__all__":
+            if isinstance(node, ast.AugAssign):
+                return None
+            node_value = node.value
+        elif isinstance(node, ast.Assign) and any(getattr(t, "id", "") == "__all__" for t in node.targets):
+            node_value = node.value
+        else:
+            continue
+        if isinstance(node_value, (ast.List, ast.Tuple)) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in node_value.elts):
+            found = {e.value for e in node_value.elts}  # type: ignore[attr-defined]
+        else:
+            return None
+    return found
+
+
 class ModuleIndex:
     """Maps a dotted module name to the set of top-level names it binds, by parsing only."""
 
@@ -93,6 +122,9 @@ class ModuleIndex:
         self._names: dict[str, set[str]] = {}
         self._dynamic: set[str] = set()
         self._packages: set[str] = set()
+        #: per module: the resolved dotted source of each ``from X import *`` (None when it cannot be resolved), and a literal ``__all__``
+        self._star_sources: dict[str, list[str | None]] = {}
+        self._literal_all: dict[str, set[str]] = {}
         self._package_roots = [Path(p) for p in (package_roots or roots)]
         #: ``(path, "line: kind: message")`` for every file under the roots that could not be read or parsed. Its
         #: module is known to exist but its names are not, so imports from it are not judged.
@@ -114,6 +146,13 @@ class ModuleIndex:
                 if _is_dynamic_module(tree):
                     self._dynamic.add(dotted)
                 self._names[dotted] = tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree))
+                stars = _star_import_sources(tree, dotted, is_package=path.name == "__init__.py")
+                if stars:
+                    self._star_sources[dotted] = stars
+                literal = _literal_dunder_all(tree)
+                if literal is not None:
+                    self._literal_all[dotted] = literal
+        self._resolve_star_imports()
 
         # A package's SUBMODULES are importable names too: `from a.b import c` is valid whenever a/b/c.py
         # exists, even though b/__init__.py binds no name `c`. Without this every subpackage facade reads
@@ -125,6 +164,37 @@ class ModuleIndex:
             for depth in range(len(parts) - 1, 0, -1):
                 parent = ".".join(parts[:depth])
                 self._names.setdefault(parent, set()).add(parts[depth])
+
+    def _exported_by_star(self, dotted: str) -> set[str] | None:
+        """What ``from dotted import *`` binds: the literal ``__all__`` when there is one, else every public name; None while the
+        module's own surface is still unknown (a dynamic module, or one that star-imports something unresolved)."""
+        if dotted in self._dynamic or "*" in self._names.get(dotted, ()):
+            return None
+        literal = self._literal_all.get(dotted)
+        return set(literal) if literal is not None else {n for n in self._names[dotted] if not n.startswith("_")}
+
+    def _resolve_star_imports(self) -> None:
+        """Replace each ``*`` marker by the names the star-imported module really exports, chains included.
+
+        A source outside the parsed roots (numpy, a stdlib module) stays unresolved and keeps the marker, so a module that
+        re-exports one is still not judged; one fixpoint pass per chain link resolves ``a`` star-importing ``b`` star-importing ``c``.
+        """
+        pending = {m: list(src) for m, src in self._star_sources.items() if "*" in self._names.get(m, ())}
+        for _ in range(len(pending) + 1):
+            progressed = False
+            for module, sources in list(pending.items()):
+                resolved: set[str] = set()
+                for source in sources:
+                    exported = self._exported_by_star(source) if source is not None and source in self._names else None
+                    if exported is None:
+                        break
+                    resolved |= exported
+                else:
+                    self._names[module] = (self._names[module] - {"*"}) | resolved
+                    del pending[module]
+                    progressed = True
+            if not progressed:
+                break
 
     def _dotted(self, path: Path) -> str | None:
         """The dotted module name for a file, relative to whichever package root contains it."""
