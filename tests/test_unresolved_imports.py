@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -291,7 +292,7 @@ class TestStarImportsAreResolved:
     """A facade built on ``from .core import *`` used to mark the whole package unresolvable, so a name it never carried
     (mlframe: ``from mlframe.metrics import show_plots_unless_agg``, imported by training code, absent from metrics) passed."""
 
-    FACADE = {
+    FACADE: ClassVar[dict[str, str]] = {
         "__init__.py": "",
         "core.py": "from .parts import *\n\ndef fast():\n    return 1\n\ndef _private():\n    return 2\n",
         "parts.py": "def part():\n    return 3\n",
