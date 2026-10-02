@@ -59,7 +59,6 @@
   "src/py_ci_shared/spec_bound_doubles.py::_unbound_lines": 13,
   "src/py_ci_shared/sql_function_privileges.py::_Replay.apply": 17,
   "src/py_ci_shared/sql_function_privileges.py::_statements": 25,
-  "src/py_ci_shared/stale_comment_age.py::find_stale_comments": 11,
   "src/py_ci_shared/teeth_sweep.py::main": 14,
   "src/py_ci_shared/test_partition_reachability.py::assert_partitions_reachable": 14,
   "src/py_ci_shared/unresolved_imports.py::_is_dynamic_module": 11,

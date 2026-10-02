@@ -144,6 +144,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`changelog_promise_parity`](src/py_ci_shared/changelog_promise_parity.py) | gate | 1.3.1 | `assert_changelog_bullets_satisfy_pattern` | Shared checks for the "a CHANGELOG bullet promises something, does the promise ever get kept" consistency pattern |
 | [`checkout_resolution`](src/py_ci_shared/checkout_resolution.py) | gate | 1.7.0 | `assert_modules_resolve_to_checkout` (+1) | The suite examines the code in THIS checkout, not a copy installed somewhere else |
 | [`checkpoint_isolation`](src/py_ci_shared/checkpoint_isolation.py) | gate | 1.4.0 | `assert_outside` | Assert that no test reads or writes the on-disk state a real run of the program uses |
+| [`ci_health`](src/py_ci_shared/ci_health.py) | cli | 1.20.0 | `main` | How long each consumer repo's CI workflows have been red, with billing-blocked runs reported apart from failures |
 | [`ci_install_covers_conftest`](src/py_ci_shared/ci_install_covers_conftest.py) | gate | 1.20.0 | `assert_ci_install_covers_conftest` | Every CI job that runs pytest installs the third-party packages its conftest.py files import at collection |
 | [`ci_test_dir_reachability`](src/py_ci_shared/ci_test_dir_reachability.py) | gate | 1.3.1 | `assert_every_test_subdir_reachable` | Every subdirectory under a consumer repo's ``tests/`` must be reachable by at least one CI job -- or be explicitly whitelisted as intentionally |
 | [`ci_workflow_gate`](src/py_ci_shared/ci_workflow_gate.py) | gate | 1.3.0 | `assert_continue_on_error_is_reviewed` | Every ``continue-on-error |
@@ -1116,12 +1117,20 @@ the enclosing repository and answers about that instead, reporting the directory
 
 ## Keeping this repo in sync with consumers
 
-`configs/consumers.toml` lists every consumer (owner/repo, branch, private, corpus). Two scheduled workflows read it:
+`configs/consumers.toml` lists every consumer (owner/repo, branch, private, corpus). Three scheduled workflows read it:
 
-- `consumer-pins.yml` (daily): shallow-clones each consumer and runs `adoption_matrix --resolve-in .`, failing on
-  disagreeing, moving or stale pins ("N releases behind vX.Y.Z") and silent skips. The matrix is in the job summary
+- `consumer-pins.yml` (daily): shallow-clones each consumer and runs `adoption_matrix --resolve-in . --allow-behind 2`,
+  failing on disagreeing or moving pins, pins more than 2 releases behind the latest tag ("N releases behind vX.Y.Z";
+  1 or 2 behind shows in the matrix but is tolerated) and silent skips. The matrix is in the job summary
   and the `adoption-matrix` artifact. Private repos need the `CONSUMER_READ_TOKEN` secret (a fine-grained token with
   contents: read on them); without it they are skipped with a warning.
+- `ci-health.yml` (daily): `python -m py_ci_shared.ci_health` reads each consumer's GitHub Actions runs on its CI
+  branch (plus scheduled runs) and reports, per workflow, how many days it has been continuously red: since the first
+  failure after its last success, cancelled and skipped runs not counting. A workflow red for more than
+  `--max-red-days` (default 2) fails the job. A run whose jobs never started because the account's payment failed or
+  its spending limit was hit is reported as `billing`, separately, and does not fail it. Public repos are read with
+  the run's `GITHUB_TOKEN`; private ones need `CONSUMER_READ_TOKEN` to also grant actions: read, else they are
+  skipped with a warning. The table is in the job summary and the `ci-health` artifact.
 - `corpus-drift.yml` (nightly): `python -m py_ci_shared.corpus_drift` runs every corpus-bindable `find_*` over the
   `corpus = true` repos and compares the counts with the last successful run's snapshot artifact. It fails when a
   count grows by more than 20% and more than 5, drops to zero, or a finder starts to raise; run it by hand with

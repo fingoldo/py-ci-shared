@@ -161,3 +161,15 @@ def test_git_clone_is_shallow_on_the_branch_and_keeps_the_token_out_of_argv(tmp_
     assert log.strip().endswith("two") and len(log.strip().splitlines()) == 1
     missing = _LocalConsumer("y", "file://" + src.as_posix(), "nope", private=False)
     assert "nope" in (_consumers._git_clone(missing, tmp_path / "dst2", None) or "")
+
+
+def test_consumer_pins_tolerates_two_releases_behind_and_resolves_against_full_history():
+    """--allow-behind is only applied with --resolve-in, and the count needs this checkout's tags (fetch-depth: 0)."""
+    import yaml
+
+    wf = yaml.safe_load((REPO / ".github" / "workflows" / "consumer-pins.yml").read_text(encoding="utf-8"))
+    (job,) = wf["jobs"].values()
+    checkout = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/checkout@"))
+    assert checkout["with"]["fetch-depth"] == 0
+    run = next(str(s["run"]) for s in job["steps"] if "py_ci_shared.adoption_matrix" in str(s.get("run", "")))
+    assert "--allow-behind 2" in run and "--resolve-in ." in run

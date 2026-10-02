@@ -23,6 +23,13 @@
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
 
+## Consumers
+
+- `configs/consumers.toml` feeds `consumer-pins.yml` (adoption_matrix with `--resolve-in . --allow-behind 2`: a pin
+  may lag the latest release by 2 tags; the tolerance only applies with `--resolve-in` and a full-history checkout),
+  `ci-health.yml` (`ci_health`: days each consumer workflow has been red; billing-blocked runs reported apart) and
+  `corpus-drift.yml`. Private consumers need the `CONSUMER_READ_TOKEN` secret and are skipped with a warning without it.
+
 ## Versions and releases
 
 - `version` in `pyproject.toml` (and `__version__` in `src/py_ci_shared/__init__.py`) is the NEXT release tag

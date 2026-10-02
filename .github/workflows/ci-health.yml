@@ -1,0 +1,54 @@
+name: Consumer CI health
+
+# Daily: for every consumer in configs/consumers.toml, read its GitHub Actions runs (read-only, REST API) and report how
+# long each workflow has been continuously red. Fails when a workflow is red for more than 2 days; a run GitHub never
+# started because of billing (failed payment, spending limit) is reported as `billing` and does not fail the job.
+# Public repos are read with this run's GITHUB_TOKEN; private ones need the CONSUMER_READ_TOKEN secret (a fine-grained
+# token with actions:read and metadata:read on them); without it they are skipped with a warning.
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: python -m pip install -e .
+
+      - name: CI health report
+        env:
+          CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          if [ -z "$CONSUMER_READ_TOKEN" ]; then
+            echo "::warning title=CONSUMER_READ_TOKEN not set::private consumer repos are skipped; only the public ones are checked"
+          fi
+          python -m py_ci_shared.ci_health configs/consumers.toml --max-red-days 2 --output ci-health.md
+
+      - name: Upload the report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: ci-health
+          path: ci-health.md
+          if-no-files-found: ignore
+          retention-days: 30

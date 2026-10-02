@@ -1,7 +1,7 @@
 name: Consumer pins
 
 # Daily: check out every consumer in configs/consumers.toml read-only and run adoption_matrix over them. Fails when a
-# repo's py-ci-shared pins disagree, move, lag the latest release tag, or a gate skips itself when the package is
+# repo's py-ci-shared pins disagree, move, lag the latest release tag by more than 2 releases, or a gate skips itself when the package is
 # missing. Private repos need the CONSUMER_READ_TOKEN secret (a fine-grained token with contents:read on them);
 # without it they are skipped with a warning, while a clone that should work and fails is an error.
 
@@ -47,10 +47,13 @@ jobs:
           python -m py_ci_shared._consumers checkout configs/consumers.toml \
             --dest "$RUNNER_TEMP/consumers" --repos-file "$RUNNER_TEMP/consumers/repos.toml"
 
+      # --allow-behind 2: a fixed pin may lag the latest release tag by up to 2 releases before the job fails (a consumer
+      # bumps on its own schedule). The tolerance needs --resolve-in: "." is this checkout, whose fetch-depth: 0 carries
+      # every vX.Y.Z tag the count is made against; without them every pin would read as 0 behind.
       - name: Adoption matrix
         run: |
           python -m py_ci_shared.adoption_matrix --repos-file "$RUNNER_TEMP/consumers/repos.toml" \
-            --resolve-in . --output adoption-matrix.md
+            --resolve-in . --allow-behind 2 --output adoption-matrix.md
 
       - name: Job summary
         if: always()

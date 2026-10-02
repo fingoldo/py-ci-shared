@@ -10,6 +10,19 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   `sys.version_info` guards and `python_version` markers evaluated per matrix Python. It flags pyutilz's
   `numba-coverage.yml` before e6db9af (no py-ci-shared for `tests/conftest.py`), the class behind three collection
   failures in four days.
+- New CLI `ci_health` and daily workflow `ci-health.yml`: for every repo in `configs/consumers.toml`, how many days each
+  GitHub Actions workflow on its CI branch (and its scheduled runs) has been continuously red, counted from the first
+  failure after the last success; cancelled and skipped runs do not count. A workflow red for more than
+  `--max-red-days` (default 2) fails the job. A run GitHub refused to start because the account's payment failed or
+  its spending limit was hit is reported as `billing`, apart from code failures, and never fails it. Private repos
+  need `CONSUMER_READ_TOKEN`, else they are skipped with a warning, as in `consumer-pins.yml`.
+- `consumer-pins.yml` runs `adoption_matrix --allow-behind 2`: a consumer's fixed pin may lag the latest release by up
+  to 2 tags before the daily job fails (with the default 0, every release turned every consumer red until it bumped).
+- `stale_comment_age`: opt-in early warning. `assert_no_stale_todos(..., warn_days=7)` emits one `UserWarning` per TODO
+  or commented-out call that crosses `max_age_days` within the next 7 days, naming `file:line` and the date it goes
+  stale, and returns those lines; it never fails on them. `find_comments_going_stale` returns the same list.
+  `warn_days=0` (the default) changes nothing for existing callers. Both functions and `find_stale_comments` take
+  `now=` to freeze the clock.
 
 ## 1.19.0
 

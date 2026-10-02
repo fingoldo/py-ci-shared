@@ -247,6 +247,10 @@ meta_dir = "src/py_ci_shared"
 module = "ci_workflow_timeout_gate"
 workflow_path = ".github/workflows/black-filtered.yml"
 
+[tool.py_ci_shared.gates.workflow_timeouts_ci_health]
+module = "ci_workflow_timeout_gate"
+workflow_path = ".github/workflows/ci-health.yml"
+
 [tool.py_ci_shared.gates.workflow_timeouts_config_drift_check]
 module = "ci_workflow_timeout_gate"
 workflow_path = ".github/workflows/config-drift-check.yml"

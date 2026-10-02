@@ -311,3 +311,62 @@ def test_prose_with_parentheses_is_not_commented_out_code(body):
 @pytest.mark.parametrize("body", ["print(i, col)", 'ensure_installed("numpy")', "fig.suptitle(title)"])
 def test_commented_out_calls_are_still_code(body):
     assert sca._COMMENTED_HASH_CALL_RE.match(f"# {body}") and sca._body_is_code(body, python=True)
+
+
+# A commit authored at exactly this UTC instant; `now` is then frozen relative to it.
+_T0 = 1577836800  # 2020-01-01T00:00:00Z
+_DAY = 86400
+
+
+def _repo_at_t0(tmp_path: Path, rel: str, body: str) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "T"]):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True)
+    p = tmp_path / rel
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    stamp = f"{_T0} +0000"
+    env = {**subprocess.os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=env)
+    return tmp_path
+
+
+class TestEarlyWarning:
+    """``warn_days``: comments about to cross the limit are named, with their due date, and never fail."""
+
+    BODY = "// TODO: call this after the first lesson\nvoid a() {}\n"
+
+    def test_comment_inside_the_window_is_named_with_its_due_date(self, tmp_path):
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        out = sca.find_comments_going_stale(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 25 * _DAY)
+        expected = (
+            "lib/a.dart:1: TODO goes stale on 2020-01-31 (25 of 30 days) - `// TODO: call this after the first lesson`. "
+            "Do it, delete it, or reference the issue that tracks it."
+        )
+        assert out == [expected]
+        assert find_stale_comments(repo, ["lib"], max_age_days=30, now=_T0 + 25 * _DAY) == []
+
+    @pytest.mark.parametrize("days, expected", [(22, 0), (23.5, 1), (30, 1), (30.5, 0)])
+    def test_window_boundaries(self, tmp_path, days, expected):
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        out = sca.find_comments_going_stale(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + days * _DAY)
+        assert len(out) == expected
+        # past the limit it is the gate's finding instead
+        assert len(find_stale_comments(repo, ["lib"], max_age_days=30, now=_T0 + days * _DAY)) == (1 if days > 30 else 0)
+
+    def test_assert_warns_but_does_not_fail(self, tmp_path):
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        with pytest.warns(UserWarning, match=r"lib/a\.dart:1: TODO goes stale on 2020-01-31"):
+            out = assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 25 * _DAY)
+        assert len(out) == 1
+
+    def test_default_warn_days_zero_is_silent(self, tmp_path, recwarn):
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        assert assert_no_stale_todos(repo, ["lib"], max_age_days=30, now=_T0 + 25 * _DAY) == []
+        assert not [w for w in recwarn if "early warning" in str(w.message)]
+
+    def test_stale_still_fails_with_warn_days(self, tmp_path):
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        with pytest.raises(pytest.fail.Exception, match="older than 30 days"):
+            assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 31 * _DAY)

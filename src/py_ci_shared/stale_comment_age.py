@@ -26,6 +26,13 @@ Usage::
 
     def test_no_todo_older_than_a_release():
         assert_no_stale_todos(REPO, ["lib", "tool"], max_age_days=30)
+
+Early warning (opt-in): ``warn_days=7`` also names every comment that will cross ``max_age_days`` within the next
+7 days, as advisory output that never fails the test. :func:`assert_no_stale_todos` emits one ``UserWarning`` per such
+comment (pytest lists them in its warnings summary) and returns those lines; :func:`find_comments_going_stale`
+returns them without the gate. Each line names ``file:line`` and the UTC date the comment goes stale, so the TODO can
+be done or tracked before it turns the build red. ``warn_days=0`` (the default) keeps the gate exactly as it was.
+Both accept ``now`` (epoch seconds) to freeze the clock.
 """
 
 from __future__ import annotations
@@ -36,7 +43,9 @@ import re
 import subprocess
 import time
 import tokenize
+import warnings
 from collections.abc import Iterable, Sequence
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -240,12 +249,11 @@ def _git(repo_root: Path, *args: str) -> "subprocess.CompletedProcess[str]":
     return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
 
 
-def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, float]:
-    """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``. Raises :class:`BlameError` when git fails."""
+def _blame_times(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, int]:
+    """Return ``{line_number: author_time_epoch}`` for ``lines`` of ``rel_path``. Raises :class:`BlameError` when git fails."""
     if not lines:
         return {}
-    ages: dict[int, float] = {}
-    now = time.time()
+    times: dict[int, int] = {}
     spans = _ranges(lines)
     for start in range(0, len(spans), _BLAME_BATCH):
         args = ["blame", "--line-porcelain"]
@@ -265,9 +273,15 @@ def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[in
                 current_line = int(m.group(1))
                 continue
             if line.startswith("author-time ") and current_line is not None:
-                ages[current_line] = (now - int(line.split()[1])) / 86400.0
+                times[current_line] = int(line.split()[1])
                 current_line = None
-    return ages
+    return times
+
+
+def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int], now: Optional[float] = None) -> dict[int, float]:
+    """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``, measured at ``now`` (default: the real clock)."""
+    at = time.time() if now is None else now
+    return {n: (at - t) / 86400.0 for n, t in _blame_times(repo_root, rel_path, lines).items()}
 
 
 def _history_problem(repo_root: Path) -> Optional[str]:
@@ -310,29 +324,20 @@ def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str
     return out
 
 
-def find_stale_comments(
-    repo_root: Path,
-    scan_dirs: Iterable[str],
-    *,
-    max_age_days: int = 30,
-    suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
-    require_issue_ref: bool = True,
-    skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
-) -> list[str]:
-    """Return one problem string per TODO/commented-out call older than ``max_age_days``.
+# (rel path, line, kind, text, author time epoch)
+_Dated = tuple[str, int, str, str, int]
 
-    A TODO carrying an issue reference right after its marker (``TODO(#12)``, ``TODO(topic)``, ``TODO: #12``,
-    ``TODO ABC-12``, a URL) is exempt when ``require_issue_ref`` is true: it is a tracked promise rather than a
-    note to nobody. Trailing comments count. Only tracked files are scanned (an untracked file has no age).
 
-    The gate reports, rather than passes, whatever stops it from dating a line: a scan directory that does not
-    exist, a root that is not a git work tree, a shallow clone, and a ``git blame`` that fails.
-    """
+def _scan(
+    repo_root: Path, scan_dirs: Iterable[str], *, suffixes: Sequence[str], require_issue_ref: bool, skip_dirs: Iterable[str]
+) -> tuple[list[str], list[_Dated]]:
+    """Every candidate comment with its ``git blame`` author time, plus the problems that kept a line from being dated."""
     problems: list[str] = []
+    dated: list[_Dated] = []
     root = Path(repo_root)
     history = _history_problem(root)
     if history is not None:
-        return [history]
+        return [history], []
     patterns = tuple(f"*{s}" for s in suffixes)
     for d in scan_dirs:
         base = root / d
@@ -350,19 +355,84 @@ def find_stale_comments(
             if not candidates:
                 continue
             try:
-                ages = _blame_ages(root, rel, sorted(candidates))
+                times = _blame_times(root, rel, sorted(candidates))
             except BlameError as exc:
                 problems.append(f"{exc}; its {len(candidates)} candidate comment(s) could not be dated.")
                 continue
             for lineno, (kind, text) in sorted(candidates.items()):
-                age = ages.get(lineno)
-                if age is None:
+                stamp = times.get(lineno)
+                if stamp is None:
                     problems.append(f"{rel}:{lineno}: git blame returned no date for this line - `{text}`.")
                     continue
-                if age <= max_age_days:
-                    continue
-                problems.append(f"{rel}:{lineno}: {kind} {int(age)} days old - `{text}`. Do it, delete it, or " f"reference the issue that tracks it.")
-    return problems
+                dated.append((rel, lineno, kind, text, stamp))
+    return problems, dated
+
+
+def _stale(dated: Sequence[_Dated], max_age_days: int, now: float) -> list[str]:
+    out = []
+    for rel, lineno, kind, text, stamp in dated:
+        age = (now - stamp) / 86400.0
+        if age > max_age_days:
+            out.append(f"{rel}:{lineno}: {kind} {int(age)} days old - `{text}`. Do it, delete it, or " f"reference the issue that tracks it.")
+    return out
+
+
+def _going_stale(dated: Sequence[_Dated], max_age_days: int, warn_days: int, now: float) -> list[str]:
+    """Comments not older than ``max_age_days`` yet that will be within ``warn_days`` days from ``now``."""
+    if warn_days <= 0:
+        return []
+    out = []
+    for rel, lineno, kind, text, stamp in dated:
+        age = (now - stamp) / 86400.0
+        if max_age_days - warn_days < age <= max_age_days:
+            due = datetime.fromtimestamp(stamp + max_age_days * 86400, tz=timezone.utc).date().isoformat()
+            out.append(
+                f"{rel}:{lineno}: {kind} goes stale on {due} ({int(age)} of {max_age_days} days) - `{text}`. "
+                "Do it, delete it, or reference the issue that tracks it."
+            )
+    return out
+
+
+def find_stale_comments(
+    repo_root: Path,
+    scan_dirs: Iterable[str],
+    *,
+    max_age_days: int = 30,
+    suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
+    require_issue_ref: bool = True,
+    skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
+    now: Optional[float] = None,
+) -> list[str]:
+    """Return one problem string per TODO/commented-out call older than ``max_age_days``.
+
+    A TODO carrying an issue reference right after its marker (``TODO(#12)``, ``TODO(topic)``, ``TODO: #12``,
+    ``TODO ABC-12``, a URL) is exempt when ``require_issue_ref`` is true: it is a tracked promise rather than a
+    note to nobody. Trailing comments count. Only tracked files are scanned (an untracked file has no age).
+
+    The gate reports, rather than passes, whatever stops it from dating a line: a scan directory that does not
+    exist, a root that is not a git work tree, a shallow clone, and a ``git blame`` that fails. ``now`` (epoch
+    seconds) freezes the clock; the default is the real one.
+    """
+    problems, dated = _scan(repo_root, scan_dirs, suffixes=suffixes, require_issue_ref=require_issue_ref, skip_dirs=skip_dirs)
+    return problems + _stale(dated, max_age_days, time.time() if now is None else now)
+
+
+def find_comments_going_stale(
+    repo_root: Path,
+    scan_dirs: Iterable[str],
+    *,
+    max_age_days: int = 30,
+    warn_days: int = 7,
+    suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
+    require_issue_ref: bool = True,
+    skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
+    now: Optional[float] = None,
+) -> list[str]:
+    """Advisory: one line per TODO/commented-out call that is not stale yet but crosses ``max_age_days`` within
+    ``warn_days`` days, naming ``file:line`` and the UTC date it goes stale. Never a failure; a line that cannot be
+    dated is left to :func:`find_stale_comments`, which reports it."""
+    _, dated = _scan(repo_root, scan_dirs, suffixes=suffixes, require_issue_ref=require_issue_ref, skip_dirs=skip_dirs)
+    return _going_stale(dated, max_age_days, warn_days, time.time() if now is None else now)
 
 
 def assert_no_stale_todos(
@@ -373,11 +443,22 @@ def assert_no_stale_todos(
     require_issue_ref: bool = True,
     suffixes: Sequence[str] = _DEFAULT_SUFFIXES,
     skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
-) -> None:
+    warn_days: int = 0,
+    now: Optional[float] = None,
+) -> list[str]:
     """Fail on any TODO or commented-out call older than ``max_age_days``, and on anything that kept a line from
-    being dated (see :func:`find_stale_comments`)."""
+    being dated (see :func:`find_stale_comments`).
+
+    With ``warn_days > 0``, comments that go stale within that many days are emitted as one ``UserWarning`` each
+    and returned (see :func:`find_comments_going_stale`); they never fail the test. Returns ``[]`` by default."""
     import pytest
 
-    problems = find_stale_comments(repo_root, scan_dirs, max_age_days=max_age_days, require_issue_ref=require_issue_ref, suffixes=suffixes, skip_dirs=skip_dirs)
+    at = time.time() if now is None else now
+    problems, dated = _scan(repo_root, scan_dirs, suffixes=suffixes, require_issue_ref=require_issue_ref, skip_dirs=skip_dirs)
+    problems += _stale(dated, max_age_days, at)
+    advisories = _going_stale(dated, max_age_days, warn_days, at)
+    for line in advisories:
+        warnings.warn(f"stale-comment early warning: {line}", UserWarning, stacklevel=2)
     if problems:
         pytest.fail(f"{len(problems)} stale comment(s) older than {max_age_days} days:\n  " + "\n  ".join(problems))
+    return advisories
