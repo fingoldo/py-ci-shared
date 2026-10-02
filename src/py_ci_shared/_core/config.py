@@ -15,7 +15,7 @@ Shape::
     [tool.py_ci_shared.gates.rounds_format]              # a second run of one module under another name
     module = "audit_round_format"
     entry = "assert_rounds_countable"
-    audits_dir = "audits/2026-09-24"
+    audits_dir = "audits/implemented/2026-09-24"
 
 Reserved keys in a gate table (not passed to the gate): ``module``, ``entry``, ``budget_s``, ``enabled``.
 Every other key is a keyword argument. Paths are relative to the repo root (see :func:`resolve_kwargs`).

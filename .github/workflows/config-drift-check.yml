@@ -27,5 +27,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Nothing installed the package, so every run printed "No module named 'py_ci_shared'" and went green: the
+      # default `bash -e` shell takes the exit status of `tee`. `shell: bash` adds pipefail; the check itself
+      # always exits 0 on divergence, so only a crash fails the run.
+      - name: Install package
+        run: python -m pip install -e .
+
       - name: Run config drift check
+        shell: bash
         run: python -m py_ci_shared.config_drift_check | tee -a "$GITHUB_STEP_SUMMARY"

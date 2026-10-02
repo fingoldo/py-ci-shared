@@ -48,8 +48,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      # The snapshot imports every registered gate and library module, and resource_leak_guard (a pytest plugin)
+      # imports pytest at module level; without it the step died with ModuleNotFoundError. corpus_drift.finders()
+      # names any such module (MissingDependencyError); tests/test_corpus_drift.py holds this line to cover them.
       - name: Install package
-        run: python -m pip install -e .
+        run: python -m pip install -e . "pytest>=7.0"
 
       - name: Check out the corpus repos
         env:

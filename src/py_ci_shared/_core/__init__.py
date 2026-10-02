@@ -1,6 +1,6 @@
 """Shared core every py-ci-shared gate builds on: source reading, corpus, scan, baseline, refresh, aliases, findings.
 
-See ``audits/2026-09-24/dispositions/core.md`` (section ``_core API``) for the idiom a gate should use.
+See ``audits/implemented/2026-09-24/dispositions/core.md`` (section ``_core API``) for the idiom a gate should use.
 """
 
 from __future__ import annotations

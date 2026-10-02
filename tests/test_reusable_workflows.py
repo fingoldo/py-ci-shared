@@ -131,3 +131,20 @@ def test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_th
     assert at_root == {"Actionlint (workflow files)", "Zizmor (workflow security scan)", "yamllint workflow files"}
     assert '--toml "$CODESPELL_TOML"' in steps["Codespell"]["run"]
     assert '-c "$BANDIT_CONFIG"' in steps["Bandit security scan"]["run"] and '-x "$BANDIT_EXCLUDE"' in steps["Bandit security scan"]["run"]
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_a_job_that_runs_this_package_installs_it_first(path):
+    # config-drift-check.yml ran `python -m py_ci_shared.config_drift_check | tee ...` with nothing installed: every
+    # run printed "No module named 'py_ci_shared'" and went green because the pipe took tee's exit status.
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for job_name, job in (workflow.get("jobs") or {}).items():
+        installed = False
+        for step in job.get("steps") or []:
+            run = str(step.get("run") or "")
+            if re.search(r"""pip install\b[^\n]*(-e\s+["']?\.|py-ci-shared)""", run):
+                installed = True
+            if "python -m py_ci_shared." in run:
+                assert installed, f"{path.name}:{job_name}: step {step.get('name')!r} runs py_ci_shared before any step installs it"
+                if "|" in run:
+                    assert step.get("shell") == "bash" or "pipefail" in run, f"{path.name}:{job_name}: a pipe hides the exit status"

@@ -131,27 +131,7 @@ class ModuleIndex:
         self.unparsed: list[tuple[Path, str]] = []
         for root in roots:
             for path in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE):
-                dotted = self._dotted(path)
-                if dotted is None:
-                    continue
-                if path.name == "__init__.py":
-                    self._packages.add(dotted)
-                try:
-                    _, tree = parse_source(path)
-                except SourceError as exc:
-                    self.unparsed.append((path, f"{exc.line or 1}: {exc.kind}: {exc.message}"))
-                    self._dynamic.add(dotted)
-                    self._names.setdefault(dotted, set())
-                    continue
-                if _is_dynamic_module(tree):
-                    self._dynamic.add(dotted)
-                self._names[dotted] = tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree))
-                stars = _star_import_sources(tree, dotted, is_package=path.name == "__init__.py")
-                if stars:
-                    self._star_sources[dotted] = stars
-                literal = _literal_dunder_all(tree)
-                if literal is not None:
-                    self._literal_all[dotted] = literal
+                self._index_file(path)
         self._resolve_star_imports()
 
         # A package's SUBMODULES are importable names too: `from a.b import c` is valid whenever a/b/c.py
@@ -164,6 +144,30 @@ class ModuleIndex:
             for depth in range(len(parts) - 1, 0, -1):
                 parent = ".".join(parts[:depth])
                 self._names.setdefault(parent, set()).add(parts[depth])
+
+    def _index_file(self, path: Path) -> None:
+        """Record the names, star imports and literal ``__all__`` of one file under the roots."""
+        dotted = self._dotted(path)
+        if dotted is None:
+            return
+        if path.name == "__init__.py":
+            self._packages.add(dotted)
+        try:
+            _, tree = parse_source(path)
+        except SourceError as exc:
+            self.unparsed.append((path, f"{exc.line or 1}: {exc.kind}: {exc.message}"))
+            self._dynamic.add(dotted)
+            self._names.setdefault(dotted, set())
+            return
+        if _is_dynamic_module(tree):
+            self._dynamic.add(dotted)
+        self._names[dotted] = tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree))
+        stars = _star_import_sources(tree, dotted, is_package=path.name == "__init__.py")
+        if stars:
+            self._star_sources[dotted] = stars
+        literal = _literal_dunder_all(tree)
+        if literal is not None:
+            self._literal_all[dotted] = literal
 
     def _exported_by_star(self, dotted: str) -> set[str] | None:
         """What ``from dotted import *`` binds: the literal ``__all__`` when there is one, else every public name; None while the

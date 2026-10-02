@@ -37,6 +37,7 @@ __all__ = [
     "FAILING_KINDS",
     "NON_CORPUS",
     "Drift",
+    "MissingDependencyError",
     "bind",
     "compare",
     "count_of",
@@ -128,16 +129,40 @@ def _required(fn: Callable[..., Any]) -> list[str]:
     return [p.name for p in params if p.default is p.empty and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
 
 
+class MissingDependencyError(RuntimeError):
+    """A registered gate or library module imports a package that is not installed, so its finders cannot be counted.
+
+    Raised instead of skipping the module: a nightly snapshot without it would read as that gate going blind, and a bare
+    ``ModuleNotFoundError`` from the first such import names neither the gate nor the others missing alongside it."""
+
+    def __init__(self, missing: dict[str, str]) -> None:
+        self.missing = dict(missing)
+        listed = "; ".join(f"{module} needs {package!r}" for module, package in sorted(self.missing.items()))
+        packages = " ".join(sorted(set(self.missing.values())))
+        super().__init__(f"cannot import every gate module ({listed}); install them next to py-ci-shared: pip install {packages}")
+
+
 def finders() -> list[tuple[str, Callable[..., Any]]]:
-    """``(module.find_x, fn)`` for every ``find_*`` defined in a registered gate or library module, in registry order."""
+    """``(module.find_x, fn)`` for every ``find_*`` defined in a registered gate or library module, in registry order.
+
+    Raises :class:`MissingDependencyError`, naming every such module, when any of them imports a package that is absent."""
     out: list[tuple[str, Callable[..., Any]]] = []
+    missing: dict[str, str] = {}
     for spec in registry.GATES:
         if spec.kind not in ("gate", "library"):
             continue
-        module = importlib.import_module(spec.module)
+        try:
+            module = importlib.import_module(spec.module)
+        except ModuleNotFoundError as exc:
+            if not exc.name or exc.name.split(".", 1)[0] == __package__:
+                raise
+            missing[spec.module] = exc.name.split(".", 1)[0]
+            continue
         for name, fn in inspect.getmembers(module, inspect.isfunction):
             if name.startswith("find_") and fn.__module__ == module.__name__:
                 out.append((f"{spec.name}.{name}", fn))
+    if missing:
+        raise MissingDependencyError(missing)
     return out
 
 
@@ -323,7 +348,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--absolute", type=int, default=5, help="absolute growth that, with --pct, is a jump (default 5)")
     p.add_argument("--output", help="also write the markdown table here")
     args = parser.parse_args(argv)
-    return _cmd_snapshot(args) if args.command == "snapshot" else _cmd_compare(args)
+    try:
+        return _cmd_snapshot(args) if args.command == "snapshot" else _cmd_compare(args)
+    except MissingDependencyError as exc:
+        sys.stderr.write(f"corpus_drift: {exc}\n")
+        return 2
 
 
 if __name__ == "__main__":

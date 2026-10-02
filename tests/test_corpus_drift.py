@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import ast
+import importlib.util
 import json
+import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import pytest
+import yaml
 
-from py_ci_shared import corpus_drift
+from py_ci_shared import corpus_drift, registry
 from py_ci_shared.corpus_drift import NON_CORPUS, Drift, bind, compare, count_of, finders, main, render_table, snapshot, unbound_finders
 
 
@@ -172,3 +177,59 @@ def test_cli_snapshot_refuses_an_empty_repo_list(tmp_path, capsys):
     repos.write_bytes(b"")
     assert main(["snapshot", "--repos-file", str(repos), "--output", str(tmp_path / "x.json")]) == 2
     capsys.readouterr()
+
+
+def test_finders_name_a_gate_module_whose_dependency_is_missing(monkeypatch):
+    # The nightly job installed only the package, and resource_leak_guard imports pytest at module level: the snapshot
+    # died on a bare ModuleNotFoundError. finders() now names every such module and package instead of crashing on the first.
+    monkeypatch.setitem(sys.modules, "pytest", None)
+    monkeypatch.delitem(sys.modules, "py_ci_shared.resource_leak_guard", raising=False)
+    with pytest.raises(corpus_drift.MissingDependencyError) as caught:
+        finders()
+    assert caught.value.missing.get("py_ci_shared.resource_leak_guard") == "pytest"
+    assert "py_ci_shared.resource_leak_guard needs 'pytest'" in str(caught.value)
+    assert "pip install" in str(caught.value) and "pytest" in str(caught.value).rsplit("pip install", 1)[1]
+
+
+def test_snapshot_cli_reports_a_missing_dependency_and_exits_2(monkeypatch, tmp_path, capsys):
+    monkeypatch.setitem(sys.modules, "pytest", None)
+    monkeypatch.delitem(sys.modules, "py_ci_shared.resource_leak_guard", raising=False)
+    repos = tmp_path / "repos.toml"
+    (tmp_path / "r").mkdir()
+    repos.write_text(f'[[repo]]\nname = "r"\npath = "{(tmp_path / "r").as_posix()}"\n', encoding="utf-8")
+    assert main(["snapshot", "--repos-file", str(repos), "--output", str(tmp_path / "out.json")]) == 2
+    assert "resource_leak_guard needs 'pytest'" in capsys.readouterr().err
+    assert not (tmp_path / "out.json").exists()
+
+
+def _module_level_third_party_imports() -> dict[str, str]:
+    """``{top-level package: gate module}`` for every unconditional module-level import of a registered gate or library
+    module that is neither stdlib, this package, nor a runtime dependency of it."""
+    runtime = {"yaml", "tomli"}
+    out: dict[str, str] = {}
+    for spec in registry.GATES:
+        if spec.kind not in ("gate", "library"):
+            continue
+        found = importlib.util.find_spec(spec.module)
+        assert found is not None and found.origin, spec.module
+        tree = ast.parse(Path(found.origin).read_text(encoding="utf-8"))
+        for node in tree.body:
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
+            if isinstance(node, ast.ImportFrom) and not node.level and node.module:
+                names = [node.module]
+            for name in names:
+                top = name.split(".", 1)[0]
+                if top in sys.stdlib_module_names or top in runtime or top == "py_ci_shared" or top == "__future__":
+                    continue
+                out.setdefault(top, spec.module)
+    return out
+
+
+@pytest.mark.skipif(sys.version_info < (3, 10), reason="sys.stdlib_module_names is 3.10+")
+def test_the_nightly_workflow_installs_every_package_a_gate_module_imports():
+    workflow = yaml.safe_load((Path(__file__).resolve().parents[1] / ".github/workflows/corpus-drift.yml").read_text(encoding="utf-8"))
+    steps = [step for job in workflow["jobs"].values() for step in job.get("steps", [])]
+    install = next(step["run"] for step in steps if step.get("name") == "Install package")
+    needed = _module_level_third_party_imports()
+    assert "pytest" in needed, "the probe must see resource_leak_guard's import pytest, or it checks nothing"
+    assert {top: module for top, module in needed.items() if top not in install} == {}
