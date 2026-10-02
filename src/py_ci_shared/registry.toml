@@ -888,7 +888,7 @@ summary = "``file.py:NNN`` citations that no longer point where they say"
 name = "standard_stream_restore"
 kind = "gate"
 entries = ["assert_standard_streams_restored_only_if_still_ours"]
-since = "1.18.0"
+since = "1.19.0"
 summary = "Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed"
 
 [[gate]]

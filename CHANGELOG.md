@@ -2,11 +2,22 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## 1.18.0 (unreleased)
+## 1.19.0
 
 - `unresolved_imports` resolves `from X import *` exactly instead of treating the star-importing module as unknowable: the exported set is X's literal `__all__` (else its public names), followed through chains. A name a facade built on `from .core import *` does not carry (mlframe: `from mlframe.metrics import show_plots_unless_agg`, which raised ImportError at run time) is now reported. A star from outside the parsed roots, or from a module with `__getattr__`/`globals()` tricks, stays unjudged.
 - `nondiscriminating_shapes`: two false positives removed. `late-skip` no longer flags the write-the-baseline-on-first-run skip (`if not BASELINE.exists(): write(); pytest.skip(...)`, used by dozens of meta-gates): an `.exists()` check is a filesystem-state probe, not the data deciding. `median-roundtrip` now fires only when the median is the test's SOLE verdict; a median canary next to `assert_allclose` or another assert is a precondition, not the pass/fail criterion.
 - `nondiscriminating_shapes`: the environment-probe vocabulary of `late-skip` also recognises `supported` (`not callbacks_supported()`), `vram` and `major`/`minor` (a compute-capability or version tuple). Whole identifier parts only, so `majority_share` and `n_supporters` stay data and are still flagged.
+- New gate `standard_stream_restore`: code that swaps `sys.stdout`/`sys.stderr` restores them only while its own stream is
+  still installed, so a nested swap cannot put back a stream somebody else has already replaced.
+- `corpus_drift.finders()` imports every gate module; a gate whose third-party dependency is missing now raises
+  `MissingDependencyError` naming each module and package (`snapshot` exits 2 and writes nothing) instead of dying with a bare
+  `ModuleNotFoundError`. The nightly workflow installs pytest, `config-drift-check.yml` installs the package (it printed
+  `No module named 'py_ci_shared'` on every run while showing green, because the pipe through `tee` hid the exit code and
+  the step had no pipefail), and a workflow test requires every job that runs `python -m py_ci_shared.*` to install it first.
+- `unresolved_imports.ModuleIndex` indexes one file per helper call (the complexity ratchet had flagged `__init__`).
+
+## 1.18.0
+
 - `uncalled_functions` follows import aliases across files (a re-export module `from ._impl import _h as h`, loaded by a
   consumer as `from pkg.shared import h as _probe`), and a name a function imports locally stays the imported function
   even when an `except ImportError: f = None` fallback also assigns it. Both were reported as dead code.
