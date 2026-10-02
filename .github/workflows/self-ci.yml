@@ -23,14 +23,27 @@ jobs:
     # a linux-only run could never catch that, while every consumer repo runs the same checks locally.
     # Every Python from the advertised floor (requires-python >=3.9) up, on Linux: the two 3.9/3.10 breakages so far
     # (tomllib, a runtime PEP 604 union) were found by a consumer's shards because this matrix ran 3.11 only.
+    # ubuntu-24.04, not ubuntu-latest: ubuntu-latest moves to 26.04 between 2026-10-19 and 2026-11-19
+    # (actions/runner-images#14748), and actions/python-versions publishes no 3.9 build for 26.04, so the 3.9 leg
+    # would stop resolving the day the label moved. The ubuntu-26.04 legs below are non-blocking (continue-on-error)
+    # previews. Before moving the pinned label (here and in every reusable workflow) to ubuntu-26.04, verify: those
+    # legs are green, PG_BIN still resolves (26.04 ships PostgreSQL 18, 24.04 ships 16), and decide what tests 3.9
+    # (drop the floor, or keep a 3.9 leg on ubuntu-24.04 while that image exists).
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.preview == true }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-24.04]
         python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         include:
+          - os: ubuntu-26.04
+            python: "3.11"
+            preview: true
+          - os: ubuntu-26.04
+            python: "3.13"
+            preview: true
           - os: windows-latest
             python: "3.11"
           - os: macos-latest
@@ -43,16 +56,16 @@ jobs:
     steps:
       # Full history and tags: the release-version test compares against the newest tag, and stale_comment_age (run by
       # the dogfood step) needs real blame dates.
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with:
           python-version: ${{ matrix.python }}
 
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5.4.2
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: true
 
@@ -79,7 +92,7 @@ jobs:
       # Coverage is measured on one leg (ubuntu, 3.11); [tool.coverage.report] holds the floor.
       - name: Run tests
         env:
-          COVERAGE: ${{ matrix.os == 'ubuntu-latest' && matrix.python == '3.11' }}
+          COVERAGE: ${{ matrix.os == 'ubuntu-24.04' && matrix.python == '3.11' }}
         run: |
           if [ "$COVERAGE" = "true" ]; then
             python -m pytest tests/ -v -ra --junitxml=junit.xml --cov=py_ci_shared --cov-report=term --cov-report=xml

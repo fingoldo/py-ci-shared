@@ -148,3 +148,77 @@ def test_a_job_that_runs_this_package_installs_it_first(path):
                 assert installed, f"{path.name}:{job_name}: step {step.get('name')!r} runs py_ci_shared before any step installs it"
                 if "|" in run:
                     assert step.get("shell") == "bash" or "pipefail" in run, f"{path.name}:{job_name}: a pipe hides the exit status"
+
+
+# The first major of each action whose runs.using is node24 (for a composite, whose nested actions are all node24).
+# GitHub forces Node 20 actions onto Node 24 and then removes Node 20, so a pin below its floor here is a dated break.
+NODE24_FLOOR = {
+    "actions/checkout": 5,
+    "actions/setup-python": 6,
+    "astral-sh/setup-uv": 7,
+    "actions/upload-artifact": 6,
+    "actions/download-artifact": 7,
+    "actions/upload-pages-artifact": 5,
+    "actions/deploy-pages": 5,
+    "codecov/codecov-action": 7,
+}
+USES_LINE = re.compile(r"uses:\s*([\w.-]+/[\w.-]+)(?:/[\w./-]+)?@([0-9a-f]{40})\s+#\s*v(\d+)\.\d+\.\d+(?:\s+#\s*zizmor: ignore\[[\w,-]+\])?\s*$")
+
+
+def _third_party_uses() -> list[tuple[Path, str, str, int]]:
+    found = []
+    for path in [*WORKFLOWS, *ACTIONS]:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip().removeprefix("- ")
+            if not stripped.startswith("uses:") or "uses: ./" in stripped or "fingoldo/py-ci-shared" in stripped:
+                continue
+            m = USES_LINE.search(stripped)
+            assert m, f"{path.name}: `{stripped}` is not a 40-char SHA with a full `# vX.Y.Z` comment"
+            found.append((path, m.group(1), m.group(2), int(m.group(3))))
+    return found
+
+
+def test_every_action_is_on_its_node24_major_and_pinned_to_one_sha_repo_wide():
+    uses = _third_party_uses()
+    assert len(uses) >= 30, "the uses: scan found too few lines to be the real population"
+    shas: dict[str, set[str]] = {}
+    for path, action, sha, major in uses:
+        assert action in NODE24_FLOOR, f"{path.name}: {action} has no reviewed Node 24 floor; check its action.yml and add one"
+        assert major >= NODE24_FLOOR[action], f"{path.name}: {action} v{major} runs on Node 20 (node24 from v{NODE24_FLOOR[action]})"
+        shas.setdefault(action, set()).add(sha)
+    assert {a: s for a, s in shas.items() if len(s) > 1} == {}, "one action pinned to different SHAs in different files"
+
+
+def test_no_job_runs_on_a_moving_ubuntu_label():
+    """ubuntu-latest moved 24.04 -> 26.04 (actions/runner-images#14748); 26.04 has no Python 3.9 build."""
+    labels = []
+    for path in WORKFLOWS:
+        for name, job in _load(path)["jobs"].items():
+            runs_on = job.get("runs-on")
+            if runs_on is None:
+                assert "uses" in job, f"{path.name}:{name} has neither runs-on nor uses"
+                continue
+            labels.append(runs_on)
+            assert "latest" not in str(runs_on), f"{path.name}:{name} runs on a moving label: {runs_on}"
+    assert "ubuntu-24.04" in labels
+    matrix = _load(REPO / ".github" / "workflows" / "self-ci.yml")["jobs"]["test"]["strategy"]["matrix"]
+    assert matrix["os"] == ["ubuntu-24.04"], "the blocking Linux legs (including 3.9) must stay on 24.04"
+
+
+def test_self_ci_previews_ubuntu_26_04_without_blocking():
+    job = _load(REPO / ".github" / "workflows" / "self-ci.yml")["jobs"]["test"]
+    previews = [leg for leg in job["strategy"]["matrix"]["include"] if leg["os"] == "ubuntu-26.04"]
+    assert previews and all(leg.get("preview") is True for leg in previews), "a 26.04 leg without preview: true would block"
+    assert all(leg["python"] != "3.9" for leg in previews), "actions/python-versions has no 3.9 build for 26.04"
+    assert job["continue-on-error"] == "${{ matrix.preview == true }}"
+    run_tests = next(s for s in job["steps"] if s.get("name") == "Run tests")
+    assert "matrix.os == 'ubuntu-24.04'" in run_tests["env"]["COVERAGE"], "coverage must come from exactly one blocking leg"
+
+
+def test_upload_codecov_forwards_plugins_and_keeps_the_stock_default():
+    action = _load(REPO / ".github" / "actions" / "upload-codecov" / "action.yml")
+    assert action["inputs"]["plugins"]["default"] == "" and action["inputs"]["plugins"]["required"] is False
+    assert "noop" in action["inputs"]["plugins"]["description"]
+    (step,) = [s for s in action["runs"]["steps"] if str(s.get("uses", "")).startswith("codecov/codecov-action@")]
+    assert step["with"]["plugins"] == "${{ inputs.plugins }}"
+    assert step["with"]["files"] == "${{ inputs.files }}"

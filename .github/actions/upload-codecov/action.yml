@@ -29,14 +29,24 @@ inputs:
       prior inline call sites) so a codecov outage never blocks CI.
     required: false
     default: "false"
+  plugins:
+    description: >-
+      Optional comma-separated codecov uploader plugins, forwarded to codecov-action's `plugins` input.
+      Empty (the default) keeps the uploader's own default plugins. A caller that already wrote its
+      coverage report should pass "noop": the default plugins include one that re-runs `coverage xml`,
+      which re-applies [tool.coverage.report] fail_under to whatever data file it finds and can fail
+      or overwrite the report the caller produced.
+    required: false
+    default: ""
 
 runs:
   using: composite
   steps:
     - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f  # v7.0.0
+      uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5  # v7.1.1
       with:
         files: ${{ inputs.files }}
         flags: ${{ inputs.flags }}
         fail_ci_if_error: ${{ inputs.fail-ci-if-error }}
         token: ${{ inputs.token }}
+        plugins: ${{ inputs.plugins }}
