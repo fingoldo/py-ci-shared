@@ -2,6 +2,15 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.20.0
+
+- New gate `ci_install_covers_conftest`: a workflow job that runs pytest must install every third-party package its
+  `conftest.py` files import at collection (module level and session hooks), read statically from the job's pip/uv
+  installs, `-r` files, `pyproject.toml` extras, `uv.lock`, local composite actions and shell scripts, with
+  `sys.version_info` guards and `python_version` markers evaluated per matrix Python. It flags pyutilz's
+  `numba-coverage.yml` before e6db9af (no py-ci-shared for `tests/conftest.py`), the class behind three collection
+  failures in four days.
+
 ## 1.19.0
 
 - `unresolved_imports` resolves `from X import *` exactly instead of treating the star-importing module as unknowable: the exported set is X's literal `__all__` (else its public names), followed through chains. A name a facade built on `from .core import *` does not carry (mlframe: `from mlframe.metrics import show_plots_unless_agg`, which raised ImportError at run time) is now reported. A star from outside the parsed roots, or from a module with `__getattr__`/`globals()` tricks, stays unjudged.

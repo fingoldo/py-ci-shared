@@ -123,6 +123,13 @@ since = "1.4.0"
 summary = "Assert that no test reads or writes the on-disk state a real run of the program uses"
 
 [[gate]]
+name = "ci_install_covers_conftest"
+kind = "gate"
+entries = ["assert_ci_install_covers_conftest"]
+since = "1.20.0"
+summary = "Every CI job that runs pytest installs the third-party packages its conftest.py files import at collection"
+
+[[gate]]
 name = "ci_test_dir_reachability"
 kind = "gate"
 entries = ["assert_every_test_subdir_reachable"]

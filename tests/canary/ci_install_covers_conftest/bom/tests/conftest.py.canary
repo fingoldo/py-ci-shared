@@ -1,0 +1,10 @@
+﻿import sys
+
+import numpy as np  # noqa: F401
+
+
+def pytest_addoption(parser):
+    if sys.version_info >= (3, 9):
+        from py_ci_shared.code_audit_meta import register_refresh_option
+
+        register_refresh_option(parser)

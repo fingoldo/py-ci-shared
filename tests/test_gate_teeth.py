@@ -221,6 +221,11 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("ci_workflow_timeout_gate", lambda d: _gate("ci_workflow_timeout_gate").assert_all_jobs_have_timeout(d / "seed.yml"), token="seed_job"),
         Canary(
+            "ci_install_covers_conftest",
+            lambda d: _gate("ci_install_covers_conftest").assert_ci_install_covers_conftest(d),
+            token="py-ci-shared",  # pyutilz's numba-coverage.yml before e6db9af: [dev] installed, requirements-dev.txt not
+        ),
+        Canary(
             "git_dependency_pins",
             lambda d: _gate("git_dependency_pins").assert_all_git_dependencies_pinned(d / "pyproject.toml"),
             token="main",  # the finding is the unpinned ref

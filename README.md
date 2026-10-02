@@ -144,6 +144,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`changelog_promise_parity`](src/py_ci_shared/changelog_promise_parity.py) | gate | 1.3.1 | `assert_changelog_bullets_satisfy_pattern` | Shared checks for the "a CHANGELOG bullet promises something, does the promise ever get kept" consistency pattern |
 | [`checkout_resolution`](src/py_ci_shared/checkout_resolution.py) | gate | 1.7.0 | `assert_modules_resolve_to_checkout` (+1) | The suite examines the code in THIS checkout, not a copy installed somewhere else |
 | [`checkpoint_isolation`](src/py_ci_shared/checkpoint_isolation.py) | gate | 1.4.0 | `assert_outside` | Assert that no test reads or writes the on-disk state a real run of the program uses |
+| [`ci_install_covers_conftest`](src/py_ci_shared/ci_install_covers_conftest.py) | gate | 1.20.0 | `assert_ci_install_covers_conftest` | Every CI job that runs pytest installs the third-party packages its conftest.py files import at collection |
 | [`ci_test_dir_reachability`](src/py_ci_shared/ci_test_dir_reachability.py) | gate | 1.3.1 | `assert_every_test_subdir_reachable` | Every subdirectory under a consumer repo's ``tests/`` must be reachable by at least one CI job -- or be explicitly whitelisted as intentionally |
 | [`ci_workflow_gate`](src/py_ci_shared/ci_workflow_gate.py) | gate | 1.3.0 | `assert_continue_on_error_is_reviewed` | Every ``continue-on-error |
 | [`ci_workflow_paths`](src/py_ci_shared/ci_workflow_paths.py) | gate | 1.3.6 | `assert_workflow_paths_exist` | A CI workflow does not name paths that do not exist, and declares its permissions |
@@ -549,6 +550,31 @@ def test_ci_continue_on_error_steps_are_reviewed():
     assert_continue_on_error_is_reviewed(
         Path(__file__).resolve().parents[2] / ".github" / "workflows" / "ci.yml",
         reviewed_advisory_steps={"Run ruff", "Run black --check", "Run bandit security scan", "Run mypy"},
+    )
+```
+
+## CI installs what conftest imports (`ci_install_covers_conftest`)
+
+Fails when a workflow job runs pytest without installing a third-party package that a `conftest.py` it loads imports at
+collection: at module level or inside a session hook such as `pytest_addoption`, outside a `try/except ImportError` and
+`if TYPE_CHECKING`. Such a job dies with `ModuleNotFoundError` before any test runs (pyutilz's `numba-coverage.yml`
+installed `-e ".[...,dev]"` without the `-r requirements-dev.txt` that carries the py-ci-shared pin, and was red for five
+days). Static: it reads `.github/workflows/*.yml`, local composite actions, py-ci-shared's `install-pyutilz` action and
+local shell scripts; `pip`/`uv pip install` names, `-r` files, `--group`, `-e .[extras]` (expanded from `pyproject.toml`),
+`name @ git+...`; `uv sync`/`uv export`/`uv run` count every package in `uv.lock`. `if sys.version_info` guards in the
+conftest and `; python_version` markers on installs are evaluated against the job's `setup-python` versions (matrix
+included). Findings are `ci-install-missing`, `ci-install-unmapped` (no distribution known for an import: add an alias)
+and `ci-install-unevaluated` (something is missing and an install form could not be read: acknowledge it per job).
+
+```python
+from pathlib import Path
+from py_ci_shared.ci_install_covers_conftest import assert_ci_install_covers_conftest
+
+def test_ci_jobs_install_what_conftest_imports():
+    assert_ci_install_covers_conftest(
+        Path(__file__).resolve().parents[2],
+        aliases={"mycorp_utils": "mycorp-utils"},                   # import name -> distribution, when they differ
+        acknowledge={"gpu.yml::gpu-tests": "CUDA extra chosen at run time; installs py-ci-shared via the image"},
     )
 ```
 
