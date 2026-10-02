@@ -88,11 +88,11 @@ def _is_dynamic_module(tree: ast.Module) -> bool:
 
 def _star_import_sources(tree: ast.Module, importing: str, *, is_package: bool) -> list[str | None]:
     """The dotted module of every module-level ``from X import *`` (None when a relative import cannot be resolved)."""
-    out: list[str | None] = []
-    for node in _module_level_nodes(tree.body):
-        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
-            out.append(_resolve_relative(importing, node, is_package=is_package))
-    return out
+    return [
+        _resolve_relative(importing, node, is_package=is_package)
+        for node in _module_level_nodes(tree.body)
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names)
+    ]
 
 
 def _literal_dunder_all(tree: ast.Module) -> set[str] | None:
