@@ -24,6 +24,10 @@ Allowlist: ini ``leak_guard_allow`` (one entry per line) or ``@pytest.mark.leak_
 ``thread:<glob>`` (thread name), ``process:<glob>`` (process name or command line), ``socket:<glob>`` (``laddr->raddr``),
 ``env:<glob>`` (variable name) or ``logging``. ``PYTEST_*`` and ``COV_CORE_*`` variables are always allowed.
 ``@pytest.mark.no_leak_guard`` skips a test; ini ``leak_guard_checks`` narrows the checks.
+
+``streams``, ``cwd``, ``sys_path`` and ``warnings`` (swapped ``sys.stdout``/``stderr``/``stdin``, a changed working
+directory, ``sys.path`` and warning filters) live in :mod:`py_ci_shared.resource_leak_checks`, snapshotted before setup
+and restored after the report like ``env``.
 """
 
 from __future__ import annotations
@@ -42,9 +46,11 @@ from typing import Any, Optional
 
 import pytest
 
+from .resource_leak_checks import STATE_CHECKS, StateSnapshot, restore_state, state_leaks, take_state
+
 __all__ = ["ALL_CHECKS", "Snapshot", "leaks_between", "take_snapshot"]
 
-ALL_CHECKS = ("processes", "threads", "sockets", "logging", "env")
+ALL_CHECKS = ("processes", "threads", "sockets", "logging", "env", *STATE_CHECKS)
 _ALWAYS_ALLOWED_ENV = ("PYTEST_*", "COV_CORE_*")
 #: Modules pytest itself imports lazily during a test's setup and call; they configure nothing.
 _RUNNER_MODULES = frozenset({"pytest", "_pytest", "pluggy", "py", "iniconfig", "packaging", "exceptiongroup", "tomli", "colorama"})
@@ -54,6 +60,7 @@ _THREAD_GRACE_S = 0.5
 _PROCESS_GRACE_S = 1.0
 _BEFORE = pytest.StashKey["Snapshot"]()
 _AFTER_SETUP = pytest.StashKey["Snapshot"]()
+_STATE = pytest.StashKey[StateSnapshot]()
 
 
 @dataclass
@@ -253,7 +260,12 @@ def _restore(before: Snapshot) -> None:
 
 
 def pytest_addoption(parser: Any) -> None:
-    parser.addini("leak_guard_allow", "resource_leak_guard allowlist: kind:glob per line (thread/process/socket/env/logging)", type="linelist", default=[])
+    parser.addini(
+        "leak_guard_allow",
+        "resource_leak_guard allowlist: kind:glob per line (thread/process/socket/env/logging/stream/cwd/sys_path/warnings)",
+        type="linelist",
+        default=[],
+    )
     parser.addini("leak_guard_checks", "resource_leak_guard checks to run (default: all)", type="args", default=list(ALL_CHECKS))
     parser.addini("leak_guard_restore", "restore leaked env vars and logging.disable after reporting", type="bool", default=True)
 
@@ -289,6 +301,7 @@ def _allow(item: Any) -> list[str]:
 def pytest_runtest_setup(item: Any) -> None:
     if item.get_closest_marker("no_leak_guard") is None:
         item.stash[_BEFORE] = take_snapshot([c for c in _checks(item) if c in ("logging", "env")])
+        item.stash[_STATE] = take_state([c for c in _checks(item) if c in STATE_CHECKS])
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -305,9 +318,11 @@ def pytest_runtest_teardown(item: Any, nextitem: Any) -> None:
         return
     before = item.stash[_BEFORE]
     after_setup = item.stash.get(_AFTER_SETUP, Snapshot())
-    leaks = leaks_between(after_setup, before, allow=_allow(item))
+    state = item.stash.get(_STATE, StateSnapshot())
+    leaks = leaks_between(after_setup, before, allow=_allow(item)) + state_leaks(state, allow=_allow(item))
     if leaks and item.config.getini("leak_guard_restore"):
         _restore(before)
+        restore_state(state)
     if leaks:
         raise pytest.fail.Exception(
             f"{item.nodeid} leaked resources past its teardown:\n    " + "\n    ".join(leaks) + "\n"

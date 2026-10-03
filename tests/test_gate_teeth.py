@@ -41,6 +41,9 @@ def _gate(name: str):
     return importlib.import_module(f"py_ci_shared.{name}")
 
 
+_FACT_DAY = __import__("datetime").date(2026, 10, 3)  # external_fact_tables canary: its clean citation is dated 2026-09-26
+
+
 @dataclass(frozen=True)
 class Canary:
     """How to run one gate over a materialized canary directory ``d``."""
@@ -281,6 +284,15 @@ CANARIES: dict[str, Canary] = {
         Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text"),
         Canary("committed_line_endings", _committed_line_endings_canary, token="seed.txt", parses=False),  # bytes, not syntax
         Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0"),
+        Canary(
+            "consumer_import_census",
+            lambda d: _gate("consumer_import_census").assert_consumer_imports_resolve(d / "lib", "seedlib", [("app", d / "app")], use_git=False),
+        ),
+        Canary(
+            "external_fact_tables",
+            lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(d, {"seed.py:SEED_PRICING": 45}, today=_FACT_DAY),
+        ),
+        Canary("vendored_internal_imports", lambda d: _gate("vendored_internal_imports").assert_no_vendored_internal_imports(d, use_git=False)),
     ]
 }
 
@@ -295,7 +307,9 @@ EXEMPT: dict[str, str] = {
     "changelog_promise_parity": "regex over a CHANGELOG with caller-supplied trigger patterns",
     "checkout_resolution": "imports modules / runs pytest in a copy; runtime check, not a scanner",
     "checkpoint_isolation": "single path predicate, no corpus",
+    "closed_audit_rounds": "compares audit files across a git revision range; needs git history",
     "code_audit_meta": "wraps pyutilz code_audit checks behind a baseline; the checks live in pyutilz",
+    "commit_metadata": "checks commit messages over a git revision range or a commit-msg file; needs git history",
     "function_complexity": "a compatibility API over complexity_ratchet, whose canary seeds the same measurement",
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
@@ -325,6 +339,7 @@ EXEMPT: dict[str, str] = {
     "prose_numeric_claims": "takes caller-built claims; no corpus",
     "pydantic_field_bounds": "needs live pydantic model classes as input",
     "randomly_seed_guard": "runtime helper called from pytest_configure to wrap pytest-randomly's reseeders; reads no corpus",
+    "resource_leak_checks": "live interpreter-state checks run by the resource_leak_guard plugin; covered by test_resource_leak_checks.py",
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",
     "repo_hygiene": "tracked-file and layout hygiene; needs a git work tree",
     "source_text_ban": "library of banned-substring helpers configured by the caller",
@@ -337,6 +352,7 @@ EXEMPT: dict[str, str] = {
     "tracker_summary_parity": "Markdown tracker bookkeeping, not a code scanner",
     "version_consistency": "compares version strings across manifests; no violation shape in code",
     "version_tag_currency": "compares a manifest version against git tags; needs git history",
+    "workflow_runner_labels": "reads workflow YAML and the dependabot config of a repo; CI configuration, covered by test_workflow_runner_labels.py",
 }
 
 

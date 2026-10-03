@@ -1,0 +1,3 @@
+from seedlib.core import seed_gone
+
+print(seed_gone)

@@ -178,6 +178,7 @@ exclude = [
     "tests/test_statement_compilation.py",
     "tests/test_pytest_addopts_path_runs.py",
     "tests/test_resource_leak_guard.py",
+    "tests/test_resource_leak_checks.py",
 ]
 
 [tool.py_ci_shared.gates.entry_points_resolvable]

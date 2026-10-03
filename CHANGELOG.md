@@ -41,6 +41,14 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   tests that import a stdlib module; the header says when psutil is missing. `version_tag_currency` no longer takes
   tag `10.2.3` for version `0.2.3`, and counts only releases of the pin's own spelling as "behind". The CLI escapes
   characters the console cannot print instead of crashing, and `run naive-utcnow` finds `naive_utcnow`.
+- **Behaviour change** (audit 2026-10-03, gaps G-6..G-14): `resource_leak_guard` also checks `streams`, `cwd`,
+  `sys_path` and `warnings` (module `resource_leak_checks`); a test that leaves `sys.stdout` swapped, the working
+  directory changed, `sys.path` edited or a warning filter added now errors at teardown. Restore it in the test, or
+  allow it (`stream:<name>`, `cwd`, `sys_path:<glob>`, `warnings`), or narrow `leak_guard_checks`. New gates
+  `vendored_internal_imports`, `consumer_import_census`, `external_fact_tables`, `commit_metadata` (forbidden trailers
+  configurable, none by default), `closed_audit_rounds`, `workflow_runner_labels` (`--fix`), and the
+  `required_check_contexts` CLI. `assert_no_stale_todos` warns by default 7 days before a comment goes stale
+  (`warn_days=0` restores the old silence; the advisory never fails a run).
 
 - New gate `ci_install_covers_conftest`: a workflow job that runs pytest must install every third-party package its
   `conftest.py` files import at collection (module level and session hooks), read statically from the job's pip/uv

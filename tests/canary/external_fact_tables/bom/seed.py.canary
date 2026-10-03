@@ -1,0 +1,5 @@
+﻿# Pricing per 1M tokens (USD): (input, output).
+SEED_PRICING = {
+    "seed-model": (1.00, 4.00),
+    "seed-model-mini": (0.10, 0.40),
+}

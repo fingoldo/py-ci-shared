@@ -372,9 +372,13 @@ class TestEarlyWarning:
         assert len(out) == 1
         assert [w.category for w in seen] == [sca.StaleCommentAdvisory]
 
-    def test_default_warn_days_zero_is_silent(self, tmp_path, recwarn):
+    def test_the_early_warning_is_on_by_default_and_warn_days_zero_is_silent(self, tmp_path, recwarn):
+        """G-12 (audit 2026-10-03): seven days of warning by default, so a calendar day is no surprise."""
         repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
-        assert assert_no_stale_todos(repo, ["lib"], max_age_days=30, now=_T0 + 25 * _DAY) == []
+        assert len(assert_no_stale_todos(repo, ["lib"], max_age_days=30, now=_T0 + 25 * _DAY)) == 1
+        assert [w for w in recwarn if "early warning" in str(w.message)]
+        recwarn.clear()
+        assert assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=0, now=_T0 + 25 * _DAY) == []
         assert not [w for w in recwarn if "early warning" in str(w.message)]
 
     def test_stale_still_fails_with_warn_days(self, tmp_path):

@@ -166,13 +166,16 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_paths`](src/py_ci_shared/ci_workflow_paths.py) | gate | 1.3.6 | `assert_workflow_paths_exist` | A CI workflow does not name paths that do not exist, and declares its permissions |
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
+| [`closed_audit_rounds`](src/py_ci_shared/closed_audit_rounds.py) | gate | 1.20.0 | `assert_closed_audit_rounds_append_only` | Files of a closed audit round (``audits/implemented/``) only gain lines over a revision range; edits need an ``Audit-Edit:`` trailer |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
+| [`commit_metadata`](src/py_ci_shared/commit_metadata.py) | gate | 1.20.0 | `assert_commit_metadata` | No commit subject starting with a BOM or invisible character, and no trailer from the repo's forbidden list (empty by default) |
 | [`committed_line_endings`](src/py_ci_shared/committed_line_endings.py) | gate | 1.20.0 | `assert_committed_line_endings` | Committed (index) blobs with bare CR, mixed CRLF/LF or CRLF line endings |
 | [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.18.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
 | [`conceded_defect_pins`](src/py_ci_shared/conceded_defect_pins.py) | library | 1.17.0 |  | Tests that say the behaviour is wrong and then pin it exactly |
 | [`config_call_site_parity`](src/py_ci_shared/config_call_site_parity.py) | gate | 1.3.0 | `assert_every_cfg_get_call_resolves_to_a_schema_field` (+4) | Shared checks for the "``cfg().get(section, key, default, type_)`` call-site vs Pydantic schema" consistency pattern |
 | [`config_drift_check`](src/py_ci_shared/config_drift_check.py) | cli | 1.1.1 | `main` | Reports [tool.ruff]/[tool.mypy] config divergence across consumer repos |
 | [`config_getattr_default_parity`](src/py_ci_shared/config_getattr_default_parity.py) | gate | 1.17.0 | `assert_getattr_defaults_match_schema` | ``getattr(cfg, "field", <literal>)`` whose literal disagrees with the field's own default |
+| [`consumer_import_census`](src/py_ci_shared/consumer_import_census.py) | gate | 1.20.0 | `assert_consumer_imports_resolve` | A library checkout still resolves every name its consumer repos import from it, honouring its module alias map |
 | [`content_hash_version_bump_gate`](src/py_ci_shared/content_hash_version_bump_gate.py) | gate | 1.3.1 | `assert_version_bumped_with_content` | Shared harness for the "N files feed a version/cache-key constant that must be bumped by hand whenever those files change" meta-test pattern |
 | [`corpus_drift`](src/py_ci_shared/corpus_drift.py) | cli | 1.18.0 | `main` | Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them |
 | [`coverage_config_parity`](src/py_ci_shared/coverage_config_parity.py) | gate | 1.17.0 | `assert_coverage_config_parity` | Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see |
@@ -193,6 +196,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`env_example_round_trip`](src/py_ci_shared/env_example_round_trip.py) | gate | 1.17.0 | `assert_env_example_loads` | Every value a `.env.example` documents can actually be loaded by the settings class |
 | [`env_flag_parsing`](src/py_ci_shared/env_flag_parsing.py) | gate | 1.17.0 | `assert_env_flags_use_one_parser` | Boolean environment flags read by hand, each with its own idea of what "on" means |
 | [`epsilon_padded_denominators`](src/py_ci_shared/epsilon_padded_denominators.py) | gate | 1.4.0 | `assert_no_epsilon_padded_power_denominators` | An additive epsilon must not guard a denominator whose magnitude falls off geometrically |
+| [`external_fact_tables`](src/py_ci_shared/external_fact_tables.py) | gate | 1.20.0 | `assert_external_fact_tables_current` | Declared vendor fact tables (prices, limits) cite a source URL and a check date younger than their limit |
 | [`fail_message_quality`](src/py_ci_shared/fail_message_quality.py) | gate | 1.12.0 | `assert_fail_messages_actionable` | Every ``pytest.fail`` message in a meta-test directory tells the reviewer what to do |
 | [`fail_open_handlers`](src/py_ci_shared/fail_open_handlers.py) | gate | 1.17.0 | `assert_no_new_fail_open_handlers` | Fail-open exception handlers in gate code |
 | [`format_warn`](src/py_ci_shared/format_warn.py) | cli | 1.0.0 | `main` | Warn-only formatting / lint check for the pre-commit hook |
@@ -255,6 +259,8 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`readme_env_var_parity`](src/py_ci_shared/readme_env_var_parity.py) | gate | 1.3.0 | `assert_readme_documents_every_env_var` (+1) | Every environment variable production code reads via ``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's |
 | [`reiterated_iterable_params`](src/py_ci_shared/reiterated_iterable_params.py) | gate | 1.17.0 | `assert_no_reiterated_iterable_params` | A parameter typed ``Iterable`` (or ``Iterator``/``Generator``) consumed more than once |
 | [`repo_hygiene`](src/py_ci_shared/repo_hygiene.py) | gate | 1.3.6 | `assert_repo_hygiene` | The repository tracks nothing it generates, and carries the files its gates need |
+| [`required_check_contexts`](src/py_ci_shared/required_check_contexts.py) | cli | 1.20.0 | `main` | Consumer branch protection requires only check contexts their recent commits produce; unreadable protection is reported loudly |
+| [`resource_leak_checks`](src/py_ci_shared/resource_leak_checks.py) | library | 1.20.0 |  | Standard-stream, working-directory, sys.path and warning-filter leak checks that resource_leak_guard runs per test |
 | [`resource_leak_guard`](src/py_ci_shared/resource_leak_guard.py) | library | 1.17.0 |  | Opt-in pytest plugin: a test that leaks a child process, a thread, a socket, ``logging.disable`` or an env var errors at teardown |
 | [`resource_release_paths`](src/py_ci_shared/resource_release_paths.py) | gate | 1.4.0 | `assert_released_on_every_path` | A resource a module OWNS is released on the failure path too |
 | [`rollback_then_continue`](src/py_ci_shared/rollback_then_continue.py) | gate | 1.17.0 | `assert_no_rollback_then_continue` | ``rollback()`` in a loop's ``except`` handler, then on to the next item as if only that item failed |
@@ -288,9 +294,11 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`unresolved_imports`](src/py_ci_shared/unresolved_imports.py) | gate | 1.4.0 | `assert_all_from_imports_resolve` | Every ``from X import Y`` must name something X actually defines |
 | [`vacuous_loop_assertions`](src/py_ci_shared/vacuous_loop_assertions.py) | gate | 1.17.0 | `assert_no_new_floorless_loop` | A ``for`` loop whose body is only conditional assertions, with nothing elsewhere asserting the loop actually ran, is a test that passes on zero |
 | [`value_bearing_asserts`](src/py_ci_shared/value_bearing_asserts.py) | gate | 1.12.0 | `assert_no_value_bearing_asserts` | No guard that checks a VALUE may ride on an ``assert`` in production code |
+| [`vendored_internal_imports`](src/py_ci_shared/vendored_internal_imports.py) | gate | 1.20.0 | `assert_no_vendored_internal_imports` | No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback |
 | [`version_consistency`](src/py_ci_shared/version_consistency.py) | gate | 1.8.0 | `assert_versions_agree` | A package reports one version wherever it states one |
 | [`version_tag_currency`](src/py_ci_shared/version_tag_currency.py) | gate | 1.3.6 | `assert_version_is_tagged` | A package's declared version, its tags and its consumers' pins agree |
 | [`vulture_warn`](src/py_ci_shared/vulture_warn.py) | cli | 1.0.0 | `main` | Warn-only dead-code check for the pre-commit hook |
+| [`workflow_runner_labels`](src/py_ci_shared/workflow_runner_labels.py) | gate | 1.20.0 | `assert_workflow_runner_labels_pinned` | Workflows use no moving ``*-latest`` runner label, and pinned actions have a github-actions update channel; ``--fix`` rewrites both |
 | [`worktree_hygiene`](src/py_ci_shared/worktree_hygiene.py) | cli | 1.17.0 | `main` | Which worktrees, branches and leftover directories can go, and which still hold work |
 
 <!-- gate-catalogue:end -->

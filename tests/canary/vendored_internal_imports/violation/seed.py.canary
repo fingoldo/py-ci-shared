@@ -1,0 +1,5 @@
+from seedlib.externals import cloudpickle
+
+
+def seed_dump(obj):
+    return cloudpickle.dumps(obj)
