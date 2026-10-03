@@ -136,5 +136,9 @@ class TestAuditRegressions:
 
 def test_black_version_is_the_one_the_shared_workflow_runs():
     workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "black-filtered.yml").read_text(encoding="utf-8")
-    pins = re.findall(r"black==([0-9][0-9.]*)", workflow)
-    assert pins and set(pins) == {BLACK_VERSION}, f"black-filtered.yml runs black {sorted(set(pins))}, tool_versions says {BLACK_VERSION}"
+    pins = set(re.findall(r"black==([0-9][0-9.]*)", workflow))
+    reads_the_constant = "from py_ci_shared.tool_versions import BLACK_VERSION" in workflow
+    # The workflow either reads BLACK_VERSION from the installed py-ci-shared (one source of truth) or spells a pin that equals it;
+    # a hard-coded pin that differs is the drift this test exists for.
+    assert reads_the_constant or pins == {BLACK_VERSION}, f"black-filtered.yml runs black {sorted(pins)}, tool_versions says {BLACK_VERSION}"
+    assert pins <= {BLACK_VERSION}, f"black-filtered.yml also pins black {sorted(pins - {BLACK_VERSION})}, tool_versions says {BLACK_VERSION}"

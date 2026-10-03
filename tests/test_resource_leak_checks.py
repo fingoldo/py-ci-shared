@@ -56,20 +56,23 @@ class TestDirect:
             sys.stderr = original
 
     def test_cwd_sys_path_and_warnings(self, tmp_path: Path) -> None:
-        before = take_state()
         cwd, path, filters = os.getcwd(), list(sys.path), list(warnings.filters)
         try:
+            # A controlled sys.path: a real one can hold the same entry twice (CI does), and then removing one copy leaves it
+            # in the list, so nothing would be reported as removed.
+            sys.path[:] = ["seed-one", "seed-two", "seed-three"]
+            before = take_state()
             os.chdir(tmp_path)
             sys.path.insert(0, "seed-entry")
-            sys.path.remove(path[-1])
+            sys.path.remove("seed-three")
             warnings.simplefilter("ignore")
             leaks = state_leaks(before)
             assert f"working directory changed to {str(tmp_path)!r} (was {cwd!r})" in leaks
-            assert "sys.path entry 'seed-entry' was added" in leaks and f"sys.path entry {path[-1]!r} was removed" in leaks
+            assert "sys.path entry 'seed-entry' was added" in leaks and "sys.path entry 'seed-three' was removed" in leaks
             assert any(line.startswith("warnings.filters changed") for line in leaks)
             assert state_leaks(before, allow=["cwd", "sys_path", "warnings"]) == []
             restore_state(before)
-            assert (os.getcwd(), sys.path, list(warnings.filters)) == (cwd, path, filters)
+            assert (os.getcwd(), sys.path, list(warnings.filters)) == (cwd, ["seed-one", "seed-two", "seed-three"], filters)
         finally:
             os.chdir(cwd)
             sys.path[:] = path
