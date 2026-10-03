@@ -716,3 +716,79 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `NEW-48` | nondiscriminating_shapes: shapes its pyutilz counterpart catches |
 | **WON'T FIX** | Med | `NEW-49` | inert_patch_targets: shapes its pyutilz counterpart catches |
 | **RESOLVED** | Low | `CANARY-58` | complexity_ratchet caught a new over-limit function in config_getattr_default_parity |
+
+## Round 2026-10-03 -- full audit: new code, core, workflows/docs/tests, gap analysis
+
+69 findings. Files: `10_new_code` (N), `20_core_infra` (K), `30_workflows_docs_tests` (WF; W belongs to 2026-09-24), `40_gaps` (G, proposals). Dispositions are under each finding and in `dispositions/`.
+
+| Status | Sev | Id | Finding |
+|---|---|---|---|
+| **RESOLVED** | High | `N-1` | worktree_hygiene: an untracked nested git repository is silently counted as saved |
+| **RESOLVED** | High | `N-2` | function_complexity: unparsable files are dropped silently (fail-open), unlike complexity_ratchet |
+| **RESOLVED** | High | `N-3` | unresolved_imports: ModuleIndex mutates the shared tree_memo set, so later indexes see stale names |
+| **RESOLVED** | Med | `N-4` | ci_install_covers_conftest: `dynamic = ["dependencies"]` is read as "no dependencies" (false ci-install-missing) |
+| **RESOLVED** | Med | `N-5` | ci_install_covers_conftest: the finding's rule (and baseline key) depends on the interpreter running the gate |
+| **RESOLVED** | Med | `N-6` | ci_health: a billing-blocked newest run hides a code failure that has been red for weeks |
+| **RESOLVED** | Med | `N-7` | ci_health `--only` with a name that matches no consumer exits 0 with an empty report |
+| **RESOLVED** | Med | `N-8` | adoption_matrix: a pin to a tag or SHA that does not exist passes with `--resolve-in` |
+| **RESOLVED** | Med | `N-9` | corpus_drift.compare: a repo missing from tonight's snapshot, and a finder that errors from its first night, never fail |
+| **RESOLVED** | Med | `N-10` | standard_stream_restore: any unrelated `is` comparison exempts the function; aliases and setattr are invisible |
+| **RESOLVED** | Med | `N-11` | standard_stream_restore: false positives on real consumers (process-lifetime wrappers, guard via a loop variable) |
+| **RESOLVED** | Med | `N-12` | nondiscriminating_shapes: `"exists"`/`"supported"` env-probe words exempt data-decided late skips; any other assert disarms median-roundtrip |
+| **RESOLVED** | Med | `N-13` | Version and release state drift: HEAD declares 1.19.0 (already tagged) while CHANGELOG and registry say 1.20.0; the guard test passes |
+| **RESOLVED** | Med | `N-14` | release.yml: no check that the pushed tag is the newest release before moving `v1` |
+| **RESOLVED** | Low | `N-15` | _core.node_index keeps every tree it ever indexed alive (unbounded growth) |
+| **RESOLVED** | Low | `N-16` | randomly_seed_guard: a reseeder that already carries `__wrapped__` is never bounded |
+| **RESOLVED** | Low | `N-17` | nondiscriminating_shapes: an unknown `extra_shapes` slug is silently ignored; `nonempty-only-assert` misses `!= 0` and bare `len()` |
+| **RESOLVED** | Low | `N-18` | config_getattr_default_parity: a declared pydantic field is reported as "undeclared" when dataclass_classes is given; a non-dataclass is silently ignored |
+| **RESOLVED** | Low | `N-19` | Baseline refresh on a corrupt baseline says "does not exist" |
+| **RESOLVED** | Low | `N-20` | ci_install_covers_conftest: `pytest_plugins` and `-p` plugins are not required; non-recognised runners pass silently |
+| **RESOLVED** | Low | `N-21` | stale_comment_age early warning fails the test under `-W error` |
+| **RESOLVED** | Low | `N-22` | Docs drift: new options not in README |
+| **RESOLVED** | Med | `K-1` | `py-ci-shared run` crashes on a cp1251 console and loses the finding text |
+| **RESOLVED** | Med | `K-2` | The plugin reads `[tool.py_ci_shared]` from pytest's rootdir, the CLI from the nearest pyproject; gates vanish silently |
+| **RESOLVED** | Med | `K-3` | Glob kwargs return nothing when the repo path contains `[`, `]`, `*` or `?` |
+| **RESOLVED** | Med | `K-4` | `iter_files` silently changes corpus definition when `git ls-files` fails or times out |
+| **RESOLVED** | Med | `K-5` | `resource_leak_guard` misses env leaks: the first test of every session without psutil, and on 3.9 any test that imports a stdlib module |
+| **RESOLVED** | Low | `K-6` | `version_tag_currency` accepts tag `10.2.3` as the tag for declared version `0.2.3` |
+| **RESOLVED** | Low | `K-7` | `[tool.py_ci_shared]` shapes are under-validated: a string `enable`, duplicate names and a non-numeric `budget_s` |
+| **RESOLVED** | Low | `K-8` | `scan_python` scans one file twice when it is reached through a relative and an absolute spelling |
+| **RESOLVED** | Low | `K-9` | `node_index` pins every superseded tree; the "bounded by corpus size" promise does not hold |
+| **RESOLVED** | Low | `K-10` | A malformed baseline count raises `ValueError` instead of `BaselineError`, and negative counts are accepted |
+| **RESOLVED** | Low | `K-11` | Configuration ERROR results also print a spurious "over its 0s budget" line |
+| **RESOLVED** | Low | `K-12` | `run`/`refresh` reject dashed gate names that `tool` and the plugin accept |
+| **RESOLVED** | Low | `K-13` | `subprocess.run(text=True)` without `encoding` loses or garbles git output on a non-UTF-8 Windows locale |
+| **RESOLVED** | Low | `K-14` | Eight private git runners with divergent policies belong in `_core` |
+| **RESOLVED** | Low | `K-15` | `allow_unparsed` and floor naming are inconsistent across gates, against the repo's own rule |
+| **RESOLVED** | Low | `K-16` | `find_stale_pin` counts prereleases and unrelated tags as releases behind |
+| **RESOLVED** | Low | `K-17` | No written compatibility promise for the moving `@v1` tag, although v1.x has changed behaviour |
+| **RESOLVED** | High | `WF-1` | lint-advisory's pip-audit audits pip-audit's own venv, never the consumer project |
+| **RESOLVED** | Med | `WF-2` | release.yml's publish job is not re-runnable; a failed v1 move leaves "Latest" published and v1 stale |
+| **RESOLVED** | Med | `WF-3` | Version not bumped after v1.19.0 shipped; registry `since` and CHANGELOG say 1.20.0, and no test catches it |
+| **RESOLVED** | Med | `WF-4` | Reusable workflows silently fall back to master when the pinned ref cannot be fetched |
+| **RESOLVED** | Med | `WF-5` | self-ci never exercises the consumer fetch path of the reusable workflows |
+| **RESOLVED** | Med | `WF-6` | release.yml does not require the tagged commit's CI to be green, and runs 3 test files, not "the test suite" |
+| **RESOLVED** | Med | `WF-7` | No documented rollback for a bad release on the moving v1 tag |
+| **RESOLVED** | Med | `WF-8` | README states the wrong config-fetch mechanism (`github.job_workflow_sha`) |
+| **RESOLVED** | Low | `WF-9` | RELEASE_TOKEN is not behind a protected environment |
+| **RESOLVED** | Low | `WF-10` | README stale or wrong facts |
+| **RESOLVED** | Low | `WF-11` | EXEMPT entries whose subject can be seeded as files |
+| **RESOLVED** | Med | `WF-12` | Timeout-bound warm-worker tests fail and crash xdist workers under load |
+| **WON'T FIX** | Low | `WF-13` | Slow tests: top offenders |
+| **RESOLVED** | Low | `WF-14` | Workflow hygiene leftovers |
+| **RESOLVED** | Low | `WF-15` | Own-suite tests whose assertion loops can run zero times |
+| **NOT A DEFECT** | Low | `WF-16` | The consumer doctest symptom is not a stdout leak; nothing in py-ci-shared swaps sys.stdout |
+| **RESOLVED** | High | `G-1` | Commits that never went through the hooks: a CI check over the pushed range |
+| **RESOLVED** | High | `G-2` | A sibling dependency floor in pyproject vs the sibling revision CI actually installs |
+| **RESOLVED** | High | `G-3` | optional_truthiness misses optionals carried on `self` and forwarded to helpers |
+| **RESOLVED** | Med | `G-4` | Stdlib API newer than `requires-python` (guard-aware vermin) |
+| **RESOLVED** | Med | `G-5` | Line endings of the COMMITTED blobs: bare CR, mixed, CRLF in an LF repo |
+| **RESOLVED** | Med | `G-6` | Library repos: every name a consumer imports still resolves |
+| **RESOLVED** | Med | `G-7` | resource_leak_guard: check the standard streams, cwd, sys.path and warning filters; and get it adopted |
+| **RESOLVED** | Med | `G-8` | Imports of another package's vendored internals |
+| **RESOLVED** | Med | `G-9` | External-fact tables carry a source and a dated check, and go stale visibly |
+| **RESOLVED** | Low | `G-10` | Required status-check contexts that no workflow produces |
+| **RESOLVED** | Low | `G-11` | Consumer workflows: moving runner labels and no update channel for actions |
+| **RESOLVED** | Med | `G-12` | stale_comment_age: make the early warning the default |
+| **RESOLVED** | Low | `G-13` | Commit metadata policy: forbidden trailers and BOM-prefixed subjects |
+| **RESOLVED** | Low | `G-14` | Closed audit rounds are append-only |

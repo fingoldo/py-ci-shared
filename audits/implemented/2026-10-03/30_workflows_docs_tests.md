@@ -27,6 +27,8 @@ Tool runs:
 
 ### WF-1 (High) -- lint-advisory's pip-audit audits pip-audit's own venv, never the consumer project
 
+**Disposition:** RESOLVED -- lint-advisory.yml "pip-audit dependency vulnerability scan" now audits the calling project (`.`, or `-r` per file of the new `pip-audit-requirements` input). Reproduced on a scratch project pinning `requests==2.0.0`: the old command audited pip-audit's own 28-package venv ("No known vulnerabilities"); the new step script, run as-is, reports `requests 2.0.0`, 12 vulnerabilities. Tests: tests/test_reusable_workflows.py::test_pip_audit_audits_the_calling_project_by_default, ::test_pip_audit_audits_the_given_requirements_files (execute the step with a recording `uvx`).
+
 **Evidence:** .github/workflows/lint-advisory.yml:218 runs `uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json`.
 It passes no `-r`, no project path and no `--local`. Under `uvx`, pip-audit runs in its own isolated tool venv and
 audits that environment. Reproduced in a scratch directory whose pyproject.toml declares `requests==2.0.0`: the report
@@ -41,6 +43,8 @@ install step.
 
 ### WF-2 (Med) -- release.yml's publish job is not re-runnable; a failed v1 move leaves "Latest" published and v1 stale
 
+**Disposition:** RESOLVED -- release.yml publish moves v1 first, skips the move when v1 already points at the tag, and creates the release only when `gh release view` finds none, so "Re-run failed jobs" completes. Test: tests/test_release_version.py::test_release_publish_is_rerunnable_and_moves_v1_before_the_release_page.
+
 **Evidence:** release.yml:80-84 runs `gh release create` **before** release.yml:86-97 moves v1. `gh release create`
 fails when the release already exists, so re-running the failed job can never get past step 1 to the tag move. This
 has already happened: the v1.17.0 run (36104391633) and the v1.18.0 run (36235990551) both concluded `failure` at
@@ -52,6 +56,8 @@ manual force-push of the tag, the step the workflow exists to replace.
 (`gh release view "$TAG" || gh release create ...`), so "Re-run failed jobs" finishes the job.
 
 ### WF-3 (Med) -- Version not bumped after v1.19.0 shipped; registry `since` and CHANGELOG say 1.20.0, and no test catches it
+
+**Disposition:** RESOLVED -- version 1.20.0 (pyproject.toml, `__init__.__version__`, three workflow defaults). tests/test_release_version.py::test_a_released_version_is_declared_only_by_its_own_tagged_commit fails when `v{VERSION}` is tagged and HEAD is not that commit (rule in .github/scripts/release_guard.py `version_problem`, tested by ::test_version_problem and ::test_version_problem_on_a_scratch_repository); ::test_every_registry_since_is_a_release_up_to_the_declared_version holds `since <= version`. On the old tree (1.19.0, HEAD past v1.19.0) the new test fails.
 
 **Evidence:** v1.19.0 is tagged at fe366ce (`git ls-remote`: refs/tags/v1.19.0^{} fe366ce), and HEAD e53587c is 3
 commits after it. pyproject.toml:7 and `__init__.__version__` still say `1.19.0`. registry.toml gives `ci_health` and
@@ -69,6 +75,8 @@ checked: each equals the first tag containing the module.)
 
 ### WF-4 (Med) -- Reusable workflows silently fall back to master when the pinned ref cannot be fetched
 
+**Disposition:** RESOLVED -- ruff-blocking.yml, lint-advisory.yml ("Resolve PY_CI_SHARED_DIR") and black-filtered.yml ("Install py-ci-shared") retry the pinned ref 3 times, then `exit 1`; the master fallback is gone. lint-blocking and mypy-* never fetched py-ci-shared (checked: no fetch step). Tests (execute the real step scripts with fake git/uv): tests/test_reusable_workflows.py::test_a_pinned_ref_that_cannot_be_fetched_fails_after_retries_and_never_fetches_master, ::test_a_transient_fetch_failure_is_retried_and_succeeds, ::test_black_filtered_fails_when_the_pinned_ref_cannot_be_installed, ::test_py_ci_shared_is_fetched_only_at_the_pinned_ref_and_never_at_master. All fail against the old workflows.
+
 **Evidence:** ruff-blocking.yml:339-342, lint-advisory.yml:186-189 and black-filtered.yml:62-64 fetch `PCS_REF`. On
 **any** failure (a network blip, GitHub 5xx, a typo'd ref) they print `::warning::` and fetch or install **master**.
 black-filtered installs and executes master's `black_filtered_apply` code.
@@ -79,6 +87,8 @@ at master".
 that was deleted, gate it behind an explicit input.
 
 ### WF-5 (Med) -- self-ci never exercises the consumer fetch path of the reusable workflows
+
+**Disposition:** RESOLVED -- new input `force-remote-fetch` on the three workflows; self-ci.yml gains integration-ruff-blocking-remote-fetch, integration-black-filtered-remote-install, integration-lint-advisory-remote-fetch calling them at `github.event.pull_request.head.sha || github.sha`. The failure path is covered by the executed step tests above. Tests: ::test_self_ci_runs_the_consumer_fetch_path_of_each_self_fetching_workflow, ::test_inside_this_repo_the_local_checkout_is_used_unless_a_remote_fetch_is_forced. First real proof is the next self-ci run.
 
 **Evidence:** every "Resolve PY_CI_SHARED_DIR" / "Install py-ci-shared" step short-circuits on
 `GITHUB_REPOSITORY = fingoldo/py-ci-shared` (ruff-blocking.yml:333, lint-advisory.yml:180, black-filtered.yml:60).
@@ -92,6 +102,8 @@ fetch path explicitly, with `py-ci-shared-ref: ${{ github.sha }}`.
 
 ### WF-6 (Med) -- release.yml does not require the tagged commit's CI to be green, and runs 3 test files, not "the test suite"
 
+**Disposition:** RESOLVED -- verify waits (up to 30 min) for a successful self-ci.yml run of the tagged SHA (`release_guard.py ci-green`) and runs `python -m pytest tests/ -ra`, the whole suite. README/CLAUDE.md wording corrected. Tests: tests/test_release_version.py::test_release_verify_requires_the_newest_tag_green_self_ci_and_the_whole_suite, ::test_ci_verdict, ::test_wait_for_ci_polls_until_the_run_finishes, ::test_wait_for_ci_gives_up_as_pending_after_the_wait.
+
 **Evidence:** release.yml:59-60 runs only test_release_version.py, test_package_inventory.py and
 test_reusable_workflows.py on one OS and one Python. Nothing checks self-ci's conclusion for the tagged SHA.
 README.md:443 says release.yml "runs the test suite", and CLAUDE.md says "runs the tests".
@@ -101,6 +113,8 @@ once. README.md:48-49 sells @v1 as "propagates to every consumer at once". The d
 self-ci.yml at that SHA) and require success. Correct the README and CLAUDE.md wording.
 
 ### WF-7 (Med) -- No documented rollback for a bad release on the moving v1 tag
+
+**Disposition:** RESOLVED -- release.yml `workflow_dispatch` input `rollback-to` (job `rollback`, target validated by `release_guard.py rollback`); procedure in CLAUDE.md "Rolling back a release" and README "Pinning and releases". Tests: ::test_release_rollback_is_a_dispatch_through_the_guard, ::test_cli_rollback_accepts_an_earlier_release_and_refuses_an_unknown_one, ::test_the_rollback_procedure_is_documented.
 
 **Evidence:** README.md:48-63 and :431-445 and CLAUDE.md "Versions and releases" describe only moving forward. A grep
 for rollback/revert/bad release across README, CHANGELOG and CLAUDE.md finds nothing about releases. CLAUDE.md forbids
@@ -114,6 +128,8 @@ earlier vX.Y.Z, gated by an environment), and say when to use it.
 
 ### WF-8 (Med) -- README states the wrong config-fetch mechanism (`github.job_workflow_sha`)
 
+**Disposition:** RESOLVED -- README "Pinning and releases" and the PY_CI_SHARED_DIR paragraph describe the `py-ci-shared-ref` input, its default, the SHA-pin caveat and the no-fallback failure; `job_workflow_sha` no longer appears.
+
 **Evidence:** README.md:432-435 ("the workflow now fetches this repo's configs and RUFF_VERSION at the commit the
 workflow itself was loaded from (`github.job_workflow_sha`) ... so a pin pins everything") and README.md:1083 say the
 same. No workflow references `job_workflow_sha` (grep of .github is empty). The real mechanism is the
@@ -125,6 +141,8 @@ so "a pin pins everything" is false. With WF-4, a failed fetch gives master.
 
 ### WF-9 (Low) -- RELEASE_TOKEN is not behind a protected environment
 
+**Disposition:** RESOLVED (code) / OWNER STEP -- publish and rollback run in `environment: release` (auto-created on first run; zizmor auditor no longer reports secrets-outside-env for RELEASE_TOKEN). Owner must, in repository settings: add a deployment rule to `release` (v* tags + default branch), move RELEASE_TOKEN into it, optionally a tag ruleset. Documented in CLAUDE.md "Versions and releases". Test: ::test_release_publish_is_rerunnable_and_moves_v1_before_the_release_page (asserts the environment).
+
 **Evidence:** zizmor `secrets-outside-env` release.yml:78/89. The workflow runs the release.yml **of the tagged
 commit**, and the "on master" check (release.yml:52-56) is itself part of that file. Anyone who can push a tag on any
 branch commit can edit release.yml in that commit and read RELEASE_TOKEN (contents + workflows write). Fork PRs cannot
@@ -135,6 +153,8 @@ with persist-credentials but runs only `gh` and `git` afterwards: no third-party
 secret stored there, plus a tag-protection ruleset.
 
 ### WF-10 (Low) -- README stale or wrong facts
+
+**Disposition:** RESOLVED -- README:11 lists the real blocking and advisory bundles; install tags v1.17.0 -> v1.19.0; release.yml in "Deliberately NOT here" explained as this repo's own; "runs the test suite" now true (WF-6). Test: tests/test_release_version.py::test_the_readme_install_tag_is_the_newest_release_or_this_one.
 
 **Evidence:**
 - README.md:11 says the advisory bundle is "codespell/yamllint/bandit/actionlint/vulture/pip-audit". lint-advisory.yml
@@ -148,6 +168,8 @@ secret stored there, plus a tag-protection ruleset.
 already done for the workflow defaults.
 
 ### WF-11 (Low) -- EXEMPT entries whose subject can be seeded as files
+
+**Disposition:** RESOLVED -- the 11 remaining EXEMPT entries are now real canaries (`tests/canary/<gate>/` with violation/clean/bom and, where the gate parses, unparsable; `CANARIES.update` in `tests/test_gate_teeth.py`): hook_hygiene, test_partition_reachability, doc_identifier_parity, phantom_code_references, effect_assertion_parity, sql_verifier_coverage, audit_path_references, audit_disposition_parity, disposition_test_references, timezone_honest, import_layering. No exemption was kept for this list. Markdown/shell readers (hook_hygiene, doc_identifier_parity, audit_disposition_parity) have `parses=False`: they read text, so there is no unparsable input. The canaries found gate defects, fixed here: - `effect_assertion_parity`: an unparsable `test_*.py` was silently absent from `build_import_map` and never reported; `find_unasserted_effects` now parses every file it walks (`src/py_ci_shared/effect_assertion_parity.py:824`). Test: `tests/test_effect_assertion_parity.py::test_an_unparsable_test_the_import_map_dropped_is_still_reported`. - test_partition_reachability (the module): an unparsable `dart_test.yaml` raised a bare yaml error without the file name (now `SourceParseError` naming file and line, `src/py_ci_shared/test_partition_reachability.py:104`), and a runner directory with no runner in it passed (now fails, line 231). Tests: `tests/test_test_partition_reachability.py::test_an_unparsable_tags_file_fails_naming_it`, `::test_a_runner_directory_without_runners_fails_instead_of_passing`. - No floor: `phantom_code_references.assert_no_phantom_code_references` (`min_files=1`, line 581), `doc_identifier_parity.assert_doc_identifiers_exist` (`min_files=1` on documents checked, line 191; its `**kwargs` became the explicit keywords of `find_absent_doc_identifiers`) and `timezone_honest.assert_timezone_honest` (`min_files=1` on non-test Python under the scan paths, line 156) passed an empty corpus. Tests: the `-empty` canary cases; `tests/baselines/gate_entry_contract.json` records the three as `allow_unparsed` only. The two problems the 2026-10-03 workflows agent noticed: `gate_integrity._load_yaml` (`src/py_ci_shared/gate_integrity.py:82`) raises `SourceParseError` naming the file and line, and `assert_narrowings_declared` fails with it (`tests/test_gate_integrity.py::test_an_unparsable_config_fails_naming_the_file_and_line[precommit|workflow]`); `pytest_addopts_path_runs` keeps the markers of the parsed files when another test file is unparsable (`_marked_in_parsed_files`, `src/py_ci_shared/pytest_addopts_path_runs.py:88`), so only the broken file is reported (`tests/test_pytest_addopts_path_runs.py::test_a_broken_file_does_not_strip_the_markers_of_the_parsed_ones`). `tests/test_gate_teeth.py`: 564 passed (was 466 after the first 7).
 
 **Evidence:** tests/test_gate_teeth.py:270-328 exempts these from canaries as "CI configuration" or "repo layout":
 ci_test_dir_reachability, ci_workflow_paths, coverage_config_parity, pytest_addopts_path_runs, gate_config_honesty,
@@ -164,6 +186,8 @@ runtime plugins), and reword reasons as "needs X" rather than "subject is repo l
 
 ### WF-12 (Med) -- Timeout-bound warm-worker tests fail and crash xdist workers under load
 
+**Disposition:** RESOLVED -- root cause: pytest-timeout (`timeout = 300`, thread method on Windows) calls `os._exit` on the xdist worker when a test passes 300 s. Measured: TestConcurrencyChangesSpeedAndNothingElse 282 s under -n 4 (256 s alone); reproduced the exact "node down: Not properly terminated / replacing crashed worker" with `--timeout=20`. Fix: `@pytest.mark.timeout(1200)` on that class and on test_scaffold's nested-pytest test; test_mutation_worker uses WARM_TIMEOUT = 600 with a 1200 s module mark. Same `--timeout=20 -n 4` run after the fix: 17 passed, no crash. Tests: tests/test_mutation_teeth.py::test_the_worker_pool_tests_carry_a_budget_above_the_global_timeout, tests/test_mutation_worker.py::test_the_warm_runner_tests_outlast_their_worker_budget.
+
 **Evidence:** a local run with `-n 4` gives:
 - FAILED test_mutation_worker.py::TestTheProtocolChannelIsPrivate::test_a_failing_run_still_reports_its_own_code
   (`assert None == 1`). The test took 133.3 s against `_WarmRunner(timeout=120)`, so `run()` returned None on timeout.
@@ -178,6 +202,8 @@ verdict (None) rather than a skip or a clear timeout error. The crashing tests s
 with "timed out after Ns". Give a crashed worker a diagnosable cause (faulthandler dump to file).
 
 ### WF-13 (Low) -- Slow tests: top offenders
+
+**Disposition:** WON'T FIX -- measured serially, no xdist, this workstation: four_workers 256 s, survivors 91 s, test_refresh_writes_a_missing_baseline 54 s; CI legs take 99-258 s for the whole suite. The cost is Windows interpreter start per nested pytest/mutant run, which is what these end-to-end tests exist to exercise; WF-12 removes the failure mode.
 
 **Evidence (summed per file, `--durations=200`, local, -n 4):** test_pytest_plugin.py 1012 s; test_mutation_worker.py
 540 s; test_checkout_resolution.py 391 s; test_mutation_teeth.py 364 s; test_stale_comment_age.py 275 s;
@@ -195,6 +221,8 @@ end-to-end mutation tests behind a marker that runs on one CI leg.
 
 ### WF-14 (Low) -- Workflow hygiene leftovers
 
+**Disposition:** RESOLVED -- config-drift-check.yml concurrency; corpus-drift baseline filtered `branch=master` and the newest run with a non-expired artifact; black-filtered reads BLACK_VERSION from tool_versions; scheduled reports and release install with `-c .github/constraints/runtime.txt` (exact PyYAML/tomli/pytest). windows-latest/macos-latest kept on purpose (comment in self-ci.yml; images 2026-10-02: windows-2025-vs2026, macos-26-arm64) and allowlisted. Tests: tests/test_reusable_workflows.py::test_every_scheduled_workflow_has_a_concurrency_group, ::test_corpus_drift_takes_its_baseline_from_master_and_skips_expired_artifacts, ::test_black_filtered_reads_the_black_version_from_tool_versions, ::test_the_constraints_file_pins_every_runtime_dependency_exactly, ::test_scheduled_reports_and_the_release_install_with_the_constraints, ::test_moving_runner_labels_are_only_the_reviewed_ones.
+
 **Evidence:**
 - config-drift-check.yml has no `concurrency` (zizmor).
 - self-ci.yml:47/49 use the moving `windows-latest`/`macos-latest` labels, while every ubuntu leg is deliberately pinned.
@@ -209,6 +237,8 @@ end-to-end mutation tests behind a marker that runs on one CI leg.
 baseline query with `&branch=master` and handle an expired artifact. Read BLACK_VERSION like RUFF_VERSION.
 
 ### WF-15 (Low) -- Own-suite tests whose assertion loops can run zero times
+
+**Disposition:** RESOLVED -- `tests/test_ci_install_covers_conftest.py:254`: the env loop counts the variables it checked and asserts the set equals the gate's input map, so a renamed env name fails instead of skipping every assertion. The false positive in `tests/test_package_inventory.py:79` got the floor the scanner asks for (`len(registry.GATES) >= 100`). The finding's dogfooding step is done: `[tool.py_ci_shared.gates.vacuous_loop_assertions]` in `pyproject.toml:244` (all `tests/**/test_*.py`, `min_files = 100`, empty baseline `tests/baselines/vacuous_loop_assertions.json`) and the gate is in the dogfood set of `tests/test_self_gates.py`. Test: `tests/test_self_gates.py::test_gate_passes_on_this_repo[vacuous_loop_assertions]`, which fails on the old `test_ci_install_covers_conftest.py` naming line 248.
 
 **Evidence:** running `find_floorless_loops` over tests/ (the repo's own vacuous-loop scanner, not dogfooded on its own
 tests) reports 3:
@@ -225,6 +255,8 @@ test_vacuous_loop_assertions.py:108). All 3 are fixture or description text quot
 tests/ in `[tool.py_ci_shared]`.
 
 ### WF-16 (Low) -- The consumer doctest symptom is not a stdout leak; nothing in py-ci-shared swaps sys.stdout
+
+**Disposition:** NOT A DEFECT -- probe (scratchpad dt_probe.py): stdout swapped and displayhook no-op before `doctest.testmod` -> 0 failed; module state cleared so the function returns None -> 1 failed, "Got nothing". The only stream swaps in src are in _mutation_worker's subprocess `main()` and docstring/fixture text in standard_stream_restore.
 
 **Evidence:** the only stream swap in src/ is `contextlib.redirect_stdout/stderr` plus `os.dup2` in
 _mutation_worker.py:230-237 and :279. Those run in a separate worker subprocess (`main()`), and no test calls
