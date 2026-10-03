@@ -313,3 +313,46 @@ class TestStdinFilename:
         stub = "import os\n\nclass A:\n    x: int\n    def f(self) -> int: ...\n"
         assert run_black_stdin(src, str(cfg), filename="m.pyi") == stub
         assert run_black_stdin(src, str(cfg)) != stub
+
+
+class TestCheckModeSkipsFilesBlackLeavesAlone:
+    """``--check`` asks Black once per batch which files it would change, instead of starting Black for every file."""
+
+    @staticmethod
+    def _config(tmp_path):
+        cfg = tmp_path / "pyproject.toml"
+        cfg.write_text("[tool.black]\nline-length = 100\n", encoding="utf-8")
+        return str(cfg)
+
+    def test_only_the_file_black_would_change_is_returned(self, tmp_path):
+        pytest.importorskip("black")
+        from py_ci_shared.black_filtered_apply import files_black_would_change
+
+        clean = tmp_path / "clean.py"
+        clean.write_text("x = 1\n", encoding="utf-8")
+        messy = tmp_path / "messy.py"
+        messy.write_text("x   =   1\n", encoding="utf-8")
+        assert files_black_would_change([str(clean), str(messy)], self._config(tmp_path)) == [str(messy)]
+
+    def test_a_batch_black_cannot_run_is_returned_whole(self, tmp_path):
+        pytest.importorskip("black")
+        from py_ci_shared.black_filtered_apply import files_black_would_change
+
+        bad_config = tmp_path / "bad.toml"
+        bad_config.write_text("[tool.black\nline-length = ", encoding="utf-8")
+        a = tmp_path / "a.py"
+        a.write_text("x = 1\n", encoding="utf-8")
+        assert files_black_would_change([str(a)], str(bad_config)) == [str(a)]
+
+    def test_check_reports_the_same_files_as_checking_each_file(self, tmp_path, capsys):
+        pytest.importorskip("black")
+        from py_ci_shared.black_filtered_apply import main
+
+        cfg = self._config(tmp_path)
+        (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
+        (tmp_path / "bad.py").write_text("x   =   1\n", encoding="utf-8")
+        with pytest.raises(SystemExit) as exc:
+            main(["--config", cfg, "--check", str(tmp_path)])
+        assert exc.value.code == 1
+        out = capsys.readouterr().out
+        assert "1/2 files have non-excluded-class Black findings" in out and "bad.py" in out and "ok.py" not in out
