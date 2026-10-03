@@ -13,7 +13,7 @@
   "src/py_ci_shared/audit_disposition_parity.py::find_unsupported_dispositions": 14,
   "src/py_ci_shared/baseline_hygiene.py::_entries": 13,
   "src/py_ci_shared/black_filtered_apply.py::filtered_apply": 14,
-  "src/py_ci_shared/black_filtered_apply.py::main": 14,
+  "src/py_ci_shared/black_filtered_apply.py::main": 13,
   "src/py_ci_shared/ci_test_dir_reachability.py::_pytest_args": 11,
   "src/py_ci_shared/ci_test_dir_reachability.py::pytest_invocations": 11,
   "src/py_ci_shared/ci_workflow_gate.py::find_continue_on_error_steps": 23,
