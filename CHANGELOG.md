@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.20.0
 
+- `import_side_effects`: an import-time `os.environ` write is reported by key and value length, never by value. A
+  module that loads a `.env` at import made a failing gate print every DSN and API key in full.
 - **Behaviour change** (audit 2026-10-03 remainders, N-19, WF-11): a baseline that exists but cannot be read is
   reported as "baseline X is unreadable (...); fix or delete it" by every refresh, never as "does not exist" (the core
   `Baseline` refresh, `mutation_teeth`, `function_length`, `ignore_ratchet`, `import_side_effects`, `audit_wave_filenames`,
