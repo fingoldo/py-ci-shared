@@ -20,7 +20,7 @@ def _git(repo: Path, *args: str, author: str = "Dev") -> str:
 
 
 def _commit(repo: Path, message: str, *, author: str = "Dev") -> str:
-    (repo / "f.txt").write_text(message[:20] + str(len(list(repo.iterdir()))) + _git(repo, "rev-list", "--all", "--count"))
+    (repo / "f.txt").write_text(message[:20] + str(len(list(repo.iterdir()))) + _git(repo, "rev-list", "--all", "--count"), encoding="utf-8")
     _git(repo, "add", "-A")
     msg = repo.parent / f"{repo.name}-msg.txt"
     msg.write_bytes(message.encode("utf-8"))  # -F keeps a BOM, as PowerShell 5 Set-Content wrote it

@@ -132,7 +132,7 @@ def _run_step(tmp_path: Path, workflow: str, name: str, *, fail: str = "", repo:
 
     step = _step(workflow, name)
     script = tmp_path / "step.sh"
-    script.write_text(FAKES + step["run"], encoding="utf-8", newline="\n")
+    script.write_bytes((FAKES + step["run"]).encode("utf-8"))  # Path.write_text(newline=) is 3.10+; the script must keep LF
     calls, github_env = tmp_path / "calls.txt", tmp_path / "github_env"
     calls.write_text("", encoding="utf-8")
     github_env.write_text("", encoding="utf-8")
