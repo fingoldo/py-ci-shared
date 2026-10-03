@@ -61,6 +61,21 @@ def _fatal(marker: str) -> bool:
     return marker.startswith("fatal_failed")
 
 
+def _committed_line_endings_canary(d: Path) -> None:
+    """The gate reads git index blobs: commit the corpus first, with ``{CR}`` in a fixture written as a bare CR (a real
+    one in a committed fixture would trip this repository's own line-ending checks)."""
+    from py_ci_shared._core.git import run_git
+
+    for p in sorted(d.rglob("*")):
+        if p.is_file():
+            # The fixtures are committed with LF; a checkout under core.autocrlf=true hands us CRLF, which would make every
+            # control look like a CRLF violation. Normalise first so the seeded bytes do not depend on the checkout.
+            p.write_bytes(p.read_bytes().replace(b"\r\n", b"\n").replace(b"{CR}", b"\r"))
+    for args in (("init", "-q"), ("config", "core.autocrlf", "false"), ("config", "core.safecrlf", "false"), ("add", "-A")):
+        run_git(d, *args, check=True)
+    _gate("committed_line_endings").assert_committed_line_endings(d)
+
+
 def _kwarg_forwarding_canary(d: Path) -> None:
     """The library has finders, not an ``assert_*`` entry: fail the way a consumer's meta test does on any finding."""
     mod, files = _gate("kwarg_forwarding"), sorted(d.rglob("*.py"))
@@ -263,6 +278,9 @@ CANARIES: dict[str, Canary] = {
         Canary("kwarg_forwarding", _kwarg_forwarding_canary),
         Canary("stale_source_citations", lambda d: _gate("stale_source_citations").assert_no_stale_source_citations(d, use_git=False)),
         Canary("pickle_state_completeness", lambda d: _gate("pickle_state_completeness").assert_no_pickle_state_gaps(d, use_git=False), token="_seed_cache"),
+        Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text"),
+        Canary("committed_line_endings", _committed_line_endings_canary, token="seed.txt", parses=False),  # bytes, not syntax
+        Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0"),
     ]
 }
 
@@ -299,6 +317,7 @@ EXEMPT: dict[str, str] = {
     "gate_population_canary": "itself a population/canary gate over meta tests",
     "git_changed_lines": "library for git diff line ranges; needs git history",
     "guard_population": "runs shell guard scripts; runtime check",
+    "hook_attestation": "checks commit trailers over a git revision range; its subject is history, not files",
     "hook_hygiene": "audits git hook scripts and their wiring; CI configuration",
     "ignore_ratchet": "takes precomputed counts; no corpus",
     "import_layering": "rules are caller-supplied layer maps; covered by test_import_layering.py",

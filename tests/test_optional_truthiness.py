@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from py_ci_shared.optional_truthiness import assert_optionals_test_for_none, find_truthiness_tests
+from py_ci_shared.optional_truthiness import BOUND_NAMES, assert_optionals_test_for_none, find_attribute_truthiness_tests, find_truthiness_tests
 
 
 def _module(tmp_path: Path, body: str, name: str = "m.py") -> Path:
@@ -294,3 +294,278 @@ def test_a_sibling_comparison_that_disagrees_at_zero_does_not_excuse_it(tmp_path
         encoding="utf-8",
     )
     assert [re.search(r":(\d+):", x).group(1) for x in find_truthiness_tests(f)] == ["5", "7", "9"]
+
+
+# --- optionals carried on self and forwarded one hop (follow_attributes) ----------------------------------------------
+
+
+def _tree(tmp_path: Path, files: "dict[str, str]") -> "list[Path]":
+    out = []
+    for rel, body in files.items():
+        p = tmp_path / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(textwrap.dedent(body), encoding="utf-8")
+        out.append(p)
+    return sorted(out)
+
+
+def _attr(tmp_path: Path, files: "dict[str, str]", **kw) -> "list[tuple[str, str]]":
+    """(path:line, expression) per attribute-pass finding."""
+    found = find_attribute_truthiness_tests(_tree(tmp_path, files), repo_root=tmp_path, **kw)
+    return [(m.group(1), m.group(2)) for m in (re.match(r"^(\S+:\d+): `([^`]+)`", f) for f in found) if m]
+
+
+MONITOR = """
+    from typing import Optional
+
+    class Monitor:
+        def __init__(self, time_budget_s: Optional[float] = None, total_iterations: Optional[int] = None):
+            self.time_budget_s = time_budget_s
+            self.total_iterations = total_iterations
+
+        def check(self, elapsed):
+            if self.time_budget_s and elapsed > self.time_budget_s:
+                return "stop"
+            if self.time_budget_s is not None and elapsed > self.time_budget_s:
+                return "stop"
+            return f"/{self.total_iterations}" if self.total_iterations else ""
+"""
+
+
+class TestAttributeTruthiness:
+    def test_a_budget_stored_on_self_and_tested_for_truth_is_reported(self, tmp_path):
+        """mlframe _cb_gpu_monitor.py:391; `total_iterations` is not a budget name and stays out (BOUND_NAMES)."""
+        assert _attr(tmp_path, {"m.py": MONITOR}) == [("m.py:10", "self.time_budget_s")]
+
+    def test_a_custom_name_pattern_widens_it(self, tmp_path):
+        found = _attr(tmp_path, {"m.py": MONITOR}, bound_names=r"total|budget")
+        assert found == [("m.py:10", "self.time_budget_s"), ("m.py:14", "self.total_iterations")]
+
+    def test_getattr_in_a_mixin_and_a_closure_read_the_nearest_classes(self, tmp_path):
+        """boruta_shap _fit_explain.py:535 and shap_proxied _shap_proxied_fit.py:184 (a nested function)."""
+        files = {
+            "fs/boruta/__init__.py": """
+                from typing import Optional
+                from ._fit import FitMixin
+
+                class Boruta(FitMixin):
+                    def __init__(self, max_runtime_mins: Optional[float] = None):
+                        self.max_runtime_mins = max_runtime_mins
+            """,
+            "fs/boruta/_fit.py": """
+                class FitMixin:
+                    def fit(self):
+                        budget = getattr(self, "max_runtime_mins", None)
+
+                        def exhausted(t):
+                            if budget and t > budget * 60:
+                                return True
+                            return False
+
+                        return exhausted
+            """,
+            # Far away, a class whose max_runtime_mins is a plain float: it must not veto the nearer answer.
+            "other/ctx.py": """
+                from dataclasses import dataclass
+
+                @dataclass
+                class Ctx:
+                    max_runtime_mins: float
+            """,
+        }
+        assert _attr(tmp_path, files) == [("fs/boruta/_fit.py:7", "budget")]
+
+    def test_a_class_that_defines_the_attribute_unannotated_is_judged_on_its_own(self, tmp_path):
+        """mlframe models/selection.py: `max_train_size=None` unannotated, while another class has it Optional[int]."""
+        files = {
+            "a.py": """
+                class Split:
+                    def __init__(self, max_runtime_mins=None):
+                        self.max_runtime_mins = max_runtime_mins
+
+                    def run(self):
+                        if self.max_runtime_mins:
+                            return 1
+            """,
+            "b.py": """
+                from typing import Optional
+
+                class Other:
+                    def __init__(self, max_runtime_mins: Optional[float] = None):
+                        self.max_runtime_mins = max_runtime_mins
+            """,
+        }
+        assert _attr(tmp_path, files) == []
+
+    def test_disagreeing_classes_leave_a_mixin_unreported(self, tmp_path):
+        files = {
+            "pkg/a.py": """
+                from typing import Optional
+
+                class A:
+                    def __init__(self, timeout: Optional[float] = None):
+                        self.timeout = timeout
+            """,
+            "pkg/b.py": """
+                class B:
+                    timeout: float = 1.0
+            """,
+            "pkg/mixin.py": """
+                class M:
+                    def go(self):
+                        if self.timeout:
+                            return 1
+            """,
+        }
+        assert _attr(tmp_path, files) == []
+
+    def test_a_dataclass_field_and_a_module_level_self_function(self, tmp_path):
+        """rfecv `_fit.py`: a module-level `def fit(self, ...)` binding `max_refits = self.max_refits`."""
+        files = {
+            "rfe/_configs.py": """
+                from typing import Optional
+                from dataclasses import dataclass
+
+                @dataclass
+                class SearchConfig:
+                    max_refits: Optional[int] = None
+            """,
+            "rfe/_fit.py": """
+                def fit(self, n):
+                    max_refits = self.max_refits
+                    total = min(n, max_refits) if max_refits else n
+                    if not max_refits or n < 3:
+                        return total
+                    return 0
+            """,
+        }
+        assert _attr(tmp_path, files) == [("rfe/_fit.py:4", "max_refits"), ("rfe/_fit.py:5", "max_refits")]
+
+    def test_forwarding_one_hop_by_keyword_and_by_position(self, tmp_path):
+        """rfecv `_fit_outer_loop.py:379` (keyword) and a positional call to a method."""
+        files = {
+            "rfe/est.py": """
+                from typing import Optional
+
+                class RFE:
+                    def __init__(self, max_refits: Optional[int] = None):
+                        self.max_refits = max_refits
+
+                    def fit(self):
+                        run_iteration(state=None, max_refits=self.max_refits)
+                        self.helper(self.max_refits)
+                        typed(max_refits=self.max_refits)
+                        ambiguous(max_refits=self.max_refits)
+
+                    def helper(self, cap):
+                        if cap:
+                            return 1
+            """,
+            "rfe/loop.py": """
+                from typing import Optional
+
+                def run_iteration(state, max_refits):
+                    if max_refits and state.nsteps >= max_refits:
+                        return "break"
+
+                def typed(max_refits: Optional[int] = None):
+                    if max_refits:  # an annotated optional: the per-function check reports it, not this pass
+                        return 1
+
+                def ambiguous(max_refits):
+                    if max_refits:
+                        return 1
+            """,
+            "rfe/other.py": """
+                def ambiguous(max_refits):
+                    return max_refits
+            """,
+        }
+        assert _attr(tmp_path, files) == [("rfe/est.py:15", "cap"), ("rfe/loop.py:5", "max_refits")]
+
+    def test_a_nested_function_rebinding_the_forwarded_name_is_not_followed(self, tmp_path):
+        files = {"m.py": """
+                from typing import Optional
+
+                class C:
+                    def __init__(self, timeout: Optional[float] = None):
+                        self.timeout = timeout
+
+                    def go(self):
+                        wait(timeout=self.timeout)
+
+                def wait(timeout):
+                    def inner(timeout):
+                        return 1 if timeout else 0
+
+                    def closure():
+                        return 1 if timeout else 0
+
+                    return inner, closure
+            """}
+        assert _attr(tmp_path, files) == [("m.py:16", "timeout")]
+
+    def test_a_sibling_comparison_agreeing_at_zero_excuses_a_carried_local(self, tmp_path):
+        files = {"m.py": """
+                from typing import Optional
+
+                class C:
+                    def __init__(self, max_retries: Optional[int] = None):
+                        self.max_retries = max_retries
+
+                    def go(self):
+                        n = self.max_retries
+                        if n and n > 0:
+                            return n
+                        return 0
+            """}
+        assert _attr(tmp_path, files) == []
+
+    def test_staticmethods_have_no_instance_parameter(self, tmp_path):
+        files = {"m.py": """
+                from typing import Optional
+
+                class C:
+                    def __init__(self, timeout: Optional[float] = None):
+                        self.timeout = timeout
+
+                    @staticmethod
+                    def go(other):
+                        return 1 if other.timeout else 0
+            """}
+        assert _attr(tmp_path, files) == []
+
+    def test_unparsable_files_are_left_to_the_per_file_check(self, tmp_path):
+        files = _tree(tmp_path, {"m.py": MONITOR, "broken.py": "def (:\n"})
+        assert len(find_attribute_truthiness_tests(files, repo_root=tmp_path)) == 1
+        with pytest.raises(pytest.fail.Exception, match=r"broken\.py"):
+            assert_optionals_test_for_none(files=files, repo_root=tmp_path)
+
+    def test_the_assert_follows_attributes_by_default_and_can_be_told_not_to(self, tmp_path):
+        files = _tree(tmp_path, {"m.py": MONITOR})
+        with pytest.raises(pytest.fail.Exception, match=r"self\.time_budget_s"):
+            assert_optionals_test_for_none(files=files, repo_root=tmp_path)
+        assert_optionals_test_for_none(files=files, repo_root=tmp_path, follow_attributes=False)
+        accepted = find_attribute_truthiness_tests(files, repo_root=tmp_path)
+        assert_optionals_test_for_none(files=files, repo_root=tmp_path, baseline=accepted)
+
+
+@pytest.mark.parametrize(
+    ("name", "bound"),
+    [
+        ("max_runtime_mins", True),
+        ("max_refits", True),
+        ("time_budget_s", True),
+        ("timeout", True),
+        ("request_timeout_s", True),
+        ("max_tokens", True),
+        ("min_iters", True),
+        ("max_nfeatures", False),
+        ("max_train_size", False),
+        ("max_categorical_cardinality", False),
+        ("total_iterations", False),
+        ("reporting_interval_mins", False),
+    ],
+)
+def test_bound_names(name, bound):
+    assert bool(BOUND_NAMES.search(name)) is bound

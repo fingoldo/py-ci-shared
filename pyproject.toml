@@ -62,7 +62,11 @@ dev = [
     "tomli>=2.0",
     "pytest-cov>=5.0",
     "pytest-timeout>=2.2",
+    # api_floor runs vermin; without it the gate reports itself unavailable, so its tests and canary need it.
+    "vermin>=1.6",
 ]
+# api_floor's checker. Optional: a consumer that does not enable api_floor never needs it.
+api = ["vermin>=1.6"]
 
 [project.scripts]
 safe-precommit = "py_ci_shared.safe_precommit:main"

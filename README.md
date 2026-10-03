@@ -144,6 +144,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`adoption_matrix`](src/py_ci_shared/adoption_matrix.py) | cli | 1.17.0 | `main` | Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself |
 | [`advisory_warn`](src/py_ci_shared/advisory_warn.py) | cli | 1.0.0 | `main` | Warn-only advisory-taste check for the pre-commit hook |
 | [`alembic_concurrently`](src/py_ci_shared/alembic_concurrently.py) | gate | 1.8.0 | `assert_concurrently_is_in_autocommit_blocks` | An Alembic migration runs ``CONCURRENTLY`` only inside ``autocommit_block()`` |
+| [`api_floor`](src/py_ci_shared/api_floor.py) | gate | 1.20.0 | `assert_api_floor` | Standard-library API newer than the ``requires-python`` floor, outside a version guard (vermin, guard-aware) |
 | [`arb_checks`](src/py_ci_shared/arb_checks.py) | gate | 1.3.6 | `assert_arb_catalogues_are_sound` | Shared checks over Flutter ``.arb`` localization catalogues |
 | [`atomic_write_staging`](src/py_ci_shared/atomic_write_staging.py) | gate | 1.17.0 | `assert_atomic_write_staging` | Write-then-rename staging that does not stage what it renames, and cache/baseline files rewritten in place |
 | [`audit_disposition_parity`](src/py_ci_shared/audit_disposition_parity.py) | gate | 1.4.0 | `assert_dispositions_name_real_artefacts` | A finding marked RESOLVED names artefacts that exist |
@@ -166,6 +167,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
+| [`committed_line_endings`](src/py_ci_shared/committed_line_endings.py) | gate | 1.20.0 | `assert_committed_line_endings` | Committed (index) blobs with bare CR, mixed CRLF/LF or CRLF line endings |
 | [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.18.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
 | [`conceded_defect_pins`](src/py_ci_shared/conceded_defect_pins.py) | library | 1.17.0 |  | Tests that say the behaviour is wrong and then pin it exactly |
 | [`config_call_site_parity`](src/py_ci_shared/config_call_site_parity.py) | gate | 1.3.0 | `assert_every_cfg_get_call_resolves_to_a_schema_field` (+4) | Shared checks for the "``cfg().get(section, key, default, type_)`` call-site vs Pydantic schema" consistency pattern |
@@ -206,6 +208,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`hardcoded_token_ceilings`](src/py_ci_shared/hardcoded_token_ceilings.py) | gate | 1.17.0 | `assert_no_hardcoded_token_ceilings` | LLM output ceilings written as a number someone chose by eye |
 | [`hash_fed_by_array_copy`](src/py_ci_shared/hash_fed_by_array_copy.py) | gate | 1.4.0 | `assert_no_hash_fed_by_array_copy` | An array must not be copied just to be hashed |
 | [`hash_key_determinism`](src/py_ci_shared/hash_key_determinism.py) | gate | 1.17.0 | `assert_hash_keys_are_deterministic` | JSON serialised for a hash, a cache key or a dedup comparison without sorting its keys |
+| [`hook_attestation`](src/py_ci_shared/hook_attestation.py) | gate | 1.20.0 | `assert_hook_attestation` | A commit-msg trailer proving the pre-commit hooks ran, and a check of a pushed range for commits without it |
 | [`hook_hygiene`](src/py_ci_shared/hook_hygiene.py) | gate | 1.3.6 | `assert_hooks_are_honest` | A git hook fails loudly, stages nothing of its own, and runs what CI runs |
 | [`identity_comparisons`](src/py_ci_shared/identity_comparisons.py) | gate | 1.17.0 | `assert_no_identity_comparisons` | A string constant is compared by value, not by identity |
 | [`ignore_ratchet`](src/py_ci_shared/ignore_ratchet.py) | gate | 1.17.0 | `assert_ignore_list_only_shrinks` | The codes a blocking lint gate IGNORES may only shrink |
@@ -260,6 +263,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`save_failure_markers`](src/py_ci_shared/save_failure_markers.py) | gate | 1.5.0 | `assert_markers_are_fatal` | Every save-failure marker a writer emits is one the success decision recognises |
 | [`sentinel_or_fallback`](src/py_ci_shared/sentinel_or_fallback.py) | gate | 1.17.0 | `assert_no_sentinel_or_fallback` | ``value or fallback`` on a setting whose falsy values are meaningful: ``max_tokens=0``, ``timeout=0``, ``seed=0`` |
 | [`setup_env`](src/py_ci_shared/setup_env.py) | cli | 1.3.0 | `main` | Persist ``PY_CI_SHARED_DIR`` at the OS/user level so ruff's ``extend = "$PY_CI_SHARED_DIR/configs/ruff-base.toml"`` (see README's "Using the |
+| [`sibling_floor_skew`](src/py_ci_shared/sibling_floor_skew.py) | gate | 1.20.0 | `assert_sibling_floor_skew` | A first-party sibling floor in ``pyproject.toml`` above the revision the CI workflows install |
 | [`source_text_ban`](src/py_ci_shared/source_text_ban.py) | library | 1.4.0 |  | Find tests that assert on a module's SOURCE TEXT instead of running it |
 | [`source_text_claims`](src/py_ci_shared/source_text_claims.py) | gate | 1.11.0 | `assert_no_new_source_text_claims` | Tests that assert on SOURCE TEXT instead of running the code |
 | [`spec_bound_doubles`](src/py_ci_shared/spec_bound_doubles.py) | gate | 1.4.0 | `assert_doubles_are_spec_bound` | A test double reaching duck-typed production code must be spec-bound |

@@ -1,0 +1,7 @@
+import sys
+from pathlib import Path
+
+
+def seed_write(p):
+    if sys.version_info >= (3, 10):
+        Path(p).write_text("x", newline="\n")

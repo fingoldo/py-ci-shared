@@ -1,0 +1,5 @@
+﻿jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: pip install git+https://github.com/fingoldo/pyutilz.git@v1.0.0

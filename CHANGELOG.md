@@ -4,6 +4,14 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- **Behaviour change** (audit 2026-10-03, G-3): `optional_truthiness` also follows optional numbers carried on `self`
+  (`self.x`, `getattr(self, "x")`, a local bound from either) and one hop of argument forwarding, for budget-like
+  names (`BOUND_NAMES`). On by default (`follow_attributes=True`); mlframe master gets 7 new findings (three zero-budget
+  bugs plus the sites 1256fff4d fixes). Fix them with `is not None`, or pass `follow_attributes=False` while you do.
+- New gates (audit 2026-10-03 G-1, G-2, G-4, G-5): `hook_attestation` (a `commit-msg` trailer and a pushed-range check
+  for commits that skipped the hooks), `sibling_floor_skew` (a sibling floor in `pyproject.toml` above the revision CI
+  installs), `api_floor` (vermin against `requires-python`, guard-aware; `pip install py-ci-shared[api]`) and
+  `committed_line_endings` (bare CR, mixed and CRLF line ends in the committed blobs).
 - **Behaviour change** (audit 2026-10-03, core): `[tool.py_ci_shared]` is validated more strictly. A string `enable`,
   a gate enabled twice (dashes and underscores count alike), a non-numeric or non-positive `budget_s`, a non-string
   `entry`/`module` and a glob that matches no file are configuration errors (exit 2) where they used to run wrongly or

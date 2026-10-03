@@ -24,6 +24,13 @@ since = "1.8.0"
 summary = "An Alembic migration runs ``CONCURRENTLY`` only inside ``autocommit_block()``"
 
 [[gate]]
+name = "api_floor"
+kind = "gate"
+entries = ["assert_api_floor"]
+since = "1.20.0"
+summary = "Standard-library API newer than the ``requires-python`` floor, outside a version guard (vermin, guard-aware)"
+
+[[gate]]
 name = "arb_checks"
 kind = "gate"
 entries = ["assert_arb_catalogues_are_sound"]
@@ -179,6 +186,13 @@ entries = ["assert_no_new_code_audit_findings"]
 since = "1.1.0"
 budget_s = 180
 summary = "Shared harness for the \"code-audit baseline\" meta-test pattern"
+
+[[gate]]
+name = "committed_line_endings"
+kind = "gate"
+entries = ["assert_committed_line_endings"]
+since = "1.20.0"
+summary = "Committed (index) blobs with bare CR, mixed CRLF/LF or CRLF line endings"
 
 [[gate]]
 name = "complexity_ratchet"
@@ -458,6 +472,13 @@ kind = "gate"
 entries = ["assert_hash_keys_are_deterministic"]
 since = "1.17.0"
 summary = "JSON serialised for a hash, a cache key or a dedup comparison without sorting its keys"
+
+[[gate]]
+name = "hook_attestation"
+kind = "gate"
+entries = ["assert_hook_attestation"]
+since = "1.20.0"
+summary = "A commit-msg trailer proving the pre-commit hooks ran, and a check of a pushed range for commits without it"
 
 [[gate]]
 name = "hook_hygiene"
@@ -835,6 +856,13 @@ kind = "cli"
 since = "1.3.0"
 cli = true
 summary = "Persist ``PY_CI_SHARED_DIR`` at the OS/user level so ruff's ``extend = \"$PY_CI_SHARED_DIR/configs/ruff-base.toml\"`` (see README's \"Using the"
+
+[[gate]]
+name = "sibling_floor_skew"
+kind = "gate"
+entries = ["assert_sibling_floor_skew"]
+since = "1.20.0"
+summary = "A first-party sibling floor in ``pyproject.toml`` above the revision the CI workflows install"
 
 [[gate]]
 name = "source_text_ban"

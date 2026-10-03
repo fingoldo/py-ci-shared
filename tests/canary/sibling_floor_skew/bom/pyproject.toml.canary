@@ -1,0 +1,4 @@
+﻿[project]
+name = "seed"
+version = "0.1"
+dependencies = ["pyutilz>=1.1"]

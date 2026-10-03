@@ -1,0 +1,11 @@
+﻿from typing import Optional
+
+
+class SeedMonitor:
+    def __init__(self, time_budget_s: Optional[float] = None):
+        self.time_budget_s = time_budget_s
+
+    def check(self, elapsed, limit=None):
+        if self.time_budget_s and elapsed > self.time_budget_s:
+            return 1
+        return 0
