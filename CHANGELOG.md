@@ -12,6 +12,20 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   for commits that skipped the hooks), `sibling_floor_skew` (a sibling floor in `pyproject.toml` above the revision CI
   installs), `api_floor` (vermin against `requires-python`, guard-aware; `pip install py-ci-shared[api]`) and
   `committed_line_endings` (bare CR, mixed and CRLF line ends in the committed blobs).
+- **Behaviour change** (audit 2026-10-03, new code): gates added since v1.17.0 got stricter where they failed open.
+  `function_complexity` fails on an unparsable file and refuses a refresh while one exists (`allow_unparsed=True` to
+  tolerate it; its entries are then kept), as `complexity_ratchet` did; both name an unreadable baseline. `adoption_matrix`
+  with `--resolve-in` fails a pin to a tag or SHA that does not exist (`unresolvable-pin`). `corpus_drift compare` fails
+  when a repo of last night's snapshot is missing tonight (`repo-gone`) and when a finder errors from its first night.
+  `standard_stream_restore` now judges only RESTORES of a saved stream (through `import sys as x` and `setattr` too),
+  guarded only by an identity check that encloses or precedes the restore: CLI-wide `sys.stdout = TextIOWrapper(...)`
+  is no longer reported, and `allow` accepts `path::function`. `nondiscriminating_shapes` raises on an unknown
+  `extra_shapes` slug and no longer lets `exists`/`supported` on a computed name or a trivial companion assert hide a
+  late skip or a median round-trip. `config_getattr_default_parity` raises `TypeError` for a non-dataclass in
+  `dataclass_classes`. `ci_install_covers_conftest` reads setuptools dynamic dependencies, requires `pytest_plugins`
+  and `-p` plugins, reports a tox/nox/`make test` job as unevaluated, and no longer lets the interpreter running it
+  choose the rule (an import with no table mapping is `ci-install-unmapped` everywhere). Re-run the gates after
+  upgrading and fix, allow or acknowledge what they name.
 - **Behaviour change** (audit 2026-10-03, core): `[tool.py_ci_shared]` is validated more strictly. A string `enable`,
   a gate enabled twice (dashes and underscores count alike), a non-numeric or non-positive `budget_s`, a non-string
   `entry`/`module` and a glob that matches no file are configuration errors (exit 2) where they used to run wrongly or

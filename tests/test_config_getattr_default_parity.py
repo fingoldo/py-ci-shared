@@ -135,3 +135,19 @@ def test_a_bom_file_is_read_and_an_unparsable_one_fails(tmp_path):
         assert_getattr_defaults_match_schema([bom, bad], tmp_path, [Schema], allowed={"threshold": "deliberately stricter"})
     with pytest.raises(AssertionError, match="parsed only 0 files"):
         assert_getattr_defaults_match_schema([bad], tmp_path, [Schema])
+
+
+def test_required_factory_and_conflicting_pydantic_fields_are_not_undeclared(tmp_path):
+    """N-18: required, default_factory and two-model-conflict fields were dropped from ``declared`` and then reported as
+    typos whenever a dataclass was passed; a real typo next to them is still reported."""
+    src = "def f(cfg):\n    a = getattr(cfg, 'built', [])\n    b = getattr(cfg, 'required_field', 'x')\n    c = getattr(cfg, 'enabled', True)\n    return getattr(cfg, 'typo_feild', 1)\n"
+    p = _write(tmp_path, src)
+    found = find_getattr_default_mismatches([p], tmp_path, [Schema, Other], dataclass_classes=[RunConfig])
+    assert [(g.field, g.declared) for g in found] == [("typo_feild", UNDECLARED)]
+
+
+def test_a_non_dataclass_in_dataclass_classes_raises(tmp_path):
+    """N-18: a plain class (or a pydantic model) in ``dataclass_classes`` used to switch the typo check off silently."""
+    p = _write(tmp_path, "def f(cfg):\n    return getattr(cfg, 'typo_feild', 1)\n")
+    with pytest.raises(TypeError, match="not a dataclass"):
+        find_getattr_default_mismatches([p], tmp_path, [], dataclass_classes=[Other])

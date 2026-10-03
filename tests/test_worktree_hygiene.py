@@ -322,3 +322,19 @@ def test_an_unreadable_file_is_unsaved_work_not_a_crash(origin_and_clone, monkey
     assert {"cache/data_0", "open.log"} <= set(unsaved)
     assert worktree_findings(origin_and_clone)[0].verdict == REVIEW
 
+
+def test_an_untracked_nested_repository_is_unsaved_work(origin_and_clone):
+    """N-1: ``?? nested/`` (a git repo inside the worktree) used to be skipped as not-a-file, so its work read as saved."""
+    worktree = origin_and_clone.parent / "wt_nested"
+    _git(origin_and_clone, "worktree", "add", "-q", "--detach", str(worktree), "origin/master")
+    (worktree / "loose.txt").write_text("loose\n", encoding="utf-8")
+    nested = worktree / "nested"
+    nested.mkdir()
+    subprocess.run(["git", "init", "-q", str(nested)], check=True)
+    (nested / "notes.txt").write_text("precious work\n", encoding="utf-8")
+    assert "?? nested/" in _git(worktree, "status", "--porcelain", "--untracked-files=all")
+
+    unsaved = unsaved_paths(origin_and_clone, worktree)
+
+    assert set(unsaved) == {"loose.txt", "nested/", "nested/notes.txt"}
+    assert worktree_findings(origin_and_clone)[0].verdict == REVIEW

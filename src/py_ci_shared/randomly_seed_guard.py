@@ -17,12 +17,17 @@ from importlib.metadata import EntryPoint, entry_points
 
 _SEED_SPACE = 2**32
 
+#: Set on every wrapper this module makes. ``__wrapped__`` cannot serve as the marker: every
+#: ``functools.wraps``-decorated reseeder carries it, and such a reseeder would then never be bounded.
+_MARKER = "_py_ci_shared_bounded"
+
 
 def _bounded(reseed: Callable[[int], None]) -> Callable[[int], None]:
     def bounded(seed: int) -> None:
         reseed(seed % _SEED_SPACE)
 
     bounded.__wrapped__ = reseed  # type: ignore[attr-defined]
+    setattr(bounded, _MARKER, True)
     return bounded
 
 
@@ -51,5 +56,5 @@ def bound_randomly_reseeders() -> bool:
     loaded = pytest_randomly.entrypoint_reseeds
     if loaded is None:
         loaded = [ep.load() for ep in _entry_points_in("pytest_randomly.random_seeder")]
-    pytest_randomly.entrypoint_reseeds = [r if hasattr(r, "__wrapped__") else _bounded(r) for r in loaded]
+    pytest_randomly.entrypoint_reseeds = [r if getattr(r, _MARKER, False) else _bounded(r) for r in loaded]
     return bool(loaded)

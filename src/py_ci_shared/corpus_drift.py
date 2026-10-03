@@ -8,8 +8,11 @@ root, a list of roots, the tracked Python files, the tests directory) over each 
     python -m py_ci_shared.corpus_drift compare last-night.json tonight.json --output drift.md
 
 ``compare`` exits 1 when a finder's count JUMPS (grows by more than ``--pct`` (default 0.20) AND by more than
-``--absolute`` (default 5)), goes BLIND (drops to zero from non-zero) or starts to ERROR where it counted before. A
-missing previous snapshot is the first night: it reports that and exits 0. Finders that need inputs a corpus cannot
+``--absolute`` (default 5)), goes BLIND (drops to zero from non-zero), starts to ERROR (where it counted before, or
+from its first night, when it never counted), or when a repo of the previous snapshot is missing from tonight's
+(REPO-GONE: a consumer skipped for a missing token, or dropped from repos.toml, is no longer measured). A finder that
+errored last night too is reported every night as ``still-errored``, without failing again. A missing previous
+snapshot is the first night: it reports that and exits 0. Finders that need inputs a corpus cannot
 supply (live models, config maps, precomputed claims) are listed in :data:`NON_CORPUS` with the reason, and a test
 fails when a new finder is neither bindable nor listed there.
 """
@@ -48,7 +51,7 @@ __all__ = [
 ]
 
 SCHEMA = 1
-FAILING_KINDS = ("jump", "blind", "errored")
+FAILING_KINDS = ("jump", "blind", "errored", "repo-gone")
 
 # Finders (``module`` for all of its finders, or ``module.find_x``) a repo checkout cannot feed, with the reason.
 NON_CORPUS: dict[str, str] = {
@@ -248,7 +251,7 @@ class Drift:
     finder: str
     before: Optional[int]
     after: Optional[int]
-    kind: str  # jump | blind | errored | new | gone | recovered
+    kind: str  # jump | blind | errored | repo-gone (failing) | new | gone | recovered | still-errored
     detail: str = ""
 
     @property
@@ -260,7 +263,7 @@ def _pair(prev: dict[str, Any], cur: dict[str, Any], repo: str, key: str, pct: f
     before, after = prev["counts"].get(key), cur["counts"].get(key)
     was_err, now_err = prev["errors"].get(key), cur["errors"].get(key)
     if now_err is not None:
-        return Drift(repo, key, before, None, "errored", now_err) if before is not None else None
+        return Drift(repo, key, before, None, "still-errored" if was_err is not None and before is None else "errored", now_err)
     if after is None:
         return Drift(repo, key, before, None, "gone") if before is not None else None
     if before is None:
@@ -275,7 +278,8 @@ def _pair(prev: dict[str, Any], cur: dict[str, Any], repo: str, key: str, pct: f
 
 def compare(prev: dict[str, Any], cur: dict[str, Any], *, pct: float = 0.20, absolute: int = 5) -> list[Drift]:
     """Every notable change from *prev* to *cur*; see :data:`FAILING_KINDS` for the ones that fail the night."""
-    out: list[Drift] = []
+    gone = sorted(set(prev.get("repos", {})) - set(cur.get("repos", {})))
+    out = [Drift(repo, "*", None, None, "repo-gone", "in the previous snapshot, missing from this one: nothing measured it tonight") for repo in gone]
     for repo, now in sorted(cur.get("repos", {}).items()):
         then = prev.get("repos", {}).get(repo)
         if then is None:
@@ -294,7 +298,12 @@ def _n(value: Optional[int]) -> str:
 
 def render_table(drifts: Sequence[Drift], *, pct: float, absolute: int) -> str:
     """Markdown: the failing changes first, then the informational ones."""
-    lines = ["# Corpus drift", "", f"Fails on: a jump of more than {pct:.0%} and more than {absolute} findings, a drop to zero, a new error.", ""]
+    lines = [
+        "# Corpus drift",
+        "",
+        f"Fails on: a jump of more than {pct:.0%} and more than {absolute} findings, a drop to zero, a new error, a repo no longer measured.",
+        "",
+    ]
     if not drifts:
         return "\n".join([*lines, "No change past the thresholds.", ""])
     lines += ["| verdict | repo | finder | before | after | detail |", "|---|---|---|---|---|---|"]

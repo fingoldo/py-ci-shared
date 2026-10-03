@@ -877,7 +877,7 @@ TypeScript repository with no pytest harness can call the `find_*` half from a p
 | `test_partition_reachability` | Is a declared test tag, Playwright project or standalone script selected by any runner, or does a permanent `test.skip` sit at the top of a spec? |
 | `baseline_hygiene` | Does every accepted baseline entry carry a human reason, is any entry stale, and does any contain an absolute path? Also exposes `body_asserts_only_absence_of_crash` for assertion scanners. |
 | `import_layering` | Does the layer that exists to be reusable import the product it was extracted from? Rules are `from_glob !-> to_glob`; both relative and `package:` imports resolve to the same repo-relative path. |
-| `stale_comment_age` | How old is that TODO? `git blame` decides; an issue reference exempts a line. Also catches commented-out calls. |
+| `stale_comment_age` | How old is that TODO? `git blame` decides; an issue reference exempts a line. Also catches commented-out calls. `warn_days=7` (or `find_comments_going_stale`) names comments about to go stale as `StaleCommentAdvisory` warnings, never a failure, even under `-W error`. |
 | `arb_checks` | Flutter `.arb` catalogues: key parity, ICU plural per locale's own CLDR categories, a `{count}` outside a plural, informal register (advisory), dead keys. |
 | `dart_scanners` | Fifteen structural scanners over Dart source (painters and animations, repaint isolation, hardcoded UI strings, tappable/semantics hygiene, non-directional layout, parse/serialise/catch, provider state, file size, empty catch, source-text tests, import/export cycles, assertion-free tests, timed dismissal, double error reports, unused test seams) and the file listing/reader/pubspec helpers, returning the `{key: description}` shape a repo's own baseline ratchet already consumes. |
 | `edge_function_hygiene` | Serverless functions: a catch that answers 200, an uncapped request body, a secret compared with `===`, an IP in a log line, the forgeable first `x-forwarded-for` hop. |
@@ -946,6 +946,7 @@ The baseline is a ratchet keyed `path::function::rule` and counted per key; a ke
 ## Assertion shapes that cannot fail (`nondiscriminating_shapes`)
 
 `shape_reasons(func)` returns the slugs a test function exhibits: `wide-literal-range` (`assert 0 < rmse < 100`, literal bounds spanning 20x, or from <= 0 to >= 10; `0 <= p <= 1` is exempt), `envelope-assert` (`pred.min() > 0.5 * y.min()`), `median-roundtrip` (a median absolute error in a round-trip / inverse test) and `late-skip` (a `pytest.skip` after the test computed something, outside an environment probe). `SHAPE_HELP` maps each slug to the fix. The consuming repository chooses the scope and the baseline.
+`shape_reasons(func, extra_shapes=["nonempty-only-assert"])` opts into `nonempty-only-assert` (the sole assertion is `len(x) > 0`, `len(x) != 0` or a bare `len(x)`); an unknown slug raises `ValueError`.
 
 ## Runtime writes to a module registry (`runtime_registry_mutation`)
 

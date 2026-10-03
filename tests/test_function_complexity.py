@@ -80,3 +80,39 @@ def test_a_seeding_refresh_needs_growth_allowed(tmp_path):
     with pytest.raises(pytest.fail.Exception, match=r"ALLOW_GROW|refresh-grow|grow"):
         assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=1, refresh=True, grow=False)
     assert not baseline.exists()
+
+
+def test_an_unparsable_file_fails_instead_of_being_dropped(tmp_path):
+    """N-2: the wrapper never read ``scan.unparsed``, so a file the parser could not read passed silently."""
+    files = _repo(tmp_path, {f"ok{i}.py": _branchy(f"f{i}", 1) for i in range(3)} | {"broken.py": "def g(:\n    if x:\n        pass\n"})
+    baseline = tmp_path / "b.json"
+    baseline.write_text("{}", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"broken\.py:1: .*not measured"):
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3)
+    assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, allow_unparsed=True)
+
+
+def test_a_refresh_is_refused_while_a_file_is_unparsable_and_allow_unparsed_keeps_its_entries(tmp_path):
+    """N-2: a refresh over an unparsed file dropped its baselined functions as a "shrink"."""
+    files = _repo(tmp_path, {f"ok{i}.py": _branchy(f"f{i}", 1) for i in range(3)} | {"broken.py": "def g(:\n"})
+    baseline = tmp_path / "b.json"
+    baseline.write_text(json.dumps({"broken.py::g": 40}), encoding="utf-8")
+    with pytest.raises((pytest.fail.Exception, pytest.skip.Exception)) as refused:  # a skip means the refresh went through
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=True)
+    assert refused.type is pytest.fail.Exception and "cannot refresh" in str(refused.value)
+    assert json.loads(baseline.read_text(encoding="utf-8")) == {"broken.py::g": 40}
+
+    with pytest.raises(pytest.skip.Exception):
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=True, allow_unparsed=True)
+    assert json.loads(baseline.read_text(encoding="utf-8")) == {"broken.py::g": 40}
+    assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, allow_unparsed=True)
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_a_corrupt_baseline_is_named_unreadable_not_a_json_traceback(tmp_path, refresh):
+    """N-19: ``json.loads`` on a baseline left with a merge conflict raised a bare JSONDecodeError."""
+    files = _repo(tmp_path, {f"ok{i}.py": _branchy(f"f{i}", 1) for i in range(3)})
+    baseline = tmp_path / "b.json"
+    baseline.write_text("{not json", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"b\.json is unreadable .*fix or delete it"):
+        assert_complexity_does_not_grow(files, tmp_path, baseline, limit=25, min_functions=3, refresh=refresh)

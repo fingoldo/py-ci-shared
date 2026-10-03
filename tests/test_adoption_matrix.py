@@ -436,3 +436,17 @@ def test_main_fails_a_stale_pin_unless_allowed(tmp_path, capsys):
     assert "stale-pin" in capsys.readouterr().out
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs), "--allow-behind", "1"]) == 0
     capsys.readouterr()
+
+
+def test_a_pin_to_a_tag_or_sha_that_does_not_exist_fails(tmp_path):
+    """N-8: an unresolvable fixed pin got no finding, so a typo'd or force-deleted tag passed with --resolve-in."""
+    pcs, _ = _pcs_with_releases(tmp_path)
+    for name, ref in (("tag", "v1.9.9"), ("sha", "f" * 40)):
+        root = _repo(tmp_path, {"requirements-dev.txt": f"py-ci-shared @ {URL}@{ref}\n"}, name)
+        rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
+        assert rep.failing
+        assert [(f.rule, f.message) for f in rep.findings()] == [
+            ("unresolvable-pin", f"package pinned to {ref}, which does not exist upstream: its install fails")
+        ]
+        assert not scan_repo(root, local_copies=False).failing, "without a resolver nothing can be said"
+        assert not scan_repo(root, local_copies=False, resolver=RefResolver(None)).failing

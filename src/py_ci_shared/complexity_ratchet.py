@@ -18,6 +18,10 @@ Two definitions under one qualname (a property getter and setter, overload stubs
 
 A refresh (*refresh*, ``--refresh-complexity-baseline`` or ``PY_CI_SHARED_REFRESH=complexity``) is shrink-only unless
 growth is opted into (*grow*, ``--py-ci-refresh-grow``, ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``).
+
+A file the parser cannot read fails the gate, and a refresh is refused while one exists. With *allow_unparsed* such a
+file is tolerated instead: its baseline entries are neither judged nor dropped, so a refresh keeps them. A baseline that
+is not valid JSON fails with "unreadable; fix or delete it" rather than a raw ``JSONDecodeError``.
 """
 
 from __future__ import annotations
@@ -28,7 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-complexity-baseline"
 DEFAULT_LIMIT = 10  # ruff's default max-complexity
@@ -132,12 +136,41 @@ def complexity_problems(values: dict[str, int], baseline: dict[str, int], *, lim
     return problems
 
 
-def write_complexity_baseline(path: Path, values: dict[str, int], *, limit: int = DEFAULT_LIMIT, grow: Optional[bool] = None, request: Any = None) -> None:
+def load_complexity_baseline(path: Path) -> dict[str, int]:
+    """The ``{"path::Qual.name": ceiling}`` baseline at *path*; :class:`BaselineError` when it cannot be read or is
+    not that shape (a merge conflict left in it, say), so the message names the file instead of a ``JSONDecodeError``."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise BaselineError(f"complexity baseline {path} is unreadable ({type(exc).__name__}: {exc}); fix or delete it") from exc
+    if not isinstance(data, dict) or not all(isinstance(k, str) and type(v) is int for k, v in data.items()):
+        raise BaselineError(f'complexity baseline {path} is not a {{"path::Qual.name": ceiling}} object; fix or delete it')
+    return data
+
+
+def held_by_unparsed(baseline: dict[str, int], unparsed: Iterable[str]) -> dict[str, int]:
+    """The entries of *baseline* in a file of *unparsed* (relative paths): nothing measured them, so nothing may judge or drop them."""
+    rels = set(unparsed)
+    return {k: v for k, v in baseline.items() if k.partition("::")[0] in rels}
+
+
+def write_complexity_baseline(
+    path: Path,
+    values: dict[str, int],
+    *,
+    limit: int = DEFAULT_LIMIT,
+    grow: Optional[bool] = None,
+    request: Any = None,
+    unparsed: Iterable[str] = (),
+) -> None:
     """Record every function over *limit* with its complexity; shrink-only unless growth is allowed (then a new or
-    raised entry raises ``BaselineGrowthError`` after the removals are written)."""
+    raised entry raises ``BaselineGrowthError`` after the removals are written). Entries in an *unparsed* file are
+    kept as they are. Raises :class:`BaselineError` when the existing baseline is unreadable."""
     over = {k: v for k, v in sorted(values.items()) if v > limit}
-    previous = json.loads(Path(path).read_text(encoding="utf-8-sig")) if Path(path).is_file() else None
-    write_ratchet(path, over, gate="complexity", previous=previous, render=dump_json, grow=grow, request=request)
+    previous = load_complexity_baseline(path) if Path(path).is_file() else None
+    if previous is not None:
+        over.update(held_by_unparsed(previous, unparsed))
+    write_ratchet(path, dict(sorted(over.items())), gate="complexity", previous=previous, render=dump_json, grow=grow, request=request)
 
 
 def assert_complexity_does_not_grow(
@@ -151,27 +184,34 @@ def assert_complexity_does_not_grow(
     refresh: Optional[bool] = None,
     request: Any = None,
     grow: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
-    """Fail on the rules in the module docstring, on any unparsable file, on fewer than *min_functions* measured, and
-    on a missing baseline (a clean repo commits ``{}``). A refresh rewrites the baseline and skips."""
+    """Fail on the rules in the module docstring, on any unparsable file (unless *allow_unparsed*), on fewer than
+    *min_functions* measured, and on a missing or unreadable baseline (a clean repo commits ``{}``). A refresh rewrites
+    the baseline and skips."""
     import pytest
 
     scan = scan_python([Path(f) for f in files], root=Path(root))
     values = _measure(scan)[0]
     if len(values) < min_functions:
         pytest.fail(f"only {len(values)} function(s) measured; expected at least {min_functions} -- the file walk broke and this would check nothing")
-    problems: list[str] = [f"{u.rel}:{u.line}: {u.kind}, so its functions were not measured: {u.message}" for u in scan.unparsed]
+    unparsed = [u.rel for u in scan.unparsed]
+    problems: list[str] = [] if allow_unparsed else [f"{u.rel}:{u.line}: {u.kind}, so its functions were not measured: {u.message}" for u in scan.unparsed]
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         if problems:
             pytest.fail("cannot refresh the complexity baseline while files are unparsable:\n  " + "\n  ".join(problems))
         try:
-            write_complexity_baseline(baseline_path, values, limit=limit, grow=grow, request=request)
-        except BaselineGrowthError as exc:
+            write_complexity_baseline(baseline_path, values, limit=limit, grow=grow, request=request, unparsed=unparsed)
+        except BaselineError as exc:
             pytest.fail(str(exc), pytrace=False)
         pytest.skip(f"complexity baseline written to {baseline_path}")
     if not Path(baseline_path).is_file():
         pytest.fail(f"complexity baseline {baseline_path} does not exist; create it with {REFRESH_FLAG} (a clean repo commits {{}})")
-    baseline = json.loads(Path(baseline_path).read_text(encoding="utf-8-sig"))
-    problems += complexity_problems(values, baseline, limit=limit, fail_on_shrink=fail_on_shrink)
+    try:
+        baseline = load_complexity_baseline(baseline_path)
+    except BaselineError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    held = held_by_unparsed(baseline, unparsed)
+    problems += complexity_problems(values, {k: v for k, v in baseline.items() if k not in held}, limit=limit, fail_on_shrink=fail_on_shrink)
     if problems:
         pytest.fail(f"{len(problems)} complexity problem(s) ({Path(baseline_path).name}, limit {limit}):\n  " + "\n  ".join(problems))

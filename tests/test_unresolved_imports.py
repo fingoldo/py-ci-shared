@@ -335,3 +335,14 @@ class TestStarImportsAreResolved:
             "user.py": "from pkg.facade import whatever\n",
         }
         assert _scan(_pkg(tmp_path, "pkg", files)) == []
+
+
+def test_a_second_index_does_not_inherit_the_first_indexs_submodules(tmp_path):
+    """N-3: the memoised name set of an unchanged __init__ was mutated in place, so a later index saw a deleted submodule."""
+    _pkg(tmp_path, "pkg", {"__init__.py": "X = 1\n", "sub.py": "Y = 2\n"})
+    (tmp_path / "user.py").write_text("from pkg import sub\n", encoding="utf-8")
+    assert _scan(tmp_path) == []
+
+    (tmp_path / "pkg" / "sub.py").unlink()
+
+    assert [line for line in _scan(tmp_path) if "'sub'" in line]

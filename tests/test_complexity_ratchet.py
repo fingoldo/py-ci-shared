@@ -164,3 +164,23 @@ def test_seeding_a_missing_baseline_needs_the_opt_in(tmp_path, monkeypatch):
     with pytest.raises(pytest.skip.Exception):
         _run(files, tmp_path, refresh=True)
     assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {"m0.py::branchy": 4}
+
+
+@pytest.mark.parametrize("refresh", [False, True])
+def test_a_corrupt_baseline_is_named_unreadable_not_a_json_traceback(tmp_path, refresh):
+    """N-19: ``json.loads`` on a baseline left with a merge conflict raised a bare JSONDecodeError."""
+    files = _repo(tmp_path, SIMPLE)
+    (tmp_path / "b.json").write_text("{not json", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"b\.json is unreadable .*fix or delete it"):
+        _run(files, tmp_path, refresh=refresh)
+
+
+def test_allow_unparsed_tolerates_the_file_and_keeps_its_entries_through_a_refresh(tmp_path):
+    files = _repo(tmp_path, SIMPLE, "def broken(:\n")
+    (tmp_path / "b.json").write_text(json.dumps({"m1.py::broken": 9}), encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match="not measured"):
+        _run(files, tmp_path)
+    _run(files, tmp_path, allow_unparsed=True)
+    with pytest.raises(pytest.skip.Exception):
+        _run(files, tmp_path, refresh=True, allow_unparsed=True)
+    assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {"m1.py::broken": 9}

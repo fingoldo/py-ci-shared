@@ -693,8 +693,13 @@ class RepoReport:
         return [p for p in self.pins if p.ref is not None and not p.moving and self.behind.get(p.ref, (0, ""))[0] > self.allow_behind]
 
     @property
+    def unresolvable_pins(self) -> list[Pin]:
+        """Fixed pins the resolver was asked about and could not find: a typo'd or deleted tag, an unknown SHA."""
+        return [p for p in self.pins if p.ref is not None and not p.moving and p.ref in self.resolved and self.resolved[p.ref] is None]
+
+    @property
     def failing(self) -> bool:
-        return not self.pins_agree or bool(self.moving_pins) or bool(self.silent_skips) or bool(self.stale_pins)
+        return not self.pins_agree or bool(self.moving_pins) or bool(self.silent_skips) or bool(self.stale_pins) or bool(self.unresolvable_pins)
 
     def findings(self) -> list[Finding]:
         out: list[Finding] = []
@@ -713,6 +718,10 @@ class RepoReport:
         for p in self.stale_pins:
             n, latest = self.behind[p.ref or ""]
             out.append(Finding(p.path, p.line, "stale-pin", f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}"))
+        out.extend(
+            Finding(p.path, p.line, "unresolvable-pin", f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails")
+            for p in self.unresolvable_pins
+        )
         out.extend(self.silent_skips)
         return out
 
@@ -741,7 +750,7 @@ def scan_repo(
         local_copies=_local_copies(root) if local_copies else [],
         allow_behind=allow_behind,
     )
-    if resolver is not None:
+    if resolver is not None and not (isinstance(resolver, RefResolver) and resolver.repo is None):
         report.resolved = {p.ref: resolver(p.ref) for p in report.pins if p.ref is not None}
     if isinstance(resolver, RefResolver):
         for p in report.pins:

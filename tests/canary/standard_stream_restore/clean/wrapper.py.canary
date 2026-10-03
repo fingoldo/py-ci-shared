@@ -1,0 +1,5 @@
+import io
+import sys
+
+# A CLI installing a UTF-8 wrapper for the life of the process: it restores nothing, so it cannot restore a closed stream.
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")

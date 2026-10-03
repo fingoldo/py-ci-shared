@@ -207,6 +207,8 @@ def eval_marker(marker: str, python: Version) -> Optional[bool]:
 class Repo:
     root: Path
     problems: list[Finding] = field(default_factory=list)
+    #: ``(workflow, job, line, command)`` of a job that runs its tests through make/tox/nox and calls no pytest itself
+    delegated: list[tuple[str, str, int, str]] = field(default_factory=list)
     _toml: dict[Path, Optional[dict[str, Any]]] = field(default_factory=dict)
 
     def rel(self, path: Path) -> str:
@@ -253,6 +255,7 @@ class Provided:
     dists: dict[str, list[Optional[str]]] = field(default_factory=dict)  # normalised dist -> its markers (None = unconditional)
     unresolved: list[str] = field(default_factory=list)  # install forms this check cannot read
     notes: list[str] = field(default_factory=list)
+    reading: set[str] = field(default_factory=set)  # dynamic requirement files being read, so a file naming its own project stops
 
     def add(self, name: str, marker: Optional[str] = None) -> None:
         self.dists.setdefault(norm(name), []).append(marker)
@@ -309,14 +312,50 @@ def _extra_lines(own: str, optional: dict[str, Any], extras: Sequence[str], prov
     return lines
 
 
+def _dynamic_files(repo: Repo, directory: Path, spec: Any, what: str, provided: Provided) -> None:
+    """Read a ``[tool.setuptools.dynamic]`` entry's ``file =`` requirement files; anything else is unresolved."""
+    files = spec.get("file") if isinstance(spec, dict) else None
+    files = [files] if isinstance(files, str) else files
+    if not isinstance(files, list) or not files or not all(isinstance(f, str) for f in files):
+        provided.unresolved.append(f"{repo.rel(directory / 'pyproject.toml')}: {what} are dynamic, and not a [tool.setuptools.dynamic] file = list")
+        return
+    for name in files:
+        key = str((directory / name).resolve())
+        if key in provided.reading:
+            continue
+        provided.reading.add(key)
+        try:
+            requirements_file(repo, directory / name, directory, provided)
+        finally:
+            provided.reading.discard(key)
+
+
 def add_project(repo: Repo, directory: Path, extras: Sequence[str], provided: Provided, *, marker: Optional[str] = None) -> bool:
-    """Add a local project, its dependencies and the named extras; False when *directory* has no readable ``[project]`` table."""
-    project = (repo.toml(directory / "pyproject.toml") or {}).get("project")
+    """Add a local project, its dependencies and the named extras; False when *directory* has no readable ``[project]`` table.
+
+    ``dynamic = ["dependencies"]`` (or ``"optional-dependencies"``) is read from ``[tool.setuptools.dynamic]``'s
+    ``file =`` lists; a dynamic table this cannot read is recorded as unresolved, never as "no dependencies"."""
+    data = repo.toml(directory / "pyproject.toml") or {}
+    project = data.get("project")
     if not isinstance(project, dict) or not project.get("name"):
         return False
     own = norm(project["name"])
     provided.add(own, marker)
-    lines = list(project.get("dependencies") or []) + _extra_lines(own, project.get("optional-dependencies") or {}, extras, provided)
+    dynamic = project.get("dynamic") or []
+    tool = data.get("tool")
+    setuptools = tool.get("setuptools") if isinstance(tool, dict) else None
+    sdyn = setuptools.get("dynamic") if isinstance(setuptools, dict) else None
+    sdyn = sdyn if isinstance(sdyn, dict) else {}
+    if "dependencies" in dynamic:
+        _dynamic_files(repo, directory, sdyn.get("dependencies"), "dependencies", provided)
+    if "optional-dependencies" in dynamic:
+        optional_dyn = sdyn.get("optional-dependencies")
+        for extra in dict.fromkeys(extras):
+            spec = optional_dyn.get(extra) if isinstance(optional_dyn, dict) else None
+            _dynamic_files(repo, directory, spec, f"optional-dependencies[{extra}]", provided)
+    lines = list(project.get("dependencies") or [])
+    if "optional-dependencies" not in dynamic:
+        lines += _extra_lines(own, project.get("optional-dependencies") or {}, extras, provided)
     for line in lines:
         parts = split_requirement(line)
         if parts is not None and norm(parts[0]) != own:
@@ -587,12 +626,26 @@ class _ImportVisitor:
         for node in body:
             self.node(node, guard, in_hook)
 
-    def node(self, node: ast.stmt, guard: Guard, in_hook: bool) -> None:
+    def loaded_modules(self, node: ast.stmt, guard: Guard, in_hook: bool) -> bool:
+        """Record what *node* imports (an import, or a module-level ``pytest_plugins``, which pytest imports when it
+        loads the conftest); False when *node* is neither."""
+        names: list[str] = []
         if isinstance(node, ast.Import):
-            self.out.extend(ConftestImport(a.name, a.name.split(".")[0], self.rel, node.lineno, guard) for a in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            self.out.append(ConftestImport(node.module, node.module.split(".")[0], self.rel, node.lineno, guard))
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names = [a.name for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module] if node.level == 0 and node.module else []
+        elif isinstance(node, ast.Assign) and not in_hook and any(isinstance(t, ast.Name) and t.id == "pytest_plugins" for t in node.targets):
+            values = node.value.elts if isinstance(node.value, (ast.List, ast.Tuple)) else [node.value]
+            names = [v.value for v in values if isinstance(v, ast.Constant) and isinstance(v.value, str) and v.value]
+        else:
+            return False
+        self.out.extend(ConftestImport(name, name.split(".")[0], self.rel, node.lineno, guard) for name in names)
+        return True
+
+    def node(self, node: ast.stmt, guard: Guard, in_hook: bool) -> None:
+        if self.loaded_modules(node, guard, in_hook):
+            return
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             if not in_hook and (isinstance(node, ast.ClassDef) or node.name in SESSION_HOOKS):
                 self.visit(node.body, guard, not isinstance(node, ast.ClassDef))
         elif isinstance(node, ast.If):
@@ -660,14 +713,3 @@ def installed_map() -> dict[str, tuple[str, ...]]:
         for t in tops:
             out.setdefault(t, set()).add(norm(name))
     return {k: tuple(sorted(v)) for k, v in out.items()}
-
-
-@functools.cache
-def installed_dist(name: str) -> bool:
-    from importlib import metadata
-
-    try:
-        metadata.distribution(name)
-        return True
-    except metadata.PackageNotFoundError:
-        return False

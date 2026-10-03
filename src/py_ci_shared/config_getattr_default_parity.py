@@ -119,12 +119,14 @@ def dataclass_field_names(dataclass_classes: Sequence[type]) -> frozenset[str]:
     """The union of field names declared by every plain ``@dataclass`` in *dataclass_classes*.
 
     Unioned rather than intersected, matching :func:`schema_field_defaults`'s treatment of same-named fields
-    across models: a field is undeclared only when NONE of the caller's dataclasses has it.
+    across models: a field is undeclared only when NONE of the caller's dataclasses has it. Anything that is not a
+    dataclass raises ``TypeError``: skipping it would switch the typo check off without a word.
     """
     names: set[str] = set()
     for cls in dataclass_classes:
-        if dataclasses.is_dataclass(cls):
-            names.update(f.name for f in dataclasses.fields(cls))
+        if not dataclasses.is_dataclass(cls):
+            raise TypeError(f"dataclass_classes holds {cls!r}, which is not a dataclass; pass pydantic models as schema_classes")
+        names.update(f.name for f in dataclasses.fields(cls))
     return frozenset(names)
 
 
@@ -163,6 +165,10 @@ def _mismatches(
     dataclass_fields: frozenset[str] = frozenset(),
 ) -> list[GetattrDefault]:
     declared = schema_field_defaults(schema_classes)
+    if dataclass_fields:
+        # Every pydantic field is declared, required and default_factory ones included, though only fields with a
+        # literal default are in ``declared``: without them a real field read as a typo.
+        dataclass_fields = dataclass_fields | {name for cls in schema_classes for name in cls.model_fields}
     out: list[GetattrDefault] = []
     for parsed in scan:
         for node, field, default_node in _config_getattrs(parsed.tree, receiver_names, receiver_suffixes):

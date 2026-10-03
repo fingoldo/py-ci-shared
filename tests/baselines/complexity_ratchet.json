@@ -64,5 +64,5 @@
   "src/py_ci_shared/unresolved_imports.py::_is_dynamic_module": 11,
   "src/py_ci_shared/unresolved_imports.py::_names_bound_by": 13,
   "src/py_ci_shared/version_consistency.py::version_sources": 12,
-  "src/py_ci_shared/worktree_hygiene.py::unsaved_paths": 13
+  "src/py_ci_shared/worktree_hygiene.py::unsaved_paths": 11
 }

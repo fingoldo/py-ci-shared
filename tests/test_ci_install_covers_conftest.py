@@ -48,7 +48,6 @@ def pytest_addoption(parser):
 def _no_installed_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     """Map imports only through the tables and the repo itself, whatever this interpreter happens to have installed."""
     monkeypatch.setattr(gate, "installed_map", lambda: {})
-    monkeypatch.setattr(gate, "installed_dist", lambda name: False)
 
 
 def _job(install: str, test: str = "pytest tests/", python: str = '"3.11"', extra_steps: str = "", matrix: str = "") -> str:
@@ -462,3 +461,71 @@ def test_a_baseline_accepts_the_known_finding_and_fails_when_it_goes_stale(tmp_p
 )
 def test_markers(marker: str, python: Optional[tuple[int, int]], expected: Optional[bool]) -> None:
     assert eval_marker(marker, python) is expected
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# 2026-10-03 audit regressions
+
+DYNAMIC_PYPROJECT = """
+[project]
+name = "seedpkg"
+version = "0.1.0"
+dynamic = ["dependencies", "optional-dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = {file = ["requirements.txt"]}
+optional-dependencies.dev = {file = ["requirements-dev.txt"]}
+"""
+
+
+def test_dynamic_dependencies_are_read_from_their_setuptools_files(tmp_path: Path) -> None:
+    """N-4: ``dynamic = ["dependencies"]`` was read as "no dependencies", a confident and wrong ci-install-missing."""
+    conftest = "import requests\nimport hypothesis\n"
+    files = {"pyproject.toml": DYNAMIC_PYPROJECT, "requirements.txt": "requests\n", "requirements-dev.txt": "hypothesis\n", "tests/conftest.py": conftest}
+    root = _repo(tmp_path, {**files, ".github/workflows/ci.yml": _job('pip install -e ".[dev]"')})
+    assert _findings(root) == []
+    root2 = _repo(tmp_path / "b", {**files, ".github/workflows/ci.yml": _job("pip install -e .")})
+    assert _missing(root2) == {"hypothesis": gate.RULE_MISSING}
+
+
+def test_a_dynamic_table_that_cannot_be_read_is_unevaluated_not_missing(tmp_path: Path) -> None:
+    pyproject = '[project]\nname = "seedpkg"\nversion = "0.1.0"\ndynamic = ["dependencies"]\n'
+    root = _repo(tmp_path, {"pyproject.toml": pyproject, "tests/conftest.py": "import requests\n", ".github/workflows/ci.yml": _job("pip install -e .")})
+    assert _missing(root) == {"requests": gate.RULE_UNEVALUATED}
+
+
+def test_the_rule_and_key_do_not_depend_on_the_interpreter_running_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """N-5: installed metadata chose between missing and unmapped and named the key's distribution, so a baseline
+    written on one interpreter did not match on another."""
+    root = _repo(tmp_path, {"tests/conftest.py": "import git\nimport requests\n", ".github/workflows/ci.yml": _job("pip install numpy")})
+    bare = sorted(f.key for f in _findings(root))
+    monkeypatch.setattr(gate, "installed_map", lambda: {"git": ("gitpython",), "requests": ("requests",)})
+    rich = _findings(root)
+    assert sorted(f.key for f in rich) == bare
+    assert bare == ["ci-install-unmapped::.github/workflows/ci.yml::test::git", "ci-install-unmapped::.github/workflows/ci.yml::test::requests"]
+    assert any("'gitpython'" in f.message for f in rich), "installed metadata still helps, as a hint in the message"
+
+
+def test_pytest_plugins_and_dash_p_plugins_are_required(tmp_path: Path) -> None:
+    """N-20: modules named by ``pytest_plugins`` and by ``-p`` load at startup like a conftest import, and were ignored."""
+    conftest = 'pytest_plugins = ["pytest_asyncio", "tests.helpers"]\n'
+    root = _repo(
+        tmp_path,
+        {
+            "tests/conftest.py": conftest,
+            "tests/helpers.py": "",
+            ".github/workflows/ci.yml": _job("pip install numpy pytest", test="pytest -p xdist -p no:randomly tests/"),
+        },
+    )
+    assert set(_missing(root, aliases={"pytest_asyncio": "pytest-asyncio", "xdist": "pytest-xdist"})) == {"pytest-asyncio", "pytest-xdist"}
+
+
+@pytest.mark.parametrize("test", ["tox -e py", "nox -s tests", "make test", "python -m tox"])
+def test_a_job_that_runs_its_tests_through_tox_nox_or_make_is_reported_unevaluated(tmp_path: Path, test: str) -> None:
+    """N-20: such a job was skipped as "runs no pytest", silently."""
+    root = _repo(tmp_path, {".github/workflows/ci.yml": _job("pip install numpy", test=test)})
+    (finding,) = _findings(root)
+    assert finding.rule == gate.RULE_UNEVALUATED and test.split()[0] in finding.message
+    assert _findings(root, acknowledge={"ci.yml::test": "tox builds its own env"}) == []
+    plain = _repo(tmp_path / "plain", {".github/workflows/ci.yml": _job("pip install numpy", test="make docs")})
+    assert _findings(plain) == []

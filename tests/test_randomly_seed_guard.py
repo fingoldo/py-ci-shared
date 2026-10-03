@@ -33,6 +33,30 @@ def test_it_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
     assert seen == [7]
 
 
+def test_a_reseeder_decorated_with_functools_wraps_is_still_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """N-16: ``__wrapped__`` was the "already ours" marker, so any ``functools.wraps``-decorated reseeder got the raw seed."""
+    import functools
+
+    seen: list[int] = []
+
+    def strict(seed: int) -> None:
+        if not 0 <= seed < 2**32:
+            raise ValueError("Seed must be between 0 and 2**32 - 1")
+        seen.append(seed)
+
+    @functools.wraps(strict)
+    def decorated(seed: int) -> None:
+        strict(seed)
+
+    assert hasattr(decorated, "__wrapped__")
+    monkeypatch.setattr(pytest_randomly, "entrypoint_reseeds", [decorated])
+
+    randomly_seed_guard.bound_randomly_reseeders()
+    pytest_randomly.entrypoint_reseeds[0](2**32 + 5)
+
+    assert seen == [5]
+
+
 def test_a_seed_in_range_is_passed_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[int] = []
     monkeypatch.setattr(pytest_randomly, "entrypoint_reseeds", [seen.append])

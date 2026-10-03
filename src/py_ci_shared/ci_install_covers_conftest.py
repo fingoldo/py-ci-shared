@@ -24,12 +24,16 @@ earlier commands install:
 
 What is REQUIRED is every third-party top-level import that runs when pytest loads each ``conftest.py`` the
 invocation reaches (the conftests between its rootdir and its test paths; ``--ignore`` honoured): imports at module
-level and in the session hooks, minus those inside a ``try`` that catches ``ImportError`` and those under
+level and in the session hooks, the modules a conftest's ``pytest_plugins`` names and every ``-p <plugin>`` on the
+pytest command line, minus those inside a ``try`` that catches ``ImportError`` and those under
 ``if TYPE_CHECKING``. An import under ``if sys.version_info >= (3, 9):`` is required only on the job's Python
 versions the guard admits, and a provided requirement with a ``; python_version ...`` marker counts only on the
 versions it admits (the job's versions come from ``actions/setup-python`` and the matrix). Stdlib and first-party
 names are dropped; an import name maps to its distribution through a built-in alias table (``yaml`` -> ``pyyaml``),
-the installed environment's metadata, the caller's ``aliases`` and ``-``/``_``/case normalisation. Distributions a
+the caller's ``aliases`` and ``-``/``_``/case normalisation, and a name the repo declares or installs anywhere counts
+as known. The running interpreter's installed metadata is NOT consulted for the verdict: it made the rule and the
+baseline key depend on which interpreter ran the gate (``ci-install-missing::...::gitpython`` on a developer machine,
+``ci-install-unmapped::...::git`` in CI); it only adds a hint to an unmapped finding's message. Distributions a
 provided package pulls in transitively are not known, so a conftest import of one must be installed explicitly.
 
 Three finding kinds, never a silent pass:
@@ -37,7 +41,8 @@ Three finding kinds, never a silent pass:
 * ``ci-install-missing``: the job installs no distribution that provides the import;
 * ``ci-install-unmapped``: the import's distribution is unknown (add it to ``aliases``);
 * ``ci-install-unevaluated``: something is missing, but the job also installs through a form this check cannot
-  read (``poetry install``, ``conda``, ``-r "$VAR"``, an extra built from a matrix value, a third-party action); a
+  read (``poetry install``, ``conda``, ``-r "$VAR"``, an extra built from a matrix value, a third-party action), or
+  the job calls no pytest itself but runs ``tox``/``nox``/``make test`` (whose environments it does not read); a
   repo acknowledges that per job with ``acknowledge={"ci.yml::test": "why"}``.
 
 Usage::
@@ -69,7 +74,6 @@ from ._ci_install_parts import (
     add_project,
     conftest_imports,
     dependency_group,
-    installed_dist,
     installed_map,
     is_stdlib,
     norm,
@@ -456,6 +460,7 @@ class _JobWalk:
     provided: Provided = field(default_factory=Provided)
     runs: list[PytestRun] = field(default_factory=list)
     text: str = ""
+    delegated: list[tuple[int, str]] = field(default_factory=list)  # tox/nox/make-test calls: (line, command)
 
     def steps(self, steps: Any, ctx: _Context, workdir: str, depth: int = 0) -> None:
         for step in steps if isinstance(steps, list) else []:
@@ -559,6 +564,10 @@ class _JobWalk:
             self.uv(rest, cwd)
         elif prog in ("bash", "sh", "source", ".") or argv[0].endswith(".sh"):
             self.shell_script(argv, ctx, cwd, line, depth)
+        elif prog in ("tox", "nox") or (_is_python(prog) and rest[:2] in (["-m", "tox"], ["-m", "nox"])):
+            self.delegated.append((line, " ".join(argv[:3])))
+        elif prog == "make" and any(re.search(r"test|check", a) for a in rest if not a.startswith("-")):
+            self.delegated.append((line, " ".join(argv[:3])))
         else:
             self.unknown_installer(prog, rest)
 
@@ -634,6 +643,8 @@ def _workflow_runs(repo: Repo, path: Path) -> Optional[list[PytestRun]]:
         walk = _JobWalk(repo, repo.rel(path), str(job_id), [None], text=text)
         walk.steps(job["steps"], ctx, _working_directory(job.get("defaults")) or _working_directory(data.get("defaults")))
         runs.extend(walk.runs)
+        if walk.delegated and not walk.runs:
+            repo.delegated.append((repo.rel(path), str(job_id), *walk.delegated[0]))
     return runs
 
 
@@ -756,14 +767,12 @@ def _candidates(imp: ConftestImport, aliases: Mapping[str, Any]) -> tuple[list[s
         if hit is not None:
             found.extend([hit] if isinstance(hit, str) else list(hit))
             break
-    found.extend(installed_map().get(imp.top, ()))
     out: list[str] = []
     for name in found:
         out.extend(norm(alt) for alt in _ALTERNATIVES.get(norm(name), (name,)) if norm(alt) not in out)
     if out:
         return out, True
-    identity = norm(imp.top)
-    return [identity], installed_dist(identity)
+    return [norm(imp.top)], False
 
 
 def _versions_text(versions: Sequence[Version]) -> str:
@@ -785,8 +794,10 @@ class _Gap:
         what = f"{self.imp.conftest}:{self.imp.line} imports {self.imp.module!r}" + (f" (and {others} more import(s) of it)" if others > 0 else "")
         job = f"job {self.run.job!r}{_versions_text(self.versions)}"
         if self.rule == RULE_UNMAPPED:
+            here = installed_map().get(self.imp.top, ())
+            hint = f" (the interpreter running this check has it from {', '.join(map(repr, here))})" if here else ""
             message = (
-                f"{job} runs pytest, and {what} at collection, but no distribution is known for {self.imp.top!r}: add "
+                f"{job} runs pytest, and {what} at collection, but no distribution is known for {self.imp.top!r}{hint}: add "
                 f"aliases={{{self.imp.top!r}: '<distribution>'}} so its install can be checked"
             )
         elif self.rule == RULE_UNEVALUATED:
@@ -831,7 +842,12 @@ def _declared(repo: Repo) -> set[str]:
     data = repo.toml(repo.root / "pyproject.toml") or {}
     raw_project = data.get("project")
     project: dict[str, Any] = raw_project if isinstance(raw_project, dict) else {}
-    add_project(repo, repo.root, list(project.get("optional-dependencies") or {}), declared)
+    tool = data.get("tool")
+    setuptools = tool.get("setuptools") if isinstance(tool, dict) else None
+    dynamic = setuptools.get("dynamic") if isinstance(setuptools, dict) else None
+    dynamic_extras = dynamic.get("optional-dependencies") if isinstance(dynamic, dict) else None
+    extras = [*(project.get("optional-dependencies") or {}), *(dynamic_extras if isinstance(dynamic_extras, dict) else {})]
+    add_project(repo, repo.root, extras, declared)
     for group in data.get("dependency-groups") or {}:
         dependency_group(repo, repo.root / "pyproject.toml", str(group), declared)
     return set(declared.dists)
@@ -852,8 +868,9 @@ def collect_ci_install_gaps(
     """
     repo = Repo(Path(root).resolve())
     runs, read = _pytest_runs(repo)
+    acknowledged = {k: v for k, v in (acknowledge or {}).items() if str(v).strip()}
     if not runs:
-        return [], list(repo.problems), read
+        return _delegated_findings(repo, acknowledged), list(repo.problems), read
     scan = scan_python(repo.root, min_files=0, patterns=("conftest.py",))
     repo.problems.extend(problem.to_finding(RULE_UNPARSED) for problem in scan.unparsed)
     first = set(first_party)
@@ -861,15 +878,42 @@ def collect_ci_install_gaps(
     for f in scan.files:
         local = _first_party(repo, f.path.resolve(), first)
         imports[f.path.resolve()] = [i for i in conftest_imports(f.tree, f.rel) if not is_stdlib(i.top) and i.top not in local]
-    acknowledged = {k: v for k, v in (acknowledge or {}).items() if str(v).strip()}
     checker = _Checker(repo, dict(aliases or {}), acknowledged, {d for r in runs for d in r.provided.dists} | _declared(repo))
     every = sorted(imports)
     for run in runs:
         for conftest in _conftests_for(repo, run, every):
             for imp in imports[conftest]:
                 checker.check(run, imp)
+        local = _first_party(repo, run.cwd / "conftest.py", first) if repo.inside(run.cwd) else first
+        for imp in _plugin_options(run):
+            if not is_stdlib(imp.top) and imp.top not in local:
+                checker.check(run, imp)
     findings = [gap.finding(f"{Path(gap.run.workflow).name}::{gap.run.job}") for gap in checker.gaps.values()]
+    findings += _delegated_findings(repo, acknowledged)
     return sorted(findings, key=lambda f: (f.path, f.line, f.message)), list(repo.problems), read
+
+
+def _delegated_findings(repo: Repo, acknowledged: Mapping[str, str]) -> list[Finding]:
+    """One ``ci-install-unevaluated`` per job that runs its tests only through tox/nox/``make test``."""
+    findings: list[Finding] = []
+    for workflow, job, line, command in repo.delegated:
+        if f"{Path(workflow).name}::{job}" not in acknowledged:
+            message = (
+                f"job {job!r} runs its tests through `{command}`, whose environments this check does not read, so what the "
+                f"conftests import was not checked. Run pytest in the job, or acknowledge={{{Path(workflow).name + '::' + job!r}: '<why>'}}"
+            )
+            findings.append(Finding(workflow, line, RULE_UNEVALUATED, message, key=f"{RULE_UNEVALUATED}::{workflow}::{job}::{command.split()[0]}"))
+    return findings
+
+
+def _plugin_options(run: PytestRun) -> list[ConftestImport]:
+    """The plugins ``-p name`` / ``-pname`` load at startup (``-p no:x`` disables one and is skipped)."""
+    out: list[ConftestImport] = []
+    for i, a in enumerate(run.args):
+        value = run.args[i + 1] if a == "-p" and i + 1 < len(run.args) else a[2:] if a.startswith("-p") and len(a) > 2 else ""
+        if value and not value.startswith("no:") and "\x00" not in value:
+            out.append(ConftestImport(value, value.split(".")[0], run.workflow, run.line, lambda _: True))
+    return out
 
 
 def find_ci_install_gaps(root: Path) -> list[str]:

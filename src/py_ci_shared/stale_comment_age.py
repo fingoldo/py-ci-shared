@@ -28,8 +28,10 @@ Usage::
         assert_no_stale_todos(REPO, ["lib", "tool"], max_age_days=30)
 
 Early warning (opt-in): ``warn_days=7`` also names every comment that will cross ``max_age_days`` within the next
-7 days, as advisory output that never fails the test. :func:`assert_no_stale_todos` emits one ``UserWarning`` per such
-comment (pytest lists them in its warnings summary) and returns those lines; :func:`find_comments_going_stale`
+7 days, as advisory output that never fails the test. :func:`assert_no_stale_todos` emits one
+:class:`StaleCommentAdvisory` (a ``UserWarning``) per such comment (pytest lists them in its warnings summary) and
+returns those lines. It is emitted with its own ``always`` filter, so ``-W error`` / ``filterwarnings = ["error"]`` does
+not turn an advisory into a failure; :func:`find_comments_going_stale`
 returns them without the gate. Each line names ``file:line`` and the UTC date the comment goes stale, so the TODO can
 be done or tracked before it turns the build red. ``warn_days=0`` (the default) keeps the gate exactly as it was.
 Both accept ``now`` (epoch seconds) to freeze the clock.
@@ -50,6 +52,11 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source
+
+
+class StaleCommentAdvisory(UserWarning):
+    """A comment that goes stale within ``warn_days``: advisory, never an error, whatever the warning filters say."""
+
 
 _MARKERS = r"(?:TODO|FIXME|HACK|XXX)"
 # Applied to a comment's TEXT (marker stripped), so a trailing `x = 1  # TODO fix` is seen as well as a whole-line one.
@@ -456,16 +463,19 @@ def assert_no_stale_todos(
     """Fail on any TODO or commented-out call older than ``max_age_days``, and on anything that kept a line from
     being dated (see :func:`find_stale_comments`).
 
-    With ``warn_days > 0``, comments that go stale within that many days are emitted as one ``UserWarning`` each
-    and returned (see :func:`find_comments_going_stale`); they never fail the test. Returns ``[]`` by default."""
+    With ``warn_days > 0``, comments that go stale within that many days are emitted as one
+    :class:`StaleCommentAdvisory` each (shown even under ``-W error``, never raised) and returned (see :func:`find_comments_going_stale`); they never fail the test. Returns ``[]`` by default.
+    """
     import pytest
 
     at = time.time() if now is None else now
     problems, dated = _scan(repo_root, scan_dirs, suffixes=suffixes, require_issue_ref=require_issue_ref, skip_dirs=skip_dirs)
     problems += _stale(dated, max_age_days, at)
     advisories = _going_stale(dated, max_age_days, warn_days, at)
-    for line in advisories:
-        warnings.warn(f"stale-comment early warning: {line}", UserWarning, stacklevel=2)
+    with warnings.catch_warnings():
+        warnings.simplefilter("always", StaleCommentAdvisory)  # ahead of a blanket "error" filter, for this block only
+        for line in advisories:
+            warnings.warn(f"stale-comment early warning: {line}", StaleCommentAdvisory, stacklevel=2)
     if problems:
         pytest.fail(f"{len(problems)} stale comment(s) older than {max_age_days} days:\n  " + "\n  ".join(problems))
     return advisories

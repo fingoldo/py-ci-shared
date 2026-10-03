@@ -161,7 +161,9 @@ class ModuleIndex:
             return
         if _is_dynamic_module(tree):
             self._dynamic.add(dotted)
-        self._names[dotted] = tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree))
+        # A COPY: the memoised set is shared by every index that reads this unchanged tree, and the submodule pass in
+        # __init__ adds to it, which would leak one index's submodule names into the next.
+        self._names[dotted] = set(tree_memo(tree, "unresolved_imports._bound_names", functools.partial(_bound_names, tree)))
         stars = _star_import_sources(tree, dotted, is_package=path.name == "__init__.py")
         if stars:
             self._star_sources[dotted] = stars

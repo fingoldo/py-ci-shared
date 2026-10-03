@@ -361,6 +361,17 @@ class TestEarlyWarning:
             out = assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 25 * _DAY)
         assert len(out) == 1
 
+    def test_an_advisory_does_not_fail_under_warnings_as_errors(self, tmp_path):
+        """N-21: under ``-W error`` the early warning raised, failing the test days before the comment was stale."""
+        import warnings
+
+        repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
+        with warnings.catch_warnings(record=True) as seen:
+            warnings.simplefilter("error")
+            out = assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 25 * _DAY)
+        assert len(out) == 1
+        assert [w.category for w in seen] == [sca.StaleCommentAdvisory]
+
     def test_default_warn_days_zero_is_silent(self, tmp_path, recwarn):
         repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
         assert assert_no_stale_todos(repo, ["lib"], max_age_days=30, now=_T0 + 25 * _DAY) == []

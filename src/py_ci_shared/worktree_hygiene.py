@@ -36,6 +36,7 @@ import hashlib
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -224,6 +225,23 @@ def _file_content_ids(repo: Path, path: Path, object_format: str) -> set[str]:
     return _content_ids(repo, content, object_format)
 
 
+def _unsaved_in_directory(repo: Path, worktree: Path, directory: Path, object_format: str, saved: Callable[[str, set[str]], bool]) -> list[str]:
+    """The unsaved files under an ignored or untracked *directory*, which git lists as one entry.
+
+    An untracked directory reaches here only when git would not list its files: a nested repository (its own ``.git``)
+    shows as one ``?? nested/`` entry even with ``--untracked-files=all``. Its files are judged like any other, and its
+    history, which nothing outside it holds, makes the directory itself unsaved.
+    """
+    out: list[str] = []
+    if (directory / ".git").exists():
+        out.append(directory.relative_to(worktree).as_posix() + "/")
+    for inner in _files_under(directory):
+        inner_rel = inner.relative_to(worktree).as_posix()
+        if not _skipped(inner_rel) and not saved(inner_rel, _file_content_ids(repo, inner, object_format)):
+            out.append(inner_rel)
+    return out
+
+
 def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reachable: frozenset[str] | None = None) -> list[str]:
     """Changed paths in *worktree* whose content is neither in *ref* nor reachable from any ref of this repo.
 
@@ -254,11 +272,8 @@ def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reach
         if "D" in code:
             continue
         candidate = worktree / relative
-        if code == "!!" and candidate.is_dir():
-            for inner in _files_under(candidate):
-                inner_rel = inner.relative_to(worktree).as_posix()
-                if not _skipped(inner_rel) and not saved(inner_rel, _file_content_ids(repo, inner, object_format)):
-                    unsaved.append(inner_rel)
+        if code in ("!!", "??") and candidate.is_dir():
+            unsaved.extend(_unsaved_in_directory(repo, worktree, candidate, object_format, saved))
             continue
         if not candidate.is_file():
             continue

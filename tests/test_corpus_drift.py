@@ -50,12 +50,26 @@ def test_thresholds_are_configurable():
     assert _kinds(compare(prev, cur, pct=0.1, absolute=2)) == [("g.find_x", "jump")]
 
 
-def test_a_finder_that_starts_to_raise_fails_and_one_that_always_raised_does_not():
+def test_a_finder_that_starts_to_raise_fails_and_one_that_always_raised_is_reported_without_failing():
     prev = _snap({"g.find_x": 4}, {"g.find_old": "SyntaxError: x"})
     cur = _snap({}, {"g.find_x": "UnparsedFilesError: 1 file", "g.find_old": "SyntaxError: x"})
-    (d,) = compare(prev, cur)
+    (d,) = [d for d in compare(prev, cur) if d.failing]
     assert (d.finder, d.kind, d.before, d.after, d.failing) == ("g.find_x", "errored", 4, None, True)
     assert "UnparsedFilesError" in d.detail
+    assert [(d.finder, d.kind) for d in compare(prev, cur) if not d.failing] == [("g.find_old", "still-errored")]
+
+
+def test_a_new_finder_that_errors_from_its_first_night_fails():
+    """N-9: "errored" needed an earlier count, so a finder raising on real code since it was added never failed."""
+    (d,) = compare(_snap({"g.find_x": 1}), _snap({"g.find_x": 1}, {"b.find_new": "ValueError: boom"}))
+    assert (d.finder, d.kind, d.failing) == ("b.find_new", "errored", True)
+
+
+def test_a_repo_missing_from_tonight_fails():
+    """N-9: a repo present last night and absent tonight (a private consumer skipped for its token) was not compared at all."""
+    prev = {"repos": {**_snap({"g.find_x": 12}, repo="mlframe")["repos"], **_snap({"g.find_x": 1}, repo="pyutilz")["repos"]}}
+    (d,) = compare(prev, _snap({"g.find_x": 1}, repo="pyutilz"))
+    assert (d.repo, d.kind, d.failing) == ("mlframe", "repo-gone", True)
 
 
 def test_new_gone_and_recovered_finders_are_reported_but_do_not_fail():
@@ -67,7 +81,7 @@ def test_new_gone_and_recovered_finders_are_reported_but_do_not_fail():
 
 
 def test_a_repo_missing_from_the_previous_snapshot_is_not_compared():
-    assert compare(_snap({"g.find_x": 0}, repo="old"), _snap({"g.find_x": 50}, repo="added")) == []
+    assert [(d.repo, d.kind) for d in compare(_snap({"g.find_x": 0}, repo="old"), _snap({"g.find_x": 50}, repo="added"))] == [("old", "repo-gone")]
 
 
 def test_the_table_puts_failures_first_and_names_the_numbers():

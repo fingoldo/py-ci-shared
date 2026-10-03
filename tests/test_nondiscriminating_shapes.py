@@ -120,8 +120,26 @@ class TestAuditRegressions:
             "    np.testing.assert_allclose(moved, isolated, rtol=1e-6)\n"
         )
         assert _reasons(canary) == []
-        assert_next = "def test_inverse_is_local():\n    assert np.median(np.abs(a - b)) < 1e-6\n    assert a.shape == b.shape\n"
+        assert_next = "def test_inverse_is_local():\n    assert np.median(np.abs(a - b)) < 1e-6\n    assert np.all(np.abs(a - b) < 1e-3)\n"
         assert _reasons(assert_next) == []
+
+    @pytest.mark.parametrize("companion", ["assert out is not None", "assert len(out) > 0", "assert out.shape == x.shape"])
+    def test_a_trivial_companion_assert_does_not_disarm_the_median_check(self, companion):
+        """N-12: any other ``assert`` used to count as the real check, though none of these compares an element."""
+        src = f"def test_roundtrip_with_trivial_guard():\n    out = inv(fwd(x))\n    {companion}\n    assert np.median(np.abs(out - x)) < 1e-3\n"
+        assert _reasons(src) == ["median-roundtrip"]
+
+    @pytest.mark.parametrize("companion", ["assert (out == x).all()", "assert np.abs(out - x).max() < 1e-6", "assert out.tolist() == x.tolist()"])
+    def test_a_per_element_companion_still_disarms_it(self, companion):
+        src = f"def test_roundtrip():\n    out = inv(fwd(x))\n    {companion}\n    assert np.median(np.abs(out - x)) < 1e-3\n"
+        assert _reasons(src) == []
+
+    @pytest.mark.parametrize("cond", ["not out_file.exists()", "not result.supported"])
+    def test_an_env_word_on_a_computed_name_is_still_a_late_skip(self, cond):
+        """N-12: ``exists``/``supported`` exempted any skip, even one on what the code under test just returned."""
+        receiver = cond.split()[1].split(".")[0]
+        src = f"def test_x():\n    {receiver} = run_pipeline()\n    if {cond}:\n        pytest.skip('no output')\n    assert {receiver}\n"
+        assert _reasons(src) == ["late-skip"]
 
     def test_a_sole_median_verdict_in_an_inverse_test_is_still_flagged(self):
         src = "def test_roundtrip():\n    assert np.median(np.abs(back - x)) < 1e-6\n"
@@ -162,7 +180,9 @@ class TestAuditRegressions:
 
 
 class TestNonemptyOnlyAssert:
-    @pytest.mark.parametrize("cmp", ["len(result) > 0", "len(result) >= 1", "0 < len(result)", "1 <= len(result)"])
+    @pytest.mark.parametrize(
+        "cmp", ["len(result) > 0", "len(result) >= 1", "0 < len(result)", "1 <= len(result)", "len(result) != 0", "0 != len(result)", "len(result)"]
+    )
     def test_a_sole_nonemptiness_assertion_is_found(self, cmp):
         src = f"def test_dedup_removes_duplicates():\n    result = dedup([1, 1, 2])\n    assert {cmp}\n"
         assert _reasons(src) == ["nonempty-only-assert"]
@@ -179,3 +199,9 @@ class TestNonemptyOnlyAssert:
 
     def test_a_value_assertion_alone_is_not_flagged(self):
         assert _reasons("def test_x():\n    result = dedup([1, 1, 2])\n    assert result == [1, 2]\n") == []
+
+
+def test_an_unknown_extra_shape_slug_raises():
+    """N-17: a typo in the opt-in (``nonempty_only_assert``) used to switch the shape off without a word."""
+    with pytest.raises(ValueError, match="nonempty_only_assert"):
+        _reasons("def test_x():\n    assert len(r) > 0\n", extra_shapes=["nonempty_only_assert"])
