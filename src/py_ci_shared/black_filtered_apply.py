@@ -38,6 +38,7 @@ if any do (0 if the tree/file-set is fully filtered-Black-clean).
 
 import difflib
 import io
+import concurrent.futures
 import os
 import pathlib
 import re
@@ -329,6 +330,38 @@ def filtered_apply(orig: str, formatted: str) -> str:
     return "".join(out)
 
 
+_PREFILTER_BATCH = 200
+
+
+def files_black_would_change(files, config_path):
+    """Subset of *files* for which one batched ``black --check`` says "would reformat" or fails to format.
+
+    Spawning Black once per file costs a Python start-up each (~0.4 s), which on a few thousand files outran a 15-minute job. Black run
+    over many files in one process takes seconds, and a file it leaves alone cannot produce a filtered change either: the filter only
+    DROPS hunks from Black's output, so identical input and output stay identical. Only the files named here need the per-file filtered
+    comparison. A batch Black cannot run at all (unusable config, crash) falls back to the full list, so the check is never weaker
+    than the per-file path.
+    """
+    flagged = []
+    for i in range(0, len(files), _PREFILTER_BATCH):
+        batch = files[i : i + _PREFILTER_BATCH]
+        proc = subprocess.run([*_BLACK_CMD, "--check", "--config", config_path, *batch], capture_output=True)
+        if proc.returncode == 0:
+            continue
+        err = proc.stderr.decode("utf-8", "replace").replace("\r\n", "\n")
+        named = set()
+        for line in err.splitlines():
+            for prefix in ("would reformat ", "error: cannot format "):
+                if line.startswith(prefix):
+                    named.add(line[len(prefix) :].split(": ", 1)[0].strip())
+        by_normalised = {os.path.normpath(f): f for f in batch}
+        hits = [by_normalised[os.path.normpath(n)] for n in named if os.path.normpath(n) in by_normalised]
+        if proc.returncode not in (0, 1) or not hits:
+            hits = batch  # black itself failed, or its report could not be matched to files: check them all, the slow way
+        flagged.extend(hits)
+    return flagged
+
+
 def process_one(path, config_path):
     """Returns (changed: bool, orig: str, result: str)."""
     with open(path, "r", encoding="utf-8", newline="") as f:
@@ -376,8 +409,8 @@ def main(argv=None):
             files = discover_py_files(args)
         except DiscoveryError as exc:
             raise SystemExit(f"--check: {exc}")
-        changed_files = []
-        for path in files:
+        def check_one(path):
+            """True when the filtered result differs from the file, or the file could not be checked."""
             try:
                 changed, _, _ = process_one(path, config_path)
             except Exception as e:
@@ -387,8 +420,13 @@ def main(argv=None):
                 # RuntimeError case black itself raises.
                 print(f"ERROR: {path}: {type(e).__name__}: {e}", file=sys.stderr)
                 changed = True
-            if changed:
-                changed_files.append(path)
+            return changed
+
+        candidates = files_black_would_change(files, config_path)
+        # One Black process per candidate, run side by side: the threads only wait on subprocesses.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 1))) as pool:
+            verdicts = list(pool.map(check_one, candidates))
+        changed_files = [path for path, changed in zip(candidates, verdicts) if changed]
         if changed_files:
             print(f"{len(changed_files)}/{len(files)} files have non-excluded-class Black findings:")
             for p in changed_files:
