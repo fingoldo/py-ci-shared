@@ -28,11 +28,11 @@ The traps this handles, each of which produces a silently wrong range if ignored
 
 from __future__ import annotations
 
-import os
 import re
-import subprocess
 import warnings
 from pathlib import Path
+
+from ._core.git import run_git
 
 #: ``@@ -old[,n] +new[,n] @@`` -- the ``,n`` groups are genuinely optional; see the module docstring.
 _HUNK_RE = re.compile(rb"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
@@ -101,12 +101,15 @@ def changed_lines(
     # Explicit prefixes: `diff.noprefix` / `diff.mnemonicPrefix` in the user's config would otherwise change the header
     # paths (no `b/`, or `w/`/`i/`), and the prefix strip below would keep or cut the wrong characters. `--no-textconv`
     # keeps a configured textconv driver from diffing a rendering of the file instead of its lines.
-    args = ["git", "-C", str(root), "diff", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
+    args = ["diff", "--unified=0", "--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/"]
     if rev:
         args.append(rev)
     else:
         args.append("HEAD")
-    completed = subprocess.run(args, capture_output=True, check=False, env=_git_env())
+    # run_git drops the GIT_DIR/GIT_INDEX_FILE git exports to its hooks: they override -C, and since pre-commit stashes
+    # unstaged changes first, the diff of the committing repository came back EMPTY inside a hook, which read as
+    # "nothing changed" and scoped the caller's check to nothing (found by a test that fails only inside a hook).
+    completed = run_git(root, *args)
     if completed.returncode != 0:
         raise RuntimeError(f"git diff failed in {root} (exit {completed.returncode}): " f"{completed.stderr.decode('utf-8', 'replace')[:400]}")
 
@@ -143,12 +146,7 @@ def changed_lines(
                 out[current].append(range(start, start + count))
 
     if include_untracked:
-        listed = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "--others", "--exclude-standard", "-z"],
-            capture_output=True,
-            check=False,
-            env=_git_env(),
-        )
+        listed = run_git(root, "ls-files", "--others", "--exclude-standard", "-z")
         for entry in listed.stdout.split(b"\0"):
             if not entry:
                 continue
@@ -185,19 +183,3 @@ def lines_for(changed: dict[Path, list[range]], path: Path | str) -> list[range]
         if key == wanted or key.parts[-len(wanted.parts) :] == wanted.parts:
             return ranges
     return []
-
-
-def _git_env() -> dict[str, str]:
-    """The ambient environment minus every ``GIT_*`` variable.
-
-    ``git`` exports ``GIT_DIR`` and ``GIT_INDEX_FILE`` to its hooks, and ``git -C <path>`` does NOT
-    override them: ``-C`` changes the working directory, while those name the repository and the
-    index outright and win. Every call here would otherwise inspect the repository git handed the
-    hook rather than *repo_root* -- and because pre-commit stashes unstaged changes before running
-    hooks, ``git status`` and ``git diff`` come back EMPTY inside one, which reads as 'nothing
-    changed' and silently scopes the caller's check to nothing at all.
-
-    Found by a test that fails only inside a hook: outside one the variables are simply absent, so
-    every ordinary run passed.
-    """
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}

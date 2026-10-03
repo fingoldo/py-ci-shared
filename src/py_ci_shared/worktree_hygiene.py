@@ -75,9 +75,11 @@ class WorktreeFinding:
 
 def _run(repo: Path, *args: str, stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     """Run git in *repo*; a missing git binary is reported as a failed run (returncode 127), never raised."""
+    from ._core.git import GitError, run_git
+
     try:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, input=stdin, check=False)
-    except OSError as exc:
+        return run_git(repo, *args, stdin=stdin)
+    except GitError as exc:
         return subprocess.CompletedProcess(["git", *args], 127, b"", str(exc).encode("utf-8", "replace"))
 
 

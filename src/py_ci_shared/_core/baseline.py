@@ -102,15 +102,23 @@ def _parse_list(data: list, path: Path) -> "Counter[str]":
     return counts
 
 
+def _count(key: str, count: Any, path: Path) -> int:
+    """A count is a positive int: ``"two"`` was a bare ``ValueError`` with no file name, and ``-3`` made one occurrence
+    read as four new findings (audit 2026-10-03 K-10)."""
+    if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+        raise BaselineError(f"{path}: entry {key!r} has count {count!r}; expected a whole number >= 1")
+    return count
+
+
 def _entry(key: str, value: Any, path: Path) -> tuple[int, Optional[str]]:
     """``(count, note or None)`` for one mapping entry in any committed shape."""
     if isinstance(value, dict):
         note = value.get("note", "")
-        return int(value.get("count", 1)), note if isinstance(note, str) else json.dumps(note)
+        return _count(key, value.get("count", 1), path), note if isinstance(note, str) else json.dumps(note)
     if isinstance(value, bool):
         raise BaselineError(f"{path}: entry {key!r} has a boolean value")
     if isinstance(value, int):
-        return value, None
+        return _count(key, value, path), None
     if isinstance(value, str) or value is None:
         return 1, value or ""
     return 1, json.dumps(value, sort_keys=True)

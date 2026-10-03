@@ -15,6 +15,11 @@ Options:
 ``resource_leak_guard = true`` in the table also loads :mod:`py_ci_shared.resource_leak_guard`, the opt-in plugin that
 fails a test leaking a process, thread, socket, env var or ``logging.disable`` (the same as ``-p py_ci_shared.resource_leak_guard``).
 
+Which table: the one in pytest's rootdir ``pyproject.toml``. When the nearest ``pyproject.toml`` above the directory
+pytest was started from (the file ``py-ci-shared run`` reads) is a different file with its own table, the run stops
+with a usage error naming both, so the plugin and the CLI never run different gate sets in silence. ``--py-ci-gates=on``
+with no table found is a usage error too.
+
 Every gate is timed. Past its ``budget_s`` (registry default, or ``budget_s`` in its table) the item warns, or fails
 when the table sets ``budget = "fail"``.
 """
@@ -27,7 +32,7 @@ from typing import Any, Optional
 
 import pytest
 
-from ._core.config import ConfigError, GateRun, RepoConfig, load_config
+from ._core.config import ConfigError, GateRun, RepoConfig, find_repo_root, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
@@ -92,9 +97,14 @@ def pytest_configure(config: Any) -> None:
 
         config.add_cleanup(_restore)
     try:
-        repo_config = load_config(Path(str(config.rootpath)))
+        repo_config = _locate_config(config)
     except ConfigError as exc:
         raise pytest.UsageError(f"py-ci-shared: {exc}") from exc
+    if repo_config is None and _gates_mode(config) == "on":
+        raise pytest.UsageError(
+            f"py-ci-shared: --py-ci-gates=on, but neither pytest's rootdir {config.rootpath} nor the nearest pyproject.toml "
+            f"above {config.invocation_params.dir} has a [tool.py_ci_shared] table"
+        )
     config.stash[_CONFIG_KEY] = repo_config
     if repo_config is not None and repo_config.resource_leak_guard:
         # Registered late, its historic pytest_addoption and pytest_configure are replayed; unknown ini keys are only
@@ -102,10 +112,44 @@ def pytest_configure(config: Any) -> None:
         config.pluginmanager.import_plugin(LEAK_GUARD_PLUGIN)
 
 
+def _gates_mode(config: Any) -> str:
+    try:
+        return str(config.getoption("--py-ci-gates"))
+    except ValueError:
+        return "auto"
+
+
+def _locate_config(config: Any) -> Optional[RepoConfig]:
+    """The ``[tool.py_ci_shared]`` table this run uses: the one in pytest's rootdir.
+
+    ``py-ci-shared run`` (no ``--repo``) reads the nearest ``pyproject.toml`` at or above the current directory instead.
+    The two differ when the rootdir is an ancestor whose pytest config made it the rootdir (a monorepo, a ``pytest.ini``
+    one level up): the gates then dropped out of the pytest run with no word (audit 2026-10-03 K-2). So when the
+    nearest ``pyproject.toml`` above the invocation directory is NOT the rootdir's and has its own table, this is a
+    usage error naming both files, never a silent choice; ``--rootdir`` (or moving the table) settles it."""
+    rootdir = Path(str(config.rootpath))
+    repo_config = load_config(rootdir)
+    try:
+        nearest: Optional[Path] = find_repo_root(Path(str(config.invocation_params.dir)))
+    except ConfigError:
+        nearest = None
+    if nearest is None or nearest.resolve() == rootdir.resolve():
+        return repo_config
+    near_config = load_config(nearest)
+    if near_config is None:
+        return repo_config
+    rootdir_has = "has a different one" if repo_config is not None else "has none"
+    raise ConfigError(
+        f"{nearest / 'pyproject.toml'} has a [tool.py_ci_shared] table, but pytest's rootdir is {rootdir}, whose "
+        f"pyproject.toml {rootdir_has}. `py-ci-shared run` from here reads {nearest}; run pytest with "
+        f"--rootdir={nearest} (or move the table to the rootdir's pyproject.toml) so both run the same gates"
+    )
+
+
 def _wanted(config: Any, repo_config: Optional[RepoConfig]) -> bool:
     if repo_config is None or not repo_config.gates:
         return False
-    mode = config.getoption("--py-ci-gates")
+    mode = _gates_mode(config)
     if mode != "auto":
         return bool(mode == "on")
     source = getattr(config, "args_source", None)

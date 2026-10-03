@@ -344,17 +344,19 @@ def assert_pins_agree(files: Sequence[Path], name: str, *, root: Path | None = N
 
 
 def _git(args: list[str], cwd: Path):
-    """Run git in *cwd* and nowhere else.
+    """Run git in *cwd* and nowhere else, through the ``_core`` runner.
 
     A pre-commit hook runs with GIT_DIR and GIT_INDEX_FILE exported for the repository being committed, and git obeys
     them over its working directory: inside a hook, ``rev-parse HEAD`` in the dependency's checkout answered with the
-    committing repository's HEAD, and the pin check failed every commit. So every GIT_* variable is dropped.
+    committing repository's HEAD, and the pin check failed every commit. ``run_git`` drops those variables for every
+    caller now. Output is decoded as UTF-8 (never the locale codec).
     """
-    import os
     import subprocess
 
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    return subprocess.run(["git", *args], cwd=cwd, env=env, capture_output=True, text=True, timeout=60)
+    from ._core.git import git_text, run_git
+
+    proc = run_git(cwd, *args, timeout=60)
+    return subprocess.CompletedProcess(proc.args, proc.returncode, git_text(proc.stdout), git_text(proc.stderr))
 
 
 _INSTALL_DIRS = frozenset({"site-packages", "dist-packages"})

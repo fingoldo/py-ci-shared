@@ -265,3 +265,55 @@ class TestSnapshotApi:
         before = take_snapshot([])
         monkeypatch.setenv("LEAK_GUARD_UNIT2", "1")
         assert leaks_between(before) == []
+
+
+class TestAudit20261003K5:
+    """K-5: the env check was blind for the first test of a session without psutil, and on 3.9 for any test that
+    imported a stdlib module, because those imports read as a library configuring itself."""
+
+    _LEAK_ALONE = """
+        import os
+        def test_leaks_env():
+            os.environ["PCS_K5_PROBE"] = "1"
+        """
+
+    def test_without_psutil_the_first_test_is_guarded_and_the_run_says_psutil_is_missing(self, pytester, monkeypatch):
+        pytester.makepyfile(psutil="raise ImportError('psutil hidden by the test')")
+        result = _run(pytester, monkeypatch, self._LEAK_ALONE)
+        result.assert_outcomes(passed=1, errors=1)
+        assert "env var PCS_K5_PROBE was added" in _errors(result)
+        assert "psutil is not installed" in _errors(result)
+
+    def test_with_psutil_the_same_leak_is_caught(self, pytester, monkeypatch):
+        pytest.importorskip("psutil")
+        result = _run(pytester, monkeypatch, self._LEAK_ALONE)
+        result.assert_outcomes(passed=1, errors=1)
+        assert "psutil is not installed" not in _errors(result)
+
+    def test_a_stdlib_import_inside_the_test_does_not_hide_its_leak(self, pytester, monkeypatch):
+        result = _run(
+            pytester,
+            monkeypatch,
+            """
+            import os
+            def test_imports_stdlib_and_leaks():
+                import colorsys  # noqa: F401
+                os.environ["PCS_K5_STDLIB"] = "1"
+            """,
+        )
+        result.assert_outcomes(passed=1, errors=1)
+        assert "env var PCS_K5_STDLIB was added" in _errors(result)
+
+    def test_stdlib_and_script_modules_are_not_libraries_without_stdlib_module_names(self, monkeypatch):
+        """Python 3.9 has no ``sys.stdlib_module_names``: the fallback reads where the module was loaded from."""
+        import colorsys  # noqa: F401
+        import sys
+
+        import yaml  # noqa: F401  (a runtime dependency, installed in site-packages)
+
+        from py_ci_shared import resource_leak_guard as guard
+
+        monkeypatch.delattr(sys, "stdlib_module_names", raising=False)
+        assert not guard._is_library("colorsys") and not guard._is_library("json.decoder") and not guard._is_library("sys")
+        assert not guard._is_library("__mp_main__") and not guard._is_library("__main__")
+        assert guard._is_library("yaml"), "a site-packages module is a library (control)"

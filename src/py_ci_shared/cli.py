@@ -4,6 +4,7 @@ Subcommands::
 
     py-ci-shared list [--markdown]            every registered module (the README catalogue with --markdown)
     py-ci-shared run <gate> [<gate> ...]      run gates enabled in [tool.py_ci_shared] of the repo
+                                              (``naive-utcnow`` and ``naive_utcnow`` name the same gate)
     py-ci-shared run-all                      run every enabled gate
     py-ci-shared refresh <gate>|all           rewrite the baselines of the named gates, then run them
                                               (shrink-only; --grow lets the refresh add entries)
@@ -42,8 +43,18 @@ def config_path(name: str) -> Path:
 
 
 def _print(text: str = "", *, err: bool = False) -> None:
+    """Write one line, never failing on a character the console codepage lacks.
+
+    A finding about ``src/数据.py`` on a cp1251 console raised ``UnicodeEncodeError`` here: the finding, the remaining
+    gates and the summary were lost, and the exit code was the traceback's 1, even for an ERROR gate whose contract is 2
+    (audit 2026-10-03 K-1). Unencodable characters are written as backslash escapes instead."""
     stream = sys.stderr if err else sys.stdout
-    stream.write(text + "\n")
+    line = text + "\n"
+    try:
+        stream.write(line)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "ascii"
+        stream.write(line.encode(encoding, "backslashreplace").decode(encoding, "replace"))
 
 
 def _load(repo: Optional[str]) -> RepoConfig:

@@ -33,6 +33,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
 
 _SEMVER_TAG_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?$")
@@ -44,10 +45,13 @@ class VersionCheckError(RuntimeError):
 
 
 def _run_git(repo: Path, *args: str) -> "subprocess.CompletedProcess[str]":
+    """The ``_core`` git runner (timeout, UTF-8, hook-safe env), its output as text; a missing git or a timeout is a
+    :class:`VersionCheckError`."""
     try:
-        return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
-    except OSError as exc:
-        raise VersionCheckError(f"git is not available to inspect {repo}: {exc}") from exc
+        proc = run_git(repo, *args)
+    except GitError as exc:
+        raise VersionCheckError(str(exc)) from exc
+    return subprocess.CompletedProcess(proc.args, proc.returncode, git_text(proc.stdout), git_text(proc.stderr))
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -97,6 +101,13 @@ def _sort_key(tag: str) -> tuple:
     return (int(m.group(1)), int(m.group(2)), int(m.group(3)), 0 if pre else 1, pre_key)
 
 
+def is_release_tag(tag: str, *, prefix: str = "v") -> bool:
+    """*tag* is a full release (``v1.2.3``, no ``-rc`` suffix) spelled with *prefix* (``"v"`` or ``""``). The one release
+    filter shared by :func:`find_stale_pin` and ``adoption_matrix``, so the two count "releases behind" alike."""
+    m = _SEMVER_TAG_RE.match(tag)
+    return m is not None and m.group(4) is None and tag[: len(tag) - len(tag.lstrip("v"))] == prefix
+
+
 def semver_tags(repo: Path) -> list[str]:
     """Every semver-shaped tag in the repository (prereleases included), oldest first. Raises
     :class:`VersionCheckError` when git cannot list them."""
@@ -121,7 +132,8 @@ def find_version_tag_problems(repo: Path, manifest: str) -> list[str]:
         tags = semver_tags(repo)
     except VersionCheckError as exc:
         return [f"cannot determine whether {version} is tagged: {exc}"]
-    matching = [t for t in tags if t[1:] == version or t == version]
+    # Only a literal "v" may be stripped: t[1:] made tag 10.2.3 the tag of version 0.2.3 (audit 2026-10-03 K-6).
+    matching = [t for t in tags if t == version or (t.startswith("v") and t[1:] == version)]
     problems: list[str] = []
     if not matching:
         newest = tags[-1] if tags else "(none)"
@@ -183,12 +195,15 @@ def find_stale_pin(consumer_manifest: Path, package_repo: Path, package_name: st
     tags = semver_tags(package_repo)
     if not tags or pinned not in tags:
         return None
-    behind = len(tags) - 1 - tags.index(pinned)
-    if behind <= 0:
+    # Releases only, in the pin's own spelling: prereleases and unrelated tags (10.2.3 next to v1.0.0) are not
+    # releases this pin is behind (audit 2026-10-03 K-16).
+    prefix = "v" if pinned.startswith("v") else ""
+    newer = [t for t in tags if is_release_tag(t, prefix=prefix) and _sort_key(t) > _sort_key(pinned)]
+    if not newer:
         return None
     return (
-        f"{consumer_manifest.name} pins {package_name} {pinned}, which is {behind} release(s) "
-        f"behind {tags[-1]}. Every fix in between is one this product has not taken."
+        f"{consumer_manifest.name} pins {package_name} {pinned}, which is {len(newer)} release(s) "
+        f"behind {newer[-1]}. Every fix in between is one this product has not taken."
     )
 
 

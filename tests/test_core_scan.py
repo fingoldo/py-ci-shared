@@ -97,3 +97,15 @@ class TestMixedCorpus:
 
         with pytest.raises(CorpusError, match="does not exist"):
             scan_python([tmp_path / "missing.py"])
+
+
+def test_one_file_reached_by_two_spellings_is_scanned_once(tmp_path, monkeypatch):
+    """K-8: dedupe on the RESOLVED path. A directory entry plus the absolute path of a file inside it scanned the file
+    twice under two keys, so every finding counted double in a baseline and the floor was met by half the files."""
+    root = _files(tmp_path / "e5", {"m.py": "x = 1\n"})
+    monkeypatch.chdir(tmp_path)
+    result = scan_python(["e5", root / "m.py"], use_git=False)
+    assert result.parsed_count == 1, [f.rel for f in result.files]
+    assert [f.rel for f in result.files] == ["m.py"]  # the first spelling is kept
+    two = _files(tmp_path / "e6", {"a.py": "x = 1\n", "b.py": "y = 2\n"})
+    assert scan_python([two / "a.py", two / "b.py"], use_git=False).parsed_count == 2  # control: distinct files stay

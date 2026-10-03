@@ -11,6 +11,7 @@ import pytest
 from py_ci_shared import _consumers
 from py_ci_shared._consumers import Consumer, checkout, load_consumers, write_repos_file
 from py_ci_shared._core import CoreError
+from py_ci_shared._core import git as core_git
 from py_ci_shared.adoption_matrix import load_repo_list
 
 REPO = Path(__file__).resolve().parents[1]
@@ -152,11 +153,11 @@ def test_git_clone_is_shallow_on_the_branch_and_keeps_the_token_out_of_argv(tmp_
         seen.append(list(cmd))
         return real_run(cmd, *a, **k)
 
-    monkeypatch.setattr(_consumers.subprocess, "run", spy)
+    monkeypatch.setattr(core_git.subprocess, "run", spy)
     consumer = _LocalConsumer("x", "file://" + src.as_posix(), "staging", private=True)
     assert _consumers._git_clone(consumer, tmp_path / "dst", "s3cret") is None
     assert "s3cret" not in " ".join(seen[0])
-    monkeypatch.setattr(_consumers.subprocess, "run", real_run)
+    monkeypatch.setattr(core_git.subprocess, "run", real_run)
     log = subprocess.run(["git", "-C", str(tmp_path / "dst"), "log", "--oneline"], check=True, capture_output=True, text=True).stdout
     assert log.strip().endswith("two") and len(log.strip().splitlines()) == 1
     missing = _LocalConsumer("y", "file://" + src.as_posix(), "nope", private=False)

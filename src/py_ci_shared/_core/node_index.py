@@ -7,8 +7,11 @@ caller the SAME tree object while the file is unchanged, so what a walk finds ca
 * :func:`nodes_of` -- the nodes of the given types, in ``ast.walk`` order, from one walk of the tree;
 * :func:`tree_memo` -- any per-tree derived value (a module's import aliases, a file's marker analysis), computed once.
 
-Both are keyed on the tree object and hold a reference to it, so an ``id()`` is never reused for another tree while
-its entry exists. Trees are shared and read-only (see :func:`py_ci_shared._core.source.parse_source`); a caller that
+Both are keyed WEAKLY on the tree object: an entry lives exactly as long as its tree, so a tree the parse cache replaced
+(or one a caller built with a plain ``ast.parse`` and dropped) is freed with everything derived from it. Holding the
+tree strongly, as this module first did, pinned every superseded tree of a long-lived process (audit 2026-10-03 K-9).
+The index never stores the root node itself (a value referencing its key would keep the key alive); a memo value
+must not hold its tree for the same reason. Trees are shared and read-only (see :func:`py_ci_shared._core.source.parse_source`); a caller that
 mutates one must not use these. :func:`clear` drops everything, and ``clear_parse_cache`` calls it.
 """
 
@@ -17,6 +20,7 @@ from __future__ import annotations
 import ast
 import heapq
 import threading
+import weakref
 from collections import deque
 from collections.abc import Callable, Hashable, Iterator
 from typing import Any, TypeVar, Union, overload
@@ -25,10 +29,10 @@ T = TypeVar("T")
 _A = TypeVar("_A", bound=ast.AST)
 _B = TypeVar("_B", bound=ast.AST)
 
-# id(tree) -> (tree, {node type: ([walk positions], [nodes])})
-_INDEX: "dict[int, tuple[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]]" = {}
-# (id(tree), key) -> (tree, value)
-_MEMO: "dict[tuple[int, Hashable], tuple[ast.AST, Any]]" = {}
+# tree -> {node type: ([walk positions], [nodes])}, the root itself left out (position 0, see nodes_of)
+_INDEX: "weakref.WeakKeyDictionary[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]" = weakref.WeakKeyDictionary()
+# tree -> {key: value}
+_MEMO: "weakref.WeakKeyDictionary[ast.AST, dict[Hashable, Any]]" = weakref.WeakKeyDictionary()
 _LOCK = threading.Lock()
 
 
@@ -57,18 +61,20 @@ def walk(node: ast.AST) -> "Iterator[ast.AST]":
 
 def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
     with _LOCK:
-        hit = _INDEX.get(id(tree))
-    if hit is not None and hit[0] is tree:
-        return hit[1]
+        hit = _INDEX.get(tree)
+    if hit is not None:
+        return hit
     by_type: "dict[type, tuple[list[int], list[ast.AST]]]" = {}
     for pos, node in enumerate(walk(tree)):
+        if pos == 0:
+            continue  # the root: see nodes_of
         entry = by_type.get(type(node))
         if entry is None:
             entry = by_type[type(node)] = ([], [])
         entry[0].append(pos)
         entry[1].append(node)
     with _LOCK:
-        _INDEX[id(tree)] = (tree, by_type)
+        _INDEX[tree] = by_type
     return by_type
 
 
@@ -89,6 +95,8 @@ def nodes_of(tree: ast.AST, *types: type) -> "list[Any]":
     ``isinstance``. The returned list is shared: do not mutate it."""
     by_type = _index(tree)
     hits = [entry for node_type, entry in by_type.items() if issubclass(node_type, types)]
+    if isinstance(tree, types):  # the root is walk position 0 and is not stored in the index
+        hits.insert(0, ([0], [tree]))
     if not hits:
         return []
     if len(hits) == 1:
@@ -99,15 +107,21 @@ def nodes_of(tree: ast.AST, *types: type) -> "list[Any]":
 def tree_memo(tree: ast.AST, key: Hashable, compute: "Callable[[], T]") -> T:
     """``compute()`` for (*tree*, *key*), computed once while the tree is cached. *key* names what is derived, and
     must include every argument the value depends on besides the tree."""
-    slot = (id(tree), key)
+    missing = object()
     with _LOCK:
-        hit = _MEMO.get(slot)
-    if hit is not None and hit[0] is tree:
-        return hit[1]  # type: ignore[no-any-return]
+        hit = _MEMO.get(tree, {}).get(key, missing)
+    if hit is not missing:
+        return hit  # type: ignore[no-any-return]
     value = compute()
     with _LOCK:
-        _MEMO[slot] = (tree, value)
+        _MEMO.setdefault(tree, {})[key] = value
     return value
+
+
+def index_size() -> int:
+    """How many trees have an index or a memo (both shrink as their trees are freed)."""
+    with _LOCK:
+        return len(set(_INDEX.keys()) | set(_MEMO.keys()))
 
 
 def clear() -> None:

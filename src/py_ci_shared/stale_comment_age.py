@@ -246,7 +246,14 @@ def _ranges(lines: Sequence[int]) -> list[tuple[int, int]]:
 
 
 def _git(repo_root: Path, *args: str) -> "subprocess.CompletedProcess[str]":
-    return subprocess.run(["git", *args], cwd=repo_root, capture_output=True, text=True, encoding="utf-8", errors="replace", check=False)
+    """git through the ``_core`` runner; a missing git or a timeout surfaces as the ``OSError`` its callers report."""
+    from ._core.git import GitError, git_text, run_git
+
+    try:
+        proc = run_git(repo_root, *args)
+    except GitError as exc:
+        raise OSError(str(exc)) from exc
+    return subprocess.CompletedProcess(proc.args, proc.returncode, git_text(proc.stdout), git_text(proc.stderr))
 
 
 def _blame_times(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[int, int]:

@@ -16,7 +16,6 @@ from __future__ import annotations
 import argparse
 import base64
 import os
-import subprocess
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -24,6 +23,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from ._core import CoreError, read_source
+from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
 
 __all__ = ["TOKEN_ENV", "CheckoutResult", "Consumer", "checkout", "load_consumers", "main", "write_repos_file"]
@@ -82,21 +82,24 @@ def load_consumers(path: Path) -> list[Consumer]:
 
 
 def _git_clone(consumer: Consumer, dest: Path, token: Optional[str]) -> Optional[str]:
-    """Clone *consumer* shallowly into *dest*; the error text, or None on success. The token never reaches argv."""
-    env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
-    cmd = ["git"]
+    """Clone *consumer* shallowly into *dest*; the error text, or None on success. The token never reaches argv.
+
+    Through the ``_core`` git runner: git's own error text is decoded as UTF-8, so on a cp1251 console a non-ASCII
+    destination no longer turned "fatal: destination path ... already exists" into a reader-thread
+    ``UnicodeDecodeError`` and a bare "git clone exited 128" (audit 2026-10-03 K-13)."""
+    extra = {"GIT_TERMINAL_PROMPT": "0"}
     if token:
         basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
-        n = int(env.get("GIT_CONFIG_COUNT", "0") or 0)  # append to, never replace, config passed the same way
-        env.update({"GIT_CONFIG_COUNT": str(n + 1), f"GIT_CONFIG_KEY_{n}": "http.https://github.com/.extraheader"})
-        env[f"GIT_CONFIG_VALUE_{n}"] = f"AUTHORIZATION: basic {basic}"
-    cmd += ["clone", "--quiet", "--depth", "1", "--single-branch", "--branch", consumer.branch, consumer.url, str(dest)]
+        n = int(os.environ.get("GIT_CONFIG_COUNT", "0") or 0)  # append to, never replace, config passed the same way
+        extra.update({"GIT_CONFIG_COUNT": str(n + 1), f"GIT_CONFIG_KEY_{n}": "http.https://github.com/.extraheader"})
+        extra[f"GIT_CONFIG_VALUE_{n}"] = f"AUTHORIZATION: basic {basic}"
+    args = ["clone", "--quiet", "--depth", "1", "--single-branch", "--branch", consumer.branch, consumer.url, str(dest)]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, check=False)
-    except OSError as exc:
+        proc = run_git(None, *args, env=extra, timeout=600)
+    except GitError as exc:
         return str(exc)
     if proc.returncode != 0:
-        return (proc.stderr or proc.stdout).strip() or f"git clone exited {proc.returncode}"
+        return (git_text(proc.stderr) or git_text(proc.stdout)).strip() or f"git clone exited {proc.returncode}"
     return None
 
 

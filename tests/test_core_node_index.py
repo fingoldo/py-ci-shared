@@ -71,3 +71,39 @@ def test_clearing_the_parse_cache_drops_memos(tmp_path):
     clear_parse_cache()
     tree_memo(tree, "k", lambda: calls.append(1))
     assert len(calls) == 2
+
+
+def test_a_replaced_tree_is_freed_with_its_index_and_memos(tmp_path):
+    """K-9: the index held every tree strongly, so each rewrite of a file pinned one more tree forever."""
+    import gc
+    import weakref
+
+    from py_ci_shared._core import node_index
+
+    clear_parse_cache()
+    path = tmp_path / "m.py"
+    refs = []
+    for i in range(5):
+        path.write_text(f"x = {i}\n", encoding="utf-8")
+        tree = parse_file(path)
+        nodes_of(tree, ast.Assign)
+        tree_memo(tree, "k", lambda: 1)
+        refs.append(weakref.ref(tree))
+        del tree
+    gc.collect()
+    assert sum(r() is not None for r in refs) == 1, "only the cached (current) tree may stay alive"
+    assert node_index.index_size() == 1
+    plain = ast.parse("y = 1\n")
+    nodes_of(plain, ast.Assign)
+    ref = weakref.ref(plain)
+    del plain
+    gc.collect()
+    assert ref() is None and node_index.index_size() == 1, "a tree built outside the parse cache is not pinned either"
+
+
+def test_the_root_node_is_still_returned_in_walk_order():
+    """The root is not stored in the index (it would keep its own key alive); nodes_of still returns it first."""
+    tree = ast.parse(_SRC)
+    assert nodes_of(tree, ast.Module) == [tree]
+    assert nodes_of(tree, ast.AST) == list(ast.walk(tree))
+    assert nodes_of(tree, ast.Module, ast.Import) == _walk_filtered(tree, ast.Module, ast.Import)

@@ -97,7 +97,7 @@ def _run_probe_in_a_copy(
         "no:cacheprovider",
         *pytest_args,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(copy), timeout=timeout, check=False)
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(copy), timeout=timeout, check=False)
     resolved = next((line.partition(": ")[2].strip() for line in proc.stdout.splitlines() if line.startswith("RESOLVED:")), "")
     return resolved, proc
 

@@ -169,11 +169,14 @@ def _git_env() -> dict[str, str]:
         error: Error building trees
 
     where `m.py` lives only in a tmp_path fixture. Stripping the variables makes each git call talk
-    to the repository named on its own command line.
+    to the repository named on its own command line. The policy is the production runner's own
+    (`_core.git.git_env`): only the location variables go, so the session's GIT_CONFIG_* isolation
+    applies to the fixture's commits exactly as it does to `changed_lines`' diff (with every GIT_*
+    dropped here, the user's core.autocrlf rewrote the committed files and every line read as changed).
     """
-    import os
+    from py_ci_shared._core.git import git_env
 
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    return git_env()
 
 
 @pytest.mark.parametrize("config", [("diff.noprefix", "true"), ("diff.mnemonicPrefix", "true")])

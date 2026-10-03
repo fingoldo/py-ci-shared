@@ -50,6 +50,20 @@ release, so cutting a release here propagates to every consumer at once — no p
 Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which moves `v1` to it (see
 [Pinning and releases](#pinning-and-releases)); nobody re-points it by hand.
 
+**Compatibility promise for `@v1`.** Tracking a moving tag is only safe if what moves under it is bounded:
+
+- *Stable within v1* (removed or changed incompatibly only in a v2): the names in `py_ci_shared._core.__all__`;
+  every registered module's `find_*`/`assert_*` functions and their existing keyword arguments (new keywords arrive
+  with defaults that keep the old behaviour); the `[tool.py_ci_shared]` keys; the `py-ci-shared` subcommands, their
+  flags and exit codes (0 pass, 1 findings, 2 usage or configuration error); the baseline file formats a gate reads;
+  the reusable workflows' inputs.
+- *May change within v1*: a gate may get STRICTER when that fixes a defect (a case it missed, a file it skipped, a
+  malformed config it accepted), so a consumer can go red after a release with no change of its own; anything
+  private (`_`-prefixed modules and names), message wording, and module internals.
+- *How a change is announced*: every entry in `CHANGELOG.md` that can turn a green consumer red, or that changes what
+  a refresh writes (1.18.0 made `refresh` shrink-only, which broke CI that seeded baselines with `--refresh-*`), starts
+  with **Behaviour change** and says what to do. Refresh semantics change only that way, never silently.
+
 This replaces the previous "pin every consumer to an exact tag/SHA" rule, which did not survive
 contact with reality: consumers drifted onto *different* pins of the same workflow (`algopacksimple`
 held three distinct SHAs across its own workflow files, `llm_bench` two), and the manual bump was
@@ -321,7 +335,19 @@ audits_dir = "audits"
   in `_dir`, `_path` or `_root` becomes a path; a list under `files`, `roots`, `md_files`, `scan_roots`,
   `package_roots`, `test_files`, `paths` becomes a list of paths with globs expanded (`**` is recursive). A
   `repo_root`/`root`/`repo`/`project_root` parameter you leave out is set to the repo root.
-- An unknown key fails with the entry function's signature, rather than being ignored.
+- An unknown key fails with the entry function's signature, rather than being ignored. So does a malformed shape:
+  `enable` must be a list of names, `entry`/`module` strings, `budget_s` a positive number, and one gate may not be
+  enabled twice (`naive-utcnow` and `naive_utcnow` are the same gate). A glob that matches no file is an error too.
+- Corpus gates share two keyword names: `min_files` (the floor: fewer files PARSED fails the gate) and
+  `allow_unparsed` (`true` lets a file that cannot be read or parsed through instead of failing). Gates added since
+  2026-10-03 take both; older gates are being moved over one at a time (`tests/baselines/gate_entry_contract.json`
+  lists the ones that do not yet, and some spell their floor differently, e.g. `min_functions`).
+
+Which `pyproject.toml`: `py-ci-shared run`/`run-all` read `--repo`, else the nearest `pyproject.toml` at or above the
+current directory. The pytest plugin reads the one in pytest's rootdir. When the two differ and the nearer one has
+its own table (a monorepo whose parent holds the pytest config), pytest stops with a usage error naming both files
+instead of dropping the gates in silence; pass `--rootdir` or move the table. `--py-ci-gates=on` with no table found
+is a usage error too.
 
 With the table in place:
 

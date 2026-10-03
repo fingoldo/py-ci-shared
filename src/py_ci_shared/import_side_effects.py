@@ -308,7 +308,9 @@ class ProbeResult:
 def _run_probe(targets: list[str], cfg: dict, timeout: float, python: str, cwd: Path | None, env: dict[str, str] | None) -> ProbeResult:
     payload = json.dumps({**cfg, "targets": targets})
     try:
-        proc = subprocess.run([python, "-c", _PROBE, payload], capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
+        proc = subprocess.run(
+            [python, "-c", _PROBE, payload], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, cwd=cwd, env=env
+        )
     except subprocess.TimeoutExpired:
         return ProbeResult(crashed=[f"{targets}: no result within {timeout}s"])
     for line in reversed(proc.stdout.splitlines()):

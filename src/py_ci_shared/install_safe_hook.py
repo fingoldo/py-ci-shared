@@ -37,16 +37,28 @@ _REPLACEMENT = "-m py_ci_shared.safe_precommit"
 _HOOK_NAMES = ("pre-commit", "pre-merge-commit")
 
 
+def _git_rev_parse(*args: str) -> str:
+    """``git rev-parse`` in the current directory, the user's GIT_DIR honoured (this tool patches the repository the
+    user is in). Raises ``CalledProcessError`` when git fails, as its callers expect."""
+    from ._core.git import GitError, git_text, run_git
+
+    try:
+        out = run_git(None, "rev-parse", *args, inherit_location=True)
+    except GitError as exc:
+        raise subprocess.CalledProcessError(127, ("git", "rev-parse", *args), b"", str(exc).encode("utf-8", "replace")) from exc
+    if out.returncode != 0:
+        raise subprocess.CalledProcessError(out.returncode, out.args, out.stdout, out.stderr)
+    return git_text(out.stdout).strip()
+
+
 def _git_dir() -> Path:
-    out = subprocess.run(["git", "rev-parse", "--git-dir"], capture_output=True, text=True, check=True)
-    return Path(out.stdout.strip())
+    return Path(_git_rev_parse("--git-dir"))
 
 
 def _hooks_dir() -> Path:
     """The directory git runs hooks from: ``core.hooksPath`` when set, else ``<git-dir>/hooks`` (``--git-path hooks``
     answers both, and a linked worktree's shared hooks too)."""
-    out = subprocess.run(["git", "rev-parse", "--git-path", "hooks"], capture_output=True, text=True, check=True)
-    path = Path(out.stdout.strip())
+    path = Path(_git_rev_parse("--git-path", "hooks"))
     return path if path.is_absolute() else Path.cwd() / path
 
 

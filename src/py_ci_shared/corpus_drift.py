@@ -21,7 +21,6 @@ import datetime
 import importlib
 import inspect
 import json
-import subprocess
 import sys
 import time
 from collections.abc import Sequence
@@ -206,11 +205,13 @@ def count_of(result: Any) -> int:
 
 
 def _commit(repo: Path) -> Optional[str]:
+    from ._core.git import GitError, git_text, run_git
+
     try:
-        proc = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True, check=False)
-    except OSError:
+        proc = run_git(repo, "rev-parse", "HEAD")
+    except GitError:
         return None
-    return proc.stdout.strip() or None if proc.returncode == 0 else None
+    return git_text(proc.stdout).strip() or None if proc.returncode == 0 else None
 
 
 def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dict[str, Any]:

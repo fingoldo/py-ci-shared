@@ -125,6 +125,8 @@ def scan_python(
             rel_root = base
         pairs = [(p, rel_root) for p in iter_files(base, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)]
     else:
+        # Deduped on the RESOLVED path: one file reached as "pkg" and as "/abs/pkg/m.py" is scanned once, under the
+        # first spelling (audit 2026-10-03 K-8: twice before, so every finding counted double in a baseline).
         seen: set[Path] = set()
         for entry in (Path(e) for e in files_or_root):
             new_pairs: list[tuple[Path, Optional[Path]]]
@@ -137,8 +139,9 @@ def scan_python(
             else:
                 raise CorpusError(f"corpus entry does not exist: {entry}")
             for found_path, found_base in new_pairs:
-                if found_path not in seen:
-                    seen.add(found_path)
+                identity = _identity(found_path)
+                if identity not in seen:
+                    seen.add(identity)
                     pairs.append((found_path, found_base))
         pairs.sort(key=lambda pr: pr[0])
     result = ScanResult(root=rel_root, min_files=min_files)
@@ -149,6 +152,13 @@ def scan_python(
         else:
             result.unparsed.append(item)
     return result
+
+
+def _identity(path: Path) -> Path:
+    try:
+        return path.resolve()
+    except (OSError, RuntimeError):  # a symlink loop: keep the spelling
+        return path.absolute()
 
 
 def _parse_one(path: Path, rel: str) -> Union[ParsedFile, SourceProblem]:

@@ -11,6 +11,10 @@ Rules here:
   untracked-but-not-ignored ones, so a new file is checked before its first commit and ignored output is never read.
   Output is bytes, decoded as UTF-8 with ``surrogateescape`` so an odd filename cannot crash the listing.
 * Outside git (or when *root* itself is git-ignored) a walk prunes excluded directories instead of descending.
+* Submodule content is never part of the corpus: git lists a submodule as one gitlink, and the walk prunes every
+  directory that holds a ``.git`` FILE.
+* Inside a work tree a failed or timed-out ``git ls-files`` raises :class:`CorpusError`; it never silently becomes
+  the walk (``PY_CI_SHARED_GIT_TIMEOUT_S`` raises the timeout, see :mod:`py_ci_shared._core.git`).
 * :data:`DEFAULT_EXCLUDE` is matched against path components RELATIVE to *root*, in both modes.
 * A missing root raises :class:`CorpusError`; it is never an empty, passing scan.
 * Output is sorted, so findings and baselines are deterministic.
@@ -26,6 +30,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from .errors import CorpusError
+from .git import GitError, git_text, run_git
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -56,9 +61,12 @@ DEFAULT_EXCLUDE: frozenset[str] = frozenset(
 
 
 def _git(root: Path, *args: str) -> "Optional[subprocess.CompletedProcess[bytes]]":
+    """A git call, or None when git itself is missing. A TIMEOUT is not "no git": it raises :class:`CorpusError`."""
     try:
-        return subprocess.run(["git", "-C", str(root), *args], capture_output=True, check=False, timeout=120)
-    except (OSError, subprocess.SubprocessError):
+        return run_git(root, *args)
+    except GitError as exc:
+        if exc.timed_out:
+            raise CorpusError(f"cannot list the corpus under {root}: {exc}") from exc
         return None
 
 
@@ -66,7 +74,10 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
     """Root-relative POSIX paths git would commit under *root*, or ``None`` when *root* is not usable via git.
 
     ``None`` covers: git missing, not a work tree, "dubious ownership", and *root* itself being ignored (then the
-    listing would be empty for a reason that has nothing to do with the files).
+    listing would be empty for a reason that has nothing to do with the files). Once git has said *root* IS a work
+    tree, a failed or timed-out ``ls-files`` raises :class:`CorpusError`: falling back to the walk would silently
+    widen the corpus to ignored build output and submodules (audit 2026-10-03 K-4). Pass ``use_git=False`` to
+    :func:`iter_files` to walk on purpose.
     """
     probe = _git(root, "rev-parse", "--is-inside-work-tree")
     if probe is None or probe.returncode != 0 or probe.stdout.strip() != b"true":
@@ -79,7 +90,8 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
         args += ["--others", "--exclude-standard"]
     listing = _git(root, *args)
     if listing is None or listing.returncode != 0:
-        return None
+        detail = git_text(listing.stderr).strip()[:300] if listing is not None else "git disappeared"
+        raise CorpusError(f"git ls-files failed in the work tree {root}: {detail}; refusing to fall back to a walk that would read ignored files")
     names = listing.stdout.decode("utf-8", "surrogateescape").split("\0")
     # --cached and --others can both list a path in a conflicted state; dedupe.
     return sorted({n for n in names if n})
@@ -87,7 +99,9 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
 
 def _walk(root: Path, exclude: frozenset[str]) -> Iterator[str]:
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        dirnames[:] = sorted(d for d in dirnames if d not in exclude)
+        # A directory holding a `.git` FILE is a submodule (or linked worktree) checkout: git mode never lists its
+        # content, so the walk does not either.
+        dirnames[:] = sorted(d for d in dirnames if d not in exclude and not os.path.isfile(os.path.join(dirpath, d, ".git")))
         rel_dir = Path(dirpath).relative_to(root)
         for name in filenames:
             yield (rel_dir / name).as_posix()

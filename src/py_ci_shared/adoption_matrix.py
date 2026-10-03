@@ -34,7 +34,6 @@ from __future__ import annotations
 import argparse
 import ast
 import re
-import subprocess
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -42,8 +41,10 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ImportAliases, iter_files, read_source
+from ._core.git import GitError, git_text, run_git
 from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
+from .version_tag_currency import is_release_tag
 
 __all__ = [
     "MOVING_KINDS",
@@ -70,7 +71,6 @@ SILENT_RULES = ("importorskip", "collect-ignore", "exit-0", "skip", "availabilit
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 _RELEASE = re.compile(r"^v?\d+\.\d+\.\d+([.-]?[0-9A-Za-z.]+)?$")
 _MOVING_TAG = re.compile(r"^v?\d+(\.\d+)?$")
-_FULL_RELEASE = re.compile(r"^v\d+\.\d+\.\d+$")
 _PKG_NAME = re.compile(r"^\s*py[-_.]ci[-_.]shared\b", re.IGNORECASE)
 _GIT_URL = re.compile(r"git\+(?:https?|ssh)://(?:git@)?github\.com[/:][\w.-]+/py-ci-shared(?:\.git)?(?:@([^\s\"'#;,\]\)]+))?", re.IGNORECASE)
 _USES = re.compile(r"\buses:\s*['\"]?[\w.-]+/py-ci-shared(/[^@\s'\"]*)?@([^\s'\"#]+)")
@@ -136,16 +136,16 @@ class RefResolver:
         if self.repo is None:
             return None
         try:
-            proc = subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, text=True, check=False)
-        except OSError:
+            proc = run_git(self.repo, *args)
+        except GitError:
             return None
-        return proc.stdout if proc.returncode == 0 else None
+        return git_text(proc.stdout) if proc.returncode == 0 else None
 
     def releases(self) -> list[str]:
         """The checkout's ``vX.Y.Z`` tags, oldest first by version (``v1`` and pre-releases are not releases)."""
         if self._releases is None:
             out = self._git("tag", "--list", "v*")
-            tags = [t.strip() for t in (out or "").splitlines() if _FULL_RELEASE.match(t.strip())]
+            tags = [t.strip() for t in (out or "").splitlines() if is_release_tag(t.strip())]
             self._releases = sorted(tags, key=lambda t: tuple(int(x) for x in t[1:].split(".")))
         return self._releases
 
@@ -164,16 +164,7 @@ class RefResolver:
         if self.repo is None:
             return None
         if ref not in self._cache:
-            try:
-                proc = subprocess.run(
-                    ["git", "-C", str(self.repo), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-            except OSError:
-                proc = None
-            out = proc.stdout.strip() if proc is not None and proc.returncode == 0 else ""
+            out = (self._git("rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}") or "").strip()
             self._cache[ref] = out or None
         return self._cache[ref]
 

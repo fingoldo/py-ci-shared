@@ -128,3 +128,50 @@ def test_relative_posix_never_raises(tmp_path):
     outside = tmp_path.parent / "elsewhere.py"
     assert relative_posix(outside, tmp_path) == outside.as_posix()
     assert relative_posix(inside, None) == inside.as_posix()
+
+
+def _failing_ls_files(monkeypatch, outcome):
+    """Make only `git ls-files` time out (outcome None) or exit non-zero; every other git call is real."""
+    real = subprocess.run
+
+    def run(argv, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if "ls-files" in list(argv):
+            if outcome is None:
+                raise subprocess.TimeoutExpired(argv, kwargs.get("timeout") or 120)
+            return subprocess.CompletedProcess(argv, outcome, b"", b"fatal: index file corrupt")
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+
+
+@needs_git
+class TestListingFailures:
+    """K-4: once git says the root IS a work tree, a failed listing is an error, never a silent switch to the walk
+    (which reads ignored build output and submodule content)."""
+
+    def _repo(self, tmp_path: Path) -> Path:
+        _git_init(tmp_path)
+        _touch(tmp_path, "a.py", "generated/junk.py")
+        (tmp_path / ".gitignore").write_text("generated/\n", encoding="utf-8")
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["a.py"]  # control: git mode drops the ignored file
+        return tmp_path
+
+    @pytest.mark.parametrize("outcome", [None, 128], ids=["timeout", "exit-128"])
+    def test_a_failed_ls_files_raises_instead_of_walking(self, tmp_path, monkeypatch, outcome):
+        repo = self._repo(tmp_path)
+        _failing_ls_files(monkeypatch, outcome)
+        with pytest.raises(CorpusError, match=r"ls-files|timed out"):
+            iter_files(repo)
+
+    def test_the_walk_stays_available_on_request(self, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        _failing_ls_files(monkeypatch, 128)
+        assert _rels(repo, iter_files(repo, use_git=False)) == ["a.py", "generated/junk.py"]
+
+
+def test_the_walk_leaves_submodule_checkouts_out_like_git_does(tmp_path):
+    """A directory holding a `.git` FILE is a submodule (or linked worktree): git lists it as one gitlink, never its
+    files, so the walk must not read them either."""
+    _touch(tmp_path, "a.py", "vendor/sub/inner.py", "vendor/plain/kept.py")
+    (tmp_path / "vendor" / "sub" / ".git").write_text("gitdir: ../../.git/modules/sub\n", encoding="utf-8")
+    assert _rels(tmp_path, iter_files(tmp_path, use_git=False)) == ["a.py", "vendor/plain/kept.py"]

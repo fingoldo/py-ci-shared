@@ -161,3 +161,32 @@ class TestAuditRegressions:
         assert find_version_tag_problems(repo, "pubspec.yaml") == []
         other = _repo(tmp_path / "other", "0.7.0-rc.1", ("v0.7.0",))
         assert "no matching tag" in find_version_tag_problems(other, "pubspec.yaml")[0]
+
+
+class TestAudit20261003:
+    def test_k6_only_a_literal_v_is_stripped_from_a_tag(self, tmp_path):
+        """Tag 10.2.3 used to count as the tag of declared version 0.2.3 (t[1:] stripped any first character)."""
+        repo = _repo(tmp_path, "0.2.3", ("10.2.3",))
+        (problem,) = find_version_tag_problems(repo, "pubspec.yaml")
+        assert "no matching tag" in problem
+        assert find_version_tag_problems(_repo(tmp_path / "v", "0.2.3", ("v0.2.3",)), "pubspec.yaml") == []  # control
+        assert find_version_tag_problems(_repo(tmp_path / "bare", "0.2.3", ("0.2.3",)), "pubspec.yaml") == []  # control
+
+    def test_k16_prereleases_and_other_spellings_are_not_releases_behind(self, tmp_path):
+        pkg = _repo(tmp_path / "pkg", "1.1.0", ("v1.0.0", "v1.1.0-rc.1", "v1.1.0-rc.2", "10.2.3"))
+        consumer = tmp_path / "app" / "pubspec.yaml"
+        consumer.parent.mkdir(parents=True)
+        consumer.write_text("dependencies:\n  core:\n    git:\n      ref: v1.0.0\n", encoding="utf-8")
+        assert find_stale_pin(consumer, pkg, "core") is None
+        subprocess.run(["git", "tag", "v1.1.0"], cwd=pkg, check=True)
+        subprocess.run(["git", "tag", "v1.2.0"], cwd=pkg, check=True)
+        msg = find_stale_pin(consumer, pkg, "core")
+        assert msg is not None and "2 release(s) behind v1.2.0" in msg, msg
+
+    def test_k16_the_release_filter_is_the_one_adoption_matrix_uses(self):
+        from py_ci_shared import adoption_matrix
+        from py_ci_shared.version_tag_currency import is_release_tag
+
+        assert adoption_matrix.is_release_tag is is_release_tag
+        assert [t for t in ("v1.0.0", "v1.1.0-rc.1", "1.2.0", "v1", "v2.0.0") if is_release_tag(t)] == ["v1.0.0", "v2.0.0"]
+        assert is_release_tag("1.2.0", prefix="") and not is_release_tag("v1.2.0", prefix="")

@@ -118,11 +118,11 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
 def main_checkout_file(relative: "str | Path", *, cwd: "Path | None" = None) -> "Path | None":
     """*relative* (to the repository root) in the MAIN worktree, when *cwd* is inside a linked worktree."""
     cwd = cwd or Path.cwd()
+    from ._core.git import GitError, git_output
+
     try:
-        common = subprocess.run(
-            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"], cwd=cwd, capture_output=True, text=True, check=True
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
+        common = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    except GitError:
         return None
     main_root = Path(common).parent
     candidate = main_root / relative

@@ -31,6 +31,7 @@ from .errors import (
     UnparsedFilesError,
 )
 from .findings import UNPARSED_RULE, Finding
+from .git import GitError, git_output, git_text, run_git
 from .node_index import nodes_of, tree_memo, walk
 from .refresh import ENV_VAR as REFRESH_ENV_VAR
 from .refresh import GENERIC_OPTION as REFRESH_OPTION
@@ -56,6 +57,7 @@ __all__ = [
     "CorpusError",
     "EmptyScanError",
     "Finding",
+    "GitError",
     "ImportAliases",
     "ParsedFile",
     "ScanResult",
@@ -71,6 +73,8 @@ __all__ = [
     "walk",
     "dump_json",
     "git_listing",
+    "git_output",
+    "git_text",
     "grow_requested",
     "growth_message",
     "is_unjustified",
@@ -85,6 +89,7 @@ __all__ = [
     "register_refresh_options",
     "relative_posix",
     "resolve_relative",
+    "run_git",
     "scan_python",
     "shrink_only",
     "write_ratchet",

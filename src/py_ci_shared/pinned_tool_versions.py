@@ -74,7 +74,7 @@ def installed_version(module: str) -> Optional[str]:
     """The last token of ``python -m <module> --version``, or None when it cannot run."""
     try:
         out = subprocess.run(  # nosec B603 - fixed argv (sys.executable plus literal flags), shell=False
-            [sys.executable, "-m", module, "--version"], capture_output=True, text=True, check=False, timeout=60
+            [sys.executable, "-m", module, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60
         )
     except (OSError, subprocess.SubprocessError):
         return None

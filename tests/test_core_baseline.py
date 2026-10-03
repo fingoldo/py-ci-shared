@@ -234,3 +234,21 @@ class TestShrinkOnlyRefresh:
 
         kept = write_ratchet(tmp_path / "c.json", {"f": 105}, gate="g", previous={"f": 100}, render=dump_json, slack=10)
         assert kept == {"f": 100}
+
+
+@pytest.mark.parametrize(
+    "entry", [{"count": "two"}, {"count": -3}, {"count": 0}, {"count": 1.5}, {"count": True}, -1], ids=["str", "negative", "zero", "float", "bool", "bare-int"]
+)
+def test_a_malformed_count_is_a_baseline_error_naming_the_file(tmp_path, entry):
+    """K-10: "two" was a bare ValueError without the file name; -3 made one occurrence read as four new findings."""
+    path = tmp_path / "b.json"
+    path.write_text(json.dumps({"entries": {"k": entry}}), encoding="utf-8")
+    with pytest.raises(BaselineError, match=r"b\.json.*'k'.*count"):
+        Baseline(path).load()
+
+
+def test_a_well_formed_count_still_loads(tmp_path):
+    path = tmp_path / "b.json"
+    path.write_text(json.dumps({"entries": {"k": {"count": 2, "note": "n"}, "j": 3}}), encoding="utf-8")
+    counts, notes = Baseline(path).load()
+    assert counts == {"k": 2, "j": 3} and notes == {"k": "n"}

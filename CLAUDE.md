@@ -9,7 +9,9 @@
 - Read and parse through `_core`: `scan_python`/`read_source`/`parse_file`, `Finding`, `Baseline`,
   `ImportAliases`. Never `ast.parse(path.read_text(...))` with `except SyntaxError: continue`: a file the gate
   cannot read is a finding (`UnparsedFilesError`), not a pass. Keep a `min_files` floor and an `allow_unparsed`
-  switch.
+  switch (`tests/test_gate_entry_contract.py` fails a new corpus gate entry without them; `_core.gate_contract`).
+- Run git only through `_core.git.run_git`/`git_output` (UTF-8 output, a timeout, hook-safe `GIT_*` env);
+  `tests/test_core_git.py` fails a direct `subprocess` git call and `text=True` without `encoding=`.
 - Register every public module in `src/py_ci_shared/registry.toml` (sorted by name; `since` = the version in
   `pyproject.toml`). Private helpers go in `registry.INTERNAL_MODULES` with a reason.
 - A corpus-scanning gate needs a canary in `tests/canary/<name>/` (fixture files end in `.canary`), or an `EXEMPT`
@@ -36,3 +38,6 @@
   without its `v`; `tests/test_release_version.py` holds them equal and ahead of the newest tag.
 - A release is a pushed `vX.Y.Z` tag equal to that version, on master. `.github/workflows/release.yml` verifies
   it, runs the tests, then moves `v1` to it and creates the GitHub release. Nobody moves `v1` by hand.
+- Consumers track `@v1`, so keep README's "Compatibility promise for `@v1`": within v1 only additive changes and
+  defect fixes that make a gate stricter. Any change that can turn a green consumer red, or that changes what a
+  refresh writes, gets a CHANGELOG entry starting **Behaviour change** with what to do.

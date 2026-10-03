@@ -67,7 +67,6 @@ from __future__ import annotations
 
 import fnmatch
 import re
-import subprocess
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
@@ -111,14 +110,11 @@ _EMPTINESS_GUARD_TMPL = (
 
 def tracked_files(repo_root: Path) -> list[str]:
     """Tracked paths as git stores them: ``-z`` so a non-ASCII name is not C-quoted (``"audits/\320\277..."``)."""
+    from ._core.git import GitError, run_git
+
     try:
-        out = subprocess.run(
-            ["git", "ls-files", "-z"],
-            cwd=repo_root,
-            capture_output=True,
-            check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover - environment
+        out = run_git(repo_root, "ls-files", "-z", check=True).stdout
+    except GitError as exc:  # pragma: no cover - environment
         raise RuntimeError(f"git ls-files failed in {repo_root}: {exc}") from exc
     return [rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel]
 

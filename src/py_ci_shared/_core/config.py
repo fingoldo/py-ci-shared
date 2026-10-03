@@ -77,10 +77,17 @@ class RepoConfig:
     resource_leak_guard: bool = False
 
     def gate(self, name: str) -> GateRun:
+        """The enabled gate *name*; ``naive-utcnow`` finds ``naive_utcnow``, as ``tool`` and the plugin's refresh do."""
+        wanted = _canonical(name)
         for run in self.gates:
-            if run.name == name:
+            if _canonical(run.name) == wanted:
                 return run
-        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of {self.repo_root / 'pyproject.toml'}")
+        enabled = ", ".join(run.name for run in self.gates) or "none"
+        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of {self.repo_root / 'pyproject.toml'} (enabled: {enabled})")
+
+
+def _canonical(name: str) -> str:
+    return name.replace("-", "_")
 
 
 def find_repo_root(start: Optional[Path] = None) -> Path:
@@ -126,26 +133,66 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, resource_leak_guard=leak_guard)
 
 
+def _enable_list(pyproject: Path, table: dict[str, Any]) -> list[str]:
+    names = table.get("enable", [])
+    # A string is iterable: enable = "naive_utcnow" used to enable the gates 'n', 'a', 'i', ... (audit 2026-10-03 K-7).
+    if not isinstance(names, list) or not all(isinstance(n, str) and n for n in names):
+        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] enable = {names!r}; expected a list of gate names")
+    return names
+
+
+def _section_value(pyproject: Path, name: str, section: dict[str, Any], key: str) -> Optional[str]:
+    value = section.get(key)
+    if value is not None and not (isinstance(value, str) and value):
+        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] {key} = {value!r}; expected a non-empty string")
+    return value
+
+
+def _budget_s(pyproject: Path, name: str, section: dict[str, Any]) -> Optional[float]:
+    value = section.get("budget_s")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0:
+        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] budget_s = {value!r}; expected a positive number of seconds")
+    return float(value)
+
+
 def _gate_runs(pyproject: Path, table: dict[str, Any]) -> list[GateRun]:
-    """The ``enable`` list, then one run per ``[tool.py_ci_shared.gates.<name>]`` table not set ``enabled = false``."""
-    runs: list[GateRun] = [GateRun(name=name, module=name, entry=None) for name in table.get("enable", [])]
-    for name, section in table.get("gates", {}).items():
+    """The ``enable`` list, then one run per ``[tool.py_ci_shared.gates.<name>]`` table not set ``enabled = false``.
+
+    Two runs may not share a name, dashes and underscores counted alike (one would shadow the other in ``run``)."""
+    runs: list[GateRun] = []
+    seen: dict[str, str] = {}
+
+    def add(run: GateRun, where: str) -> None:
+        other = seen.get(_canonical(run.name))
+        if other is not None:
+            raise ConfigError(f"{pyproject}: gate {run.name!r} is enabled twice: both {other} and {where}; keep one")
+        seen[_canonical(run.name)] = where
+        runs.append(run)
+
+    for name in _enable_list(pyproject, table):
+        add(GateRun(name=name, module=name, entry=None), "`enable`")
+    gates = table.get("gates", {})
+    if not isinstance(gates, dict):
+        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates] must be a table")
+    for name, section in gates.items():
         if not isinstance(section, dict):
             raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] must be a table")
-        if section.get("enabled", True) is False:
+        enabled = section.get("enabled", True)
+        if not isinstance(enabled, bool):
+            raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] enabled = {enabled!r}; expected true or false")
+        if not enabled:
             continue
-        if any(r.name == name for r in runs):
-            raise ConfigError(f"{pyproject}: {name!r} is both in `enable` and has a gates table; keep one")
-        budget_s = section.get("budget_s")
-        runs.append(
-            GateRun(
-                name=name,
-                module=str(section.get("module", name)),
-                entry=section.get("entry"),
-                kwargs={k: v for k, v in section.items() if k not in RESERVED_KEYS},
-                budget_s=float(budget_s) if budget_s is not None else None,
-            )
+        module = _section_value(pyproject, name, section, "module")
+        run = GateRun(
+            name=name,
+            module=module or name,
+            entry=_section_value(pyproject, name, section, "entry"),
+            kwargs={k: v for k, v in section.items() if k not in RESERVED_KEYS},
+            budget_s=_budget_s(pyproject, name, section),
         )
+        add(run, f"[tool.py_ci_shared.gates.{name}]")
     return runs
 
 
@@ -196,7 +243,13 @@ def _wants_paths(key: str, param: Optional[inspect.Parameter]) -> tuple[bool, bo
 
 def _expand(repo_root: Path, item: str) -> list[Path]:
     if any(ch in item for ch in "*?["):
-        return sorted(Path(p) for p in _glob.glob(str(repo_root / item), recursive=True) if "__pycache__" not in Path(p).parts)
+        # The ROOT is escaped: a checkout under "proj[1]" read "[1]" as a character class and every glob matched
+        # nothing (audit 2026-10-03 K-3). A glob that matches nothing is a config error, never an empty corpus.
+        pattern = _glob.escape(str(repo_root)) + "/" + item
+        found = sorted(Path(p) for p in _glob.glob(pattern, recursive=True) if "__pycache__" not in Path(p).parts)
+        if not found:
+            raise ConfigError(f"{item!r} matches no file under {repo_root}; fix the glob or remove it")
+        return found
     return [repo_root / item]
 
 

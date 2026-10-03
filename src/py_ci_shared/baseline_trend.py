@@ -33,6 +33,9 @@ import sys
 from collections.abc import Iterable, Sequence
 from typing import Optional
 
+from ._core.git import GitError as CoreGitError
+from ._core.git import git_text, run_git
+
 DEFAULT_DIRECTORIES = ("tool/meta/baselines", "test/meta/baselines")
 
 _KEY_CHARS = ("/", "\\", ".", ":")
@@ -81,16 +84,10 @@ def count_entries(text: str) -> Optional[int]:
 
 def _run_git(repo: str, *args: str) -> "subprocess.CompletedProcess[str]":
     try:
-        return subprocess.run(
-            ["git", "-C", repo, *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as exc:
+        proc = run_git(repo, *args)
+    except CoreGitError as exc:
         raise GitError(f"git {args[0]}: {exc}") from exc
+    return subprocess.CompletedProcess(proc.args, proc.returncode, git_text(proc.stdout), git_text(proc.stderr))
 
 
 def _git(repo: str, *args: str) -> str:

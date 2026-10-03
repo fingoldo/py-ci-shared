@@ -115,8 +115,11 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
 
 
 def budget_verdict(result: GateResult, mode: str) -> Optional[str]:
-    """A message when *result* ran past its budget and *mode* is not ``off``; the caller warns or fails on it."""
-    if mode == "off" or not result.over_budget:
+    """A message when *result* ran past its budget and *mode* is not ``off``; the caller warns or fails on it.
+
+    Never for an ERROR: a gate that failed to resolve has no budget yet (0), and "over its 0s budget" next to a
+    configuration error sent people to the wrong fix (audit 2026-10-03 K-11)."""
+    if mode == "off" or result.status == ERROR or not result.over_budget:
         return None
     return (
         f"{result.name} took {result.seconds:.1f}s, over its {result.budget_s:.0f}s budget. Narrow its inputs, raise "

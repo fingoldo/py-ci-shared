@@ -2,6 +2,24 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased
+
+- **Behaviour change** (audit 2026-10-03, core): `[tool.py_ci_shared]` is validated more strictly. A string `enable`,
+  a gate enabled twice (dashes and underscores count alike), a non-numeric or non-positive `budget_s`, a non-string
+  `entry`/`module` and a glob that matches no file are configuration errors (exit 2) where they used to run wrongly or
+  crash. Fix the table the message names.
+- **Behaviour change**: inside a git work tree, a failed or timed-out `git ls-files` now fails the gate (`CorpusError`)
+  instead of silently walking the directory, ignored files and submodules included. `PY_CI_SHARED_GIT_TIMEOUT_S`
+  raises the 120 s git timeout. Every git call goes through one runner (`_core.git`).
+- **Behaviour change**: the pytest plugin stops with a usage error when the nearest `pyproject.toml` has a
+  `[tool.py_ci_shared]` table but pytest's rootdir is another directory (the gates used to vanish from the run), and
+  when `--py-ci-gates=on` finds no table. Pass `--rootdir`.
+- **Behaviour change**: a baseline count that is not a whole number >= 1 is a `BaselineError` naming the file.
+- `resource_leak_guard` now catches env leaks in the first test of a session without psutil and, on Python 3.9, in
+  tests that import a stdlib module; the header says when psutil is missing. `version_tag_currency` no longer takes
+  tag `10.2.3` for version `0.2.3`, and counts only releases of the pin's own spelling as "behind". The CLI escapes
+  characters the console cannot print instead of crashing, and `run naive-utcnow` finds `naive_utcnow`.
+
 ## 1.20.0
 
 - New gate `ci_install_covers_conftest`: a workflow job that runs pytest must install every third-party package its

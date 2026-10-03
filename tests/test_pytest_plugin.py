@@ -114,3 +114,33 @@ def test_the_table_loads_the_resource_leak_guard_only_when_asked(tmp_path):
 def test_a_non_boolean_resource_leak_guard_is_a_usage_error(tmp_path):
     proc = _pytest(_repo(tmp_path, '[tool.py_ci_shared]\nresource_leak_guard = "yes"\n'))
     assert proc.returncode == 4 and "resource_leak_guard" in proc.stderr, proc.stdout + proc.stderr
+
+
+def _nested(tmp_path: Path) -> Path:
+    """K-2 layout: the parent holds the pytest config (so it becomes rootdir), the repo below holds the gate table."""
+    parent = tmp_path / "rp"
+    parent.mkdir()
+    (parent / "pyproject.toml").write_bytes(b"[tool.pytest.ini_options]\naddopts = ''\n")
+    return _repo(parent / "repo", IDENTITY, DIRTY)
+
+
+def test_k2_a_table_below_pytests_rootdir_is_a_usage_error_not_a_silent_skip(tmp_path):
+    repo = _nested(tmp_path)
+    proc = _pytest(repo, "--py-ci-gates=on")
+    assert proc.returncode == 4, proc.stdout + proc.stderr
+    assert "[tool.py_ci_shared]" in proc.stderr and "--rootdir" in proc.stderr and str(repo) in proc.stderr, proc.stderr
+    bare = _pytest(repo)
+    assert bare.returncode == 4, "without --py-ci-gates=on as well: " + bare.stdout + bare.stderr
+
+
+def test_k2_pointing_rootdir_at_the_table_runs_the_gates_the_cli_runs(tmp_path):
+    repo = _nested(tmp_path)
+    proc = _pytest(repo, f"--rootdir={repo}")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "FAILED pyproject.toml::identity_comparisons" in proc.stdout, proc.stdout
+
+
+def test_k2_gates_on_without_any_table_is_a_usage_error(tmp_path):
+    proc = _pytest(_repo(tmp_path, "", DIRTY), "--py-ci-gates=on")
+    assert proc.returncode == 4 and "--py-ci-gates=on" in proc.stderr, proc.stdout + proc.stderr
+    assert _pytest(_repo(tmp_path / "auto", "", DIRTY)).returncode == 0  # control: auto mode stays silent

@@ -53,12 +53,12 @@ def _repo_root() -> Path:
 
 
 def _set_windows(value: str) -> None:
-    subprocess.run(["setx", _VAR, value], check=True, capture_output=True, text=True)
+    subprocess.run(["setx", _VAR, value], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     print(f"Windows: set {_VAR} via setx (user-level registry).")
 
 
 def _set_macos(value: str) -> None:
-    subprocess.run(["launchctl", "setenv", _VAR, value], check=True, capture_output=True, text=True)
+    subprocess.run(["launchctl", "setenv", _VAR, value], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     print(f"macOS: set {_VAR} for this session's already-running GUI apps via `launchctl setenv`.")
 
     plist_dir = Path.home() / "Library" / "LaunchAgents"
@@ -86,9 +86,9 @@ def _set_macos(value: str) -> None:
     )
     # unload-then-load so a re-run with a changed `value` actually takes: `load` on an
     # already-loaded label is a silent no-op, leaving the OLD path in the running agent.
-    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True, text=True)
+    subprocess.run(["launchctl", "unload", str(plist_path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     try:
-        subprocess.run(["launchctl", "load", "-w", str(plist_path)], check=True, capture_output=True, text=True)
+        subprocess.run(["launchctl", "load", "-w", str(plist_path)], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
         print(f"macOS: installed a LaunchAgent at {plist_path} so this persists across logins/reboots.")
     except subprocess.CalledProcessError as exc:
         print(

@@ -30,8 +30,10 @@ from __future__ import annotations
 
 import fnmatch
 import logging
+import multiprocessing
 import os
 import sys
+import sysconfig
 import threading
 import time
 from collections.abc import Iterable
@@ -46,6 +48,8 @@ ALL_CHECKS = ("processes", "threads", "sockets", "logging", "env")
 _ALWAYS_ALLOWED_ENV = ("PYTEST_*", "COV_CORE_*")
 #: Modules pytest itself imports lazily during a test's setup and call; they configure nothing.
 _RUNNER_MODULES = frozenset({"pytest", "_pytest", "pluggy", "py", "iniconfig", "packaging", "exceptiongroup", "tomli", "colorama"})
+#: Module names that are scripts, not libraries: ``multiprocessing`` registers ``__mp_main__`` when imported.
+_SCRIPT_MODULES = frozenset({"__main__", "__mp_main__"})
 _THREAD_GRACE_S = 0.5
 _PROCESS_GRACE_S = 1.0
 _BEFORE = pytest.StashKey["Snapshot"]()
@@ -74,9 +78,7 @@ def _psutil() -> Any:
 
 def _processes() -> dict[int, str]:
     psutil = _psutil()
-    if psutil is None:
-        import multiprocessing
-
+    if psutil is None:  # multiprocessing is imported with this module: importing it here registered __mp_main__ inside the test
         return {p.pid or 0: p.name for p in multiprocessing.active_children()}
     described = ((child.pid, _describe(psutil, child)) for child in psutil.Process().children(recursive=True))
     return {pid: text for pid, text in described if text is not None}
@@ -170,12 +172,39 @@ def _import_time_keys(before: Snapshot) -> set[str]:
     return {k for k in os.environ if k not in before.env}
 
 
+def _stdlib_dirs() -> tuple[str, ...]:
+    paths = sysconfig.get_paths()
+    dirs = {os.path.normcase(os.path.abspath(paths[k])) for k in ("stdlib", "platstdlib") if paths.get(k)}
+    return tuple(d.rstrip(os.sep + "/") + os.sep for d in dirs)
+
+
+_STDLIB_DIRS = _stdlib_dirs()
+_SITE_DIRS = ("site-packages", "dist-packages")
+
+
+def _is_stdlib(top: str) -> bool:
+    """*top* is a standard-library module. ``sys.stdlib_module_names`` exists from 3.10; before that a loaded module is
+    stdlib when it is built in or its file lies under the interpreter's stdlib directory (and not in site-packages).
+    Without this, on 3.9 every stdlib import counted as a library and hid the test's own env leak (audit 2026-10-03 K-5)."""
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is not None:
+        return top in names
+    if top in sys.builtin_module_names:
+        return True
+    module = sys.modules.get(top)
+    path = getattr(module, "__file__", None) if module is not None else None
+    if not path:
+        return False
+    full = os.path.normcase(os.path.abspath(path))
+    return full.startswith(_STDLIB_DIRS) and not any(part in _SITE_DIRS for part in full.split(os.sep))
+
+
 def _is_library(module: str) -> bool:
     """A module outside the test runner and the standard library: importing one can configure a process."""
     top = module.split(".", 1)[0]
-    if top in _RUNNER_MODULES or top.startswith("_pytest") or top.startswith("test_") or top == "conftest":
+    if top in _RUNNER_MODULES or top in _SCRIPT_MODULES or top.startswith("_pytest") or top.startswith("test_") or top == "conftest":
         return False
-    return top not in getattr(sys, "stdlib_module_names", frozenset())
+    return not _is_stdlib(top)
 
 
 def _env_leaks(before: Snapshot, allow: list[str]) -> list[str]:
@@ -236,6 +265,13 @@ def pytest_configure(config: Any) -> None:
     unknown = sorted(set(config.getini("leak_guard_checks")) - set(ALL_CHECKS))
     if unknown:
         raise pytest.UsageError(f"leak_guard_checks: unknown check(s) {unknown}; known: {list(ALL_CHECKS)}")
+
+
+def pytest_report_header(config: Any) -> Optional[str]:
+    """Without psutil two checks are weaker; say so once at the top of the run instead of passing quietly."""
+    if _psutil() is not None:
+        return None
+    return "resource_leak_guard: psutil is not installed, so sockets are not checked and processes are multiprocessing children only (pip install psutil)"
 
 
 def _checks(item: Any) -> list[str]:

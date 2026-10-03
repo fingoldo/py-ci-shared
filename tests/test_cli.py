@@ -197,3 +197,81 @@ class TestCommandLine:
     def test_version(self, capsys):
         assert cli.main(["version"]) == 0
         assert capsys.readouterr().out.strip() == __version__
+
+
+class TestAudit20261003:
+    """Regressions for audit 2026-10-03 (20_core_infra.md) K-1, K-3, K-7, K-11, K-12."""
+
+    def _cli(self, repo: Path, *args: str):  # type: ignore[no-untyped-def]
+        import subprocess
+        import sys
+
+        src = str(Path(__file__).resolve().parents[1] / "src")
+        env = {**os.environ, "PYTHONUTF8": "0", "PYTHONIOENCODING": "cp1251", "PYTHONPATH": src}
+        return subprocess.run([sys.executable, "-m", "py_ci_shared.cli", *args, "--repo", str(repo)], capture_output=True, env=env, timeout=240)
+
+    def test_k1_a_finding_the_console_cannot_encode_is_escaped_not_a_crash(self, tmp_path):
+        repo = _repo(tmp_path, '[tool.py_ci_shared]\nenable = ["naive_utcnow"]\n', {"src/\u6570\u636e.py": "import datetime\ndatetime.datetime.utcnow()\n"})
+        proc = self._cli(repo, "run", "naive_utcnow")
+        out = proc.stdout.decode("cp1251")
+        assert proc.returncode == 1, out + proc.stderr.decode("cp1251", "replace")
+        assert "Traceback" not in proc.stderr.decode("cp1251", "replace")
+        assert "\\u6570\\u636e.py:2" in out and "0 passed, 1 failed" in out, out
+
+    def test_k1_an_error_gate_keeps_exit_2_on_a_console_that_cannot_print_it(self, tmp_path):
+        repo = _repo(tmp_path, '[tool.py_ci_shared]\nenable = ["\u6570\u636e"]\n')
+        proc = self._cli(repo, "run-all")
+        out = proc.stdout.decode("cp1251")
+        assert proc.returncode == 2, out + proc.stderr.decode("cp1251", "replace")
+        assert "ERROR" in out and "1 error" in out, out
+
+    def test_k3_globs_work_under_a_root_with_glob_characters(self, tmp_path):
+        repo = _repo(tmp_path / "proj[1]", "", {"src/a.py": "x = 1\n"})
+        out = resolve_kwargs(_takes_files, {"files": ["src/*.py"]}, repo)
+        assert out["files"] == [repo / "src" / "a.py"]
+
+    def test_k3_a_glob_that_matches_nothing_is_a_config_error(self, tmp_path):
+        repo = _repo(tmp_path, "", {"src/a.py": "x = 1\n"})
+        with pytest.raises(ConfigError, match="matches no file"):
+            resolve_kwargs(_takes_files, {"files": ["lib/*.py"]}, repo)
+
+    @pytest.mark.parametrize(
+        "table, needle",
+        [
+            ('[tool.py_ci_shared]\nenable = "naive_utcnow"\n', "enable"),
+            ('[tool.py_ci_shared]\nenable = ["naive_utcnow", "naive_utcnow"]\n', "twice"),
+            ('[tool.py_ci_shared]\nenable = ["naive_utcnow", "naive-utcnow"]\n', "twice"),
+            ('[tool.py_ci_shared.gates.g]\nmodule = "naive_utcnow"\nbudget_s = "fast"\n', "budget_s"),
+            ('[tool.py_ci_shared.gates.g]\nmodule = "naive_utcnow"\nbudget_s = -1\n', "budget_s"),
+            ('[tool.py_ci_shared.gates.g]\nmodule = "naive_utcnow"\nentry = 5\n', "entry"),
+            ('[tool.py_ci_shared.gates.g]\nmodule = ["x"]\n', "module"),
+            ('[tool.py_ci_shared.gates.g]\nmodule = "naive_utcnow"\nenabled = "no"\n', "enabled"),
+        ],
+    )
+    def test_k7_malformed_shapes_are_config_errors_naming_the_key(self, tmp_path, table, needle):
+        with pytest.raises(ConfigError, match=needle):
+            load_config(_repo(tmp_path, table))
+
+    def test_k7_a_bad_budget_is_exit_2_not_a_traceback(self, tmp_path, capsys):
+        repo = _repo(tmp_path, '[tool.py_ci_shared.gates.g]\nmodule = "naive_utcnow"\nbudget_s = "fast"\n')
+        assert cli.main(["run-all", "--repo", str(repo)]) == 2
+        assert "budget_s" in capsys.readouterr().err
+
+    def test_k11_a_configuration_error_has_no_budget_line(self, tmp_path, capsys):
+        repo = _repo(tmp_path, '[tool.py_ci_shared]\nenable = ["ab"]\n')
+        assert cli.main(["run-all", "--repo", str(repo)]) == 2
+        captured = capsys.readouterr()
+        assert "ERROR ab" in captured.out and "BUDGET" not in captured.err, captured.err
+        assert budget_verdict(GateResult("ab", ERROR, "configuration: x", seconds=0.01, budget_s=0.0), "warn") is None
+        assert budget_verdict(GateResult("ab", FAILED, "x", seconds=0.01, budget_s=0.0), "warn") is not None  # control
+
+    def test_k12_run_accepts_the_dashed_name_and_lists_what_is_enabled(self, tmp_path, capsys):
+        repo = _repo(tmp_path, '[tool.py_ci_shared]\nenable = ["naive_utcnow"]\n', {"src/m.py": "x = 1\n"})
+        assert cli.main(["run", "naive-utcnow", "--repo", str(repo)]) == 0
+        assert "PASS  naive_utcnow" in capsys.readouterr().out
+        assert cli.main(["run", "nope", "--repo", str(repo)]) == 2
+        assert "enabled: naive_utcnow" in capsys.readouterr().err
+
+
+def _takes_files(files: "list[Path]") -> None:
+    """A stand-in entry whose ``files`` takes a list of paths."""
