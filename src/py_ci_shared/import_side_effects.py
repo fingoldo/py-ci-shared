@@ -246,7 +246,9 @@ if cfg["block_environ"]:
 
     def _logged_set(self, key, value):
         if key not in allowed:
-            _record(f"os.environ[{key!r}] = {value!r}")
+            # The key, never the value: what a module puts in the environment at import is usually a credential, and this
+            # report is printed in full by a failing gate.
+            _record(f"os.environ[{key!r}] = <{len(str(value))} chars>")
         _set(self, key, value)
 
     def _logged_del(self, key):

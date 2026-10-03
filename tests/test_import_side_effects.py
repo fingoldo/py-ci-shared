@@ -117,3 +117,12 @@ class TestFirstPartyAttribution:
         result = probe_import_side_effects(["fp_imports"], env=self._env(pkg_dir))
         assert result.chains == [["dep_with_effect"]]
         assert_imports_have_no_side_effects(["fp_imports"], first_party=("fp_imports",), env=self._env(pkg_dir))
+
+
+def test_an_environment_write_is_reported_by_key_never_by_value(tmp_path):
+    """A module that loads credentials at import must fail the gate without the gate printing them."""
+    (tmp_path / "loads_secret.py").write_text("import os\nos.environ['PCS_PROBE_TOKEN'] = 's3cret-value-xyz'\n", encoding="utf-8")
+    result = probe_import_side_effects(["loads_secret"], block_environ=True, env={**os.environ, "PYTHONPATH": str(tmp_path)})
+    reported = " ".join(what for what, _origin in result.violations)
+    assert "PCS_PROBE_TOKEN" in reported, "the write was not reported at all"
+    assert "s3cret-value-xyz" not in reported, "the report carries the value"
