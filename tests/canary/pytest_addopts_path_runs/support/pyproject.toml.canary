@@ -1,0 +1,7 @@
+[project]
+name = 'seed'
+version = '0'
+
+[tool.pytest.ini_options]
+addopts = "-m 'not integration'"
+markers = ['integration: needs a db']

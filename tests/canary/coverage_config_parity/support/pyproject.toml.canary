@@ -1,0 +1,6 @@
+[project]
+name = 'seed'
+version = '0'
+
+[tool.coverage.report]
+fail_under = 90

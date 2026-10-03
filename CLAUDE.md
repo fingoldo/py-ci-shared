@@ -21,7 +21,7 @@
 
 ## Before pushing
 
-- Format with `uvx black==26.5.1` (the version `black-filtered.yml` runs); lint with `uvx ruff@0.16.1 check src tests`.
+- Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@0.16.1 check src tests`.
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
 
@@ -35,9 +35,28 @@
 ## Versions and releases
 
 - `version` in `pyproject.toml` (and `__version__` in `src/py_ci_shared/__init__.py`) is the NEXT release tag
-  without its `v`; `tests/test_release_version.py` holds them equal and ahead of the newest tag.
-- A release is a pushed `vX.Y.Z` tag equal to that version, on master. `.github/workflows/release.yml` verifies
-  it, runs the tests, then moves `v1` to it and creates the GitHub release. Nobody moves `v1` by hand.
+  without its `v`. `tests/test_release_version.py` holds them equal, strictly ahead of every release tag (equal to
+  one only on that tag's own commit), and every `registry.toml` `since` at or below it. Bump it in the first commit
+  after a release.
+- A release is a pushed `vX.Y.Z` tag equal to that version, on master, and the highest `v1.*.*` tag. The `verify`
+  job of `.github/workflows/release.yml` checks those, waits for self-ci of the tagged commit to have succeeded
+  (all OSes and Pythons), and runs the whole suite; `publish` then moves `v1` and creates the GitHub release. Both
+  publish steps are idempotent: after a failure, "Re-run failed jobs". Nobody moves `v1` by hand. The rules live in
+  `.github/scripts/release_guard.py`.
+- A back-port tag below the newest release (v1.18.1 after v1.19.0) is refused: it would move `v1` backwards for
+  every consumer.
+- `publish` and `rollback` run in the `release` environment. Owner step (repository settings, not code): give the
+  environment a deployment rule allowing only `v*` tags and the default branch, and move `RELEASE_TOKEN` from the
+  repository secrets into it, so a tag pushed from an edited release.yml cannot read it.
 - Consumers track `@v1`, so keep README's "Compatibility promise for `@v1`": within v1 only additive changes and
   defect fixes that make a gate stricter. Any change that can turn a green consumer red, or that changes what a
   refresh writes, gets a CHANGELOG entry starting **Behaviour change** with what to do.
+
+## Rolling back a release
+
+- When a release breaks `@v1` consumers and the fix is not minutes away: Actions, Release, "Run workflow" on
+  master with `rollback-to` = the last good `vX.Y.Z` (or `gh workflow run release.yml -f rollback-to=v1.19.0`).
+  It checks the target is an existing release and points `v1` at it. Consumers pinned to a SHA are unaffected.
+- Then fix forward: a new commit, the next version, a new tag. That tag is higher than the bad one, so release.yml
+  moves `v1` to it as usual. Never delete or re-point the bad `vX.Y.Z` tag itself.
+- A consumer with a local clone of this repo needs `git fetch --tags --force` to see the moved `v1`.

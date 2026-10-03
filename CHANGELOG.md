@@ -2,7 +2,7 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## Unreleased
+## 1.20.0
 
 - **Behaviour change** (audit 2026-10-03, G-3): `optional_truthiness` also follows optional numbers carried on `self`
   (`self.x`, `getattr(self, "x")`, a local bound from either) and one hop of argument forwarding, for budget-like
@@ -42,8 +42,6 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   tag `10.2.3` for version `0.2.3`, and counts only releases of the pin's own spelling as "behind". The CLI escapes
   characters the console cannot print instead of crashing, and `run naive-utcnow` finds `naive_utcnow`.
 
-## 1.20.0
-
 - New gate `ci_install_covers_conftest`: a workflow job that runs pytest must install every third-party package its
   `conftest.py` files import at collection (module level and session hooks), read statically from the job's pip/uv
   installs, `-r` files, `pyproject.toml` extras, `uv.lock`, local composite actions and shell scripts, with
@@ -63,6 +61,17 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   stale, and returns those lines; it never fails on them. `find_comments_going_stale` returns the same list.
   `warn_days=0` (the default) changes nothing for existing callers. Both functions and `find_stale_comments` take
   `now=` to freeze the clock.
+
+- **Behaviour change** (reusable workflows): `ruff-blocking.yml`, `lint-advisory.yml` and `black-filtered.yml` no
+  longer fall back to master when `py-ci-shared-ref` cannot be fetched; they retry three times and fail. Pass a ref
+  that exists. New input `force-remote-fetch` (self-ci only).
+- **Behaviour change** (`lint-advisory.yml`): pip-audit audits the calling project (`.`), or the files in the new
+  `pip-audit-requirements` input; before, it audited its own tool environment and never the project.
+- **Behaviour change** (`ci_health`): a billing-refused run no longer relabels an older code-failure streak as
+  `billing`; such workflows are now red. `--only` with an unknown name exits 2. Per-request timeouts, `--deadline`
+  (600 s), `--jobs` (8) and per-consumer progress on stderr.
+- `release.yml`: refuses a tag that is not the newest release of its major, requires self-ci green for the tagged
+  commit, runs the whole suite, is re-runnable, and has a `rollback-to` dispatch (CLAUDE.md "Rolling back a release").
 
 ## 1.19.0
 

@@ -44,6 +44,9 @@ jobs:
           - os: ubuntu-26.04
             python: "3.13"
             preview: true
+          # windows-latest and macos-latest move on purpose (2026-10-02: windows-2025-vs2026, macos-26-arm64): these legs
+          # exist to catch path and shell differences on the OS that consumers' developers run now, and no Python floor
+          # rides on them (3.11 only), unlike the ubuntu legs. tests/test_reusable_workflows.py allows exactly these two.
           - os: windows-latest
             python: "3.11"
           - os: macos-latest
@@ -165,6 +168,32 @@ jobs:
     uses: ./.github/workflows/black-filtered.yml
     with:
       check-path: "src/py_ci_shared"
+
+  # The path every consumer takes: fetch (or pip install) py-ci-shared at a pinned ref from GitHub, instead of the
+  # local-checkout shortcut the jobs above take inside this repository (audit 2026-10-03 WF-5). The ref is this
+  # commit, so the jobs test the tree under review. The failure path (a ref that cannot be fetched fails, never falls
+  # back to master) is run by tests/test_reusable_workflows.py against the same step scripts.
+  integration-ruff-blocking-remote-fetch:
+    uses: ./.github/workflows/ruff-blocking.yml
+    with:
+      ignore: "C901"
+      check-path: "src/py_ci_shared"
+      force-remote-fetch: true
+      py-ci-shared-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  integration-black-filtered-remote-install:
+    uses: ./.github/workflows/black-filtered.yml
+    with:
+      check-path: "src/py_ci_shared"
+      force-remote-fetch: true
+      py-ci-shared-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  integration-lint-advisory-remote-fetch:
+    uses: ./.github/workflows/lint-advisory.yml
+    with:
+      source-path: "src/py_ci_shared"
+      force-remote-fetch: true
+      py-ci-shared-ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
   integration-mypy-beachhead:
     uses: ./.github/workflows/mypy-beachhead.yml

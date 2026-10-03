@@ -1,0 +1,6 @@
+[project]
+name = 'seed'
+version = '0'
+
+[tool.bandit]
+skips = ['B101']

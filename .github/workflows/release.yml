@@ -1,12 +1,26 @@
 name: Release
 
-# Pushing a vX.Y.Z tag: check the tag is the version the package declares and sits on master, run the release checks,
-# then move the major tag (v1) to it and publish the GitHub release. Consumers on @v1 get the release from that moment;
-# nobody re-points v1 by hand any more.
+# Pushing a vX.Y.Z tag: verify that the tag is the version the package declares, sits on master, is the newest release
+# of its major, and that self-ci succeeded for the tagged commit; run the whole test suite; then move the major tag (v1)
+# to it and create the GitHub release. Consumers on @v1 get the release from that moment; nobody re-points v1 by hand.
+# Every publish step is idempotent (the tag move is skipped when v1 is already there, the release is created only when
+# missing), so "Re-run failed jobs" finishes a half-done release.
+#
+# workflow_dispatch with `rollback-to: vX.Y.Z` is the emergency path: it points the major tag back at an earlier
+# release that already shipped. See CLAUDE.md "Rolling back a release" for when to use it.
+#
+# The tag-selection, CI and version rules are in .github/scripts/release_guard.py, tested by
+# tests/test_release_version.py against a scratch git repository.
 
 on:
   push:
     tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  workflow_dispatch:
+    inputs:
+      rollback-to:
+        description: "Emergency rollback: an existing vX.Y.Z release to point its major tag (v1) at"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -17,10 +31,18 @@ concurrency:
 
 jobs:
   verify:
+    if: github.event_name == 'push'
     # Pinned, not ubuntu-latest (which moves to 26.04 from 2026-10-19). Move to ubuntu-26.04 once self-ci's
     # ubuntu-26.04 leg is green; see the comment on that leg for what to verify.
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # Up to 30 minutes waiting for self-ci of the tagged commit, then the whole suite.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read  # self-ci's runs for the tagged commit
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -37,8 +59,10 @@ jobs:
         with:
           enable-cache: false
 
+      # The runtime dependencies are constrained to exact versions; the [dev] test tools resolve as in self-ci, whose
+      # green run for this very commit is required below.
       - name: Install package
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install --system -c .github/constraints/runtime.txt -e ".[dev]"
 
       - name: Tag equals the declared version and is on master
         env:
@@ -56,17 +80,41 @@ jobs:
           fi
           python -c "from pathlib import Path; from py_ci_shared.version_tag_currency import find_version_tag_problems as f; p = f(Path('.'), 'pyproject.toml'); print(*p, sep='\n'); raise SystemExit(1 if p else 0)"
 
-      - name: Release checks
-        run: python -m pytest tests/test_release_version.py tests/test_package_inventory.py tests/test_reusable_workflows.py -ra
+      # A back-port tag (v1.17.1 after v1.19.0) must not move v1 backwards for every consumer.
+      - name: The tag is the newest release of its major
+        env:
+          TAG: ${{ github.ref_name }}
+        run: python .github/scripts/release_guard.py major-move "$TAG"
+
+      - name: self-ci succeeded for the tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: python .github/scripts/release_guard.py ci-green --repo "$GITHUB_REPOSITORY" --sha "$SHA" --wait 1800
+
+      # The Postgres binaries are on the runner but not on PATH; without PG_BIN the real-server tests skip.
+      - name: Point PG_BIN at the runner's Postgres
+        run: |
+          bin=$(find /usr/lib/postgresql -mindepth 2 -maxdepth 2 -type d -name bin 2>/dev/null | sort -V | tail -n 1)
+          if [ -n "$bin" ]; then echo "PG_BIN=$bin" >> "$GITHUB_ENV"; fi
+
+      # The whole suite, not a subset: self-ci covered every OS and Python for this commit, this run re-checks the
+      # exact tree being published with the release-path install.
+      - name: Run the test suite
+        run: python -m pytest tests/ -ra
 
   publish:
     needs: verify
+    if: github.event_name == 'push'
     # Pinned, not ubuntu-latest (which moves to 26.04 from 2026-10-19). Move to ubuntu-26.04 once self-ci's
     # ubuntu-26.04 leg is green; see the comment on that leg for what to verify.
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # The environment is created on first use. Its protection (a deployment rule for v* tags) and moving RELEASE_TOKEN
+    # from the repository secrets into it are repository settings the owner sets (see CLAUDE.md).
+    environment: release
     permissions:
-      contents: write
+      contents: write  # push the major tag, create the GitHub release
     steps:
       # The persisted credential is what the tag push below uses; this job uploads no artifact.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1  # zizmor: ignore[artipacked]
@@ -77,21 +125,71 @@ jobs:
           # write on this repository.
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
 
-      - name: Publish the GitHub release
+      # Checked again: another tag may have been pushed since verify started.
+      - name: Still the newest release of its major
         env:
-          GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+        run: python3 .github/scripts/release_guard.py major-move "$TAG"
 
+      # Before the release page: a failure here leaves no "Latest" release claiming what @v1 does not yet run.
       - name: Move the major tag
         env:
           TAG: ${{ github.ref_name }}
           HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
         run: |
+          major="${TAG%%.*}"
+          target=$(git rev-parse "$TAG^{commit}")
+          if [ "$(git rev-parse -q --verify "refs/tags/$major^{commit}" || true)" = "$target" ]; then
+            echo "$major already points at $TAG ($target)"
+            exit 0
+          fi
           if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
-            echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved (GITHUB_TOKEN may not update a ref to a commit that changes workflows). Add the secret, or move it by hand: git tag -f ${TAG%%.*} $TAG^{commit} && git push -f origin refs/tags/${TAG%%.*}"
+            echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved (GITHUB_TOKEN may not update a ref to a commit that changes workflows). Add the secret, then re-run this job."
             exit 1
           fi
-          major="${TAG%%.*}"
-          git tag -f "$major" "$TAG^{commit}"
+          git tag -f "$major" "$target"
           git push -f origin "refs/tags/$major"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "release $TAG already exists"
+          else
+            gh release create "$TAG" --verify-tag --generate-notes --title "$TAG"
+          fi
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release
+    permissions:
+      contents: write  # push the major tag
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1  # zizmor: ignore[artipacked]
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: The target is a release that shipped
+        env:
+          TARGET: ${{ inputs.rollback-to }}
+        run: python3 .github/scripts/release_guard.py rollback "$TARGET"
+
+      - name: Point the major tag at it
+        env:
+          TARGET: ${{ inputs.rollback-to }}
+          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+        run: |
+          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+            echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved"
+            exit 1
+          fi
+          major="${TARGET%%.*}"
+          target=$(git rev-parse "$TARGET^{commit}")
+          git tag -f "$major" "$target"
+          git push -f origin "refs/tags/$major"
+          echo "::warning title=rolled back::$major now points at $TARGET ($target). Fix forward with a new, higher release."

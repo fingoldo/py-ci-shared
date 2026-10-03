@@ -61,14 +61,226 @@ def test_every_third_party_action_is_pinned_to_a_full_sha(path: Path):
     assert not loose, f"{path.name}: action refs not pinned to a 40-hex SHA: {loose}"
 
 
-@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
-def test_py_ci_shared_is_never_fetched_at_master_by_default(path: Path):
-    """Configs and code come from the ref the caller pinned; master is only a logged fallback when that ref is gone."""
-    for step_text in re.split(r"\n\s*- (?:name|uses):", path.read_text(encoding="utf-8")):
-        if "fingoldo/py-ci-shared.git" not in step_text:
-            continue
-        assert "PCS_REF" in step_text, f"{path.name}: a step fetches py-ci-shared without inputs.py-ci-shared-ref:\n{step_text[:400]}"
-        assert "git clone --depth 1 https://github.com/fingoldo/py-ci-shared.git" not in step_text
+# The three reusable workflows that fetch or install py-ci-shared itself, and the step that does it.
+SELF_FETCH = {
+    "ruff-blocking.yml": "Resolve PY_CI_SHARED_DIR",
+    "lint-advisory.yml": "Resolve PY_CI_SHARED_DIR",
+    "black-filtered.yml": "Install py-ci-shared",
+}
+
+
+def test_py_ci_shared_is_fetched_only_at_the_pinned_ref_and_never_at_master():
+    """Configs and code come from the ref the caller pinned. The master fallback (audit 2026-10-03 WF-4) is gone, and
+    the step scan has a floor: it used to skip every step and pass if the URL spelling changed (WF-15)."""
+    fetching = {}
+    for path in WORKFLOWS:
+        for step in (step for job in _load(path)["jobs"].values() for step in job.get("steps") or []):
+            run = str(step.get("run") or "")
+            if "github.com/fingoldo/py-ci-shared" in run:
+                fetching[path.name] = step.get("name")
+                assert "${PCS_REF}" in run, f"{path.name}: {step.get('name')} fetches py-ci-shared without inputs.py-ci-shared-ref"
+                commands = "\n".join(line for line in run.splitlines() if not line.strip().startswith(("echo", "#")))
+                assert not re.search(r"py-ci-shared\.git\"|\bmaster\b", commands), f"{path.name}: {step.get('name')} can fetch master"
+                assert "exit 1" in run, f"{path.name}: {step.get('name')} does not fail when the ref cannot be fetched"
+    assert fetching == SELF_FETCH
+
+
+# --- the fetch steps, executed (audit 2026-10-03 WF-4/WF-5) --------------------------------------------------------
+
+
+def _bash() -> str:
+    """A POSIX bash: the runners' own on Linux/macOS, Git's on Windows (never WSL's System32 launcher)."""
+    import shutil
+
+    found = shutil.which("bash")
+    if found and "system32" not in found.lower():
+        return found
+    git = shutil.which("git")
+    if git:
+        for candidate in (Path(git).parents[1] / "bin" / "bash.exe", Path(git).parents[1] / "usr" / "bin" / "bash.exe"):
+            if candidate.exists():
+                return str(candidate)
+    pytest.skip("no bash to run the workflow step with")
+    raise AssertionError  # unreachable, for type checkers
+
+
+def _step(workflow: str, name: str) -> dict:
+    steps = [s for job in _load(REPO / ".github" / "workflows" / workflow)["jobs"].values() for s in job["steps"]]
+    (step,) = [s for s in steps if s.get("name") == name]
+    return step
+
+
+# Stand-ins for git/uv/uvx/sleep: each records its argv; a command fails when its argv matches $FAIL_PATTERN.
+FAKES = r"""
+_fake() {
+  echo "$*" >> "$CALLS"
+  if [ -n "$FAIL_PATTERN" ] && echo "$*" | grep -Eq "$FAIL_PATTERN"; then
+    if [ -z "${FAIL_ONCE:-}" ]; then return 1; fi
+    if [ ! -e "$FAIL_ONCE" ]; then touch "$FAIL_ONCE"; return 1; fi
+  fi
+  return 0
+}
+git() { _fake git "$@"; }
+uv() { _fake uv "$@"; }
+uvx() { _fake uvx "$@"; }
+sleep() { _fake sleep "$@"; }
+"""
+
+
+def _run_step(tmp_path: Path, workflow: str, name: str, *, fail: str = "", repo: str = "fingoldo/consumer", **env: str):
+    import subprocess
+
+    step = _step(workflow, name)
+    script = tmp_path / "step.sh"
+    script.write_text(FAKES + step["run"], encoding="utf-8", newline="\n")
+    calls, github_env = tmp_path / "calls.txt", tmp_path / "github_env"
+    calls.write_text("", encoding="utf-8")
+    github_env.write_text("", encoding="utf-8")
+    import os
+
+    full_env = {
+        **os.environ,
+        "CALLS": str(calls),
+        "FAIL_PATTERN": fail,
+        "GITHUB_ENV": str(github_env),
+        "GITHUB_REPOSITORY": repo,
+        "GITHUB_WORKSPACE": str(tmp_path / "ws"),
+        "RUNNER_TEMP": str(tmp_path / "rt"),
+        "PCS_REF": "v1.20.0",
+        "FORCE_REMOTE": "false",
+        "FAIL_ONCE": "",
+        **env,
+    }
+    proc = subprocess.run([_bash(), "--noprofile", "--norc", "-eo", "pipefail", str(script)], env=full_env, capture_output=True, text=True, timeout=60)
+    lines = calls.read_text(encoding="utf-8").splitlines()
+    return proc, lines, github_env.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("workflow", ["ruff-blocking.yml", "lint-advisory.yml"])
+def test_a_pinned_ref_that_cannot_be_fetched_fails_after_retries_and_never_fetches_master(tmp_path: Path, workflow: str):
+    proc, calls, github_env = _run_step(tmp_path, workflow, SELF_FETCH[workflow], fail=r"^git .* fetch ")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    fetches = [c for c in calls if " fetch " in c]
+    assert len(fetches) == 3 and all(c.endswith(" v1.20.0") for c in fetches), calls
+    assert not any("master" in c for c in calls), calls
+    assert "::error::py-ci-shared ref v1.20.0 could not be fetched" in proc.stdout
+    assert github_env == "", "no PY_CI_SHARED_DIR may be exported when the fetch failed"
+
+
+@pytest.mark.parametrize("workflow", ["ruff-blocking.yml", "lint-advisory.yml"])
+def test_a_transient_fetch_failure_is_retried_and_succeeds(tmp_path: Path, workflow: str):
+    proc, calls, github_env = _run_step(
+        tmp_path, workflow, SELF_FETCH[workflow], fail=r"^git .* fetch ", FAIL_ONCE=str(tmp_path / "failed_once"), PCS_REF="abc123"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    fetches = [c for c in calls if " fetch " in c]
+    assert len(fetches) == 2 and all(c.endswith(" abc123") for c in fetches), calls
+    assert github_env.startswith("PY_CI_SHARED_DIR=") and "attempt 1 of 3" in proc.stdout
+
+
+def test_black_filtered_fails_when_the_pinned_ref_cannot_be_installed(tmp_path: Path):
+    proc, calls, _ = _run_step(tmp_path, "black-filtered.yml", "Install py-ci-shared", fail=r"^uv pip install")
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    installs = [c for c in calls if c.startswith("uv pip install")]
+    assert len(installs) == 3 and all(c.endswith("py-ci-shared.git@v1.20.0") for c in installs), calls
+    assert "::error::py-ci-shared ref v1.20.0 could not be installed" in proc.stdout
+
+
+@pytest.mark.parametrize("workflow", sorted(SELF_FETCH))
+def test_inside_this_repo_the_local_checkout_is_used_unless_a_remote_fetch_is_forced(tmp_path: Path, workflow: str):
+    proc, calls, _ = _run_step(tmp_path, workflow, SELF_FETCH[workflow], repo="fingoldo/py-ci-shared")
+    assert proc.returncode == 0 and not any("github.com" in c for c in calls), calls
+    forced, forced_calls, _ = _run_step(tmp_path, workflow, SELF_FETCH[workflow], repo="fingoldo/py-ci-shared", FORCE_REMOTE="true", PCS_REF="deadbeef")
+    assert forced.returncode == 0, forced.stdout + forced.stderr
+    assert any("github.com/fingoldo/py-ci-shared" in c and "deadbeef" in c for c in forced_calls), forced_calls
+
+
+@pytest.mark.parametrize("workflow", sorted(SELF_FETCH))
+def test_self_ci_runs_the_consumer_fetch_path_of_each_self_fetching_workflow(workflow: str):
+    jobs = _load(REPO / ".github" / "workflows" / "self-ci.yml")["jobs"]
+    remote = [j for j in jobs.values() if j.get("uses") == f"./.github/workflows/{workflow}" and (j.get("with") or {}).get("force-remote-fetch") is True]
+    assert remote, f"no self-ci job calls {workflow} with force-remote-fetch: true"
+    assert all("github.sha" in str(j["with"]["py-ci-shared-ref"]) for j in remote), "the remote fetch must test this commit"
+    inputs = _load(REPO / ".github" / "workflows" / workflow)[True]["workflow_call"]["inputs"]
+    assert inputs["force-remote-fetch"] == {"description": inputs["force-remote-fetch"]["description"], "type": "boolean", "default": False}
+
+
+# --- pip-audit audits the calling project (audit 2026-10-03 WF-1) --------------------------------------------------
+
+
+def test_pip_audit_audits_the_calling_project_by_default(tmp_path: Path):
+    proc, calls, _ = _run_step(tmp_path, "lint-advisory.yml", "pip-audit dependency vulnerability scan", PIP_AUDIT_VERSION="2.10.1", PIP_AUDIT_REQUIREMENTS="")
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (call,) = [c for c in calls if c.startswith("uvx ")]
+    assert call.split()[1] == "pip-audit==2.10.1" and call.split()[-1] == ".", f"pip-audit has no project target: {call}"
+
+
+def test_pip_audit_audits_the_given_requirements_files(tmp_path: Path):
+    proc, calls, _ = _run_step(
+        tmp_path, "lint-advisory.yml", "pip-audit dependency vulnerability scan", PIP_AUDIT_VERSION="2.10.1", PIP_AUDIT_REQUIREMENTS="req.txt dev.txt"
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    (call,) = [c for c in calls if c.startswith("uvx ")]
+    assert call.endswith("-r req.txt -r dev.txt") and " . " not in f"{call} ", call
+
+
+# --- workflow hygiene (audit 2026-10-03 WF-14) ---------------------------------------------------------------------
+
+CONSTRAINTS = REPO / ".github" / "constraints" / "runtime.txt"
+
+
+def test_the_constraints_file_pins_every_runtime_dependency_exactly():
+    from py_ci_shared._toml_compat import tomllib
+
+    deps = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["dependencies"]
+    names = {re.split(r"[<>=!~;\[ ]", d, maxsplit=1)[0].lower() for d in deps}
+    pinned = {}
+    for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines():
+        if line.strip() and not line.startswith("#"):
+            name, _, rest = line.partition("==")
+            pinned[name.strip().lower()] = rest.split(";")[0].strip()
+    assert names and names <= set(pinned), f"runtime dependencies without an exact pin in {CONSTRAINTS.name}: {names - set(pinned)}"
+    assert all(re.fullmatch(r"\d+(\.\d+)+", v) for v in pinned.values()), pinned
+
+
+@pytest.mark.parametrize("name", ["ci-health.yml", "consumer-pins.yml", "config-drift-check.yml", "corpus-drift.yml", "release.yml"])
+def test_scheduled_reports_and_the_release_install_with_the_constraints(name: str):
+    runs = [str(s.get("run", "")) for job in _load(REPO / ".github" / "workflows" / name)["jobs"].values() for s in job.get("steps") or []]
+    installs = [r for r in runs if re.search(r"pip install\b", r)]
+    assert installs, f"{name}: no install step found; the check lost its subject"
+    assert all("-c .github/constraints/runtime.txt" in r for r in installs), f"{name}: an install without the constraints file: {installs}"
+
+
+@pytest.mark.parametrize("path", [p for p in WORKFLOWS if "schedule" in (yaml.safe_load(p.read_text(encoding="utf-8"))[True] or {})], ids=lambda p: p.name)
+def test_every_scheduled_workflow_has_a_concurrency_group(path: Path):
+    assert "concurrency" in _load(path), f"{path.name}: a slow scheduled run and a manual one can overlap"
+
+
+def test_corpus_drift_takes_its_baseline_from_master_and_skips_expired_artifacts():
+    run = str(_step("corpus-drift.yml", "Find the last successful run")["run"])
+    assert "status=success&branch=master" in run, "a dispatch from another branch must not become master's baseline"
+    assert "select(.expired == false)" in run, "an expired snapshot artifact failed the download every night"
+
+
+def test_black_filtered_reads_the_black_version_from_tool_versions():
+    text = (REPO / ".github" / "workflows" / "black-filtered.yml").read_text(encoding="utf-8")
+    assert "from py_ci_shared.tool_versions import BLACK_VERSION" in text
+    assert not re.search(r"black==\d", text), "a literal black version can drift from tool_versions.BLACK_VERSION"
+
+
+# The only moving labels: self-ci's single Windows and macOS legs (see the comment on them in self-ci.yml).
+ALLOWED_LATEST = {("self-ci.yml", "windows-latest"), ("self-ci.yml", "macos-latest")}
+
+
+def test_moving_runner_labels_are_only_the_reviewed_ones():
+    found = set()
+    for path in WORKFLOWS:
+        for job in _load(path)["jobs"].values():
+            labels = [job.get("runs-on")]
+            matrix = (job.get("strategy") or {}).get("matrix") or {}
+            labels += list(matrix.get("os") or []) + [leg.get("os") for leg in matrix.get("include") or []]
+            found |= {(path.name, str(label)) for label in labels if label and "latest" in str(label)}
+    assert found == ALLOWED_LATEST
 
 
 def test_lint_advisory_installs_every_tool_at_an_exact_version():

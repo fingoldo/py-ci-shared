@@ -8,12 +8,12 @@ Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and f
 
 Two things live here, each solving a different half of the duplication:
 
-1. **Reusable GitHub Actions workflows** (`.github/workflows/*.yml`, invoked via `workflow_call`) for the pieces of CI that are identical in *behavior* across repos: the blocking ruff gate, the filtered Black check, the mypy strict-mode-beachhead pattern, the mypy-full advisory pass, the advisory lint bundle (codespell/yamllint/bandit/actionlint/vulture/pip-audit), and the MkDocs docs build/deploy.
-2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.17.0"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
+1. **Reusable GitHub Actions workflows** (`.github/workflows/*.yml`, invoked via `workflow_call`) for the pieces of CI that are identical in *behavior* across repos: the blocking ruff gate, the filtered Black check, the mypy strict-mode-beachhead pattern, the mypy-full advisory pass, the blocking lint bundle (`lint-blocking.yml`: codespell, yamllint, bandit, actionlint, zizmor, vulture, interrogate, deptry), the advisory bundle (`lint-advisory.yml`: full ruff, mccabe complexity, pip-audit of the calling project, import-linter, pydoclint, semgrep), and the MkDocs docs build/deploy.
+2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.19.0"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
 
 Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` superset, pulled into each consuming repo's own `pyproject.toml` via ruff's native `extend` mechanism (a real config-merge, not copy-paste) — see below.
 
-**Deliberately NOT here:** anything whose shared surface is small relative to the parametrization cost (`sklearn-matrix-ci.yml`, `gpu-matrix.yml`, `release.yml`, `numba-coverage.yml`'s hardcoded test-path lists), and anything inherently project-specific (vulture whitelists, per-repo meta-test suites, the `test`/`build` jobs in each repo's own `ci.yml`). Those stay local to each repo.
+**Deliberately NOT here:** anything whose shared surface is small relative to the parametrization cost (`sklearn-matrix-ci.yml`, `gpu-matrix.yml`, a shared `release.yml`, `numba-coverage.yml`'s hardcoded test-path lists; this repo's own `.github/workflows/release.yml` releases py-ci-shared itself and is not meant to be called), and anything inherently project-specific (vulture whitelists, per-repo meta-test suites, the `test`/`build` jobs in each repo's own `ci.yml`). Those stay local to each repo.
 
 ## Writing tests: [WRITING_TESTS.md](WRITING_TESTS.md)
 
@@ -460,17 +460,26 @@ Other behaviour changes in 1.17.0:
 
 Workflows: `uses: fingoldo/py-ci-shared/.github/workflows/<name>.yml@v1`, or a full SHA with the exact tag
 as a comment (`@<sha>  # v1.17.0`) when you need a frozen pipeline. Do not mix the two in one repo, and never
-write `# v1` next to a SHA: the comment then lies as soon as `v1` moves. Either way the workflow now fetches
-this repo's configs and `RUFF_VERSION` at the commit the workflow itself was loaded from
-(`github.job_workflow_sha`), not at `master`, so a pin pins everything.
+write `# v1` next to a SHA: the comment then lies as soon as `v1` moves. `ruff-blocking.yml`,
+`lint-advisory.yml` and `black-filtered.yml` take this repo's configs, `RUFF_VERSION`/`BLACK_VERSION` and package
+from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.20.0` in the
+file at that release). A caller on `@v1` or on a release tag therefore gets that release's configs. A caller pinned
+to a SHA between releases gets the previous release's configs unless it also passes `py-ci-shared-ref: <the same
+SHA>`. A ref that cannot be fetched fails the job after three attempts; there is no fallback to `master`.
 
-Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.17.0"`. The
+Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.19.0"`. The
 version in `pyproject.toml` and `py_ci_shared.__version__` is the release it becomes when tagged.
 
 Releasing: bump `version` in `pyproject.toml` and `__version__` in `src/py_ci_shared/__init__.py`
-(`tests/test_release_version.py` holds them equal and ahead of the newest tag), commit, then push a
-`vX.Y.Z` tag. `.github/workflows/release.yml` checks the tag equals the declared version and is on
-`master`, runs the test suite, moves `v1` to the tag and creates the GitHub release.
+(`tests/test_release_version.py` holds them equal and strictly ahead of every release tag), commit, then push a
+`vX.Y.Z` tag. `.github/workflows/release.yml` checks the tag equals the declared version, is on `master` and is the
+newest `v1` release (a back-port tag never moves `v1` backwards), waits for self-ci of that commit to have
+succeeded on every OS and Python, runs the whole test suite, then moves `v1` to the tag and creates the GitHub
+release. Both publish steps are idempotent, so "Re-run failed jobs" finishes a release that failed half-way.
+
+Rolling back a bad release: run the Release workflow by hand (`gh workflow run release.yml -f rollback-to=vX.Y.Z`)
+with the last good release; it points `v1` back at it. Then fix forward with a new, higher release. SHA-pinned
+consumers are unaffected either way. Details in CLAUDE.md, "Rolling back a release".
 
 ## Code-audit baseline meta-test (`code_audit_meta`)
 
@@ -1111,7 +1120,7 @@ python -m py_ci_shared.setup_env
 
 Restart your terminal/IDE afterward so the new value is picked up.
 
-CI resolves `PY_CI_SHARED_DIR` itself — see `ruff-blocking.yml` / `lint-advisory.yml`'s "Resolve PY_CI_SHARED_DIR" step, which fetches this repo at the exact commit the reusable workflow was loaded from (`github.job_workflow_sha`), so the config and `RUFF_VERSION` match the pin — a calling repo's own workflow doesn't need to do anything extra.
+CI resolves `PY_CI_SHARED_DIR` itself — see `ruff-blocking.yml` / `lint-advisory.yml`'s "Resolve PY_CI_SHARED_DIR" step, which fetches this repo at the `py-ci-shared-ref` input (default: the release the workflow file belongs to; see [Pinning and releases](#pinning-and-releases)) and fails, with no fallback to `master`, when that ref cannot be fetched — a calling repo's own workflow doesn't need to do anything extra.
 
 **CRITICAL:** never invoke ruff with `--select <subset>` in a blocking gate — it REPLACES the effective rule set instead of narrowing the extended config, silently dropping the whole shared ignore list and breaking RUF100's own "is this noqa still needed" determination. Always use `--ignore <code>` to ADD to the resolved ignore list. See `configs/ruff-base.toml`'s header comment and the `mlframe`/`pyutilz` `CLAUDE.md` files for the incident this rule postdates (2026-07-09).
 

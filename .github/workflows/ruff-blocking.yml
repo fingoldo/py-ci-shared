@@ -18,9 +18,16 @@ on:
         description: >-
           Ref of py-ci-shared to take configs, RUFF_VERSION and the package from. The default is the release this
           workflow file belongs to (bumped with the version in every release commit), so a caller pinned to a tag or SHA
-          gets that release's config rather than master's. A ref that cannot be fetched falls back to master with a warning.
+          gets that release's config rather than master's. A ref that cannot be fetched (after three attempts) fails the
+          job: it never falls back to master.
         type: string
-        default: "v1.19.0"
+        default: "v1.20.0"
+      force-remote-fetch:
+        description: >-
+          Fetch py-ci-shared at py-ci-shared-ref even when the caller is py-ci-shared itself. Only self-ci sets it, to run
+          the fetch path every consumer takes.
+        type: boolean
+        default: false
       ignore:
         description: 'Extra --ignore codes on top of the extended config (e.g. "C901" to keep complexity advisory-only)'
         type: string
@@ -66,21 +73,29 @@ jobs:
       - name: Resolve PY_CI_SHARED_DIR
         # Fetched at inputs.py-ci-shared-ref (this file's own release by default), never at master: a caller pinned to a
         # tag or SHA gets that release's ruff config and RUFF_VERSION, not whatever master holds.
+        # The pinned ref or nothing. A fallback to master ran unreviewed config and code under a pinned workflow and
+        # stayed green with a warning (audit 2026-10-03 WF-4); a transient failure is retried instead.
         env:
           PCS_REF: ${{ inputs.py-ci-shared-ref }}
+          FORCE_REMOTE: ${{ inputs.force-remote-fetch }}
         run: |
-          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ]; then
+          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ] && [ "${FORCE_REMOTE}" != "true" ]; then
             echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
             exit 0
           fi
           d="${RUNNER_TEMP}/py-ci-shared"
           git init -q "$d"
-          if ! git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
-            echo "::warning::py-ci-shared ref ${PCS_REF} could not be fetched; using master instead of the pinned release"
-            git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git master
-          fi
-          git -C "$d" checkout -q FETCH_HEAD
-          echo "PY_CI_SHARED_DIR=$d" >> "$GITHUB_ENV"
+          for attempt in 1 2 3; do
+            if git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
+              git -C "$d" checkout -q FETCH_HEAD
+              echo "PY_CI_SHARED_DIR=$d" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "::warning::fetching py-ci-shared at ${PCS_REF} failed (attempt ${attempt} of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
+          done
+          echo "::error::py-ci-shared ref ${PCS_REF} could not be fetched; fix py-ci-shared-ref (a tag or SHA that exists). There is no fallback to master."
+          exit 1
 
       # Version-pinned (not bare "uvx ruff"): an unpinned uvx resolves whatever is newest on PyPI at
       # run time, drifting from what a contributor's local pre-commit run just verified, the same

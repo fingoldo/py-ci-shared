@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install package
-        run: python -m pip install -e .
+        run: python -m pip install -c .github/constraints/runtime.txt -e .
 
       - name: Check out the consumers
         env:

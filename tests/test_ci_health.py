@@ -7,6 +7,7 @@ timestamps and the code-failure annotations are copied from the consumer repos' 
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -63,6 +64,12 @@ BILLING_WF = {"id": 3, "name": "CI", "path": ".github/workflows/ci.yml", "state"
 BILLING_RUNS = [_run(302, "2026-10-02T18:35:35Z", "failure"), _run(301, "2026-09-25T10:00:00Z", "failure"), _run(300, "2026-09-20T10:00:00Z", "success")]
 BILLING_JOBS = {"jobs": [{"id": 9001, "name": "test (3.11)", "conclusion": "failure", "steps": []}]}
 BILLING_ANNOTATIONS = [{"annotation_level": "failure", "title": "", "message": BILLING_TEXT}]
+# Both failures since the last success (302 and 301) were refused for billing.
+BILLING_EXTRA = {
+    "repos/fingoldo/autopsia/actions/runs/302/jobs": BILLING_JOBS,
+    "repos/fingoldo/autopsia/actions/runs/301/jobs": BILLING_JOBS,
+    "repos/fingoldo/autopsia/check-runs/9001/annotations": BILLING_ANNOTATIONS,
+}
 
 # A real code failure: the jobs ran and the annotation is a process exit code.
 CODE_JOBS = {"jobs": [{"id": 9002, "name": "test (3.11)", "conclusion": "failure", "steps": [{"name": "Run tests", "conclusion": "failure"}]}]}
@@ -191,7 +198,7 @@ def test_collect_billing_blocked_repo_reports_billing_and_exits_0(capsys, tmp_pa
         [BILLING_WF],
         {3: BILLING_RUNS},
         default_branch="master",
-        extra={"repos/fingoldo/autopsia/actions/runs/302/jobs": BILLING_JOBS, "repos/fingoldo/autopsia/check-runs/9001/annotations": BILLING_ANNOTATIONS},
+        extra=BILLING_EXTRA,
     )
     repo = ci_health.collect(_consumer("autopsia", private=True, branch="master"), FakeApi(routes), NOW, can_read_private=True)
     (w,) = repo.workflows
@@ -268,7 +275,7 @@ def _all_routes(nightly_conclusion: str) -> dict[str, Any]:
             [BILLING_WF],
             {3: BILLING_RUNS},
             default_branch="master",
-            extra={"repos/fingoldo/autopsia/actions/runs/302/jobs": BILLING_JOBS, "repos/fingoldo/autopsia/check-runs/9001/annotations": BILLING_ANNOTATIONS},
+            extra=BILLING_EXTRA,
         )
     )
     return routes
@@ -350,3 +357,173 @@ def test_runs_are_paged_until_a_success_shows_up(monkeypatch):
     assert [r["id"] for r in runs] == [209, 208, 207, 206, 205, 204] and len(calls) == 3
     w = assess_workflow(NIGHTLY_WF, runs, NOW)
     assert w is not None and not w.lower_bound and w.red_runs == 5
+
+
+# --- billing never hides a code failure (audit 2026-10-03 N-6) -------------------------------------------------------
+
+# Code failures on 09-20, 09-25 and 09-30 after a green 09-15, then one billing refusal on 10-02.
+MIXED_RUNS = [
+    _run(404, "2026-10-02T10:00:00Z", "failure"),
+    _run(403, "2026-09-30T10:00:00Z", "failure"),
+    _run(402, "2026-09-25T10:00:00Z", "failure"),
+    _run(401, "2026-09-20T10:00:00Z", "failure"),
+    _run(400, "2026-09-15T10:00:00Z", "success"),
+]
+
+
+def test_a_billing_refusal_on_top_of_a_code_failure_streak_is_still_red():
+    w = assess_workflow(BILLING_WF, MIXED_RUNS, NOW, billing_run_ids=[404])
+    assert w is not None and w.status == "red", "the newest run's billing refusal must not relabel 13 days of code failures"
+    assert w.red_runs == 3 and w.billing_runs == 1
+    assert w.red_since == datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc) and round(w.days_red, 1) == 13.1
+    repo = ci_health.RepoHealth("autopsia", "fingoldo/autopsia", "master", workflows=[w])
+    assert exit_code([repo], 2) == 1
+    assert "13.1 d (3 runs) + 1 billing-blocked" in render_markdown([repo], NOW, 2)
+
+
+def test_the_older_billing_flag_form_also_keeps_the_code_failure_red():
+    w = assess_workflow(BILLING_WF, MIXED_RUNS, NOW, billing=True)
+    assert w is not None and w.status == "red" and w.red_runs == 3
+
+
+def test_billing_refusals_after_a_success_are_billing_and_do_not_fail():
+    runs = [_run(503, "2026-10-02T10:00:00Z", "failure"), _run(502, "2026-10-01T10:00:00Z", "failure"), _run(501, "2026-09-20T10:00:00Z", "success")]
+    w = assess_workflow(BILLING_WF, runs, NOW, billing_run_ids=[503, 502])
+    assert w is not None and w.status == "billing" and w.red_runs == 2 and w.billing_runs == 2
+    assert w.last_success == datetime(2026, 9, 20, 10, 0, tzinfo=timezone.utc) and not w.lower_bound
+
+
+def test_only_billing_refusals_in_the_window_are_a_lower_bound_billing_streak():
+    runs = [_run(602, "2026-10-02T10:00:00Z", "failure"), _run(601, "2026-10-01T10:00:00Z", "failure")]
+    w = assess_workflow(BILLING_WF, runs, NOW, billing_run_ids=[601, 602])
+    assert w is not None and w.status == "billing" and w.lower_bound
+
+
+def test_a_billing_id_that_is_a_success_does_not_make_the_workflow_billing():
+    w = assess_workflow(GREEN_WF, GREEN_RUNS, NOW, billing_run_ids=[103])
+    assert w is not None and w.status == "green"
+
+
+def test_collect_probes_failures_until_the_first_code_failure():
+    extra = {
+        "repos/fingoldo/autopsia/actions/runs/404/jobs": BILLING_JOBS,
+        "repos/fingoldo/autopsia/check-runs/9001/annotations": BILLING_ANNOTATIONS,
+        "repos/fingoldo/autopsia/actions/runs/403/jobs": CODE_JOBS,
+        "repos/fingoldo/autopsia/check-runs/9002/annotations": CODE_ANNOTATIONS,
+    }
+    api = FakeApi(_routes("autopsia", [BILLING_WF], {3: MIXED_RUNS}, default_branch="master", extra=extra))
+    repo = ci_health.collect(_consumer("autopsia", branch="master"), api, NOW, can_read_private=True)
+    (w,) = repo.workflows
+    assert not repo.error and w.status == "red" and w.billing_runs == 1 and exit_code([repo], 2) == 1
+    probed = [c.split("?")[0] for c in api.calls if c.split("?")[0].endswith("/jobs")]
+    assert probed == ["repos/fingoldo/autopsia/actions/runs/404/jobs", "repos/fingoldo/autopsia/actions/runs/403/jobs"], "probing stops at a code failure"
+
+
+def test_billing_probes_are_capped(monkeypatch):
+    monkeypatch.setattr(ci_health, "MAX_BILLING_PROBES", 1)
+    calls: list[str] = []
+
+    def api(path: str) -> Any:
+        calls.append(path)
+        return BILLING_JOBS if path.split("?")[0].endswith("/jobs") else BILLING_ANNOTATIONS
+
+    assert ci_health._billing_refusals(api, "o/r", relevant_runs(MIXED_RUNS)) == [404]
+    assert sum(c.split("?")[0].endswith("/jobs") for c in calls) == 1
+
+
+# --- --only, deadline and request timeouts (audit 2026-10-03 N-7 and the 600 s silent run) ---------------------------
+
+
+def _no_network(path: str) -> Any:
+    raise AssertionError(f"no request expected, got {path}")
+
+
+def test_only_with_an_unknown_consumer_fails_without_a_request(tmp_path, capsys):
+    assert ci_health.main([str(_config(tmp_path)), "--only", "autopsiaa"], api=_no_network, now=NOW) == 2
+    err = capsys.readouterr().err
+    assert "--only names no consumer" in err and "autopsiaa" in err and "known: autopsia, glossum_backend_scripts" in err
+
+
+def test_only_with_one_known_and_one_unknown_consumer_fails(tmp_path):
+    assert ci_health.main([str(_config(tmp_path)), "--only", "autopsia", "--only", "nope"], api=_no_network, now=NOW) == 2
+
+
+def test_only_with_a_known_consumer_checks_just_that_one(tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    api = FakeApi(_all_routes("failure"))
+    assert ci_health.main([str(_config(tmp_path)), "--only", "autopsia"], api=api, now=NOW) == 0
+    assert api.calls and all("autopsia" in c for c in api.calls)
+
+
+def test_a_config_with_no_consumers_fails(tmp_path):
+    empty = tmp_path / "consumers.toml"
+    empty.write_text("", encoding="utf-8")
+    assert ci_health.main([str(empty)], api=_no_network, now=NOW) == 2
+
+
+def test_with_deadline_refuses_requests_once_the_clock_passes():
+    ticks = iter([0.0, 5.0, 10.0])
+    calls: list[str] = []
+    api = ci_health.with_deadline(lambda p: calls.append(p) or {}, 10.0, clock=lambda: next(ticks))
+    api("a")
+    api("b")
+    with pytest.raises(ci_health.DeadlineExceededError, match="deadline"):
+        api("c")
+    assert calls == ["a", "b"]
+
+
+def test_main_past_the_deadline_still_reports_and_fails(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    code = ci_health.main([str(_config(tmp_path)), "--deadline", "0"], api=_no_network, now=NOW)
+    captured = capsys.readouterr()
+    assert code == 1
+    assert captured.out.count("not attempted, the overall deadline passed") >= 2
+    assert "ci_health: autopsia: ERROR" in captured.err and "ci_health: glossum_backend_scripts: ERROR" in captured.err
+
+
+def test_gh_api_turns_a_hung_call_into_an_api_error(monkeypatch):
+    seen: dict[str, Any] = {}
+
+    def hung(cmd, **kwargs):
+        seen.update(kwargs)
+        raise ci_health.subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+
+    monkeypatch.setattr(ci_health.subprocess, "run", hung)
+    with pytest.raises(ApiError, match="no answer in 7 s"):
+        ci_health.gh_api("gh", timeout=7)("repos/o/r")
+    assert seen["timeout"] == 7
+
+
+def test_default_api_passes_the_request_timeout_down(monkeypatch):
+    seen: list[float] = []
+    monkeypatch.setattr(ci_health, "urllib_api", lambda token, timeout: seen.append(timeout) or (lambda p: None))
+    ci_health.default_api({"GITHUB_TOKEN": "y"}, timeout=3.5)
+    assert seen == [3.5]
+
+
+def test_consumers_are_read_concurrently(tmp_path, monkeypatch):
+    """Each consumer's first request waits for the other's: a serial loop breaks the barrier."""
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    barrier = threading.Barrier(2, timeout=10)
+    inner = FakeApi(_all_routes("success"))
+
+    def api(path: str) -> Any:
+        if path.count("/") == 2:  # repos/<owner>/<name>: the first call per consumer
+            barrier.wait()
+        return inner(path)
+
+    assert ci_health.main([str(_config(tmp_path)), "--jobs", "2"], api=api, now=NOW) == 0
+    assert not barrier.broken
+
+
+def test_the_ci_health_workflow_deadline_fits_its_timeout():
+    wf = yaml.safe_load((REPO / ".github" / "workflows" / "ci-health.yml").read_text(encoding="utf-8"))
+    (job,) = wf["jobs"].values()
+    assert ci_health.DEFAULT_DEADLINE + ci_health.DEFAULT_REQUEST_TIMEOUT < job["timeout-minutes"] * 60 - 120
+
+
+def test_a_capped_billing_probe_says_older_failures_were_not_probed(monkeypatch):
+    monkeypatch.setattr(ci_health, "MAX_BILLING_PROBES", 1)
+    w = assess_workflow(BILLING_WF, MIXED_RUNS, NOW, billing_run_ids=[404])
+    repo = ci_health.RepoHealth("autopsia", "fingoldo/autopsia", "master", workflows=[w])
+    assert "+ 1 billing-blocked, older failures not probed" in render_markdown([repo], NOW, 2)

@@ -1,0 +1,8 @@
+# Exact versions of what the scheduled reports (ci-health, consumer-pins, config-drift-check, corpus-drift) and
+# release.yml install next to this package: its runtime dependencies (pyproject.toml [project] dependencies) and
+# corpus-drift's pytest. Used as a constraints file (-c), so the same commit installs the same code on every run.
+# tests/test_reusable_workflows.py holds every runtime dependency pinned here and every such install using it.
+# Bump deliberately, with a test run.
+PyYAML==6.0.3
+tomli==2.4.1 ; python_version < "3.11"
+pytest==9.1.1

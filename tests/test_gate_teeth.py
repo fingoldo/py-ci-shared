@@ -295,12 +295,8 @@ EXEMPT: dict[str, str] = {
     "changelog_promise_parity": "regex over a CHANGELOG with caller-supplied trigger patterns",
     "checkout_resolution": "imports modules / runs pytest in a copy; runtime check, not a scanner",
     "checkpoint_isolation": "single path predicate, no corpus",
-    "ci_test_dir_reachability": "compares a tests/ tree against workflow commands; subject is repo layout",
-    "ci_workflow_paths": "checks that workflow-referenced paths exist in a repo; subject is repo layout",
     "code_audit_meta": "wraps pyutilz code_audit checks behind a baseline; the checks live in pyutilz",
     "function_complexity": "a compatibility API over complexity_ratchet, whose canary seeds the same measurement",
-    "coverage_config_parity": "compares [tool.coverage] config against workflow coverage commands; CI configuration",
-    "pytest_addopts_path_runs": "compares hook/workflow pytest commands against addopts; CI configuration",
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
     "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
@@ -312,8 +308,6 @@ EXEMPT: dict[str, str] = {
     "edge_function_hygiene": "Supabase edge-function directory layout checks (TypeScript)",
     "effect_assertion_parity": "maps production modules to their tests through an import map; subject is repo layout",
     "env_example_round_trip": "loads a .env example into a live settings class; runtime check",
-    "gate_config_honesty": "compares pre-commit and workflow commands against config; CI configuration",
-    "gate_integrity": "compares pre-commit, workflows and pyproject; CI configuration",
     "gate_population_canary": "itself a population/canary gate over meta tests",
     "git_changed_lines": "library for git diff line ranges; needs git history",
     "guard_population": "runs shell guard scripts; runtime check",
@@ -323,7 +317,6 @@ EXEMPT: dict[str, str] = {
     "import_layering": "rules are caller-supplied layer maps; covered by test_import_layering.py",
     "index_coverage": "compares SQL index definitions against a live catalogue",
     "inert_patch_targets": "needs a precomputed module-facts index; library entry",
-    "marker_runner_coverage": "compares marked tests against runner commands; subject is CI wiring",
     "mutation_teeth": "runs mutants against tests; runtime check",
     "nondiscriminating_shapes": "library helpers for test-shape predicates",
     "package_doctests": "runs doctests of an importable package; runtime check",
@@ -345,6 +338,52 @@ EXEMPT: dict[str, str] = {
     "version_consistency": "compares version strings across manifests; no violation shape in code",
     "version_tag_currency": "compares a manifest version against git tags; needs git history",
 }
+
+
+# CI-configuration gates: workflows, hooks and pyproject are files too, so they get canaries (audit 2026-10-03 WF-11).
+# Regex/line-level readers have no unparsable input (parses=False).
+CANARIES.update(
+    {
+        c.gate: c
+        for c in [
+            Canary(
+                "ci_workflow_paths",
+                lambda d: _gate("ci_workflow_paths").assert_workflow_paths_exist(d / ".github" / "workflows", d, require_permissions=True),
+                parses=False,
+            ),
+            Canary(
+                "ci_test_dir_reachability",
+                lambda d: _gate("ci_test_dir_reachability").assert_every_test_subdir_reachable(d, d / ".github" / "workflows"),
+                parses=False,
+            ),
+            Canary("coverage_config_parity", lambda d: _gate("coverage_config_parity").assert_coverage_config_parity(d)),
+            Canary(
+                "gate_config_honesty",
+                lambda d: _gate("gate_config_honesty").assert_gates_honest(
+                    d / ".pre-commit-config.yaml", sorted((d / ".github" / "workflows").glob("*.yml")), d / "pyproject.toml"
+                ),
+                parses=False,
+            ),
+            Canary(
+                "pytest_addopts_path_runs",
+                lambda d: _gate("pytest_addopts_path_runs").assert_path_runs_select_tests(
+                    d, repo_root=d, workflows=sorted((d / ".github" / "workflows").glob("*.yml"))
+                ),
+            ),
+            Canary(
+                "marker_runner_coverage",
+                lambda d: _gate("marker_runner_coverage").assert_every_marked_test_is_selected(
+                    d / "tests",
+                    d,
+                    marker="integration",
+                    commands=[("ci::integration", "python -m pytest tests -m 'integration' -k seed_db_run")],
+                    addopts="-m 'not integration'",
+                ),
+            ),
+            Canary("gate_integrity", lambda d: _gate("gate_integrity").assert_narrowings_declared(d / ".pre-commit-config.yaml", None, {})),
+        ]
+    }
+)
 
 
 def _assert_empty(found) -> None:

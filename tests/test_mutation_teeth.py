@@ -898,6 +898,9 @@ P = re.compile(r"^a+$")
 """
 
 
+# 256 s alone on a Windows workstation, 282 s under -n 4: past the global 300 s pytest-timeout, whose thread method
+# os._exit()s the xdist worker ("node down: Not properly terminated", audit 2026-10-03 WF-12). Its own, larger budget.
+@pytest.mark.timeout(1200)
 class TestConcurrencyChangesSpeedAndNothingElse:
     """`jobs=N` is opt-in, and this is the property that makes it safe to opt into.
 
@@ -1154,3 +1157,9 @@ class TestAMutantThatStopsPytestStartingIsAKill:
 
         assert outcome.mutants_run >= 1
         assert not [m for m in outcome.survivors if "_count" in m.original_span], outcome.summary()
+
+
+def test_the_worker_pool_tests_carry_a_budget_above_the_global_timeout():
+    """Audit 2026-10-03 WF-12: past pytest-timeout's 300 s, its thread method kills the whole xdist worker."""
+    (mark,) = [m for m in TestConcurrencyChangesSpeedAndNothingElse.pytestmark if m.name == "timeout"]
+    assert mark.args[0] > 300

@@ -151,6 +151,7 @@ def test_the_cli_subcommand(layout, capsys):
     assert "already in registry.toml" in capsys.readouterr().err
 
 
+@pytest.mark.timeout(1200)  # three nested pytest runs; 82 s under -n 4, past 300 s under full-suite load (WF-12)
 def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout):
     """In the copy: the inventory accepts the new gate, while its own tests and its canary fail."""
     new_gate(full_layout, "unfinished_gate", summary="Not written yet")

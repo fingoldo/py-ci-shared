@@ -15,6 +15,17 @@ import pytest
 from py_ci_shared import _mutation_worker
 from py_ci_shared.mutation_teeth import _WarmRunner
 
+# A warm worker that does not answer in time returns None, which read as a wrong exit code ("assert None == 1",
+# 133 s against 120 s under -n 4, audit 2026-10-03 WF-12). A generous budget, and every module test gets its own.
+WARM_TIMEOUT = 600
+pytestmark = pytest.mark.timeout(1200)
+
+
+def test_the_warm_runner_tests_outlast_their_worker_budget():
+    """The pytest-timeout budget must exceed the worker's, or a slow run os._exit()s the xdist worker instead."""
+    (mark,) = [m for m in [pytestmark] if m.name == "timeout"]
+    assert mark.args[0] > WARM_TIMEOUT
+
 
 def _write(path: Path, text: str) -> None:
     path.write_bytes(text.encode("utf-8"))
@@ -31,13 +42,13 @@ class TestTheProtocolChannelIsPrivate:
             "    subprocess.run([sys.executable, '-c', 'print(\"{}\")'], check=True)\n"
             "    assert True\n",
         )
-        with _WarmRunner(tmp_path, timeout=120) as warm:
+        with _WarmRunner(tmp_path, timeout=WARM_TIMEOUT) as warm:
             codes = [warm.run(["test_noisy.py"]) for _ in range(3)]
         assert codes == [0, 0, 0], codes
 
     def test_a_failing_run_still_reports_its_own_code(self, tmp_path):
         _write(tmp_path / "test_fails.py", "import os\n\n\ndef test_f():\n    os.write(1, b'{\"rc\": 0}\\n')\n    assert 1 == 2\n")
-        with _WarmRunner(tmp_path, timeout=120) as warm:
+        with _WarmRunner(tmp_path, timeout=WARM_TIMEOUT) as warm:
             assert warm.run(["test_fails.py"]) == 1
 
 
@@ -63,7 +74,7 @@ class TestProcessStateIsRestoredBetweenRuns:
             "    assert '/nonexistent-leak' not in sys.path\n"
             "    assert '--leak' not in sys.argv\n",
         )
-        with _WarmRunner(tmp_path, timeout=120) as warm:
+        with _WarmRunner(tmp_path, timeout=WARM_TIMEOUT) as warm:
             assert warm.run(["test_clean.py"]) == 0, "the control must pass on a fresh worker"
             assert warm.run(["test_leaks.py"]) == 0
             assert warm.run(["test_clean.py"]) == 0, "state left by the previous run reached this one"
@@ -89,7 +100,7 @@ class TestCrashesAreToldApart:
     def test_a_type_error_is_a_crash_and_an_assertion_is_not(self, tmp_path):
         _write(tmp_path / "test_crash.py", "def test_c():\n    len(5)\n")
         _write(tmp_path / "test_assert.py", "def test_a():\n    assert 1 == 2\n")
-        with _WarmRunner(tmp_path, timeout=120) as warm:
+        with _WarmRunner(tmp_path, timeout=WARM_TIMEOUT) as warm:
             assert warm.run(["test_crash.py"]) == 1
             assert warm.last_crash is True
             assert warm.run(["test_assert.py"]) == 1

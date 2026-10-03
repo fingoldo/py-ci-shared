@@ -1,0 +1,7 @@
+repos:
+  - repo: local
+    hooks:
+      - id: seed-bandit
+        name: seed bandit
+        entry: bandit -r src
+        language: system
