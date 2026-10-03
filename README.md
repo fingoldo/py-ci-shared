@@ -9,7 +9,7 @@ Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and f
 Two things live here, each solving a different half of the duplication:
 
 1. **Reusable GitHub Actions workflows** (`.github/workflows/*.yml`, invoked via `workflow_call`) for the pieces of CI that are identical in *behavior* across repos: the blocking ruff gate, the filtered Black check, the mypy strict-mode-beachhead pattern, the mypy-full advisory pass, the blocking lint bundle (`lint-blocking.yml`: codespell, yamllint, bandit, actionlint, zizmor, vulture, interrogate, deptry), the advisory bundle (`lint-advisory.yml`: full ruff, mccabe complexity, pip-audit of the calling project, import-linter, pydoclint, semgrep), and the MkDocs docs build/deploy.
-2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.19.0"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
+2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.20.0"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
 
 Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` superset, pulled into each consuming repo's own `pyproject.toml` via ruff's native `extend` mechanism (a real config-merge, not copy-paste) — see below.
 
@@ -475,7 +475,7 @@ file at that release). A caller on `@v1` or on a release tag therefore gets that
 to a SHA between releases gets the previous release's configs unless it also passes `py-ci-shared-ref: <the same
 SHA>`. A ref that cannot be fetched fails the job after three attempts; there is no fallback to `master`.
 
-Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.19.0"`. The
+Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.20.0"`. The
 version in `pyproject.toml` and `py_ci_shared.__version__` is the release it becomes when tagged.
 
 Releasing: bump `version` in `pyproject.toml` and `__version__` in `src/py_ci_shared/__init__.py`
