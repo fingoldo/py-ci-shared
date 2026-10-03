@@ -43,6 +43,7 @@ import ast
 import io
 import re
 import subprocess
+import sys
 import time
 import tokenize
 import warnings
@@ -316,6 +317,44 @@ def _history_problem(repo_root: Path) -> Optional[str]:
     return None
 
 
+def _called_names(body: str) -> set[str]:
+    """The names a code-shaped comment body calls (``self.stats.setdefault("k", 0)`` -> ``{"setdefault"}``)."""
+    text = body.strip().rstrip(";,").strip()
+    try:
+        tree = ast.parse("_" + text if text.startswith(".") else text)
+    except (SyntaxError, ValueError):
+        return set()
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            out.add(func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else "")
+    return out - {""}
+
+
+def _shapes_this_file_matches(source: str) -> frozenset[str]:
+    """String literals naming a call this file looks for, when it is an AST analyser (imports ``ast``), else empty.
+
+    Such a file labels each branch with the call shape it matches: ``# self.stats.setdefault("k", 0)`` above
+    ``if node.func.attr == "setdefault"``, ``# Path.open(mode, buffering, ...)`` inside ``func.attr == "open"``. Those
+    labels have exactly the shape of dead code, and the literal beside them is what tells them apart (pyutilz 635d0c5
+    had to reword one to get past the gate). A file that only USES the name (``print``) has no such literal."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return frozenset()
+    imports_ast = any(
+        (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast") for n in ast.walk(tree)
+    )
+    if not imports_ast:
+        return frozenset()
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
+            found.add(node.value)
+    return frozenset(found)
+
+
 def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str]]:
     try:
         source = read_source(path)
@@ -324,6 +363,7 @@ def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str
     file_lines = source.splitlines()
     out: dict[int, tuple[str, str]] = {}
     hash_lang = path.suffix in _HASH_SUFFIXES
+    matched_shapes: Optional[frozenset[str]] = None
     for lineno, comment in sorted(_comments(path, source, file_lines).items()):
         line = file_lines[lineno - 1] if lineno - 1 < len(file_lines) else comment
         todo = _todo(comment)
@@ -333,7 +373,13 @@ def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str
             out[lineno] = ("TODO", line.strip()[:100])
             continue
         code_re = _COMMENTED_HASH_CALL_RE if hash_lang else _COMMENTED_CODE_RE
-        if code_re.match(line) and _body_is_code(_comment_body(line) or "", python=path.suffix == ".py") and not _block_reads_as_prose(file_lines, lineno - 1):
+        body = _comment_body(line) or ""
+        if code_re.match(line) and _body_is_code(body, python=path.suffix == ".py") and not _block_reads_as_prose(file_lines, lineno - 1):
+            if path.suffix == ".py":
+                if matched_shapes is None:
+                    matched_shapes = _shapes_this_file_matches(source)
+                if _called_names(body) & matched_shapes:
+                    continue  # a label naming the call shape the code beside it matches, not a call somebody disabled
             out[lineno] = ("commented-out code", line.strip()[:100])
     return out
 
@@ -479,3 +525,78 @@ def assert_no_stale_todos(
     if problems:
         pytest.fail(f"{len(problems)} stale comment(s) older than {max_age_days} days:\n  " + "\n  ".join(problems))
     return advisories
+
+
+def _configured(repo_root: Path) -> dict:
+    """The repo's own ``[tool.py_ci_shared.gates.stale_comment_age]`` table (``scan_dirs``, ``max_age_days``, ``warn_days``),
+    or ``{}``: the summary then judges the same scope and limits as the consumer's gate."""
+    from ._toml_compat import tomllib
+
+    pyproject = repo_root / "pyproject.toml"
+    if not pyproject.is_file():
+        return {}
+    data = tomllib.loads(read_source(pyproject))
+    table = data.get("tool", {}).get("py_ci_shared", {}).get("gates", {}).get("stale_comment_age", {})
+    return table if isinstance(table, dict) else {}
+
+
+def stale_warning_summary(
+    repos: Sequence[Path],
+    *,
+    scan_dirs: Optional[Sequence[str]] = None,
+    max_age_days: Optional[int] = None,
+    warn_days: Optional[int] = None,
+    now: Optional[float] = None,
+) -> tuple[list[str], int]:
+    """``(lines, repos that could not be checked)``: per checked-out repo, how many comments go stale within the warning
+    window and how many already are, then a ``stale-comment early warnings: N`` total.
+
+    The early warning is a pytest warning a consumer's CI prints and nobody reads; this counts the same thing from a
+    checkout (consumer-pins-style jobs clone every consumer anyway), so the number is in one report. Scan dirs and limits
+    come from the arguments, else the repo's own gate table, else ``["."]``, 30 and 7 days. A repo whose comments cannot be
+    dated (shallow clone, not a git tree, missing scan dir) is listed as not checked and counted, never as zero.
+    """
+    at = time.time() if now is None else now
+    lines: list[str] = []
+    total = unchecked = 0
+    for repo in repos:
+        root = Path(repo)
+        cfg = _configured(root)
+        dirs = list(scan_dirs or cfg.get("scan_dirs") or ["."])
+        limit = int(max_age_days if max_age_days is not None else cfg.get("max_age_days", 30))
+        window = int(warn_days if warn_days is not None else cfg.get("warn_days", 7)) or 7
+        problems, dated = _scan(root, dirs, suffixes=_DEFAULT_SUFFIXES, require_issue_ref=True, skip_dirs=DEFAULT_SKIP_DIRS)
+        if problems and not dated:
+            unchecked += 1
+            lines.append(f"{root.name}: not checked - {problems[0]}")
+            continue
+        soon, stale = len(_going_stale(dated, limit, window, at)), len(_stale(dated, limit, at))
+        total += soon
+        note = f"; {len(problems)} line(s) could not be dated" if problems else ""
+        lines.append(f"{root.name}: {soon} going stale within {window} days, {stale} already older than {limit} days{note}")
+    lines.append(f"stale-comment early warnings: {total}" + (f" ({unchecked} repo(s) not checked)" if unchecked else ""))
+    return lines, unchecked
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    """``python -m py_ci_shared.stale_comment_age --stale-warning-summary REPO [REPO ...]``: 0, or 1 when a repo could
+    not be checked."""
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m py_ci_shared.stale_comment_age", description=main.__doc__)
+    parser.add_argument("--stale-warning-summary", nargs="+", metavar="REPO", required=True, help="checked-out repos (full history) to count")
+    parser.add_argument(
+        "--scan-dir", action="append", default=None, help="directory to scan in every repo (repeatable; default: the repo's gate table, else .)"
+    )
+    parser.add_argument("--max-age-days", type=int, default=None)
+    parser.add_argument("--warn-days", type=int, default=None)
+    args = parser.parse_args(argv)
+    lines, unchecked = stale_warning_summary(
+        [Path(p) for p in args.stale_warning_summary], scan_dirs=args.scan_dir, max_age_days=args.max_age_days, warn_days=args.warn_days
+    )
+    sys.stdout.write("".join(line + "\n" for line in lines))
+    return 1 if unchecked else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

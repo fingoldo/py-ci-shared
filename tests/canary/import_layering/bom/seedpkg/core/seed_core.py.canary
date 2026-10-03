@@ -1,0 +1,3 @@
+﻿from seedpkg.product.screen import NAME
+
+LABEL = NAME

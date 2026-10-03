@@ -236,3 +236,22 @@ class TestAuditRegressions:
     def test_top_level_precommit_scoping_is_a_narrowing(self, tmp_path):
         precommit = _hooks(tmp_path, "      - id: t\n        entry: tool\n", top="exclude: ^tests/\n")
         assert set(find_narrowings(precommit, None)) == {"pre-commit::<top-level>::exclude=^tests/"}
+
+
+@pytest.mark.parametrize("where", ["precommit", "workflow"])
+def test_an_unparsable_config_fails_naming_the_file_and_line(tmp_path, where):
+    """It used to escape as a bare yaml ParserError naming neither the config nor the gate (audit 2026-10-03 WF-11)."""
+    from py_ci_shared.gate_integrity import assert_narrowings_declared
+
+    broken = "repos: [\n  - id: seed\n"
+    if where == "precommit":
+        bad = _write(tmp_path / ".pre-commit-config.yaml", broken)
+        call = lambda: assert_narrowings_declared(bad, None, {})  # noqa: E731
+    else:
+        bad = _write(tmp_path / "wf" / "ci.yml", broken)
+        call = lambda: assert_narrowings_declared(None, bad.parent, {})  # noqa: E731
+    with pytest.raises(pytest.fail.Exception) as info:
+        call()
+    text = str(info.value)
+    assert bad.name in text and "unparsable" in text and "not valid YAML" in text
+    assert f"{bad.name}:2: unparsable" in text

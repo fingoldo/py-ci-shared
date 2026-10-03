@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import Baseline, iter_files, refresh_requested, write_ratchet
+from ._core import Baseline, iter_files, load_json, refresh_requested, write_ratchet
 
 REFRESH_FLAG = "--refresh-audit-wave-filenames-baseline"
 
@@ -65,7 +65,7 @@ def find_audit_wave_test_files(tests_dir: Path, *, extra_patterns: Iterable[str]
 def _read_baseline(baseline: "Path | None") -> set[str]:
     if baseline is None or not baseline.is_file():
         return set()
-    data = json.loads(baseline.read_text(encoding="utf-8-sig"))
+    data = load_json(baseline)
     if not isinstance(data, list) or not all(isinstance(x, str) for x in data):
         raise ValueError(f"{baseline} must hold a JSON list of test-file paths relative to the tests directory")
     return set(data)

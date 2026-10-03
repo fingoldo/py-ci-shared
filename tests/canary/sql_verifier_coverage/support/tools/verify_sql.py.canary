@@ -1,0 +1,4 @@
+STATEMENTS = [
+    ("seedpkg.queries", ("SEED_SELECT",)),
+]
+EXCLUDED = {}

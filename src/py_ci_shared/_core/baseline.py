@@ -84,7 +84,7 @@ def load_json(path: PathLike) -> Any:
     try:
         return json.loads(p.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as exc:
-        raise BaselineError(f"baseline {p} is unreadable: {exc}") from exc
+        raise BaselineError(f"baseline {p} is unreadable ({type(exc).__name__}: {exc}); fix or delete it") from exc
 
 
 _META_KEYS = frozenset({"_comment", "_meta", "_schema", "_note"})
@@ -253,11 +253,11 @@ class Baseline:
         """``(counts, notes)``. Raises :class:`BaselineError` when the file is missing or malformed."""
         if not self.exists():
             raise BaselineError(f"baseline {self.path} does not exist. Create it with: {self.refresh_command}")
+        data = load_json(self.path)
         try:
-            data = json.loads(self.path.read_text(encoding="utf-8-sig"))
-        except (OSError, ValueError) as exc:
-            raise BaselineError(f"baseline {self.path} is unreadable: {exc}") from exc
-        return _parse_entries(data, self.path)
+            return _parse_entries(data, self.path)
+        except BaselineError as exc:
+            raise BaselineError(f"baseline {self.path} is unreadable ({exc}); fix or delete it") from exc
 
     def save(self, counts: Mapping[str, int], notes: Optional[Mapping[str, str]] = None) -> None:
         notes = notes or {}
@@ -272,16 +272,15 @@ class Baseline:
         """Write today's findings, keeping existing notes; new keys get ``self.new_note``.
 
         Shrink-only unless growth is allowed (*grow*, else :func:`grow_requested`): see :func:`write_ratchet`, whose
-        :class:`BaselineGrowthError` this raises after writing the removals.
+        :class:`BaselineGrowthError` this raises after writing the removals. A baseline that exists but cannot be read
+        raises :class:`BaselineError` ("unreadable ...; fix or delete it") and is left as it is: treating it as missing
+        would report a seeding and drop every note it holds.
         """
         current = self.count(found)
         previous_counts: Optional[Counter[str]] = None
         notes: dict[str, str] = {}
         if self.exists():
-            try:
-                previous_counts, notes = self.load()
-            except BaselineError:
-                previous_counts = None
+            previous_counts, notes = self.load()
 
         def render(kept: dict[str, int]) -> str:
             entries = {k: {"count": n, "note": notes.get(k) or self.new_note} for k, n in sorted(kept.items())}

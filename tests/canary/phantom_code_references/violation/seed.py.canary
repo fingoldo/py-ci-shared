@@ -1,0 +1,6 @@
+"""Helpers."""
+
+
+# The work happens in `SeedRunner.go()`.
+def helper():
+    return 1

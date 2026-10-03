@@ -811,8 +811,9 @@ def find_unasserted_effects(
 
     *import_map* is ``{module path: [test paths that import it]}``, both relative to *repo_root*. The
     importing tests are the right population rather than all tests: a suite-wide "somebody somewhere
-    asserts on commit" would be satisfied by one unrelated test and would gate nothing. A module or test that cannot
-    be parsed is reported as ``"<path>::<unparsable>"``: nothing about it can be vouched for.
+    asserts on commit" would be satisfied by one unrelated test and would gate nothing. A module, test or conftest under
+    *repo_root* that cannot be parsed is reported as ``"<path>::<unparsable>"``, whether or not the map names it:
+    nothing about it can be vouched for.
     """
     parse = _Parser(repo_root)
     mock_inspected: dict[str, set[str]] = {}
@@ -820,12 +821,13 @@ def find_unasserted_effects(
     problems: dict[str, str] = {}
     # Every conftest in the tree, because a `db_session` may be defined in the root one and used
     # three packages down. Collected once: this is an AST parse per conftest, not per test.
+    # Test files are parsed here too (_inspection_helpers already parsed every other file): build_import_map drops a test
+    # it cannot parse without a word (no imports, no edge), so a broken test would vanish from the map instead of failing.
     db_fixtures: set[str] = set()
-    for conftest in _py_files(repo_root):
-        if conftest.name == "conftest.py":
-            tree = parse(conftest)
-            if tree is not None:
-                db_fixtures |= _fixtures_backed_by_a_real_database_in(tree)
+    for path in _py_files(repo_root):
+        tree = parse(path)
+        if tree is not None and path.name == "conftest.py":
+            db_fixtures |= _fixtures_backed_by_a_real_database_in(tree)
     fixtures = frozenset(db_fixtures)
     patches_driver: dict[str, bool] = {}
 

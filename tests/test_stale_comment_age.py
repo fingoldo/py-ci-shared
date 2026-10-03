@@ -385,3 +385,66 @@ class TestEarlyWarning:
         repo = _repo_at_t0(tmp_path, "lib/a.dart", self.BODY)
         with pytest.raises(pytest.fail.Exception, match="older than 30 days"):
             assert_no_stale_todos(repo, ["lib"], max_age_days=30, warn_days=7, now=_T0 + 31 * _DAY)
+
+
+class TestShapeLabelsInAnalysers:
+    """An AST analyser labels each branch with the call shape it matches; that label is not dead code (G-12 sample:
+    every commented-out-code hit in pyutilz and py-ci-shared was one, pyutilz 635d0c5 reworded one to get past)."""
+
+    @staticmethod
+    def _kinds(tmp_path: Path, source: str) -> list[str]:
+        p = tmp_path / "m.py"
+        p.write_text(source, encoding="utf-8")
+        return [kind for kind, _ in sca._candidates(p, require_issue_ref=True).values()]
+
+    _ANALYSER = (
+        "import ast\n\n_INC_HELPERS = {'_inc_stat'}\n\n\ndef keys(node):\n"
+        '    # self.stats.setdefault("k", 0)\n'
+        "    if node.func.attr == 'setdefault':\n        return 1\n"
+        '    # self._inc_stat("k")\n'
+        "    elif node.func.attr in _INC_HELPERS:\n        return 2\n"
+        "    if node.func.attr == 'open':\n"
+        "        # Path.open(mode, buffering, encoding, errors, newline)\n"
+        "        return 3\n"
+    )
+
+    def test_shape_labels_in_an_ast_analyser_are_not_code(self, tmp_path):
+        assert self._kinds(tmp_path, self._ANALYSER) == []
+
+    def test_a_disabled_call_in_an_analyser_is_still_code(self, tmp_path):
+        source = self._ANALYSER.replace("        return 3\n", "        return 3\n    # print(node.func.attr)\n")
+        assert self._kinds(tmp_path, source) == ["commented-out code"]
+
+    def test_the_same_label_outside_an_ast_analyser_is_still_code(self, tmp_path):
+        source = "MODE = 'setdefault'\n\n\ndef f(stats):\n    # stats.setdefault(\"k\", 0)\n    return MODE\n"
+        assert self._kinds(tmp_path, source) == ["commented-out code"]
+
+
+class TestStaleWarningSummary:
+    def test_counts_per_repo_and_a_total_line(self, tmp_path):
+        a = _repo_at_t0(tmp_path / "alpha", "lib/a.dart", "// TODO: soon\nvoid a() {}\n")
+        b = _repo_at_t0(tmp_path / "beta", "lib/b.dart", "void b() {}\n")
+        lines, unchecked = sca.stale_warning_summary([a, b], scan_dirs=["lib"], max_age_days=30, warn_days=7, now=_T0 + 25 * _DAY)
+        assert unchecked == 0
+        assert lines == [
+            "alpha: 1 going stale within 7 days, 0 already older than 30 days",
+            "beta: 0 going stale within 7 days, 0 already older than 30 days",
+            "stale-comment early warnings: 1",
+        ]
+
+    def test_the_repo_gate_table_sets_scope_and_limits(self, tmp_path):
+        a = _repo_at_t0(tmp_path / "alpha", "lib/a.dart", "// TODO: soon\nvoid a() {}\n")
+        (a / "pyproject.toml").write_text("[tool.py_ci_shared.gates.stale_comment_age]\nscan_dirs = ['lib']\nmax_age_days = 40\n", encoding="utf-8")
+        lines, _ = sca.stale_warning_summary([a], now=_T0 + 25 * _DAY)
+        assert lines[0] == "alpha: 0 going stale within 7 days, 0 already older than 40 days"
+        lines, _ = sca.stale_warning_summary([a], now=_T0 + 35 * _DAY)
+        assert lines[-1] == "stale-comment early warnings: 1"
+
+    def test_a_repo_that_cannot_be_dated_is_not_checked_and_fails_the_cli(self, tmp_path, capsys):
+        plain = tmp_path / "plain"
+        (plain / "lib").mkdir(parents=True)
+        lines, unchecked = sca.stale_warning_summary([plain], scan_dirs=["lib"])
+        assert unchecked == 1 and lines[0].startswith("plain: not checked - ") and "not a git work tree" in lines[0]
+        assert lines[-1] == "stale-comment early warnings: 0 (1 repo(s) not checked)"
+        assert sca.main(["--stale-warning-summary", str(plain), "--scan-dir", "lib"]) == 1
+        assert "stale-comment early warnings: 0 (1 repo(s) not checked)" in capsys.readouterr().out

@@ -54,12 +54,11 @@ Usage::
 from __future__ import annotations
 
 import ast
-import json
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Union
 
-from ._core import nodes_of, relative_posix, scan_python
+from ._core import load_json, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loop"]
@@ -372,7 +371,7 @@ def assert_no_new_floorless_loop(
     """Fail on a floorless loop not already in *baseline_path*, on a test file that cannot be parsed, and on fewer
     than *min_files* parsed files. Ratchet, not a gate: the baseline records what was already true, and the list can
     only shrink from here."""
-    accepted: dict[str, str] = json.loads(baseline_path.read_text(encoding="utf-8-sig")) if baseline_path.exists() else {}
+    accepted: dict[str, str] = load_json(baseline_path) if baseline_path.exists() else {}
     found, parsed_count = _floorless_loops(files, repo_root)
     if parsed_count < min_files:
         raise AssertionError(f"only {parsed_count} test file(s) parsed; expected at least {min_files}. The scan lost its subject.")

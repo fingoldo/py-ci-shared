@@ -4,6 +4,22 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.20.0
 
+- **Behaviour change** (audit 2026-10-03 remainders, N-19, WF-11): a baseline that exists but cannot be read is
+  reported as "baseline X is unreadable (...); fix or delete it" by every refresh, never as "does not exist" (the core
+  `Baseline` refresh, `mutation_teeth`, `function_length`, `ignore_ratchet`, `import_side_effects`, `audit_wave_filenames`,
+  `fail_open_handlers`, `loc_budget`, `phantom_code_references`, `vacuous_loop_assertions`); the file is left as it is.
+  Floors where a gate passed on nothing: `phantom_code_references.assert_no_phantom_code_references`,
+  `doc_identifier_parity.assert_doc_identifiers_exist` and `timezone_honest.assert_timezone_honest` take `min_files=1`;
+  `test_partition_reachability` fails a runner path that holds no runner text and names an unparsable tags file.
+  `effect_assertion_parity` reports an unparsable `test_*.py` that `build_import_map` had dropped. `gate_integrity` names
+  an unparsable pre-commit or workflow file (it raised a bare yaml error), and `pytest_addopts_path_runs` no longer
+  reports the clean files' runs when another test file is unparsable.
+- `local_copy_report` also judges every `conftest.py` by content (`CONFTEST_SIGNATURES`: a hand-rolled autouse stream
+  guard is a copy of `resource_leak_checks`); `include_conftest=False` turns it off (audit 2026-10-03 G-7).
+- `stale_comment_age`: a code-shaped comment in an AST analyser that names a call shape the file matches by a string
+  literal (`# self.stats.setdefault("k", 0)` above `attr == "setdefault"`) is a label, not commented-out code; and
+  `python -m py_ci_shared.stale_comment_age --stale-warning-summary REPO ...` prints per-repo counts of comments going
+  stale plus a `stale-comment early warnings: N` total for a job that checks consumers out (audit 2026-10-03 G-12).
 - **Behaviour change** (audit 2026-10-03, G-3): `optional_truthiness` also follows optional numbers carried on `self`
   (`self.x`, `getattr(self, "x")`, a local bound from either) and one hop of argument forwarding, for budget-like
   names (`BOUND_NAMES`). On by default (`follow_attributes=True`); mlframe master gets 7 new findings (three zero-budget

@@ -129,3 +129,49 @@ class TestAssert:
         (root / "tests" / "test_meta" / "test_no_import_cycles.py").unlink()
         with pytest.raises(pytest.fail.Exception, match="no longer found"):
             assert_local_copies_do_not_grow(root, baseline_path=baseline, use_git=False)
+
+
+# A hand-rolled stream guard in a conftest (mlframe's, 2026-10-03 G-7): it never matched, because only test_*.py files
+# under a meta directory were judged.
+_STREAM_GUARD = """
+import sys
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _restore_streams():
+    before = (sys.stdout, sys.stderr)
+    yield
+    leaked = [n for n, s, b in (("stdout", sys.stdout, before[0]), ("stderr", sys.stderr, before[1])) if s is not b]
+    if leaked:
+        sys.stdout, sys.stderr = before
+        pytest.fail(f"left {leaked} replaced")
+"""
+
+
+class TestConftest:
+    def test_a_conftest_stream_guard_is_a_copy_of_resource_leak_checks(self, tmp_path):
+        root = _repo(tmp_path, {"tests/conftest.py": _STREAM_GUARD, "tests/test_meta/test_ok.py": "x = 1\n"})
+        assert _found(root) == [("tests/conftest.py", "resource_leak_checks:streams")]
+        assert _found(root, include_conftest=False) == []
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            # reads the streams but never restores one: a capture helper, not a guard
+            "import sys, pytest\n\n@pytest.fixture(autouse=True)\ndef f():\n    before = sys.stdout\n    yield\n    assert sys.stdout is not None\n",
+            # restores without an identity check, and not autouse
+            "import sys, pytest\n\n@pytest.fixture\ndef quiet():\n    old = sys.stdout\n    yield\n    sys.stdout = old\n",
+            # uses the central check
+            "import sys, pytest\nfrom py_ci_shared.resource_leak_checks import take_state\n" + _STREAM_GUARD,
+        ],
+        ids=["no-restore", "not-autouse-no-identity", "imports-central"],
+    )
+    def test_near_misses_are_not_copies(self, tmp_path, body):
+        root = _repo(tmp_path, {"tests/conftest.py": body, "tests/test_meta/test_ok.py": "x = 1\n"})
+        assert _found(root) == []
+
+    def test_a_nested_conftest_outside_meta_dirs_is_judged_too(self, tmp_path):
+        root = _repo(tmp_path, {"tests/unit/deep/conftest.py": _STREAM_GUARD, "tests/test_meta/test_ok.py": "x = 1\n"})
+        assert _found(root) == [("tests/unit/deep/conftest.py", "resource_leak_checks:streams")]

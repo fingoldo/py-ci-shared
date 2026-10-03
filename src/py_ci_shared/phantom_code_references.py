@@ -48,14 +48,13 @@ import ast
 import functools
 import importlib
 import io
-import json
 import re
 import tokenize
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
+from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, load_json, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 # A backticked token. Kept narrow on purpose: identifiers, dotted members, a trailing "(" and test-file
@@ -579,18 +578,23 @@ def assert_no_phantom_code_references(
     *,
     baseline_path: Path | None = None,
     extra_known: Iterable[str] = (),
+    min_files: int = 1,
 ) -> None:
     """Fail on any phantom reference not in the committed baseline; also fail when a baseline entry is no
-    longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks.
+    longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks. Fewer than *min_files*
+    files fails too: a glob that lost its subject hands over an empty list, which would otherwise read as clean.
 
     A baseline entry is matched on file and name: ``"<rel>::<token>"``, or a full violation line whose line number
     and wording are ignored, so moving a comment or rewording a message does not churn the baseline."""
     import pytest
 
+    files = list(files)
+    if len(files) < min_files:
+        pytest.fail(f"only {len(files)} file(s) given; expected at least {min_files} -- this would check nothing")
     violations = set(find_phantom_code_references(files, repo_root, declared, extra_known=extra_known))
     baseline: set[str] = set()
     if baseline_path is not None and baseline_path.exists():
-        baseline = set(json.loads(baseline_path.read_text(encoding="utf-8-sig"))["phantom_references"])
+        baseline = set(load_json(baseline_path)["phantom_references"])
     # Entries match on file + name (either the key form or a full violation line), never on line or wording.
     baseline_keys = {_violation_key(e) for e in baseline}
     found_keys = {_violation_key(v) for v in violations}

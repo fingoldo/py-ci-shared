@@ -244,10 +244,14 @@ def test_the_install_pyutilz_action_matches_the_one_this_repo_ships() -> None:
     runs = [s["run"].strip() for s in action["runs"]["steps"] if "uv pip install" in s.get("run", "")]
     command, inputs = gate.KNOWN_ACTIONS["fingoldo/py-ci-shared/.github/actions/install-pyutilz"]
     assert runs == [command]
+    matched: set[str] = set()
     for step in action["runs"]["steps"]:
         for var, value in (step.get("env") or {}).items():
             if var in inputs:
                 assert value == "${{ inputs." + inputs[var] + " }}"
+                matched.add(var)
+    # Every env name the gate maps must be wired in the shipped action; renaming one there must fail here, not skip.
+    assert matched == set(inputs), f"env names the gate expects but the action no longer sets: {sorted(set(inputs) - matched)}"
 
 
 def test_the_remote_install_pyutilz_action_provides_the_project_extras(tmp_path: Path) -> None:

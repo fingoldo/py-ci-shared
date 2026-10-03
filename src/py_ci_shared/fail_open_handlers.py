@@ -28,13 +28,12 @@ not turn it into a new finding; the list can only shrink.
 from __future__ import annotations
 
 import ast
-import json
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineGrowthError, ScanResult, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
@@ -301,7 +300,7 @@ def assert_no_new_fail_open_handlers(
     for h in found:
         by_scope.setdefault(h.scope, []).append(h)
     exists = Path(baseline_path).is_file()
-    accepted: dict[str, str] = json.loads(Path(baseline_path).read_text(encoding="utf-8-sig")) if exists else {}
+    accepted: dict[str, str] = load_json(baseline_path) if exists else {}
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         before: Optional[dict[str, int]] = None
         if exists:

@@ -40,7 +40,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, read_source
+from ._core import DEFAULT_EXCLUDE, SourceError, SourceParseError, iter_files, read_source
 
 # `name:` sits inside an object literal on the same line as the brace in most configs, so this
 # is deliberately not anchored to the line start.
@@ -97,7 +97,11 @@ def declared_tags(declared_tags_file: Path) -> list[str]:
     """Tag names under the top-level ``tags:`` map of a ``dart_test.yaml``, at any indentation (parsed as YAML)."""
     import yaml
 
-    data = yaml.safe_load(read_source(declared_tags_file)) or {}
+    try:
+        data = yaml.safe_load(read_source(declared_tags_file)) or {}
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        raise SourceParseError(declared_tags_file, f"not valid YAML: {exc}", mark.line + 1 if mark is not None else None) from exc
     tags = data.get("tags") if isinstance(data, dict) else None
     if tags is None:
         return []
@@ -189,6 +193,25 @@ def find_permanent_skips(spec_dirs: Sequence[Path]) -> list[str]:
     return out
 
 
+def _fail_on_empty_runner_text(runner_texts: Sequence[Path], runner_text: str) -> None:
+    """A workflows directory with no workflow in it selects nothing, and every tag/project would then be judged against
+    an empty text: the excluded-and-never-included rule cannot fire, so it would read as a pass."""
+    import pytest
+
+    if runner_texts and not runner_text.strip():
+        pytest.fail(f"the runner path(s) {[str(p) for p in runner_texts]} hold no runner text, so nothing was checked against them")
+
+
+def _unreachable_tags_or_fail(declared_tags: Path, runner_text: str) -> list[str]:
+    import pytest
+
+    try:
+        return find_unreachable_tags(declared_tags, runner_text)
+    except SourceError as exc:
+        pytest.fail(f"cannot read the declared tags: {exc}")
+        raise  # unreachable: pytest.fail raises
+
+
 def assert_partitions_reachable(
     *,
     runner_texts: Sequence[Path],
@@ -221,6 +244,7 @@ def assert_partitions_reachable(
         reference_text = runner_text + ("\n" + read_source(script_index) if script_index is not None else "")
     except SourceError as exc:
         pytest.fail(f"cannot read a runner or index file: {exc}")
+    _fail_on_empty_runner_text(runner_texts, runner_text)
     used: set[str] = set()
 
     def excused(name: str) -> bool:
@@ -230,7 +254,7 @@ def assert_partitions_reachable(
         return False
 
     if declared_tags is not None:
-        for tag in find_unreachable_tags(declared_tags, runner_text):
+        for tag in _unreachable_tags_or_fail(declared_tags, runner_text):
             if excused(tag):
                 continue
             problems.append(f"test tag {tag!r} is excluded by a runner and selected by none - the suite it " f"labels runs nowhere.")

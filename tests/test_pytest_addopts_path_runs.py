@@ -134,6 +134,15 @@ def test_unparsable_test_file_is_reported_and_fails(tmp_path: Path) -> None:
         assert_path_runs_select_tests(root, commands={"h": ("pytest -m integration tests/integration", "")})
 
 
+def test_a_broken_file_does_not_strip_the_markers_of_the_parsed_ones(tmp_path: Path) -> None:
+    """A run that does select its marked tests stays clean next to an unparsable file; only that file is reported."""
+    root = _pkg(tmp_path)
+    (root / "tests" / "test_bad.py").write_text("def (:\n", encoding="utf-8")
+    findings = find_path_runs_selecting_nothing(root, commands={"h": ("pytest -m integration tests/integration tests/test_only_live.py", "")})
+    assert [f.rule for f in findings] == ["unparsed-file"]
+    assert "test_bad.py" in findings[0].render()
+
+
 def test_no_test_files_fails_the_floor(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text(PYPROJECT, encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="only 0 file"):

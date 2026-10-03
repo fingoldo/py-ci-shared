@@ -76,6 +76,7 @@ def test_the_readme_catalogue_is_the_rendered_registry():
 def test_every_registered_module_has_a_readme_row():
     """Each row links to the module file, which must exist."""
     text = README.read_text(encoding="utf-8")
+    assert len(registry.GATES) >= 100, "registry.GATES lost its entries; the row check below would pass on nothing"
     for spec in registry.GATES:
         assert f"[`{spec.name}`](src/py_ci_shared/{spec.name}.py)" in text, f"{spec.name} has no README catalogue row"
         assert (PKG / f"{spec.name}.py").is_file()

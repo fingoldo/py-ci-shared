@@ -36,7 +36,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
-from ._core import dump_json, read_source, write_ratchet
+from ._core import dump_json, load_json, read_source, write_ratchet
 
 #: A rule code (``F401``, ``PLR0913``). A syntax error comes back with no code (older ruff) or ``invalid-syntax``.
 _RULE_CODE = re.compile(r"^[A-Z]+[0-9]*$")
@@ -115,7 +115,7 @@ def ratchet_problems(codes: Iterable[str], counts: dict[str, int], baseline: dic
 
 def write_ignore_baseline(path: Path, counts: dict[str, int], *, grow: Optional[bool] = None) -> None:
     """Record *counts*; shrink-only unless growth is allowed (``BaselineGrowthError`` names a new code or a higher count)."""
-    previous = json.loads(read_source(path)) if Path(path).is_file() else None
+    previous = load_json(path) if Path(path).is_file() else None
     write_ratchet(path, counts, gate="ignore-ratchet", previous=previous, render=lambda kept: dump_json(dict(sorted(kept.items()))), grow=grow)
 
 
@@ -125,7 +125,7 @@ def assert_ignore_list_only_shrinks(codes: Iterable[str], counts: dict[str, int]
     codes = list(codes)
     if not codes:
         pytest.fail("the gate's ignore list parsed as empty -- the workflow moved or the key changed, and this would check nothing")
-    baseline = json.loads(read_source(baseline_path)) if baseline_path.is_file() else {}
+    baseline = load_json(baseline_path) if baseline_path.is_file() else {}
     problems = ratchet_problems(codes, counts, baseline)
     if problems:
         pytest.fail(f"{len(problems)} problem(s) with the gate's ignore list ({baseline_path.name}):\n  " + "\n  ".join(problems))

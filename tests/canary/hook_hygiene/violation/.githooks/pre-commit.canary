@@ -1,0 +1,4 @@
+#!/bin/sh
+set -e
+ruff format seed_pkg
+git add -u

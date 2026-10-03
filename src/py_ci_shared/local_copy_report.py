@@ -12,7 +12,9 @@ pyutilz's ``code_audit``, whose scanners ``code_audit_meta`` runs centrally) and
   that gate (the rule's subject together with the AST walk that implements it).
 
 Only test files under a meta-test directory (:data:`META_DIRS`) are judged by default, and a central name must keep two
-specific tokens to match by name (``cli`` or ``registry`` alone would match any test).
+specific tokens to match by name (``cli`` or ``registry`` alone would match any test). Every ``conftest.py`` is judged by
+content as well (:data:`CONFTEST_SIGNATURES`, e.g. a hand-rolled autouse stream guard that ``resource_leak_checks``
+replaces); ``include_conftest=False`` turns that off.
 
 It is a REPORT: whether a local copy can be replaced is a judgement (it may check a repo-specific rule under a shared
 name). :func:`assert_local_copies_do_not_grow` ratchets the list with a baseline, so a NEW copy fails while the known
@@ -38,6 +40,7 @@ from ._gate_run import enforce_findings
 
 __all__ = [
     "CODE_AUDIT_SCANNERS",
+    "CONFTEST_SIGNATURES",
     "CONTENT_SIGNATURES",
     "REFRESH_FLAG",
     "assert_local_copies_do_not_grow",
@@ -89,6 +92,17 @@ CONTENT_SIGNATURES: dict[str, tuple[str, ...]] = {
     "code_audit_meta:mutable_defaults": (r"ast\.(List|Dict|Set)\b", r"mutable[_ ]default"),
     "code_audit_meta:console_unicode": (r"ast\.walk\(", r"[\"']print[\"']", r"UnicodeEncodeError|non-ASCII|ord\(\w+\)\s*>\s*127"),
 }
+#: Signatures judged only in a ``conftest.py`` (``include_conftest=True``): plugin-shaped copies live in fixtures, not in
+#: test files. A hand-rolled stream guard (mlframe's ``_restore_closed_standard_streams``) is an autouse fixture that
+#: snapshots ``sys.stdout``/``sys.stderr``, compares identity after the test and puts the old object back, which is what
+#: the ``streams`` check of ``resource_leak_checks`` (run by the ``resource_leak_guard`` plugin) does centrally.
+CONFTEST_SIGNATURES: dict[str, tuple[str, ...]] = {
+    "resource_leak_checks:streams": (
+        r"@pytest\.fixture\([^)]*autouse\s*=\s*True",
+        r"\bsys\.(?:stdout|stderr)\b[^\n]*\bis\s+not\b|\bis\s+not\b[^\n]*\bsys\.(?:stdout|stderr)\b",
+        r"(?m)^\s*sys\.(?:stdout|stderr)\s*(?:,\s*sys\.(?:stdout|stderr)\s*)?=(?!=)",
+    ),
+}
 #: Directory names a local meta-test lives under; ``None`` in :func:`find_local_copies` scans every test file.
 META_DIRS = ("test_meta", "meta", "meta_tests")
 
@@ -127,6 +141,17 @@ def _content_matches(source: str, signatures: Mapping[str, Iterable[str]]) -> li
     return [t for t, patterns in signatures.items() if all(re.search(p, source, re.IGNORECASE) for p in patterns)]
 
 
+def _conftest_copies(f: ParsedFile, signatures: Mapping[str, Iterable[str]]) -> list[Finding]:
+    imported = set(ImportAliases.from_tree(f.tree).mapping.values())
+    out: list[Finding] = []
+    for target in _content_matches(f.source, signatures):
+        module = "py_ci_shared." + target.split(":", 1)[0]
+        if any(t == module or t.startswith(module + ".") for t in imported):
+            continue
+        out.append(Finding(f.rel, 1, RULE, f"duplicates central `{target}` (matched by content in a conftest); it does not use {module}"))
+    return out
+
+
 def find_local_copies(
     repo_root: Union[str, Path],
     *,
@@ -137,12 +162,19 @@ def find_local_copies(
     signatures: Optional[Mapping[str, Iterable[str]]] = None,
     exclude_parts: Iterable[str] = (),
     use_git: Optional[bool] = None,
+    include_conftest: bool = True,
 ) -> tuple[list[Finding], list[ScanResult]]:
     """``(findings, scans)``: one finding per (local test file, central target it duplicates).
 
     *central* defaults to every public module of this package; *extra_central* adds ``name -> target`` pairs on top of
     :data:`CODE_AUDIT_SCANNERS`; *signatures* replaces :data:`CONTENT_SIGNATURES`. Only files under a directory named in
     *meta_dirs* are judged (``None``: every ``test_*.py``); the floor still counts every parsed file.
+
+    *include_conftest* also judges every ``conftest.py`` under *test_dirs* (wherever it sits: a conftest is not a meta
+    test, so *meta_dirs* does not apply), by content only, against :data:`CONFTEST_SIGNATURES` and the content
+    *signatures*. A conftest imports ``py_ci_shared`` for other reasons, so only an import of the target's own module
+    (``py_ci_shared.resource_leak_checks``) clears it. On by default (no consumer ran this report when it was added, so no
+    baseline could grow); ``False`` restores the test-file-only scan.
     """
     meta = None if meta_dirs is None else frozenset(meta_dirs)
     root = Path(repo_root)
@@ -156,6 +188,10 @@ def find_local_copies(
         scan = scan_python(root / sub, root=root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
         scans.append(scan)
         for f in scan:
+            if f.path.name == "conftest.py":
+                if include_conftest:
+                    findings += _conftest_copies(f, {**CONFTEST_SIGNATURES, **sigs})
+                continue
             if not f.path.name.startswith("test_") or (meta is not None and not meta & set(Path(f.rel).parts[:-1])):
                 continue
             if _imports_central(f):
@@ -182,6 +218,7 @@ def assert_local_copies_do_not_grow(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    include_conftest: bool = True,
 ) -> None:
     """Fail on a local copy not in *baseline_path* (and on a stale entry: a migrated copy must leave the baseline).
 
@@ -197,6 +234,7 @@ def assert_local_copies_do_not_grow(
         signatures=signatures,
         exclude_parts=exclude_parts,
         use_git=use_git,
+        include_conftest=include_conftest,
     )
     enforce_findings(
         findings,

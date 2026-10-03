@@ -1,0 +1,3 @@
+tags:
+  seed_bench:
+    timeout: 2x

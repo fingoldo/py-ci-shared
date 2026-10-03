@@ -252,3 +252,53 @@ def test_a_well_formed_count_still_loads(tmp_path):
     path.write_text(json.dumps({"entries": {"k": {"count": 2, "note": "n"}, "j": 3}}), encoding="utf-8")
     counts, notes = Baseline(path).load()
     assert counts == {"k": 2, "j": 3} and notes == {"k": "n"}
+
+
+# A corrupt baseline (a merge conflict left in it, say) is named unreadable on every refresh path, never reported as
+# missing: the old regenerate swallowed the BaselineError and rendered "does not exist, and seeding it would accept".
+@pytest.mark.parametrize("text", ["{not json", "<<<<<<< HEAD\n{}\n", "42"])
+@pytest.mark.parametrize("grow", [False, True])
+def test_a_corrupt_baseline_refresh_says_unreadable_not_missing_and_keeps_the_file(tmp_path, text, grow):
+    path = tmp_path / "b.json"
+    path.write_text(text, encoding="utf-8")
+    with pytest.raises(BaselineError, match=r"b\.json is unreadable \(.*\); fix or delete it") as info:
+        Baseline(path, gate="g").enforce([_f("x")], refresh=True, grow=grow)
+    assert "does not exist" not in str(info.value)
+    assert path.read_text(encoding="utf-8") == text
+
+
+def test_mutation_teeth_regenerate_does_not_drop_the_notes_of_a_corrupt_baseline(tmp_path):
+    from py_ci_shared.mutation_teeth import _regenerate
+
+    path = tmp_path / "b.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(BaselineError, match="unreadable"):
+        _regenerate(Baseline(path, gate="g"), {"k": "survivor"})
+    assert path.read_text(encoding="utf-8") == "{not json"
+
+
+def _length_refresh(path):
+    from py_ci_shared.function_length import write_length_baseline
+
+    write_length_baseline(path, {"a.py::f": 99}, limit=10, grow=True)
+
+
+def _ignore_refresh(path):
+    from py_ci_shared.ignore_ratchet import write_ignore_baseline
+
+    write_ignore_baseline(path, {"E501": 1}, grow=True)
+
+
+def _wave_refresh(path):
+    from py_ci_shared.audit_wave_filenames import write_baseline
+
+    write_baseline(path, ["x.md"], grow=True)
+
+
+@pytest.mark.parametrize("refresh", [_length_refresh, _ignore_refresh, _wave_refresh], ids=["function_length", "ignore_ratchet", "audit_wave_filenames"])
+def test_sibling_ratchets_name_a_corrupt_baseline_instead_of_a_json_traceback(tmp_path, refresh):
+    path = tmp_path / "b.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(BaselineError, match=r"b\.json is unreadable \(JSONDecodeError: .*\); fix or delete it"):
+        refresh(path)
+    assert path.read_text(encoding="utf-8") == "{not json"

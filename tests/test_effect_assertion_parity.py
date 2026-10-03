@@ -924,3 +924,15 @@ class TestAReadIsNotAnEffect:
         _write(tmp_path, "store.py", "def run(cur):\n    cur.execute('SELECT 1')\n    cur.execute('UPDATE t SET x = 1')\n")
         _write(tmp_path, "tests/test_store.py", self._TEST)
         assert list(find_unasserted_effects(tmp_path, {"store.py": ["tests/test_store.py"]})) == ["store.py::execute"]
+
+
+def test_an_unparsable_test_the_import_map_dropped_is_still_reported(tmp_path):
+    """build_import_map cannot read a broken test's imports, so the test is in no map entry; it used to vanish."""
+    _write(tmp_path, "store.py", "def save(conn):\n    conn.commit()\n")
+    _write(tmp_path, "tests/test_store.py", "import store\n\n\ndef test_it(conn):\n    store.save(conn)\n    conn.commit.assert_called_once()\n")
+    _write(tmp_path, "tests/test_broken.py", "import store\n\ndef test_x(:\n")
+    import_map = build_import_map(tmp_path)
+    assert import_map == {"store.py": ["tests/test_store.py"]}
+    assert list(find_unasserted_effects(tmp_path, import_map)) == ["tests/test_broken.py::<unparsable>"]
+    with pytest.raises(pytest.fail.Exception, match=r"test_broken\.py could not be parsed"):
+        assert_effects_are_asserted(tmp_path, import_map)

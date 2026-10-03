@@ -1,0 +1,4 @@
+from seedpkg.store import save
+
+def test_x(:
+    save

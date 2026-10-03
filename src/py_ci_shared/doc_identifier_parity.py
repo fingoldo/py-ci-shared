@@ -138,7 +138,21 @@ def find_absent_doc_identifiers(
     *doc_files* defaults to the tracked Markdown; *corpus_files* to :func:`default_corpus_files`.
     *exclude_docs* are repo-relative POSIX paths or folder prefixes ending in ``/``.
     """
+    return _absent(repo_root, doc_files=doc_files, corpus_files=corpus_files, exclude_docs=exclude_docs, ignore=ignore, external_commands=external_commands)[0]
+
+
+def _absent(
+    repo_root: Path,
+    *,
+    doc_files: Iterable[Path] | None,
+    corpus_files: Iterable[Path] | None,
+    exclude_docs: Iterable[str],
+    ignore: Iterable[str],
+    external_commands: frozenset[str],
+) -> tuple[list[str], int]:
+    """``(problems, documents checked)``."""
     root = repo_root.resolve()
+    checked = 0
     docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
     if corpus_files is None:
         corpus_files = default_corpus_files(root)
@@ -150,6 +164,7 @@ def find_absent_doc_identifiers(
         rel = relative_posix(doc.resolve(), root)
         if rel in skipped or any(rel.startswith(s) for s in skipped if s.endswith("/")):
             continue
+        checked += 1
         try:
             text = read_source(doc)
         except SourceReadError as exc:
@@ -162,13 +177,27 @@ def find_absent_doc_identifiers(
                 if token in ignored or token in foreign or token in corpus:
                     continue
                 problems.append(f"{rel}:{lineno}: `{token}` occurs nowhere in the source, config or tests")
-    return problems
+    return problems, checked
 
 
-def assert_doc_identifiers_exist(repo_root: Path, **kwargs: object) -> None:
-    """Fail on any backticked flag or identifier a document names that the code does not contain."""
+def assert_doc_identifiers_exist(
+    repo_root: Path,
+    *,
+    doc_files: Iterable[Path] | None = None,
+    corpus_files: Iterable[Path] | None = None,
+    exclude_docs: Iterable[str] = (),
+    ignore: Iterable[str] = (),
+    external_commands: frozenset[str] = DEFAULT_EXTERNAL_COMMANDS,
+    min_files: int = 1,
+) -> None:
+    """Fail on any backticked flag or identifier a document names that the code does not contain, and on fewer than
+    *min_files* documents checked (after *exclude_docs*): no document examined is not a clean result."""
     import pytest
 
-    problems = find_absent_doc_identifiers(repo_root, **kwargs)  # type: ignore[arg-type]
+    problems, checked = _absent(
+        repo_root, doc_files=doc_files, corpus_files=corpus_files, exclude_docs=exclude_docs, ignore=ignore, external_commands=external_commands
+    )
+    if checked < min_files:
+        problems.insert(0, f"only {checked} document(s) checked under {repo_root}; expected at least {min_files} -- this would check nothing")
     if problems:
         pytest.fail(f"{len(problems)} name(s) in the docs that the code does not contain:\n  " + "\n  ".join(problems))

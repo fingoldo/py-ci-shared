@@ -55,6 +55,7 @@ from ._core import (
     BaselineGrowthError,
     SourceReadError,
     dump_json,
+    load_json,
     read_source,
     refresh_requested,
     register_refresh_options,
@@ -226,7 +227,7 @@ def assert_no_new_oversized_file(
     if not baseline_path.is_file():
         pytest.fail(f"LOC-budget baseline {baseline_path} does not exist, so nothing was compared. Create it with {REFRESH_FLAG}")
 
-    baseline: dict[str, int] = json.loads(baseline_path.read_text(encoding="utf-8-sig"))
+    baseline: dict[str, int] = load_json(baseline_path)
 
     problems = ratchet_problems(baseline, current, limit=limit, growth_slack=growth_slack, one_way=one_way)
 

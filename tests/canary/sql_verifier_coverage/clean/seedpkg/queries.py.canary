@@ -1,0 +1,2 @@
+SEED_SELECT = "SELECT id FROM t"
+SEED_LABEL = "Deletion failed"

@@ -241,6 +241,12 @@ baseline_path = "tests/baselines/complexity_ratchet.json"
 # uncalled_functions is not enabled: every public assert_*/find_* here is called by consumers, never by this package, so
 # it would list the public API itself.
 
+[tool.py_ci_shared.gates.vacuous_loop_assertions]
+files = ["tests/**/test_*.py"]
+repo_root = "."
+baseline_path = "tests/baselines/vacuous_loop_assertions.json"
+min_files = 100
+
 [tool.py_ci_shared.gates.fail_open_handlers]
 files = ["src/**/*.py"]
 baseline_path = "tests/baselines/fail_open_handlers.json"

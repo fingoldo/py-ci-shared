@@ -1,0 +1,7 @@
+permissions: read-all
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: dart test --exclude-tags seed_bench
+      - run: dart test --tags seed_bench

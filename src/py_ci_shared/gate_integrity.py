@@ -43,7 +43,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import read_source
+from ._core import SourceError, SourceParseError, read_source
 
 # Flags that NARROW what a gate inspects or lower the bar it enforces. Both the
 # `--flag=value` and `--flag value` spellings are recognized. A flag must end where its name ends:
@@ -80,9 +80,15 @@ _SEGMENT_SPLIT_RE = re.compile(r"&&|\|\||;|\n|\|")
 
 
 def _load_yaml(path: Path) -> Any:
+    """The parsed YAML at *path*; :class:`SourceParseError` naming the file (and line) when it is not YAML, instead of a
+    bare ``yaml`` error that says neither which config nor which gate."""
     import yaml
 
-    return yaml.safe_load(read_source(path)) or {}
+    try:
+        return yaml.safe_load(read_source(path)) or {}
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        raise SourceParseError(path, f"not valid YAML: {exc}", mark.line + 1 if mark is not None else None) from exc
 
 
 def _iter_precommit_hooks(precommit_path: Path) -> Iterator[tuple[str, dict]]:
@@ -393,7 +399,7 @@ def assert_narrowings_declared(
 
     try:
         undeclared, stale = find_undeclared_narrowings(precommit_path, workflows_dir, declared, pyproject_path, pyproject_tables)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, SourceError) as exc:
         pytest.fail(str(exc))
     problems = []
     if undeclared:

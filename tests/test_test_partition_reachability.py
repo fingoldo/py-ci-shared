@@ -198,3 +198,21 @@ class TestAuditRegressions:
         with pytest.raises(pytest.fail.Exception, match="no longer excuses"):
             assert_partitions_reachable(runner_texts=[runner], declared_tags=cfg, allowed={"benchmark": "a", "golden": "b", "gone": "c"})
         assert_partitions_reachable(runner_texts=[runner], declared_tags=cfg, allowed={"benchmark": "a", "golden": "b"})
+
+
+def test_an_unparsable_tags_file_fails_naming_it(tmp_path):
+    """It escaped as a bare yaml error naming neither the file nor the gate (audit 2026-10-03 WF-11)."""
+    cfg = _write(tmp_path, "dart_test.yaml", "tags: [\n  seed: {\n")
+    runner = _write(tmp_path, "ci.yml", "run: dart test --exclude-tags seed\n")
+    with pytest.raises(pytest.fail.Exception, match=r"dart_test\.yaml:\d+: unparsable: not valid YAML"):
+        assert_partitions_reachable(runner_texts=[runner], declared_tags=cfg)
+
+
+def test_a_runner_directory_without_runners_fails_instead_of_passing(tmp_path):
+    cfg = _write(tmp_path, "dart_test.yaml", _DART_TEST_YAML)
+    (tmp_path / "workflows").mkdir()
+    with pytest.raises(pytest.fail.Exception, match="hold no runner text"):
+        assert_partitions_reachable(runner_texts=[tmp_path / "workflows"], declared_tags=cfg)
+    _write(tmp_path, "workflows/ci.yml", "run: dart test --exclude-tags benchmark\n")
+    with pytest.raises(pytest.fail.Exception, match="'benchmark' is excluded"):
+        assert_partitions_reachable(runner_texts=[tmp_path / "workflows"], declared_tags=cfg)

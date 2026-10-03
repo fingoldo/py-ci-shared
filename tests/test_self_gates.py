@@ -35,6 +35,7 @@ def test_the_dogfood_set_covers_the_gates_this_repo_can_break():
         "fail_message_quality",
         "audit_round_format",
         "pytest_markers",
+        "vacuous_loop_assertions",
     }
     assert expected <= enabled, f"dropped from [tool.py_ci_shared]: {sorted(expected - enabled)}"
     workflows = {p.name for p in (REPO / ".github" / "workflows").glob("*.yml")}

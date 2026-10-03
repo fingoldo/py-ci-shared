@@ -1,0 +1,10 @@
+from unittest.mock import MagicMock
+
+from seedpkg.store import save
+
+
+def test_seed_save():
+    conn = MagicMock()
+    assert save(conn, 1) is True
+    conn.execute.assert_called_once()
+    conn.commit.assert_called_once()

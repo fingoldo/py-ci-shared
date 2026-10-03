@@ -22,12 +22,11 @@ its setter, ``typing.overload`` stubs) report the LONGEST, so a short setter can
 from __future__ import annotations
 
 import ast
-import json
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import BaselineGrowthError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineGrowthError, ScanResult, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-function-length-baseline"
 
@@ -80,7 +79,7 @@ def write_length_baseline(path: Path, lengths: dict[str, int], *, limit: int, gr
     Shrink-only unless growth is allowed (see ``_core.write_ratchet``): a new long function or a raised ceiling raises
     ``BaselineGrowthError`` after the removals are written."""
     over = {k: v for k, v in sorted(lengths.items()) if v > limit}
-    previous = json.loads(Path(path).read_text(encoding="utf-8-sig")) if Path(path).is_file() else None
+    previous = load_json(path) if Path(path).is_file() else None
     write_ratchet(path, over, gate="function-length", previous=previous, render=dump_json, grow=grow, request=request)
 
 
@@ -115,7 +114,7 @@ def assert_functions_do_not_grow(
         pytest.skip(f"function-length baseline written to {baseline_path}")
     if not baseline_path.is_file():
         pytest.fail(f"function-length baseline {baseline_path} does not exist; create it with {REFRESH_FLAG} (a clean repo commits {{}})")
-    baseline = json.loads(baseline_path.read_text(encoding="utf-8-sig"))
+    baseline = load_json(baseline_path)
     problems += length_problems(lengths, baseline, limit=limit)
     if problems:
         pytest.fail(f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit}):\n  " + "\n  ".join(problems))

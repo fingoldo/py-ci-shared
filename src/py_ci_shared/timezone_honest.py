@@ -153,12 +153,18 @@ def timezone_problems(
     allowed: Mapping[tuple[str, str], str] | None = None,
     not_code: Iterable[str] = (),
     test_dir_names: Iterable[str] = ("tests",),
+    min_files: int = 1,
 ) -> list[str]:
-    """Every reason the check fails, as sentences. Empty means it passes."""
+    """Every reason the check fails, as sentences. Empty means it passes. Fewer than *min_files* non-test Python files
+    under the scan paths is one: ruff over a tree with no Python says nothing, which would read as honest."""
     scan = tuple(_normalise(p) for p in scan_paths)
     allowed = dict(allowed or {})
     tests = tuple(test_dir_names)
     problems = []
+    code_files = {f for p in scan if (root / p).is_dir() for f in iter_files(root / p, ("*.py",)) if not set(tests) & set(f.relative_to(root).parts[:-1])}
+    code_files |= {root / p for p in scan if p.endswith(".py") and (root / p).is_file()}
+    if len(code_files) < min_files:
+        problems.append(f"only {len(code_files)} non-test Python file(s) under {list(scan)}; expected at least {min_files} -- this would check nothing")
     declared_not_code = {_normalise(n) for n in not_code}
 
     unscanned = [
@@ -204,10 +210,11 @@ def assert_timezone_honest(
     allowed: Mapping[tuple[str, str], str] | None = None,
     not_code: Iterable[str] = (),
     test_dir_names: Iterable[str] = ("tests",),
+    min_files: int = 1,
 ) -> None:
     """Fail with every problem at once, so one run shows the whole picture."""
     import pytest
 
-    problems = timezone_problems(root, scan_paths=scan_paths, allowed=allowed, not_code=not_code, test_dir_names=test_dir_names)
+    problems = timezone_problems(root, scan_paths=scan_paths, allowed=allowed, not_code=not_code, test_dir_names=test_dir_names, min_files=min_files)
     if problems:
         pytest.fail(f"{len(problems)} timezone problem(s):\n  - " + "\n  - ".join(problems))

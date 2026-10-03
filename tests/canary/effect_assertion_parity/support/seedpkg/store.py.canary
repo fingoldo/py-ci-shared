@@ -1,0 +1,4 @@
+def save(conn, row):
+    conn.execute('INSERT INTO t VALUES (?)', (row,))
+    conn.commit()
+    return True

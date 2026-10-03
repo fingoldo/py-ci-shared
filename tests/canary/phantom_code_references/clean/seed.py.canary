@@ -1,0 +1,11 @@
+"""Helpers."""
+
+
+class SeedRunner:
+    def go(self):
+        return 1
+
+
+# The work happens in `SeedRunner.go()`.
+def helper():
+    return 1

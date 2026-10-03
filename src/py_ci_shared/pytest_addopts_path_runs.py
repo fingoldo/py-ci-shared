@@ -36,7 +36,8 @@ from typing import Any, Optional, Union
 
 from ._core import Finding, SourceProblem, read_source, relative_posix, scan_python
 from ._gate_report import report
-from .marker_runner_coverage import Runner, expression_selects, keyword_selects, marked_tests, runners
+from .marker_runner_coverage import MarkedTest, Runner, expression_selects, keyword_selects, runners
+from .marker_runner_coverage import _collect as _marked_with_problems
 
 __all__ = ["RULE", "REFRESH_FLAG", "read_addopts", "find_path_runs_selecting_nothing", "assert_path_runs_select_tests"]
 
@@ -84,6 +85,11 @@ def _test_names(body: Sequence[ast.stmt], prefix: str = "") -> list[str]:
     return out
 
 
+def _marked_in_parsed_files(tests_dir: Path, package_root: Path, marker: str) -> list[MarkedTest]:
+    """``marked_tests`` without its raise: the unparsed files are reported once by :func:`_collect_tests`."""
+    return _marked_with_problems(tests_dir, package_root, marker)[0]
+
+
 def _collect_tests(package_root: Path, tests_dirs: Sequence[str], identifiers: Iterable[str]) -> tuple[list[_Test], list[SourceProblem], int]:
     """Every test under *tests_dirs* with the markers among *identifiers* it carries (via ``marked_tests``)."""
     names: dict[tuple[str, str], set[str]] = {}
@@ -98,14 +104,15 @@ def _collect_tests(package_root: Path, tests_dirs: Sequence[str], identifiers: I
             rel = relative_posix(f.path, package_root)
             for name in _test_names(f.tree.body):
                 names[(rel, name)] = set()
-    if not problems:
-        for marker in sorted(set(identifiers)):
-            for tests_dir in dirs:
-                for marked in marked_tests(tests_dir, package_root, marker=marker):
-                    members = marked.members if marked.members else (marked.name,)
-                    for member in members:
-                        if (marked.file, member) in names:
-                            names[(marked.file, member)].add(marker)
+    # The parsed files keep their markers when another file is broken: that file is already a problem of its own, and
+    # dropping every marker would report clean files as deselected (audit 2026-10-03 WF-11).
+    for marker in sorted(set(identifiers)):
+        for tests_dir in dirs:
+            for marked in _marked_in_parsed_files(tests_dir, package_root, marker):
+                members = marked.members if marked.members else (marked.name,)
+                for member in members:
+                    if (marked.file, member) in names:
+                        names[(marked.file, member)].add(marker)
     return [_Test(f, n, frozenset(m)) for (f, n), m in sorted(names.items())], problems, parsed
 
 

@@ -299,8 +299,6 @@ CANARIES: dict[str, Canary] = {
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
     "arb_checks": "reads Flutter .arb JSON catalogues keyed by locale; its subject is catalogue parity, covered by test_arb_checks.py",
-    "audit_disposition_parity": "cross-references audit prose against the repo tree; no seedable code shape",
-    "audit_path_references": "cross-references code literals against audit round directories; subject is repo layout",
     "audit_round_format": "Markdown tracker/round bookkeeping, not a code scanner",
     "baseline_hygiene": "audits a baseline file's own notes; subject is a JSON document, not a corpus",
     "baseline_ratchet": "library of baseline helpers, no scanning entry",
@@ -316,25 +314,19 @@ EXEMPT: dict[str, str] = {
     "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
     "deferred_drift": "counts DEFERRED list entries against a baseline; bookkeeping",
     "deletion_gates": "library of git-diff deletion checks; needs git history",
-    "disposition_test_references": "cross-references audit dispositions against test files; subject is repo layout",
-    "doc_identifier_parity": "cross-references doc identifiers against a whole repo; subject is repo layout",
     "docs_inventory_parity": "takes a precomputed problem list; the find_* helpers compare pyproject and docs",
     "edge_function_hygiene": "Supabase edge-function directory layout checks (TypeScript)",
-    "effect_assertion_parity": "maps production modules to their tests through an import map; subject is repo layout",
     "env_example_round_trip": "loads a .env example into a live settings class; runtime check",
     "gate_population_canary": "itself a population/canary gate over meta tests",
     "git_changed_lines": "library for git diff line ranges; needs git history",
     "guard_population": "runs shell guard scripts; runtime check",
     "hook_attestation": "checks commit trailers over a git revision range; its subject is history, not files",
-    "hook_hygiene": "audits git hook scripts and their wiring; CI configuration",
     "ignore_ratchet": "takes precomputed counts; no corpus",
-    "import_layering": "rules are caller-supplied layer maps; covered by test_import_layering.py",
     "index_coverage": "compares SQL index definitions against a live catalogue",
     "inert_patch_targets": "needs a precomputed module-facts index; library entry",
     "mutation_teeth": "runs mutants against tests; runtime check",
     "nondiscriminating_shapes": "library helpers for test-shape predicates",
     "package_doctests": "runs doctests of an importable package; runtime check",
-    "phantom_code_references": "cross-references prose against a declared-name set; subject is repo layout",
     "prompt_field_parity": "library comparing prompt templates against schema fields",
     "prose_numeric_claims": "takes caller-built claims; no corpus",
     "pydantic_field_bounds": "needs live pydantic model classes as input",
@@ -343,11 +335,8 @@ EXEMPT: dict[str, str] = {
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",
     "repo_hygiene": "tracked-file and layout hygiene; needs a git work tree",
     "source_text_ban": "library of banned-substring helpers configured by the caller",
-    "sql_verifier_coverage": "compares SQL constants against a verifier module; subject is repo layout",
     "sql_verify": "runs statements against a live database connection",
     "stale_comment_age": "ages comments through git blame; needs git history",
-    "test_partition_reachability": "compares runner scripts, tags and playwright configs; CI configuration",
-    "timezone_honest": "delegates the scan to ruff (DTZ rules) in a subprocess; covered by test_timezone_honest.py",
     "tool_versions": "library reading installed tool versions",
     "tracker_summary_parity": "Markdown tracker bookkeeping, not a code scanner",
     "version_consistency": "compares version strings across manifests; no violation shape in code",
@@ -397,6 +386,67 @@ CANARIES.update(
                 ),
             ),
             Canary("gate_integrity", lambda d: _gate("gate_integrity").assert_narrowings_declared(d / ".pre-commit-config.yaml", None, {})),
+        ]
+    }
+)
+
+
+def _effect_assertion_canary(d: Path) -> None:
+    mod = _gate("effect_assertion_parity")
+    mod.assert_effects_are_asserted(d, mod.build_import_map(d, package_name="seedpkg"))
+
+
+def _phantom_code_references_canary(d: Path) -> None:
+    mod, files = _gate("phantom_code_references"), _py(d)
+    mod.assert_no_phantom_code_references(files, d, mod.python_declarations([f for f in files if "broken" not in f.name]))
+
+
+# The rest of the WF-11 list (audit 2026-10-03): repo-layout cross-references, hooks, partitions and the ruff-backed
+# timezone check all read files, so they are seeded as files too. Markdown and shell readers have no unparsable input.
+CANARIES.update(
+    {
+        c.gate: c
+        for c in [
+            Canary("hook_hygiene", lambda d: _gate("hook_hygiene").assert_hooks_are_honest(d / ".githooks"), token="git add -u", parses=False),
+            Canary(
+                "test_partition_reachability",
+                lambda d: _gate("test_partition_reachability").assert_partitions_reachable(
+                    runner_texts=[d / ".github" / "workflows"], declared_tags=d / "dart_test.yaml"
+                ),
+            ),
+            Canary(
+                "doc_identifier_parity",
+                lambda d: _gate("doc_identifier_parity").assert_doc_identifiers_exist(d, doc_files=sorted(d.glob("*.md")), corpus_files=_py(d)),
+                parses=False,
+            ),
+            Canary("phantom_code_references", _phantom_code_references_canary, token="SeedRunner"),
+            Canary("effect_assertion_parity", _effect_assertion_canary, token="seedpkg/store.py"),
+            Canary(
+                "sql_verifier_coverage",
+                lambda d: _gate("sql_verifier_coverage").assert_verifier_covers_statements(d, d / "tools" / "verify_sql.py", exclude_top_dirs=["tools"]),
+                token="SEED_DELETE",
+            ),
+            Canary(
+                "audit_path_references",
+                lambda d: _gate("audit_path_references").assert_no_open_round_paths(_py(d / "src"), [d / "audits"], root=d),
+            ),
+            Canary(
+                "audit_disposition_parity",
+                lambda d: _gate("audit_disposition_parity").assert_dispositions_name_real_artefacts(d / "audits" / "round", d),
+                parses=False,
+            ),
+            Canary(
+                "disposition_test_references",
+                lambda d: _gate("disposition_test_references").assert_disposition_tests_exist(sorted((d / "audits").rglob("*.md")), d),
+            ),
+            Canary("timezone_honest", lambda d: _gate("timezone_honest").assert_timezone_honest(d), token="seed_job.py"),
+            Canary(
+                "import_layering",
+                lambda d: _gate("import_layering").assert_layering(
+                    d, [_gate("import_layering").LayerRule("seedpkg/core/*", ["seedpkg/product/*"], reason="core is product-neutral")]
+                ),
+                token="seed_core.py",
+            ),
         ]
     }
 )

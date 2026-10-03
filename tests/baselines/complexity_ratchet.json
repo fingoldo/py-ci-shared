@@ -30,7 +30,7 @@
   "src/py_ci_shared/edge_function_hygiene.py::find_edge_function_problems": 15,
   "src/py_ci_shared/effect_assertion_parity.py::_inspection_helpers": 11,
   "src/py_ci_shared/effect_assertion_parity.py::build_import_map": 15,
-  "src/py_ci_shared/effect_assertion_parity.py::find_unasserted_effects": 21,
+  "src/py_ci_shared/effect_assertion_parity.py::find_unasserted_effects": 20,
   "src/py_ci_shared/env_flag_parsing.py::_boolean_contexts": 13,
   "src/py_ci_shared/fail_open_handlers.py::assert_no_new_fail_open_handlers": 15,
   "src/py_ci_shared/gate_config_honesty.py::gate_commands": 12,

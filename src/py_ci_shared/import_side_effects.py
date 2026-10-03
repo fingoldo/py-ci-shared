@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import DEFAULT_EXCLUDE, BaselineGrowthError, CorpusError, ImportAliases, iter_files, refresh_requested, scan_python, write_ratchet
+from ._core import DEFAULT_EXCLUDE, BaselineGrowthError, CorpusError, ImportAliases, iter_files, load_json, refresh_requested, scan_python, write_ratchet
 
 __all__ = [
     "ENV_REFRESH_FLAG",
@@ -159,7 +159,7 @@ def assert_no_new_import_time_env_mutations(
     current = set(keys)
     do_refresh = refresh if refresh is not None else refresh_requested(refresh_flag, request)
     if baseline_path is not None and do_refresh:
-        previous = dict.fromkeys(json.loads(baseline_path.read_text(encoding="utf-8-sig")), 1) if baseline_path.is_file() else None
+        previous = dict.fromkeys(load_json(baseline_path), 1) if baseline_path.is_file() else None
         try:
             write_ratchet(
                 baseline_path,
@@ -174,7 +174,7 @@ def assert_no_new_import_time_env_mutations(
         pytest.skip(f"{baseline_path.name} rewritten with {len(current)} entr(ies)")
     if baseline_path is not None and not baseline_path.is_file():
         pytest.fail(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_flag}")
-    known: set[str] = set(json.loads(baseline_path.read_text(encoding="utf-8-sig"))) if baseline_path is not None else set()
+    known: set[str] = set(load_json(baseline_path)) if baseline_path is not None else set()
     new = sorted(current - known)
     stale = sorted(known - current)
     problems: list[str] = []

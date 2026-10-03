@@ -96,7 +96,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline as CoreBaseline
-from ._core import BaselineError, atomic_write_text, refresh_requested, register_refresh_options
+from ._core import atomic_write_text, refresh_requested, register_refresh_options
 from ._mutation_fingerprint import _first_party_imports as _first_party_imports
 from ._mutation_fingerprint import _installed_pytest_plugins as _installed_pytest_plugins
 from ._mutation_fingerprint import _python_files_patterns as _python_files_patterns
@@ -819,10 +819,7 @@ def _regenerate(baseline: Any, found: dict[str, str]) -> None:
     if isinstance(baseline, CoreBaseline):
         notes: dict[str, str] = {}
         if baseline.exists():
-            try:
-                notes = baseline.load()[1]
-            except BaselineError:
-                notes = {}
+            notes = baseline.load()[1]  # an unreadable baseline raises BaselineError rather than losing its notes
         baseline.save(Counter(found.keys()), {k: notes.get(k) or v for k, v in found.items()})
     else:
         baseline.regenerate(found, grow=True)
