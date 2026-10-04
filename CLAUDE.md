@@ -24,6 +24,7 @@
 - Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@0.16.1 check src tests`.
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
+- Install the hooks once per clone: `python -m pre_commit install --hook-type pre-commit --hook-type pre-push` then `python -m py_ci_shared.install_safe_hook`. The pre-push hook runs mypy and the self-gate tests (about 4 minutes); the rest of `tests/` is left to CI.
 
 ## Consumers
 

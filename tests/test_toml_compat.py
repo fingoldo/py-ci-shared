@@ -43,7 +43,7 @@ def test_the_fallback_is_used_when_tomllib_is_absent(monkeypatch):
 
     module = importlib.import_module("py_ci_shared._toml_compat")
     assert module.tomllib.__name__ == "tomli", "the fallback did not resolve to tomli"
-    assert module.tomllib.loads('a = 1\n') == {"a": 1}
+    assert module.tomllib.loads("a = 1\n") == {"a": 1}
 
 
 @pytest.mark.parametrize(

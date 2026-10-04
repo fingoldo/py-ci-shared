@@ -36,11 +36,11 @@ def test_each_hand_parse_shape_is_reported(tmp_path):
 
 def test_value_reads_are_not_reported(tmp_path):
     """A number, a path or a backend name read from the environment is not a boolean flag."""
-    p = _write(tmp_path, "m.py",
-               "import os\n"
-               "n = int(os.environ.get('P_ROWS', '5'))\n"
-               "backend = os.environ.get('P_BACKEND', 'threading')\n"
-               "path = os.getenv('P_DIR')\n")
+    p = _write(
+        tmp_path,
+        "m.py",
+        "import os\n" "n = int(os.environ.get('P_ROWS', '5'))\n" "backend = os.environ.get('P_BACKEND', 'threading')\n" "path = os.getenv('P_DIR')\n",
+    )
     assert find_hand_parsed_env_flags([p], tmp_path, ("P_",)) == []
 
 

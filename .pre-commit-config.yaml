@@ -1,0 +1,83 @@
+# Git hooks for py-ci-shared. Install once per clone (hooks live in the shared .git/hooks, worktrees reuse them):
+#   python -m pre_commit install --hook-type pre-commit --hook-type pre-push && python -m py_ci_shared.install_safe_hook
+#
+# Tool versions equal what CI runs: ruff 0.16.1 and black 26.5.1 (py_ci_shared.tool_versions), mypy 2.1.0 (self-ci.yml).
+# `language: system` so the hooks use this checkout's own interpreter and its [dev] extras.
+#
+# pre-commit stage: seconds. pre-push stage: the self-gates CI's self-ci.yml enforces (the 2026-10-04 v1.21.0 push
+# failed CI on unregistered pytest markers, a complexity limit and the README install tag because only the changed
+# files' tests had been run). Measured 2026-10-04 on a loaded machine: the gate subset takes ~4 min with -n 2 (1075 tests);
+# the full suite takes ~20 min there, so the rest of tests/ is left to CI.
+
+default_install_hook_types: [pre-commit, pre-push]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: check-toml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: mixed-line-ending
+        args: ['--fix=no']
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: '\.secrets\.baseline$'
+
+  - repo: https://github.com/Mateusz-Grzelinski/actionlint-py
+    rev: v1.7.12.25
+    hooks:
+      - id: actionlint
+
+  - repo: local
+    hooks:
+      - id: ruff-blocking
+        name: "ruff 0.16.1 check --ignore C901 (blocking; self-ci.yml, complexity is the ratchet test)"
+        entry: python -m ruff check --ignore C901
+        language: system
+        types: [python]
+        files: '^(src|tests)/'
+        stages: [pre-commit]
+      - id: black-filtered-blocking
+        name: "black 26.5.1, filtered (blocking; the check black-filtered.yml runs)"
+        entry: python -m py_ci_shared.black_filtered_apply --config pyproject.toml --check
+        language: system
+        types: [python]
+        stages: [pre-commit]
+      - id: format-lint-warn
+        name: "format + lint (WARN only, never rewrites or blocks)"
+        entry: python -m py_ci_shared.format_warn
+        language: system
+        types: [python]
+        verbose: true
+        stages: [pre-commit]
+      - id: pinned-tool-versions
+        name: "ruff pin matches tool_versions.py"
+        entry: python -m py_ci_shared.pinned_tool_versions
+        language: system
+        pass_filenames: false
+        files: '(^pyproject\.toml$|^\.pre-commit-config\.yaml$|^\.github/workflows/)'
+        stages: [pre-commit]
+
+      - id: mypy-blocking
+        name: "mypy src/py_ci_shared (pre-push; CI self-ci.yml MyPy self-check)"
+        entry: python -m mypy src/py_ci_shared
+        language: system
+        pass_filenames: false
+        files: '^(src/|pyproject\.toml$)'
+        stages: [pre-push]
+      - id: self-gates-blocking
+        name: "self-gate tests, ~4 min (pre-push; rest of tests/ is left to CI, ~20 min locally)"
+        entry: python -m pytest -p no:randomly -n 2 -o addopts="-ra --strict-markers" tests/test_package_inventory.py tests/test_gate_teeth.py tests/test_release_version.py tests/test_self_gates.py tests/test_complexity_ratchet.py tests/test_pytest_markers.py
+        language: system
+        pass_filenames: false
+        files: '^(src/|tests/|configs/|pyproject\.toml$|README\.md$|CHANGELOG\.md$|\.github/)'
+        stages: [pre-push]
