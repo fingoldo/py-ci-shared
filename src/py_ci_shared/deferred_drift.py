@@ -64,6 +64,9 @@ def assert_deferred_lists_not_grown(
     current = count_user_deferred_entries(meta_dir, extra_prefixes=tuple(extra_prefixes))
     if len(current) < min_lists:
         pytest.fail(f"only {len(current)} deferred list(s) found under {meta_dir}; expected at least {min_lists} -- the counter lost its subject")
+    # An EMPTY list is not debt, and is not a baseline entry: the baseline loader rejects a count below 1 (K-10), so a project holding an empty `_KNOWN_*` whitelist (a drained one is the goal) could
+    # neither write a baseline nor pass against one -- "NEW list x: 0 entr(ies)" with no way to record it.
+    current = {key: count for key, count in current.items() if count > 0}
     if refresh if refresh is not None else refresh_requested(refresh_flag, request):
         previous = dict(Baseline(baseline_path, gate="deferred-debt").load()[0]) if Path(baseline_path).is_file() else None
         try:

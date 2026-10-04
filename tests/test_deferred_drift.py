@@ -102,3 +102,24 @@ class TestTheRatchet:
         baseline.write_text("{}", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="lost its subject"):
             assert_deferred_lists_not_grown(meta, baseline)
+
+
+class TestAnEmptyListIsNotDebt:
+    """A drained whitelist (`_KNOWN_X = {}`) is the goal state. The baseline loader rejects a zero count, so the list must be neither written nor demanded."""
+
+    def _meta_with_an_empty_and_a_full_list(self, tmp_path: Path) -> Path:
+        meta = tmp_path / "test_meta"
+        meta.mkdir()
+        source = "_USER_DEFERRED_FULL = {'a', 'b'}\n_USER_DEFERRED_EMPTY = {}\n\n\ndef test_x():\n    pass\n"
+        (meta / "test_a.py").write_text(source, encoding="utf-8")
+        return meta
+
+    def test_a_refresh_does_not_write_the_empty_list_and_the_baseline_then_passes(self, tmp_path):
+        meta = self._meta_with_an_empty_and_a_full_list(tmp_path)
+        baseline = tmp_path / "debt.json"
+
+        with pytest.raises(pytest.skip.Exception):
+            assert_deferred_lists_not_grown(meta, baseline, refresh=True)
+
+        assert json.loads(baseline.read_text(encoding="utf-8")) == {"test_a::_USER_DEFERRED_FULL": 2}
+        assert_deferred_lists_not_grown(meta, baseline)  # passes: nothing to say about the empty list
