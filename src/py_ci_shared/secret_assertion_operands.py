@@ -109,7 +109,7 @@ class _Taint:
         self.names = names
         self.resolvers = resolvers
 
-    def is_tainted(self, node: ast.AST) -> bool:  # noqa: C901 - one branch per expression shape keeps the rule readable
+    def is_tainted(self, node: ast.AST) -> bool:
         if _is_environ(node):
             return True
         if _harmless_env_read(node):
@@ -120,19 +120,23 @@ class _Taint:
             return self.is_tainted(node.value)
         if isinstance(node, ast.Call):
             return self._call_tainted(node)
+        return any(self.is_tainted(part) for part in self._carried_parts(node))
+
+    def _carried_parts(self, node: ast.AST) -> list[ast.AST]:
+        """The sub-expressions whose value an expression can carry through to its own value."""
         if isinstance(node, ast.JoinedStr):
-            return any(isinstance(v, ast.FormattedValue) and self.is_tainted(v.value) for v in node.values)
+            return [v.value for v in node.values if isinstance(v, ast.FormattedValue)]
         if isinstance(node, (ast.FormattedValue, ast.NamedExpr, ast.Starred)):
-            return self.is_tainted(node.value)
+            return [node.value]
         if isinstance(node, ast.IfExp):
-            return self.is_tainted(node.body) or self.is_tainted(node.orelse)
+            return [node.body, node.orelse]
         if isinstance(node, ast.BoolOp):  # `a or b` evaluates to one of its operands, not to a bool
-            return any(self.is_tainted(v) for v in node.values)
+            return list(node.values)
         if isinstance(node, ast.BinOp):  # "prefix" + dsn, "%s" % dsn
-            return self.is_tainted(node.left) or self.is_tainted(node.right)
+            return [node.left, node.right]
         if isinstance(node, (ast.Tuple, ast.List, ast.Set)):
-            return any(self.is_tainted(e) for e in node.elts)
-        return False
+            return list(node.elts)
+        return []
 
     def _call_tainted(self, node: ast.Call) -> bool:
         name = _call_name(node.func)

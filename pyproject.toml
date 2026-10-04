@@ -104,7 +104,13 @@ pythonpath = ["src"]
 addopts = "-ra --strict-markers"
 # A hung git or python child fails its test after this long instead of holding the job to its 15-minute limit.
 timeout = 300
-markers = ["py_ci_shared: a gate item generated from [tool.py_ci_shared]"]
+markers = [
+    "py_ci_shared: a gate item generated from [tool.py_ci_shared]",
+    "real_database: (fixture tests of offline_suite_without_credentials) a test that may keep its credentials",
+    "live_db: (fixture tests of offline_suite_without_credentials) a consumer-configured live marker",
+    "stub_signature_allow: (fixture tests of stub_signature_guard) accept the named stub mismatches",
+    "no_stub_signature_check: (fixture tests of stub_signature_guard) skip the stub signature check",
+]
 
 [tool.coverage.run]
 source = ["py_ci_shared"]
