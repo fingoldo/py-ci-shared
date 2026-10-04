@@ -1,0 +1,4 @@
+"""Package a imports the public alias of b by bare module name."""
+from b_mod import seed_helper
+
+VALUE = seed_helper()

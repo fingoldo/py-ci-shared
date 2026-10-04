@@ -22,16 +22,19 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ipaddress
 import os
 import platform
+import re
 import shlex
 import shutil
 import socket
 import subprocess
 import sys
 import tempfile
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
+from urllib.parse import unquote
 
 _EXE = ".exe" if os.name == "nt" else ""
 
@@ -113,6 +116,103 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
             _quiet([pg_ctl, "-D", str(data / "db"), "-m", "fast", "-w", "stop"], check=False)
     finally:
         shutil.rmtree(data, ignore_errors=True)
+
+
+class NotAThrowawayServerError(RuntimeError):
+    """A DSN that a writing test would use does not name a loopback TCP server, so it may be a real one."""
+
+
+_LOOPBACK_NAMES = frozenset({"localhost", "::1"})
+_URI = re.compile(r"^postgres(?:ql)?://", re.IGNORECASE)
+
+
+def _is_loopback_host(host: str) -> bool:
+    host = host.strip().strip("[]").lower()
+    if host in _LOOPBACK_NAMES:
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _split_uri(dsn: str) -> "dict[str, str]":
+    """The host-bearing parts of a ``postgresql://`` URI: the authority's host list (``host``), and any ``host`` or
+    ``hostaddr`` query parameter, which libpq lets override it."""
+    rest = _URI.sub("", dsn.strip(), count=1)
+    rest, _, query = rest.partition("?")
+    authority = rest.split("/", 1)[0]
+    hosts = authority.rsplit("@", 1)[-1]
+    out: dict[str, str] = {}
+    if hosts:
+        # `[::1]:5432,[::2]:5433`: split on commas, strip each port. A bracketed IPv6 keeps its colons.
+        parts = []
+        for chunk in hosts.split(","):
+            chunk = chunk.strip()
+            parts.append(chunk[1 : chunk.index("]")] if chunk.startswith("[") and "]" in chunk else chunk.split(":", 1)[0])
+        out["host"] = ",".join(unquote(p) for p in parts)
+    for pair in query.split("&"):
+        key, _, value = pair.partition("=")
+        if key in ("host", "hostaddr"):
+            out[key] = unquote(value)
+    return out
+
+
+_KEY_VALUE = re.compile(r"\s*([^\s=]+)\s*=\s*(?:'((?:\\.|[^'\\])*)'|((?:\\.|[^\s\\])+))")
+
+
+def _split_key_value(dsn: str) -> "dict[str, str]":
+    """``host``/``hostaddr`` of a ``key=value`` libpq string. Raises ValueError on text that is not ``key=value`` pairs."""
+    out: dict[str, str] = {}
+    pos, text = 0, dsn.strip()
+    if not text:
+        raise ValueError("empty")
+    while pos < len(text):
+        match = _KEY_VALUE.match(text, pos)
+        if match is None:
+            raise ValueError("not key=value")
+        value = match.group(2) if match.group(2) is not None else match.group(3)
+        out[match.group(1)] = re.sub(r"\\(.)", r"\1", value)
+        pos = match.end()
+    return out
+
+
+def require_loopback_dsn(dsn: str) -> str:
+    """Return *dsn* unchanged when every host it connects to is a loopback TCP address, else raise
+    :class:`NotAThrowawayServerError`.
+
+    A writing test must reach only the server :func:`embedded_postgres` starts, which listens on ``127.0.0.1``. A free-form
+    environment variable can be overwritten with a production DSN, so the test refuses anything that is not loopback:
+    a remote host, a DSN with no host (libpq then falls back to ``PGHOST`` or a local socket, neither of which is the
+    harness), a unix-socket path, an unparseable string. Every host of a multi-host DSN, and ``hostaddr`` when present,
+    must qualify. The message names the reason only: never the DSN, its host or its password, because the DSN may be real.
+    """
+    text = dsn if isinstance(dsn, str) else ""
+    try:
+        parts = _split_uri(text) if _URI.match(text.strip()) else _split_key_value(text)
+    except ValueError:
+        raise NotAThrowawayServerError("the DSN is not parseable, so it cannot be shown to name a loopback server") from None
+    hosts = [h for h in (parts.get("hostaddr", "") or parts.get("host", "")).split(",")]
+    if not any(h.strip() for h in hosts):
+        raise NotAThrowawayServerError("the DSN names no host (a local socket or the PGHOST default), which is not the loopback throwaway server")
+    if not all(_is_loopback_host(h) for h in hosts):
+        raise NotAThrowawayServerError("the DSN names a host that is not a loopback address, so it may be a real server")
+    return dsn
+
+
+def throwaway_dsn_from_env(var: str, *, environ: "Mapping[str, str] | None" = None) -> "str | None":
+    """The DSN in environment variable *var* (the one ``run --env`` sets), checked by :func:`require_loopback_dsn`; None
+    when it is unset or empty, which is how a writing test knows it is outside the harness and must skip.
+
+    The refusal names *var* and the reason, never the value.
+    """
+    raw = (os.environ if environ is None else environ).get(var) or None
+    if raw is None:
+        return None
+    try:
+        return require_loopback_dsn(raw)
+    except NotAThrowawayServerError as exc:
+        raise NotAThrowawayServerError(f"{var}: {exc}; a writing test runs only against the local throwaway server") from None
 
 
 def main_checkout_file(relative: "str | Path", *, cwd: "Path | None" = None) -> "Path | None":

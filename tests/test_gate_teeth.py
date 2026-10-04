@@ -79,6 +79,20 @@ def _committed_line_endings_canary(d: Path) -> None:
     _gate("committed_line_endings").assert_committed_line_endings(d)
 
 
+def _tracked_secret_shapes_canary(d: Path) -> None:
+    """The gate reads git index blobs: commit the corpus first. ``{TOKEN}`` in a fixture becomes a fake token built here, so no
+    token-shaped text sits in this repository's own files."""
+    from py_ci_shared._core.git import run_git
+
+    fake = "seedtok_" + "0f1e2d3c4b5a6978" * 2  # pragma: allowlist secret
+    for p in sorted(d.rglob("*")):
+        if p.is_file():
+            p.write_bytes(p.read_bytes().replace(b"{TOKEN}", fake.encode()))
+    for args in (("init", "-q"), ("add", "-A")):
+        run_git(d, *args, check=True)
+    _gate("tracked_secret_shapes").assert_no_tracked_secret_shapes(d, shapes={"seed_token": "seedtok_[0-9a-f]{20,}"})
+
+
 def _kwarg_forwarding_canary(d: Path) -> None:
     """The library has finders, not an ``assert_*`` entry: fail the way a consumer's meta test does on any finding."""
     mod, files = _gate("kwarg_forwarding"), sorted(d.rglob("*.py"))
@@ -302,6 +316,24 @@ CANARIES: dict[str, Canary] = {
         Canary("vendored_internal_imports", lambda d: _gate("vendored_internal_imports").assert_no_vendored_internal_imports(d, use_git=False)),
         Canary("stub_signature_parity", lambda d: _gate("stub_signature_parity").assert_stub_signature_parity(d, use_git=False)),
         Canary("wrapper_protocol_parity", lambda d: _gate("wrapper_protocol_parity").assert_wrapper_protocol_parity(d, use_git=False)),
+        Canary(
+            "destructive_tests_throwaway_only",
+            lambda d: _gate("destructive_tests_throwaway_only").assert_destructive_tests_are_throwaway_only(
+                d / "tests", hook_config_paths=[d / ".pre-commit-config.yaml"], repo_root=d, min_destructive_files=1, use_git=False
+            ),
+        ),
+        Canary("connection_liveness_kwargs", lambda d: _gate("connection_liveness_kwargs").assert_every_connection_has_liveness_kwargs(d, use_git=False)),
+        Canary("unresolved_module_attributes", lambda d: _gate("unresolved_module_attributes").assert_no_unresolved_module_attributes(d, use_git=False)),
+        Canary(
+            "cross_package_private_names",
+            lambda d: _gate("cross_package_private_names").assert_cross_package_private_names({"a": d / "a", "b": d / "b"}, use_git=False),
+            token="_seed_helper",
+        ),
+        Canary("tracked_secret_shapes", _tracked_secret_shapes_canary, token="seed.txt", parses=False),  # a byte reader: no syntax to break
+        Canary(
+            "unexecuted_function_bodies",
+            lambda d: _gate("unexecuted_function_bodies").assert_unexecuted_function_bodies(d / "coverage.json", [d], base=d, use_git=False),
+        ),
     ]
 }
 
@@ -346,6 +378,7 @@ EXEMPT: dict[str, str] = {
     "resource_leak_checks": "live interpreter-state checks run by the resource_leak_guard plugin; covered by test_resource_leak_checks.py",
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",
     "repo_hygiene": "tracked-file and layout hygiene; needs a git work tree",
+    "schema_snapshot_parity": "provisions a SQL file on a throwaway Postgres server; its canaries are in test_schema_snapshot_parity.py, which skips loudly without binaries",
     "secret_safe_test_output": "a pytest plugin rewriting live test reports and os.environ; covered by test_secret_safe_test_output.py",
     "source_text_ban": "library of banned-substring helpers configured by the caller",
     "sql_verify": "runs statements against a live database connection",

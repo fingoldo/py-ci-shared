@@ -1,0 +1,23 @@
+{
+  "_source": "hand-written canary snapshot",
+  "schema_version": 1,
+  "tables": {
+    "app.events": {
+      "columns": {
+        "id": {"data_type": "bigint", "generated": false, "identity": null, "is_nullable": "NO"},
+        "note": {"data_type": "text", "generated": false, "identity": null, "is_nullable": "YES"}
+      },
+      "indexes": []
+    },
+    "app.jobs": {
+      "columns": {
+        "cost_usd": {"data_type": "numeric", "generated": false, "identity": null, "is_nullable": "YES"},
+        "created_at": {"data_type": "timestamp with time zone", "generated": false, "identity": null, "is_nullable": "NO"},
+        "id": {"data_type": "bigint", "generated": false, "identity": "ALWAYS", "is_nullable": "NO"},
+        "title": {"data_type": "text", "generated": false, "identity": null, "is_nullable": "YES"},
+        "total": {"data_type": "numeric", "generated": true, "identity": null, "is_nullable": "YES"}
+      },
+      "indexes": ["jobs_created_at_idx", "jobs_pkey"]
+    }
+  }
+}

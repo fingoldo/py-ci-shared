@@ -1,0 +1,7 @@
+-- The incident shape: a naive timestamp, a missing cost column, a missing table, an id that is not an identity.
+CREATE SCHEMA IF NOT EXISTS app;
+CREATE TABLE IF NOT EXISTS app.jobs (
+    id         bigint PRIMARY KEY,
+    created_at timestamp NOT NULL DEFAULT now(),
+    title      text
+);

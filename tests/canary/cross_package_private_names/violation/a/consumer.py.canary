@@ -1,0 +1,4 @@
+"""Package a imports the private helper of b by bare module name."""
+from b_mod import _seed_helper
+
+VALUE = _seed_helper()

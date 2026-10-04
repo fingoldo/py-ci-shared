@@ -253,6 +253,13 @@ since = "1.21.0"
 summary = "Database connect failures whose exception text is printed: libpq echoes the connection string, password included"
 
 [[gate]]
+name = "connection_liveness_kwargs"
+kind = "gate"
+entries = ["assert_every_connection_has_liveness_kwargs"]
+since = "1.21.1"
+summary = "Every call that opens a network database connection sets TCP keepalives"
+
+[[gate]]
 name = "constant_relations"
 kind = "gate"
 entries = ["assert_constant_relations"]
@@ -291,6 +298,13 @@ since = "1.17.0"
 summary = "Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see"
 
 [[gate]]
+name = "cross_package_private_names"
+kind = "gate"
+entries = ["assert_cross_package_private_names"]
+since = "1.21.1"
+summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)."
+
+[[gate]]
 name = "dart_scanners"
 kind = "library"
 since = "1.3.6"
@@ -322,6 +336,13 @@ name = "deletion_gates"
 kind = "library"
 since = "1.4.0"
 summary = "Assert that something an audit deliberately REMOVED has not come back"
+
+[[gate]]
+name = "destructive_tests_throwaway_only"
+kind = "gate"
+entries = ["assert_destructive_tests_are_throwaway_only"]
+since = "1.21.1"
+summary = "A test that writes SQL must reach only a throwaway server and be run by an embedded_postgres hook"
 
 [[gate]]
 name = "discarded_model_copy"
@@ -924,6 +945,14 @@ since = "1.5.0"
 summary = "Every save-failure marker a writer emits is one the success decision recognises"
 
 [[gate]]
+name = "schema_snapshot_parity"
+kind = "gate"
+entries = ["assert_schema_matches_snapshot"]
+since = "1.21.1"
+budget_s = 120
+summary = "A schema.sql that promises to provision a database from scratch provisions the columns, types and tables a committed production snapshot has"
+
+[[gate]]
 name = "secret_assertion_operands"
 kind = "gate"
 entries = ["assert_no_secret_assertion_operands"]
@@ -1098,6 +1127,13 @@ since = "1.4.1"
 summary = "The linter versions every consuming repo runs, defined in one place"
 
 [[gate]]
+name = "tracked_secret_shapes"
+kind = "gate"
+entries = ["assert_no_tracked_secret_shapes"]
+since = "1.21.1"
+summary = "Tracked files holding a string of a secret shape the consumer configured"
+
+[[gate]]
 name = "tracker_summary_parity"
 kind = "gate"
 entries = ["assert_tracker_summaries_agree"]
@@ -1112,6 +1148,13 @@ since = "1.4.0"
 summary = "A function that production code never calls"
 
 [[gate]]
+name = "unexecuted_function_bodies"
+kind = "gate"
+entries = ["assert_unexecuted_function_bodies"]
+since = "1.21.1"
+summary = "A function whose body never runs under the unit coverage run"
+
+[[gate]]
 name = "unread_init_params"
 kind = "gate"
 entries = ["assert_no_unread_init_params"]
@@ -1124,6 +1167,13 @@ kind = "gate"
 entries = ["assert_all_from_imports_resolve"]
 since = "1.4.0"
 summary = "Every ``from X import Y`` must name something X actually defines"
+
+[[gate]]
+name = "unresolved_module_attributes"
+kind = "gate"
+entries = ["assert_no_unresolved_module_attributes"]
+since = "1.21.1"
+summary = "Every attribute read on an imported first-party module (m.NAME) must name something that module defines"
 
 [[gate]]
 name = "vacuous_loop_assertions"

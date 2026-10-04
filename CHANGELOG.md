@@ -2,11 +2,47 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased
+
+- New gate `schema_snapshot_parity`: a `schema.sql` that promises to provision a database from scratch is applied twice on a private
+  throwaway Postgres (`embedded_postgres`) and its catalogue compared with a committed, versioned production snapshot: tables and
+  columns missing, types (timezone-ness included), nullability, generated/identity, extras (allowances need a reason, stale ones are
+  findings), optionally index names. No server means NOT CHECKED, loudly, never a pass. `refresh` writes the snapshot through a
+  read-only DSN named by an environment variable.
+
 ## 1.21.1
+
+New gate `connection_liveness_kwargs` (`assert_every_connection_has_liveness_kwargs`): every call that opens a network database
+connection (`psycopg2.connect`, the psycopg2 pools, `psycopg`, `psycopg_pool`) must set the four TCP keepalive keywords, literally, through a
+shared `**KEEPALIVES` mapping the scan can read, or in a DSN literal; a tunnel that drops silently otherwise leaves the client waiting for the
+two-hour OS timer. The mapping is also exported as `connection_liveness_kwargs.KEEPALIVES`.
+New gate `tracked_secret_shapes`: tracked (index) files holding a string of a secret shape the consumer lists in
+`[tool.py_ci_shared.secret_shapes]`, with a pre-commit entry point (`python -m py_ci_shared.tracked_secret_shapes`); the matched
+text is never printed and no baseline is accepted.
 
 Git hooks for this repository: a `.pre-commit-config.yaml` (ruff, filtered black, actionlint, secret scan, mypy and the self-gate
 tests on push) so a push can no longer fail the self-gates that CI enforces. `tests/test_release_version.py` scratch
 repositories no longer inherit the hook's `GIT_*` variables.
+
+New gate `destructive_tests_throwaway_only` (`assert_destructive_tests_are_throwaway_only`): a test file that writes SQL
+(INSERT/UPDATE/DELETE/TRUNCATE/DROP/ALTER/CREATE in a string literal) and reaches a database (a connect call, a `real_database` or
+`integration` mark, or a DSN read) must take its DSN from a throwaway accessor, never `live_dsn` or a `DATABASE_*` variable, and every
+pre-commit hook or workflow step naming it must start `python -m py_ci_shared.embedded_postgres run`. Test roots may be several packages
+with the configs at the repository root; a reasoned per-file allowlist covers rollback-only tests. `embedded_postgres` gains
+`require_loopback_dsn` and `throwaway_dsn_from_env`, which refuse a non-loopback, hostless or unparseable DSN with
+`NotAThrowawayServerError` without echoing it.
+New gate `unresolved_module_attributes` (`assert_no_unresolved_module_attributes`): an attribute read on an imported first-party module
+(`import m; m.NAME`, `import a.b as x`, `from pkg import submodule`) must name something the module defines. The sibling of
+`unresolved_imports`, which sees only `from X import Y`. Targets are parsed, never imported; `resolve_roots` lists the directories
+where bare module names are found. Modules with a `__getattr__`, a `__class__` swap, `globals()[...] =` or `exec` are skipped and reported.
+New gate `cross_package_private_names`: a package must not import or reach an underscore-private NAME inside another package's
+module when the modules are imported by bare name (`from show_top_jobs import _get_dsn`, `import top_jobs_query as tq; tq._X`).
+It follows aliases and `from pkg import module as x`, skips `if TYPE_CHECKING:` blocks, names the public alias when one exists,
+lists a module name found in several packages as skipped (never as a pass), and takes an `allowed` map with mandatory reasons
+that may only shrink. `private_imports` only sees underscore MODULES.
+New gate `unexecuted_function_bodies`: reads the coverage.py JSON report of the UNIT run (`pytest --cov=pkg --cov-report=json`) and
+reports every function or method whose body statements have no executed line (a function every test stubs, as `outcome_column_exists`
+was), as a shrink-only ratchet; a missing, empty, stale or mismatching report is an error. CLI: `python -m py_ci_shared.unexecuted_function_bodies`.
 
 ## 1.21.0
 

@@ -1,0 +1,12 @@
+﻿"""A connection opened without TCP keepalives: a silent-drop tunnel leaves the client waiting two hours."""
+
+import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
+
+
+def seed_connect(dsn):
+    return psycopg2.connect(dsn)
+
+
+def seed_pool(dsn):
+    return ThreadedConnectionPool(1, 8, dsn)

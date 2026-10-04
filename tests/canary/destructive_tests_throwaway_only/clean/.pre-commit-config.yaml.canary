@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: seed-throwaway-db-tests
+        name: seed tests that write, on a throwaway server
+        entry: python -m py_ci_shared.embedded_postgres run --env SEED_THROWAWAY_PG_DSN -- python -m pytest tests/test_seed_db.py -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

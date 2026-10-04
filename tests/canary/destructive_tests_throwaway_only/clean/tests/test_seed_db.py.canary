@@ -1,0 +1,8 @@
+import psycopg2
+from tests._live_dsn import throwaway_dsn
+
+
+def test_seed_cleanup_deletes_its_rows():
+    connection = psycopg2.connect(throwaway_dsn())
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM seed_rows WHERE tag = %s", ("~01test",))

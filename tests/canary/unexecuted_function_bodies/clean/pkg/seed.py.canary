@@ -1,0 +1,3 @@
+def probe(conn):
+    cur = conn.cursor()
+    return cur.fetchone()

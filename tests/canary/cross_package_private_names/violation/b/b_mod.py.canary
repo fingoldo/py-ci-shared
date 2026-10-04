@@ -1,0 +1,8 @@
+"""Package b: a private helper and the public name b offers for it."""
+
+
+def _seed_helper():
+    return 1
+
+
+seed_helper = _seed_helper

@@ -1,0 +1,9 @@
+﻿repos:
+  - repo: local
+    hooks:
+      - id: seed-live-db-tests
+        name: seed tests that reach the database
+        entry: python -m pytest tests/test_seed_db.py -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

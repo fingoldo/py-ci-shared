@@ -1,0 +1,6 @@
+import helpers
+import lazy
+
+
+def run():
+    return helpers.removed_name() + lazy.anything

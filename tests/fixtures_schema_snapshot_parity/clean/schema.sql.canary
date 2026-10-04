@@ -1,0 +1,14 @@
+-- Provisions what snapshot.json.canary says production has.
+CREATE SCHEMA IF NOT EXISTS app;
+CREATE TABLE IF NOT EXISTS app.jobs (
+    id         bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    title      text,
+    cost_usd   numeric,
+    total      numeric GENERATED ALWAYS AS (cost_usd * 2) STORED
+);
+CREATE INDEX IF NOT EXISTS jobs_created_at_idx ON app.jobs (created_at);
+CREATE TABLE IF NOT EXISTS app.events (
+    id   bigint NOT NULL,
+    note text
+);

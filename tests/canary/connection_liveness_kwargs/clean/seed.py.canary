@@ -1,0 +1,14 @@
+"""The same two openers, each spreading the shared KEEPALIVES defined in this file."""
+
+import psycopg2
+from psycopg2.pool import ThreadedConnectionPool
+
+KEEPALIVES = {"keepalives": 1, "keepalives_idle": 60, "keepalives_interval": 10, "keepalives_count": 3}
+
+
+def seed_connect(dsn):
+    return psycopg2.connect(dsn, **KEEPALIVES)
+
+
+def seed_pool(dsn):
+    return ThreadedConnectionPool(1, 8, dsn, **KEEPALIVES)

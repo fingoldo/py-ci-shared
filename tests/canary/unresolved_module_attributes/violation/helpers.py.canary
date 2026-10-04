@@ -1,0 +1,5 @@
+"""Sibling module the seed reads from."""
+
+
+def present_name():
+    return 1

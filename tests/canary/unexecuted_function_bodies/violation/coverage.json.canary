@@ -1,0 +1,18 @@
+{
+ "meta": {
+  "format": 3,
+  "version": "7.14.1"
+ },
+ "files": {
+  "pkg/seed.py": {
+   "executed_lines": [
+    1
+   ],
+   "missing_lines": [
+    2,
+    3
+   ],
+   "excluded_lines": []
+  }
+ }
+}

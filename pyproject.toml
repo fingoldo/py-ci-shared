@@ -155,6 +155,7 @@ exclude = [".git", "__pycache__", "build", "dist"]
 "src/py_ci_shared/config_drift_check.py" = ["T201"]
 "src/py_ci_shared/setup_env.py" = ["T201"]
 "src/py_ci_shared/worktree_hygiene.py" = ["T201"]  # a report CLI: printing the report IS its interface.
+"src/py_ci_shared/unexecuted_function_bodies.py" = ["T201"]  # a report CLI: printing the report IS its interface.
 "src/py_ci_shared/pinned_tool_versions.py" = ["T201"]
 "src/py_ci_shared/sql_verify.py" = ["T201"]
 "src/py_ci_shared/teeth_sweep.py" = ["T201"]
@@ -191,6 +192,7 @@ exclude = [
     "tests/test_pytest_addopts_path_runs.py",
     "tests/test_resource_leak_guard.py",
     "tests/test_resource_leak_checks.py",
+    "tests/test_destructive_tests_throwaway_only.py",
 ]
 
 [tool.py_ci_shared.gates.entry_points_resolvable]

@@ -1,0 +1,9 @@
+﻿import os
+
+import psycopg2
+
+
+def test_seed_cleanup_deletes_its_rows():
+    connection = psycopg2.connect(os.environ["DATABASE_URL"])
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM seed_rows WHERE tag = %s", ("~01test",))
