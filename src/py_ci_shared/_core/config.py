@@ -6,6 +6,9 @@ Shape::
     enable = ["naive_utcnow", "identity_comparisons"]   # gates run with their defaults (plus path injection)
     budget = "warn"                                      # "warn" (default), "fail" or "off"
     resource_leak_guard = true                           # also load the py_ci_shared.resource_leak_guard pytest plugin
+    stub_signature_guard = true                          # also load the py_ci_shared.stub_signature_guard pytest plugin
+    secret_safe_test_output = true                       # also load py_ci_shared.secret_safe_test_output (redacted reports)
+    offline_suite_without_credentials = true             # also load py_ci_shared.offline_suite_without_credentials
 
     [tool.py_ci_shared.gates.function_length]            # a table enables the gate and holds its kwargs
     files = ["src/**/*.py"]
@@ -43,6 +46,8 @@ __all__ = [
 
 BUDGET_MODES = ("warn", "fail", "off")
 RESERVED_KEYS = frozenset({"module", "entry", "budget_s", "enabled"})
+#: Boolean keys of the table that load the opt-in pytest plugin of the same name (``py_ci_shared.<key>``).
+PLUGIN_KEYS = ("resource_leak_guard", "stub_signature_guard", "secret_safe_test_output", "offline_suite_without_credentials")
 
 # Keyword names whose value is one path, and those whose value is a list of paths (globs expanded).
 _PATH_KEYS = frozenset({"root", "repo", "repo_root", "path", "tracker", "verifier", "package_root", "readme_path", "manifest_path"})
@@ -75,6 +80,9 @@ class RepoConfig:
     gates: tuple[GateRun, ...]
     budget: str = "warn"
     resource_leak_guard: bool = False
+    stub_signature_guard: bool = False
+    secret_safe_test_output: bool = False
+    offline_suite_without_credentials: bool = False
 
     def gate(self, name: str) -> GateRun:
         """The enabled gate *name*; ``naive-utcnow`` finds ``naive_utcnow``, as ``tool`` and the plugin's refresh do."""
@@ -125,12 +133,12 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     budget = table.get("budget", "warn")
     if budget not in BUDGET_MODES:
         raise ConfigError(f"{pyproject}: [tool.py_ci_shared] budget = {budget!r}; expected one of {BUDGET_MODES}")
-    unknown = set(table) - {"enable", "budget", "gates", "resource_leak_guard"}
+    unknown = set(table) - {"enable", "budget", "gates", *PLUGIN_KEYS}
     if unknown:
         raise ConfigError(f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}")
-    leak_guard = _bool_key(pyproject, table, "resource_leak_guard")
+    plugins = {key: _bool_key(pyproject, table, key) for key in PLUGIN_KEYS}
     runs = _gate_runs(pyproject, table)
-    return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, resource_leak_guard=leak_guard)
+    return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, **plugins)
 
 
 def _enable_list(pyproject: Path, table: dict[str, Any]) -> list[str]:

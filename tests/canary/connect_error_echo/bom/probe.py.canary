@@ -1,0 +1,12 @@
+﻿"""An audit probe: the shape that printed the dashboard DSN three times."""
+
+import psycopg2
+
+
+def seed_probe(dsn):
+    try:
+        conn = psycopg2.connect(dsn)
+    except Exception as e:
+        print(e)
+        return None
+    return conn

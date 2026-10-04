@@ -109,6 +109,7 @@ CANARIES: dict[str, Canary] = {
         Canary("machine_specific_paths", lambda d: _gate("machine_specific_paths").assert_no_machine_specific_paths(d, use_git=False), token="alice"),
         Canary("swallowed_exceptions", lambda d: _gate("swallowed_exceptions").assert_no_swallowed_exceptions(d, use_git=False), token="OSError"),
         Canary("alembic_concurrently", lambda d: _gate("alembic_concurrently").assert_concurrently_is_in_autocommit_blocks(d)),
+        Canary("connect_error_echo", lambda d: _gate("connect_error_echo").assert_no_connect_error_echo(d, use_git=False), token="seed_probe"),
         Canary(
             "dataclass_case_completeness", lambda d: _gate("dataclass_case_completeness").assert_every_dataclass_has_a_case(_py(d), ()), token="SeedVerdict"
         ),
@@ -119,6 +120,7 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("discarded_model_copy", lambda d: _gate("discarded_model_copy").assert_no_discarded_model_copy(_py(d), d, {}), token="seed_copy"),
         Canary("drifted_duplicate_functions", lambda d: _gate("drifted_duplicate_functions").assert_no_drifted_duplicate_functions([d]), token="seed_fn"),
+        Canary("drifted_duplicate_literals", lambda d: _gate("drifted_duplicate_literals").assert_no_drifted_duplicate_literals(d, use_git=False), token="221"),
         Canary(
             "env_flag_parsing",
             lambda d: _gate("env_flag_parsing").assert_env_flags_use_one_parser(_py(d), d, ("SEED_",), {}),
@@ -153,6 +155,11 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("runtime_registry_mutation", lambda d: _gate("runtime_registry_mutation").assert_writes_have_replay(_py(d), d, {}), token="SEED_REGISTRY"),
         Canary("save_failure_markers", lambda d: _gate("save_failure_markers").assert_markers_are_fatal(d, _fatal), token="seed_failed"),
+        Canary(
+            "secret_assertion_operands",
+            lambda d: _gate("secret_assertion_operands").assert_no_secret_assertion_operands([d], root=d),
+            token="test_seed_an_unset_dsn_is_none",
+        ),
         Canary("source_text_claims", lambda d: _gate("source_text_claims").assert_no_new_source_text_claims(_py(d), d), token="test_seed"),
         Canary(
             "spec_bound_doubles",
@@ -293,6 +300,8 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(d, {"seed.py:SEED_PRICING": 45}, today=_FACT_DAY),
         ),
         Canary("vendored_internal_imports", lambda d: _gate("vendored_internal_imports").assert_no_vendored_internal_imports(d, use_git=False)),
+        Canary("stub_signature_parity", lambda d: _gate("stub_signature_parity").assert_stub_signature_parity(d, use_git=False)),
+        Canary("wrapper_protocol_parity", lambda d: _gate("wrapper_protocol_parity").assert_wrapper_protocol_parity(d, use_git=False)),
     ]
 }
 
@@ -310,6 +319,7 @@ EXEMPT: dict[str, str] = {
     "commit_metadata": "checks commit messages over a git revision range or a commit-msg file; needs git history",
     "function_complexity": "a compatibility API over complexity_ratchet, whose canary seeds the same measurement",
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",
+    "constant_relations": "resolves imported module attributes and model defaults; covered with teeth by test_constant_relations.py",
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
     "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
     "deferred_drift": "counts DEFERRED list entries against a baseline; bookkeeping",
@@ -326,17 +336,21 @@ EXEMPT: dict[str, str] = {
     "inert_patch_targets": "needs a precomputed module-facts index; library entry",
     "mutation_teeth": "runs mutants against tests; runtime check",
     "nondiscriminating_shapes": "library helpers for test-shape predicates",
+    "offline_suite_without_credentials": "a pytest plugin blanking live os.environ and dotenv per test; covered by test_offline_suite_without_credentials.py",
     "package_doctests": "runs doctests of an importable package; runtime check",
     "prompt_field_parity": "library comparing prompt templates against schema fields",
     "prose_numeric_claims": "takes caller-built claims; no corpus",
+    "protocol_attributes": "a run-time check of a live object's attributes; covered by test_protocol_attributes.py",
     "pydantic_field_bounds": "needs live pydantic model classes as input",
     "randomly_seed_guard": "runtime helper called from pytest_configure to wrap pytest-randomly's reseeders; reads no corpus",
     "resource_leak_checks": "live interpreter-state checks run by the resource_leak_guard plugin; covered by test_resource_leak_checks.py",
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",
     "repo_hygiene": "tracked-file and layout hygiene; needs a git work tree",
+    "secret_safe_test_output": "a pytest plugin rewriting live test reports and os.environ; covered by test_secret_safe_test_output.py",
     "source_text_ban": "library of banned-substring helpers configured by the caller",
     "sql_verify": "runs statements against a live database connection",
     "stale_comment_age": "ages comments through git blame; needs git history",
+    "stub_signature_guard": "a pytest plugin wrapping monkeypatch.setattr at run time; covered by test_stub_signature_guard.py",
     "tool_versions": "library reading installed tool versions",
     "tracker_summary_parity": "Markdown tracker bookkeeping, not a code scanner",
     "version_consistency": "compares version strings across manifests; no violation shape in code",

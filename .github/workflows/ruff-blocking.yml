@@ -21,7 +21,7 @@ on:
           gets that release's config rather than master's. A ref that cannot be fetched (after three attempts) fails the
           job: it never falls back to master.
         type: string
-        default: "v1.20.0"
+        default: "v1.21.0"
       force-remote-fetch:
         description: >-
           Fetch py-ci-shared at py-ci-shared-ref even when the caller is py-ci-shared itself. Only self-ci sets it, to run

@@ -150,7 +150,8 @@ class TestRunGate:
         assert missing.status == FAILED and not (repo / "b.json").exists(), "a missing baseline fails and is not written"
         run_gate(config, config.gate("loc_budget"), refresh=True)
         assert json.loads((repo / "b.json").read_text(encoding="utf-8")) == {}
-        assert os.environ.get(ENV_VAR) is None and os.getcwd() == cwd
+        refresh_left_set = ENV_VAR in os.environ  # a bool: pytest would print the whole environment for os.environ.get
+        assert not refresh_left_set and os.getcwd() == cwd
         assert run_gate(config, config.gate("loc_budget")).status == PASSED
 
     def test_the_budget_verdict(self):

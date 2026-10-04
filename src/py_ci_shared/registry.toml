@@ -246,6 +246,20 @@ since = "1.17.0"
 summary = "``getattr(cfg, \"field\", <literal>)`` whose literal disagrees with the field's own default"
 
 [[gate]]
+name = "connect_error_echo"
+kind = "gate"
+entries = ["assert_no_connect_error_echo"]
+since = "1.21.0"
+summary = "Database connect failures whose exception text is printed: libpq echoes the connection string, password included"
+
+[[gate]]
+name = "constant_relations"
+kind = "gate"
+entries = ["assert_constant_relations"]
+since = "1.21.0"
+summary = "A declared relation between numeric constants and config defaults across packages holds"
+
+[[gate]]
 name = "consumer_import_census"
 kind = "gate"
 entries = ["assert_consumer_imports_resolve"]
@@ -343,6 +357,13 @@ kind = "gate"
 entries = ["assert_no_drifted_duplicate_functions"]
 since = "1.4.0"
 summary = "Copies of one function that have drifted apart"
+
+[[gate]]
+name = "drifted_duplicate_literals"
+kind = "gate"
+entries = ["assert_no_drifted_duplicate_literals"]
+since = "1.21.0"
+summary = "One set of numbers written out in several modules: the literal analogue of drifted_duplicate_functions"
 
 [[gate]]
 name = "edge_function_hygiene"
@@ -696,6 +717,12 @@ since = "1.17.0"
 summary = "A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them"
 
 [[gate]]
+name = "offline_suite_without_credentials"
+kind = "library"
+since = "1.21.0"
+summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
+
+[[gate]]
 name = "optional_truthiness"
 kind = "gate"
 entries = ["assert_optionals_test_for_none"]
@@ -785,6 +812,13 @@ kind = "gate"
 entries = ["assert_numeric_claims_match"]
 since = "1.3.6"
 summary = "A counted fact stated in prose is computed from the repo, not typed by hand"
+
+[[gate]]
+name = "protocol_attributes"
+kind = "gate"
+entries = ["assert_satisfies_protocol"]
+since = "1.21.0"
+summary = "Run-time check that an object carries every callable attribute of a protocol (``refresh``, ``cache_clear``) a caller reads with a fallback"
 
 [[gate]]
 name = "pydantic_field_bounds"
@@ -890,6 +924,19 @@ since = "1.5.0"
 summary = "Every save-failure marker a writer emits is one the success decision recognises"
 
 [[gate]]
+name = "secret_assertion_operands"
+kind = "gate"
+entries = ["assert_no_secret_assertion_operands"]
+since = "1.21.0"
+summary = "An assert, assert message or ``self.assert*`` whose printed operand is an environment value or a DSN"
+
+[[gate]]
+name = "secret_safe_test_output"
+kind = "library"
+since = "1.21.0"
+summary = "Opt-in pytest plugin: credentials redacted from every report, ``os.environ`` restored after collection and ``.env`` fixtures, per-test env leaks by key"
+
+[[gate]]
 name = "sentinel_or_fallback"
 kind = "gate"
 entries = ["assert_no_sentinel_or_fallback"]
@@ -946,7 +993,8 @@ summary = "Every SQL statement a package defines is on its SQL verifier's list, 
 
 [[gate]]
 name = "sql_verify"
-kind = "library"
+kind = "gate"
+entries = ["assert_fragment_matrix"]
 since = "1.4.0"
 budget_s = 120
 summary = "Execute every SQL statement a project ships against a real PostgreSQL server"
@@ -993,6 +1041,19 @@ kind = "gate"
 entries = ["assert_no_stdlib_json"]
 since = "1.17.0"
 summary = "Opt-in: no module imports the standard-library ``json``; JSON goes through ``orjson`` (or a project shim over it)"
+
+[[gate]]
+name = "stub_signature_guard"
+kind = "library"
+since = "1.21.0"
+summary = "Opt-in pytest plugin: ``monkeypatch.setattr`` refuses a stub that cannot accept every parameter of the callable it replaces"
+
+[[gate]]
+name = "stub_signature_parity"
+kind = "gate"
+entries = ["assert_stub_signature_parity"]
+since = "1.21.0"
+summary = "A monkeypatched stub must accept every parameter of the callable it replaces"
 
 [[gate]]
 name = "survivorship_scoring"
@@ -1120,3 +1181,10 @@ kind = "cli"
 since = "1.17.0"
 cli = true
 summary = "Which worktrees, branches and leftover directories can go, and which still hold work"
+
+[[gate]]
+name = "wrapper_protocol_parity"
+kind = "gate"
+entries = ["assert_wrapper_protocol_parity"]
+since = "1.21.0"
+summary = "A wrapper that copies some of a protocol's attributes from its inner callable must copy all of them"

@@ -1,0 +1,7 @@
+﻿"""Audit 16b.2: the probe's resolver returned the configured DSN, and pytest printed it under the message."""
+
+import probe_module
+
+
+def test_seed_an_unset_dsn_is_none():
+    assert probe_module._dsn() is None, "a DSN was resolved"

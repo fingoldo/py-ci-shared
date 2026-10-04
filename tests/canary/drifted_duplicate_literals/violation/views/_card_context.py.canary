@@ -1,0 +1,3 @@
+"""The tooltip that explains the colours."""
+
+VIEWED_TOOLTIP = "green up to 20h, amber 20-70h, orange 70-221h, red beyond"

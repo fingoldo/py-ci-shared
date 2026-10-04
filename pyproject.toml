@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-ci-shared"
-version = "1.20.0"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
+version = "1.21.0"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
 description = "Shared CI/lint tooling (scripts + ruff base config + reusable GitHub Actions workflows) for fingoldo Python projects."
 authors = [{name = "Anatoly Alexeev", email = "fingoldo@gmail.com"}]
 license = "MIT"
@@ -64,9 +64,15 @@ dev = [
     "pytest-timeout>=2.2",
     # api_floor runs vermin; without it the gate reports itself unavailable, so its tests and canary need it.
     "vermin>=1.6",
+    # sql_verify's fragment matrix parses composed statements with sqlglot; without it its tests skip.
+    "sqlglot>=25.0",
 ]
 # api_floor's checker. Optional: a consumer that does not enable api_floor never needs it.
 api = ["vermin>=1.6"]
+# sql_verify.FragmentMatrix: sqlglot parses and scopes the statements; pglast (PostgreSQL's own parser) is used too
+# when installed, kept out of this extra because it builds from C where no wheel matches the platform.
+sql = ["sqlglot>=25.0"]
+pglast = ["sqlglot>=25.0", "pglast>=6.0"]
 
 [project.scripts]
 safe-precommit = "py_ci_shared.safe_precommit:main"

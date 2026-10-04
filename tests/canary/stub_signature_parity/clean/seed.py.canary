@@ -1,0 +1,16 @@
+from seedpkg import real
+
+
+def test_submit_reports_the_outcome(monkeypatch):
+    async def _submit(conn, submission_id, request, provider=None, expected_dry_run=None):
+        return None
+
+    monkeypatch.setattr(real, "submit_approved", _submit)
+
+
+def test_backfill_reads_the_missing_ids(monkeypatch):
+    monkeypatch.setattr(real, "missing_detail_transaction_ids", lambda *_a, **_k: ["t1"])
+
+
+def test_the_dialog_names_the_questions(monkeypatch):
+    monkeypatch.setattr(real, "_questions_line", lambda job_uid, fl_cid, saved_answers=None: "questions")

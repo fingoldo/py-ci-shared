@@ -14,6 +14,11 @@ Options:
 
 ``resource_leak_guard = true`` in the table also loads :mod:`py_ci_shared.resource_leak_guard`, the opt-in plugin that
 fails a test leaking a process, thread, socket, env var or ``logging.disable`` (the same as ``-p py_ci_shared.resource_leak_guard``).
+``stub_signature_guard = true`` likewise loads :mod:`py_ci_shared.stub_signature_guard`: ``monkeypatch.setattr`` then refuses a
+stub that cannot accept every parameter of the callable it replaces.
+``secret_safe_test_output = true`` loads :mod:`py_ci_shared.secret_safe_test_output` (credentials redacted from every
+report, ``os.environ`` restored after collection) and ``offline_suite_without_credentials = true`` loads
+:mod:`py_ci_shared.offline_suite_without_credentials` (credential variables and ``.env`` loading blanked per test).
 
 Which table: the one in pytest's rootdir ``pyproject.toml``. When the nearest ``pyproject.toml`` above the directory
 pytest was started from (the file ``py-ci-shared run`` reads) is a different file with its own table, the run stops
@@ -32,7 +37,7 @@ from typing import Any, Optional
 
 import pytest
 
-from ._core.config import ConfigError, GateRun, RepoConfig, find_repo_root, load_config
+from ._core.config import PLUGIN_KEYS, ConfigError, GateRun, RepoConfig, find_repo_root, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
@@ -106,10 +111,11 @@ def pytest_configure(config: Any) -> None:
             f"above {config.invocation_params.dir} has a [tool.py_ci_shared] table"
         )
     config.stash[_CONFIG_KEY] = repo_config
-    if repo_config is not None and repo_config.resource_leak_guard:
-        # Registered late, its historic pytest_addoption and pytest_configure are replayed; unknown ini keys are only
-        # validated after collection. import_plugin is a no-op when -p already loaded it and honours -p no:<name>.
-        config.pluginmanager.import_plugin(LEAK_GUARD_PLUGIN)
+    for key in PLUGIN_KEYS:
+        if repo_config is not None and getattr(repo_config, key):
+            # Registered late, its historic pytest_addoption and pytest_configure are replayed; unknown ini keys are only
+            # validated after collection. import_plugin is a no-op when -p already loaded it and honours -p no:<name>.
+            config.pluginmanager.import_plugin(f"py_ci_shared.{key}")
 
 
 def _gates_mode(config: Any) -> str:

@@ -82,7 +82,8 @@ def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
 @pytest.mark.skipif(find_pg_bin() is None, reason="no Postgres binaries here (PG_BIN / pgserver / PATH)")
 def test_run_hands_the_command_its_dsn():
     code = run([sys.executable, "-c", "import os; raise SystemExit(0 if 'port=' in os.environ['X_DSN'] else 5)"], env_var="X_DSN", bin_dir=find_pg_bin())
-    assert code == 0 and "X_DSN" not in os.environ
+    dsn_left_set = "X_DSN" in os.environ  # a bool: an operand `os.environ` makes pytest print every variable
+    assert code == 0 and not dsn_left_set
 
 
 def test_a_failing_setup_command_raises_with_its_output(tmp_path):

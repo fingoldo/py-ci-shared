@@ -1,0 +1,17 @@
+def ttl_cached(key, ttl):
+    def deco(fn):
+        return fn
+
+    return deco
+
+
+@ttl_cached("recommendations_ttl_sec", 150.0)
+def _load_top_jobs_cached(*, limit):
+    return limit
+
+
+def load_top_jobs(*, limit=25):
+    return _load_top_jobs_cached(limit=limit)
+
+
+load_top_jobs.cache_clear = _load_top_jobs_cached.cache_clear

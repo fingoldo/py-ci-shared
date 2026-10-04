@@ -1,0 +1,8 @@
+"""Audit 16b.2 fixed: the value is folded to a bool before the assert, so a failure prints only False."""
+
+import probe_module
+
+
+def test_seed_an_unset_dsn_is_none():
+    resolved = probe_module._dsn() is not None
+    assert not resolved, "a DSN was resolved"

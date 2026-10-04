@@ -1,0 +1,16 @@
+"""The safe form: the type and the SQLSTATE only, raised outside the handler."""
+
+import psycopg2
+
+
+class ProbeError(Exception):
+    pass
+
+
+def seed_probe(dsn):
+    failure = None
+    try:
+        return psycopg2.connect(dsn)
+    except Exception as e:
+        failure = f"{type(e).__name__} sqlstate={getattr(e, 'pgcode', None)}"
+    raise ProbeError(failure)

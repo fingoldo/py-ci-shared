@@ -2,6 +2,28 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.21.0
+
+Eight checks from the 2026-10-03 Upwork dashboard audit, each proven on the real defect it is named for:
+
+- New gates `stub_signature_parity` (a monkeypatched or `mock.patch`ed stub must accept every parameter of the callable it
+  replaces; static scan, plus the opt-in run-time plugin `stub_signature_guard`) and `wrapper_protocol_parity` (a wrapper that
+  copies some of a protocol's attributes, e.g. `cache_clear`, from its inner callable must set all the inner one has, e.g.
+  `refresh`; plus the run-time `protocol_attributes.assert_satisfies_protocol`).
+- New gate `secret_assertion_operands`, and the opt-in pytest plugins `secret_safe_test_output` (credentials redacted from
+  every report, `os.environ` restored) and `offline_suite_without_credentials` (credential variables and `.env` loading
+  blanked for every test without the `real_database` marker). Plugins are switched on in `[tool.py_ci_shared]`
+  (`PLUGIN_KEYS`: `resource_leak_guard`, `stub_signature_guard`, `secret_safe_test_output`, `offline_suite_without_credentials`)
+  or by `-p py_ci_shared.<name>`. Three of this repo's own tests that printed the whole environment on failure fold to a bool.
+- New gate `constant_relations`: a TOML registry of declared relations between numeric constants and config defaults across
+  packages, evaluated by a walked `ast` grammar (no eval); an unresolvable reference fails.
+- `sql_verify` is now a gate: `FragmentMatrix` / `assert_fragment_matrix` build every fragment of a dict into every template and
+  fail on a statement that does not parse, keeps an unfilled `{slot}`, or names a table alias out of scope where it lands.
+  New extras `sql` (sqlglot) and `pglast`.
+- New gates `connect_error_echo` (an `except` around a database connect or DSN resolve must not format the exception into
+  output: libpq echoes the connection string) and `drifted_duplicate_literals` (one set of numbers restated in several
+  modules of a package; baseline entries need a reason).
+
 ## 1.20.0
 
 - `import_side_effects`: an import-time `os.environ` write is reported by key and value length, never by value. A

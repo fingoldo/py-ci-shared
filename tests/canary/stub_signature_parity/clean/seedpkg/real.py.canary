@@ -1,0 +1,13 @@
+"""The three dashboard callables whose stubs broke silently (2026-10)."""
+
+
+async def submit_approved(conn, submission_id, request, *, provider=None, expected_dry_run=None):
+    return (conn, submission_id, request, provider, expected_dry_run)
+
+
+def missing_detail_transaction_ids(conn, ace_id, *, limit=200):
+    return [conn, ace_id, limit]
+
+
+def _questions_line(job_uid, fl_cid, saved_answers=None):
+    return (job_uid, fl_cid, saved_answers)

@@ -144,3 +144,20 @@ def test_k2_gates_on_without_any_table_is_a_usage_error(tmp_path):
     proc = _pytest(_repo(tmp_path, "", DIRTY), "--py-ci-gates=on")
     assert proc.returncode == 4 and "--py-ci-gates=on" in proc.stderr, proc.stdout + proc.stderr
     assert _pytest(_repo(tmp_path / "auto", "", DIRTY)).returncode == 0  # control: auto mode stays silent
+
+
+SECRET_PROBE = "import os\n\n\ndef test_probe_env():\n    print('DSN=' + repr(os.environ.get('DATABASE_URL')))\n    assert False\n"
+
+
+def test_the_table_loads_the_secret_and_offline_plugins_only_when_asked(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://u:FAKEPW0123456789@db.example/x")
+    for flag in ("false", "true"):
+        table = f"[tool.py_ci_shared]\nsecret_safe_test_output = {flag}\noffline_suite_without_credentials = {flag}\n"
+        repo = _repo(tmp_path / flag, table)
+        (repo / "test_secret.py").write_bytes(SECRET_PROBE.encode())
+        proc = _pytest(repo, "test_secret.py")
+        out = proc.stdout + proc.stderr
+        if flag == "false":
+            assert "FAKEPW0123456789" in out, out
+        else:
+            assert "FAKEPW0123456789" not in out and "DSN=None" in out, out

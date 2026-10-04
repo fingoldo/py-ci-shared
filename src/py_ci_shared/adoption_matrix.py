@@ -406,6 +406,8 @@ def _config_modules(path: Path) -> list[str]:
     out = [str(n) for n in table.get("enable", []) or []]
     if table.get("resource_leak_guard") is True:  # the plugin is enabled by a key of its own, not by `enable`
         out.append("resource_leak_guard")
+    if table.get("stub_signature_guard") is True:
+        out.append("stub_signature_guard")
     for name, section in (table.get("gates", {}) or {}).items():
         if isinstance(section, dict) and section.get("enabled", True) is not False:
             out.append(str(section.get("module", name)))

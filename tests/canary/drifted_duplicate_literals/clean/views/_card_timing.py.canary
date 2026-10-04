@@ -1,0 +1,14 @@
+"""The colour code of the last-viewed badge, from the one band tuple."""
+
+VIEWED_BANDS_H = (20, 70, 221)
+
+
+def seed_colour(hours):
+    green, amber, orange = VIEWED_BANDS_H
+    if hours <= green:
+        return "green"
+    elif hours <= amber:
+        return "amber"
+    elif hours <= orange:
+        return "orange"
+    return "red"

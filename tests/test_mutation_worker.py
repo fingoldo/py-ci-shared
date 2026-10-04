@@ -92,7 +92,8 @@ class TestProcessStateIsRestoredBetweenRuns:
         sys.argv.append("--leak")
         state.restore()
         assert Path.cwd() == tmp_path
-        assert "MUTATION_WORKER_RESTORE" not in os.environ
+        variable_left_set = "MUTATION_WORKER_RESTORE" in os.environ  # a bool: an operand `os.environ` prints every variable
+        assert not variable_left_set
         assert "/leak" not in sys.path and "--leak" not in sys.argv
 
 

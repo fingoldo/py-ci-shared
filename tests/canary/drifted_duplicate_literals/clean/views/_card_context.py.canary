@@ -1,0 +1,5 @@
+"""The tooltip that explains the colours, formatted from the same tuple."""
+
+from ._card_timing import VIEWED_BANDS_H
+
+VIEWED_TOOLTIP = "green up to {0}h, amber {0}-{1}h, orange {1}-{2}h, red beyond".format(*VIEWED_BANDS_H)

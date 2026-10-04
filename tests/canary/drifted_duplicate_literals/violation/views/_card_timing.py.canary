@@ -1,0 +1,11 @@
+"""The colour code of the last-viewed badge."""
+
+
+def seed_colour(hours):
+    if hours <= 20:
+        return "green"
+    elif hours <= 70:
+        return "amber"
+    elif hours <= 221:
+        return "orange"
+    return "red"

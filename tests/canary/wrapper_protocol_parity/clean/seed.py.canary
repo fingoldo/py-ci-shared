@@ -1,0 +1,21 @@
+import functools
+
+
+def ttl_cached(key, ttl):
+    def deco(fn):
+        return fn
+
+    return deco
+
+
+@ttl_cached("recommendations_ttl_sec", 150.0)
+def _load_top_jobs_cached(*, limit):
+    return limit
+
+
+def load_top_jobs(*, limit=25, _refresh=False):
+    return (_load_top_jobs_cached.refresh if _refresh else _load_top_jobs_cached)(limit=limit)
+
+
+load_top_jobs.cache_clear = _load_top_jobs_cached.cache_clear
+load_top_jobs.refresh = functools.partial(load_top_jobs, _refresh=True)
