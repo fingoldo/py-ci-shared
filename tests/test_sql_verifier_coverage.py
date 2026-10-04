@@ -71,3 +71,42 @@ def test_the_both_directions_contract(tmp_path: Path):
     _write(tmp_path, "scripts/verify.py", 'STATEMENTS = [("m", ("Q",))]\nEXCLUDED = {"m.R": "short"}\n')
     with pytest.raises(pytest.fail.Exception, match="without a real reason"):
         assert_verifier_covers_statements(tmp_path, verifier, exclude_top_dirs={"scripts"})
+
+
+class TestAStatementThatIsNotOneStringLiteral:
+    """A constant built with `+`, one led by a session setting, and one led by REFRESH were invisible: the verifier lists could omit them and the gate stayed green (audit 2026-10-03 SQL-26)."""
+
+    def test_a_chain_of_literals_is_one_statement(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'Q = "WITH x AS (SELECT 1) " + "SELECT * FROM x"\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.Q"}
+
+    def test_a_module_level_name_in_the_chain_is_resolved(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'CTE = "WITH x AS (SELECT 1) "\nQ = CTE + "SELECT * FROM x"\nFRAGMENT = CTE\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.CTE", "m.Q", "m.FRAGMENT"}  # the fragment starts WITH, so it is a constant of its own
+
+    def test_a_name_the_module_does_not_bind_leaves_the_statement_seen_by_its_literal(self, tmp_path: Path):
+        """`from other import CTE` cannot be resolved from one file; the statement still exists and must be listed or excluded."""
+        _write(tmp_path, "m.py", 'from other import CTE\nQ = CTE + "SELECT * FROM x"\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.Q"}
+
+    def test_a_chain_that_is_not_sql_is_not_a_statement(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'MSG = "Selection of " + "rows"\nFROM_X = "FROM x" + " WHERE a"\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == set()
+
+    def test_a_refresh_is_a_statement(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'R = "REFRESH MATERIALIZED VIEW CONCURRENTLY v"\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.R"}
+
+    def test_a_session_setting_in_front_is_not_what_is_sent(self, tmp_path: Path):
+        _write(
+            tmp_path,
+            "m.py",
+            'U = "SET LOCAL TimeZone = \'UTC\'; INSERT INTO t (a) VALUES (%s)"\nS = "SET statement_timeout = 0; SELECT 1"\nONLY = "SET LOCAL x = 1"\n',
+        )
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.U", "m.S"}
+
+    def test_a_built_statement_missing_from_the_list_now_fails_the_gate(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'CTE = "WITH x AS (SELECT 1) "\nQ = CTE + "SELECT * FROM x"\n')
+        verifier = _write(tmp_path, "scripts/verify.py", "STATEMENTS = []\nEXCLUDED = {}\n")
+        with pytest.raises(pytest.fail.Exception, match=r"m\.Q"):
+            assert_verifier_covers_statements(tmp_path, verifier, exclude_top_dirs={"scripts"})

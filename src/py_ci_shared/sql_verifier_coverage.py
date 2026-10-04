@@ -25,22 +25,38 @@ from ._core import DEFAULT_EXCLUDE, ScanResult, parse_file, scan_python
 
 __all__ = ["DEFAULT_STATEMENT_STARTS", "assert_verifier_covers_statements", "sql_constants", "verifier_lists"]
 
-DEFAULT_STATEMENT_STARTS = ("SELECT", "INSERT", "UPDATE", "DELETE", "WITH")
+DEFAULT_STATEMENT_STARTS = ("SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "REFRESH")
 
 
-def _string_value(value: ast.expr | None) -> str | None:
+def _string_value(value: ast.expr | None, names: dict[str, str] | None = None) -> str | None:
+    """The text of a string constant: a literal, an f-string's literal parts, or a ``+`` chain of those and of module-level names bound to strings.
+
+    A name the module does not bind to a string (an import, a call) contributes nothing, so a statement built from one is still SEEN by its leading
+    literal and must be listed or excluded: reading it as "not a constant" let `_CTE + "SELECT ..."` escape every verifier list.
+    """
     if isinstance(value, ast.Constant) and isinstance(value.value, str):
         return value.value
     if isinstance(value, ast.JoinedStr):
         return "".join(part.value for part in value.values if isinstance(part, ast.Constant) and isinstance(part.value, str))
+    if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
+        left, right = _string_value(value.left, names), _string_value(value.right, names)
+        return None if left is None and right is None else (left or "") + (right or "")
+    if isinstance(value, ast.Name) and names is not None:
+        return names.get(value.id)
     return None
 
 
 _LEADING_COMMENTS = re.compile(r"^(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/)*", re.DOTALL)
 
 
+#: A session setting in front of the statement (`SET LOCAL TimeZone = 'UTC'; INSERT ...`): not what is being sent.
+_SESSION_PREFIX = re.compile(r"^SET\s+(?:LOCAL\s+|SESSION\s+)?[^;]*;\s*", re.IGNORECASE)
+
+
 def _starts_statement(text: str, starts: tuple[str, ...]) -> bool:
     body = _LEADING_COMMENTS.sub("", text, count=1).lstrip("(").lstrip()
+    while _SESSION_PREFIX.match(body):
+        body = _LEADING_COMMENTS.sub("", _SESSION_PREFIX.sub("", body, count=1), count=1).lstrip()
     head = re.match(r"[A-Za-z_]+", body)
     return head is not None and head.group(0).upper() in starts
 
@@ -63,14 +79,17 @@ def _constants(scan: ScanResult, starts: tuple[str, ...]) -> set[str]:
     found: set[str] = set()
     for parsed in scan:
         module = _module_name(parsed.rel)
+        bound: dict[str, str] = {}  # module-level names bound to strings so far, in source order: what a `+` chain may name
         for node in parsed.tree.body:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
-            text = _string_value(node.value)
-            if text is None or not _starts_statement(text, starts):
+            text = _string_value(node.value, bound)
+            if text is None:
                 continue
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            found.update(f"{module}.{t.id}" for t in targets if isinstance(t, ast.Name))
+            bound.update({t.id: text for t in targets if isinstance(t, ast.Name)})
+            if _starts_statement(text, starts):
+                found.update(f"{module}.{t.id}" for t in targets if isinstance(t, ast.Name))
     return found
 
 
