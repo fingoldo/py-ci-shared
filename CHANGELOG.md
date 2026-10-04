@@ -4,6 +4,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- `resource_leak_guard` no longer reports a connection the test already closed: a socket in FIN_WAIT1/2, TIME_WAIT, CLOSING or LAST_ACK stays
+  listed until the peer finishes the teardown (seconds, against a remote database), so every test that closed its connection properly failed at teardown.
+
 - New gate `schema_snapshot_parity`: a `schema.sql` that promises to provision a database from scratch is applied twice on a private
   throwaway Postgres (`embedded_postgres`) and its catalogue compared with a committed, versioned production snapshot: tables and
   columns missing, types (timezone-ness included), nullability, generated/identity, extras (allowances need a reason, stale ones are

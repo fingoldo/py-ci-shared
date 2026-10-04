@@ -221,6 +221,25 @@ class TestProcessesAndSockets:
         result.assert_outcomes(passed=2, errors=1)
         assert "socket 127.0.0.1:" in _errors(result)
 
+    def test_a_connection_closed_here_is_not_listed_while_the_peer_has_not_closed_its_end(self):
+        pytest.importorskip("psutil")
+        import socket
+
+        from py_ci_shared import resource_leak_guard as guard
+
+        with socket.socket() as srv:
+            srv.bind(("127.0.0.1", 0))
+            srv.listen()
+            client = socket.create_connection(srv.getsockname())
+            peer, _ = srv.accept()
+            local = f"127.0.0.1:{client.getsockname()[1]}->"
+            assert any(s.startswith(local) for s in guard._sockets() or ()), "the open connection must be listed"
+            client.close()
+            try:
+                assert not any(s.startswith(local) for s in guard._sockets() or ())
+            finally:
+                peer.close()
+
 
 class TestConfiguration:
     def test_no_leak_guard_and_the_ini_allowlist(self, pytester, monkeypatch):

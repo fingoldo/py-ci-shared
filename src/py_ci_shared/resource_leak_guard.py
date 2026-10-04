@@ -99,6 +99,11 @@ def _describe(psutil: Any, child: Any) -> Optional[str]:
         return None
 
 
+# A connection this process has already closed stays listed while the peer finishes the TCP teardown (a remote database over a
+# VPN can take seconds); the descriptor is gone, so it is not a leak.
+_CLOSED_BY_US = frozenset({"FIN_WAIT1", "FIN_WAIT2", "TIME_WAIT", "CLOSING", "LAST_ACK"})
+
+
 def _sockets() -> Optional[set[str]]:
     psutil = _psutil()
     if psutil is None:
@@ -107,6 +112,8 @@ def _sockets() -> Optional[set[str]]:
     getter = getattr(proc, "net_connections", None) or proc.connections
     out = set()
     for c in getter(kind="inet"):
+        if c.status in _CLOSED_BY_US:
+            continue
         laddr = f"{c.laddr.ip}:{c.laddr.port}" if c.laddr else "-"
         raddr = f"{c.raddr.ip}:{c.raddr.port}" if c.raddr else "-"
         out.add(f"{laddr}->{raddr}")
