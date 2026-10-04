@@ -1,0 +1,18 @@
+import json
+import logging
+from pathlib import Path
+
+import cupy
+
+SEED_CACHE = Path("hw_fingerprint.json")
+
+
+def seed_fingerprint():
+    try:
+        devices = cupy.cuda.runtime.getDeviceCount()
+    except Exception:
+        logging.warning("GPU probe failed; not caching a verdict")
+        return {"name": "no-gpu"}
+    gpu = {"devices": devices}
+    SEED_CACHE.write_text(json.dumps({"gpu": gpu}))
+    return gpu

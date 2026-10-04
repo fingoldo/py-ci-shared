@@ -1,0 +1,16 @@
+﻿import json
+from pathlib import Path
+
+import cupy
+
+SEED_CACHE = Path("hw_fingerprint.json")
+
+
+def seed_fingerprint():
+    try:
+        devices = cupy.cuda.runtime.getDeviceCount()
+        gpu = {"devices": devices}
+    except Exception:
+        gpu = {"name": "no-gpu"}
+        SEED_CACHE.write_text(json.dumps({"gpu": gpu}))
+    return gpu

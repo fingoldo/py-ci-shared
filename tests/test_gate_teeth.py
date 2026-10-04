@@ -334,6 +334,20 @@ CANARIES: dict[str, Canary] = {
             "unexecuted_function_bodies",
             lambda d: _gate("unexecuted_function_bodies").assert_unexecuted_function_bodies(d / "coverage.json", [d], base=d, use_git=False),
         ),
+        Canary("single_shot_timing_assertion", lambda d: _gate("single_shot_timing_assertion").assert_single_shot_timing_assertion(d, use_git=False)),
+        Canary("cancellation_prone_moments", lambda d: _gate("cancellation_prone_moments").assert_cancellation_prone_moments(d, use_git=False)),
+        Canary("unsafe_deserialization", lambda d: _gate("unsafe_deserialization").assert_unsafe_deserialization(d, use_git=False)),
+        Canary("unread_function_params", lambda d: _gate("unread_function_params").assert_unread_function_params(d, use_git=False)),
+        Canary("hardcoded_seed_in_library", lambda d: _gate("hardcoded_seed_in_library").assert_hardcoded_seed_in_library(d, use_git=False)),
+        Canary("constant_fallback_cache_key", lambda d: _gate("constant_fallback_cache_key").assert_constant_fallback_cache_key(d, use_git=False)),
+        Canary("ci_default_branch_never_cancelled", lambda d: _gate("ci_default_branch_never_cancelled").assert_ci_default_branch_never_cancelled(d)),
+        Canary("ci_install_covers_entry_imports", lambda d: _gate("ci_install_covers_entry_imports").assert_ci_install_covers_entry_imports(d)),
+        Canary("optional_imports_guarded", lambda d: _gate("optional_imports_guarded").assert_optional_imports_guarded(d, use_git=False)),
+        Canary(
+            "id_keyed_cache_validates_identity", lambda d: _gate("id_keyed_cache_validates_identity").assert_id_keyed_cache_validates_identity(d, use_git=False)
+        ),
+        Canary("persisted_negative_probe", lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False)),
+        Canary("cuda_kernel_integer_width", lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False)),
     ]
 }
 
@@ -374,6 +388,7 @@ EXEMPT: dict[str, str] = {
     "prose_numeric_claims": "takes caller-built claims; no corpus",
     "protocol_attributes": "a run-time check of a live object's attributes; covered by test_protocol_attributes.py",
     "pydantic_field_bounds": "needs live pydantic model classes as input",
+    "pytest_known_gap": "a helper that tests call (xfail while a gap is open, fail when it closes); it scans nothing, and no_xfail_to_defer reads its call sites",
     "randomly_seed_guard": "runtime helper called from pytest_configure to wrap pytest-randomly's reseeders; reads no corpus",
     "resource_leak_checks": "live interpreter-state checks run by the resource_leak_guard plugin; covered by test_resource_leak_checks.py",
     "resource_leak_guard": "a pytest plugin checking live processes, threads, sockets and env at teardown; covered by test_resource_leak_guard.py",

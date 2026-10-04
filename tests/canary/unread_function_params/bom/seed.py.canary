@@ -1,0 +1,2 @@
+﻿def seed_fit(X, sample_weight=None):
+    return X

@@ -1,0 +1,11 @@
+from py_ci_shared.pytest_known_gap import known_gap
+
+
+def test_seed_gap_names_an_external_limit():
+    kept = select()
+    known_gap("numpy 2.1 argsort is unstable on ties (numpy#1234)", gap_closed="redundant" not in kept)
+
+
+def test_seed_gap_names_a_tracked_issue():
+    kept = select()
+    known_gap("tracked in MLF-88", gap_closed="redundant" not in kept)

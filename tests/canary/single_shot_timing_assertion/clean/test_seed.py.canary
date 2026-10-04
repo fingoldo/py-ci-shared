@@ -1,0 +1,13 @@
+import time
+
+
+def _once(fn):
+    t0 = time.perf_counter()
+    fn()
+    return time.perf_counter() - t0
+
+
+def test_seed_speedup():
+    t_serial = min(_once(serial) for _ in range(3))
+    t_parallel = min(_once(parallel) for _ in range(3))
+    assert t_serial / t_parallel >= 1.15

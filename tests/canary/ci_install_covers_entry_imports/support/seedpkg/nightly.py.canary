@@ -1,0 +1,5 @@
+from . import features
+
+
+if __name__ == "__main__":
+    features.seed_transform([1, 2, 3, 4])

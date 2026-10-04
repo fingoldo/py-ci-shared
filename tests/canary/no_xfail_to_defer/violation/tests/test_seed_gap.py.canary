@@ -1,0 +1,10 @@
+from py_ci_shared.pytest_known_gap import known_gap
+
+
+def test_seed_gap_parks_a_bug():
+    kept = select()
+    known_gap("PROD GAP: the seed selector keeps a redundant column", gap_closed="redundant" not in kept)
+
+
+def test_seed_gap_that_can_never_close():
+    known_gap("numpy 2.1 argsort is unstable on ties (numpy#1234)", gap_closed=False)

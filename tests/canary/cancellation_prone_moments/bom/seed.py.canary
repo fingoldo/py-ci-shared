@@ -1,0 +1,8 @@
+﻿def seed_variance(values):
+    s1 = 0.0
+    s2 = 0.0
+    for v in values:
+        s1 += v
+        s2 += v * v
+    n = len(values)
+    return s2 / n - (s1 / n) ** 2

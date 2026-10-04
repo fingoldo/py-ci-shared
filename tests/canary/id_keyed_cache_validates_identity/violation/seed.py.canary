@@ -1,0 +1,9 @@
+_SEED_REGISTRY = {}
+
+
+def register(host_array, codes):
+    _SEED_REGISTRY[id(host_array)] = codes
+
+
+def lookup(host_array):
+    return _SEED_REGISTRY.get(id(host_array))

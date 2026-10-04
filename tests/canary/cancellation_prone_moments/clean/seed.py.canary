@@ -1,0 +1,4 @@
+def seed_variance(values):
+    n = len(values)
+    mean = sum(values) / n
+    return sum((v - mean) ** 2 for v in values) / n

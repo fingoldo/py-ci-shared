@@ -108,6 +108,13 @@ cli = true
 summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes"
 
 [[gate]]
+name = "cancellation_prone_moments"
+kind = "gate"
+entries = ["assert_cancellation_prone_moments"]
+since = "1.21.1"
+summary = "Variance, skewness and kurtosis built from raw power sums cancel catastrophically on large-offset data"
+
+[[gate]]
 name = "changelog_promise_parity"
 kind = "gate"
 entries = ["assert_changelog_bullets_satisfy_pattern"]
@@ -130,6 +137,13 @@ since = "1.4.0"
 summary = "Assert that no test reads or writes the on-disk state a real run of the program uses"
 
 [[gate]]
+name = "ci_default_branch_never_cancelled"
+kind = "gate"
+entries = ["assert_ci_default_branch_never_cancelled"]
+since = "1.21.1"
+summary = "a workflow that runs on push to the default branch must not set cancel-in-progress to something that can be true there"
+
+[[gate]]
 name = "ci_health"
 kind = "cli"
 since = "1.20.0"
@@ -143,6 +157,13 @@ kind = "gate"
 entries = ["assert_ci_install_covers_conftest"]
 since = "1.20.0"
 summary = "Every CI job that runs pytest installs the third-party packages its conftest.py files import at collection"
+
+[[gate]]
+name = "ci_install_covers_entry_imports"
+kind = "gate"
+entries = ["assert_ci_install_covers_entry_imports", "assert_entry_imports_without_extras"]
+since = "1.21.1"
+summary = "the extras a CI job installs must cover the module-level third-party imports of the python -m / script entry it runs"
 
 [[gate]]
 name = "ci_test_dir_reachability"
@@ -260,6 +281,13 @@ since = "1.21.1"
 summary = "Every call that opens a network database connection sets TCP keepalives"
 
 [[gate]]
+name = "constant_fallback_cache_key"
+kind = "gate"
+entries = ["assert_constant_fallback_cache_key"]
+since = "1.21.1"
+summary = "A digest or cache-key builder whose except handler returns a literal constant, so every failing input shares one key"
+
+[[gate]]
 name = "constant_relations"
 kind = "gate"
 entries = ["assert_constant_relations"]
@@ -303,6 +331,13 @@ kind = "gate"
 entries = ["assert_cross_package_private_names"]
 since = "1.21.1"
 summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)."
+
+[[gate]]
+name = "cuda_kernel_integer_width"
+kind = "gate"
+entries = ["assert_cuda_kernel_integer_width"]
+since = "1.21.1"
+summary = "CUDA kernel source strings use 64-bit integer types: no platform-width long, no int-typed products of two sizes"
 
 [[gate]]
 name = "dart_scanners"
@@ -527,6 +562,13 @@ since = "1.3.6"
 summary = "A guard script is actually looking at something"
 
 [[gate]]
+name = "hardcoded_seed_in_library"
+kind = "gate"
+entries = ["assert_hardcoded_seed_in_library"]
+since = "1.21.1"
+summary = "A function with its own seed parameter that seeds a callee with an int literal, so the caller's seed never arrives"
+
+[[gate]]
 name = "hardcoded_token_ceilings"
 kind = "gate"
 entries = ["assert_no_hardcoded_token_ceilings"]
@@ -560,6 +602,13 @@ kind = "gate"
 entries = ["assert_hooks_are_honest"]
 since = "1.3.6"
 summary = "A git hook fails loudly, stages nothing of its own, and runs what CI runs"
+
+[[gate]]
+name = "id_keyed_cache_validates_identity"
+kind = "gate"
+entries = ["assert_id_keyed_cache_validates_identity"]
+since = "1.21.1"
+summary = "A module-level cache keyed by id(obj) keeps a weakref to obj or re-checks identity on lookup"
 
 [[gate]]
 name = "identity_comparisons"
@@ -744,6 +793,13 @@ since = "1.21.0"
 summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
 
 [[gate]]
+name = "optional_imports_guarded"
+kind = "gate"
+entries = ["assert_optional_imports_guarded"]
+since = "1.21.1"
+summary = "a module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function"
+
+[[gate]]
 name = "optional_truthiness"
 kind = "gate"
 entries = ["assert_optionals_test_for_none"]
@@ -764,6 +820,13 @@ entries = ["assert_package_doctests_pass"]
 since = "1.12.0"
 budget_s = 120
 summary = "The doctests a package ships actually run, and there are some to run"
+
+[[gate]]
+name = "persisted_negative_probe"
+kind = "gate"
+entries = ["assert_persisted_negative_probe"]
+since = "1.21.1"
+summary = "A failed hardware probe must not persist a negative verdict (no-gpu) that outlives the process"
 
 [[gate]]
 name = "phantom_code_references"
@@ -854,6 +917,12 @@ kind = "gate"
 entries = ["assert_path_runs_select_tests"]
 since = "1.17.0"
 summary = "A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them"
+
+[[gate]]
+name = "pytest_known_gap"
+kind = "library"
+since = "1.21.1"
+summary = "known_gap(reason, gap_closed): xfail while an external limit is open, fail once the measurement shows it closed"
 
 [[gate]]
 name = "pytest_markers"
@@ -985,6 +1054,13 @@ kind = "gate"
 entries = ["assert_sibling_floor_skew"]
 since = "1.20.0"
 summary = "A first-party sibling floor in ``pyproject.toml`` above the revision the CI workflows install"
+
+[[gate]]
+name = "single_shot_timing_assertion"
+kind = "gate"
+entries = ["assert_single_shot_timing_assertion"]
+since = "1.21.1"
+summary = "A test must not assert on a wall-clock ratio or ceiling derived from one measurement per side"
 
 [[gate]]
 name = "source_text_ban"
@@ -1155,6 +1231,13 @@ since = "1.21.1"
 summary = "A function whose body never runs under the unit coverage run"
 
 [[gate]]
+name = "unread_function_params"
+kind = "gate"
+entries = ["assert_unread_function_params"]
+since = "1.21.1"
+summary = "Named function parameters (sample_weight, random_state, seed, n_jobs, verbose, timeout, device) that the body never reads"
+
+[[gate]]
 name = "unread_init_params"
 kind = "gate"
 entries = ["assert_no_unread_init_params"]
@@ -1174,6 +1257,13 @@ kind = "gate"
 entries = ["assert_no_unresolved_module_attributes"]
 since = "1.21.1"
 summary = "Every attribute read on an imported first-party module (m.NAME) must name something that module defines"
+
+[[gate]]
+name = "unsafe_deserialization"
+kind = "gate"
+entries = ["assert_unsafe_deserialization"]
+since = "1.21.1"
+summary = "Deserialization that can execute attacker-chosen code: module-wide find_class allowlists, torch.load without weights_only, np.load allow_pickle, unverified pickle loads, yaml.load without a safe Loader"
 
 [[gate]]
 name = "vacuous_loop_assertions"

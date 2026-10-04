@@ -1,0 +1,9 @@
+import hashlib
+import json
+
+
+def seed_config_digest(config):
+    try:
+        return hashlib.sha256(json.dumps(config).encode()).hexdigest()
+    except TypeError:
+        return hashlib.sha256(repr(config).encode()).hexdigest()

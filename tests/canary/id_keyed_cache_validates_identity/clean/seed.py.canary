@@ -1,0 +1,12 @@
+_SEED_REGISTRY = {}
+
+
+def register(host_array, codes):
+    _SEED_REGISTRY[id(host_array)] = (host_array, codes)
+
+
+def lookup(host_array):
+    entry = _SEED_REGISTRY.get(id(host_array))
+    if entry is not None and entry[0] is host_array:
+        return entry[1]
+    return None

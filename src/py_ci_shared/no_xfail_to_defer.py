@@ -17,7 +17,19 @@ turns it red. Per test file:
   words are read (f-string parts included); a reason computed from names, or built around a variable that holds the
   reason (``XFAIL_REASON + ...``, ``f"{gap} ..."``), is not judged.
 
+* ``known-gap-never-closes``: an unguarded call to ``known_gap(reason, gap_closed)`` whose ``gap_closed`` is a falsy literal
+  (``False``, ``0``, ``None``): the gap can never close, so the helper can never fail and the call is a plain xfail. Inside an
+  ``if``/``except`` the literal is fine: the branch is the measurement, and a closed gap never reaches the call.
+
 ``skipif`` (a condition on the environment) and ``importorskip`` are the right tools and are not judged.
+
+``known_gap(reason, gap_closed)`` (``py_ci_shared.pytest_known_gap``, or a consumer's own copy such as ``tests._known_gap``)
+xfails while a gap is open and fails once ``gap_closed`` is true. Because the reason is an argument and not a marker, the
+xfail rules above could not see these sites, and every parked bug could move behind the helper. A call is therefore
+judged as an imperative ``pytest.xfail(reason)``: no reason, or a reason naming no external component or tracked issue,
+is a finding. The helper is resolved through the module's imports; *known_gap_modules* names the consumer's local
+modules (matched as a dotted suffix, so ``from ._known_gap import known_gap`` and ``from _known_gap import known_gap``
+both resolve to ``tests._known_gap``).
 """
 
 from __future__ import annotations
@@ -34,13 +46,28 @@ from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 from ._toml_compat import tomllib
 
-__all__ = ["EXTERNAL_WORDS", "REFRESH_FLAG", "assert_no_xfail_to_defer", "find_xfail_to_defer", "read_xfail_strict"]
+__all__ = [
+    "EXTERNAL_WORDS",
+    "KNOWN_GAP_MODULES",
+    "REFRESH_FLAG",
+    "RULE_GAP_NEVER_CLOSES",
+    "RULE_NOT_STRICT",
+    "RULE_NO_REASON",
+    "RULE_UNTRACKED",
+    "assert_no_xfail_to_defer",
+    "find_xfail_to_defer",
+    "read_xfail_strict",
+]
 
 REFRESH_FLAG = "--refresh-xfail-baseline"
 GATE = "xfail"
 RULE_NOT_STRICT = "xfail-not-strict"
 RULE_NO_REASON = "no-reason"
 RULE_UNTRACKED = "untracked-reason"
+RULE_GAP_NEVER_CLOSES = "known-gap-never-closes"
+#: Where ``known_gap`` lives besides ``py_ci_shared.pytest_known_gap``: the local helper module of the consumers that had one first.
+KNOWN_GAP_MODULES = ("tests._known_gap",)
+_KNOWN_GAP_SHIPPED = "py_ci_shared.pytest_known_gap"
 #: Words that name something outside the repository: libraries, platforms, hardware, upstream.
 EXTERNAL_WORDS = frozenset(
     {"upstream", "third-party", "third party", "vendor", "bug in", "not supported by", "unsupported by", "platform", "os", "hardware"}
@@ -153,6 +180,41 @@ def _judge_xfail(call: Optional[ast.Call], *, imperative: bool, repo_strict: boo
     return out
 
 
+def _is_known_gap(qualified: str, modules: frozenset[str]) -> bool:
+    """Is *qualified* (``tests._known_gap.known_gap``, ``._known_gap.known_gap``, ``known_gap``) the ``known_gap`` helper?
+
+    The shipped module matches exactly. A local module matches when its configured dotted name equals the call's module, or
+    ends with it after any leading dots of a relative import are dropped (``._known_gap`` against ``tests._known_gap``)."""
+    module, _, name = qualified.rpartition(".")
+    if name != "known_gap":
+        return False
+    module = module.lstrip(".")
+    if module == _KNOWN_GAP_SHIPPED:
+        return True
+    if not module:  # a bare ``known_gap(...)``: only when it was imported, which the alias map has already resolved
+        return False
+    return any(m == module or m.endswith("." + module) for m in modules)
+
+
+def _gap_argument(call: ast.Call) -> Optional[ast.expr]:
+    """The ``gap_closed`` argument: ``gap_closed=`` or the second positional."""
+    for kw in call.keywords:
+        if kw.arg == "gap_closed":
+            return kw.value
+    return call.args[1] if len(call.args) > 1 else None
+
+
+def _known_gap_findings(call: ast.Call, parents: dict[int, ast.AST], repo_strict: bool, external: frozenset[str]) -> list[tuple[str, str]]:
+    """The reason is judged as an xfail's. A falsy literal verdict is reported only when nothing guards the call: inside an
+    ``if``/``except`` the branch IS the measurement (``if not wired: known_gap(..., gap_closed=False)``), and a closed gap
+    simply never reaches the call, so the verdict cannot be wrong."""
+    out = _judge_xfail(call, imperative=True, repo_strict=repo_strict, external=external)
+    verdict = _gap_argument(call)
+    if isinstance(verdict, ast.Constant) and not verdict.value and not _is_conditional(call, parents):
+        out.append((RULE_GAP_NEVER_CLOSES, f"known_gap(gap_closed={verdict.value!r}) can never close, so it can never fail: it is a plain xfail"))
+    return out
+
+
 def _is_conditional(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
     """An imperative ``pytest.skip()`` inside an ``if``/``except`` is a condition on the environment."""
     cur = parents.get(id(node))
@@ -170,12 +232,15 @@ def find_xfail_to_defer(
     xfail_strict: Optional[bool] = None,
     external: Iterable[str] = (),
     exclude_parts: Iterable[str] = (),
+    known_gap_modules: Iterable[str] = KNOWN_GAP_MODULES,
     use_git: Optional[bool] = None,
 ) -> tuple[list[Finding], ScanResult]:
     """``(findings, scan)`` over the test files under *tests_root*.
 
     *xfail_strict* defaults to the repository's ini (``repo_root`` defaults to the parent of a directory *tests_root*).
+    *known_gap_modules* are the dotted names of the consumer's own modules defining ``known_gap`` (see the module docstring).
     """
+    gap_modules = frozenset(known_gap_modules)
     if xfail_strict is None:
         base = Path(repo_root) if repo_root is not None else (Path(tests_root).parent if isinstance(tests_root, (str, Path)) else Path("."))
         xfail_strict = read_xfail_strict(base)
@@ -188,15 +253,24 @@ def find_xfail_to_defer(
         for node in _fast_walk(f.tree):
             if isinstance(node, ast.Call) and isinstance(parents.get(id(node)), ast.Attribute):
                 continue  # ``pytest.mark.xfail(...).with_args`` and similar: the outer call is judged
-            results = _node_findings(node, aliases, parents, xfail_strict, ext)
+            results = _node_findings(node, aliases, parents, xfail_strict, ext, gap_modules)
             findings.extend(Finding(f.rel, getattr(node, "lineno", 1), rule, message) for rule, message in results)
     findings.sort(key=lambda x: (x.path, x.line, x.rule))
     return findings, scan
 
 
-def _node_findings(node: ast.AST, aliases: ImportAliases, parents: dict[int, ast.AST], repo_strict: bool, ext: frozenset[str]) -> list[tuple[str, str]]:
+def _node_findings(
+    node: ast.AST,
+    aliases: ImportAliases,
+    parents: dict[int, ast.AST],
+    repo_strict: bool,
+    ext: frozenset[str],
+    gap_modules: frozenset[str] = frozenset(KNOWN_GAP_MODULES),
+) -> list[tuple[str, str]]:
     if isinstance(node, ast.Call):
         name = aliases.qualified_name(node.func) or ""
+        if _is_known_gap(name, gap_modules):
+            return _known_gap_findings(node, parents, repo_strict, ext)
         if name == "pytest.xfail":
             return _judge_xfail(node, imperative=True, repo_strict=repo_strict, external=ext)
         if name == "pytest.skip" and not _is_conditional(node, parents) and not _reason(node, positional_reason=True):
@@ -223,6 +297,7 @@ def assert_no_xfail_to_defer(
     xfail_strict: Optional[bool] = None,
     external: Iterable[str] = (),
     exclude_parts: Iterable[str] = (),
+    known_gap_modules: Iterable[str] = KNOWN_GAP_MODULES,
     min_files: int = 1,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
@@ -231,7 +306,13 @@ def assert_no_xfail_to_defer(
     """Fail on a finding not accepted by *baseline_path* (the free-text rule is meant to be ratcheted). Missing
     baseline fails; refresh with ``REFRESH_FLAG`` or ``PY_CI_SHARED_REFRESH=xfail``."""
     findings, scan = find_xfail_to_defer(
-        tests_root, repo_root=repo_root, xfail_strict=xfail_strict, external=external, exclude_parts=exclude_parts, use_git=use_git
+        tests_root,
+        repo_root=repo_root,
+        xfail_strict=xfail_strict,
+        external=external,
+        exclude_parts=exclude_parts,
+        known_gap_modules=known_gap_modules,
+        use_git=use_git,
     )
     enforce_findings(
         findings,

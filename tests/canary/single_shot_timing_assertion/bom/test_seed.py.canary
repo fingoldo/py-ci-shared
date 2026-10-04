@@ -1,0 +1,11 @@
+﻿import time
+
+
+def test_seed_speedup():
+    t0 = time.perf_counter()
+    serial()
+    t_serial = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    parallel()
+    t_parallel = time.perf_counter() - t0
+    assert t_serial / t_parallel >= 1.15

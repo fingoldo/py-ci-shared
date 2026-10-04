@@ -1,0 +1,13 @@
+import cupy as cp
+
+SEED_SRC = r"""
+extern "C" __global__ void seed_gather(const float* X, float* out, int n_cols) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;   // a long grid index comment
+    const float* row = X + (long long)i * n_cols;
+    long double scale = 1.0;
+    int tile = 4 * 8;
+    out[i] = row[0];
+}
+"""
+
+seed_kernel = cp.RawKernel(SEED_SRC, "seed_gather")

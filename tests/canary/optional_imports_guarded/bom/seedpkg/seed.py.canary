@@ -1,0 +1,6 @@
+﻿import numpy
+import zstandard
+
+
+def seed_compress(data):
+    return zstandard.ZstdCompressor().compress(data), numpy.zeros(1)

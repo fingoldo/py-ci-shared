@@ -1,0 +1,6 @@
+import numpy
+import pywt
+
+
+def seed_transform(x):
+    return pywt.dwt(numpy.asarray(x), "haar")

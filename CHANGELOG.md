@@ -4,6 +4,24 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- Thirteen new gates from the mlframe audit of 2026-10-04, each with canaries and a suppression comment that needs a reason:
+  `cancellation_prone_moments` (variance, skewness and kurtosis from raw power sums, which cancels on large-offset data),
+  `unsafe_deserialization` (a `find_class` that allows whole modules or gadget modules, `torch.load` without `weights_only`, `np.load(allow_pickle=True)`,
+  unverified pickle and joblib loads, unsafe `yaml.load`), `unread_function_params` (`sample_weight`, `seed`, `n_jobs` and similar accepted and never read),
+  `hardcoded_seed_in_library` (an int literal seed in a function that has its own `random_state` or `seed`), `constant_fallback_cache_key` (a digest or key
+  builder that returns a constant from an `except`, so distinct inputs collide), `ci_default_branch_never_cancelled` (`cancel-in-progress` that can be true on a
+  push to the default branch), `ci_install_covers_entry_imports` (a workflow that installs fewer extras than its entry module imports; plus
+  `assert_entry_imports_without_extras`), `optional_imports_guarded` (a module-level import of a distribution that only an extra declares),
+  `single_shot_timing_assertion` (a speedup or ceiling asserted from one measurement per side, or a skip placed after the timing), `cuda_kernel_integer_width`
+  (`long` in a CUDA kernel source, 32 bits under Windows NVRTC), `id_keyed_cache_validates_identity` (a cache keyed by `id(obj)` that never checks identity),
+  `persisted_negative_probe` (a failed hardware probe written to disk as a negative verdict). New library module `pytest_known_gap` (`known_gap(reason,
+  gap_closed)`: xfail while a gap is open, fail when it closes).
+
+- **Behaviour change**: `no_xfail_to_defer` follows `known_gap(...)` calls (from `py_ci_shared.pytest_known_gap` or the modules named in
+  `known_gap_modules`, default `tests._known_gap`): the reason is judged like a `pytest.xfail` reason, and an unguarded call whose `gap_closed` is a falsy
+  literal (a gap that can never close, so can never fail) is a finding. What to do: give each `known_gap` reason a tracked issue or an external component, and
+  make `gap_closed` a measured condition.
+
 - **Behaviour change** (audit 2026-10-03, SQL-26): `sql_verifier_coverage` reads more of what a package sends. A constant built with `+`
   (`_CTE + "SELECT ..."`, resolving module-level names bound to strings; an operand the module does not bind leaves the statement seen by
   its literal), one that starts `REFRESH`, and one led by a session setting (`SET LOCAL TimeZone = 'UTC'; INSERT ...`) are now SQL

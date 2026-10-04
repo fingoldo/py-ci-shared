@@ -1,0 +1,8 @@
+[project]
+name = "seedpkg"
+version = "0.1.0"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+signal = ["pywavelets"]

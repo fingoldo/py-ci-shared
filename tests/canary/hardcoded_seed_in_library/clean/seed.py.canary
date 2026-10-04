@@ -1,0 +1,5 @@
+from sklearn.model_selection import train_test_split
+
+
+def seed_split(X, random_state=None):
+    return train_test_split(X, random_state=random_state)
