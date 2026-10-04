@@ -11,6 +11,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   "constant that no longer exists" direction. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason, and make the
   verifier PREPARE it (a `REFRESH` through a read of the view, a `SET` prefix stripped first). On the audit's two consumers this found
   seven statements in `production_scrapers` and four in `realtime_applications` that no list had ever carried.
+- The pytest plugin accepts the `[tool.py_ci_shared.secret_shapes]` table that `tracked_secret_shapes` documents as its config; it used to reject it as
+  an unknown key and fail the collection of every test in a repo that followed the documentation.
 
 - `resource_leak_guard` no longer reports a connection the test already closed: a socket in FIN_WAIT1/2, TIME_WAIT, CLOSING or LAST_ACK stays
   listed until the peer finishes the teardown (seconds, against a remote database), so every test that closed its connection properly failed at teardown.

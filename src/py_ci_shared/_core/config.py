@@ -133,7 +133,8 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     budget = table.get("budget", "warn")
     if budget not in BUDGET_MODES:
         raise ConfigError(f"{pyproject}: [tool.py_ci_shared] budget = {budget!r}; expected one of {BUDGET_MODES}")
-    unknown = set(table) - {"enable", "budget", "gates", *PLUGIN_KEYS}
+    # `secret_shapes` is the data table of the tracked_secret_shapes gate (name = regex), read by that gate, not by the plugin.
+    unknown = set(table) - {"enable", "budget", "gates", "secret_shapes", *PLUGIN_KEYS}
     if unknown:
         raise ConfigError(f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}")
     plugins = {key: _bool_key(pyproject, table, key) for key in PLUGIN_KEYS}
