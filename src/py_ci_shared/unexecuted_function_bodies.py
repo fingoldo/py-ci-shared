@@ -311,6 +311,8 @@ def _check_floor_and_report(matched: int, absent: int, report: _Report, min_file
 
 
 def _check_matches_source(entry: Mapping[str, Any], parsed: Any, report: _Report) -> None:
+    if not parsed.tree.body:
+        return  # an empty module has no statements to disagree about; coverage on Python 3.9 still lists its line 1 as executed
     # excluded_lines is left out: an excluded region (a `...` method, a whole `if TYPE_CHECKING:` block) is listed with its blank lines
     listed = set(entry["executed_lines"]) | set(entry["missing_lines"])
     bad = sorted(listed - _stmt_starts(parsed.tree))
