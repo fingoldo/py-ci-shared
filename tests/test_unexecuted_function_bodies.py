@@ -436,3 +436,18 @@ def test_a_real_coverage_run_over_a_function_every_test_stubs_is_flagged(tmp_pat
     assert out.returncode == 0, out.stdout + out.stderr
     found = find_unexecuted_function_bodies(tmp_path / "coverage.json", [tmp_path / "minipkg"], base=tmp_path, use_git=False)
     assert [(f.path, f.message.split(":")[0]) for f in found] == [("minipkg/outcomes.py", "outcome_column_exists")]
+
+
+def test_an_empty_module_listed_with_a_line_is_not_a_stale_report():
+    """coverage.py on Python 3.9 reports line 1 of an empty __init__.py as executed; that is not a report from another revision."""
+    import ast
+    from types import SimpleNamespace
+
+    from py_ci_shared.unexecuted_function_bodies import _check_matches_source
+
+    report = SimpleNamespace(path="coverage.json")
+    empty = SimpleNamespace(tree=ast.parse(""), rel="p/__init__.py")
+    _check_matches_source({"executed_lines": [1], "missing_lines": []}, empty, report)  # type: ignore[arg-type]
+    code = SimpleNamespace(tree=ast.parse("x = 1\n\n\ny = 2\n"), rel="p/m.py")
+    with pytest.raises(CoverageReportError):
+        _check_matches_source({"executed_lines": [2], "missing_lines": []}, code, report)  # type: ignore[arg-type]
