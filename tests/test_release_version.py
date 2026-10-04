@@ -222,7 +222,7 @@ def _scratch_repo(tmp_path: Path, tags: list[str]) -> Path:
 
 
 def _cli(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run([sys.executable, str(GUARD_PATH), *args], capture_output=True, text=True, timeout=60)
+    return subprocess.run([sys.executable, str(GUARD_PATH), *args], capture_output=True, text=True, timeout=60, env=git_env())
 
 
 def test_cli_refuses_to_move_v1_for_a_back_port_tag(tmp_path: Path):
