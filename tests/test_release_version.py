@@ -16,6 +16,7 @@ import pytest
 import yaml
 
 import py_ci_shared
+from py_ci_shared._core.git import git_env
 from py_ci_shared._toml_compat import tomllib
 from py_ci_shared.registry import load_gates
 from py_ci_shared.version_consistency import assert_versions_agree
@@ -54,7 +55,7 @@ def test_the_version_is_plain_semver():
 
 
 def _git(*args: str, cwd: Path = REPO) -> str:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60, check=True).stdout.strip()
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, timeout=60, check=True, env=git_env()).stdout.strip()
 
 
 def _tags() -> list[str]:

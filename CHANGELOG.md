@@ -2,6 +2,12 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.21.1
+
+Git hooks for this repository: a `.pre-commit-config.yaml` (ruff, filtered black, actionlint, secret scan, mypy and the self-gate
+tests on push) so a push can no longer fail the self-gates that CI enforces. `tests/test_release_version.py` scratch
+repositories no longer inherit the hook's `GIT_*` variables.
+
 ## 1.21.0
 
 Eight checks from the 2026-10-03 Upwork dashboard audit, each proven on the real defect it is named for:
