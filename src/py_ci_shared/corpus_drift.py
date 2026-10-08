@@ -110,6 +110,7 @@ NON_CORPUS: dict[str, str] = {
     "sql_function_privileges": "takes a SQL migrations directory",
     "sql_verify.find_fragment_matrix_problems": "takes caller-declared templates and fragment dicts",
     "stale_comment_age": "ages comments with git blame; a shallow clone has no history",
+    "statement_real_engine_coverage": "needs the caller-defined real-engine test directories or markers",
     "test_partition_reachability": "needs runner text, tag files and playwright configs",
     "tracked_secret_shapes": "needs the consumer's own secret shape table; a corpus repo has none, and the gate refuses to run without shapes",
     "unexecuted_function_bodies": "reads a coverage.py JSON report of the consumer's unit run, which a repo checkout does not contain",

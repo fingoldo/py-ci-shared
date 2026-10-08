@@ -353,6 +353,13 @@ CANARIES: dict[str, Canary] = {
             "statement_columns_exist_in_ddl",
             lambda d: _gate("statement_columns_exist_in_ddl").assert_statement_columns_exist_in_ddl(d, ddl_dirs=["sql"], use_git=False),
         ),
+        Canary(
+            "statement_real_engine_coverage",
+            lambda d: _gate("statement_real_engine_coverage").assert_every_statement_has_an_engine_test(
+                d, engine_test_dirs=["tests/integration"], exclude_top_dirs=["tests"], use_git=False
+            ),
+            token="SEED_UNCOVERED_SQL",
+        ),
     ]
 }
 

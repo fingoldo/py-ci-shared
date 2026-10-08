@@ -1107,6 +1107,13 @@ since = "1.17.0"
 summary = "A test that mocks the statement constructor never compiles the statement"
 
 [[gate]]
+name = "statement_real_engine_coverage"
+kind = "gate"
+entries = ["assert_every_statement_has_an_engine_test"]
+since = "1.22.0"
+summary = "Every SQL statement constant a package defines is exercised by a real-engine test, not only a fake cursor"
+
+[[gate]]
 name = "stdlib_json_ban"
 kind = "gate"
 entries = ["assert_no_stdlib_json"]

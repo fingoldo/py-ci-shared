@@ -62,7 +62,10 @@ _SESSION_PREFIX = re.compile(r"^SET\s+(?:LOCAL\s+|SESSION\s+)?[^;]*;\s*", re.IGN
 
 
 def _starts_statement(text: str, starts: tuple[str, ...]) -> bool:
-    body = _LEADING_COMMENTS.sub("", text, count=1).lstrip("(").lstrip()
+    body = _LEADING_COMMENTS.sub("", text, count=1)
+    while body.startswith("("):  # `(` then a `--` comment then the keyword: the comment sits after the paren
+        body = _LEADING_COMMENTS.sub("", body[1:], count=1)
+    body = body.lstrip()
     while _SESSION_PREFIX.match(body):
         body = _LEADING_COMMENTS.sub("", _SESSION_PREFIX.sub("", body, count=1), count=1).lstrip()
     head = re.match(r"[A-Za-z_]+", body)
@@ -76,8 +79,8 @@ def _module_name(relative: str) -> str:
     return ".".join(parts)
 
 
-def _scan(root: Path, skip: set[str]) -> ScanResult:
-    scan = scan_python(root, exclude=DEFAULT_EXCLUDE)
+def _scan(root: Path, skip: set[str], use_git: bool | None = None) -> ScanResult:
+    scan = scan_python(root, exclude=DEFAULT_EXCLUDE, use_git=use_git)
     scan.files = [f for f in scan.files if f.rel.split("/")[0] not in skip]
     scan.unparsed = [p for p in scan.unparsed if p.rel.split("/")[0] not in skip]
     return scan
@@ -177,12 +180,13 @@ def sql_constants(
     exclude_top_dirs: Iterable[str],
     statement_starts: Iterable[str] = DEFAULT_STATEMENT_STARTS,
     allow_unparsed: bool = False,
+    use_git: bool | None = None,
 ) -> set[str]:
     """``{"module.NAME", ...}`` for every module-level constant under *root* whose value begins like a statement.
 
     A file that cannot be read or parsed raises ``UnparsedFilesError`` (an ``AssertionError``) unless *allow_unparsed*.
     """
-    scan = _scan(Path(root), set(exclude_top_dirs))
+    scan = _scan(Path(root), set(exclude_top_dirs), use_git)
     if not allow_unparsed:
         scan.check_unparsed()
     return _constants(scan, tuple(s.upper() for s in statement_starts))

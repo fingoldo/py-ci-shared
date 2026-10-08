@@ -97,6 +97,10 @@ class TestAStatementThatIsNotOneStringLiteral:
         _write(tmp_path, "m.py", 'R = "REFRESH MATERIALIZED VIEW CONCURRENTLY v"\n')
         assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.R"}
 
+    def test_a_comment_after_the_opening_parenthesis_does_not_hide_the_statement(self, tmp_path: Path):
+        _write(tmp_path, "m.py", 'P = """(-- the pending jobs\nSELECT 1)"""\nNOT = "(-- only a comment)"\n')
+        assert sql_constants(tmp_path, exclude_top_dirs=()) == {"m.P"}
+
     def test_a_session_setting_in_front_is_not_what_is_sent(self, tmp_path: Path):
         _write(
             tmp_path,

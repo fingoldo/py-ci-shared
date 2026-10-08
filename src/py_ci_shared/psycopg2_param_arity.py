@@ -135,7 +135,8 @@ def _findings_in(tree: ast.Module, rel: str, sql_calls: Mapping[str, tuple[int, 
             continue
         problem = _arity_problem(sql, node.args[params_at])
         if problem:
-            label = node.args[sql_at].id if isinstance(node.args[sql_at], ast.Name) else "the statement"
+            sql_arg = node.args[sql_at]
+            label = sql_arg.id if isinstance(sql_arg, ast.Name) else "the statement"
             out.append(Finding(rel, node.lineno, RULE, f"`{node.func.attr}({label}, ...)`: the statement {problem}"))
     return out
 
