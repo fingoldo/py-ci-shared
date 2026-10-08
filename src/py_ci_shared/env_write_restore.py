@@ -37,13 +37,14 @@ from pathlib import Path
 from collections.abc import Iterator
 from typing import Any, Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, refresh_requested, scan_python
 from .import_side_effects import _ENV_WRITERS, _MUTATING_METHODS, _is_environ
 
-__all__ = ["DEFAULT_NOTE", "RULE", "assert_env_write_restore", "find_env_write_restore"]
+__all__ = ["DEFAULT_NOTE", "REFRESH_FLAG", "RULE", "assert_env_write_restore", "find_env_write_restore"]
 
 RULE = "env-write-restore"
 DEFAULT_NOTE = "pre-existing when the gate was adopted; not yet triaged"
+REFRESH_FLAG = "--refresh-env-write-restore-baseline"
 
 _SCOPE_NODES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 _SETUP_NAMES = frozenset({"setUp", "setUpClass", "setup_method", "setup_class", "setup_function", "setup_module", "setup", "asyncSetUp"})
@@ -202,7 +203,7 @@ def assert_env_write_restore(
     root: Union[str, Path],
     *,
     baseline_path: Optional[Union[str, Path]] = None,
-    refresh: bool = False,
+    refresh: Optional[bool] = None,
     grow: Optional[bool] = None,
     request: Any = None,
     new_note: str = DEFAULT_NOTE,
@@ -212,7 +213,7 @@ def assert_env_write_restore(
 ) -> None:
     """Fail on any unrestored write, or with *baseline_path* on any the baseline does not accept (and on a stale baseline entry).
 
-    A refresh is shrink-only unless *grow* (or ``--py-ci-refresh-grow`` / ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``): seed a first baseline with it.
+    A refresh (*refresh*, ``--refresh-env-write-restore-baseline`` via *request* or argv, or ``PY_CI_SHARED_REFRESH=env-write-restore``) is shrink-only unless *grow* (or ``--py-ci-refresh-grow`` / ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``): seed a first baseline with it.
     *new_note* is written as the justification of each newly recorded entry."""
     found = find_env_write_restore(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
     guidance = (
@@ -221,8 +222,9 @@ def assert_env_write_restore(
         "a yield-fixture that restores after the yield, or try/finally"
     )
     if baseline_path is not None:
-        baseline = Baseline(baseline_path, gate="env_write_restore", refresh_command="PY_CI_SHARED_REFRESH=env_write_restore", new_note=new_note)
-        baseline.enforce(found, refresh=refresh, guidance=guidance, grow=grow, request=request).raise_for_pytest()
+        baseline = Baseline(baseline_path, gate="env_write_restore", refresh_command="PY_CI_SHARED_REFRESH=env-write-restore", new_note=new_note)
+        do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
+        baseline.enforce(found, refresh=do_refresh, guidance=guidance, grow=grow, request=request).raise_for_pytest()
         return
     if found:
         raise AssertionError(f"{len(found)} env-write-restore finding(s); {guidance}:\n  " + "\n  ".join(f.render() for f in found))
