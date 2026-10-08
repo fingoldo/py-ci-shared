@@ -1,0 +1,6 @@
+﻿import os
+
+
+def test_leaks_a_setting_into_every_later_test():
+    os.environ["MLFRAME_FE_GPU_STRICT"] = "1"
+    assert os.environ["MLFRAME_FE_GPU_STRICT"] == "1"

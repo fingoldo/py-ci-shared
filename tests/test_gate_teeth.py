@@ -360,6 +360,7 @@ CANARIES: dict[str, Canary] = {
             ),
             token="SEED_UNCOVERED_SQL",
         ),
+        Canary("env_write_restore", lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False)),
     ]
 }
 

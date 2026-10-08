@@ -444,6 +444,13 @@ since = "1.17.0"
 summary = "Boolean environment flags read by hand, each with its own idea of what \"on\" means"
 
 [[gate]]
+name = "env_write_restore"
+kind = "gate"
+entries = ["assert_env_write_restore"]
+since = "1.22.1"
+summary = "A test restores every os.environ write it makes"
+
+[[gate]]
 name = "epsilon_padded_denominators"
 kind = "gate"
 entries = ["assert_no_epsilon_padded_power_denominators"]
