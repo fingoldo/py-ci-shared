@@ -66,8 +66,8 @@ def _text(node: ast.expr | None, names: Mapping[str, str]) -> str | None:
     return None
 
 
-def _module_texts(tree: ast.Module) -> dict[str, str]:
-    """Module-level names bound exactly once, to a string expression made of literals and other such names."""
+def _bindings(tree: ast.Module) -> dict[str, list[ast.expr | None]]:
+    """Every module-level binding of each name; ``None`` stands for a binding that is not a plain assignment (``+=``)."""
     assigned: dict[str, list[ast.expr | None]] = {}
     for stmt in tree.body:
         if isinstance(stmt, ast.Assign):
@@ -78,6 +78,12 @@ def _module_texts(tree: ast.Module) -> dict[str, str]:
             assigned.setdefault(stmt.target.id, []).append(stmt.value)
         elif isinstance(stmt, ast.AugAssign) and isinstance(stmt.target, ast.Name):
             assigned.setdefault(stmt.target.id, []).append(None)
+    return assigned
+
+
+def _module_texts(tree: ast.Module) -> dict[str, str]:
+    """Module-level names bound exactly once, to a string expression made of literals and other such names."""
+    assigned = _bindings(tree)
     names: dict[str, str] = {}
     for _ in range(len(assigned) + 1):  # a constant built from another needs the other first
         grew = False
@@ -93,6 +99,28 @@ def _module_texts(tree: ast.Module) -> dict[str, str]:
     return names
 
 
+def _sequence_problem(params: ast.Tuple | ast.List, named: list[str], positional: int) -> str | None:
+    """Why a literal tuple/list cannot satisfy a statement with these placeholders."""
+    if any(isinstance(e, ast.Starred) for e in params.elts):
+        return None
+    if named:
+        return f"has {len(set(named))} named placeholder(s) but is given a {type(params).__name__.lower()} of {len(params.elts)}"
+    if len(params.elts) != positional:
+        return f"has {positional} %s placeholder(s) but is given {len(params.elts)} parameter(s)"
+    return None
+
+
+def _dict_problem(params: ast.Dict, named: list[str], positional: int) -> str | None:
+    """Why a literal dict cannot satisfy a statement with these placeholders."""
+    if any(k is None or not (isinstance(k, ast.Constant) and isinstance(k.value, str)) for k in params.keys):
+        return None
+    if positional:
+        return f"has {positional} positional %s placeholder(s) but is given a dict"
+    keys = {k.value for k in params.keys if isinstance(k, ast.Constant)}
+    missing = sorted(set(named) - keys)
+    return f"names %({', '.join(missing)})s but the dict has no such key" if missing else None
+
+
 def _arity_problem(sql: str, params: ast.expr) -> str | None:
     """Why *params* cannot satisfy *sql*, or ``None`` (including when it cannot be told)."""
     named, positional = placeholders(sql)
@@ -101,22 +129,9 @@ def _arity_problem(sql: str, params: ast.expr) -> str | None:
     if named and positional:
         return "mixes %s and %(name)s placeholders, which psycopg2 refuses"
     if isinstance(params, (ast.Tuple, ast.List)):
-        if any(isinstance(e, ast.Starred) for e in params.elts):
-            return None
-        if named:
-            return f"has {len(set(named))} named placeholder(s) but is given a {type(params).__name__.lower()} of {len(params.elts)}"
-        if len(params.elts) != positional:
-            return f"has {positional} %s placeholder(s) but is given {len(params.elts)} parameter(s)"
-        return None
+        return _sequence_problem(params, named, positional)
     if isinstance(params, ast.Dict):
-        if any(k is None or not (isinstance(k, ast.Constant) and isinstance(k.value, str)) for k in params.keys):
-            return None
-        keys = {k.value for k in params.keys if isinstance(k, ast.Constant)}
-        if positional:
-            return f"has {positional} positional %s placeholder(s) but is given a dict"
-        missing = sorted(set(named) - keys)
-        if missing:
-            return f"names %({', '.join(missing)})s but the dict has no such key"
+        return _dict_problem(params, named, positional)
     return None
 
 

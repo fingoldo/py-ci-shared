@@ -195,6 +195,7 @@ exclude = [
     "tests/test_resource_leak_guard.py",
     "tests/test_resource_leak_checks.py",
     "tests/test_destructive_tests_throwaway_only.py",
+    "tests/test_statement_real_engine_coverage.py",
 ]
 
 [tool.py_ci_shared.gates.entry_points_resolvable]

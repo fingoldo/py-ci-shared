@@ -62,31 +62,30 @@ def _module_containers(tree: ast.Module) -> dict[str, int]:
     return out
 
 
+def _written_names(node: ast.AST, declared_global: set[str]) -> list[str]:
+    """The names *node* writes to: ``name[k] = v``, ``del name[k]``, a rebinding of a ``global`` name, or a mutator call such as ``name.append(x)``."""
+    if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
+        targets = node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
+        out = []
+        for t in targets:
+            if isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name):
+                out.append(t.value.id)
+            elif isinstance(t, ast.Name) and t.id in declared_global:
+                out.append(t.id)
+        return out
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _MUTATORS and isinstance(node.func.value, ast.Name):
+        return [node.func.value.id]
+    return []
+
+
 def _mutated_in_functions(tree: ast.Module, names: Iterable[str]) -> set[str]:
     """The *names* that some function in the module writes to."""
     wanted = set(names)
     hit: set[str] = set()
     for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
-        declared_global: set[str] = set()
+        declared_global = {name for node in ast.walk(func) if isinstance(node, ast.Global) for name in node.names}
         for node in ast.walk(func):
-            if isinstance(node, ast.Global):
-                declared_global.update(node.names)
-        for node in ast.walk(func):
-            target: ast.expr | None = None
-            if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)):
-                targets = node.targets if isinstance(node, (ast.Assign, ast.Delete)) else [node.target]
-                for t in targets:
-                    if isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name):
-                        target = t.value
-                    elif isinstance(t, ast.Name) and t.id in declared_global:
-                        target = t
-                    elif isinstance(node, ast.AugAssign) and isinstance(t, ast.Name) and t.id in declared_global:
-                        target = t
-                    if isinstance(target, ast.Name) and target.id in wanted:
-                        hit.add(target.id)
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _MUTATORS and isinstance(node.func.value, ast.Name):
-                if node.func.value.id in wanted:
-                    hit.add(node.func.value.id)
+            hit.update(name for name in _written_names(node, declared_global) if name in wanted)
     return hit
 
 
