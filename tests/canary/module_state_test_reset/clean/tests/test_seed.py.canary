@@ -1,0 +1,6 @@
+import seed
+
+
+def test_remember():
+    seed.remember(1, 2)
+    seed._CACHE.clear()

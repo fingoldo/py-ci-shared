@@ -293,3 +293,33 @@ def test_a_real_statement_would_reach_the_server(monkeypatch):
     rc = sv.run_checks(lambda c: sv.check(c, "listing", "SELECT 1"), dsn="postgresql://h/db", argv=[])
     assert rc == 0
     assert conn.executed == [("SELECT 1",)]
+
+
+class TestPsycopg2Idioms:
+    """The shared rewrite helpers every project's verifier used to carry its own copy of."""
+
+    def test_a_doubled_percent_is_a_literal_and_not_the_start_of_a_placeholder(self):
+        assert sv.to_positional("a ILIKE '%%suspended%%' AND b = %s") == "a ILIKE '%suspended%' AND b = $1"
+
+    def test_the_doubled_percent_is_also_safe_in_the_parse_form(self):
+        assert sv._parse_ready("a ILIKE '%%suspended%%' AND b = %s", "pyformat") == "a ILIKE '%suspended%' AND b = NULL"
+
+    def test_a_repeated_named_placeholder_gets_one_number(self):
+        assert sv.to_positional("x = %(a)s OR y = %(a)s OR z = %s") == "x = $1 OR y = $1 OR z = $2"
+
+    def test_values_percent_s_becomes_a_row_sized_from_the_column_list(self):
+        assert sv.normalise_psycopg2_idioms("INSERT INTO t (a, b, c) VALUES %s") == ("INSERT INTO t (a, b, c) VALUES (NULL, NULL, NULL)", None)
+
+    def test_in_percent_s_becomes_a_one_element_tuple(self):
+        assert sv.normalise_psycopg2_idioms("SELECT 1 WHERE a IN %s") == ("SELECT 1 WHERE a IN (NULL)", None)
+
+    def test_a_format_template_is_reported_not_rewritten(self):
+        _sql, reason = sv.normalise_psycopg2_idioms("SELECT {cols} FROM t")
+        assert reason and "builder" in reason
+
+    def test_a_braced_name_inside_a_string_literal_is_a_value_not_a_template(self):
+        assert sv.normalise_psycopg2_idioms("SELECT x #> '{opening}' FROM t")[1] is None
+
+    def test_a_leading_set_clause_is_dropped_and_a_refresh_becomes_a_view_probe(self):
+        assert sv.normalise_psycopg2_idioms("SET LOCAL lock_timeout = '5s'; SELECT 1") == ("SELECT 1", None)
+        assert sv.normalise_psycopg2_idioms("REFRESH MATERIALIZED VIEW CONCURRENTLY s.v") == ("SELECT 1 FROM s.v LIMIT 0", None)

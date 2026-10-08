@@ -334,6 +334,8 @@ CANARIES: dict[str, Canary] = {
             "unexecuted_function_bodies",
             lambda d: _gate("unexecuted_function_bodies").assert_unexecuted_function_bodies(d / "coverage.json", [d], base=d, use_git=False),
         ),
+        Canary("psycopg2_param_arity", lambda d: _gate("psycopg2_param_arity").assert_psycopg2_param_arity(d, use_git=False)),
+        Canary("module_state_test_reset", lambda d: _gate("module_state_test_reset").assert_module_state_test_reset(d, d / "tests", use_git=False)),
     ]
 }
 

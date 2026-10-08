@@ -239,6 +239,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`meta_private_imports`](src/py_ci_shared/meta_private_imports.py) | gate | 1.13.0 | `assert_no_private_meta_imports` | A meta-test does not import a private name of the package it polices, unless a permitted entry says why |
 | [`module_cache_thread_safety`](src/py_ci_shared/module_cache_thread_safety.py) | gate | 1.17.0 | `assert_thread_safe_module_caches` | Module-level caches mutated with no lock, and lazy ``from X import`` inside joblib-dispatched workers |
 | [`module_reload_safety`](src/py_ci_shared/module_reload_safety.py) | gate | 1.7.0 | `assert_no_reloads_in_code` (+1) | No module is reloaded or dropped from ``sys.modules`` without a restore in the same scope |
+| [`module_state_test_reset`](src/py_ci_shared/module_state_test_reset.py) | gate | 1.21.1 | `assert_module_state_test_reset` | Module-level mutable state that production code writes and no test ever resets or replaces |
 | [`mutation_teeth`](src/py_ci_shared/mutation_teeth.py) | gate | 1.4.0 | `assert_no_new_surviving_mutant` (+1) | A test that claims to pin a defect must be able to FAIL |
 | [`mypy_gate`](src/py_ci_shared/mypy_gate.py) | cli | 1.3.6 | `main` | Run mypy as a gate that requires COMPLETION, not merely a zero exit code |
 | [`naive_utcnow`](src/py_ci_shared/naive_utcnow.py) | gate | 1.4.1 | `assert_no_naive_utcnow` | No production module builds a timestamp with `datetime.utcnow()` |
@@ -260,6 +261,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`prompt_field_parity`](src/py_ci_shared/prompt_field_parity.py) | library | 1.5.0 |  | A field a prompt or schema asks the model for is read by something, and stored |
 | [`prose_numeric_claims`](src/py_ci_shared/prose_numeric_claims.py) | gate | 1.3.6 | `assert_numeric_claims_match` | A counted fact stated in prose is computed from the repo, not typed by hand |
 | [`protocol_attributes`](src/py_ci_shared/protocol_attributes.py) | gate | 1.21.0 | `assert_satisfies_protocol` | Run-time check that an object carries every callable attribute of a protocol (``refresh``, ``cache_clear``) a caller reads with a fallback |
+| [`psycopg2_param_arity`](src/py_ci_shared/psycopg2_param_arity.py) | gate | 1.21.1 | `assert_psycopg2_param_arity` | A psycopg2 call whose statement has N placeholders but whose literal parameter tuple or dict has a different count |
 | [`pydantic_field_bounds`](src/py_ci_shared/pydantic_field_bounds.py) | gate | 1.12.0 | `assert_field_bounds_enforced` | A pydantic field's declared bound or ``Literal`` set actually rejects a value outside it |
 | [`pytest_addopts_path_runs`](src/py_ci_shared/pytest_addopts_path_runs.py) | gate | 1.17.0 | `assert_path_runs_select_tests` | A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them |
 | [`pytest_markers`](src/py_ci_shared/pytest_markers.py) | gate | 1.7.0 | `assert_markers_registered` | Every pytest marker a test suite uses is registered |

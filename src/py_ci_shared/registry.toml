@@ -695,6 +695,13 @@ since = "1.7.0"
 summary = "No module is reloaded or dropped from ``sys.modules`` without a restore in the same scope"
 
 [[gate]]
+name = "module_state_test_reset"
+kind = "gate"
+entries = ["assert_module_state_test_reset"]
+since = "1.21.1"
+summary = "Module-level mutable state that production code writes and no test ever resets or replaces"
+
+[[gate]]
 name = "mutation_teeth"
 kind = "gate"
 entries = ["assert_no_new_surviving_mutant", "assert_revert_fails_tests"]
@@ -840,6 +847,13 @@ kind = "gate"
 entries = ["assert_satisfies_protocol"]
 since = "1.21.0"
 summary = "Run-time check that an object carries every callable attribute of a protocol (``refresh``, ``cache_clear``) a caller reads with a fallback"
+
+[[gate]]
+name = "psycopg2_param_arity"
+kind = "gate"
+entries = ["assert_psycopg2_param_arity"]
+since = "1.21.1"
+summary = "A psycopg2 call whose statement has N placeholders but whose literal parameter tuple or dict has a different count"
 
 [[gate]]
 name = "pydantic_field_bounds"

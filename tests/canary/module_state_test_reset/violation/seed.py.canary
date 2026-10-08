@@ -1,0 +1,5 @@
+_CACHE = {}
+
+
+def remember(key, value):
+    _CACHE[key] = value
