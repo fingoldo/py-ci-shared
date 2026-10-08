@@ -1,0 +1,2 @@
+-- seed: not valid UTF-8 ÿþ
+ALTER TABLE seed_orders ADD COLUMN x int;

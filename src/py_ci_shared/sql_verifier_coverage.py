@@ -20,10 +20,18 @@ import ast
 import re
 from collections.abc import Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 from ._core import DEFAULT_EXCLUDE, ScanResult, parse_file, scan_python
 
-__all__ = ["DEFAULT_STATEMENT_STARTS", "assert_verifier_covers_statements", "sql_constants", "verifier_lists"]
+__all__ = [
+    "DEFAULT_STATEMENT_STARTS",
+    "StatementConstant",
+    "assert_verifier_covers_statements",
+    "sql_constants",
+    "statement_constants",
+    "verifier_lists",
+]
 
 DEFAULT_STATEMENT_STARTS = ("SELECT", "INSERT", "UPDATE", "DELETE", "WITH", "REFRESH")
 
@@ -75,22 +83,92 @@ def _scan(root: Path, skip: set[str]) -> ScanResult:
     return scan
 
 
-def _constants(scan: ScanResult, starts: tuple[str, ...]) -> set[str]:
-    found: set[str] = set()
+class StatementConstant(NamedTuple):
+    """A module-level constant whose value begins like a SQL statement, with its text as far as it can be known."""
+
+    name: str  # ``module.NAME``
+    rel: str  # path of the defining file, relative to the scan root
+    line: int  # line of the assignment (of the opening quote for a single literal)
+    text: str  # the literal text; a part that is not a literal contributes nothing
+    exact: bool  # False when the text is incomplete: an f-string field, a call, a name the module does not bind to a literal
+    single: bool  # True when the value is one plain string literal, so a line inside it maps to a line of the file
+
+
+def _literal(value: ast.expr | None, exact: dict[str, str]) -> str | None:
+    """The whole text of *value* when it is knowable without running code, else ``None``.
+
+    Plain literals, ``+`` chains, names in *exact* (module-level names bound to such text) and an f-string whose replacement fields are
+    bare names in *exact*. A call, an attribute, a conversion or a format spec makes the text unknowable: `_string_value` would drop it
+    silently, which is right for finding the constant and wrong for reading what it says.
+    """
+    if isinstance(value, ast.Constant):
+        return value.value if isinstance(value.value, str) else None
+    if isinstance(value, ast.JoinedStr):
+        parts: list[str] = []
+        for part in value.values:
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                parts.append(part.value)
+            elif isinstance(part, ast.FormattedValue) and part.conversion == -1 and part.format_spec is None and isinstance(part.value, ast.Name):
+                if part.value.id not in exact:
+                    return None
+                parts.append(exact[part.value.id])
+            else:
+                return None
+        return "".join(parts)
+    if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
+        left, right = _literal(value.left, exact), _literal(value.right, exact)
+        return None if left is None or right is None else left + right
+    if isinstance(value, ast.Name):
+        return exact.get(value.id)
+    return None
+
+
+def _dynamic_head(value: ast.expr | None) -> str | None:
+    """The literal a ``"...".format(...)`` call or ``"..." % args`` is made from; the finished statement is not knowable."""
+    if isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute) and value.func.attr == "format":
+        value = value.func.value
+    elif isinstance(value, ast.BinOp) and isinstance(value.op, ast.Mod):
+        value = value.left
+    else:
+        return None
+    return value.value if isinstance(value, ast.Constant) and isinstance(value.value, str) else None
+
+
+def statement_constants(scan: ScanResult, starts: tuple[str, ...], *, include_dynamic: bool = False) -> list[StatementConstant]:
+    """Every module-level constant of the scanned files whose value begins like a statement, in file and source order.
+
+    With *include_dynamic*, a ``"...".format(...)`` or ``"..." % args`` value is listed too, as an inexact constant of its literal head.
+    """
+    found: list[StatementConstant] = []
     for parsed in scan:
         module = _module_name(parsed.rel)
         bound: dict[str, str] = {}  # module-level names bound to strings so far, in source order: what a `+` chain may name
+        known: dict[str, str] = {}  # the subset whose text is complete
         for node in parsed.tree.body:
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             text = _string_value(node.value, bound)
+            if text is None and include_dynamic:
+                text = _dynamic_head(node.value)
             if text is None:
                 continue
+            whole = _literal(node.value, known)
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            bound.update({t.id: text for t in targets if isinstance(t, ast.Name)})
+            names = [t.id for t in targets if isinstance(t, ast.Name)]
+            bound.update({n: text for n in names})
+            for n in names:
+                known.pop(n, None)
+                if whole is not None:
+                    known[n] = whole
             if _starts_statement(text, starts):
-                found.update(f"{module}.{t.id}" for t in targets if isinstance(t, ast.Name))
+                single = isinstance(node.value, ast.Constant)
+                shown = whole if whole is not None else text
+                found.extend(StatementConstant(f"{module}.{n}", parsed.rel, node.lineno, shown, whole is not None, single) for n in names)
     return found
+
+
+def _constants(scan: ScanResult, starts: tuple[str, ...]) -> set[str]:
+    return {c.name for c in statement_constants(scan, starts)}
 
 
 def sql_constants(

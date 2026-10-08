@@ -145,6 +145,13 @@ since = "1.20.0"
 summary = "Every CI job that runs pytest installs the third-party packages its conftest.py files import at collection"
 
 [[gate]]
+name = "ci_pin_version_skew"
+kind = "gate"
+entries = ["assert_installed_matches_ci_pin"]
+since = "1.22.0"
+summary = "The py-ci-shared version a consumer's workflows pin (the trailing # vX.Y.Z) differs from the installed one the local hooks run"
+
+[[gate]]
 name = "ci_test_dir_reachability"
 kind = "gate"
 entries = ["assert_every_test_subdir_reachable"]
@@ -323,6 +330,13 @@ kind = "gate"
 entries = ["assert_no_new_incomplete_transaction"]
 since = "1.17.0"
 summary = "A function that runs a statement on a database-handle parameter must also close the transaction it opened -- a ``commit()`` or ``rollback()`` on"
+
+[[gate]]
+name = "ddl_lock_safety"
+kind = "gate"
+entries = ["assert_ddl_files_lock_safe"]
+since = "1.22.0"
+summary = "Plain SQL files that change a live table bound their lock wait and add constraints and indexes without a blocking scan"
 
 [[gate]]
 name = "deferred_drift"
@@ -698,7 +712,7 @@ summary = "No module is reloaded or dropped from ``sys.modules`` without a resto
 name = "module_state_test_reset"
 kind = "gate"
 entries = ["assert_module_state_test_reset"]
-since = "1.21.1"
+since = "1.22.0"
 summary = "Module-level mutable state that production code writes and no test ever resets or replaces"
 
 [[gate]]
@@ -852,7 +866,7 @@ summary = "Run-time check that an object carries every callable attribute of a p
 name = "psycopg2_param_arity"
 kind = "gate"
 entries = ["assert_psycopg2_param_arity"]
-since = "1.21.1"
+since = "1.22.0"
 summary = "A psycopg2 call whose statement has N placeholders but whose literal parameter tuple or dict has a different count"
 
 [[gate]]
@@ -967,6 +981,13 @@ budget_s = 120
 summary = "A schema.sql that promises to provision a database from scratch provisions the columns, types and tables a committed production snapshot has"
 
 [[gate]]
+name = "script_entry_points"
+kind = "gate"
+entries = ["assert_script_entry_points"]
+since = "1.22.0"
+summary = "Flat top-level scripts: an entry point imported by bare name registers itself in sys.modules, and no script puts the cwd on sys.path"
+
+[[gate]]
 name = "secret_assertion_operands"
 kind = "gate"
 entries = ["assert_no_secret_assertion_operands"]
@@ -1070,6 +1091,13 @@ kind = "gate"
 entries = ["assert_standard_streams_restored_only_if_still_ours"]
 since = "1.19.0"
 summary = "Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed"
+
+[[gate]]
+name = "statement_columns_exist_in_ddl"
+kind = "gate"
+entries = ["assert_statement_columns_exist_in_ddl"]
+since = "1.22.0"
+summary = "SQL statements in code name only columns the project DDL files define"
 
 [[gate]]
 name = "statement_compilation"

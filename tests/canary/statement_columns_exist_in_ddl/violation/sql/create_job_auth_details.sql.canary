@@ -1,0 +1,9 @@
+-- The table as created; the checked_at migration has not been written yet.
+CREATE TABLE IF NOT EXISTS new_upwork.job_auth_details (
+    job_uid       TEXT        NOT NULL,
+    ts            TIMESTAMP   NOT NULL DEFAULT (now() AT TIME ZONE 'utc'),
+    questions     JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    errors        JSONB,
+    n_questions   INT         GENERATED ALWAYS AS (jsonb_array_length(questions)) STORED,
+    PRIMARY KEY (job_uid, ts)
+);

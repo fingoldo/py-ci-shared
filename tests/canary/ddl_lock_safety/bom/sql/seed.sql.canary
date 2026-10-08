@@ -1,0 +1,4 @@
+﻿-- seed migration: every statement here blocks writers on a live table
+ALTER TABLE seed_orders ADD COLUMN token uuid DEFAULT gen_random_uuid();
+ALTER TABLE seed_orders ADD CONSTRAINT seed_orders_qty_check CHECK (qty > 0);
+CREATE INDEX seed_orders_qty_idx ON seed_orders (qty);

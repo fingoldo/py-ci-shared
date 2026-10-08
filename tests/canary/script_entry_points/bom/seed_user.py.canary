@@ -1,0 +1,4 @@
+﻿def stop_flag():
+    import seed
+
+    return seed._STOP
