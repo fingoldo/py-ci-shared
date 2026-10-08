@@ -60,6 +60,20 @@ on:
           project itself: pip-audit resolves the dependencies its pyproject.toml declares.
         type: string
         default: ""
+      pip-audit-uv-lock:
+        description: >-
+          Audit the exact versions in the calling repo's uv.lock instead of resolving the project. The lock is exported
+          (all extras, no hashes, without the project itself) and checked with pip-audit's --no-deps --disable-pip, so no
+          environment is built: a dependency that is not on PyPI (a git-sourced package) cannot break the resolution, and
+          the audited set is the locked one. Ignored when pip-audit-requirements is set.
+        type: boolean
+        default: false
+      pip-audit-skip-packages:
+        description: >-
+          Space-separated packages left out of the uv.lock export (git-sourced or private packages pip-audit cannot look
+          up on PyPI). Only used with pip-audit-uv-lock.
+        type: string
+        default: ""
       import-linter-version:
         type: string
         default: "2.15"
@@ -159,13 +173,23 @@ jobs:
         # requests==2.0.0 (audit 2026-10-03 WF-1). The project directory, or the requirements files, is the target.
         run: |
           targets=()
+          flags=()
           for f in ${PIP_AUDIT_REQUIREMENTS}; do targets+=(-r "$f"); done
+          if [ "${#targets[@]}" -eq 0 ] && [ "${PIP_AUDIT_UV_LOCK}" = "true" ]; then
+            skip=()
+            for p in ${PIP_AUDIT_SKIP_PACKAGES}; do skip+=(--no-emit-package "$p"); done
+            uv export --frozen --no-hashes --no-emit-project --all-extras "${skip[@]}" -o "${RUNNER_TEMP}/pip-audit-requirements.txt"
+            targets=(-r "${RUNNER_TEMP}/pip-audit-requirements.txt")
+            flags=(--no-deps --disable-pip)
+          fi
           if [ "${#targets[@]}" -eq 0 ]; then targets=(.); fi
-          uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json "${targets[@]}"
+          uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json "${flags[@]}" "${targets[@]}"
         continue-on-error: true
         env:
           PIP_AUDIT_VERSION: ${{ inputs.pip-audit-version }}
           PIP_AUDIT_REQUIREMENTS: ${{ inputs.pip-audit-requirements }}
+          PIP_AUDIT_UV_LOCK: ${{ inputs.pip-audit-uv-lock }}
+          PIP_AUDIT_SKIP_PACKAGES: ${{ inputs.pip-audit-skip-packages }}
 
       - name: Upload pip-audit results
         if: always()
