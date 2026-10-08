@@ -12,11 +12,11 @@ banned the primitives outright in production code. Both halves are here:
 * ``find_unpaired_reloads`` -- in tests, each primitive needs a restore reachable from its OWN function or
   fixture (or an enclosing function): a write-back of a SNAPSHOT (``sys.modules[...] = saved`` /
   ``sys.modules.update(saved)`` / ``mod.__dict__.update(saved)``, where ``saved`` was read from ``sys.modules`` or
-  a module ``__dict__``), an ``addfinalizer(...)`` whose callable does one of those or reloads, a ``finally``
-  that reloads again after the patch is undone, ``patch.dict(sys.modules)``, a requested restoring fixture (from
+  a module ``__dict__``), an ``addfinalizer(...)`` whose callable does one of those, ``patch.dict(sys.modules)``, a requested restoring fixture (from
   the file or a ``conftest.py``, by argument or ``usefixtures``), or an autouse one whose scope covers the site.
-  Installing a fake (``sys.modules["m"] = object()``) is not a restore, and neither is a ``subprocess.run`` next
-  to an in-process reload. Whole-file matching was the earlier heuristic and passed a file whose restore sat in
+  Installing a fake (``sys.modules["m"] = object()``) is not a restore, neither is a ``subprocess.run`` next
+  to an in-process reload, and neither is a SECOND reload: it mints a third set of class objects instead of putting the
+  originals back, so a model pickled afterwards carries them by value. Whole-file matching was the earlier heuristic and passed a file whose restore sat in
   an unrelated function.
 * ``find_reloads_in_code`` -- outside tests there is no fixture to restore anything, so any use is flagged.
 
@@ -126,8 +126,6 @@ class _Restores:
     def has_restore(self, scope: ast.AST, snapshots: Optional[set[str]] = None, *, in_finalizer: bool = False, depth: int = 0) -> bool:
         snaps = set(snapshots or ()) | _snapshots(scope, self.aliases)
         for sub in _fast_walk(scope):
-            if in_finalizer and reload_primitive(sub, self.aliases) == "importlib.reload":
-                return True
             if isinstance(sub, ast.Assign) and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, self.aliases) for t in sub.targets):
                 if _uses(sub.value, snaps):
                     return True
@@ -141,8 +139,6 @@ class _Restores:
                 if f.attr == "dict" and self.aliases.qualified_name(f) in ("unittest.mock.patch.dict", "mock.patch.dict"):
                     if sub.args and _is_sys_modules(sub.args[0], self.aliases):
                         return True
-            if isinstance(sub, ast.Try) and any(reload_primitive(n, self.aliases) == "importlib.reload" for fin in sub.finalbody for n in _fast_walk(fin)):
-                return True
         return False
 
     def _finalizer_restores(self, arg: ast.AST, snaps: set[str], depth: int) -> bool:

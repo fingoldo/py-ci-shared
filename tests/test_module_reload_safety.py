@@ -47,15 +47,16 @@ class TestTestSideReloads:
                 finally:
                     sys.modules["m"] = saved
             """,
-            # a finally that reloads again after the patch is undone
+            # a finally that writes the pre-reload namespace back
             """
             import importlib, mod
             def test_x(monkeypatch):
+                saved = dict(mod.__dict__)
                 try:
                     importlib.reload(mod)
                 finally:
                     monkeypatch.undo()
-                    importlib.reload(mod)
+                    mod.__dict__.update(saved)
             """,
             # a requested fixture that restores
             """
@@ -79,7 +80,7 @@ class TestTestSideReloads:
                 sys.modules.pop("m", None)
             """,
         ],
-        ids=["same-scope-restore", "finally-reload", "requested-fixture", "autouse-fixture"],
+        ids=["same-scope-restore", "finally-namespace-restore", "requested-fixture", "autouse-fixture"],
     )
     def test_each_restore_mechanism_is_recognised(self, tmp_path, body):
         assert find_unpaired_reloads(_file(tmp_path, "test_a.py", body)) == []
@@ -168,17 +169,30 @@ class TestAuditRegressions:
         body = (
             "import importlib, mod\n"
             "def test_x(monkeypatch):\n"
+            "    saved = dict(mod.__dict__)\n"
             "    def inner():\n"
             "        importlib.reload(mod)\n"
             "    try:\n"
             "        inner()\n"
             "    finally:\n"
             "        monkeypatch.undo()\n"
-            "        importlib.reload(mod)\n"
+            "        mod.__dict__.update(saved)\n"
         )
         assert self._lines(tmp_path, body) == []
         unpaired = "import importlib, mod\ndef test_x():\n    def inner():\n        importlib.reload(mod)\n    inner()\n"
         assert self._lines(tmp_path, unpaired, "test_b.py") == [4]
+
+    @pytest.mark.parametrize(
+        "body",
+        [
+            "import importlib, mod\ndef test_x(request):\n    request.addfinalizer(lambda: importlib.reload(mod))\n    importlib.reload(mod)\n",
+            "import importlib, mod\ndef test_x():\n    try:\n        importlib.reload(mod)\n    finally:\n        importlib.reload(mod)\n",
+        ],
+        ids=["finalizer-reloads-again", "finally-reloads-again"],
+    )
+    def test_a_second_reload_is_not_a_restore(self, tmp_path, body):
+        """Reloading again mints a third set of class objects; only writing the original namespace back restores identity."""
+        assert len(find_unpaired_reloads(_file(tmp_path, "test_a.py", body))) >= 1
 
     def test_conftest_and_usefixtures_fixtures_are_seen(self, tmp_path):
         _file(
@@ -227,7 +241,8 @@ class TestAuditRegressions:
         body = (
             "import sys, importlib, mod\n"
             "def test_a(request):\n"
-            "    request.addfinalizer(lambda: importlib.reload(mod))\n"
+            "    saved = dict(mod.__dict__)\n"
+            "    request.addfinalizer(lambda: mod.__dict__.update(saved))\n"
             "    importlib.reload(mod)\n"
             "def test_b():\n"
             "    saved = dict(mod.__dict__)\n"
