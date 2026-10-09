@@ -1,0 +1,25 @@
+from typing import Optional
+
+from fastapi import FastAPI, Header, Query
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class Lookup(BaseModel):
+    term: str
+
+
+@app.post("/lookup")
+def lookup(body: Lookup):
+    return {"term": body.term}
+
+
+@app.post("/rates")
+def rates(body: Lookup, limit: int = 10):
+    return {"complaint": body.term, "limit": limit}
+
+
+@app.get("/items/{item_id}")
+def item(item_id: str, curie: Optional[str] = Query(default=None, max_length=256), page: int = 1, x_user: str = Header(default="")):
+    return {"id": item_id, "curie": curie, "page": page}

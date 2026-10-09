@@ -1,0 +1,20 @@
+﻿from typing import Optional
+
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+
+@app.get("/lookup/{term}")
+def lookup(term: str):
+    return {"term": term}
+
+
+@app.get("/rates")
+def rates(chief_complaint: str = Query(max_length=200), limit: int = 10):
+    return {"complaint": chief_complaint, "limit": limit}
+
+
+@app.get("/search")
+def search(phrase: Optional[str] = Query(default=None, max_length=300)):
+    return {"phrase": phrase}

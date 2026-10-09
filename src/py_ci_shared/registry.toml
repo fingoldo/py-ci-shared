@@ -521,6 +521,13 @@ cli = true
 summary = "Warn-only formatting / lint check for the pre-commit hook"
 
 [[gate]]
+name = "free_text_in_get_route"
+kind = "gate"
+entries = ["assert_free_text_in_get_route"]
+since = "1.22.4"
+summary = "A GET route must not take free text in its path or query string; text a clinician or customer typed belongs in a POST body"
+
+[[gate]]
 name = "function_complexity"
 kind = "gate"
 entries = ["assert_complexity_does_not_grow"]

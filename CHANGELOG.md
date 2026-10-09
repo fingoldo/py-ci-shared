@@ -5,6 +5,13 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ## Unreleased
 
 - `.github/scripts/release_guard.py prepare X.Y.Z [--write | --check]` brings every place that names a release (pyproject, `__version__`, the README install tag and gate catalogue, the reusable workflows' default ref, the `since` of modules not yet published) to one version before the tag is pushed; two tags (v1.22.0, v1.22.2) failed the Release run's `verify` job for want of it.
+
+- New gate `free_text_in_get_route` (`assert_free_text_in_get_route`): a FastAPI/Starlette `@x.get("/path")` route must not take free text in its path or its query string.
+  A parameter counts as free text when it is a `str` named like one (`term`, `query`, `q`, `text`, `search`, `condition`, `complaint`, `chief_complaint`, `symptoms`,
+  `description`, `note`, `comment`, `message`, `prompt`, `question`; configurable) or carries `Query`/`Path(max_length>=100)` unless its name says it is an identifier.
+  A URL is written to every access log, proxy and browser history, so text a clinician or customer typed belongs in a POST body. Run over seven codebases it reported
+  nothing in five and seven routes in one backend (three clinical lookups, three vocabulary typeaheads and a reviewer name); a route that must stay GET goes in the baseline.
+
 - `lint-advisory.yml` gains `pip-audit-uv-lock` (and `pip-audit-skip-packages`): it exports the calling repo's `uv.lock` and audits the exact locked versions
   with `--no-deps --disable-pip`. Without it the job resolved the project itself and failed whenever a dependency was git-sourced (mlframe's `pyutilz`), so the
   scan ran on nothing; against mlframe's lock it audited 366 dependencies and reported 31 advisories in 10 packages.
