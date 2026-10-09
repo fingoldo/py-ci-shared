@@ -5,6 +5,8 @@
 * ``rollback TAG``: ``TAG`` is an existing release, so the emergency ``workflow_dispatch`` may point its major at it.
 * ``ci-green --repo R --sha S``: the ``self-ci.yml`` run for commit ``S`` succeeded; waits (``--wait``) while it is
   still running, fails when it failed or never ran.
+* ``prepare VERSION [--write | --check]``: bring pyproject, ``__version__``, the README install tag, the reusable workflows' default ref and the
+  ``since`` of every not-yet-published module to ``VERSION`` (dry run by default; ``--check`` exits 1 while anything still differs). Run it BEFORE tagging.
 * ``version`` (used by ``tests/test_release_version.py``): the declared version is ahead of every release tag, or
   is exactly the release whose tagged commit is ``HEAD``.
 
@@ -105,6 +107,120 @@ def ci_verdict(runs: Sequence[dict]) -> tuple[str, str]:
     return "red", f"self-ci did not succeed for this commit: {worst}"
 
 
+#: Every file that names the release, relative to the repository root.
+PREP_FILES = (
+    "pyproject.toml",
+    "src/py_ci_shared/__init__.py",
+    "README.md",
+    "src/py_ci_shared/registry.toml",
+    ".github/workflows/black-filtered.yml",
+    ".github/workflows/ruff-blocking.yml",
+    ".github/workflows/lint-advisory.yml",
+)
+_PYPROJECT_VERSION = re.compile(r'^(version = ")[^"]+(")', re.M)
+_MODULE_VERSION = re.compile(r'^(__version__ = ")[^"]+(")', re.M)
+_README_TAG = re.compile(r"py-ci-shared\.git@(v\d+\.\d+\.\d+)")
+_WORKFLOW_REF = re.compile(r'(py-ci-shared-ref:\s*\n(?:[^\n]*\n){0,8}?\s*default:\s*")v\d+\.\d+\.\d+(")')
+_SINCE = re.compile(r'(^since = ")(\d+\.\d+\.\d+)(")', re.M)
+
+
+def _sub_once(pattern: "re.Pattern[str]", text: str, version: str, what: str) -> str:
+    """``pattern`` with its quoted value replaced by ``version``; it must match exactly once, or the file is not the shape this knows."""
+    new, count = pattern.subn(lambda m: f"{m.group(1)}{version}{m.group(2)}", text)
+    if count != 1:
+        raise ValueError(f"{what}: expected one match, found {count}")
+    return new
+
+
+def _readme_edit(text: str, version: str) -> str:
+    """Every install tag the README names, and the prose mentions of those same tags, moved to ``v{version}``."""
+    olds = set(_README_TAG.findall(text))
+    if not olds:
+        raise ValueError("README.md: no `py-ci-shared.git@vX.Y.Z` install line")
+    for old in sorted(olds, reverse=True):
+        text = re.sub(re.escape(old) + r"(?![\d.]*\d)", f"v{version}", text)
+    return text
+
+
+def _registry_edit(text: str, version: str, published: tuple[int, int, int]) -> str:
+    """The ``since`` of every module first shipped AFTER the newest published release becomes ``version``: a dead tag never shipped it."""
+
+    def move(m: "re.Match[str]") -> str:
+        key = release_key(f"v{m.group(2)}") or (0, 0, 0)
+        return f"{m.group(1)}{version}{m.group(3)}" if key > published else m.group(0)
+
+    return _SINCE.sub(move, text)
+
+
+_CATALOGUE_ROW = re.compile(r"(^\| \[`[^`]+`\]\([^)]*\) \| [a-z]+ \| )(\d+\.\d+\.\d+)( \|)", re.M)
+
+
+def _catalogue_edit(text: str, version: str, published: tuple[int, int, int]) -> str:
+    """The README gate catalogue is the rendered registry, so its version column moves with ``since``."""
+
+    def move(m: "re.Match[str]") -> str:
+        key = release_key(f"v{m.group(2)}") or (0, 0, 0)
+        return f"{m.group(1)}{version}{m.group(3)}" if key > published else m.group(0)
+
+    return _CATALOGUE_ROW.sub(move, text)
+
+
+def _workflow_edit(text: str, version: str, name: str) -> str:
+    """The reusable workflow's ``py-ci-shared-ref`` default, moved to ``v{version}``."""
+    new, count = _WORKFLOW_REF.subn(lambda m: f"{m.group(1)}v{version}{m.group(2)}", text)
+    if count != 1:
+        raise ValueError(f"{name}: expected one py-ci-shared-ref default, found {count}")
+    return new
+
+
+def release_edits(version: str, texts: dict[str, str], published_tag: str) -> dict[str, str]:
+    """The new text of every file in ``PREP_FILES`` for a release ``version``, given the newest PUBLISHED release tag.
+
+    Between a release and the next the version is bumped in six places that must agree before the tag is pushed: ``pyproject.toml``, the module's
+    ``__version__``, the README install tag(s), the three reusable workflows' default ref, and the ``since`` of every module not yet in a published
+    release. ``tests/test_release_version.py`` checks them, but only on a tagged commit's Release run, which is too late to fix without a new tag
+    (v1.22.0 and v1.22.2 were both tagged with the README still on the previous release).
+    """
+    key, published = release_key(f"v{version}"), release_key(published_tag)
+    if key is None or published is None:
+        raise ValueError(f"version {version!r} and published tag {published_tag!r} must be X.Y.Z / vX.Y.Z")
+    if key <= published:
+        raise ValueError(f"v{version} is not ahead of the newest published release {published_tag}")
+    out = {
+        "pyproject.toml": _sub_once(_PYPROJECT_VERSION, texts["pyproject.toml"], version, "pyproject.toml version"),
+        "src/py_ci_shared/__init__.py": _sub_once(_MODULE_VERSION, texts["src/py_ci_shared/__init__.py"], version, "__version__"),
+        "README.md": _catalogue_edit(_readme_edit(texts["README.md"], version), version, published),
+        "src/py_ci_shared/registry.toml": _registry_edit(texts["src/py_ci_shared/registry.toml"], version, published),
+    }
+    for name in PREP_FILES[4:]:
+        out[name] = _workflow_edit(texts[name], version, name)
+    return out
+
+
+def _published_release(repo: str, token: str, tags: Sequence[str]) -> str:
+    """The newest tag that has a GitHub release (a tag whose Release run failed is not one); the newest tag when the API cannot be read."""
+    try:
+        names = [r.get("tag_name", "") for r in _github(token)(f"repos/{repo}/releases?per_page=100")]
+    except OSError:
+        names = []
+    return highest(names) or highest(tags) or "v0.0.0"
+
+
+def run_prep(repo_dir: Path, version: str, published_tag: str, *, write: bool) -> list[str]:
+    """The files that change (written when ``write``); a ValueError names a file that is not the shape the edit knows."""
+    texts = {name: (repo_dir / name).read_bytes().decode("utf-8") for name in PREP_FILES}  # bytes: read_text would turn CRLF into LF and hide the line ending
+    new = release_edits(version, {k: v.replace("\r\n", "\n") for k, v in texts.items()}, published_tag)
+    changed = []
+    for name, text in new.items():
+        crlf = "\r\n" in texts[name]
+        text = text.replace("\n", "\r\n") if crlf else text
+        if text != texts[name]:
+            changed.append(name)
+            if write:
+                (repo_dir / name).write_bytes(text.encode("utf-8"))
+    return changed
+
+
 def _git_tags(cwd: Path) -> list[str]:
     out = subprocess.run(["git", "tag", "--list", "v*"], cwd=cwd, capture_output=True, text=True, check=True, timeout=60)
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
@@ -147,6 +263,20 @@ def _say(line: str) -> None:
     sys.stdout.write(line + "\n")
 
 
+def _main_prepare(args: argparse.Namespace) -> int:
+    repo_dir = Path(args.repo_dir)
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    published = args.published or _published_release(args.repo, token, _git_tags(repo_dir))
+    try:
+        changed = run_prep(repo_dir, args.version, published, write=args.write)
+    except ValueError as exc:
+        _say(f"::error::{exc}")
+        return 2
+    verb = "wrote" if args.write else "would change"
+    _say(f"release {args.version} (newest published: {published}): " + (f"{verb} {', '.join(changed)}" if changed else "nothing differs, ready to tag"))
+    return 1 if (args.check and changed) else 0
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="release_guard.py", description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -160,7 +290,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ci.add_argument("--workflow", default="self-ci.yml")
     ci.add_argument("--wait", type=float, default=0.0, help="seconds to keep polling while the run is in progress")
     ci.add_argument("--poll", type=float, default=30.0)
+    prep = sub.add_parser("prepare")
+    prep.add_argument("version", help="X.Y.Z, the release about to be tagged")
+    prep.add_argument("--repo-dir", default=".")
+    prep.add_argument("--repo", default="fingoldo/py-ci-shared")
+    prep.add_argument("--published", help="newest PUBLISHED release tag (default: the newest GitHub release)")
+    mode = prep.add_mutually_exclusive_group()
+    mode.add_argument("--write", action="store_true", help="write the edits")
+    mode.add_argument("--check", action="store_true", help="exit 1 while any file still differs")
     args = parser.parse_args(argv)
+    if args.cmd == "prepare":
+        return _main_prepare(args)
     if args.cmd == "ci-green":
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
         state, why = wait_for_ci(_github(token), args.repo, args.sha, workflow=args.workflow, wait=args.wait, poll=args.poll)

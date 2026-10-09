@@ -111,7 +111,7 @@ summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching exc
 name = "cancellation_prone_moments"
 kind = "gate"
 entries = ["assert_cancellation_prone_moments"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "Variance, skewness and kurtosis built from raw power sums cancel catastrophically on large-offset data"
 
 [[gate]]
@@ -140,7 +140,7 @@ summary = "Assert that no test reads or writes the on-disk state a real run of t
 name = "ci_default_branch_never_cancelled"
 kind = "gate"
 entries = ["assert_ci_default_branch_never_cancelled"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "a workflow that runs on push to the default branch must not set cancel-in-progress to something that can be true there"
 
 [[gate]]
@@ -162,7 +162,7 @@ summary = "Every CI job that runs pytest installs the third-party packages its c
 name = "ci_install_covers_entry_imports"
 kind = "gate"
 entries = ["assert_ci_install_covers_entry_imports", "assert_entry_imports_without_extras"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "the extras a CI job installs must cover the module-level third-party imports of the python -m / script entry it runs"
 
 [[gate]]
@@ -291,7 +291,7 @@ summary = "Every call that opens a network database connection sets TCP keepaliv
 name = "constant_fallback_cache_key"
 kind = "gate"
 entries = ["assert_constant_fallback_cache_key"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "A digest or cache-key builder whose except handler returns a literal constant, so every failing input shares one key"
 
 [[gate]]
@@ -343,7 +343,7 @@ summary = "A package does not import or reach underscore-private names of anothe
 name = "cuda_kernel_integer_width"
 kind = "gate"
 entries = ["assert_cuda_kernel_integer_width"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "CUDA kernel source strings use 64-bit integer types: no platform-width long, no int-typed products of two sizes"
 
 [[gate]]
@@ -586,7 +586,7 @@ summary = "A guard script is actually looking at something"
 name = "hardcoded_seed_in_library"
 kind = "gate"
 entries = ["assert_hardcoded_seed_in_library"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "A function with its own seed parameter that seeds a callee with an int literal, so the caller's seed never arrives"
 
 [[gate]]
@@ -628,7 +628,7 @@ summary = "A git hook fails loudly, stages nothing of its own, and runs what CI 
 name = "id_keyed_cache_validates_identity"
 kind = "gate"
 entries = ["assert_id_keyed_cache_validates_identity"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "A module-level cache keyed by id(obj) keeps a weakref to obj or re-checks identity on lookup"
 
 [[gate]]
@@ -824,7 +824,7 @@ summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with cre
 name = "optional_imports_guarded"
 kind = "gate"
 entries = ["assert_optional_imports_guarded"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "a module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function"
 
 [[gate]]
@@ -853,7 +853,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 name = "persisted_negative_probe"
 kind = "gate"
 entries = ["assert_persisted_negative_probe"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "A failed hardware probe must not persist a negative verdict (no-gpu) that outlives the process"
 
 [[gate]]
@@ -956,7 +956,7 @@ summary = "A hook or CI step that names test paths, and runs none of them becaus
 [[gate]]
 name = "pytest_known_gap"
 kind = "library"
-since = "1.22.2"
+since = "1.22.3"
 summary = "known_gap(reason, gap_closed): xfail while an external limit is open, fail once the measurement shows it closed"
 
 [[gate]]
@@ -1101,7 +1101,7 @@ summary = "A first-party sibling floor in ``pyproject.toml`` above the revision 
 name = "single_shot_timing_assertion"
 kind = "gate"
 entries = ["assert_single_shot_timing_assertion"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "A test must not assert on a wall-clock ratio or ceiling derived from one measurement per side"
 
 [[gate]]
@@ -1290,7 +1290,7 @@ summary = "A function whose body never runs under the unit coverage run"
 name = "unread_function_params"
 kind = "gate"
 entries = ["assert_unread_function_params"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "Named function parameters (sample_weight, random_state, seed, n_jobs, verbose, timeout, device) that the body never reads"
 
 [[gate]]
@@ -1318,7 +1318,7 @@ summary = "Every attribute read on an imported first-party module (m.NAME) must 
 name = "unsafe_deserialization"
 kind = "gate"
 entries = ["assert_unsafe_deserialization"]
-since = "1.22.2"
+since = "1.22.3"
 summary = "Deserialization that can execute attacker-chosen code: module-wide find_class allowlists, torch.load without weights_only, np.load allow_pickle, unverified pickle loads, yaml.load without a safe Loader"
 
 [[gate]]

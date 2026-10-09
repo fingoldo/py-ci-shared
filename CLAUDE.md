@@ -39,6 +39,8 @@
   without its `v`. `tests/test_release_version.py` holds them equal, strictly ahead of every release tag (equal to
   one only on that tag's own commit), and every `registry.toml` `since` at or below it. Bump it in the first commit
   after a release.
+- BEFORE tagging run `python .github/scripts/release_guard.py prepare X.Y.Z --write`, commit, and wait for green CI: it brings pyproject, `__version__`, the README install tag and gate catalogue, the three reusable workflows' default
+  ref and the `since` of every module not yet in a published release to X.Y.Z (`--check` exits 1 while anything differs). v1.22.0 and v1.22.2 were tagged without it, failed `verify`, and are dead tags: a pushed tag is never moved, so each cost a version.
 - A release is a pushed `vX.Y.Z` tag equal to that version, on master, and the highest `v1.*.*` tag. The `verify`
   job of `.github/workflows/release.yml` checks those, waits for self-ci of the tagged commit to have succeeded
   (all OSes and Pythons), and runs the whole suite; `publish` then moves `v1` and creates the GitHub release. Both
