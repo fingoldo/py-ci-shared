@@ -268,12 +268,39 @@ def wheel_platform(sys_platform: "str | None" = None, machine: "str | None" = No
     return next((tag for (key, cpu), tag in _WHEEL_PLATFORM.items() if sys_platform.startswith(key) and cpu == arch), None)
 
 
+def _install_timezone_database(target: Path) -> None:
+    """Give an unpacked pgserver build its ``timezone/`` directory from the ``tzdata`` wheel; a no-op when it is already there.
+
+    The pgserver build ships ``timezonesets`` (abbreviations) but not the zone files, so ``SET TimeZone = 'UTC'`` or ``'Europe/Moscow'``
+    is refused ("invalid value for parameter TimeZone") and every test or statement that sets a session zone fails on the embedded
+    server only. The ``tzdata`` wheel carries the same TZif files Postgres reads. A download that fails is reported and not fatal: the
+    server still starts, and only the tests that name a zone cannot run.
+    """
+    import zipfile
+
+    tz_dir = target / "share" / "postgresql" / "timezone"
+    if tz_dir.is_dir():
+        return
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"], check=True)
+            wheel = next(Path(tmp).glob("tzdata-*.whl"))
+            with zipfile.ZipFile(wheel) as zf:
+                members = [m for m in zf.namelist() if m.startswith("tzdata/zoneinfo/") and not m.endswith("/")]
+                zf.extractall(tmp, members)
+            shutil.copytree(Path(tmp) / "tzdata" / "zoneinfo", tz_dir)
+        except (subprocess.CalledProcessError, StopIteration, OSError) as exc:
+            sys.stderr.write(f"!! no timezone database for the embedded Postgres ({type(exc).__name__}): tests that SET TimeZone cannot run on it\n")
+
+
 def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Path:
-    """Download the pgserver wheel for this platform and unpack its ``pginstall/`` into the cache. Idempotent."""
+    """Download the pgserver wheel for this platform and unpack its ``pginstall/`` into the cache, plus the timezone database. Idempotent."""
     import zipfile
 
     bin_dir = dest or cache_bin_dir()
     if (bin_dir / f"initdb{_EXE}").is_file():
+        if (bin_dir.parent / "share" / "postgresql").is_dir():  # a real pginstall; an unpack from before the tz step lacks the zone files
+            _install_timezone_database(bin_dir.parent)
         return bin_dir
     tag = wheel_platform()
     if tag is None:
@@ -313,6 +340,7 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
             elif existing.exists() or existing.is_symlink():
                 existing.unlink()
         shutil.copytree(unpacked, target, dirs_exist_ok=True)
+    _install_timezone_database(bin_dir.parent)
     return bin_dir
 
 

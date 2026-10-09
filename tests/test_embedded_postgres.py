@@ -132,6 +132,10 @@ def test_fetch_into_a_custom_dest_leaves_its_parent_alone(tmp_path, monkeypatch)
 
     def fake_download(cmd, check):
         out = Path(cmd[cmd.index("-d") + 1])
+        if "tzdata" in cmd:
+            with zipfile.ZipFile(out / "tzdata-2026.5-py2.py3-none-any.whl", "w") as zf:
+                zf.writestr("tzdata/zoneinfo/UTC", "")
+            return subprocess.CompletedProcess(cmd, 0)
         with zipfile.ZipFile(out / "pgserver-0.1.4-py3-none-any.whl", "w") as zf:
             zf.writestr(f"pgserver/pginstall/bin/initdb{exe}", "")
             zf.writestr(f"pgserver/pginstall/bin/pg_ctl{exe}", "")
@@ -144,6 +148,67 @@ def test_fetch_into_a_custom_dest_leaves_its_parent_alone(tmp_path, monkeypatch)
     assert (tools / "bin" / f"initdb{exe}").is_file() and (tools / "lib" / "libpq.so").is_file()
     assert (tools / "mine" / "keep.txt").is_file() and (tools / "notes.txt").is_file()
     assert not (tools / "lib" / "stale.so").exists()
+
+
+def _fake_pip(monkeypatch, ep, *, fail_tz: bool = False) -> list[list[str]]:
+    """Replace the pip download with a fake that writes a tzdata wheel (or fails for it); the calls are recorded."""
+    import zipfile
+
+    calls: list[list[str]] = []
+
+    def fake(cmd, check):
+        calls.append(list(cmd))
+        if fail_tz:
+            raise subprocess.CalledProcessError(1, cmd)
+        out = Path(cmd[cmd.index("-d") + 1])
+        with zipfile.ZipFile(out / "tzdata-2026.5-py2.py3-none-any.whl", "w") as zf:
+            zf.writestr("tzdata/zoneinfo/UTC", "")
+            zf.writestr("tzdata/zoneinfo/Europe/Moscow", "")
+        return subprocess.CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(ep.subprocess, "run", fake)
+    return calls
+
+
+def _unpacked_pginstall(root: Path) -> Path:
+    exe = ".exe" if os.name == "nt" else ""
+    (root / "bin").mkdir(parents=True)
+    for name in ("initdb", "pg_ctl"):
+        (root / "bin" / f"{name}{exe}").write_text("", encoding="utf-8")
+    (root / "share" / "postgresql" / "timezonesets").mkdir(parents=True)
+    return root / "bin"
+
+
+def test_a_cache_unpacked_before_the_timezone_step_gets_the_zone_files(tmp_path, monkeypatch):
+    """The pgserver build has no timezone/ directory, so SET TimeZone = 'UTC' failed on the embedded server; fetch adds it to an existing cache."""
+    import py_ci_shared.embedded_postgres as ep
+
+    bin_dir = _unpacked_pginstall(tmp_path / "pginstall")
+    calls = _fake_pip(monkeypatch, ep)
+    assert ep.fetch(bin_dir) == bin_dir
+    zones = tmp_path / "pginstall" / "share" / "postgresql" / "timezone"
+    assert (zones / "UTC").is_file() and (zones / "Europe" / "Moscow").is_file()
+    assert len(calls) == 1 and "tzdata" in calls[0]
+
+
+def test_a_cache_that_has_its_zone_files_is_not_downloaded_again(tmp_path, monkeypatch):
+    import py_ci_shared.embedded_postgres as ep
+
+    bin_dir = _unpacked_pginstall(tmp_path / "pginstall")
+    (tmp_path / "pginstall" / "share" / "postgresql" / "timezone").mkdir()
+    calls = _fake_pip(monkeypatch, ep)
+    assert ep.fetch(bin_dir) == bin_dir
+    assert calls == []
+
+
+def test_a_failed_tzdata_download_is_reported_and_does_not_stop_the_server(tmp_path, monkeypatch, capsys):
+    import py_ci_shared.embedded_postgres as ep
+
+    bin_dir = _unpacked_pginstall(tmp_path / "pginstall")
+    _fake_pip(monkeypatch, ep, fail_tz=True)
+    assert ep.fetch(bin_dir) == bin_dir
+    assert "no timezone database" in capsys.readouterr().err
+    assert not (tmp_path / "pginstall" / "share" / "postgresql" / "timezone").exists()
 
 
 def test_the_cli_keeps_a_double_dash_that_belongs_to_the_command(capsys, monkeypatch):
