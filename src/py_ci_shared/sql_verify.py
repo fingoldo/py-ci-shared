@@ -248,6 +248,9 @@ def run_checks(
 DEFAULT_EXTRA_ALIASES: frozenset[str] = frozenset({"excluded", "new", "old"})
 
 _PYFORMAT_PARAM = re.compile(r"%\((\w+)\)s|%s")
+#: A doubled ``%%`` is a literal percent sign. It is set aside BEFORE placeholders are read: ``ILIKE '%%suspended%%'`` contains the characters ``%s`` (the second percent and the ``s``).
+_LITERAL_PERCENT = "@@literal-percent@@"
+_SESSION_PREFIX = re.compile(r"^\s*SET\s+(?:LOCAL\s+|SESSION\s+)?[^;]*;\s*", re.I)
 _DOTTED_REF = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
 _PLACEHOLDER = re.compile(r"\{[A-Za-z_]\w*\}")
 _STRING_LITERAL = re.compile(r"'(?:[^']|'')*'")
@@ -329,7 +332,7 @@ def matrix_statements(matrix: FragmentMatrix) -> list[tuple[str, Optional[str]]]
 def _parse_ready(sql: str, paramstyle: str) -> str:
     """The statement as the server would see it, each driver placeholder replaced by ``NULL``."""
     if paramstyle == "pyformat":
-        return _PYFORMAT_PARAM.sub("NULL", sql).replace("%%", "%")
+        return _PYFORMAT_PARAM.sub("NULL", sql.replace("%%", _LITERAL_PERCENT)).replace(_LITERAL_PERCENT, "%")
     return sql
 
 
@@ -344,7 +347,51 @@ def _prepare_ready(sql: str, paramstyle: str) -> str:
         numbers.setdefault(name, len(numbers) + 1)
         return f"${numbers[name]}"
 
-    return _PYFORMAT_PARAM.sub(_number, sql).replace("%%", "%")
+    return _PYFORMAT_PARAM.sub(_number, sql.replace("%%", _LITERAL_PERCENT)).replace(_LITERAL_PERCENT, "%")
+
+
+def without_session_prefix(sql: str) -> str:
+    """`SET [LOCAL] ...;` clauses in front of a statement, removed: PREPARE takes one statement, and the clause is not what is being checked."""
+    while True:
+        stripped = _SESSION_PREFIX.sub("", sql, count=1)
+        if stripped == sql:
+            return sql
+        sql = stripped
+
+
+def to_positional(sql: str) -> str:
+    """psycopg2 placeholders -> PostgreSQL positional parameters (``$n``), order preserved; a named placeholder repeated gets one number.
+
+    A doubled ``%%`` is a literal percent sign and is set aside first (see ``_LITERAL_PERCENT``).
+    """
+    return _prepare_ready(sql, "pyformat")
+
+
+def normalise_psycopg2_idioms(sql: str) -> tuple[str, str | None]:
+    """Rewrite the psycopg2 shapes whose ``%s`` is not a scalar parameter; returns the SQL and, when the statement cannot be checked at all, the reason.
+
+    * ``VALUES %s`` (``execute_values``) becomes a literal row of NULLs sized from the INSERT's own column list.
+    * ``IN %s`` (a Python tuple adapted to ``(a, b, c)``) becomes ``IN (NULL)``.
+    * ``{name}`` is a ``str.format`` template, not a statement: reported as needing a builder.
+    * A leading ``SET ...;`` clause is dropped and ``REFRESH MATERIALIZED VIEW`` becomes ``SELECT 1 FROM view LIMIT 0`` (neither can be PREPAREd).
+
+    A named ``{field}`` is looked for outside single-quoted literals only (``'{opening}'`` is a jsonb path); a positional ``{0}`` anywhere unless it follows a regex atom.
+    """
+    sql = without_session_prefix(sql)
+    refreshed = re.match(r"\s*REFRESH\s+MATERIALIZED\s+VIEW\s+(?:CONCURRENTLY\s+)?([\w.\"]+)", sql, re.I)
+    if refreshed:
+        return f"SELECT 1 FROM {refreshed.group(1)} LIMIT 0", None
+    unquoted = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    if re.search(r"\{[A-Za-z_]\w*(?:[.!:][^}]*)?\}", unquoted) or re.search(r"(?<![\]).\w\\])\{\d+\}", sql):
+        return sql, "a str.format template, not a finished statement -- expose a builder instead"
+    if re.search(r"VALUES\s*%s", sql, re.I):
+        match = re.search(r"INSERT\s+INTO\s+[\w.\"]+\s*\(([^)]*)\)", sql, re.I | re.S)
+        if not match:
+            return sql, "`VALUES %s` with no INSERT column list to size the row from"
+        width = len([c for c in (c.strip() for c in match.group(1).split(",")) if c])
+        sql = re.sub(r"VALUES\s*%s", "VALUES (" + ", ".join(["NULL"] * width) + ")", sql, count=1, flags=re.I)
+    sql = re.sub(r"\bIN\s*%s", "IN (NULL)", sql, flags=re.I)
+    return sql, None
 
 
 def alias_scope_problems(sql: str, *, extra_aliases: frozenset[str] = DEFAULT_EXTRA_ALIASES) -> list[str]:

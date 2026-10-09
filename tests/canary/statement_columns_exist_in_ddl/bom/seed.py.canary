@@ -1,0 +1,16 @@
+﻿# The CORR-26 shape: both statements name checked_at, which no DDL file adds yet.
+SEED_STALE_SQL = """
+    SELECT max(coalesce(d.checked_at, d.ts)) AS ts
+    FROM new_upwork.job_auth_details d
+    WHERE d.job_uid = %s
+"""
+
+SEED_INSERT_SQL = """
+    INSERT INTO new_upwork.job_auth_details (job_uid, questions, errors, checked_at)
+    VALUES %s
+    ON CONFLICT (job_uid, ts) DO NOTHING
+"""
+
+SEED_CONFIRM_SQL = """
+    UPDATE new_upwork.job_auth_details SET checked_at = now() WHERE job_uid = %s
+"""

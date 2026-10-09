@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "py-ci-shared"
-version = "1.21.1"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
+version = "1.22.2"  # the next release tag without its "v"; tests/test_release_version.py ties it to __version__ and the tags
 description = "Shared CI/lint tooling (scripts + ruff base config + reusable GitHub Actions workflows) for fingoldo Python projects."
 authors = [{name = "Anatoly Alexeev", email = "fingoldo@gmail.com"}]
 license = "MIT"
@@ -195,6 +195,7 @@ exclude = [
     "tests/test_resource_leak_guard.py",
     "tests/test_resource_leak_checks.py",
     "tests/test_destructive_tests_throwaway_only.py",
+    "tests/test_statement_real_engine_coverage.py",
 ]
 
 [tool.py_ci_shared.gates.entry_points_resolvable]

@@ -31,6 +31,25 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   `known_gap_modules`, default `tests._known_gap`): the reason is judged like a `pytest.xfail` reason, and an unguarded call whose `gap_closed` is a falsy
   literal (a gap that can never close, so can never fail) is a finding. What to do: give each `known_gap` reason a tracked issue or an external component, and
   make `gap_closed` a measured condition.
+- New opt-in gate `env_write_restore` (`assert_env_write_restore(root, baseline_path=...)`): a test function that writes `os.environ` (assignment, `del`, `update`/`setdefault`/`pop`, `os.putenv`) and never restores it leaks the setting into every later test in the process, so the victim is a different innocent test each run and passes alone (mlframe: three `MLFRAME_*` strict-GPU flags set directly made a bit-identity test fail 4 runs in 5). The import-time half stays in `import_side_effects`. A write is accepted inside `patch.dict` / `monkeypatch.context`, in a function with a `try` whose `finally` writes the environment, in a yield-fixture that writes again after the yield, in a `setUp` whose class tears it down, with `addfinalizer`/`addCleanup`, or in a function named as a restorer. Findings are keyed `rule::path::function: statement` (no line numbers) and ride the ratchet `Baseline`; seed a first baseline with `grow=True`.
+- **Behaviour change**: `sql_verifier_coverage` now recognises a statement written `(` + a `--` comment + the keyword (a parenthesised subquery constant with a leading comment); it was invisible to the gate, so a verifier list could omit it unnoticed. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason.
+- New opt-in gate `psycopg2_param_arity` (`assert_psycopg2_param_arity(root)`): a `cur.execute(sql, params)` whose statement resolves to text (a literal, a `+` chain, a module-level constant) and whose parameters are a literal tuple, list or dict must give one value per `%s` and a key for every `%(name)s`. `?`/`$1` statements (DuckDB, sqlite3) are skipped.
+- New opt-in gate `module_state_test_reset` (`assert_module_state_test_reset(root, tests_root)`): a module-level dict/list/set that a function mutates and that no test file mentions has no test-side reset, so one test's entries leak into the next.
+- `sql_verify` gains the helpers every project's verifier used to copy: `normalise_psycopg2_idioms` (`VALUES %s`, `IN %s`, `{name}` templates, a leading `SET`, `REFRESH`), `to_positional` and `without_session_prefix`.
+- **Behaviour change** (audit 2026-10-03): `sql_verify` no longer reads the `%s` inside a doubled `%%` as a placeholder (`ILIKE '%%suspended%%'` was prepared with an invented parameter and failed with `could not determine data type of parameter $2`). What to do: nothing; a statement that failed only because of this now passes.
+- New opt-in gate `script_entry_points` (`assert_script_entry_points(root, script_dirs, probe_dirs=...)`) for packages of flat top-level scripts:
+  an entry point (`if __name__ == "__main__":`) that a sibling imports by bare name, at any depth, must register itself with
+  `sys.modules.setdefault("<name>", sys.modules["__main__"])` (otherwise the import executes the file a second time with its own globals);
+  scripts and probes must not put the working directory on `sys.path`; two script directories must not define the same module name.
+  `double_execution_findings(...)` is the opt-in behavioural half: one subprocess per exposed entry point loads it as `__main__` without its work
+  block and asserts `import_module(name)` returns the same object (timeout, and a skip table in which every skip carries a reason).
+- New opt-in gate `ci_pin_version_skew` (`assert_installed_matches_ci_pin`, `find_pin_skew_findings`): compares the `# vX.Y.Z` comment on the py-ci-shared SHA
+  pins in a consumer's workflows with the installed `py_ci_shared.__version__`. Installed older than a pin is a finding; installed newer is one unless
+  `tolerate_ahead=True`; a SHA pin without a version comment, mixed pins across workflows and (with `known_releases`) a pin more than `max_lag` releases behind are
+  reported too. Offline: it cannot check that a SHA is the commit its comment names.
+- New opt-in gate `statement_real_engine_coverage`: every SQL statement constant a package defines (found by `sql_verifier_coverage.sql_constants`) must be referenced by name from
+  a test of the real-engine tier, which the caller defines with `engine_test_dirs` and/or `engine_markers`; one level of `import ... as` alias is followed. A statement without
+  one is a finding, ratcheted by a shrink-only baseline of `module.NAME -> reason`. `sql_constants` gained an optional `use_git`.
 
 - **Behaviour change** (audit 2026-10-03, SQL-26): `sql_verifier_coverage` reads more of what a package sends. A constant built with `+`
   (`_CTE + "SELECT ..."`, resolving module-level names bound to strings; an operand the module does not bind leaves the statement seen by
@@ -39,6 +58,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   "constant that no longer exists" direction. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason, and make the
   verifier PREPARE it (a `REFRESH` through a read of the view, a `SET` prefix stripped first). On the audit's two consumers this found
   seven statements in `production_scrapers` and four in `realtime_applications` that no list had ever carried.
+- The pytest plugin accepts the `[tool.py_ci_shared.secret_shapes]` table that `tracked_secret_shapes` documents as its config; it used to reject it as
+  an unknown key and fail the collection of every test in a repo that followed the documentation.
 
 - `resource_leak_guard` no longer reports a connection the test already closed: a socket in FIN_WAIT1/2, TIME_WAIT, CLOSING or LAST_ACK stays
   listed until the peer finishes the teardown (seconds, against a remote database), so every test that closed its connection properly failed at teardown.
@@ -48,6 +69,16 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   columns missing, types (timezone-ness included), nullability, generated/identity, extras (allowances need a reason, stale ones are
   findings), optionally index names. No server means NOT CHECKED, loudly, never a pass. `refresh` writes the snapshot through a
   read-only DSN named by an environment variable.
+
+- New gate `ddl_lock_safety` (`assert_ddl_files_lock_safe`, `find_ddl_lock_findings`): hand-applied `.sql` files that change a live table must bound the lock wait (`SET [LOCAL] lock_timeout` before the first `ALTER TABLE`; `0` and `DEFAULT` do not count), add `CHECK`/`FOREIGN KEY` constraints `NOT VALID`, build indexes `CONCURRENTLY` (and never inside an explicit `BEGIN` block), and not rewrite the table (volatile `ADD COLUMN ... DEFAULT`, `serial`, `GENERATED ... STORED`, `ALTER COLUMN ... TYPE`) unless the file says `-- rewrite-ok: <reason>`. A paste-ready `--   command` comment header counts as a command. Small tables are allowed through a caller-supplied `tiny_tables` mapping with a reason each. Opt-in: nothing calls it until a consumer's test does, so it cannot turn a green consumer red; a baseline lets a repo adopt it over the files it already has.
+- New opt-in gate `statement_columns_exist_in_ddl` (`assert_statement_columns_exist_in_ddl`, `find_unknown_statement_columns`, `statement_column_report`;
+  needs the `sql` extra): every column a module-level SQL constant names (`INSERT INTO t (cols)`, `ON CONFLICT (cols)` and `DO UPDATE SET`,
+  `UPDATE t SET c`, `EXCLUDED.c`, `alias.c` bound through FROM/JOIN to a table) must exist in the tables the project's DDL files define
+  (`CREATE TABLE`, `ADD`/`DROP`/`RENAME COLUMN`, `DROP`/`RENAME TABLE`), read offline. It is the offline half of the 2026-10-04 CORR-26 incident, a column
+  named in code before its additive migration was applied. A statement the gate cannot read (f-string field, `{name}` field, unparsable) or that
+  touches no table the DDL defines is NOT CHECKED and counted in the report, never clean; baseline-able and shrink-only because a project is
+  legitimately ahead of its DDL for a window. `sql_verifier_coverage` gained `statement_constants` (the constants with their text); its own behaviour
+  is unchanged.
 
 ## 1.21.1
 

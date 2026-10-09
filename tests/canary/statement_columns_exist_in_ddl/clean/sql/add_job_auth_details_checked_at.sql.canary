@@ -1,0 +1,2 @@
+-- Additive and idempotent: apply before the scrapers that name the column are restarted.
+ALTER TABLE new_upwork.job_auth_details ADD COLUMN IF NOT EXISTS checked_at TIMESTAMP;

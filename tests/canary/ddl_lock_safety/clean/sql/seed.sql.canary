@@ -1,0 +1,6 @@
+-- seed migration: the same changes, each in its non-blocking form
+SET lock_timeout = '5s';
+ALTER TABLE seed_orders ADD COLUMN token uuid;
+ALTER TABLE seed_orders ADD CONSTRAINT seed_orders_qty_check CHECK (qty > 0) NOT VALID;
+ALTER TABLE seed_orders VALIDATE CONSTRAINT seed_orders_qty_check;
+CREATE INDEX CONCURRENTLY seed_orders_qty_idx ON seed_orders (qty);

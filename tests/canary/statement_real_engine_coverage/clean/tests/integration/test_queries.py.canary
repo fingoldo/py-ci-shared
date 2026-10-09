@@ -1,0 +1,9 @@
+from seedpkg import queries
+
+
+def test_selects_the_open_job(pg_cursor):
+    pg_cursor.execute(queries.SEED_COVERED_SQL)
+
+
+def test_closes_the_job(pg_cursor):
+    pg_cursor.execute(queries.SEED_UNCOVERED_SQL, (1,))

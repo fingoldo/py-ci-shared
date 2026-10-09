@@ -1,0 +1,9 @@
+name: seed-ci
+on: [push]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - run: pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@0123456789abcdef0123456789abcdef01234567"  # v1.18.0

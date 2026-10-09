@@ -348,6 +348,33 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("persisted_negative_probe", lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False)),
         Canary("cuda_kernel_integer_width", lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False)),
+        Canary("psycopg2_param_arity", lambda d: _gate("psycopg2_param_arity").assert_psycopg2_param_arity(d, use_git=False)),
+        Canary("module_state_test_reset", lambda d: _gate("module_state_test_reset").assert_module_state_test_reset(d, d / "tests", use_git=False)),
+        Canary(
+            "ddl_lock_safety",
+            lambda d: _gate("ddl_lock_safety").assert_ddl_files_lock_safe(d, sql_dirs=["sql"], use_git=False),
+            parses=False,  # SQL text read by a lexer; undecodable bytes are covered in test_ddl_lock_safety.py
+        ),
+        Canary("script_entry_points", lambda d: _gate("script_entry_points").assert_script_entry_points(d, ["."])),
+        Canary(
+            "ci_pin_version_skew",
+            # the installed version is passed in: CI pins 1.20.0 in the violation, 1.18.0 in the clean control
+            lambda d: _gate("ci_pin_version_skew").assert_installed_matches_ci_pin(d, installed_version="1.18.0"),
+            token="seed-ci.yml",
+            parses=False,
+        ),
+        Canary(
+            "statement_columns_exist_in_ddl",
+            lambda d: _gate("statement_columns_exist_in_ddl").assert_statement_columns_exist_in_ddl(d, ddl_dirs=["sql"], use_git=False),
+        ),
+        Canary(
+            "statement_real_engine_coverage",
+            lambda d: _gate("statement_real_engine_coverage").assert_every_statement_has_an_engine_test(
+                d, engine_test_dirs=["tests/integration"], exclude_top_dirs=["tests"], use_git=False
+            ),
+            token="SEED_UNCOVERED_SQL",
+        ),
+        Canary("env_write_restore", lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False)),
     ]
 }
 

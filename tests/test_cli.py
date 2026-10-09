@@ -66,6 +66,11 @@ class TestLoadConfig:
         with pytest.raises(ConfigError, match=needle):
             load_config(_repo(tmp_path, table))
 
+    def test_the_secret_shapes_data_table_is_not_an_unknown_key(self, tmp_path):
+        table = '[tool.py_ci_shared]\n[tool.py_ci_shared.secret_shapes]\nupwork_token = "oauth2v2_[0-9a-f]{32}"\n'
+        config = load_config(_repo(tmp_path, table))
+        assert config is not None and config.gates == ()
+
 
 class TestResolveKwargs:
     def test_paths_follow_the_annotation_and_globs_expand(self, tmp_path):

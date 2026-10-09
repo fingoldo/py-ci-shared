@@ -1,0 +1,2 @@
+SEED_COVERED_SQL = "SELECT id FROM seed_jobs WHERE open"
+SEED_UNCOVERED_SQL = "UPDATE seed_jobs SET open = false WHERE id = %s"

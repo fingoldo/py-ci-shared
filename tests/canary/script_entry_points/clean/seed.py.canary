@@ -1,0 +1,16 @@
+import sys
+
+if __name__ == "__main__":
+    import sys as _sys
+
+    _sys.modules.setdefault("seed", _sys.modules["__main__"])
+
+_STOP = object()
+
+
+def main():
+    return _STOP
+
+
+if __name__ == "__main__":
+    main()

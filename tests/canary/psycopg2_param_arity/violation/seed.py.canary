@@ -1,0 +1,5 @@
+_SQL = "UPDATE jobs SET state = %s, note = %s WHERE uid = %s"
+
+
+def mark(cur, uid):
+    cur.execute(_SQL, ("done", uid))

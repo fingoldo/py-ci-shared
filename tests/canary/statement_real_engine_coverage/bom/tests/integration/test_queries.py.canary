@@ -1,0 +1,5 @@
+﻿from seedpkg.queries import SEED_COVERED_SQL
+
+
+def test_selects_the_open_job(pg_cursor):
+    pg_cursor.execute(SEED_COVERED_SQL)
