@@ -70,7 +70,7 @@ def test_only_modules_newer_than_the_published_release_get_the_new_since(tree: P
     guard.run_prep(tree, "99.0.0", "v1.21.1", write=True)
     after = re.findall(r'^since = "([\d.]+)"', _text(tree, "src/py_ci_shared/registry.toml"), re.M)
     assert len(before) == len(after) > 50
-    for was, now in zip(before, after, strict=True):
+    for was, now in zip(before, after):
         shipped = tuple(int(p) for p in was.split(".")) <= (1, 21, 1)
         assert now == (was if shipped else "99.0.0"), (was, now)
     assert "99.0.0" in after and "1.21.1" in after
