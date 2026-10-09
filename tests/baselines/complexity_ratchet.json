@@ -40,7 +40,6 @@
   "src/py_ci_shared/index_coverage.py::statements": 15,
   "src/py_ci_shared/inert_patch_targets.py::_aliases_in": 13,
   "src/py_ci_shared/inert_patch_targets.py::_module_facts": 24,
-  "src/py_ci_shared/module_reload_safety.py::_Restores.has_restore": 12,
   "src/py_ci_shared/module_reload_safety.py::find_unpaired_reloads": 15,
   "src/py_ci_shared/mutation_teeth.py::_sweep_mutants": 23,
   "src/py_ci_shared/mutation_teeth.py::find_surviving_mutants": 18,

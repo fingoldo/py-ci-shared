@@ -100,60 +100,88 @@ def _own(scope: ast.AST) -> list[ast.AST]:
     return out
 
 
+_Func = Union[ast.FunctionDef, ast.AsyncFunctionDef]
+
+
+def _is_key_function(func: _Func) -> bool:
+    """Does the name or a decorator of *func* mark it as a digest / cache-key builder?"""
+    return bool(_NAME.search(func.name)) or any(_DECORATOR.search(_decorator_text(d)) for d in func.decorator_list)
+
+
+def _none_is_documented(func: _Func) -> bool:
+    """Does the return annotation or the docstring say ``None`` is a legitimate result?"""
+    annotation = ast.unparse(func.returns) if func.returns is not None else ""
+    return "None" in annotation or "Optional" in annotation or "None" in (ast.get_docstring(func) or "")
+
+
+def _fallback_text(inner: ast.AST, constants: dict[str, ast.AST], returned: set[str]) -> str:
+    """The source of the literal a handler statement returns (or assigns to a returned name); empty when it is not one."""
+    if isinstance(inner, ast.Return) and _is_literal(inner.value, constants):
+        return ast.unparse(inner.value) if inner.value is not None else "None"
+    if (
+        isinstance(inner, ast.Assign)
+        and len(inner.targets) == 1
+        and isinstance(inner.targets[0], ast.Name)
+        and inner.targets[0].id in returned
+        and _is_literal(inner.value, constants)
+    ):
+        return ast.unparse(inner.value)
+    return ""
+
+
+def _handler_findings(
+    func: _Func, handler: ast.ExceptHandler, ctx: tuple[dict[str, ast.AST], set[str], bool], qualname: str, rel: str, lines: list[str]
+) -> list[Finding]:
+    """The findings of one ``except`` handler of a key function; *ctx* is ``(constants, returned names, None documented)``."""
+    constants, returned, none_documented = ctx
+    out: list[Finding] = []
+    for inner in _own(handler):
+        if not isinstance(inner, (ast.Return, ast.Assign)):
+            continue
+        shown = _fallback_text(inner, constants, returned)
+        if not shown or (shown == "None" and none_documented) or shown in ("True", "False"):  # a key is never a bool: a predicate, not a builder
+            continue
+        ranges = [
+            (inner.lineno, inner.end_lineno or inner.lineno),
+            (handler.lineno, handler.lineno),
+            (func.lineno, max(func.body[0].lineno - 1, func.lineno)),
+        ]
+        if not _suppressed(lines, ranges):
+            out.append(Finding(rel, inner.lineno, RULE, f"{qualname}: except handler returns the constant {shown}, so every failing input shares one key"))
+    return out
+
+
+def _check_key_function(func: _Func, qualname: str, constants: dict[str, ast.AST], rel: str, lines: list[str]) -> list[Finding]:
+    """The findings of one key function: every ``except`` handler that returns a literal."""
+    own = _own(func)
+    returned = {n.value.id for n in own if isinstance(n, ast.Return) and isinstance(n.value, ast.Name)}
+    ctx = (constants, returned, _none_is_documented(func))
+    out: list[Finding] = []
+    for node in own:
+        if isinstance(node, ast.Try):
+            for handler in node.handlers:
+                out.extend(_handler_findings(func, handler, ctx, qualname, rel, lines))
+    return out
+
+
+def _visit_functions(node: ast.AST, prefix: str, constants: dict[str, ast.AST], rel: str, lines: list[str]) -> list[Finding]:
+    """Walk classes and functions below *node*, checking each key function with its qualified name."""
+    out: list[Finding] = []
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.ClassDef):
+            out.extend(_visit_functions(child, f"{prefix}{child.name}.", constants, rel, lines))
+        elif isinstance(child, _FUNCTIONS):
+            if _is_key_function(child):
+                out.extend(_check_key_function(child, f"{prefix}{child.name}", constants, rel, lines))
+            out.extend(_visit_functions(child, f"{prefix}{child.name}.<locals>.", constants, rel, lines))
+        else:
+            out.extend(_visit_functions(child, prefix, constants, rel, lines))
+    return out
+
+
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
-    lines = lines or []
-    out: list[Finding] = []
-    constants = _module_constants(tree)
-
-    def visit(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.")
-            elif isinstance(child, _FUNCTIONS):
-                if _NAME.search(child.name) or any(_DECORATOR.search(_decorator_text(d)) for d in child.decorator_list):
-                    check(child, f"{prefix}{child.name}")
-                visit(child, f"{prefix}{child.name}.<locals>.")
-            else:
-                visit(child, prefix)
-
-    def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], qualname: str) -> None:
-        own = _own(func)
-        annotation = ast.unparse(func.returns) if func.returns is not None else ""
-        none_is_documented = "None" in annotation or "Optional" in annotation or "None" in (ast.get_docstring(func) or "")
-        returned = {n.value.id for n in own if isinstance(n, ast.Return) and isinstance(n.value, ast.Name)}
-        for node in own:
-            if not isinstance(node, ast.Try):
-                continue
-            for handler in node.handlers:
-                for inner in _own(handler):
-                    shown = ""
-                    if not isinstance(inner, (ast.Return, ast.Assign)):
-                        continue
-                    if isinstance(inner, ast.Return) and _is_literal(inner.value, constants):
-                        shown = ast.unparse(inner.value) if inner.value is not None else "None"
-                    elif (
-                        isinstance(inner, ast.Assign)
-                        and len(inner.targets) == 1
-                        and isinstance(inner.targets[0], ast.Name)
-                        and inner.targets[0].id in returned
-                        and _is_literal(inner.value, constants)
-                    ):
-                        shown = ast.unparse(inner.value)
-                    if not shown or (shown == "None" and none_is_documented) or shown in ("True", "False"):  # a key is never a bool: a predicate, not a builder
-                        continue
-                    ranges = [
-                        (inner.lineno, inner.end_lineno or inner.lineno),
-                        (handler.lineno, handler.lineno),
-                        (func.lineno, max(func.body[0].lineno - 1, func.lineno)),
-                    ]
-                    if not _suppressed(lines, ranges):
-                        out.append(
-                            Finding(rel, inner.lineno, RULE, f"{qualname}: except handler returns the constant {shown}, so every failing input shares one key")
-                        )
-
-    visit(tree, "")
-    return out
+    return _visit_functions(tree, "", _module_constants(tree), rel, lines or [])
 
 
 def find_constant_fallback_cache_key(

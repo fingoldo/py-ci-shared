@@ -31,7 +31,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
@@ -99,51 +99,66 @@ def _is_default_for_missing_seed(call: ast.Call, parents: dict[int, ast.AST], pa
     return False
 
 
+def _seed_description(call: ast.Call, aliases: ImportAliases) -> str:
+    """How *call* hard-codes a seed (``seed=0``, ``default_rng(0)``), or an empty string when it does not."""
+    what = ""
+    for keyword in call.keywords:
+        if keyword.arg in _SEED_KEYWORDS and _int_literal(keyword.value):
+            what = f"{keyword.arg}={ast.unparse(keyword.value)}"
+    if not what and (aliases.qualified_name(call) in _SEEDERS) and call.args and _int_literal(call.args[0]):
+        what = f"{ast.unparse(call.func)}({ast.unparse(call.args[0])})"
+    return what
+
+
+def _own_calls(func: ast.AST) -> Iterator[tuple[ast.Call, dict[int, ast.AST]]]:
+    """Each call of *func* outside nested functions, classes and lambdas, with the parent map built so far (the call's own chain is complete)."""
+    parents: dict[int, ast.AST] = {}
+    stack = list(ast.iter_child_nodes(func))
+    for child in stack:
+        parents[id(child)] = func
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (*_FUNCTIONS, ast.ClassDef, ast.Lambda)):
+            continue  # judged as their own scope
+        for child in ast.iter_child_nodes(node):
+            parents[id(child)] = node
+            stack.append(child)
+        if isinstance(node, ast.Call):
+            yield node, parents
+
+
+def _check_seeds(func: ast.AST, qualname: str, params: list[str], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+    """The findings of one function that takes its own seed parameter(s) *params*."""
+    out: list[Finding] = []
+    for node, parents in _own_calls(func):
+        if _is_default_for_missing_seed(node, parents, set(params)):
+            continue
+        what = _seed_description(node, aliases)
+        if what and not _suppressed(lines, node):
+            out.append(Finding(rel, node.lineno, RULE, f"{qualname}: {what} hard-codes a seed in a function that takes its own {'/'.join(params)}"))
+    return out
+
+
+def _visit_seed_scopes(node: ast.AST, prefix: str, inherited: frozenset[str], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+    """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
+    out: list[Finding] = []
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.ClassDef):
+            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines))
+        elif isinstance(child, _FUNCTIONS):
+            params = frozenset(_own_params(child)) | inherited
+            qualname = f"{prefix}{child.name}"
+            if params:
+                out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines))
+            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines))
+        else:
+            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines))
+    return out
+
+
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
-    lines = lines or []
-    out: list[Finding] = []
-
-    def visit(node: ast.AST, prefix: str, inherited: frozenset[str]) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.", frozenset())
-            elif isinstance(child, _FUNCTIONS):
-                params = frozenset(_own_params(child)) | inherited
-                qualname = f"{prefix}{child.name}"
-                if params:
-                    check(child, qualname, sorted(params))
-                visit(child, f"{qualname}.<locals>.", params)
-            else:
-                visit(child, prefix, inherited)
-
-    def check(func: ast.AST, qualname: str, params: list[str]) -> None:
-        parents: dict[int, ast.AST] = {}
-        stack = list(ast.iter_child_nodes(func))
-        for child in stack:
-            parents[id(child)] = func
-        while stack:
-            node = stack.pop()
-            if isinstance(node, (*_FUNCTIONS, ast.ClassDef, ast.Lambda)):
-                continue  # judged as their own scope
-            for child in ast.iter_child_nodes(node):
-                parents[id(child)] = node
-                stack.append(child)
-            if not isinstance(node, ast.Call):
-                continue
-            if _is_default_for_missing_seed(node, parents, set(params)):
-                continue
-            what = ""
-            for keyword in node.keywords:
-                if keyword.arg in _SEED_KEYWORDS and _int_literal(keyword.value):
-                    what = f"{keyword.arg}={ast.unparse(keyword.value)}"
-            if not what and (aliases.qualified_name(node) in _SEEDERS) and node.args and _int_literal(node.args[0]):
-                what = f"{ast.unparse(node.func)}({ast.unparse(node.args[0])})"
-            if what and not _suppressed(lines, node):
-                out.append(Finding(rel, node.lineno, RULE, f"{qualname}: {what} hard-codes a seed in a function that takes its own {'/'.join(params)}"))
-
-    visit(tree, "", frozenset())
-    return out
+    return _visit_seed_scopes(tree, "", frozenset(), rel, aliases, lines or [])
 
 
 def find_hardcoded_seed_in_library(

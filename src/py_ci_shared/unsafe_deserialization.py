@@ -134,6 +134,58 @@ def _raises_in_body(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
     return False
 
 
+def _is_resolver_call(node: ast.AST) -> bool:
+    """A ``getattr`` / ``__import__`` / ``import_module`` / ``find_class`` call, which resolves a name rather than testing it."""
+    return isinstance(node, ast.Call) and _call_name(node) in ("getattr", "__import__", "import_module", "find_class")
+
+
+def _module_test_kind(node: ast.AST, name: str) -> str:
+    """How one comparison or call that mentions the module parameter constrains it: ``"per_name"``, ``"module_only"`` or ``""``."""
+    if _mentions(node, name):
+        return "per_name"
+    if isinstance(node, ast.Compare) or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("startswith", "endswith")):
+        return "module_only"
+    return ""
+
+
+def _resolves_module(node: ast.AST, module: str) -> bool:
+    """Does the call resolve the module parameter (``getattr(module, ...)`` or ``super().find_class(module, ...)``)?"""
+    if not isinstance(node, ast.Call):
+        return False
+    callee = node.func
+    if isinstance(callee, ast.Name) and callee.id == "getattr" and node.args and _mentions(node.args[0], module):
+        return True
+    return isinstance(callee, ast.Attribute) and callee.attr == "find_class" and any(_mentions(a, module) for a in node.args)
+
+
+def _admits_whole_modules(func: ast.FunctionDef, module: str, name: str) -> bool:
+    """True when ``find_class`` tests or resolves the module without any per-name allowlist."""
+    module_only = False
+    per_name = False
+    resolves = False
+    for node in ast.walk(func):
+        if isinstance(node, (ast.Compare, ast.Call)) and _mentions(node, module):
+            if _is_resolver_call(node):
+                continue  # a resolver call that mentions the module is neither a test nor counted as resolving
+            kind = _module_test_kind(node, name)
+            per_name = per_name or kind == "per_name"
+            module_only = module_only or kind == "module_only"
+        elif isinstance(node, ast.Compare) and _mentions(node, name):
+            per_name = True
+        resolves = resolves or _resolves_module(node, module)
+    return (module_only or resolves) and not per_name
+
+
+def _gadget_pool(node: ast.AST, consts: dict[str, ast.AST], parents: dict[int, ast.AST], paired: set[int]) -> list[ast.AST]:
+    """The container to search for gadget strings at *node*: the literal itself, or the module constant it names."""
+    if isinstance(node, (ast.Constant, ast.Tuple)):
+        return [] if _raises_in_body(node, parents) or id(node) in paired else [node]
+    ref = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
+    if ref in consts and not _DENY_NAME.search(ref) and not _raises_in_body(node, parents):
+        return [consts[ref]]
+    return []
+
+
 def _find_class_problems(func: ast.FunctionDef, consts: dict[str, ast.AST]) -> list[str]:
     """What is wrong with one ``find_class`` body, as short messages."""
     params = [a.arg for a in func.args.args]
@@ -142,39 +194,12 @@ def _find_class_problems(func: ast.FunctionDef, consts: dict[str, ast.AST]) -> l
     module, name = params[1], params[2]
     parents = {id(c): p for p in ast.walk(func) for c in ast.iter_child_nodes(p)}
     problems: list[str] = []
-    module_only = False
-    per_name = False
-    resolves = False
-    for node in ast.walk(func):
-        if isinstance(node, (ast.Compare, ast.Call)) and _mentions(node, module):
-            if isinstance(node, ast.Call) and _call_name(node) in ("getattr", "__import__", "import_module", "find_class"):
-                continue
-            if _mentions(node, name):
-                per_name = True
-            elif isinstance(node, ast.Compare) or (isinstance(node.func, ast.Attribute) and node.func.attr in ("startswith", "endswith")):
-                module_only = True
-        elif isinstance(node, ast.Compare) and _mentions(node, name):
-            per_name = True
-        if isinstance(node, ast.Call):
-            callee = node.func
-            if isinstance(callee, ast.Name) and callee.id == "getattr" and node.args and _mentions(node.args[0], module):
-                resolves = True
-            if isinstance(callee, ast.Attribute) and callee.attr == "find_class" and any(_mentions(a, module) for a in node.args):
-                resolves = True
-    if (module_only or resolves) and not per_name:
+    if _admits_whole_modules(func, module, name):
         problems.append("find_class admits whole modules (a test on the module alone, no per-name allowlist)")
     seen_gadget: set[str] = set()
     paired = _paired_ids(func)
     for node in ast.walk(func):
-        pool: list[ast.AST] = []
-        if isinstance(node, (ast.Constant, ast.Tuple)):
-            if not _raises_in_body(node, parents) and id(node) not in paired:
-                pool = [node]
-        else:
-            ref = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else ""
-            if ref in consts and not _DENY_NAME.search(ref) and not _raises_in_body(node, parents):
-                pool = [consts[ref]]
-        for container in pool:
+        for container in _gadget_pool(node, consts, parents, paired):
             for text in _gadget_entries(container):
                 if text not in seen_gadget:
                     seen_gadget.add(text)
@@ -249,75 +274,120 @@ def _call_label(node: ast.Call) -> str:
         return "<call>"
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
-    """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
-    lines = lines or []
-    out: list[Finding] = []
-    consts = _module_constants(tree)
+class _Sink:
+    """Collects the findings of one file, dropping those whose node (or anchor) carries the suppression comment."""
 
-    def report(node: ast.AST, message: str, anchors: Iterable[ast.AST] = ()) -> None:
-        if _suppressed(lines, node) or any(_suppressed(lines, a) for a in anchors):
+    def __init__(self, rel: str, lines: list[str]) -> None:
+        self.rel = rel
+        self.lines = lines
+        self.out: list[Finding] = []
+
+    def report(self, node: ast.AST, message: str, anchors: Iterable[ast.AST] = ()) -> None:
+        if _suppressed(self.lines, node) or any(_suppressed(self.lines, a) for a in anchors):
             return
-        out.append(Finding(rel, getattr(node, "lineno", 0), RULE, message))
+        self.out.append(Finding(self.rel, getattr(node, "lineno", 0), RULE, message))
 
-    # (a) restricted unpicklers and the methods that make up the safe loader
+
+def _check_unpicklers(tree: ast.Module, aliases: ImportAliases, consts: dict[str, ast.AST], sink: _Sink) -> set[int]:
+    """(a) Restricted unpicklers: report their ``find_class`` problems; return the ids of the functions that make up a safe loader."""
     safe_loader_functions: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ClassDef) and _is_unpickler_class(node, aliases):
-            for member in ast.walk(node):
-                if isinstance(member, _FUNCTIONS):
-                    safe_loader_functions.add(id(member))
-            for item in node.body:
-                if isinstance(item, ast.FunctionDef) and item.name == "find_class":
-                    for problem in _find_class_problems(item, {**consts, **_module_constants(node)}):
-                        report(item, f"{node.name}: {problem}", anchors=(node,))
-
-    # (b)(c)(e) keyword-driven loaders
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call):
+        if not (isinstance(node, ast.ClassDef) and _is_unpickler_class(node, aliases)):
             continue
-        qualified = aliases.qualified_name(node) or ""
-        if qualified == "torch.load":
-            flag = _kw(node, "weights_only")
-            if flag is None or (isinstance(flag, ast.Constant) and flag.value is not True):
-                report(node, "torch.load without weights_only=True unpickles the checkpoint, which executes code")
-        elif qualified in ("numpy.load", "np.load"):
-            flag = _kw(node, "allow_pickle")
-            if isinstance(flag, ast.Constant) and flag.value is True:
-                report(node, "np.load(allow_pickle=True) unpickles object arrays, which executes code")
-        elif qualified in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all", "yaml.full_load", "yaml.full_load_all"):
-            loader = _kw(node, "Loader") or (node.args[1] if len(node.args) > 1 else None)
-            loader_name = (aliases.qualified_name(loader) or "").rsplit(".", 1)[-1] if loader is not None else ""
-            if qualified.endswith(("unsafe_load", "unsafe_load_all", "full_load", "full_load_all")) or loader_name not in _SAFE_YAML:
-                report(node, f"{qualified} without a safe Loader can construct arbitrary Python objects; use yaml.safe_load")
+        safe_loader_functions.update(id(member) for member in ast.walk(node) if isinstance(member, _FUNCTIONS))
+        for item in node.body:
+            if isinstance(item, ast.FunctionDef) and item.name == "find_class":
+                for problem in _find_class_problems(item, {**consts, **_module_constants(node)}):
+                    sink.report(item, f"{node.name}: {problem}", anchors=(node,))
+    return safe_loader_functions
 
-    # (d) pickle-family loads with no preceding hash or signature check in the same function
+
+def _yaml_message(node: ast.Call, qualified: str, aliases: ImportAliases) -> Optional[str]:
+    """The message for a ``yaml.load``-family call without a safe Loader, else None."""
+    loader = _kw(node, "Loader") or (node.args[1] if len(node.args) > 1 else None)
+    loader_name = (aliases.qualified_name(loader) or "").rsplit(".", 1)[-1] if loader is not None else ""
+    if qualified.endswith(("unsafe_load", "unsafe_load_all", "full_load", "full_load_all")) or loader_name not in _SAFE_YAML:
+        return f"{qualified} without a safe Loader can construct arbitrary Python objects; use yaml.safe_load"
+    return None
+
+
+def _keyword_loader_message(node: ast.Call, aliases: ImportAliases) -> Optional[str]:
+    """(b)(c)(e) The message for a ``torch.load`` / ``np.load`` / ``yaml.load`` call that unpickles or constructs arbitrary objects, else None."""
+    qualified = aliases.qualified_name(node) or ""
+    if qualified == "torch.load":
+        flag = _kw(node, "weights_only")
+        if flag is None or (isinstance(flag, ast.Constant) and flag.value is not True):
+            return "torch.load without weights_only=True unpickles the checkpoint, which executes code"
+    elif qualified in ("numpy.load", "np.load"):
+        flag = _kw(node, "allow_pickle")
+        if isinstance(flag, ast.Constant) and flag.value is True:
+            return "np.load(allow_pickle=True) unpickles object arrays, which executes code"
+    elif qualified in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all", "yaml.full_load", "yaml.full_load_all"):
+        return _yaml_message(node, qualified, aliases)
+    return None
+
+
+def _check_keyword_loaders(tree: ast.Module, aliases: ImportAliases, sink: _Sink) -> None:
+    """(b)(c)(e) Keyword-driven loaders anywhere in the file."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            message = _keyword_loader_message(node, aliases)
+            if message is not None:
+                sink.report(node, message)
+
+
+def _scope_calls(scope: ast.AST) -> list[ast.Call]:
+    """Calls of *scope* outside nested functions, lambdas and classes."""
+    calls: list[ast.Call] = []
+    stack = list(ast.iter_child_nodes(scope))
+    while stack:
+        current = stack.pop()
+        if isinstance(current, ast.Call):
+            calls.append(current)
+        if not isinstance(current, (*_FUNCTIONS, ast.Lambda, ast.ClassDef)):
+            stack.extend(ast.iter_child_nodes(current))
+    return calls
+
+
+def _is_verifying_call(candidate: ast.Call, call: ast.Call) -> bool:
+    """Is *candidate* a hash/signature check or a producer (dump/save) placed before *call*?"""
+    return (
+        candidate is not call
+        and (candidate.lineno, candidate.col_offset) < (call.lineno, call.col_offset)
+        and bool(_VERIFY.search(_call_label(candidate)) or _call_name(candidate) in _PRODUCERS)
+    )
+
+
+def _unverified_load(call: ast.Call, calls: list[ast.Call], scope: ast.AST, tree: ast.Module, aliases: ImportAliases) -> bool:
+    """Is *call* a pickle-family load of non-literal bytes with no earlier verification in its function or an enclosing one?"""
+    if aliases.qualified_name(call) not in _PICKLE_LOADS:
+        return False
+    first = call.args[0] if call.args else None
+    if isinstance(first, ast.Constant) and not isinstance(first.value, (str, bytes)):
+        return False
+    if any(_is_verifying_call(c, call) for c in calls):
+        return False
+    return not (isinstance(scope, _FUNCTIONS) and _verified_by_enclosing(tree, scope, call))
+
+
+def _check_pickle_loads(tree: ast.Module, aliases: ImportAliases, safe_loader_functions: set[int], sink: _Sink) -> None:
+    """(d) Pickle-family loads with no preceding hash or signature check in the same function."""
     for scope, qualname in [(tree, "<module>"), *_qualified_scopes(tree)]:
         if id(scope) in safe_loader_functions:
             continue
-        calls: list[ast.Call] = []
-        stack = list(ast.iter_child_nodes(scope))
-        while stack:
-            current = stack.pop()
-            if isinstance(current, ast.Call):
-                calls.append(current)
-            if not isinstance(current, (*_FUNCTIONS, ast.Lambda, ast.ClassDef)):
-                stack.extend(ast.iter_child_nodes(current))
+        calls = _scope_calls(scope)
         for call in calls:
-            if aliases.qualified_name(call) not in _PICKLE_LOADS:
-                continue
-            first = call.args[0] if call.args else None
-            if isinstance(first, ast.Constant) and not isinstance(first.value, (str, bytes)):
-                continue
-            verified = any(
-                c is not call and (c.lineno, c.col_offset) < (call.lineno, call.col_offset) and (_VERIFY.search(_call_label(c)) or _call_name(c) in _PRODUCERS)
-                for c in calls
-            )
-            if not verified and isinstance(scope, _FUNCTIONS):
-                verified = _verified_by_enclosing(tree, scope, call)
-            if not verified:
-                report(call, f"{_call_label(call)} in {qualname} with no earlier sha256/hmac/verify call: unpickling unverified bytes executes code")
-    return out
+            if _unverified_load(call, calls, scope, tree, aliases):
+                sink.report(call, f"{_call_label(call)} in {qualname} with no earlier sha256/hmac/verify call: unpickling unverified bytes executes code")
+
+
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
+    """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
+    sink = _Sink(rel, lines or [])
+    safe_loader_functions = _check_unpicklers(tree, aliases, _module_constants(tree), sink)
+    _check_keyword_loaders(tree, aliases, sink)
+    _check_pickle_loads(tree, aliases, safe_loader_functions, sink)
+    return sink.out
 
 
 def _verified_by_enclosing(tree: ast.Module, scope: ast.AST, call: ast.Call) -> bool:

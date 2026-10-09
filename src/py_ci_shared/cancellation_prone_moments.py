@@ -145,20 +145,24 @@ def _mentions(node: ast.AST, names: set[str]) -> bool:
     return bool(names) and _contains(node, lambda n: isinstance(n, (ast.Name, ast.Attribute)) and _key(n) in names)
 
 
-def _classify(own: list[ast.AST]) -> tuple[set[str], set[str]]:
-    """``(power-sum names, mean-like names)`` of one scope: accumulators and derived names."""
-    power: set[str] = set()
-    first: set[str] = set()
-    assigns: list[tuple[str, ast.AST]] = []
-    for node in own:
-        if isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) and _key(node.target):
-            if _is_power(node.value) or _is_power_sum_call(node.value):
-                power.add(_key(node.target))
-            elif isinstance(node.value, (ast.Name, ast.Subscript, ast.Attribute)):
-                first.add(_key(node.target))
-        elif isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None:
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            assigns.extend((_key(t), node.value) for t in targets if _key(t) and not isinstance(t, ast.Subscript))
+def _record_accumulator(node: ast.AugAssign, power: set[str], first: set[str]) -> None:
+    """File the target of ``acc += value`` as a power-sum or a first-power accumulator."""
+    if _is_power(node.value) or _is_power_sum_call(node.value):
+        power.add(_key(node.target))
+    elif isinstance(node.value, (ast.Name, ast.Subscript, ast.Attribute)):
+        first.add(_key(node.target))
+
+
+def _named_assignments(node: ast.AST) -> list[tuple[str, ast.AST]]:
+    """``(name, value)`` pairs of a plain or annotated assignment, skipping subscript targets and unnamed ones."""
+    if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+        return []
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return [(_key(t), node.value) for t in targets if _key(t) and not isinstance(t, ast.Subscript)]
+
+
+def _propagate_names(assigns: list[tuple[str, ast.AST]], power: set[str], first: set[str]) -> None:
+    """Three rounds of: a name assigned from a power sum (or power-sum name) is one too, likewise for mean-like names."""
     for _ in range(3):
         for name, value in assigns:
             if name in power or name in first:
@@ -167,6 +171,19 @@ def _classify(own: list[ast.AST]) -> tuple[set[str], set[str]]:
                 power.add(name)
             elif _contains(value, _is_first_sum_call) or _mentions(value, first):
                 first.add(name)
+
+
+def _classify(own: list[ast.AST]) -> tuple[set[str], set[str]]:
+    """``(power-sum names, mean-like names)`` of one scope: accumulators and derived names."""
+    power: set[str] = set()
+    first: set[str] = set()
+    assigns: list[tuple[str, ast.AST]] = []
+    for node in own:
+        if isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add) and _key(node.target):
+            _record_accumulator(node, power, first)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            assigns.extend(_named_assignments(node))
+    _propagate_names(assigns, power, first)
     return power, first
 
 
@@ -211,6 +228,62 @@ def _suppressed(lines: list[str], lo: int, hi: int) -> bool:
     return any(SUPPRESSION in lines[i] for i in range(max(lo - 1, 0), min(hi, len(lines))))
 
 
+def _is_additive(node: ast.AST) -> bool:
+    return isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub))
+
+
+def _scope_may_cancel(own: list[ast.AST]) -> bool:
+    """Does the scope hold both a ``+``/``-`` and a power or power-sum call, the two ingredients of a cancelling moment?"""
+    if not any(_is_additive(n) for n in own):
+        return False
+    return any(_is_power(n) or _is_power_sum_call(n) for n in own if isinstance(n, (ast.BinOp, ast.Call)))
+
+
+def _statement_anchor(node: ast.AST, parents: dict[int, ast.AST]) -> ast.AST:
+    """The enclosing statement of *node* (or the topmost parent reachable)."""
+    anchor = node
+    while id(anchor) in parents and not isinstance(anchor, ast.stmt):
+        anchor = parents[id(anchor)]
+    return anchor
+
+
+def _cancelling_term(signed: list[tuple[ast.AST, int]], power: set[str], first: set[str]) -> bool:
+    """Is some term a power sum while a term of the opposite sign holds a squared or cubed mean?"""
+    return any(_power_term(term, power) and any(s != sign and _squared_mean(t, first) for t, s in signed) for term, sign in signed)
+
+
+def _moment_finding(node: ast.BinOp, anchor: ast.AST, rel: str, lines: list[str]) -> Optional[Finding]:
+    """The finding for a cancelling chain, or None when its statement carries the suppression comment."""
+    lo, hi = getattr(anchor, "lineno", node.lineno), getattr(anchor, "end_lineno", None) or node.lineno
+    if _suppressed(lines, lo, hi):
+        return None
+    shown = ast.unparse(node)
+    shown = shown if len(shown) <= 100 else shown[:97] + "..."
+    return Finding(rel, node.lineno, RULE, f"moment from raw power sums cancels catastrophically on large-offset data: {shown}")
+
+
+def _scope_findings(scope: ast.AST, own: list[ast.AST], rel: str, lines: list[str]) -> list[Finding]:
+    """The findings of one scope whose own nodes are *own*."""
+    out: list[Finding] = []
+    power, first = _classify(own)
+    parents = {id(c): p for p in [scope, *own] for c in ast.iter_child_nodes(p)}
+    seen: set[int] = set()
+    for node in own:
+        if not isinstance(node, ast.BinOp) or not _is_additive(node):
+            continue
+        signed = _terms(node)
+        if len(signed) < 2 or not _cancelling_term(signed, power, first):
+            continue
+        anchor = _statement_anchor(node, parents)
+        if id(anchor) in seen:
+            continue
+        seen.add(id(anchor))
+        finding = _moment_finding(node, anchor, rel, lines)
+        if finding is not None:
+            out.append(finding)
+    return out
+
+
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
     lines = lines or []
@@ -218,40 +291,8 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     scopes: list[ast.AST] = [tree, *(n for n in ast.walk(tree) if isinstance(n, _FUNCTIONS))]
     for scope in scopes:
         own = list(_own_nodes(scope))
-        if not any(isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Add, ast.Sub)) for n in own):
-            continue
-        if not any(_is_power(n) or _is_power_sum_call(n) for n in own if isinstance(n, (ast.BinOp, ast.Call))):
-            continue
-        power, first = _classify(own)
-        parents = {id(c): p for p in [scope, *own] for c in ast.iter_child_nodes(p)}
-        seen: set[int] = set()
-        for node in own:
-            if not (isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub))):
-                continue
-            signed = _terms(node)
-            if len(signed) < 2:
-                continue
-            for term, sign in signed:
-                if _power_term(term, power) and any(s != sign and _squared_mean(t, first) for t, s in signed):
-                    anchor: ast.AST = node
-                    while id(anchor) in parents and not isinstance(anchor, ast.stmt):
-                        anchor = parents[id(anchor)]
-                    if id(anchor) in seen:
-                        break
-                    seen.add(id(anchor))
-                    lo, hi = getattr(anchor, "lineno", node.lineno), getattr(anchor, "end_lineno", None) or node.lineno
-                    if not _suppressed(lines, lo, hi):
-                        shown = ast.unparse(node)
-                        shown = shown if len(shown) <= 100 else shown[:97] + "..."
-                        out.append(
-                            Finding(
-                                rel,
-                                node.lineno,
-                                RULE,
-                                f"moment from raw power sums cancels catastrophically on large-offset data: {shown}",
-                            )
-                        )
-                    break
+        if _scope_may_cancel(own):
+            out.extend(_scope_findings(scope, own, rel, lines))
     return out
 
 

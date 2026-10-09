@@ -154,27 +154,12 @@ class _Analysis:
         """Evaluate one expression to the durations it derives from."""
         if isinstance(node, ast.Call):
             return self._call(node, in_loop)
-        if isinstance(node, ast.Name):
-            if node.id in self.env:
-                return self.env[node.id]
-            return _Val({f"{_REPORTED_ATOM}{node.id}": True}) if node.id.endswith(_REPORTED) else _Val()
-        if isinstance(node, ast.Attribute):
-            return _Val({f"{_REPORTED_ATOM}{node.attr}": True}) if node.attr.endswith(_REPORTED) else _Val()
+        if isinstance(node, (ast.Name, ast.Attribute)):
+            return self._eval_reference(node)
         if isinstance(node, ast.BinOp):
-            left, right = self.eval(node.left, in_loop), self.eval(node.right, in_loop)
-            if isinstance(node.op, ast.Sub) and left.stamp and right.stamp:
-                # a loop between the two stamps makes it a mean over iterations, not one sample
-                averaged = any(right.line < start and end <= node.lineno for start, end in self.loops)
-                return self._atom(node, not in_loop and not averaged)
-            merged = _merge([left, right])
-            if isinstance(node.op, ast.Div) and merged.atoms:
-                merged.ratio = True
-            return merged
-        if isinstance(node, (ast.ListComp, ast.GeneratorExp, ast.SetComp)):
-            inner = self.eval(node.elt, True)
-            return _Val({k: False for k in inner.atoms})
-        if isinstance(node, ast.DictComp):
-            inner = self.eval(node.value, True)
+            return self._eval_binop(node, in_loop)
+        if isinstance(node, (ast.ListComp, ast.GeneratorExp, ast.SetComp, ast.DictComp)):
+            inner = self.eval(node.value if isinstance(node, ast.DictComp) else node.elt, True)
             return _Val({k: False for k in inner.atoms})
         if isinstance(node, (ast.UnaryOp, ast.Subscript, ast.Starred)):
             return self.eval(node.operand if isinstance(node, ast.UnaryOp) else node.value, in_loop)
@@ -183,6 +168,26 @@ class _Analysis:
         if isinstance(node, ast.IfExp):
             return _merge([self.eval(node.body, in_loop), self.eval(node.orelse, in_loop)])
         return _Val()
+
+    def _eval_reference(self, node: Union[ast.Name, ast.Attribute]) -> _Val:
+        """A tracked name keeps its value; a name or attribute spelled like a reported duration (``total_seconds``) is one."""
+        if isinstance(node, ast.Name):
+            if node.id in self.env:
+                return self.env[node.id]
+            return _Val({f"{_REPORTED_ATOM}{node.id}": True}) if node.id.endswith(_REPORTED) else _Val()
+        return _Val({f"{_REPORTED_ATOM}{node.attr}": True}) if node.attr.endswith(_REPORTED) else _Val()
+
+    def _eval_binop(self, node: ast.BinOp, in_loop: bool) -> _Val:
+        """A difference of two timer stamps is a fresh duration; any other arithmetic merges the operands (a division marks a ratio)."""
+        left, right = self.eval(node.left, in_loop), self.eval(node.right, in_loop)
+        if isinstance(node.op, ast.Sub) and left.stamp and right.stamp:
+            # a loop between the two stamps makes it a mean over iterations, not one sample
+            averaged = any(right.line < start and end <= node.lineno for start, end in self.loops)
+            return self._atom(node, not in_loop and not averaged)
+        merged = _merge([left, right])
+        if isinstance(node.op, ast.Div) and merged.atoms:
+            merged.ratio = True
+        return merged
 
     def _call(self, node: ast.Call, in_loop: bool) -> _Val:
         qualified = self.aliases.qualified_name(node.func) or ""

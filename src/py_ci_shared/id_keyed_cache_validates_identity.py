@@ -183,7 +183,8 @@ def _id_names(scope: ast.AST, id_helpers: set[str], fixed: frozenset[str]) -> se
         changed = False
         for node in assigns:
             target = node.targets[0]
-            assert isinstance(target, ast.Name)
+            if not isinstance(target, ast.Name):
+                raise TypeError("only simple-name assignments are collected here")
             if target.id not in names and _has_id_call(node.value, id_helpers, names, fixed):
                 names.add(target.id)
                 changed = True
