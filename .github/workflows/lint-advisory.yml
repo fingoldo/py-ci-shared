@@ -74,6 +74,12 @@ on:
           up on PyPI). Only used with pip-audit-uv-lock.
         type: string
         default: ""
+      pip-audit-ignore-vulns:
+        description: >-
+          Space-separated advisory ids (PYSEC-..., GHSA-..., CVE-...) pip-audit skips, for risks the calling repo has accepted and
+          documented. The list is the baseline: every id in it hides a known finding, and a NEW advisory still shows in the report.
+        type: string
+        default: ""
       import-linter-version:
         type: string
         default: "2.15"
@@ -183,6 +189,7 @@ jobs:
             flags=(--no-deps --disable-pip)
           fi
           if [ "${#targets[@]}" -eq 0 ]; then targets=(.); fi
+          for v in ${PIP_AUDIT_IGNORE_VULNS}; do flags+=(--ignore-vuln "$v"); done
           uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json "${flags[@]}" "${targets[@]}"
         continue-on-error: true
         env:
@@ -190,6 +197,7 @@ jobs:
           PIP_AUDIT_REQUIREMENTS: ${{ inputs.pip-audit-requirements }}
           PIP_AUDIT_UV_LOCK: ${{ inputs.pip-audit-uv-lock }}
           PIP_AUDIT_SKIP_PACKAGES: ${{ inputs.pip-audit-skip-packages }}
+          PIP_AUDIT_IGNORE_VULNS: ${{ inputs.pip-audit-ignore-vulns }}
 
       - name: Upload pip-audit results
         if: always()
