@@ -1,0 +1,5 @@
+def score_all(baselines, y):
+    """``y`` never changes across baselines but is recast every iteration."""
+    for name in baselines:
+        y_int = y.astype("int64")
+        print(name, y_int)

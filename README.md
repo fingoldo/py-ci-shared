@@ -245,6 +245,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`llm_call_archive_gate`](src/py_ci_shared/llm_call_archive_gate.py) | gate | 1.5.0 | `assert_every_llm_call_is_archived` | Every paid LLM call goes through the place that keeps its raw answer |
 | [`loc_budget`](src/py_ci_shared/loc_budget.py) | gate | 1.3.0 | `assert_no_new_oversized_file` | Shared harness for the "no file over N LOC" meta-test pattern |
 | [`local_copy_report`](src/py_ci_shared/local_copy_report.py) | gate | 1.17.0 | `assert_local_copies_do_not_grow` | Local meta-tests that duplicate a central gate |
+| [`loop_invariant_cast`](src/py_ci_shared/loop_invariant_cast.py) | gate | 1.22.4 | `assert_loop_invariant_cast` | Flags a cast/copy call inside a loop whose argument never changes across the function |
 | [`machine_specific_paths`](src/py_ci_shared/machine_specific_paths.py) | gate | 1.17.0 | `assert_no_machine_specific_paths` | Paths and connection strings that only exist on the machine that wrote them |
 | [`marker_runner_coverage`](src/py_ci_shared/marker_runner_coverage.py) | gate | 1.17.0 | `assert_every_marked_test_is_selected` | A test carrying a marker must be SELECTED by some runner, or it never runs |
 | [`meta_private_imports`](src/py_ci_shared/meta_private_imports.py) | gate | 1.13.0 | `assert_no_private_meta_imports` | A meta-test does not import a private name of the package it polices, unless a permitted entry says why |

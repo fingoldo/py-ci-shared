@@ -737,6 +737,13 @@ since = "1.17.0"
 summary = "Local meta-tests that duplicate a central gate"
 
 [[gate]]
+name = "loop_invariant_cast"
+kind = "gate"
+entries = ["assert_loop_invariant_cast"]
+since = "1.22.4"
+summary = "Flags a cast/copy call inside a loop whose argument never changes across the function"
+
+[[gate]]
 name = "machine_specific_paths"
 kind = "gate"
 entries = ["assert_no_machine_specific_paths"]
