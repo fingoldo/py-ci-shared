@@ -52,9 +52,10 @@ jobs:
 
       # The snapshot imports every registered gate and library module, and resource_leak_guard (a pytest plugin)
       # imports pytest at module level; without it the step died with ModuleNotFoundError. corpus_drift.finders()
-      # names any such module (MissingDependencyError); tests/test_corpus_drift.py holds this line to cover them.
+      # names any such module (MissingDependencyError); tests/test_corpus_drift.py holds this line to cover them. The sql extra brings sqlglot,
+      # which statement_columns_exist_in_ddl needs; without it that finder ERRORED every night.
       - name: Install package
-        run: python -m pip install -c .github/constraints/runtime.txt -e . pytest
+        run: python -m pip install -c .github/constraints/runtime.txt -e ".[sql]" pytest
 
       - name: Check out the corpus repos
         env:
