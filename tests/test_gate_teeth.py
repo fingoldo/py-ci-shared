@@ -394,6 +394,7 @@ EXEMPT: dict[str, str] = {
     "audit_round_format": "Markdown tracker/round bookkeeping, not a code scanner",
     "baseline_hygiene": "audits a baseline file's own notes; subject is a JSON document, not a corpus",
     "baseline_ratchet": "library of baseline helpers, no scanning entry",
+    "worker_budget": "arithmetic over the CPU's busy share, no corpus or source file to scan; test_worker_budget.py pins the numbers directly",
     "changelog_promise_parity": "regex over a CHANGELOG with caller-supplied trigger patterns",
     "checkout_resolution": "imports modules / runs pytest in a copy; runtime check, not a scanner",
     "checkpoint_isolation": "single path predicate, no corpus",
