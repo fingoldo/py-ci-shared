@@ -1385,6 +1385,12 @@ cli = true
 summary = "Warn-only dead-code check for the pre-commit hook"
 
 [[gate]]
+name = "worker_budget"
+kind = "library"
+since = "1.22.7"
+summary = "How many workers the machine can spare now: half of its free physical cores, overridable by PY_CI_WORKERS"
+
+[[gate]]
 name = "workflow_runner_labels"
 kind = "gate"
 entries = ["assert_workflow_runner_labels_pinned"]
