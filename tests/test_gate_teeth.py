@@ -377,6 +377,14 @@ CANARIES: dict[str, Canary] = {
         Canary("env_write_restore", lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False)),
         Canary("free_text_in_get_route", lambda d: _gate("free_text_in_get_route").assert_free_text_in_get_route(d, use_git=False)),
         Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False)),
+        Canary(
+            "llm_output_caps",
+            lambda d: _gate("llm_output_caps").assert_no_new_output_caps(
+                _gate("llm_output_caps").numeric_output_caps([d], repo_root=d, name_hints=("CAP_TOKENS",), default_hints=("max_tokens",)), {}
+            ),
+            token="CAP_TOKENS",
+            empty=False,
+        ),
     ]
 }
 

@@ -723,6 +723,13 @@ summary = "Every paid LLM call goes through the place that keeps its raw answer"
 tests = ["tests/test_llm_preservation_gates.py"]
 
 [[gate]]
+name = "llm_output_caps"
+kind = "gate"
+entries = ["assert_no_new_output_caps", "assert_known_caps_only_shrink", "assert_each_known_cap_states_its_reason"]
+since = "1.22.5"
+summary = "No LLM call carries a numeric output or reasoning cap someone chose: a ratchet that fails by name, opt-in per repo"
+
+[[gate]]
 name = "loc_budget"
 kind = "gate"
 entries = ["assert_no_new_oversized_file"]
