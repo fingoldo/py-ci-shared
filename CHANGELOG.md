@@ -4,6 +4,14 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- **Behaviour change** `dart_scanners.scan_tappable_semantics` finds a spinner's labelling `Semantics(label:)`, a GestureDetector's
+  announcing `Semantics(button: true / checked: / ...)` and a tappable's `MinTapTargetBox` by walking out through the widget's ENCLOSING calls
+  (bracket nesting over string-masked source) instead of a fixed 400/600-character window. A label far above on the widget's own ancestor now
+  counts (noema_app leaf_controls, polyvocab_app landing_navbar); a `Semantics` that is a closed SIBLING above the widget no longer does.
+  `scan_hardcoded_ui_strings` skips a `label:` literal whose innermost enclosing call is in `non_ui_label_calls` (default `("retryTransient",)`,
+  a retry log label that is never rendered). Over noema_app, polyvocab_app and flutter_app_core this removes three false positives and adds
+  none. What to do: regenerate the `tappable-semantics` and `hardcoded-ui-strings` baselines so the entries that no longer fire drop out.
+
 - `uncalled_functions` gains named exemption categories, declared once for every consumer: `CATEGORIES` (PUBLIC_API, FRAMEWORK_HOOK,
   PLUGIN_HOOK, SUPERSEDED, RETAINED_KERNEL, OPT_IN_SLOW, OFFLINE_HELPER, TEST_UTILITY, each with its meaning), an `Exemption(category, reason)`
   per name passed as `exempt=`, and `reexported_public_api(files, root)`, which lists what a package `__init__` re-exports (`from x import f` and

@@ -176,6 +176,67 @@ def _balanced_body(source: str, open_index: int, opener: str = "{", closer: str 
     return source[open_index + 1 :]
 
 
+def _mask_strings(source: str) -> str:
+    """*source* with every string literal's contents blanked to spaces, so brackets inside text never count as code."""
+    out: list[str] = []
+    i, n = 0, len(source)
+    while i < n:
+        c = source[i]
+        if c in "'\"":
+            end = _string_end(source, i)
+            out.append("".join(ch if ch == "\n" else " " for ch in source[i:end]))
+            i = end
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+_CALL_NAME = re.compile(r"([A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)?\s*$")
+
+
+def _enclosing_calls(masked: str, pos: int) -> Iterator[tuple[str, int]]:
+    """``(callee, open_paren_index)`` of every call whose argument list contains *pos*, innermost first.
+
+    Walks outwards through bracket nesting on string-masked source, so a label 1000 characters above a widget still
+    counts when it sits on the widget's own ancestor, and a label on a sibling never does.
+    """
+    depth = 0
+    for i in range(pos - 1, -1, -1):
+        ch = masked[i]
+        if ch in ")]}":
+            depth += 1
+        elif ch in "([{":
+            if depth:
+                depth -= 1
+            elif ch == "(":
+                m = _CALL_NAME.search(masked, max(0, i - 80), i)
+                if m:
+                    yield m.group(1), i
+
+
+def _top_level_args(masked: str, open_index: int) -> str:
+    """The argument text of the call opening at *open_index* with every nested bracket's contents removed."""
+    body = _balanced_body(masked, open_index, "(", ")")
+    out: list[str] = []
+    depth = 0
+    for ch in body:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def _enclosing_semantics_args(masked: str, pos: int) -> Iterator[str]:
+    """Top-level argument text of every ``Semantics(`` that encloses *pos*."""
+    for name, open_index in _enclosing_calls(masked, pos):
+        if name == "Semantics":
+            yield _top_level_args(masked, open_index)
+
+
 def _method_bodies(source: str, name_pattern: str) -> list[tuple[int, str]]:
     """Return ``(start_index, body)`` for every method whose signature matches ``name_pattern``."""
     out: list[tuple[int, str]] = []
@@ -289,6 +350,17 @@ _RAW_COLOR = re.compile(r"\bColor\(0x[0-9A-Fa-f]{6,8}\)")
 _LOG_CALL = re.compile(r"\b(?:AppLog|SharedLog|debugPrint|print)\s*[.(]")
 
 
+def _is_non_ui_literal(clean: str, masked: str, m: re.Match, non_ui_label_calls: Sequence[str]) -> bool:
+    """A literal on a log-call line, or a ``label:`` argument of a call in *non_ui_label_calls* (a log label, never rendered)."""
+    line_start = clean.rfind("\n", 0, m.start()) + 1
+    if _LOG_CALL.search(clean[line_start : clean.find("\n", m.start())]):
+        return True
+    if not m.group(0).startswith("label:"):
+        return False
+    innermost = next((name for name, _ in _enclosing_calls(masked, m.start())), None)
+    return innermost in non_ui_label_calls
+
+
 def scan_hardcoded_ui_strings(
     files: Iterable[str],
     read: Reader,
@@ -303,12 +375,18 @@ def scan_hardcoded_ui_strings(
         "high_contrast",
         "min_tap_target_box",
     ),
+    non_ui_label_calls: Sequence[str] = ("retryTransient",),
 ) -> dict:
-    """User-visible text or colour baked into Dart instead of coming from l10n / the palette."""
+    """User-visible text or colour baked into Dart instead of coming from l10n / the palette.
+
+    A ``label:`` argument whose innermost enclosing call is named in *non_ui_label_calls* is a log or diagnostic
+    label (``retryTransient(..., label: 'GET $path')`` names the request in its retry log line), never rendered.
+    """
     found: dict[str, str] = {}
     for rel in files:
         source = read(rel)
         clean = _strip_comments(source)
+        masked = _mask_strings(clean)
         lower = rel.lower()
 
         for em in _ENUM_HEAD.finditer(clean):
@@ -323,9 +401,7 @@ def scan_hardcoded_ui_strings(
                 break
 
         for m in _LITERAL_TEXT.finditer(clean):
-            line_start = clean.rfind("\n", 0, m.start()) + 1
-            line = clean[line_start : clean.find("\n", m.start())]
-            if _LOG_CALL.search(line):
+            if _is_non_ui_literal(clean, masked, m, non_ui_label_calls):
                 continue
             found[_key(found, rel)] = (
                 f"user-visible literal {m.group(1)[:40]!r} (line {_line_of(clean, m.start())}) - " f"every other string on this screen comes from l10n"
@@ -360,14 +436,12 @@ _MIN_TAP_TARGET = re.compile(r"\bMinTapTargetBox\s*\(|\bminTapTarget\b")
 # Any announced ROLE, not just `button: true`: a segmented control is correctly announced with
 # inMutuallyExclusiveGroup/checked, and a like button with toggled. Demanding `button: true`
 # everywhere would push widgets towards the WRONG role.
-_SEMANTICS_BUTTON = re.compile(
-    r"Semantics\s*\(\s*(?:[^()]*?)(?:button:\s*true|inMutuallyExclusiveGroup:|checked:|selected:|toggled:)",
-    re.DOTALL,
-)
+# Matched against the top-level arguments of a Semantics that ENCLOSES the widget (bracket nesting, not a window).
+_SEMANTICS_ROLE_ARG = re.compile(r"\b(?:button:\s*true|inMutuallyExclusiveGroup:|checked:|selected:|toggled:)")
+_SEMANTICS_LABEL_ARG = re.compile(r"\blabel:")
 _NAMED_CONTEXT_PARAM = re.compile(r"\{[^}]*?required\s+BuildContext\s+context\b", re.DOTALL)
 _BUILD_HELPER = re.compile(r"\bWidget\s+_build\w*\s*\(")
 _TOOLTIP_MESSAGE = re.compile(r"Tooltip\s*\(\s*message:\s*([^,\n]+)")
-_SEMANTICS_LABEL_RE = re.compile(r"Semantics\s*\(\s*(?:[^()]*?)label:", re.DOTALL)
 # The widget that PROVIDES the minimum tap target cannot be asked to wrap itself in one.
 _TAP_TARGET_HELPER_FILES = ("min_tap_target_box",)
 # Either spelling closes the double announcement: `excludeFromSemantics` on the tooltip drops the
@@ -381,12 +455,15 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
     for rel in files:
         source = read(rel)
         clean = _strip_comments(source)
+        masked = _mask_strings(clean)
 
         for m in _SPINNER.finditer(clean):
             body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
             # A Semantics(label:) wrapper already names it; adding semanticsLabel as well would
             # announce the same thing twice, which is the defect the tooltip rule below catches.
-            labelled_ancestor = _SEMANTICS_LABEL_RE.search(clean[max(0, m.start() - 400) : m.start()])
+            # The wrapper is found by bracket nesting, not a character window: a label far above
+            # on the spinner's own ancestor counts, one on a sibling above it does not.
+            labelled_ancestor = any(_SEMANTICS_LABEL_ARG.search(args) for args in _enclosing_semantics_args(masked, m.start()))
             if "semanticsLabel" not in body and not labelled_ancestor:
                 found[_key(found, rel)] = (
                     f"CircularProgressIndicator with no semanticsLabel (line "
@@ -401,14 +478,16 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
                 continue
             window_start = max(0, m.start() - 600)
             before = clean[window_start : m.start()]
-            if not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
+            wrapped = any(name == "MinTapTargetBox" for name, _ in _enclosing_calls(masked, m.start()))
+            if not wrapped and not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
                 found[_key(found, rel)] = (
                     f"tappable with no MinTapTargetBox (line {_line_of(clean, m.start())}) - the " f"visible target can be smaller than the 48x48 minimum"
                 )
             # InkWell announces itself as a button; GestureDetector does not, which is the
             # whole difference this rule is about.
             is_gesture_detector = clean[m.start() :].startswith("GestureDetector")
-            if is_gesture_detector and not _SEMANTICS_BUTTON.search(before) and "Semantics(" not in body:
+            announced = any(_SEMANTICS_ROLE_ARG.search(args) for args in _enclosing_semantics_args(masked, m.start()))
+            if is_gesture_detector and not announced and "Semantics(" not in body:
                 found[_key(found, rel)] = (
                     f"GestureDetector with no announced role (line {_line_of(clean, m.start())}) - "
                     f"unlike InkWell it announces nothing, so a screen reader reads the contents "

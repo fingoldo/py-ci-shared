@@ -362,6 +362,80 @@ class TestRefinements:
         assert any("announced role" in v for v in problems.values())
 
 
+class TestEnclosingSemantics:
+    """Role and label come from a Semantics that ENCLOSES the widget, found by bracket nesting, not a character window."""
+
+    # noema_app leaf_controls: the Semantics label sits far more than 400 characters above the spinner.
+    _FAR = (
+        "Semantics(button: true, label: label, liveRegion: checking, child: MinTapTargetBox(child: DecoratedBox("
+        + ("decoration: BoxDecoration(color: c, border: Border.all(color: b)), " * 12)
+        + "child: InkWell(onTap: t, child: SizedBox(child: checking ? SizedBox(child: CircularProgressIndicator(strokeWidth: 2)) : Icon(i))))))"
+    )
+
+    def test_spinner_labelled_by_a_distant_enclosing_semantics_passes(self):
+        assert self._FAR.index("CircularProgressIndicator") - self._FAR.index("label:") > 600
+        files, read = _reader({"lib/a.dart": self._FAR})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_spinner_after_a_closed_sibling_semantics_is_still_flagged(self):
+        src = "Column(children: [Semantics(label: l10n.title, child: Text(t)), const CircularProgressIndicator()])"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert len(problems) == 1
+        assert "CircularProgressIndicator with no semanticsLabel" in next(iter(problems.values()))
+
+    def test_label_on_a_child_of_the_enclosing_semantics_does_not_count(self):
+        src = "Semantics(liveRegion: true, child: Row(children: [Tooltip(label: x), CircularProgressIndicator()]))"
+        files, read = _reader({"lib/a.dart": src})
+        assert len(scan_tappable_semantics(files, read)) == 1
+
+    def test_parentheses_inside_a_string_do_not_break_the_walk(self):
+        src = "Semantics(label: 'Loading (step 1 of 2)', hint: ')', child: CircularProgressIndicator())"
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_gesture_detector_under_a_distant_enclosing_button_semantics_passes(self):
+        src = (
+            "Semantics(button: true, child: Padding("
+            + "padding: EdgeInsets.all(8), " * 40
+            + "child: GestureDetector(onTap: x, child: MinTapTargetBox(child: c))))"
+        )
+        files, read = _reader({"lib/a.dart": src})
+        assert scan_tappable_semantics(files, read) == {}
+
+    def test_gesture_detector_after_a_sibling_button_semantics_is_still_flagged(self):
+        src = "Row(children: [Semantics(button: true, child: a), GestureDetector(onTap: x, child: MinTapTargetBox(child: c))])"
+        files, read = _reader({"lib/a.dart": src})
+        problems = scan_tappable_semantics(files, read)
+        assert any("announced role" in v for v in problems.values())
+
+
+class TestNonUiLabelCalls:
+    def test_retry_transient_label_is_not_a_ui_string(self):
+        src = "response = await retryTransient(\n  () => client.get(Uri.parse('$baseUrl$path')),\n  label: 'GET $path',\n);"
+        files, read = _reader({"lib/api_transport.dart": src})
+        assert scan_hardcoded_ui_strings(files, read) == {}
+
+    def test_label_on_a_widget_is_still_flagged(self):
+        src = "Chip(label: 'Retry now', onPressed: () => retryTransient(() => f(), label: 'GET x'))"
+        files, read = _reader({"lib/a.dart": src})
+        found = scan_hardcoded_ui_strings(files, read)
+        assert len(found) == 1
+        assert "Retry now" in next(iter(found.values()))
+
+    def test_widget_label_nested_inside_a_retry_call_is_still_flagged(self):
+        src = "retryTransient(() => show(Chip(label: 'Retry now')), label: 'GET x')"
+        files, read = _reader({"lib/a.dart": src})
+        found = scan_hardcoded_ui_strings(files, read)
+        assert len(found) == 1
+        assert "Retry now" in next(iter(found.values()))
+
+    def test_the_skip_list_is_the_callers(self):
+        src = "retryTransient(() => f(), label: 'GET $path');"
+        files, read = _reader({"lib/a.dart": src})
+        assert len(scan_hardcoded_ui_strings(files, read, non_ui_label_calls=())) == 1
+
+
 class TestCommentStrippingAndKeys:
     def test_a_url_in_a_string_does_not_hide_the_rest_of_the_line(self):
         files, read = _reader({"lib/w.dart": "Text('Visit https://x.com now'); final c = Color(0xFF112233);"})
