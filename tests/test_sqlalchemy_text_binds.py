@@ -82,5 +82,6 @@ def test_a_missing_root_and_an_unparsable_file_fail(tmp_path):
     with pytest.raises(pytest.fail.Exception, match="nope: corpus root does not exist"):
         assert_no_colon_cast_binds(tmp_path, roots=("pkg", "nope"))
     (tmp_path / "pkg" / "bad.py").write_text('Q = text("SELECT :a::int"\n', encoding="utf-8")
-    with pytest.raises(pytest.fail.Exception, match=r"bad\.py:1: unparsable"):
+    # The line is the parser's: Python 3.9 reports this unclosed call at line 2 (EOF), 3.10+ at line 1.
+    with pytest.raises(pytest.fail.Exception, match=r"bad\.py:\d+: unparsable"):
         assert_no_colon_cast_binds(tmp_path, roots=("pkg",))

@@ -172,7 +172,7 @@ def _bash() -> str:
     if os.name == "nt":
         git = shutil.which("git")
         if git:
-            for parent in Path(git).resolve().parents[:3]:
+            for parent in list(Path(git).resolve().parents)[:3]:  # list(): Python 3.9 cannot slice .parents
                 candidate = parent / "bin" / "bash.exe"
                 if candidate.is_file():
                     return str(candidate)

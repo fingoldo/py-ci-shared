@@ -2,6 +2,11 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.22.13
+
+- Fixed: `guard_population` on Windows under Python 3.9 sliced `Path.parents` while finding Git's bash, which 3.9 cannot, so every guard
+  raised `TypeError`. Found by running 3.9 on Windows locally (self-ci runs 3.9 on Linux only).
+
 ## 1.22.12
 
 `lock_held_across_io` honours a reviewed marker: a call that must stay under a cross-process file lock carries
