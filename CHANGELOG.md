@@ -4,6 +4,12 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- **Behaviour change** `git_child_env` (Dart): the call body was read from the closing quote of `'git'`, not from the call's `(`, so it
+  ended at the first nested call's `)` or, with none, held no arguments at all; a scrubbed `environment:` map literal was reported as "passes no
+  environment:". The body is now the whole argument list. A scrubbed `environment:` now also needs `includeParentEnvironment: false`: Dart
+  merges `environment:` into the parent's environment otherwise, so the hook's `GIT_DIR` reaches the child anyway. Over noema_app,
+  polyvocab_app and flutter_app_core this adds no finding. What to do: pass `includeParentEnvironment: false` next to the scrubbed map.
+
 - **Behaviour change** `dart_scanners.scan_tappable_semantics` finds a spinner's labelling `Semantics(label:)`, a GestureDetector's
   announcing `Semantics(button: true / checked: / ...)` and a tappable's `MinTapTargetBox` by walking out through the widget's ENCLOSING calls
   (bracket nesting over string-masked source) instead of a fixed 400/600-character window. A label far above on the widget's own ancestor now

@@ -11,8 +11,9 @@ Flagged, one finding per call:
   with ``"git"`` (or a string starting with ``git ``) and that either passes no ``env=`` or passes one that does not
   mention ``GIT_`` nor a helper named like ``git_env``, ``clean_env``, ``scrub`` or ``strip``. A bare name passed as ``env=``
   is judged by the values assigned to that name in the module.
-* Dart: ``Process.run``/``runSync``/``start`` of ``'git'`` with no ``environment:`` argument, or one that does not
-  mention ``GIT_`` nor such a helper.
+* Dart: ``Process.run``/``runSync``/``start`` of ``'git'`` with no ``environment:`` argument, one that does not
+  mention ``GIT_`` nor such a helper, or a scrubbed one without ``includeParentEnvironment: false`` (Dart merges
+  ``environment:`` into the parent's environment otherwise, so the hook's ``GIT_*`` reach the child anyway).
 
 The environment check is by name, not by evaluating the expression: an ``env=`` that names a helper with a
 misleading name passes. Python test files are parsed with ``_core.source.parse_source``, so a file that does not
@@ -43,6 +44,7 @@ __all__ = ["find_unscrubbed_git_spawns", "assert_no_new_unscrubbed_git_spawns"]
 _SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "check_call", "call"})
 _DART_SPAWN = re.compile(r"Process\.(?:run|runSync|start)\(\s*['\"]git['\"]")
 # GIT_ is case-sensitive (an environment variable name); the helper names are not, so _cleanEnv and clean_env both count.
+_NO_PARENT_ENV = re.compile(r"\bincludeParentEnvironment\s*:\s*false\b")
 _SCRUBBER = re.compile(r"GIT_|(?i:git_?env|clean_?env|scrub|strip)")
 
 
@@ -103,8 +105,12 @@ def _dart_spawns(rel: str, text: str) -> dict[str, str]:
     found: dict[str, str] = {}
     for match in _DART_SPAWN.finditer(text):
         depth = 0
-        end = match.end() - 1  # the '(' that opens the call
-        for index in range(end, len(text)):
+        # The '(' that opens the call. match.end() - 1 is the closing quote of 'git', and walking from there ended the
+        # body at the first nested call's ')' or, with none, kept only `Process.run('git'`: an `environment:` written as a
+        # map literal was then reported as missing.
+        start = text.index("(", match.start())
+        end = start
+        for index in range(start, len(text)):
             if text[index] == "(":
                 depth += 1
             elif text[index] == ")":
@@ -114,12 +120,20 @@ def _dart_spawns(rel: str, text: str) -> dict[str, str]:
                     break
         body = text[match.start() : end + 1]
         environment = re.search(r"\benvironment\s*:", body)
-        if environment is not None and _SCRUBBER.search(body[environment.end() :]):
+        scrubbed = environment is not None and _SCRUBBER.search(body[environment.end() :])
+        # Dart MERGES `environment:` into the parent's unless includeParentEnvironment is false, so a scrubbed map alone
+        # still hands the child the hook's GIT_DIR.
+        if scrubbed and _NO_PARENT_ENV.search(body):
             continue
         line_start = text.rfind("\n", 0, match.start()) + 1
         line_end = text.find("\n", match.start())
         line = text[line_start : len(text) if line_end < 0 else line_end]
-        why = "passes no environment:" if environment is None else "passes an environment that neither drops GIT_* nor calls a scrubbing helper"
+        if environment is None:
+            why = "passes no environment:"
+        elif scrubbed:
+            why = "scrubs environment: without includeParentEnvironment: false, so Dart merges the parent's GIT_* back in"
+        else:
+            why = "passes an environment that neither drops GIT_* nor calls a scrubbing helper"
         number = text.count("\n", 0, match.start()) + 1
         found[f"{rel}: {normalize_line(line)}"] = f"line {number} spawns git and {why}"
     return found
