@@ -76,6 +76,7 @@ NON_CORPUS: dict[str, str] = {
     "destructive_tests_throwaway_only": "needs the test roots and the hook and workflow configs of the repo",
     "disposition_test_references": "needs the audit files of the repo",
     "docs_inventory_parity": "needs the docs files, pyproject path and bullet patterns of the repo",
+    "dup_baseline_percent_key.find_percent_only_duplicates": "reads one duplicate-baseline JSON file the repo names itself, not a corpus",
     "edge_function_hygiene": "takes a Supabase functions directory",
     "effect_assertion_parity": "needs a production-to-test import map",
     "emitted_vocabulary_literals": "needs the consumer's emit sites (callee and field) and its published vocabulary",
