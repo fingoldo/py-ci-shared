@@ -1,0 +1,21 @@
+# Line endings: text files are stored with LF and checked out with LF on every platform, so a Windows checkout
+# (core.autocrlf=true, or an editor that saves CRLF) cannot commit CRLF into the repository.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF on checkout: cmd.exe needs it.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Shell scripts break on CRLF under Linux.
+*.sh text eol=lf
+
+# Images and other binaries are never touched by the text filter.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.npy binary
+*.npz binary
+*.pkl binary
