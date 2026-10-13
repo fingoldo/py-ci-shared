@@ -823,6 +823,24 @@ def _line_of(constant: StatementConstant, column: str) -> int:
     return constant.line
 
 
+def _without_ddl_directory(constants: list, missing_dirs: list[Path]) -> "StatementColumnReport":
+    """No DDL directory is a repo without a database: clean when no statement would need one. A statement that exists
+    without its DDL is the gate losing its subject, so it raises."""
+    if constants:
+        raise CorpusError(f"DDL directory does not exist: {missing_dirs[0]} ({len(missing_dirs)} missing), but {len(constants)} SQL statement(s) need it")
+    return StatementColumnReport(no_subject=True)
+
+
+def _known_tables(catalogue: "_Catalogue", ddl_dirs: Iterable[Union[str, Path]], min_tables: int) -> list["_Table"]:
+    known = [t for t in catalogue.tables.values() if not t.open]
+    if len(known) < min_tables:
+        raise AssertionError(
+            f"only {len(known)} table(s) with a column list found in the DDL under {list(ddl_dirs)} ({catalogue.files} file(s)); expected at least "
+            f"{min_tables}. Check ddl_dirs: the gate has lost its subject"
+        )
+    return known
+
+
 def statement_column_report(
     root: Union[str, Path],
     *,
@@ -846,22 +864,13 @@ def statement_column_report(
     scan: ScanResult = scan_python(root_path, min_files=min_files, use_git=use_git)
     scan.files = [f for f in scan.files if f.rel.split("/")[0] not in skip]
     scan.unparsed = [p for p in scan.unparsed if p.rel.split("/")[0] not in skip]
-    catalogue, problems, missing = _build_catalogue(root_path, ddl_dirs, use_git)
+    catalogue, problems, missing_dirs = _build_catalogue(root_path, ddl_dirs, use_git)
     scan.unparsed.extend(problems)
     scan.assert_ok(allow_unparsed=allow_unparsed)
     constants = list(statement_constants(scan, tuple(s.upper() for s in statement_starts), include_dynamic=True))
-    if missing:
-        # No DDL directory is a repo without a database, which is clean when no statement would need one. A statement that
-        # exists without its DDL is the gate losing its subject, so it raises.
-        if constants:
-            raise CorpusError(f"DDL directory does not exist: {missing[0]} ({len(missing)} missing), but {len(constants)} SQL statement(s) need it")
-        return StatementColumnReport(no_subject=True)
-    known = [t for t in catalogue.tables.values() if not t.open]
-    if len(known) < min_tables:
-        raise AssertionError(
-            f"only {len(known)} table(s) with a column list found in the DDL under {list(ddl_dirs)} ({catalogue.files} file(s)); expected at least "
-            f"{min_tables}. Check ddl_dirs: the gate has lost its subject"
-        )
+    if missing_dirs:
+        return _without_ddl_directory(constants, missing_dirs)
+    known = _known_tables(catalogue, ddl_dirs, min_tables)
     report = StatementColumnReport(tables=len(known), ddl_files=catalogue.files)
     for constant in constants:
         report.statements += 1
