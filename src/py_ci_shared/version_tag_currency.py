@@ -8,11 +8,15 @@ every combination fails silently:
    repo believes it shipped. flutter_app_core C02-9 (2026-09-02).
 2. **Tag exists but is not reachable from HEAD.** The tag was moved or cut on a branch that never
    merged, so ``ref: v0.6.0`` resolves to code nobody has reviewed on the default branch.
-3. **Consumer pin age.** glossum P03-22: the app pinned ``v0.4.0`` while the sibling package had
+3. **Consumer pin vs its lock.** A product's build honours ``pubspec.lock``, not the ref in ``pubspec.yaml``: move
+   the ref without ``flutter pub get`` and the old commit ships under a green everything; re-point a tag (or pin a
+   branch that moved) and the lock names a commit the ref no longer means. :func:`find_lock_pin_problems` checks both
+   (noema_app ``tool/check-core-pin-agrees.sh``, 2026-10, generalized for every app pinning a git package).
+4. **Consumer pin age.** glossum P03-22: the app pinned ``v0.4.0`` while the sibling package had
    shipped through ``v0.5.9`` -- twelve releases of fixes, including security ones, that the
    product had simply never taken. Nothing failed; nobody looked.
 
-Rules 1 and 2 are blocking (they are facts about one repo). Rule 3 is advisory by default, because
+Rules 1 to 3 are blocking (they are facts about one repo). Rule 4 is advisory by default, because
 "pin is behind" is often a deliberate freeze -- but it should be a decision someone made this week,
 not a number nobody has read since it was written.
 
@@ -214,3 +218,70 @@ def assert_version_is_tagged(repo: Path, manifest: str = "pubspec.yaml") -> None
     problems = find_version_tag_problems(repo, manifest)
     if problems:
         pytest.fail(f"{len(problems)} version/tag problem(s):\n  " + "\n  ".join(problems))
+
+
+def _lock_git_entry(lock: Path, package_name: str) -> "dict[str, Any] | None":
+    """``packages.<name>.description`` of a ``pubspec.lock`` when the package resolved from git, else None."""
+    import yaml
+
+    data = yaml.safe_load(lock.read_text(encoding="utf-8-sig")) or {}
+    entry = (data.get("packages") or {}).get(package_name) if isinstance(data, dict) else None
+    if not isinstance(entry, dict) or entry.get("source") != "git" or not isinstance(entry.get("description"), dict):
+        return None
+    description: dict[str, Any] = entry["description"]
+    return description
+
+
+def _remote_commit(url: str, ref: str) -> "str | None":
+    """The commit *ref* names on *url* today (an annotated tag's peeled commit first), or None when it names nothing.
+    Raises :class:`VersionCheckError` when the remote cannot be reached."""
+    try:
+        proc = run_git(None, "ls-remote", url, f"refs/tags/{ref}^{{}}", f"refs/tags/{ref}", f"refs/heads/{ref}", timeout=60)
+    except GitError as exc:
+        raise VersionCheckError(str(exc)) from exc
+    if proc.returncode != 0:
+        raise VersionCheckError(f"git ls-remote {url} failed (exit {proc.returncode}): {git_text(proc.stderr).strip()[:300]}")
+    rows = [line.split() for line in git_text(proc.stdout).splitlines() if line.strip()]
+    peeled = [r[0] for r in rows if len(r) == 2 and r[1].endswith("^{}")]
+    if peeled:
+        return peeled[0]
+    return rows[0][0] if rows and rows[0] else None
+
+
+def find_lock_pin_problems(manifest: Path, lock: Path, package_name: str, *, check_remote: bool = True) -> list[str]:
+    """Where *manifest* (``pubspec.yaml``), *lock* (``pubspec.lock``) and the package's remote disagree about the git
+    pin of *package_name*: the lock's ``ref`` must be the ref the manifest names, and (with *check_remote*) the lock's
+    ``resolved-ref`` must be the commit that ref names on the remote today. A manifest with no git pin for the package
+    (a path override, a hosted dependency) is not a pin to check and reports nothing.
+
+    Raises :class:`VersionCheckError` when *check_remote* and the remote cannot be reached: a check that could not ask
+    must not read as one that agreed. Pass ``check_remote=False`` offline.
+    """
+    pin = pinned_ref(manifest, package_name)
+    if pin is None:
+        return []
+    entry = _lock_git_entry(lock, package_name)
+    if entry is None:
+        return [f"{manifest.name} pins {package_name} at {pin}, but {lock.name} has no git entry for it; run flutter pub get"]
+    lock_ref, resolved, url = str(entry.get("ref") or ""), str(entry.get("resolved-ref") or ""), str(entry.get("url") or "")
+    if lock_ref != pin:
+        return [f"{manifest.name} pins {package_name} at {pin} but {lock.name} resolved {lock_ref or 'no ref'}; run flutter pub get"]
+    if not check_remote:
+        return []
+    if not url:
+        return [f"{lock.name} records no url for {package_name}, so the pinned commit cannot be checked"]
+    commit = _remote_commit(url, pin)
+    if commit is None:
+        return [f"{url} has no tag or branch named {pin}"]
+    if commit != resolved:
+        return [f"{package_name} {pin} is {commit} on {url} but {lock.name} resolved it to {resolved or 'nothing'}; run flutter pub upgrade {package_name}"]
+    return []
+
+
+def assert_lock_agrees_with_pin(repo: Path, package_name: str, *, check_remote: bool = True) -> None:
+    """Fail when *repo*'s ``pubspec.yaml`` pin of *package_name*, its ``pubspec.lock`` and the remote disagree."""
+    problems = find_lock_pin_problems(repo / "pubspec.yaml", repo / "pubspec.lock", package_name, check_remote=check_remote)
+    if problems:
+        import pytest
+
+        pytest.fail("pubspec pin and lock disagree; run the command each line names:\n  " + "\n  ".join(problems))

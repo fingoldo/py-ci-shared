@@ -10,8 +10,11 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.version_tag_currency import (
+    VersionCheckError,
+    assert_lock_agrees_with_pin,
     assert_version_is_tagged,
     declared_version,
+    find_lock_pin_problems,
     find_stale_pin,
     find_version_tag_problems,
     semver_tags,
@@ -190,3 +193,71 @@ class TestAudit20261003:
         assert adoption_matrix.is_release_tag is is_release_tag
         assert [t for t in ("v1.0.0", "v1.1.0-rc.1", "1.2.0", "v1", "v2.0.0") if is_release_tag(t)] == ["v1.0.0", "v2.0.0"]
         assert is_release_tag("1.2.0", prefix="") and not is_release_tag("v1.2.0", prefix="")
+
+
+class TestLockPinAgreement:
+    """``find_lock_pin_problems``: the pubspec pin, the lock and the remote name one commit."""
+
+    def _consumer(self, tmp_path: Path, url: str, pin: str, lock_ref: str, resolved: str) -> Path:
+        app = tmp_path / "app"
+        app.mkdir(parents=True, exist_ok=True)
+        (app / "pubspec.yaml").write_text(f"name: app\ndependencies:\n  core:\n    git:\n      url: {url}\n      ref: {pin}\n", encoding="utf-8")
+        (app / "pubspec.lock").write_text(
+            "packages:\n  core:\n    dependency: direct main\n    description:\n"
+            f'      path: "."\n      ref: {lock_ref}\n      resolved-ref: "{resolved}"\n      url: "{url}"\n'
+            '    source: git\n    version: "0.1.0"\n',
+            encoding="utf-8",
+        )
+        return app
+
+    def _remote(self, tmp_path: Path) -> tuple[str, str]:
+        remote = _repo(tmp_path / "remote", "0.1.0")
+        subprocess.run(["git", "tag", "-a", "v0.1.0", "-m", "release"], cwd=remote, check=True)
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=remote, check=True, capture_output=True, text=True, encoding="utf-8").stdout.strip()
+        return remote.as_posix(), head
+
+    def test_pin_lock_and_remote_that_agree_report_nothing(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        app = self._consumer(tmp_path, url, "v0.1.0", "v0.1.0", head)
+        assert find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core") == []
+        assert_lock_agrees_with_pin(app, "core")
+
+    def test_a_ref_moved_without_pub_get_is_reported(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        app = self._consumer(tmp_path, url, "v0.1.1", "v0.1.0", head)
+        problems = find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core", check_remote=False)
+        assert problems == ["pubspec.yaml pins core at v0.1.1 but pubspec.lock resolved v0.1.0; run flutter pub get"]
+        with pytest.raises(pytest.fail.Exception, match=r"v0\.1\.1"):
+            assert_lock_agrees_with_pin(app, "core", check_remote=False)
+
+    def test_a_lock_on_a_commit_the_tag_no_longer_names_is_reported(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        stale = "0" * 40
+        app = self._consumer(tmp_path, url, "v0.1.0", "v0.1.0", stale)
+        assert find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core", check_remote=False) == []
+        (problem,) = find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core")
+        assert head in problem and stale in problem and "flutter pub upgrade core" in problem
+
+    def test_a_pin_the_remote_does_not_have_is_reported(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        app = self._consumer(tmp_path, url, "v9.9.9", "v9.9.9", head)
+        assert find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core") == [f"{url} has no tag or branch named v9.9.9"]
+
+    def test_an_unreachable_remote_is_an_error_not_a_pass(self, tmp_path):
+        app = self._consumer(tmp_path, (tmp_path / "missing").as_posix(), "v0.1.0", "v0.1.0", "0" * 40)
+        with pytest.raises(VersionCheckError):
+            find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core")
+
+    def test_a_path_override_is_not_a_pin(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        app = self._consumer(tmp_path, url, "v0.1.0", "v0.0.1", head)
+        with (app / "pubspec.yaml").open("a", encoding="utf-8") as fh:
+            fh.write("dependency_overrides:\n  core:\n    path: ../core\n")
+        assert find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core") == []
+
+    def test_a_lock_with_no_git_entry_is_reported(self, tmp_path):
+        url, head = self._remote(tmp_path)
+        app = self._consumer(tmp_path, url, "v0.1.0", "v0.1.0", head)
+        (app / "pubspec.lock").write_text("packages: {}\n", encoding="utf-8")
+        (problem,) = find_lock_pin_problems(app / "pubspec.yaml", app / "pubspec.lock", "core")
+        assert "no git entry" in problem

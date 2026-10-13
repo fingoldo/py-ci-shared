@@ -385,6 +385,15 @@ CANARIES: dict[str, Canary] = {
             token="CAP_TOKENS",
             empty=False,
         ),
+        Canary(
+            "emitted_vocabulary_literals",
+            lambda d: _gate("emitted_vocabulary_literals").assert_emitted_vocabulary_literals(
+                d,
+                sites=[_gate("emitted_vocabulary_literals").EmitSite("Disclosure", keyword="kind")],
+                published={"composed", "priced"},
+                use_git=False,
+            ),
+        ),
     ]
 }
 

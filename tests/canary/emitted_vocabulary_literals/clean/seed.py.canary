@@ -1,0 +1,6 @@
+COMPOSED = "composed"
+
+
+def disclose(priced: bool):
+    kind = "priced" if priced else COMPOSED
+    return Disclosure(kind=kind)

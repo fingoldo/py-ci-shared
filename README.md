@@ -205,6 +205,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`edge_function_hygiene`](src/py_ci_shared/edge_function_hygiene.py) | gate | 1.3.6 | `assert_edge_functions_are_sound` | A serverless edge function is not a hole in the product's own back end |
 | [`effect_assertion_parity`](src/py_ci_shared/effect_assertion_parity.py) | gate | 1.4.0 | `assert_effects_are_asserted` | A side effect the code performs must be one some test actually inspects |
 | [`embedded_postgres`](src/py_ci_shared/embedded_postgres.py) | cli | 1.17.0 | `main` | Run a command against a throwaway local Postgres, and find the main checkout's ``.env`` from a worktree |
+| [`emitted_vocabulary_literals`](src/py_ci_shared/emitted_vocabulary_literals.py) | gate | 1.22.7 | `assert_emitted_vocabulary_literals` | Every literal passed to a named model's field at an emit site is in the published vocabulary, and every published member is emitted |
 | [`entry_points_resolvable`](src/py_ci_shared/entry_points_resolvable.py) | gate | 1.3.1 | `assert_all_entry_points_resolvable` | Every ``[project.scripts]``/``[project.entry-points.*]`` entry in pyproject.toml actually resolves (module imports, attribute exists) |
 | [`env_example_round_trip`](src/py_ci_shared/env_example_round_trip.py) | gate | 1.17.0 | `assert_env_example_loads` | Every value a `.env.example` documents can actually be loaded by the settings class |
 | [`env_flag_parsing`](src/py_ci_shared/env_flag_parsing.py) | gate | 1.17.0 | `assert_env_flags_use_one_parser` | Boolean environment flags read by hand, each with its own idea of what "on" means |
@@ -336,7 +337,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`value_bearing_asserts`](src/py_ci_shared/value_bearing_asserts.py) | gate | 1.12.0 | `assert_no_value_bearing_asserts` | No guard that checks a VALUE may ride on an ``assert`` in production code |
 | [`vendored_internal_imports`](src/py_ci_shared/vendored_internal_imports.py) | gate | 1.20.0 | `assert_no_vendored_internal_imports` | No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback |
 | [`version_consistency`](src/py_ci_shared/version_consistency.py) | gate | 1.8.0 | `assert_versions_agree` | A package reports one version wherever it states one |
-| [`version_tag_currency`](src/py_ci_shared/version_tag_currency.py) | gate | 1.3.6 | `assert_version_is_tagged` | A package's declared version, its tags and its consumers' pins agree |
+| [`version_tag_currency`](src/py_ci_shared/version_tag_currency.py) | gate | 1.3.6 | `assert_version_is_tagged` (+1) | A package's declared version, its tags and its consumers' pins agree |
 | [`vulture_warn`](src/py_ci_shared/vulture_warn.py) | cli | 1.0.0 | `main` | Warn-only dead-code check for the pre-commit hook |
 | [`worker_budget`](src/py_ci_shared/worker_budget.py) | library | 1.22.7 |  | How many workers the machine can spare now: half of its free physical cores, overridable by PY_CI_WORKERS |
 | [`workflow_runner_labels`](src/py_ci_shared/workflow_runner_labels.py) | gate | 1.20.0 | `assert_workflow_runner_labels_pinned` | Workflows use no moving ``*-latest`` runner label, and pinned actions have a github-actions update channel; ``--fix`` rewrites both |

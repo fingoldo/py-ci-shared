@@ -1,0 +1,8 @@
+COMPOSED = "composed"
+
+
+def disclose(priced: bool):
+    kind = "priced" if priced else COMPOSED
+    if not priced:
+        return Disclosure(kind="seed_rebased")
+    return Disclosure(kind=kind)

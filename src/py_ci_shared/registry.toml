@@ -458,6 +458,13 @@ cli = true
 summary = "Run a command against a throwaway local Postgres, and find the main checkout's ``.env`` from a worktree"
 
 [[gate]]
+name = "emitted_vocabulary_literals"
+kind = "gate"
+entries = ["assert_emitted_vocabulary_literals"]
+since = "1.22.7"
+summary = "Every literal passed to a named model's field at an emit site is in the published vocabulary, and every published member is emitted"
+
+[[gate]]
 name = "entry_points_resolvable"
 kind = "gate"
 entries = ["assert_all_entry_points_resolvable"]
@@ -1373,7 +1380,7 @@ summary = "A package reports one version wherever it states one"
 [[gate]]
 name = "version_tag_currency"
 kind = "gate"
-entries = ["assert_version_is_tagged"]
+entries = ["assert_version_is_tagged", "assert_lock_agrees_with_pin"]
 since = "1.3.6"
 summary = "A package's declared version, its tags and its consumers' pins agree"
 

@@ -4,6 +4,20 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased
 
+- New gate `emitted_vocabulary_literals` (`assert_emitted_vocabulary_literals`, `EmitSite`): every value a backend passes to a closed-vocabulary
+  field at its emit sites (a callee name plus the keyword and/or positional slots) is a member of the vocabulary it publishes, and every published
+  member is emitted somewhere (a class default of that field counts). Arguments resolve statically: literals, both arms of a conditional, module- and
+  class-level string constants (also imported, absolute or relative), locals and tuples unpacked from a same-module function's returns. An argument
+  it cannot resolve is a finding unless its source text is listed in `pass_through`. Generalized from Autopsia's `test_emitted_vocabulary_literals`
+  (a `rebased` kind reached a client's screen untranslated); over Autopsia's tree with that test's two configurations it reports nothing, and one
+  planted literal at a `ModeratorDisclosureOut(kind=...)` site is reported along with the published member it displaced.
+
+- `version_tag_currency.find_lock_pin_problems` / `assert_lock_agrees_with_pin`: a Flutter app's `pubspec.yaml` git pin of a package, its
+  `pubspec.lock` and the package's remote name one commit (the lock's `ref` is the pinned ref; its `resolved-ref` is what that ref names on the
+  remote today, via `git ls-remote`, with an annotated tag peeled). The build honours the lock, so a ref moved without `flutter pub get`, or a tag
+  re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
+  `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
+
 - `corpus-drift.yml` installs the `sql` extra, so `statement_columns_exist_in_ddl` runs in the nightly corpus scan instead of raising ImportError for sqlglot.
 
 - `lint-advisory.yml` gains `pip-audit-ignore-vulns`: advisory ids pip-audit skips (`--ignore-vuln` each), for risks a repo has accepted and written

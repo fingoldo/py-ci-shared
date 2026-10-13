@@ -78,6 +78,7 @@ NON_CORPUS: dict[str, str] = {
     "docs_inventory_parity": "needs the docs files, pyproject path and bullet patterns of the repo",
     "edge_function_hygiene": "takes a Supabase functions directory",
     "effect_assertion_parity": "needs a production-to-test import map",
+    "emitted_vocabulary_literals": "needs the consumer's emit sites (callee and field) and its published vocabulary",
     "entry_points_resolvable": "takes a pyproject path and imports the entry points",
     "env_flag_parsing": "needs the repo's env-var prefixes",
     "external_fact_tables": "needs the repo's declared fact tables",
