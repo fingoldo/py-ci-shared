@@ -99,7 +99,7 @@ class RepoState:
 
 
 def read_state(tag: str, remote: str, branch: str) -> RepoState:
-    git("fetch", "--quiet", "--tags", remote, branch)
+    git("fetch", "--quiet", "--force", "--tags", remote, branch)  # --force: a local v1 behind the moved remote one is not an error
     head = git("rev-parse", "HEAD")
     upstream = git("rev-parse", f"{remote}/{branch}")
     major = tag.split(".", 1)[0]
@@ -343,7 +343,7 @@ def rollback(
     out: Callable[[str], None] = print,
 ) -> int:
     """Check ``target`` is a release that shipped (``release_guard.py rollback``) and print, or run, the ``v1`` move."""
-    git("fetch", "--quiet", "--tags", remote)
+    git("fetch", "--quiet", "--force", "--tags", remote)
     if runner(Step("the target is a release that shipped (release_guard rollback)", (sys.executable, GUARD, "rollback", target))) != 0:
         return 1
     major = target.split(".", 1)[0]
