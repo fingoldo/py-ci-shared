@@ -902,7 +902,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 name = "patch_target_read_at_call"
 kind = "gate"
 entries = ["assert_patch_target_read_at_call"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A monkeypatch of a module-level name that the module only re-exports is inert: the code under test reads its own binding"
 
 [[gate]]
