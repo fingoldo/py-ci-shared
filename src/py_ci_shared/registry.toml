@@ -439,7 +439,7 @@ summary = "One set of numbers written out in several modules: the literal analog
 name = "dup_baseline_percent_key"
 kind = "gate"
 entries = ["assert_no_percent_only_duplicate_entries"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
 
 [[gate]]
@@ -586,7 +586,7 @@ summary = "The line ranges a diff actually touched, per file"
 name = "git_child_env"
 kind = "gate"
 entries = ["assert_no_new_unscrubbed_git_spawns"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A test that spawns git passes an environment with GIT_* removed, or it runs against the hook's repository (opt-in ratchet)"
 
 [[gate]]
@@ -614,7 +614,7 @@ summary = "A guard script is actually looking at something"
 name = "guard_without_fixture"
 kind = "gate"
 entries = ["assert_every_guard_named_by_a_test"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A tool/check* guard that no test file names is never run against bad input (opt-in ratchet)"
 
 [[gate]]
@@ -1157,7 +1157,7 @@ summary = "A test must not assert on a wall-clock ratio or ceiling derived from 
 name = "skip_as_pass"
 kind = "gate"
 entries = ["assert_no_new_skip_as_pass"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A tool/scripts/.githooks script that prints SKIPPED and exits 0 reports a pass (opt-in ratchet)"
 
 [[gate]]
@@ -1423,7 +1423,7 @@ summary = "Warn-only dead-code check for the pre-commit hook"
 name = "wallclock_test_waits"
 kind = "gate"
 entries = ["assert_no_new_wallclock_test_waits"]
-since = "1.22.8"
+since = "1.22.9"
 summary = "A test does not sleep on the wall clock (Future.delayed of a Duration, time.sleep) (opt-in ratchet)"
 
 [[gate]]

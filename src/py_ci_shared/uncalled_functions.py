@@ -47,13 +47,35 @@ as a call.
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, UnparsedFilesError, refresh_requested, register_refresh_options, relative_posix, scan_python
 
 REFRESH_FLAG = "--refresh-uncalled-functions-baseline"
+
+#: Named exemption categories. Each names one reason a function can be uncalled by production code legitimately; a
+#: consumer chooses from this set rather than inventing free text. An exemption outside this set fails the gate.
+CATEGORIES: dict[str, str] = {
+    "PUBLIC_API": "the library's public surface: exported through __all__ or a package re-export, for callers outside the repo",
+    "FRAMEWORK_HOOK": "invoked by name by a framework or the interpreter (callbacks, lazy-module protocol, entry points)",
+    "PLUGIN_HOOK": "an extension point a downstream package calls by name",
+    "SUPERSEDED": "replaced by a live twin and kept as the reference; a parity test must pin the twin",
+    "RETAINED_KERNEL": "a deliberately kept alternative implementation (A/B, fallback) that no switch currently reaches",
+    "OPT_IN_SLOW": "a valid path enabled by an explicit call or flag, slower than the default, so not on the default path",
+    "OFFLINE_HELPER": "a benchmark, generator or diagnostic helper run by hand, never by the shipped pipeline",
+    "TEST_UTILITY": "a test-isolation helper (cache reset, fixture hook) that only tests call",
+}
+
+
+@dataclass(frozen=True)
+class Exemption:
+    """Why one bare function name is exempt: a category from :data:`CATEGORIES` and a non-empty reason."""
+
+    category: str
+    reason: str
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
@@ -212,6 +234,30 @@ def _referenced_names(tree: ast.Module) -> set[str]:
     return loaded | {original for local, original in aliases.items() if local in loaded}
 
 
+def reexported_public_api(files: Iterable[Path], root: Path) -> dict[str, Exemption]:
+    """Map each name a package ``__init__`` re-exports (``from x import f`` or listed in ``__all__``) to a PUBLIC_API exemption.
+
+    The keys are bare names, as :func:`assert_no_new_uncalled_function` matches ``exempt``. Only ``__init__.py`` files count:
+    they are the package facade a downstream user imports from.
+    """
+    out: dict[str, Exemption] = {}
+    for parsed in scan_python([Path(p) for p in files], min_files=0, root=root):
+        if parsed.path.name != "__init__.py":
+            continue
+        module = relative_posix(parsed.path, root).removesuffix("/__init__.py").replace("/", ".")
+        for node in ast.walk(parsed.tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name != "*":
+                        out.setdefault(alias.asname or alias.name, Exemption("PUBLIC_API", f"re-exported by {module}"))
+            if isinstance(node, ast.Assign) and any(isinstance(tg, ast.Name) and tg.id == "__all__" for tg in node.targets):
+                if isinstance(node.value, (ast.List, ast.Tuple)):
+                    for elt in node.value.elts:
+                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                            out.setdefault(elt.value, Exemption("PUBLIC_API", f"listed in __all__ of {module}"))
+    return out
+
+
 def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed: bool = False) -> dict[str, str]:
     """Return ``{"rel/path.py::name": name}`` for module-level functions nothing in *files* loads.
 
@@ -259,11 +305,18 @@ def assert_no_new_uncalled_function(
     baseline_path: Path,
     ignore: Iterable[str] = (),
     *,
+    exempt: Optional[Mapping[str, Exemption]] = None,
+    public_api_from_exports: bool = False,
     min_files: int = 1,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
 ) -> None:
-    """Fail if a module-level function has no production call site, unless it is baselined.
+    """Fail if a module-level function has no production call site, unless it is baselined or exempt.
+
+    ``exempt`` maps a bare name to an :class:`Exemption`; each must use a category from :data:`CATEGORIES` and a non-empty
+    reason, otherwise the gate fails naming the bad entry. ``public_api_from_exports=True`` adds a PUBLIC_API exemption for
+    every name a package ``__init__`` re-exports, so a library does not list them by hand. An explicit ``exempt`` entry wins
+    over the automatic one. ``ignore`` remains for callers that keep bare names without a category.
 
     The baseline is a committed multiset (``_core.Baseline``). A MISSING baseline fails and names the refresh
     command; it is written only when a refresh is requested (``refresh=True``, ``--refresh-uncalled-functions-baseline``
@@ -291,7 +344,17 @@ def assert_no_new_uncalled_function(
     if problems:  # never write or compare a baseline from a broken walk
         pytest.fail("\n".join(problems), pytrace=False)
 
-    ignored = set(ignore)
+    exemptions: dict[str, Exemption] = dict(reexported_public_api(paths, root)) if public_api_from_exports else {}
+    exemptions.update(exempt or {})
+    bad = [
+        f"{name}: category {ex.category!r} is not one of {sorted(CATEGORIES)}" if ex.category not in CATEGORIES
+        else f"{name}: an exemption needs a non-empty reason"
+        for name, ex in exemptions.items()
+        if ex.category not in CATEGORIES or not ex.reason.strip()
+    ]
+    if bad:
+        pytest.fail("invalid uncalled-function exemption(s):\n  " + "\n  ".join(bad), pytrace=False)
+    ignored = set(ignore) | set(exemptions)
     current = {k: v for k, v in find_uncalled_functions(paths, root).items() if v not in ignored}
     do_refresh = refresh if refresh is not None else _refresh_requested(request)
     baseline = Baseline(baseline_path, gate="uncalled-functions", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=uncalled-functions)")

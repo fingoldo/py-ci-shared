@@ -13,7 +13,13 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared._core import UnparsedFilesError
-from py_ci_shared.uncalled_functions import assert_no_new_uncalled_function, find_uncalled_functions
+from py_ci_shared.uncalled_functions import (
+    CATEGORIES,
+    Exemption,
+    assert_no_new_uncalled_function,
+    find_uncalled_functions,
+    reexported_public_api,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -264,3 +270,50 @@ class TestGuardedLocalImport:
             "def g():\n    try:\n        from a import f\n    except ImportError:\n        f = None\n    if f is not None:\n        return f()\n",
         )
         assert "a.py::f" not in find_uncalled_functions([a, b], tmp_path)
+
+
+class TestExemptionCategories:
+    """Named exemption categories: one reason per name, from a fixed set, and the package facade's re-exports on request."""
+
+    def test_reexported_names_come_from_the_facade_and_all(self, tmp_path):
+        init = _write(tmp_path, "pkg/__init__.py", 'from .impl import exported_fn\n\n__all__ = ["listed_fn"]\n')
+        impl = _write(tmp_path, "pkg/impl.py", "def exported_fn():\n    return 1\n\ndef listed_fn():\n    return 2\n\ndef internal():\n    return 3\n")
+        found = reexported_public_api([init, impl], tmp_path)
+        assert set(found) == {"exported_fn", "listed_fn"}
+        assert found["exported_fn"].category == "PUBLIC_API"
+        assert "pkg" in found["exported_fn"].reason
+
+    def test_public_api_from_exports_exempts_the_re_exported_one_only(self, tmp_path):
+        init = _write(tmp_path, "pkg/__init__.py", "from .impl import api\n")
+        impl = _write(tmp_path, "pkg/impl.py", "def api():\n    return 1\n\ndef dead_helper():\n    return 2\n")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception) as excinfo:
+            assert_no_new_uncalled_function([init, impl], tmp_path, baseline, public_api_from_exports=True)
+        message = str(excinfo.value)
+        assert "pkg/impl.py::dead_helper" in message
+        assert "pkg/impl.py::api" not in message
+
+    def test_an_exemption_outside_the_category_set_fails(self, tmp_path):
+        f = _write(tmp_path, "m.py", "def orphan():\n    return 1\n")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="not one of"):
+            assert_no_new_uncalled_function([f], tmp_path, baseline, exempt={"orphan": Exemption("MADE_UP", "because")})
+
+    def test_an_exemption_without_a_reason_fails(self, tmp_path):
+        f = _write(tmp_path, "m.py", "def orphan():\n    return 1\n")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+        with pytest.raises(pytest.fail.Exception, match="non-empty reason"):
+            assert_no_new_uncalled_function([f], tmp_path, baseline, exempt={"orphan": Exemption("PUBLIC_API", "   ")})
+
+    def test_a_valid_exemption_passes(self, tmp_path):
+        f = _write(tmp_path, "m.py", "def orphan():\n    return 1\n")
+        baseline = tmp_path / "baseline.json"
+        baseline.write_text("[]", encoding="utf-8")
+        assert_no_new_uncalled_function([f], tmp_path, baseline, exempt={"orphan": Exemption("OFFLINE_HELPER", "run by hand for benchmarks")})
+
+    def test_every_category_has_a_description(self):
+        assert "PUBLIC_API" in CATEGORIES
+        assert all(description.strip() for description in CATEGORIES.values())
