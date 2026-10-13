@@ -1,0 +1,7 @@
+﻿import reexport
+import service
+
+
+def test_cap_limits_to_the_configured_limit(monkeypatch):
+    monkeypatch.setattr(reexport, "LIMIT", 5)
+    assert service.cap(3) == 3

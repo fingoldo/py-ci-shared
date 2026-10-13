@@ -899,6 +899,13 @@ budget_s = 120
 summary = "The doctests a package ships actually run, and there are some to run"
 
 [[gate]]
+name = "patch_target_read_at_call"
+kind = "gate"
+entries = ["assert_patch_target_read_at_call"]
+since = "1.22.8"
+summary = "A monkeypatch of a module-level name that the module only re-exports is inert: the code under test reads its own binding"
+
+[[gate]]
 name = "persisted_negative_probe"
 kind = "gate"
 entries = ["assert_persisted_negative_probe"]

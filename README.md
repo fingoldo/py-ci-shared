@@ -268,6 +268,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`optional_truthiness`](src/py_ci_shared/optional_truthiness.py) | gate | 1.4.0 | `assert_optionals_test_for_none` | An optional parameter tested for truth rather than for absence |
 | [`order_losing_filters`](src/py_ci_shared/order_losing_filters.py) | gate | 1.17.0 | `assert_no_order_losing_filters` | Row selections by an index-built mask whose positional twin returns the rows in index order |
 | [`package_doctests`](src/py_ci_shared/package_doctests.py) | gate | 1.12.0 | `assert_package_doctests_pass` | The doctests a package ships actually run, and there are some to run |
+| [`patch_target_read_at_call`](src/py_ci_shared/patch_target_read_at_call.py) | gate | 1.22.8 | `assert_patch_target_read_at_call` | A monkeypatch of a module-level name that the module only re-exports is inert: the code under test reads its own binding |
 | [`persisted_negative_probe`](src/py_ci_shared/persisted_negative_probe.py) | gate | 1.22.3 | `assert_persisted_negative_probe` | A failed hardware probe must not persist a negative verdict (no-gpu) that outlives the process |
 | [`phantom_code_references`](src/py_ci_shared/phantom_code_references.py) | gate | 1.3.6 | `assert_no_phantom_code_references` (+2) | A comment that names a test file, a class or a function must name one that exists |
 | [`phantom_markdown_links`](src/py_ci_shared/phantom_markdown_links.py) | gate | 1.3.1 | `assert_no_phantom_markdown_links` | Every markdown-link target in a repo's .md files resolves to a real file |

@@ -94,6 +94,7 @@ NON_CORPUS: dict[str, str] = {
     "marker_runner_coverage": "needs a marker name and runner commands",
     "mutation_teeth": "runs mutants against tests; minutes per file, not a count",
     "optional_truthiness": "takes one file path, not a corpus",
+    "patch_target_read_at_call": "needs the test paths and the first-party package roots, which a repo checkout does not name (src layouts, several packages)",
     "phantom_code_references": "needs the declared-name set of the repo",
     "phantom_markdown_links": "takes Markdown files, not the Python corpus",
     "private_imports": "needs the package name and its source directory",

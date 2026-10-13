@@ -1,0 +1,5 @@
+﻿from reexport import LIMIT
+
+
+def cap(n):
+    return min(n, LIMIT)

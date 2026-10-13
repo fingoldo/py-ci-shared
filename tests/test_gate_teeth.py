@@ -394,6 +394,11 @@ CANARIES: dict[str, Canary] = {
                 use_git=False,
             ),
         ),
+        Canary(
+            "patch_target_read_at_call",
+            lambda d: _gate("patch_target_read_at_call").assert_patch_target_read_at_call([d / "tests"], [d], use_git=False),
+            token="reexport.LIMIT",
+        ),
     ]
 }
 
