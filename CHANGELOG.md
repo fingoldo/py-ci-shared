@@ -4,6 +4,13 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.10)
 
+- Releases are cut locally with `.github/scripts/release_local.py X.Y.Z`: GitHub Actions cannot run on this account, so
+  `release.yml` and the self-ci run it waited for never ran. The script refuses a dirty tree, a HEAD that is not `origin/master` and any
+  failing check; runs `release_guard.py prepare --check`, every pre-commit hook over all files, the whole suite on Python 3.9 to 3.13
+  (coverage on 3.11), `run-all`, ruff over the whole tree, mypy, black-filtered and the isolated mypy; tags; runs release.yml's tag checks;
+  and prints the pushes (`v1` with `--force-with-lease`, `gh release create` with these notes). `--rollback-to` replaces the release
+  workflow's rollback dispatch. The pre-commit ruff hook now covers every Python file (it skipped `.github/scripts`), and pre-push
+  runs `py-ci-shared run-all`, which only self-ci ran before. Nothing changes for consumers.
 - New in-place exemption for `patch_target_read_at_call` (additive): a `monkeypatch` line carrying `# audit-exempt: patch_target_read_at_call -- <reason of at least 20 characters>` is no longer reported, for a reader that resolves the patched name through an accessor the static scan cannot follow (a parent-module bridge such as `_get_live("NAME")`). The check id uses underscores because the shared marker regex allows no hyphens; a marker with no reason, or naming another check, still leaves the finding.
 - `complexity_ratchet` accepts a second baseline entry form, `{"count": ceiling, "note": reason}`, next to the bare ceiling. The gate reads the ceiling from either form; `load_complexity_notes` returns the reasons; a refresh keeps the reason of every entry it keeps. What to do: nothing for a consumer whose baseline holds bare ceilings; a consumer that wants a reason next to an entry writes the record form.
 - **New** `mutation_rerun` (CLI): the per-module mutation drivers that lived in a session scratchpad, now shared. `python -m py_ci_shared.mutation_rerun --repo . sweep <module> <tests> <checkpoint>` runs a whole module with a resumable checkpoint; `… lines <module> <tests> <survivor-log> <notes.json> [min max]` re-checks only the survivor lines and records a survivor in the journal only when the notes explain it. Paths are relative to `--repo`, the journal path is `--survivors` (default `tests/test_meta/mutation_survivors.json`). What to do: nothing for a consumer that does not run mutation sweeps; a consumer that did may delete its own copies of these scripts.

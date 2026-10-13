@@ -8,7 +8,8 @@
 # failed CI on unregistered pytest markers, a complexity limit and the README install tag because only the changed
 # files' tests had been run). Measured 2026-11-07 on a loaded machine: the gate subset is 1,612 tests, 202 s serial (about 4 min with -n 2 once the
 # tree digest skips .claude);
-# the full suite takes ~20 min there, so the rest of tests/ is left to CI.
+# the full suite takes ~20 min there, so the rest of tests/ is left to CI. Before a release tag, .github/scripts/release_local.py
+# runs the rest (every Python of self-ci's matrix, all hooks over all files, run-all), for when Actions cannot run.
 
 default_install_hook_types: [pre-commit, pre-push]
 
@@ -45,7 +46,6 @@ repos:
         entry: python -m ruff check --ignore C901
         language: system
         types: [python]
-        files: '^(src|tests)/'
         stages: [pre-commit]
       - id: black-filtered-blocking
         name: "black 26.5.1, filtered (blocking; the check black-filtered.yml runs)"
@@ -76,8 +76,17 @@ repos:
         files: '^(src/|pyproject\.toml$)'
         stages: [pre-push]
       - id: self-gates-blocking
-        name: "self-gate tests, ~4 min (pre-push; rest of tests/ is left to CI, ~20 min locally)"
-        entry: python -m pytest -p no:randomly -n 2 -o addopts="-ra --strict-markers" tests/test_package_inventory.py tests/test_gate_teeth.py tests/test_release_version.py tests/test_self_gates.py tests/test_complexity_ratchet.py tests/test_pytest_markers.py
+        name: "self-gate tests, ~4 min (pre-push; the rest of tests/ runs in release_local.py, ~20 min)"
+        entry: python -m pytest -p no:randomly -n 2 -o addopts="-ra --strict-markers" tests/test_package_inventory.py tests/test_gate_teeth.py tests/test_release_version.py tests/test_self_gates.py tests/test_complexity_ratchet.py tests/test_pytest_markers.py tests/test_release_local.py
+        language: system
+        pass_filenames: false
+        files: '^(src/|tests/|configs/|pyproject\.toml$|README\.md$|CHANGELOG\.md$|\.github/)'
+        stages: [pre-push]
+      # Was only self-ci.yml's dogfood step, which cannot run on this account (no Actions). About a minute.
+      - id: run-all-self
+        name: "py-ci-shared run-all on this repo (pre-push; self-ci.yml dogfood step)"
+        # src first on sys.path: in a worktree the interpreter's editable install points at another checkout.
+        entry: python -c "import sys; sys.path.insert(0, 'src'); from py_ci_shared.cli import main; sys.exit(main(['run-all']))"
         language: system
         pass_filenames: false
         files: '^(src/|tests/|configs/|pyproject\.toml$|README\.md$|CHANGELOG\.md$|\.github/)'
