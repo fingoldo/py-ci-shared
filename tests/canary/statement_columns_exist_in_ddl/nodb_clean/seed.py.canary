@@ -1,0 +1,2 @@
+# A repo with no database: no SQL constant and no DDL directory, so nothing needs one.
+VALUE = 1

@@ -1,0 +1,6 @@
+# A repo with no database that still names a table in SQL: the DDL it needs is missing, so the gate must raise.
+SEED_STALE_SQL = """
+    SELECT max(d.ts) AS ts
+    FROM job_auth_details d
+    WHERE d.job_uid = %s
+"""

@@ -524,13 +524,16 @@ def _file_events(tokens: list[_Tok], file: str) -> list[_Event]:
     return events
 
 
-def _build_catalogue(root: Path, ddl_dirs: Iterable[Union[str, Path]], use_git: Optional[bool]) -> tuple[_Catalogue, list[SourceProblem]]:
+def _build_catalogue(root: Path, ddl_dirs: Iterable[Union[str, Path]], use_git: Optional[bool]) -> tuple[_Catalogue, list[SourceProblem], list[Path]]:
+    """The DDL catalogue, the problems reading it, and the DDL directories that do not exist (a repo with no database has none)."""
     problems: list[SourceProblem] = []
     files: list[Path] = []
+    missing: list[Path] = []
     for entry in ddl_dirs:
         base = Path(entry) if Path(entry).is_absolute() else Path(root) / entry
         if not base.is_dir():
-            raise CorpusError(f"DDL directory does not exist: {base}")
+            missing.append(base)
+            continue
         files.extend(iter_files(base, ("*.sql",), exclude=DEFAULT_EXCLUDE, use_git=use_git))
     catalogue = _Catalogue()
     seen: set[Path] = set()
@@ -551,12 +554,12 @@ def _build_catalogue(root: Path, ddl_dirs: Iterable[Union[str, Path]], use_git: 
         catalogue.files += 1
         for event in _file_events(tokens, rel):
             catalogue.apply(event)
-    return catalogue, problems
+    return catalogue, problems, missing
 
 
 def ddl_catalogue(root: Union[str, Path], *, ddl_dirs: Iterable[Union[str, Path]] = ("sql",), use_git: Optional[bool] = None) -> dict[str, list[str]]:
     """``{"schema.table": [columns...]}`` for every table with a column list the DDL files under *ddl_dirs* define."""
-    catalogue, _ = _build_catalogue(Path(root), ddl_dirs, use_git)
+    catalogue, _, _ = _build_catalogue(Path(root), ddl_dirs, use_git)
     return {t.display: sorted(t.columns) for t in catalogue.tables.values() if not t.open}
 
 
@@ -578,6 +581,8 @@ class StatementColumnReport:
     unknown_tables: dict[str, int] = field(default_factory=dict)
     tables: int = 0
     ddl_files: int = 0
+    #: No DDL directory and no statement that needs one: there is nothing to compare, so nothing is a finding.
+    no_subject: bool = False
 
     @property
     def unchecked(self) -> int:
@@ -841,9 +846,16 @@ def statement_column_report(
     scan: ScanResult = scan_python(root_path, min_files=min_files, use_git=use_git)
     scan.files = [f for f in scan.files if f.rel.split("/")[0] not in skip]
     scan.unparsed = [p for p in scan.unparsed if p.rel.split("/")[0] not in skip]
-    catalogue, problems = _build_catalogue(root_path, ddl_dirs, use_git)
+    catalogue, problems, missing = _build_catalogue(root_path, ddl_dirs, use_git)
     scan.unparsed.extend(problems)
     scan.assert_ok(allow_unparsed=allow_unparsed)
+    constants = list(statement_constants(scan, tuple(s.upper() for s in statement_starts), include_dynamic=True))
+    if missing:
+        # No DDL directory is a repo without a database, which is clean when no statement would need one. A statement that
+        # exists without its DDL is the gate losing its subject, so it raises.
+        if constants:
+            raise CorpusError(f"DDL directory does not exist: {missing[0]} ({len(missing)} missing), but {len(constants)} SQL statement(s) need it")
+        return StatementColumnReport(no_subject=True)
     known = [t for t in catalogue.tables.values() if not t.open]
     if len(known) < min_tables:
         raise AssertionError(
@@ -851,8 +863,7 @@ def statement_column_report(
             f"{min_tables}. Check ddl_dirs: the gate has lost its subject"
         )
     report = StatementColumnReport(tables=len(known), ddl_files=catalogue.files)
-    starts = tuple(s.upper() for s in statement_starts)
-    for constant in statement_constants(scan, starts, include_dynamic=True):
+    for constant in constants:
         report.statements += 1
         if not constant.exact or _FORMAT_FIELD.search(constant.text):
             report.not_checked.setdefault(NOT_LITERAL, []).append(constant.name)
@@ -953,7 +964,7 @@ def assert_statement_columns_exist_in_ddl(
         allow_unparsed=allow_unparsed,
         use_git=use_git,
     )
-    if report.checked < min_checked:
+    if report.checked < min_checked and not report.no_subject:
         raise AssertionError(
             f"only {report.checked} SQL statement(s) could be compared with the DDL; expected at least {min_checked}. "
             f"Check ddl_dirs and exclude_top_dirs; {report.summary()}"

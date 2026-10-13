@@ -417,3 +417,31 @@ def test_a_table_whose_columns_the_ddl_cannot_list_is_unknown_not_checked(tmp_pa
     report = _report(tmp_path, ddl, "SELECT c.zz FROM s.copy c", "SELECT b.id FROM s.base b")
     assert report.findings == [] and report.unknown_tables == {"s.copy": 1}
     assert report.not_checked == {NO_DDL_TABLE: ["app.SQL_0"]} and report.checked == 1
+
+
+_NODB = Path(__file__).parent / "canary" / "statement_columns_exist_in_ddl"
+
+
+def test_a_repo_without_a_ddl_directory_and_no_statement_is_clean(tmp_path):
+    """A repo with no database has no DDL directory; with no SQL statement that needs one, the gate reports nothing and passes."""
+    root = _corpus(tmp_path, {"seed.py": (_NODB / "nodb_clean" / "seed.py.canary").read_bytes()})
+    assert find_unknown_statement_columns(root, use_git=False) == []
+    assert_statement_columns_exist_in_ddl(root, use_git=False)
+
+
+def test_a_statement_without_its_ddl_directory_still_raises(tmp_path):
+    """The same repo naming a table in SQL with no DDL directory is the gate losing its subject: it raises, it does not pass."""
+    root = _corpus(tmp_path, {"seed.py": (_NODB / "nodb_violation" / "seed.py.canary").read_bytes()})
+    with pytest.raises(CorpusError, match="DDL directory does not exist"):
+        find_unknown_statement_columns(root, use_git=False)
+
+
+def test_teeth_both_ways_on_the_no_database_shape(tmp_path):
+    """Adding a statement to the clean shape makes it raise; removing the statement from the violation makes it clean."""
+    clean = (_NODB / "nodb_clean" / "seed.py.canary").read_bytes()
+    violation = (_NODB / "nodb_violation" / "seed.py.canary").read_bytes()
+    with_statement = _corpus(tmp_path / "a", {"seed.py": clean + violation})
+    with pytest.raises(CorpusError, match="DDL directory does not exist"):
+        find_unknown_statement_columns(with_statement, use_git=False)
+    without = _corpus(tmp_path / "b", {"seed.py": violation.replace(b"SELECT max", b"NOTE max")})
+    assert find_unknown_statement_columns(without, use_git=False) == []
