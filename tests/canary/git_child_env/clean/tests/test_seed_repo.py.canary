@@ -1,0 +1,7 @@
+import os
+import subprocess
+
+
+def test_seed_repo(tmp_path):
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    subprocess.run(["git", "init"], cwd=tmp_path, env=env, check=True)

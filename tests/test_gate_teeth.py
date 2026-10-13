@@ -454,6 +454,27 @@ EXEMPT: dict[str, str] = {
 }
 
 
+# Text-ratchet gates (opt-in): each reads a file's text line by line, so there is no syntax to break except where it parses a file.
+# Their corpora hold no floor: an empty corpus is a clean one (empty=False); dup_baseline_percent_key reads one named file, so it fails without it.
+CANARIES.update(
+    {
+        "skip_as_pass": Canary("skip_as_pass", lambda d: _gate("skip_as_pass").assert_no_new_skip_as_pass(d), parses=False, empty=False),
+        "wallclock_test_waits": Canary(
+            "wallclock_test_waits", lambda d: _gate("wallclock_test_waits").assert_no_new_wallclock_test_waits(d), parses=False, empty=False
+        ),
+        "guard_without_fixture": Canary(
+            "guard_without_fixture", lambda d: _gate("guard_without_fixture").assert_every_guard_named_by_a_test(d), parses=False, empty=False
+        ),
+        "git_child_env": Canary("git_child_env", lambda d: _gate("git_child_env").assert_no_new_unscrubbed_git_spawns(d), empty=False),
+        "dup_baseline_percent_key": Canary(
+            "dup_baseline_percent_key",
+            lambda d: _gate("dup_baseline_percent_key").assert_no_percent_only_duplicate_entries(d, duplicate_baseline_path="seed_duplicate_bodies.json"),
+            parses=False,
+        ),
+    }
+)
+
+
 # CI-configuration gates: workflows, hooks and pyproject are files too, so they get canaries (audit 2026-10-03 WF-11).
 # Regex/line-level readers have no unparsable input (parses=False).
 CANARIES.update(

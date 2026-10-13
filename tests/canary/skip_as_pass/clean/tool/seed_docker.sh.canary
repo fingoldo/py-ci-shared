@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ -z "$DOCKER" ]; then
+  echo "SKIPPED: seed has no docker"
+  exit 1
+fi

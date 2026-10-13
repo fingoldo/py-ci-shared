@@ -1,0 +1,5 @@
+﻿import subprocess
+
+
+def test_seed_repo(tmp_path):
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True)

@@ -436,6 +436,13 @@ since = "1.21.0"
 summary = "One set of numbers written out in several modules: the literal analogue of drifted_duplicate_functions"
 
 [[gate]]
+name = "dup_baseline_percent_key"
+kind = "gate"
+entries = ["assert_no_percent_only_duplicate_entries"]
+since = "1.22.8"
+summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
+
+[[gate]]
 name = "edge_function_hygiene"
 kind = "gate"
 entries = ["assert_edge_functions_are_sound"]
@@ -576,6 +583,13 @@ since = "1.4.0"
 summary = "The line ranges a diff actually touched, per file"
 
 [[gate]]
+name = "git_child_env"
+kind = "gate"
+entries = ["assert_no_new_unscrubbed_git_spawns"]
+since = "1.22.8"
+summary = "A test that spawns git passes an environment with GIT_* removed, or it runs against the hook's repository (opt-in ratchet)"
+
+[[gate]]
 name = "git_dependency_pins"
 kind = "gate"
 entries = ["assert_all_git_dependencies_pinned", "assert_pins_agree", "assert_installed_includes_pin"]
@@ -595,6 +609,13 @@ kind = "gate"
 entries = ["assert_guards_examine_something"]
 since = "1.3.6"
 summary = "A guard script is actually looking at something"
+
+[[gate]]
+name = "guard_without_fixture"
+kind = "gate"
+entries = ["assert_every_guard_named_by_a_test"]
+since = "1.22.8"
+summary = "A tool/check* guard that no test file names is never run against bad input (opt-in ratchet)"
 
 [[gate]]
 name = "hardcoded_seed_in_library"
@@ -1133,6 +1154,13 @@ since = "1.22.3"
 summary = "A test must not assert on a wall-clock ratio or ceiling derived from one measurement per side"
 
 [[gate]]
+name = "skip_as_pass"
+kind = "gate"
+entries = ["assert_no_new_skip_as_pass"]
+since = "1.22.8"
+summary = "A tool/scripts/.githooks script that prints SKIPPED and exits 0 reports a pass (opt-in ratchet)"
+
+[[gate]]
 name = "source_text_ban"
 kind = "library"
 since = "1.4.0"
@@ -1390,6 +1418,13 @@ kind = "cli"
 since = "1.0.0"
 cli = true
 summary = "Warn-only dead-code check for the pre-commit hook"
+
+[[gate]]
+name = "wallclock_test_waits"
+kind = "gate"
+entries = ["assert_no_new_wallclock_test_waits"]
+since = "1.22.8"
+summary = "A test does not sleep on the wall clock (Future.delayed of a Duration, time.sleep) (opt-in ratchet)"
 
 [[gate]]
 name = "worker_budget"

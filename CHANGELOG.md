@@ -18,6 +18,13 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
   `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
 
+- Five new **opt-in** ratchet gates, none in the default set: a repo enables each by name in `[tool.py_ci_shared] enable`, and
+  only NEW violations fail; existing ones are recorded in the repo's `tool/meta/baselines/<gate>.json` with a note each.
+  `skip_as_pass` (a tool/scripts/.githooks script that prints SKIPPED and exits 0), `wallclock_test_waits` (`Future.delayed` of a
+  `Duration`, `time.sleep` inside a test), `guard_without_fixture` (a `tool/check*` guard no test names), `git_child_env` (a test's git
+  spawn that does not scrub `GIT_*` from its environment) and `dup_baseline_percent_key` (a duplicate-body pair listed twice because only
+  its similarity percentage moved). Enabling them in a consumer that already has violations needs its baseline first.
+
 - `corpus-drift.yml` installs the `sql` extra, so `statement_columns_exist_in_ddl` runs in the nightly corpus scan instead of raising ImportError for sqlglot.
 
 - `lint-advisory.yml` gains `pip-audit-ignore-vulns`: advisory ids pip-audit skips (`--ignore-vuln` each), for risks a repo has accepted and written
