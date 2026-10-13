@@ -245,17 +245,32 @@ def reexported_public_api(files: Iterable[Path], root: Path) -> dict[str, Exempt
         if parsed.path.name != "__init__.py":
             continue
         module = relative_posix(parsed.path, root).removesuffix("/__init__.py").replace("/", ".")
-        for node in ast.walk(parsed.tree):
-            if isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    if alias.name != "*":
-                        out.setdefault(alias.asname or alias.name, Exemption("PUBLIC_API", f"re-exported by {module}"))
-            if isinstance(node, ast.Assign) and any(isinstance(tg, ast.Name) and tg.id == "__all__" for tg in node.targets):
-                if isinstance(node.value, (ast.List, ast.Tuple)):
-                    for elt in node.value.elts:
-                        if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                            out.setdefault(elt.value, Exemption("PUBLIC_API", f"listed in __all__ of {module}"))
+        for name, source in _facade_exports(parsed.tree, module):
+            out.setdefault(name, Exemption("PUBLIC_API", source))
     return out
+
+
+def _facade_exports(tree: ast.Module, module: str) -> Iterator[tuple[str, str]]:
+    """Yield ``(name, reason)`` for each name a facade imports or lists in ``__all__``."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            for alias in node.names:
+                if alias.name != "*":
+                    yield alias.asname or alias.name, f"re-exported by {module}"
+        elif isinstance(node, ast.Assign) and _binds_all(node):
+            for elt in _string_items(node.value):
+                yield elt, f"listed in __all__ of {module}"
+
+
+def _binds_all(node: ast.Assign) -> bool:
+    return any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
+
+
+def _string_items(value: ast.expr) -> Iterator[str]:
+    if isinstance(value, (ast.List, ast.Tuple)):
+        for elt in value.elts:
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                yield elt.value
 
 
 def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed: bool = False) -> dict[str, str]:
