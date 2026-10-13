@@ -2,6 +2,17 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.22.10
+
+Regression fix in the opt-in `wallclock_test_waits` gate. 1.22.9 scanned a file under `test`/`tests` only when its name was
+`test_*.py`, `*_test.py` or `*_test.dart`, so helpers there (`tests/conftest.py`, `tests/support/*.py`, `test/support/*.dart`,
+`test/helpers.dart`) were skipped and a real `time.sleep(` or `Future.delayed(const Duration(milliseconds` in them was missed.
+Now every `.py` and `.dart` file inside a `test`/`tests` directory is scanned. Outside one nothing is scanned, so exploratory
+scripts stay out. The comment-line and docstring exclusions are unchanged.
+
+Behaviour change (opt-in gate only): a wall-clock wait in a test helper is now a finding. What to do: if the gate is enabled and
+it reports a helper's wait, remove the wait or record it in `tool/meta/baselines/wallclock_test_waits.json` with a note.
+
 ## 1.22.9
 
 Two false-positive fixes in opt-in ratchet gates. Both gates are opt-in (`[tool.py_ci_shared] enable = [...]`), so a consumer

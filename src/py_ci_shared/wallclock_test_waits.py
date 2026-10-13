@@ -4,9 +4,9 @@ Flagged, one finding per line: Dart ``Future.delayed(const Duration(milliseconds
 that needs time to pass should inject the clock (a fake clock, ``fake_async``, a monkeypatched ``time.sleep``) or wait on
 the condition it is really after. A real sleep makes the suite slower on every run and passes or fails with machine load.
 
-Test files are the files under a ``test``/``tests`` directory that are named ``test_*.py``, ``*_test.py`` or
-``*_test.dart``; a ``test_*.py`` script outside a test directory is not scanned. A comment line (stripped text starting
-with ``#``) and a line inside a Python docstring are not waits. Keys are ``<repo-relative path>: <normalized line>``, so re-indenting or moving a line does not
+Test files are every ``.py`` and ``.dart`` file under a ``test``/``tests`` directory, helpers and ``conftest.py``
+included. Outside a test directory nothing is scanned by this gate, so a ``test_*.py`` exploratory script is not a finding.
+A comment line (stripped text starting with ``#``) and a line inside a Python docstring are not waits. Keys are ``<repo-relative path>: <normalized line>``, so re-indenting or moving a line does not
 churn the baseline; two identical lines in one file share one key.
 
 Enable it explicitly (NOT in the default set)::
@@ -36,13 +36,10 @@ WAIT_PATTERNS = (
 )
 
 
-_TEST_NAME = re.compile(r"(test_.*\.py|.*_test\.py|.*_test\.dart)")
-
-
 def is_wallclock_test_file(rel: str) -> bool:
-    """A file inside a ``test``/``tests`` directory whose name is a test module's (``test_*.py``, ``*_test.py``, ``*_test.dart``)."""
+    """A ``.py`` or ``.dart`` file inside a ``test``/``tests`` directory (any name, so helpers and ``conftest.py`` count)."""
     parts = rel.split("/")
-    return any(p in TEST_DIR_NAMES for p in parts[:-1]) and _TEST_NAME.fullmatch(parts[-1]) is not None
+    return any(p in TEST_DIR_NAMES for p in parts[:-1]) and parts[-1].endswith((".py", ".dart"))
 
 
 def _docstring_lines(text: str) -> set[int]:

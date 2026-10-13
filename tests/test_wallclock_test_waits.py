@@ -51,6 +51,16 @@ def test_a_test_named_file_outside_a_test_directory_is_not_scanned(tmp_path: Pat
     assert find_wallclock_test_waits(tmp_path) == {}
 
 
+def test_a_sleep_in_a_conftest_is_a_finding(tmp_path: Path) -> None:
+    _tree(tmp_path, "tests/conftest.py", "import time\n\ntime.sleep(0.2)\n")
+    assert list(find_wallclock_test_waits(tmp_path)) == ["tests/conftest.py: time.sleep(0.2)"]
+
+
+def test_a_sleep_in_a_dart_test_helper_is_a_finding(tmp_path: Path) -> None:
+    _tree(tmp_path, "test/support/helper.dart", "Future<void> settle() => Future.delayed(const Duration(milliseconds: 50));\n")
+    assert list(find_wallclock_test_waits(tmp_path)) == ["test/support/helper.dart: Future<void> settle() => Future.delayed(const Duration(milliseconds: 50));"]
+
+
 def test_a_comment_line_with_sleep_is_not_a_finding(tmp_path: Path) -> None:
     _tree(tmp_path, "tests/test_poll.py", "import time\n# time.sleep(5) was removed\n    # time.sleep(2)\n")
     assert find_wallclock_test_waits(tmp_path) == {}
