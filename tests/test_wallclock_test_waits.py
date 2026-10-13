@@ -43,3 +43,24 @@ def test_a_recorded_wait_passes_and_a_new_one_fails(tmp_path: Path) -> None:
     _tree(tmp_path, "tests/test_other.py", "import time\ntime.sleep(2)\n")
     with pytest.raises(AssertionError):
         assert_no_new_wallclock_test_waits(tmp_path)
+
+
+def test_a_test_named_file_outside_a_test_directory_is_not_scanned(tmp_path: Path) -> None:
+    _tree(tmp_path, "scripts/test_probe.py", "import time\ntime.sleep(1)\n")
+    _tree(tmp_path, "tools/poll_test.py", "import time\ntime.sleep(1)\n")
+    assert find_wallclock_test_waits(tmp_path) == {}
+
+
+def test_a_comment_line_with_sleep_is_not_a_finding(tmp_path: Path) -> None:
+    _tree(tmp_path, "tests/test_poll.py", "import time\n# time.sleep(5) was removed\n    # time.sleep(2)\n")
+    assert find_wallclock_test_waits(tmp_path) == {}
+
+
+def test_a_real_sleep_inside_tests_is_still_a_finding(tmp_path: Path) -> None:
+    _tree(tmp_path, "tests/test_poll.py", "import time\n\ndef test_x():\n    time.sleep(0.5)  # wait for the child\n")
+    assert list(find_wallclock_test_waits(tmp_path)) == ["tests/test_poll.py: time.sleep(0.5) # wait for the child"]
+
+
+def test_a_sleep_inside_a_docstring_is_not_a_finding(tmp_path: Path) -> None:
+    _tree(tmp_path, "tests/test_poll.py", 'def test_x():\n    """Do not time.sleep(1) here."""\n    assert True\n')
+    assert find_wallclock_test_waits(tmp_path) == {}

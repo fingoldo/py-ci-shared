@@ -2,6 +2,22 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.22.9
+
+Two false-positive fixes in opt-in ratchet gates. Both gates are opt-in (`[tool.py_ci_shared] enable = [...]`), so a consumer
+that has not enabled them sees no change.
+
+- `guard_without_fixture`: a `tool/check*` guard named by a CI workflow (`.github/**/*.yml`, `*.yaml`) or a git hook (`.githooks/*`)
+  is covered, not reported. Before, only `test/` and `tests/` counted, so a guard run only by CI was flagged. A guard named nowhere
+  is still reported.
+- `wallclock_test_waits`: only a `test_*.py`, `*_test.py` or `*_test.dart` file inside a `test`/`tests` directory is scanned, so a
+  `test_*.py` exploratory script outside one is no longer a finding. A line whose stripped text starts with `#` is a comment, not a
+  wait, and a line inside a Python module, class or function docstring is not a wait either. Dart files get no docstring check.
+
+Behaviour change (opt-in gates only): both gates report fewer findings. An accepted baseline entry that no longer fires is reported as
+stale and does not fail; prune it with the gate's refresh command. What to do: nothing, unless you enabled one of these gates and want
+the stale entries removed.
+
 ## Unreleased
 
 - **Behaviour change** `git_child_env` (Dart): the call body was read from the closing quote of `'git'`, not from the call's `(`, so it

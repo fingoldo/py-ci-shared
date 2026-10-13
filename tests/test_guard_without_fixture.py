@@ -50,3 +50,21 @@ def test_a_recorded_guard_passes_and_a_new_unnamed_one_fails(tmp_path: Path) -> 
     _tree(tmp_path, "tool/check_b.sh", "exit 0\n")
     with pytest.raises(AssertionError):
         assert_every_guard_named_by_a_test(tmp_path)
+
+
+def test_a_guard_named_only_by_a_workflow_is_not_found(tmp_path: Path) -> None:
+    _tree(tmp_path, "tool/check_release.sh", "exit 0\n")
+    _tree(tmp_path, ".github/workflows/ci.yml", "steps:\n  - run: bash tool/check_release.sh\n")
+    assert find_guards_without_fixture(tmp_path) == {}
+
+
+def test_a_guard_named_only_by_a_git_hook_is_not_found(tmp_path: Path) -> None:
+    _tree(tmp_path, "tool/check_lint.py", "print('ok')\n")
+    _tree(tmp_path, ".githooks/pre-push", "python tool/check_lint.py\n")
+    assert find_guards_without_fixture(tmp_path) == {}
+
+
+def test_a_guard_named_nowhere_is_found_even_with_workflows_present(tmp_path: Path) -> None:
+    _tree(tmp_path, "tool/check_orphan.py", "print('ok')\n")
+    _tree(tmp_path, ".github/workflows/ci.yml", "steps:\n  - run: echo ok\n")
+    assert list(find_guards_without_fixture(tmp_path)) == ["tool/check_orphan.py"]
