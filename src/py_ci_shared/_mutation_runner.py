@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import itertools
 import json
+import logging
 import os
 import queue
 import shutil
@@ -25,6 +26,8 @@ from typing import Any, Optional, Union
 
 from ._mutation_model import MutationHarnessError
 from ._mutation_worker import is_crash_message
+
+logger = logging.getLogger(__name__)
 
 
 def _pytest_env() -> dict[str, str]:
@@ -319,7 +322,8 @@ class _WarmRunner:
             assert self.process.stdin is not None and self.process.stdout is not None
             self.process.stdin.write(json.dumps(request) + "\n")
             self.process.stdin.flush()
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            logger.debug("warm runner pipe failed, returned no result: %s", type(exc).__name__)
             return None
         reply = self._reply_to(request_id, time.monotonic() + self.timeout)
         if reply is None:
@@ -335,7 +339,8 @@ class _WarmRunner:
         self.last_timings = {k: reply[k] for k in ("t_purge", "t_pytest", "t_total") if k in reply} or None
         try:
             return int(reply["rc"])
-        except (TypeError, ValueError):
+        except (TypeError, ValueError) as exc:
+            logger.debug("warm runner reply had no valid return code: %s", type(exc).__name__)
             return None
 
     def _reply_to(self, request_id: int, deadline: float) -> Optional[dict[str, Any]]:
@@ -395,7 +400,8 @@ class _WarmRunner:
         lines = self._ensure_pump()
         try:
             return lines.get(timeout=max(0.0, wait))
-        except queue.Empty:
+        except queue.Empty as exc:
+            logger.debug("warm runner produced no line in time: %s", type(exc).__name__)
             return None
 
     def _readline_within(self, deadline: float) -> str | None:

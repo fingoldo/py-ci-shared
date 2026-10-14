@@ -32,12 +32,15 @@ functions, matching this package's other modules.
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 
 from ._core import SourceError, SourceProblem, UnparsedFilesError, parse_file, relative_posix, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     # Type-only: pydantic is a [dev] test dependency here (schema_cls is always a real
@@ -325,7 +328,8 @@ class ConstantResolver:
             return False, None
         try:
             return True, ast.literal_eval(last)
-        except (ValueError, SyntaxError, TypeError):
+        except (ValueError, SyntaxError, TypeError) as exc:
+            logger.debug("could not evaluate constant, treated as unknown: %s", type(exc).__name__)
             return False, None
 
     def _const_via_package(self, pkg_dir: Path, name: str) -> tuple[bool, Any]:

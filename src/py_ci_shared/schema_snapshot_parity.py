@@ -59,6 +59,7 @@ prints the exception type and SQLSTATE only). The gate itself never runs it.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import re
 import sys
@@ -71,6 +72,8 @@ from typing import Any, Optional
 from ._core import Finding
 from ._core.baseline import atomic_write_text, dump_json
 from .embedded_postgres import embedded_postgres, find_pg_bin
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -411,6 +414,7 @@ def _try_statement(cur: Any, stmt: str, psycopg2: Any) -> "list[tuple[str, str]]
     try:
         cur.execute(stmt)
     except psycopg2.Error as exc:
+        logger.debug("statement failed to execute, reported: %s", type(exc).__name__)
         return [(" ".join(stmt.split())[:80], _first_line(exc))]
     return []
 

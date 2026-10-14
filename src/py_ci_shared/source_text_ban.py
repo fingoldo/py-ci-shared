@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ast
 import io
+import logging
 import re
 import tokenize
 from pathlib import Path
@@ -37,6 +38,8 @@ from typing import Optional
 
 from ._core import ImportAliases, SourceError, parse_source, read_source
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["offending_lines", "READ_CALL", "PY_PATH_ON_LINE", "NON_PY_LITERAL", "GETSOURCE"]
 
@@ -116,7 +119,8 @@ def _without_comments(source: str) -> list[str]:
     lines = source.splitlines()
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
-    except (tokenize.TokenError, IndentationError, SyntaxError):
+    except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+        logger.debug("could not tokenize source, lines kept: %s", type(exc).__name__)
         return lines
     for tok in tokens:
         if tok.type == tokenize.COMMENT and tok.start[0] - 1 < len(lines):

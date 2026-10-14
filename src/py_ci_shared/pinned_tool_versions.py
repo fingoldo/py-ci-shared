@@ -20,6 +20,7 @@ Exit codes: 0 when all three agree; 1 otherwise, one line per problem naming bot
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import subprocess  # nosec B404 - runs `python -m <tool> --version` with a fixed argv, no shell
 import sys
@@ -29,6 +30,8 @@ from typing import Callable, Optional
 
 from py_ci_shared._toml_compat import tomllib
 from py_ci_shared.tool_versions import RUFF_VERSION
+
+logger = logging.getLogger(__name__)
 
 #: tool -> (module run as ``python -m``, distribution name in the pin, version the shared workflows run)
 TOOLS: dict[str, tuple[str, str, str]] = {"ruff": ("ruff", "ruff", RUFF_VERSION)}
@@ -76,7 +79,8 @@ def installed_version(module: str) -> Optional[str]:
         out = subprocess.run(  # nosec B603 - fixed argv (sys.executable plus literal flags), shell=False
             [sys.executable, "-m", module, "--version"], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=60
         )
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("could not run tool for its version: %s", type(exc).__name__)
         return None
     if out.returncode != 0:
         return None

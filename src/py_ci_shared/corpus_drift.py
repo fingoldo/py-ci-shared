@@ -24,6 +24,7 @@ import datetime
 import importlib
 import inspect
 import json
+import logging
 import sys
 import time
 from collections.abc import Sequence
@@ -33,6 +34,8 @@ from typing import Any, Callable, Optional
 
 from . import registry
 from ._core import iter_files
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BINDINGS",
@@ -231,7 +234,8 @@ def _commit(repo: Path) -> Optional[str]:
 
     try:
         proc = run_git(repo, "rev-parse", "HEAD")
-    except GitError:
+    except GitError as exc:
+        logger.debug("git rev-parse failed, commit unknown: %s", type(exc).__name__)
         return None
     return git_text(proc.stdout).strip() or None if proc.returncode == 0 else None
 

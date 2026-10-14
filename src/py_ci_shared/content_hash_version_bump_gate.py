@@ -53,12 +53,15 @@ convention, so importing ``py_ci_shared`` itself never requires them.
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
 from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
+
+logger = logging.getLogger(__name__)
 
 REFRESH_FLAG = "--refresh-content-hash-version-baseline"
 #: Version of the hash layout written into new baselines. A baseline without it holds a legacy hash.
@@ -93,7 +96,8 @@ def _labels(paths: "list[Path]") -> list[str]:
     try:
         common = Path(os.path.commonpath([str(p.resolve()) for p in paths]))
         return [p.resolve().relative_to(common).as_posix() for p in paths]
-    except ValueError:  # different drives on Windows
+    except ValueError as exc:  # different drives on Windows
+        logger.debug("paths share no common root, using file names: %s", type(exc).__name__)
         return [p.name for p in paths]
 
 

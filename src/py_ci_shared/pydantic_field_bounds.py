@@ -12,10 +12,13 @@ A probe that fails for another reason (a required field it could not fill) is in
 from __future__ import annotations
 
 import inspect
+import logging
 import math
 from collections.abc import Iterable
 from types import ModuleType
 from typing import Any, Literal, Optional, Union, get_args, get_origin
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["assert_field_bounds_enforced", "find_unenforced_literals", "find_unenforced_numeric_bounds", "iter_pydantic_models"]
 
@@ -104,7 +107,8 @@ def _error_fields(exc: Exception) -> Optional[set[str]]:
         return None
     try:
         return {str(e["loc"][0]) for e in errors() if e.get("loc")}
-    except Exception:
+    except Exception as field_exc:
+        logger.debug("could not read validation errors: %s", type(field_exc).__name__)
         return None
 
 

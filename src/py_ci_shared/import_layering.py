@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import ast
 import fnmatch
+import logging
 import re
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -44,6 +45,8 @@ from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 # Dart: `import '...'` / `export '...'`; TS/JS: `import {x} from '...'`, `export * from '...'`,
 # `require('...')`; Python-style `from x import y` is matched by the same `from` form when the
@@ -82,7 +85,8 @@ def _repo_relative_target(importer: Path, raw: str, repo_root: Path, package_roo
         try:
             resolved = (importer.parent / raw).resolve()
             return resolved.relative_to(repo_root.resolve()).as_posix()
-        except (ValueError, OSError):
+        except (ValueError, OSError) as exc:
+            logger.debug("import target is outside the repo or unreadable: %s", type(exc).__name__)
             return None
     if "/" in raw and not raw.startswith("/"):
         # A bare relative path (Dart allows `import 'widgets/x.dart';` inside the same directory).
@@ -90,7 +94,8 @@ def _repo_relative_target(importer: Path, raw: str, repo_root: Path, package_roo
         if candidate.exists():
             try:
                 return candidate.resolve().relative_to(repo_root.resolve()).as_posix()
-            except (ValueError, OSError):
+            except (ValueError, OSError) as exc:
+                logger.debug("import target is outside the repo or unreadable: %s", type(exc).__name__)
                 return None
     return None
 

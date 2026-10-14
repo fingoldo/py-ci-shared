@@ -65,6 +65,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import logging
 import pathlib
 import shutil
 import sys
@@ -73,6 +74,8 @@ import time
 from typing import Any
 
 from ._mutation_runner import run_with_deadline
+
+logger = logging.getLogger(__name__)
 
 #: pytest exit codes that are a verdict: 0 all passed, 1 some failed. Anything else (2 interrupted,
 #: 3 internal error, 4 usage error, 5 nothing collected) means the suite did not run.
@@ -93,6 +96,7 @@ def _apply(path: pathlib.Path, old: str, new: str) -> str | None:
     try:
         raw = path.read_bytes().decode("utf-8")
     except (OSError, UnicodeDecodeError) as exc:
+        logger.debug("target unreadable, reported: %s", type(exc).__name__)
         return f"cannot read the target: {exc}"
     nl = "\r\n" if "\r\n" in raw else "\n"
 

@@ -12,8 +12,11 @@ seed the same way pytest-randomly already does for numpy, so ordering and per-te
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
+
+logger = logging.getLogger(__name__)
 
 _SEED_SPACE = 2**32
 
@@ -49,7 +52,8 @@ def bound_randomly_reseeders() -> bool:
     """
     try:
         import pytest_randomly
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("pytest-randomly is not installed: %s", type(exc).__name__)
         return False
     if not hasattr(pytest_randomly, "entrypoint_reseeds"):
         return False  # a version without the cache: nothing here knows how to intercept it

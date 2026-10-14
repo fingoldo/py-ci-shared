@@ -45,8 +45,11 @@ real missing index.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 _CREATE = re.compile(
     r"CREATE\s+(?P<unique>UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?"
@@ -207,7 +210,8 @@ def parse(statement: str) -> Index | None:
         return None
     try:
         columns_text, rest = _balanced_prefix(match.group("cols"))
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not split index column list: %s", type(exc).__name__)
         return None
     predicate = None
     where = re.search(r"\bWHERE\b(?P<pred>.*)$", rest, re.IGNORECASE | re.DOTALL)
@@ -218,7 +222,8 @@ def parse(statement: str) -> Index | None:
     if included:
         try:
             include_text, _ = _balanced_prefix(rest[included.end() :])
-        except ValueError:
+        except ValueError as exc:
+            logger.debug("could not split index include list: %s", type(exc).__name__)
             return None
         include = tuple(_normalise_key(c)[0] for c in _split_top_level(include_text))
     keys = [_normalise_key(c) for c in _split_top_level(columns_text)]

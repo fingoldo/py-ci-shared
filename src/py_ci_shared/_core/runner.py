@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import logging
 import os
 import time
 from collections.abc import Iterator
@@ -13,6 +14,8 @@ from typing import Any, Callable, Optional
 
 from .config import ConfigError, GateRun, RepoConfig, resolve_kwargs
 from .refresh import ENV_VAR, GROW_ENV_VAR
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["GateResult", "budget_verdict", "resolve_gate", "run_gate"]
 
@@ -71,7 +74,8 @@ def _refresh_env(refresh: bool, grow: bool = False) -> Iterator[None]:
 def _outcome_types() -> tuple[tuple[type[BaseException], ...], tuple[type[BaseException], ...]]:
     try:
         from _pytest.outcomes import Failed, Skipped
-    except ImportError:  # pytest absent: gates that need it fail with ImportError, reported as ERROR
+    except ImportError as exc:  # pytest absent: gates that need it fail with ImportError, reported as ERROR
+        logger.debug("pytest outcome types unavailable, using AssertionError only: %s", type(exc).__name__)
         return (AssertionError,), ()
     return (AssertionError, Failed), (Skipped,)
 
@@ -102,14 +106,18 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         finally:
             os.chdir(cwd)
     except ConfigError as exc:
+        logger.warning("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"configuration: {exc}", time.perf_counter() - start, budget)
     except failed_types as exc:
+        logger.debug("gate failed, reporting FAILED: %s", type(exc).__name__)
         return GateResult(run.name, FAILED, str(exc), time.perf_counter() - start, budget)
     except skipped_types as exc:
+        logger.debug("gate skipped, reporting SKIPPED: %s", type(exc).__name__)
         return GateResult(run.name, SKIPPED, str(exc), time.perf_counter() - start, budget)
     except (KeyboardInterrupt, SystemExit):
         raise
     except BaseException as exc:  # a crashing gate is reported as ERROR with its type, never swallowed
+        logger.warning("gate raised, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"{type(exc).__name__}: {exc}", time.perf_counter() - start, budget)
     return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget)
 

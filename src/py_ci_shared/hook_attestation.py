@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import logging
 import os
 import re
 import sys
@@ -38,6 +39,8 @@ from typing import Callable, Optional, Union
 
 from ._core import CorpusError, Finding
 from ._core.git import GitError, git_text, run_git
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BOT_AUTHORS",
@@ -149,7 +152,8 @@ def _hash_at(repo: Path) -> Callable[[str], Optional[str]]:
     def expected(sha: str) -> Optional[str]:
         try:
             proc = run_git(repo, "show", f"{sha}:{CONFIG}")
-        except GitError:
+        except GitError as exc:
+            logger.debug("could not read committed hook config: %s", type(exc).__name__)
             return None
         return config_hash(proc.stdout) if proc.returncode == 0 else None
 

@@ -31,11 +31,14 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source, relative_posix
+
+logger = logging.getLogger(__name__)
 
 _CATCH_BLOCK_RE = re.compile(r"\bcatch\s*\([^)]*\)\s*\{")
 _STATUS_RE = re.compile(r"status:\s*(\d{3})")
@@ -192,6 +195,7 @@ def find_edge_function_problems(
     try:
         files = [p for p in iter_files(functions_dir, ("*.ts",), exclude=DEFAULT_EXCLUDE) if not p.name.endswith(".test.ts")]
     except CorpusError as exc:
+        logger.warning("edge functions directory unreadable, nothing examined: %s", type(exc).__name__)
         return [f"{functions_dir}: {exc} - this check examined nothing."]
     if not files:
         return [f"{functions_dir}: no function sources found - this check examined nothing."]

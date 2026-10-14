@@ -31,6 +31,7 @@ when the table sets ``budget = "fail"``.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any, Optional
@@ -41,6 +42,8 @@ from ._core.config import PLUGIN_KEYS, ConfigError, GateRun, RepoConfig, find_re
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
+
+logger = logging.getLogger(__name__)
 
 _CONFIG_KEY = pytest.StashKey[Optional[RepoConfig]]()
 LEAK_GUARD_PLUGIN = "py_ci_shared.resource_leak_guard"
@@ -60,7 +63,8 @@ def pytest_addoption(parser: Any) -> None:
 def _refresh_tokens(config: Any) -> list[str]:
     try:
         values = config.getoption(GENERIC_OPTION) or []
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("refresh option not registered: %s", type(exc).__name__)
         return []
     return [token for value in values for token in str(value).split(",") if token.strip()]
 
@@ -68,7 +72,8 @@ def _refresh_tokens(config: Any) -> list[str]:
 def _export_grow(config: Any) -> None:
     try:
         wanted = bool(config.getoption(GROW_OPTION))
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("grow option not registered: %s", type(exc).__name__)
         return
     if not wanted:
         return
@@ -121,7 +126,8 @@ def pytest_configure(config: Any) -> None:
 def _gates_mode(config: Any) -> str:
     try:
         return str(config.getoption("--py-ci-gates"))
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("gates option not registered, using auto: %s", type(exc).__name__)
         return "auto"
 
 

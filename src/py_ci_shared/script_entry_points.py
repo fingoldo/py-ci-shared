@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import ast
 import concurrent.futures
+import logging
 import os
 import subprocess
 import sys
@@ -45,6 +46,8 @@ from typing import Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult, scan_python
 from ._core.gate_contract import check_scan
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "RULE_COLLISION",
@@ -403,7 +406,8 @@ def double_execution_findings(
                 errors="replace",
                 timeout=timeout,
             )
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
+            logger.debug("script load probe timed out, reported: %s", type(exc).__name__)
             return Finding(rel, 1, RULE_DOUBLE, f"`{name}` did not finish loading as __main__ within {timeout:g}s. Raise the timeout or skip it with a reason")
         if "SAME True" in proc.stdout:
             return None

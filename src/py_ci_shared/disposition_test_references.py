@@ -21,12 +21,15 @@ edits to the round files.
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file, read_source
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 # A paragraph opener, or a markdown table row with a `Disposition` cell (`| X-1 | Disposition: fixed, `test_y` |`).
 _DISPOSITION_START = re.compile(r"^\s*(?:-\s*)?(?:\*\*Disposition|Disposition:)")
@@ -58,7 +61,8 @@ def _definitions(path: Path) -> _Defined:
 def _defined_names(path: Path) -> set[str]:
     try:
         return _definitions(path).names
-    except SourceError:
+    except SourceError as exc:
+        logger.debug("could not parse test file for definitions: %s", type(exc).__name__)
         return set()
 
 

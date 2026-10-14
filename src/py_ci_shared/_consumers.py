@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import logging
 import os
 import sys
 from collections.abc import Sequence
@@ -25,6 +26,8 @@ from typing import Callable, Optional
 from ._core import CoreError, read_source
 from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["TOKEN_ENV", "CheckoutResult", "Consumer", "checkout", "load_consumers", "main", "write_repos_file"]
 
@@ -97,6 +100,7 @@ def _git_clone(consumer: Consumer, dest: Path, token: Optional[str]) -> Optional
     try:
         proc = run_git(None, *args, env=extra, timeout=600)
     except GitError as exc:
+        logger.debug("git clone of a consumer failed: %s", type(exc).__name__)
         return str(exc)
     if proc.returncode != 0:
         return (git_text(proc.stderr) or git_text(proc.stdout)).strip() or f"git clone exited {proc.returncode}"

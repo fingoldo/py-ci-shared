@@ -25,6 +25,7 @@ Usage in a consumer's meta test::
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,8 @@ from typing import Optional, Union
 
 from ._core import Baseline, CorpusError, EmptyScanError, Finding
 from ._core.git import GitError, git_text, run_git
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RULE_BARE_CR", "RULE_CRLF", "RULE_MIXED", "Endings", "assert_committed_line_endings", "find_committed_line_endings", "index_endings"]
 
@@ -119,7 +122,8 @@ def _decodes_as_text(data: bytes) -> bool:
         return False
     try:
         data.decode("utf-8")
-    except UnicodeDecodeError:
+    except UnicodeDecodeError as exc:
+        logger.debug("file is not UTF-8 text: %s", type(exc).__name__)
         return False
     return True
 

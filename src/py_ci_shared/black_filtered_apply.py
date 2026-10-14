@@ -39,6 +39,7 @@ if any do (0 if the tree/file-set is fully filtered-Black-clean).
 import difflib
 import io
 import concurrent.futures
+import logging
 import os
 import pathlib
 import re
@@ -48,6 +49,8 @@ import sys
 import tokenize
 
 from py_ci_shared._core import CorpusError, iter_files
+
+logger = logging.getLogger(__name__)
 
 EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pycache__", "legacy", "benchmarks", "_benchmarks", "profiling"}
 # A consuming repo with its own dir-name to skip (rare) can add it without forking this file.
@@ -69,7 +72,8 @@ def _relative_parts(p: pathlib.Path):
     if p.is_absolute():
         try:
             return p.resolve().relative_to(pathlib.Path.cwd().resolve()).parts
-        except ValueError:
+        except ValueError as exc:
+            logger.debug("path is outside the working directory, kept as given: %s", type(exc).__name__)
             return p.parts[-1:]
     return p.parts
 
@@ -220,7 +224,8 @@ def _triple_quote_state_before_each_line(lines):
     state = [False] * (len(lines) + 1)
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO("".join(lines)).readline))
-    except (tokenize.TokenError, SyntaxError, IndentationError):
+    except (tokenize.TokenError, SyntaxError, IndentationError) as exc:
+        logger.debug("could not tokenize for triple-quote state, using parity fallback: %s", type(exc).__name__)
         return _parity_state(lines)
     spans = []
     fstring_starts = []
@@ -409,6 +414,7 @@ def main(argv=None):
             files = discover_py_files(args)
         except DiscoveryError as exc:
             raise SystemExit(f"--check: {exc}")
+
         def check_one(path):
             """True when the filtered result differs from the file, or the file could not be checked."""
             try:

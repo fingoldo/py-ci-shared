@@ -30,12 +30,15 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import logging
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from ._core import ScanResult, UnparsedFilesError, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:  # pydantic is a test-time dependency here, as in this package's other schema checks
     from pydantic import BaseModel
@@ -193,7 +196,8 @@ def _config_getattrs(tree: ast.AST, receiver_names: frozenset[str], receiver_suf
 def _literal_or_none(node: ast.expr) -> Any:
     try:
         return ast.literal_eval(node)
-    except (ValueError, SyntaxError, TypeError):
+    except (ValueError, SyntaxError, TypeError) as exc:
+        logger.debug("default is not a literal: %s", type(exc).__name__)
         return None
 
 
@@ -207,7 +211,8 @@ def _judge_default(
         return None
     try:
         literal = ast.literal_eval(default_node)
-    except (ValueError, SyntaxError, TypeError):
+    except (ValueError, SyntaxError, TypeError) as exc:
+        logger.debug("default is not a literal, treated as computed: %s", type(exc).__name__)
         return None  # a computed fallback is not a competing default
     if literal != declared[field] or type(literal) is not type(declared[field]):
         return GetattrDefault(rel, lineno, field, literal, declared[field])

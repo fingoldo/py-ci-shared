@@ -30,12 +30,15 @@ matching this package's other modules.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional
 
 from ._core import SourceParseError, SourceReadError, read_source, relative_posix
+
+logger = logging.getLogger(__name__)
 
 # A git URL dependency, PEP 508 direct-reference form: `name @ git+URL[@ref]`. Captures the
 # WHOLE URL blob (ref, if any, still embedded) -- ref extraction is done separately in
@@ -151,7 +154,8 @@ def _is_requirements_file(path: Path) -> bool:
         return True
     try:
         text = read_source(path)
-    except SourceReadError:
+    except SourceReadError as exc:
+        logger.debug("could not read file, not a requirements file: %s", type(exc).__name__)
         return False
     for line in text.splitlines():
         stripped = line.strip()
@@ -386,7 +390,8 @@ def _direct_url_commit(dist: str) -> str | None:
 
     try:
         raw = metadata.distribution(dist).read_text("direct_url.json")
-    except metadata.PackageNotFoundError:
+    except metadata.PackageNotFoundError as exc:
+        logger.debug("distribution not installed, no direct_url: %s", type(exc).__name__)
         return None
     if not raw:
         return None

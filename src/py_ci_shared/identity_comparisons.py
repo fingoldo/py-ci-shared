@@ -17,6 +17,7 @@ strings), or a name imported from a module outside the scan (``p.kind is inspect
 from __future__ import annotations
 
 import ast
+import logging
 import os
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -24,6 +25,8 @@ from typing import Optional
 
 from ._core import ImportAliases, ParsedFile, ScanResult, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
@@ -145,7 +148,8 @@ def _common_root(paths: list[Path]) -> Optional[Path]:
         return None
     try:
         return Path(os.path.commonpath([str(p.resolve().parent) for p in paths]))
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("paths share no common root: %s", type(exc).__name__)
         return None
 
 

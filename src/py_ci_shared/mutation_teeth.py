@@ -84,6 +84,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import json
+import logging
 import os
 import shutil
 import tempfile
@@ -135,6 +136,8 @@ from ._mutation_runner import _remove_tree as _remove_tree
 from ._mutation_runner import _run_pytest as _run_pytest
 from ._mutation_runner import _WarmRunner as _WarmRunner
 from ._mutation_worker import _CRASH_EXCEPTIONS as _CRASH_EXCEPTIONS
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "HARNESS_VERSION",
@@ -408,7 +411,8 @@ def _try_lock(fd: int) -> bool:
         else:
             fcntl: Any = importlib.import_module("fcntl")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not lock cache file: %s", type(exc).__name__)
         return False
     return True
 
@@ -453,7 +457,8 @@ def _cache_lock(cache_file: Path, timeout: float = _CACHE_LOCK_TIMEOUT) -> Itera
 def _read_cache(cache_file: Path) -> dict[str, Any]:
     try:
         data = json.loads(cache_file.read_text(encoding="utf-8")) if cache_file.is_file() else {}
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.debug("cache file unreadable, starting empty: %s", type(exc).__name__)
         return {}
     return data if isinstance(data, dict) else {}
 
@@ -476,7 +481,8 @@ def _load_cached_run(cache_file: Path, relative: Path, key: str) -> Optional[Mut
             wider_net_note=entry.get("wider_net_note", ""),
             from_cache=True,
         )
-    except (KeyError, TypeError, ValueError, IndexError):
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        logger.debug("cache entry malformed, treated as a miss: %s", type(exc).__name__)
         return None  # an entry written by something else is a miss, never a crash
 
 

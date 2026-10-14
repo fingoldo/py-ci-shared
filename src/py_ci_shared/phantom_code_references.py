@@ -48,6 +48,7 @@ import ast
 import functools
 import importlib
 import io
+import logging
 import re
 import tokenize
 from collections.abc import Iterable
@@ -56,6 +57,8 @@ from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, load_json, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 # A backticked token. Kept narrow on purpose: identifiers, dotted members, a trailing "(" and test-file
 # names; anything with spaces, operators or quotes is prose in code font, not a reference.
@@ -350,6 +353,7 @@ def _comment_lines_checked(path: Path) -> "tuple[list[tuple[int, str]], Optional
             return _python_comment_lines(source, tree), None
         source = read_source(path)
     except SourceError as exc:
+        logger.debug("could not parse source for comment lines: %s", type(exc).__name__)
         return [], exc
     out: list[tuple[int, str]] = []
     for lineno, line in enumerate(source.splitlines(), start=1):
@@ -368,7 +372,8 @@ def _import_or_none(name: str) -> object:
     """The module ``name``, or None when importing it raises anything (a module may even call ``sys.exit``)."""
     try:
         return importlib.import_module(name)
-    except (Exception, SystemExit):
+    except (Exception, SystemExit) as exc:
+        logger.debug("module could not be imported: %s", type(exc).__name__)
         return None
 
 
@@ -379,7 +384,8 @@ def _importable(name: str) -> bool:
 
     try:
         return importlib.util.find_spec(name) is not None
-    except (ImportError, ValueError):
+    except (ImportError, ValueError) as exc:
+        logger.debug("module spec lookup failed: %s", type(exc).__name__)
         return False
 
 
@@ -404,7 +410,8 @@ def _resolves_by_import(dotted: str) -> bool:
     try:
         for name in rest:
             obj = getattr(obj, name)
-    except Exception:  # a property or a module __getattr__ may raise anything
+    except Exception as exc:  # a property or a module __getattr__ may raise anything
+        logger.debug("dotted name does not resolve by import: %s", type(exc).__name__)
         return False
     return True
 

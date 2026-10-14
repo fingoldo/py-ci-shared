@@ -37,6 +37,7 @@ Usage (in a consuming repo's test suite)::
 
 from __future__ import annotations
 
+import logging
 import re
 import shlex
 from collections.abc import Iterator
@@ -44,6 +45,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import SourceError, SourceParseError, read_source
+
+logger = logging.getLogger(__name__)
 
 # Flags that NARROW what a gate inspects or lower the bar it enforces. Both the
 # `--flag=value` and `--flag value` spellings are recognized. A flag must end where its name ends:
@@ -117,7 +120,8 @@ def _hook_command(hook: dict) -> str:
 def _split(segment: str) -> list[str]:
     try:
         return shlex.split(segment, posix=True)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not shell-split segment, falling back to whitespace split: %s", type(exc).__name__)
         return segment.split()
 
 

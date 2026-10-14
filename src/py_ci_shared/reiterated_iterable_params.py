@@ -25,6 +25,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -32,6 +33,8 @@ from typing import Any, Optional, Union
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RULE", "REFRESH_FLAG", "ONE_SHOT_TYPES", "find_reiterated_iterable_params", "assert_no_reiterated_iterable_params"]
 
@@ -52,7 +55,8 @@ def _is_one_shot(ann: Optional[ast.expr], aliases: ImportAliases) -> bool:
     if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
         try:
             return _is_one_shot(ast.parse(ann.value, mode="eval").body, aliases)
-        except SyntaxError:
+        except SyntaxError as exc:
+            logger.debug("annotation is not parseable: %s", type(exc).__name__)
             return False
     if isinstance(ann, ast.BinOp) and isinstance(ann.op, ast.BitOr):
         return _is_one_shot(ann.left, aliases) or _is_one_shot(ann.right, aliases)

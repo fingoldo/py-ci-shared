@@ -25,6 +25,7 @@ A conftest can change the settings with the hook ``pytest_offline_credentials(co
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sys
@@ -34,6 +35,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 import pytest
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_LOADERS", "DEFAULT_PATTERNS", "DEFAULT_VARS", "OfflineSettings"]
 
@@ -117,7 +120,8 @@ def _test_supplied(args: "tuple[Any, ...]", kwargs: "dict[str, Any]") -> bool:
     try:
         resolved = Path(os.fspath(target)).resolve()
         temp = Path(tempfile.gettempdir()).resolve()
-    except (OSError, RuntimeError, TypeError):
+    except (OSError, RuntimeError, TypeError) as exc:
+        logger.debug("could not resolve target path, treated as not supplied: %s", type(exc).__name__)
         return False
     return resolved == temp or temp in resolved.parents
 

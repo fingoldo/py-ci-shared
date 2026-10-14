@@ -57,6 +57,7 @@ or ``[tool.py_ci_shared.gates.ci_install_covers_conftest]`` with ``aliases``/``f
 
 from __future__ import annotations
 
+import logging
 import re
 import shlex
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -81,6 +82,8 @@ from ._ci_install_parts import (
     pip_install,
 )
 from ._core import Baseline, Finding, SourceError, read_source, refresh_requested, scan_python
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BUILTIN_ALIASES",
@@ -314,7 +317,8 @@ class _Context:
 def _tokens(command: str) -> list[str]:
     try:
         return shlex.split(command, posix=True)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not shell-split command, falling back to whitespace split: %s", type(exc).__name__)
         return command.split()
 
 
@@ -695,7 +699,8 @@ def _under(path: Path, base: Path) -> bool:
     try:
         path.relative_to(base)
         return True
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not relate path to base: %s", type(exc).__name__)
         return False
 
 

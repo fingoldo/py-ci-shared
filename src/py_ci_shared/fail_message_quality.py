@@ -14,6 +14,7 @@ become perfect.
 from __future__ import annotations
 
 import ast
+import logging
 import os
 import re
 from collections.abc import Iterable, Iterator
@@ -22,6 +23,8 @@ from typing import Optional
 
 from ._core import ImportAliases, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["ACTIONABLE_RE", "assert_fail_messages_actionable", "fail_message_problems"]
 
@@ -74,7 +77,8 @@ def _common_root(files: list[Path]) -> Optional[Path]:
         return None
     try:
         return Path(os.path.commonpath([str(p.resolve().parent) for p in files]))
-    except ValueError:  # different drives
+    except ValueError as exc:  # different drives
+        logger.debug("paths share no common root: %s", type(exc).__name__)
         return None
 
 

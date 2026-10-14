@@ -48,12 +48,15 @@ from __future__ import annotations
 
 import ast
 import inspect
+import logging
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_PATCHER_NAMES",
@@ -96,7 +99,8 @@ def params_of_callable(fn: Any) -> Optional[tuple[Param, ...]]:
     """The parameters of a live callable, or None when it has no inspectable signature (some builtins)."""
     try:
         sig = inspect.signature(fn)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError) as exc:
+        logger.debug("signature could not be read: %s", type(exc).__name__)
         return None
     return tuple(Param(p.name, _INSPECT_KINDS[p.kind], p.default is not p.empty) for p in sig.parameters.values())
 

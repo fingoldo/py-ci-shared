@@ -11,8 +11,11 @@ checkout without ``psutil`` still gets a sensible value and never fewer than one
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+
+logger = logging.getLogger(__name__)
 
 ENV_OVERRIDE = "PY_CI_WORKERS"
 
@@ -47,7 +50,8 @@ def _busy_percent(interval: float) -> float:
         import psutil  # type: ignore[import-not-found]
 
         return float(psutil.cpu_percent(interval=interval))
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("psutil is not installed, busy percent is 0: %s", type(exc).__name__)
         return 0.0
 
 

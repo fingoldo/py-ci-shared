@@ -34,11 +34,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import subprocess
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 #: Directories whose contents are never authored work: caches, build output, vendored trees.
 SKIP_PARTS = frozenset({"__pycache__", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".hypothesis", "node_modules", ".venv"})
@@ -81,6 +84,7 @@ def _run(repo: Path, *args: str, stdin: bytes | None = None) -> subprocess.Compl
     try:
         return run_git(repo, *args, stdin=stdin)
     except GitError as exc:
+        logger.debug("git command failed, returned a failed result: %s", type(exc).__name__)
         return subprocess.CompletedProcess(["git", *args], 127, b"", str(exc).encode("utf-8", "replace"))
 
 
@@ -220,7 +224,8 @@ def _file_content_ids(repo: Path, path: Path, object_format: str) -> set[str]:
     """
     try:
         content = path.read_bytes()
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not read file for content id: %s", type(exc).__name__)
         return set()
     return _content_ids(repo, content, object_format)
 

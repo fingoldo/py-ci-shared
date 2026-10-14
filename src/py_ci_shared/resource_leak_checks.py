@@ -25,12 +25,15 @@ Allowlist entries (``leak_guard_allow``): ``stream:<glob>`` (``stdout``/``stderr
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
 import sys
 import warnings
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["STATE_CHECKS", "StateSnapshot", "restore_state", "state_leaks", "take_state"]
 
@@ -69,7 +72,8 @@ def take_state(checks: Iterable[str] = STATE_CHECKS) -> StateSnapshot:
 def _cwd() -> str:
     try:
         return os.getcwd()
-    except OSError:  # the directory was removed under us: that is a change too
+    except OSError as exc:  # the directory was removed under us: that is a change too
+        logger.debug("current directory is unavailable: %s", type(exc).__name__)
         return "<deleted>"
 
 

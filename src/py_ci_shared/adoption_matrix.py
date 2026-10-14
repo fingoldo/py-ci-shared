@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import logging
 import re
 import sys
 from collections.abc import Iterable, Sequence
@@ -45,6 +46,8 @@ from ._core.git import GitError, git_text, run_git
 from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
 from .version_tag_currency import is_release_tag
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MOVING_KINDS",
@@ -137,7 +140,8 @@ class RefResolver:
             return None
         try:
             proc = run_git(self.repo, *args)
-        except GitError:
+        except GitError as exc:
+            logger.debug("git command failed while resolving a ref: %s", type(exc).__name__)
             return None
         return git_text(proc.stdout) if proc.returncode == 0 else None
 
@@ -221,7 +225,8 @@ def _pyproject_pins(path: Path, root: Path) -> list[Pin]:
     text = read_source(path)
     try:
         data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
+    except tomllib.TOMLDecodeError as exc:
+        logger.warning("pyproject.toml is not valid TOML, its pins are not checked: %s", type(exc).__name__)
         return []
     lines = text.splitlines()
     used: set[int] = set()
@@ -277,7 +282,8 @@ def _uv_lock_pins(path: Path, root: Path) -> list[Pin]:
     text = read_source(path)
     try:
         data = tomllib.loads(text)
-    except tomllib.TOMLDecodeError:
+    except tomllib.TOMLDecodeError as exc:
+        logger.warning("uv.lock is not valid TOML, its pins are not checked: %s", type(exc).__name__)
         return []
     lines = text.splitlines()
     pins = []
@@ -366,7 +372,8 @@ def _safe(reader: Callable[[Path, Path], list[Pin]], path: Path, root: Path) -> 
     """*reader*'s pins, or none for a file that cannot be decoded (a pin in it could not be read either)."""
     try:
         return reader(path, root)
-    except CoreError:
+    except CoreError as exc:
+        logger.warning("could not read a consumer file, treated as empty: %s", type(exc).__name__)
         return []
 
 
@@ -398,7 +405,8 @@ def known_modules(package_dir: Optional[Path] = None) -> list[str]:
 def _config_modules(path: Path) -> list[str]:
     try:
         data = tomllib.loads(read_source(path))
-    except tomllib.TOMLDecodeError:
+    except tomllib.TOMLDecodeError as exc:
+        logger.warning("config is not valid TOML, its modules are not checked: %s", type(exc).__name__)
         return []
     table = (data.get("tool", {}) or {}).get("py_ci_shared")
     if not isinstance(table, dict):
@@ -461,7 +469,8 @@ def _mentions(path: Path, needles: Sequence[bytes]) -> bool:
     """A raw-bytes prefilter: decoding every large data file in a repo dominated the run."""
     try:
         raw = path.read_bytes()
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not read a file while looking for a pin mention: %s", type(exc).__name__)
         return False
     return any(n in raw for n in needles)
 
@@ -650,7 +659,8 @@ def _local_copies(root: Path) -> list[Finding]:
 
     try:
         findings, _ = find_local_copies(root, test_dirs=_test_dirs(root), use_git=None)
-    except CoreError:
+    except CoreError as exc:
+        logger.warning("local copy scan failed, no local copies reported: %s", type(exc).__name__)
         return []
     return findings
 

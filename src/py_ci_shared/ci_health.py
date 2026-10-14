@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -57,6 +58,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ._consumers import TOKEN_ENV, Consumer, load_consumers
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "BILLING_MARKERS",
@@ -444,6 +447,7 @@ def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bo
             runs_by[int(wf["id"])] = ordered
             billing_ids += _billing_refusals(api, consumer.repo, ordered)
     except ApiError as exc:
+        logger.debug("GitHub API call failed, consumer reported with an error: %s", type(exc).__name__)
         return RepoHealth(consumer.name, consumer.repo, consumer.branch, error=str(exc))
     return assess_repo(consumer, workflows, runs_by, now, billing_run_ids=billing_ids)
 

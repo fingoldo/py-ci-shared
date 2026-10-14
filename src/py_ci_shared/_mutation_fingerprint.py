@@ -9,6 +9,7 @@ import ast
 import configparser
 import fnmatch
 import hashlib
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -16,6 +17,8 @@ from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 #: pytest's own default for ``python_files``.
 _DEFAULT_PYTHON_FILES = ("test_*.py", "*_test.py")
@@ -45,10 +48,11 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
     _add_package_parents(path, repo_root, seen)
     try:
         tree = parse_file(path)
-    except SourceError:
+    except SourceError as exc:
         # The file itself still counts. Dropping it silently removed it AND everything it imports
         # from the fingerprint, so the very edit that fixes a syntax error would not invalidate the
         # cached verdict that was measured without it.
+        logger.debug("could not parse file for first-party imports: %s", type(exc).__name__)
         return seen
     names: list[str] = []
     for node in _fast_walk(tree):
@@ -109,7 +113,8 @@ def _python_files_patterns(repo_root: Path) -> tuple[str, ...]:
         parser = configparser.ConfigParser(interpolation=None)
         try:
             parser.read(ini, encoding="utf-8")
-        except configparser.Error:
+        except configparser.Error as exc:
+            logger.debug("could not read pytest config, using default python-files patterns: %s", type(exc).__name__)
             return _DEFAULT_PYTHON_FILES
         return tuple(_split_patterns(parser.get("pytest", "python_files", fallback=""))) or _DEFAULT_PYTHON_FILES
     pyproject = repo_root / "pyproject.toml"
@@ -254,7 +259,8 @@ def _installed_pytest_plugins() -> list[str]:
     found: list[str] = []
     try:
         from importlib.metadata import distributions
-    except ImportError:  # pragma: no cover - stdlib since 3.8
+    except ImportError as exc:  # pragma: no cover - stdlib since 3.8
+        logger.debug("could not list installed distributions for pytest plugins: %s", type(exc).__name__)
         return found
     for dist in distributions():
         try:

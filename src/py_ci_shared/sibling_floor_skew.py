@@ -35,6 +35,7 @@ or from CI: ``python -m py_ci_shared.sibling_floor_skew . --resolve-in pyutilz=.
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import re
 import sys
@@ -48,6 +49,8 @@ from typing import Any, Callable, Optional, Union
 from ._core import Baseline, CoreError, EmptyScanError, Finding, SourceError, UnparsedFilesError, read_source
 from ._core.git import GitError, run_git
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_OWNER",
@@ -246,7 +249,8 @@ def find_install_sites(repo_root: PathLike, siblings: Iterable[str] = DEFAULT_SI
 def _git_show_version(clone: Path, ref: str) -> Optional[str]:
     try:
         proc = run_git(clone, "show", f"{ref}:pyproject.toml")
-    except GitError:
+    except GitError as exc:
+        logger.debug("could not read pyproject from git: %s", type(exc).__name__)
         return None
     if proc.returncode != 0:
         return None
@@ -263,7 +267,8 @@ def _github_version(sibling: str, owner: str, ref: str) -> Optional[str]:
     try:
         with urllib.request.urlopen(request, timeout=20) as response:  # fixed https host
             body = response.read().decode("utf-8", "replace")
-    except (urllib.error.URLError, OSError, ValueError):
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        logger.warning("could not fetch version from GitHub, floor skew not checked: %s", type(exc).__name__)
         return None
     m = _VERSION.search(body)
     return m.group(1) if m else None

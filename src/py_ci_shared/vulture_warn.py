@@ -25,11 +25,14 @@ works directly in ``entry:``):
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import posixpath
 import subprocess
 import sys
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 #: vulture's own exit codes: 0 nothing found, 1 invalid input (unreadable file, syntax error), 2 bad command line,
 #: 3 dead code found. Only 3 means "findings"; 1 and 2 mean the scan did not happen.
@@ -54,7 +57,8 @@ def in_scope(path: str, src_path: str) -> bool:
     if os.path.isabs(path) and not posixpath.isabs(src):
         try:
             path = os.path.relpath(path)
-        except ValueError:  # another drive on Windows
+        except ValueError as exc:  # another drive on Windows
+            logger.debug("path is not relative to the cwd: %s", type(exc).__name__)
             return False
     candidate = _normalise(path)
     return not src or candidate == src or candidate.startswith(src + "/")

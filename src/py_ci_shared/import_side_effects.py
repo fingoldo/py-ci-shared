@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import ast
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -33,6 +34,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core import DEFAULT_EXCLUDE, BaselineGrowthError, CorpusError, ImportAliases, iter_files, load_json, refresh_requested, scan_python, write_ratchet
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ENV_REFRESH_FLAG",
@@ -113,7 +116,8 @@ def _scan_env(root: Path, pattern: str) -> tuple[int, list[str], list[str]]:
     """``(files parsed, keys, unparsable "path:line: why")`` under *root*."""
     try:
         files = iter_files(root, (pattern,), exclude=DEFAULT_EXCLUDE)
-    except CorpusError:
+    except CorpusError as exc:
+        logger.warning("could not list files to probe, nothing examined: %s", type(exc).__name__)
         return 0, [], []
     scan = scan_python(files, root=root)
     keys: list[str] = []
@@ -313,7 +317,8 @@ def _run_probe(targets: list[str], cfg: dict, timeout: float, python: str, cwd: 
         proc = subprocess.run(
             [python, "-c", _PROBE, payload], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, cwd=cwd, env=env
         )
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
+        logger.debug("probe timed out, reported as crashed: %s", type(exc).__name__)
         return ProbeResult(crashed=[f"{targets}: no result within {timeout}s"])
     for line in reversed(proc.stdout.splitlines()):
         if line.startswith(_RESULT_TAG):

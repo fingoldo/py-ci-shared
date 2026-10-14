@@ -50,6 +50,8 @@ import time
 from collections.abc import Callable, Generator
 from types import ModuleType
 
+logger = logging.getLogger(__name__)
+
 #: Where an unrestorable patch is copied, relative to the repository's git dir.
 UNRESTORED_DIR = "safe-precommit-unrestored"
 
@@ -65,7 +67,8 @@ def _preserve_unrestored_patch(sfo: ModuleType, patch_filename: str) -> "str | N
         target = os.path.join(target_dir, os.path.basename(patch_filename))
         shutil.copy2(patch_filename, target)
         return target
-    except Exception:  # the loud report below must happen even when the copy cannot be made
+    except Exception as exc:  # the loud report below must happen even when the copy cannot be made
+        logger.warning("could not preserve the unrestored patch: %s", type(exc).__name__)
         return None
 
 
@@ -185,7 +188,8 @@ def patch_stash_restore() -> bool:
     """
     try:
         import pre_commit.staged_files_only as sfo
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("pre-commit staged-files module not importable: %s", type(exc).__name__)
         return False
     if _verify_patch_target(sfo):
         return False  # the copy would call an attribute this pre-commit version does not have

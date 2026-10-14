@@ -11,6 +11,7 @@ import ast
 import bisect
 import hashlib
 import io
+import logging
 import re
 import tokenize
 from collections.abc import Iterable
@@ -19,6 +20,8 @@ from typing import Optional, Union
 
 from ._core.node_index import walk as _fast_walk
 from ._mutation_model import _CONTAINER_SAMPLE, Mutant, MutationHarnessError, read_target
+
+logger = logging.getLogger(__name__)
 
 Candidate = tuple[int, int, int, str, str, str]
 
@@ -29,7 +32,8 @@ def _tree_of(source: str, tree: Optional[ast.AST]) -> Optional[ast.AST]:
         return tree
     try:
         return ast.parse(source)
-    except SyntaxError:
+    except SyntaxError as exc:
+        logger.debug("could not parse mutation source: %s", type(exc).__name__)
         return None
 
 
@@ -487,7 +491,8 @@ def _string_emptied(token: str) -> Optional[str]:
     """
     try:
         value = ast.literal_eval(token)
-    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError) as exc:
+        logger.debug("could not evaluate string literal token: %s", type(exc).__name__)
         return None
     if not isinstance(value, (str, bytes)) or not value:
         return None
@@ -509,7 +514,8 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False, tree: O
     out: list[Candidate] = []
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(source, newline="").readline))
-    except (tokenize.TokenError, SyntaxError, IndentationError):
+    except (tokenize.TokenError, SyntaxError, IndentationError) as exc:
+        logger.debug("could not tokenize source for mutation candidates: %s", type(exc).__name__)
         return []
 
     for index, tok in enumerate(tokens):

@@ -48,6 +48,8 @@ import pytest
 
 from .resource_leak_checks import STATE_CHECKS, StateSnapshot, restore_state, state_leaks, take_state
 
+logger = logging.getLogger(__name__)
+
 __all__ = ["ALL_CHECKS", "Snapshot", "leaks_between", "take_snapshot"]
 
 ALL_CHECKS = ("processes", "threads", "sockets", "logging", "env", *STATE_CHECKS)
@@ -78,7 +80,8 @@ class Snapshot:
 def _psutil() -> Any:
     try:
         import psutil
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("psutil is not installed: %s", type(exc).__name__)
         return None
     return psutil
 
@@ -95,7 +98,8 @@ def _describe(psutil: Any, child: Any) -> Optional[str]:
     """The command line (or name) of a child; None when it exited between listing and reading, which is not a leak."""
     try:
         return " ".join(child.cmdline()) or str(child.name())
-    except (psutil.NoSuchProcess, psutil.AccessDenied):
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        logger.debug("child process vanished or is not accessible: %s", type(exc).__name__)
         return None
 
 

@@ -57,11 +57,14 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import logging
 import os
 import re
 import sys
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger(__name__)
 
 #: Distinct from 1 (a statement failed) so a CI job can tell "not verified" from "verified clean".
 #: ``--skip-without-db`` maps it to 0, which is what a pre-push hook wants.
@@ -304,6 +307,7 @@ def _built(label: str, build: Callable[[str], str], key: str) -> tuple[str, Opti
     try:
         return f"{label}[{key}]", build(key)
     except Exception as exc:
+        logger.debug("fragment builder raised: %s", type(exc).__name__)
         return f"{label}[{key}]: the builder raised {type(exc).__name__}: {exc}", None
 
 
@@ -429,11 +433,13 @@ def alias_scope_problems(sql: str, *, extra_aliases: frozenset[str] = DEFAULT_EX
 def _pglast_problem(sql: str) -> Optional[str]:
     try:
         from pglast import parse_sql  # type: ignore[import-not-found]
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("pglast is not installed, parser check skipped: %s", type(exc).__name__)
         return None
     try:
         parse_sql(sql)
     except Exception as exc:
+        logger.debug("pglast rejected the statement: %s", type(exc).__name__)
         return f"PostgreSQL's own parser (pglast) rejects it: {str(exc).strip()[:200]}"
     return None
 
@@ -444,6 +450,7 @@ def _prepare_problem(conn: Any, sql: str) -> Optional[str]:
             cur.execute(f"PREPARE py_ci_shared_fragment_matrix AS {sql}")
             cur.execute("DEALLOCATE py_ci_shared_fragment_matrix")
     except Exception as exc:
+        logger.debug("PREPARE check failed: %s", type(exc).__name__)
         return f"PREPARE failed: {type(exc).__name__}: {str(exc).strip()[:200]}"
     finally:
         conn.rollback()

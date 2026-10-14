@@ -32,6 +32,7 @@ Fix by citing the symbol instead of the line (``see `_mah._fit` ``), which ``pha
 from __future__ import annotations
 
 import io
+import logging
 import os
 import re
 import tokenize
@@ -42,6 +43,8 @@ from typing import Any, Optional, Union
 from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, SourceError, iter_files, read_source, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["REFRESH_FLAG", "WINDOW", "assert_no_stale_source_citations", "find_stale_source_citations"]
 
@@ -67,7 +70,8 @@ def _texts(f: ParsedFile) -> Iterable[tuple[int, int, str, bool]]:
     """``(start_line, end_line, text, is_code_string)`` for every comment and string token of the file."""
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(f.source).readline))
-    except (tokenize.TokenError, SyntaxError):
+    except (tokenize.TokenError, SyntaxError) as exc:
+        logger.debug("could not tokenize source for citations: %s", type(exc).__name__)
         return
     for tok in tokens:
         if tok.type == tokenize.COMMENT:

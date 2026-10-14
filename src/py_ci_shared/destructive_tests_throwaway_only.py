@@ -47,6 +47,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import logging
 import posixpath
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -58,6 +59,8 @@ from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, Sc
 from ._core.gate_contract import check_scan
 from .marker_runner_coverage import expression_selects, keyword_selects
 from .marker_runner_coverage import runners as _pytest_runners
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_CONNECT_CALLS",
@@ -343,7 +346,8 @@ def _names(entry: _Entry, file: str, markers: "set[str]") -> bool:
         return False
     try:
         return expression_selects(entry.expression, markers) and keyword_selects(entry.keyword, [*file.split("/"), *sorted(markers)])
-    except ValueError:
+    except ValueError as exc:
+        logger.warning("selection expression could not be evaluated, treated as not selecting: %s", type(exc).__name__)
         return False
 
 

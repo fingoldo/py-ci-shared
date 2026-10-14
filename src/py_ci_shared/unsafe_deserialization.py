@@ -36,12 +36,15 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RULE", "assert_unsafe_deserialization", "find_unsafe_deserialization"]
 
@@ -270,7 +273,8 @@ def _call_name(node: ast.Call) -> str:
 def _call_label(node: ast.Call) -> str:
     try:
         return ast.unparse(node.func)
-    except Exception:  # pragma: no cover - ast.unparse handles every parsed node
+    except Exception as exc:  # pragma: no cover - ast.unparse handles every parsed node
+        logger.debug("could not unparse call target: %s", type(exc).__name__)
         return "<call>"
 
 

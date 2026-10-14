@@ -42,6 +42,7 @@ from __future__ import annotations
 import ast
 import dataclasses
 import importlib
+import logging
 import operator
 import sys
 from collections.abc import Iterable, Mapping, Sequence
@@ -50,6 +51,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 _COMPARE: dict[type, tuple[str, Callable[[float, float], bool]]] = {
     ast.Lt: ("<", operator.lt),
@@ -278,6 +281,7 @@ def find_constant_relation_problems(
         try:
             items = load_relations(registry)
         except (OSError, RelationError, tomllib.TOMLDecodeError) as exc:
+            logger.debug("relation registry unreadable, reported as a finding: %s", type(exc).__name__)
             return [f"{registry}: unreadable relation registry: {exc}"]
     else:
         items = list(relations)

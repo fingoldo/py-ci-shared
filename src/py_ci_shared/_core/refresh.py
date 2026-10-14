@@ -16,10 +16,13 @@ includes seeding a missing one with findings, needs the separate opt-in :func:`g
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from collections.abc import Iterable
 from typing import Any, Optional
+
+logger = logging.getLogger(__name__)
 
 ENV_VAR = "PY_CI_SHARED_REFRESH"
 GENERIC_OPTION = "--py-ci-refresh"
@@ -65,7 +68,8 @@ def _config_of(request_or_config: Any) -> Any:
 def _getoption(config: Any, name: str) -> Any:
     try:
         return config.getoption(name)
-    except (ValueError, AttributeError):  # option not registered in this session
+    except (ValueError, AttributeError) as exc:  # option not registered in this session
+        logger.debug("option not registered, using None: %s", type(exc).__name__)
         return None
 
 

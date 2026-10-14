@@ -29,11 +29,14 @@ Usage::
 from __future__ import annotations
 
 import importlib
+import logging
 import shutil
 import subprocess
 import sys
 from collections.abc import Iterable
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 _COPY_IGNORE = ("__pycache__", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", "*.egg-info", ".venv", "venv", "node_modules")
 
@@ -113,7 +116,8 @@ def resolved_in_a_copy(repo_root: Path, package: str, workdir: Path, *, timeout:
 def _is_within(path: Path, root: Path) -> bool:
     try:
         path.relative_to(root)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not compare path with root: %s", type(exc).__name__)
         return False
     return True
 

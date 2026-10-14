@@ -36,6 +36,7 @@ no test currently inspects.
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from pathlib import Path
@@ -43,6 +44,8 @@ from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, SourceError, iter_files, nodes_of, parse_file, relative_posix, resolve_relative
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_EFFECTS",
@@ -208,7 +211,8 @@ class _Parser:
 def _tree(path: Path) -> Optional[ast.Module]:
     try:
         return parse_file(path)
-    except SourceError:
+    except SourceError as exc:
+        logger.debug("could not parse file, skipped: %s", type(exc).__name__)
         return None
 
 

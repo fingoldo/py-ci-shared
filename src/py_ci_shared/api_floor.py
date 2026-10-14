@@ -32,6 +32,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import logging
 import re
 import subprocess
 import sys
@@ -41,6 +42,8 @@ from typing import Optional, Union
 
 from ._core import Baseline, CorpusError, Finding, ParsedFile, nodes_of, read_source, scan_python
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RULE", "RULE_UNAVAILABLE", "assert_api_floor", "find_api_floor", "guarded_lines", "parse_vermin_output", "target_from_pyproject"]
 
@@ -148,7 +151,8 @@ def _batches(paths: Sequence[str]) -> Iterator[list[str]]:
 def _vermin_available() -> bool:
     try:
         import vermin  # noqa: F401
-    except ImportError:
+    except ImportError as exc:
+        logger.debug("vermin is not installed, floor check skipped: %s", type(exc).__name__)
         return False
     return True
 

@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import ipaddress
+import logging
 import os
 import platform
 import re
@@ -35,6 +36,8 @@ import tempfile
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from urllib.parse import unquote
+
+logger = logging.getLogger(__name__)
 
 _EXE = ".exe" if os.name == "nt" else ""
 
@@ -132,7 +135,8 @@ def _is_loopback_host(host: str) -> bool:
         return True
     try:
         return ipaddress.ip_address(host).is_loopback
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("host is not an IP address, not loopback: %s", type(exc).__name__)
         return False
 
 
@@ -222,7 +226,8 @@ def main_checkout_file(relative: "str | Path", *, cwd: "Path | None" = None) -> 
 
     try:
         common = git_output(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
-    except GitError:
+    except GitError as exc:
+        logger.debug("could not resolve git common dir: %s", type(exc).__name__)
         return None
     main_root = Path(common).parent
     candidate = main_root / relative

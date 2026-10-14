@@ -66,11 +66,14 @@ Usage::
 from __future__ import annotations
 
 import fnmatch
+import logging
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, iter_files
+
+logger = logging.getLogger(__name__)
 
 #: Generated-artefact patterns, matched on path COMPONENTS, never as substrings (see :func:`matches_generated_pattern`).
 _DEFAULT_GENERATED_PATTERNS: tuple[str, ...] = (
@@ -209,7 +212,8 @@ def _read_bytes_or_none(path: Path) -> "bytes | None":
     """The file's bytes, or None when it cannot be read -- a vanished or unreadable file is not a finding."""
     try:
         return path.read_bytes()
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not read file bytes: %s", type(exc).__name__)
         return None
 
 

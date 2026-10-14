@@ -38,6 +38,7 @@ fragments) to skip, for utility workflows that deliberately cancel.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
@@ -48,6 +49,8 @@ import yaml
 
 from ._core import Baseline, EmptyScanError, Finding, SourceError, UnparsedFilesError, read_source
 from .ci_install_covers_conftest import _LineLoader
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_BRANCHES",
@@ -121,7 +124,8 @@ class _Eval:
             self.tokens.append((kind, match.group(kind)))
         try:
             value = self.disjunction()
-        except (IndexError, ValueError):
+        except (IndexError, ValueError) as exc:
+            logger.debug("could not evaluate condition, result unknown: %s", type(exc).__name__)
             return UNKNOWN
         return value if self.pos == len(self.tokens) else UNKNOWN
 
@@ -399,6 +403,7 @@ def _load(path: Path, rel: str) -> tuple[Optional[tuple[str, dict[Any, Any]]], O
         text = read_source(path)
         doc = yaml.load(text, Loader=_LineLoader)  # nosec B506 -- a SafeLoader subclass that only adds line numbers
     except SourceError as exc:
+        logger.debug("could not load workflow YAML, reported as a problem: %s", type(exc).__name__)
         return None, _problem(rel, f"{exc.kind}: {exc.message}", exc.line or 1)
     except yaml.YAMLError as exc:
         mark = getattr(exc, "problem_mark", None)

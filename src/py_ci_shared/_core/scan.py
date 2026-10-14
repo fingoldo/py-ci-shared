@@ -9,6 +9,7 @@ to report.
 from __future__ import annotations
 
 import ast
+import logging
 import os
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -19,6 +20,8 @@ from .corpus import DEFAULT_EXCLUDE, iter_files, relative_posix
 from .errors import CorpusError, EmptyScanError, SourceError, UnparsedFilesError
 from .findings import UNPARSED_RULE, Finding
 from .source import parse_source
+
+logger = logging.getLogger(__name__)
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -157,7 +160,8 @@ def scan_python(
 def _identity(path: Path) -> Path:
     try:
         return path.resolve()
-    except (OSError, RuntimeError):  # a symlink loop: keep the spelling
+    except (OSError, RuntimeError) as exc:  # a symlink loop: keep the spelling
+        logger.debug("could not resolve path, using absolute path: %s", type(exc).__name__)
         return path.absolute()
 
 
@@ -165,5 +169,6 @@ def _parse_one(path: Path, rel: str) -> Union[ParsedFile, SourceProblem]:
     try:
         source, tree = parse_source(path)
     except SourceError as exc:
+        logger.debug("could not parse source, reported as a problem: %s", type(exc).__name__)
         return _problem(exc, rel)
     return ParsedFile(path, rel, tree, source)

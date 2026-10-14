@@ -42,6 +42,7 @@ excuse a site: ``set_params`` bypasses it (the reason 1256fff4d fixed ``max_refi
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from collections import Counter
 from collections.abc import Iterable, Iterator
@@ -50,6 +51,8 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 from ._core import SourceError, parse_file, parse_source, relative_posix, walk
+
+logger = logging.getLogger(__name__)
 
 # Types where 0 is a value a caller can legitimately mean, distinct from absence.
 #
@@ -86,7 +89,8 @@ def _union_members(annotation: ast.AST) -> list[str]:
         # A string annotation ("int | None"): parse it rather than matching substrings.
         try:
             return _union_members(ast.parse(annotation.value, mode="eval").body)
-        except SyntaxError:
+        except SyntaxError as exc:
+            logger.debug("annotation is not parseable, kept as a single member: %s", type(exc).__name__)
             return [annotation.value]
     return [ast.unparse(annotation)]
 
@@ -237,6 +241,7 @@ def find_truthiness_tests(path: Path, *, repo_root: Optional[Path] = None) -> li
     try:
         tree = parse_file(path)
     except SourceError as exc:
+        logger.debug("could not parse file, reported as a problem: %s", type(exc).__name__)
         return [f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message}"]
     out: list[str] = []
     for node in tree.body:

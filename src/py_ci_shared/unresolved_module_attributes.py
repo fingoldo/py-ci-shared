@@ -30,6 +30,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import logging
 import os
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
@@ -39,6 +40,8 @@ from typing import Optional, Union
 from ._core import Baseline, Finding, SourceError, nodes_of, parse_source, scan_python
 from ._core.gate_contract import check_scan
 from .unresolved_imports import _bound_names, _is_dynamic_module, _literal_dunder_all, _module_level_nodes, _names_bound_by, _names_in
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "RULE",
@@ -260,6 +263,7 @@ class _Resolver:
         try:
             _, tree = parse_source(cand.path)
         except SourceError as exc:
+            logger.debug("target could not be parsed: %s", type(exc).__name__)
             return _ModuleInfo(None, f"target cannot be parsed ({exc.kind})")
         if _is_dynamic_module(tree) or _swaps_module_class(tree):
             return _ModuleInfo(None, "target builds names dynamically (module __getattr__, __class__ swap, globals()[...], exec or setattr on sys.modules)")
@@ -312,7 +316,8 @@ def _swaps_module_class(tree: ast.Module) -> bool:
 def _tree_all(cand: _Candidate) -> "Optional[set[str]]":
     try:
         _, tree = parse_source(cand.path)
-    except SourceError:
+    except SourceError as exc:
+        logger.debug("could not parse module: %s", type(exc).__name__)
         return None
     return _literal_dunder_all(tree)
 
@@ -321,7 +326,8 @@ def _submodule_names(package_dir: Path) -> set[str]:
     out: set[str] = set()
     try:
         entries = list(package_dir.iterdir())
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not list package directory: %s", type(exc).__name__)
         return out
     for entry in entries:
         if entry.is_dir():

@@ -12,9 +12,12 @@ from __future__ import annotations
 import doctest
 import importlib
 import importlib.util
+import logging
 import pkgutil
 from collections.abc import Iterable
 from types import ModuleType
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["assert_package_doctests_pass", "run_package_doctests"]
 
@@ -23,7 +26,8 @@ def _has_example(module_name: str) -> bool:
     """True unless the module's source is readable and contains no ``>>>`` prompt (then there is nothing to run)."""
     try:
         spec = importlib.util.find_spec(module_name)
-    except (ImportError, ValueError):
+    except (ImportError, ValueError) as exc:
+        logger.warning("module spec could not be found, doctests assumed present: %s", type(exc).__name__)
         return True
     origin = getattr(spec, "origin", None) if spec is not None else None
     if not origin or not origin.endswith(".py"):
@@ -31,7 +35,8 @@ def _has_example(module_name: str) -> bool:
     try:
         with open(origin, encoding="utf-8", errors="replace") as fh:
             return ">>>" in fh.read()
-    except OSError:
+    except OSError as exc:
+        logger.warning("module source could not be read, doctests assumed present: %s", type(exc).__name__)
         return True
 
 

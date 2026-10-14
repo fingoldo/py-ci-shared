@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import subprocess
 import sys
 from collections.abc import Iterable, Sequence
@@ -35,6 +36,8 @@ from typing import Optional
 
 from ._core.git import GitError as CoreGitError
 from ._core.git import git_text, run_git
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DIRECTORIES = ("tool/meta/baselines", "test/meta/baselines")
 
@@ -60,7 +63,8 @@ def count_entries(text: str) -> Optional[int]:
     """The number of accepted findings in a baseline file's text, or None when it is not one."""
     try:
         data = json.loads(text.lstrip("\ufeff"))
-    except (json.JSONDecodeError, ValueError):
+    except (json.JSONDecodeError, ValueError) as exc:
+        logger.warning("baseline file is not valid JSON, entry count unknown: %s", type(exc).__name__)
         return None
     if not isinstance(data, dict):
         return None

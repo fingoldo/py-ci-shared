@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import io
+import logging
 import re
 import tokenize
 from collections.abc import Iterable, Mapping, Sequence
@@ -35,6 +36,8 @@ from typing import Callable, Optional
 
 from ._core import DEFAULT_EXCLUDE, ParsedFile, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_MARKER_PATTERNS", "assert_markers_are_fatal", "find_emitted_markers"]
 
@@ -119,7 +122,8 @@ def _code_without_comments(source: str) -> str:
     """*source* with every comment replaced by spaces, so a commented-out append is not a marker."""
     try:
         tokens = list(tokenize.generate_tokens(io.StringIO(source).readline))
-    except (tokenize.TokenError, IndentationError, SyntaxError):
+    except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+        logger.debug("could not tokenize source, comments kept: %s", type(exc).__name__)
         return source
     lines = source.splitlines(keepends=True)
     for tok in tokens:

@@ -54,12 +54,15 @@ Usage::
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Union
 
 from ._core import load_json, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["FloorlessLoop", "find_floorless_loops", "assert_no_new_floorless_loop"]
 
@@ -220,7 +223,8 @@ def _assignments(fn: _FuncDef) -> "dict[str, list[ast.expr]]":
 def _src(node: ast.AST) -> "str | None":
     try:
         return ast.unparse(node)
-    except Exception:  # unparse is best-effort; missing it just narrows the check
+    except Exception as exc:  # unparse is best-effort; missing it just narrows the check
+        logger.debug("could not unparse node: %s", type(exc).__name__)
         return None
 
 

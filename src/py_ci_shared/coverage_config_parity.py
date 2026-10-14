@@ -32,6 +32,7 @@ Usage::
 from __future__ import annotations
 
 import configparser
+import logging
 import re
 import shlex
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -41,6 +42,8 @@ from typing import Any, Optional, Union
 
 from ._core import Finding, SourceError, SourceProblem, iter_files, read_source, relative_posix
 from ._gate_report import report, skip_set
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RULE_NARROW", "RULE_NUMBA", "REFRESH_FLAG", "coverage_fail_under", "find_coverage_config_violations", "assert_coverage_config_parity"]
 
@@ -90,7 +93,8 @@ def _testpaths(repo_root: Path) -> set[str]:
 def _tokens(command: str) -> list[str]:
     try:
         return shlex.split(command, posix=True)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not shell-split command, falling back to whitespace split: %s", type(exc).__name__)
         return command.split()
 
 
@@ -297,7 +301,8 @@ def _uses_numba(repo_root: Path, source_dirs: Sequence[Union[str, Path]], skip: 
 def _raw(path: Path) -> bytes:
     try:
         return path.read_bytes()
-    except OSError:
+    except OSError as exc:
+        logger.debug("could not read config file, treated as empty: %s", type(exc).__name__)
         return b""
 
 

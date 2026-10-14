@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import ast
 import datetime as _dt
+import logging
 import re
 import sys
 from collections.abc import Iterator, Mapping
@@ -46,6 +47,8 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import CoreError, Finding, SourceError, parse_source, scan_python
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "RULE",
@@ -138,7 +141,8 @@ def citation(lines: list[str], node: ast.stmt) -> str:
 def _valid_date(y: str, m: str, d: str) -> Optional[_dt.date]:
     try:
         return _dt.date(int(y), int(m), int(d))
-    except ValueError:  # 2026-02-30 reads as a date to the regex only
+    except ValueError as exc:  # 2026-02-30 reads as a date to the regex only
+        logger.debug("date fields are not integers: %s", type(exc).__name__)
         return None
 
 

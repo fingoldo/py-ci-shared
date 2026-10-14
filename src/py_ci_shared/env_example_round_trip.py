@@ -31,6 +31,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from collections.abc import Iterable, Iterator, Mapping
@@ -38,6 +39,8 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from ._core import read_source
+
+logger = logging.getLogger(__name__)
 
 #: ``NAME=VALUE``, ``# NAME=VALUE``, ``export NAME=VALUE`` and ``NAME = VALUE`` (dotenv accepts all four); NAME in the
 #: shell's own shape.
@@ -132,6 +135,7 @@ def unloadable_values(
         try:
             settings_cls(_env_file=None)
         except Exception as exc:  # the report IS the exception, whatever its type
+            logger.debug("settings class could not be built from base env: %s", type(exc).__name__)
             return [f"base_env alone does not build {settings_cls.__name__}: {type(exc).__name__}: {exc}"], 0
     problems, tried = [], 0
     for lineno, name, value in documented_values(env_path):

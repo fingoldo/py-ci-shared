@@ -34,6 +34,7 @@ losses is per-field work. What must not happen is a NEW unread field appearing s
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -42,6 +43,8 @@ from typing import Any
 
 from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source
 from ._core.node_index import walk as _fast_walk
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_KEY",
@@ -402,7 +405,8 @@ def _annotation_members(node: ast.AST) -> "list[ast.AST]":
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         try:
             node = ast.parse(node.value, mode="eval").body
-        except SyntaxError:
+        except SyntaxError as exc:
+            logger.debug("annotation is not parseable, kept as-is: %s", type(exc).__name__)
             return [node]
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _annotation_members(node.left) + _annotation_members(node.right)

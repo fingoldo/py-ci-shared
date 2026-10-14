@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import ast
 import io
+import logging
 import re
 import subprocess
 import sys
@@ -53,6 +54,8 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source
+
+logger = logging.getLogger(__name__)
 
 
 class StaleCommentAdvisory(UserWarning):
@@ -125,7 +128,8 @@ def _body_is_code(body: str, python: bool) -> bool:
         text = "_" + text
     try:
         tree = ast.parse(text)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError) as exc:
+        logger.debug("could not parse comment body as code: %s", type(exc).__name__)
         return False
     if len(tree.body) != 1:
         return False
@@ -211,7 +215,8 @@ def _python_comments(source: str) -> Optional[dict[int, str]]:
         for tok in tokenize.generate_tokens(io.StringIO(source).readline):
             if tok.type == tokenize.COMMENT:
                 out[tok.start[0]] = tok.string[1:]
-    except (tokenize.TokenError, IndentationError, SyntaxError):
+    except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
+        logger.debug("could not tokenize source for comments: %s", type(exc).__name__)
         return None
     return out
 
@@ -305,6 +310,7 @@ def _history_problem(repo_root: Path) -> Optional[str]:
     try:
         proc = _git(repo_root, "rev-parse", "--is-shallow-repository")
     except OSError as exc:
+        logger.debug("git history query failed, comment ages unknown: %s", type(exc).__name__)
         return f"{repo_root}: cannot run git ({exc}); comment ages are unknown, so nothing was checked."
     if proc.returncode != 0:
         return f"{repo_root}: not a git work tree ({proc.stderr.strip()[:200]}); comment ages are unknown, so nothing was checked."
@@ -322,7 +328,8 @@ def _called_names(body: str) -> set[str]:
     text = body.strip().rstrip(";,").strip()
     try:
         tree = ast.parse("_" + text if text.startswith(".") else text)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError) as exc:
+        logger.debug("could not parse text for call names: %s", type(exc).__name__)
         return set()
     out: set[str] = set()
     for node in ast.walk(tree):
@@ -341,7 +348,8 @@ def _shapes_this_file_matches(source: str) -> frozenset[str]:
     had to reword one to get past the gate). A file that only USES the name (``print``) has no such literal."""
     try:
         tree = ast.parse(source)
-    except (SyntaxError, ValueError):
+    except (SyntaxError, ValueError) as exc:
+        logger.debug("could not parse source for shapes: %s", type(exc).__name__)
         return frozenset()
     imports_ast = any(
         (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast") for n in ast.walk(tree)

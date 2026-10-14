@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import functools
+import logging
 import os
 import re
 import shlex
@@ -20,6 +21,8 @@ from typing import Any, Callable, Optional
 
 from ._core import Finding, SourceError, read_source
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 RULE_UNPARSED = "unparsed-file"
 
@@ -194,7 +197,8 @@ def eval_marker(marker: str, python: Version) -> Optional[bool]:
     parser = _MarkerParser(tokens, python)
     try:
         result = parser.disjunction()
-    except IndexError:
+    except IndexError as exc:
+        logger.debug("could not evaluate marker expression: %s", type(exc).__name__)
         return None
     return result if parser.position == len(tokens) else None
 
@@ -214,14 +218,16 @@ class Repo:
     def rel(self, path: Path) -> str:
         try:
             return path.resolve().relative_to(self.root.resolve()).as_posix()
-        except ValueError:
+        except ValueError as exc:
+            logger.debug("could not relate path to repo root, kept as given: %s", type(exc).__name__)
             return path.as_posix()
 
     def inside(self, path: Path) -> bool:
         try:
             path.resolve().relative_to(self.root.resolve())
             return True
-        except ValueError:
+        except ValueError as exc:
+            logger.debug("could not relate path to repo root: %s", type(exc).__name__)
             return False
 
     def toml(self, path: Path) -> Optional[dict[str, Any]]:
@@ -445,7 +451,8 @@ def requirements_file(repo: Repo, path: Path, cwd: Path, provided: Provided, dep
 def _tokens(line: str) -> list[str]:
     try:
         return shlex.split(line, posix=True)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug("could not shell-split line, falling back to whitespace split: %s", type(exc).__name__)
         return line.split()
 
 
@@ -580,7 +587,8 @@ def _compare_guard(test: ast.Compare) -> Optional[Guard]:
         return None
     try:
         bound = tuple(int(x) for x in ast.literal_eval(right))
-    except (ValueError, TypeError, SyntaxError):
+    except (ValueError, TypeError, SyntaxError) as exc:
+        logger.debug("could not evaluate version bound literal: %s", type(exc).__name__)
         return None
     op = sym
     return lambda v: None if v is None else compare_versions(tuple(v), op, bound)
@@ -688,7 +696,8 @@ def is_stdlib(name: str) -> bool:
 
     try:
         spec = importlib.util.find_spec(name)
-    except (ImportError, ValueError):
+    except (ImportError, ValueError) as exc:
+        logger.debug("could not resolve module spec, treated as not stdlib: %s", type(exc).__name__)
         return False
     origin = getattr(spec, "origin", None) or ""
     stdlib = sysconfig.get_paths().get("stdlib", "")

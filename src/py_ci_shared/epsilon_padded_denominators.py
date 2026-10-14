@@ -39,10 +39,13 @@ check that gets baselined.
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, scan_python
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "Finding",
@@ -90,7 +93,8 @@ def _falls_off_geometrically(node: ast.AST) -> bool:
         # resolving names, which a parse-only check cannot do anyway.
         try:
             return ast.unparse(node.left) == ast.unparse(node.right)
-        except Exception:
+        except Exception as exc:
+            logger.debug("could not unparse expression pair: %s", type(exc).__name__)
             return False
     if isinstance(node, ast.Call):
         func = node.func

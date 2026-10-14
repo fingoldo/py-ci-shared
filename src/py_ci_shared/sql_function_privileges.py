@@ -48,6 +48,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
@@ -55,6 +56,8 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import CorpusError, SourceReadError, iter_files, read_source
+
+logger = logging.getLogger(__name__)
 
 _IDENT = r'(?:"(?:[^"]|"")+"|[A-Za-z_][\w$]*)'
 _QUALIFIED = rf"(?:(?P<schema>{_IDENT})\s*\.\s*)?(?P<name>{_IDENT})"
@@ -374,6 +377,7 @@ def find_unlocked_definer_functions(
     try:
         files = _migration_files(Path(migrations_dir))
     except CorpusError as exc:
+        logger.warning("migrations directory unreadable, nothing examined: %s", type(exc).__name__)
         return [f"{migrations_dir}: {exc} - this check examined nothing, which reads as a pass. Point it at the migrations directory."]
     if not files:
         return [f"{migrations_dir}: no .sql files found - this check examined nothing, which reads as a pass. Point it at the migrations directory."]

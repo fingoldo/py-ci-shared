@@ -32,6 +32,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import logging
 import re
 from pathlib import Path
 from collections.abc import Iterator
@@ -39,6 +40,8 @@ from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, refresh_requested, scan_python
 from .import_side_effects import _ENV_WRITERS, _MUTATING_METHODS, _is_environ
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_NOTE", "REFRESH_FLAG", "RULE", "assert_env_write_restore", "find_env_write_restore"]
 
@@ -101,7 +104,8 @@ def _is_scoping_call(expr: ast.AST) -> bool:
         return False
     try:
         text = ast.unparse(expr.func)
-    except Exception:  # pragma: no cover - unparse of an odd node
+    except Exception as exc:  # pragma: no cover - unparse of an odd node
+        logger.debug("could not unparse call expression: %s", type(exc).__name__)
         return False
     return any(text == name or text.endswith("." + name) for name in _SCOPING_CALLS)
 

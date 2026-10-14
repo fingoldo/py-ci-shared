@@ -32,6 +32,7 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 from pathlib import Path
@@ -39,6 +40,8 @@ from typing import Any
 
 from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 _SEMVER_TAG_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?$")
 _DEP_SECTIONS = ("dependencies", "dev_dependencies", "dependency_overrides")
@@ -135,6 +138,7 @@ def find_version_tag_problems(repo: Path, manifest: str) -> list[str]:
     try:
         tags = semver_tags(repo)
     except VersionCheckError as exc:
+        logger.debug("could not list semver tags: %s", type(exc).__name__)
         return [f"cannot determine whether {version} is tagged: {exc}"]
     # Only a literal "v" may be stripped: t[1:] made tag 10.2.3 the tag of version 0.2.3 (audit 2026-10-03 K-6).
     matching = [t for t in tags if t == version or (t.startswith("v") and t[1:] == version)]
@@ -151,6 +155,7 @@ def find_version_tag_problems(repo: Path, manifest: str) -> list[str]:
     try:
         ancestor = _is_ancestor(repo, tag)
     except VersionCheckError as exc:
+        logger.debug("could not check tag ancestry: %s", type(exc).__name__)
         return [f"cannot determine whether tag {tag} is on this branch: {exc}"]
     if ancestor is None:
         shallow = _run_git(repo, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"

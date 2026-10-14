@@ -31,6 +31,7 @@ metadata keys, which are ignored.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from collections import Counter
@@ -42,6 +43,8 @@ from typing import Any, Callable, Optional, Union
 from .errors import BaselineError, BaselineGrowthError
 from .findings import Finding
 from .refresh import grow_hint, grow_requested
+
+logger = logging.getLogger(__name__)
 
 PathLike = Union[str, "os.PathLike[str]"]
 
@@ -293,6 +296,7 @@ class Baseline:
         try:
             current = self.regenerate(found, grow=grow, request=request)
         except BaselineGrowthError as exc:
+            logger.warning("baseline refresh refused, growth not written: %s", type(exc).__name__)
             return BaselineOutcome(new=exc.grown, message=str(exc))
         return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.path}")
 

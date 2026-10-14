@@ -67,6 +67,8 @@ from ._core import (
 )
 from .sql_verifier_coverage import DEFAULT_STATEMENT_STARTS, StatementConstant, statement_constants
 
+logger = logging.getLogger(__name__)
+
 __all__ = [
     "RULE",
     "StatementColumnReport",
@@ -610,15 +612,16 @@ def _sqlglot() -> Any:
 
 def _parse(sqlglot: Any, exp: Any, text: str) -> list[Any]:
     """The statement's trees, or ``[]`` when sqlglot cannot parse it (a ``Command`` fallback understands nothing, so it is no parse)."""
-    logger = logging.getLogger("sqlglot")
-    level = logger.level
-    logger.setLevel(logging.ERROR)  # its "falling back to parsing as a Command" warning is what this function turns into a count
+    sqlglot_log = logging.getLogger("sqlglot")
+    level = sqlglot_log.level
+    sqlglot_log.setLevel(logging.ERROR)  # its "falling back to parsing as a Command" warning is what this function turns into a count
     try:
         trees = [t for t in sqlglot.parse(_parse_ready(text), read="postgres") if t is not None]
-    except (sqlglot.errors.SqlglotError, RecursionError):
+    except (sqlglot.errors.SqlglotError, RecursionError) as exc:
+        logger.warning("SQL statement could not be parsed, its columns are not checked: %s", type(exc).__name__)
         return []
     finally:
-        logger.setLevel(level)
+        sqlglot_log.setLevel(level)
     return [] if any(isinstance(t, exp.Command) for t in trees) else trees
 
 
