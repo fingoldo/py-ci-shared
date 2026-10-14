@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import ast
 import os
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -47,6 +47,7 @@ from ._gate_run import enforce_findings
 
 __all__ = [
     "RULE_DROPPED",
+    "RULE_EXEMPT",
     "RULE_INCLUDE",
     "RULE_REQUIRED",
     "NginxParseError",
@@ -60,6 +61,7 @@ REFRESH_FLAG = "--refresh-nginx-location-headers-baseline"
 RULE_DROPPED = "dropped-header"
 RULE_INCLUDE = "unresolved-include"
 RULE_REQUIRED = "missing-required"
+RULE_EXEMPT = "exemption"
 PATTERNS = ("*.conf", "*.conf.template")
 #: Blocks whose ``add_header`` set is a level of nginx's inheritance; anything else is not descended into.
 _LEVELS = frozenset({"http", "server", "location", "if", "limit_except"})
@@ -200,6 +202,9 @@ class _Ctx:
     conf: Path
     required: dict[str, str]
     resolve_includes: bool
+    exempt: Mapping[str, str] = field(default_factory=dict)
+    required_in_exempt: dict[str, str] = field(default_factory=dict)
+    seen_selectors: set[str] = field(default_factory=set)
     findings: list[Finding] = field(default_factory=list)
 
 
@@ -255,14 +260,18 @@ def _walk(block: Directive, inherited: dict[str, str], inherited_from: Optional[
         for inc in unresolved:
             message = f"{_where(block)} has `{inc.label()}`, which may set or drop add_header lines the gate cannot read"
             ctx.findings.append(Finding(ctx.rel, inc.line, RULE_INCLUDE, message, key=f"{RULE_INCLUDE}::{ctx.rel}::{block.label()}::{inc.label()}"))
-    if own and inherited_from is not None:
+    selector = " ".join(block.args)
+    exempt = block.name == "location" and selector in ctx.exempt
+    if exempt:
+        ctx.seen_selectors.add(selector)
+    if own and inherited_from is not None and not exempt:
         _check_dropped(block, own, inherited, inherited_from, ctx)
     effective, source = (own, block) if own else (inherited, inherited_from)
-    if ctx.required and block.name in _SERVING:
-        missing = [name for key, name in ctx.required.items() if key not in effective]
-        if missing:
-            message = f"{_where(block)} serves responses without {', '.join(missing)}"
-            ctx.findings.append(Finding(ctx.rel, block.line, RULE_REQUIRED, message, key=f"{RULE_REQUIRED}::{ctx.rel}::{block.label()}::{','.join(missing)}"))
+    wanted = ctx.required_in_exempt if exempt else (ctx.required if block.name in _SERVING else {})
+    missing = [name for key, name in wanted.items() if key not in effective]
+    if missing:
+        message = f"{_where(block)} serves responses without {', '.join(missing)}" + (" (required even in an exempt block)" if exempt else "")
+        ctx.findings.append(Finding(ctx.rel, block.line, RULE_REQUIRED, message, key=f"{RULE_REQUIRED}::{ctx.rel}::{block.label()}::{','.join(missing)}"))
     for child in body:
         if child.block is not None and child.name in _LEVELS:
             _walk(child, effective, source, ctx)
@@ -279,12 +288,34 @@ def _entries(conf_paths: Union[PathLike, Iterable[PathLike]], use_git: Optional[
     return out
 
 
+def _exemption_findings(exempt: Mapping[str, str], seen: set[str], where: str) -> list[Finding]:
+    out: list[Finding] = []
+    for selector, reason in sorted(exempt.items()):
+        if not str(reason).strip():
+            out.append(Finding(where, 1, RULE_EXEMPT, f"exempt location `{selector}` gives no reason", key=f"{RULE_EXEMPT}::reason::{selector}"))
+        if selector not in seen:
+            out.append(
+                Finding(
+                    where, 1, RULE_EXEMPT, f"exempt location `{selector}` matches no location block (stale exemption)", key=f"{RULE_EXEMPT}::stale::{selector}"
+                )
+            )
+    return out
+
+
 def _scan(
-    conf_paths: Union[PathLike, Iterable[PathLike]], required: Iterable[str], resolve_includes: bool, use_git: Optional[bool]
+    conf_paths: Union[PathLike, Iterable[PathLike]],
+    required: Iterable[str],
+    resolve_includes: bool,
+    use_git: Optional[bool],
+    exempt: Optional[Mapping[str, str]] = None,
+    required_in_exempt: Iterable[str] = (),
 ) -> tuple[list[Finding], ScanResult]:
     scan = ScanResult(root=None, min_files=0)
     findings: list[Finding] = []
     wanted = {name.lower(): name for name in required}
+    exempt = exempt or {}
+    in_exempt = {name.lower(): name for name in required_in_exempt}
+    seen: set[str] = set()
     for path, rel in _entries(conf_paths, use_git):
         try:
             text = read_source(path)
@@ -296,9 +327,12 @@ def _scan(
             scan.unparsed.append(SourceProblem(path, rel, exc.line, "unparsable", str(exc)))
             continue
         scan.files.append(ParsedFile(path, rel, ast.Module(body=[], type_ignores=[]), text))
-        ctx = _Ctx(rel, path, wanted, resolve_includes)
+        ctx = _Ctx(rel, path, wanted, resolve_includes, exempt, in_exempt)
         _walk(Directive("main", [], 1, block=tree), {}, None, ctx)
         findings.extend(ctx.findings)
+        seen |= ctx.seen_selectors
+    if exempt and scan.files:
+        findings.extend(_exemption_findings(exempt, seen, "<exempt>"))
     return sorted(findings, key=lambda f: (f.path, f.line, f.rule)), scan
 
 
@@ -306,12 +340,18 @@ def find_nginx_header_problems(
     conf_paths: Union[PathLike, Iterable[PathLike]],
     *,
     required: Iterable[str] = (),
+    exempt: Optional[Mapping[str, str]] = None,
+    required_in_exempt: Iterable[str] = (),
     resolve_includes: bool = False,
     use_git: Optional[bool] = None,
 ) -> list[Finding]:
     """Every dropped, unresolved or missing header in the nginx configs *conf_paths* (files, or directories searched for
-    ``*.conf``/``*.conf.template``), plus one ``unparsed-file`` finding per config that could not be read or parsed."""
-    findings, scan = _scan(conf_paths, required, resolve_includes, use_git)
+    ``*.conf``/``*.conf.template``), plus one ``unparsed-file`` finding per config that could not be read or parsed.
+
+    *exempt* maps a location selector, exactly as written after ``location`` (``= /healthz``, ``~* \\.(?:js)$``), to the
+    reason it is exempt: such a block is not checked for dropped headers or *required*, only for *required_in_exempt*. A
+    key matching no location in any config, or an empty reason, is an ``exemption`` finding (path ``<exempt>``)."""
+    findings, scan = _scan(conf_paths, required, resolve_includes, use_git, exempt or {}, required_in_exempt)
     return sorted(findings + scan.unparsed_findings(), key=lambda f: (f.path, f.line, f.rule))
 
 
@@ -319,6 +359,8 @@ def assert_nginx_location_headers(
     conf_paths: Union[PathLike, Iterable[PathLike]],
     *,
     required: Iterable[str] = (),
+    exempt: Optional[Mapping[str, str]] = None,
+    required_in_exempt: Iterable[str] = (),
     resolve_includes: bool = False,
     baseline_path: Optional[Union[str, Path]] = None,
     min_files: int = 1,
@@ -328,8 +370,9 @@ def assert_nginx_location_headers(
     use_git: Optional[bool] = None,
 ) -> None:
     """Fail on any finding (or one *baseline_path* does not accept), on fewer than *min_files* configs parsed, and on a
-    config that could not be read or parsed unless *allow_unparsed*."""
-    findings, scan = _scan(conf_paths, required, resolve_includes, use_git)
+    config that could not be read or parsed unless *allow_unparsed*. *exempt*/*required_in_exempt*: see
+    :func:`find_nginx_header_problems`."""
+    findings, scan = _scan(conf_paths, required, resolve_includes, use_git, exempt or {}, required_in_exempt)
     if allow_unparsed:
         scan.unparsed = []
     enforce_findings(

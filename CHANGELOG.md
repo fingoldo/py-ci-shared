@@ -20,6 +20,8 @@ then refresh the baseline if the handler is accepted.
   an enclosing block sets, since nginx then drops the inherited set; an `include` where headers matter is reported
   unless `resolve_includes=True` reads it; `required=` names headers every `server`/`location` must end up with.
   Unbalanced braces are an unparsed file, not a pass; `.conf.template` files with `${VAR}` parse. Opt-in.
+  `exempt={selector: reason}` exempts a `location` (selector exactly as written) from the dropped-header and `required`
+  checks; it must then carry `required_in_exempt`. An empty reason or a selector matching no location is a finding.
 - `phantom_code_references.count_claim_mismatches` also counts a bullet list naming one thing per item
   (`#   NAME - text`, `# - NAME: text`, `// * NAME - text`) under a claim line ending in `:`, and accepts any
   "<number> <word(s)>:" claim ("Two substitutions:") for such a list. Numbered lists are counted as before.

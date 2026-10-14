@@ -184,3 +184,72 @@ def test_a_directory_is_searched_and_an_empty_one_fails_the_floor(tmp_path):
     empty.mkdir()
     with pytest.raises(BaseException, match="expected at least 1"):
         assert_nginx_location_headers(empty, use_git=False)
+
+
+EXEMPT_CONF = """server {
+    add_header Content-Security-Policy "default-src 'self'" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-Frame-Options DENY always;
+    location / {
+        try_files $uri /index.html;
+    }
+    location = /healthz {
+        add_header Content-Security-Policy "default-src 'self'" always;
+        add_header X-Content-Type-Options nosniff always;
+        return 200;
+    }
+    location = /other {
+        add_header Cache-Control no-cache;
+    }
+}
+"""
+DOC = ("Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options")
+IN_EXEMPT = ("Content-Security-Policy", "X-Content-Type-Options")
+
+
+def _exempt_found(tmp_path, text=EXEMPT_CONF, exempt=None):
+    path = _write(tmp_path, text, "site.conf")
+    exempt = {"= /healthz": "a probe, not a document", "= /other": "asset"} if exempt is None else exempt
+    return _found(path, required=DOC, exempt=exempt, required_in_exempt=IN_EXEMPT)
+
+
+def test_an_exempt_block_carrying_the_exempt_headers_is_clean(tmp_path):
+    assert [f for f in _exempt_found(tmp_path) if "healthz" in f[2]] == []
+
+
+def test_an_exempt_block_missing_an_exempt_header_is_a_finding(tmp_path):
+    found = _exempt_found(tmp_path)
+    assert found == [
+        (
+            13,
+            "missing-required",
+            "`location = /other` (line 13) serves responses without Content-Security-Policy, X-Content-Type-Options (required even in an exempt block)",
+        )
+    ]
+
+
+def test_an_empty_reason_and_a_stale_key_are_findings(tmp_path):
+    found = _exempt_found(tmp_path, exempt={"= /healthz": "  ", "= /other": "asset", "= /gone": "was removed"})
+    exemption = [(rule, msg) for _, rule, msg in found if rule == "exemption"]
+    assert exemption == [
+        ("exemption", "exempt location `= /gone` matches no location block (stale exemption)"),
+        ("exemption", "exempt location `= /healthz` gives no reason"),
+    ]
+
+
+def test_a_block_that_is_not_exempt_is_still_flagged(tmp_path):
+    rules = sorted({(line, rule) for line, rule, _ in _exempt_found(tmp_path, exempt={"= /healthz": "probe"})})
+    assert rules == [(13, "dropped-header"), (13, "missing-required")]
+
+
+def test_exempt_is_threaded_through_the_assert(tmp_path):
+    path = _write(
+        tmp_path,
+        EXEMPT_CONF.replace(
+            "add_header Cache-Control no-cache;", "add_header Cache-Control no-cache;\n" + "\n".join(f"        add_header {h} x;" for h in IN_EXEMPT)
+        ),
+        "site.conf",
+    )
+    assert_nginx_location_headers([path], required=DOC, exempt={"= /healthz": "probe", "= /other": "asset"}, required_in_exempt=IN_EXEMPT)
+    with pytest.raises(BaseException, match=r"stale exemption"):
+        assert_nginx_location_headers([path], required=DOC, exempt={"= /healthz": "probe", "= /other": "asset", "= /x": "y"}, required_in_exempt=IN_EXEMPT)
