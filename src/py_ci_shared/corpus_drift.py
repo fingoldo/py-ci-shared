@@ -97,6 +97,7 @@ NON_CORPUS: dict[str, str] = {
     "llm_call_archive_gate": "needs provider classes, archive names and wrapping factories",
     "marker_runner_coverage": "needs a marker name and runner commands",
     "mutation_teeth": "runs mutants against tests; minutes per file, not a count",
+    "nginx_location_headers": "takes the nginx config files of a deploy directory, whose name and layout vary per repo",
     "optional_truthiness": "takes one file path, not a corpus",
     "patch_target_read_at_call": "needs the test paths and the first-party package roots, which a repo checkout does not name (src layouts, several packages)",
     "phantom_code_references": "needs the declared-name set of the repo",

@@ -12,6 +12,25 @@ Behaviour change: `fail_open_handlers` has a fifth rule, `silent_default_return`
 the failure at WARNING (or raise), or mark the `except` line `# best-effort: <reason>` when the fallback cannot change a result,
 then refresh the baseline if the handler is accepted.
 
+- New gate `comment_repo_paths`: a comment (`#` in shell/YAML/TOML/INI/Dockerfile/`#!` scripts, `//` in Dart/JS/TS,
+  Python comments and docstrings) that names a path under `tool/`, `tools/`, `scripts/`, `.githooks/` or
+  `.github/scripts/` must name a file or directory that exists under the repo root. Glob and template tokens and
+  past-tense lines ("renamed", "removed", "no longer"...) are skipped; an unparsable `.py` is reported. Opt-in.
+- New gate `nginx_location_headers`: a `server`/`location`/`if` block with its own `add_header` must repeat every header
+  an enclosing block sets, since nginx then drops the inherited set; an `include` where headers matter is reported
+  unless `resolve_includes=True` reads it; `required=` names headers every `server`/`location` must end up with.
+  Unbalanced braces are an unparsed file, not a pass; `.conf.template` files with `${VAR}` parse. Opt-in.
+- `phantom_code_references.count_claim_mismatches` also counts a bullet list naming one thing per item
+  (`#   NAME - text`, `# - NAME: text`, `// * NAME - text`) under a claim line ending in `:`, and accepts any
+  "<number> <word(s)>:" claim ("Two substitutions:") for such a list. Numbered lists are counted as before.
+
+**Behaviour change**: `phantom_code_references` (`find_phantom_code_references`, `count_claim_mismatches`) now reads `#`
+lines of `.sh`/`.bash`/`.zsh`/`.yaml`/`.yml`/`.toml`/`.cfg`/`.ini`/`.conf`/`.template` files, `Dockerfile*` and
+extensionless `#!` scripts as comments (before, only `//`/`*` lines of non-Python files were read), and a bullet list
+under a count claim can now disagree with it. A consumer that passes such files can see new findings. What to do: fix
+the comment (a backticked name that does not exist, or a count that does not match its list), or keep those files out
+of the `files` you pass.
+
 ## 1.22.10
 
 Regression fix in the opt-in `wallclock_test_waits` gate. 1.22.9 scanned a file under `test`/`tests` only when its name was

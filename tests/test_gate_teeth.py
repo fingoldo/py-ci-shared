@@ -422,6 +422,8 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("shared_mutable_placeholder").assert_no_shared_mutable_placeholders(_py(d)),
             token="_SEED_EMPTY",
         ),
+        Canary("comment_repo_paths", lambda d: _gate("comment_repo_paths").assert_comment_repo_paths(d, use_git=False)),
+        Canary("nginx_location_headers", lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False)),
     ]
 }
 
@@ -718,6 +720,10 @@ def _parse_error(path: Path, data: bytes) -> Optional[str]:
             from py_ci_shared._toml_compat import tomllib
 
             tomllib.loads(text)
+        elif name.endswith((".conf", ".conf.template")):
+            from py_ci_shared.nginx_location_headers import parse_nginx
+
+            parse_nginx(text)
         elif name.endswith((".yml", ".yaml")):
             yaml = pytest.importorskip("yaml")
             yaml.safe_load(text)

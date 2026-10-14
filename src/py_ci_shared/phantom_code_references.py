@@ -85,6 +85,12 @@ _COUNT_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 _NUMBERED_ITEM_RE = re.compile(r"^\s*(?:#|//|///|\*|\"\"\")?\s*(\d+)[.)]\s+\S")
+#: A claim line that ends in "<number> <one or two words>:" ("Two substitutions:"), checked only against a bullet list.
+_TAIL_CLAIM_RE = re.compile(r"\b(?P<n>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+[A-Za-z][\w-]*(?:\s+[A-Za-z][\w-]*)?\s*:\s*$", re.IGNORECASE)
+_NAME = r"(?:`[^`\n]+`|[A-Za-z_][\w.]*)"
+#: One bullet naming a thing: ``#   NAME - text``, ``# - NAME: text``, ``// * NAME - text``. Captures the indent after the
+#: comment marker, so a deeper-indented line under an item reads as that item's continuation.
+_BULLET_ITEM_RE = re.compile(r"^\s*(?:#|///|//)?(?P<indent>\s*)(?:(?:[-*]\s+" + _NAME + r"\s*(?::|\s-)\s+\S)|(?:" + _NAME + r"\s+-\s+\S))")
 
 # Words that appear in backticks constantly and are never a code reference in the repos this serves:
 # language keywords and literals, common type names, and the punctuation-ish tokens people quote.
@@ -355,12 +361,24 @@ def _comment_lines_checked(path: Path) -> "tuple[list[tuple[int, str]], Optional
     except SourceError as exc:
         logger.debug("could not parse source for comment lines: %s", type(exc).__name__)
         return [], exc
+    markers: tuple[str, ...] = ("//", "///", "/*", "*")
+    if _hash_commented(path, source):
+        markers = ("#",)
     out: list[tuple[int, str]] = []
     for lineno, line in enumerate(source.splitlines(), start=1):
         stripped = line.lstrip()
-        if stripped.startswith(("//", "///", "/*", "*")):
+        if stripped.startswith(markers) and not stripped.startswith("#!"):
             out.append((lineno, stripped))
     return out, None
+
+
+#: Suffixes whose comments start with ``#``: shell, YAML, TOML, INI-style configs. A ``Dockerfile*`` and an extensionless
+#: script with a ``#!`` line are read the same way.
+_HASH_COMMENT_SUFFIXES = frozenset({".sh", ".bash", ".zsh", ".yaml", ".yml", ".toml", ".cfg", ".ini", ".conf", ".template"})
+
+
+def _hash_commented(path: Path, source: str) -> bool:
+    return path.suffix in _HASH_COMMENT_SUFFIXES or path.name.startswith("Dockerfile") or (not path.suffix and source.startswith("#!"))
 
 
 def _comment_lines(path: Path) -> list[tuple[int, str]]:
@@ -505,40 +523,75 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
     return violations
 
 
+def _numbered_count(lines: list[tuple[int, str]], i: int) -> int:
+    """How many consecutive ``1.``/``2)`` items follow the claim at *i* in the same comment block."""
+    seen: list[int] = []
+    j = i + 1
+    while j < len(lines) and j < i + 60:
+        ln, txt = lines[j]
+        if ln != lines[j - 1][0] + 1:
+            break  # the comment block ended
+        item = _NUMBERED_ITEM_RE.match(txt)
+        if item:
+            number = int(item.group(1))
+            if (seen and number != seen[-1] + 1) or (not seen and number != 1):
+                break
+            seen.append(number)
+        elif seen and not txt.strip(" /#*"):
+            break
+        j += 1
+    return len(seen)
+
+
+def _bullet_count(lines: list[tuple[int, str]], i: int) -> int:
+    """How many contiguous ``NAME - text`` bullets start directly under the claim at *i*. A line indented deeper than the
+    first bullet continues the previous item; anything else (a blank comment line, prose, the block's end) ends the list."""
+    count, indent = 0, -1
+    j = i + 1
+    while j < len(lines) and j < i + 60:
+        ln, txt = lines[j]
+        if ln != lines[j - 1][0] + 1:
+            break
+        item = _BULLET_ITEM_RE.match(txt)
+        body = txt.lstrip().lstrip("#/").rstrip()
+        depth = len(body) - len(body.lstrip())
+        if item and (indent < 0 or len(item.group("indent")) == indent):
+            indent = len(item.group("indent"))
+            count += 1
+        elif count and body.strip() and depth > indent:
+            pass  # continuation of the previous bullet
+        else:
+            break
+        j += 1
+    return count
+
+
 def count_claim_mismatches(files: Iterable[Path]) -> list[str]:
     """``"<file>:<line>: says N ..., lists M"`` for every comment block that claims a count ("the TWO
-    known exceptions", "four cases") and then enumerates a numbered list of a different length within
-    the next 60 comment lines. Only that exact shape is checked: a number word with no list under it is
-    prose and passes."""
+    known exceptions", "four cases", "Two substitutions:") on a line ending in ``:`` and then enumerates a list of a
+    different length directly under it: a numbered list (``1.``/``2)``, within the next 60 comment lines) or a contiguous
+    bullet list naming one thing per item (``#   NAME - text``, ``# - NAME: text``, ``// * `name` - text``). Only that
+    exact shape is checked: a number word with no list under it is prose and passes.
+
+    Comments are Python comment tokens and docstrings, ``//``/``*`` lines of other sources, and ``#`` lines of shell,
+    YAML, TOML, INI-style files, ``Dockerfile*`` and extensionless ``#!`` scripts."""
     violations: list[str] = []
     for path in files:
         lines = _comment_lines(path)
-        by_index = {i: (ln, txt) for i, (ln, txt) in enumerate(lines)}
         for i, (lineno, text) in enumerate(lines):
-            m = _COUNT_CLAIM_RE.search(text)
-            if not m or not text.rstrip().endswith(":"):
+            if not text.rstrip().endswith(":"):
                 continue
-            raw = m.group("n").lower()
+            m = _COUNT_CLAIM_RE.search(text)
+            tail = _TAIL_CLAIM_RE.search(text)
+            if not m and not tail:
+                continue
+            listed = _numbered_count(lines, i) if m else 0
+            if not listed:
+                listed = _bullet_count(lines, i)
+            raw = (m or tail).group("n").lower()  # type: ignore[union-attr]
             claimed = int(raw) if raw.isdigit() else _WORD_NUMBERS[raw]
-            seen: list[int] = []
-            j = i + 1
-            while j in by_index and j < i + 60:
-                ln, txt = by_index[j]
-                if ln != lines[j - 1][0] + 1:
-                    break  # the comment block ended
-                item = _NUMBERED_ITEM_RE.match(txt)
-                if item:
-                    number = int(item.group(1))
-                    if seen and number != seen[-1] + 1:
-                        break
-                    if not seen and number != 1:
-                        break
-                    seen.append(number)
-                elif seen and not txt.strip(" /#*"):
-                    break
-                j += 1
-            if seen and len(seen) != claimed:
-                violations.append(f"{path}:{lineno}: says {claimed}, lists {len(seen)}")
+            if listed and listed != claimed:
+                violations.append(f"{path}:{lineno}: says {claimed}, lists {listed}")
     return violations
 
 

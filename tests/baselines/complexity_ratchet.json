@@ -43,7 +43,6 @@
   "src/py_ci_shared/module_reload_safety.py::find_unpaired_reloads": 15,
   "src/py_ci_shared/mutation_teeth.py::_sweep_mutants": 23,
   "src/py_ci_shared/mutation_teeth.py::find_surviving_mutants": 18,
-  "src/py_ci_shared/phantom_code_references.py::count_claim_mismatches": 11,
   "src/py_ci_shared/phantom_code_references.py::find_phantom_code_references": 16,
   "src/py_ci_shared/phantom_code_references.py::python_declarations": 32,
   "src/py_ci_shared/prompt_field_parity.py::keys_in_schema": 12,

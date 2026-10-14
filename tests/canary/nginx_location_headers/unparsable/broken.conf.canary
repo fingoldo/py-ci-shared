@@ -1,0 +1,4 @@
+server {
+    location /broken {
+        add_header X-Seed 1;
+}

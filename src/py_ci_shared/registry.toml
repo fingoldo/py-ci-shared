@@ -231,6 +231,13 @@ budget_s = 180
 summary = "Shared harness for the \"code-audit baseline\" meta-test pattern"
 
 [[gate]]
+name = "comment_repo_paths"
+kind = "gate"
+entries = ["assert_comment_repo_paths"]
+since = "1.22.12"
+summary = "A comment naming a tool/, scripts/ or .githooks/ path names a file that exists"
+
+[[gate]]
 name = "commit_metadata"
 kind = "gate"
 entries = ["assert_commit_metadata"]
@@ -856,6 +863,13 @@ kind = "gate"
 entries = ["assert_no_naive_utcnow"]
 since = "1.4.1"
 summary = "No production module builds a timestamp with `datetime.utcnow()`"
+
+[[gate]]
+name = "nginx_location_headers"
+kind = "gate"
+entries = ["assert_nginx_location_headers"]
+since = "1.22.12"
+summary = "An nginx block with its own add_header repeats every header its enclosing blocks set"
 
 [[gate]]
 name = "no_source_text_tests"

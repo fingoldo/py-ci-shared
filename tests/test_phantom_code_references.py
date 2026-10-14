@@ -94,6 +94,51 @@ def test_count_claim_fires_only_when_the_numbered_list_disagrees(tmp_path: Path)
     assert count_claim_mismatches([prose]) == []
 
 
+_SUBST = (
+    "#!/bin/sh\n# Two substitutions:\n#   API_URL - the backend origin\n#   CORE_REF - the pinned core tag,\n#     resolved at build time\n{third}\nsed -e x\n"
+)
+
+
+def test_count_claim_counts_a_bullet_list_in_a_shell_comment(tmp_path: Path) -> None:
+    bad = _write(tmp_path, "tool/build.sh", _SUBST.format(third="#   SENTRY_DSN - the error sink"))
+    assert count_claim_mismatches([bad]) == [f"{bad}:2: says 2, lists 3"]
+
+
+def test_count_claim_bullet_list_matching_the_claim_is_clean(tmp_path: Path) -> None:
+    good = _write(tmp_path, "tool/build.sh", _SUBST.format(third="echo done"))
+    assert count_claim_mismatches([good]) == []
+
+
+def test_count_claim_without_a_list_under_it_is_prose(tmp_path: Path) -> None:
+    prose = _write(tmp_path, "Dockerfile", "# Two substitutions:\nRUN echo a\n# API_URL - not under the claim\n")
+    spaced = _write(tmp_path, "b.yaml", "# Two substitutions:\n#\n#   API_URL - after a blank comment line\nk: v\n")
+    assert count_claim_mismatches([prose, spaced]) == []
+
+
+@pytest.mark.parametrize(
+    ("rel", "text"),
+    [
+        ("deploy/app.yaml", "# the three keys:\n# - `host`: where\n# - port: which\nk: v\n"),
+        ("lib/a.dart", "// Three modes:\n// * FAST - quick\n// * SLOW - thorough\nvoid f() {}\n"),
+        (".githooks/pre-commit", "#!/bin/sh\n# three checks:\n#   LINT - ruff\n#   TYPES - mypy\nexit 0\n"),
+        ("a.py", "def f():\n    # Three substitutions:\n    #   A - x\n    #   B - y\n    pass\n"),
+    ],
+)
+def test_count_claim_bullet_shapes_across_languages(tmp_path: Path, rel: str, text: str) -> None:
+    path = _write(tmp_path, rel, text)
+    assert [v.rsplit(": ", 1)[1] for v in count_claim_mismatches([path])] == ["says 3, lists 2"]
+
+
+def test_count_claim_numbered_list_still_wins_over_bullets(tmp_path: Path) -> None:
+    path = _write(tmp_path, "a.sh", "# the two steps:\n#   1. build\n#   2. push\n")
+    assert count_claim_mismatches([path]) == []
+
+
+def test_a_hash_comment_in_yaml_is_now_a_comment_line_for_phantom_references(tmp_path: Path) -> None:
+    path = _write(tmp_path, "ci.yaml", "# runs `GhostRunner` first\nk: v\n")
+    assert find_phantom_code_references([path], tmp_path, set()) == ["ci.yaml:1: `GhostRunner` names nothing declared in this repo"]
+
+
 def test_assert_variant_uses_and_prunes_the_baseline(tmp_path: Path) -> None:
     p = _write(tmp_path, "pkg/mod.py", "# see `Ghost`\n")
     baseline = tmp_path / "_baseline.json"

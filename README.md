@@ -173,6 +173,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`closed_audit_rounds`](src/py_ci_shared/closed_audit_rounds.py) | gate | 1.20.0 | `assert_closed_audit_rounds_append_only` | Files of a closed audit round (``audits/implemented/``) only gain lines over a revision range; edits need an ``Audit-Edit:`` trailer |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
+| [`comment_repo_paths`](src/py_ci_shared/comment_repo_paths.py) | gate | 1.22.12 | `assert_comment_repo_paths` | A comment naming a tool/, scripts/ or .githooks/ path names a file that exists |
 | [`commit_metadata`](src/py_ci_shared/commit_metadata.py) | gate | 1.20.0 | `assert_commit_metadata` | No commit subject starting with a BOM or invisible character, and no trailer from the repo's forbidden list (empty by default) |
 | [`committed_line_endings`](src/py_ci_shared/committed_line_endings.py) | gate | 1.20.0 | `assert_committed_line_endings` | Committed (index) blobs with bare CR, mixed CRLF/LF or CRLF line endings |
 | [`complexity_ratchet`](src/py_ci_shared/complexity_ratchet.py) | gate | 1.18.0 | `assert_complexity_does_not_grow` | No NEW function over the cyclomatic-complexity limit (ruff C901), and the ones already over it may not grow |
@@ -262,6 +263,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`mutation_teeth`](src/py_ci_shared/mutation_teeth.py) | gate | 1.4.0 | `assert_no_new_surviving_mutant` (+1) | A test that claims to pin a defect must be able to FAIL |
 | [`mypy_gate`](src/py_ci_shared/mypy_gate.py) | cli | 1.3.6 | `main` | Run mypy as a gate that requires COMPLETION, not merely a zero exit code |
 | [`naive_utcnow`](src/py_ci_shared/naive_utcnow.py) | gate | 1.4.1 | `assert_no_naive_utcnow` | No production module builds a timestamp with `datetime.utcnow()` |
+| [`nginx_location_headers`](src/py_ci_shared/nginx_location_headers.py) | gate | 1.22.12 | `assert_nginx_location_headers` | An nginx block with its own add_header repeats every header its enclosing blocks set |
 | [`no_source_text_tests`](src/py_ci_shared/no_source_text_tests.py) | gate | 1.22.12 | `assert_no_source_text_tests` | A test that asserts on the text of a SQL statement (a WHERE or SELECT probe) instead of the rows it returns |
 | [`no_xfail_to_defer`](src/py_ci_shared/no_xfail_to_defer.py) | gate | 1.17.0 | `assert_no_xfail_to_defer` | xfail and skip may mark a limit outside the repository, never park a bug inside it |
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |

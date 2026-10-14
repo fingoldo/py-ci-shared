@@ -1,0 +1,3 @@
+name: seed_app
+# The core pin is checked by tool/check-seed-pin.sh before every release.
+version: 1.0.0
