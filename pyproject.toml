@@ -268,6 +268,18 @@ min_files = 100
 files = ["src/**/*.py"]
 baseline_path = "tests/baselines/fail_open_handlers.json"
 
+[tool.py_ci_shared.gates.lock_held_across_io]
+files = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.py_ci_shared.gates.check_then_act_outside_lock]
+files = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.py_ci_shared.gates.shared_mutable_placeholder]
+files = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.py_ci_shared.gates.no_source_text_tests]
+files = ["tests/**/*.py"]
+
 [tool.py_ci_shared.gates.fail_message_quality]
 meta_dir = "src/py_ci_shared"
 

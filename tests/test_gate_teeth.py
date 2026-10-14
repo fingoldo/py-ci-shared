@@ -18,6 +18,7 @@ caused by bad test configuration cannot pass for teeth.
 from __future__ import annotations
 
 import ast
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -25,6 +26,8 @@ from typing import Callable, Optional
 import pytest
 
 from py_ci_shared import registry
+
+logger = logging.getLogger(__name__)
 
 CANARY_DIR = Path(__file__).resolve().parent / "canary"
 SUFFIX = ".canary"
@@ -651,9 +654,11 @@ def _outcome(fn: Callable[[], object]) -> Optional[str]:
     """``None`` when the gate passed; the failure text when it raised. A skip counts as a pass: it is silent."""
     try:
         fn()
-    except pytest.skip.Exception:
+    except pytest.skip.Exception as exc:
+        logger.debug("gate skipped, counted as a pass: %s", type(exc).__name__)
         return None
     except (Exception, pytest.fail.Exception) as exc:
+        logger.debug("gate raised, reported as a failure: %s", type(exc).__name__)
         return f"{type(exc).__name__}: {exc}"
     return None
 
@@ -717,6 +722,7 @@ def _parse_error(path: Path, data: bytes) -> Optional[str]:
             yaml = pytest.importorskip("yaml")
             yaml.safe_load(text)
     except Exception as exc:
+        logger.debug("file does not parse as its type: %s", type(exc).__name__)
         return f"{type(exc).__name__}: {exc}"
     return None
 

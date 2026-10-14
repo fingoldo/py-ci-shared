@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Literal, Optional
 
 import pytest
@@ -15,6 +16,8 @@ from py_ci_shared.pydantic_field_bounds import (
     find_unenforced_numeric_bounds,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class _Unenforced(pydantic.BaseModel):
     """A required non-str field, and a bound declared where the validator never reads it."""
@@ -27,7 +30,8 @@ class _Unenforced(pydantic.BaseModel):
     def _swallow(cls, value, handler):  # type: ignore[no-untyped-def]
         try:
             return handler(value)
-        except pydantic.ValidationError:
+        except pydantic.ValidationError as exc:
+            logger.debug("probe value rejected, kept as is: %s", type(exc).__name__)
             return value
 
 
@@ -40,7 +44,8 @@ class _RequiredIntWithUnenforcedBound(pydantic.BaseModel):
     def _swallow(cls, value, handler):  # type: ignore[no-untyped-def]
         try:
             return handler(value)
-        except pydantic.ValidationError:
+        except pydantic.ValidationError as exc:
+            logger.debug("probe value rejected, kept as is: %s", type(exc).__name__)
             return value
 
 
@@ -119,7 +124,8 @@ class TestAuditRegressions:
             def _swallow(cls, value, handler):  # type: ignore[no-untyped-def]
                 try:
                     return handler(value)
-                except pydantic.ValidationError:
+                except pydantic.ValidationError as exc:
+                    logger.debug("probe value rejected, kept as is: %s", type(exc).__name__)
                     return value
 
         assert find_unenforced_numeric_bounds([OptionalInt]) == (1, ["OptionalInt.n declares lt=3 but accepted 3"])

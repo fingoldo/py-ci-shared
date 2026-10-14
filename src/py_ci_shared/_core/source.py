@@ -84,7 +84,8 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     """``(source, tree)`` for *path*, from the in-process cache when the file is unchanged.
 
     The cache key is (resolved path, digest of the file's bytes): a gate suite that runs forty gates over one
-    package parses it once, and an edited file is re-parsed however quickly it was rewritten. The returned tree is SHARED between callers; treat it as read-only.
+    package parses it once, and an edited file is re-parsed however quickly it was rewritten. The returned tree is
+    SHARED between callers; treat it as read-only.
     """
     p = Path(path)
     try:
@@ -95,11 +96,10 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     digest = hashlib.blake2b(raw, digest_size=16).digest()
     with _LOCK:
         hit = _CACHE.get(key)
-    if hit is not None and hit[0] == digest:
-        return hit[1], hit[2]
-    text = _decode(p, raw)
-    tree = _parse_text(p, text)
-    with _LOCK:
+        if hit is not None and hit[0] == digest:
+            return hit[1], hit[2]
+        text = _decode(p, raw)
+        tree = _parse_text(p, text)
         _CACHE[key] = (digest, text, tree)
     return text, tree
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import re
 import textwrap
@@ -13,6 +14,8 @@ from py_ci_shared.fail_message_quality import ACTIONABLE_RE, assert_fail_message
 from py_ci_shared.package_doctests import assert_package_doctests_pass, run_package_doctests
 from py_ci_shared.pydantic_field_bounds import assert_field_bounds_enforced, find_unenforced_literals, find_unenforced_numeric_bounds
 from py_ci_shared.sql_verifier_coverage import assert_verifier_covers_statements, sql_constants, verifier_lists
+
+logger = logging.getLogger(__name__)
 
 
 class TestFailMessages:
@@ -26,7 +29,10 @@ class TestFailMessages:
 
     def test_the_scan_judges_static_text_and_counts_dynamic(self, tmp_path):
         f = tmp_path / "test_x.py"
-        f.write_text('import pytest\n\ndef test_a():\n    pytest.fail("bad: thing")\n    pytest.fail(f"{x} dynamic")\n    pytest.fail("Fix the thing")\n', encoding="utf-8")
+        f.write_text(
+            'import pytest\n\ndef test_a():\n    pytest.fail("bad: thing")\n    pytest.fail(f"{x} dynamic")\n    pytest.fail("Fix the thing")\n',
+            encoding="utf-8",
+        )
         audited, bad = fail_message_problems([f])
         assert audited == 3 and len(bad) == 1 and "bad: thing" in bad[0]
 
@@ -77,26 +83,34 @@ class TestPackageDoctests:
         return "dtpkg"
 
     def test_a_passing_doctest_counts(self, tmp_path, monkeypatch):
-        name = self._package(tmp_path, monkeypatch, '''
+        name = self._package(
+            tmp_path,
+            monkeypatch,
+            '''
             def f():
                 """
                 >>> f()
                 'hi x'
                 """
                 return "hi x"
-            ''')
+            ''',
+        )
         attempted, failures, _ = run_package_doctests(name)
         assert attempted == 1 and failures == []
 
     def test_a_wrong_doctest_fails(self, tmp_path, monkeypatch):
-        name = self._package(tmp_path, monkeypatch, '''
+        name = self._package(
+            tmp_path,
+            monkeypatch,
+            '''
             def f():
                 """
                 >>> f()
                 'hix'
                 """
                 return "hi x"
-            ''')
+            ''',
+        )
         with pytest.raises(pytest.fail.Exception, match="failed"):
             assert_package_doctests_pass(name)
 
@@ -132,7 +146,8 @@ class _BadLiteral(pydantic.BaseModel):
     def _swallow(cls, v, handler):
         try:
             return handler(v)
-        except Exception:
+        except Exception as exc:
+            logger.debug("literal rejected, kept as is: %s", type(exc).__name__)
             return v
 
 

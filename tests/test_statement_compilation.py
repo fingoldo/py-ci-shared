@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -114,10 +115,16 @@ def test_compile_pg_emits_postgresql_grammar():
     table = sqlalchemy.Table("t", sqlalchemy.MetaData(), sqlalchemy.Column("id", sqlalchemy.Integer, primary_key=True))
     statement = postgresql.insert(table).values(id=1).on_conflict_do_nothing(index_elements=["id"])
 
-    sql = compile_pg(statement)
+    sql = compile_pg(statement, literal_binds=True)
 
-    assert "ON CONFLICT" in sql.upper()
-    assert "INSERT INTO t" in sql
+    db = sqlite3.connect(":memory:")
+    try:
+        db.execute("CREATE TABLE t (id INTEGER PRIMARY KEY)")
+        db.execute(sql)
+        db.execute(sql)  # the conflict clause absorbs the duplicate; the generic dialect would raise IntegrityError here
+        assert db.execute("SELECT COUNT(*) FROM t").fetchone() == (1,)
+    finally:
+        db.close()
 
 
 @pytest.mark.parametrize(

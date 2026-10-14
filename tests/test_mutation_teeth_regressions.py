@@ -11,6 +11,7 @@ import ast
 import codecs
 import gc
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -27,6 +28,8 @@ from py_ci_shared import _mutation_worker, mutation_teeth
 from py_ci_shared._mutation_model import SourceText, read_target, write_target
 from py_ci_shared._mutation_operators import _Intervals, _normalise_lines
 from py_ci_shared.mutation_teeth import Mutant, MutationHarnessError, MutationRun, fingerprint, generate_mutants
+
+logger = logging.getLogger(__name__)
 
 # ── fakes ───────────────────────────────────────────────────────────────────────────────────────
 
@@ -792,7 +795,8 @@ def _alive(pid: int) -> bool:
         return str(pid).encode("ascii") in out
     try:
         os.kill(pid, 0)
-    except OSError:
+    except OSError as exc:
+        logger.debug("pid %s is not alive: %s", pid, type(exc).__name__)
         return False
     return True
 
