@@ -487,3 +487,110 @@ class TestTryAndPrefsRegressions:
     def test_awaited_prefs_through_an_attribute_pass(self):
         files, read = _reader({"lib/p.dart": "Future<void> f() async {\n  await widget.prefs.setBool('k', true);\n}"})
         assert scan_provider_state_hygiene(files, read) == {}
+
+
+_COMPACT = (
+    "class _CompactTapTarget extends StatelessWidget {\n"
+    "  Widget build(BuildContext context) => ConstrainedBox(\n"
+    "    constraints: const BoxConstraints(minWidth: 24, minHeight: 24),\n"
+    "    child: child,\n"
+    "  );\n"
+    "}\n"
+)
+_CHIP = "Semantics(button: true, child: _CompactTapTarget(child: InkWell(onTap: go, child: Container(child: Text(n)))))\n"
+
+
+class TestTargetWrappers:
+    """A configured project wrapper counts only when its own definition guarantees a 24x24 target."""
+
+    def _scan(self, src: str, **kwargs):
+        files, read = _reader({"lib/a.dart": src})
+        return scan_tappable_semantics(files, read, **kwargs)
+
+    def test_verified_wrapper_counts_as_a_tap_target(self):
+        assert self._scan(_COMPACT + _CHIP, target_wrappers=["_CompactTapTarget"]) == {}
+
+    def test_the_same_wrapper_unconfigured_is_still_flagged(self):
+        problems = self._scan(_COMPACT + _CHIP)
+        assert [v for v in problems.values() if "no MinTapTargetBox (line 7)" in v]
+
+    def test_a_wrapper_below_24_is_a_finding_and_does_not_exempt(self):
+        problems = self._scan(_COMPACT.replace("minWidth: 24", "minWidth: 20") + _CHIP, target_wrappers=["_CompactTapTarget"])
+        assert any("_CompactTapTarget does not constrain" in v for v in problems.values())
+        assert any("no MinTapTargetBox" in v for v in problems.values())
+
+    def test_a_wrapper_constraining_one_axis_only_does_not_exempt(self):
+        problems = self._scan(_COMPACT.replace("minWidth: 24, ", "") + _CHIP, target_wrappers=["_CompactTapTarget"])
+        assert any("does not constrain" in v for v in problems.values())
+
+    def test_an_ordinary_widget_named_as_a_wrapper_is_a_finding(self):
+        src = "class Card extends StatelessWidget { Widget build(c) => Padding(padding: p, child: child); }\n"
+        src += "Semantics(button: true, child: Card(child: InkWell(onTap: go, child: Icon(Icons.add))))\n"
+        problems = self._scan(src, target_wrappers=["Card"])
+        assert any("wrapper Card does not constrain" in v for v in problems.values())
+        assert any("no MinTapTargetBox" in v for v in problems.values())
+
+    def test_an_undefined_wrapper_is_a_finding(self):
+        problems = self._scan(_CHIP.replace("_CompactTapTarget", "_Nowhere"), target_wrappers=["_Nowhere"])
+        assert any("_Nowhere is defined in none of the scanned files" in v for v in problems.values())
+
+    def test_a_function_wrapper_is_verified_by_its_body(self):
+        src = "Widget compact(Widget child) => ConstrainedBox(constraints: BoxConstraints(minWidth: 32, minHeight: 32), child: child);\n"
+        src += "Semantics(button: true, child: compact(InkWell(onTap: go, child: Icon(Icons.add))))\n"
+        assert self._scan(src, target_wrappers=["compact"]) == {}
+
+
+_LINK = (
+    "Widget build(BuildContext context) => MouseRegion(\n"
+    "  child: GestureDetector(\n"
+    "    onTap: open,\n"
+    "    child: Semantics(link: true, label: t, child: Text(text, style: style?.copyWith(decoration: TextDecoration.underline))),\n"
+    "  ),\n"
+    ");\n"
+)
+_MARK = "  // tap-target: inline-text - a link inside a sentence; WCAG 2.5.8 exempts inline targets\n"
+
+
+class TestInlineTextMarker:
+    """`// tap-target: inline-text - <reason>` exempts a text-only tappable, and nothing else."""
+
+    def _scan(self, src: str):
+        files, read = _reader({"lib/l.dart": src})
+        return scan_tappable_semantics(files, read)
+
+    def _with_marker(self, marker: str = _MARK, link: str = _LINK) -> str:
+        first, rest = link.split("\n", 1)
+        return first + "\n" + marker + rest
+
+    def test_marked_text_link_passes(self):
+        assert self._scan(self._with_marker()) == {}
+
+    def test_unmarked_text_link_is_flagged(self):
+        assert any("no MinTapTargetBox" in v for v in self._scan(_LINK).values())
+
+    def test_marker_among_other_comment_lines_still_counts(self):
+        assert self._scan(self._with_marker(_MARK + "  // more prose about the link\n")) == {}
+
+    def test_marker_separated_by_code_does_not_count(self):
+        src = self._with_marker(_MARK + "  key: k,\n")
+        assert any("no MinTapTargetBox" in v for v in self._scan(src).values())
+
+    def test_marker_without_reason_is_a_finding(self):
+        problems = self._scan(self._with_marker("  // tap-target: inline-text\n"))
+        assert any("invalid inline-text" in v and "no reason" in v for v in problems.values())
+
+    def test_marker_on_an_icon_button_is_a_finding(self):
+        src = self._with_marker(link=_LINK.replace("Text(text, style: style?.copyWith(decoration: TextDecoration.underline))", "Icon(Icons.add)"))
+        problems = self._scan(src)
+        assert any("invalid inline-text" in v and "Icon" in v for v in problems.values())
+
+    def test_marker_on_padded_text_is_a_finding(self):
+        src = self._with_marker(link=_LINK.replace("child: Text(", "child: Padding(padding: p, child: Text(").replace(")))),\n  ),", "))))),\n  ),"))
+        problems = self._scan(src)
+        assert any("invalid inline-text" in v and "Padding" in v for v in problems.values())
+
+    def test_marker_does_not_silence_the_role_rule(self):
+        src = _MARK + "GestureDetector(\n  onTap: open,\n  child: Text(text),\n)\n"
+        problems = self._scan(src)
+        assert not any("MinTapTargetBox" in v or "invalid" in v for v in problems.values())
+        assert any("announced role" in v for v in problems.values())

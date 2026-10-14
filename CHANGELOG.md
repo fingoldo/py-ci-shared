@@ -42,6 +42,21 @@ under a count claim can now disagree with it. A consumer that passes such files 
 the comment (a backticked name that does not exist, or a count that does not match its list), or keep those files out
 of the `files` you pass.
 
+`dart_scanners.scan_tappable_semantics` can tell two real tap-target exemptions from a missing `MinTapTargetBox`. Both are
+checked, so neither lets an ordinary button opt out.
+
+- `target_wrappers=[...]` (keyword argument): project widgets or `Widget name(...)` helpers that guarantee a compact WCAG 2.5.8
+  AA target. A tappable inside one counts as wrapped only when the wrapper's own definition, found in the scanned files, sets
+  both `minWidth` and `minHeight` to at least 24 (or to a `minTapTarget` constant). A named wrapper that is missing, or that
+  does not constrain both axes, is a finding of its own.
+- `// tap-target: inline-text - <reason>` on the comment lines directly above a tappable: WCAG 2.5.8's inline-target exemption.
+  It holds only when the tappable's `child:` holds text alone (`Text`, `RichText`, `TextSpan`, semantics and text styling). A
+  marker with no reason, or on a tappable whose child holds any other widget (`Icon`, `Padding`, `Container`...), is reported
+  as an invalid exemption. The marker does not touch the role rule.
+
+Nothing changes for a consumer that passes no `target_wrappers` and writes no marker. The source-text helpers moved to the
+private `_dart_source` module and are re-imported by `dart_scanners`.
+
 ## 1.22.10
 
 Regression fix in the opt-in `wallclock_test_waits` gate. 1.22.9 scanned a file under `test`/`tests` only when its name was

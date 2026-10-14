@@ -72,6 +72,7 @@ class GateSpec:
 # Modules that are not part of the public surface: the package plumbing and the private helpers of other modules.
 INTERNAL_MODULES: dict[str, str] = {
     "_ci_install_parts": "private part of ci_install_covers_conftest: markers, install arguments, conftest imports",
+    "_dart_source": "source-text helpers of dart_scanners: comment stripping, string masking, bracket matching, finding keys",
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",
     "_import_graph": "private part of optional_imports_guarded and ci_install_covers_entry_imports: module-level imports, first-party reach, declared extras",
     "_gate_run": "the shared assert_* tail of the AST gates",

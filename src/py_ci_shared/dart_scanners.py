@@ -24,7 +24,8 @@ Rules and the findings that motivated them (P = glossum, C = flutter_app_core):
   C02-10), capitalised ``??`` fallbacks (P05-19, P08-14), and raw ``Color(0x`` outside a palette
   (P05-15).
 * :func:`scan_tappable_semantics` - unlabelled spinners (P05-14, C04-20), a tappable with no
-  minimum tap target (P05-5, P05-6) or no button semantics (P05-11), ``onTap`` paired with
+  minimum tap target (P05-5, P05-6; a verified ``target_wrappers`` widget or a reasoned
+  ``// tap-target: inline-text`` marker on a text-only tappable also satisfies it) or no button semantics (P05-11), ``onTap`` paired with
   ``onDoubleTap`` (P05-2), a named ``BuildContext`` parameter (P05-10), and a tooltip duplicating a
   semantics label without ``excludeFromSemantics`` (C04-13).
 * :func:`scan_non_directional_layout` - ``Alignment.centerLeft`` and friends, which do not flip in
@@ -51,7 +52,6 @@ Usage (from a repo's own ``tool/meta/scanners.py``)::
 
 from __future__ import annotations
 
-import hashlib
 import os
 import posixpath
 import re
@@ -63,178 +63,17 @@ from ._core.source import PathLike
 
 Reader = Callable[[str], str]
 
-# --------------------------------------------------------------------------------------------
-# helpers
-
-
-def _line_of(source: str, index: int) -> int:
-    return source.count("\n", 0, index) + 1
-
-
-def _key(found: dict, rel: str) -> str:
-    """A provisional, unique key while a scanner collects; :func:`_rekey` turns it into the stable one."""
-    return f"{rel}#{len(found)}"
-
-
-_LINE_REF_RE = re.compile(r"\(line \d+\)")
-
-
-def _rekey(found: dict) -> dict:
-    """``{rel#<hash of the finding>[#n]: description}``: the ratchet sees WHAT was found, not only how many.
-
-    A key built from an ordinal alone let a fixed finding be swapped for a new one in the same file with no change
-    to the key set. The hash covers the description minus its ``(line N)``, and the description names the matched
-    text where the rule has one, so an edit above a finding keeps its key while a changed finding gets a new one.
-    """
-    out: dict[str, str] = {}
-    seen: dict[str, int] = {}
-    for key, description in found.items():
-        rel = key.rsplit("#", 1)[0]
-        digest = hashlib.sha1(_LINE_REF_RE.sub("", description).encode("utf-8")).hexdigest()[:10]
-        base = f"{rel}#{digest}"
-        n = seen.get(base, 0)
-        seen[base] = n + 1
-        out[base if n == 0 else f"{base}#{n}"] = description
-    return out
-
-
-def _strip_comments(source: str) -> str:
-    """*source* with ``//`` and (nestable) ``/* */`` comments removed, string literals left intact.
-
-    A regex strip ran inside strings, so ``Text('Visit https://x.com now')`` lost the rest of its line and hid any
-    finding on it. Newlines inside a removed block comment are kept, so line numbers still match the file.
-    """
-    out: list[str] = []
-    i, n = 0, len(source)
-    while i < n:
-        c = source[i]
-        if source.startswith("//", i):
-            end = source.find("\n", i)
-            i = n if end == -1 else end
-            continue
-        if source.startswith("/*", i):
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if source.startswith("/*", j):
-                    depth, j = depth + 1, j + 2
-                elif source.startswith("*/", j):
-                    depth, j = depth - 1, j + 2
-                else:
-                    j += 1
-            out.append("\n" * source.count("\n", i, j))
-            i = j
-            continue
-        if c in "'\"":
-            j = _string_end(source, i)
-            out.append(source[i:j])
-            i = j
-            continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-def _string_end(source: str, i: int) -> int:
-    """Index just past the Dart string literal opening at *i* (single/double, triple, raw ``r'...'``)."""
-    raw = i > 0 and source[i - 1] == "r" and (i < 2 or not (source[i - 2].isalnum() or source[i - 2] == "_"))
-    quote = source[i] * 3 if source.startswith(source[i] * 3, i) else source[i]
-    j = i + len(quote)
-    n = len(source)
-    while j < n:
-        if not raw and source[j] == "\\":
-            j += 2
-            continue
-        if source.startswith(quote, j):
-            return j + len(quote)
-        if len(quote) == 1 and source[j] == "\n":
-            return j
-        if not raw and source.startswith("${", j):
-            depth, j = 1, j + 2
-            while j < n and depth:
-                if source[j] in "'\"":
-                    j = _string_end(source, j)
-                    continue
-                depth += {"{": 1, "}": -1}.get(source[j], 0)
-                j += 1
-            continue
-        j += 1
-    return n
-
-
-def _balanced_body(source: str, open_index: int, opener: str = "{", closer: str = "}") -> str:
-    """Return the text between ``open_index`` (at an opener) and its matching closer."""
-    depth = 0
-    i = open_index
-    while i < len(source):
-        if source[i] == opener:
-            depth += 1
-        elif source[i] == closer:
-            depth -= 1
-            if depth == 0:
-                return source[open_index + 1 : i]
-        i += 1
-    return source[open_index + 1 :]
-
-
-def _mask_strings(source: str) -> str:
-    """*source* with every string literal's contents blanked to spaces, so brackets inside text never count as code."""
-    out: list[str] = []
-    i, n = 0, len(source)
-    while i < n:
-        c = source[i]
-        if c in "'\"":
-            end = _string_end(source, i)
-            out.append("".join(ch if ch == "\n" else " " for ch in source[i:end]))
-            i = end
-            continue
-        out.append(c)
-        i += 1
-    return "".join(out)
-
-
-_CALL_NAME = re.compile(r"([A-Za-z_]\w*)(?:\.[A-Za-z_]\w*)?\s*$")
-
-
-def _enclosing_calls(masked: str, pos: int) -> Iterator[tuple[str, int]]:
-    """``(callee, open_paren_index)`` of every call whose argument list contains *pos*, innermost first.
-
-    Walks outwards through bracket nesting on string-masked source, so a label 1000 characters above a widget still
-    counts when it sits on the widget's own ancestor, and a label on a sibling never does.
-    """
-    depth = 0
-    for i in range(pos - 1, -1, -1):
-        ch = masked[i]
-        if ch in ")]}":
-            depth += 1
-        elif ch in "([{":
-            if depth:
-                depth -= 1
-            elif ch == "(":
-                m = _CALL_NAME.search(masked, max(0, i - 80), i)
-                if m:
-                    yield m.group(1), i
-
-
-def _top_level_args(masked: str, open_index: int) -> str:
-    """The argument text of the call opening at *open_index* with every nested bracket's contents removed."""
-    body = _balanced_body(masked, open_index, "(", ")")
-    out: list[str] = []
-    depth = 0
-    for ch in body:
-        if ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        elif depth == 0:
-            out.append(ch)
-    return "".join(out)
-
-
-def _enclosing_semantics_args(masked: str, pos: int) -> Iterator[str]:
-    """Top-level argument text of every ``Semantics(`` that encloses *pos*."""
-    for name, open_index in _enclosing_calls(masked, pos):
-        if name == "Semantics":
-            yield _top_level_args(masked, open_index)
+from ._dart_source import (  # noqa: F401  # the scanners' shared helpers
+    _line_of,
+    _key,
+    _rekey,
+    _strip_comments,
+    _balanced_body,
+    _mask_strings,
+    _enclosing_calls,
+    _top_level_args,
+    _enclosing_semantics_args,
+)
 
 
 def _method_bodies(source: str, name_pattern: str) -> list[tuple[int, str]]:
@@ -449,12 +288,115 @@ _TAP_TARGET_HELPER_FILES = ("min_tap_target_box",)
 _EXCLUDE_FROM_SEMANTICS = re.compile(r"exclude(?:FromSemantics|Semantics):\s*true")
 
 
-def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
-    """Interactive-affordance rules: see the module docstring."""
+# A project widget that guarantees a smaller-than-48 but still WCAG 2.5.8 AA target (24x24) counts as wrapping only
+# when the caller names it AND its own definition, found in the scanned files, constrains BOTH minWidth and minHeight
+# to at least 24. Naming a widget that does not is a finding, so a configured name cannot exempt an ordinary button.
+_WCAG_AA_MIN_TARGET = 24
+_MIN_DIMENSION = re.compile(r"\bmin(Width|Height):\s*(?:(\d+(?:\.\d+)?)\b|[\w.]*minTapTarget\b)")
+# The inline-text exemption: WCAG 2.5.8 exempts a target that sits in a sentence of text. It is a comment directly
+# above the tappable with a reason, and it holds only when the tappable's child is text and nothing else.
+_INLINE_TEXT_MARKER = re.compile(r"^\s*//\s*tap-target:\s*inline-text\b\s*-?\s*(.*)$")
+_INLINE_REASON_MIN_CHARS = 10
+_TEXT_ONLY_CALLEES = frozenset(
+    {"Semantics", "MergeSemantics", "ExcludeSemantics", "Text", "RichText", "TextSpan", "TextStyle", "TextDecoration", "DefaultTextStyle", "Theme"}
+)
+_TEXT_CALLEES = frozenset({"Text", "RichText", "TextSpan"})
+_CALLEE = re.compile(r"\b([A-Z]\w*)(?:\.\w+)?\s*\(")
+
+
+def _definition_body(clean: str, name: str) -> str | None:
+    """The body of ``class <name>`` or of a function ``Widget <name>(...)`` in *clean*, or None."""
+    m = re.search(r"\bclass\s+" + re.escape(name) + r"\b[^{]*\{", clean)
+    if m:
+        return _balanced_body(clean, m.end() - 1)
+    m = re.search(r"\bWidget\s+" + re.escape(name) + r"\s*\(", clean)
+    if m is None:
+        return None
+    after_params = m.end() + len(_balanced_body(clean, m.end() - 1, "(", ")")) + 1
+    tail = clean[after_params:]
+    if tail.lstrip().startswith("=>"):
+        end = tail.find(";")
+        return tail if end == -1 else tail[:end]
+    brace = tail.find("{")
+    return _balanced_body(tail, brace) if brace != -1 else None
+
+
+def _guarantees_aa_target(body: str) -> bool:
+    """Whether *body* constrains both minWidth and minHeight to at least the WCAG 2.5.8 AA 24px."""
+    ok = {"Width": False, "Height": False}
+    for m in _MIN_DIMENSION.finditer(body):
+        if m.group(2) is None or float(m.group(2)) >= _WCAG_AA_MIN_TARGET:
+            ok[m.group(1)] = True
+    return ok["Width"] and ok["Height"]
+
+
+def _verified_target_wrappers(cleaned: dict[str, str], target_wrappers: Sequence[str], found: dict[str, str]) -> frozenset[str]:
+    """The configured wrappers whose definitions guarantee a 24x24 target; a finding for each one that does not."""
+    verified = set()
+    for name in target_wrappers:
+        bodies = [b for b in (_definition_body(clean, name) for clean in cleaned.values()) if b is not None]
+        if bodies and all(_guarantees_aa_target(b) for b in bodies):
+            verified.add(name)
+            continue
+        why = "is defined in none of the scanned files" if not bodies else "does not constrain both minWidth and minHeight to at least 24"
+        found[f"target_wrappers:{name}#0"] = f"configured tap-target wrapper {name} {why} - it cannot stand in for MinTapTargetBox"
+    return frozenset(verified)
+
+
+def _inline_text_exemption(source: str, clean: str, start: int) -> str | None:
+    """None when no inline-text marker sits directly above the tappable at *start*, ``"ok"`` when a valid one does,
+    and the reason it is invalid otherwise."""
+    lines = source.split("\n")
+    i = clean.count("\n", 0, start) - 1
+    marker = None
+    while i >= 0 and lines[i].lstrip().startswith("//"):
+        marker = _INLINE_TEXT_MARKER.match(lines[i])
+        if marker:
+            break
+        i -= 1
+    if marker is None:
+        return None
+    if len(marker.group(1).strip()) < _INLINE_REASON_MIN_CHARS:
+        return "the inline-text marker gives no reason"
+    args = _balanced_body(_mask_strings(clean), clean.find("(", start), "(", ")")
+    child = re.search(r"\bchild:", args)
+    widgets = {m.group(1) for m in _CALLEE.finditer(args[child.end() :])} if child else set()
+    others = sorted(widgets - _TEXT_ONLY_CALLEES)
+    if others or not widgets & _TEXT_CALLEES:
+        return "its child is not text alone (" + (", ".join(others) or "no Text") + ")"
+    return "ok"
+
+
+def _report_small_target(found: dict[str, str], rel: str, source: str, clean: str, start: int) -> None:
+    line = _line_of(clean, start)
+    verdict = _inline_text_exemption(source, clean, start)
+    if verdict == "ok":
+        return
+    if verdict is not None:
+        found[_key(found, rel)] = f"invalid inline-text tap-target exemption (line {line}) - {verdict}"
+        return
+    found[_key(found, rel)] = f"tappable with no MinTapTargetBox (line {line}) - the visible target can be smaller than the 48x48 minimum"
+
+
+def scan_tappable_semantics(files: Iterable[str], read: Reader, *, target_wrappers: Sequence[str] = ()) -> dict:
+    """Interactive-affordance rules: see the module docstring.
+
+    *target_wrappers* names project widgets (or ``Widget name(...)`` helpers) that guarantee a compact WCAG 2.5.8 AA
+    target. Each counts as wrapping a tappable only if its definition in *files* sets both ``minWidth`` and
+    ``minHeight`` to at least 24; a name whose definition does not, or is missing, is itself a finding.
+
+    A tappable whose child is text alone, inline in a sentence, may instead carry ``// tap-target: inline-text -
+    <reason>`` on the comment lines directly above it (WCAG 2.5.8's inline exemption). A marker with no reason, or on
+    a tappable whose child holds any widget other than text and semantics, is a finding.
+    """
     found: dict[str, str] = {}
+    files = list(files)
+    sources = {rel: read(rel) for rel in files}
+    cleaned = {rel: _strip_comments(src) for rel, src in sources.items()}
+    wrappers = {"MinTapTargetBox"} | _verified_target_wrappers(cleaned, target_wrappers, found)
     for rel in files:
-        source = read(rel)
-        clean = _strip_comments(source)
+        source = sources[rel]
+        clean = cleaned[rel]
         masked = _mask_strings(clean)
 
         for m in _SPINNER.finditer(clean):
@@ -478,11 +420,9 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader) -> dict:
                 continue
             window_start = max(0, m.start() - 600)
             before = clean[window_start : m.start()]
-            wrapped = any(name == "MinTapTargetBox" for name, _ in _enclosing_calls(masked, m.start()))
+            wrapped = any(name in wrappers for name, _ in _enclosing_calls(masked, m.start()))
             if not wrapped and not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
-                found[_key(found, rel)] = (
-                    f"tappable with no MinTapTargetBox (line {_line_of(clean, m.start())}) - the " f"visible target can be smaller than the 48x48 minimum"
-                )
+                _report_small_target(found, rel, source, clean, m.start())
             # InkWell announces itself as a button; GestureDetector does not, which is the
             # whole difference this rule is about.
             is_gesture_detector = clean[m.start() :].startswith("GestureDetector")
