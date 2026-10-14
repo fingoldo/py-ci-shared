@@ -823,11 +823,17 @@ _ASSERTION = re.compile(r"\b(expect|expectLater|expect[A-Z]\w*|verify|verifyNeve
 
 
 def _test_blocks(source: str) -> Iterator[tuple[str, str, int]]:
-    """``(name, body, line)`` for each ``test(``/``testWidgets(`` call, paren-matched from its opening paren."""
-    for match in re.finditer(r"\b(testWidgets|test)\(", source):
+    """``(name, body, line)`` for each ``test(``/``testWidgets(`` call, paren-matched from its opening paren.
+
+    Calls and parens are found in the string-masked source: a fixture test file held in a triple-quoted string is not
+    a test of this file, and a ``)`` inside a string must not close the call. *body* is the masked text, so an
+    ``expect`` that is only string content is not an assertion; the name is read from the original at the same offsets.
+    """
+    masked = _mask_strings(source)
+    for match in re.finditer(r"\b(testWidgets|test)\(", masked):
         start = match.end() - 1
-        body = "(" + _balanced_body(source, start, "(", ")") + ")"
-        name_match = re.search(r"['\"](.+?)['\"]", body, re.DOTALL)
+        body = "(" + _balanced_body(masked, start, "(", ")") + ")"
+        name_match = re.search(r"['\"](.+?)['\"]", source[start : start + len(body)], re.DOTALL)
         yield (name_match.group(1)[:70] if name_match else "?"), body, _line_of(source, start)
 
 

@@ -139,6 +139,20 @@ class TestTestsWithoutAssertions:
         files, read = _reader({"test/a_test.dart": "test('same', () { a(); });\ntest('same', () { b(); });\n"})
         assert set(scan_tests_without_assertions(files, read)) == {"test/a_test.dart::same", "test/a_test.dart::same#1"}
 
+    def test_fixture_tests_inside_a_string_are_not_tests_of_this_file(self):
+        src = "test('sweeps', () {\n  write('a.dart', '''\ntest('prints', () { print(1); });\n''');\n  expect(f(), []);\n});\n"
+        files, read = _reader({"test/a_test.dart": src})
+        assert scan_tests_without_assertions(files, read) == {}
+
+    def test_a_paren_inside_a_string_does_not_close_the_call(self):
+        src = "test('quotes', () {\n  const s = \"f(a, ')', \\\"(\\\", // )\";\n  expect(g(s), 1);\n});\n"
+        files, read = _reader({"test/a_test.dart": src})
+        assert scan_tests_without_assertions(files, read) == {}
+
+    def test_an_expect_that_is_only_string_content_is_not_an_assertion(self):
+        files, read = _reader({"test/a_test.dart": "test('logs', () {\n  print('expect(x, 1)');\n});\n"})
+        assert set(scan_tests_without_assertions(files, read)) == {"test/a_test.dart::logs"}
+
 
 class TestTimedDismissal:
     def test_timer_that_pops_the_route_is_flagged(self):
