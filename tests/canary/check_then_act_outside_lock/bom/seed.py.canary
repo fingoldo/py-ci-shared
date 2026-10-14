@@ -1,0 +1,22 @@
+﻿import threading
+
+_SEED_CACHE = {}
+_seed_guard = threading.Lock()
+
+
+class Store:
+    def __init__(self):
+        self._seed_lock = threading.Lock()
+        self._items = {}
+
+    def put(self, key, value):
+        if key not in self._items:
+            with self._seed_lock:
+                self._items[key] = value
+
+
+def remember(key, value):
+    if key in _SEED_CACHE:
+        return _SEED_CACHE[key]
+    _SEED_CACHE[key] = value
+    return value

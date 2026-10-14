@@ -399,6 +399,26 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("patch_target_read_at_call").assert_patch_target_read_at_call([d / "tests"], [d], use_git=False),
             token="reexport.LIMIT",
         ),
+        Canary(
+            "lock_held_across_io",
+            lambda d: _gate("lock_held_across_io").assert_no_lock_held_across_io(_py(d)),
+            token="_seed_lock",
+        ),
+        Canary(
+            "check_then_act_outside_lock",
+            lambda d: _gate("check_then_act_outside_lock").assert_no_check_then_act_outside_lock(_py(d)),
+            token="_SEED_CACHE",
+        ),
+        Canary(
+            "no_source_text_tests",
+            lambda d: _gate("no_source_text_tests").assert_no_source_text_tests(_py(d)),
+            token="WHERE",
+        ),
+        Canary(
+            "shared_mutable_placeholder",
+            lambda d: _gate("shared_mutable_placeholder").assert_no_shared_mutable_placeholders(_py(d)),
+            token="_SEED_EMPTY",
+        ),
     ]
 }
 

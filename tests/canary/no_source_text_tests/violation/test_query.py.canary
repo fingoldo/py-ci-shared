@@ -1,0 +1,7 @@
+def build_query(tenant):
+    return "SELECT * FROM orders WHERE tenant = " + tenant
+
+
+def test_query_filters_by_tenant():
+    sql = build_query("acme")
+    assert "WHERE" in sql

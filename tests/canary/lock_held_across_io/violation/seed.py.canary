@@ -1,0 +1,14 @@
+import threading
+
+
+class Pool:
+    def __init__(self, db):
+        self._seed_lock = threading.Lock()
+        self._db = db
+        self._conns = {}
+
+    def acquire(self, host):
+        with self._seed_lock:
+            conn = self._db.connect(host)
+            self._conns[host] = conn
+        return conn

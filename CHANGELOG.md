@@ -2,6 +2,16 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.22.12
+
+Four new gates for concurrency and test-quality defects, and one new rule in `fail_open_handlers`: `lock_held_across_io`,
+`check_then_act_outside_lock`, `no_source_text_tests` and `shared_mutable_placeholder`.
+
+Behaviour change: `fail_open_handlers` has a fifth rule, `silent_default_return`, an `except` handler whose whole body is one
+`return` and that logs nothing. A gate already on `@v1` that scans a file with such a handler now reports it. What to do: log
+the failure at WARNING (or raise), or mark the `except` line `# best-effort: <reason>` when the fallback cannot change a result,
+then refresh the baseline if the handler is accepted.
+
 ## 1.22.10
 
 Regression fix in the opt-in `wallclock_test_waits` gate. 1.22.9 scanned a file under `test`/`tests` only when its name was

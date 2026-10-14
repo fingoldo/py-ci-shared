@@ -1,0 +1,10 @@
+﻿class Rows:
+    def __init__(self):
+        self.items = []
+
+
+_SEED_EMPTY = Rows()
+
+
+def seed_fetch():
+    return _SEED_EMPTY

@@ -3,3 +3,31 @@ def seed_check(v):
         return v > 0
     except Exception:
         return True
+
+
+def seed_default(v):
+    try:
+        return int(v)
+    except ValueError:
+        return None
+
+
+def seed_fallback(v, default):
+    try:
+        return int(v)
+    except ValueError:
+        return default
+
+
+def seed_failed(v):
+    try:
+        return int(v)
+    except ValueError:
+        return failed()
+
+
+def seed_empty(v):
+    try:
+        return int(v)
+    except ValueError:
+        return []

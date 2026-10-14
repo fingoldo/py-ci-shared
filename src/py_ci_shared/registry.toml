@@ -122,6 +122,13 @@ since = "1.3.1"
 summary = "Shared checks for the \"a CHANGELOG bullet promises something, does the promise ever get kept\" consistency pattern"
 
 [[gate]]
+name = "check_then_act_outside_lock"
+kind = "gate"
+entries = ["assert_no_check_then_act_outside_lock"]
+since = "1.22.12"
+summary = "A membership test or get on a shared dict, then a write to it, with no lock held across both"
+
+[[gate]]
 name = "checkout_resolution"
 kind = "gate"
 entries = ["assert_modules_resolve_to_checkout", "assert_a_copy_imports_itself"]
@@ -439,7 +446,7 @@ summary = "One set of numbers written out in several modules: the literal analog
 name = "dup_baseline_percent_key"
 kind = "gate"
 entries = ["assert_no_percent_only_duplicate_entries"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
 
 [[gate]]
@@ -586,7 +593,7 @@ summary = "The line ranges a diff actually touched, per file"
 name = "git_child_env"
 kind = "gate"
 entries = ["assert_no_new_unscrubbed_git_spawns"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A test that spawns git passes an environment with GIT_* removed, or it runs against the hook's repository (opt-in ratchet)"
 
 [[gate]]
@@ -614,7 +621,7 @@ summary = "A guard script is actually looking at something"
 name = "guard_without_fixture"
 kind = "gate"
 entries = ["assert_every_guard_named_by_a_test"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A tool/check* guard that no test file names is never run against bad input (opt-in ratchet)"
 
 [[gate]]
@@ -772,6 +779,13 @@ since = "1.17.0"
 summary = "Local meta-tests that duplicate a central gate"
 
 [[gate]]
+name = "lock_held_across_io"
+kind = "gate"
+entries = ["assert_no_lock_held_across_io"]
+since = "1.22.12"
+summary = "A blocking call (connect, HTTP, subprocess, sleep, file write) made while a lock is held"
+
+[[gate]]
 name = "loop_invariant_cast"
 kind = "gate"
 entries = ["assert_loop_invariant_cast"]
@@ -844,6 +858,13 @@ since = "1.4.1"
 summary = "No production module builds a timestamp with `datetime.utcnow()`"
 
 [[gate]]
+name = "no_source_text_tests"
+kind = "gate"
+entries = ["assert_no_source_text_tests"]
+since = "1.22.12"
+summary = "A test that asserts on the text of a SQL statement (a WHERE or SELECT probe) instead of the rows it returns"
+
+[[gate]]
 name = "no_xfail_to_defer"
 kind = "gate"
 entries = ["assert_no_xfail_to_defer"]
@@ -902,7 +923,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 name = "patch_target_read_at_call"
 kind = "gate"
 entries = ["assert_patch_target_read_at_call"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A monkeypatch of a module-level name that the module only re-exports is inert: the code under test reads its own binding"
 
 [[gate]]
@@ -1147,6 +1168,13 @@ cli = true
 summary = "Persist ``PY_CI_SHARED_DIR`` at the OS/user level so ruff's ``extend = \"$PY_CI_SHARED_DIR/configs/ruff-base.toml\"`` (see README's \"Using the"
 
 [[gate]]
+name = "shared_mutable_placeholder"
+kind = "gate"
+entries = ["assert_no_shared_mutable_placeholders"]
+since = "1.22.12"
+summary = "A mutable placeholder built once in an enclosing scope and returned by reference, so every caller shares it"
+
+[[gate]]
 name = "sibling_floor_skew"
 kind = "gate"
 entries = ["assert_sibling_floor_skew"]
@@ -1164,7 +1192,7 @@ summary = "A test must not assert on a wall-clock ratio or ceiling derived from 
 name = "skip_as_pass"
 kind = "gate"
 entries = ["assert_no_new_skip_as_pass"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A tool/scripts/.githooks script that prints SKIPPED and exits 0 reports a pass (opt-in ratchet)"
 
 [[gate]]
@@ -1430,7 +1458,7 @@ summary = "Warn-only dead-code check for the pre-commit hook"
 name = "wallclock_test_waits"
 kind = "gate"
 entries = ["assert_no_new_wallclock_test_waits"]
-since = "1.22.11"
+since = "1.22.12"
 summary = "A test does not sleep on the wall clock (Future.delayed of a Duration, time.sleep) (opt-in ratchet)"
 
 [[gate]]

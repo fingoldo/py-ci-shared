@@ -13,6 +13,10 @@ existed to stop:
   fallback is genuinely inconsequential, and is honoured.
 * ``finite_guarded_reject``: a reject guarded by ``isfinite(x) and x >= thr`` (or ``>``, ``<``, ``<=``): NaN and inf skip
   the rejection, so the candidate whose score could not be computed is the one that passes.
+* ``silent_default_return``: an ``except`` handler whose whole body is one ``return`` (a literal, a name such as ``default``,
+  a call such as ``failed()``, or a bare ``return``) and that logs nothing, so the failure reaches the caller as an ordinary
+  value. A ``# best-effort:`` marker on the ``except`` line (or the line above) honours a fallback that cannot change a result.
+  A handler another rule already reports (``except: return True`` in a deciding function) is not reported a second time.
 
 Usage from a repository's meta tests::
 
@@ -181,6 +185,13 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
     return False
 
 
+def _silent_default_return(handler: ast.ExceptHandler, lines: list[str]) -> bool:
+    """True when the handler's whole body is one ``return`` and nothing in the handler logs, raises or is marked best-effort."""
+    if len(handler.body) != 1 or not isinstance(handler.body[0], ast.Return):
+        return False
+    return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
+
+
 def _returns_true(handler: ast.ExceptHandler) -> bool:
     """True when the handler contains ``return True``."""
     return any(isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and n.value.value is True for n in _fast_walk(handler))
@@ -210,6 +221,20 @@ def _is_finite_guarded_reject(node: ast.If) -> bool:
     return False
 
 
+def _handler_findings(handler: ast.ExceptHandler, rel: str, name: str, lines: list[str], is_gate: bool, loop_vars: frozenset[str]) -> list[FailOpenHandler]:
+    """The rules one ``except`` handler breaks (admit, gate-returns-true, quiet substitution, silent default)."""
+    found: list[FailOpenHandler] = []
+    if loop_vars and _appends_name(handler, set(loop_vars)):
+        found.append(FailOpenHandler(rel, name, handler.lineno, "admit_on_error", "the handler keeps the loop's element because evaluating it failed"))
+    if is_gate and _returns_true(handler):
+        found.append(FailOpenHandler(rel, name, handler.lineno, "gate_returns_true", "an error in a deciding function returns True"))
+    if _assigns_a_value(handler) and _logs_quietly(handler) and not _logs_loudly(handler) and not _marked_best_effort(lines, handler):
+        found.append(FailOpenHandler(rel, name, handler.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
+    if not found and _silent_default_return(handler, lines):
+        found.append(FailOpenHandler(rel, name, handler.lineno, "silent_default_return", "the handler returns a default and logs nothing"))
+    return found
+
+
 def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, qualname: Optional[str] = None) -> list[FailOpenHandler]:
     """Findings inside one function or module body (nested functions and classes are scanned on their own)."""
     found: list[FailOpenHandler] = []
@@ -224,14 +249,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
             if isinstance(child, (ast.For, ast.AsyncFor)):
                 vars_here = loop_vars | {n.id for n in _fast_walk(child.target) if isinstance(n, ast.Name)}
             if isinstance(child, ast.ExceptHandler):
-                if loop_vars and _appends_name(child, set(loop_vars)):
-                    found.append(
-                        FailOpenHandler(rel, name, child.lineno, "admit_on_error", "the handler keeps the loop's element because evaluating it failed")
-                    )
-                if is_gate and _returns_true(child):
-                    found.append(FailOpenHandler(rel, name, child.lineno, "gate_returns_true", "an error in a deciding function returns True"))
-                if _assigns_a_value(child) and _logs_quietly(child) and not _logs_loudly(child) and not _marked_best_effort(lines, child):
-                    found.append(FailOpenHandler(rel, name, child.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
+                found.extend(_handler_findings(child, rel, name, lines, is_gate, loop_vars))
             if isinstance(child, ast.If) and _is_finite_guarded_reject(child):
                 found.append(FailOpenHandler(rel, name, child.lineno, "finite_guarded_reject", "NaN/inf skip this rejection"))
             visit(child, vars_here)

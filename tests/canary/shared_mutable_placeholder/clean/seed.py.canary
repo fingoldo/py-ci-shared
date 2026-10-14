@@ -1,0 +1,7 @@
+class Rows:
+    def __init__(self):
+        self.items = []
+
+
+def seed_fetch():
+    return Rows()

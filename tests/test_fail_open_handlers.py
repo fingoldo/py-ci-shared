@@ -82,7 +82,7 @@ def test_a_deciding_function_returning_true_on_error_is_found(tmp_path):
     assert _rules(tmp_path, body) == ["gate_returns_true"]
 
 
-def test_return_true_outside_a_deciding_function_is_not_flagged(tmp_path):
+def test_return_true_outside_a_deciding_function_is_not_gate_returns_true(tmp_path):
     body = """
         def load(path):
             try:
@@ -90,7 +90,7 @@ def test_return_true_outside_a_deciding_function_is_not_flagged(tmp_path):
             except OSError:
                 return True
     """
-    assert _rules(tmp_path, body) == []
+    assert _rules(tmp_path, body) == ["silent_default_return"]
 
 
 def test_a_quiet_substitution_is_found(tmp_path):
