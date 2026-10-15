@@ -15,6 +15,11 @@ Behaviour change: `fail_open_handlers` has a fifth rule, `silent_default_return`
 the failure at WARNING (or raise), or mark the `except` line `# best-effort: <reason>` when the fallback cannot change a result,
 then refresh the baseline if the handler is accepted.
 
+Behaviour change: `code_audit_meta.assert_no_new_code_audit_findings` fails when a pyutilz code-audit scanner raises, instead
+of counting the crashed scanner as "no findings" (it calls `pyutilz.dev.code_audit.registry.run_all_checked`). What to do: fix
+or exclude the scanner the failure names. With a pyutilz older than `run_all_checked` the gate warns and keeps the old
+behaviour; upgrade pyutilz (the `[dev]` extra and `install-pyutilz` now pin `ec8f2bd`) to get the check.
+
 - New gate `comment_repo_paths`: a comment (`#` in shell/YAML/TOML/INI/Dockerfile/`#!` scripts, `//` in Dart/JS/TS,
   Python comments and docstrings) that names a path under `tool/`, `tools/`, `scripts/`, `.githooks/` or
   `.github/scripts/` must name a file or directory that exists under the repo root. Glob and template tokens and

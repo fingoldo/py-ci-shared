@@ -43,6 +43,7 @@ practice while keeping this package's own install graph unchanged.
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -154,6 +155,23 @@ def _key(f: "Finding") -> str:
     return f"{f.check}::{f.file}::{_snippet_fingerprint(f)}"
 
 
+def _run_scanners(root: Path, checks: list[str] | None, exclude_dirs: frozenset[str]) -> tuple[list[Finding], dict[str, str]]:
+    """Every scanner's findings, and the scanners that raised (name -> error)."""
+    from pyutilz.dev.code_audit import registry
+
+    run_all_checked = getattr(registry, "run_all_checked", None)
+    if run_all_checked is None:
+        # A consumer pinned to a pyutilz older than run_all_checked must not turn red on an ImportError under @v1; it
+        # keeps the old behaviour, where a crashed scanner is indistinguishable from a clean one, and is told so.
+        warnings.warn(
+            "pyutilz has no code_audit.registry.run_all_checked; a scanner that raises is not detected. Upgrade pyutilz.",
+            stacklevel=3,
+        )
+        return list(registry.run_all(root, checks=checks, exclude_dirs=exclude_dirs)), {}
+    findings, failed = run_all_checked(root, checks=checks, exclude_dirs=exclude_dirs)
+    return list(findings), dict(failed)
+
+
 def assert_no_new_code_audit_findings(
     root: Path,
     baseline_path: Path,
@@ -191,10 +209,9 @@ def assert_no_new_code_audit_findings(
             print for a repo mid-migration.
     """
     import pytest
-    from pyutilz.dev.code_audit.registry import run_all_checked
 
     merged_exclude = DEFAULT_EXCLUDE_DIRS | exclude_dirs
-    current, failed = run_all_checked(root, checks=checks, exclude_dirs=merged_exclude)
+    current, failed = _run_scanners(root, checks, merged_exclude)
     if failed:
         # A scanner that raised has no findings to report, so an empty list from it is not a clean result (audit S-01).
         pytest.fail(

@@ -20,3 +20,24 @@ def test_crashed_scanner_fails_the_gate(tmp_path: Path, monkeypatch: pytest.Monk
             baseline_path=tmp_path / "baseline.json",
             request=None,
         )
+
+
+def test_a_pyutilz_without_run_all_checked_falls_back_with_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A consumer pinned to a pyutilz that predates run_all_checked failed with ImportError on every code-audit test
+    # (CI run 38698274157); it must keep working through run_all and be told the crash check is off.
+    from pyutilz.dev.code_audit import registry
+
+    from py_ci_shared import code_audit_meta
+
+    calls = []
+
+    def old_run_all(root, checks=None, exclude_dirs=frozenset(), parallel=True):
+        calls.append(root)
+        return []
+
+    monkeypatch.delattr(registry, "run_all_checked", raising=False)
+    monkeypatch.setattr(registry, "run_all", old_run_all)
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH", "code-audit")
+    with pytest.warns(UserWarning, match="run_all_checked"), pytest.raises(pytest.skip.Exception):
+        code_audit_meta.assert_no_new_code_audit_findings(root=tmp_path, baseline_path=tmp_path / "baseline.json", request=None)
+    assert calls == [tmp_path]

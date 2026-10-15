@@ -18,7 +18,7 @@ inputs:
       so an unset input installs a known commit rather than whatever pyutilz's default branch holds at run time. Set
       it to the SHA your project pins, or to "master" to take the tip on purpose.
     required: false
-    default: "3be55c1512ad73a6dab628b4a79eeecbc31212a1"
+    default: "ec8f2bd7fa44cf3df47d094442a745f5e1f2777e"  # pragma: allowlist secret
 
 runs:
   using: composite
