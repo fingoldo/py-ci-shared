@@ -380,3 +380,14 @@ def test_a_baseline_accepts_known_findings_and_rejects_new_ones(tmp_path):
     (root / "user.py").write_text("import helpers\nhelpers.old\nhelpers.fresh\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):
         assert_no_unresolved_module_attributes(root, use_git=False, baseline_path=baseline)
+
+def test_a_package_module_does_not_shadow_a_stdlib_name(tmp_path):
+    # ``import io`` inside a package is the stdlib module, never the package's own ``io.py`` sibling.
+    files = {"pkg/__init__.py": "", "pkg/io.py": "def fake():\n    return 1\n", "pkg/user.py": "import io\n\n\ndef run():\n    return io.BytesIO\n"}
+    assert _hits(tmp_path, files) == []
+
+
+def test_a_bare_name_does_not_match_a_differently_cased_directory(tmp_path):
+    # On a case-folding filesystem ``mrmr`` must not be found for a bare name spelled ``MRMR``.
+    files = {"mrmr/__init__.py": "VALUE = 1\n", "user.py": "import MRMR as MRMRX\n\n\ndef run():\n    return MRMRX.VALUE\n"}
+    assert _hits(tmp_path, files) == []

@@ -214,6 +214,16 @@ def _binder(scope: _Scope, name: str, shadow: "frozenset[str]") -> "Optional[_Sc
     return None
 
 
+def _exact_case_is_file(path: Path) -> bool:
+    """True when *path* is a file whose name matches the on-disk spelling exactly (Windows folds case, so `MRMR` would find `mrmr/`)."""
+    return path.is_file() and path.name in os.listdir(path.parent)
+
+
+def _exact_case_is_dir(path: Path) -> bool:
+    """True when *path* is a directory whose name matches the on-disk spelling exactly."""
+    return path.is_dir() and path.name in os.listdir(path.parent)
+
+
 class _Resolver:
     """Finds first-party source files for dotted names and caches what each defines, by parsing only."""
 
@@ -229,11 +239,11 @@ class _Resolver:
         for base in dirs:
             target = base.joinpath(*parts) if parts else base
             found: Optional[_Candidate] = None
-            if (target / "__init__.py").is_file():
+            if _exact_case_is_dir(target) and _exact_case_is_file(target / "__init__.py"):
                 found = _Candidate(target / "__init__.py", "package")
-            elif parts and target.with_name(target.name + ".py").is_file():
+            elif parts and _exact_case_is_file(target.with_name(target.name + ".py")):
                 found = _Candidate(target.with_name(target.name + ".py"), "module")
-            elif parts and target.is_dir() and any(target.glob("*.py")):
+            elif parts and _exact_case_is_dir(target) and any(target.glob("*.py")):
                 found = _Candidate(target, "namespace")
             if found is not None:
                 key = found.path.resolve()
@@ -523,7 +533,10 @@ def scan_module_attributes(
     report = AttributeReport()
     scan_dirs = [Path(r) for r in root_list if Path(r).is_dir()]
     for parsed in scan:
-        dirs = _dedupe([_anchor(parsed.path.resolve()), parsed.path.parent, *extra, *scan_dirs])
+        own_dir = parsed.path.resolve().parent
+        # A file inside a package is never a bare-name source for its own directory: `import io` in mlframe/training/ means the stdlib module.
+        pkg_dirs = [] if (own_dir / "__init__.py").is_file() else [parsed.path.parent]
+        dirs = _dedupe([_anchor(parsed.path.resolve()), *pkg_dirs, *extra, *scan_dirs])
         _scan_file(parsed.tree, parsed.rel, parsed.path.resolve(), dirs, resolver, report)
     report.findings.sort(key=lambda f: (f.path, f.line))
     return report
