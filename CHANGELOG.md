@@ -4,6 +4,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.22.12
 
+`lock_held_across_io` honours a reviewed marker: a call that must stay under a cross-process file lock carries
+`# lock-io-ok: <reason>` on its own line, with a non-empty reason. A marker without a reason does not suppress the finding.
+
 Four new gates for concurrency and test-quality defects, and one new rule in `fail_open_handlers`: `lock_held_across_io`,
 `check_then_act_outside_lock`, `no_source_text_tests` and `shared_mutable_placeholder`.
 

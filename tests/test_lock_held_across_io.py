@@ -116,3 +116,28 @@ def test_assert_raises_on_a_finding_and_passes_when_clean(tmp_path):
     good = tmp_path / "good.py"
     good.write_text("class P:\n    def a(self):\n        self.db.connect()\n", encoding="utf-8")
     assert_no_lock_held_across_io([good])
+
+
+_LOCKED_WRITE = """
+import threading
+_lock = threading.Lock()
+
+
+def append(path, data):
+    with _lock:
+        with open(path, "ab") as handle:{marker}
+            handle.write(data)
+"""
+
+
+def test_a_reviewed_marker_with_a_reason_suppresses_the_finding(tmp_path):
+    assert _lines(tmp_path, _LOCKED_WRITE.format(marker="  # lock-io-ok: cross-process append; a torn line otherwise")) == []
+
+
+def test_a_marker_without_a_reason_does_not_suppress_the_finding(tmp_path):
+    assert len(_lines(tmp_path, _LOCKED_WRITE.format(marker="  # lock-io-ok:"))) == 1
+
+
+def test_a_marker_on_another_line_does_not_suppress_the_finding(tmp_path):
+    body = _LOCKED_WRITE.format(marker="") + "\n# lock-io-ok: the wrong line, so the call is still reported\n"
+    assert len(_lines(tmp_path, body)) == 1

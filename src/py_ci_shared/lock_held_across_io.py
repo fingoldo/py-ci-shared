@@ -115,8 +115,23 @@ def _calls_under(body: list[ast.stmt]) -> Iterator[ast.Call]:
         stack.extend(ast.iter_child_nodes(node))
 
 
+_REVIEWED_MARKER = "# lock-io-ok:"
+
+
+def _reviewed_io(source_lines: list[str], lineno: int) -> bool:
+    """True when the call's own line carries ``# lock-io-ok: <reason>`` with a non-empty reason.
+
+    The reason is the reviewed decision: a site where the I/O must stay under the lock (a cross-process file lock
+    whose append would tear without it) says so next to the call, and the gate accepts only that explicit form.
+    """
+    line = source_lines[lineno - 1] if 0 < lineno <= len(source_lines) else ""
+    marker = line.find(_REVIEWED_MARKER)
+    return marker >= 0 and bool(line[marker + len(_REVIEWED_MARKER) :].strip())
+
+
 def _findings_in(parsed: ParsedFile) -> list[Finding]:
     aliases = ImportAliases.from_tree(parsed.tree)
+    source_lines = parsed.source.splitlines()
     lock_names = module_lock_names(parsed.tree)
     out: list[Finding] = []
     reported: set[int] = set()
@@ -128,7 +143,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
             continue
         for call in _calls_under(node.body):
             label = io_label(call, aliases)
-            if label is None or id(call) in reported:
+            if label is None or id(call) in reported or _reviewed_io(source_lines, call.lineno):
                 continue
             reported.add(id(call))
             out.append(
