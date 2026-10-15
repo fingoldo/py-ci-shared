@@ -109,6 +109,25 @@ def test_count_claim_bullet_list_matching_the_claim_is_clean(tmp_path: Path) -> 
     assert count_claim_mismatches([good]) == []
 
 
+def test_count_claim_docstring_bullets_with_wrapped_items_are_all_counted(tmp_path: Path) -> None:
+    # A docstring has no comment marker, so its continuation lines carry their indent as is; reading it after a
+    # blanket lstrip counted the first bullet and stopped (autopsia's `tests/_overlay_unwire.py`: "says 3, lists 1").
+    text = (
+        '"""Helpers.\n\n'
+        "Three entry points:\n"
+        "- `simulate_unwired(monkeypatch, tmp_path, module)` - unwires a module and\n"
+        "  forces a cold re-parse of the merged KB.\n"
+        "- `filter_sibling_overlays(...)` - the sibling pass on its own, for a caller\n"
+        "  that already has the removed ids.\n"
+        "- `cheap_scores_unwired(present, absent, rows_attr)` - the fast path.\n"
+        '"""\n'
+    )
+    good = _write(tmp_path, "tests/_helper.py", text)
+    assert count_claim_mismatches([good]) == []
+    bad = _write(tmp_path, "tests/_helper2.py", text.replace("Three entry points", "Two entry points"))
+    assert count_claim_mismatches([bad]) == [f"{bad}:3: says 2, lists 3"]
+
+
 def test_count_claim_without_a_list_under_it_is_prose(tmp_path: Path) -> None:
     prose = _write(tmp_path, "Dockerfile", "# Two substitutions:\nRUN echo a\n# API_URL - not under the claim\n")
     spaced = _write(tmp_path, "b.yaml", "# Two substitutions:\n#\n#   API_URL - after a blank comment line\nk: v\n")

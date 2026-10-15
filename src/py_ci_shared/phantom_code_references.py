@@ -90,7 +90,9 @@ _TAIL_CLAIM_RE = re.compile(r"\b(?P<n>\d+|one|two|three|four|five|six|seven|eigh
 _NAME = r"(?:`[^`\n]+`|[A-Za-z_][\w.]*)"
 #: One bullet naming a thing: ``#   NAME - text``, ``# - NAME: text``, ``// * NAME - text``. Captures the indent after the
 #: comment marker, so a deeper-indented line under an item reads as that item's continuation.
-_BULLET_ITEM_RE = re.compile(r"^\s*(?:#|///|//)?(?P<indent>\s*)(?:(?:[-*]\s+" + _NAME + r"\s*(?::|\s-)\s+\S)|(?:" + _NAME + r"\s+-\s+\S))")
+_BULLET_ITEM_RE = re.compile(r"^(?P<indent>\s*)(?:(?:[-*]\s+" + _NAME + r"\s*(?::|\s-)\s+\S)|(?:" + _NAME + r"\s+-\s+\S))")
+#: A line's comment marker, so indentation is measured the same way with one (``#   NAME``) and without (a docstring).
+_COMMENT_MARKER_RE = re.compile(r"^\s*(?:#|///|//)")
 
 # Words that appear in backticks constantly and are never a code reference in the repos this serves:
 # language keywords and literals, common type names, and the punctuation-ish tokens people quote.
@@ -552,8 +554,8 @@ def _bullet_count(lines: list[tuple[int, str]], i: int) -> int:
         ln, txt = lines[j]
         if ln != lines[j - 1][0] + 1:
             break
-        item = _BULLET_ITEM_RE.match(txt)
-        body = txt.lstrip().lstrip("#/").rstrip()
+        body = _COMMENT_MARKER_RE.sub("", txt, count=1).rstrip()
+        item = _BULLET_ITEM_RE.match(body)
         depth = len(body) - len(body.lstrip())
         if item and (indent < 0 or len(item.group("indent")) == indent):
             indent = len(item.group("indent"))
