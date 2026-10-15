@@ -191,10 +191,16 @@ def assert_no_new_code_audit_findings(
             print for a repo mid-migration.
     """
     import pytest
-    from pyutilz.dev.code_audit import run_all
+    from pyutilz.dev.code_audit.registry import run_all_checked
 
     merged_exclude = DEFAULT_EXCLUDE_DIRS | exclude_dirs
-    current = run_all(root, checks=checks, exclude_dirs=merged_exclude)
+    current, failed = run_all_checked(root, checks=checks, exclude_dirs=merged_exclude)
+    if failed:
+        # A scanner that raised has no findings to report, so an empty list from it is not a clean result (audit S-01).
+        pytest.fail(
+            "code-audit scanners raised, so their findings are unknown:\n  " + "\n  ".join(f"{name}: {err}" for name, err in sorted(failed.items())),
+            pytrace=False,
+        )
     keyed = _keys(current)
     current_by_key = {k: f for f, k in keyed}
     current_keys = set(current_by_key)
