@@ -153,3 +153,12 @@ def test_a_missing_baseline_fails_instead_of_accepting_everything(tmp_path):
     (root / "a.py").write_text("def test_a():\n    pass\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="does not exist"):
         assert_env_write_restore(root, baseline_path=tmp_path / "nope.json", use_git=False)
+
+def test_an_exempted_writer_passes_and_needs_a_reason(tmp_path):
+    src = "import os\n\n\ndef setup_thing():\n    os.environ['JULIA_EXE'] = 'x'\n"
+    (tmp_path / "gate_mod.py").write_text(src, encoding="utf-8")
+    assert_env_write_restore(tmp_path, min_files=1, exempt={"gate_mod.py::setup_thing": "documented process-wide exposure, idempotent"})
+    with pytest.raises(ValueError, match="needs a non-empty reason"):
+        assert_env_write_restore(tmp_path, min_files=1, exempt={"gate_mod.py::setup_thing": "  "})
+    with pytest.raises(AssertionError, match="env-write-restore finding"):
+        assert_env_write_restore(tmp_path, min_files=1)

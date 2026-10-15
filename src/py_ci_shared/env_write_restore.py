@@ -37,6 +37,7 @@ import re
 from pathlib import Path
 from collections.abc import Iterator
 from typing import Any, Optional, Union
+from collections.abc import Mapping
 
 from ._core import Baseline, Finding, ImportAliases, refresh_requested, scan_python
 from .import_side_effects import _ENV_WRITERS, _MUTATING_METHODS, _is_environ
@@ -203,6 +204,16 @@ def find_env_write_restore(
     return sorted(out, key=lambda f: (f.path, f.line))
 
 
+def _drop_exempt(found: list[Finding], exempt: Optional[Mapping[str, str]]) -> list[Finding]:
+    """Remove findings whose ``path::function`` is exempted with a stated reason; an exemption without a reason is refused."""
+    if not exempt:
+        return found
+    for key, reason in exempt.items():
+        if not str(reason).strip():
+            raise ValueError(f"env-write-restore exemption {key!r} needs a non-empty reason")
+    return [f for f in found if f"{f.path}::{f.message.split(': ', 1)[0]}" not in exempt]
+
+
 def assert_env_write_restore(
     root: Union[str, Path],
     *,
@@ -214,12 +225,14 @@ def assert_env_write_restore(
     min_files: int = 1,
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
+    exempt: Optional[Mapping[str, str]] = None,
 ) -> None:
     """Fail on any unrestored write, or with *baseline_path* on any the baseline does not accept (and on a stale baseline entry).
 
     A refresh (*refresh*, ``--refresh-env-write-restore-baseline`` via *request* or argv, or ``PY_CI_SHARED_REFRESH=env-write-restore``) is shrink-only unless *grow* (or ``--py-ci-refresh-grow`` / ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1``): seed a first baseline with it.
     *new_note* is written as the justification of each newly recorded entry."""
     found = find_env_write_restore(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
+    found = _drop_exempt(found, exempt)
     guidance = (
         "an os.environ write inside a function is never undone, so it leaks into every later test in the process (a different victim each run, "
         "passing when run alone). Use monkeypatch.setenv / monkeypatch.delenv (pytest restores them), `with mock.patch.dict(os.environ, {...})`, "
