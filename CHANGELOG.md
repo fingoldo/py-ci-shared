@@ -25,6 +25,12 @@ then refresh the baseline if the handler is accepted.
   Unbalanced braces are an unparsed file, not a pass; `.conf.template` files with `${VAR}` parse. Opt-in.
   `exempt={selector: reason}` exempts a `location` (selector exactly as written) from the dropped-header and `required`
   checks; it must then carry `required_in_exempt`. An empty reason or a selector matching no location is a finding.
+- New gate `validation_errors_echo_input`: a pydantic validator (`field_validator`/`validator`/`model_validator`/
+  `root_validator`), or a helper it passes the value to, that raises `ValueError`/`TypeError`/`AssertionError`/
+  `PydanticCustomError` (or asserts) with a message reaching the validated value (`len(value)` and the field name are
+  fine), and a `RequestValidationError` handler that returns `exc.errors()` without dropping `input` for every error. Both
+  put the rejected value into the 422 detail that clients log (autopsia, 2026-10-15). Keys are `path::function::shape`;
+  shrink-only baseline. Opt-in.
 - `phantom_code_references.count_claim_mismatches` also counts a bullet list naming one thing per item
   (`#   NAME - text`, `# - NAME: text`, `// * NAME - text`) under a claim line ending in `:`, and accepts any
   "<number> <word(s)>:" claim ("Two substitutions:") for such a list. Numbered lists are counted as before.

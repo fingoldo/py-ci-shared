@@ -1434,6 +1434,13 @@ since = "1.17.0"
 summary = "A ``for`` loop whose body is only conditional assertions, with nothing elsewhere asserting the loop actually ran, is a test that passes on zero"
 
 [[gate]]
+name = "validation_errors_echo_input"
+kind = "gate"
+entries = ["assert_validation_errors_echo_input"]
+since = "1.22.12"
+summary = "Validator errors and RequestValidationError handlers that echo the rejected input back into the 422 detail"
+
+[[gate]]
 name = "value_bearing_asserts"
 kind = "gate"
 entries = ["assert_no_value_bearing_asserts"]

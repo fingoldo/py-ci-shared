@@ -179,7 +179,9 @@ def find_unwrapped_providers(
 
 def _generate_call_lines(source: "str | ast.Module", methods: frozenset[str]) -> list[int]:
     return sorted(
-        node.lineno for node in _fast_walk(_tree_of(source)) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in methods
+        node.lineno
+        for node in _fast_walk(_tree_of(source))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in methods
     )
 
 

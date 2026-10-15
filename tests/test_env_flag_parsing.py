@@ -16,15 +16,18 @@ def _write(tmp_path, name, source):
 
 def test_each_hand_parse_shape_is_reported(tmp_path):
     """The three spellings that disagree about "on": a truth test, a comparison and a literal membership."""
-    p = _write(tmp_path, "m.py",
-               "import os\n"
-               "if not os.environ.get('P_A'):\n"
-               "    pass\n"
-               "b = os.environ.get('P_B', '').strip().lower() in ('1', 'true')\n"
-               "if os.getenv('P_C') == '1':\n"
-               "    pass\n"
-               "if os.environ['P_D']:\n"
-               "    pass\n")
+    p = _write(
+        tmp_path,
+        "m.py",
+        "import os\n"
+        "if not os.environ.get('P_A'):\n"
+        "    pass\n"
+        "b = os.environ.get('P_B', '').strip().lower() in ('1', 'true')\n"
+        "if os.getenv('P_C') == '1':\n"
+        "    pass\n"
+        "if os.environ['P_D']:\n"
+        "    pass\n",
+    )
     found = [(r.var, r.shape) for r in find_hand_parsed_env_flags([p], tmp_path, ("P_",))]
     assert found == [
         ("P_A", "not <read>"),

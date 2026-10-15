@@ -87,7 +87,9 @@ def test_the_readme_catalogue_moves_with_the_registry(tree: Path):
 def test_since_is_compared_numerically_not_as_text(tree: Path):
     """1.9.0 is older than 1.10.0; a text comparison would call it newer and rewrite a module that shipped long ago."""
     registry = tree / "src" / "py_ci_shared" / "registry.toml"
-    registry.write_text(registry.read_text(encoding="utf-8") + '\n[[gate]]\nname = "x"\nkind = "gate"\nentries = ["x"]\nsince = "1.9.0"\nsummary = "x"\n', encoding="utf-8")
+    registry.write_text(
+        registry.read_text(encoding="utf-8") + '\n[[gate]]\nname = "x"\nkind = "gate"\nentries = ["x"]\nsince = "1.9.0"\nsummary = "x"\n', encoding="utf-8"
+    )
     guard.run_prep(tree, "99.0.0", "v1.10.0", write=True)
     assert _text(tree, "src/py_ci_shared/registry.toml").rstrip().endswith('since = "1.9.0"\nsummary = "x"')
 

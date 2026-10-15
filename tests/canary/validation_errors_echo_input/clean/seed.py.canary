@@ -1,0 +1,39 @@
+"""The fixed forms: lengths and field names only, and a handler that drops `input` for every error."""
+
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, field_validator
+
+app = FastAPI()
+
+
+def seed_bounded_entries(value):
+    too_long = next((item for item in value if len(item) > 200), None)
+    if too_long is not None:
+        raise ValueError(f"entry too long ({len(too_long)} chars, max 200)")
+    return value
+
+
+class SeedRequest(BaseModel):
+    symptoms: list
+    context: dict
+
+    @field_validator("symptoms")
+    @classmethod
+    def _bounded(cls, value):
+        return seed_bounded_entries(value)
+
+    @field_validator("context")
+    @classmethod
+    def _age(cls, value, info):
+        for key, val in value.items():
+            if not 0 <= float(val) <= 130:
+                raise ValueError(f"{info.field_name}[{key!r}] must be in [0, 130]")
+        return value
+
+
+@app.exception_handler(RequestValidationError)
+async def seed_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    cleaned = [{k: v for k, v in e.items() if k != "input"} for e in exc.errors()]
+    return JSONResponse(status_code=422, content={"detail": cleaned})

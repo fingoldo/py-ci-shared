@@ -76,6 +76,8 @@ class Exemption:
 
     category: str
     reason: str
+
+
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
@@ -362,8 +364,11 @@ def assert_no_new_uncalled_function(
     exemptions: dict[str, Exemption] = dict(reexported_public_api(paths, root)) if public_api_from_exports else {}
     exemptions.update(exempt or {})
     bad = [
-        f"{name}: category {ex.category!r} is not one of {sorted(CATEGORIES)}" if ex.category not in CATEGORIES
-        else f"{name}: an exemption needs a non-empty reason"
+        (
+            f"{name}: category {ex.category!r} is not one of {sorted(CATEGORIES)}"
+            if ex.category not in CATEGORIES
+            else f"{name}: an exemption needs a non-empty reason"
+        )
         for name, ex in exemptions.items()
         if ex.category not in CATEGORIES or not ex.reason.strip()
     ]

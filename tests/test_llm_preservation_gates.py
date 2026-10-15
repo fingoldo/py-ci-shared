@@ -28,7 +28,11 @@ def _write(root: Path, rel: str, body: str) -> Path:
 
 class TestDirectSdkCalls:
     def test_all_three_sdk_shapes_are_found(self, tmp_path: Path) -> None:
-        _write(tmp_path, "pkg/a.py", "async def f(c, g):\n    await c.messages.create(model='m')\n    await c.chat.completions.create(model='m')\n    g.generate_content('p')\n")
+        _write(
+            tmp_path,
+            "pkg/a.py",
+            "async def f(c, g):\n    await c.messages.create(model='m')\n    await c.chat.completions.create(model='m')\n    g.generate_content('p')\n",
+        )
 
         assert find_direct_sdk_calls(tmp_path, ["pkg"]) == {"pkg/a.py": [2, 3, 4]}
 

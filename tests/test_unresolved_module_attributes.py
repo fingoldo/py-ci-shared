@@ -381,6 +381,7 @@ def test_a_baseline_accepts_known_findings_and_rejects_new_ones(tmp_path):
     with pytest.raises(pytest.fail.Exception):
         assert_no_unresolved_module_attributes(root, use_git=False, baseline_path=baseline)
 
+
 def test_a_package_module_does_not_shadow_a_stdlib_name(tmp_path):
     # ``import io`` inside a package is the stdlib module, never the package's own ``io.py`` sibling.
     files = {"pkg/__init__.py": "", "pkg/io.py": "def fake():\n    return 1\n", "pkg/user.py": "import io\n\n\ndef run():\n    return io.BytesIO\n"}

@@ -34,7 +34,9 @@ class TestPrivateMetaImports:
         return tmp_path
 
     def test_the_last_segment_is_judged_by_default(self, tmp_path):
-        meta = self._meta(tmp_path, "from pkg.mod import _helper, public\nfrom pkg._impl import Public\nimport pkg.__about__\nfrom other import _x\nfrom . import _local\n")
+        meta = self._meta(
+            tmp_path, "from pkg.mod import _helper, public\nfrom pkg._impl import Public\nimport pkg.__about__\nfrom other import _x\nfrom . import _local\n"
+        )
         _parsed, found = private_meta_imports(sorted(meta.glob("test_*.py")), ("pkg",))
         assert found == {"test_a::pkg.mod._helper"}
 
