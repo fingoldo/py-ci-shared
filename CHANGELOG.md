@@ -4,6 +4,11 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.22.13
 
+- New opt-in gate `import_time_global_side_effects`: a module-level statement (outside `if __name__ == "__main__":` and any function) that changes
+  process-global state for everything imported after it: `logging.disable`, `basicConfig(force=True)`, root-logger handler/level surgery, a blanket
+  `warnings` ignore, assignment to `sys.stdout`/`stderr`/`stdin`, `os.chdir`, `locale.setlocale`, `signal.signal`. `imported_by="tests"` limits the
+  check to modules a test imports (the precise form for a scripts directory). Found when a test importing a CLI script dropped every INFO/WARNING
+  record in all xdist workers (78 failures in the Glossum backend).
 - Fixed: `guard_population` on Windows under Python 3.9 sliced `Path.parents` while finding Git's bash, which 3.9 cannot, so every guard
   raised `TypeError`. Found by running 3.9 on Windows locally (self-ci runs 3.9 on Linux only).
 

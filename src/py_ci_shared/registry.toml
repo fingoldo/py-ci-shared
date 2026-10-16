@@ -718,6 +718,13 @@ budget_s = 120
 summary = "Importing a module has no side effects"
 
 [[gate]]
+name = "import_time_global_side_effects"
+kind = "gate"
+entries = ["assert_import_time_global_side_effects"]
+since = "1.22.13"
+summary = "Module-level statements that change process-global state on import (logging.disable, root-logger surgery, blanket warnings filters, sys.stdout assignment, chdir, setlocale, signal) (opt-in)"
+
+[[gate]]
 name = "index_coverage"
 kind = "library"
 since = "1.4.0"

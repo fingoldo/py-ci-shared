@@ -242,6 +242,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`import_cycles`](src/py_ci_shared/import_cycles.py) | gate | 1.17.0 | `assert_no_import_cycles` | Module-level import cycles, and the cycles that only load when one particular side is imported first |
 | [`import_layering`](src/py_ci_shared/import_layering.py) | gate | 1.3.6 | `assert_layering` | Declared architectural layers are not violated by an import |
 | [`import_side_effects`](src/py_ci_shared/import_side_effects.py) | gate | 1.13.0 | `assert_no_new_import_time_env_mutations` (+1) | Importing a module has no side effects |
+| [`import_time_global_side_effects`](src/py_ci_shared/import_time_global_side_effects.py) | gate | 1.22.13 | `assert_import_time_global_side_effects` | Module-level statements that change process-global state on import (logging.disable, root-logger surgery, blanket warnings filters, sys.stdout assignment, chdir, setlocale, signal) (opt-in) |
 | [`index_coverage`](src/py_ci_shared/index_coverage.py) | library | 1.4.0 |  | Is an expected index already served by a live one under a different name? |
 | [`inert_patch_targets`](src/py_ci_shared/inert_patch_targets.py) | library | 1.4.0 |  | Find test fixtures that RESET a module attribute the module does not have |
 | [`install_safe_hook`](src/py_ci_shared/install_safe_hook.py) | cli | 1.1.0 | `main` | Point the generated git hook(s) at ``safe_precommit`` instead of raw ``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive |

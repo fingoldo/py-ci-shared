@@ -426,6 +426,11 @@ CANARIES: dict[str, Canary] = {
         Canary("nginx_location_headers", lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False)),
         Canary("validation_errors_echo_input", lambda d: _gate("validation_errors_echo_input").assert_validation_errors_echo_input(d, use_git=False)),
         Canary("predictable_tmp_path", lambda d: _gate("predictable_tmp_path").assert_predictable_tmp_path(d, use_git=False)),
+        Canary(
+            "import_time_global_side_effects",
+            lambda d: _gate("import_time_global_side_effects").assert_import_time_global_side_effects(d, use_git=False),
+            token="unimorph",
+        ),
     ]
 }
 
