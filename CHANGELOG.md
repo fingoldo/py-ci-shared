@@ -4,11 +4,6 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.22.12
 
-**Waiver.** The `macos-latest` leg of self-ci is not part of this release's required run: GitHub assigned it no runner
-for over a day (queued from 2026-10-15), so the run could not complete. The other 17 jobs (Linux 3.9-3.13, Windows 3.11,
-the ubuntu-26.04 previews) passed on the same tree. The leg is restored in the commit after the tag; the next release
-needs it green again, or a new waiver written down here.
-
 `lock_held_across_io` honours a reviewed marker: a call that must stay under a cross-process file lock carries
 `# lock-io-ok: <reason>` on its own line, with a non-empty reason. A marker without a reason does not suppress the finding.
 

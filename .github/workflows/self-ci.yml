@@ -49,10 +49,8 @@ jobs:
           # rides on them (3.11 only), unlike the ubuntu legs. tests/test_reusable_workflows.py allows exactly these two.
           - os: windows-latest
             python: "3.11"
-          # macos-latest is waived for the 1.22.12 release only (2026-10-16): its job sat queued for over a day with no
-          # runner assigned, so the run could never finish and the release guard, which needs the whole run green,
-          # could not be satisfied. Linux and Windows cover the code; the package has no macOS-specific path. The leg
-          # comes back in the first commit after the release (CHANGELOG 1.22.12, "Waiver"); remove this comment then.
+          - os: macos-latest
+            python: "3.11"
     # bash on every OS (it ships on the Windows runners too): the run: blocks below use POSIX
     # shell syntax, which pwsh - the Windows default - would parse differently.
     defaults:
