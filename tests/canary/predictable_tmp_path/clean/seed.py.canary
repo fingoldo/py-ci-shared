@@ -1,0 +1,7 @@
+import os
+import tempfile
+
+
+def lock_path(name):
+    base = os.path.join(tempfile.gettempdir(), f"app-{os.getuid()}")
+    return os.path.join(base, name + ".lock")

@@ -281,6 +281,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`pinned_tool_versions`](src/py_ci_shared/pinned_tool_versions.py) | cli | 1.4.1 | `main` | Fail when a repo's ruff pin, or the ruff its interpreter runs, differs from the shared version |
 | [`plotly_annotation_loop`](src/py_ci_shared/plotly_annotation_loop.py) | gate | 1.17.0 | `assert_no_plotly_annotation_loops` | plotly ``fig.add_annotation``/``add_shape`` called once per item in a loop: O(n^2) in the number of items |
 | [`polars_null_equality`](src/py_ci_shared/polars_null_equality.py) | gate | 1.17.0 | `assert_polars_null_equality` | Advisory: polars comparisons whose null handling silently changes the answer |
+| [`predictable_tmp_path`](src/py_ci_shared/predictable_tmp_path.py) | gate | 1.22.12 | `assert_predictable_tmp_path` | A path built under gettempdir() with no per-user component (audit X-12): a predictable lock or cache name another local user can pre-create |
 | [`printed_advice`](src/py_ci_shared/printed_advice.py) | gate | 1.17.0 | `assert_printed_advice_registered` | Log and error messages that advise an action, each mapped to a test that follows the advice |
 | [`private_imports`](src/py_ci_shared/private_imports.py) | gate | 1.8.0 | `assert_no_private_cross_package_imports` | Production code does not import another package's underscore-prefixed module |
 | [`prompt_field_parity`](src/py_ci_shared/prompt_field_parity.py) | library | 1.5.0 |  | A field a prompt or schema asks the model for is read by something, and stored |

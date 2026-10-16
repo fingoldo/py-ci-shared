@@ -990,6 +990,13 @@ since = "1.17.0"
 summary = "Advisory: polars comparisons whose null handling silently changes the answer"
 
 [[gate]]
+name = "predictable_tmp_path"
+kind = "gate"
+entries = ["assert_predictable_tmp_path"]
+since = "1.22.12"
+summary = "A path built under gettempdir() with no per-user component (audit X-12): a predictable lock or cache name another local user can pre-create"
+
+[[gate]]
 name = "printed_advice"
 kind = "gate"
 entries = ["assert_printed_advice_registered"]

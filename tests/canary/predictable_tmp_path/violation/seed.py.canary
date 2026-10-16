@@ -1,0 +1,6 @@
+import os
+import tempfile
+
+
+def lock_path(name):
+    return os.path.join(tempfile.gettempdir(), name + ".lock")

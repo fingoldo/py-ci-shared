@@ -425,6 +425,7 @@ CANARIES: dict[str, Canary] = {
         Canary("comment_repo_paths", lambda d: _gate("comment_repo_paths").assert_comment_repo_paths(d, use_git=False)),
         Canary("nginx_location_headers", lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False)),
         Canary("validation_errors_echo_input", lambda d: _gate("validation_errors_echo_input").assert_validation_errors_echo_input(d, use_git=False)),
+        Canary("predictable_tmp_path", lambda d: _gate("predictable_tmp_path").assert_predictable_tmp_path(d, use_git=False)),
     ]
 }
 
