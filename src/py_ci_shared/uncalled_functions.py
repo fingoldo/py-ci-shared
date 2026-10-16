@@ -64,6 +64,7 @@ CATEGORIES: dict[str, str] = {
     "PLUGIN_HOOK": "an extension point a downstream package calls by name",
     "SUPERSEDED": "replaced by a live twin and kept as the reference; a parity test must pin the twin",
     "RETAINED_KERNEL": "a deliberately kept alternative implementation (A/B, fallback) that no switch currently reaches",
+    "ALTERNATE": "an alternative implementation a flag or config selects on request; the default path does not use it, and a parity test pins it to the default within a stated tolerance",
     "OPT_IN_SLOW": "a valid path enabled by an explicit call or flag, slower than the default, so not on the default path",
     "OFFLINE_HELPER": "a benchmark, generator or diagnostic helper run by hand, never by the shipped pipeline",
     "TEST_UTILITY": "a test-isolation helper (cache reset, fixture hook) that only tests call",
