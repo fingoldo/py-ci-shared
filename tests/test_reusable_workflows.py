@@ -269,7 +269,9 @@ def test_black_filtered_reads_the_black_version_from_tool_versions():
 
 
 # The only moving labels: self-ci's single Windows and macOS legs (see the comment on them in self-ci.yml).
-ALLOWED_LATEST = {("self-ci.yml", "windows-latest"), ("self-ci.yml", "macos-latest")}
+# The macOS leg is waived for the 1.22.12 tag only (CHANGELOG 1.22.12, "Waiver"); it returns with the next commit, which
+# adds ("self-ci.yml", "macos-latest") back here.
+ALLOWED_LATEST = {("self-ci.yml", "windows-latest")}
 
 
 def test_moving_runner_labels_are_only_the_reviewed_ones():
