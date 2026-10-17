@@ -38,7 +38,7 @@ dev = [
     # timezone_honest runs `python -m ruff`, so its tests need ruff in the test environment; without
     # it CI's test job had none and every one of them failed. Exact, equal to tool_versions.RUFF_VERSION
     # (tests/test_pinned_tool_versions.py holds the two together).
-    "ruff==0.16.1",
+    "ruff==0.16.10",
     # config_call_site_parity.py's tests build a real pydantic.BaseModel schema fixture (the
     # module itself is duck-typed, no pydantic import at runtime -- only the tests need a
     # concrete model class to exercise it against).

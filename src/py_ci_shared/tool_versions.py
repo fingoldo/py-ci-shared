@@ -14,7 +14,7 @@ To bump: change the value here, release, then set each consumer's pin to match. 
 until it does, which is the point.
 """
 
-RUFF_VERSION = "0.16.1"
+RUFF_VERSION = "0.16.10"
 
 #: The black the shared ``black-filtered.yml`` workflow runs (its ``BLACK_CMD``); a consumer pins its own ``black==`` to
 #: this so its local hook formats exactly as CI checks. A test holds the workflow to this value.

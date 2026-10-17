@@ -1,7 +1,7 @@
 # Git hooks for py-ci-shared. Install once per clone (hooks live in the shared .git/hooks, worktrees reuse them):
 #   python -m pre_commit install --hook-type pre-commit --hook-type pre-push && python -m py_ci_shared.install_safe_hook
 #
-# Tool versions equal what CI runs: ruff 0.16.1 and black 26.5.1 (py_ci_shared.tool_versions), mypy 2.1.0 (self-ci.yml).
+# Tool versions equal what CI runs: ruff 0.16.10 and black 26.5.1 (py_ci_shared.tool_versions), mypy 2.1.0 (self-ci.yml).
 # `language: system` so the hooks use this checkout's own interpreter and its [dev] extras.
 #
 # pre-commit stage: seconds. pre-push stage: the self-gates CI's self-ci.yml enforces (the 2026-10-04 v1.21.0 push
@@ -40,7 +40,7 @@ repos:
   - repo: local
     hooks:
       - id: ruff-blocking
-        name: "ruff 0.16.1 check --ignore C901 (blocking; self-ci.yml, complexity is the ratchet test)"
+        name: "ruff 0.16.10 check --ignore C901 (blocking; self-ci.yml, complexity is the ratchet test)"
         entry: python -m ruff check --ignore C901
         language: system
         types: [python]
