@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Finding, ParsedFile, scan_python
+from ._core.node_index import nodes_of
 
 __all__ = ["RULE", "assert_no_shared_mutable_placeholders", "find_shared_mutable_placeholders"]
 
@@ -74,9 +75,9 @@ def _direct_nodes(scope: _Scope) -> list[ast.AST]:
     return out
 
 
-def _placeholders_of(scope: _Scope) -> frozenset[str]:
+def _placeholders_in(direct: list[ast.AST]) -> frozenset[str]:
     names: set[str] = set()
-    for node in _direct_nodes(scope):
+    for node in direct:
         if isinstance(node, ast.Assign) and is_placeholder_value(node.value):
             names.update(t.id for t in node.targets if isinstance(t, ast.Name))
         elif isinstance(node, ast.AnnAssign) and node.value is not None and is_placeholder_value(node.value) and isinstance(node.target, ast.Name):
@@ -84,16 +85,14 @@ def _placeholders_of(scope: _Scope) -> frozenset[str]:
     return frozenset(names)
 
 
-def _bound_here(fn: _Scope) -> frozenset[str]:
+def _bound_in(fn: _Scope, direct: list[ast.AST]) -> frozenset[str]:
     """Names *fn* binds itself (parameters, assignments, nested definitions), minus those it declares ``global``."""
-    if isinstance(fn, ast.Module):
-        return frozenset()
-    args = fn.args
+    args = fn.args  # type: ignore[union-attr]
     params = [a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]]
     params += [a.arg for a in (args.vararg, args.kwarg) if a is not None]
     bound: set[str] = set(params)
     declared_global: set[str] = set()
-    for node in _direct_nodes(fn):
+    for node in direct:
         if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
             bound.add(node.id)
         elif isinstance(node, (*_FUNCTIONS, ast.ClassDef)):
@@ -103,7 +102,7 @@ def _bound_here(fn: _Scope) -> frozenset[str]:
     return frozenset(bound - declared_global)
 
 
-def _returns_of(fn: _Scope, rel: str, visible: frozenset[str], scope_name: str) -> list[Finding]:
+def _returns_in(fn: _Scope, direct: list[ast.AST], rel: str, visible: frozenset[str], scope_name: str) -> list[Finding]:
     return [
         Finding(
             rel,
@@ -112,25 +111,29 @@ def _returns_of(fn: _Scope, rel: str, visible: frozenset[str], scope_name: str) 
             f"{node.value.id} is a mutable placeholder built once in {scope_name} and returned by reference from "
             f"{getattr(fn, 'name', '<function>')}: every caller shares one object; build the value inside the function or return a copy",
         )
-        for node in _direct_nodes(fn)
+        for node in direct
         if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and node.value.id in visible
     ]
 
 
-def _visit(node: ast.AST, rel: str, enclosing: frozenset[str], scope_name: str, out: list[Finding]) -> None:
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, _FUNCTIONS):
-            visible = enclosing - _bound_here(child)
-            out.extend(_returns_of(child, rel, visible, scope_name))
-            _visit(child, rel, visible | _placeholders_of(child), child.name, out)
-        else:
-            _visit(child, rel, enclosing, scope_name, out)
-
-
 def _findings_in(parsed: ParsedFile) -> list[Finding]:
+    """One pass over the scopes: each scope's own nodes are collected once and serve the placeholder, binding and return checks."""
+    if not any(isinstance(r.value, ast.Name) for r in nodes_of(parsed.tree, ast.Return)):
+        return []  # a finding is a ``return NAME``; a module with none has nothing to judge
     out: list[Finding] = []
-    module_names = _placeholders_of(parsed.tree)
-    _visit(parsed.tree, parsed.rel, module_names, "the module", out)
+    module_direct = _direct_nodes(parsed.tree)
+    # (scope node, its own nodes, names an inner function can see, name of the scope a finding is reported against)
+    todo: list[tuple[ast.AST, list[ast.AST], frozenset[str], str]] = [(parsed.tree, module_direct, _placeholders_in(module_direct), "the module")]
+    while todo:
+        _, direct, enclosing, scope_name = todo.pop()
+        for node in direct:
+            if isinstance(node, _FUNCTIONS):
+                fn_direct = _direct_nodes(node)
+                visible = enclosing - _bound_in(node, fn_direct)
+                out.extend(_returns_in(node, fn_direct, parsed.rel, visible, scope_name))
+                todo.append((node, fn_direct, visible | _placeholders_in(fn_direct), node.name))
+            elif isinstance(node, ast.ClassDef):
+                todo.append((node, _direct_nodes(node), enclosing, scope_name))
     return out
 
 
