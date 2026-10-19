@@ -32,6 +32,7 @@ from typing import Optional, Union
 
 from ._core import Finding, ParsedFile, scan_python
 from ._core.node_index import nodes_of
+from ._core.scopes import iter_scopes
 
 __all__ = ["RULE", "assert_no_shared_mutable_placeholders", "find_shared_mutable_placeholders"]
 
@@ -60,19 +61,6 @@ def is_placeholder_value(value: ast.AST) -> bool:
     if name in _BUILTIN_COLLECTIONS:
         return True
     return bool(name) and name[0].isupper() and name not in _IMMUTABLE_CONSTRUCTORS
-
-
-def _direct_nodes(scope: _Scope) -> list[ast.AST]:
-    """Nodes that execute in *scope*'s own body: nested function, class and lambda bodies are other scopes (the def is kept)."""
-    out: list[ast.AST] = []
-    stack: list[ast.AST] = list(scope.body) if isinstance(scope, ast.Module) else [s for s in ast.iter_child_nodes(scope)]
-    while stack:
-        node = stack.pop()
-        out.append(node)
-        if isinstance(node, _SCOPES):
-            continue
-        stack.extend(ast.iter_child_nodes(node))
-    return out
 
 
 def _placeholders_in(direct: list[ast.AST]) -> frozenset[str]:
@@ -117,23 +105,25 @@ def _returns_in(fn: _Scope, direct: list[ast.AST], rel: str, visible: frozenset[
 
 
 def _findings_in(parsed: ParsedFile) -> list[Finding]:
-    """One pass over the scopes: each scope's own nodes are collected once and serve the placeholder, binding and return checks."""
+    """Each scope's own nodes come from the shared per-tree scope index, so the placeholder, binding and return checks share one collection."""
     if not any(isinstance(r.value, ast.Name) for r in nodes_of(parsed.tree, ast.Return)):
         return []  # a finding is a ``return NAME``; a module with none has nothing to judge
     out: list[Finding] = []
-    module_direct = _direct_nodes(parsed.tree)
-    # (scope node, its own nodes, names an inner function can see, name of the scope a finding is reported against)
-    todo: list[tuple[ast.AST, list[ast.AST], frozenset[str], str]] = [(parsed.tree, module_direct, _placeholders_in(module_direct), "the module")]
-    while todo:
-        _, direct, enclosing, scope_name = todo.pop()
-        for node in direct:
-            if isinstance(node, _FUNCTIONS):
-                fn_direct = _direct_nodes(node)
-                visible = enclosing - _bound_in(node, fn_direct)
-                out.extend(_returns_in(node, fn_direct, parsed.rel, visible, scope_name))
-                todo.append((node, fn_direct, visible | _placeholders_in(fn_direct), node.name))
-            elif isinstance(node, ast.ClassDef):
-                todo.append((node, _direct_nodes(node), enclosing, scope_name))
+    # per scope: names an inner function can see, and the name findings in its functions are reported against
+    context: dict[int, tuple[frozenset[str], str]] = {}
+    for scope in iter_scopes(parsed.tree):
+        if scope.parent is None:
+            enclosing, scope_name = _placeholders_in(scope.nodes), "the module"
+        else:
+            parent_enclosing, parent_name = context[id(scope.parent)]
+            node = scope.node
+            if isinstance(node, ast.ClassDef):
+                enclosing, scope_name = parent_enclosing, parent_name
+            else:
+                visible = parent_enclosing - _bound_in(node, scope.nodes)
+                out.extend(_returns_in(node, scope.nodes, parsed.rel, visible, parent_name))
+                enclosing, scope_name = visible | _placeholders_in(scope.nodes), node.name
+        context[id(scope)] = (enclosing, scope_name)
     return out
 
 

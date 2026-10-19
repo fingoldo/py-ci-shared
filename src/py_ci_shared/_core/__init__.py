@@ -33,6 +33,7 @@ from .errors import (
 from .findings import UNPARSED_RULE, Finding
 from .git import GitError, git_output, git_text, run_git
 from .node_index import nodes_of, tree_memo, walk
+from .scopes import Scope, iter_scopes, scope_nodes
 from .refresh import ENV_VAR as REFRESH_ENV_VAR
 from .refresh import GENERIC_OPTION as REFRESH_OPTION
 from .refresh import GROW_ENV_VAR as REFRESH_GROW_ENV_VAR
@@ -61,6 +62,7 @@ __all__ = [
     "ImportAliases",
     "ParsedFile",
     "ScanResult",
+    "Scope",
     "SourceError",
     "SourceParseError",
     "SourceProblem",
@@ -79,6 +81,7 @@ __all__ = [
     "growth_message",
     "is_unjustified",
     "iter_files",
+    "iter_scopes",
     "load_json",
     "module_of",
     "package_of",
@@ -87,6 +90,7 @@ __all__ = [
     "read_source",
     "refresh_requested",
     "register_refresh_options",
+    "scope_nodes",
     "relative_posix",
     "resolve_relative",
     "run_git",
