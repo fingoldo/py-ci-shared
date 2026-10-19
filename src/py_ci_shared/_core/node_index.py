@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import heapq
+import itertools
 import threading
 import weakref
 from collections import deque
@@ -33,15 +34,16 @@ _B = TypeVar("_B", bound=ast.AST)
 _INDEX: "weakref.WeakKeyDictionary[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]" = weakref.WeakKeyDictionary()
 # tree -> {key: value}
 _MEMO: "weakref.WeakKeyDictionary[ast.AST, dict[Hashable, Any]]" = weakref.WeakKeyDictionary()
+# module tree -> every node below it in ``ast.walk`` order, the root itself left out (a value referencing its key would keep the tree alive)
+_DESCENDANTS: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.WeakKeyDictionary()
 _LOCK = threading.Lock()
 
 
 _FIELDS: "dict[type, tuple[str, ...]]" = {}
 
 
-def walk(node: ast.AST) -> "Iterator[ast.AST]":
-    """``ast.walk`` with the same breadth-first order, about 1.5x faster: the stdlib version goes through two generator
-    layers (``iter_child_nodes`` over ``iter_fields``) per node, and every gate here walks millions of nodes."""
+def _walk(node: ast.AST) -> "Iterator[ast.AST]":
+    """The breadth-first walk itself (no caching); see :func:`walk`."""
     _ast, fields_of = ast.AST, _FIELDS
     todo = deque([node])
     pop, push, extend = todo.popleft, todo.append, todo.extend
@@ -59,15 +61,40 @@ def walk(node: ast.AST) -> "Iterator[ast.AST]":
         yield current
 
 
+def walk(node: ast.AST) -> "Iterator[ast.AST]":
+    """``ast.walk`` with the same breadth-first order, about 1.5x faster: the stdlib version goes through two generator
+    layers (``iter_child_nodes`` over ``iter_fields``) per node, and every gate here walks millions of nodes.
+
+    A module tree is walked once per process: the node list is kept next to the tree (weakly keyed, freed with it) and every later
+    ``walk`` of that tree replays it. On the mlframe suite gates called ``walk`` on the same trees 221 million times, almost all of them
+    repeats. Trees are shared and read-only (see :func:`py_ci_shared._core.source.parse_source`); a caller that mutates one must not use this.
+    """
+    if not isinstance(node, ast.Module):
+        return _walk(node)
+    return itertools.chain((node,), _descendants(node))
+
+
+def _descendants(tree: ast.Module) -> "list[ast.AST]":
+    with _LOCK:
+        hit = _DESCENDANTS.get(tree)
+    if hit is not None:
+        return hit
+    nodes = _walk(tree)
+    next(nodes)  # the root
+    rest = list(nodes)
+    with _LOCK:
+        _DESCENDANTS[tree] = rest
+    return rest
+
+
 def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
     with _LOCK:
         hit = _INDEX.get(tree)
     if hit is not None:
         return hit
     by_type: "dict[type, tuple[list[int], list[ast.AST]]]" = {}
-    for pos, node in enumerate(walk(tree)):
-        if pos == 0:
-            continue  # the root: see nodes_of
+    nodes = _descendants(tree) if isinstance(tree, ast.Module) else list(itertools.islice(_walk(tree), 1, None))
+    for pos, node in enumerate(nodes, start=1):  # position 0 is the root: see nodes_of
         entry = by_type.get(type(node))
         if entry is None:
             entry = by_type[type(node)] = ([], [])
@@ -129,3 +156,4 @@ def clear() -> None:
     with _LOCK:
         _INDEX.clear()
         _MEMO.clear()
+        _DESCENDANTS.clear()

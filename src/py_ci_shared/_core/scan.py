@@ -19,7 +19,7 @@ from typing import Optional, Union
 from .corpus import DEFAULT_EXCLUDE, iter_files, relative_posix
 from .errors import CorpusError, EmptyScanError, SourceError, UnparsedFilesError
 from .findings import UNPARSED_RULE, Finding
-from .source import parse_source
+from .source import parse_source, resolve_cached
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def scan_python(
 
 def _identity(path: Path) -> Path:
     try:
-        return path.resolve()
+        return resolve_cached(path)
     except (OSError, RuntimeError) as exc:  # a symlink loop: keep the spelling
         logger.debug("could not resolve path, using absolute path: %s", type(exc).__name__)
         return path.absolute()

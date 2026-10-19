@@ -20,6 +20,7 @@ import hashlib
 import io
 import os
 import threading
+import time
 import tokenize
 from pathlib import Path
 from typing import Union
@@ -35,6 +36,24 @@ _PYTHON_SUFFIXES = frozenset({".py", ".pyi", ".pyw"})
 # mtime and size: a same-size rewrite inside one mtime tick would otherwise serve the old tree.
 _CACHE: dict[str, tuple[bytes, str, ast.Module]] = {}
 _LOCK = threading.Lock()
+
+# path as given -> (stat signature, time it was read, cache key, digest). A stable file is recognised by its stat alone, without reading, hashing or resolving it again:
+# a gate suite asks for each of a few thousand files tens of times. The signature is trusted only when the file's mtime is older than the moment it was read by more than
+# ``_RACY_NS`` (the rule git applies to its index): a file rewritten inside the timestamp granularity of the read would otherwise keep its old signature, and falls to the
+# digest comparison below instead.
+_FAST: dict[str, tuple[tuple[int, int, int], int, str, bytes]] = {}
+_RACY_NS = 3_000_000_000
+_RESOLVED: dict[str, Path] = {}
+
+
+def resolve_cached(path: PathLike) -> Path:
+    """``Path(path).resolve()`` remembered for the process (cleared with the parse cache): resolving one path costs a few system calls, and gates resolve each file dozens of times."""
+    spelled = os.fspath(path)
+    key = spelled if os.path.isabs(spelled) else f"{os.getcwd()}|{spelled}"  # a relative path resolves against the working directory
+    hit = _RESOLVED.get(key)
+    if hit is None:
+        hit = _RESOLVED[key] = Path(spelled).resolve()
+    return hit
 
 
 def _decode(path: Path, raw: bytes) -> str:
@@ -88,13 +107,28 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     SHARED between callers; treat it as read-only.
     """
     p = Path(path)
+    spath = os.fspath(path)
+    try:
+        st = os.stat(spath)
+    except OSError:
+        st = None
+    sig = (st.st_mtime_ns, st.st_size, st.st_ino) if st is not None else None
+    fast = _FAST.get(spath)
+    if fast is not None and sig is not None and fast[0] == sig and fast[1] - st.st_mtime_ns > _RACY_NS:  # type: ignore[union-attr]
+        with _LOCK:
+            hit = _CACHE.get(fast[2])
+        if hit is not None and hit[0] == fast[3]:
+            return hit[1], hit[2]
     try:
         raw = p.read_bytes()
-        key = str(p.resolve())
+        read_ns = time.time_ns()
+        key = str(resolve_cached(spath))
     except OSError as exc:
         raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
     digest = hashlib.blake2b(raw, digest_size=16).digest()
     with _LOCK:
+        if sig is not None:
+            _FAST[spath] = (sig, read_ns, key, digest)
         hit = _CACHE.get(key)
         if hit is not None and hit[0] == digest:
             return hit[1], hit[2]
@@ -115,6 +149,8 @@ def clear_parse_cache() -> None:
 
     with _LOCK:
         _CACHE.clear()
+        _FAST.clear()
+        _RESOLVED.clear()
     node_index.clear()
 
 

@@ -17,6 +17,7 @@ from typing import Any, Callable, NamedTuple, Optional, Union
 
 from ._ci_install_parts import Provided, Repo, add_project, catches_import_error, is_stdlib, is_type_checking, norm
 from ._core import UnparsedFilesError
+from ._core.source import resolve_cached
 from .ci_install_covers_conftest import _ALTERNATIVES, BUILTIN_ALIASES
 
 ALLOW = re.compile(r"#\s*optional-import-ok:\s*\S")
@@ -330,7 +331,7 @@ class ModuleIndex:
 
     def dotted_of(self, path: Path) -> Optional[tuple[str, bool]]:
         """``(dotted name, is a package)`` of a file under a root; None outside every root."""
-        resolved = path.resolve()
+        resolved = resolve_cached(path)
         for root in self.roots:
             try:
                 rel = resolved.relative_to(root)
@@ -397,7 +398,7 @@ def reach(
     parents: dict[Path, Optional[Path]] = {}
     queue: deque[Path] = deque()
     for start in starts:
-        resolved = start.resolve()
+        resolved = resolve_cached(start)
         if resolved not in parents:
             parents[resolved] = None
             queue.append(resolved)
@@ -413,7 +414,7 @@ def reach(
                 third.append(ThirdPartyImport(current, imp.line, imp.module))
                 continue
             for nxt in _followed(index, current, targets, top, imp.level):
-                resolved = nxt.resolve()
+                resolved = resolve_cached(nxt)
                 if resolved not in parents:
                     parents[resolved] = current
                     queue.append(resolved)
@@ -423,7 +424,7 @@ def reach(
 def chain(parents: Mapping[Path, Optional[Path]], leaf: Path, index: ModuleIndex) -> str:
     """``a -> b -> c``: how the entry reaches *leaf*, as dotted module names."""
     names: list[str] = []
-    cursor: Optional[Path] = leaf.resolve()
+    cursor: Optional[Path] = resolve_cached(leaf)
     while cursor is not None and len(names) < 12:
         located = index.dotted_of(cursor)
         names.append(located[0] if located and located[0] else cursor.name)
