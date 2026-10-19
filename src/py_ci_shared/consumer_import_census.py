@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import CoreError, Finding, ParsedFile, ScanResult, parse_source, scan_python
+from ._core import walk as shared_walk
 from ._core.git import run_git
 from .unresolved_imports import ModuleIndex, _guarded_import_ids
 
@@ -122,7 +123,7 @@ class LibrarySurface:
 def _imports(parsed: ParsedFile, surface: LibrarySurface) -> Iterator[tuple[int, str, Optional[str]]]:
     """``(line, module, name or None)`` for every absolute import of the library in one consumer file, guards excluded."""
     guarded = _guarded_import_ids(parsed.tree)
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if id(node) in guarded:
             continue
         if isinstance(node, ast.ImportFrom) and node.level == 0 and node.module and surface.owns(node.module):

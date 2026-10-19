@@ -43,7 +43,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "EmitSite", "assert_emitted_vocabulary_literals", "find_emitted_vocabulary_literals"]
 
@@ -89,8 +90,8 @@ class _File:
         self.tree = tree
         self.aliases = ImportAliases.from_tree(tree)
         self.parents: dict[int, ast.AST] = {}
-        for node in ast.walk(tree):
-            for child in ast.iter_child_nodes(node):
+        for node in shared_walk(tree):
+            for child in child_nodes(node):
                 self.parents[id(child)] = node
         self.constants: dict[str, ast.expr] = {}
         self.classes: dict[str, dict[str, ast.expr]] = {}
@@ -178,7 +179,7 @@ class _Resolver:
         """The values a local is bound to in *fn*; ``False`` when *fn* never binds it (so look further out)."""
         found: set[str] = set()
         bound = False
-        for node in ast.walk(fn):
+        for node in shared_walk(fn):
             if not isinstance(node, ast.Assign) or len(node.targets) != 1:
                 continue
             target = node.targets[0]
@@ -210,7 +211,7 @@ class _Resolver:
         if fn is None:
             return None
         found: set[str] = set()
-        for ret in (r for r in ast.walk(fn) if isinstance(r, ast.Return)):
+        for ret in (r for r in shared_walk(fn) if isinstance(r, ast.Return)):
             if not isinstance(ret.value, ast.Tuple) or index >= len(ret.value.elts):
                 return None
             got = self.values(ret.value.elts[index], f, ret, depth + 1)
@@ -282,7 +283,7 @@ def find_emitted_vocabulary_literals(
     emitted: set[str] = set()
     out: list[Finding] = []
     for f in files:
-        for node in ast.walk(f.tree):
+        for node in shared_walk(f.tree):
             if isinstance(node, ast.Call):
                 for site in by_call.get(_callee(node), ()):
                     out.extend(_check_call(node, site, f, resolver, emitted, allowed | set(ignore_values), vocabulary, pass_through))

@@ -53,7 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, iter_files, nodes_of, relative_posix, scan_python
+from ._core import DEFAULT_EXCLUDE, child_nodes, iter_files, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["Finding", "ModuleFacts", "module_index", "scan"]
@@ -196,7 +196,7 @@ def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
             bound.update(h.name for h in getattr(node, "handlers", []) if h.name)
         # A walrus at module scope binds a module name too.
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            for sub in ast.iter_child_nodes(node):
+            for sub in child_nodes(node):
                 if not isinstance(sub, ast.stmt):
                     bound.update(n.target.id for n in _fast_walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
     bound |= _globals_assigned_in_functions(tree)

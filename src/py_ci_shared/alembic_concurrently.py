@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import Baseline, Finding, ScanResult, refresh_requested, scan_python
+from ._core import Baseline, Finding, ScanResult, child_nodes, refresh_requested, scan_python
 from ._core.node_index import walk as _fast_walk
 
 RULE = "alembic-concurrently"
@@ -47,7 +47,7 @@ def _string_parts(node: ast.AST, names: "dict[str, list[str]]") -> Iterable[str]
         elif isinstance(cur, ast.Name):
             yield from names.get(cur.id, ())
         elif not isinstance(cur, ast.Call) or cur is node:
-            stack.extend(ast.iter_child_nodes(cur))
+            stack.extend(child_nodes(cur))
 
 
 def _truthy(value: ast.expr) -> bool:
@@ -110,7 +110,7 @@ def _unguarded_calls(tree: ast.AST) -> list[ast.Call]:
             stack = []
         elif isinstance(node, ast.Call) and _uses_concurrently(node, names) and not _in_autocommit_block(stack):
             out.append(node)
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             walk(child, stack)
 
     walk(tree, [])

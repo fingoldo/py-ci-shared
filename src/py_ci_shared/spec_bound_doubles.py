@@ -48,7 +48,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional
 
-from ._core import ImportAliases, SourceError, parse_file, read_source, relative_posix
+from ._core import ImportAliases, SourceError, child_nodes, parse_file, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 DEFAULT_MOCK_NAMES = frozenset({"Mock", "MagicMock", "AsyncMock", "NonCallableMock"})
@@ -106,7 +106,7 @@ def _scopes(tree: ast.Module) -> Iterator[list[ast.AST]]:
         while stack:
             node = stack.pop()
             nodes.append(node)
-            stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, _NESTED))
+            stack.extend(c for c in child_nodes(node) if not isinstance(c, _NESTED))
         yield sorted(nodes, key=lambda n: (getattr(n, "lineno", 0), getattr(n, "col_offset", 0)))
 
 

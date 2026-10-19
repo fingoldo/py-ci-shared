@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ImportAliases, iter_files, read_source
+from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ImportAliases, iter_files, parse_text, read_source
 from ._core.git import GitError, git_text, run_git
 from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
@@ -451,7 +451,7 @@ def find_module_usage(repo_root: PathLike, modules: Optional[Iterable[str]] = No
                 note(m.group(1), rel)
         if path.suffix == ".py":
             try:
-                tree = ast.parse(text)
+                tree = parse_text(text)
             except (SyntaxError, ValueError):
                 tree = None
             if tree is not None:
@@ -634,7 +634,7 @@ def find_silent_skips(repo_root: PathLike) -> list[Finding]:
         except CoreError:
             continue
         try:
-            tree = ast.parse(text)
+            tree = parse_text(text)
         except (SyntaxError, ValueError):
             continue
         out.extend(_skips_in_tree(tree, _rel(path, root)))

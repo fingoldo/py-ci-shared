@@ -44,7 +44,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_loop_invariant_cast", "find_loop_invariant_cast"]
 
@@ -103,7 +104,7 @@ def _reassigned_names(scope: ast.AST) -> set[str]:
     excluding them keeps the walk a single pass without a separate scope stack.
     """
     out: set[str] = set()
-    for node in ast.walk(scope):
+    for node in shared_walk(scope):
         out.update(_bound_names_of_node(node))
     return out
 
@@ -169,7 +170,7 @@ def _mutated_in_loop(name: str, loop: ast.AST) -> bool:
     hoisting that copy out of the loop would share one mutable array across iterations and corrupt the parallel
     shuffle, not just fail to speed anything up.
     """
-    for node in ast.walk(loop):
+    for node in shared_walk(loop):
         target = None
         if isinstance(node, (ast.Assign,)):
             for t in node.targets:
@@ -192,12 +193,12 @@ def _mutated_in_loop(name: str, loop: ast.AST) -> bool:
 
 def _function_findings(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
     parents: dict[int, ast.AST] = {}
-    for parent in ast.walk(func):
-        for child in ast.iter_child_nodes(parent):
+    for parent in shared_walk(func):
+        for child in child_nodes(parent):
             parents[id(child)] = parent
     reassigned = _reassigned_names(func)
     out: list[Finding] = []
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
             continue
         call = node.value
@@ -228,7 +229,7 @@ def _function_findings(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], rel: 
 
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
     out: list[Finding] = []
-    for func in (n for n in ast.walk(tree) if isinstance(n, _FUNCTIONS)):
+    for func in (n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS)):
         out.extend(_function_findings(func, rel, aliases, lines))
     return out
 

@@ -30,7 +30,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core import ImportAliases, ParsedFile, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["RegistryWrite", "find_runtime_registry_writes", "assert_writes_have_replay"]
@@ -212,12 +212,12 @@ def _writes_in(func: ast.AST, registries: set[str], local_aliases: Optional[Mapp
     """``(line, registry)`` for every write to one of ``registries`` inside ``func`` (not in nested defs)."""
     aliases = local_aliases or {}
     hits: list[tuple[int, str]] = []
-    stack = list(ast.iter_child_nodes(func))
+    stack = list(child_nodes(func))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
         if isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)):
             reg = _registry_names(node.value, registries, aliases)
             if reg:
@@ -244,7 +244,7 @@ def _functions(tree: ast.Module) -> Iterator[tuple[_FunctionNode, bool, list[_Fu
     """``(function, defined_in_a_class, enclosing functions outermost first)`` for every function in *tree*."""
 
     def visit(node: ast.AST, in_class: bool, outer: list[_FunctionNode]) -> Iterator[tuple[_FunctionNode, bool, list[_FunctionNode]]]:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 yield child, in_class, outer
                 yield from visit(child, False, [*outer, child])

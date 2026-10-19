@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import UNJUSTIFIED_MARKER, Baseline, Finding, ParsedFile, ScanResult, refresh_requested
+from ._core import walk as shared_walk
 from ._gate_report import report, scan_tree, skip_set
 
 __all__ = [
@@ -174,7 +175,7 @@ def _text_numbers(text: str, ignore: frozenset[float]) -> frozenset[float]:
 
 def _docstring_ids(tree: ast.Module) -> set[int]:
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
@@ -189,7 +190,7 @@ def _ladder_values(node: ast.If, ignore: frozenset[float]) -> tuple[list[float],
     current: Optional[ast.stmt] = node
     while isinstance(current, ast.If):
         chain.add(id(current))
-        for test in ast.walk(current.test):
+        for test in shared_walk(current.test):
             if isinstance(test, ast.Compare):
                 for operand in [test.left, *test.comparators]:
                     value = _number(operand)
@@ -246,7 +247,7 @@ def _text_site(node: ast.AST, rel: str, ignore: frozenset[float], docstrings: se
 def _sites(parsed: ParsedFile, ignore: frozenset[float]) -> Iterator[LiteralSite]:
     docstrings = _docstring_ids(parsed.tree)
     in_ladder: set[int] = set()
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if isinstance(node, ast.If):
             if id(node) in in_ladder:
                 continue
@@ -270,7 +271,7 @@ def _constants(parsed: ParsedFile, ignore: frozenset[float]) -> Iterator[Literal
 
 
 def _comparisons(parsed: ParsedFile, ignore: frozenset[float]) -> Iterator[LiteralSite]:
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if not isinstance(node, ast.Compare) or len(node.comparators) != 1:
             continue
         left, right = node.left, node.comparators[0]

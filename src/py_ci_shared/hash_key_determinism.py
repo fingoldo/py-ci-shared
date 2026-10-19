@@ -28,7 +28,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -93,10 +93,10 @@ class _Scope:
         while stack:
             node = stack.pop()
             self.nodes.append(node)
-            stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, _NESTED))
+            stack.extend(c for c in child_nodes(node) if not isinstance(c, _NESTED))
         self.parents: dict[int, ast.AST] = {}
         for node in self.nodes:
-            for child in ast.iter_child_nodes(node):
+            for child in child_nodes(node):
                 self.parents[id(child)] = node
 
 

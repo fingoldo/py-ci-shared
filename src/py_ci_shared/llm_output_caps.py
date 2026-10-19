@@ -42,6 +42,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core import walk as shared_walk
 from ._core.source import parse_file
 
 __all__ = [
@@ -92,7 +93,7 @@ def _parameter_defaults(node: ast.AST) -> Iterator[tuple[str, ast.expr]]:
 
 
 def _caps_in(tree: ast.Module, rel: str, name_hints: Sequence[str], default_hints: Sequence[str]) -> Iterator[Cap]:
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         for name, value in _assigned_names(node):
             literal = _positive_int(value)
             if literal is not None and any(hint in name for hint in name_hints):

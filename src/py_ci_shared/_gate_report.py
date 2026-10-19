@@ -21,11 +21,13 @@ from ._core import (
     ScanResult,
     SourceError,
     SourceProblem,
+    child_nodes,
     iter_files,
     read_source,
     refresh_requested,
     relative_posix,
     scan_python,
+    tree_cached,
 )
 
 PathLike = Union[str, "os.PathLike[str]"]
@@ -95,12 +97,13 @@ def line_has_marker(source_lines: Sequence[str], line: int, marker: str) -> bool
     return "#" in text and marker in text[text.index("#") :]
 
 
+@tree_cached
 def enclosing_functions(tree: ast.Module) -> dict[int, str]:
     """``{id(node): qualified function name}`` for every node inside a function (innermost function wins)."""
     out: dict[int, str] = {}
 
     def visit(node: ast.AST, name: str) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = f"{name}.{child.name}" if name else child.name
                 out[id(child)] = name or "<module>"

@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Baseline, Finding, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_module_state_test_reset", "find_module_state_test_reset"]
 
@@ -82,9 +83,9 @@ def _mutated_in_functions(tree: ast.Module, names: Iterable[str]) -> set[str]:
     """The *names* that some function in the module writes to."""
     wanted = set(names)
     hit: set[str] = set()
-    for func in (n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
-        declared_global = {name for node in ast.walk(func) if isinstance(node, ast.Global) for name in node.names}
-        for node in ast.walk(func):
+    for func in (n for n in shared_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
+        declared_global = {name for node in shared_walk(func) if isinstance(node, ast.Global) for name in node.names}
+        for node in shared_walk(func):
             hit.update(name for name in _written_names(node, declared_global) if name in wanted)
     return hit
 
@@ -95,7 +96,7 @@ def _names_tests_mention(tests_root: Union[str, Path], *, use_git: Optional[bool
     scan.assert_ok(allow_unparsed=True)
     seen: set[str] = set()
     for parsed in scan:
-        for node in ast.walk(parsed.tree):
+        for node in shared_walk(parsed.tree):
             if isinstance(node, ast.Attribute):
                 seen.add(node.attr)
             elif isinstance(node, ast.Name):

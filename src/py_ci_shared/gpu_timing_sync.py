@@ -34,7 +34,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import NamedTuple, Optional
 
-from ._core import ImportAliases, ScanResult, scan_python
+from ._core import ImportAliases, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
 # Suppression marker for a DELIBERATE launch-latency (async) measurement, placed as a comment
@@ -217,7 +217,7 @@ def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], pat
     """
 
     def visit(node: ast.AST, visible_params: set[str], func_name: Optional[str]) -> Iterator[GpuTimingFinding]:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 params = visible_params | _param_names(child)
                 yield from _scan_one_function(child, params, gpu_aware, source_lines, path, aliases)

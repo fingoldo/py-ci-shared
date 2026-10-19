@@ -63,7 +63,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, refresh_requested, scan_python
+from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, qualified_functions, refresh_requested, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -199,24 +199,6 @@ def _called_methods(
     return found
 
 
-def _functions_with_qualnames(tree: ast.Module) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
-    out: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
-
-    def visit(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                out.append((qual, child))
-                visit(child, f"{qual}.<locals>.")
-            elif isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.")
-            else:
-                visit(child, prefix)
-
-    visit(tree, "")
-    return out
-
-
 def _find_in_scan(
     scan: ScanResult,
     *,
@@ -227,7 +209,7 @@ def _find_in_scan(
 ) -> list[IncompleteTransaction]:
     out: list[IncompleteTransaction] = []
     for parsed in scan:
-        for qual, node in _functions_with_qualnames(parsed.tree):
+        for qual, node in qualified_functions(parsed.tree):
             params = _param_names(node) & handle_names
             with_bound = _with_bound_names(node, autocommitting_context_managers)
             candidates = params - with_bound

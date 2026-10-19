@@ -41,7 +41,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
+from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 from ._toml_compat import tomllib
@@ -249,7 +249,7 @@ def find_xfail_to_defer(
     findings: list[Finding] = []
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
-        parents = {id(c): n for n in _fast_walk(f.tree) for c in ast.iter_child_nodes(n)}
+        parents = {id(c): n for n in _fast_walk(f.tree) for c in child_nodes(n)}
         for node in _fast_walk(f.tree):
             if isinstance(node, ast.Call) and isinstance(parents.get(id(node)), ast.Attribute):
                 continue  # ``pytest.mark.xfail(...).with_args`` and similar: the outer call is judged

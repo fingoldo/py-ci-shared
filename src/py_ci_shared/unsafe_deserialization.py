@@ -42,7 +42,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, qualified_functions, scan_python
+from ._core import walk as shared_walk
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +111,7 @@ def _kw(call: ast.Call, name: str) -> Optional[ast.expr]:
 
 
 def _mentions(node: ast.AST, name: str) -> bool:
-    return any(isinstance(n, ast.Name) and n.id == name for n in ast.walk(node))
+    return any(isinstance(n, ast.Name) and n.id == name for n in shared_walk(node))
 
 
 def _module_constants(tree: Union[ast.Module, ast.ClassDef]) -> dict[str, ast.AST]:
@@ -166,7 +167,7 @@ def _admits_whole_modules(func: ast.FunctionDef, module: str, name: str) -> bool
     module_only = False
     per_name = False
     resolves = False
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         if isinstance(node, (ast.Compare, ast.Call)) and _mentions(node, module):
             if _is_resolver_call(node):
                 continue  # a resolver call that mentions the module is neither a test nor counted as resolving
@@ -195,13 +196,13 @@ def _find_class_problems(func: ast.FunctionDef, consts: dict[str, ast.AST]) -> l
     if len(params) < 3:
         return []
     module, name = params[1], params[2]
-    parents = {id(c): p for p in ast.walk(func) for c in ast.iter_child_nodes(p)}
+    parents = {id(c): p for p in shared_walk(func) for c in child_nodes(p)}
     problems: list[str] = []
     if _admits_whole_modules(func, module, name):
         problems.append("find_class admits whole modules (a test on the module alone, no per-name allowlist)")
     seen_gadget: set[str] = set()
     paired = _paired_ids(func)
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         for container in _gadget_pool(node, consts, parents, paired):
             for text in _gadget_entries(container):
                 if text not in seen_gadget:
@@ -216,7 +217,7 @@ def _is_pair(node: ast.AST) -> bool:
 
 def _paired_ids(root: ast.AST) -> set[int]:
     """Ids of the string constants that sit in a ``("module", "name")`` pair, judged as a pair rather than alone."""
-    return {id(e) for n in ast.walk(root) if _is_pair(n) for e in n.elts}  # type: ignore[attr-defined]
+    return {id(e) for n in shared_walk(root) if _is_pair(n) for e in n.elts}  # type: ignore[attr-defined]
 
 
 def _gadget_entries(container: ast.AST) -> list[str]:
@@ -224,7 +225,7 @@ def _gadget_entries(container: ast.AST) -> list[str]:
     ``"builtins.eval"`` naming a dangerous callable. A harmless pair such as ``("builtins", "set")`` is the safe pattern."""
     found: list[str] = []
     paired = _paired_ids(container)
-    for node in ast.walk(container):
+    for node in shared_walk(container):
         if _is_pair(node):
             module, name = (e.value for e in node.elts)  # type: ignore[attr-defined]
             if module in _GADGET_MODULES and name in _DANGEROUS_NAMES:
@@ -234,23 +235,6 @@ def _gadget_entries(container: ast.AST) -> list[str]:
             if head in _GADGET_MODULES and (not tail or tail in _DANGEROUS_NAMES):
                 found.append(node.value)
     return found
-
-
-def _qualified_scopes(tree: ast.Module) -> list[tuple[ast.AST, str]]:
-    out: list[tuple[ast.AST, str]] = []
-
-    def visit(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.")
-            elif isinstance(child, _FUNCTIONS):
-                out.append((child, f"{prefix}{child.name}"))
-                visit(child, f"{prefix}{child.name}.<locals>.")
-            else:
-                visit(child, prefix)
-
-    visit(tree, "")
-    return out
 
 
 def _is_unpickler_class(node: ast.ClassDef, aliases: ImportAliases) -> bool:
@@ -295,10 +279,10 @@ class _Sink:
 def _check_unpicklers(tree: ast.Module, aliases: ImportAliases, consts: dict[str, ast.AST], sink: _Sink) -> set[int]:
     """(a) Restricted unpicklers: report their ``find_class`` problems; return the ids of the functions that make up a safe loader."""
     safe_loader_functions: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not (isinstance(node, ast.ClassDef) and _is_unpickler_class(node, aliases)):
             continue
-        safe_loader_functions.update(id(member) for member in ast.walk(node) if isinstance(member, _FUNCTIONS))
+        safe_loader_functions.update(id(member) for member in shared_walk(node) if isinstance(member, _FUNCTIONS))
         for item in node.body:
             if isinstance(item, ast.FunctionDef) and item.name == "find_class":
                 for problem in _find_class_problems(item, {**consts, **_module_constants(node)}):
@@ -333,7 +317,7 @@ def _keyword_loader_message(node: ast.Call, aliases: ImportAliases) -> Optional[
 
 def _check_keyword_loaders(tree: ast.Module, aliases: ImportAliases, sink: _Sink) -> None:
     """(b)(c)(e) Keyword-driven loaders anywhere in the file."""
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Call):
             message = _keyword_loader_message(node, aliases)
             if message is not None:
@@ -343,13 +327,13 @@ def _check_keyword_loaders(tree: ast.Module, aliases: ImportAliases, sink: _Sink
 def _scope_calls(scope: ast.AST) -> list[ast.Call]:
     """Calls of *scope* outside nested functions, lambdas and classes."""
     calls: list[ast.Call] = []
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         current = stack.pop()
         if isinstance(current, ast.Call):
             calls.append(current)
         if not isinstance(current, (*_FUNCTIONS, ast.Lambda, ast.ClassDef)):
-            stack.extend(ast.iter_child_nodes(current))
+            stack.extend(child_nodes(current))
     return calls
 
 
@@ -376,7 +360,7 @@ def _unverified_load(call: ast.Call, calls: list[ast.Call], scope: ast.AST, tree
 
 def _check_pickle_loads(tree: ast.Module, aliases: ImportAliases, safe_loader_functions: set[int], sink: _Sink) -> None:
     """(d) Pickle-family loads with no preceding hash or signature check in the same function."""
-    for scope, qualname in [(tree, "<module>"), *_qualified_scopes(tree)]:
+    for scope, qualname in [(tree, "<module>"), *[(f, q) for q, f in qualified_functions(tree)]]:
         if id(scope) in safe_loader_functions:
             continue
         calls = _scope_calls(scope)
@@ -396,9 +380,9 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
 
 def _verified_by_enclosing(tree: ast.Module, scope: ast.AST, call: ast.Call) -> bool:
     """A nested function loads what its enclosing function verified earlier."""
-    for node in ast.walk(tree):
-        if isinstance(node, _FUNCTIONS) and node is not scope and any(n is scope for n in ast.walk(node)):
-            for inner in ast.walk(node):
+    for node in shared_walk(tree):
+        if isinstance(node, _FUNCTIONS) and node is not scope and any(n is scope for n in shared_walk(node)):
+            for inner in shared_walk(node):
                 if (
                     isinstance(inner, ast.Call)
                     and (inner.lineno, inner.col_offset) < (call.lineno, call.col_offset)

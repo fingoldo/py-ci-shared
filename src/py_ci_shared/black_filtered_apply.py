@@ -36,9 +36,9 @@ Reports which files still have non-excluded-class Black findings, and exits 1
 if any do (0 if the tree/file-set is fully filtered-Black-clean).
 """
 
+import concurrent.futures
 import difflib
 import io
-import concurrent.futures
 import logging
 import os
 import pathlib

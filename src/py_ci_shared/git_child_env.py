@@ -36,6 +36,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core import walk as shared_walk
 from ._core.source import parse_source
 from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, is_test_path, normalize_line, text_files
 
@@ -58,7 +59,7 @@ def _is_git_argv(node: ast.expr) -> bool:
 def _assigned_sources(source: str, tree: ast.Module) -> dict[str, list[str]]:
     """``{name: [source of each value assigned to it]}``, so ``env=env`` is judged by what ``env`` was built from."""
     assigned: dict[str, list[str]] = {}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Assign):
             targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
@@ -84,7 +85,7 @@ def _python_spawns(rel: str, path: Path) -> dict[str, str]:
     lines = source.splitlines()
     assigned = _assigned_sources(source, tree)
     found: dict[str, str] = {}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func

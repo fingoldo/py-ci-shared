@@ -34,7 +34,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, scan_python
+from ._core import Finding, ImportAliases, ParsedFile, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_no_lock_held_across_io", "find_lock_held_across_io", "is_lock_like", "module_lock_names"]
 
@@ -65,7 +66,7 @@ def _named_like_a_lock(segment: str) -> bool:
 def module_lock_names(tree: ast.Module) -> frozenset[str]:
     """Attribute and variable names bound anywhere in the module to a Lock, RLock or Condition constructor."""
     names: set[str] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Assign) and _last_segment(node.value) in LOCK_CONSTRUCTORS and isinstance(node.value, ast.Call):
             names.update(_last_segment(t) for t in node.targets if _last_segment(t))
     return frozenset(names)
@@ -112,7 +113,7 @@ def _calls_under(body: list[ast.stmt]) -> Iterator[ast.Call]:
             continue
         if isinstance(node, ast.Call):
             yield node
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 _REVIEWED_MARKER = "# lock-io-ok:"
@@ -135,7 +136,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     lock_names = module_lock_names(parsed.tree)
     out: list[Finding] = []
     reported: set[int] = set()
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if not isinstance(node, _WITH):
             continue
         held = [ast.unparse(item.context_expr) for item in node.items if is_lock_like(item.context_expr, lock_names)]

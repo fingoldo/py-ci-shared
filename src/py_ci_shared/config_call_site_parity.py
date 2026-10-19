@@ -37,7 +37,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 
-from ._core import SourceError, SourceProblem, UnparsedFilesError, parse_file, relative_posix, resolve_relative, scan_python
+from ._core import SourceError, SourceProblem, UnparsedFilesError, child_nodes, parse_file, relative_posix, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
 
 logger = logging.getLogger(__name__)
@@ -107,13 +107,13 @@ _NESTED_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDe
 def _direct_nodes(scope: ast.AST) -> list[ast.AST]:
     """Every node in *scope*'s own body, not descending into nested function/lambda/class bodies."""
     out: list[ast.AST] = []
-    stack: list[ast.AST] = list(ast.iter_child_nodes(scope))
+    stack: list[ast.AST] = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         out.append(node)
         if isinstance(node, _NESTED_SCOPES):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return out
 
 

@@ -29,7 +29,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
-from ._core import read_source
+from ._core import parse_text, read_source
 from ._core.node_index import walk as _fast_walk
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
@@ -361,7 +361,7 @@ def absence_comparisons(source: str) -> list[tuple[int, str, str]]:
     """``(line, left, right)`` for every ``X not in Y`` comparison in *source*."""
     return [
         (node.lineno, ast.unparse(node.left), ast.unparse(node.comparators[0]))
-        for node in _fast_walk(ast.parse(source))
+        for node in _fast_walk(parse_text(source))
         if isinstance(node, ast.Compare) and node.ops and isinstance(node.ops[0], ast.NotIn)
     ]
 

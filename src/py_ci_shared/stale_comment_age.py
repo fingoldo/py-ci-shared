@@ -53,7 +53,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source
+from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, parse_text, read_source
+from ._core import walk as shared_walk
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +128,7 @@ def _body_is_code(body: str, python: bool) -> bool:
     if text.startswith("."):
         text = "_" + text
     try:
-        tree = ast.parse(text)
+        tree = parse_text(text)
     except (SyntaxError, ValueError) as exc:
         logger.debug("could not parse comment body as code: %s", type(exc).__name__)
         return False
@@ -327,12 +328,12 @@ def _called_names(body: str) -> set[str]:
     """The names a code-shaped comment body calls (``self.stats.setdefault("k", 0)`` -> ``{"setdefault"}``)."""
     text = body.strip().rstrip(";,").strip()
     try:
-        tree = ast.parse("_" + text if text.startswith(".") else text)
+        tree = parse_text("_" + text if text.startswith(".") else text)
     except (SyntaxError, ValueError) as exc:
         logger.debug("could not parse text for call names: %s", type(exc).__name__)
         return set()
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Call):
             func = node.func
             out.add(func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else "")
@@ -347,17 +348,17 @@ def _shapes_this_file_matches(source: str) -> frozenset[str]:
     labels have exactly the shape of dead code, and the literal beside them is what tells them apart (pyutilz 635d0c5
     had to reword one to get past the gate). A file that only USES the name (``print``) has no such literal."""
     try:
-        tree = ast.parse(source)
+        tree = parse_text(source)
     except (SyntaxError, ValueError) as exc:
         logger.debug("could not parse source for shapes: %s", type(exc).__name__)
         return frozenset()
     imports_ast = any(
-        (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast") for n in ast.walk(tree)
+        (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast") for n in shared_walk(tree)
     )
     if not imports_ast:
         return frozenset()
     found: set[str] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
             found.add(node.value)
     return frozenset(found)

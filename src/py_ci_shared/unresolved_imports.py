@@ -20,12 +20,12 @@ with the skip recorded so a reader can tell "checked and clean" from "not checke
 from __future__ import annotations
 
 import ast
-from typing import cast
 import functools
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
+from typing import cast
 
-from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, nodes_of, parse_source, tree_memo
+from ._core import DEFAULT_EXCLUDE, SourceError, child_nodes, iter_files, nodes_of, parse_source, tree_memo
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -53,7 +53,7 @@ def _module_level_nodes(body: "list[ast.stmt]") -> Iterator[ast.AST]:
             continue
         if isinstance(node, ast.Lambda):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _is_dynamic_module(tree: ast.Module) -> bool:

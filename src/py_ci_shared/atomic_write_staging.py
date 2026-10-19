@@ -25,7 +25,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -84,7 +84,7 @@ def _own_nodes(fn: _FunctionNode) -> list[ast.AST]:
     while stack:
         node = stack.pop()
         out.append(node)
-        stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
+        stack.extend(c for c in child_nodes(node) if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
     return out
 
 

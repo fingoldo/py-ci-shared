@@ -45,7 +45,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, ParsedFile, scan_python
+from ._core import Baseline, Finding, ImportAliases, ParsedFile, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_patch_target_read_at_call", "find_inert_patches"]
 
@@ -98,7 +99,7 @@ def _module_scope(tree: ast.Module) -> Iterator[ast.AST]:
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _names_bound(node: ast.AST) -> tuple[list[str], bool, list[str]]:
@@ -133,7 +134,7 @@ def _record_module_scope(facts: _Facts, tree: ast.Module) -> None:
 
 
 def _record_function_reads(facts: _Facts, module: _Module, func: ast.AST) -> None:
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             facts.function_loads.add(node.id)
             facts.dynamic_namespace = facts.dynamic_namespace or node.id in _DYNAMIC_NAMESPACE_CALLS
@@ -152,10 +153,10 @@ def _record_function_reads(facts: _Facts, module: _Module, func: ast.AST) -> Non
 def _facts_of(module: _Module) -> _Facts:
     facts = _Facts()
     _record_module_scope(facts, module.tree)
-    for node in ast.walk(module.tree):
+    for node in shared_walk(module.tree):
         if isinstance(node, ast.Global):
             facts.global_names.update(node.names)
-    for func in ast.walk(module.tree):
+    for func in shared_walk(module.tree):
         if isinstance(func, _FUNCTIONS):
             _record_function_reads(facts, module, func)
     return facts
@@ -245,7 +246,7 @@ def _index(package_roots: Iterable[Union[str, Path]], *, allow_unparsed: bool, u
 def _findings_in(parsed: ParsedFile, modules: dict[str, _Module], facts: dict[str, _Facts]) -> list[Finding]:
     out: list[Finding] = []
     aliases = ImportAliases.from_tree(parsed.tree)
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if not isinstance(node, ast.Call):
             continue
         target = _patch_target(node, aliases)

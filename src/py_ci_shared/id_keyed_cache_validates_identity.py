@@ -46,7 +46,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker
 
@@ -109,12 +109,12 @@ def _uses_weakref(tree: ast.Module, aliases: ImportAliases) -> bool:
 
 def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
     """Nodes of *scope* without descending into nested functions, classes or lambdas (judged on their own)."""
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _scopes(tree: ast.Module) -> list[_Scope]:

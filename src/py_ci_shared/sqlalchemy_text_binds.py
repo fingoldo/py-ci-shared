@@ -31,7 +31,7 @@ import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, CorpusError, SourceError, iter_files, parse_source, read_source, relative_posix
+from ._core import DEFAULT_EXCLUDE, CorpusError, SourceError, iter_files, parse_source, parse_text, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 #: ``:name::type`` -- a bind parameter immediately followed by a cast. ``a::b::c`` is a chain of casts, not a bind,
@@ -65,7 +65,7 @@ def _string_parts(tree: ast.Module) -> Iterator[tuple[int, str]]:
 
 def python_colon_cast_binds(source: str, tree: "ast.Module | None" = None) -> list[tuple[int, str]]:
     """``(line number, match)`` for every ``:name::type`` inside a string literal of Python *source*."""
-    tree = tree if tree is not None else ast.parse(source)
+    tree = tree if tree is not None else parse_text(source)
     out: list[tuple[int, str]] = []
     for lineno, text in _string_parts(tree):
         for offset, match in colon_cast_binds(text):

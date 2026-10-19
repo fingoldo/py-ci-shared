@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Finding, ParsedFile, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_no_source_text_tests", "find_source_text_tests"]
 
@@ -41,7 +42,7 @@ SQL_PROBE = re.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|GROUP 
 
 def _text_literals(node: ast.Assert) -> Iterator[str]:
     """The string literal on the left of each membership test inside an assert (``"SELECT" in x``)."""
-    for sub in ast.walk(node.test):
+    for sub in shared_walk(node.test):
         if isinstance(sub, ast.Compare) and isinstance(sub.left, ast.Constant) and isinstance(sub.left.value, str):
             if any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
                 yield sub.left.value
@@ -49,7 +50,7 @@ def _text_literals(node: ast.Assert) -> Iterator[str]:
 
 def _findings_in(parsed: ParsedFile) -> list[Finding]:
     out: list[Finding] = []
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if not isinstance(node, ast.Assert):
             continue
         for literal in _text_literals(node):

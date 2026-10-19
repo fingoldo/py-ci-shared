@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 
 logger = logging.getLogger(__name__)
 
@@ -343,7 +343,7 @@ def _calls_with_chain(tree: ast.Module) -> Iterable[tuple[ast.Call, list[ast.AST
         if isinstance(node, ast.Call):
             yield node, chain
         inner = [*chain, node] if isinstance(node, _SCOPES) else chain
-        stack.extend((child, inner) for child in ast.iter_child_nodes(node))
+        stack.extend((child, inner) for child in child_nodes(node))
 
 
 def _findings_in(tree: ast.Module, rel: str, index: _Index, patchers: frozenset[str]) -> list[Finding]:

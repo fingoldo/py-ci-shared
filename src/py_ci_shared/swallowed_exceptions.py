@@ -40,7 +40,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, TreeVisitor, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -156,7 +156,7 @@ def _outer_calls(expr: Optional[ast.AST]) -> list[str]:
         elif isinstance(node, (ast.Lambda, ast.comprehension)):
             continue
         else:
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
     return out
 
 
@@ -198,7 +198,7 @@ def _marked(lines: list[str], handler: ast.ExceptHandler) -> bool:
     return False
 
 
-class _Visitor(ast.NodeVisitor):
+class _Visitor(TreeVisitor):
     def __init__(self, f: ParsedFile, quiet_log_is_silent: bool) -> None:
         self.f = f
         self.quiet_log_is_silent = quiet_log_is_silent

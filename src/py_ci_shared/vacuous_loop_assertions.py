@@ -59,7 +59,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Union
 
-from ._core import load_json, nodes_of, relative_posix, scan_python
+from ._core import child_nodes, load_json, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,7 @@ def _own_nodes(fn: _FuncDef) -> Iterator[ast.AST]:
     while stack:
         node = stack.pop()
         yield node
-        stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, scoped))
+        stack.extend(c for c in child_nodes(node) if not isinstance(c, scoped))
 
 
 def _enclosing_loops(fn: _FuncDef) -> "dict[int, frozenset[int]]":
@@ -164,12 +164,12 @@ def _enclosing_loops(fn: _FuncDef) -> "dict[int, frozenset[int]]":
     def visit(node: ast.AST, loops: "frozenset[int]") -> None:
         out[id(node)] = loops
         if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
-            for child in ast.iter_child_nodes(node):
+            for child in child_nodes(node):
                 in_body = any(child is s for s in [*node.body, *node.orelse])
                 if not isinstance(child, scoped):
                     visit(child, loops | {id(node)} if in_body else loops)
             return
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if not isinstance(child, scoped):
                 visit(child, loops)
 

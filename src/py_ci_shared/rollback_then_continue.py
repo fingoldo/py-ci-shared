@@ -31,7 +31,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ParsedFile, ScanResult
+from ._core import Finding, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
@@ -50,7 +50,7 @@ def _walk_own(nodes: Sequence[ast.AST]) -> Iterator[ast.AST]:
         node = stack.pop()
         yield node
         if not isinstance(node, _SCOPES):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _calls(nodes: Sequence[ast.AST], attr: str) -> bool:
@@ -141,7 +141,7 @@ def _commits_per_item(body: Sequence[ast.stmt]) -> bool:
             name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else ""
             if "commit" in name.lower():
                 return True
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return False
 
 

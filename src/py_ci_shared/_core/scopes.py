@@ -19,7 +19,7 @@ from typing import NamedTuple, Optional, Union
 
 from .node_index import tree_memo
 
-__all__ = ["SCOPE_TYPES", "Scope", "iter_scopes", "scope_nodes"]
+__all__ = ["SCOPE_TYPES", "Scope", "iter_scopes", "qualified_functions", "scope_nodes"]
 
 #: Node types that open a scope of their own (a lambda opens one too, but holds no statements, so it is only a boundary).
 SCOPE_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
@@ -79,3 +79,32 @@ def scope_nodes(tree: ast.Module, opener: _Opener) -> "list[ast.AST]":
         if scope.node is opener or (scope.node is None and opener is tree):
             return scope.nodes
     raise ValueError("opener is not a scope of this tree")
+
+
+def qualified_functions(tree: ast.Module, *, locals_marker: bool = True) -> "list[tuple[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]]":
+    """``(qualified name, definition)`` of every function in *tree*, in source order: methods as ``Class.method``, nested functions as ``outer.<locals>.inner``.
+
+    With ``locals_marker=False`` a nested function is ``outer.inner`` (the spelling some gates match against). Computed once per tree from :func:`iter_scopes` and
+    shared (do not mutate); many gates each carried their own copy of this recursion.
+    """
+
+    def build() -> "list[tuple[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]]":
+        inner = ".<locals>." if locals_marker else "."
+        prefix: "dict[int, str]" = {}
+        out: "list[tuple[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]]" = []
+        for scope in iter_scopes(tree):
+            node = scope.node
+            if node is None:
+                prefix[id(scope)] = ""
+                continue
+            above = prefix[id(scope.parent)]  # type: ignore[index]  # parents come before children
+            if isinstance(node, ast.ClassDef):
+                prefix[id(scope)] = f"{above}{node.name}."
+            else:
+                qual = f"{above}{node.name}"
+                out.append((qual, node))
+                prefix[id(scope)] = f"{qual}{inner}"
+        out.sort(key=lambda item: (item[1].lineno, item[1].col_offset))
+        return out
+
+    return tree_memo(tree, ("py_ci_shared.qualified_functions", locals_marker), build)

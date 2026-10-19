@@ -43,7 +43,7 @@ import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, scan_python
+from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, nodes_of, scan_python
 
 logger = logging.getLogger(__name__)
 
@@ -116,40 +116,23 @@ def _is_padded_power(denominator: ast.AST) -> bool:
     return len(terms) > 1 and any(_is_small_positive_literal(t) for t in terms) and any(_falls_off_geometrically(t) for t in terms)
 
 
-class _Visitor(ast.NodeVisitor):
-    """Collects every ``<anything> / (<power> + <epsilon>)`` in one module."""
+def _report(path: Path, node: ast.AST) -> Finding:
+    try:
+        rendered = ast.unparse(node)
+    except Exception:
+        rendered = "<unrenderable>"
+    return Finding(path, getattr(node, "lineno", 0), rendered[:160])
 
-    def __init__(self, path: Path) -> None:
-        """Start with no findings for ``path``."""
-        self.path = path
-        self.findings: list[Finding] = []
 
-    def _report(self, node: ast.AST) -> None:
-        try:
-            rendered = ast.unparse(node)
-        except Exception:
-            rendered = "<unrenderable>"
-        self.findings.append(Finding(self.path, getattr(node, "lineno", 0), rendered[:160]))
-
-    def visit_BinOp(self, node: ast.BinOp) -> None:
-        """Flag a division whose denominator is a power with a small literal added to it."""
-        if isinstance(node.op, ast.Div) and _is_padded_power(node.right):
-            self._report(node)
-        self.generic_visit(node)
-
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        """``x /= r**d + 1e-12``."""
-        if isinstance(node.op, ast.Div) and _is_padded_power(node.value):
-            self._report(node)
-        self.generic_visit(node)
-
-    def visit_Call(self, node: ast.Call) -> None:
-        """``np.divide(k, r**d + 1e-12)`` and friends: the second argument is the denominator."""
-        func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
-        if name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1]):
-            self._report(node)
-        self.generic_visit(node)
+def _is_padded_division(node: ast.AST) -> bool:
+    """A division whose denominator is a power with a small literal added: ``a / (r**d + eps)``, ``x /= r**d + eps`` or ``np.divide(k, r**d + eps)``."""
+    if isinstance(node, ast.BinOp):
+        return isinstance(node.op, ast.Div) and _is_padded_power(node.right)
+    if isinstance(node, ast.AugAssign):
+        return isinstance(node.op, ast.Div) and _is_padded_power(node.value)
+    func = node.func  # type: ignore[attr-defined]
+    name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+    return name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1])  # type: ignore[attr-defined]
 
 
 def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
@@ -163,9 +146,9 @@ def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
-        visitor = _Visitor(parsed.path)
-        visitor.visit(parsed.tree)
-        findings.extend(visitor.findings)
+        hits = [n for n in nodes_of(parsed.tree, ast.BinOp, ast.AugAssign, ast.Call) if _is_padded_division(n)]
+        hits.sort(key=lambda n: (n.lineno, n.col_offset))
+        findings.extend(_report(parsed.path, n) for n in hits)
     return findings
 
 

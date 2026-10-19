@@ -30,7 +30,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, iter_files, scan_python
+from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, child_nodes, iter_files, qualified_functions, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -115,22 +115,7 @@ def _own_scope(function: _FunctionNode) -> Iterator[ast.AST]:
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        stack.extend(ast.iter_child_nodes(node))
-
-
-def _qualified_functions(tree: ast.Module) -> Iterator[tuple[str, _FunctionNode]]:
-    def visit(node: ast.AST, prefix: str) -> Iterator[tuple[str, _FunctionNode]]:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                yield qual, child
-                yield from visit(child, f"{qual}.<locals>.")
-            elif isinstance(child, ast.ClassDef):
-                yield from visit(child, f"{prefix}{child.name}.")
-            else:
-                yield from visit(child, prefix)
-
-    return visit(tree, "")
+        stack.extend(child_nodes(node))
 
 
 def _bool_targets(stmt: ast.AST) -> list[ast.Name]:
@@ -148,7 +133,7 @@ def _handler_statements(handler: ast.ExceptHandler) -> Iterator[ast.AST]:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
@@ -165,7 +150,7 @@ def _findings(scan: ScanResult) -> list[Finding]:
         tree = parsed.tree
         aliases = ImportAliases.from_tree(tree)
         module_names = _module_level_names(tree)
-        for qualname, function in _qualified_functions(tree):
+        for qualname, function in qualified_functions(tree):
             own = list(_own_scope(function))
             declared_global = {n for node in own if isinstance(node, ast.Global) for n in node.names}
             if not declared_global:

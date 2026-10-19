@@ -24,7 +24,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import ScanResult, scan_python
+from ._core import ScanResult, child_nodes, qualified_functions, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["DiscardedCopy", "find_discarded_model_copies", "assert_no_discarded_model_copy"]
@@ -127,22 +127,7 @@ def _own_scope(func: _FunctionNode) -> Iterator[ast.AST]:
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        stack.extend(ast.iter_child_nodes(node))
-
-
-def _functions(tree: ast.Module) -> Iterator[tuple[str, _FunctionNode]]:
-    def visit(node: ast.AST, prefix: str) -> Iterator[tuple[str, _FunctionNode]]:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                yield qual, child
-                yield from visit(child, f"{qual}.<locals>.")
-            elif isinstance(child, ast.ClassDef):
-                yield from visit(child, f"{prefix}{child.name}.")
-            else:
-                yield from visit(child, prefix)
-
-    return visit(tree, "")
+        stack.extend(child_nodes(node))
 
 
 def _copies(func: _FunctionNode) -> Iterator[tuple[int, str]]:
@@ -157,7 +142,7 @@ def _copies(func: _FunctionNode) -> Iterator[tuple[int, str]]:
 def _find_in_scan(scan: ScanResult) -> list[DiscardedCopy]:
     out: list[DiscardedCopy] = []
     for parsed in scan:
-        for qual, func in _functions(parsed.tree):
+        for qual, func in qualified_functions(parsed.tree):
             out.extend(DiscardedCopy(parsed.rel, qual, line, name) for line, name in _copies(func) if not _escapes(func, name))
     return sorted(out, key=lambda d: (d.path, d.lineno))
 

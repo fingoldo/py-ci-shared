@@ -23,7 +23,7 @@ import threading
 import time
 import tokenize
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from .errors import SourceParseError, SourceReadError
 
@@ -45,14 +45,20 @@ _FAST: dict[str, tuple[tuple[int, int, int], int, str, bytes]] = {}
 _RACY_NS = 3_000_000_000
 _RESOLVED: dict[str, Path] = {}
 
+# module text -> tree, for gates handed a source STRING rather than a path (the same module is judged by many gates in one run). Only module-sized text is kept: a comment
+# body or a one-line annotation is parsed afresh, so the table is bounded by the corpus and never fills with snippets.
+_TEXT_TREES: dict[str, ast.Module] = {}
+_TEXT_MIN_CHARS = 1000
+
 
 def resolve_cached(path: PathLike) -> Path:
     """``Path(path).resolve()`` remembered for the process (cleared with the parse cache): resolving one path costs a few system calls, and gates resolve each file dozens of times."""
     spelled = os.fspath(path)
     key = spelled if os.path.isabs(spelled) else f"{os.getcwd()}|{spelled}"  # a relative path resolves against the working directory
-    hit = _RESOLVED.get(key)
-    if hit is None:
-        hit = _RESOLVED[key] = Path(spelled).resolve()
+    with _LOCK:
+        hit = _RESOLVED.get(key)
+        if hit is None:
+            hit = _RESOLVED[key] = Path(spelled).resolve()
     return hit
 
 
@@ -99,6 +105,27 @@ def _parse_text(path: Path, text: str) -> ast.Module:
         raise SourceParseError(path, str(exc)) from exc
 
 
+def _fast_lookup(spath: str, sig: "Optional[tuple[int, int, int]]", mtime_ns: int) -> "Optional[tuple[str, ast.Module]]":
+    """The cached ``(source, tree)`` of a file whose stat signature is unchanged and old enough to trust (see ``_RACY_NS``), else ``None``."""
+    if sig is None:
+        return None
+    with _LOCK:
+        fast = _FAST.get(spath)
+        if fast is None or fast[0] != sig or fast[1] - mtime_ns <= _RACY_NS:
+            return None
+        hit = _CACHE.get(fast[2])
+        if hit is not None and hit[0] == fast[3]:
+            return hit[1], hit[2]
+    return None
+
+
+def _fast_store(spath: str, sig: "Optional[tuple[int, int, int]]", read_ns: int, key: str, digest: bytes) -> None:
+    """Remember the stat signature a file was read under."""
+    if sig is not None:
+        with _LOCK:
+            _FAST[spath] = (sig, read_ns, key, digest)
+
+
 def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     """``(source, tree)`` for *path*, from the in-process cache when the file is unchanged.
 
@@ -113,12 +140,9 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     except OSError:
         st = None
     sig = (st.st_mtime_ns, st.st_size, st.st_ino) if st is not None else None
-    fast = _FAST.get(spath)
-    if fast is not None and sig is not None and fast[0] == sig and fast[1] - st.st_mtime_ns > _RACY_NS:  # type: ignore[union-attr]
-        with _LOCK:
-            hit = _CACHE.get(fast[2])
-        if hit is not None and hit[0] == fast[3]:
-            return hit[1], hit[2]
+    stable = _fast_lookup(spath, sig, st.st_mtime_ns if st is not None else 0)
+    if stable is not None:
+        return stable
     try:
         raw = p.read_bytes()
         read_ns = time.time_ns()
@@ -126,9 +150,8 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     except OSError as exc:
         raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
     digest = hashlib.blake2b(raw, digest_size=16).digest()
+    _fast_store(spath, sig, read_ns, key, digest)
     with _LOCK:
-        if sig is not None:
-            _FAST[spath] = (sig, read_ns, key, digest)
         hit = _CACHE.get(key)
         if hit is not None and hit[0] == digest:
             return hit[1], hit[2]
@@ -136,6 +159,23 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
         tree = _parse_text(p, text)
         _CACHE[key] = (digest, text, tree)
     return text, tree
+
+
+def parse_text(text: str, filename: str = "<unknown>") -> ast.Module:
+    """The AST of module *text*, shared between callers while the text is the same (module-sized text only); the tree is READ-ONLY.
+
+    The string counterpart of :func:`parse_source` for a gate that is handed source text. It raises ``SyntaxError`` / ``ValueError`` exactly as ``ast.parse`` does, so a caller keeps
+    its own decision about an unparsable text. *filename* is only for the error message and the nodes' ``filename``; a text that was already parsed returns the first tree.
+    """
+    if len(text) < _TEXT_MIN_CHARS:
+        return ast.parse(text, filename=filename)
+    with _LOCK:
+        hit = _TEXT_TREES.get(text)
+    if hit is not None:
+        return hit
+    tree = ast.parse(text, filename=filename)
+    with _LOCK:
+        return _TEXT_TREES.setdefault(text, tree)
 
 
 def parse_file(path: PathLike) -> ast.Module:
@@ -151,6 +191,7 @@ def clear_parse_cache() -> None:
         _CACHE.clear()
         _FAST.clear()
         _RESOLVED.clear()
+        _TEXT_TREES.clear()
     node_index.clear()
 
 

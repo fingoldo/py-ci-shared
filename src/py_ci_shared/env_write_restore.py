@@ -34,12 +34,12 @@ from __future__ import annotations
 import ast
 import logging
 import re
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from collections.abc import Iterator
 from typing import Any, Optional, Union
-from collections.abc import Mapping
 
-from ._core import Baseline, Finding, ImportAliases, refresh_requested, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, refresh_requested, scan_python
+from ._core import walk as shared_walk
 from .import_side_effects import _ENV_WRITERS, _MUTATING_METHODS, _is_environ
 
 logger = logging.getLogger(__name__)
@@ -70,7 +70,7 @@ def _own_nodes(fn: ast.AST) -> Iterator[ast.AST]:
         yield node
         if isinstance(node, _SCOPE_NODES):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _env_write_text(node: ast.AST, aliases: ImportAliases) -> Optional[str]:
@@ -120,7 +120,7 @@ def _protected_ranges(fn: ast.AST, aliases: ImportAliases, write_lines: list[int
     for node in _own_nodes(fn):
         if isinstance(node, (ast.With, ast.AsyncWith)) and any(_is_scoping_call(item.context_expr) for item in node.items):
             ranges.append((node.lineno, _end(node)))
-        elif isinstance(node, ast.Try) and node.finalbody and any(_env_write_text(n, aliases) for s in node.finalbody for n in ast.walk(s)):
+        elif isinstance(node, ast.Try) and node.finalbody and any(_env_write_text(n, aliases) for s in node.finalbody for n in shared_walk(s)):
             # From the top of the function: the usual shape sets the variable just BEFORE the try whose finally puts it back.
             ranges.append((getattr(fn, "lineno", node.lineno), _end(node)))
         elif isinstance(node, (ast.Yield, ast.YieldFrom)):
@@ -139,7 +139,7 @@ def _functions(tree: ast.AST) -> Iterator[tuple[str, ast.AST, Optional[ast.Class
     """``(qualified name, function node, the class that directly owns it or None)`` for every function in the module."""
 
     def walk(node: ast.AST, prefix: str, owner: Optional[ast.ClassDef]) -> Iterator[tuple[str, ast.AST, Optional[ast.ClassDef]]]:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 qual = f"{prefix}{child.name}"
                 yield qual, child, owner

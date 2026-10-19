@@ -36,8 +36,8 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import CoreError, Finding, read_source
-from ._toml_compat import tomllib
 from ._core.git import git_output, run_git
+from ._toml_compat import tomllib
 
 __all__ = [
     "DEFAULT_SKIP_AUTHORS",

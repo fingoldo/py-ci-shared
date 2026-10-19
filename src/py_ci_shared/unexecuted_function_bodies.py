@@ -74,7 +74,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Baseline, CoreError, Finding, scan_python
+from ._core import Baseline, CoreError, Finding, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = [
     "DEFAULT_SKIP_DECORATORS",
@@ -234,14 +235,14 @@ def _functions(
         if isinstance(child, _FuncDef):
             qual = prefix + child.name
             yield _Fn(qual, child, _skip_reason(child, protocol, type_checking, decorators, dunders))
-            yield from _functions(ast.iter_child_nodes(child), qual + ".<locals>.", False, type_checking, decorators, dunders)
+            yield from _functions(child_nodes(child), qual + ".<locals>.", False, type_checking, decorators, dunders)
         elif isinstance(child, ast.ClassDef):
-            yield from _functions(ast.iter_child_nodes(child), prefix + child.name + ".", _is_protocol(child), type_checking, decorators, dunders)
+            yield from _functions(child_nodes(child), prefix + child.name + ".", _is_protocol(child), type_checking, decorators, dunders)
         elif isinstance(child, ast.If) and _is_type_checking(child.test):
             yield from _functions(child.body, prefix, protocol, True, decorators, dunders)
             yield from _functions(child.orelse, prefix, protocol, type_checking, decorators, dunders)
         elif not isinstance(child, ast.expr):
-            yield from _functions(ast.iter_child_nodes(child), prefix, protocol, type_checking, decorators, dunders)
+            yield from _functions(child_nodes(child), prefix, protocol, type_checking, decorators, dunders)
 
 
 def _is_inert(stmt: ast.stmt) -> bool:
@@ -257,7 +258,7 @@ def _is_inert(stmt: ast.stmt) -> bool:
 
 
 def _collect(node: ast.AST, out: "set[int]") -> None:
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         if isinstance(child, ast.stmt):
             if _is_inert(child):
                 continue
@@ -278,7 +279,7 @@ def _own_lines(fn: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> "set[int]":
 
 def _stmt_starts(tree: ast.Module) -> "set[int]":
     starts: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.stmt):
             starts.add(node.lineno)
             if isinstance(node, (*_FuncDef, ast.ClassDef)):

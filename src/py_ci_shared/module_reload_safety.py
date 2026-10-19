@@ -33,7 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, relative_posix, scan_python
+from ._core import DEFAULT_EXCLUDE, ImportAliases, child_nodes, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
 _RELOADERS = frozenset({"importlib.reload", "imp.reload"})
@@ -209,7 +209,7 @@ def _conftest_fixtures(tests_dir: Path, parsed_by_path: "dict[Path, tuple[ast.Mo
 def _parents(tree: ast.AST) -> "dict[ast.AST, ast.AST]":
     parents: dict[ast.AST, ast.AST] = {}
     for node in _fast_walk(tree):
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             parents[child] = node
     return parents
 

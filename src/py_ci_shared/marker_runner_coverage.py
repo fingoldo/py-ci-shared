@@ -41,7 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, UnparsedFilesError, relative_posix, scan_python, tree_memo
+from ._core import DEFAULT_EXCLUDE, ImportAliases, UnparsedFilesError, parse_text, relative_posix, scan_python, tree_memo
 from ._core.node_index import walk as _fast_walk
 
 logger = logging.getLogger(__name__)
@@ -312,7 +312,7 @@ def _python_invocations(source: str) -> "list[str]":
     import shlex
 
     try:
-        tree = ast.parse(source)
+        tree = parse_text(source)
     except (SyntaxError, ValueError) as exc:
         logger.warning("could not parse script, its invocations are not checked: %s", type(exc).__name__)
         return []

@@ -26,13 +26,13 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import BaselineGrowthError, ScanResult, dump_json, load_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-function-length-baseline"
 
 
 def _walk(node: ast.AST, prefix: str, rel: str, out: dict[str, int]) -> None:
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
             _walk(child, f"{prefix}{child.name}.", rel, out)
         elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):

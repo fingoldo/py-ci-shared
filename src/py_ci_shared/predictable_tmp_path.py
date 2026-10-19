@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
 
@@ -53,10 +54,10 @@ def _operands_of_path_build(node: ast.AST) -> Optional[list[ast.AST]]:
 def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
     """``id(node) -> source of its innermost enclosing function``; top-level code maps to the whole module."""
     out: dict[int, str] = {}
-    for scope in ast.walk(tree):
+    for scope in shared_walk(tree):
         if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
             text = ast.get_source_segment(source, scope) or ""
-            for sub in ast.walk(scope):
+            for sub in shared_walk(scope):
                 out[id(sub)] = text
     return out
 
@@ -65,9 +66,9 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     lines = source.splitlines()
     scope_text = _per_user_scope_text(tree, source)
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         operands = _operands_of_path_build(node)
-        if operands is None or not any(_is_gettempdir(sub) for op in operands for sub in ast.walk(op)):
+        if operands is None or not any(_is_gettempdir(sub) for op in operands for sub in shared_walk(op)):
             continue
         line_no = getattr(node, "lineno", 0)
         line = lines[line_no - 1] if 0 < line_no <= len(lines) else ""

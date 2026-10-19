@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from . import complexity_ratchet
-from ._core import ScanResult, dump_json, refresh_requested, scan_python
+from ._core import ScanResult, child_nodes, dump_json, refresh_requested, scan_python
 from ._core.baseline import write_ratchet
 from ._core.errors import BaselineError
 
@@ -38,7 +38,7 @@ def _def_lines(tree: ast.AST, rel: str) -> dict[int, str]:
     out: dict[int, str] = {}
 
     def walk(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 walk(child, f"{prefix}{child.name}.")
             elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):

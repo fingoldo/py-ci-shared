@@ -52,7 +52,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Baseline, UnparsedFilesError, refresh_requested, register_refresh_options, relative_posix, scan_python
+from ._core import Baseline, UnparsedFilesError, child_nodes, refresh_requested, register_refresh_options, relative_posix, scan_python
+from ._core import walk as shared_walk
 
 REFRESH_FLAG = "--refresh-uncalled-functions-baseline"
 
@@ -158,7 +159,7 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
             imported.update((a.asname or a.name).split(".")[0] for a in node.names)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     # A name the function imports is the imported object on the path that imported it, even when a fallback also assigns
     # it (``try: from x import f`` / ``except ImportError: f = None``); treating it as a shadow reported f as dead.
     return bound - declared_outer - imported
@@ -228,7 +229,7 @@ def _visit_references(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
         _visit_function_scope(node, shadowed, own, loaded, aliases)
         return
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         _visit_references(child, shadowed, own, loaded, aliases)
 
 
@@ -256,7 +257,7 @@ def reexported_public_api(files: Iterable[Path], root: Path) -> dict[str, Exempt
 
 def _facade_exports(tree: ast.Module, module: str) -> Iterator[tuple[str, str]]:
     """Yield ``(name, reason)`` for each name a facade imports or lists in ``__all__``."""
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.ImportFrom):
             for alias in node.names:
                 if alias.name != "*":

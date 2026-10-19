@@ -31,7 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding, ParsedFile, scan_python
+from ._core import Finding, ParsedFile, child_nodes, scan_python
+from ._core import walk as shared_walk
 from .lock_held_across_io import is_lock_like, module_lock_names
 
 __all__ = ["RULE", "assert_no_check_then_act_outside_lock", "find_check_then_act_outside_lock"]
@@ -110,7 +111,7 @@ def _accesses(fn: ast.AST, module_dicts: frozenset[str], lock_names: frozenset[s
 
     def visit(node: ast.AST, locks: frozenset[int]) -> None:
         nonlocal holds_lock
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, _SCOPES):
                 continue
             inner = locks
@@ -125,7 +126,7 @@ def _accesses(fn: ast.AST, module_dicts: frozenset[str], lock_names: frozenset[s
 
 
 def _functions(tree: ast.AST) -> Iterator[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             yield node
 

@@ -38,7 +38,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE_LONG", "RULE_PRODUCT", "MARKER", "assert_cuda_kernel_integer_width", "find_cuda_kernel_integer_width"]
 
@@ -161,15 +162,15 @@ def _units(tree: ast.Module, aliases: ImportAliases) -> Iterator[_Unit]:
             yield from emit(node, stmt, False)
             if len(seen) != before:
                 return  # the whole expression was one unit; its operand strings are not separate units
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             yield from visit(child, stmt)
 
     yield from visit(tree, tree)
 
 
 def _statement_of(tree: ast.Module, target: ast.AST) -> Optional[ast.AST]:
-    for node in ast.walk(tree):
-        if isinstance(node, ast.stmt) and any(child is target for child in ast.walk(node)):
+    for node in shared_walk(tree):
+        if isinstance(node, ast.stmt) and any(child is target for child in shared_walk(node)):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 return node
     return None

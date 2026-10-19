@@ -49,7 +49,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Union
 
-from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, nodes_of, scan_python
+from ._core import DEFAULT_EXCLUDE, ScanResult, child_nodes, iter_files, nodes_of, scan_python
 from ._core.node_index import walk
 
 __all__ = [
@@ -146,12 +146,12 @@ def _saved_locations(tree: ast.Module, sys_names: frozenset[str]) -> frozenset[s
 
 def _own_nodes(scope: ast.AST) -> Iterable[ast.AST]:
     """Nodes of ``scope`` that are not inside a nested function, so each assignment is judged by its own function."""
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _guard_names(own: list[ast.AST], sys_names: frozenset[str]) -> frozenset[str]:
@@ -204,7 +204,7 @@ def _scopes(tree: ast.Module) -> list[tuple[_Scope, str]]:
     out: list[tuple[_Scope, str]] = [(tree, "<module>")]
 
     def visit(node: ast.AST, prefix: str) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 visit(child, f"{prefix}{child.name}.")
             elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -223,7 +223,7 @@ def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
     saved = _saved_locations(tree, sys_names)
     for scope, qualname in _scopes(tree):
         own = list(_own_nodes(scope))
-        parents = {id(c): p for p in [scope, *own] for c in ast.iter_child_nodes(p)}
+        parents = {id(c): p for p in [scope, *own] for c in child_nodes(p)}
         guard_names = _guard_names(own, sys_names)
         for node in own:
             for target, value in _pairs(node, sys_names):

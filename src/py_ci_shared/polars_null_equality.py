@@ -37,7 +37,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
@@ -158,7 +158,7 @@ def _scope_ids(tree: ast.Module) -> dict[int, int]:
     out: dict[int, int] = {}
 
     def visit(node: ast.AST, scope: int) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             out[id(child)] = scope
             visit(child, id(child) if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else scope)
 

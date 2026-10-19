@@ -33,7 +33,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import DEFAULT_EXCLUDE, BaselineGrowthError, CorpusError, ImportAliases, iter_files, load_json, refresh_requested, scan_python, write_ratchet
+from ._core import (
+    DEFAULT_EXCLUDE,
+    BaselineGrowthError,
+    CorpusError,
+    ImportAliases,
+    child_nodes,
+    iter_files,
+    load_json,
+    refresh_requested,
+    scan_python,
+    write_ratchet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +95,7 @@ def _import_time_nodes(tree: ast.Module):
             stack.extend(node.body)
             continue
         yield node
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def import_time_env_mutations(tree: ast.Module) -> list[tuple[int, str]]:

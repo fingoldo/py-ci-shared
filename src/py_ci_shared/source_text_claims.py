@@ -52,7 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import Baseline, BaselineError, ImportAliases, SourceError, parse_source, read_source, relative_posix
+from ._core import Baseline, BaselineError, ImportAliases, SourceError, child_nodes, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -196,7 +196,7 @@ class _Detector:
             if self._is_deserialiser(sub):
                 continue
             yield sub
-            stack.extend(ast.iter_child_nodes(sub))
+            stack.extend(child_nodes(sub))
 
     def reader_kind(self, node: ast.AST, path_names: set[str], tainted: set[str]) -> str | None:
         """How *node* yields source text, or None. Checks readers, file reads, helpers and tainted names."""
@@ -384,7 +384,7 @@ def _walk_scope(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
     while stack:
         node = stack.pop()
         yield node
-        stack.extend(child for child in ast.iter_child_nodes(node) if not isinstance(child, _NESTED_SCOPES))
+        stack.extend(child for child in child_nodes(node) if not isinstance(child, _NESTED_SCOPES))
 
 
 def _defs_in(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
@@ -397,7 +397,7 @@ def _defs_in(body: Iterable[ast.stmt]) -> Iterator[ast.AST]:
             continue
         if isinstance(node, ast.Lambda):
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _target_names(node: ast.AST) -> set[str]:

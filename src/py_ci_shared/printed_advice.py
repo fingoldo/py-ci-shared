@@ -28,7 +28,7 @@ import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from ._core import scan_python
+from ._core import child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ADVICE_RE", "PrintedAdvice", "assert_printed_advice_registered", "find_printed_advice"]
@@ -79,7 +79,7 @@ def _scopes(tree: ast.Module) -> dict[int, str]:
     out: dict[int, str] = {}
 
     def visit(node: ast.AST, scope: str) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 visit(child, child.name if scope == "<module>" else f"{scope}.{child.name}")
             else:

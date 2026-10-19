@@ -58,7 +58,7 @@ from typing import Any, Optional, Union
 from ._ci_install_parts import is_stdlib
 from ._core import Baseline, CorpusError, Finding, ParsedFile, ScanResult, parse_source, scan_python
 from ._core.gate_contract import check_scan
-from ._import_graph import Declared, ModuleImport, ModuleIndex, distributions, module_level_imports, is_sibling, read_declared, reach
+from ._import_graph import Declared, ModuleImport, ModuleIndex, distributions, is_sibling, module_level_imports, reach, read_declared
 
 __all__ = [
     "DEFAULT_IGNORE",

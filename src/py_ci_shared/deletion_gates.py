@@ -37,7 +37,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Union
 
-from ._core import parse_file
+from ._core import parse_file, qualified_functions
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -60,21 +60,6 @@ def parse(path: Path | str) -> ast.Module:
     return parse_file(path)
 
 
-def _functions(tree: ast.Module) -> Iterator[tuple[str, _FunctionNode]]:
-    def visit(node: ast.AST, prefix: str) -> Iterator[tuple[str, _FunctionNode]]:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                yield qual, child
-                yield from visit(child, f"{qual}.<locals>.")
-            elif isinstance(child, ast.ClassDef):
-                yield from visit(child, f"{prefix}{child.name}.")
-            else:
-                yield from visit(child, prefix)
-
-    return visit(tree, "")
-
-
 def function_parameters(path: Path | str, function: str) -> set[str]:
     """Every parameter name of *function*, including keyword-only, `*args` and `**kwargs`.
 
@@ -86,7 +71,7 @@ def function_parameters(path: Path | str, function: str) -> set[str]:
     Raises `AssertionError` if the function is absent: a renamed target must fail the gate rather
     than quietly satisfy `"x" not in set()`.
     """
-    candidates = [(qual, node) for qual, node in _functions(parse(path)) if (qual == function if "." in function else node.name == function)]
+    candidates = [(qual, node) for qual, node in qualified_functions(parse(path)) if (qual == function if "." in function else node.name == function)]
     quals = sorted({qual for qual, _ in candidates})
     if not candidates:
         raise AssertionError(f"{Path(path).name} has no function named {function!r} -- the gate needs re-pointing, not deleting")

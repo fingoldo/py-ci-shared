@@ -30,7 +30,7 @@ import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from ._core import scan_python
+from ._core import child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["OrderLosingFilter", "assert_no_order_losing_filters", "find_order_losing_filters"]
@@ -110,7 +110,7 @@ def _functions(tree: ast.Module):
     """``(qualified name, node)`` for every function, with its enclosing classes and functions."""
 
     def walk(node: ast.AST, prefix: str):
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 name = f"{prefix}{child.name}"
                 yield name, child

@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import BaselineGrowthError, ScanResult, dump_json, load_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
@@ -242,7 +242,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
     is_gate = not isinstance(fn, ast.Module) and bool(gate_re.search(fn.name))
 
     def visit(node: ast.AST, loop_vars: frozenset[str]) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
                 continue
             vars_here = loop_vars
@@ -263,7 +263,7 @@ def _scopes(tree: ast.Module) -> Iterator[tuple[str, _Scope]]:
     yield "<module>", tree
 
     def walk(node: ast.AST, prefix: str) -> Iterator[tuple[str, _Scope]]:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 qual = f"{prefix}{child.name}"
                 yield qual, child

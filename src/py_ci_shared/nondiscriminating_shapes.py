@@ -34,13 +34,12 @@ heuristics.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 import ast
 import re
+from collections.abc import Iterable
 from typing import Optional
 
-from ._core import ImportAliases
+from ._core import ImportAliases, child_nodes
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["shape_reasons", "SHAPE_HELP"]
@@ -245,7 +244,7 @@ def _late_skip(func: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
     computed = _computed_names(computing)
     parents: dict[int, ast.AST] = {}
     for p in _fast_walk(func):
-        for c in ast.iter_child_nodes(p):
+        for c in child_nodes(p):
             parents[id(c)] = p
     for node in _fast_walk(func):
         line = getattr(node, "lineno", 0)

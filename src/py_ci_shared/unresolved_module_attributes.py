@@ -37,7 +37,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, SourceError, nodes_of, parse_source, scan_python
+from ._core import Baseline, Finding, SourceError, child_nodes, nodes_of, parse_source, scan_python
+from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
 from .unresolved_imports import _bound_names, _is_dynamic_module, _literal_dunder_all, _module_level_nodes, _names_bound_by, _names_in
 
@@ -126,14 +127,14 @@ def _own_nodes(scope: ast.AST) -> Iterator["tuple[ast.AST, frozenset[str]]"]:
         elif isinstance(node, ast.Lambda):
             stack.extend((n, shadow) for n in node.args.defaults)
         elif isinstance(node, _COMPREHENSIONS):
-            bound = frozenset(n.id for g in node.generators for n in ast.walk(g.target) if isinstance(n, ast.Name))
+            bound = frozenset(n.id for g in node.generators for n in shared_walk(g.target) if isinstance(n, ast.Name))
             inner = shadow | bound
             children = [node.key, node.value] if isinstance(node, ast.DictComp) else [node.elt]
             for gen in node.generators:
                 children.extend([gen.iter, *gen.ifs])
             stack.extend((n, inner) for n in children)
         else:
-            stack.extend((n, shadow) for n in ast.iter_child_nodes(node))
+            stack.extend((n, shadow) for n in child_nodes(node))
 
 
 def _param_names(scope: ast.AST) -> set[str]:
@@ -365,19 +366,19 @@ def _guarded_ids(tree: ast.Module) -> "set[int]":
     guarded: set[int] = set()
     for node in nodes_of(tree, ast.Try, *((ast.TryStar,) if hasattr(ast, "TryStar") else ())):
         if any("AttributeError" in _names_in(h.type) for h in node.handlers):  # type: ignore[attr-defined]
-            guarded.update(id(n) for stmt in node.body for n in ast.walk(stmt))  # type: ignore[attr-defined]
+            guarded.update(id(n) for stmt in node.body for n in shared_walk(stmt))  # type: ignore[attr-defined]
     for node in nodes_of(tree, ast.With, ast.AsyncWith):
         for item in node.items:  # type: ignore[attr-defined]
             call = item.context_expr
             if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "raises":
                 if any("AttributeError" in _names_in(a) for a in call.args):
-                    guarded.update(id(n) for stmt in node.body for n in ast.walk(stmt))  # type: ignore[attr-defined]
+                    guarded.update(id(n) for stmt in node.body for n in shared_walk(stmt))  # type: ignore[attr-defined]
     return guarded
 
 
 def _given_names(tree: ast.Module) -> "dict[str, set[str]]":
     given: dict[str, set[str]] = {}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)) and isinstance(node.value, ast.Name):
             given.setdefault(node.value.id, set()).add(node.attr)
         elif isinstance(node, ast.Call) and len(node.args) >= 2 and isinstance(node.args[0], ast.Name):
@@ -392,7 +393,7 @@ def _given_names(tree: ast.Module) -> "dict[str, set[str]]":
 def _hasattr_names(scope_node: ast.AST) -> "dict[str, set[str]]":
     """``alias -> names`` tested with ``hasattr(alias, "NAME")`` anywhere inside the scope's subtree."""
     out: dict[str, set[str]] = {}
-    for node in ast.walk(scope_node):
+    for node in shared_walk(scope_node):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hasattr" and len(node.args) == 2:
             first, second = node.args
             if isinstance(first, ast.Name) and isinstance(second, ast.Constant) and isinstance(second.value, str):

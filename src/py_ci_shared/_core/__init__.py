@@ -32,15 +32,15 @@ from .errors import (
 )
 from .findings import UNPARSED_RULE, Finding
 from .git import GitError, git_output, git_text, run_git
-from .node_index import nodes_of, tree_memo, walk
-from .scopes import Scope, iter_scopes, scope_nodes
+from .node_index import TreeVisitor, child_nodes, nodes_of, parent_map, parent_of, tree_cached, tree_memo, walk
 from .refresh import ENV_VAR as REFRESH_ENV_VAR
 from .refresh import GENERIC_OPTION as REFRESH_OPTION
 from .refresh import GROW_ENV_VAR as REFRESH_GROW_ENV_VAR
 from .refresh import GROW_OPTION as REFRESH_GROW_OPTION
 from .refresh import grow_requested, refresh_requested, register_refresh_options
 from .scan import ParsedFile, ScanResult, SourceProblem, scan_python
-from .source import clear_parse_cache, parse_file, parse_source, read_source
+from .scopes import Scope, iter_scopes, qualified_functions, scope_nodes
+from .source import clear_parse_cache, parse_file, parse_source, parse_text, read_source
 
 __all__ = [
     "DEFAULT_EXCLUDE",
@@ -67,10 +67,13 @@ __all__ = [
     "SourceParseError",
     "SourceProblem",
     "SourceReadError",
+    "TreeVisitor",
     "UnparsedFilesError",
     "atomic_write_text",
+    "child_nodes",
     "clear_parse_cache",
     "nodes_of",
+    "tree_cached",
     "tree_memo",
     "walk",
     "dump_json",
@@ -85,10 +88,14 @@ __all__ = [
     "load_json",
     "module_of",
     "package_of",
+    "parent_map",
+    "parent_of",
     "parse_file",
     "parse_source",
+    "parse_text",
     "read_source",
     "refresh_requested",
+    "qualified_functions",
     "register_refresh_options",
     "scope_nodes",
     "relative_posix",

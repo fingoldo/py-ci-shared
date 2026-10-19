@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
+from ._core import walk as shared_walk
 
 __all__ = [
     "CACHED_LOADER",
@@ -86,7 +87,7 @@ def _provided(labels: Iterable[str], providers: Mapping[str, frozenset[str]]) ->
 def _decorators(tree: ast.Module) -> dict[str, list[str]]:
     """Name -> labels of the decorators (or decorator factories) that built it."""
     out: dict[str, list[str]] = {}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             out[node.name] = [_decorator_label(d) for d in node.decorator_list]
         elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
@@ -118,7 +119,7 @@ def _attribute_facts(tree: ast.Module) -> tuple[dict[str, set[str]], dict[str, s
     set_on: dict[str, set[str]] = {}
     read_on: dict[str, set[str]] = {}
     copies: list[tuple[int, str, str, str]] = []  # line, wrapper, inner, attribute
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Assign):
             _assign_facts(node, set_on, copies)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "setattr" and len(node.args) >= 2:

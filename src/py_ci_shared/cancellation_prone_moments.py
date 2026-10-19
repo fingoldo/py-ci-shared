@@ -41,7 +41,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "assert_cancellation_prone_moments", "find_cancellation_prone_moments"]
 
@@ -54,12 +55,12 @@ _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
     """Nodes of *scope* outside nested functions and lambdas, so each statement is judged by its own function."""
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, (*_FUNCTIONS, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _same(a: ast.AST, b: ast.AST) -> bool:
@@ -127,7 +128,7 @@ def _is_first_sum_call(node: ast.AST) -> bool:
 
 
 def _contains(node: ast.AST, pred) -> bool:
-    return any(pred(n) for n in ast.walk(node))
+    return any(pred(n) for n in shared_walk(node))
 
 
 def _key(node: ast.AST) -> str:
@@ -204,7 +205,7 @@ def _squared_mean(term: ast.AST, first: set[str]) -> bool:
     def meanlike(node: ast.AST) -> bool:
         return not _centred(node) and (_mentions(node, first) or _contains(node, _is_first_sum_call))
 
-    for node in ast.walk(term):
+    for node in shared_walk(term):
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
             if isinstance(node.right, ast.Constant) and node.right.value in (2, 3) and meanlike(node.left):
                 return True
@@ -218,7 +219,7 @@ def _squared_mean(term: ast.AST, first: set[str]) -> bool:
 
 def _power_term(term: ast.AST, power: set[str]) -> bool:
     """A term built on ONE power sum; a product of two distinct ones (``M00*M11 - M01*M01``) is a 2x2 determinant."""
-    names = {_key(n) for n in ast.walk(term) if isinstance(n, (ast.Name, ast.Attribute)) and _key(n) in power}
+    names = {_key(n) for n in shared_walk(term) if isinstance(n, (ast.Name, ast.Attribute)) and _key(n) in power}
     if len(names) > 1:
         return False
     return bool(names) or _contains(term, _is_power_sum_call)
@@ -266,7 +267,7 @@ def _scope_findings(scope: ast.AST, own: list[ast.AST], rel: str, lines: list[st
     """The findings of one scope whose own nodes are *own*."""
     out: list[Finding] = []
     power, first = _classify(own)
-    parents = {id(c): p for p in [scope, *own] for c in ast.iter_child_nodes(p)}
+    parents = {id(c): p for p in [scope, *own] for c in child_nodes(p)}
     seen: set[int] = set()
     for node in own:
         if not isinstance(node, ast.BinOp) or not _is_additive(node):
@@ -288,7 +289,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
     lines = lines or []
     out: list[Finding] = []
-    scopes: list[ast.AST] = [tree, *(n for n in ast.walk(tree) if isinstance(n, _FUNCTIONS))]
+    scopes: list[ast.AST] = [tree, *(n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS))]
     for scope in scopes:
         own = list(_own_nodes(scope))
         if _scope_may_cancel(own):

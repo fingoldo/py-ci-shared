@@ -2,6 +2,17 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.23.0
+
+- Shared traversal for every gate. `_core.scopes` (`iter_scopes`, `qualified_functions`) and `_core.node_index` (`child_nodes`, `parent_map`/`parent_of`, `tree_cached`, `TreeVisitor`)
+  keep what one walk of a module tree found next to the tree, and `parse_text` shares the tree of a source string; `walk` of a module tree is now computed once. All 90 gates that walked
+  trees by hand (`ast.walk`, `iter_child_nodes`, `NodeVisitor`, `ast.parse`) use them; `tests/test_gates_use_shared_traversal.py` fails on a new hand-rolled walk
+  (the mutation harness, which edits private trees, is the one exemption). Six copies of the "functions with qualified names" recursion became `qualified_functions`.
+- The parse cache serves a file whose stat signature is unchanged and older than the read by 3 s (git's racy-timestamp rule) without reading, hashing or resolving it again, and
+  `resolve_cached` remembers path resolution: on a full mlframe meta-suite profile `parse_source` was asked 332k times for 7.7k files and `Path.resolve` ran 887k times.
+  `shared_mutable_placeholder` walks each scope once (81 s to 28 s over the mlframe tree).
+- `tests/test_self_code_audit.py`: py-ci-shared passes the pyutilz code audit it ships to everyone else.
+
 ## 1.22.13
 
 - New opt-in gate `import_time_global_side_effects`: a module-level statement (outside `if __name__ == "__main__":` and any function) that changes

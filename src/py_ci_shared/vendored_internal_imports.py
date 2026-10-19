@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import walk as shared_walk
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
 
@@ -89,7 +90,7 @@ def _handler_fallbacks(tree: ast.Module) -> dict[int, set[str]]:
         tried = _imported_modules(node.body)
         for handler in node.handlers:
             if _catches_import_error(handler):
-                for sub in (s for stmt in handler.body for s in ast.walk(stmt)):
+                for sub in (s for stmt in handler.body for s in shared_walk(stmt)):
                     if isinstance(sub, (ast.Import, ast.ImportFrom)):
                         out.setdefault(id(sub), set()).update(tried)
     return out
@@ -98,7 +99,7 @@ def _handler_fallbacks(tree: ast.Module) -> dict[int, set[str]]:
 def _imported_modules(body: list[ast.stmt]) -> set[str]:
     """Modules the statements import absolutely (``import x`` -> ``x``, ``from x import y`` -> ``x``)."""
     out: set[str] = set()
-    for sub in (s for stmt in body for s in ast.walk(stmt)):
+    for sub in (s for stmt in body for s in shared_walk(stmt)):
         if isinstance(sub, ast.Import):
             out.update(a.name for a in sub.names)
         elif isinstance(sub, ast.ImportFrom) and sub.level == 0 and sub.module:

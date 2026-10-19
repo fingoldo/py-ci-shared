@@ -34,7 +34,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes, tree_cached
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
@@ -85,12 +85,13 @@ def _bindings(node: ast.AST) -> list[tuple[ast.expr, ast.expr]]:
     return []
 
 
+@tree_cached
 def _assignments(tree: ast.Module) -> dict[int, dict[str, list[ast.expr]]]:
     """``{id(scope): {name: [assigned values]}}`` for the module and every function."""
     out: dict[int, dict[str, list[ast.expr]]] = {}
 
     def visit(node: ast.AST, scope: ast.AST) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 visit(child, child)
                 continue
@@ -142,12 +143,13 @@ class _Resolver:
         return False
 
 
+@tree_cached
 def _scopes_by_node(tree: ast.Module) -> dict[int, list[int]]:
     """``{id(node): [innermost function id, ..., module id]}``."""
     out: dict[int, list[int]] = {}
 
     def visit(node: ast.AST, chain: list[int]) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             out[id(child)] = chain
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 visit(child, [id(child), *chain])

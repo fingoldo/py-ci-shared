@@ -56,6 +56,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, ScanResult, read_source, scan_python
+from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
 from .marker_runner_coverage import expression_selects, keyword_selects
 from .marker_runner_coverage import runners as _pytest_runners
@@ -170,7 +171,7 @@ def _normalise(path: str) -> str:
 
 def _docstring_ids(tree: ast.Module) -> set[int]:
     ids: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
             first = node.body[0]
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
@@ -183,12 +184,12 @@ def _string_literals(tree: ast.Module) -> Iterable[tuple[int, str]]:
     ``DELETE FROM {table}`` still reads as one statement."""
     skip = _docstring_ids(tree)
     inside_fstring: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.JoinedStr):
             inside_fstring.update(id(v) for v in node.values)
             parts = [v.value for v in node.values if isinstance(v, ast.Constant) and isinstance(v.value, str)]
             yield node.lineno, " ".join(parts)
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in skip and id(node) not in inside_fstring:
             yield node.lineno, node.value
 
@@ -233,7 +234,7 @@ def _facts(
     for line, text in _string_literals(parsed.tree):
         if _WRITE_VERBS.search(" ".join(text.split())) and (not facts.first_write_line or line < facts.first_write_line):
             facts.first_write_line = line
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         marker = _marker_names(node, aliases)
         if marker in markers:
             facts.markers.add(str(marker))

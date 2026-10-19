@@ -45,7 +45,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = [
     "RULE",
@@ -123,11 +124,11 @@ def _last_name(node: ast.AST) -> str:
 def _own_nodes(scope: ast.AST) -> list[ast.AST]:
     """Nodes of *scope* outside any nested function, lambda or class."""
     out: list[ast.AST] = []
-    stack = [c for c in ast.iter_child_nodes(scope) if not isinstance(c, _Scoped)]
+    stack = [c for c in child_nodes(scope) if not isinstance(c, _Scoped)]
     while stack:
         node = stack.pop()
         out.append(node)
-        stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, _Scoped))
+        stack.extend(c for c in child_nodes(node) if not isinstance(c, _Scoped))
     return out
 
 
@@ -264,7 +265,7 @@ class _Analysis:
 
     def judge(self, test: ast.expr) -> None:
         """Judge every ordering comparison inside an ``assert`` condition."""
-        for node in ast.walk(test):
+        for node in shared_walk(test):
             if isinstance(node, ast.Compare):
                 operands = [node.left, *node.comparators]
                 for i, op in enumerate(node.ops):
@@ -275,7 +276,7 @@ class _Analysis:
         return any(
             (isinstance(n, ast.Call) and self.aliases.qualified_name(n.func) not in self.timers and _CALIBRATED.search(_last_name(n.func)))
             or (isinstance(n, ast.Name) and n.id in self.calibrated)
-            for n in ast.walk(node)
+            for n in shared_walk(node)
         )
 
     def compare(self, left: ast.expr, op: ast.cmpop, right: ast.expr, line: int) -> None:
@@ -333,7 +334,7 @@ def _timed_positions(own: list[ast.AST], aliases: ImportAliases, timers: frozens
 
     def mentions(node: ast.AST, names: set[str]) -> bool:
         return any(
-            (isinstance(n, ast.Call) and aliases.qualified_name(n.func) in timers) or (isinstance(n, ast.Name) and n.id in names) for n in ast.walk(node)
+            (isinstance(n, ast.Call) and aliases.qualified_name(n.func) in timers) or (isinstance(n, ast.Name) and n.id in names) for n in shared_walk(node)
         )
 
     names: set[str] = set()
@@ -353,7 +354,7 @@ def _timed_positions(own: list[ast.AST], aliases: ImportAliases, timers: frozens
 def _timing_helpers(tree: ast.Module, aliases: ImportAliases, timers: frozenset[str], extra: Iterable[str]) -> dict[str, _Helper]:
     """``name -> ("single" | "repeated", timed tuple positions)`` for each non-test function of the module that times its body and returns the measurement."""
     out: dict[str, _Helper] = {name: ("single", None) for name in extra}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, _FuncDef) or node.name.startswith("test"):
             continue
         own = _own_nodes(node)
@@ -379,7 +380,7 @@ def _marked(node: ast.AST, markers: frozenset[str]) -> bool:
 def _module_marked(tree: ast.Module, markers: frozenset[str]) -> bool:
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in node.targets):
-            if any(isinstance(n, ast.Attribute) and n.attr in markers for n in ast.walk(node.value)):
+            if any(isinstance(n, ast.Attribute) and n.attr in markers for n in shared_walk(node.value)):
                 return True
     return False
 
@@ -389,7 +390,7 @@ def _test_functions(tree: ast.Module, markers: frozenset[str]) -> list[tuple[str
     out: list[tuple[str, ast.AST]] = []
 
     def visit(node: ast.AST, prefix: str, exempt: bool) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 visit(child, f"{prefix}{child.name}.", exempt or _marked(child, markers))
             elif isinstance(child, _FuncDef):
@@ -407,13 +408,13 @@ def _skip_after_measure(func: ast.AST, analysis: _Analysis) -> None:
     """Record each ``pytest.skip`` placed after the first measurement whose condition or reason blames xdist or contention."""
     if not analysis.first_measure:
         return
-    parents = {id(c): n for n in [func, *_own_nodes(func)] for c in ast.iter_child_nodes(n)}
+    parents = {id(c): n for n in [func, *_own_nodes(func)] for c in child_nodes(n)}
     for node in _own_nodes(func):
         if not isinstance(node, ast.Call) or node.lineno <= analysis.first_measure:
             continue
         if analysis.aliases.qualified_name(node.func) != "pytest.skip" and _last_name(node.func) != "skipTest":
             continue
-        words = [str(n.value) for a in [*node.args, *(k.value for k in node.keywords)] for n in ast.walk(a) if isinstance(n, ast.Constant)]
+        words = [str(n.value) for a in [*node.args, *(k.value for k in node.keywords)] for n in shared_walk(a) if isinstance(n, ast.Constant)]
         cur = parents.get(id(node))
         while cur is not None and cur is not func:
             if isinstance(cur, (ast.If, ast.IfExp, ast.While)):

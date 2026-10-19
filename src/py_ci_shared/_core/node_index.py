@@ -18,13 +18,14 @@ mutates one must not use these. :func:`clear` drops everything, and ``clear_pars
 from __future__ import annotations
 
 import ast
+import functools
 import heapq
 import itertools
 import threading
 import weakref
 from collections import deque
 from collections.abc import Callable, Hashable, Iterator
-from typing import Any, TypeVar, Union, overload
+from typing import Any, Optional, TypeVar, Union, overload
 
 T = TypeVar("T")
 _A = TypeVar("_A", bound=ast.AST)
@@ -39,7 +40,18 @@ _DESCENDANTS: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.Weak
 _LOCK = threading.Lock()
 
 
-_FIELDS: "dict[type, tuple[str, ...]]" = {}
+def _all_node_types() -> "list[type]":
+    found: "list[type]" = []
+    todo = [ast.AST]
+    while todo:
+        cls = todo.pop()
+        found.append(cls)
+        todo.extend(cls.__subclasses__())
+    return found
+
+
+# every ``ast`` node type with its field names, filled once at import and only read afterwards (no lock needed); a node of an unknown subclass reads ``_fields`` directly
+_FIELDS: "dict[type, tuple[str, ...]]" = {cls: cls._fields for cls in _all_node_types()}
 
 
 def _walk(node: ast.AST) -> "Iterator[ast.AST]":
@@ -49,9 +61,7 @@ def _walk(node: ast.AST) -> "Iterator[ast.AST]":
     pop, push, extend = todo.popleft, todo.append, todo.extend
     while todo:
         current = pop()
-        fields = fields_of.get(type(current))
-        if fields is None:
-            fields = fields_of[type(current)] = current._fields
+        fields = fields_of.get(type(current)) or current._fields
         for name in fields:
             value = getattr(current, name, None)
             if isinstance(value, _ast):
@@ -85,6 +95,51 @@ def _descendants(tree: ast.Module) -> "list[ast.AST]":
     with _LOCK:
         _DESCENDANTS[tree] = rest
     return rest
+
+
+def child_nodes(node: ast.AST) -> "list[ast.AST]":
+    """The direct children of *node*, in the order ``ast.iter_child_nodes`` yields them, as a list.
+
+    The stdlib generator goes through ``iter_fields`` and a second generator layer per node; a gate that recurses over a tree calls it millions of times.
+    This reads the node's field names once per node type and returns a plain list (about 2x faster); callers that only iterate need no change.
+    """
+    fields = _FIELDS.get(type(node)) or node._fields
+    out: "list[ast.AST]" = []
+    for name in fields:
+        value = getattr(node, name, None)
+        if isinstance(value, ast.AST):
+            out.append(value)
+        elif isinstance(value, list):
+            out.extend([item for item in value if isinstance(item, ast.AST)])
+    return out
+
+
+def parent_map(tree: ast.Module) -> "dict[int, Optional[ast.AST]]":
+    """``{id(node): its parent node}`` for every node below *tree*, built once per tree and shared (do not mutate).
+
+    A child of the module itself maps to ``None`` (the memo lives next to the tree and must not hold it); :func:`parent_of` turns that back into the tree. The expression
+    contexts (``Load``, ``Store``, ``Del``) and the operator nodes (``Add``, ``Eq``, ``And``, ``Not``, ...) are one shared instance each in CPython, so they have no single parent and
+    their entry is whichever node was seen last.
+    """
+
+    def build() -> "dict[int, Optional[ast.AST]]":
+        out: "dict[int, Optional[ast.AST]]" = {}
+        for node in _descendants(tree):
+            for child in child_nodes(node):
+                out[id(child)] = node
+        for child in child_nodes(tree):
+            out[id(child)] = None
+        return out
+
+    return tree_memo(tree, "py_ci_shared.parent_map", build)
+
+
+def parent_of(tree: ast.Module, node: ast.AST) -> "Optional[ast.AST]":
+    """The parent of *node* inside *tree* (the tree itself for a top-level statement), or ``None`` for the tree or a node not in it."""
+    parents = parent_map(tree)
+    if id(node) not in parents:
+        return None
+    return parents[id(node)] or tree
 
 
 def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
@@ -143,6 +198,41 @@ def tree_memo(tree: ast.AST, key: Hashable, compute: "Callable[[], T]") -> T:
     with _LOCK:
         _MEMO.setdefault(tree, {})[key] = value
     return value
+
+
+def tree_cached(fn: "Callable[[ast.Module], T]") -> "Callable[[ast.Module], T]":
+    """Decorator: compute ``fn(tree)`` once per tree and return the same (shared, read-only) result afterwards.
+
+    For a gate helper that is a pure function of one module tree (a scope map, a per-function table). The result must not hold the tree itself (see :func:`tree_memo`):
+    keying by ``id(node)`` or holding descendants is fine, a list containing the module node is not.
+    """
+    key = f"{fn.__module__}.{fn.__qualname__}"
+
+    @functools.wraps(fn)
+    def wrapper(tree: ast.Module) -> T:
+        return tree_memo(tree, key, lambda: fn(tree))
+
+    return wrapper
+
+
+class TreeVisitor:
+    """``ast.NodeVisitor`` over :func:`child_nodes`: ``visit`` dispatches to ``visit_<NodeType>`` and ``generic_visit`` visits the children in field order.
+
+    For a gate whose traversal carries state down the tree (a scope stack, a "inside a finally" counter) and so cannot be a flat :func:`nodes_of` query. It gives the same
+    order and dispatch as the stdlib class, about twice as fast, and keeps hand-written visitors off ``ast.NodeVisitor`` (see ``tests/test_gates_use_shared_traversal.py``).
+    """
+
+    def visit(self, node: ast.AST) -> Any:
+        """Call ``visit_<NodeType>`` when the subclass defines it, else :meth:`generic_visit`."""
+        method = getattr(self, "visit_" + type(node).__name__, None)
+        if method is None:
+            return self.generic_visit(node)
+        return method(node)
+
+    def generic_visit(self, node: ast.AST) -> None:
+        """Visit every child of *node*."""
+        for child in child_nodes(node):
+            self.visit(child)
 
 
 def index_size() -> int:

@@ -48,7 +48,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, CorpusError, Finding, ImportAliases, ParsedFile, parse_file, scan_python
+from ._core import DEFAULT_EXCLUDE, CorpusError, Finding, ImportAliases, ParsedFile, child_nodes, parse_file, scan_python
 from ._core.errors import SourceError
 from ._core.gate_contract import check_scan
 
@@ -126,7 +126,7 @@ def _runtime_nodes(tree: ast.AST) -> Iterator[ast.AST]:
         if isinstance(node, ast.If) and _type_checking(node.test):
             stack.extend(reversed(node.orelse))
             continue
-        stack.extend(reversed(list(ast.iter_child_nodes(node))))
+        stack.extend(reversed(list(child_nodes(node))))
 
 
 class _Owners:

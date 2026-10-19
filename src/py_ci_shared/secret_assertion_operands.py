@@ -30,7 +30,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional
 
-from ._core import Finding, ScanResult, scan_python
+from ._core import Finding, ScanResult, child_nodes, parse_text, scan_python
 from ._core.gate_contract import check_scan
 
 __all__ = [
@@ -161,7 +161,7 @@ class _Taint:
             if self.is_tainted(sub):
                 return sub
             if not _harmless_env_read(sub):  # its ``os.environ`` operand is evaluated, never printed
-                queue.extend(ast.iter_child_nodes(sub))
+                queue.extend(child_nodes(sub))
         return None
 
 
@@ -177,12 +177,12 @@ def _targets(node: ast.AST) -> list[str]:
 
 def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
     """Nodes of *scope* without descending into nested functions or classes (they are their own scope)."""
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _bindings(node: ast.AST) -> "list[tuple[ast.AST, ast.AST]]":
@@ -228,7 +228,7 @@ def _printed_operands(node: ast.AST) -> list[ast.expr]:
 
 def offenders_in_source(source: str, path: str = "<string>", *, resolvers: Iterable[str] = DEFAULT_RESOLVERS) -> list[tuple[str, int, str]]:
     """``(qualname, line, offending expression)`` for each assertion in *source* that would print a secret-shaped value."""
-    tree = ast.parse(source, filename=path)
+    tree = parse_text(source, filename=path)
     resolver_set = frozenset(resolvers)
     found: list[tuple[str, int, str]] = []
 

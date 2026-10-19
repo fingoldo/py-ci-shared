@@ -50,7 +50,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, ParsedFile, scan_python
+from ._core import Baseline, Finding, ImportAliases, ParsedFile, child_nodes, qualified_functions, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["RULE", "SHAPE_HANDLER", "SHAPE_RAISE", "assert_validation_errors_echo_input", "find_validation_errors_echo_input"]
 
@@ -76,30 +77,13 @@ def _final_name(node: ast.AST) -> Optional[str]:
     return None
 
 
-def _functions(tree: ast.Module) -> Iterator[tuple[str, _FuncDef]]:
-    """``(qualified name, def)`` for every function, methods as ``Class.method``."""
-
-    def visit(node: ast.AST, prefix: str) -> Iterator[tuple[str, _FuncDef]]:
-        for child in ast.iter_child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                name = f"{prefix}{child.name}"
-                yield name, child
-                yield from visit(child, f"{name}.")
-            elif isinstance(child, ast.ClassDef):
-                yield from visit(child, f"{prefix}{child.name}.")
-            else:
-                yield from visit(child, prefix)
-
-    yield from visit(tree, "")
-
-
 def _walk_local(nodes: Iterable[ast.AST]) -> Iterator[ast.AST]:
     """Every node under *nodes*, not descending into nested function, class or lambda bodies."""
     stack = list(nodes)
     while stack:
         node = stack.pop()
         yield node
-        stack.extend(c for c in ast.iter_child_nodes(node) if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
+        stack.extend(c for c in child_nodes(node) if not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
 
 
 def _positional(fn: _FuncDef) -> list[str]:
@@ -127,12 +111,12 @@ def _reaches(node: ast.AST, tainted: set[str]) -> bool:
             continue
         if isinstance(current, ast.Name) and current.id in tainted:
             return True
-        stack.extend(ast.iter_child_nodes(current))
+        stack.extend(child_nodes(current))
     return False
 
 
 def _names(target: ast.AST) -> list[str]:
-    return [n.id for n in ast.walk(target) if isinstance(n, ast.Name)]
+    return [n.id for n in shared_walk(target) if isinstance(n, ast.Name)]
 
 
 def _loop_bound(target: ast.AST, source: ast.AST, tainted: set[str]) -> list[str]:
@@ -222,7 +206,7 @@ def _is_rve(node: ast.AST) -> bool:
 def _handlers(tree: ast.Module) -> set[str]:
     """Names of functions registered for RequestValidationError in this file."""
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Call) and _final_name(node.func) == "add_exception_handler" and len(node.args) >= 2 and _is_rve(node.args[0]):
             name = _final_name(node.args[1])
             if name:
@@ -286,8 +270,8 @@ def _handler_problem(fn: _FuncDef) -> Optional[str]:
     if not any(isinstance(n, ast.Call) and _final_name(n.func) == "errors" and isinstance(n.func, ast.Attribute) for n in nodes):
         return None
     parents: dict[int, ast.AST] = {}
-    for n in ast.walk(fn):
-        for c in ast.iter_child_nodes(n):
+    for n in shared_walk(fn):
+        for c in child_nodes(n):
             parents[id(c)] = n
     removals = [n for n in nodes if _removes_input(n)]
     if any(not _conditional(n, parents, fn) for n in removals):
@@ -343,7 +327,7 @@ def _seed_helpers(per_file: _PerFile, helpers: _HelperArgs) -> _Seeded:
 
 def _collect(files: list[ParsedFile]) -> list[Finding]:
     out: list[Finding] = []
-    per_file: _PerFile = [(p, ImportAliases.from_tree(p.tree), list(_functions(p.tree))) for p in files]
+    per_file: _PerFile = [(p, ImportAliases.from_tree(p.tree), list(qualified_functions(p.tree, locals_marker=False))) for p in files]
     helpers: _HelperArgs = {}
     for parsed, aliases, functions in per_file:
         added = _handlers(parsed.tree)

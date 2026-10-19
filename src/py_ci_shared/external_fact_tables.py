@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import CoreError, Finding, SourceError, parse_source, scan_python
+from ._core import walk as shared_walk
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ def find_undeclared_fact_tables(root: PathLike, tables: Optional[Mapping[str, An
             value = getattr(node, "value", None)
             if not _FACT_NAME.search(name) or not isinstance(value, ast.Dict) or len(value.keys) < 3 or (parsed.rel, name) in declared:
                 continue
-            numbers = sum(isinstance(x, ast.Constant) and isinstance(x.value, (int, float)) and not isinstance(x.value, bool) for x in ast.walk(value))
+            numbers = sum(isinstance(x, ast.Constant) and isinstance(x.value, (int, float)) and not isinstance(x.value, bool) for x in shared_walk(value))
             if numbers >= 3:
                 out.append(
                     Finding(parsed.rel, node.lineno, UNDECLARED_RULE, f"{name} looks like a table of external facts; declare it (or ignore if internal)")

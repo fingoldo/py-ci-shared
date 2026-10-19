@@ -38,7 +38,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, iter_files, scan_python
+from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, iter_files, nodes_of, scan_python
 
 __all__ = [
     "Finding",
@@ -104,26 +104,16 @@ def _hash_sink_arguments(node: ast.Call, aliases: Optional[ImportAliases] = None
     return list(node.args[:1]) + data_kw
 
 
-class _Visitor(ast.NodeVisitor):
-    """Collects every hash call whose input is a fresh array copy."""
-
-    def __init__(self, path: Path, aliases: Optional[ImportAliases] = None) -> None:
-        """Start with no findings for ``path``."""
-        self.path = path
-        self.aliases = aliases
-        self.findings: list[Finding] = []
-
-    def visit_Call(self, node: ast.Call) -> None:
-        """Flag a hash sink handed the result of ``.tobytes()``."""
-        for argument in _hash_sink_arguments(node, self.aliases):
-            if _is_tobytes_call(argument):
-                try:
-                    rendered = ast.unparse(node)
-                except Exception:
-                    rendered = "<unrenderable>"
-                self.findings.append(Finding(self.path, node.lineno, rendered[:160]))
-                break
-        self.generic_visit(node)
+def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliases]) -> Optional[Finding]:
+    """A finding when *node* is a hash sink handed the result of ``.tobytes()``."""
+    for argument in _hash_sink_arguments(node, aliases):
+        if _is_tobytes_call(argument):
+            try:
+                rendered = ast.unparse(node)
+            except Exception:
+                rendered = "<unrenderable>"
+            return Finding(path, node.lineno, rendered[:160])
+    return None
 
 
 def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
@@ -137,9 +127,9 @@ def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
-        visitor = _Visitor(parsed.path, ImportAliases.from_tree(parsed.tree))
-        visitor.visit(parsed.tree)
-        findings.extend(visitor.findings)
+        aliases = ImportAliases.from_tree(parsed.tree)
+        calls = sorted(nodes_of(parsed.tree, ast.Call), key=lambda n: (n.lineno, n.col_offset))
+        findings.extend(f for f in (_hash_fed_finding(parsed.path, c, aliases) for c in calls) if f is not None)
     return findings
 
 

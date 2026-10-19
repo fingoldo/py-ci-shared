@@ -32,7 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import BaselineError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineError, ScanResult, child_nodes, dump_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-complexity-baseline"
 DEFAULT_LIMIT = 10  # ruff's default max-complexity
@@ -85,7 +85,7 @@ def function_complexity(node: ast.AST) -> int:
 
 
 def _walk(node: ast.AST, prefix: str, rel: str, out: dict[str, int], lines: dict[tuple[str, int], int]) -> None:
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
             _walk(child, f"{prefix}{child.name}.", rel, out, lines)
         elif isinstance(child, _FUNCS):

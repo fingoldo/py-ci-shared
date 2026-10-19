@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["DEFAULT_SQL_CALLS", "RULE", "assert_psycopg2_param_arity", "find_psycopg2_param_arity", "placeholders"]
 
@@ -139,7 +140,7 @@ def _findings_in(tree: ast.Module, rel: str, sql_calls: Mapping[str, tuple[int, 
     """The findings in one parsed file."""
     names = _module_texts(tree)
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in sql_calls):
             continue
         sql_at, params_at = sql_calls[node.func.attr]

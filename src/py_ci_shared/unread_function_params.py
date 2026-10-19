@@ -39,7 +39,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["NAMED_PARAMS", "RULE", "assert_unread_function_params", "find_unread_function_params"]
 
@@ -77,7 +78,7 @@ def _is_stub(body: list[ast.stmt]) -> bool:
 
 
 def _calls_super_method(func: ast.AST, name: str) -> bool:
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         if isinstance(node, ast.Attribute) and node.attr == name and isinstance(node.value, ast.Call):
             callee = node.value.func
             if isinstance(callee, ast.Name) and callee.id == "super":
@@ -89,7 +90,7 @@ def _reads(func: ast.AST) -> tuple[set[str], bool]:
     """Names loaded in the function (parameters excluded from consideration by the caller) and whether it uses ``locals()``."""
     loaded: set[str] = set()
     dynamic = False
-    for node in ast.walk(func):
+    for node in shared_walk(func):
         if isinstance(node, ast.Name):
             if isinstance(node.ctx, ast.Load):
                 loaded.add(node.id)
@@ -117,7 +118,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     out: list[Finding] = []
 
     def visit(node: ast.AST, prefix: str, in_protocol: bool) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, ast.ClassDef):
                 visit(child, f"{prefix}{child.name}.", _is_protocol(child, aliases))
             elif isinstance(child, _FUNCTIONS):

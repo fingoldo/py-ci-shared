@@ -41,7 +41,7 @@ from pathlib import Path
 from re import Pattern
 from typing import Any
 
-from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, read_source
+from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files, parse_source, parse_text, read_source
 from ._core.node_index import walk as _fast_walk
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ def string_literals(src: str, *, strict: bool = True) -> list[str]:
     """Every string constant in a module's source. An unparsable module raises ``SyntaxError``: an empty answer would
     read as a module that asks for no fields. ``strict=False`` opts into the old empty answer."""
     try:
-        tree = ast.parse(src[1:] if src.startswith("\ufeff") else src)
+        tree = parse_text(src[1:] if src.startswith("\ufeff") else src)
     except SyntaxError:
         if strict:
             raise

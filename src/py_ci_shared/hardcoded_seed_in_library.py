@@ -35,7 +35,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 
 __all__ = ["DEFAULT_EXCLUDE_FRAGMENTS", "RULE", "assert_hardcoded_seed_in_library", "find_hardcoded_seed_in_library"]
 
@@ -113,14 +113,14 @@ def _seed_description(call: ast.Call, aliases: ImportAliases) -> str:
 def _own_calls(func: ast.AST) -> Iterator[tuple[ast.Call, dict[int, ast.AST]]]:
     """Each call of *func* outside nested functions, classes and lambdas, with the parent map built so far (the call's own chain is complete)."""
     parents: dict[int, ast.AST] = {}
-    stack = list(ast.iter_child_nodes(func))
+    stack = list(child_nodes(func))
     for child in stack:
         parents[id(child)] = func
     while stack:
         node = stack.pop()
         if isinstance(node, (*_FUNCTIONS, ast.ClassDef, ast.Lambda)):
             continue  # judged as their own scope
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             parents[id(child)] = node
             stack.append(child)
         if isinstance(node, ast.Call):
@@ -142,7 +142,7 @@ def _check_seeds(func: ast.AST, qualname: str, params: list[str], rel: str, alia
 def _visit_seed_scopes(node: ast.AST, prefix: str, inherited: frozenset[str], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
     """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
     out: list[Finding] = []
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
             out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines))
         elif isinstance(child, _FUNCTIONS):

@@ -30,7 +30,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
@@ -86,7 +86,7 @@ def _expr_count(node: Optional[ast.AST], name: str) -> int:
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
         total += _node_count(n, name)
-        stack.extend(ast.iter_child_nodes(n))
+        stack.extend(child_nodes(n))
     return total
 
 

@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
 from ._gate_report import enclosing_functions, line_has_marker, scan_tree, skip_set
 
@@ -280,7 +281,7 @@ class _Gate:
 def _rebound(tree: ast.Module, aliases: ImportAliases, openers: frozenset[str]) -> dict[str, str]:
     """``connect = psycopg2.connect`` (any scope): the bare name now opens a connection. Two passes reach a chain."""
     out: dict[str, str] = {}
-    pairs = [(n.targets[0].id, n.value) for n in ast.walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
+    pairs = [(n.targets[0].id, n.value) for n in shared_walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
     for _ in range(2):
         for name, value in pairs:
             if not isinstance(value, (ast.Name, ast.Attribute)):
@@ -308,7 +309,7 @@ def _file_findings(parsed: ParsedFile, gate: _Gate, exempt: Mapping[str, str], u
     functions = enclosing_functions(parsed.tree)
     spread = sorted(gate.shared)[0] if gate.shared else "KEEPALIVES"
     out: list[Finding] = []
-    for node in ast.walk(parsed.tree):
+    for node in shared_walk(parsed.tree):
         if not isinstance(node, ast.Call):
             continue
         qualified = rebound[node.func.id] if isinstance(node.func, ast.Name) and node.func.id in rebound else aliases.qualified_name(node.func)

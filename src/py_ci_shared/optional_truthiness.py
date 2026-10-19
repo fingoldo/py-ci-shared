@@ -50,7 +50,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Union
 
-from ._core import SourceError, parse_file, parse_source, relative_posix, walk
+from ._core import SourceError, child_nodes, parse_file, parse_source, relative_posix, walk
+from ._core import walk as shared_walk
 
 logger = logging.getLogger(__name__)
 
@@ -120,18 +121,18 @@ def _own_nodes(fn: _FuncLike) -> Iterator[ast.AST]:
     while stack:
         node = stack.pop()
         yield node
-        stack.extend(child for child in ast.iter_child_nodes(node) if not isinstance(child, scoped))
+        stack.extend(child for child in child_nodes(node) if not isinstance(child, scoped))
 
 
 def _nested(fn: ast.AST) -> Iterator[_FuncLike]:
     """Functions and lambdas defined directly inside *fn* (through any non-function nesting, classes included)."""
-    stack = list(ast.iter_child_nodes(fn))
+    stack = list(child_nodes(fn))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             yield node
             continue
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _truth_tested(expr: ast.AST) -> Iterator[ast.AST]:
@@ -306,7 +307,7 @@ def _self_name(fn: _FuncLike, in_class: bool) -> "Optional[str]":
 
 def _self_assignments(fn: "ast.FunctionDef | ast.AsyncFunctionDef", me: "Optional[str]") -> "Iterator[tuple[str, ast.AST]]":
     """``(attr, assignment)`` for every ``<me>.attr = ...`` / ``<me>.attr: T = ...`` in *fn*."""
-    for node in ast.walk(fn):
+    for node in shared_walk(fn):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
         for target in targets:
             if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id == me:

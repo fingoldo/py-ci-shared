@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult, scan_python
+from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ def _main_blocks(tree: ast.Module) -> list[ast.If]:
 
 def _registers_itself(block: ast.If, name: str) -> bool:
     """The block calls ``<x>.modules.setdefault("<name>", <y>["__main__"])``, whatever ``sys`` was imported as."""
-    for node in ast.walk(block):
+    for node in shared_walk(block):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "setdefault"):
             continue
         owner = node.func.value
@@ -107,7 +108,7 @@ def _registers_itself(block: ast.If, name: str) -> bool:
 def _imported_names(tree: ast.Module, known: frozenset[str]) -> dict[str, int]:
     """``{module name: first line}`` of every absolute import of a *known* module, at ANY depth."""
     found: dict[str, int] = {}
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 if alias.name in known:
@@ -123,7 +124,7 @@ def _names_where(tree: ast.AST, tainted: Callable[[ast.expr, set[str]], bool]) -
     changed = True
     while changed:
         changed = False
-        for node in ast.walk(tree):
+        for node in shared_walk(tree):
             if isinstance(node, ast.Assign) and tainted(node.value, names):
                 for target in node.targets:
                     if isinstance(target, ast.Name) and target.id not in names:
@@ -133,7 +134,7 @@ def _names_where(tree: ast.AST, tainted: Callable[[ast.expr, set[str]], bool]) -
 
 
 def _reads_file(expr: ast.AST, names: set[str]) -> bool:
-    return any(isinstance(n, ast.Name) and (n.id == "__file__" or n.id in names) for n in ast.walk(expr))
+    return any(isinstance(n, ast.Name) and (n.id == "__file__" or n.id in names) for n in shared_walk(expr))
 
 
 def _is_relative_literal(value: object) -> bool:
@@ -143,7 +144,7 @@ def _is_relative_literal(value: object) -> bool:
 
 
 def _reads_cwd(expr: ast.AST, names: set[str]) -> bool:
-    for n in ast.walk(expr):
+    for n in shared_walk(expr):
         if isinstance(n, ast.Name) and n.id in names:
             return True
         if isinstance(n, ast.Call):
@@ -160,7 +161,7 @@ def _cwd_path_edits(tree: ast.Module, aliases: ImportAliases) -> list[tuple[int,
     from_file = _names_where(tree, _reads_file)
     from_cwd = _names_where(tree, lambda expr, names: _reads_cwd(expr, names) and not _reads_file(expr, from_file))
     out: list[tuple[int, str]] = []
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, ast.Call) or aliases.qualified_name(node) not in ("sys.path.insert", "sys.path.append"):
             continue
         if not node.args:

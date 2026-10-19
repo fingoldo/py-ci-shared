@@ -52,7 +52,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker
 
@@ -77,7 +77,7 @@ def _own_nodes(nodes: list[ast.stmt]) -> Iterator[ast.AST]:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _dotted(node: ast.AST) -> str:

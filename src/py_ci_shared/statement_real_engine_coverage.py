@@ -42,7 +42,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import UNJUSTIFIED_MARKER, Baseline, DEFAULT_EXCLUDE, EmptyScanError, Finding, ParsedFile, scan_python
+from ._core import DEFAULT_EXCLUDE, UNJUSTIFIED_MARKER, Baseline, EmptyScanError, Finding, ParsedFile, scan_python
+from ._core import walk as shared_walk
 from ._core.scan import ScanResult
 from .sql_verifier_coverage import DEFAULT_STATEMENT_STARTS, _module_name, _scan, sql_constants
 
@@ -55,7 +56,7 @@ GATE = "statement_real_engine_coverage"
 def _names_in(node: ast.AST) -> set[str]:
     """Every identifier *node* reads or imports: names, attributes and the original name of an imported symbol."""
     out: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in shared_walk(node):
         if isinstance(sub, ast.Name):
             out.add(sub.id)
         elif isinstance(sub, ast.Attribute):
@@ -90,7 +91,7 @@ def _marked_names(tree: ast.Module, markers: frozenset[str]) -> set[str]:
     if _module_marked(tree, markers):
         return _names_in(tree)
     out: set[str] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and any(_is_marker(d, markers) for d in node.decorator_list):
             out |= _names_in(node)
     return out
@@ -143,7 +144,7 @@ def _import_aliases(files: Iterable[ParsedFile], constant_names: set[str]) -> di
     """``{alias: {original constant names}}`` for ``from m import NAME as alias`` where NAME is a known statement constant."""
     out: dict[str, set[str]] = {}
     for parsed in files:
-        for node in ast.walk(parsed.tree):
+        for node in shared_walk(parsed.tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     if alias.asname and alias.name in constant_names:

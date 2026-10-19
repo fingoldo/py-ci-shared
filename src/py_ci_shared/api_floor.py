@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, CorpusError, Finding, ParsedFile, nodes_of, read_source, scan_python
+from ._core import walk as shared_walk
 from ._toml_compat import tomllib
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ def target_from_pyproject(pyproject: PathLike) -> str:
 
 
 def _is_version_test(test: ast.AST) -> bool:
-    for node in ast.walk(test):
+    for node in shared_walk(test):
         if isinstance(node, ast.Attribute) and node.attr in ("version_info", "TYPE_CHECKING"):
             return True
         if isinstance(node, ast.Name) and node.id == "TYPE_CHECKING":

@@ -54,9 +54,9 @@ def test_parents_come_before_children_and_chain_up():
     """The enclosing scope chain of a nested function is its class, then the module."""
     scopes = iter_scopes(ast.parse(SRC))
     order = {id(s): i for i, s in enumerate(scopes)}
-    for s in scopes:
-        if s.parent is not None:
-            assert order[id(s.parent)] < order[id(s)]
+    children = [s for s in scopes if s.parent is not None]
+    assert len(children) == 4  # every scope but the module has a parent
+    assert all(order[id(s.parent)] < order[id(s)] for s in children)
     g = next(s for s in scopes if getattr(s.node, "name", None) == "g")
     assert [getattr(p.node, "name", None) for p in (g.parent, g.parent.parent, g.parent.parent.parent)] == ["m", "C", None]
 

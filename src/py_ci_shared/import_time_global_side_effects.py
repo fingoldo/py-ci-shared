@@ -57,7 +57,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, ParsedFile, scan_python
+from ._core import Baseline, Finding, ImportAliases, ParsedFile, child_nodes, scan_python
+from ._core import walk as shared_walk
 from ._core.aliases import resolve_relative
 
 __all__ = ["RULE", "assert_import_time_global_side_effects", "find_import_time_global_side_effects"]
@@ -126,7 +127,7 @@ def _walk(node: ast.AST) -> Iterator[ast.AST]:
     while stack:
         current = stack.pop()
         yield current
-        stack.extend(c for c in ast.iter_child_nodes(current) if not isinstance(c, ast.Lambda))
+        stack.extend(c for c in child_nodes(current) if not isinstance(c, ast.Lambda))
 
 
 def _arg(call: ast.Call, index: int, name: str) -> Optional[ast.AST]:
@@ -196,7 +197,7 @@ def _locations(stmt: ast.stmt, in_catch: bool, aliases: ImportAliases, bound: se
     for node in _walk(stmt):
         if isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in (leaf for t in targets for leaf in ast.walk(t) if isinstance(leaf, (ast.Attribute, ast.Name, ast.Subscript))):
+            for target in (leaf for t in targets for leaf in shared_walk(t) if isinstance(leaf, (ast.Attribute, ast.Name, ast.Subscript))):
                 stream = _sys_stream(target, aliases)
                 if stream:
                     yield node.lineno, f"sys.{stream}-assign", f"assigns sys.{stream}"
@@ -254,7 +255,7 @@ def _imported_names(tree: ast.AST, package: str, *, module_level_only: bool) -> 
     if module_level_only and isinstance(tree, ast.Module):
         nodes: list[ast.AST] = [n for stmt, _ in _import_time_statements(tree.body) for n in _walk(stmt)]
     else:
-        nodes = list(ast.walk(tree))
+        nodes = list(shared_walk(tree))
     for node in nodes:
         if isinstance(node, ast.Import):
             out |= {a.name for a in node.names}

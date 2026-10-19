@@ -17,6 +17,7 @@ from typing import Any, Callable, NamedTuple, Optional, Union
 
 from ._ci_install_parts import Provided, Repo, add_project, catches_import_error, is_stdlib, is_type_checking, norm
 from ._core import UnparsedFilesError
+from ._core import walk as shared_walk
 from ._core.source import resolve_cached
 from .ci_install_covers_conftest import _ALTERNATIVES, BUILTIN_ALIASES
 
@@ -39,7 +40,7 @@ class ModuleImport(NamedTuple):
 def _is_flag_test(test: ast.expr, flags: frozenset[str]) -> bool:
     if is_type_checking(test):
         return True
-    for node in ast.walk(test):
+    for node in shared_walk(test):
         if isinstance(node, ast.Name) and (node.id in flags or node.id == "TYPE_CHECKING"):
             return True
         if isinstance(node, ast.Attribute) and node.attr == "TYPE_CHECKING":
@@ -60,7 +61,7 @@ def _import_flags(tree: ast.Module) -> frozenset[str]:
     flags: set[str] = set()
     for node in tree.body:
         if _is_try(node) and catches_import_error(node):  # type: ignore[arg-type]
-            for sub in ast.walk(node):
+            for sub in shared_walk(node):
                 if isinstance(sub, ast.Assign):
                     flags.update(t.id for t in sub.targets if isinstance(t, ast.Name))
                 elif isinstance(sub, ast.AnnAssign) and isinstance(sub.target, ast.Name):

@@ -34,7 +34,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
 
@@ -120,12 +120,12 @@ _ELEMENT_MUTATORS = frozenset({"append", "extend", "add", "update", "insert", "r
 
 def _own_nodes(func: ast.AST) -> Iterator[ast.AST]:
     """Nodes of *func* without descending into nested functions, classes or lambdas (they are judged on their own)."""
-    stack = list(ast.iter_child_nodes(func))
+    stack = list(child_nodes(func))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _cache_of(node: ast.expr, caches: dict[str, int]) -> Optional[str]:

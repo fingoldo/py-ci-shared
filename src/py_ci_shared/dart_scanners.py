@@ -64,15 +64,15 @@ from ._core.source import PathLike
 Reader = Callable[[str], str]
 
 from ._dart_source import (  # noqa: F401  # the scanners' shared helpers
-    _line_of,
+    _balanced_body,
+    _enclosing_calls,
+    _enclosing_semantics_args,
     _key,
+    _line_of,
+    _mask_strings,
     _rekey,
     _strip_comments,
-    _balanced_body,
-    _mask_strings,
-    _enclosing_calls,
     _top_level_args,
-    _enclosing_semantics_args,
 )
 
 

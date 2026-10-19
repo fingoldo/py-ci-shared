@@ -27,6 +27,8 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core import parse_text
+from ._core import walk as shared_walk
 from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, text_files
 
 logger = logging.getLogger(__name__)
@@ -48,12 +50,12 @@ def is_wallclock_test_file(rel: str) -> bool:
 def _docstring_lines(text: str) -> set[int]:
     """1-based line numbers inside a module, class or function docstring. Unparsable Python yields none."""
     try:
-        tree = ast.parse(text)
+        tree = parse_text(text)
     except SyntaxError as exc:
         logger.debug("could not parse text for docstring lines: %s", type(exc).__name__)
         return set()
     lines: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         body = node.body

@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import walk as shared_walk
 
 __all__ = ["DEFAULT_FREE_TEXT_NAMES", "RULE", "assert_free_text_in_get_route", "find_free_text_in_get_route"]
 
@@ -116,7 +117,7 @@ def _max_length(annotation: Optional[ast.AST], default: Optional[ast.AST]) -> Op
     if default is not None:
         nodes.append(default)
     if annotation is not None:
-        nodes.extend(n for n in ast.walk(annotation) if isinstance(n, ast.Call))
+        nodes.extend(n for n in shared_walk(annotation) if isinstance(n, ast.Call))
     for node in nodes:
         if isinstance(node, ast.Call) and _callee_name(node) in _BOUND_FACTORIES:
             for kw in node.keywords:
@@ -130,7 +131,7 @@ def _is_non_url_source(annotation: Optional[ast.AST], default: Optional[ast.AST]
     if default is not None and _callee_name(default) in _NOT_URL_PARAMS:
         return True
     if annotation is not None:
-        return any(isinstance(n, ast.Call) and _callee_name(n) in _NOT_URL_PARAMS for n in ast.walk(annotation))
+        return any(isinstance(n, ast.Call) and _callee_name(n) in _NOT_URL_PARAMS for n in shared_walk(annotation))
     return False
 
 
@@ -148,7 +149,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, names: froz
     """The free-text parameters of every GET route in one parsed file."""
     del aliases  # route decorators are matched by shape (``<x>.get("/path")``), not by an imported name
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for decorator in node.decorator_list:

@@ -44,7 +44,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 
 __all__ = ["RULE", "assert_constant_fallback_cache_key", "find_constant_fallback_cache_key"]
 
@@ -91,12 +91,12 @@ def _suppressed(lines: list[str], ranges: list[tuple[int, int]]) -> bool:
 
 def _own(scope: ast.AST) -> list[ast.AST]:
     out: list[ast.AST] = []
-    stack = list(ast.iter_child_nodes(scope))
+    stack = list(child_nodes(scope))
     while stack:
         node = stack.pop()
         out.append(node)
         if not isinstance(node, (*_FUNCTIONS, ast.Lambda, ast.ClassDef)):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
     return out
 
 
@@ -167,7 +167,7 @@ def _check_key_function(func: _Func, qualname: str, constants: dict[str, ast.AST
 def _visit_functions(node: ast.AST, prefix: str, constants: dict[str, ast.AST], rel: str, lines: list[str]) -> list[Finding]:
     """Walk classes and functions below *node*, checking each key function with its qualified name."""
     out: list[Finding] = []
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
             out.extend(_visit_functions(child, f"{prefix}{child.name}.", constants, rel, lines))
         elif isinstance(child, _FUNCTIONS):

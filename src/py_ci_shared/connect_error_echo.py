@@ -39,7 +39,8 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult
+from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
+from ._core import walk as shared_walk
 from ._gate_report import enclosing_functions, report, scan_tree, skip_set
 
 __all__ = ["DEFAULT_CALLEES", "DEFAULT_SANITIZERS", "DEFAULT_SINKS", "RULE", "REFRESH_FLAG", "find_connect_error_echo", "assert_no_connect_error_echo"]
@@ -123,7 +124,7 @@ def _walk_local(nodes: Iterable[ast.AST], prune: Optional[Callable[[ast.AST], bo
         yield node
         if prune is not None and prune(node):
             continue
-        stack.extend(child for child in ast.iter_child_nodes(node) if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
+        stack.extend(child for child in child_nodes(node) if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
 
 
 class _Callees:
@@ -136,7 +137,7 @@ class _Callees:
         self.rebound: set[str] = set()
         # `connect = psycopg2.connect` (anywhere, any scope): the name now opens a connection. Two passes reach a
         # re-binding of a re-binding.
-        pairs = [(n.targets[0].id, n.value) for n in ast.walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
+        pairs = [(n.targets[0].id, n.value) for n in shared_walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
         for _ in range(2):
             self.rebound.update(target for target, value in pairs if isinstance(value, (ast.Name, ast.Attribute)) and self.matches(value))
 
@@ -177,7 +178,7 @@ def _mentions(node: ast.AST, name: str, sanitizers: tuple[str, ...]) -> bool:
             return True
         if isinstance(current, ast.Attribute) and current.attr in _SAFE_ATTRS:
             continue
-        stack.extend(ast.iter_child_nodes(current))
+        stack.extend(child_nodes(current))
     return False
 
 
@@ -247,7 +248,7 @@ def _file_findings(parsed: ParsedFile, callees: frozenset[str], sinks: frozenset
     functions = enclosing_functions(tree)
     lines = parsed.source.splitlines()
     out: list[Finding] = []
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if not isinstance(node, _TRY_TYPES) or not resolver.in_body(node.body):  # type: ignore[attr-defined]
             continue
         for handler in node.handlers:  # type: ignore[attr-defined]

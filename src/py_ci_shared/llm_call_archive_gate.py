@@ -31,7 +31,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, CorpusError, ImportAliases, SourceError, UnparsedFilesError, iter_files, parse_source, relative_posix
+from ._core import DEFAULT_EXCLUDE, CorpusError, ImportAliases, SourceError, UnparsedFilesError, iter_files, parse_source, parse_text, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -105,7 +105,7 @@ def _parsed(repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str
 
 
 def _tree_of(source_or_tree: "str | ast.Module") -> ast.Module:
-    return source_or_tree if isinstance(source_or_tree, ast.Module) else ast.parse(source_or_tree)
+    return source_or_tree if isinstance(source_or_tree, ast.Module) else parse_text(source_or_tree)
 
 
 def _sdk_call_lines(source: "str | ast.Module", sdk_methods: frozenset[tuple[str | None, str]]) -> list[int]:
