@@ -18,7 +18,7 @@ word in prose is not. A separate function checks the one numeric-claim shape tha
 comment saying "the N known ..." (or "N exceptions", "N cases", ...) followed by a numbered list in the
 same comment block must list exactly N items.
 
-Usage (a consuming repo's ``tests/test_meta/test_comments_name_real_things.py``)::
+Usage (a consuming repo's test_meta test module)::
 
     from pathlib import Path
     from py_ci_shared.phantom_code_references import (

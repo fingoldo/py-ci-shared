@@ -171,7 +171,7 @@ def find_hardcoded_seed_in_library(
 ) -> list[Finding]:
     """Every finding under *root*, sorted by path and line.
 
-    *exclude* holds path fragments matched against the POSIX relative path (``tests/`` matches ``tests/x.py`` and
+    *exclude* holds path fragments matched against the POSIX relative path (``tests`` matches ``x.py`` and
     ``pkg/tests/x.py``, not ``contests/x.py``); the default skips ``tests/`` and ``_benchmarks/``. Raises ``EmptyScanError``
     when fewer than *min_files* files parsed and ``UnparsedFilesError`` for a file that cannot be read or parsed (unless
     *allow_unparsed*): a gate that cannot read the code must not pass it.

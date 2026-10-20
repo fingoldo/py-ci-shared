@@ -19,7 +19,7 @@ What a gate module declares to opt in:
 * ``_EXPECTED_EMPTY_POPULATION = "<reason>"``: for a gate whose population is deliberately a filtered subset that
   can be empty today. It turns an invisible no-op into a recorded decision, and the reason has to be written out.
 
-Usage in a consumer's ``tests/test_meta``::
+Usage in a consumer's test_meta folder::
 
     from py_ci_shared.gate_population_canary import (
         assert_every_gate_declares_its_population, assert_population_is_not_empty, assert_canary_is_matched,

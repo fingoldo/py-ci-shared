@@ -1,7 +1,7 @@
 """Shared check: a test an audit disposition names must exist.
 
 ``audit_disposition_parity`` checks the FILES a disposition names. The commonest claim in these
-dispositions is a different one -- "covered by `TestX`", "test: `tests/test_y.py::test_z`" -- and it
+dispositions is a different one -- "covered by `TestX`", "test: `test_y.py::test_z`" -- and it
 was the claim that went unchecked. On 2026-09-12 a disposition recorded that a guard in
 production_scrapers' ``scan_loop`` was tested; no test tripped it, and it was found only because a
 synthesis agent looked. A named test that does not exist is the cheapest false RESOLVED there is.
@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # A paragraph opener, or a markdown table row with a `Disposition` cell (`| X-1 | Disposition: fixed, `test_y` |`).
 _DISPOSITION_START = re.compile(r"^\s*(?:-\s*)?(?:\*\*Disposition|Disposition:)")
 _TABLE_DISPOSITION = re.compile(r"^\s*\|(?:.*\|)?\s*(?:\*\*)?Disposition\b")
-# `.py` must end the path (`tests/x.pyi` is not `tests/x.py`); a parametrised id (`::test_x[case]`) keeps its name.
+# `.py` must end the path (`x.pyi` is not `x.py`); a parametrised id (`::test_x[case]`) keeps its name.
 _TEST_PATH = re.compile(r"(?<![\w/])((?:[\w.\-]+/)*tests/[\w./\-]+?\.py)(?![\w])(?:::(\w+)(?:\[[^\]`\s]*\])?)?(?:::(\w+)(?:\[[^\]`\s]*\])?)?")
 _TEST_NAME = re.compile(r"`((?:Test[A-Z]\w*)|(?:test_\w+))(?:\[[^\]`]*\])?(?:::(\w+)(?:\[[^\]`]*\])?)?`")
 
@@ -109,12 +109,12 @@ def _path_reference_problems(where: str, para: str, project_root: Path, tests_di
     problems: set[str] = set()
     for raw, first, second in _TEST_PATH.findall(para):
         rel = raw.rstrip(".")
-        # `tests/x.py`, or with this project's own prefix (`pkg/tests/x.py`), or a SIBLING project's
+        # `x.py`, or with this project's own prefix (`pkg/tests/x.py`), or a SIBLING project's
         # (`other_pkg/tests/x.py`), resolved against that sibling.
         if rel.startswith(tests_dir + "/"):
-            # A bare `tests/x.py` in a SIBLING's round: the fix landed there and the round names the
+            # A bare `x.py` in a SIBLING's round: the fix landed there and the round names the
             # package in its prose, not inside the backticks. A dashboard disposition citing
-            # `tests/test_check_indexes_reconciliation.py` (realtime_applications') read as missing here.
+            # `test_check_indexes_reconciliation.py` (realtime_applications') read as missing here.
             candidates = [project_root / rel, *(r / rel for r in other_roots)]
         else:
             candidates = [project_root / rel, project_root / rel.split("/", 1)[-1]]

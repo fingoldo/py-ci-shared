@@ -219,6 +219,13 @@ first_party_owners = ["fingoldo"]
 src_dir = "src/py_ci_shared"
 package = "py_ci_shared"
 
+[tool.py_ci_shared.gates.comment_repo_paths]
+# The package documents consumer layouts (tool/, scripts/) in its own docstrings by design; this repo's own tooling is tests/ and .github/.
+roots = ["tests/", ".github/"]
+# Canary fixtures are deliberately broken files; they are not prose that can cite a path.
+# Test modules quote the text they check (fixtures and expectations), so they are not scanned for prose paths.
+files = ["src/**/*.py", ".github/**/*.yml", "configs/**/*"]
+
 [tool.py_ci_shared.gates.naive_utcnow]
 root = "src"
 

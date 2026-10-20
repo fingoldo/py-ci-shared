@@ -28,7 +28,7 @@ Usage::
     from py_ci_shared.vendored_internal_imports import assert_no_vendored_internal_imports
 
     def test_no_vendored_internal_imports():
-        assert_no_vendored_internal_imports(REPO, baseline_path=REPO / "tests/baselines/vendored_internal_imports.json")
+        assert_no_vendored_internal_imports(REPO, baseline_path=REPO / "baselines/vendored_internal_imports.json")
 """
 
 from __future__ import annotations

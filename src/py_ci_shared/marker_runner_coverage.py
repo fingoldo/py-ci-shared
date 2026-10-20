@@ -7,13 +7,13 @@ package. Four tests across two packages were selected by nothing at all:
 
 * ``realtime_applications`` deselects the marker by default (``addopts = "... -m 'not integration'"``),
   its nightly workflow runs ``pytest -m "slow and integration"``, and its pre-push hook names four
-  files by path. ``tests/integration/test_idf_queries_run_against_postgres.py`` and
+  files by path. ``integration/test_idf_queries_run_against_postgres.py`` and
   ``test_client_info_batch_uses_the_partial_index.py`` carry ``integration`` WITHOUT ``slow``, so the
   default run drops them, the nightly expression does not match them, and the hook does not name
   them. Both pass in ~2 minutes against the real database, and both exist because the queries they
   cover were broken in production while 4,328 green tests said otherwise.
 * ``production_scrapers`` runs its unit job as ``pytest tests/ -m "not integration"`` and its
-  integration job as ``pytest tests/integration/ -m integration``. Two ``integration``-marked tests
+  integration job as ``pytest integration/ -m integration``. Two ``integration``-marked tests
   live OUTSIDE that directory (a real-``gql()``-over-loopback request, and the network guard's own
   exemption self-test), so the unit job deselects them and the integration job's path argument
   never reaches them.
@@ -21,7 +21,7 @@ package. Four tests across two packages were selected by nothing at all:
 This is the same defect the 2026-09-03 round found as "three integration files that had never
 executed", and the same shape as ``ci_test_dir_reachability`` -- which cannot see it, because that
 check works on DIRECTORIES and is blind to markers: a pathless ``pytest -m "slow and integration"``
-makes ``tests/integration`` look reached while every file in it whose marks do not satisfy the
+makes ``integration`` look reached while every file in it whose marks do not satisfy the
 expression is dropped.
 
 A marker is a promise that something runs the marked tier. This turns the promise into a claim the

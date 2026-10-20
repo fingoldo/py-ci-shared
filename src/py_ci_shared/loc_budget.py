@@ -12,7 +12,7 @@ CLI flag registered via ``register_refresh_option``, ``assert_*`` as the
 test body) so a project already using that pattern for code-audit findings
 recognizes this one immediately.
 
-Usage (in a consuming repo's ``tests/test_meta/test_no_file_over_1k_loc.py``,
+Usage (in a consuming repo's test_meta test module,
 or an equivalent root-level file for flat-layout repos)::
 
     from pathlib import Path
@@ -196,7 +196,7 @@ def assert_no_new_oversized_file(
         files: every production ``.py`` file to consider -- the caller
             decides what "production" means for its own layout (a
             ``src/`` tree, a flat-layout repo root, an exclusion list of
-            tests/docs/etc.), this function only applies the LOC policy.
+            docs and etc.), this function only applies the LOC policy.
         root: used to compute each file's path RELATIVE to it for the
             baseline keys/messages (so the baseline is portable across
             machines/checkouts, not tied to an absolute path).

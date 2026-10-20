@@ -9,7 +9,7 @@ from at least one test of the real-engine tier, and a statement without one is a
 The tier is the caller's definition, as either or both of:
 
 * ``engine_test_dirs`` (required; ``()`` when only markers define the tier): directories (relative to *root*, or absolute) whose Python files all run on a real engine
-  (``tests/integration``). A file there counts whole.
+  (``integration``). A file there counts whole.
 * ``engine_markers``: pytest marker names (``integration``). A module-level ``pytestmark`` carrying one counts the
   whole file; ``@pytest.mark.<marker>`` on a test function or class counts what that function or class references.
   Files are searched under ``marker_search_dirs`` (default: all of *root*).
@@ -31,7 +31,7 @@ Usage in a consumer's meta test::
 
     def test_every_statement_has_an_engine_test():
         assert_every_statement_has_an_engine_test(
-            "src", "tests/_engine_baseline.json", engine_test_dirs=["tests/integration"], exclude_top_dirs=["tests", "scripts"]
+            "src", "_engine_baseline.json", engine_test_dirs=["integration"], exclude_top_dirs=["tests", "scripts"]
         )
 """
 

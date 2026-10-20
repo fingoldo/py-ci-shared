@@ -9,7 +9,7 @@ only a NET-NEW finding fails the test. This module is that logic,
 factored out to one place so a bug fix or format change lands everywhere
 at once instead of needing seven synchronized edits.
 
-Usage (in a consuming repo's ``tests/test_meta/test_code_audit_baseline.py``,
+Usage (in a consuming repo's test_meta test module,
 or an equivalent root-level file for flat-layout repos)::
 
     from pathlib import Path

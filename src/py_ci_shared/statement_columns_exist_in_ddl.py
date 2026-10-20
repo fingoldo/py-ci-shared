@@ -40,7 +40,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.statement_columns_exist_in_ddl import assert_statement_columns_exist_in_ddl
 
     def test_statement_columns_exist_in_ddl():
-        assert_statement_columns_exist_in_ddl("src", "tests/statement_columns_baseline.json", ddl_dirs=["sql"], exclude_top_dirs=["tests", "scripts"])
+        assert_statement_columns_exist_in_ddl("src", "statement_columns_baseline.json", ddl_dirs=["sql"], exclude_top_dirs=["tests", "scripts"])
 """
 
 from __future__ import annotations

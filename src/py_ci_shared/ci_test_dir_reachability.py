@@ -3,7 +3,7 @@ reachable by at least one CI job -- or be explicitly whitelisted as
 intentionally excluded (e.g. a paid-API "live" tier).
 
 Generalizes a pattern first written directly in glossum_backend_scripts
-(``tests/test_meta/test_all_test_dirs_reachable_in_ci.py``, 2026-07-23
+(a consumer's test_meta module, 2026-07-23
 audit-verification meta-test round): a new test subdirectory can be added
 and never wired into any CI job's ``pytest`` invocation, so its tests only
 ever run locally -- CI stays green while a whole test category silently
@@ -15,7 +15,7 @@ What counts: a ``pytest`` COMMAND (at the start of a command, optionally behind
 never ``pip install pytest`` or a step name), read one command at a time (YAML
 comments stripped, shell line-continuations folded, ``;``/``&&``/``||``/``|`` split).
 Each invocation is judged on its own: its positional paths reach a subdir only on a
-path-segment boundary (``tests/unit_slow`` does not reach ``tests/unit``), a pathless
+path-segment boundary (``unit_slow`` does not reach ``unit``), a pathless
 run reaches everything its OWN ``--ignore``s (both ``=`` and space forms) leave, and
 an ignore in one job never hides a subdir another job runs.
 
@@ -83,7 +83,7 @@ def _all_ci_run_lines(workflows_dir: Path) -> str:
         return ""
     workflow_files = sorted(workflows_dir.glob("*.yml")) + sorted(workflows_dir.glob("*.yaml"))
     text = "\n".join("\n".join(_strip_yaml_comment(line) for line in read_source(wf).splitlines()) for wf in workflow_files)
-    # Fold shell line-continuations so a multi-line `pytest ... \` + newline + `tests/foo` invocation is
+    # Fold shell line-continuations so a multi-line `pytest ... \` + newline + `<dir>` invocation is
     # analysed as the single command it is -- otherwise its first line looks pathless and its
     # continuation lines look like commands of their own.
     return re.sub(r"\\[ \t]*\n\s*", " ", text)
@@ -115,7 +115,7 @@ class PytestInvocation:
     ignores: list[str] = field(default_factory=list)
 
     def reaches(self, rel: str) -> bool:
-        """True when this run collects the directory *rel* (e.g. ``tests/unit``)."""
+        """True when this run collects the directory *rel* (e.g. ``unit``)."""
         if any(_covers(ignored, rel) for ignored in self.ignores):
             return False
         if not self.paths:

@@ -18,9 +18,9 @@ then, in a meta test that runs AFTER it (or in CI as a step after the unit job):
     from py_ci_shared.unexecuted_function_bodies import assert_unexecuted_function_bodies
 
     def test_no_new_unexecuted_function_bodies():
-        assert_unexecuted_function_bodies("coverage.json", ["src/mypkg"], baseline_path="tests/baselines/unexecuted_bodies.json", base=REPO)
+        assert_unexecuted_function_bodies("coverage.json", ["src/mypkg"], baseline_path="baselines/unexecuted_bodies.json", base=REPO)
 
-or ``python -m py_ci_shared.unexecuted_function_bodies --coverage coverage.json --src src/mypkg --baseline tests/baselines/unexecuted_bodies.json``
+or ``python -m py_ci_shared.unexecuted_function_bodies --coverage coverage.json --src src/mypkg --baseline baselines/unexecuted_bodies.json``
 (``--refresh-baseline`` rewrites the baseline, shrink-only unless ``--allow-grow``). Exit status: 0 clean, 1 findings, 2 the
 gate could not run (missing, empty, stale or mismatching report; an unparsable source file).
 

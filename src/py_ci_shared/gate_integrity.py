@@ -323,7 +323,7 @@ def _pyproject_narrowings(pyproject_path: "Path | None", pyproject_tables: tuple
 
 def _require(path: Optional[Path], what: str, is_dir: bool = False) -> Optional[Path]:
     """*path*, or None when the caller passed None to say the venue does not exist. A path that is given but missing
-    raises: a typo (``.github/workflow``) must not read as a repository with no narrowings."""
+    raises: a typo (a misspelt workflows folder) must not read as a repository with no narrowings."""
     if path is None:
         return None
     ok = Path(path).is_dir() if is_dir else Path(path).is_file()

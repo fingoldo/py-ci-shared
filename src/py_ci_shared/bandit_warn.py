@@ -11,7 +11,7 @@ Never blocks the commit and never rewrites anything -- bandit has no auto-fix mo
 Shared across projects via the py-ci-shared package. The source-path filter comes from a
 ``--src-path`` CLI argument (``--src-path src/mlframe`` or ``--src-path=src/mlframe``) or, if absent,
 the PY_CI_SHARED_SRC_PATH env var -- since which files count as "production code" (vs.
-tests/scripts/docs) is project-specific. CLI flag is preferred over env var because
+test, script and doc folders) is project-specific. CLI flag is preferred over env var because
 pre-commit's hook schema has no ``env:`` key, so an env var would need an extra shell
 wrapper to set portably across platforms; a CLI arg works directly in ``entry:``.
 

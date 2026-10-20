@@ -41,7 +41,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.stub_signature_parity import assert_stub_signature_parity
 
     def test_stubs_accept_what_the_real_callables_take():
-        assert_stub_signature_parity(".", baseline_path="tests/baselines/stub_signature_parity.json")
+        assert_stub_signature_parity(".", baseline_path="baselines/stub_signature_parity.json")
 """
 
 from __future__ import annotations

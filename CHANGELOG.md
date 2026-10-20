@@ -30,6 +30,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Gate results are cached on disk: a PASSED result is not re-run while nothing in the repository changed (the key is the gate, its arguments, the package version and a digest of the tree; FAILED, refresh and network gates always run; `PY_CI_SHARED_NO_CACHE=1` turns it off). The repeat of the package's own gates: 33 s to 12 s.
 - `stale_source_citations` on the mlframe tree: 192 s to 57 s with the same findings. The token list of a file is computed once (three passes read it), files
   without a `.py:` text are not tokenized (no citation pattern can match them), statement spans, docstring lines and split source lines are computed once per tree.
+- Self gate: `comment_repo_paths` runs on this repository (roots `tests/`, `.github/`; code and config files only). Its roots now accept the path form that config tables produce. About 50 illustrative or stale path references in docstrings and comments were reworded.
 - Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
   warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 

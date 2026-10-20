@@ -2,7 +2,7 @@
 
 ``addopts`` is prepended to EVERY pytest invocation, including a pre-commit hook or workflow step that names test files
 by path. In a project whose ``addopts`` carries ``-m 'not integration'``, a hook written as
-``pytest tests/integration/test_x.py`` selects nothing: the marker expression still applies, and only a ``-m`` on the
+``pytest integration/test_x.py`` selects nothing: the marker expression still applies, and only a ``-m`` on the
 command line replaces it. The first fix written for the shipped case (naming four never-run integration tests in a
 hook) would have looked like a fix and run nothing. pytest's exit status 5 does not save it when the same command
 also names other paths that do select something.

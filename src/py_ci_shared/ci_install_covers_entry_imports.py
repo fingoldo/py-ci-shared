@@ -1,6 +1,6 @@
 """The extras a CI job installs must cover what the module it runs imports when it starts.
 
-A job that runs ``python -m mypkg.nightly`` (or ``python scripts/run.py``, or ``pytest tests/x``) loads that module and
+A job that runs ``python -m mypkg.nightly`` (or ``python scripts/run.py``, or ``pytest <test file>``) loads that module and
 everything it imports at module level, before a single line of its own code runs. When one of those modules does a bare
 ``import pywt`` and the distribution (``pywavelets``) is only in a ``signal`` extra the job never installed, the job dies at
 startup with ``ModuleNotFoundError``, and does so on every run. In the shipped case a nightly installed ``.[dev]``, its

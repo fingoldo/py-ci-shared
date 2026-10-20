@@ -143,7 +143,7 @@ def _python_files_patterns(repo_root: Path) -> tuple[str, ...]:
 
 
 def _test_file_of(test: Union[Path, str]) -> str:
-    """The file part of a pytest argument: ``tests/x.py::TestC::test_f`` -> ``tests/x.py``."""
+    """The file part of a pytest argument: ``file.py::TestC::test_f`` -> ``file.py``."""
     return str(test).split("::", 1)[0]
 
 

@@ -14,12 +14,12 @@
 # `exclude = ["tests", ...]`). PY_CI_SHARED_DIR (env-var expansion, see README) means this path
 # is the SAME regardless of how deeply nested the config file is -- no "../.." vs "../" bookkeeping:
 #
-#     # tests/ruff.toml
+#     # configs/ruff-tests.toml
 #     extend = "$PY_CI_SHARED_DIR/configs/ruff-tests.toml"
 #     target-version = "py39"          # match the repo's own floor
 #
 # Ruff's config discovery walks up from each linted file looking for the nearest ruff.toml /
-# .ruff.toml / pyproject.toml[tool.ruff] -- tests/ruff.toml wins for anything under tests/ and is
+# .ruff.toml / pyproject.toml[tool.ruff] -- configs/ruff-tests.toml wins for anything under tests/ and is
 # never merged with the repo-root pyproject.toml automatically; `extend` here is what pulls in
 # ruff-base.toml's select/ignore explicitly. Invoke with `ruff check tests/` as its own gate,
 # separate from the src/-scoped `ruff check .`.

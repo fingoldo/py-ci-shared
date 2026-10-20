@@ -40,7 +40,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.validation_errors_echo_input import assert_validation_errors_echo_input
 
     def test_validation_errors_echo_input():
-        assert_validation_errors_echo_input("src", baseline_path="tests/baselines/validation_errors_echo_input.json")
+        assert_validation_errors_echo_input("src", baseline_path="baselines/validation_errors_echo_input.json")
 """
 
 from __future__ import annotations

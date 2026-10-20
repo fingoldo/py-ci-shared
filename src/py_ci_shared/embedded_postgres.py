@@ -15,7 +15,7 @@ Two gaps production_scrapers hit on 2026-09-11/12, both of the "a gate that sile
 
 CLI::
 
-    python -m py_ci_shared.embedded_postgres run --env PS_INTEGRATION_PG_DSN -- python -m pytest -m integration tests/integration
+    python -m py_ci_shared.embedded_postgres run --env PS_INTEGRATION_PG_DSN -- python -m pytest -m integration integration
 """
 
 from __future__ import annotations

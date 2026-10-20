@@ -112,7 +112,19 @@ def _candidates(repo_root: Path, roots: Sequence[str], use_git: Optional[bool]) 
     return iter_files(repo_root, patterns, exclude=_EXCLUDE, use_git=use_git)
 
 
+def _relative_roots(repo_root: Path, roots: Sequence[Any]) -> list[str]:
+    """The roots as repo-relative strings: a config table's root arrives as a path under the repo root (see ``config.resolve_kwargs``)."""
+    out: list[str] = []
+    for root in roots:
+        if isinstance(root, Path):
+            root = root.relative_to(repo_root).as_posix() if root.is_absolute() else root.as_posix()
+            root = "" if root == "." else root
+        out.append(str(root))
+    return out
+
+
 def _scan(repo_root: Path, files: Optional[Iterable[Path]], roots: Sequence[str], use_git: Optional[bool]) -> tuple[list[Finding], ScanResult]:
+    roots = _relative_roots(repo_root, roots)
     pattern = _token_re(roots)
     paths = [Path(p) for p in files] if files is not None else _candidates(repo_root, roots, use_git)
     scan = ScanResult(root=repo_root, min_files=0)

@@ -127,7 +127,7 @@ def read_pytest_outcome(stdout: str) -> tuple[str, list[str]]:
     FAILED *AND* ERROR, and the difference is not cosmetic. A mutation that renames or removes
     something an importer needs makes pytest fail at COLLECTION, reported as::
 
-        ERROR tests/test_x.py::test_y
+        ERROR test_x.py::test_y
 
     with no FAILED line anywhere. Counting only FAILED reports that mutation as SURVIVED -- "this
     fix has no teeth" -- for a fix so thoroughly watched that the suite cannot even load without it.

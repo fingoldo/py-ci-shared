@@ -12,11 +12,11 @@ Findings (one line each, regex over the YAML text, comments ignored):
 * ``moving-runner-label``: ``ubuntu-latest``/``windows-latest``/``macos-latest`` anywhere in a workflow (``runs-on``
   or a matrix value), unless the line carries ``# moving-label-ok: <reason>``;
 * ``no-actions-update-channel``: the repo pins ``uses:`` to a SHA or tag and has no ``github-actions`` ecosystem in
-  ``.github/dependabot.yml`` (or a Renovate config).
+  ``dependabot.yml`` (or a Renovate config).
 
 Autofix (``python -m py_ci_shared.workflow_runner_labels --fix <repo>``): rewrites each moving label to
 :data:`PINNED_LABELS` (what the ``-latest`` labels pointed at when this was written; pass ``--label ubuntu=ubuntu-22.04``
-to choose) and writes or extends ``.github/dependabot.yml`` with a weekly ``github-actions`` entry. Review the diff:
+to choose) and writes or extends ``dependabot.yml`` with a weekly ``github-actions`` entry. Review the diff:
 a job that relied on what ``-latest`` happened to be may need its own label.
 """
 
