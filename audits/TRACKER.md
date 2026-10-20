@@ -792,3 +792,22 @@ Each file keeps the agent's original id on every finding.
 | **RESOLVED** | Med | `G-12` | stale_comment_age: make the early warning the default |
 | **RESOLVED** | Low | `G-13` | Commit metadata policy: forbidden trailers and BOM-prefixed subjects |
 | **RESOLVED** | Low | `G-14` | Closed audit rounds are append-only |
+
+## Round 2026-10-19 -- test-speed work and the self code audit
+
+Details and measurements: `audits/2026-10-19/followups.md`.
+
+| Disposition | Sev | Finding | Note |
+|---|---|---|---|
+| **RESOLVED** | Med | `S-1` | Postgres servers left by a killed process are reaped at the next start |
+| **RESOLVED** | Med | `S-2` | pytest-randomly reseeders loaded in sessions without randomly (about 7 s per start) |
+| **RESOLVED** | Low | `S-3` | `warn_days=0` rewritten to the default 7 by an `or` |
+| **RESOLVED** | Med | `S-4` | Mutation sweep verdict split out of a file over the 1000-line budget (harness version 19) |
+| **DEFERRED** | P1 | `S-5` | `bare_except` x3: re-raising by design; waits on the detector reading `audit-exempt` for this check |
+| **DEFERRED** | P1 | `S-6` | `busy_retry_loop`: blocking queue read, not a spin; waits on the same detector change |
+| **DEFERRED** | P1 | `S-7` | `sentinel_guard_mismatch`: false match between two functions; waits on the same detector change |
+| **DEFERRED** | P2 | `S-8` | `duplicate_function_body` (56 groups): shared helpers, one pass |
+| **DEFERRED** | P2 | `S-9` | `default_via_or` (about 180): each defaulting site needs its caller read |
+| **DEFERRED** | Low | `S-10` | C901 over 10 (62 functions): advisory in CI |
+| **DEFERRED** | Med | `S-11` | Corpus gates not run on the package itself |
+| **DEFERRED** | Low | `S-12` | Mutation sweep cost in the tests (`four_workers`, `survivors_in_source_order`) |
