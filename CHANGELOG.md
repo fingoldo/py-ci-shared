@@ -10,6 +10,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - The tests that start a Postgres server (`xdist_group("postgres")`) run on one worker under xdist, so the session has one server, not one per worker. The
   mode is added to the arguments the workers start from (see the `pytest_cmdline_main` note in `tests/conftest.py`). Tests that need an isolated schema take
   a `fresh_database()` on the session server (`py_ci_shared.embedded_postgres`). The lifecycle test (`test_a_real_server_starts...`) keeps its own start.
+- Fixed: `tests/conftest.py` called `bound_randomly_reseeders()` without the session config, so the skip for a session without pytest-randomly never ran
+  there and every pytest start imported thinc, torch and cupy (about 7 s). Every nested pytest run of `test_scaffold` paid that three times: 137 s to 51 s.
 - Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
   warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 

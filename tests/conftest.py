@@ -150,4 +150,4 @@ def pytest_configure(config: pytest.Config) -> None:
     The package's own pytest11 plugin does this too, but this suite must not depend on the package being installed
     with its entry point registered.
     """
-    bound_randomly_reseeders()
+    bound_randomly_reseeders(config)
