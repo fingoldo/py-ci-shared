@@ -43,7 +43,8 @@ import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, nodes_of, scan_python
+from ._core.scan import scan_roots_excluding
+from ._core import ScanResult, nodes_of
 
 logger = logging.getLogger(__name__)
 
@@ -137,14 +138,6 @@ def _is_padded_division(node: ast.AST) -> bool:
     return name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1])  # type: ignore[attr-defined]
 
 
-def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
-    excluded = tuple(exclude)
-    files: list[Path] = []
-    for root in roots:
-        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
-    return scan_python(files)
-
-
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
@@ -165,7 +158,7 @@ def find_epsilon_padded_power_denominators(
     shape it was frozen with. A missing root raises ``py_ci_shared._core.CorpusError``; files that cannot be parsed
     are not in this list, and :func:`assert_no_epsilon_padded_power_denominators` fails on them.
     """
-    return _findings(_scan(roots, exclude))
+    return _findings(scan_roots_excluding(roots, exclude))
 
 
 def assert_no_epsilon_padded_power_denominators(
@@ -183,7 +176,7 @@ def assert_no_epsilon_padded_power_denominators(
     not a clean tree) and when any file could not be parsed.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    scan = _scan(roots, exclude)
+    scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
     newline = chr(10)
     problems: list[str] = []

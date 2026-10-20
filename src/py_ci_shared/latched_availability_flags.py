@@ -30,7 +30,8 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, child_nodes, iter_files, qualified_functions, scan_python
+from ._core.scan import scan_roots_excluding
+from ._core import ImportAliases, ScanResult, child_nodes, qualified_functions
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -136,14 +137,6 @@ def _handler_statements(handler: ast.ExceptHandler) -> Iterator[ast.AST]:
             stack.extend(child_nodes(node))
 
 
-def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
-    excluded = tuple(exclude)
-    files: list[Path] = []
-    for root in roots:
-        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
-    return scan_python(files)
-
-
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
@@ -174,7 +167,7 @@ def find_latched_availability_flags(roots: Sequence[Path], exclude: Iterable[str
     """Return every boolean availability flag pinned to a constant inside a broad ``except`` (``try``/``except*`` alike),
     each reported once, under the function whose own scope holds it. Unparsable files are not in this list; the assert
     fails on them."""
-    return _findings(_scan(roots, exclude))
+    return _findings(scan_roots_excluding(roots, exclude))
 
 
 def assert_no_latched_availability_flags(roots: Sequence[Path], exclude: Iterable[str] = (), allow: Iterable[str] = (), *, min_files: int = 1) -> None:
@@ -185,7 +178,7 @@ def assert_no_latched_availability_flags(roots: Sequence[Path], exclude: Iterabl
     ``ImportError``, warn on anything else, and leave the cache unset so the next call re-probes.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    scan = _scan(roots, exclude)
+    scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
     newline = chr(10)
     problems: list[str] = []

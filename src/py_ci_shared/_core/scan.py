@@ -172,3 +172,12 @@ def _parse_one(path: Path, rel: str) -> Union[ParsedFile, SourceProblem]:
         logger.debug("could not parse source, reported as a problem: %s", type(exc).__name__)
         return _problem(exc, rel)
     return ParsedFile(path, rel, tree, source)
+
+
+def scan_roots_excluding(roots: Iterable[Path | str], exclude: Iterable[str]) -> ScanResult:
+    """Scan every ``*.py`` under *roots* outside :data:`DEFAULT_EXCLUDE`, dropping paths that contain any *exclude* fragment."""
+    excluded = tuple(exclude)
+    files: list[Path] = []
+    for root in roots:
+        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
+    return scan_python(files)

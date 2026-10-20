@@ -69,7 +69,7 @@ def _workflow_files(workflows_dir: Path) -> list[Path]:
     return sorted(p for p in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")) if p.is_file())
 
 
-def _strip_comment(line: str) -> str:
+def strip_yaml_comment(line: str) -> str:
     """*line* without a trailing YAML comment: a ``#`` at the start or after whitespace, outside quotes."""
     quote = ""
     for i, ch in enumerate(line):
@@ -266,7 +266,7 @@ def find_missing_workflow_paths(
     for path in files:
         raw_lines = read_source(path).splitlines()
         # A block-scalar `run: |` body is shell, not YAML: a `#` there is a shell comment and is stripped the same way.
-        lines = [_strip_comment(line) for line in raw_lines]
+        lines = [strip_yaml_comment(line) for line in raw_lines]
         rel = path.relative_to(repo_root).as_posix() if repo_root in path.parents else path.name
         job_of, step_of = _scopes(lines)
         run_text = _run_content(lines)

@@ -49,8 +49,9 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Union
 
+from ._core.scan import scan_roots_excluding
 from ._core.scopes import own_nodes
-from ._core import DEFAULT_EXCLUDE, ScanResult, child_nodes, iter_files, nodes_of, scan_python
+from ._core import ScanResult, child_nodes, nodes_of
 from ._core.node_index import walk
 
 __all__ = [
@@ -230,14 +231,6 @@ def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
     return sorted(findings, key=lambda f: (f.lineno, f.what))
 
 
-def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
-    excluded = tuple(exclude)
-    files: list[Path] = []
-    for root in roots:
-        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
-    return scan_python(files)
-
-
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
@@ -252,7 +245,7 @@ def find_unconditional_stream_restores(roots: Sequence[Path], exclude: Iterable[
     ``py_ci_shared._core.CorpusError``; files that cannot be parsed are not in this list, and
     :func:`assert_standard_streams_restored_only_if_still_ours` fails on them.
     """
-    return _findings(_scan(roots, exclude))
+    return _findings(scan_roots_excluding(roots, exclude))
 
 
 def assert_standard_streams_restored_only_if_still_ours(
@@ -270,7 +263,7 @@ def assert_standard_streams_restored_only_if_still_ours(
     clean tree) and, unless *allow_unparsed*, when any file could not be parsed.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    scan = _scan(roots, exclude)
+    scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
     newline = chr(10)
     problems: list[str] = []

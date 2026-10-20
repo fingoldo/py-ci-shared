@@ -40,6 +40,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from .ci_workflow_paths import strip_yaml_comment
 from ._core import read_source
 
 # Matches both step-level (`  - name: "..."`) and job-level (`  name: ...`)
@@ -59,20 +60,6 @@ _CONTINUE_ON_ERROR_RE = re.compile(r"^\s*(?:-\s+)?continue-on-error:\s*([\"']?)t
 _TRAILING_COMMENT_RE = re.compile(r"\s+#.*$")
 _KEY_VALUE_RE = re.compile(r"""^(?P<key>[A-Za-z0-9_.-]+|"[^"]*"|'[^']*')\s*:(?:\s+(?P<value>.*))?$""")
 _JOBS_RE = re.compile(r"^jobs\s*:\s*$")
-
-
-def _strip_comment(line: str) -> str:
-    """*line* without a trailing YAML comment: a ``#`` at the start or after whitespace, outside quotes."""
-    quote = ""
-    for i, ch in enumerate(line):
-        if quote:
-            if ch == quote:
-                quote = ""
-        elif ch in "\"'" and (i == 0 or line[i - 1] in " \t:-[{,"):
-            quote = ch
-        elif ch == "#" and (i == 0 or line[i - 1] in " \t"):
-            return line[:i].rstrip()
-    return line.rstrip()
 
 
 def _unquote(value: str) -> str:
@@ -205,7 +192,7 @@ def find_continue_on_error_steps(workflow_path: Path) -> list[str]:
     can't silently vanish from review. A file without a top-level ``jobs:``
     (a composite action) is read for ``steps:`` lists anywhere.
     """
-    lines = [_strip_comment(raw) for raw in read_source(workflow_path).splitlines()]
+    lines = [strip_yaml_comment(raw) for raw in read_source(workflow_path).splitlines()]
     reader = _Reader(any(_JOBS_RE.match(line) for line in lines))
     for lineno, line in enumerate(lines, start=1):
         reader.feed(lineno, line)

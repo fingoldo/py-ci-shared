@@ -30,7 +30,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Union
 
-from ._core import DEFAULT_EXCLUDE, ScanResult, iter_files, scan_python
+from ._core.scan import scan_roots_excluding
+from ._core import ScanResult
 
 __all__ = [
     "DriftGroup",
@@ -109,14 +110,6 @@ def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
 
-def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
-    excluded = tuple(exclude)
-    files: list[Path] = []
-    for root in roots:
-        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
-    return scan_python(files)
-
-
 def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
     groups: dict[tuple[str, str], list[tuple[Path, int, str]]] = defaultdict(list)
     for parsed in scan:
@@ -147,7 +140,7 @@ def find_drifted_duplicate_functions(
     different function, not a copy that drifted. A changed default is drift, not a different signature.
     Files that cannot be parsed are not reported here; :func:`assert_no_drifted_duplicate_functions` fails on them.
     """
-    return _groups_from(_scan(roots, exclude), similarity)
+    return _groups_from(scan_roots_excluding(roots, exclude), similarity)
 
 
 def assert_no_drifted_duplicate_functions(
@@ -166,7 +159,7 @@ def assert_no_drifted_duplicate_functions(
     *min_files* parsed files.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    scan = _scan(roots, exclude)
+    scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
     every = _groups_from(scan, similarity)
     found = [g for g in every if g.name not in allowed]

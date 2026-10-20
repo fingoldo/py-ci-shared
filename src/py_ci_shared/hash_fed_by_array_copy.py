@@ -39,7 +39,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
-from ._core import DEFAULT_EXCLUDE, ImportAliases, ScanResult, iter_files, nodes_of, scan_python
+from ._core.scan import scan_roots_excluding
+from ._core import ImportAliases, ScanResult, nodes_of
 
 logger = logging.getLogger(__name__)
 
@@ -120,14 +121,6 @@ def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliase
     return None
 
 
-def _scan(roots: Sequence[Path], exclude: Iterable[str]) -> ScanResult:
-    excluded = tuple(exclude)
-    files: list[Path] = []
-    for root in roots:
-        files.extend(p for p in iter_files(Path(root), ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.as_posix() for fragment in excluded))
-    return scan_python(files)
-
-
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
@@ -140,7 +133,7 @@ def _findings(scan: ScanResult) -> list[Finding]:
 def find_hashes_fed_by_array_copy(roots: Sequence[Path], exclude: Iterable[str] = ()) -> list[Finding]:
     """Scan every ``*.py`` under ``roots`` and return each hash call fed by a fresh array copy. A missing root raises
     ``py_ci_shared._core.CorpusError``; unparsable files are not in this list, and the assert fails on them."""
-    return _findings(_scan(roots, exclude))
+    return _findings(scan_roots_excluding(roots, exclude))
 
 
 def assert_no_hash_fed_by_array_copy(roots: Sequence[Path], exclude: Iterable[str] = (), allow: Iterable[str] = (), *, min_files: int = 1) -> None:
@@ -152,7 +145,7 @@ def assert_no_hash_fed_by_array_copy(roots: Sequence[Path], exclude: Iterable[st
     hash at all, which this check already excludes.
     """
     allowed = {entry.strip() for entry in allow if entry.strip()}
-    scan = _scan(roots, exclude)
+    scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
     newline = chr(10)
     problems: list[str] = []
