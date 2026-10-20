@@ -94,10 +94,6 @@ def register_refresh_option(parser) -> None:  # type: ignore[no-untyped-def]
     register_refresh_options(parser, [REFRESH_FLAG])
 
 
-def _refresh_requested(request: Optional[Any] = None) -> bool:
-    return refresh_requested(REFRESH_FLAG, request)
-
-
 def _module_level_defs(body: "list[ast.stmt]") -> Iterator[_FuncDef]:
     """Functions defined at module level, including under a module-level ``if``/``try``/``with`` (a platform or
     optional-dependency switch still defines a module function); never inside a class or another function."""
@@ -379,7 +375,7 @@ def assert_no_new_uncalled_function(
         pytest.fail("invalid uncalled-function exemption(s):\n  " + "\n  ".join(bad), pytrace=False)
     ignored = set(ignore) | set(exemptions)
     current = {k: v for k, v in find_uncalled_functions(paths, root).items() if v not in ignored}
-    do_refresh = refresh if refresh is not None else _refresh_requested(request)
+    do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
     baseline = Baseline(baseline_path, gate="uncalled-functions", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=uncalled-functions)")
     outcome = baseline.enforce(sorted(current), refresh=do_refresh)
     if outcome.refreshed:

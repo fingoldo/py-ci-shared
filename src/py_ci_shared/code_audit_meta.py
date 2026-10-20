@@ -87,16 +87,6 @@ def register_refresh_option(parser) -> None:
     register_refresh_options(parser, [REFRESH_FLAG], help_suffix="code-audit baseline JSON")
 
 
-def _refresh_requested(request=None) -> bool:
-    """True if a refresh of the code-audit baseline was asked for.
-
-    A thin wrapper over ``py_ci_shared._core.refresh_requested``: the pytest option (via *request*, which
-    xdist reconstructs per worker, unlike ``sys.argv == ['-c']``), the ``--py-ci-refresh`` list, the
-    ``PY_CI_SHARED_REFRESH`` env var (inherited by workers; ``code-audit`` or ``all``), then ``sys.argv``.
-    """
-    return refresh_requested(REFRESH_FLAG, request)
-
-
 def _legacy_key(f: "Finding") -> str:
     """The original ``check::file:line`` key. Read-only now; see ``_keys``."""
     return f"{f.check}::{f.file}:{f.line}"
@@ -248,7 +238,7 @@ def assert_no_new_code_audit_findings(
             accepts one. Pass it whenever the repo's ``addopts``/CI invocation
             may run under pytest-xdist (``-n``) -- without it, the refresh flag
             is detected via ``sys.argv``, which xdist worker subprocesses don't
-            reliably carry (see ``_refresh_requested``).
+            reliably carry (see ``refresh_requested``).
         fail_on_drained: fail when a baseline entry no longer matches a finding.
             A drained entry used to be printed to stderr and left in place, so a
             fixed finding kept its slot and the next one written the same way was
@@ -274,7 +264,7 @@ def assert_no_new_code_audit_findings(
     current_by_key = {k: f for f, k in keyed}
     current_keys = set(current_by_key)
 
-    if _refresh_requested(request):
+    if refresh_requested(REFRESH_FLAG, request):
         _refresh_code_audit_baseline(baseline_path, current_keys, request)
     if not baseline_path.exists():
         pytest.fail(

@@ -619,11 +619,6 @@ def register_refresh_option(parser) -> None:
     register_refresh_options(parser, flags=(REFRESH_FLAG,), help_suffix="accepted mutation survivors")
 
 
-def _refresh_requested(request) -> bool:
-    """xdist-safe: the parsed config first, then ``PY_CI_SHARED_REFRESH``, then ``sys.argv``."""
-    return refresh_requested(REFRESH_FLAG, request)
-
-
 def sweep_files(
     targets: "Sequence[tuple[PathArg, Sequence[PathArg]]]",
     repo_root: PathArg,
@@ -715,7 +710,7 @@ def assert_no_new_surviving_mutant(
     """
     outcome = find_surviving_mutants(path, test_paths, repo_root, **kwargs)
     found = {m.key: f"{_UNJUSTIFIED} {m}" for m in outcome.survivors}
-    refresh = _refresh_requested(request)
+    refresh = refresh_requested(REFRESH_FLAG, request)
     if outcome.inconclusive:
         raise AssertionError(
             f"{len(outcome.inconclusive)} mutant(s) could not be run to a verdict in " f"{path}, so this sweep does not support a pass.\n{outcome.summary()}"
