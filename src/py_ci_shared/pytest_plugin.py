@@ -36,7 +36,7 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 from ._core.config import PLUGIN_KEYS, ConfigError, GateRun, RepoConfig, find_repo_root, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
@@ -78,7 +78,7 @@ def _export_grow(config: Any) -> None:
     if not wanted:
         return
     before = os.environ.get(GROW_ENV_VAR)
-    os.environ[GROW_ENV_VAR] = "1"
+    os.environ[GROW_ENV_VAR] = "1"  # env-write-ok: deliberate export of the run state to xdist workers and subprocesses, read back by the plugin itself
 
     def _restore() -> None:
         if before is None:
@@ -97,7 +97,7 @@ def pytest_configure(config: Any) -> None:
     if tokens:
         before = os.environ.get(ENV_VAR)
         existing = [t for t in (before or "").split(",") if t]
-        os.environ[ENV_VAR] = ",".join(dict.fromkeys(existing + tokens))
+        os.environ[ENV_VAR] = ",".join(dict.fromkeys(existing + tokens))  # env-write-ok: deliberate export of the run state to xdist workers and subprocesses, read back by the plugin itself
 
         def _restore() -> None:
             if before is None:

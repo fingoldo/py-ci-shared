@@ -202,7 +202,7 @@ _LineLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _con
 
 def _load_yaml(path: Path) -> tuple[str, Any]:
     text = read_source(path)
-    return text, yaml.load(text, Loader=_LineLoader)  # nosec B506 -- a SafeLoader subclass that only adds line numbers
+    return text, yaml.load(text, Loader=_LineLoader)  # deserialize-ok: _LineLoader subclasses yaml.SafeLoader and only adds line numbers
 
 
 def _yaml_problem(repo: Repo, path: Path, exc: yaml.YAMLError) -> Finding:

@@ -11,6 +11,7 @@ import pytest
 
 from py_ci_shared import stale_comment_age as sca
 from py_ci_shared.stale_comment_age import assert_no_stale_todos, find_stale_comments
+from py_ci_shared._core.git import git_env
 
 _ENV_OLD = {
     "GIT_AUTHOR_DATE": "2020-01-01T00:00:00",
@@ -20,19 +21,19 @@ _ENV_OLD = {
 
 def _repo(tmp_path: Path, rel: str, body: str, *, old: bool = True, init_args: tuple = ()) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", *init_args], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q", *init_args], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, env=git_env())
     p = tmp_path / rel
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
     env = dict(_ENV_OLD) if old else {}
     subprocess.run(
         ["git", "commit", "-q", "-m", "seed"],
         cwd=tmp_path,
         check=True,
-        env={**subprocess.os.environ, **env},
+        env=git_env(env),
     )
     return tmp_path
 
@@ -112,10 +113,10 @@ class TestHistoryProblems:
     def test_a_shallow_clone_fails_instead_of_passing(self, tmp_path):
         src = _repo(tmp_path / "src", "lib/a.py", "# TODO: old\nx = 1\n")
         (src / "lib" / "b.py").write_text("y = 2\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=src, check=True)
-        subprocess.run(["git", "commit", "-q", "-m", "new"], cwd=src, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=src, check=True, env=git_env())
+        subprocess.run(["git", "commit", "-q", "-m", "new"], cwd=src, check=True, env=git_env())
         clone = tmp_path / "clone"
-        subprocess.run(["git", "clone", "-q", "--depth", "1", src.resolve().as_uri(), str(clone)], check=True)
+        subprocess.run(["git", "clone", "-q", "--depth", "1", src.resolve().as_uri(), str(clone)], check=True, env=git_env())
         problems = find_stale_comments(clone, ["lib"], max_age_days=30)
         assert len(problems) == 1 and "shallow clone" in problems[0]
         assert len(find_stale_comments(src, ["lib"], max_age_days=30)) == 1
@@ -127,10 +128,10 @@ class TestHistoryProblems:
         assert len(problems) == 1 and "not a git work tree" in problems[0]
 
     def test_a_blame_failure_is_reported(self, tmp_path):
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
         (tmp_path / "lib").mkdir()
         (tmp_path / "lib" / "a.py").write_text("# TODO: x\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)  # staged, but no commit: blame has no HEAD
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())  # staged, but no commit: blame has no HEAD
         problems = find_stale_comments(tmp_path, ["lib"], max_age_days=30)
         assert len(problems) == 1 and "git blame failed" in problems[0] and "could not be dated" in problems[0]
 
@@ -162,18 +163,18 @@ class TestBlameMechanics:
         assert sca._ranges([5, 3, 4, 9, 10, 12]) == [(3, 5), (9, 10), (12, 12)]
 
     def test_non_ascii_author_and_text_are_decoded(self, tmp_path):
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
-        subprocess.run(["git", "config", "user.name", "Анатолий Ёжиков"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
+        subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True, env=git_env())
+        subprocess.run(["git", "config", "user.name", "Анатолий Ёжиков"], cwd=tmp_path, check=True, env=git_env())
         (tmp_path / "lib").mkdir()
         (tmp_path / "lib" / "a.py").write_text("# TODO: проверить ✓\nx = 1\n", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
-        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env={**subprocess.os.environ, **_ENV_OLD})
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
+        subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=git_env(_ENV_OLD))
         problems = find_stale_comments(tmp_path, ["lib"], max_age_days=30)
         assert len(problems) == 1 and "проверить" in problems[0]
 
     def test_a_sha256_repository_is_dated(self, tmp_path):
-        probe = subprocess.run(["git", "init", "-q", "--object-format=sha256", str(tmp_path / "probe")], capture_output=True)
+        probe = subprocess.run(["git", "init", "-q", "--object-format=sha256", str(tmp_path / "probe")], capture_output=True, env=git_env())
         if probe.returncode != 0:
             pytest.skip("this git cannot create a SHA-256 repository")
         repo = _repo(tmp_path / "r", "lib/a.py", "# TODO: old\nx = 1\n", init_args=("--object-format=sha256",))
@@ -321,11 +322,11 @@ _DAY = 86400
 def _repo_at_t0(tmp_path: Path, rel: str, body: str) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "T"]):
-        subprocess.run(["git", *args], cwd=tmp_path, check=True)
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, env=git_env())
     p = tmp_path / rel
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
     stamp = f"{_T0} +0000"
     env = {**subprocess.os.environ, "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp}
     subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=env)

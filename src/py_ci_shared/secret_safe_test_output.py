@@ -36,7 +36,7 @@ import re
 from collections.abc import Iterable, Mapping
 from typing import Any, Optional
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 from .secret_assertion_operands import SECRET_NAME
 

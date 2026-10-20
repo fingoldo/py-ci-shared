@@ -151,6 +151,7 @@ def _collects(inv: _Invocation, run: str) -> bool:
 
 
 def _has_option(words: Sequence[str], names: Iterable[str]) -> bool:
+    names = list(names)  # consumed on more than one path below; a generator would be empty the second time
     return any(w == n or w.startswith(n + "=") for w in words for n in names)
 
 

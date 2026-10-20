@@ -190,6 +190,7 @@ def heading_status_problems(
 def assert_tracker_summaries_agree(
     audits_dir: Path, tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES, known: Iterable[str] = (), min_summaries: int = 1
 ) -> None:
+    known = list(known)  # consumed on more than one path below; a generator would be empty the second time
     import pytest
 
     if summary_table_count(tracker, statuses=statuses) < min_summaries:

@@ -21,11 +21,12 @@ from py_ci_shared.worktree_hygiene import (
     unsaved_paths,
     worktree_findings,
 )
+from py_ci_shared._core.git import git_env
 
 
 def _git(repo: Path, *args: str) -> str:
     """Run git in *repo*, failing the test loudly when git itself fails."""
-    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True)
+    result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True, env=git_env())
     return result.stdout
 
 
@@ -41,9 +42,9 @@ def origin_and_clone(tmp_path):
     (seed / "kept.txt").write_text("upstream content\n", encoding="utf-8")
     _git(seed, "add", "kept.txt")
     _git(seed, "commit", "-q", "-m", "seed")
-    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True, env=git_env())
     clone = tmp_path / "clone"
-    subprocess.run(["git", "clone", "-q", str(bare), str(clone)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", "-q", str(bare), str(clone)], check=True, capture_output=True, env=git_env())
     _git(clone, "config", "user.email", "t@example.com")
     _git(clone, "config", "user.name", "T")
     _git(clone, "remote", "set-head", "origin", "master")
@@ -196,7 +197,7 @@ class TestAuditRegressions:
         (worktree / "new.py").write_text("print('staged, never committed')\n", encoding="utf-8")
         _git(worktree, "add", "new.py")
         blob = _git(worktree, "rev-parse", ":new.py").strip()
-        assert subprocess.run(["git", "-C", str(origin_and_clone), "cat-file", "-e", blob]).returncode == 0
+        assert subprocess.run(["git", "-C", str(origin_and_clone), "cat-file", "-e", blob], env=git_env()).returncode == 0
 
         finding = worktree_findings(origin_and_clone)[0]
 
@@ -272,7 +273,7 @@ class TestAuditRegressions:
     def test_blob_ids_match_git_hash_object(self, origin_and_clone):
         data = b"line one\r\nline two\n\x00binary"
         expected = (
-            subprocess.run(["git", "-C", str(origin_and_clone), "hash-object", "--stdin"], input=data, capture_output=True, check=True).stdout.decode().strip()
+            subprocess.run(["git", "-C", str(origin_and_clone), "hash-object", "--stdin"], input=data, capture_output=True, check=True, env=git_env()).stdout.decode().strip()
         )
         assert _hash(origin_and_clone, data) == expected
         assert _hash(origin_and_clone, data + b"!") != expected
@@ -330,7 +331,7 @@ def test_an_untracked_nested_repository_is_unsaved_work(origin_and_clone):
     (worktree / "loose.txt").write_text("loose\n", encoding="utf-8")
     nested = worktree / "nested"
     nested.mkdir()
-    subprocess.run(["git", "init", "-q", str(nested)], check=True)
+    subprocess.run(["git", "init", "-q", str(nested)], check=True, env=git_env())
     (nested / "notes.txt").write_text("precious work\n", encoding="utf-8")
     assert "?? nested/" in _git(worktree, "status", "--porcelain", "--untracked-files=all")
 

@@ -59,7 +59,7 @@ def _git(*args: str, cwd: Path = REPO) -> str:
 
 
 def _tags() -> list[str]:
-    inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=REPO, capture_output=True, text=True, timeout=30)
+    inside = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=REPO, capture_output=True, text=True, timeout=30, env=git_env())
     if inside.returncode != 0:
         pytest.skip("not a git checkout (an sdist or wheel): no tags to compare with")
     return semver_tags(REPO)

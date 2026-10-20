@@ -9,6 +9,7 @@ import pytest
 
 from py_ci_shared._core import CoreError
 from py_ci_shared.commit_metadata import assert_commit_metadata, check_message, find_commit_metadata_problems, main, parse_trailers, read_commits
+from py_ci_shared._core.git import git_env
 
 BOM = "﻿"
 COAUTHOR = "Co-Authored-By: Claude <noreply@anthropic.com>"
@@ -16,7 +17,7 @@ COAUTHOR = "Co-Authored-By: Claude <noreply@anthropic.com>"
 
 def _git(repo: Path, *args: str, author: str = "Dev") -> str:
     env_args = ["-c", f"user.name={author}", "-c", "user.email=d@example.com", "-c", "commit.gpgsign=false"]
-    return subprocess.run(["git", *env_args, *args], cwd=repo, check=True, capture_output=True, text=True, encoding="utf-8").stdout
+    return subprocess.run(["git", *env_args, *args], cwd=repo, check=True, capture_output=True, text=True, encoding="utf-8", env=git_env()).stdout
 
 
 def _commit(repo: Path, message: str, *, author: str = "Dev") -> str:

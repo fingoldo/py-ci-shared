@@ -189,6 +189,7 @@ def assert_disposition_tests_exist(
     other_roots: Iterable[Path] = (),
 ) -> None:
     """Shrink-only: a missing reference not in *known* fails, and so does a *known* one that resolves again."""
+    known = list(known)  # consumed on more than one path below; a generator would be empty the second time
     import pytest
 
     files = list(audit_files)

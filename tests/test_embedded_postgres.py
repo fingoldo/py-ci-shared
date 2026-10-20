@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.embedded_postgres import embedded_postgres, find_pg_bin, main_checkout_file, run
+from py_ci_shared._core.git import git_env
 
 
 def test_no_binaries_is_a_loud_skip_with_the_chosen_exit_code(capsys):
@@ -49,7 +50,7 @@ def test_the_fetch_cache_is_searched(tmp_path, monkeypatch):
 
 
 def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True)
+    subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, env=git_env())
 
 
 def test_main_checkout_file_is_found_from_a_linked_worktree(tmp_path):

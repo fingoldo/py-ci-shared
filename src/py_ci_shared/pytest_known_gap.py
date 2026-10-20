@@ -19,7 +19,7 @@ never fail) is a finding.
 
 from __future__ import annotations
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 __all__ = ["known_gap"]
 

@@ -134,6 +134,7 @@ def _attribute_facts(tree: ast.Module) -> tuple[dict[str, set[str]], dict[str, s
 
 
 def _findings_in(tree: ast.Module, rel: str, protocols: Iterable[frozenset[str]], providers: Mapping[str, frozenset[str]]) -> list[Finding]:
+    protocols = list(protocols)  # consumed on more than one path below; a generator would be empty the second time
     decorators = _decorators(tree)
     set_on, read_on, copies = _attribute_facts(tree)
     out: list[Finding] = []

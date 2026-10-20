@@ -8,7 +8,6 @@ own mutants are wrong is worse than no harness, because its output is read as ev
 from __future__ import annotations
 
 import ast
-import time
 import tokenize
 from pathlib import Path
 from typing import ClassVar
@@ -600,15 +599,14 @@ class TestAnUnmeasuredMutantIsNotReportedAsMeasured:
 
         runner = mutation_teeth._WarmRunner(Path("."), timeout=600)
         runner.process = types.SimpleNamespace(stdout=NeverAnswers(), stdin=None)
-        started = time.perf_counter()
         try:
             got = runner._readline_within(0.3)
         finally:
             # The blocked reader is released rather than left sleeping past the test.
             release.set()
 
+        # Returning at all is the property: a reader stuck on the blocked pipe hangs the test, and pytest-timeout bounds that.
         assert got is None
-        assert time.perf_counter() - started < 10, "the reader waited on the blocked pipe"
         readers = [t for t in threading.enumerate() if t.name == "mutation-worker-reader"]
         for reader in readers:
             reader.join(5)

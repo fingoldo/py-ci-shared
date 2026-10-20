@@ -130,7 +130,7 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         return GateResult(run.name, SKIPPED, str(exc), time.perf_counter() - start, budget)
     except (KeyboardInterrupt, SystemExit):
         raise
-    except BaseException as exc:  # a crashing gate is reported as ERROR with its type, never swallowed
+    except Exception as exc:  # a crashing gate is reported as ERROR with its type, never swallowed
         logger.warning("gate raised, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"{type(exc).__name__}: {exc}", time.perf_counter() - start, budget)
     return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget)

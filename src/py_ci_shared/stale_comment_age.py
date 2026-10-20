@@ -401,6 +401,7 @@ def _scan(
     repo_root: Path, scan_dirs: Iterable[str], *, suffixes: Sequence[str], require_issue_ref: bool, skip_dirs: Iterable[str]
 ) -> tuple[list[str], list[_Dated]]:
     """Every candidate comment with its ``git blame`` author time, plus the problems that kept a line from being dated."""
+    skip_dirs = list(skip_dirs)  # consumed on more than one path below; a generator would be empty the second time
     problems: list[str] = []
     dated: list[_Dated] = []
     root = Path(repo_root)

@@ -447,12 +447,12 @@ def _provision(dsn: str, statements: "Sequence[str]", extensions: "Sequence[str]
     """Apply *statements* in a fresh database of the server at *dsn* (once, or twice), read its catalogue after each pass, drop the database."""
     psycopg2 = _import_psycopg2()
     name = f"schema_parity_{uuid.uuid4().hex[:12]}"
-    admin = psycopg2.connect(dsn)
+    admin = psycopg2.connect(dsn, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
     admin.autocommit = True
     try:
         with admin.cursor() as cur:
             cur.execute(f'CREATE DATABASE "{name}"')
-        conn = psycopg2.connect(dsn, dbname=name)
+        conn = psycopg2.connect(dsn, dbname=name, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
         conn.autocommit = True
         try:
             with conn.cursor() as cur:

@@ -24,7 +24,7 @@ import fnmatch
 import inspect
 from typing import Any, Optional
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 from .stub_signature_parity import describe, missing_parameters, params_of_callable
 

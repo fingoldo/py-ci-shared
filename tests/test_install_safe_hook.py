@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from py_ci_shared._core.git import git_env
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,7 +24,7 @@ fi
 def _init_repo_with_hook(tmp_path: Path, *, with_pre_merge_commit: bool = False) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=git_env())
     hooks_dir = repo / ".git" / "hooks"
     hooks_dir.mkdir(exist_ok=True)
     (hooks_dir / "pre-commit").write_text(_TEMPLATE)
@@ -61,7 +62,7 @@ def test_install_safe_hook_fails_cleanly_when_hook_missing(tmp_path, monkeypatch
 
     repo = tmp_path / "no_hook_repo"
     repo.mkdir()
-    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True, env=git_env())
     monkeypatch.chdir(repo)
     assert main([]) == 1
 
@@ -106,7 +107,7 @@ def test_a_configured_hooks_path_is_patched(tmp_path, monkeypatch):
     custom = repo / ".githooks"
     custom.mkdir()
     (custom / "pre-commit").write_bytes(_TEMPLATE.encode("utf-8"))
-    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=repo, check=True, env=git_env())
     monkeypatch.chdir(repo)
     assert main([]) == 0
     assert b"-m py_ci_shared.safe_precommit" in (custom / "pre-commit").read_bytes()

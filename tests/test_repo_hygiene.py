@@ -16,17 +16,18 @@ from py_ci_shared.repo_hygiene import (
     find_tracked_generated_files,
     find_unguarded_numeric_gates,
 )
+from py_ci_shared._core.git import git_env
 
 
 def _git_repo(tmp_path: Path, *tracked: str) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
     for rel in tracked:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("x", encoding="utf-8")
     # -f: these fixtures deliberately track files a developer's global gitignore excludes
     # (__pycache__, *.pyc). Without it the test's own premise depends on whose machine it runs on.
-    subprocess.run(["git", "add", "-A", "-f"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A", "-f"], cwd=tmp_path, check=True, env=git_env())
     return tmp_path
 
 
@@ -144,7 +145,7 @@ class TestNulBytesInTextFiles:
         """`assert_repo_hygiene` shells out to `git ls-files` for rule 1, so the fixture needs to
         be a repository -- without it the entry point raises about git and the NUL goes unmentioned,
         which is how the first version of this test 'failed'."""
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
         (tmp_path / "notes.md").write_bytes(bytes([0]))
         # BaseException, not Exception: `pytest.fail` raises `Failed`, which derives from
         # `BaseException` so that an `except Exception` in the code under test cannot swallow a
@@ -192,7 +193,7 @@ class TestUtf8BomsInTextFiles:
         assert repo_hygiene.find_text_files_with_nul_bytes(tmp_path) == []
 
     def test_the_entry_point_reports_it(self, tmp_path):
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
         (tmp_path / "notes.md").write_bytes(self.BOM + b"# Title")
         with pytest.raises(BaseException) as excinfo:
             repo_hygiene.assert_repo_hygiene(tmp_path)
@@ -203,7 +204,7 @@ class TestTextFileScope:
     """In a checkout the text rules read git's view: tracked plus untracked-not-ignored, never ignored files."""
 
     def test_an_ignored_file_is_not_read_but_a_new_unignored_one_is(self, tmp_path):
-        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+        subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
         (tmp_path / ".gitignore").write_text("data/\n", encoding="utf-8")
         (tmp_path / "data").mkdir()
         (tmp_path / "data" / "dump.txt").write_bytes(b"a\x00b")

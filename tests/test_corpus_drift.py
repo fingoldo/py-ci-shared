@@ -16,6 +16,18 @@ from py_ci_shared import corpus_drift, registry
 from py_ci_shared.corpus_drift import NON_CORPUS, Drift, bind, compare, count_of, finders, main, render_table, snapshot, unbound_finders
 
 
+def _stdlib_names() -> frozenset[str]:
+    """Top-level stdlib module names. ``sys.stdlib_module_names`` is 3.10+; on the 3.9 floor fall back to the stdlib directory."""
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is not None:
+        return frozenset(names)
+    import sysconfig
+
+    stdlib = Path(sysconfig.get_paths()["stdlib"])
+    listed = {p.stem for p in stdlib.iterdir() if p.suffix == ".py" or (p.is_dir() and (p / "__init__.py").exists())}
+    return frozenset(listed | set(sys.builtin_module_names))
+
+
 def _snap(counts: dict[str, int], errors: Optional[dict[str, str]] = None, repo: str = "mlframe") -> dict[str, Any]:
     return {"schema": 1, "repos": {repo: {"commit": "abc", "counts": counts, "errors": errors or {}, "seconds": {}}}}
 
@@ -233,7 +245,7 @@ def _module_level_third_party_imports() -> dict[str, str]:
                 names = [node.module]
             for name in names:
                 top = name.split(".", 1)[0]
-                if top in sys.stdlib_module_names or top in runtime or top == "py_ci_shared" or top == "__future__":
+                if top in _stdlib_names() or top in runtime or top == "py_ci_shared" or top == "__future__":
                     continue
                 out.setdefault(top, spec.module)
     return out

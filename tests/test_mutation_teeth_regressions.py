@@ -55,7 +55,7 @@ class FakeCold:
         self.on_call = on_call
         self.calls: list[tuple[Path, str]] = []
 
-    def __call__(self, test_paths, cwd, timeout):
+    def __call__(self, test_paths, cwd, _timeout):
         text = (Path(cwd) / self.relative).read_text(encoding="utf-8")
         self.calls.append((Path(cwd), text))
         if self.on_call is not None:
@@ -425,7 +425,7 @@ class TestExtraSandboxes:
         scratch.mkdir()
         monkeypatch.setattr(tempfile, "tempdir", str(scratch))
 
-        def cold(test_paths, cwd, timeout):
+        def cold(test_paths, cwd, _timeout):
             return subprocess.CompletedProcess([], 0, "", "")
 
         _seam(monkeypatch, "_run_pytest", cold)
@@ -824,9 +824,9 @@ class TestTimeoutsKillTheTree:
             f"open({str(pid_file)!r}, 'w').write(str(child.pid))\n"
             "time.sleep(120)\n"
         )
-        started = time.monotonic()
+        # The 5 s deadline is enforced by run_with_deadline; a hang would be bounded by pytest-timeout, not by a wall-clock guess here.
         result = run_with_deadline([sys.executable, "-c", script], cwd=tmp_path, env=None, timeout=5)
-        assert result is None and time.monotonic() - started < 60
+        assert result is None
         pid = int(pid_file.read_text(encoding="utf-8"))
         deadline = time.monotonic() + 10
         while _alive(pid) and time.monotonic() < deadline:

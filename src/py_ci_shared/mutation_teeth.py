@@ -168,12 +168,6 @@ __all__ = [
 _CACHE_LOCK_TIMEOUT = 60.0
 
 
-
-
-
-
-
-
 def _sweep_partition(
     sandbox: Path,
     relative: Path,
@@ -211,8 +205,6 @@ def _sweep_partition(
         return _sweep_mutants(sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker, relative)
     finally:
         write_target(target, original, original.text)
-
-
 
 
 def _sweep_mutants(
@@ -269,16 +261,6 @@ def _sweep_mutants(
     return state.survivors, state.coverage_gaps, state.inconclusive, state.judged, state.crashed, state.budget
 
 
-
-
-
-
-
-
-
-
-
-
 # ── the cache ─────────────────────────────────────────────────────────────────────────────────────
 def _scope_key(lines: Optional[list[range]], limit: Optional[int], fallback_test_paths: Sequence[PathArg], allow_empty: bool) -> object:
     """Everything that changes WHICH mutants run, for the fingerprint.
@@ -314,7 +296,7 @@ def _unlock(fd: int) -> None:
         else:
             fcntl: Any = importlib.import_module("fcntl")
             fcntl.flock(fd, fcntl.LOCK_UN)
-    except OSError:
+    except OSError:  # swallow-ok: the descriptor is closed right after; a failed unlock releases with the close
         pass
 
 
@@ -433,7 +415,7 @@ def _run_partitions(
             results[slot] = _sweep_partition(
                 sandboxes[slot], relative, partitions[slot], test_paths, fallback_test_paths, timeout, use_warm_worker, verify_baseline=slot > 0
             )
-        except BaseException as exc:  # collected here and re-raised by the caller (raise errors[0]), so nothing is swallowed
+        except Exception as exc:  # collected here and re-raised by the caller (raise errors[0]), so nothing is swallowed
             errors.append(exc)
 
     try:
@@ -488,10 +470,6 @@ def _merge_verdicts(
     for verdicts in (survivors, coverage_gaps, inconclusive):
         verdicts.sort(key=lambda m: order[id(m)])
     return survivors, coverage_gaps, inconclusive, run, crashes, budget
-
-
-
-
 
 
 def _sweep_in_sandbox(

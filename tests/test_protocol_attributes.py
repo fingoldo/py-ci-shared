@@ -28,6 +28,8 @@ def test_assert_satisfies_protocol_names_the_missing_attribute():
         return inner()
 
     load_top_jobs.cache_clear = inner.cache_clear  # type: ignore[attr-defined]
+    if hasattr(inner, "has_value"):  # forwarded like cache_clear, so a caller reading it sees the inner's value
+        load_top_jobs.has_value = inner.has_value  # type: ignore[attr-defined]
     with pytest.raises(AssertionError, match=r"^warm target load_top_jobs lacks refresh;"):
         assert_satisfies_protocol(load_top_jobs, {"refresh", "cache_clear"}, what="warm target load_top_jobs")
     # against the inner: `has_value` is not required, the inner has none

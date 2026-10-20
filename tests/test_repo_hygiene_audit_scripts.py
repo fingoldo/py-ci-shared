@@ -11,15 +11,16 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.repo_hygiene import assert_repo_hygiene, find_scripts_in_audit_folders
+from py_ci_shared._core.git import git_env
 
 
 def _git_repo(tmp_path: Path, *tracked: str) -> Path:
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
     for rel in tracked:
         p = tmp_path / rel
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("x\n", encoding="utf-8")
-    subprocess.run(["git", "add", "-A", "-f"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A", "-f"], cwd=tmp_path, check=True, env=git_env())
     return tmp_path
 
 

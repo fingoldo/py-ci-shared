@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared._core import DEFAULT_EXCLUDE, CorpusError, iter_files, relative_posix
+from py_ci_shared._core.git import git_env
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
 
@@ -25,7 +26,7 @@ def _rels(root: Path, files: list[Path]) -> list[str]:
 
 
 def _git_init(root: Path) -> None:
-    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True, env=git_env())
 
 
 class TestWalk:
@@ -89,7 +90,7 @@ class TestGit:
         _git_init(tmp_path)
         _touch(tmp_path, "tracked.py", "untracked.py", "out/ignored.py", "gen.py")
         (tmp_path / ".gitignore").write_text("out/\ngen.py\n", encoding="utf-8")
-        subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.py"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "tracked.py"], check=True, capture_output=True, env=git_env())
         assert _rels(tmp_path, iter_files(tmp_path)) == ["tracked.py", "untracked.py"]
         assert _rels(tmp_path, iter_files(tmp_path, include_untracked=False)) == ["tracked.py"]
         # control: the walk (no git) sees the ignored files, proving git was what dropped them
@@ -110,7 +111,7 @@ class TestGit:
     def test_a_tracked_file_deleted_from_disk_is_not_listed(self, tmp_path):
         _git_init(tmp_path)
         _touch(tmp_path, "a.py", "b.py")
-        subprocess.run(["git", "-C", str(tmp_path), "add", "a.py", "b.py"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(tmp_path), "add", "a.py", "b.py"], check=True, capture_output=True, env=git_env())
         (tmp_path / "b.py").unlink()
         assert _rels(tmp_path, iter_files(tmp_path)) == ["a.py"]
 

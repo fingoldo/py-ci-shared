@@ -496,7 +496,7 @@ def test_gh_api_turns_a_hung_call_into_an_api_error(monkeypatch):
 
 def test_default_api_passes_the_request_timeout_down(monkeypatch):
     seen: list[float] = []
-    monkeypatch.setattr(ci_health, "urllib_api", lambda token, timeout: seen.append(timeout) or (lambda p: None))
+    monkeypatch.setattr(ci_health, "urllib_api", lambda token, timeout, **kwargs: seen.append(timeout) or (lambda p: None))
     ci_health.default_api({"GITHUB_TOKEN": "y"}, timeout=3.5)
     assert seen == [3.5]
 

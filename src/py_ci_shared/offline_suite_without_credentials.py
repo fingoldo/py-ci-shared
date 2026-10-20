@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ def _test_supplied(args: "tuple[Any, ...]", kwargs: "dict[str, Any]") -> bool:
         return False
     try:
         resolved = Path(os.fspath(target)).resolve()
-        temp = Path(tempfile.gettempdir()).resolve()
+        temp = Path(tempfile.gettempdir()).resolve()  # tmp-path-ok: read-only comparison; nothing is written under the temp directory
     except (OSError, RuntimeError, TypeError) as exc:
         logger.warning("offline_suite_without_credentials.py handler at line 123 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not resolve target path, treated as not supplied: %s", type(exc).__name__)

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.phantom_markdown_links import assert_no_phantom_markdown_links, find_phantom_markdown_links
+from py_ci_shared._core.git import git_env
 
 
 def _write(tmp_path: Path, name: str, content: str) -> Path:
@@ -75,12 +76,12 @@ def test_tracked_markdown_files_skips_an_untracked_virtualenv(tmp_path):
 
     from py_ci_shared.phantom_markdown_links import tracked_markdown_files
 
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
     _write(tmp_path, "README.md", "See [docs](docs/guide.md).\n")
     (tmp_path / "docs").mkdir()
     _write(tmp_path, "docs/guide.md", "notes\n")
     _write(tmp_path, "setup.py", "\n")
-    subprocess.run(["git", "add", "README.md", "docs/guide.md", "setup.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "README.md", "docs/guide.md", "setup.py"], cwd=tmp_path, check=True, env=git_env())
     venv_doc = tmp_path / ".venv" / "Lib" / "site-packages" / "pkg-1.0.dist-info" / "README.md"
     venv_doc.parent.mkdir(parents=True)
     venv_doc.write_text("[contributing](CONTRIBUTING.md)\n", encoding="utf-8")

@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from py_ci_shared.git_dependency_pins import assert_installed_includes_pin, assert_pins_agree, installed_pin_problem, pinned_shas
+from py_ci_shared._core.git import git_env
 
 A = "a" * 40
 B = "b" * 40
@@ -45,7 +46,7 @@ class TestPinsAgree:
 
 
 def _git(cwd, *args):
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout.strip()
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True, env=git_env()).stdout.strip()
 
 
 class TestInstalledIncludesPin:

@@ -34,7 +34,7 @@ from __future__ import annotations
 import ast
 import logging
 import re
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 __all__ = ["DEFAULT_NOTE", "REFRESH_FLAG", "RULE", "assert_env_write_restore", "find_env_write_restore"]
 
 RULE = "env-write-restore"
+#: A deliberate, unrestored write (one that must outlive the test, say) is marked on its own line with a reason.
+SUPPRESSION = "# env-write-ok:"
 DEFAULT_NOTE = "pre-existing when the gate was adopted; not yet triaged"
 REFRESH_FLAG = "--refresh-env-write-restore-baseline"
 
@@ -160,8 +162,8 @@ def _class_restores(cls: Optional[ast.ClassDef], aliases: ImportAliases) -> bool
     return any(isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)) and m.name in _TEARDOWN_NAMES and _writes(m, aliases) for m in cls.body)
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases) -> list[Finding]:
-    """The findings in one parsed file: each unrestored ``os.environ`` write inside a function."""
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Sequence[str] = ()) -> list[Finding]:
+    """The findings in one parsed file: each unrestored ``os.environ`` write inside a function, unless its line carries SUPPRESSION."""
     out: list[Finding] = []
     for qual, fn, owner in _functions(tree):
         name = getattr(fn, "name", "")
@@ -173,6 +175,8 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases) -> list[Fin
         ranges = _protected_ranges(fn, aliases, [line for line, _ in writes])
         for line, text in writes:
             if any(lo <= line <= hi for lo, hi in ranges):
+                continue
+            if 0 < line <= len(lines) and SUPPRESSION in lines[line - 1]:
                 continue
             out.append(
                 Finding(
@@ -201,7 +205,7 @@ def find_env_write_restore(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree)))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

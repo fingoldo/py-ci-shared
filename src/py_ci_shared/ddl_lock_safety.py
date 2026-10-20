@@ -400,6 +400,7 @@ def find_ddl_lock_findings(
     Raises ``EmptyScanError`` when fewer than *min_files* files were read and ``UnparsedFilesError`` for a file that cannot be read
     (unless *allow_unparsed*); a missing directory raises ``CorpusError``.
     """
+    sql_dirs = list(sql_dirs)  # consumed on more than one path below; a generator would be empty the second time
     tiny = {_norm(k): v for k, v in (tiny_tables or {}).items()}
     blank = sorted(k for k, v in (tiny_tables or {}).items() if not str(v).strip())
     if blank:

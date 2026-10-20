@@ -176,6 +176,7 @@ def find_local_copies(
     (``py_ci_shared.resource_leak_checks``) clears it. On by default (no consumer ran this report when it was added, so no
     baseline could grow); ``False`` restores the test-file-only scan.
     """
+    exclude_parts = list(exclude_parts)  # consumed on more than one path below; a generator would be empty the second time
     meta = None if meta_dirs is None else frozenset(meta_dirs)
     root = Path(repo_root)
     catalogue: dict[str, str] = {n: n for n in (central if central is not None else central_gate_names())}

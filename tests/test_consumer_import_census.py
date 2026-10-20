@@ -17,6 +17,7 @@ from py_ci_shared.consumer_import_census import (
     main,
     package_dir,
 )
+from py_ci_shared._core.git import git_env
 
 BOM = b"\xef\xbb\xbf"
 
@@ -159,7 +160,7 @@ def test_assert_names_every_break(tmp_path: Path) -> None:
 
 
 def _git(cwd: Path, *args: str) -> None:
-    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=cwd, check=True, capture_output=True, env=git_env())
 
 
 def test_cli_since_ref_reports_only_what_broke_after_the_ref(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:

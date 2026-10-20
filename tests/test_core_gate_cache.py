@@ -16,6 +16,7 @@ def repo(tmp_path, monkeypatch):
     (root / "module.py").write_text("X = 1\n", encoding="utf-8")
     monkeypatch.setenv("TMPDIR", str(tmp_path / "tmp"))
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path / "tmp"))
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path / "home"))
     monkeypatch.delenv(gate_cache.NO_CACHE_ENV, raising=False)
     calls: list[str] = []
     behaviour = {"outcome": "pass"}

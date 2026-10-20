@@ -19,6 +19,7 @@ from py_ci_shared.adoption_matrix import (
     render_markdown,
     scan_repo,
 )
+from py_ci_shared._core.git import git_env
 
 URL = "git+https://github.com/fingoldo/py-ci-shared.git"
 SHA = "94b1c0dede79e8444c08288e9832b5d7f2dcf895"
@@ -196,8 +197,8 @@ def test_resolver_makes_a_tag_and_its_sha_agree(tmp_path):
     pcs = tmp_path / "pcs"
     pcs.mkdir()
     for args in (["init", "-q"], ["-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x"], ["tag", "v1.2.3"]):
-        subprocess.run(["git", "-C", str(pcs), *args], check=True, capture_output=True)
-    head = subprocess.run(["git", "-C", str(pcs), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        subprocess.run(["git", "-C", str(pcs), *args], check=True, capture_output=True, env=git_env())
+    head = subprocess.run(["git", "-C", str(pcs), "rev-parse", "HEAD"], check=True, capture_output=True, text=True, env=git_env()).stdout.strip()
     root = _repo(
         tmp_path,
         {"requirements.txt": f"py-ci-shared @ {URL}@v1.2.3\n", ".pre-commit-config.yaml": f"- repo: https://github.com/fingoldo/py-ci-shared\n  rev: {head}\n"},

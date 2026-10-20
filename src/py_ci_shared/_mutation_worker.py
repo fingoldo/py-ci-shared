@@ -195,8 +195,8 @@ class _ProcessState:
     def restore(self) -> None:
         try:
             os.chdir(self.cwd)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning("could not restore the working directory to %s: %s", self.cwd, exc)
         if dict(os.environ) != self.environ:
             os.environ.clear()
             os.environ.update(self.environ)
@@ -217,7 +217,8 @@ def _module_origin(target: str, names: list[str]) -> dict[str, Any]:
             continue
         try:
             here = os.path.normcase(str(Path(file).resolve()))
-        except (OSError, ValueError):
+        except (OSError, ValueError) as exc:
+            logger.warning("could not resolve the file of %s, so it is left out of the sandbox check: %s", name, exc)
             continue
         if here == wanted:
             sandbox = True
@@ -306,7 +307,7 @@ def main() -> int:
             _reply(channel, reply)
         except (KeyboardInterrupt, SystemExit):
             raise  # an interrupt or an exit ends the worker; it is not a reply to one request
-        except BaseException as exc:  # any other failure is the reply to this request, so the parent does not wait for a worker that is alive
+        except Exception as exc:  # any other failure is the reply to this request, so the parent does not wait for a worker that is alive
             _reply(channel, {"id": request_id, "error": f"{type(exc).__name__}: {exc}"})
     return 0
 

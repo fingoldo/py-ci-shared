@@ -11,6 +11,7 @@ import pytest
 
 from py_ci_shared import sibling_floor_skew as sfs
 from py_ci_shared._core import Baseline, EmptyScanError, UnparsedFilesError
+from py_ci_shared._core.git import git_env
 
 BOM = b"\xef\xbb\xbf"
 SHA = "8ffd7e6cdcfd104e428253bf67ae173798943cde"
@@ -142,7 +143,7 @@ def test_version_at_reads_a_local_clone(tmp_path):
     (clone / "pyproject.toml").write_text('[project]\nname = "pyutilz"\nversion = "1.0.0"\n', encoding="utf-8")
     for args in (["init", "-q"], ["add", "-A"], ["commit", "-qm", "v"]):
         subprocess.run(["git", "-C", str(clone), *args], check=True, env=env, capture_output=True)
-    sha = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    sha = subprocess.run(["git", "-C", str(clone), "rev-parse", "HEAD"], check=True, capture_output=True, text=True, env=git_env()).stdout.strip()
     assert sfs.version_at("pyutilz", "fingoldo", sha, resolve_in={"pyutilz": clone}, network=False) == "1.0.0"
     assert sfs.version_at("py_utilz", "fingoldo", "v2.0.1", network=False) == "2.0.1"
     assert sfs.version_at("pyutilz", "fingoldo", "deadbeef", resolve_in={"pyutilz": clone}, network=False) is None

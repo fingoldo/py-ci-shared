@@ -11,7 +11,7 @@ on:
 # review.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -47,9 +47,9 @@ jobs:
           # windows-latest and macos-latest move on purpose (2026-10-02: windows-2025-vs2026, macos-26-arm64): these legs
           # exist to catch path and shell differences on the OS that consumers' developers run now, and no Python floor
           # rides on them (3.11 only), unlike the ubuntu legs. tests/test_reusable_workflows.py allows exactly these two.
-          - os: windows-latest
+          - os: windows-latest  # moving-label-ok: deliberate, see the comment above; the OS a consumer's developer runs now is the point of this leg
             python: "3.11"
-          - os: macos-latest
+          - os: macos-latest  # moving-label-ok: deliberate, see the comment above; the OS a consumer's developer runs now is the point of this leg
             python: "3.11"
     # bash on every OS (it ships on the Windows runners too): the run: blocks below use POSIX
     # shell syntax, which pwsh - the Windows default - would parse differently.

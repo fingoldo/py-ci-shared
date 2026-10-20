@@ -247,8 +247,10 @@ class TestRunChecks:
         """A pre-push hook that hangs on an unreachable host is a pre-push hook people disable."""
         calls = _fake_psycopg2(monkeypatch)
         sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=[], connect_timeout=3)
-        assert calls[0][1] == {"connect_timeout": 3}
-        assert calls[1][1] == {"connect_timeout": 3}, "the working connection must be bounded too"
+        # The keepalive kwargs ride along with the timeout (a silent half-open socket would otherwise hang the probe).
+        for _, kwargs in calls[:2]:
+            assert kwargs["connect_timeout"] == 3, "the working connection must be bounded too"
+            assert kwargs["keepalives_idle"] == 30
 
     def test_a_refused_configuration_fails_even_with_skip_without_db(self, monkeypatch, capsys):
         """Wrong credentials are a broken setup; mapping them to exit 0 would let every push through unverified."""

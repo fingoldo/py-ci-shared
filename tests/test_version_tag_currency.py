@@ -19,18 +19,19 @@ from py_ci_shared.version_tag_currency import (
     find_version_tag_problems,
     semver_tags,
 )
+from py_ci_shared._core.git import git_env
 
 
 def _repo(tmp_path: Path, version: str, tags: tuple[str, ...] = ()) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, env=git_env())
     (tmp_path / "pubspec.yaml").write_text(f"name: pkg\nversion: {version}\n", encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=git_env())
     for t in tags:
-        subprocess.run(["git", "tag", t], cwd=tmp_path, check=True)
+        subprocess.run(["git", "tag", t], cwd=tmp_path, check=True, env=git_env())
     return tmp_path
 
 
@@ -64,12 +65,12 @@ class TestTags:
 
     def test_tag_not_reachable_from_head_is_flagged(self, tmp_path):
         repo = _repo(tmp_path, "0.6.0")
-        subprocess.run(["git", "checkout", "-q", "-b", "side"], cwd=repo, check=True)
+        subprocess.run(["git", "checkout", "-q", "-b", "side"], cwd=repo, check=True, env=git_env())
         (repo / "x.txt").write_text("x", encoding="utf-8")
-        subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
-        subprocess.run(["git", "commit", "-q", "-m", "side"], cwd=repo, check=True)
-        subprocess.run(["git", "tag", "v0.6.0"], cwd=repo, check=True)
-        subprocess.run(["git", "checkout", "-q", "-"], cwd=repo, check=True)
+        subprocess.run(["git", "add", "-A"], cwd=repo, check=True, env=git_env())
+        subprocess.run(["git", "commit", "-q", "-m", "side"], cwd=repo, check=True, env=git_env())
+        subprocess.run(["git", "tag", "v0.6.0"], cwd=repo, check=True, env=git_env())
+        subprocess.run(["git", "checkout", "-q", "-"], cwd=repo, check=True, env=git_env())
         problems = find_version_tag_problems(repo, "pubspec.yaml")
         assert len(problems) == 1
         assert "not an ancestor" in problems[0]
@@ -181,8 +182,8 @@ class TestAudit20261003:
         consumer.parent.mkdir(parents=True)
         consumer.write_text("dependencies:\n  core:\n    git:\n      ref: v1.0.0\n", encoding="utf-8")
         assert find_stale_pin(consumer, pkg, "core") is None
-        subprocess.run(["git", "tag", "v1.1.0"], cwd=pkg, check=True)
-        subprocess.run(["git", "tag", "v1.2.0"], cwd=pkg, check=True)
+        subprocess.run(["git", "tag", "v1.1.0"], cwd=pkg, check=True, env=git_env())
+        subprocess.run(["git", "tag", "v1.2.0"], cwd=pkg, check=True, env=git_env())
         msg = find_stale_pin(consumer, pkg, "core")
         assert msg is not None and "2 release(s) behind v1.2.0" in msg, msg
 
@@ -212,8 +213,8 @@ class TestLockPinAgreement:
 
     def _remote(self, tmp_path: Path) -> tuple[str, str]:
         remote = _repo(tmp_path / "remote", "0.1.0")
-        subprocess.run(["git", "tag", "-a", "v0.1.0", "-m", "release"], cwd=remote, check=True)
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=remote, check=True, capture_output=True, text=True, encoding="utf-8").stdout.strip()
+        subprocess.run(["git", "tag", "-a", "v0.1.0", "-m", "release"], cwd=remote, check=True, env=git_env())
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=remote, check=True, capture_output=True, text=True, encoding="utf-8", env=git_env()).stdout.strip()
         return remote.as_posix(), head
 
     def test_pin_lock_and_remote_that_agree_report_nothing(self, tmp_path):

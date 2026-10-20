@@ -56,7 +56,7 @@ def find_pg_bin(explicit: "str | None" = None) -> "Path | None":
         import pgserver  # type: ignore[import-not-found]
 
         candidates.append(Path(pgserver.__file__).resolve().parent / "pginstall" / "bin")
-    except Exception:  # best-effort: pgserver is an optional source of binaries; its absence is the normal case
+    except Exception:  # swallow-ok: pgserver is an optional source of binaries; its absence is the normal case
         pass
     which = shutil.which("pg_ctl")
     if which:
@@ -84,7 +84,7 @@ def _quiet(cmd: list[str], *, check: bool, log: "Path | None" = None, also: Sequ
         for path in ([log] if log is not None else []) + list(also):
             try:
                 text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
+            except OSError:  # swallow-ok: a log that cannot be read adds no tail; the error still names the command and exit code
                 continue
             tails.append(f"--- {path.name} ---\n" + "\n".join(text.splitlines()[-40:]))
         raise RuntimeError(f"{Path(cmd[0]).name} failed with exit code {code}:\n" + ("\n".join(tails) or "(no output)"))
@@ -105,7 +105,7 @@ def _reap_orphans(bin_dir: Path, tmp: Path) -> None:
     for d in tmp.glob("pg-embedded-*"):
         try:
             owner = int((d / "owner.pid").read_text(encoding="ascii").strip())
-        except (OSError, ValueError):
+        except (OSError, ValueError):  # swallow-ok: an unreadable owner.pid leaves the directory alone, which is the conservative choice
             continue
         if psutil.pid_exists(owner):
             continue
@@ -157,7 +157,7 @@ def fresh_database(cluster_dsn: str) -> str:
     import psycopg2
 
     name = "t_" + uuid.uuid4().hex[:12]
-    conn = psycopg2.connect(cluster_dsn)
+    conn = psycopg2.connect(cluster_dsn, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
     try:
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -165,7 +165,6 @@ def fresh_database(cluster_dsn: str) -> str:
     finally:
         conn.close()
     return cluster_dsn.replace("dbname=postgres", f"dbname={name}")
-
 
 
 class NotAThrowawayServerError(RuntimeError):

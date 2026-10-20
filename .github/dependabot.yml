@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # Every SHA-pinned `uses:` in the reusable workflows needs an update channel, or a pin never moves off a retired action
+  # runtime. Grouped so the whole ecosystem costs one PR (and one CI run) per week.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7

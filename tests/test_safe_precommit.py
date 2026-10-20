@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from py_ci_shared._core.git import git_env
 
 pytest.importorskip("pre_commit")
 
@@ -21,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _git(*args: str, cwd: Path) -> str:
-    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True).stdout
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, check=True, env=git_env()).stdout
 
 
 _BASE = "line_a\nline_b\nline_c\nline_d\nline_e\nline_f\nline_g\nline_h\n"

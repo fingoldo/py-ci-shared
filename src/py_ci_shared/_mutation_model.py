@@ -3,7 +3,20 @@
 Split out of ``mutation_teeth`` so each part stays readable; everything here is re-exported from there.
 """
 
-from __future__ import annotationsimport codecsimport hashlibimport ioimport shutilimport tokenizefrom dataclasses import dataclass, fieldfrom pathlib import Pathfrom typing import Unionfrom ._core import SourceError, read_source#: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
+from __future__ import annotations
+
+import codecs
+import hashlib
+import io
+import shutil
+import tokenize
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Union
+
+from ._core import SourceError, read_source
+
+#: Bumped whenever the operator set or the run semantics change, so a cached result computed by an
 #: older harness is not reused by a newer one. Without it, adding an operator would silently keep
 #: reporting the old survivor list.
 HARNESS_VERSION = "19"  # 19: the sweep and the worker log the results they substitute, at WARNING; 18: the logging of substituted results in the sweep and the worker (no verdict changes); 17: the per-mutant verdict moved to _mutation_sweep (same decisions); 16: the verdict logic is split into per-mutant helpers (_judge, _primary_verdict, _check_unmutated, _group_twins); same decisions, same accounting. 15: a corrupt harness baseline is a named error, not a silent regeneration (mutation_teeth._regenerate)

@@ -210,6 +210,7 @@ def prompt_keys(
     structural: Iterable[str] = DEFAULT_STRUCTURAL,
 ) -> dict[str, set[str]]:
     """``{field: {source, ...}}`` over prompt modules (by literal scan) and named dict ``schemas``."""
+    structural = list(structural)  # consumed on more than one path below; a generator would be empty the second time
     out: dict[str, set[str]] = {}
     skip_structural = set(structural)
     for path, _source, tree in _parsed(prompt_files):

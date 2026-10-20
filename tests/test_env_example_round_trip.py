@@ -36,7 +36,7 @@ class Fixed(BaseSettings):
     @classmethod
     def _level(cls, v: str) -> str:
         if v not in {"DEBUG", "INFO"}:
-            raise ValueError(f"bad level {v}")
+            raise ValueError("log_level must be DEBUG or INFO")
         return v
 
 

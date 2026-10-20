@@ -44,7 +44,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Optional
 
-import pytest
+import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only under pytest; the distribution lives in the dev extra
 
 from .resource_leak_checks import STATE_CHECKS, StateSnapshot, restore_state, state_leaks, take_state
 

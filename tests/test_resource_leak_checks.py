@@ -14,6 +14,7 @@ import pytest
 
 from py_ci_shared.resource_leak_checks import STATE_CHECKS, restore_state, state_leaks, take_state
 from py_ci_shared.resource_leak_guard import ALL_CHECKS
+from py_ci_shared._core.git import git_env
 
 pytest_plugins = ("pytester",)
 _SRC = str(Path(__file__).resolve().parents[1] / "src")
@@ -232,8 +233,8 @@ def test_adoption_matrix_counts_the_plugin_enabled_by_its_config_key(tmp_path: P
     from py_ci_shared.adoption_matrix import find_module_usage
 
     (tmp_path / "pyproject.toml").write_text('[tool.py_ci_shared]\nresource_leak_guard = true\nenable = ["naive_utcnow"]\n')
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "add", "pyproject.toml"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=tmp_path, check=True, env=git_env())
     used, _ = find_module_usage(tmp_path)
     assert used.get("resource_leak_guard") == ["pyproject.toml"] and used.get("naive_utcnow") == ["pyproject.toml"]
     (tmp_path / "pyproject.toml").write_text('[tool.py_ci_shared]\nresource_leak_guard = false\nenable = ["naive_utcnow"]\n')

@@ -154,6 +154,7 @@ def assert_gates_honest(
     a hook or a step therefore changes its problem string: the old entry is reported as no longer reproducing and the
     new one as new, so a rename is one edit to *known* -- which is also the point at which someone re-reads the reason.
     """
+    known = list(known)  # consumed on more than one path below; a generator would be empty the second time
     import pytest
 
     commands = gate_commands(precommit_path, list(workflows), scope=scope)

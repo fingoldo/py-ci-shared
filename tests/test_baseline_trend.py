@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from py_ci_shared.baseline_trend import count_entries, history, report
+from py_ci_shared._core.git import git_env
 
 
 def test_counts_the_python_ratchet_shape():
@@ -35,7 +36,7 @@ def test_a_file_that_is_not_a_baseline_counts_as_nothing():
 @pytest.fixture
 def repo(tmp_path):
     def git(*args):
-        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, env=git_env())
 
     git("init", "-q")
     git("config", "user.email", "t@example.com")

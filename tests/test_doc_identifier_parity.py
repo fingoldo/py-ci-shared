@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.doc_identifier_parity import assert_doc_identifiers_exist, find_absent_doc_identifiers
+from py_ci_shared._core.git import git_env
 
 
 def _repo(tmp_path: Path, doc: str, source: str = "") -> tuple[Path, list[Path], list[Path]]:
@@ -83,7 +84,7 @@ def test_the_default_corpus_skips_gitignored_files_and_keeps_untracked_ones(tmp_
 
     from py_ci_shared.doc_identifier_parity import default_corpus_files
 
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
     (tmp_path / ".gitignore").write_text("data/\n", encoding="utf-8")
     (tmp_path / "data").mkdir()
     (tmp_path / "data" / "dump.json").write_text("{}", encoding="utf-8")
@@ -113,9 +114,9 @@ def test_a_non_ascii_untracked_file_is_in_the_default_corpus(tmp_path):
 
     from py_ci_shared.doc_identifier_parity import default_corpus_files
 
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
     (tmp_path / "déjà.py").write_text("x = 1\n", encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
     assert "déjà.py" in {p.name for p in default_corpus_files(tmp_path)}
 
 

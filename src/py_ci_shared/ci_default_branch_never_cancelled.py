@@ -401,7 +401,7 @@ def _load(path: Path, rel: str) -> tuple[Optional[tuple[str, dict[Any, Any]]], O
     """``((text, document), None)`` for a readable workflow, ``(None, problem)`` otherwise."""
     try:
         text = read_source(path)
-        doc = yaml.load(text, Loader=_LineLoader)  # nosec B506 -- a SafeLoader subclass that only adds line numbers
+        doc = yaml.load(text, Loader=_LineLoader)  # deserialize-ok: _LineLoader subclasses yaml.SafeLoader and only adds line numbers
     except SourceError as exc:
         logger.debug("could not load workflow YAML, reported as a problem: %s", type(exc).__name__)
         return None, _problem(rel, f"{exc.kind}: {exc.message}", (exc.line if exc.line is not None else 1))

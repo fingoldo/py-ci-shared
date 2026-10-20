@@ -137,7 +137,7 @@ def _kill_tree(process: "subprocess.Popen[Any]") -> None:
     else:
         try:
             getattr(os, "killpg")(process.pid, getattr(signal, "SIGKILL"))
-        except OSError:
+        except OSError:  # swallow-ok: the process may already have exited; killing it is best effort
             pass
     try:
         process.kill()
@@ -174,7 +174,7 @@ def run_with_deadline(
         _kill_tree(process)
         try:
             process.communicate(timeout=10)
-        except (subprocess.TimeoutExpired, OSError, ValueError):
+        except (subprocess.TimeoutExpired, OSError, ValueError):  # swallow-ok: after a kill the pipes may already be closed; the timeout result is returned either way
             pass
         return None
     return subprocess.CompletedProcess(list(cmd), process.returncode, out, err)
@@ -387,7 +387,7 @@ class _WarmRunner:
                     if not line:
                         break
                     lines.put(line)
-            except (OSError, ValueError):
+            except (OSError, ValueError):  # swallow-ok: a closed pipe is the end of the stream; the reader reports it through the None sentinel
                 pass
             state["eof"] = True
             lines.put(None)

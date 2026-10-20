@@ -214,10 +214,10 @@ def run_checks(
     import psycopg2
 
     try:
-        probe = psycopg2.connect(dsn, connect_timeout=connect_timeout)
+        probe = psycopg2.connect(dsn, connect_timeout=connect_timeout, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
         probe.close()
     except Exception as exc:
-        detail = f"{type(exc).__name__}: {str(exc).strip()[:120]}"
+        detail = f"{type(exc).__name__} (SQLSTATE {getattr(exc, 'pgcode', None) or 'none'})"
         if not _is_unreachable(exc, psycopg2):
             print(f"FAIL: the database refused the connection ({detail}); fix the configuration.")
             return 1
@@ -227,7 +227,7 @@ def run_checks(
     runners = [checks] if callable(checks) else list(checks)
     ok = True
     # psycopg2's `with conn:` ends the transaction but leaves the connection open; closing() closes it.
-    with contextlib.closing(psycopg2.connect(dsn, connect_timeout=connect_timeout)) as conn:
+    with contextlib.closing(psycopg2.connect(dsn, connect_timeout=connect_timeout, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)) as conn:
         try:
             for runner in runners:
                 ok &= bool(runner(conn))

@@ -16,7 +16,6 @@ import hashlib
 import json
 import logging
 import os
-import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -104,9 +103,19 @@ def key_for(repo_root: Path, module: str, entry: Optional[str], kwargs: dict[str
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def _store_dir() -> Path:
+    """The per-user cache directory. Under the home directory, not the shared temp directory: another local user must not be
+    able to pre-create or plant an entry there (the predictable-temp-path defect class)."""
+    path = Path.home() / ".cache" / "py_ci_shared" / "gate_cache"
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        os.chmod(path, 0o700)
+    return path
+
+
 def _store_path(repo_root: Path) -> Path:
     tag = hashlib.sha256(repo_root.resolve().as_posix().encode("utf-8")).hexdigest()[:16]
-    return Path(tempfile.gettempdir()) / "py_ci_shared_gate_cache" / f"{tag}.json"
+    return _store_dir() / f"{tag}.json"
 
 
 def lookup(repo_root: Path, key: str) -> bool:
