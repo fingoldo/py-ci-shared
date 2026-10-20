@@ -65,7 +65,7 @@ _RUN_KEY_RE = re.compile(r"^(?P<indent>\s*)(?:-\s+)?run:\s*(?P<value>.*)$")
 _JOBS_RE = re.compile(r"^jobs\s*:\s*$")
 
 
-def _workflow_files(workflows_dir: Path) -> list[Path]:
+def workflow_files(workflows_dir: Path) -> list[Path]:
     return sorted(p for p in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")) if p.is_file())
 
 
@@ -258,7 +258,7 @@ def find_missing_workflow_paths(
     """Return one problem string per workflow path that does not exist (plus, when enabled, per
     missing top-level ``permissions:`` and per unpinned third-party action)."""
     first_party = {o.lower() for o in first_party_owners}
-    files = _workflow_files(workflows_dir)
+    files = workflow_files(workflows_dir)
     if not files:
         return [f"{workflows_dir}: no workflow files found - this check examined nothing, which reads as a pass."]
 

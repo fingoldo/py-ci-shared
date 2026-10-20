@@ -41,6 +41,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
+from .ci_workflow_paths import workflow_files
 from ._core import EmptyScanError, Finding, SourceReadError, UnparsedFilesError, read_source, relative_posix
 
 __all__ = ["RULE", "assert_installed_matches_ci_pin", "find_pin_skew_findings", "installed_py_ci_shared_version"]
@@ -80,10 +81,6 @@ class _Pin:
 
     def __init__(self, path: str, line: int, version: Optional[str], ref: str) -> None:
         self.path, self.line, self.version, self.ref = path, line, version, ref
-
-
-def _workflow_files(workflows_dir: Path) -> list[Path]:
-    return sorted(p for p in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")) if p.is_file())
 
 
 def _pins_in(text: str, rel: str, pattern: "re.Pattern[str]") -> list[_Pin]:
@@ -225,7 +222,7 @@ def find_pin_skew_findings(
     a gate that cannot read the workflows must not pass them.
     """
     base = Path(root)
-    files = _workflow_files(base / workflows_dir)
+    files = workflow_files(base / workflows_dir)
     if len(files) < min_files:
         raise EmptyScanError(f"ci_pin_version_skew: {len(files)} workflow file(s) under {base / workflows_dir}, expected at least {min_files}")
     pins = _read_pins(base, files, _pin_pattern(repo), allow_unparsed)
