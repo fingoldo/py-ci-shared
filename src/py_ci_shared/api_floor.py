@@ -169,9 +169,7 @@ def _vermin_args(target: str) -> list[str]:
 def _vermin_version() -> str:
     try:
         return importlib.metadata.version("vermin")
-    except (
-        importlib.metadata.PackageNotFoundError
-    ):  # best-effort: the version only keys the cache, so an unknown one costs a re-analysis, never a wrong verdict
+    except importlib.metadata.PackageNotFoundError:  # best-effort: the version only keys the cache; unknown costs a re-analysis
         return "unknown"
 
 
