@@ -43,7 +43,9 @@ practice while keeping this package's own install graph unchanged.
 
 from __future__ import annotations
 
+import inspect
 import warnings
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -155,11 +157,36 @@ def _key(f: "Finding") -> str:
     return f"{f.check}::{f.file}::{_snippet_fingerprint(f)}"
 
 
-def _run_scanners(root: Path, checks: list[str] | None, exclude_dirs: frozenset[str]) -> tuple[list[Finding], dict[str, str]]:
+_REPO_MARKERS = ("pyproject.toml", "setup.py", "setup.cfg", ".git")
+_CONSUMER_DIRS = ("tests", "benchmarks")
+
+
+def repo_consumer_roots(root: Path) -> list[Path]:
+    """The ``tests/`` and ``benchmarks/`` directories of the repo that ``root`` sits in.
+
+    The repo is the nearest ancestor of ``root`` (``root`` included) holding a packaging or VCS marker. A name a
+    test or benchmark imports or accesses is live, so these are passed to the code-audit scanners as consumers:
+    a re-export only the consumers use is not reported as possibly dead. Empty when no repo marker is found.
+    """
+    resolved = root.resolve()
+    for candidate in (resolved, *resolved.parents):
+        if any((candidate / marker).exists() for marker in _REPO_MARKERS):
+            return [candidate / name for name in _CONSUMER_DIRS if (candidate / name).is_dir()]
+    return []
+
+
+def _run_scanners(
+    root: Path, checks: list[str] | None, exclude_dirs: frozenset[str], consumer_roots: Iterable[Path] = ()
+) -> tuple[list[Finding], dict[str, str]]:
     """Every scanner's findings, and the scanners that raised (name -> error)."""
     from pyutilz.dev.code_audit import registry
 
     run_all_checked = getattr(registry, "run_all_checked", None)
+    consumers = list(consumer_roots)
+    # A pyutilz older than the consumer_roots parameter runs without consumers rather than raising TypeError.
+    if run_all_checked is not None and consumers and "consumer_roots" in inspect.signature(run_all_checked).parameters:
+        findings, failed = run_all_checked(root, checks=checks, exclude_dirs=exclude_dirs, consumer_roots=consumers)
+        return list(findings), dict(failed)
     if run_all_checked is None:
         # A consumer pinned to a pyutilz older than run_all_checked must not turn red on an ImportError under @v1; it
         # keeps the old behaviour, where a crashed scanner is indistinguishable from a clean one, and is told so.
@@ -179,6 +206,7 @@ def assert_no_new_code_audit_findings(
     checks: list[str] | None = None,
     request=None,
     fail_on_drained: bool = True,
+    consumer_roots: Iterable[Path] | None = None,
 ) -> None:
     """Run ``pyutilz.dev.code_audit.run_all()`` against ``root`` and either
     rewrite ``baseline_path`` (a refresh was requested: ``--refresh-code-audit-baseline``,
@@ -207,11 +235,16 @@ def assert_no_new_code_audit_findings(
             fixed finding kept its slot and the next one written the same way was
             excused by it; the baseline only ever grew back. ``False`` restores the
             print for a repo mid-migration.
+        consumer_roots: trees that only read ``root`` (the repo's ``tests/`` and ``benchmarks/``). A name they
+            import or access counts as used by the possibly_dead_import check. ``None`` (the default) derives them
+            with :func:`repo_consumer_roots`; ``[]`` disables that.
     """
     import pytest
 
     merged_exclude = DEFAULT_EXCLUDE_DIRS | exclude_dirs
-    current, failed = _run_scanners(root, checks, merged_exclude)
+    if consumer_roots is None:
+        consumer_roots = repo_consumer_roots(root)
+    current, failed = _run_scanners(root, checks, merged_exclude, consumer_roots)
     if failed:
         # A scanner that raised has no findings to report, so an empty list from it is not a clean result (audit S-01).
         pytest.fail(
