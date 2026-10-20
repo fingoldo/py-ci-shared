@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 import os
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -18,6 +18,7 @@ from ._core import (
     DEFAULT_EXCLUDE,
     Baseline,
     Finding,
+    ParsedFile,
     ScanResult,
     SourceError,
     SourceProblem,
@@ -32,7 +33,7 @@ from ._core import (
 
 PathLike = Union[str, "os.PathLike[str]"]
 
-__all__ = ["TextFile", "TextCorpus", "scan_tree", "read_text_corpus", "report", "enclosing_functions", "line_has_marker", "skip_set"]
+__all__ = ["TextFile", "TextCorpus", "collect_findings", "scan_tree", "read_text_corpus", "report", "enclosing_functions", "line_has_marker", "skip_set"]
 
 #: Directory names that hold tests. Gates whose literals are legitimately the SUBJECT of a test skip these by default.
 TEST_DIR_NAMES: frozenset[str] = frozenset({"tests", "test", "testing"})
@@ -53,6 +54,20 @@ def scan_tree(root: PathLike, *, skip: Iterable[str], use_git: Optional[bool] = 
         scan.files = [f for f in scan.files if not _is_test_file(f.rel)]
         scan.unparsed = [p for p in scan.unparsed if not _is_test_file(p.rel)]
     return scan
+
+
+def collect_findings(
+    root: PathLike,
+    *,
+    skip_dir_names: Iterable[str],
+    include_tests: bool,
+    use_git: Optional[bool],
+    file_findings: Callable[[ParsedFile], list[Finding]],
+) -> tuple[list[Finding], ScanResult]:
+    """Findings of *file_findings* over every file under *root*, sorted by path and line, with the scan they came from."""
+    scan = scan_tree(root, skip=skip_set(skip_dir_names, include_tests=include_tests), use_git=use_git)
+    findings = [f for parsed in scan for f in file_findings(parsed)]
+    return sorted(findings, key=lambda f: (f.path, f.line)), scan
 
 
 def _is_test_file(rel: str) -> bool:

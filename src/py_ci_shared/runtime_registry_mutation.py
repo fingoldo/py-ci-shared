@@ -30,7 +30,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import ImportAliases, ParsedFile, ScanResult, child_nodes, scan_python
+from ._core import ImportAliases, ParsedFile, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["RegistryWrite", "find_runtime_registry_writes", "assert_writes_have_replay"]
@@ -255,10 +255,6 @@ def _functions(tree: ast.Module) -> Iterator[tuple[_FunctionNode, bool, list[_Fu
     yield from visit(tree, False, [])
 
 
-def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
-    return scan_python([Path(p) for p in files], root=repo_root)
-
-
 def _writes(parsed: list[ParsedFile]) -> list[RegistryWrite]:
     helpers = _import_time_helpers((f.rel, f.tree) for f in parsed)
     # A registry is usually written through an import (``from .registry import _REGISTRY``), so every module-level
@@ -283,7 +279,7 @@ def find_runtime_registry_writes(files: Iterable[Path], repo_root: Path, *, allo
     """Every function-scope write to a module-level ``*REGISTRY*`` dict (defined in any scanned file), outside
     import-time helpers and the functions nested in them. A file outside *repo_root* is keyed by its absolute path.
     Raises ``UnparsedFilesError`` (an ``AssertionError``) when a file cannot be parsed, unless *allow_unparsed*."""
-    scan = _scan(files, repo_root)
+    scan = scan_python([Path(p) for p in files], root=repo_root)
     if not allow_unparsed:
         scan.check_unparsed()
     return _writes(scan.files)
@@ -296,7 +292,7 @@ def assert_writes_have_replay(files: Iterable[Path], repo_root: Path, replay_wri
     rejected, and a listed writer that no longer writes anything must be removed. Fewer than *min_files* PARSED files,
     or any file that cannot be parsed, fails too.
     """
-    scan = _scan(files, repo_root)
+    scan = scan_python([Path(p) for p in files], root=repo_root)
     scan.min_files = min_files
     try:
         scan.check_floor()

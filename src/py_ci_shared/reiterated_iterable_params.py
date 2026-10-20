@@ -30,9 +30,9 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
+from ._core import Finding, ImportAliases, ParsedFile, child_nodes
 from ._core.node_index import walk as _fast_walk
-from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
+from ._gate_report import collect_findings, enclosing_functions, line_has_marker, report
 
 logger = logging.getLogger(__name__)
 
@@ -199,18 +199,12 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
     return out
 
 
-def _collect(root: Union[str, Path], *, skip_dir_names: Iterable[str], include_tests: bool, use_git: Optional[bool]) -> tuple[list[Finding], ScanResult]:
-    scan = scan_tree(root, skip=skip_set(skip_dir_names, include_tests=include_tests), use_git=use_git)
-    findings = [f for parsed in scan for f in _file_findings(parsed)]
-    return sorted(findings, key=lambda f: (f.path, f.line)), scan
-
-
 def find_reiterated_iterable_params(
     root: Union[str, Path], *, skip_dir_names: Iterable[str] = (), include_tests: bool = False, use_git: Optional[bool] = None
 ) -> list[Finding]:
     """Every ``Iterable``-typed parameter consumed twice on one path under *root*, plus one ``unparsed-file`` finding
     per unparsable file."""
-    findings, scan = _collect(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git)
+    findings, scan = collect_findings(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git, file_findings=_file_findings)
     return findings + scan.unparsed_findings()
 
 
@@ -227,7 +221,7 @@ def assert_no_reiterated_iterable_params(
 ) -> None:
     """Fail on a re-consumed one-shot parameter (new against *baseline_path* when given), on fewer than *min_files*
     parsed files, and on any unparsable file. Refresh with ``--refresh-reiterated-iterables-baseline``."""
-    findings, scan = _collect(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git)
+    findings, scan = collect_findings(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git, file_findings=_file_findings)
     report(
         findings,
         gate="reiterated-iterable-params",

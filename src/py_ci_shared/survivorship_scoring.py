@@ -24,7 +24,7 @@ import ast
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from ._core import ParsedFile, ScanResult, scan_python
+from ._core import ParsedFile, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["SurvivorshipScore", "DEFAULT_METRIC_NAMES", "find_survivorship_scoring", "assert_no_survivorship_scoring"]
@@ -115,10 +115,6 @@ def _has_remedy(func: ast.AST) -> bool:
     return False
 
 
-def _scan(files: Iterable[Path], repo_root: Path) -> ScanResult:
-    return scan_python([Path(p) for p in files], root=repo_root)
-
-
 def _find(parsed: Iterable[ParsedFile], metric_names: Sequence[str] | frozenset[str]) -> list[SurvivorshipScore]:
     metrics = frozenset(metric_names)
     out: list[SurvivorshipScore] = []
@@ -145,7 +141,7 @@ def find_survivorship_scoring(
     A file outside *repo_root* is keyed by its absolute path. A file that cannot be read or parsed raises
     ``UnparsedFilesError`` (an ``AssertionError``) unless *allow_unparsed*.
     """
-    scan = _scan(files, repo_root)
+    scan = scan_python([Path(p) for p in files], root=repo_root)
     if not allow_unparsed:
         scan.check_unparsed()
     return _find(scan.files, metric_names)
@@ -163,7 +159,7 @@ def assert_no_survivorship_scoring(
     ``allowed`` maps ``path::function`` to the reason that site scores survivors on purpose; an empty reason is rejected,
     and an entry with nothing left to excuse must be removed.
     """
-    scan = _scan(files, repo_root)
+    scan = scan_python([Path(p) for p in files], root=repo_root)
     scan.min_files = min_files
     try:
         scan.check_floor()

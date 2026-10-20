@@ -31,9 +31,9 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, ParsedFile, ScanResult, child_nodes
+from ._core import Finding, ParsedFile, child_nodes
 from ._core.node_index import walk as _fast_walk
-from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
+from ._gate_report import collect_findings, enclosing_functions, line_has_marker, report
 
 __all__ = ["RULE", "REFRESH_FLAG", "find_rollback_then_continue", "assert_no_rollback_then_continue"]
 
@@ -181,17 +181,11 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
     return out
 
 
-def _collect(root: Union[str, Path], *, skip_dir_names: Iterable[str], include_tests: bool, use_git: Optional[bool]) -> tuple[list[Finding], ScanResult]:
-    scan = scan_tree(root, skip=skip_set(skip_dir_names, include_tests=include_tests), use_git=use_git)
-    findings = [f for parsed in scan for f in _file_findings(parsed)]
-    return sorted(findings, key=lambda f: (f.path, f.line)), scan
-
-
 def find_rollback_then_continue(
     root: Union[str, Path], *, skip_dir_names: Iterable[str] = (), include_tests: bool = False, use_git: Optional[bool] = None
 ) -> list[Finding]:
     """Every rollback-then-continue handler under *root*, plus one ``unparsed-file`` finding per unparsable file."""
-    findings, scan = _collect(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git)
+    findings, scan = collect_findings(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git, file_findings=_file_findings)
     return findings + scan.unparsed_findings()
 
 
@@ -208,7 +202,7 @@ def assert_no_rollback_then_continue(
 ) -> None:
     """Fail on a rollback-then-continue handler (new against *baseline_path* when given), on fewer than *min_files*
     parsed files, and on any unparsable file. Refresh with ``--refresh-rollback-continue-baseline``."""
-    findings, scan = _collect(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git)
+    findings, scan = collect_findings(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git, file_findings=_file_findings)
     report(
         findings,
         gate="rollback-then-continue",
