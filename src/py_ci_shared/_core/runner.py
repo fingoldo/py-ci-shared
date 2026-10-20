@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from . import gate_cache
 from .config import ConfigError, GateRun, RepoConfig, resolve_kwargs
 from .refresh import ENV_VAR, GROW_ENV_VAR
 
@@ -80,6 +81,13 @@ def _outcome_types() -> tuple[tuple[type[BaseException], ...], tuple[type[BaseEx
     return (AssertionError, Failed), (Skipped,)
 
 
+def _cache_key(config: RepoConfig, run: GateRun, kwargs: dict, budget: Optional[float]) -> Optional[str]:
+    """The key of this run's PASSED result, or None when the cache is off or this run must not be cached (see ``gate_cache``)."""
+    if not gate_cache.enabled():
+        return None
+    return gate_cache.key_for(config.repo_root, run.module, run.entry, kwargs, budget, gate_cache.tree_digest(config.repo_root))
+
+
 def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
     """Call *run*'s entry with its resolved kwargs from the repo root, never raising for a gate's own failure.
 
@@ -98,6 +106,10 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
             kwargs["refresh"] = True
         if refresh and grow and "grow" in inspect.signature(func).parameters:
             kwargs["grow"] = True
+        cache_key = None if refresh else _cache_key(config, run, kwargs, budget)
+        if cache_key is not None and gate_cache.lookup(config.repo_root, cache_key):
+            logger.debug("gate %s passed on this tree before, not re-run", run.name)
+            return GateResult(run.name, PASSED, "cached: nothing in the repository changed since it last passed", time.perf_counter() - start, budget)
         cwd = os.getcwd()
         os.chdir(config.repo_root)
         try:
@@ -105,6 +117,8 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
                 func(**kwargs)
         finally:
             os.chdir(cwd)
+        if cache_key is not None:
+            gate_cache.record(config.repo_root, cache_key)
     except ConfigError as exc:
         logger.warning("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"configuration: {exc}", time.perf_counter() - start, budget)
