@@ -135,7 +135,7 @@ def _cfg_patterns(cfg: Path, section_name: str) -> Optional[tuple[str, ...]]:
     parser = configparser.ConfigParser(interpolation=None)
     try:
         parser.read(cfg, encoding="utf-8")
-    except configparser.Error:
+    except configparser.Error:  # best-effort: an unreadable tox.ini or setup.cfg is not a pytest config, so the next file is tried
         return None
     if not parser.has_section(section_name):
         return None
