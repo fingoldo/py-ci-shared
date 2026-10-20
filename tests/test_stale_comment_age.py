@@ -456,3 +456,19 @@ def test_a_zero_warning_window_is_not_replaced_by_the_default(tmp_path):
     a = _repo_at_t0(tmp_path / "alpha", "lib/a.dart", "// TODO: soon\nvoid a() {}\n")
     lines, _ = sca.stale_warning_summary([a], scan_dirs=["lib"], max_age_days=30, warn_days=0, now=_T0 + 25 * _DAY)
     assert lines[0] == "alpha: 0 going stale within 0 days, 0 already older than 30 days"
+
+
+def test_an_explicit_empty_scan_dirs_scans_nothing_instead_of_the_configured_dirs(tmp_path: Path, monkeypatch):
+    from py_ci_shared import stale_comment_age
+
+    (tmp_path / "pyproject.toml").write_text('[tool.py_ci_shared.gates.stale_comment_age]\nscan_dirs = ["configured"]\n', encoding="utf-8")
+    scanned: list[list[str]] = []
+
+    def fake_scan(root, dirs, **kwargs):
+        scanned.append(list(dirs))
+        return [], []
+
+    monkeypatch.setattr(stale_comment_age, "_scan", fake_scan)
+    stale_comment_age.stale_warning_summary([tmp_path], scan_dirs=[])
+    stale_comment_age.stale_warning_summary([tmp_path])
+    assert scanned == [[], ["configured"]]

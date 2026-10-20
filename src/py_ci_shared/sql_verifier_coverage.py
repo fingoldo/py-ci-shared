@@ -213,7 +213,8 @@ def verifier_lists(verifier: Path, *, listed_name: str = "STATEMENTS", excluded_
         elif name == excluded_name and isinstance(value, ast.Dict):
             for key, reason in zip(value.keys, value.values):
                 if key is not None and _string_value(key):
-                    excluded[_string_value(key) or ""] = _string_value(reason) or ast.unparse(reason)
+                    text = _string_value(reason)
+                    excluded[_string_value(key) or ""] = text if text is not None else ast.unparse(reason)
     return listed, excluded
 
 

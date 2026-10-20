@@ -573,7 +573,7 @@ def stale_warning_summary(
     for repo in repos:
         root = Path(repo)
         cfg = _configured(root)
-        dirs = list(scan_dirs or cfg.get("scan_dirs") or ["."])
+        dirs = list(scan_dirs) if scan_dirs is not None else list(cfg.get("scan_dirs") or ["."])
         limit = int(max_age_days if max_age_days is not None else cfg.get("max_age_days", 30))
         window = int(warn_days if warn_days is not None else cfg.get("warn_days", 7))  # 0 is a legitimate window, not a request for the default
         problems, dated = _scan(root, dirs, suffixes=_DEFAULT_SUFFIXES, require_issue_ref=True, skip_dirs=DEFAULT_SKIP_DIRS)

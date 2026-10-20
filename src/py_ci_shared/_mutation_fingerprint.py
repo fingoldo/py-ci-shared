@@ -110,6 +110,38 @@ def _split_patterns(value: object) -> list[str]:
     return []
 
 
+def _configured_patterns(parser: configparser.ConfigParser, section_name: str) -> tuple[str, ...]:
+    """``python_files`` of one section: the default when the key is absent, the (possibly empty) patterns when it is set."""
+    # An explicit empty value means "collect no python files" to pytest, so it is kept as an empty tuple, not replaced by the defaults.
+    if not parser.has_option(section_name, "python_files"):
+        return _DEFAULT_PYTHON_FILES
+    return tuple(_split_patterns(parser.get(section_name, "python_files")))
+
+
+def _pytest_ini_patterns(ini: Path) -> tuple[str, ...]:
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(ini, encoding="utf-8")
+    except configparser.Error as exc:
+        logger.debug("could not read pytest config, using default python-files patterns: %s", type(exc).__name__)
+        return _DEFAULT_PYTHON_FILES
+    if not parser.has_section("pytest"):
+        return _DEFAULT_PYTHON_FILES
+    return _configured_patterns(parser, "pytest")
+
+
+def _cfg_patterns(cfg: Path, section_name: str) -> Optional[tuple[str, ...]]:
+    """The patterns of a tox.ini or setup.cfg section, or None when the file cannot be read or has no such section."""
+    parser = configparser.ConfigParser(interpolation=None)
+    try:
+        parser.read(cfg, encoding="utf-8")
+    except configparser.Error:
+        return None
+    if not parser.has_section(section_name):
+        return None
+    return _configured_patterns(parser, section_name)
+
+
 def _python_files_patterns(repo_root: Path) -> tuple[str, ...]:
     """The repo's ``python_files`` setting, read from the config file pytest itself would use.
 
@@ -118,13 +150,7 @@ def _python_files_patterns(repo_root: Path) -> tuple[str, ...]:
     """
     ini = repo_root / "pytest.ini"
     if ini.is_file():
-        parser = configparser.ConfigParser(interpolation=None)
-        try:
-            parser.read(ini, encoding="utf-8")
-        except configparser.Error as exc:
-            logger.debug("could not read pytest config, using default python-files patterns: %s", type(exc).__name__)
-            return _DEFAULT_PYTHON_FILES
-        return tuple(_split_patterns(parser.get("pytest", "python_files", fallback=""))) or _DEFAULT_PYTHON_FILES
+        return _pytest_ini_patterns(ini)
     pyproject = repo_root / "pyproject.toml"
     if pyproject.is_file():
         from ._toml_compat import tomllib
@@ -135,18 +161,15 @@ def _python_files_patterns(repo_root: Path) -> tuple[str, ...]:
             data = {}
         section = data.get("tool", {}).get("pytest", {}).get("ini_options")
         if isinstance(section, dict):
-            return tuple(_split_patterns(section.get("python_files"))) or _DEFAULT_PYTHON_FILES
+            if "python_files" in section:
+                return tuple(_split_patterns(section["python_files"]))
+            return _DEFAULT_PYTHON_FILES
     for name, section_name in (("tox.ini", "pytest"), ("setup.cfg", "tool:pytest")):
         cfg = repo_root / name
-        if not cfg.is_file():
-            continue
-        parser = configparser.ConfigParser(interpolation=None)
-        try:
-            parser.read(cfg, encoding="utf-8")
-        except configparser.Error:
-            continue
-        if parser.has_section(section_name):
-            return tuple(_split_patterns(parser.get(section_name, "python_files", fallback=""))) or _DEFAULT_PYTHON_FILES
+        if cfg.is_file():
+            found = _cfg_patterns(cfg, section_name)
+            if found is not None:
+                return found
     return _DEFAULT_PYTHON_FILES
 
 

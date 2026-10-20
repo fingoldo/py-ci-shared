@@ -114,3 +114,9 @@ class TestAStatementThatIsNotOneStringLiteral:
         verifier = _write(tmp_path, "scripts/verify.py", "STATEMENTS = []\nEXCLUDED = {}\n")
         with pytest.raises(pytest.fail.Exception, match=r"m\.Q"):
             assert_verifier_covers_statements(tmp_path, verifier, exclude_top_dirs={"scripts"})
+
+
+def test_an_empty_exclusion_reason_stays_empty_and_is_not_replaced_by_its_source_text(tmp_path: Path):
+    verifier = tmp_path / "verify.py"
+    verifier.write_text('STATEMENTS = []\nEXCLUDED = {"m.Q": ""}\n', encoding="utf-8")
+    assert verifier_lists(verifier) == (set(), {"m.Q": ""})
