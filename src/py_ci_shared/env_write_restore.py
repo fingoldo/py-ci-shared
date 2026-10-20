@@ -107,7 +107,9 @@ def _is_scoping_call(expr: ast.AST) -> bool:
         return False
     try:
         text = ast.unparse(expr.func)
-    except Exception as exc:  # pragma: no cover - unparse of an odd node  # best-effort: the fallback only decides whether an odd call node counts as a write; unparse failing is not a real verdict
+    except (
+        Exception
+    ) as exc:  # pragma: no cover - unparse of an odd node  # best-effort: the fallback only decides whether an odd call node counts as a write; unparse failing is not a real verdict
         logger.warning("env_write_restore.py handler at line 108 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not unparse call expression: %s", type(exc).__name__)
         return False

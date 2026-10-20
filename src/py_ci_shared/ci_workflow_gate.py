@@ -103,6 +103,94 @@ class _Scope:
         self.coe_line: Optional[int] = None
 
 
+class _Reader:
+    """The line-by-line state of one workflow read: the job and step in progress and the ``continue-on-error`` hits so far."""
+
+    def __init__(self, has_jobs: bool) -> None:
+        self.has_jobs = has_jobs
+        self.found: list[tuple[int, str]] = []
+        self.in_jobs = not has_jobs
+        self.job_indent: Optional[int] = None
+        self.job: Optional[_Scope] = _Scope(None, None) if not has_jobs else None
+        self.steps_parent: Optional[int] = None
+        self.item_indent: Optional[int] = None
+        self.step: Optional[_Scope] = None
+
+    def close_step(self) -> None:
+        step = self.step
+        if step is not None and step.coe_line is not None:
+            job_name = self.job.name if self.job is not None else None
+            self.found.append((step.coe_line, step.name or job_name or f"<unnamed step, line {step.coe_line}>"))
+        self.step = None
+
+    def close_job(self) -> None:
+        self.close_step()
+        job = self.job
+        if job is not None and job.coe_line is not None:
+            self.found.append((job.coe_line, job.name or job.ident or f"<unnamed job, line {job.coe_line}>"))
+        self.job = None
+        self.steps_parent = self.item_indent = None
+
+    def _job_line(self, indent: int, content: str) -> bool:
+        """Track the job being read; True when the line opens a new job (its id line), which needs no further reading."""
+        if self.job_indent is None:
+            self.job_indent = indent
+        if indent <= self.job_indent:
+            self.close_job()
+            kv = _key_value(content)
+            self.job = _Scope(kv[0] if kv else content.rstrip(":"), None)
+            return True
+        if self.job is not None and self.job.key_col is None:
+            self.job.key_col = indent
+        return False
+
+    def _apply_key(self, lineno: int, indent: int, is_item: bool, key_col: int, key: str, value: str) -> None:
+        step = self.step
+        if self.steps_parent is None and key == "steps" and not value:
+            self.steps_parent = indent
+            return
+        if step is not None and key_col == step.key_col:
+            if key == "name":
+                step.name = value
+            elif key == "continue-on-error" and _is_true(value):
+                step.coe_line = lineno
+            return
+        job = self.job
+        if self.has_jobs and job is not None and not is_item and indent == job.key_col and self.steps_parent is None:
+            if key == "name":
+                job.name = value
+            elif key == "continue-on-error" and _is_true(value):
+                job.coe_line = lineno
+
+    def feed(self, lineno: int, line: str) -> None:
+        if not line.strip():
+            return
+        indent = len(line) - len(line.lstrip())
+        content = line.strip()
+        if self.has_jobs and indent == 0:
+            self.close_job()
+            self.in_jobs = bool(_JOBS_RE.match(content))
+            self.job_indent = None
+            return
+        if not self.in_jobs:
+            return
+        if self.steps_parent is not None and indent <= self.steps_parent:
+            self.close_step()
+            self.steps_parent = self.item_indent = None
+        if self.has_jobs and self._job_line(indent, content):
+            return
+        is_item = content == "-" or content.startswith("- ")
+        body = content[1:].lstrip() if is_item else content
+        key_col = indent + (len(content) - len(body)) if is_item else indent
+        if self.steps_parent is not None and is_item and (self.item_indent is None or indent == self.item_indent):
+            self.close_step()
+            self.item_indent = indent
+            self.step = _Scope(None, key_col)
+        kv = _key_value(body)
+        if kv is not None:
+            self._apply_key(lineno, indent, is_item, key_col, kv[0], kv[1])
+
+
 def find_continue_on_error_steps(workflow_path: Path) -> list[str]:
     """Return the name of every step/job in ``workflow_path`` carrying a
     literal ``continue-on-error: true`` (bare or quoted, also written on the
@@ -118,82 +206,11 @@ def find_continue_on_error_steps(workflow_path: Path) -> list[str]:
     (a composite action) is read for ``steps:`` lists anywhere.
     """
     lines = [_strip_comment(raw) for raw in read_source(workflow_path).splitlines()]
-    has_jobs = any(_JOBS_RE.match(line) for line in lines)
-    found: list[tuple[int, str]] = []
-    in_jobs = not has_jobs
-    job_indent: Optional[int] = None
-    job: Optional[_Scope] = _Scope(None, None) if not has_jobs else None
-    steps_parent: Optional[int] = None
-    item_indent: Optional[int] = None
-    step: Optional[_Scope] = None
-
-    def close_step() -> None:
-        nonlocal step
-        if step is not None and step.coe_line is not None:
-            job_name = job.name if job is not None else None
-            found.append((step.coe_line, step.name or job_name or f"<unnamed step, line {step.coe_line}>"))
-        step = None
-
-    def close_job() -> None:
-        nonlocal job, steps_parent, item_indent
-        close_step()
-        if job is not None and job.coe_line is not None:
-            found.append((job.coe_line, job.name or job.ident or f"<unnamed job, line {job.coe_line}>"))
-        job = None
-        steps_parent = item_indent = None
-
+    reader = _Reader(any(_JOBS_RE.match(line) for line in lines))
     for lineno, line in enumerate(lines, start=1):
-        if not line.strip():
-            continue
-        indent = len(line) - len(line.lstrip())
-        content = line.strip()
-        if has_jobs and indent == 0:
-            close_job()
-            in_jobs = bool(_JOBS_RE.match(content))
-            job_indent = None
-            continue
-        if not in_jobs:
-            continue
-        if steps_parent is not None and indent <= steps_parent:
-            close_step()
-            steps_parent = item_indent = None
-        if has_jobs:
-            if job_indent is None:
-                job_indent = indent
-            if indent <= job_indent:
-                close_job()
-                kv = _key_value(content)
-                job = _Scope(kv[0] if kv else content.rstrip(":"), None)
-                continue
-            if job is not None and job.key_col is None:
-                job.key_col = indent
-        is_item = content == "-" or content.startswith("- ")
-        body = content[1:].lstrip() if is_item else content
-        key_col = indent + (len(content) - len(body)) if is_item else indent
-        if steps_parent is not None and is_item and (item_indent is None or indent == item_indent):
-            close_step()
-            item_indent = indent
-            step = _Scope(None, key_col)
-        kv = _key_value(body)
-        if kv is None:
-            continue
-        key, value = kv
-        if steps_parent is None and key == "steps" and not value:
-            steps_parent = indent
-            continue
-        if step is not None and key_col == step.key_col:
-            if key == "name":
-                step.name = value
-            elif key == "continue-on-error" and _is_true(value):
-                step.coe_line = lineno
-            continue
-        if has_jobs and job is not None and not is_item and indent == job.key_col and steps_parent is None:
-            if key == "name":
-                job.name = value
-            elif key == "continue-on-error" and _is_true(value):
-                job.coe_line = lineno
-    close_job()
-    return [name for _, name in sorted(found)]
+        reader.feed(lineno, line)
+    reader.close_job()
+    return [name for _, name in sorted(reader.found)]
 
 
 def assert_continue_on_error_is_reviewed(workflow_path: Path, reviewed_advisory_steps: set[str]) -> None:

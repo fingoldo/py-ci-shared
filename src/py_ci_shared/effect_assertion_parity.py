@@ -560,6 +560,22 @@ def _patches_a_real_driver(tree: ast.AST) -> bool:
     return False
 
 
+def _inspected_effects(func: ast.AST, effects: Sequence[str]) -> set[str]:
+    """Effect names whose mock *func*'s own body reads an inspection attribute off."""
+    inspected: set[str] = set()
+    for inner in _fast_walk(func):
+        if not isinstance(inner, ast.Attribute):
+            continue
+        if not (inner.attr.startswith("assert_") or inner.attr in _INSPECTIONS):
+            continue
+        target = inner.value
+        if isinstance(target, ast.Attribute) and target.attr in effects:
+            inspected.add(target.attr)
+        elif isinstance(target, ast.Name) and target.id in effects:
+            inspected.add(target.id)
+    return inspected
+
+
 def _inspection_helpers(repo_root: Path, effects: Sequence[str], parse: Optional[_Parser] = None) -> dict[str, set[str]]:
     """``{helper name: effects it inspects}`` for helpers defined in non-test modules of the tree.
 
@@ -584,17 +600,7 @@ def _inspection_helpers(repo_root: Path, effects: Sequence[str], parse: Optional
         if tree is None:
             continue
         for node in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
-            inspected: set[str] = set()
-            for inner in _fast_walk(node):
-                if not isinstance(inner, ast.Attribute):
-                    continue
-                if not (inner.attr.startswith("assert_") or inner.attr in _INSPECTIONS):
-                    continue
-                target = inner.value
-                if isinstance(target, ast.Attribute) and target.attr in effects:
-                    inspected.add(target.attr)
-                elif isinstance(target, ast.Name) and target.id in effects:
-                    inspected.add(target.id)
+            inspected = _inspected_effects(node, effects)
             if inspected:
                 helpers.setdefault(node.name, set()).update(inspected)
     return helpers
@@ -712,6 +718,44 @@ def _imported_names(path: Path, package: Optional[str] = None) -> set[str]:
     return _names_from_records(_import_records(path), package)
 
 
+def _detect_layout(repo_root: Path, package_name: str, src_dir: str) -> tuple[str, str]:
+    """``(package_name, src_dir)`` with whatever the caller left empty detected from the tree."""
+    # A repository that IS a package -- `dashboard/__init__.py` at its root, tests importing
+    # `from dashboard import data` -- maps its files as bare `data.py` while every test names
+    # `dashboard.data`, so almost nothing matches. Measured on one: 2 modules resolved out of 250
+    # files, and the check reported it clean. Same silent-empty-map failure as the src layout below,
+    # through a different door.
+    if not package_name and (repo_root / "__init__.py").is_file():
+        package_name = repo_root.name
+    if not src_dir and (repo_root / "src").is_dir():
+        packages = [d for d in (repo_root / "src").iterdir() if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))]
+        if packages:
+            src_dir = "src"
+        if len(packages) == 1:
+            package_name = package_name or packages[0].name
+    return package_name, src_dir
+
+
+def _dotted_module_name(path: Path, repo_root: Path) -> str:
+    rel = path.relative_to(repo_root).with_suffix("")
+    parts = list(rel.parts)
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _modules_by_name(sources: Sequence[Path], repo_root: Path, package_name: str, src_dir: str) -> dict[str, Path]:
+    by_module: dict[str, Path] = {}
+    for path in sources:
+        flat = _dotted_module_name(path, repo_root)
+        by_module[flat] = path
+        if package_name:
+            by_module[f"{package_name}.{flat}" if flat else package_name] = path
+        if src_dir and flat.startswith(f"{src_dir}."):
+            by_module[flat[len(src_dir) + 1 :]] = path
+    return by_module
+
+
 def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = "") -> dict[str, list[str]]:
     """``{module path: [test paths importing it]}``, both relative to *repo_root*.
 
@@ -732,39 +776,11 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
     findings. Detection makes the default correct; an explicit argument still wins. A src directory holding several
     packages maps every one of them.
     """
-    # A repository that IS a package -- `dashboard/__init__.py` at its root, tests importing
-    # `from dashboard import data` -- maps its files as bare `data.py` while every test names
-    # `dashboard.data`, so almost nothing matches. Measured on one: 2 modules resolved out of 250
-    # files, and the check reported it clean. Same silent-empty-map failure as the src layout below,
-    # through a different door.
-    if not package_name and (repo_root / "__init__.py").is_file():
-        package_name = repo_root.name
-    if not src_dir and (repo_root / "src").is_dir():
-        packages = [d for d in (repo_root / "src").iterdir() if d.is_dir() and (d / "__init__.py").is_file() and not d.name.startswith((".", "_"))]
-        if packages:
-            src_dir = "src"
-        if len(packages) == 1:
-            package_name = package_name or packages[0].name
-
-    def module_name(path: Path) -> str:
-        rel = path.relative_to(repo_root).with_suffix("")
-        parts = list(rel.parts)
-        if parts and parts[-1] == "__init__":
-            parts.pop()
-        return ".".join(parts)
-
+    package_name, src_dir = _detect_layout(repo_root, package_name, src_dir)
     files = _py_files(repo_root)
     sources = [p for p in files if "tests" not in p.relative_to(repo_root).parts]
     tests = [p for p in files if p.name.startswith("test_")]
-
-    by_module: dict[str, Path] = {}
-    for path in sources:
-        flat = module_name(path)
-        by_module[flat] = path
-        if package_name:
-            by_module[f"{package_name}.{flat}" if flat else package_name] = path
-        if src_dir and flat.startswith(f"{src_dir}."):
-            by_module[flat[len(src_dir) + 1 :]] = path
+    by_module = _modules_by_name(sources, repo_root, package_name, src_dir)
 
     records: dict[Path, list[_ImportRecord]] = {}
 
@@ -805,6 +821,72 @@ def _module_dotted_names(module: str, repo_root: Path) -> set[str]:
     return {n for n in names if n}
 
 
+def _conftest_db_fixtures(repo_root: Path, parse: _Parser) -> frozenset[str]:
+    """Fixtures backed by a real database, from every conftest in the tree.
+
+    Every conftest, because a `db_session` may be defined in the root one and used three packages down.
+    Collected once: this is an AST parse per conftest, not per test. Test files are parsed here too
+    (_inspection_helpers already parsed every other file): build_import_map drops a test it cannot parse
+    without a word (no imports, no edge), so a broken test would vanish from the map instead of failing.
+    """
+    db_fixtures: set[str] = set()
+    for path in _py_files(repo_root):
+        tree = parse(path)
+        if tree is not None and path.name == "conftest.py":
+            db_fixtures |= _fixtures_backed_by_a_real_database_in(tree)
+    return frozenset(db_fixtures)
+
+
+def _parsed_tests(repo_root: Path, tests: Sequence[str], parse: _Parser) -> dict[str, ast.Module]:
+    test_trees: dict[str, ast.Module] = {}
+    for test in tests:
+        test_path = repo_root / test
+        if test_path.is_file():
+            tree = parse(test_path)
+            if tree is not None:
+                test_trees[test] = tree
+    return test_trees
+
+
+def _run_for_real_by_a_test(
+    module_path: Path,
+    module_tree: ast.Module,
+    module_names: Collection[str],
+    test_trees: Mapping[str, ast.Module],
+    patches_driver: dict[str, bool],
+) -> bool:
+    """True when the module opens its own connection and an importing test runs it without patching the driver.
+
+    A module that opens its own connection offers no seam to hand a mock through, so a test
+    either patches the driver -- visibly -- or runs the real thing. One importing test that
+    does neither, and actually CALLS into the module, is running it, and the assertion it makes will be
+    about the ROWS, through the module's own reader. See `_owns_its_connection`.
+    """
+    if not _owns_its_connection(module_path, module_tree):
+        return False
+    for test, tree in test_trees.items():
+        if test not in patches_driver:
+            patches_driver[test] = _patches_a_real_driver(tree)
+    return any(not patches_driver[t] and _calls_into(tree, ImportAliases.from_tree(tree), module_names) for t, tree in test_trees.items())
+
+
+def _is_checked(
+    effect: str,
+    test_trees: Mapping[str, ast.Module],
+    mock_inspected: dict[str, set[str]],
+    effects: Sequence[str],
+    helpers: Mapping[str, Collection[str]],
+    fixtures: frozenset[str],
+    module_names: Collection[str],
+) -> bool:
+    for test, tree in test_trees.items():
+        if test not in mock_inspected:
+            mock_inspected[test] = _mock_inspections(tree, effects, helpers)
+        if effect in mock_inspected[test] or _real_database_tests(tree, fixtures, module_names):
+            return True
+    return False
+
+
 def find_unasserted_effects(
     repo_root: Path,
     import_map: Mapping[str, Sequence[str]],
@@ -823,16 +905,7 @@ def find_unasserted_effects(
     mock_inspected: dict[str, set[str]] = {}
     helpers = _inspection_helpers(repo_root, effects, parse)
     problems: dict[str, str] = {}
-    # Every conftest in the tree, because a `db_session` may be defined in the root one and used
-    # three packages down. Collected once: this is an AST parse per conftest, not per test.
-    # Test files are parsed here too (_inspection_helpers already parsed every other file): build_import_map drops a test
-    # it cannot parse without a word (no imports, no edge), so a broken test would vanish from the map instead of failing.
-    db_fixtures: set[str] = set()
-    for path in _py_files(repo_root):
-        tree = parse(path)
-        if tree is not None and path.name == "conftest.py":
-            db_fixtures |= _fixtures_backed_by_a_real_database_in(tree)
-    fixtures = frozenset(db_fixtures)
+    fixtures = _conftest_db_fixtures(repo_root, parse)
     patches_driver: dict[str, bool] = {}
 
     for module, tests in sorted(import_map.items()):
@@ -846,32 +919,11 @@ def find_unasserted_effects(
         if not performed:
             continue
         module_names = _module_dotted_names(module, repo_root)
-        test_trees: dict[str, ast.Module] = {}
-        for test in tests:
-            test_path = repo_root / test
-            if test_path.is_file():
-                tree = parse(test_path)
-                if tree is not None:
-                    test_trees[test] = tree
-        # A module that opens its own connection offers no seam to hand a mock through, so a test
-        # either patches the driver -- visibly -- or runs the real thing. One importing test that
-        # does neither, and actually CALLS into the module, is running it, and the assertion it makes will be
-        # about the ROWS, through the module's own reader. See `_owns_its_connection`.
-        if _owns_its_connection(module_path, module_tree):
-            for test, tree in test_trees.items():
-                if test not in patches_driver:
-                    patches_driver[test] = _patches_a_real_driver(tree)
-            if any(not patches_driver[t] and _calls_into(tree, ImportAliases.from_tree(tree), module_names) for t, tree in test_trees.items()):
-                continue
+        test_trees = _parsed_tests(repo_root, tests, parse)
+        if _run_for_real_by_a_test(module_path, module_tree, module_names, test_trees, patches_driver):
+            continue
         for effect in sorted(performed):
-            checked_by = None
-            for test, tree in test_trees.items():
-                if test not in mock_inspected:
-                    mock_inspected[test] = _mock_inspections(tree, effects, helpers)
-                if effect in mock_inspected[test] or _real_database_tests(tree, fixtures, module_names):
-                    checked_by = test
-                    break
-            if checked_by is None:
+            if not _is_checked(effect, test_trees, mock_inspected, effects, helpers, fixtures, module_names):
                 problems[f"{module}::{effect}"] = (
                     f"{module} calls `{effect}(...)` and none of its {len(tests)} importing test(s) "
                     f"ever inspects that call, so deleting it would not fail a single one"

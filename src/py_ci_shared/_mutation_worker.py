@@ -161,7 +161,9 @@ def _is_local_namespace(paths: list[Any], root: Path) -> bool:
         try:
             verdict = any(Path(p).resolve().is_relative_to(root) for p in entries)
         except (OSError, ValueError) as exc:
-            logger.warning("_mutation_worker.py line 144: substituted a fallback after %s: %s", type(exc).__name__, exc)  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
+            logger.warning(
+                "_mutation_worker.py line 144: substituted a fallback after %s: %s", type(exc).__name__, exc
+            )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
             verdict = False
         _IS_LOCAL_NAMESPACE[key] = verdict
     return verdict
@@ -192,7 +194,9 @@ def _purge_local_modules(root: Path) -> int:
             try:
                 verdict = Path(file).resolve().is_relative_to(root)
             except (OSError, ValueError) as exc:
-                logger.warning("_mutation_worker.py line 174: substituted a fallback after %s: %s", type(exc).__name__, exc)  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
+                logger.warning(
+                    "_mutation_worker.py line 174: substituted a fallback after %s: %s", type(exc).__name__, exc
+                )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
                 verdict = False
             _IS_LOCAL[file] = verdict
         if verdict:

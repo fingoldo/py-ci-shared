@@ -94,7 +94,9 @@ def main(argv: list[str] | None = None) -> int:
 
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     try:
-        result = subprocess.run([sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=_MYPY_TIMEOUT_S)
+        result = subprocess.run(
+            [sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=_MYPY_TIMEOUT_S
+        )
     except subprocess.TimeoutExpired:
         sys.stdout.write(f"\nmypy_gate: FAIL -- mypy did not finish within {_MYPY_TIMEOUT_S} seconds\n")
         return 1

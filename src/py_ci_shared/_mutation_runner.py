@@ -177,7 +177,11 @@ def run_with_deadline(
         _kill_tree(process)
         try:
             process.communicate(timeout=10)
-        except (subprocess.TimeoutExpired, OSError, ValueError):  # swallow-ok: after a kill the pipes may already be closed; the timeout result is returned either way
+        except (
+            subprocess.TimeoutExpired,
+            OSError,
+            ValueError,
+        ):  # swallow-ok: after a kill the pipes may already be closed; the timeout result is returned either way
             pass
         return None
     return subprocess.CompletedProcess(list(cmd), process.returncode, out, err)

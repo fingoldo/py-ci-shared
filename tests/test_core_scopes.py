@@ -11,8 +11,7 @@ import pytest
 
 from py_ci_shared._core.scopes import iter_scopes, scope_nodes
 
-SRC = textwrap.dedent(
-    """
+SRC = textwrap.dedent("""
     X = []
 
     class C:
@@ -26,8 +25,7 @@ SRC = textwrap.dedent(
     def f(a):
         k = lambda: a
         return X
-    """
-)
+    """)
 
 
 def _names(scope) -> "set[str]":

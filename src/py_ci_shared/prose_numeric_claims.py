@@ -99,49 +99,62 @@ def find_stale_claims(claims: Iterable[NumericClaim]) -> list[str]:
     """
     problems: list[str] = []
     for claim in claims:
-        if not claim.path.is_file():
-            problems.append(f"{claim.path}: file does not exist, so the claim {claim.description!r} cannot be checked")
+        error, text, matches = _anchor_matches(claim)
+        if error is not None:
+            problems.append(error)
             continue
-        try:
-            compiled = re.compile(claim.pattern)
-        except re.error as exc:
-            problems.append(f"{claim.path.name}: the claim {claim.description!r} has an invalid pattern {claim.pattern!r}: {exc}")
-            continue
-        if compiled.groups != 1:
+        problems.extend(_number_problems(claim, text, matches))
+    return problems
+
+
+def _unchecked(problem: str) -> tuple[Optional[str], str, list["re.Match[str]"]]:
+    return problem, "", []
+
+
+def _anchor_matches(claim: NumericClaim) -> tuple[Optional[str], str, list["re.Match[str]"]]:
+    """``(problem, text, matches)``: a problem message when the claim cannot be checked at all, else the anchor matches."""
+    if not claim.path.is_file():
+        return _unchecked(f"{claim.path}: file does not exist, so the claim {claim.description!r} cannot be checked")
+    try:
+        compiled = re.compile(claim.pattern)
+    except re.error as exc:  # best-effort: reported to the caller as an unchecked claim
+        return _unchecked(f"{claim.path.name}: the claim {claim.description!r} has an invalid pattern {claim.pattern!r}: {exc}")
+    if compiled.groups != 1:
+        return _unchecked(
+            f"{claim.path.name}: the claim {claim.description!r} pattern {claim.pattern!r} has {compiled.groups} capture "
+            "group(s); it needs exactly one, capturing the number (use (?:...) for any other grouping)"
+        )
+    try:
+        text = read_source(claim.path)
+    except SourceError as exc:  # best-effort: reported to the caller as an unchecked claim
+        return _unchecked(f"{claim.path.name}: {exc.kind}: {exc.message}, so the claim {claim.description!r} cannot be checked")
+    matches = list(compiled.finditer(text))
+    if not matches:
+        return _unchecked(
+            f"{claim.path.name}: the claim {claim.description!r} no longer matches its anchor "
+            f"pattern {claim.pattern!r} -- the prose was reworded and the number stopped being "
+            f"checked. Update the pattern or drop the claim deliberately."
+        )
+    if not claim.allow_multiple and len(matches) > 1:
+        return _unchecked(f"{claim.path.name}: the claim {claim.description!r} matched {len(matches)} times but is declared single-occurrence")
+    return None, text, matches
+
+
+def _number_problems(claim: NumericClaim, text: str, matches: list["re.Match[str]"]) -> list[str]:
+    problems: list[str] = []
+    truth = claim.compute()
+    for match in matches:
+        line = text[: match.start()].count("\n") + 1
+        raw = match.group(1)
+        stated = parse_stated_number(raw) if raw is not None else None
+        if stated is None:
             problems.append(
-                f"{claim.path.name}: the claim {claim.description!r} pattern {claim.pattern!r} has {compiled.groups} capture "
-                "group(s); it needs exactly one, capturing the number (use (?:...) for any other grouping)"
+                f"{claim.path.name}:{line}: {claim.description}: the capture group matched {raw!r}, which is not a number; "
+                "fix the pattern so it captures only the figure"
             )
             continue
-        try:
-            text = read_source(claim.path)
-        except SourceError as exc:
-            problems.append(f"{claim.path.name}: {exc.kind}: {exc.message}, so the claim {claim.description!r} cannot be checked")
-            continue
-        matches = list(compiled.finditer(text))
-        if not matches:
-            problems.append(
-                f"{claim.path.name}: the claim {claim.description!r} no longer matches its anchor "
-                f"pattern {claim.pattern!r} -- the prose was reworded and the number stopped being "
-                f"checked. Update the pattern or drop the claim deliberately."
-            )
-            continue
-        if not claim.allow_multiple and len(matches) > 1:
-            problems.append(f"{claim.path.name}: the claim {claim.description!r} matched {len(matches)} times but is declared single-occurrence")
-            continue
-        truth = claim.compute()
-        for match in matches:
-            line = text[: match.start()].count("\n") + 1
-            raw = match.group(1)
-            stated = parse_stated_number(raw) if raw is not None else None
-            if stated is None:
-                problems.append(
-                    f"{claim.path.name}:{line}: {claim.description}: the capture group matched {raw!r}, which is not a number; "
-                    "fix the pattern so it captures only the figure"
-                )
-                continue
-            if abs(stated - truth) > claim.tolerance:
-                problems.append(f"{claim.path.name}:{line}: {claim.description} states {raw} but the repo has {truth:g}")
+        if abs(stated - truth) > claim.tolerance:
+            problems.append(f"{claim.path.name}:{line}: {claim.description} states {raw} but the repo has {truth:g}")
     return problems
 
 

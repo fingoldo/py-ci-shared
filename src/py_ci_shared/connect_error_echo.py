@@ -137,7 +137,9 @@ class _Callees:
         self.rebound: set[str] = set()
         # `connect = psycopg2.connect` (anywhere, any scope): the name now opens a connection. Two passes reach a
         # re-binding of a re-binding.
-        pairs = [(n.targets[0].id, n.value) for n in shared_walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
+        pairs = [
+            (n.targets[0].id, n.value) for n in shared_walk(tree) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+        ]
         for _ in range(2):
             self.rebound.update(target for target, value in pairs if isinstance(value, (ast.Name, ast.Attribute)) and self.matches(value))
 

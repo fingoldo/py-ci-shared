@@ -147,38 +147,48 @@ def _python_module_file(module: str, base_dirs: Sequence[Path]) -> "Path | None"
     return None
 
 
+def _import_requests(node: ast.Import | ast.ImportFrom) -> list[tuple[int, str, list[str]]]:
+    """``(level, module, imported names)`` for an ``import`` or ``from ... import`` node."""
+    if isinstance(node, ast.Import):
+        return [(0, alias.name, []) for alias in node.names]
+    return [(node.level, node.module or "", [alias.name for alias in node.names if alias.name != "*"])]
+
+
+def _import_bases(path: Path, repo_root: Path, package_roots: "dict[str, str]", level: int, module: str) -> "tuple[list[Path], str]":
+    """The directories an import is looked up under, and the module name left to look up in them."""
+    if level:
+        anchor = path.parent
+        for _ in range(level - 1):
+            anchor = anchor.parent
+        return [anchor], module
+    head, _, rest = module.partition(".")
+    if head in package_roots:
+        return [repo_root / package_roots[head]], rest
+    return [repo_root, repo_root / "src"], module
+
+
+def _request_targets(bases: Sequence[Path], level: int, module: str, names: Sequence[str]) -> list[Path]:
+    """The files one import request resolves to; none for a third-party or stdlib module."""
+    found = [f for f in (_python_module_file(f"{module}.{n}" if module else n, bases) for n in names) if f is not None]
+    if found:
+        return found
+    own = _python_module_file(module, bases) if module else next((b / "__init__.py" for b in bases if (b / "__init__.py").is_file()), None)
+    if own is None and not level and module and not any((b / module.split(".")[0]).exists() for b in bases):
+        return []  # a third-party or stdlib module: not a path in this repository
+    return [own if own is not None else bases[0].joinpath(*module.split(".")).with_suffix(".py")]
+
+
 def _python_targets(path: Path, repo_root: Path, package_roots: "dict[str, str]") -> Iterator[tuple[int, str]]:
     """``(line, repo-relative target)`` for every import in a Python file that resolves inside the repository: the
     submodule an imported name is, when it is one, else the module imported from. Raises ``SourceError``."""
     _source, tree = parse_source(path)
     for node in _fast_walk(tree):
-        if isinstance(node, ast.Import):
-            requests: list[tuple[int, str, list[str]]] = [(0, alias.name, []) for alias in node.names]
-        elif isinstance(node, ast.ImportFrom):
-            requests = [(node.level, node.module or "", [alias.name for alias in node.names if alias.name != "*"])]
-        else:
+        if not isinstance(node, (ast.Import, ast.ImportFrom)):
             continue
         seen: set[str] = set()
-        for level, module, names in requests:
-            if level:
-                anchor = path.parent
-                for _ in range(level - 1):
-                    anchor = anchor.parent
-                bases = [anchor]
-            else:
-                head, _, rest = module.partition(".")
-                if head in package_roots:
-                    bases = [repo_root / package_roots[head]]
-                    module = rest
-                else:
-                    bases = [repo_root, repo_root / "src"]
-            found = [f for f in (_python_module_file(f"{module}.{n}" if module else n, bases) for n in names) if f is not None]
-            if not found:
-                own = _python_module_file(module, bases) if module else next((b / "__init__.py" for b in bases if (b / "__init__.py").is_file()), None)
-                if own is None and not level and module and not any((b / module.split(".")[0]).exists() for b in bases):
-                    continue  # a third-party or stdlib module: not a path in this repository
-                found = [own if own is not None else bases[0].joinpath(*module.split(".")).with_suffix(".py")]
-            for target in found:
+        for level, module, names in _import_requests(node):
+            bases, module = _import_bases(path, repo_root, package_roots, level, module)
+            for target in _request_targets(bases, level, module, names):
                 rel = relative_posix(target, repo_root)
                 if rel not in seen:
                     seen.add(rel)

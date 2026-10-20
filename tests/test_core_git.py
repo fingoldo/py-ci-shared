@@ -23,14 +23,18 @@ PACKAGE = SRC / "py_ci_shared"
 def _init(root: Path) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True, env=git_env())
-    subprocess.run(["git", "-C", str(root), "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "seed"], check=True, env=git_env())
+    subprocess.run(
+        ["git", "-C", str(root), "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "seed"], check=True, env=git_env()
+    )
     return root
 
 
 @needs_git
 def test_output_is_bytes_and_git_text_decodes_utf8_whatever_the_locale(tmp_path):
     repo = _init(tmp_path / "r")
-    subprocess.run(["git", "-C", str(repo), "-c", "user.email=t@e", "-c", "user.name=Ёжиков", "commit", "-q", "--allow-empty", "-m", "数据"], check=True, env=git_env())
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.email=t@e", "-c", "user.name=Ёжиков", "commit", "-q", "--allow-empty", "-m", "数据"], check=True, env=git_env()
+    )
     proc = run_git(repo, "log", "-1", "--format=%an %s")
     assert isinstance(proc.stdout, bytes)
     assert git_text(proc.stdout).strip() == "Ёжиков 数据"
@@ -40,7 +44,9 @@ def test_output_is_bytes_and_git_text_decodes_utf8_whatever_the_locale(tmp_path)
 def test_a_hooks_git_dir_does_not_redirect_the_call(tmp_path, monkeypatch):
     """Inside a pre-commit hook GIT_DIR/GIT_INDEX_FILE name the committing repository and override -C."""
     mine, other = _init(tmp_path / "mine"), _init(tmp_path / "other")
-    subprocess.run(["git", "-C", str(other), "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "2"], check=True, env=git_env())
+    subprocess.run(
+        ["git", "-C", str(other), "-c", "user.email=t@e", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "2"], check=True, env=git_env()
+    )
     want = git_output(mine, "rev-parse", "HEAD").strip()
     monkeypatch.setenv("GIT_DIR", str(other / ".git"))
     monkeypatch.setenv("GIT_INDEX_FILE", str(other / ".git" / "index"))

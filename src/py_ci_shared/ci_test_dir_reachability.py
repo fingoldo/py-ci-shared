@@ -131,6 +131,24 @@ def _covers(outer: str, inner: str) -> bool:
     return outer == "." or inner == outer or inner.startswith(outer + "/")
 
 
+def _skip_option_tokens(tokens: list[str], j: int) -> int:
+    """Index of the first token at or after *j* that is not an option (``-m`` stops the skip)."""
+    while j < len(tokens) and tokens[j] != "-m" and tokens[j].startswith("-"):
+        j += 1
+    return j
+
+
+def _launcher_pytest_args(tokens: list[str], i: int) -> Optional[list[str]]:
+    """The tokens after ``-m pytest`` for ``python [-X opts] -m pytest`` / ``coverage run [--opts] -m pytest``."""
+    n = len(tokens)
+    j = _skip_option_tokens(tokens, i + 1)
+    if tokens[i] == "coverage" and j < n and tokens[j] == "run":
+        j = _skip_option_tokens(tokens, j + 1)
+    if j + 1 < n and tokens[j] == "-m" and _PYTEST_WORD_RE.search(tokens[j + 1]):
+        return tokens[j + 2 :]
+    return None
+
+
 def _pytest_args(tokens: list[str]) -> Optional[list[str]]:
     """The tokens after ``pytest`` when *tokens* is a pytest COMMAND, else None."""
     i = 0
@@ -146,20 +164,42 @@ def _pytest_args(tokens: list[str]) -> Optional[list[str]]:
         elif tok in _RUNNERS and i + 1 < n and tokens[i + 1] == _RUNNERS[tok]:
             i += 2
         elif _PYTHON_RE.search(tok) or tok == "coverage":
-            # `python [-X opts] -m pytest`, `coverage run [--opts] -m pytest`
-            j = i + 1
-            while j < n and tokens[j] != "-m" and tokens[j].startswith("-"):
-                j += 1
-            if tok == "coverage" and j < n and tokens[j] == "run":
-                j += 1
-                while j < n and tokens[j] != "-m" and tokens[j].startswith("-"):
-                    j += 1
-            if j + 1 < n and tokens[j] == "-m" and _PYTEST_WORD_RE.search(tokens[j + 1]):
-                return tokens[j + 2 :]
-            return None
+            return _launcher_pytest_args(tokens, i)
         else:
             return None
     return None
+
+
+def _parse_invocation(args: list[str]) -> PytestInvocation:
+    inv = PytestInvocation()
+    skip_next = False
+    pending_ignore = False
+    for tok in args:
+        if skip_next:
+            skip_next = False
+            if pending_ignore:
+                inv.ignores.append(_norm_path(tok))
+                pending_ignore = False
+            continue
+        if tok in _VALUE_TAKING_SHORT_FLAGS:
+            skip_next = True
+            pending_ignore = tok in _IGNORE_FLAGS
+            continue
+        if tok.startswith(tuple(f + "=" for f in _IGNORE_FLAGS)):
+            inv.ignores.append(_norm_path(tok.split("=", 1)[1]))
+            continue
+        if tok.startswith("-") or tok == "\\":
+            continue
+        if not _looks_like_a_path(tok):
+            # A value belonging to a value-taking flag this module does not know about. Enumerating every
+            # plugin's flags is a losing game -- pytest-split alone contributes `--splits N` and
+            # `--group N`, and their bare numeric values were being read as positional test paths, which
+            # made a genuinely PATHLESS invocation look like a targeted one and reported every tests/
+            # subdir in the repo as unreached. What actually distinguishes a pytest path argument is that
+            # it is a path.
+            continue
+        inv.paths.append(_norm_path(tok))
+    return inv
 
 
 def pytest_invocations(ci_text: str) -> list[PytestInvocation]:
@@ -170,34 +210,7 @@ def pytest_invocations(ci_text: str) -> list[PytestInvocation]:
             args = _pytest_args(_TOKEN_RE.findall(segment))
             if args is None:
                 continue
-            inv = PytestInvocation()
-            skip_next = False
-            pending_ignore = False
-            for tok in args:
-                if skip_next:
-                    skip_next = False
-                    if pending_ignore:
-                        inv.ignores.append(_norm_path(tok))
-                        pending_ignore = False
-                    continue
-                if tok in _VALUE_TAKING_SHORT_FLAGS:
-                    skip_next = True
-                    pending_ignore = tok in _IGNORE_FLAGS
-                    continue
-                if tok.startswith(tuple(f + "=" for f in _IGNORE_FLAGS)):
-                    inv.ignores.append(_norm_path(tok.split("=", 1)[1]))
-                    continue
-                if tok.startswith("-") or tok == "\\":
-                    continue
-                if not _looks_like_a_path(tok):
-                    # A value belonging to a value-taking flag this module does not know about. Enumerating every
-                    # plugin's flags is a losing game -- pytest-split alone contributes `--splits N` and
-                    # `--group N`, and their bare numeric values were being read as positional test paths, which
-                    # made a genuinely PATHLESS invocation look like a targeted one and reported every tests/
-                    # subdir in the repo as unreached. What actually distinguishes a pytest path argument is that
-                    # it is a path.
-                    continue
-                inv.paths.append(_norm_path(tok))
+            inv = _parse_invocation(args)
             out.append(inv)
     return out
 

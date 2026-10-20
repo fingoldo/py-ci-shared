@@ -144,6 +144,29 @@ def _probe(cls: type, base: dict[str, Any], name: str, value: Any) -> Optional[b
     return True
 
 
+def _probe_field_bounds(
+    cls: type, name: str, info: Any, bounds: dict[str, Any], base: Optional[dict[str, Any]], why: str, inconclusive: Optional[list[str]]
+) -> tuple[int, list[str]]:
+    """``(bounds probed, failures)`` for every bound one field declares."""
+    audited = 0
+    bad: list[str] = []
+    for kind, bound in bounds.items():
+        if base is None:
+            if inconclusive is not None:
+                inconclusive.append(f"{cls.__name__}.{name} {kind}={bound}: no valid instance to start from ({why})")
+            continue
+        value = _violating(kind, bound, integer=_is_int_field(info.annotation))
+        verdict = _probe(cls, base, name, value)
+        if verdict is None:
+            if inconclusive is not None:
+                inconclusive.append(f"{cls.__name__}.{name} {kind}={bound}: rejecting {value} blamed another field")
+            continue
+        audited += 1
+        if verdict:
+            bad.append(f"{cls.__name__}.{name} declares {kind}={bound} but accepted {value}")
+    return audited, bad
+
+
 def find_unenforced_numeric_bounds(models: Iterable[type], *, inconclusive: Optional[list[str]] = None) -> tuple[int, list[str]]:
     """``(bounds probed, ["Model.field declares ge=0 but accepted -1", ...])``.
 
@@ -163,20 +186,9 @@ def find_unenforced_numeric_bounds(models: Iterable[type], *, inconclusive: Opti
             if bases is None:
                 bases = _valid_base(cls)
             base, why = bases
-            for kind, bound in bounds.items():
-                if base is None:
-                    if inconclusive is not None:
-                        inconclusive.append(f"{cls.__name__}.{name} {kind}={bound}: no valid instance to start from ({why})")
-                    continue
-                value = _violating(kind, bound, integer=_is_int_field(info.annotation))
-                verdict = _probe(cls, base, name, value)
-                if verdict is None:
-                    if inconclusive is not None:
-                        inconclusive.append(f"{cls.__name__}.{name} {kind}={bound}: rejecting {value} blamed another field")
-                    continue
-                audited += 1
-                if verdict:
-                    bad.append(f"{cls.__name__}.{name} declares {kind}={bound} but accepted {value}")
+            n_audited, n_bad = _probe_field_bounds(cls, name, info, bounds, base, why, inconclusive)
+            audited += n_audited
+            bad.extend(n_bad)
     return audited, bad
 
 

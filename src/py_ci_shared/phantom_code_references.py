@@ -225,6 +225,88 @@ def _base_names(node: ast.ClassDef) -> list[str]:
     return out
 
 
+def _collect_class(node: ast.ClassDef, names: set[str], members: dict[str, set[str]], bases: dict[str, list[str]]) -> None:
+    """Record a class, its direct members, its ``self.x``/``cls.x`` assignments and its bases."""
+    names.add(node.name)
+    own = members.setdefault(node.name, set())
+    bases.setdefault(node.name, []).extend(_base_names(node))
+    for child in node.body:
+        for member in _direct_member_names(child):
+            own.add(member)
+            names.add(member)
+    _collect_self_attrs(node, own)
+
+
+def _direct_member_names(child: ast.stmt) -> list[str]:
+    """Names a single class-body statement declares: def/class names, assignment targets."""
+    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [child.name]
+    if isinstance(child, ast.Assign):
+        return [t.id for t in child.targets if isinstance(t, ast.Name)]
+    if isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
+        return [child.target.id]
+    return []
+
+
+def _collect_self_attrs(node: ast.ClassDef, own: set[str]) -> None:
+    """Add every ``self.x`` / ``cls.x`` assignment target inside the class to *own*."""
+    for sub in _fast_walk(node):
+        if isinstance(sub, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+            targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target]
+            for target in targets:
+                if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in ("self", "cls"):
+                    own.add(target.attr)
+
+
+def _collect_non_class(node: ast.AST, names: set[str]) -> None:
+    """Record the names a function, module-level assignment or import declares."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        names.add(node.name)
+        for arg in node.args.args + node.args.kwonlyargs:
+            names.add(arg.arg)
+    elif isinstance(node, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                names.add(target.id)
+    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        names.add(node.target.id)
+    elif isinstance(node, (ast.Import, ast.ImportFrom)):
+        for alias in node.names:
+            names.add((alias.asname or alias.name).split(".")[-1])
+
+
+def _resolved_members(cls: str, seen: frozenset[str], members: dict[str, set[str]], bases: dict[str, list[str]]) -> "Optional[set[str]]":
+    """Members of *cls* including inherited ones; ``None`` when some base is not declared here (open class)."""
+    out = set(members.get(cls, ()))
+    for base in bases.get(cls, ()):
+        if base == "object":
+            continue
+        if base not in members or base in seen:
+            return None
+        inherited = _resolved_members(base, seen | {base}, members, bases)
+        if inherited is None:
+            return None
+        out |= inherited
+    return out
+
+
+def _collect_file(path: Path, names: set[str], members: dict[str, set[str]], bases: dict[str, list[str]]) -> None:
+    """Record the module stem (and package name for ``__init__``) and every declaration of one ``.py`` file."""
+    names.add(path.stem)
+    if path.stem == "__init__":
+        names.add(path.parent.name)
+    try:
+        _, tree = parse_source(path)
+    except SourceError as exc:
+        logger.warning("phantom_code_references: %s was skipped, its names are not known: %s", path, exc)
+        return
+    for node in _fast_walk(tree):
+        if isinstance(node, ast.ClassDef):
+            _collect_class(node, names, members, bases)
+        else:
+            _collect_non_class(node, names)
+
+
 def python_declarations(files: Iterable[Path]) -> set[str]:
     """Every class, function, method (as ``Class.member``), module-level name and module stem declared in
     ``files``, via ``ast`` - never a regex over source.
@@ -238,68 +320,11 @@ def python_declarations(files: Iterable[Path]) -> set[str]:
     members: dict[str, set[str]] = {}
     bases: dict[str, list[str]] = {}
     for path in files:
-        if path.suffix != ".py":
-            continue
-        names.add(path.stem)
-        if path.stem == "__init__":
-            names.add(path.parent.name)
-        try:
-            _, tree = parse_source(path)
-        except SourceError:
-            continue
-        for node in _fast_walk(tree):
-            if isinstance(node, ast.ClassDef):
-                names.add(node.name)
-                own = members.setdefault(node.name, set())
-                bases.setdefault(node.name, []).extend(_base_names(node))
-                for child in node.body:
-                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                        own.add(child.name)
-                        names.add(child.name)
-                    elif isinstance(child, ast.Assign):
-                        for target in child.targets:
-                            if isinstance(target, ast.Name):
-                                own.add(target.id)
-                                names.add(target.id)
-                    elif isinstance(child, ast.AnnAssign) and isinstance(child.target, ast.Name):
-                        own.add(child.target.id)
-                        names.add(child.target.id)
-                for sub in _fast_walk(node):
-                    if isinstance(sub, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-                        targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target]
-                        for target in targets:
-                            if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name) and target.value.id in ("self", "cls"):
-                                own.add(target.attr)
-            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                names.add(node.name)
-                for arg in node.args.args + node.args.kwonlyargs:
-                    names.add(arg.arg)
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        names.add(target.id)
-            elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                names.add(node.target.id)
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                for alias in node.names:
-                    names.add((alias.asname or alias.name).split(".")[-1])
-
-    def resolved(cls: str, seen: frozenset[str]) -> "Optional[set[str]]":
-        """Members of *cls* including inherited ones; ``None`` when some base is not declared here (open class)."""
-        out = set(members.get(cls, ()))
-        for base in bases.get(cls, ()):
-            if base == "object":
-                continue
-            if base not in members or base in seen:
-                return None
-            inherited = resolved(base, seen | {base})
-            if inherited is None:
-                return None
-            out |= inherited
-        return out
+        if path.suffix == ".py":
+            _collect_file(path, names, members, bases)
 
     for cls in members:
-        found = resolved(cls, frozenset({cls}))
+        found = _resolved_members(cls, frozenset({cls}), members, bases)
         if found is None:
             names.add(f"{cls}.*")
             found = members[cls]
@@ -431,7 +456,9 @@ def _resolves_by_import(dotted: str) -> bool:
     try:
         for name in rest:
             obj = getattr(obj, name)
-    except Exception as exc:  # a property or a module __getattr__ may raise anything  # best-effort: a property or module __getattr__ may raise anything; the name is then unresolved by import, which the caller reports
+    except (
+        Exception
+    ) as exc:  # a property or a module __getattr__ may raise anything  # best-effort: a property or module __getattr__ may raise anything; the name is then unresolved by import, which the caller reports
         logger.warning("phantom_code_references.py handler at line 433 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("dotted name does not resolve by import: %s", type(exc).__name__)
         return False
@@ -456,6 +483,44 @@ def _test_file_index(repo_root: Path) -> "tuple[set[str], set[str]]":
     output and other excluded directories never count as the file a comment names)."""
     rels = {relative_posix(p, repo_root) for p in iter_files(repo_root, ("*_test.dart", "test_*.py", "*_test.py"), exclude=DEFAULT_EXCLUDE)}
     return {r.rsplit("/", 1)[-1] for r in rels}, rels
+
+
+def _test_file_problem(token: str, basename: str, test_names: set[str], test_paths: set[str]) -> "Optional[str]":
+    """The violation text for a backticked test-file *token* that no test file under the repo matches."""
+    wanted = token.replace("\\", "/").lstrip("./")
+    exists = (wanted in test_paths or any(p.endswith("/" + wanted) for p in test_paths)) if "/" in wanted else basename in test_names
+    return None if exists else f"`{token}` names a test file that does not exist"
+
+
+def _token_problem(token: str, declared: set[str], known: set[str], repo_known: set[str], test_names: set[str], test_paths: set[str]) -> "Optional[str]":
+    """The violation text for one backticked *token* (without the ``rel:line:`` prefix), or None when it is fine."""
+    tf = _TEST_FILE_RE.match(token)
+    if tf:
+        return _test_file_problem(token, tf.group(1), test_names, test_paths)
+    im = _IDENT_RE.match(token)
+    if _FILE_EXT_RE.search(token) or (token.isupper() and "_" in token) or not im:
+        return None  # a file name, an environment variable / another system's constant, or prose
+    head, member = im.group("head"), im.group("member")
+    if member is not None and head not in repo_known:
+        # Not this repo's name: an installed module or a builtin decides, attribute by attribute.
+        if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
+            return None
+        if head in known or _importable(head):
+            return f"`{token}` does not resolve by import"
+    repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)
+    if head in known:
+        if member is None or f"{head}.{member}" in known:
+            return None
+        if not repo_class:
+            # A declared head with an undeclared member of a LIBRARY class; resolving library APIs is out
+            # of scope, so the head carries the claim. A closed class of this repo has every member listed.
+            return None
+        return f"`{token}` names a member `{head}` does not declare"
+    # A lowercase bare identifier in backticks is a parameter, a keyword argument or a local far more
+    # often than a claim about a declared function; only a call suffix or a dotted member makes it one.
+    if head[0].islower() and member is None and not im.group("call"):
+        return None
+    return f"`{token}` names nothing declared in this repo"
 
 
 def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = ()) -> list[str]:
@@ -489,41 +554,9 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
         for lineno, text in lines:
             for m in _BACKTICK_RE.finditer(text):
                 token = m.group(1).strip()
-                tf = _TEST_FILE_RE.match(token)
-                if tf:
-                    wanted = token.replace("\\", "/").lstrip("./")
-                    exists = (wanted in test_paths or any(p.endswith("/" + wanted) for p in test_paths)) if "/" in wanted else tf.group(1) in test_names
-                    if not exists:
-                        violations.append(f"{rel}:{lineno}: `{token}` names a test file that does not exist")
-                    continue
-                if _FILE_EXT_RE.search(token) or (token.isupper() and "_" in token):
-                    continue  # a file name, or an environment variable / another system's constant
-                im = _IDENT_RE.match(token)
-                if not im:
-                    continue
-                head, member = im.group("head"), im.group("member")
-                if member is not None and head not in repo_known:
-                    # Not this repo's name: an installed module or a builtin decides, attribute by attribute.
-                    if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
-                        continue
-                    if head in known or _importable(head):
-                        violations.append(f"{rel}:{lineno}: `{token}` does not resolve by import")
-                        continue
-                repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)
-                if head in known and (member is None or f"{head}.{member}" in known):
-                    continue
-                if head in known and not repo_class:
-                    # A declared head with an undeclared member of a LIBRARY class; resolving library APIs is out
-                    # of scope, so the head carries the claim. A closed class of this repo has every member listed.
-                    continue
-                if head in known and repo_class:
-                    violations.append(f"{rel}:{lineno}: `{token}` names a member `{head}` does not declare")
-                    continue
-                # A lowercase bare identifier in backticks is a parameter, a keyword argument or a local far more
-                # often than a claim about a declared function; only a call suffix or a dotted member makes it one.
-                if head[0].islower() and member is None and not im.group("call"):
-                    continue
-                violations.append(f"{rel}:{lineno}: `{token}` names nothing declared in this repo")
+                problem_text = _token_problem(token, declared, known, repo_known, test_names, test_paths)
+                if problem_text is not None:
+                    violations.append(f"{rel}:{lineno}: {problem_text}")
     return violations
 
 

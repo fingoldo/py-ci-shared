@@ -154,6 +154,7 @@ def test_a_missing_baseline_fails_instead_of_accepting_everything(tmp_path):
     with pytest.raises(pytest.fail.Exception, match="does not exist"):
         assert_env_write_restore(root, baseline_path=tmp_path / "nope.json", use_git=False)
 
+
 def test_an_exempted_writer_passes_and_needs_a_reason(tmp_path):
     src = "import os\n\n\ndef setup_thing():\n    os.environ['JULIA_EXE'] = 'x'\n"
     (tmp_path / "gate_mod.py").write_text(src, encoding="utf-8")

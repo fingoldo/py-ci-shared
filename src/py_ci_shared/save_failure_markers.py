@@ -86,35 +86,41 @@ def _elements(node: ast.expr) -> list[ast.expr]:
     return [node]
 
 
+def _emit_marker(out: list[tuple[str, int]], node: ast.expr, name_only: bool = False) -> None:
+    """Append the marker *node* names to *out*; with *name_only* only a plain name or a ``..._failed`` template counts."""
+    if name_only:
+        text = _leading_text(node)
+        if text is not None and (_NAME_RE.match(text) or (text.endswith("_failed") and "{" in text)):
+            out.append((text, node.lineno))
+        return
+    name = _marker_of(node)
+    if name:
+        out.append((name, node.lineno))
+
+
+def _call_markers(out: list[tuple[str, int]], node: ast.Call) -> None:
+    """Markers a call emits: arguments of an adder method, and a ``marker=`` keyword."""
+    if isinstance(node.func, ast.Attribute) and node.func.attr in _ADDERS:
+        for arg in node.args:
+            for elt in _elements(arg):
+                _emit_marker(out, elt)
+    for kw in node.keywords:
+        if kw.arg == "marker":
+            _emit_marker(out, kw.value, name_only=True)
+
+
 def _ast_markers(parsed: ParsedFile) -> list[tuple[str, int]]:
     out: list[tuple[str, int]] = []
-
-    def emit(node: ast.expr, name_only: bool = False) -> None:
-        if name_only:
-            text = _leading_text(node)
-            if text is not None and (_NAME_RE.match(text) or (text.endswith("_failed") and "{" in text)):
-                out.append((text, node.lineno))
-            return
-        name = _marker_of(node)
-        if name:
-            out.append((name, node.lineno))
-
     for node in _fast_walk(parsed.tree):
         if isinstance(node, ast.Call):
-            if isinstance(node.func, ast.Attribute) and node.func.attr in _ADDERS:
-                for arg in node.args:
-                    for elt in _elements(arg):
-                        emit(elt)
-            for kw in node.keywords:
-                if kw.arg == "marker":
-                    emit(kw.value, name_only=True)
+            _call_markers(out, node)
         elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
             for elt in _elements(node.value):
-                emit(elt)
+                _emit_marker(out, elt)
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             if node.value is not None and any(isinstance(t, ast.Name) and t.id == "marker" for t in targets):
-                emit(node.value, name_only=True)
+                _emit_marker(out, node.value, name_only=True)
     return out
 
 

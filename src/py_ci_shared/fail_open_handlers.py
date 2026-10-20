@@ -309,8 +309,6 @@ def assert_no_new_fail_open_handlers(
     files parsed, when a file could not be parsed, and when the baseline is missing; a refresh (*refresh*, ``--refresh-
     fail-open-baseline`` or ``PY_CI_SHARED_REFRESH=fail-open``) rewrites it, keeping existing notes.
     """
-    import pytest
-
     scan = scan_python([Path(p) for p in files], root=Path(repo_root), min_files=min_files)
     scan.check_floor()
     found = _find_in_scan(scan, re.compile(gate_name_re))
@@ -320,31 +318,47 @@ def assert_no_new_fail_open_handlers(
     exists = Path(baseline_path).is_file()
     accepted: dict[str, str] = load_json(baseline_path) if exists else {}
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
-        before: Optional[dict[str, int]] = None
-        if exists:
-            before = {}
-            for key in accepted:
-                before[key.split("#", 1)[0]] = before.get(key.split("#", 1)[0], 0) + 1
-
-        def render(kept: dict[str, int]) -> str:
-            entries: dict[str, str] = {}
-            for scope, n in sorted(kept.items()):
-                for i in range(n):
-                    key = scope if i == 0 else f"{scope}#{i + 1}"
-                    entries[key] = accepted.get(key) or "NEEDS-JUSTIFICATION: why this fallback cannot disable the gate"
-            return dump_json(entries)
-
-        try:
-            kept = write_ratchet(
-                baseline_path, {s: len(hs) for s, hs in by_scope.items()}, gate="fail-open", previous=before, render=render, grow=grow, request=request
-            )
-        except BaselineGrowthError as exc:
-            pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
+        _refresh_baseline(baseline_path, by_scope, accepted, exists, grow, request)
     allowed: dict[str, int] = {}
     for key in accepted:
         scope = key.split("#", 1)[0]
         allowed[scope] = allowed.get(scope, 0) + 1
+    problems = _baseline_problems(scan, by_scope, allowed, exists, baseline_path)
+    if problems:
+        raise AssertionError("\n".join(problems))
+
+
+def _refresh_baseline(
+    baseline_path: Path, by_scope: dict[str, list[FailOpenHandler]], accepted: dict[str, str], exists: bool, grow: Optional[bool], request: Any
+) -> None:
+    """Rewrite the baseline from the current findings (keeping notes), then skip the test; fail when it would grow."""
+    import pytest
+
+    before: Optional[dict[str, int]] = None
+    if exists:
+        before = {}
+        for key in accepted:
+            before[key.split("#", 1)[0]] = before.get(key.split("#", 1)[0], 0) + 1
+
+    def render(kept: dict[str, int]) -> str:
+        entries: dict[str, str] = {}
+        for scope, n in sorted(kept.items()):
+            for i in range(n):
+                key = scope if i == 0 else f"{scope}#{i + 1}"
+                entries[key] = accepted.get(key) or "NEEDS-JUSTIFICATION: why this fallback cannot disable the gate"
+        return dump_json(entries)
+
+    try:
+        kept = write_ratchet(
+            baseline_path, {s: len(hs) for s, hs in by_scope.items()}, gate="fail-open", previous=before, render=render, grow=grow, request=request
+        )
+    except BaselineGrowthError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    pytest.skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
+
+
+def _baseline_problems(scan: ScanResult, by_scope: dict[str, list[FailOpenHandler]], allowed: dict[str, int], exists: bool, baseline_path: Path) -> list[str]:
+    """The failure messages for unparsed files, a missing baseline, new handlers and stale baseline scopes."""
     problems: list[str] = []
     if scan.unparsed:
         problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(u.render() for u in scan.unparsed))
@@ -361,5 +375,4 @@ def assert_no_new_fail_open_handlers(
     stale = sorted(scope for scope, n in allowed.items() if n > len(by_scope.get(scope, ())))
     if stale:
         problems.append(f"these baseline scopes accept more fail-open handlers than remain -- lower or remove them: {stale}")
-    if problems:
-        raise AssertionError("\n".join(problems))
+    return problems

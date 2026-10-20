@@ -71,6 +71,26 @@ def _indent(line: str) -> int:
     return len(line) - len(line.lstrip(" "))
 
 
+def _job_opened_by(line: str, lineno: int, indent: int, job_indent: int) -> Optional[dict]:
+    """The fresh job record when *line* is a job header at the job level, else None."""
+    m = _JOB_HEADER_RE.match(line)
+    if m and indent == job_indent:
+        return {"id": m.group("job_id").strip("\"'"), "line": lineno, "timeout": False, "uses": False, "key_indent": None}
+    return None
+
+
+def _record_key(current: dict, line: str, stripped: str, indent: int) -> None:
+    """Note a ``timeout-minutes``/``uses`` key found at the job's own key level (never a step-level one)."""
+    if current["key_indent"] is None:
+        current["key_indent"] = indent
+    if indent != current["key_indent"] or stripped.startswith("-"):
+        return
+    if _TIMEOUT_MINUTES_RE.match(line):
+        current["timeout"] = True
+    elif _USES_KEY_RE.match(line):
+        current["uses"] = True
+
+
 def collect_jobs(workflow_path: Path) -> list[JobTimeout]:
     """Every job under ``jobs:`` with its job-level ``timeout-minutes``/``uses`` status.
 
@@ -106,20 +126,11 @@ def collect_jobs(workflow_path: Path) -> list[JobTimeout]:
             job_indent = indent
         if indent <= job_indent:
             close()
-            m = _JOB_HEADER_RE.match(line)
-            if m and indent == job_indent:
-                current = {"id": m.group("job_id").strip("\"'"), "line": lineno, "timeout": False, "uses": False, "key_indent": None}
+            current = _job_opened_by(line, lineno, indent, job_indent)
             continue
         if current is None:
             continue
-        if current["key_indent"] is None:
-            current["key_indent"] = indent
-        if indent != current["key_indent"] or stripped.startswith("-"):
-            continue
-        if _TIMEOUT_MINUTES_RE.match(line):
-            current["timeout"] = True
-        elif _USES_KEY_RE.match(line):
-            current["uses"] = True
+        _record_key(current, line, stripped, indent)
     close()
     return jobs
 

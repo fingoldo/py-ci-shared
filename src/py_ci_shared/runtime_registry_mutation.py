@@ -165,17 +165,16 @@ def _import_time_helpers(trees: Iterable[Union[ast.Module, tuple[str, ast.Module
                 continue
             if id(node) in main_bodies:
                 continue
-            for deco in getattr(node, "decorator_list", ()):
-                helper = _helper_of(deco, aliases, rel)
-                if helper:
-                    out.append(helper)
-            if isinstance(node, (ast.Expr, ast.Assign, ast.AnnAssign, ast.AugAssign)):
-                for sub in _fast_walk(node):
-                    if isinstance(sub, ast.Call):
-                        helper = _helper_of(sub, aliases, rel)
-                        if helper:
-                            out.append(helper)
+            out.extend(_statement_helpers(node, aliases, rel))
     return out
+
+
+def _statement_helpers(node: ast.AST, aliases: ImportAliases, rel: str) -> list[_Helper]:
+    """Helpers one module-scope statement runs at import: its decorators, and the calls in an expression/assignment."""
+    found: list[Optional[_Helper]] = [_helper_of(deco, aliases, rel) for deco in getattr(node, "decorator_list", ())]
+    if isinstance(node, (ast.Expr, ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        found.extend(_helper_of(sub, aliases, rel) for sub in _fast_walk(node) if isinstance(sub, ast.Call))
+    return [h for h in found if h]
 
 
 def _runs_at_import(func: _FunctionNode, rel: str, in_class: bool, helpers: list[_Helper]) -> bool:

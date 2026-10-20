@@ -79,29 +79,38 @@ def _entries(baseline_path: Path) -> dict[str, str]:
     ``value  # reason`` lines."""
     text = read_source(baseline_path)
     if baseline_path.suffix == ".json":
-        data = json.loads(text)
-        accepted: object = data
-        if isinstance(data, dict):
-            for wrapper in ("accepted", "entries"):
-                if isinstance(data.get(wrapper), (dict, list)):
-                    accepted = data[wrapper]
-                    break
-        out: dict[str, str] = {}
-        if isinstance(accepted, dict):
-            for key, value in accepted.items():
-                if key.startswith("_"):
-                    continue
-                out[key] = _note_of(value)
-        elif isinstance(accepted, list):
-            for item in accepted:
-                out["|".join(item) if isinstance(item, (list, tuple)) else str(item)] = ""
-        return out
+        return _json_entries(json.loads(text))
+    return _text_entries(text)
+
+
+def _json_entries(data: object) -> dict[str, str]:
+    """``{key: note}`` from parsed JSON baseline *data* (see :func:`_entries`)."""
+    accepted: object = data
+    if isinstance(data, dict):
+        for wrapper in ("accepted", "entries"):
+            if isinstance(data.get(wrapper), (dict, list)):
+                accepted = data[wrapper]
+                break
+    out: dict[str, str] = {}
+    if isinstance(accepted, dict):
+        for key, value in accepted.items():
+            if key.startswith("_"):
+                continue
+            out[key] = _note_of(value)
+    elif isinstance(accepted, list):
+        for item in accepted:
+            out["|".join(item) if isinstance(item, (list, tuple)) else str(item)] = ""
+    return out
+
+
+def _text_entries(text: str) -> dict[str, str]:
+    """``{value: reason}`` from a text allowlist (see :func:`_entries`)."""
     # A text allowlist carries its reason in one of two places, and both are legitimate: a
     # trailing `# reason` on the entry, or a comment HEADING above a group of entries that share
     # one. Demanding the first shape reported eighteen well-documented entries in a file whose
     # every group is introduced by a sentence explaining it - which is the more readable
     # convention of the two, so the rule reads it rather than fighting it.
-    out = {}
+    out: dict[str, str] = {}
     heading: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()

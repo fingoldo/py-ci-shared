@@ -339,7 +339,11 @@ def _install_timezone_database(target: Path) -> None:
         return
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            subprocess.run([sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"], check=True, timeout=_DOWNLOAD_TIMEOUT_S)
+            subprocess.run(
+                [sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"],
+                check=True,
+                timeout=_DOWNLOAD_TIMEOUT_S,
+            )
             wheel = next(Path(tmp).glob("tzdata-*.whl"))
             with zipfile.ZipFile(wheel) as zf:
                 members = [m for m in zf.namelist() if m.startswith("tzdata/zoneinfo/") and not m.endswith("/")]

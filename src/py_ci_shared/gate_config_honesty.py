@@ -21,6 +21,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 from ._core import read_source
 
@@ -67,37 +68,53 @@ def gate_commands(precommit_path: "Path | None", workflows: Iterable[Path], *, s
 
     found: dict[str, tuple[str, str]] = {}
     if precommit_path is not None:
-        data = yaml.safe_load(read_source(precommit_path)) or {}
-        for repo in data.get("repos", []) or []:
-            for hook in repo.get("hooks", []) or []:
-                if "manual" in (hook.get("stages") or []) and len(hook.get("stages") or []) == 1:
-                    continue
-                command = " ".join([str(hook.get("entry", "")), *map(str, hook.get("args", []) or [])]).strip()
-                names = " ".join(str(hook.get(k, "")) for k in ("id", "alias", "name"))
-                if command and _mentions(scope, str(hook.get("files", "")), command):
-                    found[f"pre-commit::{hook.get('alias') or hook.get('id')}"] = (command, names)
+        found.update(_hook_commands(yaml.safe_load(read_source(precommit_path)) or {}, scope))
     for workflow in workflows:
-        data = yaml.safe_load(read_source(workflow)) or {}
-        # A job without its own `defaults.run.working-directory` runs in the workflow's.
-        workflow_dir = str(((data.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "")
-        for job_id, job in (data.get("jobs") or {}).items():
-            job = job or {}
-            job_dir = str(((job.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "") or workflow_dir
-            seen: dict[str, int] = {}
-            for step in job.get("steps", []) or []:
-                run = str(step.get("run", "") or "")
-                if not run.strip():
-                    continue
-                name = str(step.get("name", "") or run.splitlines()[0])
-                step_dir = str(step.get("working-directory", "") or "")
-                if not _mentions(scope, run, name, step_dir, job_dir):
-                    continue
-                advisory = " advisory" if step.get("continue-on-error") else ""
-                label = f"{workflow.name}::{job_id}::{name}"
-                seen[label] = seen.get(label, 0) + 1
-                if seen[label] > 1:
-                    label = f"{label}#{seen[label]}"
-                found[label] = (run, name + advisory)
+        found.update(_workflow_commands(workflow, yaml.safe_load(read_source(workflow)) or {}, scope))
+    return found
+
+
+def _hook_commands(data: dict[str, Any], scope: "str | None") -> dict[str, tuple[str, str]]:
+    found: dict[str, tuple[str, str]] = {}
+    for repo in data.get("repos", []) or []:
+        for hook in repo.get("hooks", []) or []:
+            if "manual" in (hook.get("stages") or []) and len(hook.get("stages") or []) == 1:
+                continue
+            command = " ".join([str(hook.get("entry", "")), *map(str, hook.get("args", []) or [])]).strip()
+            names = " ".join(str(hook.get(k, "")) for k in ("id", "alias", "name"))
+            if command and _mentions(scope, str(hook.get("files", "")), command):
+                found[f"pre-commit::{hook.get('alias') or hook.get('id')}"] = (command, names)
+    return found
+
+
+def _workflow_commands(workflow: Path, data: dict[str, Any], scope: "str | None") -> dict[str, tuple[str, str]]:
+    found: dict[str, tuple[str, str]] = {}
+    # A job without its own `defaults.run.working-directory` runs in the workflow's.
+    workflow_dir = str(((data.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "")
+    for job_id, job in (data.get("jobs") or {}).items():
+        job = job or {}
+        job_dir = str(((job.get("defaults") or {}).get("run") or {}).get("working-directory", "") or "") or workflow_dir
+        found.update(_job_step_commands(workflow.name, job_id, job, job_dir, scope))
+    return found
+
+
+def _job_step_commands(workflow_name: str, job_id: str, job: dict[str, Any], job_dir: str, scope: "str | None") -> dict[str, tuple[str, str]]:
+    found: dict[str, tuple[str, str]] = {}
+    seen: dict[str, int] = {}
+    for step in job.get("steps", []) or []:
+        run = str(step.get("run", "") or "")
+        if not run.strip():
+            continue
+        name = str(step.get("name", "") or run.splitlines()[0])
+        step_dir = str(step.get("working-directory", "") or "")
+        if not _mentions(scope, run, name, step_dir, job_dir):
+            continue
+        advisory = " advisory" if step.get("continue-on-error") else ""
+        label = f"{workflow_name}::{job_id}::{name}"
+        seen[label] = seen.get(label, 0) + 1
+        if seen[label] > 1:
+            label = f"{label}#{seen[label]}"
+        found[label] = (run, name + advisory)
     return found
 
 

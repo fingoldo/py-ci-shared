@@ -422,6 +422,32 @@ def _config_modules(path: Path) -> list[str]:
     return out
 
 
+def _py_import_modules(text: str) -> list[str]:
+    """Submodule names reached through ``from py_ci_shared import <name>`` style imports of a ``.py`` text."""
+    try:
+        tree = parse_text(text)
+    except (SyntaxError, ValueError) as exc:
+        logger.warning("adoption_matrix: a .py text did not parse, so its py_ci_shared imports were not counted: %s", exc)
+        return []
+    out: list[str] = []
+    for target in ImportAliases.from_tree(tree).mapping.values():
+        parts = target.split(".")
+        if parts[0] == "py_ci_shared" and len(parts) > 1:
+            out.append(parts[1])
+    return out
+
+
+def _usage_names(text: str, path: Path, known: set[str]) -> list[str]:
+    """Every module name one file refers to, in the order its reference kinds are checked."""
+    names = [m.group(1) for m in _MODULE_REF.finditer(text)]
+    names += [m.group(1) for m in _CLI_RUN.finditer(text) if m.group(1) in known]
+    if path.suffix == ".py":
+        names += _py_import_modules(text)
+    if path.name == "pyproject.toml":
+        names += _config_modules(path)
+    return names
+
+
 def find_module_usage(repo_root: PathLike, modules: Optional[Iterable[str]] = None) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
     """``(used, unknown)``: module -> files naming it; names after ``py_ci_shared.`` that are no module of this package.
 
@@ -444,24 +470,8 @@ def find_module_usage(repo_root: PathLike, modules: Optional[Iterable[str]] = No
             text = read_source(path)
         except CoreError:
             continue
-        for m in _MODULE_REF.finditer(text):
-            note(m.group(1), rel)
-        for m in _CLI_RUN.finditer(text):
-            if m.group(1) in known:
-                note(m.group(1), rel)
-        if path.suffix == ".py":
-            try:
-                tree = parse_text(text)
-            except (SyntaxError, ValueError):
-                tree = None
-            if tree is not None:
-                for target in ImportAliases.from_tree(tree).mapping.values():
-                    parts = target.split(".")
-                    if parts[0] == "py_ci_shared" and len(parts) > 1:
-                        note(parts[1], rel)
-        if path.name == "pyproject.toml":
-            for name in _config_modules(path):
-                note(name, rel)
+        for name in _usage_names(text, path, known):
+            note(name, rel)
     return ({k: sorted(v) for k, v in sorted(used.items())}, {k: sorted(v) for k, v in sorted(unknown.items())})
 
 
@@ -518,39 +528,70 @@ def _exit_code_zero(call: ast.Call) -> bool:
     return isinstance(arg, ast.Constant) and arg.value in (0, None, False)
 
 
+_LOUD = "<loud>"  # a node that makes the fallback fail loudly
+
+
+def _raise_shape(node: ast.Raise) -> Optional[str]:
+    call = node.exc
+    if isinstance(call, ast.Call) and _call_name(call) == "SystemExit" and _exit_code_zero(call):
+        return "exit-0"
+    return _LOUD
+
+
+def _call_shape(node: ast.Call) -> Optional[str]:
+    name = _call_name(node)
+    if name in _EXIT_CALLS or name.endswith(".exit"):
+        return "exit-0" if _exit_code_zero(node) else _LOUD
+    if name.endswith("fail") and name.split(".")[0] in ("pytest", "fail"):
+        return _LOUD
+    if name in ("pytest.skip", "skip", "pytest.xfail", "unittest.SkipTest", "SkipTest"):
+        return "skip"
+    return None
+
+
+def _return_shape(node: ast.Return) -> Optional[str]:
+    val = node.value
+    if val is None:
+        return None
+    if isinstance(val, ast.Constant) and isinstance(val.value, int) and not isinstance(val.value, bool) and val.value != 0:
+        return _LOUD
+    if isinstance(val, ast.Constant) and val.value in (0, None):
+        return "exit-0" if val.value == 0 else "swallowed"
+    return None
+
+
+def _assign_shape(node: Union[ast.Assign, ast.AnnAssign, ast.AugAssign]) -> Optional[str]:
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    names = [t.id for t in targets if isinstance(t, ast.Name)]
+    if any(n.startswith("collect_ignore") for n in names):
+        return "collect-ignore"
+    if isinstance(node.value, ast.Constant) and node.value.value in (False, None) and names:
+        return "availability-flag"
+    return None
+
+
+def _node_shape(node: ast.AST) -> Optional[str]:
+    """The silent-skip shape one node contributes, ``_LOUD`` when it fails loudly, None when it says nothing."""
+    if isinstance(node, ast.Raise):
+        return _raise_shape(node)
+    if isinstance(node, ast.Call):
+        return _call_shape(node)
+    if isinstance(node, ast.Return):
+        return _return_shape(node)
+    if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        return _assign_shape(node)
+    return None
+
+
 def _silent_shape(body: Sequence[ast.stmt]) -> Optional[str]:
     """The silent-skip rule a fallback body matches, or None when it fails loudly (raise, non-zero exit, pytest.fail)."""
     shapes: set[str] = set()
     for node in (n for s in body for n in _fast_walk(s)):
-        if isinstance(node, ast.Raise):
-            call = node.exc
-            if isinstance(call, ast.Call) and _call_name(call) == "SystemExit" and _exit_code_zero(call):
-                shapes.add("exit-0")
-                continue
+        shape = _node_shape(node)
+        if shape == _LOUD:
             return None
-        if isinstance(node, ast.Call):
-            name = _call_name(node)
-            if name in _EXIT_CALLS or name.endswith(".exit"):
-                if not _exit_code_zero(node):
-                    return None
-                shapes.add("exit-0")
-            elif name.endswith("fail") and name.split(".")[0] in ("pytest", "fail"):
-                return None
-            elif name in ("pytest.skip", "skip", "pytest.xfail", "unittest.SkipTest", "SkipTest"):
-                shapes.add("skip")
-        elif isinstance(node, ast.Return) and node.value is not None:
-            val = node.value
-            if isinstance(val, ast.Constant) and isinstance(val.value, int) and not isinstance(val.value, bool) and val.value != 0:
-                return None
-            if isinstance(val, ast.Constant) and val.value in (0, None):
-                shapes.add("exit-0" if val.value == 0 else "swallowed")
-        elif isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            names = [t.id for t in targets if isinstance(t, ast.Name)]
-            if any(n.startswith("collect_ignore") for n in names):
-                shapes.add("collect-ignore")
-            elif isinstance(node.value, ast.Constant) and node.value.value in (False, None) and names:
-                shapes.add("availability-flag")
+        if shape is not None:
+            shapes.add(shape)
     for rule in ("collect-ignore", "exit-0", "skip", "availability-flag", "swallowed"):
         if rule in shapes:
             return rule
@@ -597,28 +638,45 @@ def _loudly_checked_flags(tree: ast.AST) -> set[str]:
     return out
 
 
+def _try_findings(node: ast.Try, rel: str) -> list[Finding]:
+    out: list[Finding] = []
+    for handler in node.handlers:
+        if not _catches_import_error(handler):
+            continue
+        rule = _silent_shape(handler.body)
+        if rule == "availability-flag":
+            names = ", ".join(f"`{n}`" for n in _flag_names(handler.body))
+            out.append(Finding(rel, handler.lineno, rule, f"{names}: {_SHAPE_TEXT[rule]}"))
+        elif rule is not None:
+            out.append(Finding(rel, handler.lineno, rule, _SHAPE_TEXT[rule]))
+    return out
+
+
+def _find_spec_findings(node: ast.If, rel: str) -> list[Finding]:
+    # `if find_spec("py_ci_shared") is None: <fallback>`: the fallback is the branch that does not import it.
+    out: list[Finding] = []
+    for branch in (node.body, node.orelse):
+        if branch and not _imports_shared(branch):
+            rule = _silent_shape(branch)
+            if rule is not None and rule != "swallowed":
+                out.append(Finding(rel, branch[0].lineno, rule, _SHAPE_TEXT[rule]))
+    return out
+
+
+def _importorskip_finding(node: ast.Call, rel: str) -> Finding:
+    mod = node.args[0].value if isinstance(node.args[0], ast.Constant) else ""
+    return Finding(rel, node.lineno, "importorskip", f"importorskip({mod!r}): the gate turns SKIPPED when the install is missing or too old")
+
+
 def _skips_in_tree(tree: ast.AST, rel: str) -> list[Finding]:
     out: list[Finding] = []
     for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and _call_name(node).split(".")[-1] == "importorskip" and node.args and _str_arg_is_shared(node.args[0]):
-            mod = node.args[0].value if isinstance(node.args[0], ast.Constant) else ""
-            out.append(Finding(rel, node.lineno, "importorskip", f"importorskip({mod!r}): the gate turns SKIPPED when the install is missing or too old"))
+            out.append(_importorskip_finding(node, rel))
         elif isinstance(node, ast.Try) and _imports_shared(node.body):
-            for handler in node.handlers:
-                if _catches_import_error(handler):
-                    rule = _silent_shape(handler.body)
-                    if rule == "availability-flag":
-                        names = ", ".join(f"`{n}`" for n in _flag_names(handler.body))
-                        out.append(Finding(rel, handler.lineno, rule, f"{names}: {_SHAPE_TEXT[rule]}"))
-                    elif rule is not None:
-                        out.append(Finding(rel, handler.lineno, rule, _SHAPE_TEXT[rule]))
+            out.extend(_try_findings(node, rel))
         elif isinstance(node, ast.If) and _is_find_spec_guard(node.test):
-            # `if find_spec("py_ci_shared") is None: <fallback>`: the fallback is the branch that does not import it.
-            for branch in (node.body, node.orelse):
-                if branch and not _imports_shared(branch):
-                    rule = _silent_shape(branch)
-                    if rule is not None and rule != "swallowed":
-                        out.append(Finding(rel, branch[0].lineno, rule, _SHAPE_TEXT[rule]))
+            out.extend(_find_spec_findings(node, rel))
     return out
 
 
@@ -781,11 +839,8 @@ def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
 
-def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable[str]] = None, title: str = "py-ci-shared adoption matrix") -> str:
-    """The report: per-repo summary, pins, module matrix (modules x repos), workflow matrix, findings."""
-    names = [r.name for r in reports]
-    lines = [f"# {title}", ""]
-    lines += [
+def _summary_lines(reports: Sequence[RepoReport]) -> list[str]:
+    lines = [
         "## Summary",
         "",
         "| repo | pins | distinct refs | pins agree | moving pins | releases behind | silent skips | local copies | modules used |",
@@ -800,15 +855,24 @@ def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable
             f"| {r.name} | {len(r.pins)} | {refs} | {agree} | {len(r.moving_pins)} | {lag_cell} | {len(r.silent_skips)} | {len(r.local_copies)} |"
             f" {len(r.modules)} |"
         )
-    lines += ["", "## Pins", "", "| repo | where | location | target | ref | kind |", "|---|---|---|---|---|---|"]
+    return lines
+
+
+def _pin_lines(reports: Sequence[RepoReport]) -> list[str]:
+    lines = ["", "## Pins", "", "| repo | where | location | target | ref | kind |", "|---|---|---|---|---|---|"]
     for r in reports:
         for p in r.pins:
             full = r.resolved.get(p.ref) if p.ref is not None else None
             ref = f"`{p.label()}`" + (f" (= `{full[:12]}`)" if full and p.ref is not None and not full.startswith(p.ref) else "")
             lines.append(f"| {r.name} | `{p.path}:{p.line}` | {p.location} | {_cell(p.target)} | {ref} | {p.kind}{' (moving)' if p.moving else ''} |")
+    return lines
+
+
+def _module_lines(reports: Sequence[RepoReport], modules: Optional[Iterable[str]]) -> list[str]:
+    names = [r.name for r in reports]
     all_modules = sorted(set(modules or []) | {m for r in reports for m in r.modules})
     counts = {m: sum(m in r.modules for r in reports) for m in all_modules}
-    lines += [
+    lines = [
         "",
         "## Modules",
         "",
@@ -819,27 +883,47 @@ def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable
     for m in sorted(all_modules, key=lambda x: (counts[x], x)):
         lines.append(f"| `{m}` | " + " | ".join("X" if m in r.modules else "." for r in reports) + f" | {counts[m]} |")
     lines.append("| **modules used** | " + " | ".join(str(len(r.modules)) for r in reports) + " | |")
+    return lines
+
+
+def _workflow_lines(reports: Sequence[RepoReport]) -> list[str]:
+    names = [r.name for r in reports]
     targets = sorted({p.target for r in reports for p in r.pins if p.target.startswith(("workflow:", "action:"))})
-    if targets:
-        lines += ["", "## Shared workflows and actions", "", "| target | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
-        for t in targets:
-            cells = []
-            for r in reports:
-                labels = sorted({p.label() for p in r.pins if p.target == t})
-                cells.append(", ".join(f"`{x[:12]}`" for x in labels) if labels else ".")
-            lines.append(f"| {t} | " + " | ".join(cells) + " |")
-    lines += ["", "## Findings", ""]
+    if not targets:
+        return []
+    lines = ["", "## Shared workflows and actions", "", "| target | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
+    for t in targets:
+        cells = []
+        for r in reports:
+            labels = sorted({p.label() for p in r.pins if p.target == t})
+            cells.append(", ".join(f"`{x[:12]}`" for x in labels) if labels else ".")
+        lines.append(f"| {t} | " + " | ".join(cells) + " |")
+    return lines
+
+
+def _finding_lines(reports: Sequence[RepoReport]) -> list[str]:
+    lines = ["", "## Findings", ""]
     any_finding = False
     for r in reports:
         found = r.findings()
         extra = [f"- {r.name}: `{f.path}:{f.line}` local-copy: {f.message}" for f in r.local_copies]
         extra += [f"- {r.name}: unknown-module `py_ci_shared.{m}` in " + ", ".join(f"`{p}`" for p in v[:3]) for m, v in r.unknown_modules.items()]
-        for f in found:
-            lines.append(f"- {r.name}: `{f.path}:{f.line}` {f.rule}: {f.message}")
+        lines.extend(f"- {r.name}: `{f.path}:{f.line}` {f.rule}: {f.message}" for f in found)
         lines.extend(extra)
         any_finding = any_finding or bool(found) or bool(extra)
     if not any_finding:
         lines.append("None.")
+    return lines
+
+
+def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable[str]] = None, title: str = "py-ci-shared adoption matrix") -> str:
+    """The report: per-repo summary, pins, module matrix (modules x repos), workflow matrix, findings."""
+    lines = [f"# {title}", ""]
+    lines += _summary_lines(reports)
+    lines += _pin_lines(reports)
+    lines += _module_lines(reports, modules)
+    lines += _workflow_lines(reports)
+    lines += _finding_lines(reports)
     lines.append("")
     return "\n".join(lines)
 

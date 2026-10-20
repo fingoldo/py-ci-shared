@@ -124,6 +124,55 @@ def _migration_numbers(text: str) -> set[str]:
     return numbers
 
 
+def _claim_problems(
+    where: str, verdict: str, text: str, ignored: set[str], roots: Sequence[Path], migration_prefixes: set[str], migrations_name: str
+) -> list[str]:
+    """Problems for one assertive disposition at *where* (``file:line``): artefacts and migrations it names that are absent."""
+    problems: list[str] = []
+    for artefact in sorted(_artefacts(text)):
+        if artefact in ignored:
+            continue
+        if _is_outside(artefact):
+            problems.append(
+                f"{where}: disposition says {verdict} and names `{artefact}`, which is outside "
+                f"the repository, so this check cannot verify it. Name the repository path, or list it in ignore_paths."
+            )
+            continue
+        if any((root / artefact).exists() for root in roots):
+            continue
+        problems.append(
+            f"{where}: disposition says {verdict} and names `{artefact}`, "
+            f"which does not exist. Either the change was not made, or the disposition "
+            f"names the wrong path."
+        )
+    for number in sorted(_migration_numbers(text)):
+        if number in migration_prefixes:
+            continue
+        problems.append(f"{where}: disposition says {verdict} and names migration {number}, and no {number}*.sql exists under {migrations_name}/.")
+    return problems
+
+
+def _file_problems(
+    path: Path, assertive: set[str], ignored: set[str], roots: Sequence[Path], migration_prefixes: set[str], migrations_name: str
+) -> tuple[list[str], int]:
+    """``(problems, dispositions seen)`` for one audit file; an unreadable file is itself a problem."""
+    try:
+        lines = read_source(path).splitlines()
+    except SourceReadError as exc:  # best-effort: the problem is reported to the caller as a finding
+        return [f"{path.name}: could not be read, so its dispositions were not checked: {exc.message}"], 0
+    problems: list[str] = []
+    seen = 0
+    for lineno, line in enumerate(lines, start=1):
+        parsed = parse_disposition(line)
+        if parsed is None:
+            continue
+        seen += 1
+        verdict, text = parsed
+        if verdict in assertive:
+            problems.extend(_claim_problems(f"{path.name}:{lineno}", verdict, text, ignored, roots, migration_prefixes, migrations_name))
+    return problems, seen
+
+
 def find_unsupported_dispositions(
     audit_dir: Path,
     repo_root: Path,
@@ -152,51 +201,13 @@ def find_unsupported_dispositions(
         return [f"{audit_dir}: no audit files found - this check examined nothing, which reads as a pass."]
 
     problems: list[str] = []
-    # Two different counters: a file whose findings are ALL deferred is normal, while a file where
-    # no line matches the disposition shape at all means this check is reading the wrong format
-    # and would pass everything.
+    # A file whose findings are ALL deferred is normal, while a run where no line matches the
+    # disposition shape at all means this check is reading the wrong format and would pass everything.
     seen_any = 0
-    checked = 0
     for path in files:
-        try:
-            lines = read_source(path).splitlines()
-        except SourceReadError as exc:
-            problems.append(f"{path.name}: could not be read, so its dispositions were not checked: {exc.message}")
-            continue
-        for lineno, line in enumerate(lines, start=1):
-            parsed = parse_disposition(line)
-            if parsed is None:
-                continue
-            seen_any += 1
-            verdict, text = parsed
-            if verdict not in assertive:
-                continue
-            checked += 1
-
-            for artefact in sorted(_artefacts(text)):
-                if artefact in ignored:
-                    continue
-                if _is_outside(artefact):
-                    problems.append(
-                        f"{path.name}:{lineno}: disposition says {verdict} and names `{artefact}`, which is outside "
-                        f"the repository, so this check cannot verify it. Name the repository path, or list it in ignore_paths."
-                    )
-                    continue
-                if any((root / artefact).exists() for root in (repo_root, *search_roots)):
-                    continue
-                problems.append(
-                    f"{path.name}:{lineno}: disposition says {verdict} and names `{artefact}`, "
-                    f"which does not exist. Either the change was not made, or the disposition "
-                    f"names the wrong path."
-                )
-            for number in sorted(_migration_numbers(text)):
-                if number in migration_prefixes:
-                    continue
-                problems.append(
-                    f"{path.name}:{lineno}: disposition says {verdict} and names migration "
-                    f"{number}, and no {number}*.sql exists under "
-                    f"{migrations_dir.name}/."
-                )
+        file_problems, seen = _file_problems(path, assertive, ignored, (repo_root, *search_roots), migration_prefixes, migrations_dir.name)
+        problems.extend(file_problems)
+        seen_any += seen
     if seen_any == 0:
         problems.append(
             f"{audit_dir}: no line matched the disposition shape, so this check examined nothing. "

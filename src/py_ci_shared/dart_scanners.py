@@ -381,6 +381,84 @@ def _report_small_target(found: dict[str, str], rel: str, source: str, clean: st
     found[_key(found, rel)] = f"tappable with no MinTapTargetBox (line {line}) - the visible target can be smaller than the 48x48 minimum"
 
 
+def _check_spinner_labels(found: dict[str, str], rel: str, clean: str, masked: str) -> None:
+    """CircularProgressIndicator with no semanticsLabel of its own or on an enclosing Semantics."""
+    for m in _SPINNER.finditer(clean):
+        body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
+        # A Semantics(label:) wrapper already names it; adding semanticsLabel as well would
+        # announce the same thing twice, which is the defect the tooltip rule below catches.
+        # The wrapper is found by bracket nesting, not a character window: a label far above
+        # on the spinner's own ancestor counts, one on a sibling above it does not.
+        labelled_ancestor = any(_SEMANTICS_LABEL_ARG.search(args) for args in _enclosing_semantics_args(masked, m.start()))
+        if "semanticsLabel" not in body and not labelled_ancestor:
+            found[_key(found, rel)] = (
+                f"CircularProgressIndicator with no semanticsLabel (line "
+                f"{_line_of(clean, m.start())}) - a screen reader announces nothing while the "
+                f"user waits"
+            )
+
+
+def _check_tappables(found: dict[str, str], rel: str, source: str, clean: str, masked: str, wrappers: set[str]) -> None:
+    """Tap-target size, announced role and onTap/onDoubleTap rules for every tappable widget in one file."""
+    defines_tap_helper = any(name in rel for name in _TAP_TARGET_HELPER_FILES)
+    for m in _TAPPABLE.finditer(clean):
+        body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
+        if not _ON_TAP.search(body) or defines_tap_helper:
+            continue
+        window_start = max(0, m.start() - 600)
+        before = clean[window_start : m.start()]
+        wrapped = any(name in wrappers for name, _ in _enclosing_calls(masked, m.start()))
+        if not wrapped and not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
+            _report_small_target(found, rel, source, clean, m.start())
+        _check_tap_semantics(found, rel, clean, masked, m.start(), body)
+
+
+def _check_tap_semantics(found: dict[str, str], rel: str, clean: str, masked: str, start: int, body: str) -> None:
+    """GestureDetector announced role, and onTap together with onDoubleTap, for the tappable at *start*."""
+    # InkWell announces itself as a button; GestureDetector does not, which is the
+    # whole difference this rule is about.
+    is_gesture_detector = clean[start:].startswith("GestureDetector")
+    announced = any(_SEMANTICS_ROLE_ARG.search(args) for args in _enclosing_semantics_args(masked, start))
+    if is_gesture_detector and not announced and "Semantics(" not in body:
+        found[_key(found, rel)] = (
+            f"GestureDetector with no announced role (line {_line_of(clean, start)}) - "
+            f"unlike InkWell it announces nothing, so a screen reader reads the contents "
+            f"and not that they are actionable"
+        )
+    if _ON_DOUBLE_TAP.search(body):
+        found[_key(found, rel)] = (
+            f"onTap and onDoubleTap on one gesture detector (line "
+            f"{_line_of(clean, start)}) - the single tap is delayed waiting for a "
+            f"second, and the double tap is undiscoverable"
+        )
+
+
+def _check_build_helper_context(found: dict[str, str], rel: str, clean: str) -> None:
+    """A ``_build`` helper whose BuildContext is a NAMED parameter."""
+    for m in _BUILD_HELPER.finditer(clean):
+        # The parameter list, not "up to the next brace": a named-parameter group opens with
+        # `{` immediately after `(`, so slicing to the first brace cut the very text this rule
+        # is about.
+        params = _balanced_body(clean, m.end() - 1, "(", ")")
+        if _NAMED_CONTEXT_PARAM.search(params):
+            found[_key(found, rel)] = (
+                f"_build helper takes BuildContext as a NAMED parameter (line "
+                f"{_line_of(clean, m.start())}) - the convention everywhere else is first "
+                f"positional"
+            )
+
+
+def _check_tooltip_duplicates(found: dict[str, str], rel: str, clean: str) -> None:
+    """A tooltip message equal to the neighbouring semantics label without excludeFromSemantics."""
+    for m in _TOOLTIP_MESSAGE.finditer(clean):
+        window = clean[max(0, m.start() - 300) : m.start() + 300]
+        label_match = re.search(r"\blabel:\s*([^,\n]+)", window)
+        if label_match and label_match.group(1).strip() == m.group(1).strip() and not _EXCLUDE_FROM_SEMANTICS.search(window):
+            found[_key(found, rel)] = (
+                f"tooltip duplicates the semantics label (line {_line_of(clean, m.start())}) " f"with no excludeFromSemantics - the name is announced twice"
+            )
+
+
 def scan_tappable_semantics(files: Iterable[str], read: Reader, *, target_wrappers: Sequence[str] = ()) -> dict:
     """Interactive-affordance rules: see the module docstring.
 
@@ -401,67 +479,10 @@ def scan_tappable_semantics(files: Iterable[str], read: Reader, *, target_wrappe
         source = sources[rel]
         clean = cleaned[rel]
         masked = _mask_strings(clean)
-
-        for m in _SPINNER.finditer(clean):
-            body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
-            # A Semantics(label:) wrapper already names it; adding semanticsLabel as well would
-            # announce the same thing twice, which is the defect the tooltip rule below catches.
-            # The wrapper is found by bracket nesting, not a character window: a label far above
-            # on the spinner's own ancestor counts, one on a sibling above it does not.
-            labelled_ancestor = any(_SEMANTICS_LABEL_ARG.search(args) for args in _enclosing_semantics_args(masked, m.start()))
-            if "semanticsLabel" not in body and not labelled_ancestor:
-                found[_key(found, rel)] = (
-                    f"CircularProgressIndicator with no semanticsLabel (line "
-                    f"{_line_of(clean, m.start())}) - a screen reader announces nothing while the "
-                    f"user waits"
-                )
-
-        defines_tap_helper = any(name in rel for name in _TAP_TARGET_HELPER_FILES)
-        for m in _TAPPABLE.finditer(clean):
-            body = _balanced_body(clean, clean.find("(", m.end() - 1), "(", ")")
-            if not _ON_TAP.search(body) or defines_tap_helper:
-                continue
-            window_start = max(0, m.start() - 600)
-            before = clean[window_start : m.start()]
-            wrapped = any(name in wrappers for name, _ in _enclosing_calls(masked, m.start()))
-            if not wrapped and not _MIN_TAP_TARGET.search(body) and not _MIN_TAP_TARGET.search(before):
-                _report_small_target(found, rel, source, clean, m.start())
-            # InkWell announces itself as a button; GestureDetector does not, which is the
-            # whole difference this rule is about.
-            is_gesture_detector = clean[m.start() :].startswith("GestureDetector")
-            announced = any(_SEMANTICS_ROLE_ARG.search(args) for args in _enclosing_semantics_args(masked, m.start()))
-            if is_gesture_detector and not announced and "Semantics(" not in body:
-                found[_key(found, rel)] = (
-                    f"GestureDetector with no announced role (line {_line_of(clean, m.start())}) - "
-                    f"unlike InkWell it announces nothing, so a screen reader reads the contents "
-                    f"and not that they are actionable"
-                )
-            if _ON_DOUBLE_TAP.search(body):
-                found[_key(found, rel)] = (
-                    f"onTap and onDoubleTap on one gesture detector (line "
-                    f"{_line_of(clean, m.start())}) - the single tap is delayed waiting for a "
-                    f"second, and the double tap is undiscoverable"
-                )
-
-        for m in _BUILD_HELPER.finditer(clean):
-            # The parameter list, not "up to the next brace": a named-parameter group opens with
-            # `{` immediately after `(`, so slicing to the first brace cut the very text this rule
-            # is about.
-            params = _balanced_body(clean, m.end() - 1, "(", ")")
-            if _NAMED_CONTEXT_PARAM.search(params):
-                found[_key(found, rel)] = (
-                    f"_build helper takes BuildContext as a NAMED parameter (line "
-                    f"{_line_of(clean, m.start())}) - the convention everywhere else is first "
-                    f"positional"
-                )
-
-        for m in _TOOLTIP_MESSAGE.finditer(clean):
-            window = clean[max(0, m.start() - 300) : m.start() + 300]
-            label_match = re.search(r"\blabel:\s*([^,\n]+)", window)
-            if label_match and label_match.group(1).strip() == m.group(1).strip() and not _EXCLUDE_FROM_SEMANTICS.search(window):
-                found[_key(found, rel)] = (
-                    f"tooltip duplicates the semantics label (line {_line_of(clean, m.start())}) " f"with no excludeFromSemantics - the name is announced twice"
-                )
+        _check_spinner_labels(found, rel, clean, masked)
+        _check_tappables(found, rel, source, clean, masked, wrappers)
+        _check_build_helper_context(found, rel, clean)
+        _check_tooltip_duplicates(found, rel, clean)
     return _rekey(found)
 
 
@@ -519,53 +540,77 @@ _NOW_FALLBACK = re.compile(r"""(?P<lhs>[\w.\[\]'"()]+)\s*\?\?\s*DateTime\.now\(\
 _PARSED_LHS_RE = re.compile(r"json\[|\bparse|\bmap\[|\brow\[|tryParse|\['\w+'\]")
 
 
+def _check_iso_without_utc(found: dict[str, str], rel: str, clean: str) -> None:
+    """toIso8601String() with no toUtc() just before it."""
+    for m in _ISO_WITHOUT_UTC.finditer(clean):
+        window = clean[max(0, m.start() - 30) : m.end()]
+        if _TO_UTC_ISO.search(window):
+            continue
+        found[_key(found, rel)] = (
+            f"toIso8601String() with no toUtc() (line {_line_of(clean, m.start())}) - the "
+            f"stamp carries the writer's local offset and every reader in another zone is off"
+        )
+
+
+def _check_now_fallback(found: dict[str, str], rel: str, clean: str) -> None:
+    """``?? DateTime.now()`` as the fallback of a value that was being parsed."""
+    for m in _NOW_FALLBACK.finditer(clean):
+        if not _PARSED_LHS_RE.search(m.group("lhs")):
+            continue
+        found[_key(found, rel)] = (
+            f"?? DateTime.now() (line {_line_of(clean, m.start())}) - a missing timestamp " f"becomes 'now', which is indistinguishable from a real one"
+        )
+
+
+def _check_json_decode(found: dict[str, str], rel: str, clean: str) -> None:
+    """jsonDecode with no ``try`` in the 600 characters before it."""
+    for m in _JSON_DECODE.finditer(clean):
+        window = clean[max(0, m.start() - 600) : m.start()]
+        if not _TRY_BLOCK_RE.search(window):
+            found[_key(found, rel)] = f"jsonDecode outside a try (line {_line_of(clean, m.start())}) - one corrupt " f"record throws past the caller"
+
+
+def _check_enum_default(found: dict[str, str], rel: str, clean: str) -> None:
+    """Enum lookup falling back to a non-nullable default."""
+    for m in _ENUM_DEFAULT.finditer(clean):
+        found[_key(found, rel)] = (
+            f"enum lookup with a non-nullable default (line {_line_of(clean, m.start())}) - an "
+            f"unknown stored value silently becomes a real choice the user never made"
+        )
+
+
+def _check_fire_and_forget(found: dict[str, str], rel: str, clean: str) -> None:
+    """An unawaited ``.then()`` statement with neither onError nor catchError."""
+    for m in _FIRE_AND_FORGET_THEN.finditer(clean):
+        statement = clean[m.start() : clean.find(";", m.start())]
+        if "onError" not in statement and "catchError" not in statement:
+            found[_key(found, rel)] = (
+                f"unawaited .then() with no error path (line {_line_of(clean, m.start())}) - "
+                f"a rejection is an unhandled async error and the UI waits forever"
+            )
+
+
+def _check_socket_exception(found: dict[str, str], rel: str, clean: str) -> None:
+    """SocketException caught with no ClientException anywhere in the file."""
+    if (socket_hit := _SOCKET_EXCEPTION.search(clean)) and not _CLIENT_EXCEPTION.search(clean):
+        found[_key(found, rel)] = (
+            f"SocketException caught without ClientException (line "
+            f"{_line_of(clean, socket_hit.start())}) - the web build never throws SocketException, so "
+            f"this branch is dead there"
+        )
+
+
 def scan_parse_serialize_catch(files: Iterable[str], read: Reader) -> dict:
     """Serialisation and error-path rules: see the module docstring."""
     found: dict[str, str] = {}
     for rel in files:
         clean = _strip_comments(read(rel))
-
-        for m in _ISO_WITHOUT_UTC.finditer(clean):
-            window = clean[max(0, m.start() - 30) : m.end()]
-            if _TO_UTC_ISO.search(window):
-                continue
-            found[_key(found, rel)] = (
-                f"toIso8601String() with no toUtc() (line {_line_of(clean, m.start())}) - the "
-                f"stamp carries the writer's local offset and every reader in another zone is off"
-            )
-
-        for m in _NOW_FALLBACK.finditer(clean):
-            if not _PARSED_LHS_RE.search(m.group("lhs")):
-                continue
-            found[_key(found, rel)] = (
-                f"?? DateTime.now() (line {_line_of(clean, m.start())}) - a missing timestamp " f"becomes 'now', which is indistinguishable from a real one"
-            )
-
-        for m in _JSON_DECODE.finditer(clean):
-            window = clean[max(0, m.start() - 600) : m.start()]
-            if not _TRY_BLOCK_RE.search(window):
-                found[_key(found, rel)] = f"jsonDecode outside a try (line {_line_of(clean, m.start())}) - one corrupt " f"record throws past the caller"
-
-        for m in _ENUM_DEFAULT.finditer(clean):
-            found[_key(found, rel)] = (
-                f"enum lookup with a non-nullable default (line {_line_of(clean, m.start())}) - an "
-                f"unknown stored value silently becomes a real choice the user never made"
-            )
-
-        for m in _FIRE_AND_FORGET_THEN.finditer(clean):
-            statement = clean[m.start() : clean.find(";", m.start())]
-            if "onError" not in statement and "catchError" not in statement:
-                found[_key(found, rel)] = (
-                    f"unawaited .then() with no error path (line {_line_of(clean, m.start())}) - "
-                    f"a rejection is an unhandled async error and the UI waits forever"
-                )
-
-        if (socket_hit := _SOCKET_EXCEPTION.search(clean)) and not _CLIENT_EXCEPTION.search(clean):
-            found[_key(found, rel)] = (
-                f"SocketException caught without ClientException (line "
-                f"{_line_of(clean, socket_hit.start())}) - the web build never throws SocketException, so "
-                f"this branch is dead there"
-            )
+        _check_iso_without_utc(found, rel, clean)
+        _check_now_fallback(found, rel, clean)
+        _check_json_decode(found, rel, clean)
+        _check_enum_default(found, rel, clean)
+        _check_fire_and_forget(found, rel, clean)
+        _check_socket_exception(found, rel, clean)
     return _rekey(found)
 
 
@@ -652,7 +697,9 @@ def dart_files_under(repo_root: PathLike, root: str, *, generated_prefixes: Sequ
             try:
                 head = read_source(full)[:400]
             except SourceError as exc:
-                logger.warning("dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc)  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
+                logger.warning(
+                    "dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc
+                )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
                 head = ""
             if any(marker in head for marker in GENERATED_MARKERS):
                 continue
@@ -730,7 +777,11 @@ def scan_import_cycles(files: Iterable[str], read: Reader, *, package: str, lib_
     packages are external. Dart tolerates cycles, which is why nothing else notices the one that turns extracting a
     package from a move into a rewrite.
     """
-    prefix = f"package:{package}/"
+    return _find_cycles(_import_graph(files, read, f"package:{package}/", lib_root))
+
+
+def _import_graph(files: Iterable[str], read: Reader, prefix: str, lib_root: str) -> dict[str, set[str]]:
+    """``file -> files it imports or exports`` among the project's own relative and ``package:`` URIs."""
     graph: dict[str, set[str]] = {}
     for rel in files:
         targets: set[str] = set()
@@ -741,7 +792,11 @@ def scan_import_cycles(files: Iterable[str], read: Reader, *, package: str, lib_
             elif not uri.startswith(("dart:", "package:")):
                 targets.add(posixpath.normpath(posixpath.join(posixpath.dirname(rel), uri)))
         graph[rel] = targets
+    return graph
 
+
+def _find_cycles(graph: dict[str, set[str]]) -> dict[str, str]:
+    """One finding per cycle of *graph*, keyed on the file where the depth-first walk first re-enters it."""
     found: dict[str, str] = {}
     state: dict[str, str] = {}
 

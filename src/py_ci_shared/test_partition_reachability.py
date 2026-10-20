@@ -212,6 +212,50 @@ def _unreachable_tags_or_fail(declared_tags: Path, runner_text: str) -> list[str
         raise  # unreachable: pytest.fail raises
 
 
+def _excused(name: str, allowed: dict[str, str], used: set[str]) -> bool:
+    if name in allowed:
+        used.add(name)
+        return True
+    return False
+
+
+def _unreachable_problems(
+    runner_text: str,
+    reference_text: str,
+    *,
+    declared_tags: "Path | None",
+    playwright_config: "Path | None",
+    script_dirs: Sequence[Path],
+    spec_dirs: Sequence[Path],
+    allowed: dict[str, str],
+    used: set[str],
+) -> list[str]:
+    """Tags, projects, scripts and skipped specs that nothing selects or references, minus the excused ones."""
+    problems: list[str] = []
+    if declared_tags is not None:
+        for tag in _unreachable_tags_or_fail(declared_tags, runner_text):
+            if _excused(tag, allowed, used):
+                continue
+            problems.append(f"test tag {tag!r} is excluded by a runner and selected by none - the suite it " f"labels runs nowhere.")
+    if playwright_config is not None:
+        for name in find_unselected_projects(playwright_config, runner_text):
+            if _excused(name, allowed, used):
+                continue
+            problems.append(
+                f"Playwright project {name!r} is declared but no runner passes --project for it, "
+                f"while other projects are named explicitly - this viewport/engine never runs."
+            )
+    for script in find_unreferenced_scripts(list(script_dirs), reference_text):
+        if _excused(Path(script).name, allowed, used):
+            continue
+        problems.append(
+            f"{script} is referenced by no workflow, hook or index document - nobody knows it "
+            f"exists or how to invoke it. Add it to the script index, or delete it."
+        )
+    problems.extend(f"{skip} - a permanently skipped spec reads as a passing suite." for skip in find_permanent_skips(list(spec_dirs)))
+    return problems
+
+
 def assert_partitions_reachable(
     *,
     runner_texts: Sequence[Path],
@@ -231,7 +275,6 @@ def assert_partitions_reachable(
     import pytest
 
     allowed = dict(allowed or {})
-    problems: list[str] = []
     missing = [
         str(p)
         for p in [*runner_texts, *(x for x in (declared_tags, playwright_config, script_index) if x is not None), *script_dirs, *spec_dirs]
@@ -246,34 +289,16 @@ def assert_partitions_reachable(
         pytest.fail(f"cannot read a runner or index file: {exc}")
     _fail_on_empty_runner_text(runner_texts, runner_text)
     used: set[str] = set()
-
-    def excused(name: str) -> bool:
-        if name in allowed:
-            used.add(name)
-            return True
-        return False
-
-    if declared_tags is not None:
-        for tag in _unreachable_tags_or_fail(declared_tags, runner_text):
-            if excused(tag):
-                continue
-            problems.append(f"test tag {tag!r} is excluded by a runner and selected by none - the suite it " f"labels runs nowhere.")
-    if playwright_config is not None:
-        for name in find_unselected_projects(playwright_config, runner_text):
-            if excused(name):
-                continue
-            problems.append(
-                f"Playwright project {name!r} is declared but no runner passes --project for it, "
-                f"while other projects are named explicitly - this viewport/engine never runs."
-            )
-    for script in find_unreferenced_scripts(list(script_dirs), reference_text):
-        if excused(Path(script).name):
-            continue
-        problems.append(
-            f"{script} is referenced by no workflow, hook or index document - nobody knows it "
-            f"exists or how to invoke it. Add it to the script index, or delete it."
-        )
-    problems.extend(f"{skip} - a permanently skipped spec reads as a passing suite." for skip in find_permanent_skips(list(spec_dirs)))
+    problems = _unreachable_problems(
+        runner_text,
+        reference_text,
+        declared_tags=declared_tags,
+        playwright_config=playwright_config,
+        script_dirs=script_dirs,
+        spec_dirs=spec_dirs,
+        allowed=allowed,
+        used=used,
+    )
     problems.extend(
         f"allowed entry {name!r} has no reason; say why it is deliberately unreachable"
         for name, reason in sorted(allowed.items())

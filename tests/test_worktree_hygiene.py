@@ -273,7 +273,9 @@ class TestAuditRegressions:
     def test_blob_ids_match_git_hash_object(self, origin_and_clone):
         data = b"line one\r\nline two\n\x00binary"
         expected = (
-            subprocess.run(["git", "-C", str(origin_and_clone), "hash-object", "--stdin"], input=data, capture_output=True, check=True, env=git_env()).stdout.decode().strip()
+            subprocess.run(["git", "-C", str(origin_and_clone), "hash-object", "--stdin"], input=data, capture_output=True, check=True, env=git_env())
+            .stdout.decode()
+            .strip()
         )
         assert _hash(origin_and_clone, data) == expected
         assert _hash(origin_and_clone, data + b"!") != expected

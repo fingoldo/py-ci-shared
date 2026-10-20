@@ -59,6 +59,7 @@ EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pyca
 if os.environ.get("EXTRA_EXCLUDED_DIRS"):
     EXCLUDED_DIR_NAMES |= set(os.environ["EXTRA_EXCLUDED_DIRS"].split(","))
 
+
 # Override how `black` is invoked via the BLACK_CMD env var (space-separated),
 # e.g. BLACK_CMD="uvx black" for projects that run Black through uv's tool
 # cache rather than a pip-installed environment. Defaults to `python -m black`.
@@ -283,6 +284,44 @@ def looks_like_import_or_call_list(old_block, new_block):
     return None
 
 
+def _sub_hunk(stag, s_old, s_new, orig_span, fmt_span, orig_string_state, fmt_string_state):
+    """Lines to emit for one fine-grained opcode of a replace hunk (*orig_span*/*fmt_span* are absolute line index pairs)."""
+    if stag == "equal":
+        return list(s_new)
+    if stag == "insert" and is_all_blank(s_new):
+        return []
+    if stag == "delete" and is_all_blank(s_old):
+        return []
+    if _touches_multiline_string(s_old, orig_string_state[orig_span[0]], orig_string_state[orig_span[1]]) or _touches_multiline_string(
+        s_new, fmt_string_state[fmt_span[0]], fmt_string_state[fmt_span[1]]
+    ):
+        # A fragment of a multi-line triple-quoted string; norm() cannot reliably
+        # classify it (see _touches_multiline_string). Reject conservatively rather
+        # than risk silently applying a misclassified explosion.
+        return list(s_old)
+    if looks_like_import_or_call_list(s_old, s_new) == "explode":
+        return list(s_old)
+    return list(s_new)
+
+
+def _replace_hunk(old_block, new_block, i1, j1, orig_string_state, fmt_string_state):
+    """Lines to emit for a ``replace`` hunk starting at old line *i1* / new line *j1*.
+
+    Never short-circuit on the whole replace block: it may bundle an
+    explosion-like change with an unrelated adjacent one (e.g. Black
+    merges a semicolon-split and a nearby quote-style fix into one
+    hunk because they're on consecutive lines). Always re-diff at a
+    finer grain so only the excluded sub-part gets rejected.
+    """
+    sub_sm = difflib.SequenceMatcher(None, old_block, new_block, autojunk=False)
+    sub_out = []
+    for stag, si1, si2, sj1, sj2 in sub_sm.get_opcodes():
+        s_old = old_block[si1:si2]
+        s_new = new_block[sj1:sj2]
+        sub_out.extend(_sub_hunk(stag, s_old, s_new, (i1 + si1, i1 + si2), (j1 + sj1, j1 + sj2), orig_string_state, fmt_string_state))
+    return sub_out
+
+
 def filtered_apply(orig: str, formatted: str) -> str:
     orig_lines = orig.splitlines(keepends=True)
     fmt_lines = formatted.splitlines(keepends=True)
@@ -295,51 +334,13 @@ def filtered_apply(orig: str, formatted: str) -> str:
         new_block = fmt_lines[j1:j2]
         if tag == "equal":
             out.extend(new_block)
-            continue
-        if tag == "insert":
+        elif tag == "insert":
             # pure blank-line insertion -> reject (keep nothing, i.e. don't insert)
-            if is_all_blank(new_block):
-                continue
-            out.extend(new_block)
-            continue
-        if tag == "delete":
-            # pure blank-line removal -> accept (i.e. actually remove: emit nothing)
-            if is_all_blank(old_block):
-                continue
-            # non-blank deletion with nothing replacing it: accept Black's change
-            continue
-        if tag == "replace":
-            # Never short-circuit on the whole replace block: it may bundle an
-            # explosion-like change with an unrelated adjacent one (e.g. Black
-            # merges a semicolon-split and a nearby quote-style fix into one
-            # hunk because they're on consecutive lines). Always re-diff at a
-            # finer grain so only the excluded sub-part gets rejected.
-            sub_sm = difflib.SequenceMatcher(None, old_block, new_block, autojunk=False)
-            sub_out = []
-            for stag, si1, si2, sj1, sj2 in sub_sm.get_opcodes():
-                s_old = old_block[si1:si2]
-                s_new = new_block[sj1:sj2]
-                if stag == "equal":
-                    sub_out.extend(s_new)
-                elif stag == "insert" and is_all_blank(s_new):
-                    continue
-                elif stag == "delete" and is_all_blank(s_old):
-                    continue
-                elif _touches_multiline_string(s_old, orig_string_state[i1 + si1], orig_string_state[i1 + si2]) or _touches_multiline_string(
-                    s_new, fmt_string_state[j1 + sj1], fmt_string_state[j1 + sj2]
-                ):
-                    # A fragment of a multi-line triple-quoted string; norm() cannot reliably
-                    # classify it (see _touches_multiline_string). Reject conservatively rather
-                    # than risk silently applying a misclassified explosion.
-                    sub_out.extend(s_old)
-                else:
-                    sub_kind = looks_like_import_or_call_list(s_old, s_new)
-                    if sub_kind == "explode":
-                        sub_out.extend(s_old)
-                    else:
-                        sub_out.extend(s_new)
-            out.extend(sub_out)
-            continue
+            if not is_all_blank(new_block):
+                out.extend(new_block)
+        elif tag == "replace":
+            out.extend(_replace_hunk(old_block, new_block, i1, j1, orig_string_state, fmt_string_state))
+        # "delete" emits nothing: a blank-line removal is accepted, and so is a non-blank deletion with nothing replacing it
     return "".join(out)
 
 
@@ -405,52 +406,44 @@ def _pop_config(args):
     return config_path, rest
 
 
-def main(argv=None):
-    args = list(sys.argv[1:] if argv is None else argv)
-    write = "--write" in args
-    check = "--check" in args
-    if write and check:
-        raise SystemExit("--check and --write are mutually exclusive: --check never rewrites files")
-    args = [a for a in args if a not in ("--write", "--check")]
-    config_path, args = _pop_config(args)
-    if not config_path:
-        raise SystemExit("--config <path-to-pyproject.toml> is required")
+def _check_one(path, config_path):
+    """True when the filtered result differs from the file, or the file could not be checked."""
+    try:
+        changed, _, _ = process_one(path, config_path)
+    except Exception as e:
+        # Broadened from RuntimeError-only: process_one's own file read (encoding="utf-8")
+        # can raise UnicodeDecodeError, and any other per-file I/O/subprocess hiccup should
+        # not abort the whole --check run -- report it and keep going, same as the
+        # RuntimeError case black itself raises.
+        print(f"ERROR: {path}: {type(e).__name__}: {e}", file=sys.stderr)
+        changed = True
+    return changed
 
-    if check:
-        if not args:
-            raise SystemExit("--check needs at least one directory or file to check")
-        try:
-            files = discover_py_files(args)
-        except DiscoveryError as exc:
-            raise SystemExit(f"--check: {exc}")
 
-        def check_one(path):
-            """True when the filtered result differs from the file, or the file could not be checked."""
-            try:
-                changed, _, _ = process_one(path, config_path)
-            except Exception as e:
-                # Broadened from RuntimeError-only: process_one's own file read (encoding="utf-8")
-                # can raise UnicodeDecodeError, and any other per-file I/O/subprocess hiccup should
-                # not abort the whole --check run -- report it and keep going, same as the
-                # RuntimeError case black itself raises.
-                print(f"ERROR: {path}: {type(e).__name__}: {e}", file=sys.stderr)
-                changed = True
-            return changed
+def _run_check(args, config_path):
+    """``--check`` mode: report files with non-excluded-class Black findings and exit 1 if any."""
+    if not args:
+        raise SystemExit("--check needs at least one directory or file to check")
+    try:
+        files = discover_py_files(args)
+    except DiscoveryError as exc:
+        raise SystemExit(f"--check: {exc}")
 
-        candidates = files_black_would_change(files, config_path)
-        # One Black process per candidate, run side by side: the threads only wait on subprocesses.
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 1))) as pool:
-            verdicts = list(pool.map(check_one, candidates))
-        changed_files = [path for path, changed in zip(candidates, verdicts) if changed]
-        if changed_files:
-            print(f"{len(changed_files)}/{len(files)} files have non-excluded-class Black findings:")
-            for p in changed_files:
-                print(f"  {p}")
-            raise SystemExit(1)
-        print(f"All {len(files)} files are filtered-Black-clean.")
-        return
+    candidates = files_black_would_change(files, config_path)
+    # One Black process per candidate, run side by side: the threads only wait on subprocesses.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 1))) as pool:
+        verdicts = list(pool.map(lambda path: _check_one(path, config_path), candidates))
+    changed_files = [path for path, changed in zip(candidates, verdicts) if changed]
+    if changed_files:
+        print(f"{len(changed_files)}/{len(files)} files have non-excluded-class Black findings:")
+        for p in changed_files:
+            print(f"  {p}")
+        raise SystemExit(1)
+    print(f"All {len(files)} files are filtered-Black-clean.")
 
-    files = args
+
+def _run_format(files, write, config_path):
+    """Default mode: print a diff per changed file, or rewrite it with ``--write``."""
     for path in files:
         changed, orig, result = process_one(path, config_path)
         if not changed:
@@ -468,6 +461,23 @@ def main(argv=None):
                 tofile=path,
             )
             sys.stdout.writelines(diff)
+
+
+def main(argv=None):
+    args = list(sys.argv[1:] if argv is None else argv)
+    write = "--write" in args
+    check = "--check" in args
+    if write and check:
+        raise SystemExit("--check and --write are mutually exclusive: --check never rewrites files")
+    args = [a for a in args if a not in ("--write", "--check")]
+    config_path, args = _pop_config(args)
+    if not config_path:
+        raise SystemExit("--config <path-to-pyproject.toml> is required")
+
+    if check:
+        _run_check(args, config_path)
+        return
+    _run_format(args, write, config_path)
 
 
 if __name__ == "__main__":

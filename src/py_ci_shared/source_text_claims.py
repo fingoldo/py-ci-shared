@@ -50,7 +50,7 @@ import re
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from ._core import Baseline, BaselineError, ImportAliases, SourceError, child_nodes, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
@@ -162,6 +162,20 @@ class _Detector:
                 return True
         return False
 
+    def _bind_with(self, node: Union[ast.With, ast.AsyncWith], names: set[str]) -> None:
+        # `with open("pkg/mod.py") as fh:` -- `fh.read()` then reads source through a name with no path of its own.
+        for item in node.items:
+            expr = item.context_expr
+            if item.optional_vars is not None and isinstance(expr, ast.Call) and _call_name(expr) == "open" and expr.args:
+                if self._is_source_path_expr(expr.args[0], names):
+                    names.update(n.id for n in _fast_walk(item.optional_vars) if isinstance(n, ast.Name))
+
+    def _bind_loop(self, node: Union[ast.For, ast.AsyncFor, ast.comprehension], names: set[str]) -> None:
+        # `ast.comprehension` covers `"".join(p.read_text() for p in DIR.glob("*.py"))`, which reads the same files.
+        globs = [c for c in _fast_walk(node.iter) if isinstance(c, ast.Call) and _call_name(c) in ("glob", "rglob", "iterdir")]
+        if any(lit.lower().endswith(self.suffixes) for c in globs for lit in _string_constants(c)):
+            names.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
+
     def _path_names(self, body: Iterable[ast.stmt], inherited: frozenset[str] = frozenset()) -> set[str]:
         """Names bound to a source path: ``_SCRIPT = ROOT / "x.py"`` and ``for p in DIR.glob("*.py")``."""
         names: set[str] = set(inherited)
@@ -171,17 +185,9 @@ class _Detector:
                     if self._is_source_path_expr(node.value, names):
                         names.update(_target_names(node))
                 elif isinstance(node, (ast.With, ast.AsyncWith)):
-                    # `with open("pkg/mod.py") as fh:` -- `fh.read()` then reads source through a name with no path of its own.
-                    for item in node.items:
-                        expr = item.context_expr
-                        if item.optional_vars is not None and isinstance(expr, ast.Call) and _call_name(expr) == "open" and expr.args:
-                            if self._is_source_path_expr(expr.args[0], names):
-                                names.update(n.id for n in _fast_walk(item.optional_vars) if isinstance(n, ast.Name))
+                    self._bind_with(node, names)
                 elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
-                    # `ast.comprehension` covers `"".join(p.read_text() for p in DIR.glob("*.py"))`, which reads the same files.
-                    globs = [c for c in _fast_walk(node.iter) if isinstance(c, ast.Call) and _call_name(c) in ("glob", "rglob", "iterdir")]
-                    if any(lit.lower().endswith(self.suffixes) for c in globs for lit in _string_constants(c)):
-                        names.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
+                    self._bind_loop(node, names)
         return names
 
     # -- what counts as reading source --------------------------------------------------------------
@@ -524,6 +530,37 @@ def _claim_site(node: ast.AST, function: str) -> Optional[ast.expr]:
     return None
 
 
+def _read_mode_kind(det: _Detector, node: ast.AST, paths: set[str]) -> Optional[str]:
+    kind = det.reader_kind(node, paths, set())
+    # Parsing a file's content as Python says the file IS Python, wherever its path came from: a
+    # parameter, or a list a helper built. A read mode that tracked only literal paths missed both.
+    if kind is None and isinstance(node, ast.Call) and _call_name(node) == "parse" and any(_contains_read(a) for a in node.args):
+        kind = "parses a file as Python"
+    return kind
+
+
+def _scan_scope(det: _Detector, scope: _Scope, mode: str, claims: dict[int, SourceTextClaim]) -> None:
+    function, body, paths, tainted = scope.function, scope.body, scope.paths, scope.tainted
+    matches = _match_names(body, det, paths, tainted)
+    positions, searches = _file_checks(det, scope) if mode == "assertion" else (set(), set())
+    for node in _walk_scope(body):
+        if mode == "read":
+            if isinstance(node, (ast.Call, ast.Attribute)) and node.lineno not in claims:
+                kind = _read_mode_kind(det, node, paths)
+                if kind:
+                    claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
+            continue
+        # `node.test` is read through the isinstance itself, not through an `is_check` flag: mypy
+        # narrows the former and not the latter, and the flag hid that the branch also accepts an
+        # `ast.If` whose body fails.
+        test = _claim_site(node, function)
+        if test is None or not isinstance(node, ast.stmt) or node.lineno in claims:
+            continue
+        kind = _source_claim_kind(det, test, scope, matches) or _file_claim_kind(det, test, scope, positions, searches)
+        if kind:
+            claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
+
+
 def find_source_text_claims(
     path: Path,
     *,
@@ -550,29 +587,7 @@ def find_source_text_claims(
     det = _Detector(tree, readers=reader_names, treat_sql_as_source=treat_sql_as_source, follow_helpers=follow_helpers)
     claims: dict[int, SourceTextClaim] = {}
     for scope in det.scopes():
-        function, body, paths, tainted = scope.function, scope.body, scope.paths, scope.tainted
-        matches = _match_names(body, det, paths, tainted)
-        positions, searches = _file_checks(det, scope) if mode == "assertion" else (set(), set())
-        for node in _walk_scope(body):
-            if mode == "read":
-                if isinstance(node, (ast.Call, ast.Attribute)) and node.lineno not in claims:
-                    kind = det.reader_kind(node, paths, set())
-                    # Parsing a file's content as Python says the file IS Python, wherever its path came from: a
-                    # parameter, or a list a helper built. A read mode that tracked only literal paths missed both.
-                    if kind is None and isinstance(node, ast.Call) and _call_name(node) == "parse" and any(_contains_read(a) for a in node.args):
-                        kind = "parses a file as Python"
-                    if kind:
-                        claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
-                continue
-            # `node.test` is read through the isinstance itself, not through an `is_check` flag: mypy
-            # narrows the former and not the latter, and the flag hid that the branch also accepts an
-            # `ast.If` whose body fails.
-            test = _claim_site(node, function)
-            if test is None or not isinstance(node, ast.stmt) or node.lineno in claims:
-                continue
-            kind = _source_claim_kind(det, test, scope, matches) or _file_claim_kind(det, test, scope, positions, searches)
-            if kind:
-                claims[node.lineno] = SourceTextClaim(node.lineno, function, kind)
+        _scan_scope(det, scope, mode, claims)
     return sorted(claims.values(), key=lambda c: c.line)
 
 
@@ -608,6 +623,48 @@ def write_source_text_baseline(baseline_path: Path, keys: "Iterable[str] | Mappi
     _baseline(baseline_path).regenerate(items, grow=grow, request=request)
 
 
+def _baseline_diff(baseline_path: Path, unallowed: dict[str, list[int]], request: Optional[Any]) -> tuple[list[str], list[str]]:
+    """``(new, stale_base)`` against the baseline; a refresh rewrites it and skips, a missing baseline fails."""
+    import pytest
+
+    from ._core import refresh_requested
+
+    baseline = _baseline(baseline_path)
+    if refresh_requested(REFRESH_FLAG, request):
+        try:
+            write_source_text_baseline(baseline_path, unallowed, request=request)
+        except BaselineError as exc:
+            pytest.fail(str(exc), pytrace=False)
+        pytest.skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
+    if not baseline.exists():
+        pytest.fail(f"source-text baseline {baseline_path} does not exist, so nothing is accepted. Create it with: {baseline.refresh_command}")
+    accepted, _notes = baseline.load()
+    new: list[str] = []
+    for k, lines in sorted(unallowed.items()):
+        extra = len(lines) - accepted.get(k, 0)
+        if extra > 0:
+            new.append(f"{k} (line {', '.join(map(str, lines))}; {extra} more than the {accepted.get(k, 0)} accepted)")
+    stale_base = sorted(f"{k} ({n - len(unallowed.get(k, []))} fewer)" for k, n in accepted.items() if n > len(unallowed.get(k, [])))
+    return new, stale_base
+
+
+def _claim_problems(unreadable: list[str], new: list[str], stale_allow: list[str], stale_base: list[str], short: list[str]) -> list[str]:
+    problems: list[str] = []
+    if unreadable:
+        problems.append("file(s) that could not be read or parsed, so their claims are unknown:\n    " + "\n    ".join(unreadable))
+    if new:
+        problems.append(
+            f"{len(new)} test(s) assert on SOURCE TEXT -- they pass against dead code and against a comment. Call the code and "
+            "assert on what it returns or does:\n    " + "\n    ".join(new)
+        )
+    if stale_allow:
+        problems.append("allowlisted file(s) that no longer read source; remove them:\n    " + "\n    ".join(stale_allow))
+    if stale_base:
+        problems.append(f"baseline entr(ies) that no longer match a claim; remove them (or pass {REFRESH_FLAG}):\n    " + "\n    ".join(stale_base))
+    problems.extend(short)
+    return problems
+
+
 def assert_no_new_source_text_claims(
     files: Iterable[Path],
     repo_root: Path,
@@ -628,8 +685,6 @@ def assert_no_new_source_text_claims(
     """
     import pytest
 
-    from ._core import refresh_requested
-
     files = list(files)
     found, scanned, unreadable = _keys(files, repo_root, **detector_kwargs)
     if scanned < min_files:
@@ -644,38 +699,12 @@ def assert_no_new_source_text_claims(
     unallowed = {k: v for k, v in found.items() if k.split("::", 1)[0] not in allow}
     stale_allow = sorted(rel for rel in allow if rel not in by_file)
 
-    problems: list[str] = []
-    if unreadable:
-        problems.append("file(s) that could not be read or parsed, so their claims are unknown:\n    " + "\n    ".join(unreadable))
     new: list[str] = []
     stale_base: list[str] = []
     if baseline_path is not None:
-        baseline = _baseline(baseline_path)
-        if refresh_requested(REFRESH_FLAG, request):
-            try:
-                write_source_text_baseline(baseline_path, unallowed, request=request)
-            except BaselineError as exc:
-                pytest.fail(str(exc), pytrace=False)
-            pytest.skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
-        if not baseline.exists():
-            pytest.fail(f"source-text baseline {baseline_path} does not exist, so nothing is accepted. Create it with: {baseline.refresh_command}")
-        accepted, _notes = baseline.load()
-        for k, lines in sorted(unallowed.items()):
-            extra = len(lines) - accepted.get(k, 0)
-            if extra > 0:
-                new.append(f"{k} (line {', '.join(map(str, lines))}; {extra} more than the {accepted.get(k, 0)} accepted)")
-        stale_base = sorted(f"{k} ({n - len(unallowed.get(k, []))} fewer)" for k, n in accepted.items() if n > len(unallowed.get(k, [])))
+        new, stale_base = _baseline_diff(baseline_path, unallowed, request)
     else:
         new = sorted(f"{k} (line {', '.join(map(str, v))})" for k, v in unallowed.items())
-    if new:
-        problems.append(
-            f"{len(new)} test(s) assert on SOURCE TEXT -- they pass against dead code and against a comment. Call the code and "
-            "assert on what it returns or does:\n    " + "\n    ".join(new)
-        )
-    if stale_allow:
-        problems.append("allowlisted file(s) that no longer read source; remove them:\n    " + "\n    ".join(stale_allow))
-    if stale_base:
-        problems.append(f"baseline entr(ies) that no longer match a claim; remove them (or pass {REFRESH_FLAG}):\n    " + "\n    ".join(stale_base))
-    problems.extend(short)
+    problems = _claim_problems(unreadable, new, stale_allow, stale_base, short)
     if problems:
         pytest.fail("\n".join(problems))

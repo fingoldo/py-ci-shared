@@ -162,6 +162,53 @@ def _globals_assigned_in_functions(tree: ast.AST) -> "set[str]":
     return out
 
 
+def _record_bindings(node: ast.stmt, bound: set[str], imported: set[str]) -> None:
+    """Add the module names one module-scope statement binds to *bound*, and its imports to *imported*."""
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        for alias in node.names:
+            if alias.name != "*":
+                imported.add((alias.asname or alias.name).split(".")[0])
+    elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        bound.add(node.name)
+    else:
+        _record_target_bindings(node, bound)
+    if isinstance(node, _TRY_TYPES):
+        bound.update(h.name for h in getattr(node, "handlers", []) if h.name)
+    # A walrus at module scope binds a module name too.
+    if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        for sub in child_nodes(node):
+            if not isinstance(sub, ast.stmt):
+                bound.update(n.target.id for n in _fast_walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
+
+
+def _record_target_bindings(node: ast.stmt, bound: set[str]) -> None:
+    if isinstance(node, ast.Assign):
+        for target in node.targets:
+            bound.update(_bound_names(target))
+    elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.For, ast.AsyncFor)):
+        bound.update(_bound_names(node.target))
+    elif isinstance(node, (ast.With, ast.AsyncWith)):
+        for item in node.items:
+            if item.optional_vars is not None:
+                bound.update(_bound_names(item.optional_vars))
+
+
+def _is_globals_call(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "globals"
+
+
+def _forwards_dynamically(tree: ast.AST) -> bool:
+    """Whether a ``__getattr__``/``__setattr__``, a ``globals()[...] =`` or a ``globals().update`` decides the module's attributes."""
+    for walked in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign, ast.Call):
+        if isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef)) and walked.name in {"__getattr__", "__setattr__"}:
+            return True
+        if isinstance(walked, ast.Assign) and any(isinstance(t, ast.Subscript) and _is_globals_call(t.value) for t in walked.targets):
+            return True
+        if isinstance(walked, ast.Call) and isinstance(walked.func, ast.Attribute) and walked.func.attr == "update" and _is_globals_call(walked.func.value):
+            return True
+    return False
+
+
 def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
     """``(bound, defined, forwards_dynamically)`` for one module.
 
@@ -172,49 +219,11 @@ def _module_facts(tree: ast.AST) -> "tuple[set[str], set[str], bool]":
     """
     bound: set[str] = set()
     imported: set[str] = set()
-    forwards = False
     body = tree.body if isinstance(tree, ast.Module) else []
     for node in _module_scope(body):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                if alias.name != "*":
-                    imported.add((alias.asname or alias.name).split(".")[0])
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            bound.add(node.name)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                bound.update(_bound_names(target))
-        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
-            bound.update(_bound_names(node.target))
-        elif isinstance(node, (ast.For, ast.AsyncFor)):
-            bound.update(_bound_names(node.target))
-        elif isinstance(node, (ast.With, ast.AsyncWith)):
-            for item in node.items:
-                if item.optional_vars is not None:
-                    bound.update(_bound_names(item.optional_vars))
-        if isinstance(node, _TRY_TYPES):
-            bound.update(h.name for h in getattr(node, "handlers", []) if h.name)
-        # A walrus at module scope binds a module name too.
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            for sub in child_nodes(node):
-                if not isinstance(sub, ast.stmt):
-                    bound.update(n.target.id for n in _fast_walk(sub) if isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name))
+        _record_bindings(node, bound, imported)
     bound |= _globals_assigned_in_functions(tree)
-    for walked in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.Assign, ast.Call):
-        if isinstance(walked, (ast.FunctionDef, ast.AsyncFunctionDef)) and walked.name in {"__getattr__", "__setattr__"}:
-            forwards = True
-        elif isinstance(walked, ast.Assign):
-            for target in walked.targets:
-                if (
-                    isinstance(target, ast.Subscript)
-                    and isinstance(target.value, ast.Call)
-                    and isinstance(target.value.func, ast.Name)
-                    and target.value.func.id == "globals"
-                ):
-                    forwards = True
-        elif isinstance(walked, ast.Call) and isinstance(walked.func, ast.Attribute) and walked.func.attr == "update":
-            if isinstance(walked.func.value, ast.Call) and isinstance(walked.func.value.func, ast.Name) and walked.func.value.func.id == "globals":
-                forwards = True
+    forwards = _forwards_dynamically(tree)
     bound |= imported
     return bound, bound - imported, forwards
 
@@ -237,6 +246,21 @@ def module_index(roots: "list[Path]", *, package_root: Path, unparsed: "Optional
     return index
 
 
+def _plain_import_aliases(node: ast.Import, known: "set[str]", aliases: "dict[str, str]") -> None:
+    for alias in node.names:
+        if alias.asname:
+            if alias.name in known:
+                aliases[alias.asname] = alias.name
+            continue
+        # `import a.b.c` binds `a`, and `a` is the PACKAGE -- not `a.b.c`. Mapping the bare
+        # name to the submodule reads `a.thing = x` against the submodule's namespace, so a
+        # name the package re-exports is reported absent. That is not hypothetical: three
+        # such findings in one repo were all `import pkg` followed by `import pkg.sub`.
+        root = alias.name.split(".")[0]
+        if root in known:
+            aliases[root] = root
+
+
 def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str, str]") -> "dict[str, str]":
     """Local name -> dotted first-party module, for the imports visible in ONE scope.
 
@@ -251,18 +275,7 @@ def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str,
     aliases = dict(inherited)
     for node in body:
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname:
-                    if alias.name in known:
-                        aliases[alias.asname] = alias.name
-                    continue
-                # `import a.b.c` binds `a`, and `a` is the PACKAGE -- not `a.b.c`. Mapping the bare
-                # name to the submodule reads `a.thing = x` against the submodule's namespace, so a
-                # name the package re-exports is reported absent. That is not hypothetical: three
-                # such findings in one repo were all `import pkg` followed by `import pkg.sub`.
-                root = alias.name.split(".")[0]
-                if root in known:
-                    aliases[root] = root
+            _plain_import_aliases(node, known, aliases)
         elif isinstance(node, ast.ImportFrom) and node.module:
             for alias in node.names:
                 candidate = f"{node.module}.{alias.name}"

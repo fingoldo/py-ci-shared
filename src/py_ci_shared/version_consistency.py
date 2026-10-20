@@ -31,6 +31,37 @@ from ._toml_compat import tomllib
 _VERSION_RE = re.compile(r"""^__version__\s*(?::\s*str\s*)?=\s*["']([^"']+)["']""", re.MULTILINE)
 
 
+def _pyproject_version(toml: Path, out: dict[str, str], missing: list[str]) -> None:
+    if not toml.is_file():
+        missing.append("pyproject.toml: file does not exist")
+        return
+    data = tomllib.loads(toml.read_text(encoding="utf-8-sig"))
+    v = data.get("project", {}).get("version")
+    if isinstance(v, str):
+        out["pyproject.toml [project].version"] = v
+    elif "version" in data.get("project", {}).get("dynamic", []):
+        missing.append("pyproject.toml: [project].version is dynamic, so it states nothing to compare")
+    else:
+        missing.append("pyproject.toml: no [project].version")
+
+
+def _file_version(repo_root: Path, rel: str, out: dict[str, str], missing: list[str]) -> None:
+    path = repo_root / rel
+    if not path.is_file():
+        missing.append(f"{rel}: file does not exist")
+        return
+    try:
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as exc:
+        missing.append(f"{rel}: unreadable ({exc})")
+        return
+    m = _VERSION_RE.search(text)
+    if m:
+        out[f"{rel} __version__"] = m.group(1)
+    else:
+        missing.append(f'{rel}: no `__version__ = "..."` line')
+
+
 def version_sources(
     repo_root: Path,
     *,
@@ -47,34 +78,10 @@ def version_sources(
     """
     out: dict[str, str] = {}
     missing: list[str] = []
-    toml = repo_root / "pyproject.toml"
     if pyproject:
-        if not toml.is_file():
-            missing.append("pyproject.toml: file does not exist")
-        else:
-            data = tomllib.loads(toml.read_text(encoding="utf-8-sig"))
-            v = data.get("project", {}).get("version")
-            if isinstance(v, str):
-                out["pyproject.toml [project].version"] = v
-            elif "version" in data.get("project", {}).get("dynamic", []):
-                missing.append("pyproject.toml: [project].version is dynamic, so it states nothing to compare")
-            else:
-                missing.append("pyproject.toml: no [project].version")
+        _pyproject_version(repo_root / "pyproject.toml", out, missing)
     for rel in files:
-        path = repo_root / rel
-        if not path.is_file():
-            missing.append(f"{rel}: file does not exist")
-            continue
-        try:
-            text = path.read_text(encoding="utf-8-sig")
-        except (OSError, UnicodeDecodeError) as exc:
-            missing.append(f"{rel}: unreadable ({exc})")
-            continue
-        m = _VERSION_RE.search(text)
-        if m:
-            out[f"{rel} __version__"] = m.group(1)
-        else:
-            missing.append(f'{rel}: no `__version__ = "..."` line')
+        _file_version(repo_root, rel, out, missing)
     for name in modules:
         v = getattr(importlib.import_module(name), "__version__", None)
         if isinstance(v, str):

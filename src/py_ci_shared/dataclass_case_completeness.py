@@ -81,6 +81,30 @@ def _names(entry: str, path: Path, name: str) -> bool:
     return cls == name and (posix == where or posix.endswith("/" + where.lstrip("/")))
 
 
+def _match_sites(sites: Sequence[tuple[str, Path, int]], entries: Sequence[str]) -> tuple[dict[str, str], set[str], set[str]]:
+    """``(missing, ambiguous, used)``: sites no entry names, bare names two classes share, and the entries that matched."""
+    per_name: dict[str, int] = {}
+    for name, _, _ in sites:
+        per_name[name] = per_name.get(name, 0) + 1
+    missing: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    used: set[str] = set()
+    for name, path, line in sites:
+        hits = [e for e in entries if _names(e, path, name)]
+        qualified = [e for e in hits if "::" in e]
+        if per_name[name] > 1 and not qualified:
+            if hits:
+                ambiguous.add(name)
+            else:
+                missing[f"{path.as_posix()}::{name}"] = f"{path.as_posix()}:{line}"
+            used.update(hits)
+            continue
+        if not hits:
+            missing[name] = f"{path.as_posix()}:{line}"
+        used.update(hits)
+    return missing, ambiguous, used
+
+
 def assert_every_dataclass_has_a_case(
     paths: Sequence[Path],
     covered: Iterable[str],
@@ -104,27 +128,8 @@ def assert_every_dataclass_has_a_case(
         messages.append(str(exc))
     if scan.unparsed:
         messages.append("these files could not be parsed, so their dataclasses were not checked: " + "; ".join(p.render() for p in scan.unparsed))
-    sites = _sites(scan, name_pattern)
-    per_name: dict[str, int] = {}
-    for name, _, _ in sites:
-        per_name[name] = per_name.get(name, 0) + 1
     entries = list(covered) + list(exempt)
-    missing: dict[str, str] = {}
-    ambiguous: set[str] = set()
-    used: set[str] = set()
-    for name, path, line in sites:
-        hits = [e for e in entries if _names(e, path, name)]
-        qualified = [e for e in hits if "::" in e]
-        if per_name[name] > 1 and not qualified:
-            if hits:
-                ambiguous.add(name)
-            else:
-                missing[f"{path.as_posix()}::{name}"] = f"{path.as_posix()}:{line}"
-            used.update(hits)
-            continue
-        if not hits:
-            missing[name] = f"{path.as_posix()}:{line}"
-        used.update(hits)
+    missing, ambiguous, used = _match_sites(_sites(scan, name_pattern), entries)
     blank = [name for name, reason in exempt.items() if not reason.strip()]
     stale = sorted(set(entries) - used)
     if missing:

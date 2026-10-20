@@ -41,6 +41,7 @@ def _seam(monkeypatch, name, value):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
+
 logger = logging.getLogger(__name__)
 
 # ── fakes ───────────────────────────────────────────────────────────────────────────────────────

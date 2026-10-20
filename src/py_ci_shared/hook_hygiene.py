@@ -109,6 +109,124 @@ def _else_branch(lines: list[str], start: int) -> "list[str] | None":
     return branch
 
 
+def _line_problems(path: Path, lines: list[str], i: int, repo_root: "Path | None", check_grep_verdicts: bool) -> list[str]:
+    """Problems on line number *i* (1-based) of the hook *path*."""
+    line = lines[i - 1]
+    stripped = line.strip()
+    problems: list[str] = []
+    guarded = _GUARDED_PATH_RE.search(line)
+    guard_exists = False
+    if repo_root and guarded:
+        # Hooks write `"$PROJECT_ROOT/tool/check-x.sh"`; the variable is the repo root,
+        # so strip it before resolving rather than reporting a healthy guard as missing.
+        candidate = guarded.group(1).strip("\"'")
+        candidate = re.sub(r"^\$\{?\w+\}?/", "", candidate)
+        guard_exists = (repo_root / candidate).exists()
+    if _INLINE_GUARD_RE.match(line) and "check" in line and not guard_exists:
+        problems.append(
+            f"{path.name}:{i}: `{stripped[:90]}` - a `&&` guard with no else branch. When "
+            f"the file is missing the hook passes, so a deleted or renamed guard reads as "
+            f"coverage forever. Fail (or print a WARNING) in the missing case."
+        )
+    if _IF_GUARD_RE.match(line) and "check" in line and not guard_exists:
+        else_branch = _else_branch(lines, i - 1)
+        if else_branch is None or not _LOUD_RE.search("\n".join(else_branch)):
+            problems.append(
+                f"{path.name}:{i}: `if [ -f ... ]` around a guard with no else that fails " f"or warns. A missing guard must be louder than a passing one."
+            )
+    if _GIT_ADD_ALL_RE.search(line) or _GIT_COMMIT_ALL_RE.search(line):
+        problems.append(
+            f"{path.name}:{i}: `{stripped}` stages every modified file, sweeping unrelated "
+            f"working-tree edits into the commit under review. Re-stage only paths that "
+            f"were already staged (`git diff --cached --name-only`)."
+        )
+    if check_grep_verdicts and _GREP_VERDICT_RE.search(line):
+        problems.append(
+            f"{path.name}:{i}: `{stripped[:90]}` derives the verdict from the tool's "
+            f"human-readable output. The exit code is the verdict; a message-format change "
+            f"silently turns this gate off."
+        )
+    return problems
+
+
+def _hook_problems(path: Path, repo_root: "Path | None", check_grep_verdicts: bool, hook_guards: set[str]) -> list[str]:
+    """Problems in one hook file; the check scripts it names are added to *hook_guards*."""
+    try:
+        lines = read_source(path).splitlines()
+    except SourceReadError as exc:  # best-effort: the problem is reported to the caller as a finding
+        return [f"{path.name}: cannot be read, so it was not checked: {exc.message}"]
+    problems: list[str] = []
+    for i, line in enumerate(lines, start=1):
+        if line.strip().startswith("#"):
+            continue
+        problems.extend(_line_problems(path, lines, i, repo_root, check_grep_verdicts))
+        hook_guards.update(_CHECK_SCRIPT_RE.findall(line))
+    return problems
+
+
+def _manual_only_guards(manual_only_file: "Path | None") -> set[str]:
+    """The guards the manual-only file lists as deliberately absent from CI."""
+    manual: set[str] = set()
+    if manual_only_file is not None and manual_only_file.is_file():
+        for line in manual_only_file.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            name = line.split("#", 1)[0].strip()
+            if name:
+                manual.add(name if name.startswith("tool/") else f"tool/{name}")
+    return manual
+
+
+def _runner_coverage(runner_scripts: Sequence[str], ci_text: str, repo_root: "Path | None", problems: list[str]) -> bool:
+    """True when a runner CI invokes discovers guards by glob (so it stands in for them); defects go to *problems*.
+
+    A workflow may run every guard through ONE runner instead of naming each. That is the
+    better shape, and a text comparison cannot see it - so the claim is checked rather than
+    trusted: the named runner must exist AND discover guards by glob, or it is not standing
+    in for anything and the guards really are hook-only.
+    """
+    runner_covers_everything = False
+    for runner in runner_scripts:
+        if runner not in ci_text:
+            continue
+        runner_path = (repo_root / runner) if repo_root else Path(runner)
+        if not runner_path.is_file():
+            problems.append(f"CI runs {runner}, which does not exist - the guards it was supposed to run " f"are running nowhere.")
+            continue
+        if _GUARD_GLOB_RE.search(runner_path.read_text(encoding="utf-8", errors="replace")):
+            runner_covers_everything = True
+        else:
+            problems.append(f"CI runs {runner}, but that script does not discover guards by glob, so it " f"cannot be standing in for the ones CI never names.")
+    return runner_covers_everything
+
+
+def _hook_only_problems(
+    hook_guards: set[str],
+    workflows_dir: Path,
+    manual_only_file: "Path | None",
+    runner_scripts: Sequence[str],
+    repo_root: "Path | None",
+) -> list[str]:
+    """Problems from guards that run on the hook but never in CI."""
+    problems: list[str] = []
+    ci_text = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in sorted(workflows_dir.glob("*.y*ml")))
+    ci_guards = set(_CHECK_SCRIPT_RE.findall(ci_text))
+    manual = _manual_only_guards(manual_only_file)
+    runner_covers_everything = _runner_coverage(runner_scripts, ci_text, repo_root, problems)
+    hook_only = (
+        [] if runner_covers_everything else sorted(g for g in hook_guards - ci_guards if g not in manual and Path(g).name not in {Path(m).name for m in manual})
+    )
+    if hook_only:
+        problems.append(
+            f"{len(hook_only)} guard(s) run on the hook but never in CI, and are not listed in "
+            f"{manual_only_file.name if manual_only_file else 'a manual-only file'}: a gate "
+            f"that lives only on one machine is bypassed by --no-verify and by every "
+            f"contributor who pushes from another:\n    " + "\n    ".join(hook_only)
+        )
+    return problems
+
+
 def find_hook_hygiene_problems(
     hooks_dir: Path,
     *,
@@ -126,95 +244,10 @@ def find_hook_hygiene_problems(
 
     problems: list[str] = []
     hook_guards: set[str] = set()
-
     for path in hooks:
-        try:
-            lines = read_source(path).splitlines()
-        except SourceReadError as exc:
-            problems.append(f"{path.name}: cannot be read, so it was not checked: {exc.message}")
-            continue
-        for i, line in enumerate(lines, start=1):
-            stripped = line.strip()
-            if stripped.startswith("#"):
-                continue
-            guarded = _GUARDED_PATH_RE.search(line)
-            guard_exists = False
-            if repo_root and guarded:
-                # Hooks write `"$PROJECT_ROOT/tool/check-x.sh"`; the variable is the repo root,
-                # so strip it before resolving rather than reporting a healthy guard as missing.
-                candidate = guarded.group(1).strip("\"'")
-                candidate = re.sub(r"^\$\{?\w+\}?/", "", candidate)
-                guard_exists = (repo_root / candidate).exists()
-            if _INLINE_GUARD_RE.match(line) and "check" in line and not guard_exists:
-                problems.append(
-                    f"{path.name}:{i}: `{stripped[:90]}` - a `&&` guard with no else branch. When "
-                    f"the file is missing the hook passes, so a deleted or renamed guard reads as "
-                    f"coverage forever. Fail (or print a WARNING) in the missing case."
-                )
-            if _IF_GUARD_RE.match(line) and "check" in line and not guard_exists:
-                else_branch = _else_branch(lines, i - 1)
-                if else_branch is None or not _LOUD_RE.search("\n".join(else_branch)):
-                    problems.append(
-                        f"{path.name}:{i}: `if [ -f ... ]` around a guard with no else that fails "
-                        f"or warns. A missing guard must be louder than a passing one."
-                    )
-            if _GIT_ADD_ALL_RE.search(line) or _GIT_COMMIT_ALL_RE.search(line):
-                problems.append(
-                    f"{path.name}:{i}: `{stripped}` stages every modified file, sweeping unrelated "
-                    f"working-tree edits into the commit under review. Re-stage only paths that "
-                    f"were already staged (`git diff --cached --name-only`)."
-                )
-            if check_grep_verdicts and _GREP_VERDICT_RE.search(line):
-                problems.append(
-                    f"{path.name}:{i}: `{stripped[:90]}` derives the verdict from the tool's "
-                    f"human-readable output. The exit code is the verdict; a message-format change "
-                    f"silently turns this gate off."
-                )
-            hook_guards.update(_CHECK_SCRIPT_RE.findall(line))
-
+        problems.extend(_hook_problems(path, repo_root, check_grep_verdicts, hook_guards))
     if workflows_dir is not None and workflows_dir.is_dir():
-        ci_text = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in sorted(workflows_dir.glob("*.y*ml")))
-        ci_guards = set(_CHECK_SCRIPT_RE.findall(ci_text))
-        manual: set[str] = set()
-        if manual_only_file is not None and manual_only_file.is_file():
-            for line in manual_only_file.read_text(encoding="utf-8", errors="replace").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                name = line.split("#", 1)[0].strip()
-                if name:
-                    manual.add(name if name.startswith("tool/") else f"tool/{name}")
-        # A workflow may run every guard through ONE runner instead of naming each. That is the
-        # better shape, and a text comparison cannot see it - so the claim is checked rather than
-        # trusted: the named runner must exist AND discover guards by glob, or it is not standing
-        # in for anything and the guards really are hook-only.
-        runner_covers_everything = False
-        for runner in runner_scripts:
-            if runner not in ci_text:
-                continue
-            runner_path = (repo_root / runner) if repo_root else Path(runner)
-            if not runner_path.is_file():
-                problems.append(f"CI runs {runner}, which does not exist - the guards it was supposed to run " f"are running nowhere.")
-                continue
-            if _GUARD_GLOB_RE.search(runner_path.read_text(encoding="utf-8", errors="replace")):
-                runner_covers_everything = True
-            else:
-                problems.append(
-                    f"CI runs {runner}, but that script does not discover guards by glob, so it " f"cannot be standing in for the ones CI never names."
-                )
-
-        hook_only = (
-            []
-            if runner_covers_everything
-            else sorted(g for g in hook_guards - ci_guards if g not in manual and Path(g).name not in {Path(m).name for m in manual})
-        )
-        if hook_only:
-            problems.append(
-                f"{len(hook_only)} guard(s) run on the hook but never in CI, and are not listed in "
-                f"{manual_only_file.name if manual_only_file else 'a manual-only file'}: a gate "
-                f"that lives only on one machine is bypassed by --no-verify and by every "
-                f"contributor who pushes from another:\n    " + "\n    ".join(hook_only)
-            )
+        problems.extend(_hook_only_problems(hook_guards, workflows_dir, manual_only_file, runner_scripts, repo_root))
     return problems
 
 

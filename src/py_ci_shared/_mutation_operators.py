@@ -158,43 +158,63 @@ def _excluded_ranges(source: str, tree: Optional[ast.AST] = None) -> list[tuple[
         return []
     starts = _line_starts(source)
 
-    def span(node: ast.AST | None) -> tuple[int, int] | None:
-        line = getattr(node, "lineno", None)
-        end_line = getattr(node, "end_lineno", None)
-        if node is None or line is None or end_line is None:
-            return None
-        return (
-            _abs_index(source, starts, line, getattr(node, "col_offset", 0)),
-            _abs_index(source, starts, end_line, getattr(node, "end_col_offset", 0)),
-        )
-
     out: list[tuple[int, int]] = []
     for node in _fast_walk(tree):
-        # Any bare string statement, not only the first one in a body.
-        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
-            if (s := span(node)) is not None:
-                out.append(s)
-        elif isinstance(node, ast.Assign):
-            if any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets) and (s := span(node.value)) is not None:
-                out.append(s)
-        elif isinstance(node, ast.AnnAssign):
-            # Only annotations with nothing mutable in them. `Literal["draft", "sent"]` and
-            # `Annotated[int, Field(ge=1, le=5)]` are ENFORCED at runtime by pydantic, and tests
-            # observe the enforcement -- excluding them wholesale hid a bound that a mutation can
-            # really move. A bare `int` or `str | None` contains no constant, so excluding it costs
-            # nothing.
-            if not _has_constant(node.annotation) and (s := span(node.annotation)) is not None:
-                out.append(s)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            args = node.args
-            for arg in [*args.args, *args.posonlyargs, *args.kwonlyargs, args.vararg, args.kwarg]:
-                if arg is None or arg.annotation is None or _has_constant(arg.annotation):
-                    continue
-                if (s := span(arg.annotation)) is not None:
-                    out.append(s)
-            if (s := span(node.returns)) is not None:
-                out.append(s)
+        out.extend(_excluded_spans_of(node, source, starts))
     return out
+
+
+def _optional_span(source: str, starts: list[int], node: ast.AST | None) -> tuple[int, int] | None:
+    line = getattr(node, "lineno", None)
+    end_line = getattr(node, "end_lineno", None)
+    if node is None or line is None or end_line is None:
+        return None
+    return (
+        _abs_index(source, starts, line, getattr(node, "col_offset", 0)),
+        _abs_index(source, starts, end_line, getattr(node, "end_col_offset", 0)),
+    )
+
+
+def _function_annotation_spans(node: ast.FunctionDef | ast.AsyncFunctionDef, source: str, starts: list[int]) -> list[tuple[int, int]]:
+    out: list[tuple[int, int]] = []
+    args = node.args
+    for arg in [*args.args, *args.posonlyargs, *args.kwonlyargs, args.vararg, args.kwarg]:
+        if arg is None or arg.annotation is None or _has_constant(arg.annotation):
+            continue
+        if (s := _optional_span(source, starts, arg.annotation)) is not None:
+            out.append(s)
+    if (s := _optional_span(source, starts, node.returns)) is not None:
+        out.append(s)
+    return out
+
+
+def _excluded_spans_of(node: ast.AST, source: str, starts: list[int]) -> list[tuple[int, int]]:
+    """The unobservable character ranges one AST node contributes (see :func:`_excluded_ranges`)."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return _function_annotation_spans(node, source, starts)
+    target: ast.AST | None = None
+    if _is_string_statement(node):
+        target = node
+    elif isinstance(node, ast.Assign) and _assigns_dunder_all(node):
+        target = node.value
+    # Only annotations with nothing mutable in them. `Literal["draft", "sent"]` and
+    # `Annotated[int, Field(ge=1, le=5)]` are ENFORCED at runtime by pydantic, and tests
+    # observe the enforcement -- excluding them wholesale hid a bound that a mutation can
+    # really move. A bare `int` or `str | None` contains no constant, so excluding it costs
+    # nothing.
+    elif isinstance(node, ast.AnnAssign) and not _has_constant(node.annotation):
+        target = node.annotation
+    s = _optional_span(source, starts, target)
+    return [] if s is None else [s]
+
+
+def _is_string_statement(node: ast.AST) -> bool:
+    """Any bare string statement, not only the first one in a body."""
+    return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+
+
+def _assigns_dunder_all(node: ast.Assign) -> bool:
+    return any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
 
 
 def _container_members(source: str, tree: Optional[ast.AST] = None) -> list[tuple[int, int, str]]:
@@ -232,33 +252,48 @@ def _container_rows(source: str, tree: Optional[ast.AST] = None) -> tuple[list[t
         name = next((t.id for t in targets if isinstance(t, ast.Name)), "<container>")
         if name in totals:
             name = f"{name}@{node.lineno}"
-        rows: list[tuple[ast.expr, ast.expr]] = []
-        if isinstance(node.value, ast.Dict):
-            rows = [(k if k is not None else v, v) for k, v in zip(node.value.keys, node.value.values)]
-        else:
-            rows = [(e, e) for e in node.value.elts]
+        rows = _table_rows(node.value)
         if len(rows) <= _CONTAINER_SAMPLE:
             continue
-        # A row that CONTAINS A CALL is code, not data. The sampler exists so a lookup table of
-        # country codes does not bury the survivor list; applied to a table of `re.compile(...)`
-        # guards it would suppress the substance of the module instead of its noise, and the
-        # content-hash seed means the same rows would stay suppressed until the file changed. The
-        # line is the presence of an expression that DOES something, which is exactly the
-        # difference between a data table and a table of behaviour.
-        if any(isinstance(sub, ast.Call) for first, last in rows for part in {id(first): first, id(last): last}.values() for sub in _fast_walk(part)):
+        if _rows_contain_call(rows):
             continue
         keep = {(seed + i) % len(rows) for i in range(_CONTAINER_SAMPLE)}
         totals[name] = (len(keep), len(rows))
-        for index, (first, last) in enumerate(rows):
-            if index in keep:
-                continue
-            head = _span_of(source, starts, first)
-            tail = _span_of(source, starts, last)
-            if head is None or tail is None:  # pragma: no cover - ast always sets these
-                continue
-            out.append((head[0], tail[1], name))
+        out.extend(_suppressed_row_spans(source, starts, rows, keep, name))
     out.sort()
     return out, totals
+
+
+def _table_rows(value: ast.expr) -> list[tuple[ast.expr, ast.expr]]:
+    """The ``(first, last)`` expression of every row of a dict / set / list / tuple display."""
+    if isinstance(value, ast.Dict):
+        return [(k if k is not None else v, v) for k, v in zip(value.keys, value.values)]
+    if isinstance(value, (ast.Set, ast.List, ast.Tuple)):
+        return [(e, e) for e in value.elts]
+    return []
+
+
+def _rows_contain_call(rows: list[tuple[ast.expr, ast.expr]]) -> bool:
+    # A row that CONTAINS A CALL is code, not data. The sampler exists so a lookup table of
+    # country codes does not bury the survivor list; applied to a table of `re.compile(...)`
+    # guards it would suppress the substance of the module instead of its noise, and the
+    # content-hash seed means the same rows would stay suppressed until the file changed. The
+    # line is the presence of an expression that DOES something, which is exactly the
+    # difference between a data table and a table of behaviour.
+    return any(isinstance(sub, ast.Call) for first, last in rows for part in {id(first): first, id(last): last}.values() for sub in _fast_walk(part))
+
+
+def _suppressed_row_spans(source: str, starts: list[int], rows: list[tuple[ast.expr, ast.expr]], keep: set[int], name: str) -> list[tuple[int, int, str]]:
+    out: list[tuple[int, int, str]] = []
+    for index, (first, last) in enumerate(rows):
+        if index in keep:
+            continue
+        head = _span_of(source, starts, first)
+        tail = _span_of(source, starts, last)
+        if head is None or tail is None:  # pragma: no cover - ast always sets these
+            continue
+        out.append((head[0], tail[1], name))
+    return out
 
 
 def _span_of(source: str, starts: list[int], node: ast.AST) -> tuple[int, int] | None:
@@ -391,7 +426,7 @@ def _substitution_candidates(source: str, tree: Optional[ast.AST] = None) -> lis
     sites = _string_literal_sites(tree)
     # The vocabulary is the file's own. Short values only: a long string is prose, and swapping two
     # sentences tests nothing that emptying one does not already test.
-    vocabulary = sorted({v for n, _r in sites if isinstance(v := n.value, str) and 1 <= len(v) <= 12 and v.strip()})
+    vocabulary = _short_vocabulary(sites)
     out: list[Candidate] = []
     for node, regexish in sites:
         span = _span_of(source, starts, node)
@@ -404,26 +439,7 @@ def _substitution_candidates(source: str, tree: Optional[ast.AST] = None) -> lis
         if not value:
             continue
         if regexish:
-            for needle, replacement, description in _REGEX_WIDENINGS:
-                if needle not in value:
-                    continue
-                widened = value.replace(needle, replacement, 1)
-                if widened == value:
-                    continue
-                try:
-                    re.compile(widened)
-                except re.error:
-                    continue  # a perturbation that does not compile is not a mutant
-                out.append(
-                    (
-                        span[0],
-                        span[1],
-                        node.lineno,
-                        raw.replace(needle, replacement, 1),
-                        f"regex widened: {description}",
-                        "",
-                    )
-                )
+            out.extend(_regex_widened_candidates(node, span, raw, value))
             continue
         if not (1 <= len(value) <= 12):
             continue
@@ -437,6 +453,35 @@ def _substitution_candidates(source: str, tree: Optional[ast.AST] = None) -> lis
                 node.lineno,
                 raw.replace(value, neighbour, 1),
                 f"constant: {value!r} became {neighbour!r}",
+                "",
+            )
+        )
+    return out
+
+
+def _short_vocabulary(sites: list[tuple[ast.Constant, bool]]) -> list[str]:
+    return sorted({v for n, _r in sites if isinstance(v := n.value, str) and 1 <= len(v) <= 12 and v.strip()})
+
+
+def _regex_widened_candidates(node: ast.Constant, span: tuple[int, int], raw: str, value: str) -> list[Candidate]:
+    out: list[Candidate] = []
+    for needle, replacement, description in _REGEX_WIDENINGS:
+        if needle not in value:
+            continue
+        widened = value.replace(needle, replacement, 1)
+        if widened == value:
+            continue
+        try:
+            re.compile(widened)
+        except re.error:
+            continue  # a perturbation that does not compile is not a mutant
+        out.append(
+            (
+                span[0],
+                span[1],
+                node.lineno,
+                raw.replace(needle, replacement, 1),
+                f"regex widened: {description}",
                 "",
             )
         )
@@ -499,6 +544,120 @@ def _string_emptied(token: str) -> Optional[str]:
     return 'b""' if isinstance(value, bytes) else '""'
 
 
+_FSTRING_MIDDLE = getattr(tokenize, "FSTRING_MIDDLE", -1)
+
+#: ``(end, replacement, description)`` of one token edit; the start is the token's own start.
+_TokenEdit = tuple[int, str, str]
+
+
+def _guard_edit(tokens: list[tokenize.TokenInfo], index: int, abs_end: int) -> Optional[_TokenEdit]:
+    tok = tokens[index]
+    if not (tok.type == tokenize.NAME and tok.string == "if" and index + 1 < len(tokens)):
+        return None
+    following = tokens[index + 1]
+    # `if flag:` -> `if not flag:`. A guard with no comparison and no `not` in it was the
+    # one shape with nothing to swap, so an inverted guard -- the most ordinary logic bug
+    # there is -- could not be expressed at all.
+    if following.type == tokenize.NAME and following.string not in ("not", "None", "True", "False"):
+        return (abs_end, "if not", "logic: guard inverted")
+    return None
+
+
+def _name_swap_edit(tokens: list[tokenize.TokenInfo], index: int, starts: list[int], abs_end: int) -> Optional[_TokenEdit]:
+    tok = tokens[index]
+    nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+    if tok.string == "is" and nxt is not None and nxt.string == "not":
+        return (starts[nxt.end[0] - 1] + nxt.end[1], "is", "comparison: is not becomes is")
+    if tok.string == "in" and index and tokens[index - 1].string == "not":
+        return None  # the `not in` pair is emitted by the `not` branch
+    new, why = _NAME_SWAP[tok.string]
+    return (abs_end, new, f"logic: {why}")
+
+
+def _not_edit(tokens: list[tokenize.TokenInfo], index: int, starts: list[int], abs_end: int) -> _TokenEdit:
+    row = tokens[index].start[0]
+    nxt = tokens[index + 1] if index + 1 < len(tokens) else None
+    if nxt is not None and nxt.string == "in":
+        return (starts[nxt.end[0] - 1] + nxt.end[1], "in", "comparison: not in becomes in")
+    # The `not` and the whitespace up to the next token on the same line, and nothing
+    # more. A fixed `+ 1` assumed a space and ate the `(` of `not(x)`, leaving `x)`.
+    end = abs_end
+    if nxt is not None and nxt.start[0] == row:
+        end = starts[row - 1] + nxt.start[1]
+    return (end, "", "dropped a `not`")
+
+
+def _number_edit(tok: tokenize.TokenInfo, abs_end: int) -> Optional[_TokenEdit]:
+    text = tok.string.replace("_", "")
+    try:
+        value: int | float = int(text, 0)
+    except ValueError:
+        try:
+            value = float(text)
+        except ValueError:  # best-effort: text that is neither int nor float is simply not a number edit
+            return None
+    # Floats are mutated too. A threshold is exactly the kind of constant a test should pin,
+    # and one of the four cases that motivated this module was a threshold test.
+    new_value = value + 1 if isinstance(value, int) else round(value + 0.1, 10)
+    return (abs_end, repr(new_value), f"constant: {value} becomes {new_value}")
+
+
+def _string_token_edit(tok: tokenize.TokenInfo, coupled: set[int], abs_end: int) -> Optional[_TokenEdit]:
+    if len(tok.string) <= 2 or tok.start[0] in coupled:
+        return None  # a coupled line's numeric partner states the same fact; see _repr_coupled_lines
+    # f-strings are skipped: emptying one literal part turns `f"{x} and {'q'}"` into
+    # concatenated literals where the second interpolation stops being one. That mutant is
+    # labelled "emptied a string" and is not one. (On 3.12+ f-strings are FSTRING_* tokens
+    # and never reach here; the prefix check covers older tokenisations.)
+    if tok.string.lstrip("rRbBuU")[:1] in ("f", "F"):
+        return None
+    emptied = _string_emptied(tok.string)
+    if emptied is None:
+        return None
+    return (abs_end, emptied, "constant: emptied a string")
+
+
+def _fstring_middle_edit(tok: tokenize.TokenInfo, coupled: set[int], abs_end: int) -> Optional[_TokenEdit]:
+    # The literal text BETWEEN interpolations, which on 3.12+ is where most of this
+    # project's prose lives: an entire prompt template rendered as one f-string produced
+    # mutants only for its `{...}` slots, so the sentences themselves could not be
+    # challenged at all. Deleting one segment is not the mutation `_string_token_edit` rejects
+    # -- that one empties a whole f-string token and breaks the interpolations with it.
+    # A segment is exactly a run of literal characters, and removing it leaves every
+    # `{...}` in place, which is what makes it the same operator as "emptied a string".
+    if not tok.string or tok.start[0] in coupled:
+        return None
+    return (abs_end, "", "constant: emptied an f-string segment")
+
+
+def _chain_edit(tokens: list[tokenize.TokenInfo], index: int, starts: list[int], coupled: set[int], abs_end: int) -> Optional[_TokenEdit]:
+    tok = tokens[index]
+    if tok.type == tokenize.OP:
+        if tok.string not in _OP_SWAP:
+            return None
+        new, why = _OP_SWAP[tok.string]
+        return (abs_end, new, f"operator: {why}")
+    if tok.type == tokenize.NAME:
+        if tok.string in _NAME_SWAP:
+            return _name_swap_edit(tokens, index, starts, abs_end)
+        if tok.string == "not":
+            return _not_edit(tokens, index, starts, abs_end)
+        return None
+    if tok.type == tokenize.NUMBER:
+        return _number_edit(tok, abs_end)
+    if tok.type == tokenize.STRING:
+        return _string_token_edit(tok, coupled, abs_end)
+    if tok.type == _FSTRING_MIDDLE:
+        return _fstring_middle_edit(tok, coupled, abs_end)
+    return None
+
+
+def _token_edits(tokens: list[tokenize.TokenInfo], index: int, starts: list[int], coupled: set[int], abs_end: int) -> list[_TokenEdit]:
+    """The edits the token at *index* yields, in emission order: the guard inversion, then its own operator."""
+    found = (_guard_edit(tokens, index, abs_end), _chain_edit(tokens, index, starts, coupled, abs_end))
+    return [e for e in found if e is not None]
+
+
 def _token_candidates(source: str, skip_coupled_constants: bool = False, tree: Optional[ast.AST] = None) -> list[Candidate]:
     """``(abs_start, abs_end, line, replacement, description, category)`` per mutable token.
 
@@ -526,82 +685,8 @@ def _token_candidates(source: str, skip_coupled_constants: bool = False, tree: O
         abs_end = starts[tok.end[0] - 1] + tok.end[1] if tok.end[0] - 1 < len(starts) else abs_start
         if excluded.contains(abs_start, abs_end):
             continue
-
-        def emit(end: int, replacement: str, description: str, _start: int = abs_start, _row: int = row) -> None:
-            out.append((_start, end, _row, replacement, description, ""))
-
-        if tok.type == tokenize.NAME and tok.string == "if" and index + 1 < len(tokens):
-            following = tokens[index + 1]
-            # `if flag:` -> `if not flag:`. A guard with no comparison and no `not` in it was the
-            # one shape with nothing to swap, so an inverted guard -- the most ordinary logic bug
-            # there is -- could not be expressed at all.
-            if following.type == tokenize.NAME and following.string not in ("not", "None", "True", "False"):
-                emit(abs_end, "if not", "logic: guard inverted")
-
-        if tok.type == tokenize.OP and tok.string in _OP_SWAP:
-            new, why = _OP_SWAP[tok.string]
-            emit(abs_end, new, f"operator: {why}")
-
-        elif tok.type == tokenize.NAME and tok.string in _NAME_SWAP:
-            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
-            if tok.string == "is" and nxt is not None and nxt.string == "not":
-                emit(starts[nxt.end[0] - 1] + nxt.end[1], "is", "comparison: is not becomes is")
-                continue
-            if tok.string == "in" and index and tokens[index - 1].string == "not":
-                continue  # the `not in` pair is emitted by the `not` branch below
-            new, why = _NAME_SWAP[tok.string]
-            emit(abs_end, new, f"logic: {why}")
-
-        elif tok.type == tokenize.NAME and tok.string == "not":
-            nxt = tokens[index + 1] if index + 1 < len(tokens) else None
-            if nxt is not None and nxt.string == "in":
-                emit(starts[nxt.end[0] - 1] + nxt.end[1], "in", "comparison: not in becomes in")
-            else:
-                # The `not` and the whitespace up to the next token on the same line, and nothing
-                # more. A fixed `+ 1` assumed a space and ate the `(` of `not(x)`, leaving `x)`.
-                end = abs_end
-                if nxt is not None and nxt.start[0] == row:
-                    end = starts[row - 1] + nxt.start[1]
-                emit(end, "", "dropped a `not`")
-
-        elif tok.type == tokenize.NUMBER:
-            text = tok.string.replace("_", "")
-            try:
-                value: int | float = int(text, 0)
-            except ValueError:
-                try:
-                    value = float(text)
-                except ValueError:
-                    continue
-            # Floats are mutated too. A threshold is exactly the kind of constant a test should pin,
-            # and one of the four cases that motivated this module was a threshold test.
-            new_value = value + 1 if isinstance(value, int) else round(value + 0.1, 10)
-            emit(abs_end, repr(new_value), f"constant: {value} becomes {new_value}")
-
-        elif tok.type == tokenize.STRING and len(tok.string) > 2:
-            if row in coupled:
-                continue  # its numeric partner on this line states the same fact; see _repr_coupled_lines
-            # f-strings are skipped: emptying one literal part turns `f"{x} and {'q'}"` into
-            # concatenated literals where the second interpolation stops being one. That mutant is
-            # labelled "emptied a string" and is not one. (On 3.12+ f-strings are FSTRING_* tokens
-            # and never reach here; the prefix check covers older tokenisations.)
-            if tok.string.lstrip("rRbBuU")[:1] in ("f", "F"):
-                continue
-            emptied = _string_emptied(tok.string)
-            if emptied is not None:
-                emit(abs_end, emptied, "constant: emptied a string")
-
-        elif tok.type == getattr(tokenize, "FSTRING_MIDDLE", -1) and tok.string:
-            # The literal text BETWEEN interpolations, which on 3.12+ is where most of this
-            # project's prose lives: an entire prompt template rendered as one f-string produced
-            # mutants only for its `{...}` slots, so the sentences themselves could not be
-            # challenged at all. Deleting one segment is not the mutation the branch above rejects
-            # -- that one empties a whole f-string token and breaks the interpolations with it.
-            # A segment is exactly a run of literal characters, and removing it leaves every
-            # `{...}` in place, which is what makes it the same operator as "emptied a string".
-            if row in coupled:
-                continue
-            emit(abs_end, "", "constant: emptied an f-string segment")
+        for end, replacement, description in _token_edits(tokens, index, starts, coupled, abs_end):
+            out.append((abs_start, end, row, replacement, description, ""))
 
     return out
 
@@ -701,6 +786,45 @@ def _scope_of(lines: Optional[list[range]]) -> Optional[list[list[int]]]:
     return None if lines is None else [[r.start, r.stop] for r in lines]
 
 
+def _overlaps_ranges(ranges: list[range], line: int, end_line: int) -> bool:
+    return any(line <= r.stop - 1 and end_line >= r.start for r in ranges)
+
+
+def _compiles_if_risky(mutated: str, description: str) -> bool:
+    """``False`` when the mutation kind can break syntax and the mutated text no longer parses."""
+    if description.startswith(_SYNTAX_RISKY_PREFIXES):
+        try:
+            ast.parse(mutated)
+        except SyntaxError:  # best-effort: an unparsable mutant is rejected by the caller, which is the intended outcome
+            return False
+    return True
+
+
+def _parse_target(path: Union[Path, str], source: str) -> ast.AST:
+    try:
+        return ast.parse(source)
+    except SyntaxError as exc:
+        raise MutationHarnessError(f"{path} does not parse ({exc.msg}, line {exc.lineno}), so no mutant of it would mean anything") from exc
+
+
+def _build_mutant(path: Union[Path, str], source: str, starts: list[int], candidate: Candidate, mutated: str) -> Mutant:
+    abs_start, abs_end, line, replacement, description, category = candidate
+    return Mutant(
+        # Both branches must produce a Path: the first yielded a str, so `.key` raised on
+        # any mutant used before `find_surviving_mutants` overwrote the field -- which is
+        # every direct caller of `generate_mutants`.
+        path=Path(Path(path).name),
+        line=line,
+        column=abs_start - starts[line - 1],
+        description=description,
+        original_span=source[abs_start:abs_end],
+        mutated_span=replacement,
+        category=category,
+        context=source[starts[line - 1] : (starts[line] if line < len(starts) else len(source))],
+        mutated_file_text=mutated,
+    )
+
+
 def generate_mutants(
     path: Union[Path, str],
     lines: "Iterable[range] | range | None" = None,
@@ -724,10 +848,7 @@ def generate_mutants(
     """
     ranges = _normalise_lines(lines)
     source = read_target(path).text
-    try:
-        tree = ast.parse(source)
-    except SyntaxError as exc:
-        raise MutationHarnessError(f"{path} does not parse ({exc.msg}, line {exc.lineno}), so no mutant of it would mean anything") from exc
+    tree = _parse_target(path, source)
     starts = _line_starts(source)
     candidates = (
         _token_candidates(source, skip_coupled_constants, tree)
@@ -753,10 +874,8 @@ def generate_mutants(
     sampled: dict[str, tuple[int, int]] = {}
     total = 0
     for abs_start, abs_end, line, replacement, description, category in candidates:
-        if ranges is not None:
-            end_line = line_of(max(abs_start, abs_end - 1))
-            if not any(line <= r.stop - 1 and end_line >= r.start for r in ranges):
-                continue
+        if ranges is not None and not _overlaps_ranges(ranges, line, line_of(max(abs_start, abs_end - 1))):
+            continue
         # Every operator's candidates, not only the token ones: a transposition or a substitution
         # inside a sampled-out row is as much table noise as a swapped operator there.
         table = sampled_out(abs_start)
@@ -772,28 +891,10 @@ def generate_mutants(
         # is worse than none: it trains the reader past the one line that matters.
         if mutated == source:
             continue
-        if description.startswith(_SYNTAX_RISKY_PREFIXES):
-            try:
-                ast.parse(mutated)
-            except SyntaxError:
-                continue  # a mutant that does not compile tests nothing
+        if not _compiles_if_risky(mutated, description):
+            continue  # a mutant that does not compile tests nothing
         total += 1
         if limit is not None and len(mutants) >= limit:
             continue
-        mutants.append(
-            Mutant(
-                # Both branches must produce a Path: the first yielded a str, so `.key` raised on
-                # any mutant used before `find_surviving_mutants` overwrote the field -- which is
-                # every direct caller of `generate_mutants`.
-                path=Path(Path(path).name),
-                line=line,
-                column=abs_start - starts[line - 1],
-                description=description,
-                original_span=source[abs_start:abs_end],
-                mutated_span=replacement,
-                category=category,
-                context=source[starts[line - 1] : (starts[line] if line < len(starts) else len(source))],
-                mutated_file_text=mutated,
-            )
-        )
+        mutants.append(_build_mutant(path, source, starts, (abs_start, abs_end, line, replacement, description, category), mutated))
     return mutants, total, sampled

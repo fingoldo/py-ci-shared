@@ -273,6 +273,40 @@ def find_undocumented_modules(
     return undocumented
 
 
+def _recent_lines(lines: list[str], keep: int | None) -> list[str]:
+    """*lines* cut before the ``##`` heading that opens section ``keep + 1`` (all of them when *keep* is None)."""
+    if keep is None:
+        return lines
+    seen = 0
+    for index, heading in enumerate(lines):
+        if heading.startswith("## "):
+            seen += 1
+            if seen > keep:
+                return lines[:index]
+    return lines
+
+
+def _is_ignored_token(target: str, ignored: set[str]) -> bool:
+    # An ignore entry ending in `/` reads as a directory and covers what is under it.
+    # It was matched exactly, so `lib/shared/` in the list did not cover
+    # `lib/shared/access/` and every path inside an ignored directory still reported.
+    return target in ignored or any(target.startswith(prefix) for prefix in ignored if prefix.endswith("/")) or "://" in target or target.startswith(("-", "/"))
+
+
+def _looks_like_path(target: str) -> bool:
+    return target.endswith("/") or "*" in target or bool(re.search(r"\.\w+$", target))
+
+
+def _doc_label(doc_path: Path, repo_root: Path) -> str:
+    # Repo-relative when possible: a project with both `README.md` and
+    # `lib/src/README.md` gets two findings labelled `README.md:5` otherwise, and the
+    # reader cannot tell which file to open.
+    try:
+        return doc_path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except (ValueError, OSError):  # best-effort: falls back to the bare file name, only used as a label
+        return doc_path.name
+
+
 def find_phantom_doc_paths(
     doc_paths: Sequence[Path],
     repo_root: Path,
@@ -316,29 +350,10 @@ def find_phantom_doc_paths(
         text = _read_doc(doc_path, problems)
         if text is None:
             continue
-        lines = text.splitlines()
-        keep = (recent_sections or {}).get(doc_path.name)
-        if keep is not None:
-            seen = 0
-            for index, heading in enumerate(lines):
-                if heading.startswith("## "):
-                    seen += 1
-                    if seen > keep:
-                        lines = lines[:index]
-                        break
+        lines = _recent_lines(text.splitlines(), (recent_sections or {}).get(doc_path.name))
         for line_number, line in enumerate(lines, start=1):
             for target in _BACKTICK_PATH_RE.findall(line):
-                # An ignore entry ending in `/` reads as a directory and covers what is under it.
-                # It was matched exactly, so `lib/shared/` in the list did not cover
-                # `lib/shared/access/` and every path inside an ignored directory still reported.
-                if (
-                    target in ignored
-                    or any(target.startswith(prefix) for prefix in ignored if prefix.endswith("/"))
-                    or "://" in target
-                    or target.startswith(("-", "/"))
-                ):
-                    continue
-                if not (target.endswith("/") or "*" in target or re.search(r"\.\w+$", target)):
+                if _is_ignored_token(target, ignored) or not _looks_like_path(target):
                     continue
                 # Also relative to the doc's OWN directory. A `SCRIPTS.md` living in `e2e/` writes
                 # `tests/*.spec.ts` because that is what a reader standing in `e2e/` types, and the
@@ -346,14 +361,7 @@ def find_phantom_doc_paths(
                 candidates = [*roots, doc_path.parent]
                 if any((root / target).exists() or any(root.glob(target)) for root in candidates):
                     continue
-                # Repo-relative when possible: a project with both `README.md` and
-                # `lib/src/README.md` gets two findings labelled `README.md:5` otherwise, and the
-                # reader cannot tell which file to open.
-                try:
-                    label = doc_path.resolve().relative_to(repo_root.resolve()).as_posix()
-                except (ValueError, OSError):
-                    label = doc_path.name
-                problems.append(f"{label}:{line_number}: `{target}` does not exist in the repo")
+                problems.append(f"{_doc_label(doc_path, repo_root)}:{line_number}: `{target}` does not exist in the repo")
     return problems
 
 

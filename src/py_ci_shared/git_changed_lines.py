@@ -77,6 +77,74 @@ def _unquote(raw: bytes) -> bytes:
     return bytes(out)
 
 
+def _target_path(raw: bytes) -> Path | None:
+    """The new-file path named by a ``+++ `` header line, or None for ``/dev/null`` (a deletion)."""
+    # git appends a TAB after the path when it quotes one. A filename that genuinely ends
+    # in a tab is quoted too, and its tab is escaped INSIDE the quotes as `\t`, so a raw
+    # trailing tab is always the separator and never part of the name.
+    target = _unquote(raw[4:].rstrip(b"\r").rstrip(b"\t"))
+    if target == b"/dev/null":
+        return None
+    text = target.decode("utf-8", "surrogateescape")
+    return Path(text[2:] if text.startswith("b/") else text)
+
+
+def _hunk_range(match: "re.Match[bytes]") -> range | None:
+    start = int(match.group(1))
+    count = 1 if match.group(2) is None else int(match.group(2))
+    # count == 0 is a pure deletion: no new lines exist to mutate
+    return range(start, start + count) if count else None
+
+
+def _parse_diff(stdout: bytes) -> dict[Path, list[range]]:
+    out: dict[Path, list[range]] = {}
+    current: Path | None = None
+    # A `+++ ` line is a header only after a `--- ` line, which is itself only a header after a
+    # `diff --git` line. Without this, an added source line beginning `++ ` is read as a header and
+    # every hunk after it is filed under a path that does not exist.
+    saw_diff = False
+    saw_minus = False
+    for raw in stdout.split(b"\n"):
+        if raw.startswith(b"diff --git "):
+            saw_diff, saw_minus = True, False
+            continue
+        if saw_diff and raw.startswith(b"--- "):
+            saw_minus = True
+            continue
+        if saw_minus and raw.startswith(b"+++ "):
+            saw_diff = saw_minus = False
+            current = _target_path(raw)
+            if current is not None:
+                out.setdefault(current, [])
+        elif current is not None and (match := _HUNK_RE.match(raw)):
+            hunk = _hunk_range(match)
+            if hunk is not None:
+                out[current].append(hunk)
+    return out
+
+
+def _add_untracked(root: Path, out: dict[Path, list[range]]) -> None:
+    """Report every untracked file whole, into *out*: every line of a new file is a changed line."""
+    listed = run_git(root, "ls-files", "--others", "--exclude-standard", "-z")
+    for entry in listed.stdout.split(b"\0"):
+        if not entry:
+            continue
+        path = Path(entry.decode("utf-8", "surrogateescape"))
+        try:
+            data = (root / path).read_bytes()
+        except OSError as exc:
+            # Skipping in silence made an unreadable new file look like an unchanged one, and a
+            # sweep scoped by this result then covers everything except the file nobody could
+            # read. Not fatal -- a transient lock should not abort an unrelated run -- but never
+            # silent either.
+            warnings.warn(f"changed_lines: cannot read untracked {path}: {exc}", stacklevel=3)
+            continue
+        # "a\nb\n" is two lines and "a\nb" is two lines too; an empty file has none.
+        line_count = data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
+        if line_count:
+            out.setdefault(path, []).append(range(1, line_count + 1))
+
+
 def changed_lines(
     repo_root: Path | str,
     *,
@@ -113,58 +181,9 @@ def changed_lines(
     if completed.returncode != 0:
         raise RuntimeError(f"git diff failed in {root} (exit {completed.returncode}): " f"{completed.stderr.decode('utf-8', 'replace')[:400]}")
 
-    out: dict[Path, list[range]] = {}
-    current: Path | None = None
-    # A `+++ ` line is a header only after a `--- ` line, which is itself only a header after a
-    # `diff --git` line. Without this, an added source line beginning `++ ` is read as a header and
-    # every hunk after it is filed under a path that does not exist.
-    saw_diff = False
-    saw_minus = False
-    for raw in completed.stdout.split(b"\n"):
-        if raw.startswith(b"diff --git "):
-            saw_diff, saw_minus = True, False
-            continue
-        if saw_diff and raw.startswith(b"--- "):
-            saw_minus = True
-            continue
-        if saw_minus and raw.startswith(b"+++ "):
-            saw_diff = saw_minus = False
-            # git appends a TAB after the path when it quotes one. A filename that genuinely ends
-            # in a tab is quoted too, and its tab is escaped INSIDE the quotes as `\t`, so a raw
-            # trailing tab is always the separator and never part of the name.
-            target = _unquote(raw[4:].rstrip(b"\r").rstrip(b"\t"))
-            if target == b"/dev/null":
-                current = None
-            else:
-                text = target.decode("utf-8", "surrogateescape")
-                current = Path(text[2:] if text.startswith("b/") else text)
-                out.setdefault(current, [])
-        elif current is not None and (match := _HUNK_RE.match(raw)):
-            start = int(match.group(1))
-            count = 1 if match.group(2) is None else int(match.group(2))
-            if count:  # count == 0 is a pure deletion: no new lines exist to mutate
-                out[current].append(range(start, start + count))
-
+    out = _parse_diff(completed.stdout)
     if include_untracked:
-        listed = run_git(root, "ls-files", "--others", "--exclude-standard", "-z")
-        for entry in listed.stdout.split(b"\0"):
-            if not entry:
-                continue
-            path = Path(entry.decode("utf-8", "surrogateescape"))
-            absolute = root / path
-            try:
-                data = absolute.read_bytes()
-            except OSError as exc:
-                # Skipping in silence made an unreadable new file look like an unchanged one, and a
-                # sweep scoped by this result then covers everything except the file nobody could
-                # read. Not fatal -- a transient lock should not abort an unrelated run -- but never
-                # silent either.
-                warnings.warn(f"changed_lines: cannot read untracked {path}: {exc}", stacklevel=2)
-                continue
-            # "a\nb\n" is two lines and "a\nb" is two lines too; an empty file has none.
-            line_count = data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
-            if line_count:
-                out.setdefault(path, []).append(range(1, line_count + 1))
+        _add_untracked(root, out)
 
     return {path: ranges for path, ranges in out.items() if ranges}
 

@@ -171,6 +171,32 @@ def _is_schema_node(node: Mapping[Any, Any]) -> bool:
     return any(m in node for m in _SCHEMA_MARKERS) or kind in _JSON_TYPES or (isinstance(kind, list) and bool(kind) and set(kind) <= _JSON_TYPES)
 
 
+def _schema_node_keys(schema: Mapping[Any, Any]) -> set[str]:
+    """Field names of a JSON-schema node: its ``properties`` names plus those found in nested schema positions."""
+    found: set[str] = set()
+    props = schema.get("properties")
+    if isinstance(props, Mapping):
+        found.update(str(k) for k in props)
+        for sub in props.values():
+            found |= keys_in_schema(sub)
+    for k, v in schema.items():
+        if str(k) in _NAME_MAPS and isinstance(v, Mapping):
+            for sub in v.values():
+                found |= keys_in_schema(sub)
+        elif k != "properties" and str(k) in _SCHEMA_VOCABULARY:
+            found |= keys_in_schema(v)
+    return found
+
+
+def _payload_keys(payload: Mapping[Any, Any]) -> set[str]:
+    """Every key of an example payload (a dict that is not a schema node), recursively."""
+    found: set[str] = set()
+    for k, v in payload.items():
+        found.add(str(k))
+        found |= keys_in_schema(v)
+    return found
+
+
 def keys_in_schema(schema: Any) -> set[str]:
     """Field names taken directly from a dict schema, recursively.
 
@@ -180,22 +206,7 @@ def keys_in_schema(schema: Any) -> set[str]:
     """
     found: set[str] = set()
     if isinstance(schema, Mapping):
-        if _is_schema_node(schema):
-            props = schema.get("properties")
-            if isinstance(props, Mapping):
-                found.update(str(k) for k in props)
-                for sub in props.values():
-                    found |= keys_in_schema(sub)
-            for k, v in schema.items():
-                if str(k) in _NAME_MAPS and isinstance(v, Mapping):
-                    for sub in v.values():
-                        found |= keys_in_schema(sub)
-                elif k != "properties" and str(k) in _SCHEMA_VOCABULARY:
-                    found |= keys_in_schema(v)
-        else:
-            for k, v in schema.items():
-                found.add(str(k))
-                found |= keys_in_schema(v)
+        found |= _schema_node_keys(schema) if _is_schema_node(schema) else _payload_keys(schema)
     elif isinstance(schema, (list, tuple)):
         for item in schema:
             found |= keys_in_schema(item)

@@ -353,7 +353,8 @@ def _shapes_this_file_matches(source: str) -> frozenset[str]:
         logger.debug("could not parse source for shapes: %s", type(exc).__name__)
         return frozenset()
     imports_ast = any(
-        (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast") for n in shared_walk(tree)
+        (isinstance(n, ast.Import) and any(a.name == "ast" for a in n.names)) or (isinstance(n, ast.ImportFrom) and n.module == "ast")
+        for n in shared_walk(tree)
     )
     if not imports_ast:
         return frozenset()

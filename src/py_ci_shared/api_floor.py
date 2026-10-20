@@ -169,7 +169,9 @@ def _vermin_args(target: str) -> list[str]:
 def _vermin_version() -> str:
     try:
         return importlib.metadata.version("vermin")
-    except importlib.metadata.PackageNotFoundError:  # best-effort: the version only keys the cache, so an unknown one costs a re-analysis, never a wrong verdict
+    except (
+        importlib.metadata.PackageNotFoundError
+    ):  # best-effort: the version only keys the cache, so an unknown one costs a re-analysis, never a wrong verdict
         return "unknown"
 
 
@@ -226,7 +228,13 @@ def _run_vermin_raw(paths: Sequence[str], target: str) -> tuple[dict[str, list[s
     complete = True
     for batch in _batches(paths):
         proc = subprocess.run(
-            [sys.executable, "-c", _VERMIN, *_vermin_args(target), *batch], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=1800
+            [sys.executable, "-c", _VERMIN, *_vermin_args(target), *batch],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=1800,
         )
         if proc.returncode not in (0, 1):  # 1 = violations found
             raise CorpusError(f"vermin exited {proc.returncode}: {(proc.stderr or proc.stdout).strip()[:500]}")

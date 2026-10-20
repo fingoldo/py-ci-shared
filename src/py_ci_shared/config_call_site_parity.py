@@ -129,25 +129,35 @@ def _scope_bindings(scope: ast.AST, cfg_function_names: frozenset[str]) -> "tupl
     for node in _direct_nodes(scope):
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             declared_outer.update(node.names)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    (cfg_names if _is_cfg_call(node.value, cfg_function_names) else other).add(target.id)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            (cfg_names if node.value is not None and _is_cfg_call(node.value, cfg_function_names) else other).add(node.target.id)
-        elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
-            (cfg_names if _is_cfg_call(node.value, cfg_function_names) else other).add(node.target.id)
-        elif isinstance(node, (ast.With, ast.AsyncWith)):
-            for item in node.items:
-                if isinstance(item.optional_vars, ast.Name):
-                    (cfg_names if _is_cfg_call(item.context_expr, cfg_function_names) else other).add(item.optional_vars.id)
-        elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
-            other.update(n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name))
-        elif isinstance(node, (ast.Import, ast.ImportFrom)):
-            other.update((alias.asname or alias.name).split(".")[0] for alias in node.names)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            other.add(node.name)
+            continue
+        for name, is_cfg in [*_assigned_bindings(node, cfg_function_names), *_plain_bindings(node)]:
+            (cfg_names if is_cfg else other).add(name)
     return cfg_names - declared_outer, other - declared_outer - cfg_names
+
+
+def _assigned_bindings(node: ast.AST, cfg_function_names: frozenset[str]) -> "list[tuple[str, bool]]":
+    """``(name, bound to cfg())`` for each name an assignment-like *node* binds."""
+    if isinstance(node, ast.Assign):
+        is_cfg = _is_cfg_call(node.value, cfg_function_names)
+        return [(t.id, is_cfg) for t in node.targets if isinstance(t, ast.Name)]
+    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+        return [(node.target.id, node.value is not None and _is_cfg_call(node.value, cfg_function_names))]
+    if isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+        return [(node.target.id, _is_cfg_call(node.value, cfg_function_names))]
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        return [(item.optional_vars.id, _is_cfg_call(item.context_expr, cfg_function_names)) for item in node.items if isinstance(item.optional_vars, ast.Name)]
+    return []
+
+
+def _plain_bindings(node: ast.AST) -> "list[tuple[str, bool]]":
+    """``(name, False)`` for each name a loop target, import or def/class *node* binds."""
+    if isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)):
+        return [(n.id, False) for n in _fast_walk(node.target) if isinstance(n, ast.Name)]
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return [((alias.asname or alias.name).split(".")[0], False) for alias in node.names]
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return [(node.name, False)]
+    return []
 
 
 def _cfg_get_nodes(tree: ast.Module, cfg_function_names: frozenset[str]) -> list[ast.Call]:
@@ -360,19 +370,23 @@ class ConstantResolver:
         if tree is None:
             return None
         for node in tree.body:
+            found = None
             if isinstance(node, ast.ImportFrom):
-                module = resolve_relative(node.module, node.level, self._package_of(path)) if node.level else node.module
-                if module is None and node.level:
-                    continue
-                for alias in node.names:
-                    if (alias.asname or alias.name) == name:
-                        return (module or ""), alias.name
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    if alias.asname == name:
-                        return alias.name, None
-                    if alias.asname is None and alias.name.split(".")[0] == name:
-                        return name, None
+                found = self._from_import_target(node, path, name)
+            elif isinstance(node, ast.Import):
+                found = _plain_import_target(node, name)
+            if found is not None:
+                return found
+        return None
+
+    def _from_import_target(self, node: ast.ImportFrom, path: Path, name: str) -> "Optional[tuple[str, Optional[str]]]":
+        """The ``from ... import`` form of :meth:`_import_target`."""
+        module = resolve_relative(node.module, node.level, self._package_of(path)) if node.level else node.module
+        if module is None and node.level:
+            return None
+        for alias in node.names:
+            if (alias.asname or alias.name) == name:
+                return (module or ""), alias.name
         return None
 
     def _imported_source(self, path: Path, name: str) -> Optional[str]:
@@ -446,22 +460,35 @@ class ConstantResolver:
         for dotted in candidates:
             if not dotted:
                 continue
-            mod_file = self._module_file(dotted)
-            if mod_file is not None:
-                ok, val = self._const_from_file(mod_file, attr, set())
-                if ok:
-                    return True, val
-                if mod_file.name == "__init__.py":
-                    ok, val = self._const_via_package(mod_file.parent, attr)
-                    if ok:
-                        return True, val
-                continue
-            pkg_dir = self._package_dir(dotted)
-            if pkg_dir is not None:
-                ok, val = self._const_via_package(pkg_dir, attr)
-                if ok:
-                    return True, val
+            ok, val = self._const_in_dotted(dotted, attr)
+            if ok:
+                return True, val
         return False, None
+
+    def _const_in_dotted(self, dotted: str, attr: str) -> tuple[bool, Any]:
+        """Look ``attr`` up in the module (or bare package dir) named ``dotted``."""
+        mod_file = self._module_file(dotted)
+        if mod_file is not None:
+            ok, val = self._const_from_file(mod_file, attr, set())
+            if ok:
+                return True, val
+            if mod_file.name == "__init__.py":
+                return self._const_via_package(mod_file.parent, attr)
+            return False, None
+        pkg_dir = self._package_dir(dotted)
+        if pkg_dir is not None:
+            return self._const_via_package(pkg_dir, attr)
+        return False, None
+
+
+def _plain_import_target(node: ast.Import, name: str) -> "Optional[tuple[str, Optional[str]]]":
+    """The ``import a.b [as m]`` form of :meth:`ConstantResolver._import_target`."""
+    for alias in node.names:
+        if alias.asname == name:
+            return alias.name, None
+        if alias.asname is None and alias.name.split(".")[0] == name:
+            return name, None
+    return None
 
 
 def _dotted(node: ast.expr) -> Optional[list[str]]:

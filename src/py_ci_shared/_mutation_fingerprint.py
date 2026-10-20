@@ -61,37 +61,45 @@ def _first_party_imports(path: Path, repo_root: Path, seen: set[Path]) -> set[Pa
         elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
             names.append(node.module)
         elif isinstance(node, ast.ImportFrom) and node.level:
-            base = path.parent
-            for _ in range(node.level - 1):
-                base = base.parent
-            # `from . import mod` puts the MODULE in node.names; `from .mod import func` puts the
-            # FUNCTION there and the module in node.module. Probing only node.names resolved the
-            # first form and silently dropped the second -- which is the dominant style inside a
-            # package, so `user_prompt.py`'s closure omitted all five siblings it actually calls
-            # (experience, formatting, smiley, truncation, word_count). A cached verdict then
-            # survived any edit to them, which is exactly the hole this closure exists to close.
-            if node.module:
-                part = base.joinpath(*node.module.split("."))
-                for candidate in (part.with_suffix(".py"), part / "__init__.py"):
-                    if candidate.is_file():
-                        _first_party_imports(candidate, repo_root, seen)
-            for alias in node.names:
-                for candidate in (base / f"{alias.name}.py", base / alias.name / "__init__.py"):
-                    if candidate.is_file():
-                        _first_party_imports(candidate, repo_root, seen)
+            _follow_relative_import(node, path, repo_root, seen)
             if node.module:
                 names.append(node.module)
     for name in names:
-        parts = name.split(".")
-        # `src/` is probed as well as the root. A src-layout package installed editable imports as
-        # `pkg.mod` while living at `src/pkg/mod.py`, so probing the root alone found nothing and
-        # the closure silently collapsed to the target file -- which is the state this very package
-        # would be fingerprinted in.
-        for base in (repo_root, repo_root / "src"):
-            for candidate in (base.joinpath(*parts).with_suffix(".py"), base.joinpath(*parts, "__init__.py")):
-                if candidate.is_file():
-                    _first_party_imports(candidate, repo_root, seen)
+        _follow_absolute_import(name, repo_root, seen)
     return seen
+
+
+def _follow_candidates(candidates: Sequence[Path], repo_root: Path, seen: set[Path]) -> None:
+    for candidate in candidates:
+        if candidate.is_file():
+            _first_party_imports(candidate, repo_root, seen)
+
+
+def _follow_relative_import(node: ast.ImportFrom, path: Path, repo_root: Path, seen: set[Path]) -> None:
+    base = path.parent
+    for _ in range(node.level - 1):
+        base = base.parent
+    # `from . import mod` puts the MODULE in node.names; `from .mod import func` puts the
+    # FUNCTION there and the module in node.module. Probing only node.names resolved the
+    # first form and silently dropped the second -- which is the dominant style inside a
+    # package, so `user_prompt.py`'s closure omitted all five siblings it actually calls
+    # (experience, formatting, smiley, truncation, word_count). A cached verdict then
+    # survived any edit to them, which is exactly the hole this closure exists to close.
+    if node.module:
+        part = base.joinpath(*node.module.split("."))
+        _follow_candidates((part.with_suffix(".py"), part / "__init__.py"), repo_root, seen)
+    for alias in node.names:
+        _follow_candidates((base / f"{alias.name}.py", base / alias.name / "__init__.py"), repo_root, seen)
+
+
+def _follow_absolute_import(name: str, repo_root: Path, seen: set[Path]) -> None:
+    parts = name.split(".")
+    # `src/` is probed as well as the root. A src-layout package installed editable imports as
+    # `pkg.mod` while living at `src/pkg/mod.py`, so probing the root alone found nothing and
+    # the closure silently collapsed to the target file -- which is the state this very package
+    # would be fingerprinted in.
+    for base in (repo_root, repo_root / "src"):
+        _follow_candidates((base.joinpath(*parts).with_suffix(".py"), base.joinpath(*parts, "__init__.py")), repo_root, seen)
 
 
 def _split_patterns(value: object) -> list[str]:
@@ -147,6 +155,32 @@ def _test_file_of(test: Union[Path, str]) -> str:
     return str(test).split("::", 1)[0]
 
 
+def _add_test_files(files: set[Path], repo_root: Path, test_paths: Sequence[Union[Path, str]]) -> None:
+    """Add every test file (directories expanded) and the ``conftest.py`` files above each to *files*."""
+    patterns: Optional[tuple[str, ...]] = None
+    for test in test_paths:
+        test_path = (repo_root / _test_file_of(test)).resolve()
+        # A directory is a legal pytest target and `read_bytes()` on one raises, which the digest
+        # loop swallowed into a constant -- leaving the fingerprint blind to every test file under
+        # it, permanently. Expand it to the files pytest would actually collect.
+        if test_path.is_dir():
+            if patterns is None:
+                patterns = _python_files_patterns(repo_root)
+            # pytest does not consult git, so neither does this walk; DEFAULT_EXCLUDE mirrors its norecursedirs.
+            collected = iter_files(test_path, ("*.py",), exclude=DEFAULT_EXCLUDE, use_git=False)
+            files.update(p for p in collected if p.name == "conftest.py" or any(fnmatch.fnmatch(p.name, pat) for pat in patterns))
+        else:
+            files.add(test_path)
+        parent = test_path.parent
+        while parent.is_relative_to(repo_root):
+            conftest = parent / "conftest.py"
+            if conftest.is_file():
+                files.add(conftest)
+            if parent == repo_root or parent == parent.parent:
+                break
+            parent = parent.parent
+
+
 def fingerprint(
     repo_root: Union[Path, str],
     target: Union[Path, str],
@@ -185,28 +219,7 @@ def fingerprint(
 
     repo_root = Path(repo_root).resolve()
     files = _first_party_imports(repo_root / target, repo_root, set())
-    patterns: Optional[tuple[str, ...]] = None
-    for test in test_paths:
-        test_path = (repo_root / _test_file_of(test)).resolve()
-        # A directory is a legal pytest target and `read_bytes()` on one raises, which the digest
-        # loop swallowed into a constant -- leaving the fingerprint blind to every test file under
-        # it, permanently. Expand it to the files pytest would actually collect.
-        if test_path.is_dir():
-            if patterns is None:
-                patterns = _python_files_patterns(repo_root)
-            # pytest does not consult git, so neither does this walk; DEFAULT_EXCLUDE mirrors its norecursedirs.
-            collected = iter_files(test_path, ("*.py",), exclude=DEFAULT_EXCLUDE, use_git=False)
-            files.update(p for p in collected if p.name == "conftest.py" or any(fnmatch.fnmatch(p.name, pat) for pat in patterns))
-        else:
-            files.add(test_path)
-        parent = test_path.parent
-        while parent.is_relative_to(repo_root):
-            conftest = parent / "conftest.py"
-            if conftest.is_file():
-                files.add(conftest)
-            if parent == repo_root or parent == parent.parent:
-                break
-            parent = parent.parent
+    _add_test_files(files, repo_root, test_paths)
     for extra in extra_fingerprint_paths:
         files.add((repo_root / extra).resolve())
 

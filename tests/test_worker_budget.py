@@ -109,4 +109,3 @@ def test_the_override_still_bypasses_the_memory_cap(monkeypatch):
     monkeypatch.setenv(wb.ENV_OVERRIDE, "6")
     monkeypatch.setattr(wb, "_free_memory_bytes", lambda: pytest.fail("memory must not be sampled under an override"))
     assert wb.available_workers() == 6
-

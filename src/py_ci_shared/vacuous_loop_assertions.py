@@ -197,7 +197,9 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
             continue
         try:
             test_src = ast.unparse(node.test)
-        except Exception:  # unparse is best-effort, as above  # swallow-ok: an assert that cannot be unparsed is left out of the mention check, so the loop is reported, not hidden
+        except (
+            Exception
+        ):  # unparse is best-effort, as above  # swallow-ok: an assert that cannot be unparsed is left out of the mention check, so the loop is reported, not hidden
             continue
         mentioned = {n.id for n in _fast_walk(node.test) if isinstance(n, ast.Name)}
         if any(all((src in mentioned) if src.isidentifier() else (src in test_src) for src in needed) for needed in alternatives):

@@ -151,12 +151,36 @@ def _literal_strings(node: ast.AST) -> "list[str] | None":
 
 def conftest_registrations(tree: ast.Module) -> "tuple[set[str], list[int]]":
     """``(marker names, lines of registrations that could not be resolved)`` for one conftest module."""
+    constants = _module_string_constants(tree)
+    loops = _literal_loop_variables(tree, constants)
+    names: set[str] = set()
+    unresolved: list[int] = []
+    for node in _fast_walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "addinivalue_line"):
+            continue
+        if len(node.args) < 2:
+            continue
+        found = _registered_markers(node, constants, loops)
+        if found is None:
+            unresolved.append(node.lineno)
+        else:
+            names |= found
+    return names, unresolved
+
+
+def _module_string_constants(tree: ast.Module) -> "dict[str, list[str]]":
+    """Module-level ``NAME = <string or tuple/list/set of strings>`` bindings."""
     constants: dict[str, list[str]] = {}
     for statement in tree.body:
         if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name):
             values = _literal_strings(statement.value)
             if values is not None:
                 constants[statement.targets[0].id] = values
+    return constants
+
+
+def _literal_loop_variables(tree: ast.Module, constants: "dict[str, list[str]]") -> "dict[str, list[str]]":
+    """Loop variables of ``for`` statements iterating over literal strings (or a constant naming them)."""
     loops: dict[str, list[str]] = {}
     for node in _fast_walk(tree):
         if isinstance(node, ast.For) and isinstance(node.target, ast.Name):
@@ -165,27 +189,20 @@ def conftest_registrations(tree: ast.Module) -> "tuple[set[str], list[int]]":
                 values = constants.get(node.iter.id)
             if values is not None:
                 loops[node.target.id] = values
-    names: set[str] = set()
-    unresolved: list[int] = []
-    for node in _fast_walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "addinivalue_line"):
-            continue
-        if len(node.args) < 2:
-            continue
-        first = _string_values(node.args[0], constants, loops)
-        if first != ["markers"]:
-            if first is None:
-                unresolved.append(node.lineno)
-            continue
-        values = _string_values(node.args[1], constants, loops)
-        if values is None:
-            unresolved.append(node.lineno)
-            continue
-        found = {name for value in values if (name := _marker_name(value)).isidentifier()}
-        if not found:
-            unresolved.append(node.lineno)
-        names |= found
-    return names, unresolved
+    return loops
+
+
+def _registered_markers(call: ast.Call, constants: "dict[str, list[str]]", loops: "dict[str, list[str]]") -> "set[str] | None":
+    """Marker names one ``addinivalue_line`` call registers (empty when it targets another ini key);
+    ``None`` when the call cannot be resolved."""
+    first = _string_values(call.args[0], constants, loops)
+    if first != ["markers"]:
+        return None if first is None else set()
+    values = _string_values(call.args[1], constants, loops)
+    if values is None:
+        return None
+    found = {name for value in values if (name := _marker_name(value)).isidentifier()}
+    return found or None
 
 
 def _conftests(tests_dir: Path, repo_root: "Path | None") -> list[Path]:

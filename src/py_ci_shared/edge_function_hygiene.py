@@ -177,6 +177,63 @@ def _function_name(path: Path, functions_dir: Path) -> str:
     return parts[0] if len(parts) > 1 else path.stem
 
 
+def _file_problems(rel: str, source: str) -> list[str]:
+    """The per-file rules: catch blocks that answer 2xx, secrets compared by equality, raw IP logging, forgeable XFF."""
+    problems: list[str] = []
+    for m in _CATCH_BLOCK_RE.finditer(source):
+        body = _balanced(source, source.find("{", m.end() - 1))
+        if not _NEW_RESPONSE_RE.search(body):
+            continue
+        statuses = _STATUS_RE.findall(body)
+        if not statuses or any(s.startswith("2") for s in statuses):
+            problems.append(
+                f"{rel}:{_line_of(source, m.start())}: a catch block answers "
+                f"{statuses or ['(no status, so 200)']} - the client is told the write "
+                f"succeeded when it failed."
+            )
+
+    for m in _COMPARISON_RE.finditer(source):
+        if not _SECRET_TOKEN_RE.search(m.group(0)) or _is_presence_check(m.group(0)):
+            continue
+        window = source[max(0, m.start() - 200) : m.end() + 200]
+        if not _DIGEST_RE.search(window):
+            problems.append(
+                f"{rel}:{_line_of(source, m.start())}: a secret compared with string equality "
+                f"- comparison time varies with the shared prefix. Compare digests."
+            )
+
+    problems.extend(
+        f"{rel}:{_line_of(source, m.start())}: logs a raw IP address - the platform's log retention becomes undeclared personal-data retention."
+        for m in _LOG_CALL_RE.finditer(source)
+        if _logs_raw_ip(source, m.end() - 1)
+    )
+
+    problems.extend(
+        f"{rel}:{_line_of(source, m.start())}: takes the FIRST x-forwarded-for hop, which " f"is the value the client sent and anyone can forge. Take the last."
+        for m in _XFF_FIRST_HOP_RE.finditer(source)
+    )
+    return problems
+
+
+def _body_cap_problems(groups: dict[str, list[tuple[str, str]]], public: set[str]) -> list[str]:
+    """Per deployed function: a request body inserted with no size cap, and a public one with no array-length cap."""
+    problems: list[str] = []
+    for name, members in groups.items():
+        combined = "\n".join(src for _, src in members)
+        if not (_REQ_JSON_RE.search(combined) and _INSERT_RE.search(combined)):
+            continue
+        rel = next((r for r, src in members if _REQ_JSON_RE.search(src)), members[0][0])
+        if not _CAP_RE.search(combined):
+            problems.append(f"{rel}: reads the request body and inserts it with no size cap - whatever a " f"caller sends lands in the column.")
+        inserts_an_array = _ARRAY_INSERT_RE.search(combined) is not None
+        if name in public and inserts_an_array and not _ARRAY_CAP_RE.search(combined):
+            problems.append(
+                f"{rel}: deployed without JWT verification and has no array-length cap - one "
+                f"request from anyone on the internet can carry an unbounded batch."
+            )
+    return problems
+
+
 def find_edge_function_problems(
     functions_dir: Path,
     *,
@@ -209,54 +266,8 @@ def find_edge_function_problems(
             problems.append(f"{rel}: unreadable, so it was not checked: {exc.message}")
             continue
         groups.setdefault(_function_name(path, functions_dir), []).append((rel, source))
-
-        for m in _CATCH_BLOCK_RE.finditer(source):
-            body = _balanced(source, source.find("{", m.end() - 1))
-            if not _NEW_RESPONSE_RE.search(body):
-                continue
-            statuses = _STATUS_RE.findall(body)
-            if not statuses or any(s.startswith("2") for s in statuses):
-                problems.append(
-                    f"{rel}:{_line_of(source, m.start())}: a catch block answers "
-                    f"{statuses or ['(no status, so 200)']} - the client is told the write "
-                    f"succeeded when it failed."
-                )
-
-        for m in _COMPARISON_RE.finditer(source):
-            if not _SECRET_TOKEN_RE.search(m.group(0)) or _is_presence_check(m.group(0)):
-                continue
-            window = source[max(0, m.start() - 200) : m.end() + 200]
-            if not _DIGEST_RE.search(window):
-                problems.append(
-                    f"{rel}:{_line_of(source, m.start())}: a secret compared with string equality "
-                    f"- comparison time varies with the shared prefix. Compare digests."
-                )
-
-        problems.extend(
-            f"{rel}:{_line_of(source, m.start())}: logs a raw IP address - the platform's log retention becomes undeclared personal-data retention."
-            for m in _LOG_CALL_RE.finditer(source)
-            if _logs_raw_ip(source, m.end() - 1)
-        )
-
-        problems.extend(
-            f"{rel}:{_line_of(source, m.start())}: takes the FIRST x-forwarded-for hop, which "
-            f"is the value the client sent and anyone can forge. Take the last."
-            for m in _XFF_FIRST_HOP_RE.finditer(source)
-        )
-
-    for name, members in groups.items():
-        combined = "\n".join(src for _, src in members)
-        if not (_REQ_JSON_RE.search(combined) and _INSERT_RE.search(combined)):
-            continue
-        rel = next((r for r, src in members if _REQ_JSON_RE.search(src)), members[0][0])
-        if not _CAP_RE.search(combined):
-            problems.append(f"{rel}: reads the request body and inserts it with no size cap - whatever a " f"caller sends lands in the column.")
-        inserts_an_array = _ARRAY_INSERT_RE.search(combined) is not None
-        if name in public and inserts_an_array and not _ARRAY_CAP_RE.search(combined):
-            problems.append(
-                f"{rel}: deployed without JWT verification and has no array-length cap - one "
-                f"request from anyone on the internet can carry an unbounded batch."
-            )
+        problems.extend(_file_problems(rel, source))
+    problems.extend(_body_cap_problems(groups, public))
     return problems
 
 

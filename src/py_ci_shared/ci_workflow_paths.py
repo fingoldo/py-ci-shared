@@ -42,7 +42,7 @@ Usage::
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
@@ -147,6 +147,109 @@ def _run_content(lines: list[str]) -> "list[Optional[str]]":
     return out
 
 
+def _working_dirs(
+    lines: Sequence[str],
+    run_text: Sequence[Optional[str]],
+    job_of: Sequence[Optional[int]],
+    step_of: Sequence[Optional[int]],
+    repo_root: Path,
+    rel: str,
+    problems: list[str],
+) -> tuple[dict[int, str], dict[int, str], Optional[str]]:
+    """The working-directory each scope declares: a step's own, a job's `defaults.run`, the workflow's `defaults.run`."""
+    step_wd: dict[int, str] = {}
+    job_wd: dict[int, str] = {}
+    top_wd: Optional[str] = None
+    for i, line in enumerate(lines):
+        if run_text[i] is not None and not _RUN_KEY_RE.match(line):
+            continue  # a line inside a run block is shell, never a key
+        m = _WORKING_DIR_RE.match(line)
+        if not m:
+            continue
+        value = m.group(1).strip()
+        if not _EXPRESSION_RE.search(value) and not (repo_root / value).exists():
+            problems.append(f"{rel}:{i + 1}: working-directory `{value}` does not exist. The step it " f"scopes cannot be doing what its name claims.")
+        usable = value if not _EXPRESSION_RE.search(value) else ""
+        if step_of[i] is not None:
+            step_wd[step_of[i]] = usable  # type: ignore[index]
+        elif job_of[i] is not None:
+            job_wd[job_of[i]] = usable  # type: ignore[index]
+        else:
+            top_wd = usable
+    return step_wd, job_wd, top_wd
+
+
+def _script_missing(script: str, text: str, repo_root: Path, current_working_dir: Optional[str]) -> bool:
+    # A step may cd first (`(cd e2e && node probe.js)`) or carry a working-directory,
+    # so the path is relative to THAT, not to the repository root. Resolving only
+    # against the root reported healthy steps as broken.
+    bases = [repo_root]
+    bases.extend(repo_root / cd_dir for cd_dir in _CD_RE.findall(text))
+    if current_working_dir:
+        bases.append(repo_root / current_working_dir)
+    return not any((base / script).exists() for base in bases)
+
+
+def _missing_scripts(
+    run_text: Sequence[Optional[str]],
+    job_of: Sequence[Optional[int]],
+    step_of: Sequence[Optional[int]],
+    wds: tuple[dict[int, str], dict[int, str], Optional[str]],
+    repo_root: Path,
+    rel: str,
+) -> list[str]:
+    step_wd, job_wd, top_wd = wds
+    problems: list[str] = []
+    for i, text in enumerate(run_text):
+        if text is None:
+            continue
+        step, job = step_of[i], job_of[i]
+        if step is not None and step in step_wd:
+            current_working_dir: Optional[str] = step_wd[step]
+        elif job is not None and job in job_wd:
+            current_working_dir = job_wd[job]
+        else:
+            current_working_dir = top_wd
+        for script in _RUN_SCRIPT_RE.findall(text):
+            if _EXPRESSION_RE.search(script) or script.startswith("-"):
+                continue
+            if _script_missing(script, text, repo_root, current_working_dir):
+                problems.append(f"{rel}:{i + 1}: runs `{script}`, which does not exist in the repository. A " f"guard that is not there is not coverage.")
+    return problems
+
+
+def _unpinned_use(rel: str, i: int, ref: str, first_party: set[str]) -> Optional[str]:
+    """The problem text for one ``uses:`` reference, or None when it is local, first-party or pinned."""
+    if ref.startswith("./") or ref.startswith(".github/"):
+        return None
+    if ref.startswith("docker://"):
+        if _DOCKER_DIGEST_RE.match(ref):
+            return None
+        return f"{rel}:{i}: `uses: {ref}` names a docker image by a mutable tag. Pin it by digest " f"(`docker://image@sha256:<digest>`)."
+    if ref.split("/", 1)[0].lower() in first_party:
+        return None
+    _, _, version = ref.partition("@")
+    if _SHA_RE.match(version):
+        return None
+    return (
+        f"{rel}:{i}: `uses: {ref}` follows a mutable tag. Whoever controls that "
+        f"tag controls what runs in CI with this workflow's token. Pin the full "
+        f"40-character commit SHA (keep the tag in a trailing comment)."
+    )
+
+
+def _sha_pin_problems(lines: Sequence[str], rel: str, first_party: set[str]) -> list[str]:
+    problems: list[str] = []
+    for i, line in enumerate(lines, start=1):
+        m = _USES_RE.match(line)
+        if not m:
+            continue
+        problem = _unpinned_use(rel, i, m.group(1), first_party)
+        if problem is not None:
+            problems.append(problem)
+    return problems
+
+
 def find_missing_workflow_paths(
     workflows_dir: Path,
     repo_root: Path,
@@ -171,50 +274,8 @@ def find_missing_workflow_paths(
         job_of, step_of = _scopes(lines)
         run_text = _run_content(lines)
 
-        # The working-directory each scope declares: a step's own, a job's `defaults.run`, the workflow's `defaults.run`.
-        step_wd: dict[int, str] = {}
-        job_wd: dict[int, str] = {}
-        top_wd: Optional[str] = None
-        for i, line in enumerate(lines):
-            if run_text[i] is not None and not _RUN_KEY_RE.match(line):
-                continue  # a line inside a run block is shell, never a key
-            m = _WORKING_DIR_RE.match(line)
-            if not m:
-                continue
-            value = m.group(1).strip()
-            if not _EXPRESSION_RE.search(value) and not (repo_root / value).exists():
-                problems.append(f"{rel}:{i + 1}: working-directory `{value}` does not exist. The step it " f"scopes cannot be doing what its name claims.")
-            usable = value if not _EXPRESSION_RE.search(value) else ""
-            if step_of[i] is not None:
-                step_wd[step_of[i]] = usable  # type: ignore[index]
-            elif job_of[i] is not None:
-                job_wd[job_of[i]] = usable  # type: ignore[index]
-            else:
-                top_wd = usable
-
-        for i, text in enumerate(run_text):
-            if text is None:
-                continue
-            step, job = step_of[i], job_of[i]
-            if step is not None and step in step_wd:
-                current_working_dir: Optional[str] = step_wd[step]
-            elif job is not None and job in job_wd:
-                current_working_dir = job_wd[job]
-            else:
-                current_working_dir = top_wd
-            for script in _RUN_SCRIPT_RE.findall(text):
-                if _EXPRESSION_RE.search(script) or script.startswith("-"):
-                    continue
-                # A step may cd first (`(cd e2e && node probe.js)`) or carry a working-directory,
-                # so the path is relative to THAT, not to the repository root. Resolving only
-                # against the root reported healthy steps as broken.
-                bases = [repo_root]
-                bases.extend(repo_root / cd_dir for cd_dir in _CD_RE.findall(text))
-                if current_working_dir:
-                    bases.append(repo_root / current_working_dir)
-                if any((base / script).exists() for base in bases):
-                    continue
-                problems.append(f"{rel}:{i + 1}: runs `{script}`, which does not exist in the repository. A " f"guard that is not there is not coverage.")
+        wds = _working_dirs(lines, run_text, job_of, step_of, repo_root, rel, problems)
+        problems.extend(_missing_scripts(run_text, job_of, step_of, wds, repo_root, rel))
 
         if require_permissions and not any(_PERMISSIONS_RE.match(line_) for line_ in lines):
             problems.append(
@@ -224,28 +285,7 @@ def find_missing_workflow_paths(
             )
 
         if require_sha_pins:
-            for i, line in enumerate(lines, start=1):
-                m = _USES_RE.match(line)
-                if not m:
-                    continue
-                ref = m.group(1)
-                if ref.startswith("./") or ref.startswith(".github/"):
-                    continue
-                if ref.startswith("docker://"):
-                    if _DOCKER_DIGEST_RE.match(ref):
-                        continue
-                    problems.append(f"{rel}:{i}: `uses: {ref}` names a docker image by a mutable tag. Pin it by digest " f"(`docker://image@sha256:<digest>`).")
-                    continue
-                owner = ref.split("/", 1)[0].lower()
-                if owner in first_party:
-                    continue
-                _, _, version = ref.partition("@")
-                if not _SHA_RE.match(version):
-                    problems.append(
-                        f"{rel}:{i}: `uses: {ref}` follows a mutable tag. Whoever controls that "
-                        f"tag controls what runs in CI with this workflow's token. Pin the full "
-                        f"40-character commit SHA (keep the tag in a trailing comment)."
-                    )
+            problems.extend(_sha_pin_problems(lines, rel, first_party))
     return problems
 
 

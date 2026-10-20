@@ -256,38 +256,51 @@ def main(argv: list[str] | None = None) -> int:
             print(f"no such case: {', '.join(sorted(missing))}", file=sys.stderr)
             return 2
 
-    print("=== baseline: the suite must be green before anything is mutated", flush=True)
-    started = time.monotonic()
-    summary, failed = _run_suite(repo, args.jobs)
-    print(f"    {summary}   [{time.monotonic() - started:.0f}s]")
-    if failed:
-        print(f"\nREFUSING TO SWEEP: {len(failed)} test(s) already fail on the unmutated tree.")
-        for name in failed[:10]:
-            print(f"  {name[:110]}")
-        if len(failed) > 10:
-            print(f"  ... and {len(failed) - 10} more")
-        print("\nEvery case would report those same failures and look like it had teeth. Fix the tree first.")
+    if _baseline_is_red(repo, args.jobs):
         return 2
 
     toothless: list[str] = []
     skipped: list[str] = []
     errored: list[str] = []
     backups = pathlib.Path(tempfile.mkdtemp(prefix="teeth_sweep_"))
+    buckets = {"toothless": toothless, "skipped": skipped, "error": errored}
 
     for case in cases:
-        try:
-            outcome = _sweep_case(repo, case, backups, args.jobs)
-        except Exception as exc:  # one bad case must not cost every later case its answer
-            print(f"    ERROR ({type(exc).__name__}: {exc}) -- this case proves nothing and is not a pass")
-            outcome = "error"
-        if outcome == "toothless":
-            toothless.append(_case_id(case))
-        elif outcome == "skipped":
-            skipped.append(_case_id(case))
-        elif outcome == "error":
-            errored.append(_case_id(case))
+        outcome = _sweep_case_or_error(repo, case, backups, args.jobs)
+        if outcome in buckets:
+            buckets[outcome].append(_case_id(case))
 
-    print(f"\n{'=' * 70}\n{len(cases)} cases, {len(toothless)} with no teeth, {len(skipped)} not applied, {len(errored)} errored")
+    _print_sweep_report(len(cases), toothless, skipped, errored, backups)
+    return 1 if toothless or skipped or errored else 0
+
+
+def _baseline_is_red(repo: pathlib.Path, jobs: int) -> bool:
+    """Run the unmutated suite; print the refusal and return True when it already fails."""
+    print("=== baseline: the suite must be green before anything is mutated", flush=True)
+    started = time.monotonic()
+    summary, failed = _run_suite(repo, jobs)
+    print(f"    {summary}   [{time.monotonic() - started:.0f}s]")
+    if not failed:
+        return False
+    print(f"\nREFUSING TO SWEEP: {len(failed)} test(s) already fail on the unmutated tree.")
+    for name in failed[:10]:
+        print(f"  {name[:110]}")
+    if len(failed) > 10:
+        print(f"  ... and {len(failed) - 10} more")
+    print("\nEvery case would report those same failures and look like it had teeth. Fix the tree first.")
+    return True
+
+
+def _sweep_case_or_error(repo: pathlib.Path, case: dict[str, Any], backups: pathlib.Path, jobs: int) -> str:
+    try:
+        return _sweep_case(repo, case, backups, jobs)
+    except Exception as exc:  # one bad case must not cost every later case its answer
+        print(f"    ERROR ({type(exc).__name__}: {exc}) -- this case proves nothing and is not a pass")
+        return "error"
+
+
+def _print_sweep_report(total: int, toothless: list[str], skipped: list[str], errored: list[str], backups: pathlib.Path) -> None:
+    print(f"\n{'=' * 70}\n{total} cases, {len(toothless)} with no teeth, {len(skipped)} not applied, {len(errored)} errored")
     if toothless:
         print("NO TEETH: " + ", ".join(toothless))
     if skipped:
@@ -295,7 +308,6 @@ def main(argv: list[str] | None = None) -> int:
     if errored:
         print("ERRORED (the case could not be run; do NOT read these as passes): " + ", ".join(errored))
     print(f"backups kept at {backups}")
-    return 1 if toothless or skipped or errored else 0
 
 
 if __name__ == "__main__":

@@ -98,6 +98,93 @@ class _Statement:
     first_line: str
 
 
+def _block_comment_end(sql: str, i: int) -> int:
+    """Index just past the (possibly nested) ``/* */`` comment starting at *i*."""
+    depth, j, n = 1, i + 2, len(sql)
+    while j < n and depth:
+        if sql.startswith("/*", j):
+            depth, j = depth + 1, j + 2
+        elif sql.startswith("*/", j):
+            depth, j = depth - 1, j + 2
+        else:
+            j += 1
+    return j
+
+
+def _string_literal_end(sql: str, i: int) -> int:
+    """Index of the closing quote of the ``'...'`` literal starting at *i* (``n`` when unterminated)."""
+    backslash = i > 0 and sql[i - 1] in "eE" and (i < 2 or not (sql[i - 2].isalnum() or sql[i - 2] == "_"))
+    j, n = i + 1, len(sql)
+    while j < n:
+        if backslash and sql[j] == "\\":
+            j += 2
+            continue
+        if sql[j] == "'":
+            if sql.startswith("''", j):
+                j += 2
+                continue
+            break
+        j += 1
+    return j
+
+
+def _quoted_ident_end(sql: str, i: int) -> int:
+    """Index of the closing quote of the ``"..."`` identifier starting at *i* (``n`` when unterminated)."""
+    j, n = i + 1, len(sql)
+    while j < n:
+        if sql[j] == '"':
+            if sql.startswith('""', j):
+                j += 2
+                continue
+            break
+        j += 1
+    return j
+
+
+def _dollar_quote_end(sql: str, i: int) -> Optional[int]:
+    """Index just past the ``$tag$...$tag$`` literal starting at *i*, or None when *i* does not open one."""
+    m = re.match(r"\$(?:[A-Za-z_][\w]*)?\$", sql[i:])
+    if not m or (i > 0 and (sql[i - 1].isalnum() or sql[i - 1] == "_")):
+        return None
+    tag = m.group(0)
+    j = sql.find(tag, i + len(tag))
+    return len(sql) if j < 0 else j + len(tag)
+
+
+def _scan_literal(sql: str, i: int) -> Optional[tuple[str, int, int]]:
+    """If a comment, string, quoted identifier or dollar-quote starts at *i*, return (text kept, next index, newlines consumed)."""
+    ch = sql[i]
+    if ch == "/" and sql.startswith("/*", i):
+        j = _block_comment_end(sql, i)
+        return " ", j, sql.count("\n", i, j)
+    if ch == "'":
+        j = _string_literal_end(sql, i)
+        return "''", j + 1, sql.count("\n", i, j)
+    if ch == '"':
+        j = _quoted_ident_end(sql, i)
+        return sql[i : j + 1], j + 1, 0
+    if ch == "$":
+        j2 = _dollar_quote_end(sql, i)
+        if j2 is not None:
+            return "$$ $$", j2, sql.count("\n", i, j2)
+    return None
+
+
+def _is_statement_text(sql: str, i: int) -> bool:
+    """True when the character at *i* is neither whitespace nor the start of a block comment."""
+    return not sql[i].isspace() and not sql.startswith("/*", i)
+
+
+def _flush_statement(path: Path, sql: str, out: list[str], raw_start: int, end: int, start_line: int) -> Optional[_Statement]:
+    """Turn the collected *out* pieces into a statement (clearing *out*), or None when they are blank."""
+    text = "".join(out).strip()
+    out.clear()
+    if not text:
+        return None
+    first = next((ln.strip() for ln in sql[raw_start:end].splitlines() if ln.strip()), text)
+    return _Statement(path, start_line, text, first)
+
+
 def _statements(path: Path, sql: str) -> Iterator[_Statement]:
     """Split *sql* on top-level ``;``. Comments (``--``, nested ``/* */``) are dropped; the CONTENT of ``'...'``,
     ``E'...'`` and ``$tag$...$tag$`` literals is replaced by spaces so no keyword inside a body or a string is seen,
@@ -110,73 +197,22 @@ def _statements(path: Path, sql: str) -> Iterator[_Statement]:
     pending = False
 
     def flush(end: int) -> Optional[_Statement]:
-        text = "".join(out).strip()
-        out.clear()
-        if not text:
-            return None
-        first = next((ln.strip() for ln in sql[raw_start:end].splitlines() if ln.strip()), text)
-        return _Statement(path, start_line, text, first)
+        return _flush_statement(path, sql, out, raw_start, end, start_line)
 
     while i < n:
         ch = sql[i]
-        if ch == "-" and sql.startswith("--", i):
+        if sql.startswith("--", i):
             j = sql.find("\n", i)
             i = n if j < 0 else j
             continue
-        if not pending and not ch.isspace() and not sql.startswith("/*", i):
+        if not pending and _is_statement_text(sql, i):
             pending, start_line, raw_start = True, line, i
-        if ch == "/" and sql.startswith("/*", i):
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if sql.startswith("/*", j):
-                    depth, j = depth + 1, j + 2
-                elif sql.startswith("*/", j):
-                    depth, j = depth - 1, j + 2
-                else:
-                    j += 1
-            line += sql.count("\n", i, j)
-            out.append(" ")
-            i = j
+        lit = _scan_literal(sql, i)
+        if lit is not None:
+            text, i, newlines = lit
+            out.append(text)
+            line += newlines
             continue
-        if ch == "'":
-            backslash = i > 0 and sql[i - 1] in "eE" and (i < 2 or not (sql[i - 2].isalnum() or sql[i - 2] == "_"))
-            j = i + 1
-            while j < n:
-                if backslash and sql[j] == "\\":
-                    j += 2
-                    continue
-                if sql[j] == "'":
-                    if sql.startswith("''", j):
-                        j += 2
-                        continue
-                    break
-                j += 1
-            line += sql.count("\n", i, j)
-            out.append("''")
-            i = j + 1
-            continue
-        if ch == '"':
-            j = i + 1
-            while j < n:
-                if sql[j] == '"':
-                    if sql.startswith('""', j):
-                        j += 2
-                        continue
-                    break
-                j += 1
-            out.append(sql[i : j + 1])
-            i = j + 1
-            continue
-        if ch == "$":
-            m = re.match(r"\$(?:[A-Za-z_][\w]*)?\$", sql[i:])
-            if m and not (i > 0 and (sql[i - 1].isalnum() or sql[i - 1] == "_")):
-                tag = m.group(0)
-                j = sql.find(tag, i + len(tag))
-                j = n if j < 0 else j + len(tag)
-                line += sql.count("\n", i, j)
-                out.append("$$ $$")
-                i = j
-                continue
         if ch == ";":
             stmt = flush(i)
             if stmt is not None:
@@ -269,58 +305,70 @@ class _Replay:
 
     def apply(self, stmt: _Statement, default_schema: str) -> str:
         """Apply one statement; returns the (possibly changed) default schema for unqualified names."""
-        text = stmt.text
-        m = _SET_SEARCH_PATH_STMT_RE.match(text)
-        if m:
-            names = [_ident(s) for s in _split_top_level(m.group("value"))]
-            usable = [s for s in names if s and s not in ("''", "$user", "default")]
-            return usable[0] if usable else default_schema
-        m = _CREATE_FUNCTION_RE.match(text)
-        if m:
-            self._create(stmt, m, default_schema)
-            return default_schema
-        m = _DROP_FUNCTION_RE.match(text)
-        if m:
-            for key in _targets(m.group("targets"), default_schema):
-                self.functions.pop(key, None)
-            return default_schema
-        m = _ALTER_FUNCTION_RE.match(text)
-        if m:
-            key = (_ident(m.group("schema")) or default_schema, _ident(m.group("name")) or "")
-            fn = self.functions.get(key)
-            rest = m.group("rest")
-            if fn is not None:
-                if _SECURITY_DEFINER_RE.search(rest):
-                    fn.definer = True
-                elif _SECURITY_INVOKER_RE.search(rest):
-                    fn.definer = False
-                if _SEARCH_PATH_RE.search(rest):
-                    fn.search_path = True
-                elif _RESET_SEARCH_PATH_RE.search(rest):
-                    fn.search_path = False
-            return default_schema
-        m = _DEFAULT_PRIVS_RE.match(text)
-        if m:
-            if not m.group("grant_option"):
-                scope = _IN_SCHEMA_RE.search(m.group("scope"))
-                schemas: list[Optional[str]] = [_ident(s) for s in _split_top_level(scope.group("schemas"))] if scope else [None]
-                for schema in schemas:
-                    bucket = self.default_revoked.setdefault(schema, set())
-                    roles = _roles(m.group("roles"))
-                    if m.group("verb").upper() == "REVOKE":
-                        bucket |= roles
-                    else:
-                        bucket -= roles
-            return default_schema
-        m = _ON_ALL_RE.match(text)
-        if m:
-            schemas_all = {_ident(s) for s in _split_top_level(m.group("schemas"))}
-            keys = [k for k in self.functions if k[0] in schemas_all]
-            self._privilege(m, keys)
-            return default_schema
-        m = _ON_FUNCTION_RE.match(text)
-        if m:
-            self._privilege(m, _targets(m.group("targets"), default_schema))
+        for pattern, handler in (
+            (_SET_SEARCH_PATH_STMT_RE, self._on_set_search_path),
+            (_CREATE_FUNCTION_RE, self._on_create),
+            (_DROP_FUNCTION_RE, self._on_drop),
+            (_ALTER_FUNCTION_RE, self._on_alter),
+            (_DEFAULT_PRIVS_RE, self._on_default_privs),
+            (_ON_ALL_RE, self._on_all),
+            (_ON_FUNCTION_RE, self._on_function),
+        ):
+            m = pattern.match(stmt.text)
+            if m:
+                return handler(stmt, m, default_schema)
+        return default_schema
+
+    def _on_set_search_path(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        names = [_ident(s) for s in _split_top_level(m.group("value"))]
+        usable = [s for s in names if s and s not in ("''", "$user", "default")]
+        return usable[0] if usable else default_schema
+
+    def _on_create(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        self._create(stmt, m, default_schema)
+        return default_schema
+
+    def _on_drop(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        for key in _targets(m.group("targets"), default_schema):
+            self.functions.pop(key, None)
+        return default_schema
+
+    def _on_alter(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        key = (_ident(m.group("schema")) or default_schema, _ident(m.group("name")) or "")
+        fn = self.functions.get(key)
+        rest = m.group("rest")
+        if fn is not None:
+            if _SECURITY_DEFINER_RE.search(rest):
+                fn.definer = True
+            elif _SECURITY_INVOKER_RE.search(rest):
+                fn.definer = False
+            if _SEARCH_PATH_RE.search(rest):
+                fn.search_path = True
+            elif _RESET_SEARCH_PATH_RE.search(rest):
+                fn.search_path = False
+        return default_schema
+
+    def _on_default_privs(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        if not m.group("grant_option"):
+            scope = _IN_SCHEMA_RE.search(m.group("scope"))
+            schemas: list[Optional[str]] = [_ident(s) for s in _split_top_level(scope.group("schemas"))] if scope else [None]
+            for schema in schemas:
+                bucket = self.default_revoked.setdefault(schema, set())
+                roles = _roles(m.group("roles"))
+                if m.group("verb").upper() == "REVOKE":
+                    bucket |= roles
+                else:
+                    bucket -= roles
+        return default_schema
+
+    def _on_all(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        schemas_all = {_ident(s) for s in _split_top_level(m.group("schemas"))}
+        keys = [k for k in self.functions if k[0] in schemas_all]
+        self._privilege(m, keys)
+        return default_schema
+
+    def _on_function(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+        self._privilege(m, _targets(m.group("targets"), default_schema))
         return default_schema
 
     def _create(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> None:

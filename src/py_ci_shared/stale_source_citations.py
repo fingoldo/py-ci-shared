@@ -68,6 +68,7 @@ _ANY_CITATION = re.compile(r"(?P<path>[A-Za-z_][\w./-]*\.py):(?P<line>\d+)")
 
 def _tokens(f: ParsedFile) -> "Optional[list[tokenize.TokenInfo]]":
     """The token list of the file, computed once per tree (three gate passes read it), or None when it does not tokenize."""
+
     def build() -> "Optional[list[tokenize.TokenInfo]]":
         if ".py:" not in f.source:
             # every citation pattern needs a ``<name>.py:<digits>`` text, so a file without ``.py:`` holds none to find, and tokenizing it is wasted

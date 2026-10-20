@@ -74,32 +74,40 @@ def _env_var_name(node: ast.AST, prefixes: Sequence[str]) -> str | None:
     return name
 
 
+def _compare_shape(node: ast.Compare, prefixes: Sequence[str]) -> list[tuple[str, str]]:
+    var = _env_var_name(node.left, prefixes)
+    if var is None:
+        return []
+    op = node.ops[0]
+    right = node.comparators[0]
+    if isinstance(op, (ast.Eq, ast.NotEq)) and isinstance(right, ast.Constant) and isinstance(right.value, str):
+        return [(var, f"compared with {right.value!r}")]
+    if isinstance(op, (ast.In, ast.NotIn)) and isinstance(right, (ast.Set, ast.List, ast.Tuple)):
+        return [(var, "membership in a literal collection")]
+    return []
+
+
+def _boolean_shapes(node: ast.AST, prefixes: Sequence[str]) -> list[tuple[str, str]]:
+    """``(var, shape)`` for each env read *node* uses as a boolean, in source order."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+        var = _env_var_name(node.operand, prefixes)
+        return [(var, "not <read>")] if var else []
+    if isinstance(node, ast.BoolOp):
+        names = (_env_var_name(value, prefixes) for value in node.values)
+        return [(var, "truthiness in and/or") for var in names if var]
+    if isinstance(node, (ast.If, ast.While, ast.IfExp)):
+        var = _env_var_name(node.test, prefixes)
+        return [(var, "truthiness in a condition")] if var else []
+    if isinstance(node, ast.Compare) and node.comparators:
+        return _compare_shape(node, prefixes)
+    return []
+
+
 def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
     """Yield ``(node, var, shape)`` for each env read that is used as a boolean."""
     for node in _fast_walk(tree):
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            var = _env_var_name(node.operand, prefixes)
-            if var:
-                yield node, var, "not <read>"
-        elif isinstance(node, ast.BoolOp):
-            for value in node.values:
-                var = _env_var_name(value, prefixes)
-                if var:
-                    yield node, var, "truthiness in and/or"
-        elif isinstance(node, (ast.If, ast.While, ast.IfExp)):
-            var = _env_var_name(node.test, prefixes)
-            if var:
-                yield node, var, "truthiness in a condition"
-        elif isinstance(node, ast.Compare) and node.comparators:
-            var = _env_var_name(node.left, prefixes)
-            if var is None:
-                continue
-            op = node.ops[0]
-            right = node.comparators[0]
-            if isinstance(op, (ast.Eq, ast.NotEq)) and isinstance(right, ast.Constant) and isinstance(right.value, str):
-                yield node, var, f"compared with {right.value!r}"
-            elif isinstance(op, (ast.In, ast.NotIn)) and isinstance(right, (ast.Set, ast.List, ast.Tuple)):
-                yield node, var, "membership in a literal collection"
+        for var, shape in _boolean_shapes(node, prefixes):
+            yield node, var, shape
 
 
 def _reads_in(tree: ast.Module, rel: str, prefixes: Sequence[str]) -> list[EnvFlagRead]:

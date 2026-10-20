@@ -138,37 +138,52 @@ def _name_of(target: ast.expr) -> Optional[str]:
     return None
 
 
+def _named_bindings(node: ast.AST, aliases: ImportAliases, mock_names: frozenset[str]) -> list[tuple[str, ast.expr, bool]]:
+    """``(name, value, value is a bare mock)`` for every named binding a statement makes, ``with ... as`` included."""
+    bound = list(_bindings(node))
+    is_with = isinstance(node, (ast.With, ast.AsyncWith))
+    if isinstance(node, (ast.With, ast.AsyncWith)):
+        bound += [(item.optional_vars, item.context_expr) for item in node.items if item.optional_vars is not None]
+    out: list[tuple[str, ast.expr, bool]] = []
+    for target, value in bound:
+        is_bare = is_bare_mock(value, mock_names, aliases) or (is_with and _is_bare_patch(value, aliases))
+        name = _name_of(target)
+        if name is not None:
+            out.append((name, value, is_bare))
+    return out
+
+
+def _bare_argument_lines(call: ast.Call, bare: set[str], hints: frozenset[str], aliases: ImportAliases, mock_names: frozenset[str]) -> list[int]:
+    """Lines of the arguments of an entry-point *call* that are a bare mock, or a name bound to one without a spec hint."""
+    lines: list[int] = []
+    for arg in list(call.args) + [kw.value for kw in call.keywords]:
+        if is_bare_mock(arg, mock_names, aliases):
+            lines.append(arg.lineno)
+        elif isinstance(arg, ast.Name) and arg.id in bare and not _hinted(arg.id, hints):
+            lines.append(arg.lineno)
+    return lines
+
+
+def _hinted(name: str, hints: frozenset[str]) -> bool:
+    return any(h in name.lower() for h in hints)
+
+
 def _unbound_lines(tree: ast.Module, entry_points: frozenset[str], name_hints: frozenset[str], mock_names: frozenset[str]) -> list[int]:
     aliases = ImportAliases.from_tree(tree)
     hints = frozenset(h.lower() for h in name_hints)
     lines: set[int] = set()
-
-    def hinted(name: str) -> bool:
-        return any(h in name.lower() for h in hints)
-
     for nodes in _scopes(tree):
         bare: set[str] = set()
         for node in nodes:
-            bound = list(_bindings(node))
-            if isinstance(node, (ast.With, ast.AsyncWith)):
-                bound += [(item.optional_vars, item.context_expr) for item in node.items if item.optional_vars is not None]
-            for target, value in bound:
-                is_bare = is_bare_mock(value, mock_names, aliases) or (isinstance(node, (ast.With, ast.AsyncWith)) and _is_bare_patch(value, aliases))
-                name = _name_of(target)
-                if name is None:
-                    continue
+            for name, value, is_bare in _named_bindings(node, aliases, mock_names):
                 if is_bare:
                     bare.add(name)
-                    if hinted(name):
+                    if _hinted(name, hints):
                         lines.add(value.lineno)
                 else:
                     bare.discard(name)
             if isinstance(node, ast.Call) and _callee(node, aliases) & entry_points:
-                for arg in list(node.args) + [kw.value for kw in node.keywords]:
-                    if is_bare_mock(arg, mock_names, aliases):
-                        lines.add(arg.lineno)
-                    elif isinstance(arg, ast.Name) and arg.id in bare and not hinted(arg.id):
-                        lines.add(arg.lineno)
+                lines.update(_bare_argument_lines(node, bare, hints, aliases, mock_names))
     return sorted(lines)
 
 

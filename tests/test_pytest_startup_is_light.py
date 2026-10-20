@@ -13,7 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 PROBE = ROOT / "tests" / "_startup_probe_plugin.py"
 
@@ -22,7 +21,21 @@ def test_a_session_without_randomly_imports_no_heavy_library(tmp_path):
     out = tmp_path / "loaded.txt"
     env = dict(os.environ, PYTHONPATH=os.pathsep.join([str(ROOT / "src"), str(ROOT / "tests")]), PCS_PROBE_OUT=str(out))
     result = subprocess.run(
-        [sys.executable, "-m", "pytest", "-p", "no:randomly", "-p", "no:cacheprovider", "-p", "_startup_probe_plugin", "--co", "-q", "--no-cov", "tests/test_worker_budget.py"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-p",
+            "no:randomly",
+            "-p",
+            "no:cacheprovider",
+            "-p",
+            "_startup_probe_plugin",
+            "--co",
+            "-q",
+            "--no-cov",
+            "tests/test_worker_budget.py",
+        ],
         cwd=ROOT,
         env=env,
         capture_output=True,

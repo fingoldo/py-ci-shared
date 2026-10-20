@@ -214,7 +214,9 @@ class TestLockPinAgreement:
     def _remote(self, tmp_path: Path) -> tuple[str, str]:
         remote = _repo(tmp_path / "remote", "0.1.0")
         subprocess.run(["git", "tag", "-a", "v0.1.0", "-m", "release"], cwd=remote, check=True, env=git_env())
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=remote, check=True, capture_output=True, text=True, encoding="utf-8", env=git_env()).stdout.strip()
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=remote, check=True, capture_output=True, text=True, encoding="utf-8", env=git_env()
+        ).stdout.strip()
         return remote.as_posix(), head
 
     def test_pin_lock_and_remote_that_agree_report_nothing(self, tmp_path):

@@ -264,27 +264,41 @@ def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reach
     def saved(relative: str, ids: set[str]) -> bool:
         return upstream.get(relative) in ids or bool(ids & known)
 
+    def staged_blobs() -> dict[str, str]:
+        nonlocal staged
+        if staged is None:
+            staged = _staged_blobs(worktree)
+        return staged
+
     for code, relative in _status_entries(worktree):
-        if _skipped(relative.rstrip("/")):
-            continue
-        if code[0] in "AMRCT":
-            if staged is None:
-                staged = _staged_blobs(worktree)
-            blob = staged.get(relative)
-            if blob is not None and not saved(relative, {blob}):
-                unsaved.append(relative)
-                continue
-        if "D" in code:
-            continue
-        candidate = worktree / relative
-        if code in ("!!", "??") and candidate.is_dir():
-            unsaved.extend(_unsaved_in_directory(repo, worktree, candidate, object_format, saved))
-            continue
-        if not candidate.is_file():
-            continue
-        if not saved(relative, _file_content_ids(repo, candidate, object_format)):
-            unsaved.append(relative)
+        unsaved.extend(_entry_unsaved(repo, worktree, code, relative, object_format, saved, staged_blobs))
     return unsaved
+
+
+def _entry_unsaved(
+    repo: Path,
+    worktree: Path,
+    code: str,
+    relative: str,
+    object_format: str,
+    saved: Callable[[str, set[str]], bool],
+    staged_blobs: Callable[[], dict[str, str]],
+) -> list[str]:
+    """The unsaved paths one ``git status`` entry contributes: its staged blob, then its working file or directory."""
+    if _skipped(relative.rstrip("/")):
+        return []
+    if code[0] in "AMRCT":
+        blob = staged_blobs().get(relative)
+        if blob is not None and not saved(relative, {blob}):
+            return [relative]
+    if "D" in code:
+        return []
+    candidate = worktree / relative
+    if code in ("!!", "??") and candidate.is_dir():
+        return _unsaved_in_directory(repo, worktree, candidate, object_format, saved)
+    if not candidate.is_file():
+        return []
+    return [] if saved(relative, _file_content_ids(repo, candidate, object_format)) else [relative]
 
 
 def unsaved_files_in_directory(repo: Path, directory: Path, ref: str = "origin/HEAD", *, reachable: frozenset[str] | None = None) -> list[str]:

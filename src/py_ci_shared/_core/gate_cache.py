@@ -97,7 +97,15 @@ def key_for(repo_root: Path, module: str, entry: Optional[str], kwargs: dict[str
     from .. import __version__ as package_version  # lazy: the package imports this module
 
     payload = json.dumps(
-        {"module": module, "entry": entry, "kwargs": _canonical(kwargs), "budget": budget, "package": package_version, "tree": tree, "root": repo_root.as_posix()},
+        {
+            "module": module,
+            "entry": entry,
+            "kwargs": _canonical(kwargs),
+            "budget": budget,
+            "package": package_version,
+            "tree": tree,
+            "root": repo_root.as_posix(),
+        },
         sort_keys=True,
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

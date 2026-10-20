@@ -64,26 +64,32 @@ def _is_dynamic_module(tree: ast.Module) -> bool:
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)) and statement.name == "__getattr__":
             return True
     for node in _module_level_nodes(tree.body):
-        if isinstance(node, (ast.Assign, ast.AugAssign)):
-            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-            for target in targets:
-                if isinstance(target, ast.Subscript) and isinstance(target.value, ast.Call) and getattr(target.value.func, "id", "") in ("globals", "vars"):
-                    return True
-        if isinstance(node, ast.Call):
-            func = node.func
-            name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
-            if name == "exec":
-                return True
-            if (
-                name == "update"
-                and isinstance(func, ast.Attribute)
-                and isinstance(func.value, ast.Call)
-                and getattr(func.value.func, "id", "") in ("globals", "vars")
-            ):
-                return True
-            if name == "setattr" and node.args and "sys.modules" in ast.unparse(node.args[0]):
-                return True
+        if _is_namespace_subscript_assign(node) or (isinstance(node, ast.Call) and _is_dynamic_call(node)):
+            return True
     return False
+
+
+def _is_namespace_subscript_assign(node: ast.AST) -> bool:
+    """``globals()[...] = ...`` / ``vars()[...] = ...`` (also augmented)."""
+    if not isinstance(node, (ast.Assign, ast.AugAssign)):
+        return False
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    return any(
+        isinstance(target, ast.Subscript) and isinstance(target.value, ast.Call) and getattr(target.value.func, "id", "") in ("globals", "vars")
+        for target in targets
+    )
+
+
+def _is_dynamic_call(node: ast.Call) -> bool:
+    """``exec(...)``, ``globals().update(...)`` / ``vars().update(...)`` or ``setattr(sys.modules[...], ...)``."""
+    func = node.func
+    name = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else ""
+    if name == "exec":
+        return True
+    if name == "update" and isinstance(func, ast.Attribute) and isinstance(func.value, ast.Call):
+        if getattr(func.value.func, "id", "") in ("globals", "vars"):
+            return True
+    return bool(name == "setattr" and node.args and "sys.modules" in ast.unparse(node.args[0]))
 
 
 def _star_import_sources(tree: ast.Module, importing: str, *, is_package: bool) -> list[str | None]:
@@ -265,20 +271,30 @@ def _names_bound_by(node: ast.AST) -> set[str]:
         for target in node.targets:
             out |= _assigned_names(target)
         return out
-    if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
-        return _assigned_names(node.target)
-    if isinstance(node, (ast.For, ast.AsyncFor)):
+    if isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr, ast.For, ast.AsyncFor)):
         return _assigned_names(node.target)
     if isinstance(node, ast.withitem) and node.optional_vars is not None:
         return _assigned_names(node.optional_vars)
     if isinstance(node, ast.ExceptHandler) and node.name:
         return {node.name}
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return _import_bound_names(node)
+    return _pattern_bound_names(node)
+
+
+def _pattern_bound_names(node: ast.AST) -> set[str]:
+    """Names bound by ``type`` aliases and ``match`` patterns; matched by class name so Python 3.9-3.11 still import this."""
     if type(node).__name__ == "TypeAlias":  # `type X = ...`, Python 3.12+
         return _assigned_names(node.name)  # type: ignore[attr-defined]
     if type(node).__name__ in ("MatchAs", "MatchStar") and getattr(node, "name", None):
         return {node.name}  # type: ignore[attr-defined]
     if type(node).__name__ == "MatchMapping" and getattr(node, "rest", None):
         return {node.rest}  # type: ignore[attr-defined]
+    return set()
+
+
+def _import_bound_names(node: ast.Import | ast.ImportFrom) -> set[str]:
+    """Names an ``import`` / ``from ... import`` statement binds."""
     if isinstance(node, ast.Import):
         return {alias.asname or alias.name.split(".")[0] for alias in node.names}
     if isinstance(node, ast.ImportFrom):

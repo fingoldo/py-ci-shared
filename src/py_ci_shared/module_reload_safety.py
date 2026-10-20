@@ -241,6 +241,78 @@ def _unparsed_site(problem: object) -> ReloadSite:
     return ReloadSite(getattr(problem, "rel"), getattr(problem, "line"), f"{getattr(problem, 'kind')}: {getattr(problem, 'message')}")
 
 
+def _dir_fixtures(path: Path, root: Path, conftests: "dict[Path, _FixtureScope]") -> "tuple[set[str], bool]":
+    """Restoring fixtures visible from the conftest files between *path*'s directory and *root*, and whether one is autouse."""
+    visible: set[str] = set()
+    dir_autouse = False
+    here = path.resolve().parent
+    while True:
+        scope = conftests.get(here)
+        if scope is not None:
+            visible |= scope.restoring
+            dir_autouse = dir_autouse or scope.autouse
+        if here == root or here.parent == here:
+            break
+        here = here.parent
+    return visible, dir_autouse
+
+
+def _pytestmark_fixtures(tree: ast.Module, aliases: ImportAliases) -> set[str]:
+    uses: set[str] = set()
+    for statement in tree.body:
+        if isinstance(statement, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in statement.targets):
+            uses |= _usefixtures([statement.value], aliases)
+    return uses
+
+
+@dataclass
+class _FileContext:
+    """What can restore a reload in one test file, gathered once per file."""
+
+    tree: ast.Module
+    aliases: ImportAliases
+    restores: _Restores
+    parents: "dict[ast.AST, ast.AST]"
+    visible: set[str]
+    dir_autouse: bool
+    module_autouse: bool
+    module_uses: set[str]
+
+
+def _file_context(path: Path, root: Path, conftests: "dict[Path, _FixtureScope]", tree: ast.Module, aliases: ImportAliases) -> _FileContext:
+    restores = _Restores(tree, aliases)
+    visible, dir_autouse = _dir_fixtures(path, root, conftests)
+    module_names, module_autouse = _restoring_fixtures_in(tree.body, restores, aliases)
+    return _FileContext(tree, aliases, restores, _parents(tree), visible | module_names, dir_autouse, module_autouse, _pytestmark_fixtures(tree, aliases))
+
+
+def _site_is_paired(node: ast.AST, ctx: _FileContext) -> bool:
+    chain = _chain(node, ctx.parents)
+    functions = [c for c in chain if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    classes = [c for c in chain if isinstance(c, ast.ClassDef)]
+    requested = set(ctx.module_uses)
+    class_autouse = False
+    class_visible: set[str] = set()
+    for cls in classes:
+        requested |= _usefixtures(cls.decorator_list, ctx.aliases)
+        names, autouse = _restoring_fixtures_in(cls.body, ctx.restores, ctx.aliases)
+        class_visible |= names
+        class_autouse = class_autouse or autouse
+    for func in functions:
+        requested |= {a.arg for a in func.args.args + func.args.kwonlyargs}
+        requested |= _usefixtures(func.decorator_list, ctx.aliases)
+    snapshots: set[str] = set()
+    for func in reversed(functions):
+        snapshots |= _snapshots(func, ctx.aliases)
+    return (
+        ctx.dir_autouse
+        or ctx.module_autouse
+        or class_autouse
+        or bool(requested & (ctx.visible | class_visible))
+        or any(ctx.restores.has_restore(func, snapshots) for func in functions)
+    )
+
+
 def find_unpaired_reloads(
     tests_dir: Path, *, stub_only_files: Iterable[str] = (), singleton_modules: Iterable[str] = (), min_files: int = 0
 ) -> list[ReloadSite]:
@@ -270,52 +342,10 @@ def find_unpaired_reloads(
         sites = [(node, prim) for node in _fast_walk(tree) for prim in [reload_primitive(node, aliases)] if prim is not None]
         if not sites:
             continue
-        restores = _Restores(tree, aliases)
-        visible: set[str] = set()
-        dir_autouse = False
-        here = parsed.path.resolve().parent
-        while True:
-            scope = conftests.get(here)
-            if scope is not None:
-                visible |= scope.restoring
-                dir_autouse = dir_autouse or scope.autouse
-            if here == root or here.parent == here:
-                break
-            here = here.parent
-        module_names, module_autouse = _restoring_fixtures_in(tree.body, restores, aliases)
-        visible |= module_names
-        module_uses: set[str] = set()
-        for statement in tree.body:
-            if isinstance(statement, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytestmark" for t in statement.targets):
-                module_uses |= _usefixtures([statement.value], aliases)
-        parents = _parents(tree)
-        singleton = any(mod in parsed.source for mod in singletons)
+        ctx = _file_context(parsed.path, root, conftests, tree, aliases)
+        singleton = any(m in parsed.source for m in singletons)
         for node, prim in sites:
-            chain = _chain(node, parents)
-            functions = [c for c in chain if isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef))]
-            classes = [c for c in chain if isinstance(c, ast.ClassDef)]
-            requested = set(module_uses)
-            class_autouse = False
-            class_visible: set[str] = set()
-            for cls in classes:
-                requested |= _usefixtures(cls.decorator_list, aliases)
-                names, autouse = _restoring_fixtures_in(cls.body, restores, aliases)
-                class_visible |= names
-                class_autouse = class_autouse or autouse
-            for func in functions:
-                requested |= {a.arg for a in func.args.args + func.args.kwonlyargs}
-                requested |= _usefixtures(func.decorator_list, aliases)
-            snapshots: set[str] = set()
-            for func in reversed(functions):
-                snapshots |= _snapshots(func, aliases)
-            safe = (
-                dir_autouse
-                or module_autouse
-                or class_autouse
-                or bool(requested & (visible | class_visible))
-                or any(restores.has_restore(func, snapshots) for func in functions)
-            )
-            if not safe:
+            if not _site_is_paired(node, ctx):
                 out.append(ReloadSite(rel, getattr(node, "lineno", 0), prim, singleton, _statement_text(parsed.source, node)))
     return out
 

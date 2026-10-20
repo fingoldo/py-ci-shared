@@ -279,38 +279,19 @@ def statements(sql_text: str):
     while i < n:
         ch = sql_text[i]
         if sql_text.startswith("--", i):
-            end = sql_text.find("\n", i)
-            i = n if end == -1 else end
+            i = _line_comment_end(sql_text, i)
             continue
         if sql_text.startswith("/*", i):
-            depth, j = 1, i + 2
-            while j < n and depth:
-                if sql_text.startswith("/*", j):
-                    depth, j = depth + 1, j + 2
-                elif sql_text.startswith("*/", j):
-                    depth, j = depth - 1, j + 2
-                else:
-                    j += 1
             current.append(" ")
-            i = j
+            i = _block_comment_end(sql_text, i)
             continue
         if ch in "'\"":
-            j = i + 1
-            while j < n:
-                if sql_text[j] == ch:
-                    if j + 1 < n and sql_text[j + 1] == ch:  # doubled quote is an escaped quote
-                        j += 2
-                        continue
-                    break
-                j += 1
+            j = _quoted_end(sql_text, i, ch)
             current.append(sql_text[i : j + 1])
             i = j + 1
             continue
-        dollar = re.match(r"\$(?:[A-Za-z_]\w*)?\$", sql_text[i:]) if ch == "$" else None
-        if dollar:
-            tag = dollar.group(0)
-            end = sql_text.find(tag, i + len(tag))
-            stop = n if end == -1 else end + len(tag)
+        stop = _dollar_quoted_end(sql_text, i) if ch == "$" else None
+        if stop is not None:
             current.append(sql_text[i:stop])
             i = stop
             continue
@@ -326,6 +307,50 @@ def statements(sql_text: str):
     text = "".join(current).strip()
     if text:
         yield text
+
+
+def _line_comment_end(sql_text: str, i: int) -> int:
+    """Index of the newline ending the ``--`` comment that starts at *i* (the text length when unterminated)."""
+    end = sql_text.find("\n", i)
+    return len(sql_text) if end == -1 else end
+
+
+def _block_comment_end(sql_text: str, i: int) -> int:
+    """Index just past the (nestable) ``/* */`` comment that starts at *i*."""
+    n = len(sql_text)
+    depth, j = 1, i + 2
+    while j < n and depth:
+        if sql_text.startswith("/*", j):
+            depth, j = depth + 1, j + 2
+        elif sql_text.startswith("*/", j):
+            depth, j = depth - 1, j + 2
+        else:
+            j += 1
+    return j
+
+
+def _quoted_end(sql_text: str, i: int, quote: str) -> int:
+    """Index of the closing *quote* of the literal opened at *i* (the text length when unterminated)."""
+    n = len(sql_text)
+    j = i + 1
+    while j < n:
+        if sql_text[j] == quote:
+            if j + 1 < n and sql_text[j + 1] == quote:  # doubled quote is an escaped quote
+                j += 2
+                continue
+            break
+        j += 1
+    return j
+
+
+def _dollar_quoted_end(sql_text: str, i: int) -> int | None:
+    """Index just past the dollar-quoted body opening at *i*, or ``None`` when no ``$tag$`` opens there."""
+    dollar = re.match(r"\$(?:[A-Za-z_]\w*)?\$", sql_text[i:])
+    if not dollar:
+        return None
+    tag = dollar.group(0)
+    end = sql_text.find(tag, i + len(tag))
+    return len(sql_text) if end == -1 else end + len(tag)
 
 
 def find_definition(sql_text: str, index_name: str) -> Index | None:
