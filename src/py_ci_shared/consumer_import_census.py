@@ -216,8 +216,10 @@ def _extract_ref(library_root: Path, ref: str, dest: Path) -> Path:
         escaping = [m.name for m in members if os.path.isabs(m.name) or ".." in Path(m.name).parts]
         if escaping:  # git archive refuses such names today; the check keeps this true if the archive source ever changes
             raise CoreError(f"git archive {ref} holds members that would leave the extraction directory: {escaping[:3]}")
-        extra = {"filter": "data"} if sys.version_info >= (3, 12) else {}
-        tar.extractall(dest, members=members, **extra)  # nosec B202 - regular files only, names checked above
+        if sys.version_info >= (3, 12):
+            tar.extractall(dest, members=members, filter="data")  # nosec B202 - regular files only, names checked above
+        else:
+            tar.extractall(dest, members=members)  # nosec B202 - regular files only, names checked above
     return dest
 
 
