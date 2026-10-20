@@ -41,7 +41,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, SourceError, iter_files, read_source, relative_posix, scan_python
-from ._core.node_index import walk as _fast_walk
+from ._core.node_index import nodes_of, tree_memo
 from ._gate_run import enforce_findings
 
 logger = logging.getLogger(__name__)
@@ -66,12 +66,25 @@ _CITATIONS = [
 _ANY_CITATION = re.compile(r"(?P<path>[A-Za-z_][\w./-]*\.py):(?P<line>\d+)")
 
 
+def _tokens(f: ParsedFile) -> "Optional[list[tokenize.TokenInfo]]":
+    """The token list of the file, computed once per tree (three gate passes read it), or None when it does not tokenize."""
+    def build() -> "Optional[list[tokenize.TokenInfo]]":
+        if ".py:" not in f.source:
+            # every citation pattern needs a ``<name>.py:<digits>`` text, so a file without ``.py:`` holds none to find, and tokenizing it is wasted
+            return []
+        try:
+            return list(tokenize.generate_tokens(io.StringIO(f.source).readline))
+        except (tokenize.TokenError, SyntaxError) as exc:
+            logger.debug("could not tokenize source for citations: %s", type(exc).__name__)
+            return None
+
+    return tree_memo(f.tree, "py_ci_shared.stale_citation_tokens", build)
+
+
 def _texts(f: ParsedFile) -> Iterable[tuple[int, int, str, bool]]:
     """``(start_line, end_line, text, is_code_string)`` for every comment and string token of the file."""
-    try:
-        tokens = list(tokenize.generate_tokens(io.StringIO(f.source).readline))
-    except (tokenize.TokenError, SyntaxError) as exc:
-        logger.debug("could not tokenize source for citations: %s", type(exc).__name__)
+    tokens = _tokens(f)
+    if tokens is None:
         return
     for tok in tokens:
         if tok.type == tokenize.COMMENT:
@@ -80,29 +93,35 @@ def _texts(f: ParsedFile) -> Iterable[tuple[int, int, str, bool]]:
             yield tok.start[0], tok.end[0], tok.string, True
 
 
-def _statement_span(f: ParsedFile, line: int) -> tuple[int, int]:
-    """The smallest statement containing *line* (so a multi-line call's literal may cite the call's first line)."""
+def _statement_lines(f: ParsedFile) -> "list[tuple[int, int]]":
+    """The (first, last) line of every statement of the file, computed once per tree."""
     import ast
 
+    return tree_memo(f.tree, "py_ci_shared.stale_statement_lines", lambda: [(n.lineno, n.end_lineno or n.lineno) for n in nodes_of(f.tree, ast.stmt)])
+
+
+def _statement_span(f: ParsedFile, line: int) -> tuple[int, int]:
+    """The smallest statement containing *line* (so a multi-line call's literal may cite the call's first line)."""
     best = (line, line)
-    for node in _fast_walk(f.tree):
-        if isinstance(node, ast.stmt) and node.lineno <= line <= (node.end_lineno or node.lineno):
-            span = (node.lineno, node.end_lineno or node.lineno)
-            if best == (line, line) or span[1] - span[0] < best[1] - best[0]:
-                best = span
+    for lo, hi in _statement_lines(f):
+        if lo <= line <= hi and (best == (line, line) or hi - lo < best[1] - best[0]):
+            best = (lo, hi)
     return best
 
 
 def _docstring_lines(f: ParsedFile) -> set[int]:
     import ast
 
-    out: set[int] = set()
-    for node in _fast_walk(f.tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
-            first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
-                out.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
-    return out
+    def build() -> set[int]:
+        out: set[int] = set()
+        for node in [f.tree, *nodes_of(f.tree, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)]:
+            if node.body:
+                first = node.body[0]
+                if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                    out.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
+        return out
+
+    return tree_memo(f.tree, "py_ci_shared.stale_docstring_lines", build)
 
 
 def _self_citations(f: ParsedFile) -> list[Finding]:
@@ -150,6 +169,11 @@ class _Index:
         return target
 
 
+def _source_lines(f: ParsedFile) -> list[str]:
+    """The lines of the file, split once per tree."""
+    return tree_memo(f.tree, "py_ci_shared.stale_source_lines", lambda: f.source.splitlines())
+
+
 def _symbol_findings(f: ParsedFile, index: _Index) -> list[Finding]:
     out: list[Finding] = []
     for start, _end, text, _is_code in _texts(f):
@@ -159,7 +183,7 @@ def _symbol_findings(f: ParsedFile, index: _Index) -> list[Finding]:
                 if target is None:
                     continue
                 line = int(m.group("line"))
-                lines = target.source.splitlines()
+                lines = _source_lines(target)
                 leaf = m.group("sym").rsplit(".", 1)[-1]
                 window = lines[max(0, line - 1 - WINDOW) : line + WINDOW]
                 if line <= len(lines) and any(re.search(r"\b" + re.escape(leaf) + r"\b", ln) for ln in window):
@@ -178,7 +202,7 @@ def _past_end_findings(f: ParsedFile, index: _Index) -> list[Finding]:
             target = f if cited.replace("\\", "/").rsplit("/", 1)[-1] == f.path.name and "/" not in cited else index.resolve(cited, f)
             if target is None:
                 continue
-            n_lines = len(target.source.splitlines())
+            n_lines = len(_source_lines(target))
             if int(m.group("line")) > n_lines:
                 message = f"cites {m.group(0)}, but {target.rel} has {n_lines} lines; cite the symbol, not the line"
                 out.append(Finding(f.rel, start, RULE_PAST_END, message, key=f"{RULE_PAST_END}::{f.rel}::{m.group(0)}"))
@@ -198,7 +222,7 @@ def _extra_past_end_findings(rel: str, source: str, index: _Index) -> list[Findi
             target = index.resolve(m.group("path"))
             if target is None:
                 continue
-            n_lines = len(target.source.splitlines())
+            n_lines = len(_source_lines(target))
             if int(m.group("line")) > n_lines:
                 message = f"cites {m.group(0)}, but {target.rel} has {n_lines} lines; cite the symbol, not the line"
                 out.append(Finding(rel, lineno, RULE_PAST_END, message, key=f"{RULE_PAST_END}::{rel}::{m.group(0)}"))
@@ -214,7 +238,7 @@ def _extra_symbol_findings(rel: str, source: str, index: _Index) -> list[Finding
                 if target is None:
                     continue
                 cite_line = int(m.group("line"))
-                target_lines = target.source.splitlines()
+                target_lines = _source_lines(target)
                 leaf = m.group("sym").rsplit(".", 1)[-1]
                 window = target_lines[max(0, cite_line - 1 - WINDOW) : cite_line + WINDOW]
                 if cite_line <= len(target_lines) and any(re.search(r"\b" + re.escape(leaf) + r"\b", ln) for ln in window):
