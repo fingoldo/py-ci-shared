@@ -806,10 +806,10 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **DEFERRED** | P1 | `S-5` | `bare_except` x3: re-raising by design; waits on the detector reading `audit-exempt` for this check |
 | **DEFERRED** | P1 | `S-6` | `busy_retry_loop`: blocking queue read, not a spin; waits on the same detector change |
 | **DEFERRED** | P1 | `S-7` | `sentinel_guard_mismatch`: false match between two functions; waits on the same detector change |
-| **DEFERRED** | P2 | `S-8` | `duplicate_function_body` (56 groups): shared helpers, one pass |
+| **DEFERRED** | P2 | `S-8` | `drifted_duplicate_functions`: 13 groups down to 3. Shared now: own_nodes, scan_roots_excluding, names_read, indent_width, collect_findings, docstring_ids, function_nodes, dotted_name, strip_yaml_comment, refresh_requested. Left on purpose: `_dotted` variants (different returns), `_workflow_files` (Windows glob case differs), `register_refresh_option` (public wrappers). `duplicate_function_body` (56 groups) not started |
 | **DEFERRED** | P2 | `S-9` | `default_via_or` (about 180): each defaulting site needs its caller read |
-| **DEFERRED** | Low | `S-10` | C901 over 10 (62 functions): advisory in CI |
-| **DEFERRED** | Med | `S-11` | Corpus gates not run on the package itself |
+| **RESOLVED** | Low | `S-10` | C901 over 10: all 62 functions refactored (bdf3aaa); `complexity_ratchet.json` is empty and enforced by the self-gate test |
+| **RESOLVED** | Med | `S-11` | Corpus gates run on the package itself: 18 more enabled in af7e788, each a self-gate test in tests/test_self_gates.py |
 | **DEFERRED** | Low | `S-12` | Mutation sweep cost in the tests (`four_workers`, `survivors_in_source_order`) |
 
 ## Round 2026-10-20 — the attack-surface audit (secrets and CI, deserialization, subprocess and git, hot paths)
