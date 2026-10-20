@@ -385,6 +385,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         return _cmd_snapshot(args) if args.command == "snapshot" else _cmd_compare(args)
     except MissingDependencyError as exc:
+        logger.warning("corpus_drift.py handler at line 387 substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"corpus_drift: {exc}\n")
         return 2
 

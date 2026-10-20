@@ -470,6 +470,7 @@ def _mentions(path: Path, needles: Sequence[bytes]) -> bool:
     try:
         raw = path.read_bytes()
     except OSError as exc:
+        logger.warning("adoption_matrix.py handler at line 472 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not read a file while looking for a pin mention: %s", type(exc).__name__)
         return False
     return any(n in raw for n in needles)

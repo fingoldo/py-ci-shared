@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import logging
 import sys
 import unicodedata
 from collections.abc import Iterable, Sequence
@@ -38,6 +39,8 @@ from typing import Any, Optional, Union
 from ._core import CoreError, Finding, read_source
 from ._core.git import git_output, run_git
 from ._toml_compat import tomllib
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_SKIP_AUTHORS",
@@ -206,6 +209,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 repo, rev_range, forbidden_trailers=forbidden, skip_authors=config.get("skip_authors", DEFAULT_SKIP_AUTHORS)
             )
     except (CoreError, tomllib.TOMLDecodeError, OSError) as exc:
+        logger.warning("commit_metadata.py line 211: substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"commit_metadata: {exc}" + "\n")
         return 1
     for f in problems:

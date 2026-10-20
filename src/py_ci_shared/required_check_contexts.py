@@ -20,6 +20,7 @@ Usage (``ci-health.yml`` style; the API comes from :func:`py_ci_shared.ci_health
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 import urllib.parse
 from collections.abc import Sequence
@@ -29,6 +30,8 @@ from typing import Any, Callable, Optional
 
 from ._consumers import Consumer, load_consumers
 from .ci_health import ApiError, default_api
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["RepoChecks", "check_repo", "main"]
 
@@ -98,6 +101,7 @@ def check_repo(consumer: Consumer, api: Api) -> RepoChecks:
     try:
         out.produced = _produced(api, consumer.repo, consumer.branch)
     except ApiError as exc:
+        logger.warning("required_check_contexts.py line 103: substituted a fallback after %s: %s", type(exc).__name__, exc)
         out.state, out.detail = "error", f"cannot read the newest commit's checks: {exc}"
         return out
     out.missing = [c for c in out.required if c not in out.produced]

@@ -52,6 +52,7 @@ Usage (from a repo's own ``tool/meta/scanners.py``)::
 
 from __future__ import annotations
 
+import logging
 import os
 import posixpath
 import re
@@ -74,6 +75,8 @@ from ._dart_source import (  # noqa: F401  # the scanners' shared helpers
     _strip_comments,
     _top_level_args,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _method_bodies(source: str, name_pattern: str) -> list[tuple[int, str]]:
@@ -648,7 +651,8 @@ def dart_files_under(repo_root: PathLike, root: str, *, generated_prefixes: Sequ
             full = Path(dirpath) / name
             try:
                 head = read_source(full)[:400]
-            except SourceError:
+            except SourceError as exc:
+                logger.warning("dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc)  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
                 head = ""
             if any(marker in head for marker in GENERATED_MARKERS):
                 continue

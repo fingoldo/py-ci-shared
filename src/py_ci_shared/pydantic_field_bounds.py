@@ -107,7 +107,7 @@ def _error_fields(exc: Exception) -> Optional[set[str]]:
         return None
     try:
         return {str(e["loc"][0]) for e in errors() if e.get("loc")}
-    except Exception as field_exc:
+    except Exception as field_exc:  # best-effort: validation errors that cannot be read are reported as unchecked by the caller
         logger.debug("could not read validation errors: %s", type(field_exc).__name__)
         return None
 

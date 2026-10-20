@@ -1,6 +1,7 @@
 """A library repo checks that every name its consumers import from it still resolves in THIS checkout.
 
 pyutilz 1.1 moved ``_RATE_LIMIT_PATTERN`` and two sibling constants into ``claude_code_cli`` without re-exporting them
+import logging
 from ``llm.claude_code_provider``; glossum failed at import (pyutilz 89eb1f6). ``unresolved_imports`` would have caught
 it, but only inside glossum, after the library had shipped. A library's own ``_api_snapshot.json`` pins the API it
 DECLARES; consumers import what they find, underscore names included. This gate measures what they really import.
@@ -35,6 +36,7 @@ from __future__ import annotations
 import argparse
 import ast
 import io
+import logging
 import sys
 import tarfile
 import tempfile
@@ -46,6 +48,8 @@ from ._core import CoreError, Finding, ParsedFile, ScanResult, parse_source, sca
 from ._core import walk as shared_walk
 from ._core.git import run_git
 from .unresolved_imports import ModuleIndex, _guarded_import_ids
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "RULE",
@@ -236,6 +240,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             reference = _extract_ref(library, args.since_ref, Path(tmp)) if args.since_ref else None
             found = find_consumer_import_breaks(library, args.package, consumers, reference_root=reference, allow_unparsed=args.allow_unparsed)
         except (CoreError, AssertionError) as exc:
+            logger.warning("consumer_import_census.py line 242: substituted a fallback after %s: %s", type(exc).__name__, exc)
             sys.stderr.write(f"consumer_import_census: {exc}" + "\n")
             return 1
     breaks = [f for f in found if f.rule == RULE]

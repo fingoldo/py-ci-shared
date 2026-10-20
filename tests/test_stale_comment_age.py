@@ -448,3 +448,10 @@ class TestStaleWarningSummary:
         assert lines[-1] == "stale-comment early warnings: 0 (1 repo(s) not checked)"
         assert sca.main(["--stale-warning-summary", str(plain), "--scan-dir", "lib"]) == 1
         assert "stale-comment early warnings: 0 (1 repo(s) not checked)" in capsys.readouterr().out
+
+
+def test_a_zero_warning_window_is_not_replaced_by_the_default(tmp_path):
+    """``warn_days=0`` is a window of zero days: nothing is going stale within it. It used to be rewritten to the default of 7 by an ``or``."""
+    a = _repo_at_t0(tmp_path / "alpha", "lib/a.dart", "// TODO: soon\nvoid a() {}\n")
+    lines, _ = sca.stale_warning_summary([a], scan_dirs=["lib"], max_age_days=30, warn_days=0, now=_T0 + 25 * _DAY)
+    assert lines[0] == "alpha: 0 going stale within 0 days, 0 already older than 30 days"

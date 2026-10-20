@@ -697,6 +697,7 @@ def is_stdlib(name: str) -> bool:
     try:
         spec = importlib.util.find_spec(name)
     except (ImportError, ValueError) as exc:
+        logger.warning("_ci_install_parts.py handler at line 699 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not resolve module spec, treated as not stdlib: %s", type(exc).__name__)
         return False
     origin = getattr(spec, "origin", None) or ""

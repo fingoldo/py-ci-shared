@@ -73,6 +73,7 @@ def _cwd() -> str:
     try:
         return os.getcwd()
     except OSError as exc:  # the directory was removed under us: that is a change too
+        logger.warning("resource_leak_checks.py handler at line 75 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("current directory is unavailable: %s", type(exc).__name__)
         return "<deleted>"
 

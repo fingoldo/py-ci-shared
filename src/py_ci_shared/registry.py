@@ -82,6 +82,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_mutation_model": "private part of mutation_teeth",
     "_mutation_operators": "private part of mutation_teeth",
     "_mutation_runner": "private part of mutation_teeth",
+    "_mutation_sweep": "private part of mutation_teeth: the per-mutant verdict and the state a sweep carries between mutants",
     "_scaffold": "the ``py-ci-shared new-gate`` scaffolder",
     "_text_ratchet": "shared file reader, line keying and baseline enforcement of the text-scanning ratchet gates",
     "_mutation_worker": "subprocess worker of mutation_teeth; its stdout is the protocol",

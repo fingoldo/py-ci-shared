@@ -93,7 +93,8 @@ def _falls_off_geometrically(node: ast.AST) -> bool:
         # resolving names, which a parse-only check cannot do anyway.
         try:
             return ast.unparse(node.left) == ast.unparse(node.right)
-        except Exception as exc:
+        except Exception as exc:  # best-effort: unparse of a diagnostic rendering; the finding is reported without it
+            logger.warning("epsilon_padded_denominators.py handler at line 96 substituted a fallback for %s: %s", type(exc).__name__, exc)
             logger.debug("could not unparse expression pair: %s", type(exc).__name__)
             return False
     if isinstance(node, ast.Call):
@@ -119,7 +120,8 @@ def _is_padded_power(denominator: ast.AST) -> bool:
 def _report(path: Path, node: ast.AST) -> Finding:
     try:
         rendered = ast.unparse(node)
-    except Exception:
+    except Exception as exc:
+        logger.warning("epsilon_padded_denominators.py line 123: substituted a fallback after %s: %s", type(exc).__name__, exc)
         rendered = "<unrenderable>"
     return Finding(path, getattr(node, "lineno", 0), rendered[:160])
 

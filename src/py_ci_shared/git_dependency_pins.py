@@ -155,6 +155,7 @@ def _is_requirements_file(path: Path) -> bool:
     try:
         text = read_source(path)
     except SourceReadError as exc:
+        logger.warning("git_dependency_pins.py handler at line 157 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not read file, not a requirements file: %s", type(exc).__name__)
         return False
     for line in text.splitlines():

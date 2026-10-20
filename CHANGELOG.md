@@ -24,6 +24,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Refactor: the mutation sweep's per-mutant verdict is split into helpers (`_judge`, `_primary_verdict`, `_check_unmutated`, `_group_twins`, `_sweep_in_sandbox`),
   clearing two C901 findings. Decisions and budget accounting are unchanged; the harness version is 16 because its tracked files changed.
 - `embedded_postgres` logs a warning when psutil is missing, so the reaper's no-op is visible.
+- `stale_comment_age`: `warn_days=0` is a zero-day window, no longer rewritten to 7 (a sentinel `or` that the self-audit reports as P1).
+- Handlers that substitute a fallback value log it at WARNING (27 self-audit findings): `_mutation_worker`, `cli`, `closed_audit_rounds`, `commit_metadata`, `consumer_import_census`, `dart_scanners`, `epsilon_padded_denominators`, `hash_fed_by_array_copy`, `mutation_teeth`, `required_check_contexts`, `workflow_runner_labels`, `_ci_install_parts`, `adoption_matrix`, `corpus_drift`, `git_dependency_pins`, `offline_suite_without_credentials`, `phantom_code_references`, `resource_leak_checks`, `schema_snapshot_parity`, `sibling_floor_skew`, `baseline_trend`, `required_check_contexts`. Unreadable-file fallbacks that are deliberately best-effort carry a `# best-effort:` reason.
+- Registry: `_mutation_sweep` is declared internal to mutation_teeth.
 - Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
   warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 

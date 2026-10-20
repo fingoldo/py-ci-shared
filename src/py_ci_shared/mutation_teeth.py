@@ -83,15 +83,6 @@ from __future__ import annotations
 
 import contextlib
 import importlib
-from ._mutation_sweep import (
-    _SweepState,
-    _check_origin,
-    _check_unmutated,
-    _group_twins,
-    _judge,
-    _module_names,
-    PathArg,
-)
 import json
 import logging
 import os
@@ -144,6 +135,15 @@ from ._mutation_runner import _pytest_flags as _pytest_flags
 from ._mutation_runner import _remove_tree as _remove_tree
 from ._mutation_runner import _run_pytest as _run_pytest
 from ._mutation_runner import _WarmRunner as _WarmRunner
+from ._mutation_sweep import (
+    PathArg,
+    _check_origin,
+    _check_unmutated,
+    _group_twins,
+    _judge,
+    _module_names,
+    _SweepState,
+)
 from ._mutation_worker import _CRASH_EXCEPTIONS as _CRASH_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
@@ -299,6 +299,7 @@ def _try_lock(fd: int) -> bool:
             fcntl: Any = importlib.import_module("fcntl")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
+        logger.warning("mutation_teeth.py line 301: substituted a fallback after %s: %s", type(exc).__name__, exc)
         logger.debug("could not lock cache file: %s", type(exc).__name__)
         return False
     return True

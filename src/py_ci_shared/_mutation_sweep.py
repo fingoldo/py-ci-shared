@@ -7,21 +7,21 @@ this module decides one mutant at a time and keeps the state the sweep carries f
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._mutation_model import Mutant, MutationHarnessError
 from ._mutation_runner import (
     _MUTATION_BROKE_THE_RUN,
-    _WarmRunner,
     _classify,
     _classify_code,
     _first_failing_file,
     _killed_by_crash,
     _lead_with,
     _run_pytest,
+    _WarmRunner,
 )
 
 PathArg = Union[Path, str]

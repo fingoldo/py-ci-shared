@@ -121,6 +121,7 @@ def _test_supplied(args: "tuple[Any, ...]", kwargs: "dict[str, Any]") -> bool:
         resolved = Path(os.fspath(target)).resolve()
         temp = Path(tempfile.gettempdir()).resolve()
     except (OSError, RuntimeError, TypeError) as exc:
+        logger.warning("offline_suite_without_credentials.py handler at line 123 substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not resolve target path, treated as not supplied: %s", type(exc).__name__)
         return False
     return resolved == temp or temp in resolved.parents

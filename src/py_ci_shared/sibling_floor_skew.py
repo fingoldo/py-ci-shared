@@ -407,6 +407,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             network=not args.no_network,
         )
     except (CoreError, AssertionError) as exc:
+        logger.warning("sibling_floor_skew.py handler at line 409 substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"sibling_floor_skew: {exc}\n")
         return 2
     for finding in found:

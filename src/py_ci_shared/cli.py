@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import importlib
 import inspect
+import logging
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -30,6 +31,8 @@ from typing import Optional
 from . import __version__, registry
 from ._core.config import ConfigError, RepoConfig, find_repo_root, load_config
 from ._core.runner import ERROR, FAILED, PASSED, SKIPPED, GateResult, budget_verdict, run_gate
+
+logger = logging.getLogger(__name__)
 
 CONFIG_NAMES = {"ruff-base": "ruff-base.toml", "ruff-tests": "ruff-tests.toml"}
 
@@ -137,6 +140,7 @@ def _cmd_new_gate(args: argparse.Namespace) -> int:
         root = find_checkout(Path(args.repo) if args.repo else Path.cwd())
         done = new_gate(root, args.name, kind=args.kind, summary=args.summary or "")
     except ScaffoldError as exc:
+        logger.warning("cli.py line 142: substituted a fallback after %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared new-gate: {exc}", err=True)
         return 2
     for rel in done.created:
@@ -196,6 +200,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _print(__version__)
         return 0
     except (ConfigError, KeyError) as exc:
+        logger.warning("cli.py line 201: substituted a fallback after %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared: {exc.args[0] if exc.args else exc}", err=True)
         return 2
 

@@ -201,6 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.unmoved or args.stale_days is not None,
         )
     except GitError as exc:
+        logger.warning("baseline_trend.py handler at line 203 substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"baseline_trend: {exc}\n")
         return 2
     if not lines:

@@ -56,7 +56,7 @@ def find_pg_bin(explicit: "str | None" = None) -> "Path | None":
         import pgserver  # type: ignore[import-not-found]
 
         candidates.append(Path(pgserver.__file__).resolve().parent / "pginstall" / "bin")
-    except Exception:
+    except Exception:  # best-effort: pgserver is an optional source of binaries; its absence is the normal case
         pass
     which = shutil.which("pg_ctl")
     if which:

@@ -715,6 +715,7 @@ def main(argv: "Sequence[str] | None" = None) -> int:
             server_dsn=_env_dsn(ns.server_dsn_env),
         )
     except SchemaParityError as exc:
+        logger.warning("schema_snapshot_parity.py handler at line 717 substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"schema_snapshot_parity: {exc}\n")
         return 2
     if not result.checked:

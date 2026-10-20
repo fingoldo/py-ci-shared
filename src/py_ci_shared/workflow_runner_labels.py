@@ -23,6 +23,7 @@ a job that relied on what ``-latest`` happened to be may need its own label.
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sys
 from collections.abc import Mapping, Sequence
@@ -30,6 +31,8 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import CoreError, Finding, read_source
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MARKER",
@@ -182,6 +185,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 sys.stdout.write(f"fixed {rel}" + "\n")
         found = find_workflow_runner_label_problems(args.repo, min_files=0)
     except (CoreError, ValueError) as exc:
+        logger.warning("workflow_runner_labels.py line 187: substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"workflow_runner_labels: {exc}" + "\n")
         return 1
     for f in found:

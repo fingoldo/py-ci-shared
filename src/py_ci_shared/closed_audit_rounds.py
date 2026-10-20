@@ -24,6 +24,7 @@ CI step (push or pull request)::
 from __future__ import annotations
 
 import argparse
+import logging
 import re
 import sys
 from collections.abc import Sequence
@@ -33,6 +34,8 @@ from typing import Optional, Union
 from ._core import CoreError, Finding
 from ._core.git import git_output
 from .commit_metadata import parse_trailers, read_commits
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_CLOSED_DIR", "DEFAULT_TRAILER", "RULE", "assert_closed_audit_rounds_append_only", "find_closed_round_edits", "main"]
 
@@ -158,6 +161,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         found = find_closed_round_edits(args.repo, args.base, head=args.head, closed_dir=args.closed_dir, trailer=args.trailer)
     except CoreError as exc:
+        logger.warning("closed_audit_rounds.py line 163: substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"closed_audit_rounds: {exc}" + "\n")
         return 1
     for f in found:
