@@ -2,6 +2,13 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.23.1
+
+- Behaviour change: `phantom_code_references` no longer reports nine classes of false positive (Python protocol names, standard vocabulary
+  codes, errno constants, external data file names, one-character symbols, names the repo spells out as strings, bare `self.x` attributes,
+  `table.column` pairs spelled in SQL). On the autopsia tree 901 findings become 494. A consumer baseline recorded against the old scanner
+  now has entries that no longer fire: rebuild it from the new scanner (`PYTHONPATH=. python tests/test_meta/<test>.py`), do not hand-edit it.
+
 ## 1.23.0
 
 - Security audit of 2026-10-20 (`audits/2026-10-20/`, 39 findings, all dispositioned in `audits/TRACKER.md`). The consumer-visible changes:

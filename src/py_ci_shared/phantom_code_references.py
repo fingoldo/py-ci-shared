@@ -45,12 +45,14 @@ self-verifying, no-allowlist check can state without judging the many still-corr
 from __future__ import annotations
 
 import ast
+import errno
 import functools
 import importlib
 import io
 import logging
 import re
 import tokenize
+import types
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
@@ -213,8 +215,20 @@ _NEVER_REFERENCES = frozenset(
 )
 # A dotted token whose tail is a file extension is a file name, which is `phantom_markdown_links`' territory.
 _FILE_EXT_RE = re.compile(
-    r"\.(?:py|md|json|jsonl|csv|tsv|txt|xml|yaml|yml|toml|cfg|ini|gz|zip|sql|db|html|css|js|dart|arb|sh|ps1|log|pdf|png|svg)$", re.IGNORECASE
+    r"\.(?:py|md|json|jsonl|csv|tsv|txt|xml|yaml|yml|toml|cfg|ini|gz|zip|sql|db|html|css|js|dart|arb|sh|ps1|log|pdf|png|svg"
+    r"|dct|dta|rrf|parquet|pkl|npz|npy|xlsx|xls|bz2|tgz)$",
+    re.IGNORECASE,
 )
+# The Python protocol names: every ``__x__`` the object, type, module and function types define, plus the module attributes and
+# the directory name a runtime creates (``__main__``, ``__file__``, ``__pycache__``). The interpreter's, never this repo's; any
+# other dunder is still judged, so a made-up ``__ghost__`` still fires.
+_PYTHON_PROTOCOL_NAMES = frozenset(
+    {"__main__", "__file__", "__pycache__"}
+    | {n for t in (object, type, types.ModuleType, types.FunctionType, types.MethodType, property) for n in dir(t) if n.startswith("__")}
+)
+# A standard identifier of an external vocabulary: an ICD-10 code or category range (``E11``, ``A15-A19``, ``K60.1``), a UMLS
+# concept unique identifier (``C0020538``), a Cochrane review id (``CD000097.pub2``). Data, not a name this repo declares.
+_STANDARD_CODE_RE = re.compile(r"^(?:[A-Z]\d{2}(?:[.-][A-Za-z0-9]+)*|C\d{7}|CD\d{6}(?:\.pub\d+)?)$")
 
 
 def _base_names(node: ast.ClassDef) -> list[str]:
@@ -235,6 +249,7 @@ def _collect_class(node: ast.ClassDef, names: set[str], members: dict[str, set[s
             own.add(member)
             names.add(member)
     _collect_self_attrs(node, own)
+    names.update(own)
 
 
 def _direct_member_names(child: ast.stmt) -> list[str]:
@@ -361,6 +376,63 @@ def dart_declarations(files: Iterable[Path]) -> set[str]:
                 if group:
                     names.add(group)
     return names
+
+
+def _is_test_file(path: Path) -> bool:
+    """A test module by its name (``test_*.py``, ``*_test.py``) or by a ``tests`` directory on its path."""
+    return path.name.startswith("test_") or path.name.endswith("_test.py") or "tests" in path.parts
+
+
+def _docstring_ids(tree: ast.Module) -> set[int]:
+    """``id()`` of the bare string statements (docstrings) of a module."""
+    return {
+        id(node.value) for node in _fast_walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    }
+
+
+def _data_name_index(files: Iterable[Path]) -> "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]":
+    """What the repo's code SPELLS OUT, from its string constants. A string that a NON-TEST module uses as a literal, in
+    any role (a comparison, a call argument, a key, a column read, an assignment), is a data name: the repo handles that
+    value, so a comment naming it is not a phantom. Docstrings are excluded (a docstring naming a thing is the claim being
+    checked, not evidence for it) and test modules never contribute. Returns the exact production constant values, a
+    word -> constant-index map for ``table.column`` SQL checks (every constant, tests included), and the constants."""
+    exact: set[str] = set()
+    constants: list[str] = []
+    words: dict[str, set[int]] = {}
+    for path in files:
+        if path.suffix != ".py":
+            continue
+        try:
+            _, tree = parse_source(path)
+        except SourceError:
+            continue
+        docstrings = _docstring_ids(tree)
+        production = not _is_test_file(path)
+        for node in _fast_walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings and node.value:
+                if production:
+                    exact.add(node.value)
+                index = len(constants)
+                constants.append(node.value)
+                for word in set(re.findall(r"[A-Za-z_]\w*", node.value)):
+                    words.setdefault(word, set()).add(index)
+    return frozenset(exact), {w: frozenset(ix) for w, ix in words.items()}, constants
+
+
+def _names_imported_by(path: Path) -> frozenset[str]:
+    """The names a Python file binds with ``import`` / ``from ... import`` (a file that imports ``StataReader`` has it)."""
+    if path.suffix != ".py":
+        return frozenset()
+    try:
+        _, tree = parse_source(path)
+    except SourceError:
+        return frozenset()
+    out: set[str] = set()
+    for node in _fast_walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                out.add((alias.asname or alias.name).split(".")[0])
+    return frozenset(out)
 
 
 def _python_comment_lines(source: str, tree: ast.Module) -> list[tuple[int, str]]:
@@ -492,29 +564,68 @@ def _test_file_problem(token: str, basename: str, test_names: set[str], test_pat
     return None if exists else f"`{token}` names a test file that does not exist"
 
 
-def _token_problem(token: str, declared: set[str], known: set[str], repo_known: set[str], test_names: set[str], test_paths: set[str]) -> "Optional[str]":
+def _outside_head_verdict(token: str, im: "re.Match[str]", known: set[str], imported: frozenset[str]) -> "Optional[bool]":
+    """For ``head.member`` whose head is not this repo's: True when it resolves (by import, or as a library member of a name
+    the commented file imports), False when the module or builtin exists but the attribute does not, None when no module
+    decides and the caller judges it as an undeclared name."""
+    head, member = im.group("head"), im.group("member")
+    if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
+        return True
+    if head in known or _importable(head):
+        return False
+    if head in imported:
+        return True  # the commented file imports ``head`` itself, so the claim is about a library member it has in hand
+    return None
+
+
+def _spelled_out_elsewhere(token: str, spelled_exact: frozenset[str], spelled_words: dict[str, frozenset[int]], spelled_constants: list[str]) -> bool:
+    """A token that is not a claim about this repo's declarations: a Python protocol name, a standard vocabulary code, an
+    OS error constant, a name the repo's code spells out as a string, a one-character symbol, or a ``table.column`` the
+    repo builds in SQL. Each rule has its own unit test in ``tests/test_phantom_code_references.py``."""
+    if _FILE_EXT_RE.search(token) or (token.isupper() and "_" in token):
+        return True  # a file name, or an environment variable / another system's constant
+    if token in _PYTHON_PROTOCOL_NAMES or _STANDARD_CODE_RE.match(token):
+        return True  # a Python protocol name, or an identifier of an external code vocabulary (ICD-10, UMLS, Cochrane)
+    if token.isupper() and hasattr(errno, token):
+        return True  # an OS error constant (``ENOENT``) spelled as the stdlib spells it
+    im = _IDENT_RE.match(token)
+    if not im:
+        return False
+    head, member = im.group("head"), im.group("member")
+    if member is None and not im.group("call"):
+        if token in spelled_exact:
+            return True  # the repo's code spells this name out as a string: a data name, column, label or key it defines
+        if len(head) == 1:
+            return True  # a one-character symbol or placeholder (``Z`` in an equation, ``X`` in ``mirrors X.as_dict()``)
+    if member is not None and not im.group("call") and not im.group("rest"):
+        return _sql_spells_both(head, member, spelled_words, spelled_constants)  # ``fts_backfill_progress.last_rowid`` in SQL
+    return False
+
+
+def _token_problem(token: str, declared: set[str], known: set[str], repo_known: set[str], test_names: set[str], test_paths: set[str],
+                   spelled: "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]", imported: frozenset[str]) -> "Optional[str]":
     """The violation text for one backticked *token* (without the ``rel:line:`` prefix), or None when it is fine."""
     tf = _TEST_FILE_RE.match(token)
     if tf:
         return _test_file_problem(token, tf.group(1), test_names, test_paths)
+    if _spelled_out_elsewhere(token, *spelled):
+        return None
     im = _IDENT_RE.match(token)
-    if _FILE_EXT_RE.search(token) or (token.isupper() and "_" in token) or not im:
-        return None  # a file name, an environment variable / another system's constant, or prose
+    if not im:
+        return None
     head, member = im.group("head"), im.group("member")
     if member is not None and head not in repo_known:
-        # Not this repo's name: an installed module or a builtin decides, attribute by attribute.
-        if _resolves_by_import(f"{head}.{member}{im.group('rest')}"):
-            return None
-        if head in known or _importable(head):
-            return f"`{token}` does not resolve by import"
+        verdict = _outside_head_verdict(token, im, known, imported)
+        if verdict is not None:
+            return None if verdict else f"`{token}` does not resolve by import"
     repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)
-    if head in known:
-        if member is None or f"{head}.{member}" in known:
-            return None
-        if not repo_class:
-            # A declared head with an undeclared member of a LIBRARY class; resolving library APIs is out
-            # of scope, so the head carries the claim. A closed class of this repo has every member listed.
-            return None
+    if head in known and (member is None or f"{head}.{member}" in known):
+        return None
+    if head in known and not repo_class:
+        # A declared head with an undeclared member of a LIBRARY class; resolving library APIs is out
+        # of scope, so the head carries the claim. A closed class of this repo has every member listed.
+        return None
+    if head in known and repo_class:
         return f"`{token}` names a member `{head}` does not declare"
     # A lowercase bare identifier in backticks is a parameter, a keyword argument or a local far more
     # often than a claim about a declared function; only a call suffix or a dotted member makes it one.
@@ -545,19 +656,27 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
     repo_known = set(declared) | set(extra_known) | _NEVER_REFERENCES
     known = repo_known | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
     test_names, test_paths = _test_file_index(repo_root)
+    spelled_exact, spelled_words, spelled_constants = _data_name_index(files)
     violations: list[str] = []
     for path in files:
         rel = relative_posix(path, repo_root)
+        imported = _names_imported_by(path)
         lines, problem = _comment_lines_checked(path)
         if problem is not None:
             violations.append(f"{rel}:{(problem.line if problem.line is not None else 1)}: {problem.kind}: {problem.message}")
         for lineno, text in lines:
             for m in _BACKTICK_RE.finditer(text):
                 token = m.group(1).strip()
-                problem_text = _token_problem(token, declared, known, repo_known, test_names, test_paths)
+                problem_text = _token_problem(token, declared, known, repo_known, test_names, test_paths, (spelled_exact, spelled_words, spelled_constants), imported)
                 if problem_text is not None:
                     violations.append(f"{rel}:{lineno}: {problem_text}")
     return violations
+
+
+def _sql_spells_both(head: str, member: str, spelled_words: dict[str, frozenset[int]], constants: list[str]) -> bool:
+    """Some string constant of the repo contains both ``head`` and ``member`` as whole words."""
+    hits = spelled_words.get(head, frozenset()) & spelled_words.get(member, frozenset())
+    return any(re.search(rf"\b{re.escape(head)}\b", constants[i]) and re.search(rf"\b{re.escape(member)}\b", constants[i]) for i in hits)
 
 
 def _numbered_count(lines: list[tuple[int, str]], i: int) -> int:

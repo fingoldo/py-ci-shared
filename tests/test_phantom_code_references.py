@@ -295,3 +295,122 @@ def test_baseline_entries_match_on_file_and_name_not_line_or_wording(tmp_path: P
     baseline.write_text(json.dumps({"phantom_references": ["pkg/mod.py::Phantom()"]}))
     with pytest.raises(pytest.fail.Exception, match="no longer reproduced"):
         assert_no_phantom_code_references([p], tmp_path, set(), baseline_path=baseline)
+
+
+# --- false-positive classes found on the autopsia consumer tree (2026-10-20). Each rule has a shape that must pass and
+# --- a neighbouring real phantom that must still fire, so the rule cannot quietly swallow a genuine finding.
+
+
+def test_python_protocol_dunder_names_are_not_repo_names(tmp_path: Path) -> None:
+    p = _write(tmp_path, "pkg/mod.py", '"""Read `__file__` and `__dict__`; a worker re-imports `__main__`."""\n')
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == []
+    ghost = _write(tmp_path, "pkg/ghost.py", '"""Calls `__ghost_protocol__` on the object."""\n')
+    assert find_phantom_code_references([ghost], tmp_path, python_declarations([ghost])) == [
+        "pkg/ghost.py:1: `__ghost_protocol__` names nothing declared in this repo"
+    ]
+
+
+def test_standard_vocabulary_codes_are_not_repo_names(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path,
+        "pkg/mod.py",
+        '"""ICD-10 `E11`, the range `A15-A19`, the concept `C0020538`, the review `CD000097.pub2`, category `K60.1`."""\n',
+    )
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == []
+
+
+def test_os_error_constants_are_not_repo_names(tmp_path: Path) -> None:
+    p = _write(tmp_path, "pkg/mod.py", '"""An `OSError` with `ENOENT` counts; `ENOTAREALERRNO` does not exist."""\n')
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == ["pkg/mod.py:1: `ENOTAREALERRNO` names nothing declared in this repo"]
+
+
+def test_external_data_file_names_with_their_own_extensions_are_not_repo_names(tmp_path: Path) -> None:
+    p = _write(tmp_path, "pkg/mod.py", '"""Reads `eddict2020.dct` and `MRMAP.RRF` from the release."""\n')
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == []
+
+
+def test_a_bare_attribute_assigned_on_self_is_declared(tmp_path: Path) -> None:
+    impl = _write(tmp_path, "pkg/impl.py", "class Client:\n    def call(self):\n        self._last_request_at = 1.0\n")
+    doc = _write(tmp_path, "pkg/doc.py", "# the `_last_request_at` stamp is reset on every retry\nx = 1\n")
+    assert find_phantom_code_references([impl, doc], tmp_path, python_declarations([impl, doc])) == []
+    assert find_phantom_code_references([doc], tmp_path, python_declarations([doc])) == ["pkg/doc.py:1: `_last_request_at` names nothing declared in this repo"]
+
+
+def test_a_one_character_symbol_is_not_a_repo_name(tmp_path: Path) -> None:
+    p = _write(tmp_path, "pkg/mod.py", "# the `Z` term is the scale the reducer factored out\n# the `Frobnicate` term is not\nx = 1\n")
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == ["pkg/mod.py:2: `Frobnicate` names nothing declared in this repo"]
+
+
+def test_a_name_the_repo_spells_out_as_a_string_is_a_data_name(tmp_path: Path) -> None:
+    data = _write(tmp_path, "pkg/fars.py", 'COLUMNS = ["ATESTANTE", "DTOBITO"]\n')
+    doc = _write(tmp_path, "pkg/doc.py", '"""The `ATESTANTE` column counts deaths; `MentionedOnlyHere` is a claim."""\nx = 1\n')
+    files = [data, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:1: `MentionedOnlyHere` names nothing declared in this repo"
+    ]
+
+
+def test_table_dot_column_the_repo_builds_in_sql_is_not_a_phantom(tmp_path: Path) -> None:
+    sql = _write(tmp_path, "pkg/db.py", 'SCHEMA = "CREATE TABLE fts_progress (last_rowid INTEGER)"\n')
+    doc = _write(tmp_path, "pkg/doc.py", "# the bookmark (`fts_progress.last_rowid`) survives a restart\n# and `fts_progress.lost_rowid` does not\nx = 1\n")
+    files = [sql, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:2: `fts_progress.lost_rowid` names nothing declared in this repo"
+    ]
+
+
+def test_a_library_member_of_a_class_the_commented_file_imports_is_not_judged(tmp_path: Path) -> None:
+    p = _write(
+        tmp_path,
+        "pkg/reader.py",
+        "from pandas.io.stata import StataReader\n# the labels come from `StataReader.value_labels()` on the real file\nx = 1\n",
+    )
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == []
+    bare = _write(tmp_path, "pkg/bare.py", "# the labels come from `StataReader.value_labels()` on the real file\nx = 1\n")
+    assert find_phantom_code_references([bare], tmp_path, python_declarations([bare])) == [
+        "pkg/bare.py:1: `StataReader.value_labels()` names nothing declared in this repo"
+    ]
+
+
+def test_a_string_a_production_module_uses_in_any_role_is_a_data_name(tmp_path: Path) -> None:
+    """A comparison, a call argument, a dict key, a subscript key and a table row are all uses the repo makes of a string, so a
+    comment naming that string describes the repo's data, not a phantom. Only the never-spelled name is reported."""
+    use = _write(tmp_path, "pkg/use.py", 'def f(x, load):\n    return x == "UseOnlyHere" or load("UseOnlyTwo")\n')
+    defn = _write(
+        tmp_path,
+        "pkg/defn.py",
+        'REGISTRY = {"DictKeyHere": 1}\nTABLE = ["TableRowHere"]\nrow = {}\nrow["SubscriptKeyHere"] = 2\n',
+    )
+    doc = _write(
+        tmp_path,
+        "pkg/doc.py",
+        "# `UseOnlyHere`, `UseOnlyTwo`, `DictKeyHere`, `TableRowHere` and `SubscriptKeyHere` are named\n# `NeverSpelledAnywhere` is not\nx = 1\n",
+    )
+    files = [use, defn, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:2: `NeverSpelledAnywhere` names nothing declared in this repo"
+    ]
+
+
+def test_a_string_only_a_test_module_uses_is_still_a_phantom(tmp_path: Path) -> None:
+    """Test modules never contribute: a fixture string under ``tests/`` is not the repo's data, so a production comment naming it fires."""
+    fixture = _write(tmp_path, "tests/test_fixture.py", 'FIXTURE = {"OnlyInTestHere": 1}\n')
+    prod = _write(tmp_path, "pkg/prod.py", "# the `OnlyInTestHere` value is what the fixture feeds in\nx = 1\n")
+    files = [fixture, prod]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == ["pkg/prod.py:1: `OnlyInTestHere` names nothing declared in this repo"]
+
+
+def test_known_genuine_phantoms_stay_reported_next_to_longer_spelled_out_strings(tmp_path: Path) -> None:
+    """Matching is by whole string: a production literal ``LBD_pipeline`` does not make the comment name ``LBD`` a data name."""
+    prod = _write(tmp_path, "pkg/prod.py", 'STAGE = "LBD_pipeline"\nlabel = "_drop_age_excluded_candidatesX"\n')
+    doc = _write(
+        tmp_path,
+        "pkg/doc.py",
+        "# `LBD` and `_drop_age_excluded_candidates` were removed; `CantMissCandidate.severity` too\nx = 1\n",
+    )
+    files = [prod, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:1: `LBD` names nothing declared in this repo",
+        "pkg/doc.py:1: `_drop_age_excluded_candidates` names nothing declared in this repo",
+        "pkg/doc.py:1: `CantMissCandidate.severity` names nothing declared in this repo",
+    ]
