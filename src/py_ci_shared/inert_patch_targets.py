@@ -53,6 +53,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from ._core.node_index import names_read
 from ._core import DEFAULT_EXCLUDE, child_nodes, iter_files, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
@@ -294,11 +295,6 @@ def _aliases_in(body: "list[ast.stmt]", known: "set[str]", inherited: "dict[str,
 _FILE_SENTINELS: "dict[str, set[str]]" = {}
 
 
-def _names_in(node: ast.expr) -> "set[str]":
-    """Every bare name mentioned in an expression."""
-    return {n.id for n in _fast_walk(node) if isinstance(n, ast.Name)}
-
-
 def _guards_presence_of(test: ast.expr, attr: str) -> bool:
     """Whether *test* is an existence check for *attr*, so an assignment under it is not inventing.
 
@@ -389,7 +385,7 @@ def _module_assignments(body: "list[ast.stmt]", known: "set[str]", inherited: "d
             # not the defect: the assignment under it cannot invent anything. The branch is walked once.
             hits = list(_module_assignments(inner, known, aliases))
             if isinstance(node, ast.If):
-                guarded = {a for _l, _d, a in hits if _guards_presence_of(node.test, a) or _FILE_SENTINELS.get(a, frozenset()) & _names_in(node.test)}
+                guarded = {a for _l, _d, a in hits if _guards_presence_of(node.test, a) or _FILE_SENTINELS.get(a, frozenset()) & names_read(node.test)}
                 yield from (t for t in hits if t[2] not in guarded)
             else:
                 yield from hits

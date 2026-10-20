@@ -34,6 +34,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.source import indent_width
 from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, text_files
 
 __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
@@ -46,10 +47,6 @@ _EXIT_ZERO = re.compile(r"(?<![\w.])(?:exit\s+0(?![\w.])|sys\.exit\(\s*0\s*\)|ex
 # Shell: the block ends at its closing keyword or at the next function header; any return/exit reached first ends it too.
 _SH_BLOCK_END = re.compile(r"^\s*(?:fi|esac|done|else|elif|return|exit)\b|^\s*\}|^\s*(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{?\s*$")
 _PY_BLOCK_END = re.compile(r"^\s*(?:return|raise|continue|break)\b")
-
-
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
 
 
 def _shell_block_exits_zero(lines: list[str], index: int) -> bool:
@@ -66,15 +63,15 @@ def _shell_block_exits_zero(lines: list[str], index: int) -> bool:
 def _python_block_exits_zero(lines: list[str], index: int) -> bool:
     if _EXIT_ZERO.search(lines[index]):
         return True
-    depth = _indent(lines[index])
+    depth = indent_width(lines[index])
     for line in lines[index + 1 :]:
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-        if _indent(line) < depth:
+        if indent_width(line) < depth:
             return False
         if _EXIT_ZERO.search(line):
             return True
-        if _indent(line) == depth and _PY_BLOCK_END.match(line):
+        if indent_width(line) == depth and _PY_BLOCK_END.match(line):
             return False
     return False
 

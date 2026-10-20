@@ -247,3 +247,8 @@ def clear() -> None:
         _INDEX.clear()
         _MEMO.clear()
         _DESCENDANTS.clear()
+
+
+def names_read(node: ast.AST) -> set[str]:
+    """Every bare name read inside *node*."""
+    return {n.id for n in walk(node) if isinstance(n, ast.Name)}

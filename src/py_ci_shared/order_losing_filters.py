@@ -30,6 +30,7 @@ import ast
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from ._core.node_index import names_read
 from ._core import child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
@@ -55,11 +56,6 @@ class OrderLosingFilter:
         return f"{self.path}:{self.lineno} {self.scope}: {self.kind} ({self.mask})"
 
 
-def _names_in(node: ast.AST) -> set[str]:
-    """Every bare name read inside ``node``."""
-    return {n.id for n in _fast_walk(node) if isinstance(n, ast.Name)}
-
-
 def _index_masks(func: ast.AST) -> dict[str, set[str]]:
     """``{mask name: the index names it was built from}`` for boolean masks built from an index array inside ``func``."""
     masks: dict[str, set[str]] = {}
@@ -70,12 +66,12 @@ def _index_masks(func: ast.AST) -> dict[str, set[str]]:
         if isinstance(node.value, ast.Constant) and node.value.value is True:
             for t in node.targets:
                 if isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name) and not isinstance(t.slice, (ast.Constant, ast.Slice)):
-                    masks.setdefault(t.value.id, set()).update(_names_in(t.slice))
+                    masks.setdefault(t.value.id, set()).update(names_read(t.slice))
         # m = np.isin(x, idx) / m = col.is_in(idx) / m = np.in1d(x, idx)
         if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Call):
             call = node.value
             if (getattr(call.func, "attr", None) or getattr(call.func, "id", None)) in _MEMBERSHIP_CALLS and call.args:
-                masks.setdefault(node.targets[0].id, set()).update(_names_in(call.args[-1]))
+                masks.setdefault(node.targets[0].id, set()).update(names_read(call.args[-1]))
     return masks
 
 
@@ -84,9 +80,9 @@ def _positional_indices(func: ast.AST) -> set[str]:
     out: set[str] = set()
     for node in _fast_walk(func):
         if isinstance(node, ast.Subscript) and getattr(node.value, "attr", None) == "iloc":
-            out |= _names_in(node.slice)
+            out |= names_read(node.slice)
         if isinstance(node, ast.Call) and getattr(node.func, "attr", None) in ("take", "gather") and node.args:
-            out |= _names_in(node.args[0])
+            out |= names_read(node.args[0])
     return out
 
 

@@ -46,6 +46,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
+from ._core.source import indent_width
 from ._core import read_source
 
 _WORKING_DIR_RE = re.compile(r"""^\s*(?:-\s*)?working-directory:\s*["']?([^"'#\n]+?)["']?\s*(?:#.*)?$""")
@@ -82,10 +83,6 @@ def _strip_comment(line: str) -> str:
     return line.rstrip()
 
 
-def _indent(line: str) -> int:
-    return len(line) - len(line.lstrip())
-
-
 def _scopes(lines: list[str]) -> "tuple[list[Optional[int]], list[Optional[int]]]":
     """Per line: the index of the job it sits in (or None) and of the step (list item) it sits in (or None)."""
     job_of: list[Optional[int]] = []
@@ -102,7 +99,7 @@ def _scopes(lines: list[str]) -> "tuple[list[Optional[int]], list[Optional[int]]
             job_of.append(job_no)
             step_of.append(step_no)
             continue
-        indent = _indent(line)
+        indent = indent_width(line)
         content = line.strip()
         if indent == 0:
             in_jobs = bool(_JOBS_RE.match(content))
@@ -132,7 +129,7 @@ def _run_content(lines: list[str]) -> "list[Optional[str]]":
     block_indent: Optional[int] = None
     for i, line in enumerate(lines):
         if block_indent is not None:
-            if not line.strip() or _indent(line) > block_indent:
+            if not line.strip() or indent_width(line) > block_indent:
                 out[i] = line
                 continue
             block_indent = None
@@ -141,7 +138,7 @@ def _run_content(lines: list[str]) -> "list[Optional[str]]":
             continue
         value = m.group("value").strip()
         if value[:1] in ("|", ">"):
-            block_indent = _indent(line)
+            block_indent = indent_width(line)
         else:
             out[i] = value
     return out

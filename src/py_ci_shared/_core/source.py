@@ -199,3 +199,8 @@ def clear_parse_cache() -> None:
 def parse_cache_size() -> int:
     with _LOCK:
         return len(_CACHE)
+
+
+def indent_width(line: str) -> int:
+    """Leading whitespace width of *line*, counting spaces and tabs as one each."""
+    return len(line) - len(line.lstrip())
