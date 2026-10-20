@@ -26,10 +26,11 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
+from ._core.scopes import own_nodes
 from ._core import Finding, ScanResult, child_nodes, parse_text, scan_python
 from ._core.gate_contract import check_scan
 
@@ -175,16 +176,6 @@ def _targets(node: ast.AST) -> list[str]:
     return []
 
 
-def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
-    """Nodes of *scope* without descending into nested functions or classes (they are their own scope)."""
-    stack = list(child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(child_nodes(node))
-
-
 def _bindings(node: ast.AST) -> "list[tuple[ast.AST, ast.AST]]":
     """``(target, value)`` pairs *node* binds: assignments, walrus, ``for``/comprehension targets, ``with ... as``."""
     if isinstance(node, ast.Assign):
@@ -206,7 +197,7 @@ def _scope_taint(scope: ast.AST, inherited: "set[str]", resolvers: "frozenset[st
     while True:
         taint = _Taint(names, resolvers)
         grown = set(names)
-        for node in _own_nodes(scope):
+        for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             for target, value in _bindings(node):
                 if taint.is_tainted(value):
                     grown.update(_targets(target))
@@ -235,7 +226,7 @@ def offenders_in_source(source: str, path: str = "<string>", *, resolvers: Itera
     def visit(scope: ast.AST, qual: str, inherited: "set[str]") -> None:
         names = _scope_taint(scope, inherited, resolver_set)
         taint = _Taint(names, resolver_set)
-        for node in _own_nodes(scope):
+        for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             for expr in _printed_operands(node):
                 hit = taint.first_tainted(expr)
                 if hit is not None:

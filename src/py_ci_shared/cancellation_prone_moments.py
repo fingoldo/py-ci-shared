@@ -37,10 +37,11 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.scopes import own_nodes
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core import walk as shared_walk
 
@@ -51,16 +52,6 @@ SUPPRESSION = "# moment-ok:"
 
 _FIRST_SUM_CALLS = frozenset({"sum", "mean", "average", "nansum", "nanmean", "fsum"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
-
-
-def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
-    """Nodes of *scope* outside nested functions and lambdas, so each statement is judged by its own function."""
-    stack = list(child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, (*_FUNCTIONS, ast.Lambda)):
-            stack.extend(child_nodes(node))
 
 
 def _same(a: ast.AST, b: ast.AST) -> bool:
@@ -291,7 +282,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     out: list[Finding] = []
     scopes: list[ast.AST] = [tree, *(n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS))]
     for scope in scopes:
-        own = list(_own_nodes(scope))
+        own = list(own_nodes(child_nodes(scope), (*_FUNCTIONS, ast.Lambda)))
         if _scope_may_cancel(own):
             out.extend(_scope_findings(scope, own, rel, lines))
     return out

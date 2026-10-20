@@ -34,6 +34,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.scopes import own_nodes
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
@@ -118,16 +119,6 @@ _REMOVES = frozenset({"pop", "popitem", "__delitem__", "move_to_end"})
 _ELEMENT_MUTATORS = frozenset({"append", "extend", "add", "update", "insert", "remove", "discard", "pop", "setdefault", "clear", "__setitem__"})
 
 
-def _own_nodes(func: ast.AST) -> Iterator[ast.AST]:
-    """Nodes of *func* without descending into nested functions, classes or lambdas (they are judged on their own)."""
-    stack = list(child_nodes(func))
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(child_nodes(node))
-
-
 def _cache_of(node: ast.expr, caches: dict[str, int]) -> Optional[str]:
     """The cache *node* names directly (``C``), or ``None``."""
     return node.id if isinstance(node, ast.Name) and node.id in caches else None
@@ -151,7 +142,7 @@ def _operations(func: ast.AST, caches: dict[str, int], declared_global: set[str]
     value held in the cache) and ``rebind`` (``global C; C = ...``)."""
     ops: dict[str, set[str]] = {}
     elements: dict[str, str] = {}
-    nodes = list(_own_nodes(func))
+    nodes = list(own_nodes(child_nodes(func), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
     for node in nodes:  # locals bound to an element: `sizes = C.setdefault(label, {})`
         if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
             owner = _element_of(node.value, caches, {})

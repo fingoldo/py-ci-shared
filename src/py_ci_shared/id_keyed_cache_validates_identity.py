@@ -46,6 +46,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.scopes import own_nodes
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker
@@ -107,16 +108,6 @@ def _uses_weakref(tree: ast.Module, aliases: ImportAliases) -> bool:
     return False
 
 
-def _own_nodes(scope: ast.AST) -> Iterator[ast.AST]:
-    """Nodes of *scope* without descending into nested functions, classes or lambdas (judged on their own)."""
-    stack = list(child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(child_nodes(node))
-
-
 def _scopes(tree: ast.Module) -> list[_Scope]:
     return [tree] + [n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
@@ -139,7 +130,7 @@ def _id_helpers(tree: ast.Module) -> set[str]:
     out: set[str] = set()
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            returns = [inner.value for inner in _own_nodes(node) if isinstance(inner, ast.Return) and inner.value is not None]
+            returns = [inner.value for inner in own_nodes(child_nodes(node), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(inner, ast.Return) and inner.value is not None]
             if returns and all(_has_id_call(value, set(), set(), frozenset()) for value in returns):
                 out.add(node.name)
     return out
@@ -166,7 +157,7 @@ def _local_names(scope: ast.AST) -> set[str]:
         return set()
     args = scope.args
     bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs, *(a for a in (args.vararg, args.kwarg) if a is not None)]}
-    for node in _own_nodes(scope):
+    for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         if isinstance(node, ast.Assign):
             bound.update(t.id for t in node.targets if isinstance(t, ast.Name))
         elif isinstance(node, (ast.For, ast.comprehension)) and isinstance(node.target, ast.Name):
@@ -177,7 +168,7 @@ def _local_names(scope: ast.AST) -> set[str]:
 def _id_names(scope: ast.AST, id_helpers: set[str], fixed: frozenset[str]) -> set[str]:
     """Local names bound from an expression containing ``id(...)`` (``key = (id(a), b)``), to a fixed point."""
     names: set[str] = set()
-    assigns = [n for n in _own_nodes(scope) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
+    assigns = [n for n in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
     changed = True
     while changed:
         changed = False
@@ -193,7 +184,7 @@ def _id_names(scope: ast.AST, id_helpers: set[str], fixed: frozenset[str]) -> se
 
 def _accesses(scope: ast.AST, caches: dict[str, int]) -> Iterator[tuple[str, ast.AST, ast.AST, bool]]:
     """``(cache, node, key expression, is_read)`` for every access of a module cache in this scope."""
-    for node in _own_nodes(scope):
+    for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name) and node.value.id in caches:
             yield node.value.id, node, node.slice, isinstance(node.ctx, ast.Load)
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name) and node.func.value.id in caches:
@@ -207,7 +198,7 @@ def _accesses(scope: ast.AST, caches: dict[str, int]) -> Iterator[tuple[str, ast
 
 def _checks_identity(scope: ast.AST) -> bool:
     """Does the scope compare something with ``is``/``is not`` other than against ``None``/``True``/``False``?"""
-    for node in _own_nodes(scope):
+    for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         if isinstance(node, ast.Compare) and any(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops):
             sides = [node.left, *node.comparators]
             if not any(isinstance(s, ast.Constant) and (s.value is None or isinstance(s.value, bool)) for s in sides):
@@ -219,10 +210,10 @@ def _shadowed(scope: ast.AST, caches: dict[str, int]) -> set[str]:
     """Cache names rebound locally in a function (a parameter or plain assignment, no ``global``): a different object."""
     if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return set()
-    declared = {n for node in _own_nodes(scope) if isinstance(node, ast.Global) for n in node.names}
+    declared = {n for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(node, ast.Global) for n in node.names}
     args = scope.args
     bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]}
-    bound |= {t.id for node in _own_nodes(scope) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
+    bound |= {t.id for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
     return (bound & set(caches)) - declared
 
 
