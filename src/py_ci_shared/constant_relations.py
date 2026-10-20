@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._toml_compat import tomllib
+from ._core.node_index import dotted_name
 
 logger = logging.getLogger(__name__)
 
@@ -98,17 +99,6 @@ def load_relations(registry: Path) -> list[Relation]:
             raise RelationError(f"{registry}: relation #{i} ({check}) has no `reason`; say why it must hold")
         out.append(Relation(check, reason, names))
     return out
-
-
-def _dotted(node: ast.expr) -> Optional[str]:
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if isinstance(node, ast.Name):
-        parts.append(node.id)
-        return ".".join(reversed(parts))
-    return None
 
 
 def _field_default(obj: Any, name: str) -> tuple[bool, Any]:
@@ -229,7 +219,7 @@ class _Evaluator:
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
             operand = self.value(node.operand)
             return -operand if isinstance(node.op, ast.USub) else operand
-        dotted = _dotted(node)
+        dotted = dotted_name(node) or None
         if dotted is not None:
             if dotted not in self.values:
                 ref = self.names.get(dotted, dotted)

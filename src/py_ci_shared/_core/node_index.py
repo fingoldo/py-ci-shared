@@ -270,3 +270,15 @@ def function_nodes(tree: ast.AST) -> "Iterator[Union[ast.FunctionDef, ast.AsyncF
     for node in walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             yield node
+
+
+def dotted_name(node: ast.AST) -> str:
+    """``a.b.C`` for a pure Name/Attribute chain; ``""`` for anything else."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+    return ""

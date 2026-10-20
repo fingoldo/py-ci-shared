@@ -37,6 +37,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Union
 
+from ._core.node_index import dotted_name
 from ._core import parse_file, qualified_functions
 from ._core.node_index import walk as _fast_walk
 
@@ -121,17 +122,6 @@ def imported_top_level(path: Path | str) -> set[str]:
     return names
 
 
-def _dotted(node: ast.expr) -> str:
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if isinstance(node, ast.Name):
-        parts.append(node.id)
-        return ".".join(reversed(parts))
-    return ""
-
-
 def exception_handlers(path: Path | str, exception: str) -> int:
     """How many `except` clauses in *path* catch *exception* by that name.
 
@@ -144,7 +134,7 @@ def exception_handlers(path: Path | str, exception: str) -> int:
         if not isinstance(node, ast.ExceptHandler) or node.type is None:
             continue
         caught = node.type.elts if isinstance(node.type, ast.Tuple) else [node.type]
-        dotted = [_dotted(c) for c in caught]
+        dotted = [dotted_name(c) for c in caught]
         if any(d == exception or ("." not in exception and d.rsplit(".", 1)[-1] == exception) for d in dotted if d):
             found += 1
     return found
