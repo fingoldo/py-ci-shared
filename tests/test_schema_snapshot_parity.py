@@ -14,7 +14,10 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared import schema_snapshot_parity as sp
-from py_ci_shared.embedded_postgres import embedded_postgres, find_pg_bin
+from py_ci_shared.embedded_postgres import find_pg_bin
+
+# One Postgres server per session (conftest.pg_cluster): under xdist these tests all run on one worker, see conftest._default_workers.
+pytestmark = pytest.mark.xdist_group("postgres")
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures_schema_snapshot_parity"
 SNAPSHOT = FIXTURES / "snapshot.json.canary"
@@ -282,12 +285,11 @@ def test_the_gate_never_calls_refresh():
 
 
 @pytest.fixture(scope="module")
-def server():
-    """One throwaway server for the module: a start costs over a minute on a scanned Windows machine."""
-    if find_pg_bin() is None:
-        pytest.skip("no Postgres binaries here (PG_BIN / pgserver / PATH / `python -m py_ci_shared.embedded_postgres fetch`): server canaries NOT run")
-    with embedded_postgres(find_pg_bin()) as dsn:  # type: ignore[arg-type]
-        yield dsn
+def server(pg_cluster):
+    """A fresh database for this module on the session's server (see ``conftest.pg_cluster``); the module's canaries share it, as they did its own server."""
+    from py_ci_shared.embedded_postgres import fresh_database
+
+    yield fresh_database(pg_cluster)
 
 
 def test_a_server_dsn_that_is_not_local_is_refused_before_anything_is_created(capsys):
@@ -312,8 +314,11 @@ def test_canary_violation_reports_the_incident_shapes_exactly(server):
 
 
 @needs_server
-def test_canary_clean_provisions_exactly_the_snapshot_including_indexes_and_twice():
-    result = sp.assert_schema_matches_snapshot(FIXTURES / "clean" / "schema.sql.canary", SNAPSHOT, check_indexes=True)
+def test_canary_clean_provisions_exactly_the_snapshot_including_indexes_and_twice(pg_cluster):
+    """On its own fresh database of the session server: provisioning needs an empty database, and a shared one holds the previous canary's schema."""
+    from py_ci_shared.embedded_postgres import fresh_database
+
+    result = sp.assert_schema_matches_snapshot(FIXTURES / "clean" / "schema.sql.canary", SNAPSHOT, check_indexes=True, server_dsn=fresh_database(pg_cluster))
     assert result.checked is True and result.findings == [] and result.ok is True
 
 

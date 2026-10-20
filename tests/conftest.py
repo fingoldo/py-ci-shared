@@ -8,6 +8,7 @@ passphrase, on a machine with signing configured.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import subprocess
 import sys
@@ -101,6 +102,48 @@ def git_repo(tmp_path: Path) -> Callable[..., Path]:
     return _make
 
 
+@pytest.fixture(scope="session")
+def pg_cluster():
+    """One throwaway Postgres server for the whole session.
+
+    A start costs 24-32 s on the machine the suite is measured on, and each module that needed a server started its own. Tests that need an
+    isolated schema take a :func:`fresh_database` on this server, so they still cannot see each other's objects.
+    """
+    from py_ci_shared.embedded_postgres import embedded_postgres, find_pg_bin
+
+    bin_dir = find_pg_bin()
+    if bin_dir is None:
+        pytest.skip("no Postgres binaries here (PG_BIN / pgserver / PATH / `python -m py_ci_shared.embedded_postgres fetch`)")
+    with embedded_postgres(bin_dir) as dsn:
+        yield dsn
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_cmdline_main(config: pytest.Config) -> None:
+    """Under xdist: run the tests marked ``xdist_group`` on one worker, and pick the worker count from worker_budget.
+
+    Both have to be in place before xdist starts. xdist decides the mode in its own ``pytest_cmdline_main``, and it starts each worker from the
+    controller's ``invocation_params.args`` (the original command line), so a mode set only on the controller's option object reaches neither the
+    scheduler's choice of group nor the workers' test ids. The ``--dist loadgroup`` is therefore added to those arguments, unless the command line
+    chose a distribution already. ``invocation_params`` is pytest's own record of the invocation and is replaced, not mutated (it is a frozen dataclass).
+    """
+    if hasattr(config, "workerinput"):
+        return
+    try:
+        import xdist  # noqa: F401
+    except ImportError:
+        return
+    args = tuple(config.invocation_params.args)
+    if not any(a == "--dist" or a.startswith("--dist=") for a in args):
+        config.invocation_params = dataclasses.replace(config.invocation_params, args=(*args, "--dist", "loadgroup"))
+        config.option.dist = "loadgroup"
+    if getattr(config.option, "numprocesses", None) is None:
+        from py_ci_shared.worker_budget import available_workers
+
+        config.option.numprocesses = available_workers()
+
+
+@pytest.hookimpl(tryfirst=True)
 def pytest_configure(config: pytest.Config) -> None:
     """pytest-randomly passes thinc's reseeder a seed past 2**32; bound it (see randomly_seed_guard).
 

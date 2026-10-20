@@ -65,7 +65,9 @@ class TestDirect:
             os.chdir(tmp_path)
             sys.path.insert(0, "seed-entry")
             sys.path.remove("seed-three")
-            warnings.simplefilter("ignore")
+            # A filter no caller has installed: simplefilter("ignore") is a no-op when the session already ignores everything (pytest -W ignore),
+            # so the "warnings.filters changed" check would fail only in such a session.
+            warnings.filterwarnings("ignore", message="py-ci-shared resource-leak probe")
             leaks = state_leaks(before)
             assert f"working directory changed to {str(tmp_path)!r} (was {cwd!r})" in leaks
             assert "sys.path entry 'seed-entry' was added" in leaks and "sys.path entry 'seed-three' was removed" in leaks

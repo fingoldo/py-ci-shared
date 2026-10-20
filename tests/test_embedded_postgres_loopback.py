@@ -107,12 +107,7 @@ def test_the_process_environment_is_read_by_default(monkeypatch):
     assert throwaway_dsn_from_env("X_PG_DSN") is None
 
 
-def test_the_dsn_the_harness_itself_produces_is_accepted():
+@pytest.mark.xdist_group("postgres")
+def test_the_dsn_the_harness_itself_produces_is_accepted(pg_cluster):
     """If `embedded_postgres()` ever yielded a socket path this guard would refuse its own server, and every writing test would fail."""
-    from py_ci_shared.embedded_postgres import embedded_postgres, find_pg_bin
-
-    bin_dir = find_pg_bin()
-    if bin_dir is None:
-        pytest.skip("no Postgres binaries (PG_BIN or `python -m py_ci_shared.embedded_postgres fetch`): the harness DSN shape is not exercised")
-    with embedded_postgres(bin_dir) as dsn:
-        assert require_loopback_dsn(dsn) == dsn
+    assert require_loopback_dsn(pg_cluster) == pg_cluster

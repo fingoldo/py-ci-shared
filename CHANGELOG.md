@@ -4,17 +4,14 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.0
 
-- Shared traversal for every gate. `_core.scopes` (`iter_scopes`, `qualified_functions`) and `_core.node_index` (`child_nodes`, `parent_map`/`parent_of`, `tree_cached`, `TreeVisitor`)
-  keep what one walk of a module tree found next to the tree, and `parse_text` shares the tree of a source string; `walk` of a module tree is now computed once. All 90 gates that walked
-  trees by hand (`ast.walk`, `iter_child_nodes`, `NodeVisitor`, `ast.parse`) use them; `tests/test_gates_use_shared_traversal.py` fails on a new hand-rolled walk
-  (the mutation harness, which edits private trees, is the one exemption). Six copies of the "functions with qualified names" recursion became `qualified_functions`.
-- The parse cache serves a file whose stat signature is unchanged and older than the read by 3 s (git's racy-timestamp rule) without reading, hashing or resolving it again, and
-  `resolve_cached` remembers path resolution: on a full mlframe meta-suite profile `parse_source` was asked 332k times for 7.7k files and `Path.resolve` ran 887k times.
-  `shared_mutable_placeholder` walks each scope once (81 s to 28 s over the mlframe tree).
-- Fixed: the pytest plugin loaded every `pytest_randomly.random_seeder` entry point on every start, even under `-p no:randomly`. Those entry points import thinc, torch and cupy,
-  so each pytest process of a machine with them installed paid 13 s before its first test; the mutation harness starts a cold pytest per surviving mutant and the self-tests start
-  many (a cold harness-style pytest: 13.0 s to 5.5 s; `test_four_workers_reach_the_same_verdict_as_one` 210 s to 33 s). The guard now does nothing when pytest-randomly is not
-  running in the session.
+- The test suite runs on the machine's spare cores by default: `tests/conftest.py` passes `worker_budget.available_workers()` to pytest-xdist when it is installed
+  (`pytest-xdist` is now in the `dev` extra). `PY_CI_WORKERS=1` gives one worker. The CPU share (rounded half up) is then capped so each worker has 4 GiB of
+  free memory, never below one: a worker that starts without it pages, and the next worker's DLL loads fail with an error that names no memory.
+- The tests that start a Postgres server (`xdist_group("postgres")`) run on one worker under xdist, so the session has one server, not one per worker. The
+  mode is added to the arguments the workers start from (see the `pytest_cmdline_main` note in `tests/conftest.py`). Tests that need an isolated schema take
+  a `fresh_database()` on the session server (`py_ci_shared.embedded_postgres`). The lifecycle test (`test_a_real_server_starts...`) keeps its own start.
+- Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
+  warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 
 ## 1.22.13
 

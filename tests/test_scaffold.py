@@ -155,7 +155,9 @@ def test_the_cli_subcommand(layout, capsys):
 def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout):
     """In the copy: the inventory accepts the new gate, while its own tests and its canary fail."""
     new_gate(full_layout, "unfinished_gate", summary="Not written yet")
-    env = dict(os.environ, PYTHONPATH=str(full_layout / "src"), PYTHONUNBUFFERED="1")
+    # A nested run is its own session: under xdist the outer worker's PYTEST_XDIST_* variables would make it believe it is a worker of the outer run.
+    inherited = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_XDIST")}
+    env = dict(inherited, PYTHONPATH=str(full_layout / "src"), PYTHONUNBUFFERED="1")
 
     def pytest_run(*ids: str) -> subprocess.CompletedProcess:
         cmd = [sys.executable, "-m", "pytest", "-p", "no:randomly", "-p", "no:cacheprovider", "-rA", *ids]

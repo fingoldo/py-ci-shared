@@ -46,6 +46,7 @@ def test_invalid_override_falls_back_to_the_measurement(monkeypatch, bad):
     monkeypatch.setenv(wb.ENV_OVERRIDE, bad)
     monkeypatch.setattr(wb, "_physical_cores", lambda: 8)
     monkeypatch.setattr(wb, "_busy_percent", lambda _s: 0.0)
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: 64 * GiB)  # the CPU arithmetic is under test, not this host's RAM
     assert wb.available_workers() == 4
 
 
@@ -53,4 +54,49 @@ def test_available_workers_never_returns_less_than_one(monkeypatch):
     monkeypatch.delenv(wb.ENV_OVERRIDE, raising=False)
     monkeypatch.setattr(wb, "_physical_cores", lambda: 1)
     monkeypatch.setattr(wb, "_busy_percent", lambda _s: 100.0)
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: 64 * GiB)  # the CPU arithmetic is under test, not this host's RAM
     assert wb.available_workers() == 1
+
+
+def test_a_four_core_laptop_at_a_fifth_busy_gets_two_workers():
+    """4 physical cores at 17.5% busy leave 3.3 free; half of that is 1.65, which a truncated budget reported as one worker."""
+    assert wb.worker_count_from(4, 17.5) == 2
+
+
+def test_half_a_worker_rounds_up_not_down():
+    assert wb.worker_count_from(2, 0.0) == 1  # 1.0 stays 1
+    assert wb.worker_count_from(3, 0.0) == 2  # 1.5 rounds half up
+
+
+GiB = 2**30
+
+
+def test_each_worker_needs_four_gib_free():
+    assert wb.worker_count_by_memory(8, 32 * GiB) == 8
+    assert wb.worker_count_by_memory(8, 12 * GiB) == 3  # 12 GiB buys three workers, not eight
+
+
+def test_the_memory_cap_never_goes_below_one_worker():
+    assert wb.worker_count_by_memory(4, 1 * GiB) == 1
+    assert wb.worker_count_by_memory(4, 0) == 1
+
+
+def test_no_measurement_leaves_the_cpu_count_alone():
+    assert wb.worker_count_by_memory(3, None) == 3
+
+
+def test_available_workers_applies_the_memory_cap(monkeypatch):
+    """A 16-core idle machine would get 8 workers from the CPU; with 9 GiB free the memory cap brings it to 2."""
+    monkeypatch.delenv(wb.ENV_OVERRIDE, raising=False)
+    monkeypatch.setattr(wb, "_physical_cores", lambda: 16)
+    monkeypatch.setattr(wb, "_busy_percent", lambda _s: 0.0)
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: 64 * GiB)  # the CPU arithmetic is under test, not this host's RAM
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: 9 * GiB)
+    assert wb.available_workers() == 2
+
+
+def test_the_override_still_bypasses_the_memory_cap(monkeypatch):
+    monkeypatch.setenv(wb.ENV_OVERRIDE, "6")
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: pytest.fail("memory must not be sampled under an override"))
+    assert wb.available_workers() == 6
+

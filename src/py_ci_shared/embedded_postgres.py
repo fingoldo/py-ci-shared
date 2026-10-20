@@ -121,6 +121,24 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
         shutil.rmtree(data, ignore_errors=True)
 
 
+def fresh_database(cluster_dsn: str) -> str:
+    """A new empty database on *cluster_dsn*'s server, as a DSN for it. The name is generated here, never taken from input."""
+    import uuid
+
+    import psycopg2
+
+    name = "t_" + uuid.uuid4().hex[:12]
+    conn = psycopg2.connect(cluster_dsn)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(f'CREATE DATABASE "{name}"')
+    finally:
+        conn.close()
+    return cluster_dsn.replace("dbname=postgres", f"dbname={name}")
+
+
+
 class NotAThrowawayServerError(RuntimeError):
     """A DSN that a writing test would use does not name a loopback TCP server, so it may be a real one."""
 

@@ -70,6 +70,7 @@ def test_outside_a_repository_there_is_no_main_checkout(tmp_path):
 
 
 @pytest.mark.skipif(find_pg_bin() is None, reason="no Postgres binaries here (PG_BIN / pgserver / PATH)")
+@pytest.mark.xdist_group("postgres")
 def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
     with embedded_postgres(find_pg_bin()) as dsn:  # type: ignore[arg-type]
         port = int(re.search(r"port=(\d+)", dsn).group(1))  # type: ignore[union-attr]
@@ -79,9 +80,12 @@ def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
         socket.create_connection(("127.0.0.1", port), timeout=2)
 
 
-@pytest.mark.skipif(find_pg_bin() is None, reason="no Postgres binaries here (PG_BIN / pgserver / PATH)")
+@pytest.mark.xdist_group("postgres")
 def test_run_hands_the_command_its_dsn():
-    code = run([sys.executable, "-c", "import os; raise SystemExit(0 if 'port=' in os.environ['X_DSN'] else 5)"], env_var="X_DSN", bin_dir=find_pg_bin())
+    bin_dir = find_pg_bin()
+    if bin_dir is None:
+        pytest.skip("no Postgres binaries here (PG_BIN / pgserver / PATH)")
+    code = run([sys.executable, "-c", "import os; raise SystemExit(0 if 'port=' in os.environ['X_DSN'] else 5)"], env_var="X_DSN", bin_dir=bin_dir)
     dsn_left_set = "X_DSN" in os.environ  # a bool: an operand `os.environ` makes pytest print every variable
     assert code == 0 and not dsn_left_set
 
