@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.0
 
+- Behaviour change: `phantom_code_references` no longer reports nine classes of false positive (Python protocol names, standard vocabulary
+  codes, errno constants, external data file names, one-character symbols, names the repo spells out as strings, bare `self.x` attributes,
+  `table.column` pairs spelled in SQL). On the autopsia tree 901 findings become 357. A consumer baseline recorded against the old scanner
+  now has entries that no longer fire: rebuild it from the new scanner (`PYTHONPATH=. python tests/test_meta/<test>.py`), do not hand-edit it.
 - The test suite runs on the machine's spare cores by default: `tests/conftest.py` passes `worker_budget.available_workers()` to pytest-xdist when it is installed
   (`pytest-xdist` is now in the `dev` extra). `PY_CI_WORKERS=1` gives one worker. The CPU share (rounded half up) is then capped so each worker has 4 GiB of
   free memory, never below one: a worker that starts without it pages, and the next worker's DLL loads fail with an error that names no memory.
