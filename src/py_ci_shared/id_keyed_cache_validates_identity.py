@@ -130,7 +130,11 @@ def _id_helpers(tree: ast.Module) -> set[str]:
     out: set[str] = set()
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            returns = [inner.value for inner in own_nodes(child_nodes(node), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(inner, ast.Return) and inner.value is not None]
+            returns = [
+                inner.value
+                for inner in own_nodes(child_nodes(node), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+                if isinstance(inner, ast.Return) and inner.value is not None
+            ]
             if returns and all(_has_id_call(value, set(), set(), frozenset()) for value in returns):
                 out.add(node.name)
     return out
@@ -168,7 +172,11 @@ def _local_names(scope: ast.AST) -> set[str]:
 def _id_names(scope: ast.AST, id_helpers: set[str], fixed: frozenset[str]) -> set[str]:
     """Local names bound from an expression containing ``id(...)`` (``key = (id(a), b)``), to a fixed point."""
     names: set[str] = set()
-    assigns = [n for n in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)]
+    assigns = [
+        n
+        for n in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+        if isinstance(n, ast.Assign) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name)
+    ]
     changed = True
     while changed:
         changed = False
@@ -210,10 +218,21 @@ def _shadowed(scope: ast.AST, caches: dict[str, int]) -> set[str]:
     """Cache names rebound locally in a function (a parameter or plain assignment, no ``global``): a different object."""
     if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return set()
-    declared = {n for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(node, ast.Global) for n in node.names}
+    declared = {
+        n
+        for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+        if isinstance(node, ast.Global)
+        for n in node.names
+    }
     args = scope.args
     bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs]}
-    bound |= {t.id for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(node, ast.Assign) for t in node.targets if isinstance(t, ast.Name)}
+    bound |= {
+        t.id
+        for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda))
+        if isinstance(node, ast.Assign)
+        for t in node.targets
+        if isinstance(t, ast.Name)
+    }
     return (bound & set(caches)) - declared
 
 
