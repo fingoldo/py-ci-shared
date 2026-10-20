@@ -425,7 +425,7 @@ def _names_imported_by(path: Path) -> frozenset[str]:
         return frozenset()
     try:
         _, tree = parse_source(path)
-    except SourceError:
+    except SourceError:  # best-effort: an unparsable file imports nothing here; the comment check reports the file itself
         return frozenset()
     out: set[str] = set()
     for node in _fast_walk(tree):
