@@ -36,6 +36,20 @@ def test_the_dogfood_set_covers_the_gates_this_repo_can_break():
         "audit_round_format",
         "pytest_markers",
         "vacuous_loop_assertions",
+        "unsafe_deserialization",
+        "connect_error_echo",
+        "connection_liveness_kwargs",
+        "committed_line_endings",
+        "ci_default_branch_never_cancelled",
+        "workflow_runner_labels",
+        "predictable_tmp_path",
+        "reiterated_iterable_params",
+        "swallowed_exceptions",
+        "single_shot_timing_assertion",
+        "wrapper_protocol_parity",
+        "stub_signature_parity",
+        "unread_function_params",
+        "validation_errors_echo_input",
     }
     assert expected <= enabled, f"dropped from [tool.py_ci_shared]: {sorted(expected - enabled)}"
     workflows = {p.name for p in (REPO / ".github" / "workflows").glob("*.yml")}

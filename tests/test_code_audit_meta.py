@@ -8,6 +8,7 @@ seed/compare/refresh/report cycle around it.
 
 from __future__ import annotations
 
+import importlib
 import json
 import sys
 from pathlib import Path
@@ -80,6 +81,9 @@ class TestAssertNoNewCodeAuditFindings:
         assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
     def test_the_baseline_round_trips_without_orjson(self, tmp_path, monkeypatch):
+        # pyutilz is a separate package and requires orjson to be imported at all; it is loaded first, so the block below tests only what
+        # THIS package does with orjson (nothing: its baseline is written and read with the standard json module).
+        importlib.import_module("pyutilz.dev.code_audit")
         monkeypatch.setitem(sys.modules, "orjson", None)  # any `import orjson` now raises ImportError
         src = tmp_path / "src"
         src.mkdir()

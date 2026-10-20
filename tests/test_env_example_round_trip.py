@@ -59,7 +59,7 @@ def test_the_comma_list_loads_after_the_fix_and_not_before(tmp_path: Path) -> No
     env = _env(tmp_path, "# ORIGINS=http://a:1,http://b:2\n")
     assert unloadable_values(Fixed, env, base_env=BASE) == ([], 1)
     problems, tried = unloadable_values(Broken, env, base_env=BASE)
-    assert tried == 1 and len(problems) == 1 and "ORIGINS='http://a:1,http://b:2'" in problems[0]
+    assert tried == 1 and len(problems) == 1 and problems[0] == ".env.example:1: ORIGINS does not load: SettingsError"
 
 
 def test_an_inline_comment_is_not_part_of_the_value(tmp_path: Path) -> None:
@@ -93,8 +93,9 @@ def test_a_check_that_tried_nothing_fails(tmp_path: Path) -> None:
 
 
 def test_the_assert_names_the_line(tmp_path: Path) -> None:
-    with pytest.raises(pytest.fail.Exception, match=r"\.env\.example:2: LOG_LEVEL='LOUD'"):
+    with pytest.raises(pytest.fail.Exception, match=r"\.env\.example:2: LOG_LEVEL does not load: ValidationError") as caught:
         assert_env_example_loads(Fixed, _env(tmp_path, "# comment\nLOG_LEVEL=LOUD\n"), base_env=BASE)
+    assert "LOUD" not in str(caught.value), "the committed value must not be echoed into CI logs"
 
 
 def test_a_bom_does_not_drop_the_first_assignment(tmp_path: Path) -> None:

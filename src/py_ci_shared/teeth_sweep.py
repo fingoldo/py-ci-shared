@@ -73,6 +73,7 @@ import tempfile
 import time
 from typing import Any
 
+from ._core.git import git_env
 from ._mutation_runner import run_with_deadline
 
 logger = logging.getLogger(__name__)
@@ -192,7 +193,7 @@ def _run_suite(repo: pathlib.Path, jobs: int) -> tuple[str, list[str]]:
     # waiting for an eviction that could no longer happen, and the run sat there. Fifteen
     # minutes is roughly four times the slowest honest run measured here. The whole process
     # tree is killed on a timeout: pytest-xdist's workers outlived a plain kill on Windows.
-    proc = run_with_deadline(_suite_command(jobs), cwd=repo, env=None, timeout=900)
+    proc = run_with_deadline(_suite_command(jobs), cwd=repo, env=git_env(), timeout=900)
     if proc is None:
         return "TIMED OUT -- the mutation hangs the suite; that is a finding, not a pass", ["<suite timed out>"]
     summary, failed, _ran = outcome_of(proc.returncode, proc.stdout, proc.stderr)

@@ -136,7 +136,8 @@ def unloadable_values(
             settings_cls(_env_file=None)
         except Exception as exc:  # the report IS the exception, whatever its type
             logger.debug("settings class could not be built from base env: %s", type(exc).__name__)
-            return [f"base_env alone does not build {settings_cls.__name__}: {type(exc).__name__}: {exc}"], 0
+            # The exception type only: a pydantic message quotes input_value, and the values here are real configuration.
+            return [f"base_env alone does not build {settings_cls.__name__}: {type(exc).__name__}"], 0
     problems, tried = [], 0
     for lineno, name, value in documented_values(env_path):
         if name not in fields or name in skipped or placeholder.search(value):
@@ -146,8 +147,9 @@ def unloadable_values(
             try:
                 settings_cls(_env_file=None)
             except Exception as exc:  # any exception is the finding
-                first = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
-                problems.append(f"{env_path.name}:{lineno}: {name}={value!r} does not load: {type(exc).__name__}: {first}")
+                # The name and the exception type, never the value: a committed .env.example can hold a real key, and the
+                # validation message quotes it (input_value=...). tracked_secret_shapes withholds matched text for the same reason.
+                problems.append(f"{env_path.name}:{lineno}: {name} does not load: {type(exc).__name__}")
     return problems, tried
 
 

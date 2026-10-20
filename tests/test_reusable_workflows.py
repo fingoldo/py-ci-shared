@@ -327,7 +327,13 @@ def test_release_moves_the_major_tag_only_after_verification():
     assert data[True]["push"]["tags"] == ["v[0-9]+.[0-9]+.[0-9]+"]
     publish = data["jobs"]["publish"]
     assert publish["needs"] == "verify" and publish["permissions"] == {"contents": "write"}
-    assert "git push -f origin" in "\n".join(str(s.get("run", "")) for s in publish["steps"])
+    runs = "\n".join(str(s.get("run", "")) for s in publish["steps"])
+    assert "push -f origin" in runs
+    # The token reaches the push as a one-shot header, never through the checkout: release_guard.py runs from the tagged commit
+    # and a credential in .git/config would be readable by it.
+    checkouts = [s for s in publish["steps"] if str(s.get("uses", "")).startswith("actions/checkout@")]
+    assert checkouts and all(s["with"].get("persist-credentials") is False and "token" not in s["with"] for s in checkouts)
+    assert "extraheader" in runs
 
 
 def test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_the_root():

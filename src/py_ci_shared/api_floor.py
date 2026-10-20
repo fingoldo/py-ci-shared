@@ -32,7 +32,11 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import hashlib
+import importlib.metadata
+import json
 import logging
+import os
 import re
 import subprocess
 import sys
@@ -158,17 +162,118 @@ def _vermin_available() -> bool:
     return True
 
 
-def _run_vermin(paths: Sequence[str], target: str) -> list[tuple[str, int, str, str]]:
-    args = ["-t=" + target + "-", "--violations", "--no-parse-comments", "--backport", "typing_extensions", "--format", "parsable"]
-    out = []
+def _vermin_args(target: str) -> list[str]:
+    return ["-t=" + target + "-", "--violations", "--no-parse-comments", "--backport", "typing_extensions", "--format", "parsable"]
+
+
+def _vermin_version() -> str:
+    try:
+        return importlib.metadata.version("vermin")
+    except importlib.metadata.PackageNotFoundError:  # best-effort: the version only keys the cache, so an unknown one costs a re-analysis, never a wrong verdict
+        return "unknown"
+
+
+def _result_key(data: bytes, target: str, version: str) -> str:
+    """What vermin's output for one file depends on: its bytes, the floor, vermin's version and the flags this module passes."""
+    digest = hashlib.sha256()
+    for part in (target, version, " ".join(_vermin_args(target)), _VERMIN):
+        digest.update(part.encode("utf-8"))
+        digest.update(b"\0")
+    digest.update(data)
+    return digest.hexdigest()
+
+
+def _result_dir() -> Path:
+    """Per-user cache of vermin results, under the home directory (not the shared temp directory: another user must not plant entries)."""
+    path = Path.home() / ".cache" / "py_ci_shared" / "vermin"
+    path.mkdir(parents=True, exist_ok=True)
+    if os.name == "posix":
+        os.chmod(path, 0o700)
+    return path
+
+
+def _load_result(key: str) -> Optional[list[str]]:
+    try:
+        with open(_result_dir() / f"{key}.json", encoding="utf-8") as handle:
+            lines = json.load(handle)
+    except (OSError, ValueError):  # swallow-ok: an unreadable entry is a miss; the file is analysed again  # best-effort: a miss only costs a re-analysis
+        return None
+    return lines if isinstance(lines, list) and all(isinstance(line, str) for line in lines) else None
+
+
+def _store_result(key: str, lines: list[str]) -> None:
+    """Keep each line without its path: the key is the file's bytes, so another file with the same bytes must get its own path."""
+    tails = [":".join(line.rsplit(":", 5)[1:]) for line in lines]
+    try:
+        target = _result_dir() / f"{key}.json"
+        staged = target.with_suffix(".tmp")
+        with open(staged, "w", encoding="utf-8") as handle:
+            json.dump(tails, handle)
+        os.replace(staged, target)
+    except OSError as exc:
+        logger.warning("vermin result cache not written (%s); the next run analyses these files again", exc)
+
+
+def _path_of(line: str) -> str:
+    """The file path of one parsable vermin line (the path may hold ':' on Windows, so split from the right)."""
+    return line.rsplit(":", 5)[0]
+
+
+def _run_vermin_raw(paths: Sequence[str], target: str) -> tuple[dict[str, list[str]], bool]:
+    """vermin's parsable violation lines for each of *paths* (an empty list for a file with none), and whether every
+    output line named one of *paths*. When one did not, the per-file split cannot be trusted, so nothing is cached."""
+    by_path: dict[str, list[str]] = {os.path.normcase(os.path.normpath(p)): [] for p in paths}
+    complete = True
     for batch in _batches(paths):
         proc = subprocess.run(
-            [sys.executable, "-c", _VERMIN, *args, *batch], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=1800
+            [sys.executable, "-c", _VERMIN, *_vermin_args(target), *batch], capture_output=True, text=True, encoding="utf-8", errors="replace", check=False, timeout=1800
         )
         if proc.returncode not in (0, 1):  # 1 = violations found
             raise CorpusError(f"vermin exited {proc.returncode}: {(proc.stderr or proc.stdout).strip()[:500]}")
-        out += parse_vermin_output(proc.stdout)
-    return out
+        for line in proc.stdout.splitlines():
+            if len(line.rsplit(":", 5)) != 6 or not _path_of(line):
+                continue  # a summary line (":::!2:3.12:" names no file)
+            line_key = os.path.normcase(os.path.normpath(_path_of(line)))
+            if line_key not in by_path:
+                complete = False
+            by_path.setdefault(line_key, []).append(line)
+    return by_path, complete
+
+
+def _file_key(path: str, target: str, version: str) -> Optional[str]:
+    """The cache key of the file at *path*, or None (logged at WARNING) when it cannot be read."""
+    try:
+        return _result_key(Path(path).read_bytes(), target, version)
+    except OSError as exc:
+        logger.warning("could not read %s to key the vermin cache (%s); it is analysed without the cache", path, type(exc).__name__)
+        return None
+
+
+def _run_vermin(paths: Sequence[str], target: str) -> list[tuple[str, int, str, str]]:
+    """Hits for *paths*. A file whose bytes, floor and vermin version were seen before is not analysed again."""
+    version = _vermin_version()
+    keys: dict[str, str] = {}
+    lines_for: dict[str, list[str]] = {}
+    missing: list[str] = []
+    for path in paths:
+        norm = os.path.normcase(os.path.normpath(path))
+        key = _file_key(path, target, version)
+        if key is None:  # unreadable here: vermin gets the path and reports it itself
+            missing.append(path)
+            continue
+        keys[norm] = key
+        cached = _load_result(key)
+        if cached is None:
+            missing.append(path)
+        else:
+            lines_for[norm] = [f"{path}:{tail}" for tail in cached]
+    if missing:
+        fresh, complete = _run_vermin_raw(missing, target)
+        for norm, lines in fresh.items():
+            lines_for[norm] = lines
+            if complete and norm in keys:
+                _store_result(keys[norm], lines)
+    return parse_vermin_output("\n".join(line for lines in lines_for.values() for line in lines))
 
 
 def _findings(files: Iterable[ParsedFile], hits: Iterable[tuple[str, int, str, str]], target: str) -> list[Finding]:

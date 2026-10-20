@@ -116,14 +116,12 @@ jobs:
     permissions:
       contents: write  # push the major tag, create the GitHub release
     steps:
-      # The persisted credential is what the tag push below uses; this job uploads no artifact.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1  # zizmor: ignore[artipacked]
+      # The checkout keeps no credential: the next step runs release_guard.py from the tagged commit, and a credential in
+      # .git/config would be readable by that script. RELEASE_TOKEN reaches only the push step, as a one-shot header.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-          # The major tag points at commits that change .github/workflows, and GITHUB_TOKEN may never update such a
-          # ref (it has no `workflows` permission). RELEASE_TOKEN is a fine-grained token with contents and workflows
-          # write on this repository.
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          persist-credentials: false
 
       # Checked again: another tag may have been pushed since verify started.
       - name: Still the newest release of its major
@@ -135,7 +133,9 @@ jobs:
       - name: Move the major tag
         env:
           TAG: ${{ github.ref_name }}
-          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+          # The major tag points at commits that change .github/workflows, and GITHUB_TOKEN may never update such a ref (it
+          # has no `workflows` permission). RELEASE_TOKEN is a fine-grained token with contents and workflows write.
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
           major="${TAG%%.*}"
           target=$(git rev-parse "$TAG^{commit}")
@@ -143,12 +143,13 @@ jobs:
             echo "$major already points at $TAG ($target)"
             exit 0
           fi
-          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+          if [ -z "$RELEASE_TOKEN" ]; then
             echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved (GITHUB_TOKEN may not update a ref to a commit that changes workflows). Add the secret, then re-run this job."
             exit 1
           fi
           git tag -f "$major" "$target"
-          git push -f origin "refs/tags/$major"
+          auth=$(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$major"
 
       - name: Publish the GitHub release
         env:
@@ -162,17 +163,18 @@ jobs:
           fi
 
   rollback:
-    if: github.event_name == 'workflow_dispatch'
+    # Only from master: a dispatch from a feature branch would run that branch's release_guard.py next to the release token.
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: release
     permissions:
       contents: write  # push the major tag
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1  # zizmor: ignore[artipacked]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
-          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+          persist-credentials: false
 
       - name: The target is a release that shipped
         env:
@@ -182,14 +184,15 @@ jobs:
       - name: Point the major tag at it
         env:
           TARGET: ${{ inputs.rollback-to }}
-          HAS_RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN != '' }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: |
-          if [ "$HAS_RELEASE_TOKEN" != "true" ]; then
+          if [ -z "$RELEASE_TOKEN" ]; then
             echo "::error::RELEASE_TOKEN is not set, so the major tag cannot be moved"
             exit 1
           fi
           major="${TARGET%%.*}"
           target=$(git rev-parse "$TARGET^{commit}")
           git tag -f "$major" "$target"
-          git push -f origin "refs/tags/$major"
+          auth=$(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$major"
           echo "::warning title=rolled back::$major now points at $TARGET ($target). Fix forward with a new, higher release."

@@ -17,6 +17,7 @@ import argparse
 import base64
 import logging
 import os
+import re
 import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -49,6 +50,10 @@ class Consumer:
         return f"https://github.com/{self.repo}.git"
 
 
+_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
+_REPO = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
 @dataclass
 class CheckoutResult:
     """What :func:`checkout` did: repos on disk, repos skipped for want of a token, clones that failed."""
@@ -68,6 +73,12 @@ def load_consumers(path: Path) -> list[Consumer]:
             raise CoreError(f"{path}: consumer #{i + 1} lacks {missing}")
         if str(table["repo"]).count("/") != 1:
             raise CoreError(f"{path}: consumer {table['name']!r}: repo must be owner/name, got {table['repo']!r}")
+        # `name` becomes a directory under the checkout root and `repo` becomes part of a URL and an API path, so neither may carry
+        # a separator, a "..", a "?" or a "#": a value such as "../../x" would clone outside the root, "a/b?x" would change the query.
+        if not _NAME.fullmatch(str(table["name"])):
+            raise CoreError(f"{path}: consumer #{i + 1}: name must be letters, digits, dot, dash or underscore and start with a letter or digit")
+        if not _REPO.fullmatch(str(table["repo"])) or {".", ".."} & set(str(table["repo"]).split("/")):
+            raise CoreError(f"{path}: consumer {table['name']!r}: repo must be owner/name with letters, digits, dot, dash or underscore only")
         out.append(
             Consumer(
                 name=str(table["name"]),
@@ -123,6 +134,9 @@ def checkout(
             result.skipped.append(consumer)
             continue
         target = dest / consumer.name
+        if target.resolve().parent != dest.resolve():  # load_consumers already rejects such names; this guards a hand-built Consumer
+            result.failed.append((consumer, f"refusing to clone outside {dest}: {consumer.name!r}"))
+            continue
         error = run(consumer, target, token or None)
         if error is None:
             result.cloned.append((consumer, target))

@@ -52,12 +52,22 @@ def _repo_root() -> Path:
     return root
 
 
+def _reject_unwritable(value: str) -> None:
+    """Refuse a value no target format can hold intact: a line break splits it, and setx cuts it at 1024 characters."""
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{_VAR} would hold a line break ({value!r}); clone to a path without one")
+    if len(value) >= 1024:
+        raise ValueError(f"{_VAR} is {len(value)} characters; setx truncates at 1024, so a shorter clone path is needed")
+
+
 def _set_windows(value: str) -> None:
+    _reject_unwritable(value)
     subprocess.run(["setx", _VAR, value], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     print(f"Windows: set {_VAR} via setx (user-level registry).")
 
 
 def _set_macos(value: str) -> None:
+    _reject_unwritable(value)
     subprocess.run(["launchctl", "setenv", _VAR, value], check=True, capture_output=True, text=True, encoding="utf-8", errors="replace")
     print(f"macOS: set {_VAR} for this session's already-running GUI apps via `launchctl setenv`.")
 
@@ -104,6 +114,7 @@ def _environment_d_value(value: str) -> str:
 
 
 def _set_linux(value: str) -> None:
+    _reject_unwritable(value)
     env_dir = Path.home() / ".config" / "environment.d"
     env_dir.mkdir(parents=True, exist_ok=True)
     conf_path = env_dir / "50-py-ci-shared.conf"

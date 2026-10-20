@@ -37,6 +37,7 @@ import argparse
 import ast
 import io
 import logging
+import os
 import sys
 import tarfile
 import tempfile
@@ -212,7 +213,11 @@ def _extract_ref(library_root: Path, ref: str, dest: Path) -> Path:
         raise CoreError(f"git archive {ref} failed in {library_root}: {proc.stderr.decode('utf-8', 'replace').strip()}")
     with tarfile.open(fileobj=io.BytesIO(proc.stdout)) as tar:
         members = [m for m in tar.getmembers() if m.isfile() or m.isdir()]  # no links: nothing escapes dest
-        tar.extractall(dest, members=members)  # nosec B202 - the archive is the library's own tracked tree, regular files only
+        escaping = [m.name for m in members if os.path.isabs(m.name) or ".." in Path(m.name).parts]
+        if escaping:  # git archive refuses such names today; the check keeps this true if the archive source ever changes
+            raise CoreError(f"git archive {ref} holds members that would leave the extraction directory: {escaping[:3]}")
+        extra = {"filter": "data"} if sys.version_info >= (3, 12) else {}
+        tar.extractall(dest, members=members, **extra)  # nosec B202 - regular files only, names checked above
     return dest
 
 

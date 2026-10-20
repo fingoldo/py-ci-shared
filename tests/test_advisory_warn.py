@@ -34,7 +34,8 @@ def test_no_staged_source_file_runs_nothing_not_even_pip_audit(calls):
 
 def test_a_staged_source_file_runs_ruff_twice_and_pip_audit_once(calls):
     assert advisory_warn.main(["--src-path=src/pkg", "src/pkg/a.py", "tests/t.py"]) == 0
-    tools = [c[2] for c in calls]
+    assert all(c[1] == "-I" for c in calls), "isolated mode: a repo-root ruff/ directory must not shadow the tool"
+    tools = [c[3] for c in calls]
     assert tools == ["ruff", "ruff", "pip_audit"]
     assert calls[0][-1] == "src/pkg/a.py" and "tests/t.py" not in calls[0]
 

@@ -32,6 +32,8 @@ import subprocess
 import sys
 from typing import Optional
 
+_TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
+
 logger = logging.getLogger(__name__)
 
 #: vulture's own exit codes: 0 nothing found, 1 invalid input (unreadable file, syntax error), 2 bad command line,
@@ -86,11 +88,11 @@ def main(argv: Optional["list[str]"] = None) -> int:
     if not files:
         return 0
 
-    cmd = [sys.executable, "-m", "vulture", "--min-confidence", "80", *files]
+    cmd = [sys.executable, "-I", "-m", "vulture", "--min-confidence", "80", *files]
     if whitelist:
         cmd.append(whitelist)
     try:
-        returncode = subprocess.run(cmd).returncode
+        returncode = subprocess.run(cmd, timeout=_TOOL_TIMEOUT_S).returncode
     except Exception as exc:  # vulture missing / any error -> warn, never block
         print(f"[vulture-warn] skipped: {exc}", file=sys.stderr)
         return 0

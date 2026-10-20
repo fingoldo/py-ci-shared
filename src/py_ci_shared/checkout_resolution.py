@@ -79,7 +79,9 @@ def _run_probe_in_a_copy(
         # A second call with the same workdir must test a FRESH copy: files left from the previous one would
         # otherwise survive in it, and copytree refuses an existing destination.
         shutil.rmtree(copy)
-    shutil.copytree(repo_root, copy, ignore=shutil.ignore_patterns(*_COPY_IGNORE))
+    # symlinks=True copies a link as a link. The default copies the TARGET's content, so a repo symlink to a home directory would put
+    # that directory's files into the probe's workdir, where pytest prints and an upload could publish them.
+    shutil.copytree(repo_root, copy, symlinks=True, ignore=shutil.ignore_patterns(*_COPY_IGNORE))
     tests = copy / "tests"
     tests.mkdir(exist_ok=True)
     (tests / "test_zz_resolution_probe.py").write_text(

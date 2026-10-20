@@ -28,6 +28,8 @@ import sys
 from collections.abc import Sequence
 from typing import Optional
 
+_TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
+
 
 def pop_option(argv: Sequence[str], name: str, *, tag: str = "warn") -> "tuple[Optional[str], list[str]]":
     """``(value, remaining argv)`` for ``name VALUE`` or ``name=VALUE``; a trailing ``name`` with no value warns."""
@@ -93,9 +95,9 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
     files = resolve_src_files(sys.argv[1:] if argv is None else argv, "bandit-warn")
     if not files:
         return 0
-    cmd = [sys.executable, "-m", "bandit", "-ll", *files]
+    cmd = [sys.executable, "-I", "-m", "bandit", "-ll", *files]
     try:
-        warned = subprocess.run(cmd, check=False).returncode != 0
+        warned = subprocess.run(cmd, check=False, timeout=_TOOL_TIMEOUT_S).returncode != 0
     except Exception as exc:  # bandit missing / any error -> warn, never block
         print(f"[bandit-warn] skipped: {exc}", file=sys.stderr)
         return 0

@@ -811,3 +811,49 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **DEFERRED** | Low | `S-10` | C901 over 10 (62 functions): advisory in CI |
 | **DEFERRED** | Med | `S-11` | Corpus gates not run on the package itself |
 | **DEFERRED** | Low | `S-12` | Mutation sweep cost in the tests (`four_workers`, `survivors_in_source_order`) |
+
+## Round 2026-10-20 — the attack-surface audit (secrets and CI, deserialization, subprocess and git, hot paths)
+
+39 findings from four read-only agents. Every one dispositioned. Reports: `audits/2026-10-20/audit_*.md`.
+
+| Disposition | Sev | Finding | Note |
+|---|---|---|---|
+| **RESOLVED** | P2 | `SEC-1` | release.yml publish checkout keeps no credential (persist-credentials: false); RELEASE_TOKEN reaches only the push step as a one-shot extraheader |
+| **RESOLVED** | P2 | `SEC-2` | the rollback job runs only from refs/heads/master, with persist-credentials: false and the same one-shot header |
+| **RESOLVED** | P2 | `SEC-3` | corpus_drift records the exception type name only; tests/test_corpus_drift.py::test_snapshot_errors_never_carry_the_exception_text |
+| **RESOLVED** | P2 | `SEC-4` | env_example_round_trip reports the field name and exception type, never the value; the test asserts the value is absent |
+| **RESOLVED** | P2 | `SEC-5` | ci_health and release_guard use a same-host redirect handler, so Authorization never leaves api.github.com; two tests |
+| **DEFERRED** | Low | `SEC-6` | the lint-blocking *-version inputs default to the empty string; pinning them needs exact versions chosen and tested per tool (tool_versions.py holds o |
+| **RESOLVED** | Low | `SEC-7` | self-ci writes ruff --show-settings to a file and prints its head, so pipefail cannot fail the step |
+| **RESOLVED** | Low | `SEC-8` | ruff-blocking, black-filtered and lint-advisory reject a py-ci-shared-ref that is not letters, digits and ._/- or that starts with -, and fetch with - |
+| **RESOLVED** | Low | `SEC-9` | load_consumers validates repo and name (same fix as DS-2); tests/test_consumers_validation.py |
+| **RESOLVED** | Low | `SEC-10` | lint-advisory splits its pip-audit inputs with read -ra, so a pattern is not expanded against the workspace |
+| **RESOLVED** | P2 | `DS-1` | the Dart empty-catch body now has one parse per position (disjoint branches, a comment runs to the end of its line); tests/test_regex_backtracking_reg |
+| **RESOLVED** | P2 | `DS-2` | load_consumers rejects names and repos with separators, dot components, ? or #; checkout refuses a target outside dest |
+| **RESOLVED** | P2 | `DS-3` | iter_files skips symlinks; tests/test_core_corpus_symlinks.py |
+| **RESOLVED** | P2 | `DS-4` | the resolution probe copies with symlinks=True; tests/test_checkout_resolution_symlinks.py |
+| **RESOLVED** | Low | `DS-5` | a config corpus entry that resolves outside the repository root raises ConfigError; tests/test_core_config_containment.py |
+| **RESOLVED** | Low | `DS-6` | black receives the file names after --; tests/test_audit_20261020_hardening.py |
+| **RESOLVED** | Low | `DS-7` | the PEP 508 rest group is taken greedily and the specifier pattern has one split per position; measured quadratic at 40000 spaces before, milliseconds |
+| **RESOLVED** | Low | `DS-8` | the bare-domain URL pattern starts only at a token boundary, so it is linear |
+| **RESOLVED** | Low | `DS-9` | one whitespace quantifier per position around the closing parentheses |
+| **RESOLVED** | Low | `DS-10` | is_whole_file_read falls back to the text test on RecursionError, MemoryError and ValueError |
+| **RESOLVED** | Low | `DS-11` | install_safe_hook refuses to patch a symlinked hook |
+| **RESOLVED** | Low | `DS-12` | consumer_import_census rejects members that climb out of the destination and uses filter='data' on Python 3.12 and later |
+| **RESOLVED** | P1 | `SUB-1` | _core/git.py sets NoDefaultCurrentDirectoryInExePath at import, which Windows reads at call time; the test asserts the variable, the Windows lookup it |
+| **RESOLVED** | P2 | `SUB-2` | the nested pytest environment and the teeth sweep scrub GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE through git_env |
+| **DEFERRED** | P2 | `SUB-3` | the downloads are now bounded by timeouts; pinning tzdata and checking wheel digests needs the real versions and SHA-256 values, which cannot be writt |
+| **RESOLVED** | P2 | `SUB-4` | BLACK_CMD is split with posix=False on Windows; tests/test_audit_20261020_subprocess.py |
+| **RESOLVED** | P2 | `SUB-5` | every listed subprocess call carries a timeout; warn-only runners report skipped on expiry, mypy_gate fails, black raises, the embedded server and dow |
+| **RESOLVED** | Low | `SUB-6` | same fix as DS-2 |
+| **RESOLVED** | Low | `SUB-7` | PY_CI_SHARED_GIT_TIMEOUT_S must be finite and positive, otherwise GitError |
+| **RESOLVED** | Low | `SUB-8` | _reap_orphans skips directories owned by another uid |
+| **RESOLVED** | Low | `SUB-9` | the README states that guard_population runs repository shell on whatever code it is given, so it must not run on untrusted code with secrets |
+| **RESOLVED** | Low | `SUB-10` | ruff, bandit, vulture, pip-audit and black run with python -I; mypy is left out because a repository-local mypy plugin must be importable from the wor |
+| **RESOLVED** | Low | `SUB-11` | setup_env refuses values with a line break or, for setx, 1024 characters or more |
+| **RESOLVED** | Low | `SUB-12` | install_safe_hook writes the patched hook beside the original and replaces it |
+| **WON'T FIX** | Low | `SUB-13` | the clone token already travels in GIT_CONFIG_* and never in argv; hiding it from the child environment needs a credential helper file with its own li |
+| **DEFERRED** | Low | `SUB-14` | bounding the captured child output of the mutation runner means replacing communicate() with a bounded reader in the worker protocol, a redesign of _m |
+| **RESOLVED** | P2 | `HOT-1` | git_listing remembers a positive work-tree probe per root, which removes two of the three git processes per listing (about 90 ms of about 260 ms measu |
+| **WON'T FIX** | Low | `HOT-2` | measured: child_nodes costs about 0.65 microseconds a node, about 4 s over 6 million calls unprofiled; the profiled 35 s is mostly cProfile overhead p |
+| **RESOLVED** | P2 | `HOT-3` | api_floor keeps vermin's output per file digest, floor and vermin version; a warm run on this repository takes 0.8 s instead of 17.2 s |

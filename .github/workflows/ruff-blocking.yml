@@ -83,10 +83,13 @@ jobs:
             echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
             exit 0
           fi
+          case "${PCS_REF}" in
+            -*|*[!A-Za-z0-9._/-]*) echo "::error::py-ci-shared-ref has an unexpected shape: it may hold letters, digits and ._/- only, and may not start with -"; exit 1 ;;
+          esac
           d="${RUNNER_TEMP}/py-ci-shared"
           git init -q "$d"
           for attempt in 1 2 3; do
-            if git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
+            if git -C "$d" fetch -q --depth 1 -- https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
               git -C "$d" checkout -q FETCH_HEAD
               echo "PY_CI_SHARED_DIR=$d" >> "$GITHUB_ENV"
               exit 0

@@ -527,3 +527,24 @@ def test_a_capped_billing_probe_says_older_failures_were_not_probed(monkeypatch)
     w = assess_workflow(BILLING_WF, MIXED_RUNS, NOW, billing_run_ids=[404])
     repo = ci_health.RepoHealth("autopsia", "fingoldo/autopsia", "master", workflows=[w])
     assert "+ 1 billing-blocked, older failures not probed" in render_markdown([repo], NOW, 2)
+
+
+def test_a_redirect_to_another_host_is_refused_so_the_token_stays_on_the_api_host():
+    import urllib.request
+
+    request = urllib.request.Request("https://api.github.com/repos/x/y")
+    request.add_header("Authorization", "Bearer secret")
+
+    handler = ci_health._SameHostRedirects()
+
+    assert handler.redirect_request(request, None, 302, "Found", {}, "https://elsewhere.example/steal") is None
+
+
+def test_a_redirect_within_the_same_host_is_followed():
+    import urllib.request
+
+    request = urllib.request.Request("https://api.github.com/repos/x/y")
+
+    followed = ci_health._SameHostRedirects().redirect_request(request, None, 301, "Moved", {}, "https://api.github.com/repositories/1")
+
+    assert followed is not None and followed.full_url == "https://api.github.com/repositories/1"

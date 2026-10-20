@@ -138,7 +138,10 @@ jobs:
 
       - name: Validate ruff-base.toml is loadable
         if: matrix.python == '3.11'
-        run: uvx "ruff==${RUFF_VERSION}" check --config configs/ruff-base.toml --show-settings . 2>&1 | head -5
+        run: |
+          # Written to a file, not piped to head: under pipefail a closed pipe can turn a passing ruff run into a failure.
+          uvx "ruff==${RUFF_VERSION}" check --config configs/ruff-base.toml --show-settings . > "${RUNNER_TEMP}/ruff-settings.txt" 2>&1
+          head -n 5 "${RUNNER_TEMP}/ruff-settings.txt"
 
   # Integration tests: actually CALL the reusable workflows below (same-repo `uses: ./...` ref)
   # against py-ci-shared's own tree, instead of only linting the YAML syntax. Added 2026-07-09

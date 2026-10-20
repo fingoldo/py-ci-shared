@@ -16,6 +16,8 @@ Shared across projects via the py-ci-shared package.
 import subprocess
 import sys
 
+_TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
+
 # ``--select E,W,N,UP,I`` re-enables every E/W/N/UP/I-prefixed code on the CLI regardless of what
 # ruff-base.toml ignores (--select REPLACES the effective rule set, same caveat as the blocking
 # gate's own --ignore-only rule -- see ruff-blocking.yml). Without re-excluding them here, this
@@ -69,8 +71,8 @@ def _commands(files: list[str]) -> list[list[str]]:
     return [
         # taste only: formatting + pycodestyle/naming/pyupgrade/import-order. Real
         # problems (pyflakes F + bugbear B) are a SEPARATE blocking hook, not here.
-        [sys.executable, "-m", "ruff", "format", "--check", "--diff", *files],
-        [sys.executable, "-m", "ruff", "check", "--select", "E,W,N,UP,I", "--ignore", ",".join(_RESELECTED_IGNORE), *files],
+        [sys.executable, "-I", "-m", "ruff", "format", "--check", "--diff", *files],
+        [sys.executable, "-I", "-m", "ruff", "check", "--select", "E,W,N,UP,I", "--ignore", ",".join(_RESELECTED_IGNORE), *files],
         # black_filtered_apply --check has NO other pre-commit hook at all (raw `black` is
         # manual-stage only, to avoid the two excluded-class rewrites -- see CLAUDE.md's "Black
         # repo-wide reformat"). Without this, filtered-Black drift is invisible locally and only
@@ -90,10 +92,10 @@ def main() -> None:
     for chunk in _chunks(files):
         for cmd in _commands(chunk):
             try:
-                if subprocess.run(cmd).returncode != 0:
+                if subprocess.run(cmd, timeout=_TOOL_TIMEOUT_S).returncode != 0:
                     warned = True
             except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
-                print(f"[format-warn] skipped {' '.join(cmd[2:4])}: {e}", file=sys.stderr)
+                print(f"[format-warn] skipped {' '.join(cmd[3:5])}: {e}", file=sys.stderr)
 
     if warned:
         print(

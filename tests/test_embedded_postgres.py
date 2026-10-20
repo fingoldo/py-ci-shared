@@ -141,7 +141,7 @@ def test_fetch_into_a_custom_dest_leaves_its_parent_alone(tmp_path, monkeypatch)
     (tools / "lib").mkdir()
     (tools / "lib" / "stale.so").write_text("old", encoding="utf-8")
 
-    def fake_download(cmd, check):
+    def fake_download(cmd, check, **_kwargs):
         out = Path(cmd[cmd.index("-d") + 1])
         if "tzdata" in cmd:
             with zipfile.ZipFile(out / "tzdata-2026.5-py2.py3-none-any.whl", "w") as zf:
@@ -167,7 +167,7 @@ def _fake_pip(monkeypatch, ep, *, fail_tz: bool = False) -> list[list[str]]:
 
     calls: list[list[str]] = []
 
-    def fake(cmd, check):
+    def fake(cmd, check, **_kwargs):
         calls.append(list(cmd))
         if fail_tz:
             raise subprocess.CalledProcessError(1, cmd)

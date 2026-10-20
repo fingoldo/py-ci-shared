@@ -50,6 +50,8 @@ import tokenize
 
 from py_ci_shared._core import CorpusError, iter_files
 
+_BLACK_TIMEOUT_S = 600  # a hung black must not hang the hook; subprocess.TimeoutExpired then propagates as the error it is
+
 logger = logging.getLogger(__name__)
 
 EXCLUDED_DIR_NAMES = {".git", ".venv", ".pytest_cache", "build", "dist", "__pycache__", "legacy", "benchmarks", "_benchmarks", "profiling"}
@@ -60,7 +62,12 @@ if os.environ.get("EXTRA_EXCLUDED_DIRS"):
 # Override how `black` is invoked via the BLACK_CMD env var (space-separated),
 # e.g. BLACK_CMD="uvx black" for projects that run Black through uv's tool
 # cache rather than a pip-installed environment. Defaults to `python -m black`.
-_BLACK_CMD = shlex.split(os.environ["BLACK_CMD"]) if os.environ.get("BLACK_CMD") else [sys.executable, "-m", "black"]
+def _split_command(value: str, *, windows: bool = os.name == "nt") -> list[str]:
+    """*value* as an argument list. POSIX mode is wrong on Windows: a backslash escapes there, so C:\tools\black.exe would become C:toolsblack.exe."""
+    return shlex.split(value, posix=not windows)
+
+
+_BLACK_CMD = _split_command(os.environ["BLACK_CMD"]) if os.environ.get("BLACK_CMD") else [sys.executable, "-I", "-m", "black"]
 
 
 class DiscoveryError(Exception):
@@ -114,6 +121,7 @@ def run_black_stdin(src: str, config_path: str, filename=None) -> str:
         [*cmd, "-"],
         input=src.encode("utf-8"),
         capture_output=True,
+        timeout=_BLACK_TIMEOUT_S,
     )
     if proc.returncode not in (0,):
         raise RuntimeError(f"black failed: {proc.stderr.decode('utf-8', 'replace')}")
@@ -350,7 +358,8 @@ def files_black_would_change(files, config_path):
     flagged = []
     for i in range(0, len(files), _PREFILTER_BATCH):
         batch = files[i : i + _PREFILTER_BATCH]
-        proc = subprocess.run([*_BLACK_CMD, "--check", "--config", config_path, *batch], capture_output=True)
+        # "--" ends the options: a tracked file named "-c" or "--fast" would otherwise be read as an option and change the verdict.
+        proc = subprocess.run([*_BLACK_CMD, "--check", "--config", config_path, "--", *batch], capture_output=True, timeout=_BLACK_TIMEOUT_S)
         if proc.returncode == 0:
             continue
         err = proc.stderr.decode("utf-8", "replace").replace("\r\n", "\n")

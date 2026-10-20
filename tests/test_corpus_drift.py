@@ -150,6 +150,18 @@ def test_bind_maps_names_and_counts_unparsed_files_rather_than_raising(tmp_path)
     assert bind(needs_tests, tmp_path) == {"tests_dir": tmp_path / "tests"}
 
 
+def test_snapshot_errors_never_carry_the_exception_text(tmp_path):
+    (tmp_path / "a.py").write_bytes(b"x = 1\n")
+
+    def leaks(root):
+        raise SyntaxError("password = 'hunter2-from-a-private-consumer'")
+
+    data = snapshot([("r", tmp_path)], run=[("m.find_leaks", leaks)])
+
+    assert data["repos"]["r"]["errors"] == {"m.find_leaks": "SyntaxError"}
+    assert "hunter2" not in json.dumps(data)
+
+
 def test_snapshot_counts_records_errors_and_skips_inapplicable_finders(tmp_path):
     (tmp_path / "a.py").write_bytes(b"x = 1\n")
 
@@ -164,7 +176,7 @@ def test_snapshot_counts_records_errors_and_skips_inapplicable_finders(tmp_path)
 
     data = snapshot([("r", tmp_path)], run=[("m.find_two", two), ("m.find_boom", boom), ("m.find_t", needs_tests)])
     repo = data["repos"]["r"]
-    assert repo["counts"] == {"m.find_two": 2} and repo["errors"] == {"m.find_boom": "ValueError: bad input"}
+    assert repo["counts"] == {"m.find_two": 2} and repo["errors"] == {"m.find_boom": "ValueError"}
     assert set(repo["seconds"]) == {"m.find_two", "m.find_boom"} and data["schema"] == 1
 
 

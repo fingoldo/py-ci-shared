@@ -325,6 +325,20 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
 # --- network -------------------------------------------------------------------------------------------------------
 
 
+class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to the host that was asked.
+
+    CPython copies the request headers, Authorization included, to the redirect target. A token must not leave
+    api.github.com because a proxy fault or an API change pointed the request somewhere else, so a redirect to another host is refused
+    (it surfaces as an HTTPError for the original request).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def urllib_api(token: Optional[str], *, base: str = "https://api.github.com", timeout: float = DEFAULT_REQUEST_TIMEOUT) -> Api:
     """An :data:`Api` over ``urllib``; ``token`` may be ``None`` (anonymous: public repos, 60 requests an hour)."""
 
@@ -335,7 +349,7 @@ def urllib_api(token: Optional[str], *, base: str = "https://api.github.com", ti
         if token:
             req.add_header("Authorization", f"Bearer {token}")
         try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
+            with urllib.request.build_opener(_SameHostRedirects).open(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except urllib.error.HTTPError as exc:
             raise ApiError(f"GET {path}: HTTP {exc.code} {exc.reason}", status=exc.code) from exc

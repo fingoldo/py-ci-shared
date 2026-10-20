@@ -21,12 +21,18 @@ hook. Rules here:
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 from collections.abc import Mapping, Sequence
 from typing import Optional, Union
 
 from .errors import CoreError
+
+# Windows searches the current directory BEFORE PATH when it resolves a bare name such as "git" (CreateProcess, and shutil.which
+# from Python 3.12). A gate run with cwd inside an untrusted checkout would then run a planted git.exe with the gate's
+# environment, tokens included. This variable switches that lookup off; it is read at call time, so setting it here covers every child.
+os.environ.setdefault("NoDefaultCurrentDirectoryInExePath", "1")
 
 __all__ = ["DEFAULT_TIMEOUT_S", "REPO_LOCATION_VARS", "TIMEOUT_ENV_VAR", "GitError", "git_env", "git_output", "git_text", "run_git"]
 
@@ -95,8 +101,8 @@ def _timeout(timeout: Union[float, str, None]) -> Optional[float]:
         value = float(raw)
     except ValueError:
         raise GitError(f"{TIMEOUT_ENV_VAR}={raw!r} is not a number of seconds") from None
-    if value <= 0:
-        raise GitError(f"{TIMEOUT_ENV_VAR}={raw!r} must be positive")
+    if not math.isfinite(value) or value <= 0:  # inf reaches subprocess as OverflowError and nan as an instant timeout
+        raise GitError(f"{TIMEOUT_ENV_VAR}={raw!r} must be a positive, finite number of seconds")
     return value
 
 

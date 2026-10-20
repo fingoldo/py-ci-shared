@@ -135,10 +135,13 @@ jobs:
             echo "PY_CI_SHARED_DIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
             exit 0
           fi
+          case "${PCS_REF}" in
+            -*|*[!A-Za-z0-9._/-]*) echo "::error::py-ci-shared-ref has an unexpected shape: it may hold letters, digits and ._/- only, and may not start with -"; exit 1 ;;
+          esac
           d="${RUNNER_TEMP}/py-ci-shared"
           git init -q "$d"
           for attempt in 1 2 3; do
-            if git -C "$d" fetch -q --depth 1 https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
+            if git -C "$d" fetch -q --depth 1 -- https://github.com/fingoldo/py-ci-shared.git "${PCS_REF}"; then
               git -C "$d" checkout -q FETCH_HEAD
               echo "PY_CI_SHARED_DIR=$d" >> "$GITHUB_ENV"
               exit 0
@@ -180,16 +183,20 @@ jobs:
         run: |
           targets=()
           flags=()
-          for f in ${PIP_AUDIT_REQUIREMENTS}; do targets+=(-r "$f"); done
+          # read -ra splits on spaces without expanding globs, which an unquoted `for f in $VAR` would do against the workspace.
+          read -ra requirement_files <<< "${PIP_AUDIT_REQUIREMENTS}"
+          for f in "${requirement_files[@]}"; do targets+=(-r "$f"); done
           if [ "${#targets[@]}" -eq 0 ] && [ "${PIP_AUDIT_UV_LOCK}" = "true" ]; then
             skip=()
-            for p in ${PIP_AUDIT_SKIP_PACKAGES}; do skip+=(--no-emit-package "$p"); done
+            read -ra skip_packages <<< "${PIP_AUDIT_SKIP_PACKAGES}"
+            for p in "${skip_packages[@]}"; do skip+=(--no-emit-package "$p"); done
             uv export --frozen --no-hashes --no-emit-project --all-extras "${skip[@]}" -o "${RUNNER_TEMP}/pip-audit-requirements.txt"
             targets=(-r "${RUNNER_TEMP}/pip-audit-requirements.txt")
             flags=(--no-deps --disable-pip)
           fi
           if [ "${#targets[@]}" -eq 0 ]; then targets=(.); fi
-          for v in ${PIP_AUDIT_IGNORE_VULNS}; do flags+=(--ignore-vuln "$v"); done
+          read -ra ignore_vulns <<< "${PIP_AUDIT_IGNORE_VULNS}"
+          for v in "${ignore_vulns[@]}"; do flags+=(--ignore-vuln "$v"); done
           uvx "pip-audit==${PIP_AUDIT_VERSION}" --desc -f json -o pip-audit-report.json "${flags[@]}" "${targets[@]}"
         continue-on-error: true
         env:

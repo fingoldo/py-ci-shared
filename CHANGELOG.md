@@ -4,6 +4,22 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.0
 
+- Security audit of 2026-10-20 (`audits/2026-10-20/`, 39 findings, all dispositioned in `audits/TRACKER.md`). The consumer-visible changes:
+  - **Behaviour change:** a `[tool.py_ci_shared]` corpus entry that resolves outside the repository root (an absolute path, or `..`) is now a `ConfigError`.
+    Move the file inside the repository or drop the entry; a gate used to read it silently.
+  - **Behaviour change:** `iter_files` skips symlinks. A tracked link to a file outside the checkout used to be read as a corpus file; a gate that counted
+    such links will see fewer files.
+  - **Behaviour change:** `load_consumers` rejects a `name` or `repo` that holds a separator, a `.`/`..` component, `?` or `#`.
+  - **Behaviour change:** `mypy_gate` fails when mypy runs longer than 30 minutes, `black_filtered_apply` raises after 10 minutes, and the warn-only runners
+    (`advisory_warn`, `bandit_warn`, `format_warn`, `vulture_warn`) report `skipped` after 10 minutes (15 for pip-audit), instead of hanging the hook.
+  - **Behaviour change:** ruff, bandit, vulture, pip-audit and black run as `python -I -m <tool>`, so `PYTHONPATH`, the user site and the working directory are
+    not on their `sys.path`. mypy is left as it was: a repository-local mypy plugin must be importable from the working directory.
+  - `env_example_round_trip` and `corpus_drift` no longer print a committed value or the text of an exception; they name the field and the exception type.
+  - `release.yml` keeps no credential in `.git/config` (the token reaches only the tag push), and the rollback job runs only from `master`.
+  - The gate cache moved from the shared temp directory to `~/.cache/py_ci_shared/gate_cache`; `api_floor` keeps vermin's output per file digest in
+    `~/.cache/py_ci_shared/vermin` (a warm run on this repository: 0.8 s, was 17 s).
+  - `env_write_restore` accepts `# env-write-ok: <reason>` on a deliberate write.
+  - Four regexes that backtracked on crafted input (the Dart empty-catch body was exponential) are linear.
 - The test suite runs on the machine's spare cores by default: `tests/conftest.py` passes `worker_budget.available_workers()` to pytest-xdist when it is installed
   (`pytest-xdist` is now in the `dev` extra). `PY_CI_WORKERS=1` gives one worker. The CPU share (rounded half up) is then capped so each worker has 4 GiB of
   free memory, never below one: a worker that starts without it pages, and the next worker's DLL loads fail with an error that names no memory.

@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -226,13 +227,27 @@ def _git_tags(cwd: Path) -> list[str]:
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
+class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to the host that was asked.
+
+    CPython copies the request headers, Authorization included, to the redirect target. A token must not leave
+    api.github.com because a proxy fault or an API change pointed the request somewhere else, so a redirect to another host is refused
+    (it surfaces as an HTTPError for the original request).
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            return None
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _github(token: str) -> Callable[[str], Any]:
     def get(path: str) -> Any:
         req = urllib.request.Request(f"https://api.github.com/{path}")
         req.add_header("Accept", "application/vnd.github+json")
         if token:
             req.add_header("Authorization", f"Bearer {token}")
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.build_opener(_SameHostRedirects).open(req, timeout=60) as resp:
             return json.loads(resp.read().decode("utf-8"))
 
     return get

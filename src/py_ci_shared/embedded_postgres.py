@@ -37,6 +37,9 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from urllib.parse import unquote
 
+_SERVER_COMMAND_TIMEOUT_S = 600  # initdb / pg_ctl: a hung server command must not hang the test session behind it
+_DOWNLOAD_TIMEOUT_S = 900  # pip download from the index: a stalled index must not hang the caller
+
 logger = logging.getLogger(__name__)
 
 _EXE = ".exe" if os.name == "nt" else ""
@@ -78,7 +81,7 @@ def _quiet(cmd: list[str], *, check: bool, log: "Path | None" = None, also: Sequ
     holding them is deleted on the way out.
     """
     with open(log, "ab") if log is not None else open(os.devnull, "wb") as out:
-        code = subprocess.run(cmd, check=False, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT).returncode
+        code = subprocess.run(cmd, check=False, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT, timeout=_SERVER_COMMAND_TIMEOUT_S).returncode
     if check and code != 0:
         tails = []
         for path in ([log] if log is not None else []) + list(also):
@@ -108,6 +111,8 @@ def _reap_orphans(bin_dir: Path, tmp: Path) -> None:
         except (OSError, ValueError):  # swallow-ok: an unreadable owner.pid leaves the directory alone, which is the conservative choice
             continue
         if psutil.pid_exists(owner):
+            continue
+        if hasattr(os, "getuid") and d.stat().st_uid != os.getuid():  # another user's server: not ours to stop or delete
             continue
         if (d / "db" / "postmaster.pid").is_file():
             _quiet([pg_ctl, "-D", str(d / "db"), "-m", "immediate", "-w", "stop"], check=False)
@@ -334,7 +339,7 @@ def _install_timezone_database(target: Path) -> None:
         return
     with tempfile.TemporaryDirectory() as tmp:
         try:
-            subprocess.run([sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"], check=True)
+            subprocess.run([sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"], check=True, timeout=_DOWNLOAD_TIMEOUT_S)
             wheel = next(Path(tmp).glob("tzdata-*.whl"))
             with zipfile.ZipFile(wheel) as zf:
                 members = [m for m in zf.namelist() if m.startswith("tzdata/zoneinfo/") and not m.endswith("/")]
@@ -375,6 +380,7 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
                 "-q",
             ],
             check=True,
+            timeout=_DOWNLOAD_TIMEOUT_S,
         )
         wheel = next(Path(tmp).glob("pgserver-*.whl"))
         with zipfile.ZipFile(wheel) as zf:

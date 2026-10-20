@@ -375,7 +375,7 @@ def is_whole_file_read(expr: str, readers: Iterable[str] = ("src", "sibling_src"
     names = set(readers)
     try:
         node: ast.expr = ast.parse(expr.strip(), mode="eval").body
-    except SyntaxError:
+    except (SyntaxError, RecursionError, MemoryError, ValueError):  # a huge expression must fall back to the text test, not crash the gate
         stripped = expr.strip()
         return any(stripped.startswith(f"{r}(") for r in names) and stripped.endswith(")") and "[" not in stripped
     while isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):

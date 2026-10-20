@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.git import git_env
 from ._mutation_model import MutationHarnessError
 from ._mutation_worker import is_crash_message
 
@@ -37,7 +38,9 @@ def _pytest_env() -> dict[str, str]:
     mutant run for the wrong reason and make every mutant look killed -- the same exit-code
     overloading this module was rewritten to abolish.
     """
-    env = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"}
+    # git_env also drops GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE: started from a hook, a test that spawns git would otherwise act on
+    # the repository that is committing, and a mutant's verdict would depend on how the run was started.
+    env = git_env(base={k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"})
     # The child inherits PYTHONPATH, never the parent's in-process `sys.path`. Without this, a
     # parent running from a checkout spawns a worker that loads the INSTALLED package instead --
     # measured: parent on a worktree, child on `C:\...\py-ci-shared\src`. Every worker-side change

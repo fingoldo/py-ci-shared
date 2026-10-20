@@ -253,7 +253,9 @@ def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dic
         try:
             counts[key] = count_of(fn(**kwargs))
         except Exception as exc:  # a finder that raises on real code is a result to record, not a crash of the night
-            errors[key] = f"{type(exc).__name__}: {str(exc).splitlines()[0][:300] if str(exc) else ''}"
+            # The type name only: parser and linter messages quote the offending source line, and a consumer may be private while
+            # the snapshot is an artifact and a step summary that anyone who can read this repository's runs can open.
+            errors[key] = type(exc).__name__
         seconds[key] = round(time.perf_counter() - start, 3)
     return {"commit": _commit(repo), "counts": counts, "errors": errors, "seconds": seconds}
 

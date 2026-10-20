@@ -25,6 +25,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import subprocess
+import threading
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Optional, Union
@@ -60,6 +61,20 @@ DEFAULT_EXCLUDE: frozenset[str] = frozenset(
 )
 
 
+# Roots that git has said ARE a usable work tree and are not themselves ignored. One listing used to cost three git processes and a run
+# lists the same few roots 60 or more times; the two probes depend on the repository's shape, not on which files exist, so a positive answer is
+# kept. The listing itself (ls-files) is never kept: a gate may write a file and list again. Only a positive answer is stored, so a directory
+# that becomes a repository later is still noticed.
+_USABLE_ROOTS: set[str] = set()
+_USABLE_LOCK = threading.Lock()
+
+
+def clear_listing_cache() -> None:
+    """Forget which roots were found to be usable work trees (the next listing probes again)."""
+    with _USABLE_LOCK:
+        _USABLE_ROOTS.clear()
+
+
 def _git(root: Path, *args: str) -> "Optional[subprocess.CompletedProcess[bytes]]":
     """A git call, or None when git itself is missing. A TIMEOUT is not "no git": it raises :class:`CorpusError`."""
     try:
@@ -79,12 +94,18 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
     widen the corpus to ignored build output and submodules (audit 2026-10-03 K-4). Pass ``use_git=False`` to
     :func:`iter_files` to walk on purpose.
     """
-    probe = _git(root, "rev-parse", "--is-inside-work-tree")
-    if probe is None or probe.returncode != 0 or probe.stdout.strip() != b"true":
-        return None
-    ignored = _git(root, "check-ignore", "-q", ".")
-    if ignored is not None and ignored.returncode == 0:
-        return None
+    key = str(root.resolve())
+    with _USABLE_LOCK:
+        known_usable = key in _USABLE_ROOTS
+    if not known_usable:
+        probe = _git(root, "rev-parse", "--is-inside-work-tree")
+        if probe is None or probe.returncode != 0 or probe.stdout.strip() != b"true":
+            return None
+        ignored = _git(root, "check-ignore", "-q", ".")
+        if ignored is not None and ignored.returncode == 0:
+            return None
+        with _USABLE_LOCK:
+            _USABLE_ROOTS.add(key)
     args = ["ls-files", "-z", "--cached"]
     if include_untracked:
         args += ["--others", "--exclude-standard"]
@@ -146,7 +167,9 @@ def iter_files(
         if skip.intersection(parts) or not _matches(rel, patterns):
             continue
         p = base.joinpath(*parts)
-        if p.is_file():  # a tracked file deleted from the work tree is not part of the corpus
+        # A tracked file deleted from the work tree is not part of the corpus. A symlink is not either: git lists it, is_file() follows it,
+        # and a link to a file outside the checkout would put that file's text into a gate's findings and make the run machine-dependent.
+        if p.is_file() and not p.is_symlink():
             out.append(p)
     return sorted(out, key=lambda p: p.relative_to(base).as_posix())
 

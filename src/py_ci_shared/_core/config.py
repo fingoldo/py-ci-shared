@@ -258,8 +258,21 @@ def _expand(repo_root: Path, item: str) -> list[Path]:
         found = sorted(Path(p) for p in _glob.glob(pattern, recursive=True) if "__pycache__" not in Path(p).parts)
         if not found:
             raise ConfigError(f"{item!r} matches no file under {repo_root}; fix the glob or remove it")
-        return found
-    return [repo_root / item]
+        return [_inside_root(repo_root, path, item) for path in found]
+    return [_inside_root(repo_root, repo_root / item, item)]
+
+
+def _inside_root(repo_root: Path, path: Path, item: str) -> Path:
+    """*path* when it resolves under *repo_root*; a ConfigError otherwise.
+
+    An absolute item replaces the root in ``repo_root / item`` and ``..`` climbs out of it, so a config entry such as ``/etc`` or
+    ``../../other/**/*.py`` would make a gate read files outside the checkout: a silent, machine-dependent input.
+    """
+    try:
+        path.resolve().relative_to(repo_root.resolve())
+    except ValueError as exc:
+        raise ConfigError(f"{item!r} resolves outside the repository root {repo_root}; a corpus entry must stay inside it") from exc
+    return path
 
 
 def resolve_kwargs(func: Callable[..., Any], kwargs: dict[str, Any], repo_root: Path) -> dict[str, Any]:

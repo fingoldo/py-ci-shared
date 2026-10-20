@@ -64,7 +64,7 @@ __all__ = [
 
 RULE = "external-fact-table"
 UNDECLARED_RULE = "undeclared-fact-table"
-_URL = re.compile(r"https?://[^\s)\]>,]+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/[^\s)\]>,]*", re.IGNORECASE)
+_URL = re.compile(r"https?://[^\s)\]>,]+|(?<![a-z0-9.-])(?:[a-z0-9-]+\.)+[a-z]{2,}/[^\s)\]>,]*", re.IGNORECASE)
 _DATE = re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)\b")
 _FACT_NAME = re.compile(r"PRIC|COST|RATE_CARD|CONTEXT_WINDOW|MAX_OUTPUT|_LIMITS?$|RETIRED|DEPRECATED_MODELS", re.IGNORECASE)
 _MAX_BLOCK = 12

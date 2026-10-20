@@ -80,7 +80,7 @@ def _balanced(source: str, open_index: int, opener: str = "{", closer: str = "}"
 
 # Comparing a secret with an empty value is a presence check, not a secret comparison: there is no prefix to time.
 _EMPTY_RIGHT_RE = re.compile(r"""\s*\(*\s*(?:""|''|``|null|undefined)(?![\w$])""")
-_EMPTY_LEFT_RE = re.compile(r"""(?<![\w$])(?:""|''|``|null|undefined)\s*\)*\s*$""")
+_EMPTY_LEFT_RE = re.compile(r"""(?<![\w$])(?:""|''|``|null|undefined)\s*(?:\)\s*)*$""")
 _EQUALITY_OP_RE = re.compile(r"===|!==|==|!=")
 
 

@@ -61,7 +61,7 @@ VALUED_OPTS = frozenset(
         "--refresh-package", "--reinstall-package", "--no-build-isolation-package", "--torch-backend", "--only-group", "--no-group",
     }
 )  # fmt: skip
-PEP508 = re.compile(r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[(?P<extras>[^\]]*)\])?\s*(?P<rest>[^;]*?)\s*(?:;\s*(?P<marker>.*))?$")
+PEP508 = re.compile(r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[(?P<extras>[^\]]*)\])?\s*(?P<rest>[^;]*)(?:;\s*(?P<marker>.*))?$")
 
 
 def norm(name: str) -> str:
@@ -287,7 +287,7 @@ def split_requirement(spec: str) -> Optional[tuple[str, list[str], Optional[str]
         egg = re.search(r"[#&]egg=([A-Za-z0-9._-]+)", spec)
         return (egg.group(1), [], None) if egg else None
     m = PEP508.match(spec)
-    if not m or not re.fullmatch(r"(?:[<>=!~]=?[^,]*,?\s*)*|\(.*\)|", (m.group("rest") or "").strip()):
+    if not m or not re.fullmatch(r"(?:[<>=!~]=?[^,]*(?:,|$)\s*)*|\(.*\)|", (m.group("rest") or "").strip()):
         return None
     return m.group("name"), split_extras(m.group("extras")), m.group("marker")
 

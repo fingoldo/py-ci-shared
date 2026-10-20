@@ -292,7 +292,9 @@ def test_release_rollback_is_a_dispatch_through_the_guard():
     data = _release()
     assert data[True]["workflow_dispatch"]["inputs"]["rollback-to"]["required"] is True
     rollback = data["jobs"]["rollback"]
-    assert rollback["if"] == "github.event_name == 'workflow_dispatch'" and rollback["environment"] == "release"
+    # Only from master: a dispatch from a feature branch would run that branch's release_guard.py next to the release token.
+    assert rollback["if"] == "github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'"
+    assert rollback["environment"] == "release"
     assert 'release_guard.py rollback "$TARGET"' in _runs(rollback)
     for name in ("verify", "publish"):
         assert data["jobs"][name]["if"] == "github.event_name == 'push'", f"{name} must not run on the rollback dispatch"

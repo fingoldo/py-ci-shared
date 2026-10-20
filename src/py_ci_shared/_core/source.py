@@ -185,7 +185,7 @@ def parse_file(path: PathLike) -> ast.Module:
 
 def clear_parse_cache() -> None:
     """Drop every cached tree and what was derived from it (frees memory in long-lived processes; correctness never depends on it)."""
-    from . import node_index
+    from . import corpus, node_index
 
     with _LOCK:
         _CACHE.clear()
@@ -193,6 +193,7 @@ def clear_parse_cache() -> None:
         _RESOLVED.clear()
         _TEXT_TREES.clear()
     node_index.clear()
+    corpus.clear_listing_cache()
 
 
 def parse_cache_size() -> int:

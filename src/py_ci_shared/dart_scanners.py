@@ -691,7 +691,7 @@ def scan_file_size(files: Iterable[str], read: Reader, *, max_lines: int = 1000)
 
 # `catch (_) {}` and `catch (_, _) { // comment only }`: a catch that does nothing. One that logs, returns a
 # fallback or rethrows is fine. Only `_` as the bound name, which is how this code base spells "ignored".
-_EMPTY_CATCH = re.compile(r"catch\s*\(\s*_\s*(?:,\s*_\s*)?\)\s*\{(?P<body>(?:[^{}]|//[^\n]*)*?)\}", re.DOTALL)
+_EMPTY_CATCH = re.compile(r"catch\s*\(\s*_\s*(?:,\s*_\s*)?\)\s*\{(?P<body>(?:[^{}/]|/(?!/)|//[^\n]*(?=\n|$))*?)\}", re.DOTALL)
 
 
 def scan_empty_catch(files: Iterable[str], read: Reader) -> dict:

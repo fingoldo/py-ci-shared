@@ -71,6 +71,9 @@ jobs:
             uv pip install --system -e .
             exit 0
           fi
+          case "${PCS_REF}" in
+            -*|*[!A-Za-z0-9._/-]*) echo "::error::py-ci-shared-ref has an unexpected shape: it may hold letters, digits and ._/- only, and may not start with -"; exit 1 ;;
+          esac
           for attempt in 1 2 3; do
             if uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@${PCS_REF}"; then
               exit 0

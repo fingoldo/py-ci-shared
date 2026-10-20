@@ -73,7 +73,7 @@ def precommit_arg_codes(precommit: Path, *, hook: str, flag: str = "--ignore") -
     return codes
 
 
-def ruff_counts(root: Path, codes: Iterable[str], *, target: str = ".", ruff: Sequence[str] = (sys.executable, "-m", "ruff")) -> dict[str, int]:
+def ruff_counts(root: Path, codes: Iterable[str], *, target: str = ".", ruff: Sequence[str] = (sys.executable, "-I", "-m", "ruff")) -> dict[str, int]:
     """How many findings each code has in *root* under the project's own ruff config.
 
     An ignored code is often a PREFIX (``E``, ``PLR09``) or ``ALL``: every finding whose code starts with it counts

@@ -29,6 +29,8 @@ import re
 import subprocess
 import sys
 
+_MYPY_TIMEOUT_S = 1800  # a whole-project run is slow on a cold cache; past this it is hung, and a hung gate must not pass silently
+
 SUCCESS_RE = re.compile(r"Success: no issues found in (\d+) source files?")
 
 #: mypy's OTHER terminator. A completed run that found problems ends with
@@ -91,7 +93,11 @@ def main(argv: list[str] | None = None) -> int:
     min_files, args = _split_args(args)
 
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    result = subprocess.run([sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env)
+    try:
+        result = subprocess.run([sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=_MYPY_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        sys.stdout.write(f"\nmypy_gate: FAIL -- mypy did not finish within {_MYPY_TIMEOUT_S} seconds\n")
+        return 1
     output = (result.stdout or "") + (result.stderr or "")
     sys.stdout.write(output)
     problem = check_mypy_output(output, result.returncode, min_files=min_files)

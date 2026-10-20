@@ -28,6 +28,8 @@ Usage::
 
 from __future__ import annotations
 
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -85,7 +87,13 @@ def _patch_one(hook_path: Path) -> int:
         )
         return 1
 
-    hook_path.write_bytes(data.replace(_TARGET.encode("utf-8"), _REPLACEMENT.encode("utf-8")))
+    if hook_path.is_symlink():  # write_bytes follows the link, so the patch would land on whatever the link points at
+        print(f"{hook_path} is a symlink; leaving it untouched.", file=sys.stderr)
+        return 1
+    staged = hook_path.with_name(hook_path.name + ".py-ci-shared.tmp")
+    staged.write_bytes(data.replace(_TARGET.encode("utf-8"), _REPLACEMENT.encode("utf-8")))
+    shutil.copymode(hook_path, staged)
+    os.replace(staged, hook_path)  # git runs this file on every commit: it is never left half-written
     print(f"Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.")
     return 0
 

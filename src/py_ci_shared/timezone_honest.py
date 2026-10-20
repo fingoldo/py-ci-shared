@@ -112,7 +112,7 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
         raise RuntimeError(f"scan path(s) {missing} do not exist under {root}. ruff would report them as clean.")
 
     result = subprocess.run(
-        [sys.executable, "-m", "ruff", "check", "--select", "DTZ", "--no-force-exclude", "--output-format", "concise", *scan],
+        [sys.executable, "-I", "-m", "ruff", "check", "--select", "DTZ", "--no-force-exclude", "--output-format", "concise", *scan],
         cwd=root,
         capture_output=True,
         text=True,
