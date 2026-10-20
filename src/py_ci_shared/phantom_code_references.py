@@ -353,6 +353,38 @@ def dart_declarations(files: Iterable[Path]) -> set[str]:
     return names
 
 
+def _strings_defined_by(value: "ast.AST | None", out: set[int]) -> None:
+    """Mark the string constants that ``value`` defines: the constant itself, or the elements of a container literal."""
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        out.add(id(value))
+    elif isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+        for elt in value.elts:
+            _strings_defined_by(elt, out)
+    elif isinstance(value, ast.Dict):
+        for key in value.keys:
+            _strings_defined_by(key, out)
+
+
+def _definition_site_ids(tree: ast.Module) -> set[int]:
+    """``id()`` of the string constants that DEFINE a name rather than use one: a dict key (a registry or record key), a
+    subscript store key (``row["Reason"] = ...``), a string assigned to a name (``LABEL = "Reason"``), and the string
+    elements of a list, tuple, set or dict literal that is itself assigned (a table of names). A comparison, a call
+    argument or a return value is a use, and does not make the string a definition."""
+    out: set[int] = set()
+    for node in _fast_walk(tree):
+        if isinstance(node, ast.Dict):
+            _strings_defined_by(node, out)
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Subscript):
+                    _strings_defined_by(target.slice, out)
+                elif isinstance(target, ast.Name):
+                    _strings_defined_by(node.value, out)
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            _strings_defined_by(node.value, out)
+    return out
+
+
 def _data_name_index(files: Iterable[Path]) -> "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]":
     """What the repo's code SPELLS OUT, from its string constants (docstrings excluded: a docstring naming a thing is the
     claim being checked, not evidence for it). Returns the exact constant values, a word -> constant-index map for
@@ -372,9 +404,11 @@ def _data_name_index(files: Iterable[Path]) -> "tuple[frozenset[str], dict[str, 
             for node in _fast_walk(tree)
             if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
         }
+        defining = _definition_site_ids(tree)
         for node in _fast_walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings and node.value:
-                exact.add(node.value)
+                if id(node) in defining:
+                    exact.add(node.value)
                 index = len(constants)
                 constants.append(node.value)
                 for word in set(re.findall(r"[A-Za-z_]\w*", node.value)):

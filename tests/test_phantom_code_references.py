@@ -370,3 +370,24 @@ def test_a_library_member_of_a_class_the_commented_file_imports_is_not_judged(tm
     assert find_phantom_code_references([bare], tmp_path, python_declarations([bare])) == [
         "pkg/bare.py:1: `StataReader.value_labels()` names nothing declared in this repo"
     ]
+
+
+def test_a_string_used_only_as_a_comparison_or_call_argument_does_not_suppress(tmp_path: Path) -> None:
+    """Narrowing of the data-name rule: a string that merely USES a name (a comparison, a call argument) is not the definition
+    of it, so a comment naming that name is still a phantom. A dict key, a subscript key and a table assigned to a name are."""
+    use = _write(tmp_path, "pkg/use.py", 'def f(x, load):\n    return x == "UseOnlyHere" or load("UseOnlyTwo")\n')
+    defn = _write(
+        tmp_path,
+        "pkg/defn.py",
+        'REGISTRY = {"DictKeyHere": 1}\nTABLE = ["TableRowHere"]\nrow = {}\nrow["SubscriptKeyHere"] = 2\n',
+    )
+    doc = _write(
+        tmp_path,
+        "pkg/doc.py",
+        "# `UseOnlyHere` and `UseOnlyTwo` are named\n# `DictKeyHere`, `TableRowHere` and `SubscriptKeyHere` are defined\nx = 1\n",
+    )
+    files = [use, defn, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:1: `UseOnlyHere` names nothing declared in this repo",
+        "pkg/doc.py:1: `UseOnlyTwo` names nothing declared in this repo",
+    ]
