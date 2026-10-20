@@ -263,3 +263,10 @@ def docstring_ids(tree: ast.AST) -> set[int]:
             if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
                 ids.add(id(first.value))
     return ids
+
+
+def function_nodes(tree: ast.AST) -> "Iterator[Union[ast.FunctionDef, ast.AsyncFunctionDef]]":
+    """Every ``def`` and ``async def`` under *tree*, nested or not, in walk order."""
+    for node in walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield node

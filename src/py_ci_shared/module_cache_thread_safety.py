@@ -34,6 +34,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.node_index import function_nodes
 from ._core.scopes import own_nodes
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
@@ -96,12 +97,6 @@ def _constructs_lock(tree: ast.Module, aliases: ImportAliases) -> bool:
             if qualified.rsplit(".", 1)[-1] in _LOCKS:
                 return True
     return False
-
-
-def _functions(tree: ast.Module) -> Iterator[Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
-    for node in _fast_walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield node
 
 
 def _locally_bound(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> set[str]:
@@ -192,7 +187,7 @@ def _writers(tree: ast.Module, caches: dict[str, int], strict: bool) -> dict[str
     """``{cache: [functions whose writes to it race]}``. ``async def`` functions are skipped: an event loop runs
     one coroutine step at a time, so their writes cannot interleave with each other mid-statement."""
     out: dict[str, list[str]] = {}
-    for func in _functions(tree):
+    for func in function_nodes(tree):
         if isinstance(func, ast.AsyncFunctionDef):
             continue
         declared_global = {n for node in _fast_walk(func) if isinstance(node, ast.Global) for n in node.names}
@@ -240,7 +235,7 @@ def _import_findings(parsed: ParsedFile, aliases: ImportAliases) -> list[Finding
     lines = parsed.source.splitlines()
     out: list[Finding] = []
     seen: set[int] = set()
-    for func in _functions(parsed.tree):
+    for func in function_nodes(parsed.tree):
         if func.name not in callees:
             continue
         for node in _fast_walk(func):
