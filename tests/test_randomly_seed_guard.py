@@ -91,3 +91,47 @@ def test_the_real_entry_point_api_is_called_without_error_on_this_interpreter():
 
     found = guard._entry_points_in("pytest11")
     assert any(ep.value.startswith("py_ci_shared") for ep in found), [ep.value for ep in found]
+
+
+class _Manager:
+    """The part of pytest's plugin manager the guard asks about."""
+
+    def __init__(self, *, blocked: bool, registered: bool) -> None:
+        self._blocked = blocked
+        self._registered = registered
+
+    def is_blocked(self, name: str) -> bool:
+        return self._blocked
+
+    def has_plugin(self, name: str) -> bool:
+        return self._registered
+
+
+class _Config:
+    def __init__(self, manager: _Manager) -> None:
+        self.pluginmanager = manager
+
+
+@pytest.mark.parametrize("manager", [_Manager(blocked=True, registered=False), _Manager(blocked=False, registered=False)])
+def test_nothing_is_loaded_when_randomly_is_not_running(monkeypatch: pytest.MonkeyPatch, manager: _Manager) -> None:
+    """With ``-p no:randomly`` the reseeders are never used, and loading them imports thinc, torch and cupy (13 s): the guard must not load any."""
+    monkeypatch.setattr(pytest_randomly, "entrypoint_reseeds", None)
+
+    def _forbidden(group: str):
+        raise AssertionError(f"loaded the {group} entry points although pytest-randomly is not running")
+
+    monkeypatch.setattr(randomly_seed_guard, "_entry_points_in", _forbidden)
+
+    assert randomly_seed_guard.bound_randomly_reseeders(_Config(manager)) is False
+    assert pytest_randomly.entrypoint_reseeds is None
+
+
+def test_reseeders_are_still_bounded_when_randomly_is_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The skip is only for a session without pytest-randomly; with it active the guard wraps the reseeders as before."""
+    seen: list[int] = []
+    monkeypatch.setattr(pytest_randomly, "entrypoint_reseeds", [seen.append])
+
+    assert randomly_seed_guard.bound_randomly_reseeders(_Config(_Manager(blocked=False, registered=True)))
+    pytest_randomly.entrypoint_reseeds[0](2**32 + 7)
+
+    assert seen == [7]

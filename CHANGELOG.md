@@ -11,7 +11,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - The parse cache serves a file whose stat signature is unchanged and older than the read by 3 s (git's racy-timestamp rule) without reading, hashing or resolving it again, and
   `resolve_cached` remembers path resolution: on a full mlframe meta-suite profile `parse_source` was asked 332k times for 7.7k files and `Path.resolve` ran 887k times.
   `shared_mutable_placeholder` walks each scope once (81 s to 28 s over the mlframe tree).
-- `tests/test_self_code_audit.py`: py-ci-shared passes the pyutilz code audit it ships to everyone else.
+- Fixed: the pytest plugin loaded every `pytest_randomly.random_seeder` entry point on every start, even under `-p no:randomly`. Those entry points import thinc, torch and cupy,
+  so each pytest process of a machine with them installed paid 13 s before its first test; the mutation harness starts a cold pytest per surviving mutant and the self-tests start
+  many (a cold harness-style pytest: 13.0 s to 5.5 s; `test_four_workers_reach_the_same_verdict_as_one` 210 s to 33 s). The guard now does nothing when pytest-randomly is not
+  running in the session.
 
 ## 1.22.13
 

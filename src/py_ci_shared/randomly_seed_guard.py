@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from importlib.metadata import EntryPoint, entry_points
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +44,24 @@ def _entry_points_in(group: str) -> list[EntryPoint]:
     return list(found.get(group, ()))  # type: ignore[union-attr]
 
 
-def bound_randomly_reseeders() -> bool:
+def _randomly_inactive(config: Any) -> bool:
+    """True when *config* says pytest-randomly is not running in this session (``-p no:randomly``, or it is not registered)."""
+    manager = getattr(config, "pluginmanager", None)
+    if manager is None:
+        return False  # no session to ask: keep the old behaviour
+    return bool(manager.is_blocked("randomly") or not manager.has_plugin("randomly"))
+
+
+def bound_randomly_reseeders(config: Any = None) -> bool:
     """Wrap pytest-randomly's entry-point reseeders so each receives a seed in ``[0, 2**32)``.
 
-    Call from ``pytest_configure``. Returns whether anything was wrapped; a no-op when pytest-randomly is not
-    installed, and idempotent. It fills pytest-randomly's own module-level cache of loaded reseeders, which the
+    Call from ``pytest_configure`` with the session's *config*. Returns whether anything was wrapped; a no-op when pytest-randomly is not
+    installed or not active in the session (loading the reseeders imports every library that registers one, thinc and torch among them: 13 s
+    on a machine with those installed, for a plugin that never reseeds anything), and idempotent. It fills pytest-randomly's own module-level cache of loaded reseeders, which the
     plugin consults before loading them itself, so the wrap holds for the whole session.
     """
+    if _randomly_inactive(config):
+        return False
     try:
         import pytest_randomly
     except ImportError as exc:

@@ -91,7 +91,7 @@ def _export_grow(config: Any) -> None:
 
 def pytest_configure(config: Any) -> None:
     config.addinivalue_line("markers", "py_ci_shared: a gate item generated from [tool.py_ci_shared]")
-    bound_randomly_reseeders()  # pytest-randomly hands thinc an out-of-range seed; see randomly_seed_guard
+    bound_randomly_reseeders(config)  # pytest-randomly hands thinc an out-of-range seed; see randomly_seed_guard
     _export_grow(config)
     tokens = _refresh_tokens(config)
     if tokens:
