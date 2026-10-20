@@ -390,14 +390,27 @@ def _given_names(tree: ast.Module) -> "dict[str, set[str]]":
     return given
 
 
-def _hasattr_names(scope_node: ast.AST) -> "dict[str, set[str]]":
-    """``alias -> names`` tested with ``hasattr(alias, "NAME")`` anywhere inside the scope's subtree."""
-    out: dict[str, set[str]] = {}
-    for node in shared_walk(scope_node):
+_SCOPE_NODES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
+
+def _hasattr_by_scope(tree: ast.Module) -> "dict[int, dict[str, set[str]]]":
+    """``id(scope node) -> alias -> names`` tested with ``hasattr(alias, "NAME")`` anywhere inside that scope's subtree.
+
+    One pass over the file: each ``hasattr`` call is recorded under every scope that encloses it, so a scope's answer does not need its own walk.
+    """
+    out: dict[int, dict[str, set[str]]] = {}
+    stack: "list[tuple[ast.AST, tuple[int, ...]]]" = [(tree, ())]
+    while stack:
+        node, scopes = stack.pop()
+        if isinstance(node, _SCOPE_NODES):
+            scopes = (*scopes, id(node))
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "hasattr" and len(node.args) == 2:
             first, second = node.args
             if isinstance(first, ast.Name) and isinstance(second, ast.Constant) and isinstance(second.value, str):
-                out.setdefault(first.id, set()).add(second.value)
+                for scope_id in scopes:
+                    out.setdefault(scope_id, {}).setdefault(first.id, set()).add(second.value)
+        for child in child_nodes(node):
+            stack.append((child, scopes))
     return out
 
 
@@ -461,7 +474,7 @@ def _judge_read(node: ast.Attribute, binding: _Binding, exempt: "set[str]", ctx:
 def _scan_file(tree: ast.Module, rel: str, path: Path, dirs: Sequence[Path], resolver: _Resolver, report: AttributeReport) -> None:
     guarded, given = _attribute_guards(tree)
     scopes = list(_scopes_of(tree))
-    hasattr_cache: "dict[int, dict[str, set[str]]]" = {}
+    hasattr_tested = _hasattr_by_scope(tree)
     skipped_seen: set[tuple[str, str, str]] = set()
     for scope in scopes:
         for node, shadow in _own_nodes(scope.node):
@@ -479,7 +492,7 @@ def _scan_file(tree: ast.Module, rel: str, path: Path, dirs: Sequence[Path], res
                 _skip(report, skipped_seen, rel, node.lineno, name, "?", "alias rebound in the same scope")
             if binding is None:
                 continue
-            exempt = hasattr_cache.setdefault(id(owner), _hasattr_names(owner.node)).get(name, set()) | given.get(name, set())
+            exempt = hasattr_tested.get(id(owner.node), {}).get(name, set()) | given.get(name, set())
             _judge_read(node, binding, exempt, (rel, path, dirs, resolver, report, skipped_seen))
 
 
