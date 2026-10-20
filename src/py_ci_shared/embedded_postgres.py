@@ -90,11 +90,39 @@ def _quiet(cmd: list[str], *, check: bool, log: "Path | None" = None, also: Sequ
         raise RuntimeError(f"{Path(cmd[0]).name} failed with exit code {code}:\n" + ("\n".join(tails) or "(no output)"))
 
 
+def _reap_orphans(bin_dir: Path, tmp: Path) -> None:
+    """Stop and delete the servers of earlier processes that died without running their cleanup (a killed test worker).
+
+    A directory is an orphan when its ``owner.pid`` names a process that no longer exists. Directories of live owners, other sessions and
+    other users are left alone; without psutil nothing can be judged, so nothing is reaped.
+    """
+    try:
+        import psutil  # type: ignore[import-not-found]
+    except ImportError:
+        return
+    pg_ctl = str(bin_dir / f"pg_ctl{_EXE}")
+    for d in tmp.glob("pg-embedded-*"):
+        try:
+            owner = int((d / "owner.pid").read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            continue
+        if psutil.pid_exists(owner):
+            continue
+        if (d / "db" / "postmaster.pid").is_file():
+            _quiet([pg_ctl, "-D", str(d / "db"), "-m", "immediate", "-w", "stop"], check=False)
+        shutil.rmtree(d, ignore_errors=True)
+
+
 @contextlib.contextmanager
 def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "postgres") -> Iterator[str]:
-    """A running server in a temporary data directory, as a libpq DSN; stopped and deleted on exit."""
+    """A running server in a temporary data directory, as a libpq DSN; stopped and deleted on exit.
+
+    Servers left behind by a process that was killed (so its ``finally`` never ran) are stopped and deleted first; see :func:`_reap_orphans`.
+    """
     port = port or free_port()
+    _reap_orphans(bin_dir, Path(tempfile.gettempdir()))
     data = Path(tempfile.mkdtemp(prefix="pg-embedded-"))
+    (data / "owner.pid").write_text(str(os.getpid()), encoding="ascii")
     pg_ctl = str(bin_dir / f"pg_ctl{_EXE}")
     try:
         _quiet(

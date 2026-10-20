@@ -227,3 +227,22 @@ def test_the_cli_keeps_a_double_dash_that_belongs_to_the_command(capsys, monkeyp
     monkeypatch.setattr(ep, "find_pg_bin", lambda explicit=None: None)
     assert ep.main(["run", "--env", "X_DSN", "--missing-exit", "4", "--", "git", "log", "--", "path"]) == 4
     assert "git log -- path" in capsys.readouterr().err
+
+
+def test_a_server_left_by_a_killed_process_is_reaped_and_a_live_one_is_kept(tmp_path):
+    """A test worker killed mid-test never runs its cleanup, so its data directory and server outlive it. A new start removes the directory of a
+    dead owner and leaves the directory of a live owner alone (another session or worker). No server is started here: the directories are the subject."""
+    import os as _os
+
+    pytest.importorskip("psutil")  # the reaper judges owners by pid; without psutil it is a no-op by design
+    from py_ci_shared.embedded_postgres import _reap_orphans
+
+    dead = tmp_path / "pg-embedded-dead"
+    (dead / "db").mkdir(parents=True)
+    (dead / "owner.pid").write_text("999999", encoding="ascii")  # no such process
+    live = tmp_path / "pg-embedded-live"
+    (live / "db").mkdir(parents=True)
+    (live / "owner.pid").write_text(str(_os.getpid()), encoding="ascii")  # this process is alive
+    _reap_orphans(Path(sys.executable), tmp_path)
+    assert not dead.exists()
+    assert live.is_dir()
