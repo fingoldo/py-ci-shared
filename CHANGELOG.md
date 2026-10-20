@@ -18,6 +18,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Fixed: a Postgres server whose test process was killed (a crashed xdist worker, a timeout) outlived it. `embedded_postgres` now stops and deletes the
   data directories of dead owners at the next start (`owner.pid`); live owners are left alone. `psutil` is in the dev extra.
 - Fixed: the mutation worker turned a KeyboardInterrupt in a request into an error reply and went on serving; an interrupt now ends the worker.
+- Refactor: the mutation sweep's per-mutant verdict is split into helpers (`_judge`, `_primary_verdict`, `_check_unmutated`, `_group_twins`, `_sweep_in_sandbox`),
+  clearing two C901 findings. Decisions and budget accounting are unchanged; the harness version is 16 because its tracked files changed.
+- `embedded_postgres` logs a warning when psutil is missing, so the reaper's no-op is visible.
 - Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
   warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 

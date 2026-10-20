@@ -1,11 +1,12 @@
 {
-  "content_hash": "a966d3e04c1b2fbe",
+  "content_hash": "8f2eb7d78d3e8be9",
   "hash_format": 2,
   "history": {
     "12": "652ba4425e85760d",
     "13": "aefada159a1bb617",
     "14": "42f89426e1fce1ad",
-    "15": "a966d3e04c1b2fbe"
+    "15": "a966d3e04c1b2fbe",
+    "16": "8f2eb7d78d3e8be9"
   },
-  "version": "15"
+  "version": "16"
 }

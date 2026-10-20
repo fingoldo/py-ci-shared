@@ -83,6 +83,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+from dataclasses import dataclass, field
 import json
 import logging
 import os
@@ -276,11 +277,6 @@ def _sweep_mutants(
 ) -> "tuple[list[Mutant], list[Mutant], list[Mutant], list[Mutant], list[Mutant], dict[str, float]]":
     """The loop itself, split out so the restore above can wrap it in a `finally`."""
     source = original if isinstance(original, SourceText) else SourceText(original)
-    survivors: list[Mutant] = []
-    coverage_gaps: list[Mutant] = []
-    inconclusive: list[Mutant] = []
-    judged: list[Mutant] = []
-    crashed: list[Mutant] = []
     relative = relative if relative is not None else Path(target.name)
     names = _module_names(relative)
 
@@ -301,95 +297,149 @@ def _sweep_mutants(
                         "mutation. Re-run with `use_warm_worker=False` to get a usable result, and "
                         "treat the difference between the two processes as the bug."
                     )
-        ordered = list(test_paths)
-        # The wider net gets the same treatment as the primary set, and for a bigger prize: it is
-        # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
-        # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
-        ordered_wider = list(fallback_test_paths)
-        budget = {"purge": 0.0, "pytest": 0.0, "overhead": 0.0, "recheck": 0.0, "mutants": 0.0}
-
-        def warm_timed_out() -> bool:
-            """A warm run that overran is INCONCLUSIVE, and the worker is replaced for the next mutant.
-
-            Re-running it cold would pay the same timeout a second time for the same answer.
-            """
-            if not warm.last_timed_out:
-                return False
-            warm.restart()
-            return True
-
+        state = _SweepState(
+            ordered=list(test_paths),
+            # The wider net gets the same treatment as the primary set, and for a bigger prize: it is
+            # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
+            # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
+            ordered_wider=list(fallback_test_paths),
+        )
         for mutant in mutants:
-            _mutant_started = time.perf_counter()
-            _judged_at = _mutant_started
+            started = time.perf_counter()
+            state.judged_at = started
             write_target(target, source, mutant.mutated_file_text)
             try:
-                code = warm.run(ordered) if use_warm_worker else None
-                _judged_at = time.perf_counter()
-                if warm.last_timings:
-                    budget["purge"] += warm.last_timings.get("t_purge", 0.0)
-                    budget["pytest"] += warm.last_timings.get("t_pytest", 0.0)
-                    # What the parent spent that the worker did not: the pipe, the JSON, and the two
-                    # whole-file writes around every mutant.
-                    budget["overhead"] += max(0.0, (_judged_at - _mutant_started) - warm.last_timings.get("t_total", 0.0))
-                if warm.last_failed:
-                    ordered = _lead_with(ordered, warm.last_failed)
-                if code is None and use_warm_worker and warm_timed_out():
-                    inconclusive.append(mutant)
-                    continue
-                if code is None:
-                    if use_warm_worker and (warm.process is None or warm.process.poll() is not None):
-                        warm.restart()  # died rather than timed out: the next mutant gets a live worker again
-                    result = _run_pytest(test_paths, sandbox, timeout)
-                    if result is None:
-                        inconclusive.append(mutant)
-                        continue
-                    passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
-                    crash = not passed and (result.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(result.stdout))
-                else:
-                    passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
-                    crash = not passed and (code in _MUTATION_BROKE_THE_RUN or warm.last_crash)
-                if not passed:
-                    judged.append(mutant)
-                    if crash:
-                        crashed.append(mutant)
-                    continue
-                confirm = _run_pytest(test_paths, sandbox, timeout)
-                if confirm is None:
-                    inconclusive.append(mutant)
-                    continue
-                if not _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
-                    # Warm said it survived and a fresh process kills it: state leaked between warm
-                    # runs. The cold verdict is the one that holds.
-                    judged.append(mutant)
-                    if confirm.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(confirm.stdout):
-                        crashed.append(mutant)
-                    continue
-                if fallback_test_paths:
-                    wider_killed, wider_killer = _wider_net(warm, use_warm_worker, ordered_wider, sandbox, timeout, str(mutant))
-                    if wider_killed is None:
-                        inconclusive.append(mutant)
-                        continue
-                    if wider_killed:
-                        # Record WHICH file killed it. Without this the report says "fix the
-                        # map" and leaves the operator to find the one test among dozens --
-                        # and adding them all is precisely what the map exists to avoid.
-                        if wider_killer:
-                            object.__setattr__(mutant, "category", f"killed-by:{wider_killer}")
-                            # Lead with it next time. Gaps cluster: the same unlisted test
-                            # usually kills many of them, and on the file that produced 65 gaps
-                            # every one named the same killer.
-                            ordered_wider = _lead_with(ordered_wider, wider_killer)
-                        judged.append(mutant)
-                        coverage_gaps.append(mutant)
-                        continue
-                judged.append(mutant)
-                survivors.append(mutant)
+                _judge(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, fallback_test_paths, relative, state, started)
             finally:
                 restore()
-                budget["mutants"] += 1
+                state.budget["mutants"] += 1
                 # Everything after the verdict is a cold re-check: the confirmation and the wider net.
-                budget["recheck"] += max(0.0, time.perf_counter() - _judged_at)
-    return survivors, coverage_gaps, inconclusive, judged, crashed, budget
+                state.budget["recheck"] += max(0.0, time.perf_counter() - state.judged_at)
+    return state.survivors, state.coverage_gaps, state.inconclusive, state.judged, state.crashed, state.budget
+
+
+@dataclass
+class _SweepState:
+    """What one sweep has decided so far, and the orderings that make the next mutant cheaper.
+
+    ``ordered`` and ``ordered_wider`` put the test file that killed the last mutant first; ``judged_at`` is when the current mutant's verdict
+    was reached, which splits the mutant's time between judging it and the cold re-checks after it.
+    """
+
+    ordered: "list[PathArg]"
+    ordered_wider: "list[PathArg]"
+    survivors: "list[Mutant]" = field(default_factory=list)
+    coverage_gaps: "list[Mutant]" = field(default_factory=list)
+    inconclusive: "list[Mutant]" = field(default_factory=list)
+    judged: "list[Mutant]" = field(default_factory=list)
+    crashed: "list[Mutant]" = field(default_factory=list)
+    budget: "dict[str, float]" = field(default_factory=lambda: {"purge": 0.0, "pytest": 0.0, "overhead": 0.0, "recheck": 0.0, "mutants": 0.0})
+    judged_at: float = 0.0
+
+
+def _warm_timed_out(warm: "_WarmRunner") -> bool:
+    """A warm run that overran is INCONCLUSIVE, and the worker is replaced for the next mutant.
+
+    Re-running it cold would pay the same timeout a second time for the same answer.
+    """
+    if not warm.last_timed_out:
+        return False
+    warm.restart()
+    return True
+
+
+def _charge_warm_timings(warm: "_WarmRunner", state: _SweepState, started: float) -> None:
+    """Add the warm worker's own timings to the budget; what the parent spent that the worker did not is overhead (the pipe, the JSON, and the two whole-file writes)."""
+    if warm.last_timings:
+        state.budget["purge"] += warm.last_timings.get("t_purge", 0.0)
+        state.budget["pytest"] += warm.last_timings.get("t_pytest", 0.0)
+        state.budget["overhead"] += max(0.0, (state.judged_at - started) - warm.last_timings.get("t_total", 0.0))
+
+
+def _primary_verdict(
+    mutant: "Mutant",
+    warm: "_WarmRunner",
+    use_warm_worker: bool,
+    test_paths: "Sequence[PathArg]",
+    sandbox: Path,
+    timeout: float,
+    state: _SweepState,
+    started: float,
+) -> "tuple[Optional[bool], bool]":
+    """``(passed, crash)`` of one mutant on the primary tests: ``passed`` is True when it survives, False when killed, None when inconclusive.
+
+    A warm verdict that says the mutant survived is confirmed cold, because state can leak between warm runs; the cold verdict is the one that holds.
+    """
+    code = warm.run(state.ordered) if use_warm_worker else None
+    state.judged_at = time.perf_counter()
+    _charge_warm_timings(warm, state, started)
+    if warm.last_failed:
+        state.ordered = _lead_with(state.ordered, warm.last_failed)
+    if code is None and use_warm_worker and _warm_timed_out(warm):
+        return None, False
+    if code is None:
+        if use_warm_worker and (warm.process is None or warm.process.poll() is not None):
+            warm.restart()  # died rather than timed out: the next mutant gets a live worker again
+        result = _run_pytest(test_paths, sandbox, timeout)
+        if result is None:
+            return None, False
+        passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
+        crash = not passed and (result.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(result.stdout))
+    else:
+        passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
+        crash = not passed and (code in _MUTATION_BROKE_THE_RUN or warm.last_crash)
+    if not passed:
+        return False, crash
+    confirm = _run_pytest(test_paths, sandbox, timeout)
+    if confirm is None:
+        return None, False
+    if not _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
+        return False, confirm.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(confirm.stdout)
+    return True, False
+
+
+def _judge(
+    mutant: "Mutant",
+    warm: "_WarmRunner",
+    use_warm_worker: bool,
+    test_paths: "Sequence[PathArg]",
+    sandbox: Path,
+    timeout: float,
+    fallback_test_paths: "Sequence[PathArg]",
+    relative: Path,
+    state: _SweepState,
+    started: float,
+) -> None:
+    """File one mutant under its verdict: killed, a coverage gap (killed only by the wider net), a survivor, crashed or inconclusive."""
+    passed, crash = _primary_verdict(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, state, started)
+    if passed is None:
+        state.inconclusive.append(mutant)
+        return
+    if not passed:
+        state.judged.append(mutant)
+        if crash:
+            state.crashed.append(mutant)
+        return
+    if fallback_test_paths:
+        wider_killed, wider_killer = _wider_net(warm, use_warm_worker, state.ordered_wider, sandbox, timeout, str(mutant))
+        if wider_killed is None:
+            state.inconclusive.append(mutant)
+            return
+        if wider_killed:
+            # Record WHICH file killed it. Without this the report says "fix the
+            # map" and leaves the operator to find the one test among dozens --
+            # and adding them all is precisely what the map exists to avoid.
+            if wider_killer:
+                object.__setattr__(mutant, "category", f"killed-by:{wider_killer}")
+                # Lead with it next time. Gaps cluster: the same unlisted test
+                # usually kills many of them, and on the file that produced 65 gaps
+                # every one named the same killer.
+                state.ordered_wider = _lead_with(state.ordered_wider, wider_killer)
+            state.judged.append(mutant)
+            state.coverage_gaps.append(mutant)
+            return
+    state.judged.append(mutant)
+    state.survivors.append(mutant)
 
 
 # ── the cache ─────────────────────────────────────────────────────────────────────────────────────
@@ -602,6 +652,126 @@ def _merge_verdicts(
     return survivors, coverage_gaps, inconclusive, run, crashes, budget
 
 
+def _check_unmutated(
+    sandbox: Path,
+    relative: Path,
+    test_paths: "Sequence[PathArg]",
+    fallback_test_paths: "Sequence[PathArg]",
+    timeout: float,
+    use_warm_worker: bool,
+    have_mutants: bool,
+    limit_name: None = None,
+) -> "tuple[Sequence[PathArg], str]":
+    """Refuse the sweep unless the unmutated tests pass; return the wider net to use and why it was dropped, if it was.
+
+    The wider net decides verdicts too (a failure in it RECLASSIFIES a survivor as a coverage-map gap), so it gets the same unmutated check the
+    primary set gets. A net that cannot run is not evidence, so it is dropped for this file and said out loud.
+    """
+    baseline = _run_pytest(test_paths, sandbox, timeout)
+    if baseline is None:
+        raise MutationHarnessError(
+            f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. " "Raise `timeout`, or narrow `test_paths`."
+        )
+    if not _classify(baseline, "the unmutated baseline"):
+        raise MutationHarnessError(
+            "the unmutated baseline does not pass, so no mutant result would mean anything.\n"
+            "Fix the failing tests first, then re-run.\n"
+            f"{baseline.stdout[-2000:]}"
+        )
+    if have_mutants and not use_warm_worker:
+        # The warm path checks this on its own baseline; a cold-only run needs one look of its own.
+        _verify_import_origin(sandbox, relative, test_paths, timeout)
+    wider_baseline_note = ""
+    if fallback_test_paths:
+        wider_baseline = _run_pytest(fallback_test_paths, sandbox, timeout)
+        if wider_baseline is None or not _classify(wider_baseline, "the unmutated wider net"):
+            broken = _first_failing_file(wider_baseline.stdout) if wider_baseline else None
+            wider_baseline_note = (
+                "the wider net does not pass unmutated"
+                + (f" ({broken} fails in the sandbox)" if broken else "")
+                + " -- it cannot tell a coverage-map gap from a survivor, so it was NOT used"
+            )
+            fallback_test_paths = ()
+    return fallback_test_paths, wider_baseline_note
+
+
+def _group_twins(mutants: "list[Mutant]") -> "dict[str, list[Mutant]]":
+    """Mutants that produce a byte-identical file, grouped by that file.
+
+    Two candidates can produce a byte-identical file -- an operator landing on a span a container sampler already covers, most often. Running the
+    twin is pure cost, but its verdict must be FANNED to every colliding mutant rather than recorded once: each carries its own baseline key, and a
+    silently unrun twin turns an accepted entry stale.
+    """
+    twins: dict[str, list[Mutant]] = {}
+    for mutant in mutants:
+        twins.setdefault(mutant.mutated_file_text, []).append(mutant)
+    return twins
+
+
+def _sweep_in_sandbox(
+    sandbox: Path,
+    borrowed: bool,
+    repo_root: Path,
+    relative: Path,
+    ranges: "Optional[list[range]]",
+    limit: Optional[int],
+    test_paths: "Sequence[PathArg]",
+    fallback_test_paths: "Sequence[PathArg]",
+    timeout: float,
+    use_warm_worker: bool,
+    jobs: int,
+    allow_empty: bool,
+) -> "MutationRun":
+    """The sweep itself, in a sandbox the caller provides or this function copies. Removing a sandbox it made is the caller's job."""
+    if not borrowed:
+        shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
+    target = sandbox / relative
+    if not target.is_file():
+        raise MutationHarnessError(
+            f"{relative} does not exist under {repo_root}. " "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
+        )
+
+    mutants, candidates_total, sampled = generate_mutants(target, lines=ranges, limit=limit)
+    if not mutants and not allow_empty:
+        raise MutationHarnessError(
+            f"no mutant of {relative.as_posix()} to run ({candidates_total} candidate(s) in scope, lines={_scope_of(ranges)}), "
+            "so a pass would check nothing. Widen `lines`, or pass `allow_empty=True` where an empty scope is expected."
+        )
+
+    fallback_test_paths, wider_baseline_note = _check_unmutated(
+        sandbox, relative, test_paths, fallback_test_paths, timeout, use_warm_worker, bool(mutants), limit_name=None
+    )
+
+    for mutant in mutants:
+        object.__setattr__(mutant, "path", relative)
+    # Two candidates can produce a byte-identical file -- an operator landing on a span a
+    # container sampler already covers, most often. Running the twin is pure cost, but its
+    # verdict must be FANNED to every colliding mutant rather than recorded once: each carries
+    # its own baseline key, and a silently unrun twin turns an accepted entry stale.
+    twins = _group_twins(mutants)
+    representatives = [group[0] for group in twins.values()]
+
+    results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs)
+    survivors, coverage_gaps, inconclusive, run, crashes, budget = _merge_verdicts(results, twins, mutants)
+    outcome = MutationRun(
+        survivors=survivors,
+        mutants_run=run,
+        killed=run - len(survivors),
+        # NOT gated on `limit`: container sampling drops candidates too, and gating on the
+        # cap left the flag False while the report read as exhaustive. Twins are run, by
+        # fan-out, so they are not omissions.
+        truncated=candidates_total > len(mutants),
+        candidates_total=candidates_total,
+        sampled_containers=sampled,
+        killed_by_crash=crashes,
+        coverage_gaps=coverage_gaps,
+        inconclusive=inconclusive,
+        wider_net_note=wider_baseline_note,
+        timings={k: round(v, 3) for k, v in budget.items()},
+    )
+    return outcome
+
+
 def find_surviving_mutants(
     path: PathArg,
     test_paths: Sequence[PathArg],
@@ -661,85 +831,8 @@ def find_surviving_mutants(
         sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
         sandbox = sandbox_parent / repo_root.name
     try:
-        if not borrowed:
-            shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
-        target = sandbox / relative
-        if not target.is_file():
-            raise MutationHarnessError(
-                f"{relative} does not exist under {repo_root}. " "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
-            )
-
-        mutants, candidates_total, sampled = generate_mutants(target, lines=ranges, limit=limit)
-        if not mutants and not allow_empty:
-            raise MutationHarnessError(
-                f"no mutant of {relative.as_posix()} to run ({candidates_total} candidate(s) in scope, lines={_scope_of(ranges)}), "
-                "so a pass would check nothing. Widen `lines`, or pass `allow_empty=True` where an empty scope is expected."
-            )
-
-        baseline = _run_pytest(test_paths, sandbox, timeout)
-        if baseline is None:
-            raise MutationHarnessError(
-                f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. " "Raise `timeout`, or narrow `test_paths`."
-            )
-        if not _classify(baseline, "the unmutated baseline"):
-            raise MutationHarnessError(
-                "the unmutated baseline does not pass, so no mutant result would mean anything.\n"
-                "Fix the failing tests first, then re-run.\n"
-                f"{baseline.stdout[-2000:]}"
-            )
-        if mutants and not use_warm_worker:
-            # The warm path checks this on its own baseline; a cold-only run needs one look of its own.
-            _verify_import_origin(sandbox, relative, test_paths, timeout)
-
-        # The wider net decides verdicts too -- a failure in it RECLASSIFIES a survivor as a
-        # coverage-map gap -- so it needs the same unmutated check the primary set gets. It was not
-        # getting one, and the consequence was measured rather than imagined: a test that reads two
-        # files from a SIBLING project raises FileNotFoundError inside the sandbox on every mutant,
-        # pytest exits non-zero, and 65 real survivors in one module were reported as "killed by a
-        # test the map does not list". That module then read as having no survivors at all, which is
-        # the direction nobody investigates.
-        #
-        # A net that cannot run is not evidence, so it is dropped for this file and said out loud.
-        wider_baseline_note = ""
-        if fallback_test_paths:
-            wider_baseline = _run_pytest(fallback_test_paths, sandbox, timeout)
-            if wider_baseline is None or not _classify(wider_baseline, "the unmutated wider net"):
-                broken = _first_failing_file(wider_baseline.stdout) if wider_baseline else None
-                wider_baseline_note = (
-                    "the wider net does not pass unmutated"
-                    + (f" ({broken} fails in the sandbox)" if broken else "")
-                    + " -- it cannot tell a coverage-map gap from a survivor, so it was NOT used"
-                )
-                fallback_test_paths = ()
-
-        for mutant in mutants:
-            object.__setattr__(mutant, "path", relative)
-        # Two candidates can produce a byte-identical file -- an operator landing on a span a
-        # container sampler already covers, most often. Running the twin is pure cost, but its
-        # verdict must be FANNED to every colliding mutant rather than recorded once: each carries
-        # its own baseline key, and a silently unrun twin turns an accepted entry stale.
-        twins: dict[str, list[Mutant]] = {}
-        for mutant in mutants:
-            twins.setdefault(mutant.mutated_file_text, []).append(mutant)
-        representatives = [group[0] for group in twins.values()]
-
-        results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs)
-        survivors, coverage_gaps, inconclusive, run, crashes, budget = _merge_verdicts(results, twins, mutants)
-        outcome = MutationRun(
-            survivors=survivors,
-            mutants_run=run,
-            killed=run - len(survivors),
-            # NOT gated on `limit`: container sampling drops candidates too, and gating on the
-            # cap left the flag False while the report read as exhaustive. Twins are run, by
-            # fan-out, so they are not omissions.
-            truncated=candidates_total > len(mutants),
-            candidates_total=candidates_total,
-            sampled_containers=sampled,
-            killed_by_crash=crashes,
-            coverage_gaps=coverage_gaps,
-            inconclusive=inconclusive,
-            wider_net_note=wider_baseline_note,
-            timings={k: round(v, 3) for k, v in budget.items()},
+        outcome = _sweep_in_sandbox(
+            sandbox, borrowed, repo_root, relative, ranges, limit, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, allow_empty
         )
     finally:
         if sandbox_parent is not None:

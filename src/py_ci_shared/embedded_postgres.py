@@ -99,6 +99,7 @@ def _reap_orphans(bin_dir: Path, tmp: Path) -> None:
     try:
         import psutil  # type: ignore[import-not-found]
     except ImportError:
+        logger.warning("psutil is not installed, so servers left by killed processes are not reaped; install it (it is in the dev extra)")
         return
     pg_ctl = str(bin_dir / f"pg_ctl{_EXE}")
     for d in tmp.glob("pg-embedded-*"):
