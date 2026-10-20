@@ -168,3 +168,24 @@ class TestNamespaceVerdictsAreCached:
 @pytest.mark.parametrize("payload, expected", [("TypeError: x", True), ("assert False", False), ("AssertionError: y", False), ("Failed: z", None)])
 def test_is_crash_message(payload, expected):
     assert _mutation_worker.is_crash_message(payload) is expected
+
+
+def test_an_interrupt_ends_the_worker_instead_of_becoming_a_reply(monkeypatch, tmp_path):
+    """A KeyboardInterrupt while serving a request must reach the caller; it used to become an error reply and the loop went on."""
+    import io
+    import json
+
+    import pytest as _pytest
+
+    from py_ci_shared import _mutation_worker as worker
+
+    monkeypatch.setattr(worker, "_claim_protocol_channel", lambda: io.StringIO())
+    monkeypatch.setattr(worker.sys, "argv", ["worker", str(tmp_path)])
+    monkeypatch.setattr(worker.sys, "stdin", io.StringIO(json.dumps({"id": 1, "args": []}) + "\n"))
+
+    def interrupted(*_a, **_k):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(_pytest, "main", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        worker.main()

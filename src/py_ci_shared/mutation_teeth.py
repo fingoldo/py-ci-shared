@@ -545,7 +545,7 @@ def _run_partitions(
             results[slot] = _sweep_partition(
                 sandboxes[slot], relative, partitions[slot], test_paths, fallback_test_paths, timeout, use_warm_worker, verify_baseline=slot > 0
             )
-        except BaseException as exc:
+        except BaseException as exc:  # collected here and re-raised by the caller (raise errors[0]), so nothing is swallowed
             errors.append(exc)
 
     try:

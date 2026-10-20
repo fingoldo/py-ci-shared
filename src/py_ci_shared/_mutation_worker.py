@@ -299,7 +299,9 @@ def main() -> int:
             if request.get("target"):
                 reply["origin"] = _module_origin(str(request["target"]), [str(n) for n in request.get("names", [])])
             _reply(channel, reply)
-        except BaseException as exc:
+        except (KeyboardInterrupt, SystemExit):
+            raise  # an interrupt or an exit ends the worker; it is not a reply to one request
+        except BaseException as exc:  # any other failure is the reply to this request, so the parent does not wait for a worker that is alive
             _reply(channel, {"id": request_id, "error": f"{type(exc).__name__}: {exc}"})
     return 0
 
