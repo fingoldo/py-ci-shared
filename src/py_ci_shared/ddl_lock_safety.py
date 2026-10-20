@@ -417,7 +417,7 @@ def find_ddl_lock_findings(
         try:
             src = read_source(path)
         except SourceReadError as exc:
-            problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
             continue
         read += 1
         out.extend(_file_findings(rel, src, tiny, check_rewrites, volatile))

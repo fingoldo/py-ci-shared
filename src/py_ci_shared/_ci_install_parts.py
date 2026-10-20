@@ -237,7 +237,7 @@ class Repo:
                 try:
                     data = tomllib.loads(read_source(path))
                 except SourceError as exc:
-                    self.problems.append(Finding(self.rel(path), exc.line or 1, RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
+                    self.problems.append(Finding(self.rel(path), (exc.line if exc.line is not None else 1), RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
                 except tomllib.TOMLDecodeError as exc:
                     self.problems.append(Finding(self.rel(path), getattr(exc, "lineno", 1) or 1, RULE_UNPARSED, f"unparsable: {exc}"))
             self._toml[path] = data
@@ -436,7 +436,7 @@ def requirements_file(repo: Repo, path: Path, cwd: Path, provided: Provided, dep
     try:
         text = read_source(path)
     except SourceError as exc:
-        repo.problems.append(Finding(repo.rel(path), exc.line or 1, RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
+        repo.problems.append(Finding(repo.rel(path), (exc.line if exc.line is not None else 1), RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
         return
     for raw in re.sub(r"\\\r?\n", " ", text).splitlines():
         line = re.sub(r"(^|\s)#.*$", "", raw).strip()

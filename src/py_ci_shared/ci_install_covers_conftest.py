@@ -216,7 +216,7 @@ def _read_yaml(repo: Repo, path: Path) -> Optional[tuple[str, Any]]:
     try:
         return _load_yaml(path)
     except SourceError as exc:
-        repo.problems.append(Finding(repo.rel(path), exc.line or 1, RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
+        repo.problems.append(Finding(repo.rel(path), (exc.line if exc.line is not None else 1), RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
     except yaml.YAMLError as exc:
         repo.problems.append(_yaml_problem(repo, path, exc))
     return None
@@ -593,7 +593,7 @@ class _JobWalk:
         try:
             text = read_source(path)
         except SourceError as exc:
-            self.repo.problems.append(Finding(self.repo.rel(path), exc.line or 1, RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
+            self.repo.problems.append(Finding(self.repo.rel(path), (exc.line if exc.line is not None else 1), RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
             return
         self.script(text, ctx, cwd, line, depth + 1)
 

@@ -29,6 +29,18 @@ from py_ci_shared._mutation_model import SourceText, read_target, write_target
 from py_ci_shared._mutation_operators import _Intervals, _normalise_lines
 from py_ci_shared.mutation_teeth import Mutant, MutationHarnessError, MutationRun, fingerprint, generate_mutants
 
+
+def _seam(monkeypatch, name, value):
+    """Replace a harness seam where the code looks it up now: the sweep's verdict lives in ``_mutation_sweep``, the rest in ``mutation_teeth``.
+
+    Patching only ``mutation_teeth`` silently stops reaching the verdict code, so every seam is set on both modules that may read it.
+    """
+    from py_ci_shared import _mutation_sweep
+
+    for module in (mutation_teeth, _mutation_sweep):
+        if hasattr(module, name):
+            monkeypatch.setattr(module, name, value)
+
 logger = logging.getLogger(__name__)
 
 # ── fakes ───────────────────────────────────────────────────────────────────────────────────────
@@ -127,7 +139,7 @@ def fake_warm(monkeypatch):
     FakeWarm.script = {}
     FakeWarm.default = 0
     FakeWarm.origin = None
-    monkeypatch.setattr(mutation_teeth, "_WarmRunner", FakeWarm)
+    _seam(monkeypatch, "_WarmRunner", FakeWarm)
     return FakeWarm
 
 
@@ -158,7 +170,7 @@ class TestZeroMutantsIsNotAPass:
     def test_an_empty_scope_raises_unless_allowed(self, tmp_path, fake_warm, monkeypatch):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
         cold = FakeCold("m.py", lambda text, _p: 0)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         with pytest.raises(MutationHarnessError, match="no mutant"):
             _sweep(repo, lines=[])
         assert cold.calls == [], "the refusal comes before any pytest run is paid for"
@@ -168,7 +180,7 @@ class TestZeroMutantsIsNotAPass:
 
     def test_a_scope_with_mutants_runs_normally(self, tmp_path, fake_warm, monkeypatch):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.default = 1
         outcome = _sweep(repo)
         assert outcome.mutants_run >= 1 and outcome.killed == outcome.mutants_run
@@ -241,7 +253,7 @@ class TestTheLineScope:
 
     def test_a_generator_is_read_once_and_scopes_the_sweep(self, tmp_path, fake_warm, monkeypatch):
         repo = _repo(tmp_path, self.SOURCE)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.default = 1
         whole = _sweep(repo)
         narrow = _sweep(repo, lines=(r for r in [range(2, 3)]))
@@ -252,7 +264,7 @@ class TestTheLineScope:
 
     def test_a_generator_run_is_cached_under_its_own_scope(self, tmp_path, fake_warm, monkeypatch):
         repo = _repo(tmp_path, self.SOURCE)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.default = 1
         cache = tmp_path / "cache.json"
         first = _sweep(repo, lines=(r for r in [range(2, 3)]), use_cache=True, cache_path=cache)
@@ -278,7 +290,7 @@ class TestTheLineScope:
     def test_a_non_range_entry_is_rejected_up_front(self, tmp_path, monkeypatch):
         repo = _repo(tmp_path, self.SOURCE)
         cold = FakeCold("m.py", lambda text, _p: 0)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         with pytest.raises(TypeError, match="range"):
             _sweep(repo, lines=[(1, 5)])
         with pytest.raises(TypeError, match="range"):
@@ -301,9 +313,9 @@ class TestTwinsShareOneVerdict:
     def _run(self, tmp_path, monkeypatch, fake_warm, rc):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
         twin_text = "def f(a, b):\n    return a - b\n"
-        monkeypatch.setattr(mutation_teeth, "generate_mutants", lambda target, lines=None, limit=None: (_twin_pair(twin_text), 2, {}))
+        _seam(monkeypatch, "generate_mutants", lambda target, lines=None, limit=None: (_twin_pair(twin_text), 2, {}))
         original = (repo / "m.py").read_text(encoding="utf-8")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0 if text == original else rc))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0 if text == original else rc))
         fake_warm.default = rc
         outcome = _sweep(repo)
         runs_of_twin = sum(1 for inst in fake_warm.instances for text in inst.runs if text == twin_text)
@@ -324,14 +336,14 @@ class TestTwinsShareOneVerdict:
 class TestWarmCrashesAreCounted:
     def test_a_type_error_kill_in_the_warm_worker_is_a_crash(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.default = (1, {"crash": True})
         outcome = _sweep(repo)
         assert outcome.killed_by_crash == outcome.mutants_run > 0
 
     def test_an_assertion_kill_is_not(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.default = (1, {"crash": False})
         outcome = _sweep(repo)
         assert outcome.killed_by_crash == 0 and outcome.killed == outcome.mutants_run > 0
@@ -349,7 +361,7 @@ class TestTimeoutsAreInconclusive:
     def test_a_warm_timeout_is_not_re_run_cold_and_the_worker_is_replaced(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, self.SOURCE)
         cold = FakeCold("m.py", lambda text, _p: 0)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         mutants, _t, _s = generate_mutants(repo / "m.py")
         hanging = mutants[0].mutated_file_text
         fake_warm.script = {hanging: ["timeout"]}
@@ -364,7 +376,7 @@ class TestTimeoutsAreInconclusive:
     def test_a_wider_net_timeout_is_inconclusive_not_a_survivor(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, self.SOURCE)
         (repo / "test_wide.py").write_text("def test_ok():\n    pass\n", encoding="utf-8")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         mutants, _t, _s = generate_mutants(repo / "m.py")
         first = mutants[0].mutated_file_text
         fake_warm.script = {first: [0, "timeout"]}
@@ -385,14 +397,14 @@ class TestTimeoutsAreInconclusive:
                 return 0 if calls["wide"] == 1 else None  # the unmutated net passes; every mutant hangs it
             return 0
 
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", verdict))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", verdict))
         outcome = _sweep(repo, fallback_test_paths=["test_wide.py"], use_warm_worker=False)
         assert outcome.survivors == [] and len(outcome.inconclusive) == outcome.candidates_total > 0
 
     def test_a_dead_worker_falls_back_cold_and_is_restarted(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, self.SOURCE)
         cold = FakeCold("m.py", lambda text, _p: 1 if text != self.SOURCE else 0)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         mutants, _t, _s = generate_mutants(repo / "m.py")
         fake_warm.script = {mutants[0].mutated_file_text: ["dead"]}
         fake_warm.default = 1
@@ -416,7 +428,7 @@ class TestExtraSandboxes:
         def cold(test_paths, cwd, timeout):
             return subprocess.CompletedProcess([], 0, "", "")
 
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         fake_warm.default = 1
         results = mutation_teeth.sweep_files([("m.py", ["test_m.py"]), ("n.py", ["test_m.py"])], repo, jobs=2, use_cache=False, timeout=30)
 
@@ -433,7 +445,7 @@ class TestExtraSandboxes:
                 (repo / "m.py").write_text("def f(a, b):\n    return 0\n", encoding="utf-8")
 
         cold = FakeCold("m.py", lambda text, _p: 0, on_call=edit_repo)
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         fake_warm.default = 1
         _sweep(repo, jobs=2)
 
@@ -445,7 +457,7 @@ class TestExtraSandboxes:
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b * 2\n")
         cold = FakeCold("m.py", lambda text, _p: 0, on_call=None)
         cold.verdict = lambda text, _p: 0 if len(cold.calls) == 1 else 1
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", cold)
+        _seam(monkeypatch, "_run_pytest", cold)
         with pytest.raises(MutationHarnessError, match="extra sandbox"):
             _sweep(repo, jobs=2)
 
@@ -453,21 +465,21 @@ class TestExtraSandboxes:
 class TestTheImportMustComeFromTheSandbox:
     def test_a_foreign_origin_is_refused(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.origin = {"sandbox": False, "elsewhere": ["m from C:/site-packages/m.py"]}
         with pytest.raises(MutationHarnessError, match="outside the mutation sandbox"):
             _sweep(repo)
 
     def test_the_sandbox_origin_is_accepted(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.origin = {"sandbox": True, "elsewhere": ["m from C:/site-packages/m.py"]}
         fake_warm.default = 1
         assert _sweep(repo).mutants_run > 0
 
     def test_a_cold_only_run_checks_too(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b\n")
-        monkeypatch.setattr(mutation_teeth, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 0))
         fake_warm.origin = {"sandbox": False, "elsewhere": ["m from elsewhere"]}
         with pytest.raises(MutationHarnessError, match="outside the mutation sandbox"):
             _sweep(repo, use_warm_worker=False)
@@ -736,7 +748,7 @@ class TestTheRatchet:
         run = MutationRun(survivors=[_survivor()], mutants_run=5, killed=4, truncated=False, candidates_total=5)
         for k, v in fields.items():
             setattr(run, k, v)
-        monkeypatch.setattr(mutation_teeth, "find_surviving_mutants", lambda *a, **k: run)
+        _seam(monkeypatch, "find_surviving_mutants", lambda *a, **k: run)
 
     @pytest.mark.parametrize(
         "fields",

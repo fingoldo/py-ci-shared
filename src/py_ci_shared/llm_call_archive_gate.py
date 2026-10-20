@@ -94,7 +94,7 @@ def _parsed(repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str
         try:
             source, tree = parse_source(path)
         except SourceError as exc:
-            problems.append(f"{_rel(path, repo_root)}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            problems.append(f"{_rel(path, repo_root)}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
             continue
         out.append((path, source, tree))
     if unparsed is not None:

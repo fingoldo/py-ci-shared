@@ -131,7 +131,7 @@ def _scan(repo_root: Path, files: Optional[Iterable[Path]], roots: Sequence[str]
                 tree = _EMPTY_TREE
                 lines = _text_comments(source, markers)
         except SourceError as exc:
-            scan.unparsed.append(SourceProblem(path, rel, exc.line or 1, exc.kind, exc.message))
+            scan.unparsed.append(SourceProblem(path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
             continue
         scan.files.append(ParsedFile(path, rel, tree, source))
         for lineno, text in lines:

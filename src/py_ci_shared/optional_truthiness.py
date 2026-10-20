@@ -243,7 +243,7 @@ def find_truthiness_tests(path: Path, *, repo_root: Optional[Path] = None) -> li
         tree = parse_file(path)
     except SourceError as exc:
         logger.debug("could not parse file, reported as a problem: %s", type(exc).__name__)
-        return [f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message}"]
+        return [f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}"]
     out: list[str] = []
     for node in tree.body:
         for fn in [node] if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) else _nested(node):

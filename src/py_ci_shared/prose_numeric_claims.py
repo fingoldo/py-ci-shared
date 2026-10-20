@@ -170,7 +170,7 @@ def find_undated_volatile_claims(paths: Iterable[Path], covered_patterns: Sequen
         try:
             lines = read_source(path).splitlines()
         except SourceError as exc:
-            findings.append(f"{path.name}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            findings.append(f"{path.name}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
             continue
         for index, line in enumerate(lines):
             if any(pattern.search(line) for pattern in covered):

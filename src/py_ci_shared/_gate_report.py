@@ -85,7 +85,7 @@ def read_text_corpus(root: PathLike, *, patterns: Sequence[str], skip: Iterable[
         try:
             corpus.files.append(TextFile(path, rel, read_source(path)))
         except SourceError as exc:
-            corpus.unreadable.append(SourceProblem(exc.path, rel, exc.line or 1, exc.kind, exc.message))
+            corpus.unreadable.append(SourceProblem(exc.path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
     return corpus
 
 

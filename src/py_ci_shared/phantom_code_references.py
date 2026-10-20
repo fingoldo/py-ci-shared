@@ -483,7 +483,7 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
         rel = relative_posix(path, repo_root)
         lines, problem = _comment_lines_checked(path)
         if problem is not None:
-            violations.append(f"{rel}:{problem.line or 1}: {problem.kind}: {problem.message}")
+            violations.append(f"{rel}:{(problem.line if problem.line is not None else 1)}: {problem.kind}: {problem.message}")
         for lineno, text in lines:
             for m in _BACKTICK_RE.finditer(text):
                 token = m.group(1).strip()

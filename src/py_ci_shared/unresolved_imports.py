@@ -155,7 +155,7 @@ class ModuleIndex:
         try:
             _, tree = parse_source(path)
         except SourceError as exc:
-            self.unparsed.append((path, f"{exc.line or 1}: {exc.kind}: {exc.message}"))
+            self.unparsed.append((path, f"{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}"))
             self._dynamic.add(dotted)
             self._names.setdefault(dotted, set())
             return
@@ -386,7 +386,7 @@ def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple
                 _, tree = parse_source(path)
             except SourceError as exc:
                 seen_unparsed.add(str(path.resolve()))
-                problems.append(f"{path.as_posix()}:{exc.line or 1}: {exc.kind}: {exc.message}")
+                problems.append(f"{path.as_posix()}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
                 continue
             parsed_count += 1
             imports = cast("list[ast.ImportFrom]", nodes_of(tree, ast.ImportFrom))

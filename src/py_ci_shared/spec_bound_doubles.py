@@ -226,7 +226,7 @@ def assert_doubles_are_spec_bound(
         try:
             lines = find_unbound_doubles(path, entry_points=entries, name_hints=hints)
         except SourceError as exc:
-            problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message} - its doubles were not checked")
+            problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message} - its doubles were not checked")
             continue
         if lines:
             problems.append(

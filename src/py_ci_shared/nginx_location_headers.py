@@ -321,7 +321,7 @@ def _scan(
             text = read_source(path)
             tree = parse_nginx(text)
         except SourceError as exc:
-            scan.unparsed.append(SourceProblem(path, rel, exc.line or 1, exc.kind, exc.message))
+            scan.unparsed.append(SourceProblem(path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
             continue
         except NginxParseError as exc:
             scan.unparsed.append(SourceProblem(path, rel, exc.line, "unparsable", str(exc)))

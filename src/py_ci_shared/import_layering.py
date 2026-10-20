@@ -229,7 +229,7 @@ def find_layering_violations(
             targets = list(_python_targets(path, repo_root, package_roots) if path.suffix == ".py" else _text_targets(path, repo_root, package_roots))
         except SourceError as exc:
             problems.append(
-                f"{rel}:{exc.line or 1}: cannot be {'parsed' if exc.kind == 'unparsable' else 'read'}, so its imports were not checked: {exc.message}"
+                f"{rel}:{(exc.line if exc.line is not None else 1)}: cannot be {'parsed' if exc.kind == 'unparsable' else 'read'}, so its imports were not checked: {exc.message}"
             )
             continue
         for i, target in targets:

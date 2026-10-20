@@ -97,7 +97,7 @@ class ScanResult:
 
 
 def _problem(exc: SourceError, rel: str) -> SourceProblem:
-    return SourceProblem(exc.path, rel, exc.line or 1, exc.kind, exc.message)
+    return SourceProblem(exc.path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message)
 
 
 def scan_python(

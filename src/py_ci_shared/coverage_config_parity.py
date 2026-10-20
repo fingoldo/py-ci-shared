@@ -321,7 +321,7 @@ def _collect(
             steps += _steps(path, rel)
             parsed += 1
         except SourceError as exc:
-            problems.append(SourceProblem(path, rel, exc.line or 1, exc.kind, exc.message))
+            problems.append(SourceProblem(path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
         except Exception as exc:  # yaml.YAMLError and malformed structures: the workflow cannot be checked
             mark = getattr(exc, "problem_mark", None)
             problems.append(SourceProblem(path, rel, (mark.line + 1) if mark is not None else 1, "unparsable", str(exc).splitlines()[0]))

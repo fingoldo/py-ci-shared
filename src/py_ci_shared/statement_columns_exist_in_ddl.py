@@ -548,7 +548,7 @@ def _build_catalogue(root: Path, ddl_dirs: Iterable[Union[str, Path]], use_git: 
         try:
             tokens = _tokenize(read_source(path))
         except SourceError as exc:
-            problems.append(SourceProblem(path, rel, exc.line or 1, exc.kind, exc.message))
+            problems.append(SourceProblem(path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
             continue
         except _DdlSyntaxError as exc:
             problems.append(SourceProblem(path, rel, exc.line, "unparsable", exc.message))

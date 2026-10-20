@@ -586,7 +586,7 @@ def _keys(files: Iterable[Path], repo_root: Path, **kwargs: object) -> tuple[dic
         try:
             claims = find_source_text_claims(Path(path), **kwargs)  # type: ignore[arg-type]
         except SourceError as exc:
-            problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message} - not checked")
+            problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message} - not checked")
             continue
         scanned += 1
         for claim in claims:

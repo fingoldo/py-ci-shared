@@ -111,7 +111,7 @@ def find_gates_without_population(tests_dir: Path, exempt: frozenset[str] = froz
         try:
             names = _module_level_names(path)
         except SourceError as exc:
-            out.append(f"{path.name} ({exc.kind} at line {exc.line or 1}: {exc.message})")
+            out.append(f"{path.name} ({exc.kind} at line {(exc.line if exc.line is not None else 1)}: {exc.message})")
             continue
         if OFFENDING_FUNCTION in names and not (names & declared):
             out.append(path.name)

@@ -32,6 +32,7 @@ def test_the_harness_version_tracks_the_harness():
             _SRC / "_mutation_operators.py",
             _SRC / "_mutation_fingerprint.py",
             _SRC / "_mutation_runner.py",
+            _SRC / "_mutation_sweep.py",
         ],
         version=HARNESS_VERSION,
         baseline_path=Path(__file__).parent / "_mutation_harness_version_baseline.json",

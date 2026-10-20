@@ -163,7 +163,7 @@ def _resolve(root: Path, declared: dict[tuple[str, str], int]) -> tuple[list[Fac
                 trees[rel] = (source.splitlines(), tree)
             except SourceError as exc:
                 trees[rel] = None
-                problems.append(Finding(rel, exc.line or 1, RULE, f"{_UNREADABLE}: {exc.kind}: {exc.message}"))
+                problems.append(Finding(rel, (exc.line if exc.line is not None else 1), RULE, f"{_UNREADABLE}: {exc.kind}: {exc.message}"))
         entry = trees[rel]
         if entry is None:
             continue

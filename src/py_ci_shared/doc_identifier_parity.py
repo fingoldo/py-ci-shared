@@ -168,7 +168,7 @@ def _absent(
         try:
             text = read_source(doc)
         except SourceReadError as exc:
-            problems.append(f"{rel}:{exc.line or 1}: unreadable, so its names were not checked: {exc.message}")
+            problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: unreadable, so its names were not checked: {exc.message}")
             continue
         lines = _without_html_comments(text).split("\n")
         foreign = _external_flags(lines, external_commands)

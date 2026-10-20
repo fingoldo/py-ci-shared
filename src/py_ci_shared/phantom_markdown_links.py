@@ -113,7 +113,7 @@ def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> li
         try:
             source = read_source(path)
         except SourceError as exc:
-            violations.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message}")
+            violations.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
             continue
         for lineno, raw in _link_targets(source):
             local = _local_path(raw)

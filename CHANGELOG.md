@@ -18,6 +18,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Fixed: a Postgres server whose test process was killed (a crashed xdist worker, a timeout) outlived it. `embedded_postgres` now stops and deletes the
   data directories of dead owners at the next start (`owner.pid`); live owners are left alone. `psutil` is in the dev extra.
 - Fixed: the mutation worker turned a KeyboardInterrupt in a request into an error reply and went on serving; an interrupt now ends the worker.
+- `mutation_teeth` is under the 1000-line budget: the per-mutant verdict (`_judge`, `_primary_verdict`, `_check_unmutated`, `_group_twins`, `_wider_net`, `_module_names`,
+  `PathArg`) moved to `_mutation_sweep.py`; `mutation_teeth` re-exports what tests and callers use. Harness version 17.
+- `exc.line or 1` in 25 modules now maps only a missing line to 1 (`exc.line if exc.line is not None else 1`); a line 0 is no longer rewritten.
 - Refactor: the mutation sweep's per-mutant verdict is split into helpers (`_judge`, `_primary_verdict`, `_check_unmutated`, `_group_twins`, `_sweep_in_sandbox`),
   clearing two C901 findings. Decisions and budget accounting are unchanged; the harness version is 16 because its tracked files changed.
 - `embedded_postgres` logs a warning when psutil is missing, so the reaper's no-op is visible.

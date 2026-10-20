@@ -338,7 +338,7 @@ class _Run:
                 source, tree = parse_source(key)
                 self.sources[key] = module_level_imports(tree, source.splitlines())
             except SourceError as exc:
-                self.repo.problems.append(Finding(self.repo.rel(key), exc.line or 1, RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
+                self.repo.problems.append(Finding(self.repo.rel(key), (exc.line if exc.line is not None else 1), RULE_UNPARSED, f"{exc.kind}: {exc.message}"))
                 self.sources[key] = []
         return self.sources[key]
 

@@ -95,7 +95,7 @@ def find_colon_cast_binds(repo_root: Path, roots: Iterable[str], *, suffixes: It
                 else:
                     found = colon_cast_binds(read_source(path))
             except SourceError as exc:
-                problems.append(f"{rel}:{exc.line or 1}: {exc.kind}: {exc.message} - not checked")
+                problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message} - not checked")
                 continue
             scanned += 1
             problems.extend(f"{rel}:{number}: {match}" for number, match in found)

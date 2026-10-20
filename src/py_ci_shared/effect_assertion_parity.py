@@ -204,7 +204,7 @@ class _Parser:
             return parse_file(path)
         except SourceError as exc:
             rel = relative_posix(path, self.repo_root) if self.repo_root is not None else Path(path).as_posix()
-            self.unparsed[rel] = f"{exc.kind} at line {exc.line or 1}: {exc.message}"
+            self.unparsed[rel] = f"{exc.kind} at line {(exc.line if exc.line is not None else 1)}: {exc.message}"
             return None
 
 
