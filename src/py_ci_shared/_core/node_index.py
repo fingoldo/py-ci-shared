@@ -51,7 +51,7 @@ def _all_node_types() -> "list[type]":
 
 
 # every ``ast`` node type with its field names, filled once at import and only read afterwards (no lock needed); a node of an unknown subclass reads ``_fields`` directly
-_FIELDS: "dict[type, tuple[str, ...]]" = {cls: cls._fields for cls in _all_node_types()}
+_FIELDS: "dict[type, tuple[str, ...]]" = {cls: getattr(cls, "_fields", ()) for cls in _all_node_types()}
 
 
 def _walk(node: ast.AST) -> "Iterator[ast.AST]":

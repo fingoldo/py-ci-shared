@@ -115,8 +115,9 @@ def _docstring_lines(f: ParsedFile) -> set[int]:
     def build() -> set[int]:
         out: set[int] = set()
         for node in [f.tree, *nodes_of(f.tree, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)]:
-            if node.body:
-                first = node.body[0]
+            body = getattr(node, "body", None) or []
+            if body:
+                first = body[0]
                 if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
                     out.update(range(first.lineno, (first.end_lineno or first.lineno) + 1))
         return out

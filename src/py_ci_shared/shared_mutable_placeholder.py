@@ -117,6 +117,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
         else:
             parent_enclosing, parent_name = context[id(scope.parent)]
             node = scope.node
+            assert node is not None, "only the module scope has no node, and it is handled above"
             if isinstance(node, ast.ClassDef):
                 enclosing, scope_name = parent_enclosing, parent_name
             else:

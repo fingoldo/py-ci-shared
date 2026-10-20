@@ -149,7 +149,7 @@ def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
         hits = [n for n in nodes_of(parsed.tree, ast.BinOp, ast.AugAssign, ast.Call) if _is_padded_division(n)]
-        hits.sort(key=lambda n: (n.lineno, n.col_offset))
+        hits.sort(key=lambda n: (getattr(n, "lineno", 0), getattr(n, "col_offset", 0)))
         findings.extend(_report(parsed.path, n) for n in hits)
     return findings
 

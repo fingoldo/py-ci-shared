@@ -248,9 +248,10 @@ class TestRunChecks:
         calls = _fake_psycopg2(monkeypatch)
         sv.run_checks(lambda conn: True, dsn="postgresql://h/db", argv=[], connect_timeout=3)
         # The keepalive kwargs ride along with the timeout (a silent half-open socket would otherwise hang the probe).
-        for _, kwargs in calls[:2]:
-            assert kwargs["connect_timeout"] == 3, "the working connection must be bounded too"
-            assert kwargs["keepalives_idle"] == 30
+        assert len(calls) >= 2, "both the reachability probe and the working connection must connect"
+        assert calls[0][1]["connect_timeout"] == 3 and calls[0][1]["keepalives_idle"] == 30
+        assert calls[1][1]["connect_timeout"] == 3, "the working connection must be bounded too"
+        assert calls[1][1]["keepalives_idle"] == 30
 
     def test_a_refused_configuration_fails_even_with_skip_without_db(self, monkeypatch, capsys):
         """Wrong credentials are a broken setup; mapping them to exit 0 would let every push through unverified."""
