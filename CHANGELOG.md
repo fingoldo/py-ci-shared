@@ -7,6 +7,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - The test suite runs on the machine's spare cores by default: `tests/conftest.py` passes `worker_budget.available_workers()` to pytest-xdist when it is installed
   (`pytest-xdist` is now in the `dev` extra). `PY_CI_WORKERS=1` gives one worker. The CPU share (rounded half up) is then capped so each worker has 4 GiB of
   free memory, never below one: a worker that starts without it pages, and the next worker's DLL loads fail with an error that names no memory.
+  The memory per worker is set per repository: 4 GiB by default, 2 GiB for this suite (`available_workers(ram_per_worker_bytes=...)`).
 - The tests that start a Postgres server (`xdist_group("postgres")`) run on one worker under xdist, so the session has one server, not one per worker. The
   mode is added to the arguments the workers start from (see the `pytest_cmdline_main` note in `tests/conftest.py`). Tests that need an isolated schema take
   a `fresh_database()` on the session server (`py_ci_shared.embedded_postgres`). The lifecycle test (`test_a_real_server_starts...`) keeps its own start.

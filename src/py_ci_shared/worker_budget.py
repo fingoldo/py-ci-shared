@@ -80,17 +80,18 @@ def _free_memory_bytes() -> "int | None":
         return None
 
 
-def available_workers(share: float = 0.5, sample_seconds: float = 0.5) -> int:
+def available_workers(share: float = 0.5, sample_seconds: float = 0.5, ram_per_worker_bytes: int = RAM_PER_WORKER_BYTES) -> int:
     """The worker count to use now, honouring the ``PY_CI_WORKERS`` override when it is set to a positive integer.
 
-    The CPU share gives the first count; it is then capped so each worker has :data:`RAM_PER_WORKER_BYTES` of free memory, never below one.
+    The CPU share gives the first count; it is then capped so each worker has *ram_per_worker_bytes* of free memory (a repository sets its own
+    figure: a suite that loads little needs less than the default), never below one.
     Samples the CPU for ``sample_seconds``, so call it once per run, not once per test.
     """
     override = os.environ.get(ENV_OVERRIDE, "").strip()
     if override.isdigit() and int(override) >= 1:
         return int(override)
     by_cpu = worker_count_from(_physical_cores(), _busy_percent(sample_seconds), share)
-    return worker_count_by_memory(by_cpu, _free_memory_bytes())
+    return worker_count_by_memory(by_cpu, _free_memory_bytes(), ram_per_worker_bytes)
 
 
 def main(argv: list[str] | None = None) -> int:

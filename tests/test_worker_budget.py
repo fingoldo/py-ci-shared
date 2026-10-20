@@ -95,6 +95,16 @@ def test_available_workers_applies_the_memory_cap(monkeypatch):
     assert wb.available_workers() == 2
 
 
+def test_a_repository_can_set_its_own_memory_per_worker(monkeypatch):
+    """With 9 GiB free the package default caps an idle 16-core machine at two workers; a repository that needs 2 GiB per worker gets four."""
+    monkeypatch.delenv(wb.ENV_OVERRIDE, raising=False)
+    monkeypatch.setattr(wb, "_physical_cores", lambda: 16)
+    monkeypatch.setattr(wb, "_busy_percent", lambda _s: 0.0)
+    monkeypatch.setattr(wb, "_free_memory_bytes", lambda: 9 * GiB)
+    assert wb.available_workers() == 2
+    assert wb.available_workers(ram_per_worker_bytes=2 * GiB) == 4
+
+
 def test_the_override_still_bypasses_the_memory_cap(monkeypatch):
     monkeypatch.setenv(wb.ENV_OVERRIDE, "6")
     monkeypatch.setattr(wb, "_free_memory_bytes", lambda: pytest.fail("memory must not be sampled under an override"))

@@ -140,7 +140,8 @@ def pytest_cmdline_main(config: pytest.Config) -> None:
     if getattr(config.option, "numprocesses", None) is None:
         from py_ci_shared.worker_budget import available_workers
 
-        config.option.numprocesses = available_workers()
+        # 2 GiB per worker: this suite loads the package and its test doubles, not the numeric libraries, so it needs less than the package default.
+        config.option.numprocesses = available_workers(ram_per_worker_bytes=2 * 2**30)
 
 
 @pytest.hookimpl(tryfirst=True)
