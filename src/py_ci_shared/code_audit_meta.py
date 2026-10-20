@@ -199,6 +199,25 @@ def _run_scanners(
     return list(findings), dict(failed)
 
 
+def _refresh_code_audit_baseline(baseline_path: Path, current_keys: set[str], request) -> None:
+    """Rewrite ``baseline_path`` to ``current_keys`` and skip the test (a refresh is not a check)."""
+    import pytest
+
+    previous = dict.fromkeys(load_json(baseline_path), 1) if baseline_path.exists() else None
+    try:
+        write_ratchet(
+            baseline_path,
+            dict.fromkeys(current_keys, 1),
+            gate="code-audit",
+            previous=previous,
+            render=lambda kept: dump_json(sorted(kept)),
+            request=request,
+        )
+    except BaselineGrowthError as exc:
+        pytest.fail(str(exc), pytrace=False)
+    pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
+
+
 def assert_no_new_code_audit_findings(
     root: Path,
     baseline_path: Path,
@@ -256,19 +275,7 @@ def assert_no_new_code_audit_findings(
     current_keys = set(current_by_key)
 
     if _refresh_requested(request):
-        previous = dict.fromkeys(load_json(baseline_path), 1) if baseline_path.exists() else None
-        try:
-            write_ratchet(
-                baseline_path,
-                dict.fromkeys(current_keys, 1),
-                gate="code-audit",
-                previous=previous,
-                render=lambda kept: dump_json(sorted(kept)),
-                request=request,
-            )
-        except BaselineGrowthError as exc:
-            pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
+        _refresh_code_audit_baseline(baseline_path, current_keys, request)
     if not baseline_path.exists():
         pytest.fail(
             f"code-audit baseline {baseline_path} does not exist, so nothing was checked against it "
