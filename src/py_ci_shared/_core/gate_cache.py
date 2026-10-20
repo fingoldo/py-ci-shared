@@ -32,20 +32,41 @@ def enabled() -> bool:
 _TREE_MEMO: dict[str, tuple[tuple, str]] = {}
 
 
+def _file_stat(entry: os.DirEntry) -> tuple[int, int]:
+    """(size, modification time) of *entry*, or (-1, -1) when it cannot be stat'ed (a broken link, a file that vanished)."""
+    try:
+        st = entry.stat()
+    except OSError:  # best-effort: a file that vanished or is a broken link gets a fixed marker, so the digest still changes with it
+        return -1, -1
+    return st.st_size, st.st_mtime_ns
+
+
+def _stat_entries(path: str, rel_dir: str, out: list) -> None:
+    """Append the (relative path, size, mtime) of every file under *path*, in os.walk order (sorted, top-down, no linked directories)."""
+    try:
+        entries = list(os.scandir(path))
+    except OSError:  # best-effort: a directory that cannot be listed contributes no files, the same as os.walk
+        return
+    # os.walk classifies with is_dir() (following links): a link to a directory is a directory, never a file.
+    dirs = sorted((e for e in entries if e.is_dir() and e.name not in _SKIP_DIRS), key=lambda e: e.name)
+    files = sorted((e for e in entries if not e.is_dir()), key=lambda e: e.name)
+    for e in files:
+        size, mtime = _file_stat(e)
+        out.append((rel_dir + e.name, size, mtime))
+    for e in dirs:
+        if not e.is_symlink():  # os.walk does not descend into linked directories
+            _stat_entries(e.path, rel_dir + e.name + "/", out)
+
+
 def _stat_signature(root: Path) -> tuple:
-    """(relative path, size, mtime) of every file under *root*, skipping the caches and the git directory. Cheap: no file is read."""
-    entries = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in _SKIP_DIRS)
-        for name in sorted(filenames):
-            path = Path(dirpath) / name
-            try:
-                st = path.stat()
-            except OSError:
-                entries.append((path.relative_to(root).as_posix(), -1, -1))
-                continue
-            entries.append((path.relative_to(root).as_posix(), st.st_size, st.st_mtime_ns))
-    return tuple(entries)
+    """(relative path, size, mtime) of every file under *root*, skipping the caches and the git directory. Cheap: no file is read.
+
+    Walks with os.scandir, whose entries carry the size and time from the directory listing on Windows, so a file costs no extra
+    system call; the entries and their order are exactly those of the os.walk version this replaced, so existing cache keys stay valid.
+    """
+    out: list = []
+    _stat_entries(os.fspath(root), "", out)
+    return tuple(out)
 
 
 def tree_digest(root: Path) -> str:
