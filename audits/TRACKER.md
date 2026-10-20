@@ -857,3 +857,13 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **RESOLVED** | P2 | `HOT-1` | git_listing remembers a positive work-tree probe per root, which removes two of the three git processes per listing (about 90 ms of about 260 ms measu |
 | **WON'T FIX** | Low | `HOT-2` | measured: child_nodes costs about 0.65 microseconds a node, about 4 s over 6 million calls unprofiled; the profiled 35 s is mostly cProfile overhead p |
 | **RESOLVED** | P2 | `HOT-3` | api_floor keeps vermin's output per file digest, floor and vermin version; a warm run on this repository takes 0.8 s instead of 17.2 s |
+
+## Round 2026-10-21 -- meta-test profile (cProfile of the self-gate tests)
+
+Details and measurements: `audits/2026-10-21/meta_test_profile.md`.
+
+| Disposition | Sev | Finding | Note |
+|---|---|---|---|
+| **RESOLVED** | P1 | `PROF-1` | gate_cache stat walk: os.scandir instead of os.walk and stat; the self-gate run 1365 s to 595 s under cProfile (2a7b663) |
+| **DEFERRED** | Low | `PROF-2` | config._inside_root: two resolve() calls per corpus path, about 3% of the run; kept, the containment check must stay |
+| **DEFERRED** | P2 | `PROF-3` | every gate walks the same tree again (about 280 s); needs a decision on a signature shared between gates and its invalidation |
