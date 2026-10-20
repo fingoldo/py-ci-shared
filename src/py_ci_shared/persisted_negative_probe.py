@@ -48,11 +48,11 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core.scopes import own_nodes
+from ._core import Baseline, Finding, ImportAliases, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker
 
@@ -68,16 +68,6 @@ _FILE_WRITERS = frozenset({"write_text", "write_bytes"})
 _CACHE_WRITERS = frozenset({"set", "put", "save"})
 _CACHE_RECEIVER = ("cache", "store", "persist")
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
-
-
-def _own_nodes(nodes: list[ast.stmt]) -> Iterator[ast.AST]:
-    """Nodes under *nodes* without descending into nested functions, classes or lambdas."""
-    stack: list[ast.AST] = list(nodes)
-    while stack:
-        node = stack.pop()
-        yield node
-        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
-            stack.extend(child_nodes(node))
 
 
 def _dotted(node: ast.AST) -> str:
@@ -98,7 +88,7 @@ def _dotted(node: ast.AST) -> str:
 
 
 def _probes_hardware(body: list[ast.stmt], aliases: ImportAliases) -> bool:
-    for node in _own_nodes(body):
+    for node in own_nodes(body, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         names: list[str] = []
         if isinstance(node, ast.Import):
             names = [a.name for a in node.names]
@@ -150,7 +140,7 @@ def _is_write_mode(call: ast.Call) -> bool:
 
 def _persist_calls(nodes: list[ast.stmt], aliases: ImportAliases) -> list[tuple[ast.Call, str, list[ast.expr]]]:
     """``(call, shape, written expressions)`` for each persisting call among *nodes*."""
-    calls = [n for n in _own_nodes(nodes) if isinstance(n, ast.Call)]
+    calls = [n for n in own_nodes(nodes, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)) if isinstance(n, ast.Call)]
     opens_for_write = any(isinstance(c.func, ast.Name) and c.func.id == "open" and _is_write_mode(c) for c in calls)
     out: list[tuple[ast.Call, str, list[ast.expr]]] = []
     for call in calls:
@@ -170,7 +160,7 @@ def _persist_calls(nodes: list[ast.stmt], aliases: ImportAliases) -> list[tuple[
 
 def _handler_bindings(handler: ast.ExceptHandler) -> dict[str, ast.AST]:
     bound: dict[str, ast.AST] = {}
-    for node in _own_nodes(handler.body):
+    for node in own_nodes(handler.body, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name):
@@ -192,7 +182,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, source: str
     lines = source.splitlines()
     out: list[Finding] = []
     for scope in [tree, *(n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]:
-        trailing = list(_own_nodes(scope.body))
+        trailing = list(own_nodes(scope.body, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
         for node in trailing:
             if not isinstance(node, _TRY_TYPES):
                 continue

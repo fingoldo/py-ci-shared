@@ -80,10 +80,6 @@ def register_refresh_option(parser) -> None:
     register_refresh_options(parser, [REFRESH_FLAG], help_suffix="LOC-budget baseline JSON (intentional split/shrink)")
 
 
-def _refresh_requested(request: Any = None) -> bool:
-    return refresh_requested(REFRESH_FLAG, request)
-
-
 def _loc(path: Path) -> int:
     """Lines in *path*, decoded as the interpreter would (BOM stripped). Raises ``SourceReadError`` for a file that
     cannot be read or decoded: a missing or undecodable file is not a zero-line file."""
@@ -218,7 +214,7 @@ def assert_no_new_oversized_file(
     if unreadable:
         pytest.fail(f"{len(unreadable)} file(s) could not be read, so their size is unknown -- Fix them:\n  " + "\n  ".join(unreadable))
 
-    if refresh if refresh is not None else _refresh_requested(request):
+    if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         try:
             write_loc_baseline(baseline_path, current, grow=grow, request=request, slack=growth_slack)
         except BaselineGrowthError as exc:

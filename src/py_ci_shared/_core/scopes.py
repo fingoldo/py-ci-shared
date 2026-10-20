@@ -15,9 +15,10 @@ a class is a child of that class's scope, so a gate can follow enclosing names d
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable, Iterator
 from typing import NamedTuple, Optional, Union
 
-from .node_index import tree_memo
+from .node_index import child_nodes, tree_memo
 
 __all__ = ["SCOPE_TYPES", "Scope", "iter_scopes", "qualified_functions", "scope_nodes"]
 
@@ -49,6 +50,20 @@ def _own_nodes(opener: _Opener) -> "list[ast.AST]":
             continue
         stack.extend(ast.iter_child_nodes(node))
     return out
+
+
+def own_nodes(roots: "Iterable[ast.AST]", stops: "tuple[type, ...]") -> "Iterator[ast.AST]":
+    """Every node reachable from *roots* without entering a node of a *stops* type; that node itself is still yielded.
+
+    Callers pass the children of a scope (``child_nodes(scope)``) or a list of statements, and the node types that
+    are their own scope, so each statement is judged by the function it belongs to.
+    """
+    stack = list(roots)
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, stops):
+            stack.extend(child_nodes(node))
 
 
 def iter_scopes(tree: ast.Module) -> "list[Scope]":

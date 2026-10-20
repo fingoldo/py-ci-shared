@@ -79,11 +79,6 @@ def register_refresh_option(parser) -> None:
     register_refresh_options(parser, [REFRESH_FLAG], help_suffix="content-hash/version-bump baseline JSON (bootstrapping only)")
 
 
-def _refresh_requested(request: Any = None) -> bool:
-    """xdist-safe refresh detection (option via *request*, ``--py-ci-refresh``, ``PY_CI_SHARED_REFRESH``, argv)."""
-    return refresh_requested(REFRESH_FLAG, request)
-
-
 def _in_ci() -> bool:
     value = os.environ.get("CI", "")
     return value.strip().lower() not in ("", "0", "false", "no")
@@ -186,7 +181,7 @@ def assert_version_bumped_with_content(
         if isinstance(loaded.get("history"), dict) and loaded.get("hash_format") == HASH_FORMAT:
             history = {str(k): str(v) for k, v in loaded["history"].items()}
 
-    if _refresh_requested(request):
+    if refresh_requested(REFRESH_FLAG, request):
         _write(baseline_path, version, current_hash, history)
         pytest.skip(f"content-hash/version-bump baseline refreshed at {baseline_path.name} (version={version!r})")
 
