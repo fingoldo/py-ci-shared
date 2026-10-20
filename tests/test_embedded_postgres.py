@@ -80,12 +80,18 @@ def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
         socket.create_connection(("127.0.0.1", port), timeout=2)
 
 
-@pytest.mark.xdist_group("postgres")
-def test_run_hands_the_command_its_dsn():
-    bin_dir = find_pg_bin()
-    if bin_dir is None:
-        pytest.skip("no Postgres binaries here (PG_BIN / pgserver / PATH)")
-    code = run([sys.executable, "-c", "import os; raise SystemExit(0 if 'port=' in os.environ['X_DSN'] else 5)"], env_var="X_DSN", bin_dir=bin_dir)
+def test_run_hands_the_command_its_dsn(monkeypatch):
+    """``run`` gives the command the DSN of the server it started, in the named variable. The server is replaced by a stand-in DSN here: the contract is the handoff, not a server."""
+    import contextlib
+
+    import py_ci_shared.embedded_postgres as ep
+
+    @contextlib.contextmanager
+    def _stand_in(bin_dir, **kwargs):
+        yield "host=127.0.0.1 port=5999 user=postgres dbname=postgres"
+
+    monkeypatch.setattr(ep, "embedded_postgres", _stand_in)
+    code = run([sys.executable, "-c", "import os; raise SystemExit(0 if 'port=' in os.environ['X_DSN'] else 5)"], env_var="X_DSN", bin_dir=Path(sys.executable))
     dsn_left_set = "X_DSN" in os.environ  # a bool: an operand `os.environ` makes pytest print every variable
     assert code == 0 and not dsn_left_set
 

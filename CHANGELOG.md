@@ -13,6 +13,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Fixed: `tests/conftest.py` called `bound_randomly_reseeders()` without the session config, so the skip for a session without pytest-randomly never ran
   there and every pytest start imported thinc, torch and cupy (about 7 s). Every nested pytest run of `test_scaffold` paid that three times: 137 s to 51 s.
 - New: `tests/test_pytest_startup_is_light.py` starts a real pytest without pytest-randomly and fails if thinc, torch or cupy get imported (the bug the next entry fixes).
+- `test_run_hands_the_command_its_dsn` checks the handoff with a stand-in DSN instead of starting a server (26 s to under 1 s).
 - Fixed: `test_cwd_sys_path_and_warnings` depended on `warnings.simplefilter("ignore")` changing the filters, which it does not when the session already ignores
   warnings (`pytest -W ignore`); the probe now installs a filter no caller has.
 
