@@ -126,7 +126,8 @@ def test_the_recommended_rewrite_works_on_every_dtype_including_datetime64():
     ):
         contiguous = np.ascontiguousarray(arr)
         recommended = hashlib.blake2b(contiguous.view(np.uint8).data, digest_size=16).hexdigest()
-        copied = hashlib.blake2b(contiguous.tobytes(), digest_size=16).hexdigest()
+        payload = contiguous.tobytes()  # the copy the rewrite avoids, built here only to prove both spellings hash alike
+        copied = hashlib.blake2b(payload, digest_size=16).hexdigest()
         assert recommended == copied, f"the rewrite changes the digest for {arr.dtype}"
 
     for arr in (np.array([1, 2, 3], dtype="datetime64[ns]"), np.array([1, 2, 3], dtype="timedelta64[ns]")):

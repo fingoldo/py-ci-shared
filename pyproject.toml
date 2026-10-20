@@ -390,3 +390,19 @@ root = "tests"
 
 [tool.py_ci_shared.gates.validation_errors_echo_input]
 root = "tests"
+
+[tool.py_ci_shared.gates.doc_identifier_parity]
+repo_root = "."
+# The audit records quote identifiers of other repositories and of code since removed (get_type_hints, find_self_elimination, ...): a historical
+# record, not documentation of this package. Everything outside audits/ is checked and reports nothing.
+exclude_docs = ["audits/"]
+
+[tool.py_ci_shared.gates.wallclock_test_waits]
+repo_root = "."
+baseline_dir = "tests/baselines"
+
+[tool.py_ci_shared.gates.standard_stream_restore]
+roots = ["src", "tests"]
+
+[tool.py_ci_shared.gates.hash_fed_by_array_copy]
+roots = ["src", "tests"]

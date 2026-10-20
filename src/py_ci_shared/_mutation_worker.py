@@ -49,6 +49,7 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import IO, Any, Optional
 
@@ -107,6 +108,24 @@ def is_crash_message(payload: str) -> Optional[bool]:
     if any(payload.startswith(name) for name in _CRASH_EXCEPTIONS):
         return True
     return None
+
+
+@contextlib.contextmanager
+def _captured_output(buffer: io.StringIO) -> Iterator[None]:
+    """Send stdout and stderr to *buffer*; put each stream back only while it is still this buffer.
+
+    ``contextlib.redirect_stdout`` restores unconditionally, so a stream that pytest's capture plugin replaced meanwhile would be overwritten
+    with the stale one this block saved.
+    """
+    old_out, old_err = sys.stdout, sys.stderr
+    sys.stdout = sys.stderr = buffer
+    try:
+        yield
+    finally:
+        if sys.stdout is buffer:
+            sys.stdout = old_out
+        if sys.stderr is buffer:
+            sys.stderr = old_err
 
 
 class _FirstFailure:
@@ -282,7 +301,7 @@ def main() -> int:
             buffer = io.StringIO()
             spy = _FirstFailure()
             _t1 = time.perf_counter()
-            with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
+            with _captured_output(buffer):
                 code = int(pytest.main(list(request["args"]), plugins=[spy]))
             _t_pytest = time.perf_counter() - _t1
             # Which FILE killed this mutant, so the caller can try it first next time. With `-x` the

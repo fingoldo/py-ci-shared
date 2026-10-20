@@ -1,0 +1,22 @@
+{
+  "accepted": {
+    "tests/test_lock_held_across_io.py: \"time.sleep(1)\",": "inside a source string that the lock_held_across_io gate scans; the line is never executed",
+    "tests/test_mutation_teeth_regressions.py: \"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\\n\"": "script text for a grandchild that the timeout under test must kill; the test never waits for it to finish",
+    "tests/test_mutation_teeth_regressions.py: \"time.sleep(120)\\n\"": "script text for a grandchild that the timeout under test must kill; the test never waits for it to finish",
+    "tests/test_mutation_teeth_regressions.py: time.sleep(0.2)": "polls a real OS process until it is gone, bounded by a 10 s deadline; there is no clock to inject into the operating system",
+    "tests/test_resource_leak_guard.py: assert \"child process\" in _errors(result) and \"time.sleep(4)\" in _errors(result)": "the child process the guard under test must detect: a sleeping child is the fixture, and the test does not wait for it",
+    "tests/test_resource_leak_guard.py: subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(4)\"])": "the child process the guard under test must detect: a sleeping child is the fixture, and the test does not wait for it",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"test/support/helper.dart\", \"Future<void> settle() => Future.delayed(const Duration(milliseconds: 50));\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"test/widget_test.dart\", \"void main() async {\\n await Future.delayed(const Duration(milliseconds: 300));\\n}\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"tests/test_poll.py\", \"import time\\n# time.sleep(5) was removed\\n # time.sleep(2)\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"tests/test_poll.py\", \"import time\\n\\ndef test_x():\\n time.sleep(0.5) # wait for the child\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"tests/test_poll.py\", \"import time\\n\\ndef test_x():\\n time.sleep(0.5)\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"tests/test_poll.py\", 'def test_x():\\n \"\"\"Do not time.sleep(1) here.\"\"\"\\n assert True\\n')": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: accepted = {\"tests/test_poll.py: time.sleep(0.5)\": \"polls a real subprocess; no clock seam\"}": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: assert list(find_wallclock_test_waits(tmp_path)) == [\"test/support/helper.dart: Future<void> settle() => Future.delayed(const Duration(milliseconds: 50));\"]": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: assert list(find_wallclock_test_waits(tmp_path)) == [\"test/widget_test.dart: await Future.delayed(const Duration(milliseconds: 300));\"]": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: assert list(find_wallclock_test_waits(tmp_path)) == [\"tests/conftest.py: time.sleep(0.2)\"]": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: assert list(find_wallclock_test_waits(tmp_path)) == [\"tests/test_poll.py: time.sleep(0.5) # wait for the child\"]": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
+    "tests/test_wallclock_test_waits.py: assert list(find_wallclock_test_waits(tmp_path)) == [\"tests/test_poll.py: time.sleep(0.5)\"]": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait"
+  }
+}

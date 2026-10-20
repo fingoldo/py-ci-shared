@@ -46,15 +46,12 @@ class TestDirect:
     def test_a_wrapper_of_the_old_stream_is_reported_unless_a_library_was_imported(self, monkeypatch: pytest.MonkeyPatch) -> None:
         before = take_state(["streams"])
         original = sys.stderr
-        sys.stderr = _Wrapper(original)  # type: ignore[assignment]
-        try:
-            assert [line.split(" (")[0] for line in state_leaks(before)] == ["sys.stderr was replaced"]
-            monkeypatch.setitem(sys.modules, "seed_colour_lib", object())  # a library's first import happened
-            assert state_leaks(before) == []
-            restore_state(before)
-            assert isinstance(sys.stderr, _Wrapper)  # the import-time wrapper is kept, like an import-time env var
-        finally:
-            sys.stderr = original
+        monkeypatch.setattr(sys, "stderr", _Wrapper(original))  # undone by monkeypatch, whatever the assertions below do
+        assert [line.split(" (")[0] for line in state_leaks(before)] == ["sys.stderr was replaced"]
+        monkeypatch.setitem(sys.modules, "seed_colour_lib", object())  # a library's first import happened
+        assert state_leaks(before) == []
+        restore_state(before)
+        assert isinstance(sys.stderr, _Wrapper)  # the import-time wrapper is kept, like an import-time env var
 
     def test_cwd_sys_path_and_warnings(self, tmp_path: Path) -> None:
         cwd, path, filters = os.getcwd(), list(sys.path), list(warnings.filters)
