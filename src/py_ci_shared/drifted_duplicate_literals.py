@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.node_index import docstring_ids
 from ._core import UNJUSTIFIED_MARKER, Baseline, Finding, ParsedFile, ScanResult, refresh_requested
 from ._core import walk as shared_walk
 from ._gate_report import report, scan_tree, skip_set
@@ -173,16 +174,6 @@ def _text_numbers(text: str, ignore: frozenset[float]) -> frozenset[float]:
     return frozenset(out)
 
 
-def _docstring_ids(tree: ast.Module) -> set[int]:
-    out: set[int] = set()
-    for node in shared_walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
-            first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
-                out.add(id(first.value))
-    return out
-
-
 def _ladder_values(node: ast.If, ignore: frozenset[float]) -> tuple[list[float], set[int]]:
     """The thresholds an ``if``/``elif`` chain compares against, and the ids of the chain's ``If`` nodes."""
     values: list[float] = []
@@ -245,7 +236,7 @@ def _text_site(node: ast.AST, rel: str, ignore: frozenset[float], docstrings: se
 
 
 def _sites(parsed: ParsedFile, ignore: frozenset[float]) -> Iterator[LiteralSite]:
-    docstrings = _docstring_ids(parsed.tree)
+    docstrings = docstring_ids(parsed.tree)
     in_ladder: set[int] = set()
     for node in shared_walk(parsed.tree):
         if isinstance(node, ast.If):

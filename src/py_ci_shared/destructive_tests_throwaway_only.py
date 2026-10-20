@@ -55,6 +55,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.node_index import docstring_ids
 from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, ScanResult, read_source, scan_python
 from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
@@ -169,20 +170,10 @@ def _normalise(path: str) -> str:
 # test file facts
 
 
-def _docstring_ids(tree: ast.Module) -> set[int]:
-    ids: set[int] = set()
-    for node in shared_walk(tree):
-        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
-            first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
-                ids.add(id(first.value))
-    return ids
-
-
 def _string_literals(tree: ast.Module) -> Iterable[tuple[int, str]]:
     """``(line, text)`` of every string literal that is not a docstring; an f-string yields its constant parts joined, so a
     ``DELETE FROM {table}`` still reads as one statement."""
-    skip = _docstring_ids(tree)
+    skip = docstring_ids(tree)
     inside_fstring: set[int] = set()
     for node in shared_walk(tree):
         if isinstance(node, ast.JoinedStr):

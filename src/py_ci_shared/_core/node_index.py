@@ -252,3 +252,14 @@ def clear() -> None:
 def names_read(node: ast.AST) -> set[str]:
     """Every bare name read inside *node*."""
     return {n.id for n in walk(node) if isinstance(n, ast.Name)}
+
+
+def docstring_ids(tree: ast.AST) -> set[int]:
+    """``id()`` of each docstring: a bare string statement that opens a module, class or function body."""
+    ids: set[int] = set()
+    for node in walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+                ids.add(id(first.value))
+    return ids

@@ -34,6 +34,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.node_index import docstring_ids
 from ._core import Finding, ParsedFile, SourceProblem
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import TextFile, line_has_marker, read_text_corpus, report, scan_tree, skip_set
@@ -64,16 +65,6 @@ def _finding(rel: str, line: int, rule: str, shown: str) -> Finding:
 
     digest = hashlib.sha256(shown.encode("utf-8")).hexdigest()[:16]
     return Finding(rel, line, rule, shown, key=f"{rule}::{rel}::{digest}")
-
-
-def _docstring_ids(tree: ast.Module) -> set[int]:
-    out: set[int] = set()
-    for node in _fast_walk(tree):
-        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
-            first = node.body[0]
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
-                out.add(id(first.value))
-    return out
 
 
 #: A regular expression's source (``r"\d:\d\d|\Z"``) can look like a drive path; such strings are not paths.
@@ -110,7 +101,7 @@ def _hits(text: str, allow: Sequence[re.Pattern[str]], *, workflow: bool = False
 
 
 def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> list[Finding]:
-    docstrings = _docstring_ids(parsed.tree)
+    docstrings = docstring_ids(parsed.tree)
     lines = parsed.source.splitlines()
     out: list[Finding] = []
     for node in _fast_walk(parsed.tree):
