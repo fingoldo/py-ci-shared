@@ -353,42 +353,24 @@ def dart_declarations(files: Iterable[Path]) -> set[str]:
     return names
 
 
-def _strings_defined_by(value: "ast.AST | None", out: set[int]) -> None:
-    """Mark the string constants that ``value`` defines: the constant itself, or the elements of a container literal."""
-    if isinstance(value, ast.Constant) and isinstance(value.value, str):
-        out.add(id(value))
-    elif isinstance(value, (ast.List, ast.Tuple, ast.Set)):
-        for elt in value.elts:
-            _strings_defined_by(elt, out)
-    elif isinstance(value, ast.Dict):
-        for key in value.keys:
-            _strings_defined_by(key, out)
+def _is_test_file(path: Path) -> bool:
+    """A test module by its name (``test_*.py``, ``*_test.py``) or by a ``tests`` directory on its path."""
+    return path.name.startswith("test_") or path.name.endswith("_test.py") or "tests" in path.parts
 
 
-def _definition_site_ids(tree: ast.Module) -> set[int]:
-    """``id()`` of the string constants that DEFINE a name rather than use one: a dict key (a registry or record key), a
-    subscript store key (``row["Reason"] = ...``), a string assigned to a name (``LABEL = "Reason"``), and the string
-    elements of a list, tuple, set or dict literal that is itself assigned (a table of names). A comparison, a call
-    argument or a return value is a use, and does not make the string a definition."""
-    out: set[int] = set()
-    for node in _fast_walk(tree):
-        if isinstance(node, ast.Dict):
-            _strings_defined_by(node, out)
-        elif isinstance(node, ast.Assign):
-            for target in node.targets:
-                if isinstance(target, ast.Subscript):
-                    _strings_defined_by(target.slice, out)
-                elif isinstance(target, ast.Name):
-                    _strings_defined_by(node.value, out)
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            _strings_defined_by(node.value, out)
-    return out
+def _docstring_ids(tree: ast.Module) -> set[int]:
+    """``id()`` of the bare string statements (docstrings) of a module."""
+    return {
+        id(node.value) for node in _fast_walk(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    }
 
 
 def _data_name_index(files: Iterable[Path]) -> "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]":
-    """What the repo's code SPELLS OUT, from its string constants (docstrings excluded: a docstring naming a thing is the
-    claim being checked, not evidence for it). Returns the exact constant values, a word -> constant-index map for
-    ``table.column`` SQL checks, and the constants themselves."""
+    """What the repo's code SPELLS OUT, from its string constants. A string that a NON-TEST module uses as a literal, in
+    any role (a comparison, a call argument, a key, a column read, an assignment), is a data name: the repo handles that
+    value, so a comment naming it is not a phantom. Docstrings are excluded (a docstring naming a thing is the claim being
+    checked, not evidence for it) and test modules never contribute. Returns the exact production constant values, a
+    word -> constant-index map for ``table.column`` SQL checks (every constant, tests included), and the constants."""
     exact: set[str] = set()
     constants: list[str] = []
     words: dict[str, set[int]] = {}
@@ -399,15 +381,11 @@ def _data_name_index(files: Iterable[Path]) -> "tuple[frozenset[str], dict[str, 
             _, tree = parse_source(path)
         except SourceError:
             continue
-        docstrings = {
-            id(node.value)
-            for node in _fast_walk(tree)
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
-        }
-        defining = _definition_site_ids(tree)
+        docstrings = _docstring_ids(tree)
+        production = not _is_test_file(path)
         for node in _fast_walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docstrings and node.value:
-                if id(node) in defining:
+                if production:
                     exact.add(node.value)
                 index = len(constants)
                 constants.append(node.value)

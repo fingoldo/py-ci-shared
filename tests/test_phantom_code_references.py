@@ -372,9 +372,9 @@ def test_a_library_member_of_a_class_the_commented_file_imports_is_not_judged(tm
     ]
 
 
-def test_a_string_used_only_as_a_comparison_or_call_argument_does_not_suppress(tmp_path: Path) -> None:
-    """Narrowing of the data-name rule: a string that merely USES a name (a comparison, a call argument) is not the definition
-    of it, so a comment naming that name is still a phantom. A dict key, a subscript key and a table assigned to a name are."""
+def test_a_string_a_production_module_uses_in_any_role_is_a_data_name(tmp_path: Path) -> None:
+    """A comparison, a call argument, a dict key, a subscript key and a table row are all uses the repo makes of a string, so a
+    comment naming that string describes the repo's data, not a phantom. Only the never-spelled name is reported."""
     use = _write(tmp_path, "pkg/use.py", 'def f(x, load):\n    return x == "UseOnlyHere" or load("UseOnlyTwo")\n')
     defn = _write(
         tmp_path,
@@ -384,10 +384,33 @@ def test_a_string_used_only_as_a_comparison_or_call_argument_does_not_suppress(t
     doc = _write(
         tmp_path,
         "pkg/doc.py",
-        "# `UseOnlyHere` and `UseOnlyTwo` are named\n# `DictKeyHere`, `TableRowHere` and `SubscriptKeyHere` are defined\nx = 1\n",
+        "# `UseOnlyHere`, `UseOnlyTwo`, `DictKeyHere`, `TableRowHere` and `SubscriptKeyHere` are named\n# `NeverSpelledAnywhere` is not\nx = 1\n",
     )
     files = [use, defn, doc]
     assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
-        "pkg/doc.py:1: `UseOnlyHere` names nothing declared in this repo",
-        "pkg/doc.py:1: `UseOnlyTwo` names nothing declared in this repo",
+        "pkg/doc.py:2: `NeverSpelledAnywhere` names nothing declared in this repo"
+    ]
+
+
+def test_a_string_only_a_test_module_uses_is_still_a_phantom(tmp_path: Path) -> None:
+    """Test modules never contribute: a fixture string under ``tests/`` is not the repo's data, so a production comment naming it fires."""
+    fixture = _write(tmp_path, "tests/test_fixture.py", 'FIXTURE = {"OnlyInTestHere": 1}\n')
+    prod = _write(tmp_path, "pkg/prod.py", "# the `OnlyInTestHere` value is what the fixture feeds in\nx = 1\n")
+    files = [fixture, prod]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == ["pkg/prod.py:1: `OnlyInTestHere` names nothing declared in this repo"]
+
+
+def test_known_genuine_phantoms_stay_reported_next_to_longer_spelled_out_strings(tmp_path: Path) -> None:
+    """Matching is by whole string: a production literal ``LBD_pipeline`` does not make the comment name ``LBD`` a data name."""
+    prod = _write(tmp_path, "pkg/prod.py", 'STAGE = "LBD_pipeline"\nlabel = "_drop_age_excluded_candidatesX"\n')
+    doc = _write(
+        tmp_path,
+        "pkg/doc.py",
+        "# `LBD` and `_drop_age_excluded_candidates` were removed; `CantMissCandidate.severity` too\nx = 1\n",
+    )
+    files = [prod, doc]
+    assert find_phantom_code_references(files, tmp_path, python_declarations(files)) == [
+        "pkg/doc.py:1: `LBD` names nothing declared in this repo",
+        "pkg/doc.py:1: `_drop_age_excluded_candidates` names nothing declared in this repo",
+        "pkg/doc.py:1: `CantMissCandidate.severity` names nothing declared in this repo",
     ]
