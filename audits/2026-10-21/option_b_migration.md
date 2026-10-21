@@ -38,3 +38,7 @@ on py-ci-shared only lazily and only in dev; py-ci-shared imports nothing from p
   origin's CI for 6da2436 has been queued for hours. Counts over six trees are unchanged by the move.
 - Stage 2 not started. `registry` runs scanners in a process pool and requires picklable functions, so a move
   changes module paths that the parallel path depends on; it needs its own run of `run_all_checked` before and after.
+
+- Stage 2 precondition met: `golden/pyutilz.json` reproduces exactly on `pyutilz/src/pyutilz` (0 findings, same rows)
+  at the recorded pyutilz commit. The root matters: scanning the repository root (tests and scripts included) gives 426 findings,
+  so every comparison after the move must use the same root as the golden file.
