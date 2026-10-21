@@ -212,10 +212,11 @@ def _conftests(tests_dir: Path, repo_root: "Path | None") -> list[Path]:
     return sorted({p.resolve(): p for p in found}.values())
 
 
-def conftest_markers(tests_dir: Path, *, repo_root: "Path | None" = None, unresolved: "list[str] | None" = None) -> set[str]:
+def conftest_markers(tests_dir: Path, *, repo_root: "Path | None" = None, unresolved: "list[str] | None" = None, allow_unparsed: bool = False) -> set[str]:
     """Marker names registered through ``config.addinivalue_line("markers", ...)`` in any conftest under *tests_dir*
     (and *repo_root*'s own ``conftest.py`` when given). Registrations whose value cannot be resolved statically are
-    appended to *unresolved* as ``path:line``. Raises ``UnparsedFilesError`` on an unparsable conftest."""
+    appended to *unresolved* as ``path:line``. Raises ``UnparsedFilesError`` on an unparsable conftest unless
+    *allow_unparsed* (which skips it)."""
     out: set[str] = set()
     problems: list[str] = []
     for conftest in _conftests(tests_dir, repo_root):
@@ -228,12 +229,12 @@ def conftest_markers(tests_dir: Path, *, repo_root: "Path | None" = None, unreso
         out |= names
         if unresolved is not None:
             unresolved.extend(f"{conftest}:{line}" for line in lines)
-    if problems:
+    if problems and not allow_unparsed:
         raise UnparsedFilesError("conftest file(s) could not be parsed, so their marker registrations are unknown:\n  " + "\n  ".join(problems))
     return out
 
 
-def used_markers(tests_dir: Path, repo_root: Path, *, exclude: Iterable[Path] = ()) -> dict[str, list[str]]:
+def used_markers(tests_dir: Path, repo_root: Path, *, exclude: Iterable[Path] = (), allow_unparsed: bool = False) -> dict[str, list[str]]:
     """``{marker: [files that name it]}`` for every ``pytest.mark.<name>`` under *tests_dir*."""
     skip = {p.resolve() for p in exclude}
     seen: dict[str, list[str]] = {}
@@ -248,12 +249,12 @@ def used_markers(tests_dir: Path, repo_root: Path, *, exclude: Iterable[Path] = 
             continue
         for name in sorted(set(_MARK_RE.findall(text))):
             seen.setdefault(name, []).append(relative_posix(path, repo_root))
-    if problems:
+    if problems and not allow_unparsed:
         raise UnparsedFilesError("test file(s) could not be read, so their markers are unknown:\n  " + "\n  ".join(problems))
     return seen
 
 
-def registered_markers(repo_root: Path, *, tests_dir: "Path | None" = None, unresolved: "list[str] | None" = None) -> set[str]:
+def registered_markers(repo_root: Path, *, tests_dir: "Path | None" = None, unresolved: "list[str] | None" = None, allow_unparsed: bool = False) -> set[str]:
     """Every marker the repo registers: pyproject (both tables), ``pytest.toml``, the ini files, and the conftests under
     the tests directory plus the root ``conftest.py``."""
     tests = tests_dir or repo_root / "tests"
@@ -261,7 +262,7 @@ def registered_markers(repo_root: Path, *, tests_dir: "Path | None" = None, unre
         pyproject_markers(repo_root / "pyproject.toml")
         | toml_markers(repo_root)
         | ini_markers(repo_root)
-        | conftest_markers(tests, repo_root=repo_root, unresolved=unresolved)
+        | conftest_markers(tests, repo_root=repo_root, unresolved=unresolved, allow_unparsed=allow_unparsed)
     )
 
 
@@ -271,11 +272,13 @@ def find_unregistered_markers(
     tests_dir: "Path | None" = None,
     extra_registered: Iterable[str] = (),
     exclude: Iterable[Path] = (),
+    allow_unparsed: bool = False,
 ) -> dict[str, list[str]]:
     """Markers used under the tests directory that nothing registers, with the files naming each."""
     tests = tests_dir or repo_root / "tests"
-    registered = registered_markers(repo_root, tests_dir=tests) | BUILTIN_MARKERS | set(extra_registered)
-    return {name: files for name, files in used_markers(tests, repo_root, exclude=exclude).items() if name not in registered}
+    registered = registered_markers(repo_root, tests_dir=tests, allow_unparsed=allow_unparsed) | BUILTIN_MARKERS | set(extra_registered)
+    used = used_markers(tests, repo_root, exclude=exclude, allow_unparsed=allow_unparsed)
+    return {name: files for name, files in used.items() if name not in registered}
 
 
 def assert_markers_registered(
@@ -286,6 +289,7 @@ def assert_markers_registered(
     expect_registered: Iterable[str] = (),
     exclude: Iterable[Path] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on an unregistered marker, on a registration the parsers could not see, and on fewer than ``min_files``
     Python files under the tests directory (a scan that lost its subject).
@@ -303,11 +307,11 @@ def assert_markers_registered(
     if scanned < min_files:
         pytest.fail(f"only {scanned} test file(s) found under {tests}; expected at least {min_files}. The scan lost its subject.")
     unresolved: list[str] = []
-    registered = registered_markers(repo_root, tests_dir=tests, unresolved=unresolved)
+    registered = registered_markers(repo_root, tests_dir=tests, unresolved=unresolved, allow_unparsed=allow_unparsed)
     missing = sorted(set(expect_registered) - registered)
     if missing:
         pytest.fail(f"expected registered marker(s) not found by the parser: {missing} -- pyproject or conftest moved, or the parser broke")
-    unregistered = find_unregistered_markers(repo_root, tests_dir=tests, extra_registered=extra_registered, exclude=exclude)
+    unregistered = find_unregistered_markers(repo_root, tests_dir=tests, extra_registered=extra_registered, exclude=exclude, allow_unparsed=allow_unparsed)
     if unregistered:
         pytest.fail(
             "Unregistered pytest markers (an error under --strict-markers, a silent no-op without it):\n"

@@ -404,6 +404,16 @@ def _migration_files(migrations_dir: Path) -> list[Path]:
     return iter_files(migrations_dir, ("*.sql",))
 
 
+def _read_migration(path: Path, allow_unparsed: bool, problems: list[str]) -> "str | None":
+    """The migration's text, or ``None`` after recording why it was not replayed (unless *allow_unparsed*)."""
+    try:
+        return read_source(path)
+    except SourceReadError as exc:
+        if not allow_unparsed:
+            problems.append(f"{path.name}: {exc.message} - its statements were not replayed, so no function in it was checked.")
+        return None
+
+
 def _allowed_key(name: str, fn: _Function) -> bool:
     return name in (fn.name, fn.label)
 
@@ -411,6 +421,9 @@ def _allowed_key(name: str, fn: _Function) -> bool:
 def find_unlocked_definer_functions(
     migrations_dir: Path,
     allowed: "Mapping[str, str] | None" = None,
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """Return one problem string per ``SECURITY DEFINER`` function that is callable by any
     signed-in user, or that omits ``SET search_path``.
@@ -427,16 +440,16 @@ def find_unlocked_definer_functions(
     except CorpusError as exc:
         logger.warning("migrations directory unreadable, nothing examined: %s", type(exc).__name__)
         return [f"{migrations_dir}: {exc} - this check examined nothing, which reads as a pass. Point it at the migrations directory."]
-    if not files:
-        return [f"{migrations_dir}: no .sql files found - this check examined nothing, which reads as a pass. Point it at the migrations directory."]
+    if len(files) < min_files:
+        return [
+            f"{migrations_dir}: {len(files)} .sql file(s) found, expected at least {min_files} - this check examined nothing, which reads as a pass. Point it at the migrations directory."
+        ]
 
     problems: list[str] = []
     replay = _Replay()
     for path in files:
-        try:
-            sql = read_source(path)
-        except SourceReadError as exc:
-            problems.append(f"{path.name}: {exc.message} - its statements were not replayed, so no function in it was checked.")
+        sql = _read_migration(path, allow_unparsed, problems)
+        if sql is None:
             continue
         schema = "public"
         for stmt in _statements(path, sql):
@@ -480,11 +493,14 @@ def find_unlocked_definer_functions(
 def assert_definer_functions_are_locked_down(
     migrations_dir: Path,
     allowed: "Mapping[str, str] | None" = None,
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail when a ``SECURITY DEFINER`` function is callable by any signed-in user, or omits
-    ``SET search_path``. See :func:`find_unlocked_definer_functions`."""
+    ``SET search_path``, or when fewer than *min_files* migrations were found. See :func:`find_unlocked_definer_functions`."""
     import pytest
 
-    problems = find_unlocked_definer_functions(migrations_dir, allowed)
+    problems = find_unlocked_definer_functions(migrations_dir, allowed, min_files=min_files, allow_unparsed=allow_unparsed)
     if problems:
         pytest.fail(f"{len(problems)} SECURITY DEFINER privilege problem(s) under {migrations_dir}:\n\n" + "\n\n".join(problems))

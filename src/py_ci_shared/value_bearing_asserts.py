@@ -134,6 +134,7 @@ def assert_no_value_bearing_asserts(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a value-bearing assert not in *baseline_path*, and on a baseline entry that no longer matches one.
 
@@ -157,7 +158,7 @@ def assert_no_value_bearing_asserts(
         problems.append(str(exc))
     if seen < min_asserts_seen:
         problems.append(f"only {seen} assert(s) seen under {package_root}; expected at least {min_asserts_seen} -- the walk is not reaching the code")
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append(
             f"{len(scan.unparsed)} file(s) could not be parsed, so their asserts were not checked:\n    " + "\n    ".join(p.render() for p in scan.unparsed)
         )

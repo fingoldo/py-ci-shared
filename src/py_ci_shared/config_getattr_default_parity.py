@@ -228,6 +228,7 @@ def assert_getattr_defaults_match_schema(
     receiver_names: frozenset[str] = DEFAULT_RECEIVER_NAMES,
     receiver_suffixes: Sequence[str] = DEFAULT_RECEIVER_SUFFIXES,
     dataclass_classes: Sequence[type] = (),
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a ``getattr`` fallback that contradicts the config's own default, or that names a field none of
     *dataclass_classes* declares at all.
@@ -246,7 +247,7 @@ def assert_getattr_defaults_match_schema(
     bad = [g for g in found if g.field not in allowed]
     stale = sorted(set(allowed) - {g.field for g in found})
     msgs = []
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         msgs.append(_unparsed_message(scan))
     if bad:
         msgs.append(

@@ -892,8 +892,10 @@ def find_unasserted_effects(
     import_map: Mapping[str, Sequence[str]],
     *,
     effects: Sequence[str] = DEFAULT_EFFECTS,
+    allow_unparsed: bool = False,
 ) -> dict[str, str]:
-    """``{"<module>::<effect>": description}`` for effects no importing test inspects.
+    """``{"<module>::<effect>": description}`` for effects no importing test inspects. An unparsable file is reported
+    as ``<rel>::<unparsable>`` unless *allow_unparsed*, which leaves it out.
 
     *import_map* is ``{module path: [test paths that import it]}``, both relative to *repo_root*. The
     importing tests are the right population rather than all tests: a suite-wide "somebody somewhere
@@ -929,6 +931,8 @@ def find_unasserted_effects(
                     f"ever inspects that call, so deleting it would not fail a single one"
                 )
     for rel, why in sorted(parse.unparsed.items()):
+        if allow_unparsed:
+            break
         problems[f"{rel}::<unparsable>"] = f"{rel} could not be parsed ({why}), so its effects and inspections are unknown"
     return problems
 
@@ -940,6 +944,7 @@ def assert_effects_are_asserted(
     *,
     effects: Sequence[str] = DEFAULT_EFFECTS,
     min_modules: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on an unasserted effect that is not already accepted. Ratchet, not a gate.
 
@@ -954,7 +959,7 @@ def assert_effects_are_asserted(
         pytest.fail(
             f"the import map holds {len(import_map)} module(s), expected at least {min_modules}; check the repo root and layout passed to build_import_map"
         )
-    found = find_unasserted_effects(repo_root, import_map, effects=effects)
+    found = find_unasserted_effects(repo_root, import_map, effects=effects, allow_unparsed=allow_unparsed)
     accepted = set(accepted)
     new = {key: why for key, why in found.items() if key not in accepted}
     stale = sorted(accepted - set(found))

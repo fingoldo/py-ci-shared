@@ -137,17 +137,19 @@ def find_unguarded_concurrently(versions_dir: Path) -> set[str]:
     return {f"{f.path}:{f.line}" for f in findings} | {p.render() for p in scan.unparsed}
 
 
-def assert_concurrently_is_in_autocommit_blocks(versions_dir: Path, *, baseline: "Path | None" = None, request: Any = None) -> None:
-    """Fail on an unguarded call not in *baseline*, on a stale or missing baseline, on an unparsable migration and on
-    an empty versions dir. Rewrite the baseline with ``--refresh-alembic-concurrently-baseline`` (or
-    ``PY_CI_SHARED_REFRESH=alembic-concurrently``)."""
+def assert_concurrently_is_in_autocommit_blocks(
+    versions_dir: Path, *, baseline: "Path | None" = None, request: Any = None, min_files: int = 1, allow_unparsed: bool = False
+) -> None:
+    """Fail on an unguarded call not in *baseline*, on a stale or missing baseline, on an unparsable migration (unless
+    *allow_unparsed*) and on fewer than *min_files* parsed migrations. Rewrite the baseline with
+    ``--refresh-alembic-concurrently-baseline`` (or ``PY_CI_SHARED_REFRESH=alembic-concurrently``)."""
     import pytest
 
     findings, scan = collect_unguarded_concurrently(versions_dir)
-    if not scan.files and not scan.unparsed:
-        pytest.fail(f"no migrations found in {versions_dir}; the check is reading nothing")
     problems: list[str] = []
-    if scan.unparsed:
+    if scan.parsed_count < min_files:
+        problems.append(f"only {scan.parsed_count} migration(s) parsed in {versions_dir}; expected at least {min_files} -- the check is reading nothing")
+    if scan.unparsed and not allow_unparsed:
         problems.append("migrations that could not be read or parsed, so they were not checked:\n    " + "\n    ".join(p.render() for p in scan.unparsed))
     guidance = (
         "CONCURRENTLY index operations outside op.get_context().autocommit_block(); applied to a real database these "

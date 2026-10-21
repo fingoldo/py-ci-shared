@@ -214,6 +214,7 @@ def assert_polars_null_equality(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Warn on each finding (``advisory=True``, the default) or fail on it (new against *baseline_path* when given).
     Fewer than *min_files* parsed files, or any unparsable file, fails either way."""
@@ -230,6 +231,7 @@ def assert_polars_null_equality(
         parsed_count=scan.parsed_count,
         problems=scan.unparsed,
         min_files=min_files,
+        allow_unparsed=allow_unparsed,
         root=root,
         baseline_path=None if advisory else baseline_path,
         refresh=refresh,

@@ -84,10 +84,13 @@ def _rel(path: Path, repo_root: Path) -> str:
     return relative_posix(path, repo_root)
 
 
-def _parsed(repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str]] = None) -> list[tuple[Path, str, ast.Module]]:
+def _parsed(
+    repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str]] = None, *, allow_unparsed: bool = False
+) -> list[tuple[Path, str, ast.Module]]:
     """``(path, source, tree)`` for every scanned file, parsed once through the shared ``_core`` cache (BOM-safe).
     A file that cannot be parsed is appended to *unparsed* (``rel:line: why``); without that list the files are
-    reported by raising ``UnparsedFilesError``, since an unparsed file would otherwise read as one with no LLM calls."""
+    reported by raising ``UnparsedFilesError``, since an unparsed file would otherwise read as one with no LLM calls.
+    *allow_unparsed* leaves such files out instead of raising."""
     out: list[tuple[Path, str, ast.Module]] = []
     problems: list[str] = []
     for path in python_files(repo_root, scanned):
@@ -99,7 +102,7 @@ def _parsed(repo_root: Path, scanned: Sequence[str], unparsed: Optional[list[str
         out.append((path, source, tree))
     if unparsed is not None:
         unparsed.extend(problems)
-    elif problems:
+    elif problems and not allow_unparsed:
         raise UnparsedFilesError("these files could not be parsed, so their LLM calls are unknown:\n  " + "\n  ".join(problems))
     return out
 
@@ -120,11 +123,15 @@ def _sdk_call_lines(source: "str | ast.Module", sdk_methods: frozenset[tuple[str
 
 
 def find_direct_sdk_calls(
-    repo_root: Path, scanned: Sequence[str], *, sdk_methods: frozenset[tuple[str | None, str]] = DEFAULT_SDK_METHODS
+    repo_root: Path,
+    scanned: Sequence[str],
+    *,
+    sdk_methods: frozenset[tuple[str | None, str]] = DEFAULT_SDK_METHODS,
+    allow_unparsed: bool = False,
 ) -> dict[str, list[int]]:
     """``{file: [lines]}`` of direct model-SDK payload calls."""
     found = {}
-    for path, _source, tree in _parsed(repo_root, scanned):
+    for path, _source, tree in _parsed(repo_root, scanned, allow_unparsed=allow_unparsed):
         if lines := _sdk_call_lines(tree, sdk_methods):
             found[_rel(path, repo_root)] = lines
     return found
@@ -160,6 +167,7 @@ def find_unwrapped_providers(
     wrapping_factories: Iterable[str],
     unwrapping_factory_modules: Sequence[str] = ("pyutilz.llm",),
     factory_names: Sequence[str] = ("get_llm_provider",),
+    allow_unparsed: bool = False,
 ) -> dict[str, list[int]]:
     """``{file: [lines]}`` constructing a provider outside the wrapping factory module(s).
 
@@ -168,7 +176,7 @@ def find_unwrapped_providers(
     """
     classes, factories = frozenset(provider_classes), set(wrapping_factories)
     found = {}
-    for path, _source, tree in _parsed(repo_root, scanned):
+    for path, _source, tree in _parsed(repo_root, scanned, allow_unparsed=allow_unparsed):
         rel = _rel(path, repo_root)
         if rel in factories:
             continue
@@ -203,6 +211,7 @@ def find_generate_calls_without_archive(
     *,
     archive_names: Iterable[str],
     generate_methods: frozenset[str] = DEFAULT_GENERATE_METHODS,
+    allow_unparsed: bool = False,
 ) -> dict[str, list[int]]:
     """``{file: [lines]}`` for modules that call ``generate*`` and never name any of ``archive_names``.
 
@@ -213,7 +222,7 @@ def find_generate_calls_without_archive(
     """
     markers = set(archive_names)
     found = {}
-    for path, _source, tree in _parsed(repo_root, scanned):
+    for path, _source, tree in _parsed(repo_root, scanned, allow_unparsed=allow_unparsed):
         lines = _generate_call_lines(tree, generate_methods)
         if lines and not (markers & _names_in(tree)):
             found[_rel(path, repo_root)] = lines
@@ -232,9 +241,11 @@ def assert_every_llm_call_is_archived(
     unwrapping_factory_modules: Sequence[str] = ("pyutilz.llm",),
     factory_names: Sequence[str] = ("get_llm_provider",),
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail for any call path that escapes the archive, for any ``allowed`` entry that no longer escapes, for a
-    scanned path that does not exist, for an unparsable file, and when fewer than *min_files* files parsed.
+    scanned path that does not exist, for an unparsable file (unless *allow_unparsed*), and when fewer than *min_files*
+    files parsed.
 
     ``allowed`` maps a repo-relative file to the reason its direct calls are archived anyway (it records
     them itself) or may bypass the archive. ``archive_names`` switches on the file-level ``generate*`` check.
@@ -244,15 +255,15 @@ def assert_every_llm_call_is_archived(
         raise AssertionError(f"every allowed entry needs a reason: {blank}")
     unparsed: list[str] = []
     try:
-        parsed = _parsed(repo_root, scanned, unparsed)
+        parsed = _parsed(repo_root, scanned, unparsed, allow_unparsed=allow_unparsed)
     except CorpusError as exc:
         raise AssertionError(f"a scanned path does not exist, so nothing under it was checked: {exc}") from exc
     if len(parsed) < min_files:
         raise AssertionError(f"only {len(parsed)} file(s) parsed under {list(scanned)}; expected at least {min_files} -- the scan examined nothing")
-    if unparsed:
+    if unparsed and not allow_unparsed:
         raise AssertionError("these files could not be parsed, so their LLM calls are unknown:\n  " + "\n  ".join(unparsed))
     problems: dict[str, dict[str, list[int]]] = {
-        "direct model-SDK call": find_direct_sdk_calls(repo_root, scanned, sdk_methods=sdk_methods),
+        "direct model-SDK call": find_direct_sdk_calls(repo_root, scanned, sdk_methods=sdk_methods, allow_unparsed=allow_unparsed),
         "provider built outside the wrapping factory": find_unwrapped_providers(
             repo_root,
             scanned,
@@ -260,11 +271,12 @@ def assert_every_llm_call_is_archived(
             wrapping_factories=wrapping_factories,
             unwrapping_factory_modules=unwrapping_factory_modules,
             factory_names=factory_names,
+            allow_unparsed=allow_unparsed,
         ),
     }
     if archive_names is not None:
         problems["generate* call in a module that never names the archive"] = find_generate_calls_without_archive(
-            repo_root, scanned, archive_names=archive_names
+            repo_root, scanned, archive_names=archive_names, allow_unparsed=allow_unparsed
         )
     matched = {f for found in problems.values() for f in found}
     offenders = {kind: {f: lines for f, lines in found.items() if f not in allowed} for kind, found in problems.items()}

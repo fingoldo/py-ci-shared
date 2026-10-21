@@ -520,6 +520,7 @@ def find_unselected_marked_tests(
     marker: str,
     commands: "Iterable[tuple[str, str]]",
     addopts: str = "",
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """``<file>::<test>: <why>`` for every *marker*-carrying test no runner selects.
 
@@ -528,6 +529,8 @@ def find_unselected_marked_tests(
     """
     every = runners(commands, addopts=addopts)
     tests, problems = _collect(tests_dir, repo_root, marker)
+    if allow_unparsed:
+        problems = []  # _collect's only problems are unparsed test files, which the caller has accepted
     usable: list[Runner] = []
     for runner in every:
         try:
@@ -561,6 +564,7 @@ def assert_every_marked_test_is_selected(
     addopts: str = "",
     known: Iterable[str] = (),
     min_marked: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Shrink-only against *known* (``<file>::<test>`` keys, as reported): a new unselected test fails, and so
     does a *known* one now run. A bare-file key no longer excuses every test in that file; it is reported stale."""
@@ -570,7 +574,7 @@ def assert_every_marked_test_is_selected(
     total = len(_collect(tests_dir, repo_root, marker)[0])
     if total < min_marked:
         pytest.fail(f"only {total} test(s) carry `{marker}`; expected at least {min_marked} -- this would check nothing")
-    found = set(find_unselected_marked_tests(tests_dir, repo_root, marker=marker, commands=commands, addopts=addopts))
+    found = set(find_unselected_marked_tests(tests_dir, repo_root, marker=marker, commands=commands, addopts=addopts, allow_unparsed=allow_unparsed))
     keys = {p.split(": ", 1)[0].strip(): p for p in found}
     known = set(known)
     new, stale = sorted(set(keys) - known), sorted(known - set(keys))

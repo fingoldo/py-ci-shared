@@ -572,14 +572,14 @@ def schema_section_field_defaults(schema_cls: type[BaseModel]) -> dict[tuple[str
     return out
 
 
-def _calls_or_fail(root: Path, files: Iterable[Path], cfg_function_names: frozenset[str], min_files: int = 0) -> list[CfgGetCall]:
-    """Call sites, or ``pytest.fail`` naming every file that could not be read or parsed, or when fewer than
-    *min_files* files parsed (a scan that lost its subject)."""
+def _calls_or_fail(root: Path, files: Iterable[Path], cfg_function_names: frozenset[str], min_files: int = 0, allow_unparsed: bool = False) -> list[CfgGetCall]:
+    """Call sites, or ``pytest.fail`` naming every file that could not be read or parsed (unless *allow_unparsed*, which
+    skips them), or when fewer than *min_files* files parsed (a scan that lost its subject)."""
     import pytest
 
     files = list(files)
     calls, unparsed = scan_cfg_get_calls(root, files, cfg_function_names)
-    if unparsed:
+    if unparsed and not allow_unparsed:
         pytest.fail(str(_unparsed_error(unparsed)))
     parsed = len(set(files)) - len({p.path for p in unparsed})
     if parsed < min_files:
@@ -594,6 +594,7 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if any ``cfg().get(section, key, ...)`` call site reads a ``(section,
     key)`` pair that doesn't exist in ``schema_cls``'s schema -- silently unreadable
@@ -603,7 +604,7 @@ def assert_every_cfg_get_call_resolves_to_a_schema_field(
 
     schema = schema_section_field_map(schema_cls)
     bad = []
-    for call in _calls_or_fail(root, files, cfg_function_names, min_files):
+    for call in _calls_or_fail(root, files, cfg_function_names, min_files, allow_unparsed):
         if call.section not in schema:
             bad.append(f"{call.file}:{call.line} -- unknown section {call.section!r}")
         elif call.key not in schema[call.section]:
@@ -621,6 +622,7 @@ def assert_every_schema_field_has_a_reader(
     known_unwired_gaps: Optional[dict[tuple[str, str], str]] = None,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if any schema field has zero ``cfg().get(...)`` reader anywhere in
     ``files``, unless it's listed in ``known_indirect_readers`` (genuinely consumed a
@@ -633,7 +635,7 @@ def assert_every_schema_field_has_a_reader(
     known_indirect_readers = known_indirect_readers or {}
     known_unwired_gaps = known_unwired_gaps or {}
     schema = schema_section_field_map(schema_cls)
-    read = {(c.section, c.key) for c in _calls_or_fail(root, files, cfg_function_names, min_files)}
+    read = {(c.section, c.key) for c in _calls_or_fail(root, files, cfg_function_names, min_files, allow_unparsed)}
     unread = []
     tracked_gaps_hit = []
     for section, keys in schema.items():
@@ -666,6 +668,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     default_type_repr: Optional[str] = None,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if two call sites reading the SAME ``(section, key)`` pass a different
     default/``type_`` -- two call sites silently disagreeing about what "the config
@@ -684,7 +687,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
     """
     import pytest
 
-    calls = _calls_or_fail(root, files, cfg_function_names, min_files)
+    calls = _calls_or_fail(root, files, cfg_function_names, min_files, allow_unparsed)
     by_pair: dict[tuple[str, str], list[CfgGetCall]] = {}
     for call in calls:
         by_pair.setdefault((call.section, call.key), []).append(call)
@@ -719,6 +722,7 @@ def assert_call_site_defaults_match_schema_defaults(
     known_intentional_mismatches: Optional[dict[tuple[str, str], str]] = None,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if a call site's own resolved default disagrees with the schema field's
     Pydantic default. Only call sites whose default expression actually resolves to a
@@ -743,7 +747,7 @@ def assert_call_site_defaults_match_schema_defaults(
     resolver = ConstantResolver(root)
     checked = 0
     mismatches = []
-    for call in _calls_or_fail(root, files, cfg_function_names, min_files):
+    for call in _calls_or_fail(root, files, cfg_function_names, min_files, allow_unparsed):
         if (call.section, call.key) in known_intentional_mismatches:
             continue
         resolved = resolver.resolve(call.default_node, call.abs_path)
@@ -810,6 +814,9 @@ def find_module_scope_frozen_cli_defaults(
     root: Path,
     files: Iterable[Path],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
+    *,
+    min_files: int = 0,
+    allow_unparsed: bool = False,
 ) -> list[FrozenCliDefault]:
     """Every module-scope ``X = cfg().get(...)`` assignment whose variable is later used as an
     ``argparse.add_argument(..., default=X)`` value in the same file.
@@ -824,8 +831,10 @@ def find_module_scope_frozen_cli_defaults(
     and only manifests as "I edited config.toml and nothing happened" for that one flag.
     """
     out: list[FrozenCliDefault] = []
-    scan = scan_python(list(files), root=root, min_files=0)
-    if scan.unparsed:
+    scan = scan_python(list(files), root=root, min_files=min_files)
+    if scan.parsed_count < min_files:
+        raise AssertionError(f"only {scan.parsed_count} file(s) parsed; expected at least {min_files} -- the scan lost its subject")
+    if scan.unparsed and not allow_unparsed:
         raise _unparsed_error(list(scan.unparsed))
     for f in scan:
         path, tree = f.path, f.tree
@@ -855,6 +864,9 @@ def assert_no_module_scope_frozen_cli_defaults(
     files: Iterable[Path],
     cfg_function_names: frozenset[str] = DEFAULT_CFG_FUNCTION_NAMES,
     known_intentional_freezes: Optional[dict[tuple[str, str], str]] = None,
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if a module-scope ``cfg().get(...)`` read feeds an ``argparse`` default -- see
     ``find_module_scope_frozen_cli_defaults`` for why this specifically (as opposed to any other
@@ -870,8 +882,8 @@ def assert_no_module_scope_frozen_cli_defaults(
     known_intentional_freezes = known_intentional_freezes or {}
     bad = []
     try:
-        hits = find_module_scope_frozen_cli_defaults(root, files, cfg_function_names)
-    except UnparsedFilesError as exc:
+        hits = find_module_scope_frozen_cli_defaults(root, files, cfg_function_names, min_files=min_files, allow_unparsed=allow_unparsed)
+    except AssertionError as exc:
         pytest.fail(str(exc))
     for hit in hits:
         if (hit.section, hit.key) in known_intentional_freezes:

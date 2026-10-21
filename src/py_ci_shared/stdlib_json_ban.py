@@ -116,6 +116,7 @@ def assert_no_stdlib_json(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a stdlib ``json`` import (new against *baseline_path* when given), on an *allow* entry without a reason
     or matching nothing, on fewer than *min_files* parsed files, and on any unparsable file."""
@@ -132,6 +133,7 @@ def assert_no_stdlib_json(
         parsed_count=scan.parsed_count,
         problems=scan.unparsed,
         min_files=min_files,
+        allow_unparsed=allow_unparsed,
         root=root,
         baseline_path=baseline_path,
         refresh=refresh,

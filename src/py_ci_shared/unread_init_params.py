@@ -151,22 +151,26 @@ def find_unread_init_params(files: Iterable[Path], repo_root: Path, *, allow_unp
     return sorted(out, key=lambda u: (u.path, u.cls, u.param))
 
 
-def assert_no_unread_init_params(files: Iterable[Path], repo_root: Path, allowlist: Mapping[str, str] | None = None, min_files: int = 1) -> None:
+def assert_no_unread_init_params(
+    files: Iterable[Path], repo_root: Path, allowlist: Mapping[str, str] | None = None, min_files: int = 1, allow_unparsed: bool = False
+) -> None:
     """Fail on a constructor parameter that nothing reads.
 
     ``allowlist`` maps a parameter name to the reason it is accepted unread (a sklearn meta-parameter consumed by
     ``get_params`` alone, say); an empty reason is rejected, and an entry with nothing left to excuse must be removed.
+    A file that cannot be parsed fails unless *allow_unparsed*.
     """
     files = list(files)
     scan = scan_python([Path(p) for p in files], min_files=min_files, root=repo_root)
     if scan.parsed_count < min_files:
         raise AssertionError(f"scanned only {scan.parsed_count} parsed files (< {min_files}); the scan lost its subject")
-    scan.check_unparsed()
+    if not allow_unparsed:
+        scan.check_unparsed()
     allowlist = dict(allowlist or {})
     empty = sorted(k for k, v in allowlist.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowlisted parameters need a reason: {empty}")
-    unread = find_unread_init_params(files, repo_root)
+    unread = find_unread_init_params(files, repo_root, allow_unparsed=allow_unparsed)
     bad = [u for u in unread if u.param not in allowlist]
     stale = sorted(set(allowlist) - {u.param for u in unread})
     msgs = []

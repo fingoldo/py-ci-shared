@@ -235,6 +235,7 @@ def assert_no_open_round_paths(
     root: "Path | None" = None,
     known: Iterable[str] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Shrink-only against *known*: entries are ``path:<value>`` so a line shift does not break them.
 
@@ -247,7 +248,7 @@ def assert_no_open_round_paths(
     if parsed < min_files:
         problems.append(f"only {parsed} file(s) parsed; expected at least {min_files} -- this would check nothing")
     unparsed = [h for h in hits if h.kind == "unparsable"]
-    if unparsed:
+    if unparsed and not allow_unparsed:
         problems.append(f"{len(unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(h.render() for h in unparsed))
     keys: dict[str, RoundHit] = {}
     for h in hits:

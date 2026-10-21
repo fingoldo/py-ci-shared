@@ -105,9 +105,16 @@ def find_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), use_git
     return sorted(out, key=lambda s: (s.split(":", 1)[0], int(s.split(":", 2)[1])))
 
 
-def assert_no_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), min_files: int = 1, use_git: Optional[bool] = None) -> None:
+def assert_no_naive_utcnow(
+    root: Path,
+    *,
+    skip_dir_names: Iterable[str] = (),
+    min_files: int = 1,
+    use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
+) -> None:
     """Fail if any module under *root* references ``.utcnow``/``.utcfromtimestamp``, if any file could not be
-    parsed, or if fewer than *min_files* files parsed (a wrong root is a failure, not a clean tree)."""
+    parsed (unless *allow_unparsed*), or if fewer than *min_files* files parsed (a wrong root is a failure, not a clean tree)."""
     import pytest
 
     findings, scan = collect_naive_utcnow(root, skip_dir_names=skip_dir_names, use_git=use_git)
@@ -117,7 +124,7 @@ def assert_no_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), mi
         scan.check_floor()
     except AssertionError as exc:
         problems.append(str(exc))
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
     if findings:
         problems.append(

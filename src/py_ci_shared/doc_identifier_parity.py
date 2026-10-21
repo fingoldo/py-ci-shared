@@ -149,8 +149,9 @@ def _absent(
     exclude_docs: Iterable[str],
     ignore: Iterable[str],
     external_commands: frozenset[str],
+    allow_unparsed: bool = False,
 ) -> tuple[list[str], int]:
-    """``(problems, documents checked)``."""
+    """``(problems, documents checked)``. An unreadable document is a problem unless *allow_unparsed*, which skips it."""
     root = repo_root.resolve()
     checked = 0
     docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
@@ -168,7 +169,8 @@ def _absent(
         try:
             text = read_source(doc)
         except SourceReadError as exc:
-            problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: unreadable, so its names were not checked: {exc.message}")
+            if not allow_unparsed:
+                problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: unreadable, so its names were not checked: {exc.message}")
             continue
         lines = _without_html_comments(text).split("\n")
         foreign = _external_flags(lines, external_commands)
@@ -189,13 +191,21 @@ def assert_doc_identifiers_exist(
     ignore: Iterable[str] = (),
     external_commands: frozenset[str] = DEFAULT_EXTERNAL_COMMANDS,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
-    """Fail on any backticked flag or identifier a document names that the code does not contain, and on fewer than
-    *min_files* documents checked (after *exclude_docs*): no document examined is not a clean result."""
+    """Fail on any backticked flag or identifier a document names that the code does not contain, on fewer than
+    *min_files* documents checked (after *exclude_docs*): no document examined is not a clean result, and on an
+    unreadable document unless *allow_unparsed*."""
     import pytest
 
     problems, checked = _absent(
-        repo_root, doc_files=doc_files, corpus_files=corpus_files, exclude_docs=exclude_docs, ignore=ignore, external_commands=external_commands
+        repo_root,
+        doc_files=doc_files,
+        corpus_files=corpus_files,
+        exclude_docs=exclude_docs,
+        ignore=ignore,
+        external_commands=external_commands,
+        allow_unparsed=allow_unparsed,
     )
     if checked < min_files:
         problems.insert(0, f"only {checked} document(s) checked under {repo_root}; expected at least {min_files} -- this would check nothing")

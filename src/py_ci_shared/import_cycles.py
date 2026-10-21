@@ -383,13 +383,17 @@ def assert_no_import_cycles(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on an import cycle or an order-dependent from-import not accepted by *baseline_path*.
 
     Without a baseline every finding fails. A missing baseline fails; it is written only on refresh
-    (``REFRESH_FLAG``, or ``PY_CI_SHARED_REFRESH=import-cycles``). Unparsed files and a walk under *min_files* fail.
+    (``REFRESH_FLAG``, or ``PY_CI_SHARED_REFRESH=import-cycles``). A walk under *min_files* fails; unparsed files fail
+    unless *allow_unparsed*, which leaves them out of the check.
     """
     findings, scan = find_import_cycles(src_root, package=package, exclude_parts=exclude_parts, use_git=use_git)
+    if allow_unparsed:
+        scan.unparsed = []  # the scan is local to this call; only the parse-failure problem is dropped
     enforce_findings(
         findings,
         scan,

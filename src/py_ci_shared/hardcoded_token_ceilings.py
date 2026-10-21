@@ -184,6 +184,7 @@ def assert_no_hardcoded_token_ceilings(
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a hardcoded ceiling (new against *baseline_path* when given), on fewer than *min_files* parsed files,
     and on any unparsable file. Refresh with ``--refresh-token-ceilings-baseline``."""
@@ -196,6 +197,7 @@ def assert_no_hardcoded_token_ceilings(
         parsed_count=scan.parsed_count,
         problems=scan.unparsed,
         min_files=min_files,
+        allow_unparsed=allow_unparsed,
         root=root,
         baseline_path=baseline_path,
         refresh=refresh,

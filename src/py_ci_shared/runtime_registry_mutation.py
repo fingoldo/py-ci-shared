@@ -285,12 +285,14 @@ def find_runtime_registry_writes(files: Iterable[Path], repo_root: Path, *, allo
     return _writes(scan.files)
 
 
-def assert_writes_have_replay(files: Iterable[Path], repo_root: Path, replay_writers: Mapping[str, str], min_files: int = 1) -> None:
+def assert_writes_have_replay(
+    files: Iterable[Path], repo_root: Path, replay_writers: Mapping[str, str], min_files: int = 1, allow_unparsed: bool = False
+) -> None:
     """Fail on a runtime registry write whose function is neither an import-time helper nor a listed replay writer.
 
     ``replay_writers`` maps a function name to the reason its registrations are replayed on load; an empty reason is
-    rejected, and a listed writer that no longer writes anything must be removed. Fewer than *min_files* PARSED files,
-    or any file that cannot be parsed, fails too.
+    rejected, and a listed writer that no longer writes anything must be removed. Fewer than *min_files* PARSED files
+    fails; a file that cannot be parsed fails too, unless *allow_unparsed*.
     """
     scan = scan_python([Path(p) for p in files], root=repo_root)
     scan.min_files = min_files
@@ -298,7 +300,8 @@ def assert_writes_have_replay(files: Iterable[Path], repo_root: Path, replay_wri
         scan.check_floor()
     except AssertionError as exc:
         raise AssertionError(f"the scan lost its subject: {exc}") from exc
-    scan.check_unparsed()
+    if not allow_unparsed:
+        scan.check_unparsed()
     empty = sorted(k for k, v in replay_writers.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"replay writers need a reason: {empty}")

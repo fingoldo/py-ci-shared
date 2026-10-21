@@ -301,6 +301,7 @@ def assert_no_new_fail_open_handlers(
     refresh: Optional[bool] = None,
     request: Any = None,
     grow: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a fail-open handler beyond what *baseline_path* accepts for its ``path::function::rule``, and on stale entries.
 
@@ -323,7 +324,7 @@ def assert_no_new_fail_open_handlers(
     for key in accepted:
         scope = key.split("#", 1)[0]
         allowed[scope] = allowed.get(scope, 0) + 1
-    problems = _baseline_problems(scan, by_scope, allowed, exists, baseline_path)
+    problems = _baseline_problems(scan, by_scope, allowed, exists, baseline_path, allow_unparsed=allow_unparsed)
     if problems:
         raise AssertionError("\n".join(problems))
 
@@ -357,10 +358,18 @@ def _refresh_baseline(
     pytest.skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
 
 
-def _baseline_problems(scan: ScanResult, by_scope: dict[str, list[FailOpenHandler]], allowed: dict[str, int], exists: bool, baseline_path: Path) -> list[str]:
-    """The failure messages for unparsed files, a missing baseline, new handlers and stale baseline scopes."""
+def _baseline_problems(
+    scan: ScanResult,
+    by_scope: dict[str, list[FailOpenHandler]],
+    allowed: dict[str, int],
+    exists: bool,
+    baseline_path: Path,
+    *,
+    allow_unparsed: bool = False,
+) -> list[str]:
+    """The failure messages for unparsed files (unless *allow_unparsed*), a missing baseline, new handlers and stale baseline scopes."""
     problems: list[str] = []
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(u.render() for u in scan.unparsed))
     if not exists:
         problems.append(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {REFRESH_FLAG} (an empty {{}} for a clean repo)")

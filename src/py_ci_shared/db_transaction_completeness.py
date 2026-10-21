@@ -252,6 +252,7 @@ def assert_no_new_incomplete_transaction(
     baseline_path: Path,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Any = None,
     **find_kwargs: Any,
@@ -274,7 +275,7 @@ def assert_no_new_incomplete_transaction(
     )
     if find_kwargs:
         raise TypeError(f"unexpected keyword argument(s): {sorted(find_kwargs)}")
-    scan.assert_ok()
+    scan.assert_ok(allow_unparsed=allow_unparsed)
     do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
     outcome = Baseline(baseline_path, gate="db-transaction", refresh_command=f"pytest {REFRESH_FLAG}").enforce(
         [t.key for t in found],
