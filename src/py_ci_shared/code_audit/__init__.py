@@ -3,3 +3,5 @@
 Moved here from pyutilz.dev.code_audit so that the rules and the gates that run them live in one package. pyutilz keeps
 a re-exporting shim at the old path. The module is stdlib-only, so py-ci-shared stays dependency-free.
 """
+
+from ._base import Finding  # noqa: F401 -- re-exported: the code_audit gate and the detectors import the record from the package

@@ -4,6 +4,12 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- **Behaviour change:** the code-audit detectors and their registry now live in `py_ci_shared.code_audit`. The
+  `code_audit_meta` gate runs them from here, so a consumer's gate results follow the py-ci-shared pin instead of the
+  pyutilz pin. The rules are the same code (copied byte for byte, then modernised to `collections.abc` and built-in
+  generics). pyutilz keeps `pyutilz.dev.code_audit.*` as aliases, so existing imports still work. To keep the old
+  behaviour while you move, pin py-ci-shared to the release that carries this and rebuild the code-audit baselines once.
+
 - `stale_comment_age.assert_no_stale_todos` takes `allow_unparsed` (default `True`: an unreadable file is still scanned with a lossy decode,
   as before; `False` reports it as a problem and checks nothing in it) and `min_files` (default `0`: a scan that read fewer files than the floor
   reports it). `test_partition_reachability.assert_partitions_reachable` takes `allow_unparsed` (default `False`: an unreadable runner or spec

@@ -52,7 +52,7 @@ from typing import TYPE_CHECKING
 from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested, register_refresh_options, write_ratchet
 
 if TYPE_CHECKING:
-    from pyutilz.dev.code_audit import Finding
+    from .code_audit import Finding
 
 REFRESH_FLAG = "--refresh-code-audit-baseline"
 
@@ -169,7 +169,7 @@ def _run_scanners(
     root: Path, checks: list[str] | None, exclude_dirs: frozenset[str], consumer_roots: Iterable[Path] = ()
 ) -> tuple[list[Finding], dict[str, str]]:
     """Every scanner's findings, and the scanners that raised (name -> error)."""
-    from pyutilz.dev.code_audit import registry
+    from .code_audit import registry
 
     run_all_checked = getattr(registry, "run_all_checked", None)
     consumers = list(consumer_roots)
@@ -316,8 +316,8 @@ def assert_no_new_code_audit_findings(
             f = current_by_key.get(k)
             detail_lines.append(f"{f.check} [{f.severity}] {f.file}:{f.line} -- {f.detail}" if f is not None else k)
         pytest.fail(
-            f"{len(new)} new static-analysis finding(s) from pyutilz.dev.code_audit "
-            f"(see pyutilz/src/pyutilz/dev/code_audit/__init__.py for check descriptions). "
+            f"{len(new)} new static-analysis finding(s) from py_ci_shared.code_audit "
+            f"(see py-ci-shared/src/py_ci_shared/code_audit/ for check descriptions). "
             f"Fix the code, OR if this is a confirmed false positive, refresh the baseline "
             f"after review:\n  " + "\n  ".join(detail_lines) + (f"\n  ... and {len(new) - 20} more" if len(new) > 20 else "")
         )
