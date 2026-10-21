@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.node_index import function_nodes
+from ._core.node_index import walk
 from ._core import Finding, ParsedFile, child_nodes, scan_python
 from .lock_held_across_io import is_lock_like, module_lock_names
 
@@ -42,6 +43,8 @@ _DICT_CONSTRUCTORS = frozenset({"dict", "OrderedDict", "defaultdict", "WeakValue
 _Key = tuple[str, str]  # ("self", attr) or ("module", name)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 _WITH = (ast.With, ast.AsyncWith)
+#: The node types :func:`_record` sorts; every other node is only a link in the walk, so it is not passed to it.
+_RELEVANT = (ast.Compare, ast.Call, ast.Assign, ast.AugAssign, ast.AnnAssign)
 
 
 @dataclass(frozen=True)
@@ -118,7 +121,8 @@ def _accesses(fn: ast.AST, module_dicts: frozenset[str], lock_names: frozenset[s
             if isinstance(child, _WITH) and any(is_lock_like(item.context_expr, lock_names) for item in child.items):
                 inner = locks | {id(child)}
                 holds_lock = True
-            _record(child, inner, module_dicts, checks, acts)
+            if isinstance(child, _RELEVANT):
+                _record(child, inner, module_dicts, checks, acts)
             visit(child, inner)
 
     visit(fn, frozenset())
@@ -153,6 +157,8 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     module_has_lock = bool(lock_names)
     out: list[Finding] = []
     for fn in function_nodes(parsed.tree):
+        if not module_has_lock and not any(isinstance(node, _WITH) for node in walk(fn)):
+            continue  # no lock anywhere in the module and no `with` in this function: no finding is possible
         out.extend(_findings_in_function(fn, parsed.rel, module_dicts, lock_names, module_has_lock))
     return out
 
