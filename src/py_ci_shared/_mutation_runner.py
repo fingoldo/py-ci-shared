@@ -23,6 +23,7 @@ import time
 import warnings
 from collections.abc import Sequence
 from pathlib import Path
+from collections.abc import Iterator
 from typing import Any, Optional, Union
 
 from ._core.git import git_env
@@ -248,6 +249,30 @@ class _Tail:
 
     def text(self) -> str:
         return "".join(self._pieces)[-_TAIL_CHARS:]
+
+
+#: The longest protocol line the warm worker's reader keeps. Replies are the worker's own JSON, far below this; a longer line is
+#: kept only as its head, which does not parse, so that request gets no reply and times out like a lost one, and the reader's memory stays bounded.
+_PROTOCOL_LINE_CAP = 8 << 20
+
+
+def _protocol_lines(stream: Any, cap: int = _PROTOCOL_LINE_CAP) -> Iterator[str]:
+    """The lines of a worker's reply stream, read in bounded pieces; a line over *cap* is yielded as its first *cap* characters."""
+    pieces: list[str] = []
+    size = 0
+    while True:
+        piece = stream.readline(_PIECE_CHARS)
+        if not piece:
+            break
+        if size < cap:
+            kept = piece[: cap - size]
+            pieces.append(kept)
+            size += len(kept)
+        if piece.endswith("\n"):
+            yield "".join(pieces)
+            pieces, size = [], 0
+    if pieces:
+        yield "".join(pieces)
 
 
 def _drain(pipe: Any, tail: _Tail, scan: Optional[OutputScan]) -> None:
@@ -544,10 +569,7 @@ class _WarmRunner:
 
         def pump() -> None:
             try:
-                while True:
-                    line = stdout.readline()
-                    if not line:
-                        break
+                for line in _protocol_lines(stdout):
                     _put_latest(lines, line)
             except (OSError, ValueError):  # swallow-ok: a closed pipe is the end of the stream; the reader reports it through the None sentinel
                 pass
