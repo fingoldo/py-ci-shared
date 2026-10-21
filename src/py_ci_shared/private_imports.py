@@ -139,6 +139,7 @@ def assert_no_private_cross_package_imports(
     exempt_prefixes: Iterable[str] = DEFAULT_EXEMPT_PREFIXES,
     min_files: int = 1,
     use_git: Optional[bool] = None,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a reach not in *allowlist*, on an allowlist entry that no longer occurs, on an unparsable file,
     and when fewer than *min_files* files parsed."""
@@ -153,7 +154,7 @@ def assert_no_private_cross_package_imports(
         scan.check_floor()
     except AssertionError as exc:
         problems.append(str(exc))
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append("files that could not be parsed, so their imports were not checked:\n    " + _render_unparsed(scan.unparsed, repo_root))
     new = sorted(found - allowed)
     if new:

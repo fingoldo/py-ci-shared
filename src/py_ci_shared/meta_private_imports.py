@@ -93,6 +93,7 @@ def assert_no_private_meta_imports(
     any_segment: bool = False,
     min_files: int = 1,
     recursive: bool = True,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a private import no permitted entry covers, on a permitted entry nothing imports, on an unparsable
     meta-test, or on an empty scan. Meta-tests in subdirectories are included unless ``recursive=False``."""
@@ -110,7 +111,7 @@ def assert_no_private_meta_imports(
     new = sorted(found - allowed)
     stale = sorted(allowed - found)
     problems: list[str] = []
-    if unparsed:
+    if unparsed and not allow_unparsed:
         problems.append(f"{len(unparsed)} meta-test file(s) could not be parsed, so their imports are unknown:\n  " + "\n  ".join(unparsed))
     if new:
         problems.append(

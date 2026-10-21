@@ -602,8 +602,16 @@ def _spelled_out_elsewhere(token: str, spelled_exact: frozenset[str], spelled_wo
     return False
 
 
-def _token_problem(token: str, declared: set[str], known: set[str], repo_known: set[str], test_names: set[str], test_paths: set[str],
-                   spelled: "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]", imported: frozenset[str]) -> "Optional[str]":
+def _token_problem(
+    token: str,
+    declared: set[str],
+    known: set[str],
+    repo_known: set[str],
+    test_names: set[str],
+    test_paths: set[str],
+    spelled: "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]",
+    imported: frozenset[str],
+) -> "Optional[str]":
     """The violation text for one backticked *token* (without the ``rel:line:`` prefix), or None when it is fine."""
     tf = _TEST_FILE_RE.match(token)
     if tf:
@@ -634,7 +642,9 @@ def _token_problem(token: str, declared: set[str], known: set[str], repo_known: 
     return f"`{token}` names nothing declared in this repo"
 
 
-def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = ()) -> list[str]:
+def find_phantom_code_references(
+    files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = (), allow_unparsed: bool = False
+) -> list[str]:
     """``"<rel>:<line>: `<token>` names nothing in this repo"`` for every backticked reference in a comment
     or docstring that resolves to neither a test file under ``repo_root`` nor a declared name.
 
@@ -662,12 +672,14 @@ def find_phantom_code_references(files: Iterable[Path], repo_root: Path, declare
         rel = relative_posix(path, repo_root)
         imported = _names_imported_by(path)
         lines, problem = _comment_lines_checked(path)
-        if problem is not None:
+        if problem is not None and not allow_unparsed:
             violations.append(f"{rel}:{(problem.line if problem.line is not None else 1)}: {problem.kind}: {problem.message}")
         for lineno, text in lines:
             for m in _BACKTICK_RE.finditer(text):
                 token = m.group(1).strip()
-                problem_text = _token_problem(token, declared, known, repo_known, test_names, test_paths, (spelled_exact, spelled_words, spelled_constants), imported)
+                problem_text = _token_problem(
+                    token, declared, known, repo_known, test_names, test_paths, (spelled_exact, spelled_words, spelled_constants), imported
+                )
                 if problem_text is not None:
                     violations.append(f"{rel}:{lineno}: {problem_text}")
     return violations
@@ -795,6 +807,7 @@ def assert_no_phantom_code_references(
     baseline_path: Path | None = None,
     extra_known: Iterable[str] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on any phantom reference not in the committed baseline; also fail when a baseline entry is no
     longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks. Fewer than *min_files*
@@ -807,7 +820,7 @@ def assert_no_phantom_code_references(
     files = list(files)
     if len(files) < min_files:
         pytest.fail(f"only {len(files)} file(s) given; expected at least {min_files} -- this would check nothing")
-    violations = set(find_phantom_code_references(files, repo_root, declared, extra_known=extra_known))
+    violations = set(find_phantom_code_references(files, repo_root, declared, extra_known=extra_known, allow_unparsed=allow_unparsed))
     baseline: set[str] = set()
     if baseline_path is not None and baseline_path.exists():
         baseline = set(load_json(baseline_path)["phantom_references"])
@@ -825,21 +838,41 @@ def assert_no_phantom_code_references(
         pytest.fail("\n".join(problems))
 
 
-def assert_no_count_claim_mismatches(files: Iterable[Path]) -> None:
+def _unreadable(paths: list[Path]) -> list[str]:
+    """One line per file the comment scan could not read or parse: its comments were never checked."""
+    out: list[str] = []
+    for path in paths:
+        problem = _comment_lines_checked(path)[1]
+        if problem is not None:
+            out.append(f"{path}:{problem.line if problem.line is not None else 1}: {problem.kind}: {problem.message}")
+    return out
+
+
+def assert_no_count_claim_mismatches(files: Iterable[Path], *, min_files: int = 1, allow_unparsed: bool = False) -> None:
     """Fail on any "the N ..." claim whose numbered list has a different length. No baseline: a wrong count
     is unconditionally wrong."""
     import pytest
 
-    violations = count_claim_mismatches(files)
+    paths = list(files)
+    if len(paths) < min_files:
+        pytest.fail(f"only {len(paths)} file(s) given; expected at least {min_files} -- this would check nothing")
+    violations = count_claim_mismatches(paths)
+    if not allow_unparsed:
+        violations += _unreadable(paths)
     if violations:
         pytest.fail("comments whose stated count disagrees with the list under it:\n  " + "\n  ".join(violations))
 
 
-def assert_no_stale_absolute_line_citations(files: Iterable[Path]) -> None:
+def assert_no_stale_absolute_line_citations(files: Iterable[Path], *, min_files: int = 1, allow_unparsed: bool = False) -> None:
     """Fail on any comment citing an absolute line of its own file that is past the file's end. No baseline:
     a line number bigger than the file cannot ever be right."""
     import pytest
 
-    violations = find_stale_absolute_line_citations(files)
+    paths = list(files)
+    if len(paths) < min_files:
+        pytest.fail(f"only {len(paths)} file(s) given; expected at least {min_files} -- this would check nothing")
+    violations = find_stale_absolute_line_citations(paths)
+    if not allow_unparsed:
+        violations += _unreadable(paths)
     if violations:
         pytest.fail("comments citing an absolute line of their own file past its end (cite the symbol instead):\n  " + "\n  ".join(violations))

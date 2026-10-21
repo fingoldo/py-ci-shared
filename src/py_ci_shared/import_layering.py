@@ -211,12 +211,30 @@ def _text_targets(path: Path, repo_root: Path, package_roots: "dict[str, str]") 
             yield i, target
 
 
+def _rule_problems(rel: str, targets: Iterable[tuple[int, str]], applicable: Sequence[LayerRule]) -> list[str]:
+    """One problem string per import in *targets* that a rule in *applicable* forbids for the file *rel*."""
+    out: list[str] = []
+    for i, target in targets:
+        for rule in applicable:
+            if rel in rule.allow_files:
+                continue
+            for forbidden in rule.forbidden:
+                if fnmatch.fnmatch(target, forbidden):
+                    tag = "ADVISORY " if rule.advisory else ""
+                    because = f" ({rule.reason})" if rule.reason else ""
+                    out.append(f"{tag}{rel}:{i}: imports {target} - {rule.from_glob} must not depend " f"on {forbidden}{because}.")
+                    break
+    return out
+
+
 def find_layering_violations(
     repo_root: Path,
     rules: Iterable[LayerRule],
     *,
     package_roots: "dict[str, str] | None" = None,
     source_suffixes: Sequence[str] = _SOURCE_SUFFIXES,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """Return one problem string per import that crosses a declared layer boundary.
 
@@ -238,24 +256,17 @@ def find_layering_violations(
         try:
             targets = list(_python_targets(path, repo_root, package_roots) if path.suffix == ".py" else _text_targets(path, repo_root, package_roots))
         except SourceError as exc:
+            if allow_unparsed:
+                continue
             problems.append(
                 f"{rel}:{(exc.line if exc.line is not None else 1)}: cannot be {'parsed' if exc.kind == 'unparsable' else 'read'}, so its imports were not checked: {exc.message}"
             )
             continue
-        for i, target in targets:
-            for rule in applicable:
-                if rel in rule.allow_files:
-                    continue
-                for forbidden in rule.forbidden:
-                    if fnmatch.fnmatch(target, forbidden):
-                        tag = "ADVISORY " if rule.advisory else ""
-                        because = f" ({rule.reason})" if rule.reason else ""
-                        problems.append(f"{tag}{rel}:{i}: imports {target} - {rule.from_glob} must not depend " f"on {forbidden}{because}.")
-                        break
-    if rules and examined == 0:
+        problems.extend(_rule_problems(rel, targets, applicable))
+    if rules and examined < min_files:
         problems.append(
             f"no source file under {repo_root} matched any rule's from_glob "
-            f"({[r.from_glob for r in rules]}) - this check examined nothing, which reads as a pass."
+            f"({[r.from_glob for r in rules]}) - this check examined nothing ({examined} file(s) matched, need {min_files}), which reads as a pass."
         )
     return problems
 
@@ -265,11 +276,13 @@ def assert_layering(
     rules: Iterable[LayerRule],
     *,
     package_roots: "dict[str, str] | None" = None,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on any non-advisory layering violation; print advisory ones."""
     import pytest
 
-    problems = find_layering_violations(repo_root, rules, package_roots=package_roots)
+    problems = find_layering_violations(repo_root, rules, package_roots=package_roots, min_files=min_files, allow_unparsed=allow_unparsed)
     blocking = [p for p in problems if not p.startswith("ADVISORY ")]
     for p in problems:
         if p.startswith("ADVISORY "):

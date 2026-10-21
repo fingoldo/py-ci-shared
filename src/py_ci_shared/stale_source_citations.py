@@ -314,6 +314,7 @@ def assert_no_stale_source_citations(
     exclude_parts: Iterable[str] = (),
     rules: Iterable[str] = (RULE_SELF, RULE_PAST_END, RULE_SYMBOL),
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -322,6 +323,8 @@ def assert_no_stale_source_citations(
     """Fail on a stale citation not accepted by *baseline_path*. Missing baseline fails; refresh with ``REFRESH_FLAG``
     or ``PY_CI_SHARED_REFRESH=stale-source-citations``."""
     findings, scan = find_stale_source_citations(root, exclude_parts=exclude_parts, rules=rules, use_git=use_git, extra_globs=extra_globs)
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,

@@ -145,12 +145,14 @@ def find_discarded_model_copies(files: Iterable[Path], repo_root: Path) -> list[
     return _find_in_scan(scan_python([Path(p) for p in files], root=Path(repo_root)))
 
 
-def assert_no_discarded_model_copy(files: Iterable[Path], repo_root: Path, allowed: Mapping[str, str], min_files: int = 1) -> None:
+def assert_no_discarded_model_copy(
+    files: Iterable[Path], repo_root: Path, allowed: Mapping[str, str], min_files: int = 1, allow_unparsed: bool = False
+) -> None:
     """Fail on a discarded ``model_copy(update=...)`` outside ``allowed`` (``"path::function"`` -> reason; ``path`` is
     relative to *repo_root*, ``function`` qualified as in the finding); stale, unreasoned or bare-name entries fail too,
     as do unparsable files and fewer than *min_files* parsed files."""
     scan = scan_python([Path(p) for p in files], root=Path(repo_root), min_files=min_files)
-    scan.check_floor()
+    scan.assert_ok(allow_unparsed=allow_unparsed)
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:
         raise AssertionError(f"allowed entries need a reason: {empty}")

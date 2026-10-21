@@ -277,6 +277,7 @@ def assert_no_pickle_state_gaps(
     baseline_path: Optional[Union[str, Path]] = None,
     exclude_parts: Iterable[str] = _DEFAULT_EXCLUDE,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -284,6 +285,8 @@ def assert_no_pickle_state_gaps(
     """Fail on a static finding not accepted by *baseline_path*. Missing baseline fails; refresh with ``REFRESH_FLAG``
     or ``PY_CI_SHARED_REFRESH=pickle-state``."""
     findings, scan = find_pickle_state_gaps(root, exclude_parts=exclude_parts, use_git=use_git)
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,

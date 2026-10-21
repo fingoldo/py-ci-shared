@@ -208,6 +208,7 @@ def assert_atomic_write_staging(
     exclude_parts: Iterable[str] = _DEFAULT_EXCLUDE,
     rules: Iterable[str] = (RULE_NPSAVE, RULE_REWRITE),
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -215,6 +216,8 @@ def assert_atomic_write_staging(
     """Fail on a finding not accepted by *baseline_path*. Missing baseline fails; refresh with ``REFRESH_FLAG`` or
     ``PY_CI_SHARED_REFRESH=atomic-write-staging``."""
     findings, scan = find_atomic_write_staging(root, exclude_parts=exclude_parts, rules=rules, use_git=use_git)
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,

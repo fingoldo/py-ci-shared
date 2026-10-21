@@ -90,6 +90,7 @@ def assert_functions_do_not_grow(
     *,
     limit: int = 150,
     min_functions: int = 50,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Any = None,
     grow: Optional[bool] = None,
@@ -103,7 +104,7 @@ def assert_functions_do_not_grow(
     lengths = _lengths(scan)
     if len(lengths) < min_functions:
         pytest.fail(f"only {len(lengths)} function(s) measured; expected at least {min_functions} -- the file walk broke and this would check nothing")
-    problems: list[str] = [f"{u.rel}:{u.line}: {u.kind}, so its functions were not measured: {u.message}" for u in scan.unparsed]
+    problems: list[str] = [f"{u.rel}:{u.line}: {u.kind}, so its functions were not measured: {u.message}" for u in ([] if allow_unparsed else scan.unparsed)]
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         if problems:
             pytest.fail("cannot refresh the function-length baseline while files are unparsable:\n  " + "\n  ".join(problems))

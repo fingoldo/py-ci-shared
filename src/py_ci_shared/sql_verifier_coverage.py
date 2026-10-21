@@ -226,6 +226,7 @@ def assert_verifier_covers_statements(
     min_constants: int = 1,
     min_reason_len: int = 40,
     statement_starts: Iterable[str] = DEFAULT_STATEMENT_STARTS,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail when a SQL constant is neither listed nor excluded, a listed or excluded name is gone, or a reason is empty."""
     import pytest
@@ -236,7 +237,7 @@ def assert_verifier_covers_statements(
         pytest.fail(f"only {len(found)} SQL constant(s) found under {root}; expected at least {min_constants} -- Check the scan, it has lost its subject")
     listed, excluded = verifier_lists(verifier)
     problems: list[str] = []
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append("files that could not be read or parsed, so their SQL constants are unknown:\n    " + "\n    ".join(p.render() for p in scan.unparsed))
     missing = sorted(found - listed - set(excluded))
     if missing:

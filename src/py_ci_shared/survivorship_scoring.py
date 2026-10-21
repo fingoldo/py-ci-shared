@@ -153,6 +153,7 @@ def assert_no_survivorship_scoring(
     allowed: Mapping[str, str] | None = None,
     min_files: int = 1,
     metric_names: Sequence[str] | frozenset[str] = DEFAULT_METRIC_NAMES,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a metric scored only where the prediction was finite.
 
@@ -165,7 +166,8 @@ def assert_no_survivorship_scoring(
         scan.check_floor()
     except AssertionError as exc:
         raise AssertionError(f"the scan lost its subject: {exc}") from exc
-    scan.check_unparsed()
+    if not allow_unparsed:
+        scan.check_unparsed()
     allowed = dict(allowed or {})
     empty = sorted(k for k, v in allowed.items() if not str(v).strip())
     if empty:

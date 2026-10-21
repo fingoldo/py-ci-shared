@@ -188,6 +188,7 @@ def assert_markers_are_fatal(
     extra_markers: Iterable[str] = (),
     min_markers: int = 1,
     glob: str = "*.py",
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail unless every emitted marker is fatal per ``is_fatal`` or listed in ``non_fatal`` with a reason.
 
@@ -207,7 +208,7 @@ def assert_markers_are_fatal(
     wrongly_listed = [n for n in non_fatal if "{" not in n and is_fatal(probe(n))]
     stale = sorted(set(non_fatal) - set(markers))
     messages = []
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         messages.append("files that could not be read or parsed, so their markers are unknown:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
     if found_count < min_markers:
         messages.append(

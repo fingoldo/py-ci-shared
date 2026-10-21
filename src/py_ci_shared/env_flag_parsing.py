@@ -139,7 +139,12 @@ def find_hand_parsed_env_flags(files: Iterable[Path], repo_root: Path, prefixes:
 
 
 def assert_env_flags_use_one_parser(
-    files: Iterable[Path], repo_root: Path, prefixes: Sequence[str], allowed: Mapping[str, str] | None = None, min_files: int = 1
+    files: Iterable[Path],
+    repo_root: Path,
+    prefixes: Sequence[str],
+    allowed: Mapping[str, str] | None = None,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a boolean env flag parsed by hand, and on any file that could not be read or parsed.
 
@@ -158,7 +163,7 @@ def assert_env_flags_use_one_parser(
     bad = [r for r in reads if r.var not in allowed]
     stale = sorted(set(allowed) - {r.var for r in reads})
     msgs = []
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         msgs.append("files that could not be read or parsed, so their env reads were not checked: " + "; ".join(u.render() for u in scan.unparsed))
     if bad:
         msgs.append(

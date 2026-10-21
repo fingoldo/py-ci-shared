@@ -390,7 +390,7 @@ def find_unresolved_from_imports(
     return _unresolved(scan_roots, index, tuple(resolvable_prefixes))[0]
 
 
-def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple[str, ...]") -> "tuple[list[str], int]":
+def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple[str, ...]", allow_unparsed: bool = False) -> "tuple[list[str], int]":
     """``(problems, parsed file count)`` for :func:`find_unresolved_from_imports`."""
     problems: list[str] = []
     parsed_count = 0
@@ -401,6 +401,8 @@ def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple
             try:
                 _, tree = parse_source(path)
             except SourceError as exc:
+                if allow_unparsed:
+                    continue
                 seen_unparsed.add(str(path.resolve()))
                 problems.append(f"{path.as_posix()}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message}")
                 continue
@@ -413,7 +415,7 @@ def _unresolved(scan_roots: Sequence[Path], index: ModuleIndex, prefixes: "tuple
                     if problem:
                         problems.append(problem)
     for path, detail in index.unparsed:
-        if str(path.resolve()) not in seen_unparsed:
+        if not allow_unparsed and str(path.resolve()) not in seen_unparsed:
             problems.append(f"{path.as_posix()}:{detail}")
     return problems, parsed_count
 
@@ -501,6 +503,7 @@ def assert_all_from_imports_resolve(
     resolvable_prefixes: Iterable[str],
     allowlist: Iterable[str] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on any `from X import Y` naming something X does not define, on a file that cannot be parsed, and on fewer
     than ``min_files`` parsed files under ``scan_roots`` (a scan that lost its subject).
@@ -511,7 +514,7 @@ def assert_all_from_imports_resolve(
     import pytest
 
     index = ModuleIndex(package_roots, package_roots)
-    found, parsed_count = _unresolved(scan_roots, index, tuple(resolvable_prefixes))
+    found, parsed_count = _unresolved(scan_roots, index, tuple(resolvable_prefixes), allow_unparsed=allow_unparsed)
     problems = [p for p in found if not any(a in p for a in allowlist)]
     if parsed_count < min_files:
         pytest.fail(f"only {parsed_count} file(s) parsed under {[str(r) for r in scan_roots]}; expected at least {min_files}. The scan lost its subject.")

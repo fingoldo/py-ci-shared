@@ -216,6 +216,7 @@ def assert_local_copies_do_not_grow(
     signatures: Optional[Mapping[str, Iterable[str]]] = None,
     exclude_parts: Iterable[str] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -237,6 +238,9 @@ def assert_local_copies_do_not_grow(
         use_git=use_git,
         include_conftest=include_conftest,
     )
+    if allow_unparsed:
+        for scan in scans:
+            scan.unparsed = []
     enforce_findings(
         findings,
         scans,

@@ -299,6 +299,7 @@ def assert_no_xfail_to_defer(
     exclude_parts: Iterable[str] = (),
     known_gap_modules: Iterable[str] = KNOWN_GAP_MODULES,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -314,6 +315,8 @@ def assert_no_xfail_to_defer(
         known_gap_modules=known_gap_modules,
         use_git=use_git,
     )
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,
