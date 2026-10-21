@@ -880,9 +880,9 @@ Every finding in the round has a disposition in its file; the table is the round
 | **RESOLVED** | P2 | `allow_unparsed` / floor for `stale_comment_age` and `test_partition_reachability` | the contract's two baseline entries; additive switches with defaults that keep behaviour (CHANGELOG, Unreleased) |
 | **RESOLVED** | P2 | `gate_entry_contract` baseline | 7 entries to 0: 5 never-parse entries in `NEVER_PARSES`, 2 handed-in entries in `NO_CORPUS`, the rest fixed in code |
 | **RESOLVED** | P2 | `fail_open_handlers` baseline | the best-effort marker covers the silent handlers; the one kept-element handler stays a baseline entry with its reason, by design (an entry that is rejected would vanish from the scan) |
-| **RESOLVED** | P2 | `DVO-*` FALSE-POSITIVE and INTENTIONAL dispositions | not defects; each has its reason in `audits/2026-10-21/dvo_group_*.md` |
+| **WON'T FIX** | P2 | `DVO-*` FALSE-POSITIVE (163) and INTENTIONAL (17) dispositions | not defects; each has its reason in `audits/2026-10-21/dvo_group_*.md` |
 | **WON'T FIX** | Low | `retrofit` NOT RETROFITTED entries | file names, bytes or runtime checks with no parse step, so `allow_unparsed` has no meaning there (see `audits/2026-10-21/retrofit_group_*.md`) |
 | **RESOLVED** | P1 | `MUT-1` (`sub14_bounded_output.md`) | bounded worker output; fixed, verdicts unchanged |
-| **RESOLVED** | P2 | `WALL-*` (`wallclock_and_failopen.md`) | 19 wallclock and fail-open findings, all fixed in the file's own disposition |
+| **RESOLVED** | P2 | `WALL-*`, 1 of 19 (`wallclock_and_failopen.md`) | the one FIXED finding; the other 18 are KEPT with reasons (WON'T FIX) |
 | **OPEN** | P2 | `wallclock_test_waits` baseline | 15 accepted entries, all test-fixture text the gate itself writes; not yet rewritten, see the next round |
 | **OPEN** | P2 | `pins` CI job | adoption matrix reports releases behind for three gates; cause not yet established |
