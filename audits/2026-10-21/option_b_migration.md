@@ -33,4 +33,8 @@ on py-ci-shared only lazily and only in dev; py-ci-shared imports nothing from p
 
 ## Status
 
-Stage 1 not started in code. The helper set in stage 1 is the first thing to read before moving it.
+- Stage 1 done and committed: `py_ci_shared.deferred_entries` (e969912), pyutilz wrapper (e289f87, in pyutilz). The
+  pyutilz pin moves to the py-ci-shared commit that carries `deferred_entries`, and that commit is not yet pushed:
+  origin's CI for 6da2436 has been queued for hours. Counts over six trees are unchanged by the move.
+- Stage 2 not started. `registry` runs scanners in a process pool and requires picklable functions, so a move
+  changes module paths that the parallel path depends on; it needs its own run of `run_all_checked` before and after.
