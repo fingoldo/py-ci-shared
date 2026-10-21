@@ -882,6 +882,9 @@ class TestWarmRunnerState:
             def poll(self):
                 return None
 
+            def wait(self, _timeout=None):
+                return 0
+
             class stdin:  # noqa: N801 - stands in for Popen.stdin
                 @staticmethod
                 def write(_):
@@ -891,11 +894,15 @@ class TestWarmRunnerState:
                 def flush():
                     return None
 
+                @staticmethod
+                def close():
+                    return None
+
             class stdout:  # noqa: N801 - stands in for Popen.stdout
                 lines: ClassVar[list[str]] = ['{"id": 0, "rc": 999}\n', "garbage\n", '{"id": 1, "rc": 1, "failed": "t.py", "crash": true}\n']
 
                 @classmethod
-                def readline(cls):
+                def readline(cls, _size=-1):
                     return cls.lines.pop(0) if cls.lines else ""
 
         runner.process = Fake()

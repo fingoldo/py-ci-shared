@@ -438,6 +438,9 @@ class TestTheWorkerProtocolSurvivesTestOutput:
             def poll(self):
                 return None
 
+            def wait(self, _timeout=None):
+                return 0
+
             class stdin:  # noqa: N801 - stands in for Popen.stdin, so it must carry that name
                 @staticmethod
                 def write(_):
@@ -447,11 +450,15 @@ class TestTheWorkerProtocolSurvivesTestOutput:
                 def flush():
                     return None
 
+                @staticmethod
+                def close():
+                    return None
+
             class stdout:  # noqa: N801 - stands in for Popen.stdout, so it must carry that name
                 lines: ClassVar[list[str]] = ['"a bare json string"' + chr(10), '{"rc": 999}' + chr(10)]
 
                 @classmethod
-                def readline(cls):
+                def readline(cls, _size=-1):
                     return cls.lines.pop(0) if cls.lines else ""
 
         runner.process = _Fake()
