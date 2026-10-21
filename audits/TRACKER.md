@@ -867,3 +867,22 @@ Details and measurements: `audits/2026-10-21/meta_test_profile.md`.
 | **RESOLVED** | P1 | `PROF-1` | gate_cache stat walk: os.scandir instead of os.walk and stat; the self-gate run 1365 s to 595 s under cProfile (2a7b663) |
 | **RESOLVED** | Low | `PROF-2` | config._inside_root: the repository root is resolved once per corpus entry instead of once per path; the symlink containment check is unchanged |
 | **RESOLVED** | P2 | `PROF-3` | every gate walked the tree again: the tree digest is computed once per process and root (gate_cache.tree_digest, forget_tree_digests); a conftest fixture forgets it around every test except the self-gate module (16befa3) |
+
+### Round 2026-10-21 -- all round files, dispositions
+
+Every finding in the round has a disposition in its file; the table is the round's status by file.
+
+| Disposition | Sev | Finding | Note |
+|---|---|---|---|
+| **RESOLVED** | P2 | `DVO-52`..`DVO-54` | empty `python_files` replaced by the default: pytest collects no files for an empty value (settled by running it), fixed in `_mutation_fingerprint.py`, pinned by `tests/test_mutation_fingerprint_python_files.py` |
+| **RESOLVED** | Low | `DVO-87`, `DVO-88` | `stale_comment_age` widened an explicit empty `scan_dirs`; fixed at `stale_comment_age.py` (`scan_dirs is not None`) |
+| **RESOLVED** | P2 | `DVO-134` | an empty exclusion reason was replaced by its unparsed AST; fixed in `sql_verifier_coverage.py` |
+| **RESOLVED** | P2 | `allow_unparsed` / floor for `stale_comment_age` and `test_partition_reachability` | the contract's two baseline entries; additive switches with defaults that keep behaviour (CHANGELOG, Unreleased) |
+| **RESOLVED** | P2 | `gate_entry_contract` baseline | 7 entries to 0: 5 never-parse entries in `NEVER_PARSES`, 2 handed-in entries in `NO_CORPUS`, the rest fixed in code |
+| **RESOLVED** | P2 | `fail_open_handlers` baseline | the best-effort marker covers the silent handlers; the one kept-element handler stays a baseline entry with its reason, by design (an entry that is rejected would vanish from the scan) |
+| **RESOLVED** | P2 | `DVO-*` FALSE-POSITIVE and INTENTIONAL dispositions | not defects; each has its reason in `audits/2026-10-21/dvo_group_*.md` |
+| **WON'T FIX** | Low | `retrofit` NOT RETROFITTED entries | file names, bytes or runtime checks with no parse step, so `allow_unparsed` has no meaning there (see `audits/2026-10-21/retrofit_group_*.md`) |
+| **RESOLVED** | P1 | `MUT-1` (`sub14_bounded_output.md`) | bounded worker output; fixed, verdicts unchanged |
+| **RESOLVED** | P2 | `WALL-*` (`wallclock_and_failopen.md`) | 19 wallclock and fail-open findings, all fixed in the file's own disposition |
+| **OPEN** | P2 | `wallclock_test_waits` baseline | 15 accepted entries, all test-fixture text the gate itself writes; not yet rewritten, see the next round |
+| **OPEN** | P2 | `pins` CI job | adoption matrix reports releases behind for three gates; cause not yet established |
