@@ -315,6 +315,21 @@ def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed
     return {key: name for key, name in definitions.items() if name not in referenced}
 
 
+def _walk_problems(scan: Any, allow_unparsed: bool) -> list[str]:
+    """The floor, then (unless *allow_unparsed*) the unparsable files, as problem strings for a walk that must not run."""
+    problems: list[str] = []
+    try:
+        scan.check_floor()
+    except AssertionError as exc:
+        problems.append(str(exc))
+    if not allow_unparsed:
+        try:
+            scan.check_unparsed()
+        except UnparsedFilesError as exc:
+            problems.append(str(exc))
+    return problems
+
+
 def assert_no_new_uncalled_function(
     files: Iterable[Path],
     root: Path,
@@ -324,6 +339,7 @@ def assert_no_new_uncalled_function(
     exempt: Optional[Mapping[str, Exemption]] = None,
     public_api_from_exports: bool = False,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
 ) -> None:
@@ -348,15 +364,7 @@ def assert_no_new_uncalled_function(
 
     paths = [Path(p) for p in files]
     scan = scan_python(paths, min_files=min_files, root=root)
-    problems: list[str] = []
-    try:
-        scan.check_floor()
-    except AssertionError as exc:
-        problems.append(str(exc))
-    try:
-        scan.check_unparsed()
-    except UnparsedFilesError as exc:
-        problems.append(str(exc))
+    problems = _walk_problems(scan, allow_unparsed)
     if problems:  # never write or compare a baseline from a broken walk
         pytest.fail("\n".join(problems), pytrace=False)
 

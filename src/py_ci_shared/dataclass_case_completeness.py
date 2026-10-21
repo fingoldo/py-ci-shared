@@ -112,6 +112,7 @@ def assert_every_dataclass_has_a_case(
     name_pattern: str = r".*",
     exempt: Mapping[str, str] = {},
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail unless every matching dataclass is in ``covered`` or in ``exempt`` with a reason.
 
@@ -126,7 +127,7 @@ def assert_every_dataclass_has_a_case(
         scan.check_floor()
     except AssertionError as exc:
         messages.append(str(exc))
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         messages.append("these files could not be parsed, so their dataclasses were not checked: " + "; ".join(p.render() for p in scan.unparsed))
     entries = list(covered) + list(exempt)
     missing, ambiguous, used = _match_sites(_sites(scan, name_pattern), entries)

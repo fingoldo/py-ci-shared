@@ -73,7 +73,9 @@ def python_colon_cast_binds(source: str, tree: "ast.Module | None" = None) -> li
     return sorted(out)
 
 
-def find_colon_cast_binds(repo_root: Path, roots: Iterable[str], *, suffixes: Iterable[str] = (".py",)) -> "tuple[list[str], int]":
+def find_colon_cast_binds(
+    repo_root: Path, roots: Iterable[str], *, suffixes: Iterable[str] = (".py",), allow_unparsed: bool = False
+) -> "tuple[list[str], int]":
     """(``path:line: match`` problems, number of files scanned) under the given roots. A missing root and a ``.py``
     file that cannot be parsed are problems too; neither counts as scanned."""
     patterns = tuple(f"*{s}" for s in suffixes)
@@ -95,18 +97,21 @@ def find_colon_cast_binds(repo_root: Path, roots: Iterable[str], *, suffixes: It
                 else:
                     found = colon_cast_binds(read_source(path))
             except SourceError as exc:
-                problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message} - not checked")
+                if not allow_unparsed:
+                    problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: {exc.kind}: {exc.message} - not checked")
                 continue
             scanned += 1
             problems.extend(f"{rel}:{number}: {match}" for number, match in found)
     return problems, scanned
 
 
-def assert_no_colon_cast_binds(repo_root: Path, roots: Iterable[str], *, min_files: int = 1, suffixes: Iterable[str] = (".py",)) -> None:
+def assert_no_colon_cast_binds(
+    repo_root: Path, roots: Iterable[str], *, min_files: int = 1, suffixes: Iterable[str] = (".py",), allow_unparsed: bool = False
+) -> None:
     """Fail on any ``:name::type``, and when fewer than *min_files* were scanned (the scan lost its subject)."""
     import pytest
 
-    problems, scanned = find_colon_cast_binds(repo_root, roots, suffixes=suffixes)
+    problems, scanned = find_colon_cast_binds(repo_root, roots, suffixes=suffixes, allow_unparsed=allow_unparsed)
     if scanned < min_files:
         pytest.fail(f"only {scanned} file(s) scanned under {list(roots)}; expected at least {min_files} -- the scan lost its subject")
     if problems:

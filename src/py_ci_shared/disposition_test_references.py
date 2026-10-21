@@ -150,7 +150,14 @@ def _name_reference_problems(where: str, para: str, all_names: set[str], tests_d
     return problems
 
 
-def find_missing_test_references(audit_files: Iterable[Path], project_root: Path, *, tests_dir: str = "tests", other_roots: Iterable[Path] = ()) -> list[str]:
+def find_missing_test_references(
+    audit_files: Iterable[Path],
+    project_root: Path,
+    *,
+    tests_dir: str = "tests",
+    other_roots: Iterable[Path] = (),
+    allow_unparsed: bool = False,
+) -> list[str]:
     """``<file>: <reference>: <why>`` for every named test that is not there.
 
     *other_roots* are sibling projects a disposition may cite: their test files resolve a
@@ -167,7 +174,8 @@ def find_missing_test_references(audit_files: Iterable[Path], project_root: Path
         try:
             defined = _definitions(f)
         except SourceError as exc:
-            problems.add(f"{f.name}: cannot be parsed, so the tests it defines cannot be confirmed ({exc.message})")
+            if not allow_unparsed:
+                problems.add(f"{f.name}: cannot be parsed, so the tests it defines cannot be confirmed ({exc.message})")
             continue
         all_names |= defined.names
         for cls, members in defined.members.items():
@@ -187,6 +195,7 @@ def assert_disposition_tests_exist(
     min_files: int = 1,
     tests_dir: str = "tests",
     other_roots: Iterable[Path] = (),
+    allow_unparsed: bool = False,
 ) -> None:
     """Shrink-only: a missing reference not in *known* fails, and so does a *known* one that resolves again."""
     known = list(known)  # consumed on more than one path below; a generator would be empty the second time
@@ -195,7 +204,7 @@ def assert_disposition_tests_exist(
     files = list(audit_files)
     if len(files) < min_files:
         pytest.fail(f"only {len(files)} audit file(s) given; expected at least {min_files} -- this would check nothing")
-    found = set(find_missing_test_references(files, project_root, tests_dir=tests_dir, other_roots=other_roots))
+    found = set(find_missing_test_references(files, project_root, tests_dir=tests_dir, other_roots=other_roots, allow_unparsed=allow_unparsed))
     new, stale = sorted(found - set(known)), sorted(set(known) - found)
     if new or stale:
         pytest.fail(

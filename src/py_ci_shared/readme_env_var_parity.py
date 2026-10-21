@@ -292,7 +292,7 @@ def find_readme_documented_vars(readme_path: Path, heading: str = DEFAULT_HEADIN
     return names
 
 
-def _read_vars_or_fail(files: Iterable[Path], min_files: int, reader_funcs: Iterable[str] = ()) -> set[str]:
+def _read_vars_or_fail(files: Iterable[Path], min_files: int, reader_funcs: Iterable[str] = (), allow_unparsed: bool = False) -> set[str]:
     import pytest
 
     scan = _scan(files, min_files)
@@ -301,10 +301,11 @@ def _read_vars_or_fail(files: Iterable[Path], min_files: int, reader_funcs: Iter
         scan.check_floor()
     except AssertionError as exc:
         problems.append(str(exc))
-    try:
-        scan.check_unparsed()
-    except AssertionError as exc:
-        problems.append(str(exc))
+    if not allow_unparsed:
+        try:
+            scan.check_unparsed()
+        except AssertionError as exc:
+            problems.append(str(exc))
     if problems:
         pytest.fail("\n".join(problems), pytrace=False)
     return _vars_in(scan, reader_funcs)
@@ -318,6 +319,7 @@ def assert_readme_documents_every_env_var(
     *,
     min_files: int = 1,
     reader_funcs: Iterable[str] = (),
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail if any env var read by production code (``files``) isn't
     documented in ``readme_path``'s table. ``third_party_vars`` excludes
@@ -329,7 +331,7 @@ def assert_readme_documents_every_env_var(
     """
     import pytest
 
-    read_vars = _read_vars_or_fail(files, min_files, reader_funcs) - third_party_vars
+    read_vars = _read_vars_or_fail(files, min_files, reader_funcs, allow_unparsed) - third_party_vars
     documented = find_readme_documented_vars(readme_path, heading)
     undocumented = sorted(read_vars - documented)
     if undocumented:
@@ -346,6 +348,7 @@ def assert_no_new_undocumented_env_vars(
     request: Any = None,
     min_files: int = 1,
     reader_funcs: Iterable[str] = (),
+    allow_unparsed: bool = False,
 ) -> None:
     """Baseline/grandfather variant of ``assert_readme_documents_every_env_var``,
     for a repo adopting this check with pre-existing undocumented-var debt.
@@ -364,7 +367,7 @@ def assert_no_new_undocumented_env_vars(
     separate, deliberate improvement, not something this check demands
     up front).
     """
-    read_vars = _read_vars_or_fail(files, min_files, reader_funcs) - third_party_vars
+    read_vars = _read_vars_or_fail(files, min_files, reader_funcs, allow_unparsed) - third_party_vars
     try:
         documented = find_readme_documented_vars(readme_path, heading)
     except ValueError:

@@ -234,7 +234,7 @@ def find_identity_comparisons(files: Iterable[Path], *, root: "Path | None" = No
     return _find(scan_python(paths), base, names, root)
 
 
-def assert_no_identity_comparisons(files: Iterable[Path], *, root: "Path | None" = None, min_files: int = 1) -> None:
+def assert_no_identity_comparisons(files: Iterable[Path], *, root: "Path | None" = None, min_files: int = 1, allow_unparsed: bool = False) -> None:
     """Fail on an identity comparison against a string constant, on a file that cannot be parsed, and when fewer than
     *min_files* files parsed."""
     import pytest
@@ -243,7 +243,9 @@ def assert_no_identity_comparisons(files: Iterable[Path], *, root: "Path | None"
     scan = scan_python(paths, min_files=min_files)
     if scan.parsed_count < min_files:
         pytest.fail(f"only {scan.parsed_count} file(s) scanned; expected at least {min_files} -- this would check nothing")
-    problems = [f"{relative_posix(u.path, root) if root else u.path.as_posix()}:{u.line}: {u.kind}: {u.message}" for u in scan.unparsed]
+    problems = [
+        f"{relative_posix(u.path, root) if root else u.path.as_posix()}:{u.line}: {u.kind}: {u.message}" for u in ([] if allow_unparsed else scan.unparsed)
+    ]
     problems += _find(scan, root if root is not None else _common_root(paths), None, root)
     if problems:
         pytest.fail(f"{len(problems)} identity comparison(s) against a string constant, or unparsable file(s):\n  " + "\n  ".join(problems))

@@ -238,6 +238,8 @@ def find_edge_function_problems(
     functions_dir: Path,
     *,
     public_functions: Iterable[str] = (),
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """Return one problem string per edge-function hygiene violation.
 
@@ -256,6 +258,8 @@ def find_edge_function_problems(
         return [f"{functions_dir}: {exc} - this check examined nothing."]
     if not files:
         return [f"{functions_dir}: no function sources found - this check examined nothing."]
+    if len(files) < min_files:
+        return [f"{functions_dir}: {len(files)} function source(s) found, expected at least {min_files} - this check examined nothing."]
 
     groups: dict[str, list[tuple[str, str]]] = {}
     for path in files:
@@ -263,7 +267,8 @@ def find_edge_function_problems(
         try:
             source = read_source(path)
         except SourceReadError as exc:
-            problems.append(f"{rel}: unreadable, so it was not checked: {exc.message}")
+            if not allow_unparsed:
+                problems.append(f"{rel}: unreadable, so it was not checked: {exc.message}")
             continue
         groups.setdefault(_function_name(path, functions_dir), []).append((rel, source))
         problems.extend(_file_problems(rel, source))
@@ -275,10 +280,12 @@ def assert_edge_functions_are_sound(
     functions_dir: Path,
     *,
     public_functions: Iterable[str] = (),
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on any edge-function hygiene violation."""
     import pytest
 
-    problems = find_edge_function_problems(functions_dir, public_functions=public_functions)
+    problems = find_edge_function_problems(functions_dir, public_functions=public_functions, min_files=min_files, allow_unparsed=allow_unparsed)
     if problems:
         pytest.fail(f"{len(problems)} edge-function problem(s):\n  " + "\n  ".join(problems))

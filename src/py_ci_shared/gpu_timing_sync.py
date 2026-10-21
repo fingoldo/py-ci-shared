@@ -328,7 +328,9 @@ def find_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] 
     return _scan(files, root)[0]
 
 
-def assert_no_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[Path] = None, allowlist: frozenset = frozenset(), *, min_files: int = 1) -> None:
+def assert_no_unsynchronized_gpu_timings(
+    files: Iterable[Path], root: Optional[Path] = None, allowlist: frozenset = frozenset(), *, min_files: int = 1, allow_unparsed: bool = False
+) -> None:
     """Fail the calling pytest run on any unsynchronized GPU timing outside ``allowlist``, on any file that could not be
     parsed, and when fewer than *min_files* files parsed.
 
@@ -345,7 +347,7 @@ def assert_no_unsynchronized_gpu_timings(files: Iterable[Path], root: Optional[P
         scan.check_floor()
     except AssertionError as exc:
         problems.append(str(exc))
-    if scan.unparsed:
+    if scan.unparsed and not allow_unparsed:
         problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n" + "\n".join(f"  {u.render()}" for u in scan.unparsed))
     findings = [f for f in found if f.key not in allowlist]
     if findings:

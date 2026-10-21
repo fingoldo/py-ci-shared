@@ -288,6 +288,7 @@ def assert_no_swallowed_exceptions(
     exclude_parts: Iterable[str] = _DEFAULT_EXCLUDE,
     quiet_log_is_silent: bool = False,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -297,6 +298,8 @@ def assert_no_swallowed_exceptions(
     A missing baseline fails; refresh with ``REFRESH_FLAG`` or ``PY_CI_SHARED_REFRESH=swallowed-exceptions``.
     """
     findings, scan = find_swallowed_exceptions(root, exclude_parts=exclude_parts, quiet_log_is_silent=quiet_log_is_silent, use_git=use_git)
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,

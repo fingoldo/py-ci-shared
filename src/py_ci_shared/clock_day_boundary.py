@@ -187,6 +187,7 @@ def assert_no_clock_day_boundary(
     baseline_path: Optional[Union[str, Path]] = None,
     exclude_parts: Iterable[str] = (),
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
     use_git: Optional[bool] = None,
@@ -194,6 +195,8 @@ def assert_no_clock_day_boundary(
     """Fail on a finding not accepted by *baseline_path*. Missing baseline fails; refresh with ``REFRESH_FLAG`` or
     ``PY_CI_SHARED_REFRESH=clock-day-boundary``."""
     findings, scan = find_clock_day_boundary(tests_root, exclude_parts=exclude_parts, use_git=use_git)
+    if allow_unparsed:
+        scan.unparsed = []
     enforce_findings(
         findings,
         scan,

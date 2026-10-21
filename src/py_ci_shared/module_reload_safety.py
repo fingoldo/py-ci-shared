@@ -314,7 +314,12 @@ def _site_is_paired(node: ast.AST, ctx: _FileContext) -> bool:
 
 
 def find_unpaired_reloads(
-    tests_dir: Path, *, stub_only_files: Iterable[str] = (), singleton_modules: Iterable[str] = (), min_files: int = 0
+    tests_dir: Path,
+    *,
+    stub_only_files: Iterable[str] = (),
+    singleton_modules: Iterable[str] = (),
+    min_files: int = 0,
+    allow_unparsed: bool = False,
 ) -> list[ReloadSite]:
     """Reload sites under *tests_dir* with no restore reachable from their own scope (paths relative to it).
 
@@ -333,7 +338,7 @@ def find_unpaired_reloads(
     parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree)) for f in scan}
     conftests = _conftest_fixtures(tests_dir, parsed_by_path)
     root = tests_dir.resolve()
-    out: list[ReloadSite] = [_unparsed_site(p) for p in scan.unparsed if p.rel not in exempt]
+    out: list[ReloadSite] = [_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed) if p.rel not in exempt]
     for parsed in scan:
         rel = parsed.rel
         if rel in exempt:
@@ -365,14 +370,16 @@ def find_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Ite
     return _reloads_in_code(roots, repo_root, allowed=allowed)[0]
 
 
-def _reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = ()) -> "tuple[list[ReloadSite], int]":
+def _reloads_in_code(
+    roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = (), allow_unparsed: bool = False
+) -> "tuple[list[ReloadSite], int]":
     """``(sites, parsed file count)`` for :func:`find_reloads_in_code`."""
     ok = set(allowed)
     out: list[ReloadSite] = []
     parsed_count = 0
     for root in roots:
         scan = scan_python(Path(root), min_files=0, root=repo_root, exclude=DEFAULT_EXCLUDE)
-        out.extend(s for s in (_unparsed_site(p) for p in scan.unparsed) if (s.path, s.line) not in ok)
+        out.extend(s for s in (_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed)) if (s.path, s.line) not in ok)
         parsed_count += scan.parsed_count
         for parsed in scan:
             aliases = ImportAliases.from_tree(parsed.tree)
@@ -388,14 +395,21 @@ def _reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterabl
     return out, parsed_count
 
 
-def assert_no_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = (), min_files: int = 1) -> None:
+def assert_no_reloads_in_code(
+    roots: Iterable[Path],
+    repo_root: Path,
+    *,
+    allowed: Iterable["tuple[str, Union[int, str]]"] = (),
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+) -> None:
     """Fail on any primitive under *roots* the allowlist does not name, on an allowlist entry that names nothing, and on
     fewer than *min_files* parsed files (a scan that lost its subject)."""
     import pytest
 
     allowed = list(allowed)
     roots = list(roots)
-    unexcused, parsed_count = _reloads_in_code(roots, repo_root, allowed=())
+    unexcused, parsed_count = _reloads_in_code(roots, repo_root, allowed=(), allow_unparsed=allow_unparsed)
     present = {(s.path, s.line) for s in unexcused} | {(s.path, s.text) for s in unexcused}
     sites = [s for s in unexcused if (s.path, s.line) not in set(allowed) and (s.path, s.text) not in set(allowed)]
     stale = [entry for entry in allowed if tuple(entry) not in present]
@@ -410,7 +424,14 @@ def assert_no_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed
         pytest.fail("\n".join(problems), pytrace=False)
 
 
-def assert_no_unpaired_reloads(tests_dir: Path, *, stub_only_files: Iterable[str] = (), singleton_modules: Iterable[str] = (), min_files: int = 1) -> None:
+def assert_no_unpaired_reloads(
+    tests_dir: Path,
+    *,
+    stub_only_files: Iterable[str] = (),
+    singleton_modules: Iterable[str] = (),
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+) -> None:
     """Fail on an unpaired reload site, an unparsable test file, a stale exemption, or fewer than *min_files* parsed files."""
     import pytest
 
@@ -418,7 +439,7 @@ def assert_no_unpaired_reloads(tests_dir: Path, *, stub_only_files: Iterable[str
     stale = [rel for rel in exempt if not (tests_dir / rel).exists()]
     if stale:
         pytest.fail(f"stub-only allowlist entries that no longer exist (an exemption for nothing): {stale}")
-    sites = find_unpaired_reloads(tests_dir, stub_only_files=exempt, singleton_modules=singleton_modules, min_files=min_files)
+    sites = find_unpaired_reloads(tests_dir, stub_only_files=exempt, singleton_modules=singleton_modules, min_files=min_files, allow_unparsed=allow_unparsed)
     if sites:
         pytest.fail(
             f"{len(sites)} reload site(s) with no snapshot/restore in their own function or fixture. Restore in the same "

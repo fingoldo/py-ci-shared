@@ -371,12 +371,13 @@ def assert_no_new_floorless_loop(
     baseline_path: Path,
     *,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a floorless loop not already in *baseline_path*, on a test file that cannot be parsed, and on fewer
     than *min_files* parsed files. Ratchet, not a gate: the baseline records what was already true, and the list can
     only shrink from here."""
     accepted: dict[str, str] = load_json(baseline_path) if baseline_path.exists() else {}
-    found, parsed_count = _floorless_loops(files, repo_root)
+    found, parsed_count = _floorless_loops(files, repo_root, allow_unparsed=allow_unparsed)
     if parsed_count < min_files:
         raise AssertionError(f"only {parsed_count} test file(s) parsed; expected at least {min_files}. The scan lost its subject.")
     # Counted per function: a function may keep as many floorless loops as the baseline lists for it. That is what

@@ -82,7 +82,9 @@ def _common_root(files: list[Path]) -> Optional[Path]:
         return None
 
 
-def fail_message_problems(files: Iterable[Path], *, pattern: re.Pattern[str] = ACTIONABLE_RE, root: Optional[Path] = None) -> tuple[int, list[str]]:
+def fail_message_problems(
+    files: Iterable[Path], *, pattern: re.Pattern[str] = ACTIONABLE_RE, root: Optional[Path] = None, allow_unparsed: bool = False
+) -> tuple[int, list[str]]:
     """``(calls audited, ["path:line -> text", ...])`` for static messages the pattern does not accept.
 
     Paths are relative to *root* (default: the files' common directory). A file that cannot be parsed is itself a
@@ -92,7 +94,7 @@ def fail_message_problems(files: Iterable[Path], *, pattern: re.Pattern[str] = A
     base = root if root is not None else _common_root(paths)
     scan = scan_python([p.resolve() for p in paths], root=base.resolve() if base is not None else None)
     audited = 0
-    bad: list[str] = [f"{u.rel}:{u.line} ({u.kind}: {u.message})" for u in scan.unparsed]
+    bad: list[str] = [f"{u.rel}:{u.line} ({u.kind}: {u.message})" for u in (() if allow_unparsed else scan.unparsed)]
     for parsed in scan:
         for line, text, dynamic in _fail_calls(parsed.tree):
             audited += 1
@@ -111,6 +113,7 @@ def assert_fail_messages_actionable(
     pattern: re.Pattern[str] = ACTIONABLE_RE,
     exclude: Iterable[str] = (),
     min_audited: int = 1,
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail on a ``pytest.fail`` message under *meta_dir* with no fix verb and no placeholder, or a file that cannot
     be parsed."""
@@ -118,7 +121,7 @@ def assert_fail_messages_actionable(
 
     skip = set(exclude)
     files = sorted(p for p in meta_dir.glob("test_*.py") if p.name not in skip)
-    audited, bad = fail_message_problems(files, pattern=pattern, root=meta_dir)
+    audited, bad = fail_message_problems(files, pattern=pattern, root=meta_dir, allow_unparsed=allow_unparsed)
     if audited < min_audited:
         pytest.fail(f"only {audited} pytest.fail call(s) found under {meta_dir}; Check the collector -- it has stopped finding them")
     if bad:

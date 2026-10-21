@@ -154,6 +154,7 @@ def assert_no_new_import_time_env_mutations(
     *,
     pattern: str = "test_*.py",
     min_files: int = 1,
+    allow_unparsed: bool = False,
     refresh_flag: str = ENV_REFRESH_FLAG,
     refresh: Optional[bool] = None,
     request: Any = None,
@@ -193,7 +194,7 @@ def assert_no_new_import_time_env_mutations(
     new = sorted(current - known)
     stale = sorted(known - current)
     problems: list[str] = []
-    if unparsed:
+    if unparsed and not allow_unparsed:
         problems.append(f"{len(unparsed)} file(s) could not be parsed, so they were not checked -- Fix them:\n  " + "\n  ".join(unparsed))
     if new:
         problems.append(
@@ -396,6 +397,8 @@ def assert_imports_have_no_side_effects(
     *,
     first_party: Iterable[str] | None = None,
     tolerate_unimportable: bool = False,
+    allow_unparsed: bool = False,
+    min_targets: int = 1,
     **probe_kw,
 ) -> None:
     """Fail on a recorded side effect, a crashed probe, or (unless tolerated) a target that could not be imported.
@@ -411,8 +414,8 @@ def assert_imports_have_no_side_effects(
     import pytest
 
     names = list(targets)
-    if not names:
-        pytest.fail("no import targets given -- Add the package and the subpackages worth probing")
+    if len(names) < min_targets:
+        pytest.fail(f"only {len(names)} import target(s) given; expected at least {min_targets} -- Add the package and the subpackages worth probing")
     result = probe_import_side_effects(names, **probe_kw)
     owners = tuple(first_party) if first_party is not None else None
     chains = result.chains if len(result.chains) == len(result.violations) else [[origin] for _what, origin in result.violations]
@@ -428,12 +431,13 @@ def assert_imports_have_no_side_effects(
         problems.append("side effects at import time (Move them behind an explicit call the caller makes):\n  " + "\n  ".join(counted + result.failed))
     if result.crashed:
         problems.append("the probe itself did not finish -- Check the interpreter and timeout:\n  " + "\n  ".join(result.crashed))
-    if result.unimportable and not tolerate_unimportable:
+    tolerate = tolerate_unimportable or allow_unparsed
+    if result.unimportable and not tolerate:
         problems.append(
             "targets that could not be imported, so were not probed -- Fix the import, drop the target, or pass tolerate_unimportable=True for "
             "optional dependencies:\n  " + "\n  ".join(result.unimportable)
         )
-    if result.unimportable and tolerate_unimportable and len(result.unimportable) == len(names):
+    if result.unimportable and tolerate and len(result.unimportable) == len(names):
         problems.append("every target was unimportable, so nothing was probed -- Check the environment:\n  " + "\n  ".join(result.unimportable))
     if problems:
         pytest.fail("\n".join(problems))

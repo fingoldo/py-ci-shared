@@ -131,6 +131,7 @@ def assert_released_on_every_path(
     repo_root: Path,
     min_subjects: int = 1,
     ignore: Iterable[Path] = (),
+    allow_unparsed: bool = False,
 ) -> None:
     """Fail when a module releases its own resource only on the success path, or when a file cannot be parsed.
 
@@ -144,7 +145,9 @@ def assert_released_on_every_path(
     scan = scan_python([Path(p) for p in files if Path(p).resolve() not in ignored], root=repo_root)
     applicable = [f for f in scan if creates_resource(f.tree, wanted)]
 
-    problems: list[str] = [f"{p.rel}:{p.line}: {p.kind}: {p.message} - whether it releases what it constructs was not checked" for p in scan.unparsed]
+    problems: list[str] = [
+        f"{p.rel}:{p.line}: {p.kind}: {p.message} - whether it releases what it constructs was not checked" for p in (() if allow_unparsed else scan.unparsed)
+    ]
     if len(applicable) < min_subjects:
         problems.append(
             f"only {len(applicable)} module(s) construct {sorted(wanted)} -- expected at "

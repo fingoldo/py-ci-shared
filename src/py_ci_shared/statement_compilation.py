@@ -159,6 +159,7 @@ def find_mocked_statement_constructors(
     module_prefixes: Optional[Iterable[str]] = None,
     excluded_prefixes: Iterable[str] = DEFAULT_EXCLUDED_PREFIXES,
     min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """``path:line: patches <name>`` for every patch of a statement constructor in *test_files*.
 
@@ -167,7 +168,7 @@ def find_mocked_statement_constructors(
     read or parsed is reported, and so is a corpus where fewer than *min_files* files parsed.
     """
     scan = _scan(test_files, root, min_files)
-    problems = [f"{p.rel}:{p.line}: {p.kind}: {p.message} - not checked" for p in scan.unparsed]
+    problems = [f"{p.rel}:{p.line}: {p.kind}: {p.message} - not checked" for p in (() if allow_unparsed else scan.unparsed)]
     try:
         scan.check_floor()
     except AssertionError as exc:
@@ -195,12 +196,12 @@ def find_mocked_statement_constructors(
     return problems
 
 
-def assert_no_mocked_statement_constructors(test_files: Iterable[Path], root: Path, **kwargs: Any) -> None:
+def assert_no_mocked_statement_constructors(test_files: Iterable[Path], root: Path, *, min_files: int = 1, allow_unparsed: bool = False, **kwargs: Any) -> None:
     """Fail on any test that replaces a statement constructor with a mock (and on unparsable files or an empty
     corpus; see :func:`find_mocked_statement_constructors`)."""
     import pytest
 
-    problems = find_mocked_statement_constructors(test_files, root, **kwargs)
+    problems = find_mocked_statement_constructors(test_files, root, min_files=min_files, allow_unparsed=allow_unparsed, **kwargs)
     if problems:
         pytest.fail(f"{len(problems)} test(s) mock away the statement they are testing:\n  " + "\n  ".join(problems))
 
