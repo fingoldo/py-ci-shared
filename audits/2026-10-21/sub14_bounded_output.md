@@ -2,9 +2,9 @@
 
 Scope: the captured output of the mutation runner's cold children (`run_with_deadline`) and of the warm worker's reply pump. Tracker finding SUB-14 said the parent's memory grew with whatever a mutant printed, until the timeout.
 
-### SUB-14 (P2) -- run_with_deadline and the warm reply pump keep the whole child output
+### MUT-1 (P2) -- run_with_deadline and the warm reply pump keep the whole child output
 
-**Disposition:** FIXED, verdicts unchanged. The fix is in the mutation harness content hash list, so the parent must refresh the baseline and bump `HARNESS_VERSION`; this change does not do either.
+**Disposition:** FIXED, verdicts unchanged. The fix is in the mutation harness content hash list, so the parent must refresh the baseline and bump `HARNESS_VERSION`; this change does not do either. This report closes the tracker row SUB-14 (the id is taken by the 2026-10-20 round).
 
 The defect: `run_with_deadline` used `communicate()`, which holds all of stdout and stderr in memory, and the warm worker's pump queued every line without a limit. A mutant that makes the suite print in a loop grew the parent until the timeout.
 
