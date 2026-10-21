@@ -365,10 +365,13 @@ def _shapes_this_file_matches(source: str) -> frozenset[str]:
     return frozenset(found)
 
 
-def _candidates(path: Path, require_issue_ref: bool) -> dict[int, tuple[str, str]]:
+def _candidates(path: Path, require_issue_ref: bool, unreadable: Optional[list[str]] = None) -> dict[int, tuple[str, str]]:
     try:
         source = read_source(path)
-    except SourceReadError:
+    except SourceReadError as exc:
+        if unreadable is not None:
+            unreadable.append(f"{path}: cannot be read as text, so its comments were not checked: {exc}")
+            return {}
         source = path.read_bytes().decode("utf-8", errors="replace")  # comment text only; a lossy decode cannot hide a marker
     file_lines = source.splitlines()
     out: dict[int, tuple[str, str]] = {}
@@ -399,7 +402,14 @@ _Dated = tuple[str, int, str, str, int]
 
 
 def _scan(
-    repo_root: Path, scan_dirs: Iterable[str], *, suffixes: Sequence[str], require_issue_ref: bool, skip_dirs: Iterable[str]
+    repo_root: Path,
+    scan_dirs: Iterable[str],
+    *,
+    suffixes: Sequence[str],
+    require_issue_ref: bool,
+    skip_dirs: Iterable[str],
+    allow_unparsed: bool = True,
+    min_files: int = 0,
 ) -> tuple[list[str], list[_Dated]]:
     """Every candidate comment with its ``git blame`` author time, plus the problems that kept a line from being dated."""
     skip_dirs = list(skip_dirs)  # consumed on more than one path below; a generator would be empty the second time
@@ -410,19 +420,22 @@ def _scan(
     if history is not None:
         return [history], []
     patterns = tuple(f"*{s}" for s in suffixes)
+    scanned = 0
     for d in scan_dirs:
         base = root / d
         if not base.is_dir():
             problems.append(f"{d}: scan directory does not exist under {root}; nothing in it was checked. Fix scan_dirs.")
             continue
         try:
-            files = iter_files(base, patterns, exclude=frozenset(skip_dirs), include_untracked=False, use_git=True)
+            files = list(iter_files(base, patterns, exclude=frozenset(skip_dirs), include_untracked=False, use_git=True))
         except CorpusError as exc:
             problems.append(f"{d}: {exc}")
             continue
+        scanned += len(files)
+        unreadable: Optional[list[str]] = None if allow_unparsed else problems
         for path in files:
             rel = path.relative_to(root).as_posix()
-            candidates = _candidates(path, require_issue_ref)
+            candidates = _candidates(path, require_issue_ref, unreadable)
             if not candidates:
                 continue
             try:
@@ -436,7 +449,15 @@ def _scan(
                     problems.append(f"{rel}:{lineno}: git blame returned no date for this line - `{text}`.")
                     continue
                 dated.append((rel, lineno, kind, text, stamp))
+    problems += _floor_problems(root, scanned, min_files)
     return problems, dated
+
+
+def _floor_problems(root: Path, scanned: int, min_files: int) -> list[str]:
+    """A scan that read fewer files than *min_files* checked nothing, so its silence proves nothing."""
+    if scanned >= min_files:
+        return []
+    return [f"only {scanned} file(s) under {root}; expected at least {min_files} -- the scan is reading nothing"]
 
 
 def _stale(dated: Sequence[_Dated], max_age_days: int, now: float) -> list[str]:
@@ -516,9 +537,14 @@ def assert_no_stale_todos(
     skip_dirs: Iterable[str] = DEFAULT_SKIP_DIRS,
     warn_days: int = 7,
     now: Optional[float] = None,
+    allow_unparsed: bool = True,
+    min_files: int = 0,
 ) -> list[str]:
     """Fail on any TODO or commented-out call older than ``max_age_days``, and on anything that kept a line from
     being dated (see :func:`find_stale_comments`).
+
+    ``allow_unparsed=True`` (the default, and the behaviour before this parameter existed) scans a file that cannot be
+    read as text with a lossy decode, so its comments are still checked. ``False`` reports such a file as a problem.
 
     With ``warn_days > 0``, comments that go stale within that many days are emitted as one
     :class:`StaleCommentAdvisory` each (shown even under ``-W error``, never raised) and returned (see :func:`find_comments_going_stale`); they never fail the test. ``warn_days=0`` returns ``[]``.
@@ -526,7 +552,15 @@ def assert_no_stale_todos(
     import pytest
 
     at = time.time() if now is None else now
-    problems, dated = _scan(repo_root, scan_dirs, suffixes=suffixes, require_issue_ref=require_issue_ref, skip_dirs=skip_dirs)
+    problems, dated = _scan(
+        repo_root,
+        scan_dirs,
+        suffixes=suffixes,
+        require_issue_ref=require_issue_ref,
+        skip_dirs=skip_dirs,
+        allow_unparsed=allow_unparsed,
+        min_files=min_files,
+    )
     problems += _stale(dated, max_age_days, at)
     advisories = _going_stale(dated, max_age_days, warn_days, at)
     with warnings.catch_warnings():

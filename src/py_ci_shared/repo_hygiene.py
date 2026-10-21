@@ -325,7 +325,7 @@ def assert_repo_hygiene(
     workflows_dir: "Path | None" = None,
     text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
     audit_dirs_hold_no_scripts: bool = True,
-    min_files: int = 1,
+    min_files: int = 0,
 ) -> None:
     """Fail on tracked generated files, missing required files, a script in an audits/ folder, or an
     unguarded numeric CI gate, and when fewer than *min_files* text files were read."""

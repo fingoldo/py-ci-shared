@@ -81,13 +81,23 @@ def _logical_lines(text: str) -> list[str]:
     return [line for line in joined.splitlines() if not line.lstrip().startswith("#")]
 
 
-def _read(paths: Iterable[Path]) -> str:
+def _read_one(path: Path, allow_unparsed: bool) -> str:
+    """The file's text; an unreadable file is an error, unless *allow_unparsed* skips it."""
+    try:
+        return read_source(path)
+    except SourceError:
+        if allow_unparsed:
+            return ""
+        raise
+
+
+def _read(paths: Iterable[Path], allow_unparsed: bool = False) -> str:
     out: list[str] = []
     for p in paths:
         if p.is_file():
-            out.append(read_source(p))
+            out.append(_read_one(p, allow_unparsed))
         elif p.is_dir():
-            out.extend(read_source(child) for child in iter_files(p, ("*",)) if child.suffix in {".yml", ".yaml", ".sh", ".md", ""})
+            out.extend(_read_one(child, allow_unparsed) for child in iter_files(p, ("*",)) if child.suffix in {".yml", ".yaml", ".sh", ".md", ""})
         else:
             raise FileNotFoundError(f"runner path does not exist: {p}")
     return "\n".join(out)
@@ -179,7 +189,7 @@ def find_unreferenced_scripts(
     return out
 
 
-def find_permanent_skips(spec_dirs: Sequence[Path]) -> list[str]:
+def find_permanent_skips(spec_dirs: Sequence[Path], *, allow_unparsed: bool = False) -> list[str]:
     """Return every disabled test or suite in a spec file: ``test.skip('title'``, ``test.describe.skip(``,
     ``test.fixme('title'``, ``xit(``, ``xdescribe(``, ``xtest(``. A missing dir raises ``FileNotFoundError``."""
     out: list[str] = []
@@ -187,7 +197,8 @@ def find_permanent_skips(spec_dirs: Sequence[Path]) -> list[str]:
         if not d.is_dir():
             raise FileNotFoundError(f"spec dir does not exist: {d}")
         for path in iter_files(d, ("*.spec.*",)):
-            for i, line in enumerate(read_source(path).splitlines(), start=1):
+            text = _read_one(path, allow_unparsed)
+            for i, line in enumerate(text.splitlines(), start=1):
                 if _SKIP_RE.match(line):
                     out.append(f"{path.name}:{i}: {line.strip()[:80]}")
     return out
@@ -229,6 +240,7 @@ def _unreachable_problems(
     spec_dirs: Sequence[Path],
     allowed: dict[str, str],
     used: set[str],
+    allow_unparsed: bool = False,
 ) -> list[str]:
     """Tags, projects, scripts and skipped specs that nothing selects or references, minus the excused ones."""
     problems: list[str] = []
@@ -252,7 +264,9 @@ def _unreachable_problems(
             f"{script} is referenced by no workflow, hook or index document - nobody knows it "
             f"exists or how to invoke it. Add it to the script index, or delete it."
         )
-    problems.extend(f"{skip} - a permanently skipped spec reads as a passing suite." for skip in find_permanent_skips(list(spec_dirs)))
+    problems.extend(
+        f"{skip} - a permanently skipped spec reads as a passing suite." for skip in find_permanent_skips(list(spec_dirs), allow_unparsed=allow_unparsed)
+    )
     return problems
 
 
@@ -265,8 +279,13 @@ def assert_partitions_reachable(
     script_index: "Path | None" = None,
     spec_dirs: Sequence[Path] = (),
     allowed: "Mapping[str, str] | None" = None,
+    allow_unparsed: bool = False,
+    min_files: int = 0,
 ) -> None:
     """Fail when a declared tag, project, script or skipped spec is never selected or referenced.
+
+    ``allow_unparsed=False`` (the default) fails on any runner, index or spec file that cannot be read.
+    ``True`` skips such a file, so it is not checked, and says nothing about it.
 
     ``allowed`` maps a tag / project / script name to the REASON it is deliberately unreachable; an empty reason,
     and an entry that no longer excuses anything, fail too. Every path given must exist: a typo'd path is a
@@ -283,22 +302,28 @@ def assert_partitions_reachable(
     if missing:
         pytest.fail("path(s) given to assert_partitions_reachable do not exist, so nothing was checked against them:\n  " + "\n  ".join(missing))
     try:
-        runner_text = _read(runner_texts)
+        runner_text = _read(runner_texts, allow_unparsed)
+        if len(runner_texts) < min_files:
+            pytest.fail(f"only {len(runner_texts)} runner path(s); expected at least {min_files} -- the check is reading nothing")
         reference_text = runner_text + ("\n" + read_source(script_index) if script_index is not None else "")
     except SourceError as exc:
         pytest.fail(f"cannot read a runner or index file: {exc}")
     _fail_on_empty_runner_text(runner_texts, runner_text)
     used: set[str] = set()
-    problems = _unreachable_problems(
-        runner_text,
-        reference_text,
-        declared_tags=declared_tags,
-        playwright_config=playwright_config,
-        script_dirs=script_dirs,
-        spec_dirs=spec_dirs,
-        allowed=allowed,
-        used=used,
-    )
+    try:
+        problems = _unreachable_problems(
+            runner_text,
+            reference_text,
+            declared_tags=declared_tags,
+            playwright_config=playwright_config,
+            script_dirs=script_dirs,
+            spec_dirs=spec_dirs,
+            allowed=allowed,
+            used=used,
+            allow_unparsed=allow_unparsed,
+        )
+    except SourceError as exc:
+        pytest.fail(f"cannot read a spec file: {exc}")
     problems.extend(
         f"allowed entry {name!r} has no reason; say why it is deliberately unreachable"
         for name, reason in sorted(allowed.items())

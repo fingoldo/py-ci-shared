@@ -44,12 +44,15 @@ Usage::
 from __future__ import annotations
 
 import ast
+import logging
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, SourceError, child_nodes, parse_file, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
+
+_LOG = logging.getLogger(__name__)
 
 DEFAULT_MOCK_NAMES = frozenset({"Mock", "MagicMock", "AsyncMock", "NonCallableMock"})
 #: ``patch(...)`` spellings whose ``as`` target is a MagicMock unless given a spec.
@@ -208,7 +211,8 @@ def files_driving(files: Iterable[Path], entry_points: Iterable[str]) -> list[Pa
     for path in files:
         try:
             text = read_source(path)
-        except SourceError:  # best-effort: fail-closed by design, the unreadable file is kept so the entry-point scan reports it by path
+        except SourceError as exc:
+            _LOG.warning("%s: unreadable, kept so the entry-point scan reports it by path: %s", path, exc)
             out.append(path)
             continue
         if any(name in text for name in wanted):

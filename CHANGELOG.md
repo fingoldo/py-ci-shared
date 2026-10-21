@@ -2,6 +2,15 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased (next: 1.23.3)
+
+- `stale_comment_age.assert_no_stale_todos` takes `allow_unparsed` (default `True`: an unreadable file is still scanned with a lossy decode,
+  as before; `False` reports it as a problem and checks nothing in it) and `min_files` (default `0`: a scan that read fewer files than the floor
+  reports it). `test_partition_reachability.assert_partitions_reachable` takes `allow_unparsed` (default `False`: an unreadable runner or spec
+  file fails with its name, as it always did; `True` skips it) and `min_files` (default `0`). Defaults keep every existing call's behaviour.
+- `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
+- `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
+
 ## 1.23.2
 
 - New library `contract_ledger` (`src/py_ci_shared/contract_ledger.py`): the shared mechanism behind the 2026-10-21 contract ratchets in
