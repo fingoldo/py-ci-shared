@@ -9,7 +9,7 @@ Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and f
 Two things live here, each solving a different half of the duplication:
 
 1. **Reusable GitHub Actions workflows** (`.github/workflows/*.yml`, invoked via `workflow_call`) for the pieces of CI that are identical in *behavior* across repos: the blocking ruff gate, the filtered Black check, the mypy strict-mode-beachhead pattern, the mypy-full advisory pass, the blocking lint bundle (`lint-blocking.yml`: codespell, yamllint, bandit, actionlint, zizmor, vulture, interrogate, deptry), the advisory bundle (`lint-advisory.yml`: full ruff, mccabe complexity, pip-audit of the calling project, import-linter, pydoclint, semgrep), and the MkDocs docs build/deploy.
-2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.2"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
+2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.3"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
 
 Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` superset, pulled into each consuming repo's own `pyproject.toml` via ruff's native `extend` mechanism (a real config-merge, not copy-paste) — see below.
 
@@ -187,7 +187,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`constant_relations`](src/py_ci_shared/constant_relations.py) | gate | 1.21.0 | `assert_constant_relations` | A declared relation between numeric constants and config defaults across packages holds |
 | [`consumer_import_census`](src/py_ci_shared/consumer_import_census.py) | gate | 1.20.0 | `assert_consumer_imports_resolve` | A library checkout still resolves every name its consumer repos import from it, honouring its module alias map |
 | [`content_hash_version_bump_gate`](src/py_ci_shared/content_hash_version_bump_gate.py) | gate | 1.3.1 | `assert_version_bumped_with_content` | Shared harness for the "N files feed a version/cache-key constant that must be bumped by hand whenever those files change" meta-test pattern |
-| [`contract_ledger`](src/py_ci_shared/contract_ledger.py) | gate | 1.23.2 | `assert_fixture_fresh` (+1) | Committed ledgers of what an API may emit (literals, status codes), a stale-fixture check, and a before/after writer probe |
+| [`contract_ledger`](src/py_ci_shared/contract_ledger.py) | gate | 1.23.3 | `assert_fixture_fresh` (+1) | Committed ledgers of what an API may emit (literals, status codes), a stale-fixture check, and a before/after writer probe |
 | [`corpus_drift`](src/py_ci_shared/corpus_drift.py) | cli | 1.18.0 | `main` | Per-gate finding counts over real consumer repos, and the nightly jumps, drops to zero and new errors between them |
 | [`coverage_config_parity`](src/py_ci_shared/coverage_config_parity.py) | gate | 1.17.0 | `assert_coverage_config_parity` | Coverage config that a CI run inherits without meaning to: a whole-suite ``fail_under`` on a narrow run, and njit bodies no run can see |
 | [`cross_package_private_names`](src/py_ci_shared/cross_package_private_names.py) | gate | 1.21.1 | `assert_cross_package_private_names` | A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias). |
@@ -197,7 +197,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`db_transaction_completeness`](src/py_ci_shared/db_transaction_completeness.py) | gate | 1.17.0 | `assert_no_new_incomplete_transaction` | A function that runs a statement on a database-handle parameter must also close the transaction it opened -- a ``commit()`` or ``rollback()`` on |
 | [`ddl_lock_safety`](src/py_ci_shared/ddl_lock_safety.py) | gate | 1.22.0 | `assert_ddl_files_lock_safe` | Plain SQL files that change a live table bound their lock wait and add constraints and indexes without a blocking scan |
 | [`deferred_drift`](src/py_ci_shared/deferred_drift.py) | gate | 1.12.0 | `assert_deferred_lists_not_grown` | Deferred-debt lists in a meta-test directory may not grow, and a list that shrank must say so |
-| [`deferred_entries`](src/py_ci_shared/deferred_entries.py) | library | 1.23.2 |  | Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift |
+| [`deferred_entries`](src/py_ci_shared/deferred_entries.py) | library | 1.23.3 |  | Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift |
 | [`deletion_gates`](src/py_ci_shared/deletion_gates.py) | library | 1.4.0 |  | Assert that something an audit deliberately REMOVED has not come back |
 | [`destructive_tests_throwaway_only`](src/py_ci_shared/destructive_tests_throwaway_only.py) | gate | 1.21.1 | `assert_destructive_tests_are_throwaway_only` | A test that writes SQL must reach only a throwaway server and be run by an embedded_postgres hook |
 | [`discarded_model_copy`](src/py_ci_shared/discarded_model_copy.py) | gate | 1.17.0 | `assert_no_discarded_model_copy` | A config rebuilt with ``model_copy(update=...)`` into a local must reach something, or the override is lost |
@@ -529,12 +529,12 @@ Workflows: `uses: fingoldo/py-ci-shared/.github/workflows/<name>.yml@v1`, or a f
 as a comment (`@<sha>  # v1.17.0`) when you need a frozen pipeline. Do not mix the two in one repo, and never
 write `# v1` next to a SHA: the comment then lies as soon as `v1` moves. `ruff-blocking.yml`,
 `lint-advisory.yml` and `black-filtered.yml` take this repo's configs, `RUFF_VERSION`/`BLACK_VERSION` and package
-from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.23.2` in the
+from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.23.3` in the
 file at that release). A caller on `@v1` or on a release tag therefore gets that release's configs. A caller pinned
 to a SHA between releases gets the previous release's configs unless it also passes `py-ci-shared-ref: <the same
 SHA>`. A ref that cannot be fetched fails the job after three attempts; there is no fallback to `master`.
 
-Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.2"`. The
+Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.3"`. The
 version in `pyproject.toml` and `py_ci_shared.__version__` is the release it becomes when tagged.
 
 Releasing: bump `version` in `pyproject.toml` and `__version__` in `src/py_ci_shared/__init__.py`

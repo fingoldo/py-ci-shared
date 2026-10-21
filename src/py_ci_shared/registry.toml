@@ -336,7 +336,7 @@ summary = "Shared harness for the \"N files feed a version/cache-key constant th
 name = "contract_ledger"
 kind = "gate"
 entries = ["assert_fixture_fresh", "assert_ledger_covers"]
-since = "1.23.2"
+since = "1.23.3"
 summary = "Committed ledgers of what an API may emit (literals, status codes), a stale-fixture check, and a before/after writer probe"
 
 [[gate]]
@@ -405,7 +405,7 @@ summary = "Deferred-debt lists in a meta-test directory may not grow, and a list
 [[gate]]
 name = "deferred_entries"
 kind = "library"
-since = "1.23.2"
+since = "1.23.3"
 summary = "Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift"
 
 [[gate]]
