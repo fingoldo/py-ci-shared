@@ -59,7 +59,7 @@ def assert_deferred_lists_not_grown(
     a counter that finds no list at all has stopped reading the directory.
     """
     import pytest
-    from pyutilz.dev.meta_test_utils import count_user_deferred_entries
+    from .deferred_entries import count_user_deferred_entries
 
     current = count_user_deferred_entries(meta_dir, extra_prefixes=tuple(extra_prefixes))
     if len(current) < min_lists:

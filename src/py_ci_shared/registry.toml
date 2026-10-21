@@ -403,6 +403,12 @@ since = "1.12.0"
 summary = "Deferred-debt lists in a meta-test directory may not grow, and a list that shrank must say so"
 
 [[gate]]
+name = "deferred_entries"
+kind = "library"
+since = "1.23.2"
+summary = "Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift"
+
+[[gate]]
 name = "deletion_gates"
 kind = "library"
 since = "1.4.0"
