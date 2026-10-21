@@ -444,6 +444,7 @@ EXEMPT: dict[str, str] = {
     "changelog_promise_parity": "regex over a CHANGELOG with caller-supplied trigger patterns",
     "checkout_resolution": "imports modules / runs pytest in a copy; runtime check, not a scanner",
     "checkpoint_isolation": "single path predicate, no corpus",
+    "contract_ledger": "library of ledger, fixture-freshness and writer-probe helpers; the subject is a committed JSON ledger or a probe the consumer drives, covered by tests/test_contract_ledger.py",
     "closed_audit_rounds": "compares audit files across a git revision range; needs git history",
     "code_audit_meta": "wraps pyutilz code_audit checks behind a baseline; the checks live in pyutilz",
     "commit_metadata": "checks commit messages over a git revision range or a commit-msg file; needs git history",

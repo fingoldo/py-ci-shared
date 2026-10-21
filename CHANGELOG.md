@@ -2,6 +2,14 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.23.2
+
+- New library `contract_ledger` (`src/py_ci_shared/contract_ledger.py`): the shared mechanism behind the 2026-10-21 contract ratchets in
+  autopsia. A committed JSON ledger lists every value a contract surface can emit (a response literal, an HTTP status and its
+  Retry-After behaviour, a file that stores user text); `ledger_gaps` and `ledger_entry_problems` report the values with no entry or a
+  malformed one; `assert_fixture_fresh` fails a stale committed fixture; `store_writers` runs a probe and lists every file it created or grew.
+  Additive: no existing gate changes.
+
 ## 1.23.1
 
 - Behaviour change: `.github/actions/install-pyutilz` without a `pyutilz-ref` input installs the pyutilz commit the calling repository's own `pyproject.toml` pins, not py-ci-shared's pin. A repository with no pin, or with two different pins, now fails with a message; set the input to the commit you mean.
