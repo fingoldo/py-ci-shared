@@ -74,7 +74,7 @@ import time
 from typing import Any
 
 from ._core.git import git_env
-from ._mutation_runner import run_with_deadline
+from ._mutation_runner import OutputScan, _scan_of, run_with_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +141,22 @@ def read_pytest_outcome(stdout: str) -> tuple[str, list[str]]:
     `"ERROR "` carries its trailing space on purpose: pytest also emits bare `ERRORS` section
     banners and `ERROR` lines from logging, and neither names a test.
     """
-    lines = stdout.splitlines()
-    summary = next(
-        (ln.strip() for ln in reversed(lines) if " passed" in ln or " failed" in ln or " error" in ln),
-        "NO RESULT LINE",
-    )
-    return summary, [ln.strip() for ln in lines if ln.startswith(("FAILED", "ERROR "))]
+    scan = OutputScan()
+    scan.feed(stdout)
+    scan.finish()
+    return scan.summary or "NO RESULT LINE", scan.failed
+
+
+def _outcome(returncode: int, scan: OutputScan, stdout_tail: str, stderr_tail: str) -> tuple[str, list[str], bool]:
+    """:func:`outcome_of` for a run whose whole output was scanned as it streamed; the tails are only for the message."""
+    summary = scan.summary or "NO RESULT LINE"
+    failed = scan.failed
+    if returncode not in _VERDICT_CODES:
+        tail = " | ".join((stderr_tail or stdout_tail).strip().splitlines()[-3:])
+        return f"PYTEST DID NOT RUN (exit {returncode}): {tail}", [f"{_DID_NOT_RUN} (exit {returncode})>"], False
+    if returncode == 1 and not failed:
+        return summary, [f"<pytest exited 1 without naming a test: {summary}>"], True
+    return summary, failed, True
 
 
 def outcome_of(returncode: int, stdout: str, stderr: str = "") -> tuple[str, list[str], bool]:
@@ -157,13 +167,10 @@ def outcome_of(returncode: int, stdout: str, stderr: str = "") -> tuple[str, lis
     and reading that run's output as "nothing failed" reported every case as having no teeth.
     An exit 1 that names no test still counts as a failure, under a placeholder name.
     """
-    summary, failed = read_pytest_outcome(stdout)
-    if returncode not in _VERDICT_CODES:
-        tail = " | ".join((stderr or stdout).strip().splitlines()[-3:])
-        return f"PYTEST DID NOT RUN (exit {returncode}): {tail}", [f"{_DID_NOT_RUN} (exit {returncode})>"], False
-    if returncode == 1 and not failed:
-        return summary, [f"<pytest exited 1 without naming a test: {summary}>"], True
-    return summary, failed, True
+    scan = OutputScan()
+    scan.feed(stdout)
+    scan.finish()
+    return _outcome(returncode, scan, stdout, stderr)
 
 
 def _suite_command(jobs: int) -> list[str]:
@@ -196,7 +203,7 @@ def _run_suite(repo: pathlib.Path, jobs: int) -> tuple[str, list[str]]:
     proc = run_with_deadline(_suite_command(jobs), cwd=repo, env=git_env(), timeout=900)
     if proc is None:
         return "TIMED OUT -- the mutation hangs the suite; that is a finding, not a pass", ["<suite timed out>"]
-    summary, failed, _ran = outcome_of(proc.returncode, proc.stdout, proc.stderr)
+    summary, failed, _ran = _outcome(proc.returncode, _scan_of(proc), proc.stdout, proc.stderr)
     return summary, failed
 
 

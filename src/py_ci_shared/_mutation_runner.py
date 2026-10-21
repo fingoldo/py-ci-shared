@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib.util
 import itertools
 import json
+from collections import deque
 import logging
 import os
 import queue
@@ -57,6 +58,93 @@ def _pytest_env() -> dict[str, str]:
     return env
 
 
+#: Characters of a child's output kept as text. The callers print ``[-2000:]`` of it; nothing else reads it.
+_TAIL_CHARS = 256 * 1024
+#: Longest piece read from a child's pipe in one call. A longer line arrives as several pieces.
+_PIECE_CHARS = 1 << 20
+#: Most FAILED/ERROR names kept. The verdict needs only whether there are any, and reports show a few.
+_MAX_FAILED_NAMES = 10_000
+#: Lines a warm worker's pump may hold unread. A reply is the newest line, so the oldest are dropped first.
+_QUEUE_LINES = 64
+
+
+class OutputScan:
+    """The markers the classifiers read from a child's output, collected while the output streams.
+
+    Fed the whole stream in order, this yields what the classifiers used to read from the full text:
+    the first decisive ``E `` line (crash or assertion), the target of the first FAILED/ERROR line,
+    the last summary line, and every FAILED/ERROR name. Only the names grow with the output, and
+    they are capped at :data:`_MAX_FAILED_NAMES`.
+
+    Pieces need not end at line breaks: an unterminated line is held until its end arrives, up to
+    :data:`_PIECE_CHARS` characters. Past that cap a line is judged by its first :data:`_PIECE_CHARS`
+    only, so a marker beyond the cap in a longer line is not seen. Call :meth:`finish` once the stream
+    has ended, which judges a final unterminated line.
+    """
+
+    def __init__(self) -> None:
+        self._partial: str | None = None
+        self._crash_decided = False
+        self._crash = False
+        self._first_failing_decided = False
+        self._first_failing: str | None = None
+        self.summary: str | None = None
+        self.failed: list[str] = []
+        self.failed_total = 0
+
+    def feed(self, text: str) -> None:
+        for chunk in text.splitlines(keepends=True):
+            body = chunk.splitlines()
+            part = body[0] if body else ""
+            held = self._partial or ""
+            if part == chunk:  # no line break in this piece: the line continues in the next one
+                self._partial = self._held(held, part)
+                continue
+            self._partial = None
+            self._line(self._held(held, part) if held else part)
+
+    def finish(self) -> None:
+        """Judge the final line if the stream ended without a line break."""
+        if self._partial is not None:
+            line, self._partial = self._partial, None
+            self._line(line)
+
+    @staticmethod
+    def _held(held: str, part: str) -> str:
+        return held + part[: max(0, _PIECE_CHARS - len(held))]
+
+    def _line(self, line: str) -> None:
+        if " passed" in line or " failed" in line or " error" in line:
+            self.summary = line.strip()
+        stripped = line.strip()
+        if line.startswith(("FAILED", "ERROR ")):
+            self.failed_total += 1
+            if len(self.failed) < _MAX_FAILED_NAMES:
+                self.failed.append(stripped)
+        if not self._first_failing_decided:
+            for prefix in ("FAILED ", "ERROR "):
+                if stripped.startswith(prefix):
+                    self._first_failing_decided = True
+                    target = stripped[len(prefix) :].split(" ", 1)[0]
+                    self._first_failing = target.split("::", 1)[0] or None
+                    break
+        if not self._crash_decided and stripped.startswith("E "):
+            verdict = is_crash_message(stripped[2:])
+            if verdict is not None:
+                self._crash_decided = True
+                self._crash = verdict
+
+    @property
+    def killed_by_crash(self) -> bool:
+        """True if the first decisive ``E`` line is an exception from the code, not a failed assertion."""
+        return self._crash
+
+    @property
+    def first_failing_file(self) -> str | None:
+        """The test file named by the first FAILED/ERROR line, or ``None``."""
+        return self._first_failing
+
+
 def _killed_by_crash(output: str) -> bool:
     """True if the failure looks like an exception from the mutated code, not a failed assertion.
 
@@ -64,14 +152,10 @@ def _killed_by_crash(output: str) -> bool:
     an exception name that a test deliberately asserted with ``pytest.raises``, and counting that as
     a crash would misreport a test doing its job.
     """
-    for line in output.splitlines():
-        stripped = line.strip()
-        if not stripped.startswith("E "):
-            continue
-        verdict = is_crash_message(stripped[2:])
-        if verdict is not None:
-            return verdict
-    return False
+    scan = OutputScan()
+    scan.feed(output)
+    scan.finish()
+    return scan.killed_by_crash
 
 
 def _pytest_flags() -> list[str]:
@@ -100,13 +184,10 @@ def _first_failing_file(output: str) -> str | None:
     for the same reason `_killed_by_crash` does: the summary line is a stable shape and a traceback
     is whatever the failing assertion happened to print. With `-x` there is at most one.
     """
-    for line in output.splitlines():
-        stripped = line.strip()
-        for prefix in ("FAILED ", "ERROR "):
-            if stripped.startswith(prefix):
-                target = stripped[len(prefix) :].split(" ", 1)[0]
-                return target.split("::", 1)[0] or None
-    return None
+    scan = OutputScan()
+    scan.feed(output)
+    scan.finish()
+    return scan.first_failing_file
 
 
 # ── process trees ───────────────────────────────────────────────────────────────────────────────
@@ -152,10 +233,74 @@ def _kill_tree(process: "subprocess.Popen[Any]") -> None:
         pass
 
 
-def run_with_deadline(
-    cmd: Sequence[str], *, cwd: Union[Path, str], env: Optional[dict[str, str]], timeout: float
-) -> "Optional[subprocess.CompletedProcess[str]]":
+class _Tail:
+    """The last :data:`_TAIL_CHARS` characters of a stream, held as pieces so the rest can be dropped."""
+
+    def __init__(self) -> None:
+        self._pieces: deque[str] = deque()
+        self._size = 0
+
+    def add(self, piece: str) -> None:
+        self._pieces.append(piece)
+        self._size += len(piece)
+        while self._pieces and self._size - len(self._pieces[0]) >= _TAIL_CHARS:
+            self._size -= len(self._pieces.popleft())
+
+    def text(self) -> str:
+        return "".join(self._pieces)[-_TAIL_CHARS:]
+
+
+def _drain(pipe: Any, tail: _Tail, scan: Optional[OutputScan]) -> None:
+    """Read *pipe* to its end, keeping its tail and feeding each piece to *scan*.
+
+    Reading continuously is what keeps a chatty child from blocking on a full pipe. A pipe closed by
+    a kill ends the stream; what was read before that is kept.
+    """
+    try:
+        while True:
+            piece = pipe.readline(_PIECE_CHARS)
+            if not piece:
+                break
+            tail.add(piece)
+            if scan is not None:
+                scan.feed(piece)
+    except (OSError, ValueError):  # swallow-ok: a pipe closed by the kill ends the stream; what was read is kept
+        pass
+
+
+class CapturedRun(subprocess.CompletedProcess):  # type: ignore[type-arg]
+    """A :class:`subprocess.CompletedProcess` whose ``stdout`` is only the tail of the output.
+
+    ``stdout_scan`` holds the classifiers' view of the WHOLE stream, collected while it streamed.
+    """
+
+    def __init__(self, args: Any, returncode: int, stdout: str, stderr: str, stdout_scan: OutputScan) -> None:
+        super().__init__(args, returncode, stdout, stderr)
+        self.stdout_scan = stdout_scan
+
+
+def _scan_of(run: Any) -> OutputScan:
+    """The whole-stream scan of *run*: the one a :class:`CapturedRun` carries, or one made from its text."""
+    if isinstance(run, CapturedRun):
+        return run.stdout_scan
+    scan = OutputScan()
+    scan.feed(run.stdout)
+    scan.finish()
+    return scan
+
+
+def _close_drained(process: "subprocess.Popen[Any]", readers: Sequence[threading.Thread]) -> None:
+    """Close each pipe whose reader has finished; a reader still blocked on its pipe keeps it open."""
+    for stream, reader in zip((process.stdout, process.stderr), readers):
+        if stream is not None and not reader.is_alive():
+            stream.close()
+
+
+def run_with_deadline(cmd: Sequence[str], *, cwd: Union[Path, str], env: Optional[dict[str, str]], timeout: float) -> "Optional[CapturedRun]":
     """``subprocess.run(capture_output=True, text=True)`` whose timeout kills the whole process tree.
+
+    The output is read as it streams. Memory is bounded: ``stdout`` and ``stderr`` keep only their
+    last :data:`_TAIL_CHARS` characters, and the classifiers' markers are collected on the way.
 
     Returns ``None`` when *timeout* expired.
     """
@@ -171,16 +316,30 @@ def run_with_deadline(
         env=env,
         **_new_group_kwargs(),
     )
+    out_tail, err_tail, scan = _Tail(), _Tail(), OutputScan()
+    readers = [
+        threading.Thread(target=_drain, args=(process.stdout, out_tail, scan), daemon=True, name="mutation-output-reader"),
+        threading.Thread(target=_drain, args=(process.stderr, err_tail, None), daemon=True, name="mutation-stderr-reader"),
+    ]
+    for reader in readers:
+        reader.start()
     try:
-        out, err = process.communicate(timeout=timeout)
+        process.wait(timeout=timeout)
+        end = time.monotonic() + timeout
+        for reader in readers:
+            reader.join(max(0.0, end - time.monotonic()))
+        if any(reader.is_alive() for reader in readers):
+            raise subprocess.TimeoutExpired(list(cmd), timeout)
     except subprocess.TimeoutExpired:
         _kill_tree(process)
-        try:
-            process.communicate(timeout=10)
-        except (subprocess.TimeoutExpired, OSError, ValueError):  # swallow-ok: pipes may be closed after a kill; timeout is returned anyway
-            pass
+        end = time.monotonic() + 10
+        for reader in readers:
+            reader.join(max(0.0, end - time.monotonic()))  # pipes may stay open under a grandchild that survived the kill
+        _close_drained(process, readers)
         return None
-    return subprocess.CompletedProcess(list(cmd), process.returncode, out, err)
+    _close_drained(process, readers)
+    scan.finish()
+    return CapturedRun(list(cmd), process.returncode, out_tail.text(), err_tail.text(), scan)
 
 
 def _remove_tree(path: Union[Path, str]) -> None:
@@ -379,7 +538,7 @@ class _WarmRunner:
     def _ensure_pump(self) -> "queue.Queue[Optional[str]]":
         if self._lines is not None and self._pumped is not None and self._pumped.get("process") is self.process:
             return self._lines
-        lines: "queue.Queue[Optional[str]]" = queue.Queue()
+        lines: "queue.Queue[Optional[str]]" = queue.Queue(maxsize=_QUEUE_LINES)
         state: dict[str, Any] = {"process": self.process, "eof": False}
         stdout = self.process.stdout
 
@@ -389,11 +548,11 @@ class _WarmRunner:
                     line = stdout.readline()
                     if not line:
                         break
-                    lines.put(line)
+                    _put_latest(lines, line)
             except (OSError, ValueError):  # swallow-ok: a closed pipe is the end of the stream; the reader reports it through the None sentinel
                 pass
             state["eof"] = True
-            lines.put(None)
+            _put_latest(lines, None)
 
         threading.Thread(target=pump, daemon=True, name="mutation-worker-reader").start()
         self._lines, self._pumped = lines, state
@@ -438,6 +597,20 @@ class _WarmRunner:
 
     def __exit__(self, *exc: object) -> None:
         self.stop()
+
+
+def _put_latest(lines: "queue.Queue[Optional[str]]", item: Optional[str]) -> None:
+    """Queue *item*, dropping the oldest queued line when the queue is full.
+
+    The reply a reader waits for is the newest line the worker writes, so dropping the oldest keeps
+    it; stray output that reached the channel is skipped by the reader anyway.
+    """
+    if lines.full():
+        try:
+            lines.get_nowait()
+        except queue.Empty:  # swallow-ok: the reader took the line first; there is room now
+            pass
+    lines.put_nowait(item)  # only the pump thread puts, so the slot freed above is still free
 
 
 def _lead_with(paths: list[Union[Path, str]], first: str) -> list[Union[Path, str]]:

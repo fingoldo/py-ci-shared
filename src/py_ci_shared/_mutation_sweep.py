@@ -17,10 +17,9 @@ from ._mutation_runner import (
     _MUTATION_BROKE_THE_RUN,
     _classify,
     _classify_code,
-    _first_failing_file,
-    _killed_by_crash,
     _lead_with,
     _run_pytest,
+    _scan_of,
     _WarmRunner,
 )
 
@@ -93,7 +92,7 @@ def _primary_verdict(
         if result is None:
             return None, False
         passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
-        crash = not passed and (result.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(result.stdout))
+        crash = not passed and (result.returncode in _MUTATION_BROKE_THE_RUN or _scan_of(result).killed_by_crash)
     else:
         passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
         crash = not passed and (code in _MUTATION_BROKE_THE_RUN or warm.last_crash)
@@ -103,7 +102,7 @@ def _primary_verdict(
     if confirm is None:
         return None, False
     if not _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
-        return False, confirm.returncode in _MUTATION_BROKE_THE_RUN or _killed_by_crash(confirm.stdout)
+        return False, confirm.returncode in _MUTATION_BROKE_THE_RUN or _scan_of(confirm).killed_by_crash
     return True, False
 
 
@@ -184,7 +183,7 @@ def _check_unmutated(
     if fallback_test_paths:
         wider_baseline = _run_pytest(fallback_test_paths, sandbox, timeout)
         if wider_baseline is None or not _classify(wider_baseline, "the unmutated wider net"):
-            broken = _first_failing_file(wider_baseline.stdout) if wider_baseline else None
+            broken = _scan_of(wider_baseline).first_failing_file if wider_baseline else None
             wider_baseline_note = (
                 "the wider net does not pass unmutated"
                 + (f" ({broken} fails in the sandbox)" if broken else "")
@@ -230,7 +229,7 @@ def _wider_net(
     wider = _run_pytest(ordered_wider, sandbox, timeout)
     if wider is None:
         return None, None
-    return not _classify(wider, f"fallback re-check {what}", baseline_verified=True), _first_failing_file(wider.stdout)
+    return not _classify(wider, f"fallback re-check {what}", baseline_verified=True), _scan_of(wider).first_failing_file
 
 
 def _verify_import_origin(sandbox: Path, relative: Path, test_paths: Sequence[PathArg], timeout: float) -> None:
