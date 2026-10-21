@@ -400,6 +400,7 @@ exclude_docs = ["audits/"]
 [tool.py_ci_shared.gates.wallclock_test_waits]
 repo_root = "."
 baseline_dir = "tests/baselines"
+python_mode = "ast"
 
 [tool.py_ci_shared.gates.standard_stream_restore]
 roots = ["src", "tests"]
