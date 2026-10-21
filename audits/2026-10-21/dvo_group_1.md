@@ -23,17 +23,17 @@ Method: each finding read with +/-6 lines of context; callers grepped in src/py_
 **Fix:** none
 
 ### DVO-52 (P2) -- _mutation_fingerprint.py:127 empty `python_files` in pytest.ini replaced by default patterns
-**Disposition:** REAL-UNVERIFIED -- `parser.get(..., fallback="")` returns "" both when the key is absent and when it is present but empty; the `or` maps both to `("test_*.py", "*_test.py")`. The caller is `_python_files_patterns` (line 113 of the same file, used at line 168 for the mutation fingerprint). If pytest treats an explicitly empty `python_files =` as "collect no patterns", the fingerprint hashes a different file set than pytest collects. Settling test: in a throwaway repo with `[pytest] python_files =` and an empty value, check what `pytest --collect-only` collects versus the fingerprint's file list. Not run here (no pytest in this audit).
+**Disposition:** RESOLVED (REAL, settled 2026-10-21 by running pytest: an empty `python_files =` collects no files) -- `parser.get(..., fallback="")` returns "" both when the key is absent and when it is present but empty; the `or` maps both to `("test_*.py", "*_test.py")`. The caller is `_python_files_patterns` (line 113 of the same file, used at line 168 for the mutation fingerprint). If pytest treats an explicitly empty `python_files =` as "collect no patterns", the fingerprint hashes a different file set than pytest collects. Settling test: in a throwaway repo with `[pytest] python_files =` and an empty value, check what `pytest --collect-only` collects versus the fingerprint's file list. Not run here (no pytest in this audit).
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `tuple(_split_patterns(parser.get("pytest", "python_files", fallback=None))) if parser.has_option("pytest", "python_files") else _DEFAULT_PYTHON_FILES` (only after the settling test confirms pytest's behaviour)
 
 ### DVO-53 (P2) -- _mutation_fingerprint.py:138 empty `[tool.pytest.ini_options] python_files` replaced by default (pyproject)
-**Disposition:** REAL-UNVERIFIED -- `section.get("python_files")` is None when absent and `[]`/"" when present but empty; the `or` treats both as default. Same caller path as line 127. Same settling test, against a pyproject.toml with `python_files = []`.
+**Disposition:** RESOLVED (REAL, settled 2026-10-21 by running pytest: an empty `python_files =` collects no files) -- `section.get("python_files")` is None when absent and `[]`/"" when present but empty; the `or` treats both as default. Same caller path as line 127. Same settling test, against a pyproject.toml with `python_files = []`.
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `tuple(_split_patterns(section["python_files"])) if "python_files" in section else _DEFAULT_PYTHON_FILES` (only after the settling test)
 
 ### DVO-54 (P2) -- _mutation_fingerprint.py:149 empty tox.ini / setup.cfg `python_files` replaced by default (hit 3 of 3 on this file)
-**Disposition:** REAL-UNVERIFIED -- `parser.get(section_name, "python_files", fallback="")` conflates absent and empty, as at line 127. Same settling test, against a tox.ini with `python_files =`.
+**Disposition:** RESOLVED (REAL, settled 2026-10-21 by running pytest: an empty `python_files =` collects no files) -- `parser.get(section_name, "python_files", fallback="")` conflates absent and empty, as at line 127. Same settling test, against a tox.ini with `python_files =`.
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `tuple(_split_patterns(parser.get(section_name, "python_files", fallback=None))) if parser.has_option(section_name, "python_files") else _DEFAULT_PYTHON_FILES` (only after the settling test)
 
@@ -166,12 +166,12 @@ Method: each finding read with +/-6 lines of context; callers grepped in src/py_
 **Fix:** none
 
 ### DVO-87 (Low) -- stale_comment_age.py:576 scan_dirs=[] silently widened to the configured or default dirs (hit 1 of 2)
-**Disposition:** REAL -- `stale_warning_summary` (line 554) is a public function whose `scan_dirs` is an `Optional[Sequence[str]]`; a caller passing an explicit empty list gets the repo's configured dirs (or ".") scanned instead of what was asked for. The CLI (line 600-606) passes `args.scan_dir`, which is None when the flag is absent (argparse default None), so the CLI never hits the empty-list case; the bug is for direct Python callers (tests call with explicit lists at `tests/test_stale_comment_age.py:428-457`). Impact is low: it widens the scan rather than silently passing.
+**Disposition:** RESOLVED (REAL, fixed) -- `stale_warning_summary` (line 554) is a public function whose `scan_dirs` is an `Optional[Sequence[str]]`; a caller passing an explicit empty list gets the repo's configured dirs (or ".") scanned instead of what was asked for. The CLI (line 600-606) passes `args.scan_dir`, which is None when the flag is absent (argparse default None), so the CLI never hits the empty-list case; the bug is for direct Python callers (tests call with explicit lists at `tests/test_stale_comment_age.py:428-457`). Impact is low: it widens the scan rather than silently passing.
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `dirs = list(scan_dirs) if scan_dirs is not None else (cfg.get("scan_dirs") or ["."])`
 
 ### DVO-88 (Low) -- stale_comment_age.py:576 scan_dirs=[] silently widened (hit 2 of 2)
-**Disposition:** REAL -- same expression, second scanner hit: the `cfg.get("scan_dirs") or ["."]` tail is the fallback chain, which is intended; the real defect is the first `scan_dirs or` step, and the fix above addresses it.
+**Disposition:** RESOLVED (REAL, fixed) -- same expression, second scanner hit: the `cfg.get("scan_dirs") or ["."]` tail is the fallback chain, which is intended; the real defect is the first `scan_dirs or` step, and the fix above addresses it.
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `dirs = list(scan_dirs) if scan_dirs is not None else (cfg.get("scan_dirs") or ["."])`
 

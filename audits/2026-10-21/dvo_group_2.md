@@ -168,6 +168,6 @@ Scope: src/py_ci_shared, read-only. Callers grepped in src/py_ci_shared; line nu
 **Fix:** none
 
 ### DVO-134 (P2) -- sql_verifier_coverage.py:216 empty literal exclusion reason replaced by its unparsed AST
-**Disposition:** REAL -- `_string_value(reason)` returns `""` for an empty string literal, which is falsy, so `or ast.unparse(reason)` stores `"''"` (the source text of the literal) as the reason. Callers of verifier_lists (line 236, in the check that rejects thin reasons at line 246, `len(reason.strip()) < min_reason_len`) therefore see a 2-character reason that can pass the length check, letting an empty exclusion reason escape the "thin reason" gate. Only non-string reasons (None from `_string_value`) should fall back to unparsing.
+**Disposition:** RESOLVED (REAL, fixed) -- `_string_value(reason)` returns `""` for an empty string literal, which is falsy, so `or ast.unparse(reason)` stores `"''"` (the source text of the literal) as the reason. Callers of verifier_lists (line 236, in the check that rejects thin reasons at line 246, `len(reason.strip()) < min_reason_len`) therefore see a 2-character reason that can pass the length check, letting an empty exclusion reason escape the "thin reason" gate. Only non-string reasons (None from `_string_value`) should fall back to unparsing.
 **Status:** fixed in this change set (falsy-value trap; regression test added)
 **Fix:** `_string_value(reason) if _string_value(reason) is not None else ast.unparse(reason)` (replaces the right-hand side of the assignment at line 216)
