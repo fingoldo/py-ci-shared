@@ -1,0 +1,1766 @@
+{
+ "corpus": "py_ci_shared",
+ "root": "C:\\Users\\Admin\\Machine learning\\py-ci-shared\\src\\py_ci_shared",
+ "pyutilz_commit": "5372fee4baf0d8edaa7bb41102142b80ebb97a0f",
+ "failed_checks": {},
+ "findings_count": 251,
+ "findings": [
+  [
+   "assert_in_loop_first_failure_only",
+   "config_call_site_parity.py",
+   545,
+   "Low",
+   "assert sub_model is not None, f\"schema field {section!r} has"
+  ],
+  [
+   "assert_in_loop_first_failure_only",
+   "config_call_site_parity.py",
+   566,
+   "Low",
+   "assert sub_model is not None, f\"schema field {section!r} has"
+  ],
+  [
+   "broad_except_swallow",
+   "embedded_postgres.py",
+   62,
+   "P1",
+   "except Exception:  # swallow-ok: pgserver is an optional sou"
+  ],
+  [
+   "broad_except_swallow",
+   "vacuous_loop_assertions.py",
+   200,
+   "P1",
+   "except Exception:  # swallow-ok: an assert that cannot be un"
+  ],
+  [
+   "comment_names_missing_symbol",
+   "checkpoint_isolation.py",
+   6,
+   "Low",
+   "WHAT IT COST, and it is why this is shared rather than local"
+  ],
+  [
+   "comment_names_missing_symbol",
+   "secret_assertion_operands.py",
+   16,
+   "Low",
+   "``dsn_or_none``, ``get_dsn``, ``dotenv_values`` and kin) or "
+  ],
+  [
+   "default_via_or",
+   "_ci_install_parts.py",
+   503,
+   "Low",
+   "provided.unresolved.append(f\"install argument {path_part!r}:"
+  ],
+  [
+   "default_via_or",
+   "_ci_install_parts.py",
+   521,
+   "Low",
+   "is_path = path_part.startswith((\".\", \"/\", \"~\", \"file:\")) or "
+  ],
+  [
+   "default_via_or",
+   "_ci_install_parts.py",
+   722,
+   "Low",
+   "tops = set(top.split()) or {str(f).split(\"/\")[0].removesuffi"
+  ],
+  [
+   "default_via_or",
+   "_consumers.py",
+   117,
+   "Low",
+   "return (git_text(proc.stderr) or git_text(proc.stdout)).stri"
+  ],
+  [
+   "default_via_or",
+   "_consumers.py",
+   117,
+   "P2",
+   "return (git_text(proc.stderr) or git_text(proc.stdout)).stri"
+  ],
+  [
+   "default_via_or",
+   "_core/baseline.py",
+   249,
+   "Low",
+   "self.refresh_command = refresh_command or f\"set PY_CI_SHARED"
+  ],
+  [
+   "default_via_or",
+   "_core/config.py",
+   93,
+   "Low",
+   "enabled = \", \".join(run.name for run in self.gates) or \"none"
+  ],
+  [
+   "default_via_or",
+   "_core/config.py",
+   103,
+   "P2",
+   "here = (start or Path.cwd()).resolve()"
+  ],
+  [
+   "default_via_or",
+   "_core/source.py",
+   103,
+   "Low",
+   "raise SourceParseError(path, exc.msg or \"invalid syntax\", ex"
+  ],
+  [
+   "default_via_or",
+   "_gate_report.py",
+   124,
+   "Low",
+   "out[id(child)] = name or \"<module>\""
+  ],
+  [
+   "default_via_or",
+   "_gate_report.py",
+   127,
+   "Low",
+   "out[id(child)] = name or \"<module>\""
+  ],
+  [
+   "default_via_or",
+   "_import_graph.py",
+   118,
+   "P2",
+   "self.visit(node.body, guarded or _suppresses_import_error(no"
+  ],
+  [
+   "default_via_or",
+   "_import_graph.py",
+   184,
+   "Low",
+   "what = \"; \".join(p.render() for p in repo.problems) or f\"{py"
+  ],
+  [
+   "default_via_or",
+   "_import_graph.py",
+   260,
+   "Low",
+   "tops = set((dist.read_text(\"top_level.txt\") or \"\").split()) "
+  ],
+  [
+   "default_via_or",
+   "_mutation_runner.py",
+   397,
+   "Low",
+   "shown = \"; \".join(failures[:3]) or \"the directory still exis"
+  ],
+  [
+   "default_via_or",
+   "_scaffold.py",
+   263,
+   "Low",
+   "summary = summary or f\"TODO: one line saying what {name} che"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   263,
+   "P2",
+   "ref = spec.get(\"rev\") or spec.get(\"tag\") or spec.get(\"branch"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   263,
+   "P2",
+   "ref = spec.get(\"rev\") or spec.get(\"tag\") or spec.get(\"branch"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   350,
+   "Low",
+   "target = f\"action:{sub or 'root'}\""
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   775,
+   "P2",
+   "return not self.pins_agree or bool(self.moving_pins) or bool"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   775,
+   "P2",
+   "return not self.pins_agree or bool(self.moving_pins) or bool"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   775,
+   "P2",
+   "return not self.pins_agree or bool(self.moving_pins) or bool"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   775,
+   "P2",
+   "return not self.pins_agree or bool(self.moving_pins) or bool"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   850,
+   "Low",
+   "refs = \", \".join(f\"`{k}`\" for k in r.distinct_refs) or \"none"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   913,
+   "P2",
+   "any_finding = any_finding or bool(found) or bool(extra)"
+  ],
+  [
+   "default_via_or",
+   "adoption_matrix.py",
+   913,
+   "P2",
+   "any_finding = any_finding or bool(found) or bool(extra)"
+  ],
+  [
+   "default_via_or",
+   "api_floor.py",
+   72,
+   "P2",
+   "m = re.search(r\">=\\s*(\\d+)\\.(\\d+)\", spec) or re.search(r\"~=\\"
+  ],
+  [
+   "default_via_or",
+   "api_floor.py",
+   313,
+   "P2",
+   "floor = target or target_from_pyproject(Path(pyproject) if p"
+  ],
+  [
+   "default_via_or",
+   "audit_disposition_parity.py",
+   196,
+   "Low",
+   "migrations_dir = migrations_dir or (repo_root / \"supabase\" /"
+  ],
+  [
+   "default_via_or",
+   "audit_path_references.py",
+   145,
+   "P2",
+   "return any(seg == \"audits\" or _AUDIT_FILE.search(seg) for se"
+  ],
+  [
+   "default_via_or",
+   "baseline_hygiene.py",
+   125,
+   "P2",
+   "out[key.strip()] = note.strip() or \" \".join(heading)"
+  ],
+  [
+   "default_via_or",
+   "baseline_trend.py",
+   199,
+   "P2",
+   "args.directories or list(DEFAULT_DIRECTORIES),"
+  ],
+  [
+   "default_via_or",
+   "baseline_trend.py",
+   201,
+   "Low",
+   "args.unmoved or args.stale_days is not None,"
+  ],
+  [
+   "default_via_or",
+   "cancellation_prone_moments.py",
+   70,
+   "P2",
+   "and not any(isinstance(f, ast.Constant) or _centred(f) for f"
+  ],
+  [
+   "default_via_or",
+   "cancellation_prone_moments.py",
+   197,
+   "P2",
+   "return not _centred(node) and (_mentions(node, first) or _co"
+  ],
+  [
+   "default_via_or",
+   "cancellation_prone_moments.py",
+   216,
+   "P2",
+   "return bool(names) or _contains(term, _is_power_sum_call)"
+  ],
+  [
+   "default_via_or",
+   "ci_health.py",
+   187,
+   "Low",
+   "name, path = str(workflow.get(\"name\") or ordered[0].get(\"nam"
+  ],
+  [
+   "default_via_or",
+   "ci_health.py",
+   261,
+   "P2",
+   "return 1 if any(r.error or over_threshold(r, max_red_days) f"
+  ],
+  [
+   "default_via_or",
+   "ci_health.py",
+   388,
+   "P2",
+   "token = consumer_token or (env.get(\"GH_TOKEN\") or \"\").strip("
+  ],
+  [
+   "default_via_or",
+   "ci_health.py",
+   388,
+   "P2",
+   "token = consumer_token or (env.get(\"GH_TOKEN\") or \"\").strip("
+  ],
+  [
+   "default_via_or",
+   "ci_health.py",
+   515,
+   "P2",
+   "at = now or datetime.now(timezone.utc)"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_conftest.py",
+   445,
+   "Low",
+   "return out or [None]"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_conftest.py",
+   487,
+   "Low",
+   "cwd = self.directory(self.repo.root, step_ctx.substitute(str"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_conftest.py",
+   644,
+   "P2",
+   "walk.steps(job[\"steps\"], ctx, _working_directory(job.get(\"de"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_conftest.py",
+   726,
+   "Low",
+   "targets = [(root / t).resolve() for t in _ini_testpaths(repo"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_conftest.py",
+   826,
+   "P2",
+   "confident = confident or any(d in self.provided_anywhere for"
+  ],
+  [
+   "default_via_or",
+   "ci_install_covers_entry_imports.py",
+   256,
+   "P2",
+   "walk.steps(job[\"steps\"], ctx, _working_directory(job.get(\"de"
+  ],
+  [
+   "default_via_or",
+   "ci_test_dir_reachability.py",
+   107,
+   "Low",
+   "return p.rstrip(\"/\") or \".\""
+  ],
+  [
+   "default_via_or",
+   "ci_test_dir_reachability.py",
+   123,
+   "P2",
+   "return any(_covers(target, rel) or _covers(rel, target) for "
+  ],
+  [
+   "default_via_or",
+   "ci_workflow_gate.py",
+   110,
+   "Low",
+   "self.found.append((step.coe_line, step.name or job_name or f"
+  ],
+  [
+   "default_via_or",
+   "ci_workflow_gate.py",
+   117,
+   "Low",
+   "self.found.append((job.coe_line, job.name or job.ident or f\""
+  ],
+  [
+   "default_via_or",
+   "cli.py",
+   59,
+   "Low",
+   "encoding = getattr(stream, \"encoding\", None) or \"ascii\""
+  ],
+  [
+   "default_via_or",
+   "cli.py",
+   113,
+   "Low",
+   "entry = spec.default_entry or (\"main\" if spec.cli else \"-\")"
+  ],
+  [
+   "default_via_or",
+   "commit_metadata.py",
+   172,
+   "P2",
+   "repo, rev_range or _default_range(repo), forbidden_trailers="
+  ],
+  [
+   "default_via_or",
+   "commit_metadata.py",
+   207,
+   "P2",
+   "rev_range = args.rev_range or config.get(\"rev_range\") or _de"
+  ],
+  [
+   "default_via_or",
+   "commit_metadata.py",
+   207,
+   "P2",
+   "rev_range = args.rev_range or config.get(\"rev_range\") or _de"
+  ],
+  [
+   "default_via_or",
+   "config_getattr_default_parity.py",
+   99,
+   "Low",
+   "return name in receiver_names or (bool(receiver_suffixes) an"
+  ],
+  [
+   "default_via_or",
+   "connection_liveness_kwargs.py",
+   270,
+   "Low",
+   "text = \"\".join(_text_parts(node)) or (strings.get(node.id, \""
+  ],
+  [
+   "default_via_or",
+   "constant_fallback_cache_key.py",
+   108,
+   "P2",
+   "return bool(_NAME.search(func.name)) or any(_DECORATOR.searc"
+  ],
+  [
+   "default_via_or",
+   "constant_relations.py",
+   181,
+   "Low",
+   "path = Path(root or \".\") / target"
+  ],
+  [
+   "default_via_or",
+   "coverage_config_parity.py",
+   90,
+   "Low",
+   "return paths or {\"tests\", \"test\"}"
+  ],
+  [
+   "default_via_or",
+   "coverage_config_parity.py",
+   201,
+   "Low",
+   "paths.append(w.split(\"::\", 1)[0].strip(\"./\") or \".\")"
+  ],
+  [
+   "default_via_or",
+   "coverage_config_parity.py",
+   285,
+   "P2",
+   "if any(_env_true(s.env, \"NUMBA_DISABLE_JIT\") or _env_true(in"
+  ],
+  [
+   "default_via_or",
+   "coverage_config_parity.py",
+   293,
+   "Low",
+   "for base in source_dirs or [repo_root]:"
+  ],
+  [
+   "default_via_or",
+   "dart_scanners.py",
+   369,
+   "Low",
+   "return \"its child is not text alone (\" + (\", \".join(others) "
+  ],
+  [
+   "default_via_or",
+   "dataclass_case_completeness.py",
+   35,
+   "Low",
+   "qualified = (aliases or ImportAliases()).qualified_name(targ"
+  ],
+  [
+   "default_via_or",
+   "destructive_tests_throwaway_only.py",
+   161,
+   "P2",
+   "return bool(self.first_write_line) and (self.connects or boo"
+  ],
+  [
+   "default_via_or",
+   "docs_inventory_parity.py",
+   297,
+   "Low",
+   "return target.endswith(\"/\") or \"*\" in target or bool(re.sear"
+  ],
+  [
+   "default_via_or",
+   "docs_inventory_parity.py",
+   297,
+   "P2",
+   "return target.endswith(\"/\") or \"*\" in target or bool(re.sear"
+  ],
+  [
+   "default_via_or",
+   "dup_baseline_percent_key.py",
+   91,
+   "Low",
+   "baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,"
+  ],
+  [
+   "default_via_or",
+   "edge_function_hygiene.py",
+   191,
+   "Low",
+   "f\"{statuses or ['(no status, so 200)']} - the client is told"
+  ],
+  [
+   "default_via_or",
+   "effect_assertion_parity.py",
+   504,
+   "P2",
+   "runs_real = bool(params & fixtures) or any(_is_real_connect("
+  ],
+  [
+   "default_via_or",
+   "effect_assertion_parity.py",
+   594,
+   "P2",
+   "parse = parse or _Parser(repo_root)"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   50,
+   "Low",
+   "base = Path(os.environ.get(\"PY_CI_SHARED_CACHE\") or Path.hom"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   93,
+   "Low",
+   "raise RuntimeError(f\"{Path(cmd[0]).name} failed with exit co"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   128,
+   "P2",
+   "port = port or free_port()"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   275,
+   "P2",
+   "cwd = cwd or Path.cwd()"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   330,
+   "P2",
+   "raw = (machine or platform.machine() or \"\").lower()"
+  ],
+  [
+   "default_via_or",
+   "embedded_postgres.py",
+   383,
+   "P2",
+   "bin_dir = dest or cache_bin_dir()"
+  ],
+  [
+   "default_via_or",
+   "env_example_round_trip.py",
+   90,
+   "Low",
+   "for name in aliases or [prefix + field]:"
+  ],
+  [
+   "default_via_or",
+   "external_fact_tables.py",
+   211,
+   "P2",
+   "day = today or _dt.datetime.now(_dt.timezone.utc).date()"
+  ],
+  [
+   "default_via_or",
+   "external_fact_tables.py",
+   224,
+   "P2",
+   "day = today or _dt.datetime.now(_dt.timezone.utc).date()"
+  ],
+  [
+   "default_via_or",
+   "fail_open_handlers.py",
+   192,
+   "P2",
+   "return not (_logs_loudly(handler) or _logs_quietly(handler) "
+  ],
+  [
+   "default_via_or",
+   "fail_open_handlers.py",
+   192,
+   "P2",
+   "return not (_logs_loudly(handler) or _logs_quietly(handler) "
+  ],
+  [
+   "default_via_or",
+   "fail_open_handlers.py",
+   241,
+   "P2",
+   "name: str = qualname or str(getattr(fn, \"name\", \"<module>\"))"
+  ],
+  [
+   "default_via_or",
+   "fail_open_handlers.py",
+   349,
+   "Low",
+   "entries[key] = accepted.get(key) or \"NEEDS-JUSTIFICATION: wh"
+  ],
+  [
+   "default_via_or",
+   "gate_config_honesty.py",
+   86,
+   "P2",
+   "found[f\"pre-commit::{hook.get('alias') or hook.get('id')}\"] "
+  ],
+  [
+   "default_via_or",
+   "gate_integrity.py",
+   247,
+   "Low",
+   "label = str(step.get(\"id\") or step.get(\"name\") or f\"step{ind"
+  ],
+  [
+   "default_via_or",
+   "gate_integrity.py",
+   247,
+   "P2",
+   "label = str(step.get(\"id\") or step.get(\"name\") or f\"step{ind"
+  ],
+  [
+   "default_via_or",
+   "gate_integrity.py",
+   451,
+   "Low",
+   "wrapped = _invocation_in(wrapper, command) or wrapper in com"
+  ],
+  [
+   "default_via_or",
+   "git_child_env.py",
+   162,
+   "Low",
+   "baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,"
+  ],
+  [
+   "default_via_or",
+   "gpu_timing_sync.py",
+   152,
+   "P2",
+   "return \"sync\" in words and (len(words) == 1 or bool(_DEVICE_"
+  ],
+  [
+   "default_via_or",
+   "gpu_timing_sync.py",
+   264,
+   "Low",
+   "work = gpu_calls or (injected if gpu_aware else [])"
+  ],
+  [
+   "default_via_or",
+   "guard_population.py",
+   103,
+   "Low",
+   "unmatched_close = unmatched_close or ch == \")\""
+  ],
+  [
+   "default_via_or",
+   "guard_population.py",
+   179,
+   "Low",
+   "return shutil.which(\"bash\") or \"bash\""
+  ],
+  [
+   "default_via_or",
+   "guard_without_fixture.py",
+   60,
+   "Low",
+   "baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,"
+  ],
+  [
+   "default_via_or",
+   "identity_comparisons.py",
+   42,
+   "P2",
+   "return _stringish(node.left, known) or _stringish(node.right"
+  ],
+  [
+   "default_via_or",
+   "ignore_ratchet.py",
+   90,
+   "Low",
+   "items = json.loads(out.stdout or \"[]\")"
+  ],
+  [
+   "default_via_or",
+   "import_side_effects.py",
+   424,
+   "Low",
+   "f\"{what}  (from {_attributed(chain, origin, owners) or '?'})"
+  ],
+  [
+   "default_via_or",
+   "index_coverage.py",
+   191,
+   "Low",
+   "nulls_first = \"nulls first\" in words or (descending and \"nul"
+  ],
+  [
+   "default_via_or",
+   "index_coverage.py",
+   236,
+   "Low",
+   "method=(match.group(\"method\") or \"btree\").lower(),"
+  ],
+  [
+   "default_via_or",
+   "latched_availability_flags.py",
+   100,
+   "Low",
+   "resolver = aliases or ImportAliases()"
+  ],
+  [
+   "default_via_or",
+   "lock_held_across_io.py",
+   80,
+   "P2",
+   "return bool(segment) and (segment in lock_names or _named_li"
+  ],
+  [
+   "default_via_or",
+   "lock_held_across_io.py",
+   94,
+   "P2",
+   "name = aliases.qualified_name(call.func) or _last_segment(ca"
+  ],
+  [
+   "default_via_or",
+   "marker_runner_coverage.py",
+   448,
+   "P2",
+   "return _evaluate(tree[1], holds) or _evaluate(tree[2], holds"
+  ],
+  [
+   "default_via_or",
+   "marker_runner_coverage.py",
+   486,
+   "Low",
+   "paths = runner.paths or (\".\",)"
+  ],
+  [
+   "default_via_or",
+   "module_cache_thread_safety.py",
+   183,
+   "Low",
+   "return \"element\" in kinds or (\"insert\" in kinds and bool(kin"
+  ],
+  [
+   "default_via_or",
+   "module_cache_thread_safety.py",
+   183,
+   "Low",
+   "return \"element\" in kinds or (\"insert\" in kinds and bool(kin"
+  ],
+  [
+   "default_via_or",
+   "module_reload_safety.py",
+   308,
+   "P2",
+   "ctx.dir_autouse"
+  ],
+  [
+   "default_via_or",
+   "module_reload_safety.py",
+   308,
+   "P2",
+   "ctx.dir_autouse"
+  ],
+  [
+   "default_via_or",
+   "module_reload_safety.py",
+   359,
+   "P2",
+   "return \" \".join((ast.get_source_segment(source, node) or ast"
+  ],
+  [
+   "default_via_or",
+   "no_xfail_to_defer.py",
+   162,
+   "P2",
+   "return bool(_TRACKED.search(reason)) or any(re.search(r\"(?<!"
+  ],
+  [
+   "default_via_or",
+   "numba_seed_range.py",
+   77,
+   "Low",
+   "return aliases.qualified_name(call) or (call.func.attr if is"
+  ],
+  [
+   "default_via_or",
+   "numba_seed_range.py",
+   220,
+   "P2",
+   "return short in self.njit_seeders or bool(_SINK_NAME.search("
+  ],
+  [
+   "default_via_or",
+   "offline_suite_without_credentials.py",
+   160,
+   "Low",
+   "settings = OfflineSettings(marker=str(config.getini(\"offline"
+  ],
+  [
+   "default_via_or",
+   "offline_suite_without_credentials.py",
+   189,
+   "Low",
+   "marker = str(config.getini(\"offline_credentials_marker\")) or"
+  ],
+  [
+   "default_via_or",
+   "package_doctests.py",
+   72,
+   "P2",
+   "return bool(parts and parts.intersection(name.split(\".\"))) o"
+  ],
+  [
+   "default_via_or",
+   "patch_target_read_at_call.py",
+   140,
+   "Low",
+   "facts.dynamic_namespace = facts.dynamic_namespace or node.id"
+  ],
+  [
+   "default_via_or",
+   "persisted_negative_probe.py",
+   115,
+   "P2",
+   "return not all((aliases.qualified_name(t) or _dotted(t)).rsp"
+  ],
+  [
+   "default_via_or",
+   "persisted_negative_probe.py",
+   147,
+   "P2",
+   "qualified = aliases.qualified_name(call) or _dotted(call.fun"
+  ],
+  [
+   "default_via_or",
+   "phantom_markdown_links.py",
+   50,
+   "P2",
+   "return bool(_SCHEME_RE.match(target)) or target.startswith(\""
+  ],
+  [
+   "default_via_or",
+   "polars_null_equality.py",
+   112,
+   "P2",
+   "recv_l = _method_call(left, \"min\") or _method_call(left, \"ma"
+  ],
+  [
+   "default_via_or",
+   "polars_null_equality.py",
+   113,
+   "P2",
+   "recv_r = _method_call(right, \"max\") or _method_call(right, \""
+  ],
+  [
+   "default_via_or",
+   "prompt_field_parity.py",
+   171,
+   "Low",
+   "return any(m in node for m in _SCHEMA_MARKERS) or kind in _J"
+  ],
+  [
+   "default_via_or",
+   "prompt_field_parity.py",
+   171,
+   "Low",
+   "return any(m in node for m in _SCHEMA_MARKERS) or kind in _J"
+  ],
+  [
+   "default_via_or",
+   "protocol_attributes.py",
+   33,
+   "P2",
+   "label = what or getattr(obj, \"__qualname__\", None) or repr(o"
+  ],
+  [
+   "default_via_or",
+   "protocol_attributes.py",
+   33,
+   "P2",
+   "label = what or getattr(obj, \"__qualname__\", None) or repr(o"
+  ],
+  [
+   "default_via_or",
+   "pydantic_field_bounds.py",
+   90,
+   "Low",
+   "literal = [v for v in get_args(info.annotation) if get_origi"
+  ],
+  [
+   "default_via_or",
+   "pytest_markers.py",
+   260,
+   "Low",
+   "tests = tests_dir or repo_root / \"tests\""
+  ],
+  [
+   "default_via_or",
+   "pytest_markers.py",
+   278,
+   "Low",
+   "tests = tests_dir or repo_root / \"tests\""
+  ],
+  [
+   "default_via_or",
+   "pytest_markers.py",
+   303,
+   "Low",
+   "tests = tests_dir or repo_root / \"tests\""
+  ],
+  [
+   "default_via_or",
+   "readme_env_var_parity.py",
+   54,
+   "Low",
+   "return (aliases or ImportAliases()).qualified_name(node) in "
+  ],
+  [
+   "default_via_or",
+   "registry.py",
+   65,
+   "Low",
+   "return self.tests or (f\"tests/test_{self.name}.py\",)"
+  ],
+  [
+   "default_via_or",
+   "resource_leak_guard.py",
+   100,
+   "P2",
+   "return \" \".join(child.cmdline()) or str(child.name())"
+  ],
+  [
+   "default_via_or",
+   "save_failure_markers.py",
+   79,
+   "P2",
+   "m = _MARKER_RE.match(text) or _TEMPLATE_RE.match(text)"
+  ],
+  [
+   "default_via_or",
+   "schema_snapshot_parity.py",
+   542,
+   "P2",
+   "bin_dir = pg_bin or find_pg_bin()"
+  ],
+  [
+   "default_via_or",
+   "secret_assertion_operands.py",
+   233,
+   "Low",
+   "found.append((qual or \"<module>\", getattr(node, \"lineno\", 0)"
+  ],
+  [
+   "default_via_or",
+   "sibling_floor_skew.py",
+   181,
+   "P2",
+   "ref = spec.get(\"rev\") or spec.get(\"tag\") or spec.get(\"branch"
+  ],
+  [
+   "default_via_or",
+   "sibling_floor_skew.py",
+   181,
+   "P2",
+   "ref = spec.get(\"rev\") or spec.get(\"tag\") or spec.get(\"branch"
+  ],
+  [
+   "default_via_or",
+   "sibling_floor_skew.py",
+   264,
+   "P2",
+   "token = os.environ.get(\"GITHUB_TOKEN\") or os.environ.get(\"CO"
+  ],
+  [
+   "default_via_or",
+   "sibling_floor_skew.py",
+   336,
+   "Low",
+   "resolve: Resolver = resolver or (lambda s, o, r: version_at("
+  ],
+  [
+   "default_via_or",
+   "sibling_floor_skew.py",
+   404,
+   "Low",
+   "siblings=args.sibling or DEFAULT_SIBLINGS,"
+  ],
+  [
+   "default_via_or",
+   "single_shot_timing_assertion.py",
+   277,
+   "Low",
+   "(isinstance(n, ast.Call) and self.aliases.qualified_name(n.f"
+  ],
+  [
+   "default_via_or",
+   "single_shot_timing_assertion.py",
+   319,
+   "Low",
+   "(plain(node.left) and isinstance(node.right, ast.Constant)) "
+  ],
+  [
+   "default_via_or",
+   "single_shot_timing_assertion.py",
+   325,
+   "P2",
+   "k = factor(left) or factor(right)"
+  ],
+  [
+   "default_via_or",
+   "single_shot_timing_assertion.py",
+   395,
+   "P2",
+   "visit(child, f\"{prefix}{child.name}.\", exempt or _marked(chi"
+  ],
+  [
+   "default_via_or",
+   "skip_as_pass.py",
+   106,
+   "Low",
+   "baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,"
+  ],
+  [
+   "default_via_or",
+   "source_text_ban.py",
+   133,
+   "P2",
+   "return bool(PY_PATH_ON_LINE.search(text)) or any(re.search(r"
+  ],
+  [
+   "default_via_or",
+   "source_text_ban.py",
+   179,
+   "P2",
+   "offending = bool(GETSOURCE.search(line)) or any(p.search(lin"
+  ],
+  [
+   "default_via_or",
+   "source_text_claims.py",
+   559,
+   "P2",
+   "kind = _source_claim_kind(det, test, scope, matches) or _fil"
+  ],
+  [
+   "default_via_or",
+   "sql_verify.py",
+   220,
+   "Low",
+   "detail = f\"{type(exc).__name__} (SQLSTATE {getattr(exc, 'pgc"
+  ],
+  [
+   "default_via_or",
+   "sql_verify.py",
+   352,
+   "Low",
+   "name = m.group(1) or f\"#{len(numbers)}\""
+  ],
+  [
+   "default_via_or",
+   "stale_comment_age.py",
+   576,
+   "Low",
+   "dirs = list(scan_dirs) if scan_dirs is not None else list(cf"
+  ],
+  [
+   "default_via_or",
+   "statement_columns_exist_in_ddl.py",
+   440,
+   "P2",
+   "open_table = open_table or any(_is(t, \"inherits\") for t in t"
+  ],
+  [
+   "default_via_or",
+   "statement_columns_exist_in_ddl.py",
+   594,
+   "Low",
+   "reasons = \"; \".join(f\"{len(names)} {reason}\" for reason, nam"
+  ],
+  [
+   "default_via_or",
+   "statement_columns_exist_in_ddl.py",
+   908,
+   "Low",
+   "else f\"which the DDL ({', '.join(sorted(set(table.created_in"
+  ],
+  [
+   "default_via_or",
+   "statement_compilation.py",
+   74,
+   "Low",
+   "return f\"{dotted_chain(first) or '<object>'}.{second.value}\""
+  ],
+  [
+   "default_via_or",
+   "stub_signature_guard.py",
+   79,
+   "P2",
+   "return any(fnmatch.fnmatchcase(dotted, p) or fnmatch.fnmatch"
+  ],
+  [
+   "default_via_or",
+   "survivorship_scoring.py",
+   132,
+   "Low",
+   "out.append(SurvivorshipScore(rel, func.name, node.lineno, _c"
+  ],
+  [
+   "default_via_or",
+   "swallowed_exceptions.py",
+   256,
+   "Low",
+   "where = \".\".join(self.scope) or \"<module>\""
+  ],
+  [
+   "default_via_or",
+   "teeth_sweep.py",
+   147,
+   "Low",
+   "return scan.summary or \"NO RESULT LINE\", scan.failed"
+  ],
+  [
+   "default_via_or",
+   "teeth_sweep.py",
+   152,
+   "Low",
+   "summary = scan.summary or \"NO RESULT LINE\""
+  ],
+  [
+   "default_via_or",
+   "tracked_secret_shapes.py",
+   158,
+   "P2",
+   "return any(fnmatch.fnmatchcase(path, p) or path.startswith(p"
+  ],
+  [
+   "default_via_or",
+   "tracked_secret_shapes.py",
+   211,
+   "Low",
+   "compiled = compile_shapes(shapes if shapes is not None else "
+  ],
+  [
+   "default_via_or",
+   "unresolved_imports.py",
+   431,
+   "P2",
+   "return handler.type is None or bool(_names_in(handler.type) "
+  ],
+  [
+   "default_via_or",
+   "unsafe_deserialization.py",
+   175,
+   "Low",
+   "per_name = per_name or kind == \"per_name\""
+  ],
+  [
+   "default_via_or",
+   "unsafe_deserialization.py",
+   176,
+   "Low",
+   "module_only = module_only or kind == \"module_only\""
+  ],
+  [
+   "default_via_or",
+   "unsafe_deserialization.py",
+   179,
+   "P2",
+   "resolves = resolves or _resolves_module(node, module)"
+  ],
+  [
+   "default_via_or",
+   "unsafe_deserialization.py",
+   298,
+   "Low",
+   "loader = _kw(node, \"Loader\") or (node.args[1] if len(node.ar"
+  ],
+  [
+   "default_via_or",
+   "vendored_internal_imports.py",
+   144,
+   "Low",
+   "shown = \", \".join(standalone_names) or \"the vendored package"
+  ],
+  [
+   "default_via_or",
+   "version_tag_currency.py",
+   273,
+   "Low",
+   "return [f\"{manifest.name} pins {package_name} at {pin} but {"
+  ],
+  [
+   "default_via_or",
+   "version_tag_currency.py",
+   282,
+   "Low",
+   "return [f\"{package_name} {pin} is {commit} on {url} but {loc"
+  ],
+  [
+   "default_via_or",
+   "vulture_warn.py",
+   81,
+   "P2",
+   "src_path = options.src_path or os.environ.get(\"PY_CI_SHARED_"
+  ],
+  [
+   "default_via_or",
+   "vulture_warn.py",
+   85,
+   "P2",
+   "whitelist = options.whitelist or os.environ.get(\"PY_CI_SHARE"
+  ],
+  [
+   "default_via_or",
+   "wallclock_test_waits.py",
+   88,
+   "Low",
+   "baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,"
+  ],
+  [
+   "default_via_or",
+   "worktree_hygiene.py",
+   156,
+   "P2",
+   "digest = hashlib.new(object_format or _object_format(repo))"
+  ],
+  [
+   "default_via_or",
+   "worktree_hygiene.py",
+   265,
+   "P2",
+   "return upstream.get(relative) in ids or bool(ids & known)"
+  ],
+  [
+   "docstring_args_incomplete",
+   "loc_budget.py",
+   170,
+   "Low",
+   "def assert_no_new_oversized_file("
+  ],
+  [
+   "duplicate_credential_regex",
+   "edge_function_hygiene.py",
+   57,
+   "P2",
+   "_SECRET_TOKEN_RE = re.compile(r\"SERVICE_ROLE_KEY|_SECRET\\b|_"
+  ],
+  [
+   "duplicate_credential_regex",
+   "free_text_in_get_route.py",
+   71,
+   "P2",
+   "_IDENTIFIER_NAME = re.compile(r\"(?i)(?:^|_)(?:id|ids|uuid|sl"
+  ],
+  [
+   "duplicate_credential_regex",
+   "phantom_code_references.py",
+   540,
+   "P2",
+   "_VIOLATION_KEY_RE = re.compile(r\"^(?P<rel>.+?):\\d+: (?:`(?P<"
+  ],
+  [
+   "duplicate_credential_regex",
+   "secret_assertion_operands.py",
+   68,
+   "P2",
+   "SECRET_NAME = re.compile(r\"(KEY|TOKEN|SECRET|PASSW(OR)?D|DSN"
+  ],
+  [
+   "duplicate_credential_regex",
+   "secret_safe_test_output.py",
+   48,
+   "P2",
+   "_KEYWORD_PASSWORD = re.compile(r\"(?P<key>\\bpassword\\s*=\\s*)("
+  ],
+  [
+   "duplicate_function_body",
+   "_scaffold.py",
+   64,
+   "P2",
+   "def _toml_str(text: str) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "ci_health.py",
+   279,
+   "P2",
+   "def _cell(text: str) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "constant_fallback_cache_key.py",
+   187,
+   "P2",
+   "def find_constant_fallback_cache_key("
+  ],
+  [
+   "duplicate_function_body",
+   "coverage_config_parity.py",
+   93,
+   "P2",
+   "def _tokens(command: str) -> list[str]:"
+  ],
+  [
+   "duplicate_function_body",
+   "edge_function_hygiene.py",
+   67,
+   "P2",
+   "def _balanced(source: str, open_index: int, opener: str = \"{"
+  ],
+  [
+   "duplicate_function_body",
+   "edge_function_hygiene.py",
+   87,
+   "P2",
+   "def _line_of(source: str, index: int) -> int:"
+  ],
+  [
+   "duplicate_function_body",
+   "effect_assertion_parity.py",
+   674,
+   "P2",
+   "def _py_files(root: Path) -> \"list[Path]\":"
+  ],
+  [
+   "duplicate_function_body",
+   "hash_fed_by_array_copy.py",
+   133,
+   "P2",
+   "def find_hashes_fed_by_array_copy(roots: Sequence[Path], exc"
+  ],
+  [
+   "duplicate_function_body",
+   "identity_comparisons.py",
+   52,
+   "P2",
+   "def _scope_statements(body: list[ast.stmt]) -> Iterator[ast."
+  ],
+  [
+   "duplicate_function_body",
+   "import_cycles.py",
+   69,
+   "P2",
+   "def _is_type_checking(test: ast.expr) -> bool:"
+  ],
+  [
+   "duplicate_function_body",
+   "inert_patch_targets.py",
+   132,
+   "P2",
+   "def _module_scope(body: \"list[ast.stmt]\") -> Iterator[ast.st"
+  ],
+  [
+   "duplicate_function_body",
+   "latched_availability_flags.py",
+   166,
+   "P2",
+   "def find_latched_availability_flags(roots: Sequence[Path], e"
+  ],
+  [
+   "duplicate_function_body",
+   "lock_held_across_io.py",
+   162,
+   "P2",
+   "def find_lock_held_across_io("
+  ],
+  [
+   "duplicate_function_body",
+   "loop_invariant_cast.py",
+   237,
+   "P2",
+   "def find_loop_invariant_cast("
+  ],
+  [
+   "duplicate_function_body",
+   "marker_runner_coverage.py",
+   401,
+   "P2",
+   "def _peek(self) -> \"str | None\":"
+  ],
+  [
+   "duplicate_function_body",
+   "module_cache_thread_safety.py",
+   55,
+   "P2",
+   "def _module_statements(body: Iterable[ast.stmt]) -> Iterator"
+  ],
+  [
+   "duplicate_function_body",
+   "no_source_text_tests.py",
+   71,
+   "P2",
+   "def find_source_text_tests("
+  ],
+  [
+   "duplicate_function_body",
+   "patch_target_read_at_call.py",
+   178,
+   "P2",
+   "def _head(node: ast.AST) -> Optional[str]:"
+  ],
+  [
+   "duplicate_function_body",
+   "persisted_negative_probe.py",
+   232,
+   "P2",
+   "def find_persisted_negative_probe("
+  ],
+  [
+   "duplicate_function_body",
+   "phantom_code_references.py",
+   438,
+   "P2",
+   "def _python_comment_lines(source: str, tree: ast.Module) -> "
+  ],
+  [
+   "duplicate_function_body",
+   "registry.py",
+   143,
+   "P2",
+   "def _md(text: str) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "reiterated_iterable_params.py",
+   202,
+   "P2",
+   "def find_reiterated_iterable_params("
+  ],
+  [
+   "duplicate_function_body",
+   "rollback_then_continue.py",
+   46,
+   "P2",
+   "def _walk_own(nodes: Sequence[ast.AST]) -> Iterator[ast.AST]"
+  ],
+  [
+   "duplicate_function_body",
+   "rollback_then_continue.py",
+   184,
+   "P2",
+   "def find_rollback_then_continue("
+  ],
+  [
+   "duplicate_function_body",
+   "shared_mutable_placeholder.py",
+   131,
+   "P2",
+   "def find_shared_mutable_placeholders("
+  ],
+  [
+   "duplicate_function_body",
+   "sibling_floor_skew.py",
+   99,
+   "P2",
+   "def _norm(name: str) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "standard_stream_restore.py",
+   94,
+   "P2",
+   "def _key(node: ast.AST) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "standard_stream_restore.py",
+   241,
+   "P2",
+   "def find_unconditional_stream_restores(roots: Sequence[Path]"
+  ],
+  [
+   "duplicate_function_body",
+   "stub_signature_parity.py",
+   260,
+   "P2",
+   "def _str(node: Optional[ast.expr]) -> Optional[str]:"
+  ],
+  [
+   "duplicate_function_body",
+   "swallowed_exceptions.py",
+   221,
+   "P2",
+   "def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef)"
+  ],
+  [
+   "duplicate_function_body",
+   "uncalled_functions.py",
+   266,
+   "P2",
+   "def _binds_all(node: ast.Assign) -> bool:"
+  ],
+  [
+   "duplicate_function_body",
+   "unexecuted_function_bodies.py",
+   205,
+   "P2",
+   "def _is_type_checking(test: ast.expr) -> bool:"
+  ],
+  [
+   "duplicate_function_body",
+   "unread_function_params.py",
+   55,
+   "P2",
+   "def _decorator_name(node: ast.expr) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "unread_function_params.py",
+   150,
+   "P2",
+   "def find_unread_function_params("
+  ],
+  [
+   "duplicate_function_body",
+   "unsafe_deserialization.py",
+   100,
+   "P2",
+   "def _suppressed(lines: list[str], node: ast.AST) -> bool:"
+  ],
+  [
+   "duplicate_function_body",
+   "unsafe_deserialization.py",
+   398,
+   "P2",
+   "def find_unsafe_deserialization("
+  ],
+  [
+   "duplicate_function_body",
+   "vacuous_loop_assertions.py",
+   87,
+   "P2",
+   "def scope(self) -> str:"
+  ],
+  [
+   "duplicate_function_body",
+   "validation_errors_echo_input.py",
+   70,
+   "P2",
+   "def _final_name(node: ast.AST) -> Optional[str]:"
+  ],
+  [
+   "effect_flag_outside_its_effect",
+   "effect_assertion_parity.py",
+   820,
+   "P2",
+   "names.add(\".\".join([repo_root.name, *parts]))"
+  ],
+  [
+   "mutable_default",
+   "dataclass_case_completeness.py",
+   108,
+   "Low",
+   "def assert_every_dataclass_has_a_case("
+  ],
+  [
+   "mutable_default",
+   "llm_call_archive_gate.py",
+   232,
+   "Low",
+   "def assert_every_llm_call_is_archived("
+  ],
+  [
+   "mutable_default",
+   "prompt_field_parity.py",
+   216,
+   "Low",
+   "def prompt_keys("
+  ],
+  [
+   "non_neutral_except_fallback",
+   "_core/gate_cache.py",
+   158,
+   "P1",
+   "except (OSError, ValueError) as exc:"
+  ],
+  [
+   "non_neutral_except_fallback",
+   "api_floor.py",
+   172,
+   "P1",
+   "except importlib.metadata.PackageNotFoundError:  # best-effo"
+  ],
+  [
+   "non_neutral_except_fallback",
+   "mypy_gate.py",
+   100,
+   "P1",
+   "except subprocess.TimeoutExpired:"
+  ],
+  [
+   "possibly_dead_import",
+   "_core/corpus.py",
+   27,
+   "Low",
+   "import subprocess"
+  ],
+  [
+   "possibly_dead_import",
+   "_gate_report.py",
+   11,
+   "Low",
+   "import os"
+  ],
+  [
+   "resource_handle_safety",
+   "_mutation_runner.py",
+   332,
+   "P2",
+   "process = subprocess.Popen("
+  ],
+  [
+   "resource_handle_safety",
+   "_mutation_runner.py",
+   463,
+   "P2",
+   "self.process = subprocess.Popen("
+  ],
+  [
+   "resource_handle_safety",
+   "_mutation_worker.py",
+   261,
+   "P2",
+   "devnull = os.open(os.devnull, os.O_WRONLY)"
+  ],
+  [
+   "resource_handle_safety",
+   "mutation_teeth.py",
+   312,
+   "P2",
+   "fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)"
+  ],
+  [
+   "sql_limit_without_order_by",
+   "sql_verify.py",
+   389,
+   "P2",
+   "return f\"SELECT 1 FROM {refreshed.group(1)} LIMIT 0\", None"
+  ],
+  [
+   "timing_literal_in_call",
+   "_mutation_runner.py",
+   396,
+   "Low",
+   "time.sleep(0.2 * (attempt + 1))"
+  ],
+  [
+   "timing_literal_in_call",
+   "mutation_teeth.py",
+   318,
+   "Low",
+   "time.sleep(0.05)"
+  ],
+  [
+   "timing_literal_in_call",
+   "resource_leak_guard.py",
+   172,
+   "Low",
+   "time.sleep(0.05)"
+  ],
+  [
+   "todo_hygiene",
+   "_scaffold.py",
+   27,
+   "Low",
+   "_PLACEHOLDER = b\"# TODO: replace with the minimal code the g"
+  ],
+  [
+   "todo_hygiene",
+   "ci_workflow_gate.py",
+   58,
+   "Low",
+   "# match `continue-on-error: true  # TODO` at all -- silently"
+  ],
+  [
+   "todo_hygiene",
+   "uncalled_functions.py",
+   43,
+   "Low",
+   "A grep-based version would have to special-case all three, a"
+  ],
+  [
+   "unbounded_retry_loop",
+   "_mutation_runner.py",
+   535,
+   "Low",
+   "while True:  # audit-exempt: busy_retry_loop -- each read wa"
+  ],
+  [
+   "unthrottled_hot_loop_log",
+   "_mutation_worker.py",
+   197,
+   "P2",
+   "logger.warning("
+  ],
+  [
+   "unthrottled_hot_loop_log",
+   "_mutation_worker.py",
+   244,
+   "P2",
+   "logger.warning(\"could not resolve the file of %s, so it is l"
+  ],
+  [
+   "unthrottled_hot_loop_log",
+   "dart_scanners.py",
+   700,
+   "P2",
+   "logger.warning("
+  ]
+ ]
+}

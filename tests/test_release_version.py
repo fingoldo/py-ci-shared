@@ -114,11 +114,20 @@ def test_the_readme_install_tag_is_the_newest_release_or_this_one():
     assert pinned <= allowed, f"README.md installs {sorted(pinned - allowed)}; use the newest release or v{VERSION}"
 
 
-def test_the_install_pyutilz_action_defaults_to_the_pinned_commit():
-    pin = next(d for d in PYPROJECT["project"]["optional-dependencies"]["dev"] if d.startswith("pyutilz"))
-    sha = pin.rsplit("@", 1)[1]
+def test_the_install_pyutilz_action_has_no_pinned_commit_of_its_own():
+    """The action reads the pin from the calling repository's pyproject.toml, so a constant here could only drift."""
     action = yaml.safe_load((REPO / ".github" / "actions" / "install-pyutilz" / "action.yml").read_text(encoding="utf-8"))
-    assert action["inputs"]["pyutilz-ref"]["default"] == sha, "install-pyutilz's default ref and the [dev] pyutilz pin must be the same commit"
+    assert action["inputs"]["pyutilz-ref"]["default"] == ""
+
+
+def test_the_resolver_returns_the_commit_this_repository_pins():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("resolve_pin", REPO / ".github" / "actions" / "install-pyutilz" / "resolve_pin.py")
+    resolve_pin = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolve_pin)
+    pin = next(d for d in PYPROJECT["project"]["optional-dependencies"]["dev"] if d.startswith("pyutilz"))
+    assert resolve_pin.pins((REPO / "pyproject.toml").read_text(encoding="utf-8")) == {pin.rsplit("@", 1)[1]}
 
 
 # --- release_guard: pure rules ---------------------------------------------------------------------------------------

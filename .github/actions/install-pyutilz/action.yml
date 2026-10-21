@@ -14,24 +14,30 @@ inputs:
     required: true
   pyutilz-ref:
     description: >-
-      pyutilz commit to install. Defaults to the commit this repo's own `[dev]` extra pins (tests hold the two equal),
-      so an unset input installs a known commit rather than whatever pyutilz's default branch holds at run time. Set
-      it to the SHA your project pins, or to "master" to take the tip on purpose.
+      pyutilz commit to install. Empty (the default) reads the one commit the calling repository's pyproject.toml pins
+      for pyutilz, so each repository installs the commit it pins and nothing else. Set it to a SHA, or to "master" to
+      take the tip on purpose.
     required: false
-    default: "5372fee4baf0d8edaa7bb41102142b80ebb97a0f"  # pragma: allowlist secret
+    default: ""
 
 runs:
   using: composite
   steps:
+    - name: Resolve the calling repository's pyutilz pin
+      id: pin
+      if: ${{ inputs.pyutilz-ref == '' }}
+      shell: bash
+      run: |
+        echo "ref=$(python "${{ github.action_path }}/resolve_pin.py" pyproject.toml)" >> "$GITHUB_OUTPUT"
+
     - name: Clone pyutilz
       shell: bash
       run: git clone --depth 1 https://github.com/fingoldo/pyutilz.git
 
     - name: Pin pyutilz to a specific commit
-      if: ${{ inputs.pyutilz-ref != '' }}
       shell: bash
       env:
-        INPUTS_PYUTILZ_REF: ${{ inputs.pyutilz-ref }}
+        INPUTS_PYUTILZ_REF: ${{ inputs.pyutilz-ref || steps.pin.outputs.ref }}
       # The clone above is --depth 1 (tip only), so an older/different SHA isn't present yet --
       # fetch just that one commit (still shallow, not a full-history clone) before checking it out.
       run: |

@@ -1,0 +1,100 @@
+{
+ "corpus": "llm_bench",
+ "root": "C:\\Users\\Admin\\Machine learning\\llm_bench\\src\\llm_bench",
+ "pyutilz_commit": "5372fee4baf0d8edaa7bb41102142b80ebb97a0f",
+ "failed_checks": {},
+ "findings_count": 13,
+ "findings": [
+  [
+   "asymmetric_resource_guard",
+   "storage/file.py",
+   221,
+   "P0",
+   "await self._db.execute(sql, params)"
+  ],
+  [
+   "asymmetric_resource_guard",
+   "storage/postgres.py",
+   333,
+   "P0",
+   "await conn.execute("
+  ],
+  [
+   "asymmetric_resource_guard",
+   "storage/postgres.py",
+   577,
+   "P0",
+   "v = await conn.fetchval("
+  ],
+  [
+   "async_primitive_reinit_per_call",
+   "runner/round_runner.py",
+   233,
+   "P1",
+   "per_op_sems: dict[str, asyncio.Semaphore] = {op: asyncio.Sem"
+  ],
+  [
+   "default_via_or",
+   "cost/estimator.py",
+   228,
+   "Low",
+   "profile = profile or CostProfile()"
+  ],
+  [
+   "default_via_or",
+   "cost/estimator.py",
+   231,
+   "Low",
+   "filter_ = filter_ or CostFilter()"
+  ],
+  [
+   "default_via_or",
+   "halving/assignment.py",
+   51,
+   "Low",
+   "schedule = schedule or HalvingSchedule()"
+  ],
+  [
+   "default_via_or",
+   "halving/driver.py",
+   239,
+   "Low",
+   "reasons[m] = why or \"dead\""
+  ],
+  [
+   "default_via_or",
+   "storage/postgres.py",
+   397,
+   "P2",
+   "ts = row.ts or datetime.now(UTC)"
+  ],
+  [
+   "duplicate_credential_regex",
+   "core/redaction.py",
+   32,
+   "P2",
+   "_BEARER_TOKEN_RE = re.compile(r\"Bearer\\s+\\S+\", re.IGNORECASE"
+  ],
+  [
+   "duplicate_function_body_subset",
+   "storage/file.py",
+   159,
+   "Low",
+   "async def close(self) -> None:"
+  ],
+  [
+   "effect_flag_outside_its_effect",
+   "core/types.py",
+   183,
+   "P2",
+   "seen.add(sid)"
+  ],
+  [
+   "llm_call_missing_max_tokens_cap",
+   "runner/round_runner.py",
+   940,
+   "P2",
+   "response = await provider.generate(prompt=usr_p, system=sys_"
+  ]
+ ]
+}
