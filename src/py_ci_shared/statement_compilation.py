@@ -30,6 +30,7 @@ from typing import Any, Optional, Union
 
 from ._core import ImportAliases, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.node_index import dotted_chain
 
 # The names that BUILD a statement. Mocking one of these means no SQL is ever compiled; mocking `session`,
 # `engine` or `connection` does not, and is the normal way to keep a unit test off the database.
@@ -54,19 +55,8 @@ _AUTOSPEC_KEYWORDS = frozenset({"autospec", "spec", "spec_set"})
 DEFAULT_EXCLUDED_PREFIXES: tuple[str, ...] = ("requests.", "httpx.", "aiohttp.", "urllib3.", "urllib.", "boto3.", "botocore.", "os.", "shutil.")
 
 
-def _dotted(node: ast.expr) -> str:
-    """``mocker.patch.object`` for the call's func expression, as written."""
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if isinstance(node, ast.Name):
-        parts.append(node.id)
-    return ".".join(reversed(parts))
-
-
 def _is_patch_call(call: ast.Call, aliases: ImportAliases) -> bool:
-    if _dotted(call.func) in _PATCH_NAMES:
+    if dotted_chain(call.func) in _PATCH_NAMES:
         return True
     return aliases.qualified_name(call) in _PATCH_NAMES
 
@@ -81,7 +71,7 @@ def _target(call: ast.Call) -> str:
     if len(call.args) > 1:
         second = call.args[1]
         if isinstance(second, ast.Constant) and isinstance(second.value, str):
-            return f"{_dotted(first) or '<object>'}.{second.value}"
+            return f"{dotted_chain(first) or '<object>'}.{second.value}"
     return ""
 
 
@@ -107,9 +97,9 @@ def _is_autospecced(call: ast.Call) -> bool:
     for keyword in call.keywords:
         if keyword.arg in _AUTOSPEC_KEYWORDS and _truthy(keyword.value):
             return True
-        if keyword.arg in ("new", "new_callable") and isinstance(keyword.value, ast.Call) and "autospec" in _dotted(keyword.value.func):
+        if keyword.arg in ("new", "new_callable") and isinstance(keyword.value, ast.Call) and "autospec" in dotted_chain(keyword.value.func):
             return True
-        if keyword.arg == "new_callable" and "autospec" in _dotted(keyword.value):
+        if keyword.arg == "new_callable" and "autospec" in dotted_chain(keyword.value):
             return True
     return False
 
@@ -119,7 +109,7 @@ _Marked = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 
 def _is_routing_mark(node: ast.expr) -> bool:
     target = node.func if isinstance(node, ast.Call) else node
-    return _dotted(target).endswith(f"mark.{ROUTING_MARKER}")
+    return dotted_chain(target).endswith(f"mark.{ROUTING_MARKER}")
 
 
 def _pytestmark_is_routing(body: list[ast.stmt]) -> bool:

@@ -26,6 +26,7 @@ from typing import Optional, Union
 
 from ._core import ScanResult, child_nodes, qualified_functions, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.node_index import dotted_chain
 
 __all__ = ["DiscardedCopy", "find_discarded_model_copies", "assert_no_discarded_model_copy"]
 
@@ -68,22 +69,12 @@ def _mentions(node: ast.AST | None, name: str) -> bool:
     return node is not None and any(isinstance(n, ast.Name) and n.id == name and isinstance(n.ctx, ast.Load) for n in _fast_walk(node))
 
 
-def _dotted(node: ast.AST) -> str:
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if isinstance(node, ast.Name):
-        parts.append(node.id)
-    return ".".join(reversed(parts))
-
-
 def _is_sink_call(call: ast.Call) -> bool:
     """``print(x)``, ``log.debug('%s', x)``, ``logging.info(x)``, ``self.logger.warning(x)``: displays, not consumers."""
     if isinstance(call.func, ast.Name):
         return call.func.id in _SINK_FUNCTIONS
     if isinstance(call.func, ast.Attribute) and call.func.attr in _LOG_METHODS:
-        receiver = _dotted(call.func.value).rsplit(".", 1)[-1].lower()
+        receiver = dotted_chain(call.func.value).rsplit(".", 1)[-1].lower()
         return "log" in receiver
     return False
 

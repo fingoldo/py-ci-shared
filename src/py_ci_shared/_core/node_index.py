@@ -282,3 +282,14 @@ def dotted_name(node: ast.AST) -> str:
         parts.append(node.id)
         return ".".join(reversed(parts))
     return ""
+
+
+def dotted_chain(node: ast.AST) -> str:
+    """The attribute chain of *node* as written (``a.b.c``), without its root when the root is not a name (``f().g`` gives ``g``)."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if isinstance(node, ast.Name):
+        parts.append(node.id)
+    return ".".join(reversed(parts))
