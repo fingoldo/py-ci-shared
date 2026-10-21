@@ -454,6 +454,7 @@ EXEMPT: dict[str, str] = {
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
     "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
     "deferred_drift": "counts DEFERRED list entries against a baseline; bookkeeping",
+    "deferred_entries": "counts the DEFERRED list literals deferred_drift holds to a baseline; bookkeeping, covered by tests/test_deferred_entries.py",
     "deletion_gates": "library of git-diff deletion checks; needs git history",
     "docs_inventory_parity": "takes a precomputed problem list; the find_* helpers compare pyproject and docs",
     "edge_function_hygiene": "Supabase edge-function directory layout checks (TypeScript)",

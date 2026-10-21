@@ -175,7 +175,7 @@ Consequences recorded here so they are not forgotten:
   their pins until each one's own rebuild, so one repository's baseline is never refreshed against another's pin.
 - Section 7 question 1 is answered by this decision. Questions 2 to 5 stay open for the owner.
 
-### 9.1 Consumer pin inventory (read-only, 2026-10-21)
+#### 9.1 Consumer pin inventory (read-only, 2026-10-21)
 
 | consumer | pyutilz pin found | status |
 |---|---|---|
