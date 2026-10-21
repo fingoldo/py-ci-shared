@@ -2,7 +2,7 @@
 
 Scope: the captured output of the mutation runner's cold children (`run_with_deadline`) and of the warm worker's reply pump. Tracker finding SUB-14 said the parent's memory grew with whatever a mutant printed, until the timeout.
 
-### SUB-14-1 (P2) -- run_with_deadline and the warm reply pump keep the whole child output
+### SUB-14 (P2) -- run_with_deadline and the warm reply pump keep the whole child output
 
 **Disposition:** FIXED, verdicts unchanged. The fix is in the mutation harness content hash list, so the parent must refresh the baseline and bump `HARNESS_VERSION`; this change does not do either.
 
