@@ -29,7 +29,7 @@ def enabled() -> bool:
     return os.environ.get(NO_CACHE_ENV, "").strip() not in ("1", "true", "yes")
 
 
-_TREE_MEMO: dict[str, tuple[tuple, str]] = {}
+_TREE_DIGESTS: dict[str, str] = {}
 
 
 def _file_stat(entry: os.DirEntry) -> tuple[int, int]:
@@ -72,17 +72,16 @@ def _stat_signature(root: Path) -> tuple:
 def tree_digest(root: Path) -> str:
     """A digest of every file under *root* (relative path and content), skipping the caches and the git directory.
 
-    The content is read only when the stat signature (paths, sizes, modification times) differs from the one this process last digested.
-    Two gates in one run do not each read the whole tree. A file rewritten with the same size inside one timestamp tick is the one case
-    this misses, the same racy case git's index has; the next change of its size or time corrects it.
+    Computed once per process and root: every gate of one run shares it, so the tree is walked and read once, not once per gate.
+    A file changed later in the same process is not seen until :func:`forget_tree_digests` is called, which is the cost of
+    sharing; code that rewrites files under a repository root in the same process must call it.
     """
     key = root.resolve().as_posix()
-    signature = _stat_signature(root)
-    memo = _TREE_MEMO.get(key)
-    if memo is not None and memo[0] == signature:
-        return memo[1]
+    known = _TREE_DIGESTS.get(key)
+    if known is not None:
+        return known
     digest = hashlib.sha256()
-    for rel, _size, _mtime in signature:
+    for rel, _size, _mtime in _stat_signature(root):
         path = root / rel
         try:
             content = path.read_bytes()
@@ -90,8 +89,13 @@ def tree_digest(root: Path) -> str:
             content = b"<unreadable>"
         digest.update(rel.encode("utf-8") + b"\x00" + hashlib.sha256(content).digest())
     value = digest.hexdigest()
-    _TREE_MEMO[key] = (signature, value)
+    _TREE_DIGESTS[key] = value
     return value
+
+
+def forget_tree_digests() -> None:
+    """Drop the tree digests this process remembers, so the next gate walks and reads the tree again."""
+    _TREE_DIGESTS.clear()
 
 
 def _kwargs_ask_for_network(kwargs: dict[str, Any]) -> bool:

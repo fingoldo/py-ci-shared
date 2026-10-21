@@ -41,12 +41,32 @@ def test_a_repeat_on_an_unchanged_tree_is_not_re_run(repo):
     assert "cached" in second.message
 
 
-def test_a_changed_file_is_a_miss(repo):
+def test_a_changed_file_is_a_miss_once_the_shared_digests_are_forgotten(repo):
     config, run, calls, _ = repo
     runner.run_gate(config, run)
     (config.repo_root / "module.py").write_text("X = 2\n", encoding="utf-8")
+    gate_cache.forget_tree_digests()
     runner.run_gate(config, run)
     assert calls == ["call", "call"]
+
+
+def test_gates_of_one_process_share_one_tree_walk(repo, monkeypatch):
+    config, run, calls, _ = repo
+    walks: list[str] = []
+    real = gate_cache._stat_entries
+
+    def counting(path, rel_dir, out):
+        if not rel_dir:
+            walks.append(path)
+        return real(path, rel_dir, out)
+
+    monkeypatch.setattr(gate_cache, "_stat_entries", counting)
+    gate_cache.forget_tree_digests()
+    runner.run_gate(config, run)
+    runner.run_gate(config, run)
+    runner.run_gate(config, run)
+    assert len(walks) == 1
+    assert calls == ["call"]
 
 
 def test_a_failure_is_never_replayed(repo):

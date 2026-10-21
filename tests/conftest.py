@@ -43,6 +43,23 @@ GIT_ISOLATION = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _fresh_tree_digests(request: pytest.FixtureRequest) -> Iterator[None]:
+    """A test that rewrites files must not leave a gate of a later test a digest of the old tree.
+
+    Only the self-gate module shares one tree digest across its gates: it runs the gates over this checkout and writes nothing.
+    Every other test starts and ends with the digests forgotten.
+    """
+    from py_ci_shared._core import gate_cache
+
+    shares = request.node.path.name == "test_self_gates.py"
+    if not shares:
+        gate_cache.forget_tree_digests()
+    yield
+    if not shares:
+        gate_cache.forget_tree_digests()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def _isolated_git_config() -> Iterator[None]:
     """Hide the developer's global/system git config from every git subprocess of the session."""
