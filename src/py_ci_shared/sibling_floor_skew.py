@@ -284,7 +284,7 @@ def version_at(sibling: str, owner: str, ref: str, *, resolve_in: Optional[Mappi
     clone = clones.get(_norm(sibling))
     if clone is not None:
         found = _git_show_version(clone, ref)
-        if found is not None:
+        if found is not None:  # audit-exempt: sentinel_guard_mismatch -- _git_show_version returns None on every failure, so the guard is the intended one
             return found
     return _github_version(sibling, owner, ref) if network else None
 

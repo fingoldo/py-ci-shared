@@ -1,3 +1,3 @@
 {
-  "src/py_ci_shared/spec_bound_doubles.py::files_driving::admit_on_error": "fail-closed: an unreadable file is kept as a candidate so the parse that follows reports it by path instead of dropping it from the scan"
+  "src/py_ci_shared/spec_bound_doubles.py::files_driving::admit_on_error": "fail-closed by design: files_driving keeps a SourceError test file so the entry-point scan that follows reports it by path; the kept file is an error report, never a gate candidate that passes"
 }

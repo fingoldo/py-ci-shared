@@ -348,7 +348,7 @@ class _WarmRunner:
 
     def _reply_to(self, request_id: int, deadline: float) -> Optional[dict[str, Any]]:
         """The reply carrying *request_id*, skipping any other line; ``None`` on EOF or at the deadline."""
-        while True:
+        while True:  # audit-exempt: busy_retry_loop -- each read waits at most the remaining deadline, so the loop is bounded in time
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self.last_timed_out = True

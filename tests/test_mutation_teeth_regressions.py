@@ -17,7 +17,6 @@ import subprocess
 import sys
 import tempfile
 import threading
-import time
 import warnings
 from pathlib import Path
 from typing import Any, ClassVar, Optional
@@ -533,7 +532,7 @@ class TestTheCache:
             try:
                 for i in range(15):
                     mutation_teeth._store_cached_run(cache, Path(f"{prefix}{i}.py"), "k", self._run(""))
-            except BaseException as exc:  # pragma: no cover - reported below
+            except BaseException as exc:  # pragma: no cover - reported below  # audit-exempt: bare_except -- the exception is kept in errors and the test asserts none below, so nothing is swallowed
                 errors.append(exc)
 
         threads = [threading.Thread(target=writer, args=(p,)) for p in ("a", "b", "c")]
@@ -802,18 +801,6 @@ class TestTheRatchet:
 # ── process trees and sandbox removal ───────────────────────────────────────────────────────────
 
 
-def _alive(pid: int) -> bool:
-    if os.name == "nt":
-        out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, timeout=30).stdout
-        return str(pid).encode("ascii") in out
-    try:
-        os.kill(pid, 0)
-    except OSError as exc:
-        logger.debug("pid %s is not alive: %s", pid, type(exc).__name__)
-        return False
-    return True
-
-
 class TestTimeoutsKillTheTree:
     def test_a_grandchild_dies_with_its_parent(self, tmp_path):
         from py_ci_shared._mutation_runner import run_with_deadline
@@ -828,11 +815,14 @@ class TestTimeoutsKillTheTree:
         # The 5 s deadline is enforced by run_with_deadline; a hang would be bounded by pytest-timeout, not by a wall-clock guess here.
         result = run_with_deadline([sys.executable, "-c", script], cwd=tmp_path, env=None, timeout=5)
         assert result is None
+        psutil = pytest.importorskip("psutil")
         pid = int(pid_file.read_text(encoding="utf-8"))
-        deadline = time.monotonic() + 10
-        while _alive(pid) and time.monotonic() < deadline:
-            time.sleep(0.2)
-        assert not _alive(pid), "the grandchild outlived the timeout"
+        try:
+            psutil.Process(pid).wait(timeout=10)
+        except psutil.NoSuchProcess:
+            return
+        except psutil.TimeoutExpired:
+            pytest.fail("the grandchild outlived the timeout")
 
     def test_a_finished_run_returns_its_output(self, tmp_path):
         from py_ci_shared._mutation_runner import run_with_deadline

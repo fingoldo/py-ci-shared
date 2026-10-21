@@ -3,7 +3,6 @@
     "tests/test_lock_held_across_io.py: \"time.sleep(1)\",": "inside a source string that the lock_held_across_io gate scans; the line is never executed",
     "tests/test_mutation_teeth_regressions.py: \"child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(120)'])\\n\"": "script text for a grandchild that the timeout under test must kill; the test never waits for it to finish",
     "tests/test_mutation_teeth_regressions.py: \"time.sleep(120)\\n\"": "script text for a grandchild that the timeout under test must kill; the test never waits for it to finish",
-    "tests/test_mutation_teeth_regressions.py: time.sleep(0.2)": "polls a real OS process until it is gone, bounded by a 10 s deadline; there is no clock to inject into the operating system",
     "tests/test_resource_leak_guard.py: assert \"child process\" in _errors(result) and \"time.sleep(4)\" in _errors(result)": "the child process the guard under test must detect: a sleeping child is the fixture, and the test does not wait for it",
     "tests/test_resource_leak_guard.py: subprocess.Popen([sys.executable, \"-c\", \"import time; time.sleep(4)\"])": "the child process the guard under test must detect: a sleeping child is the fixture, and the test does not wait for it",
     "tests/test_wallclock_test_waits.py: _tree(tmp_path, \"test/support/helper.dart\", \"Future<void> settle() => Future.delayed(const Duration(milliseconds: 50));\\n\")": "fixture text this gate's own tests write into a temporary tree and scan; it is never executed as a wait",
