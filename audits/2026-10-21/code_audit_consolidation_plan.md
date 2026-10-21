@@ -174,3 +174,18 @@ Consequences recorded here so they are not forgotten:
 - Consumer pins: the three repositories that gained `code_audit` today are pinned at pyutilz 7f4c767. The others keep
   their pins until each one's own rebuild, so one repository's baseline is never refreshed against another's pin.
 - Section 7 question 1 is answered by this decision. Questions 2 to 5 stay open for the owner.
+
+### 9.1 Consumer pin inventory (read-only, 2026-10-21)
+
+| consumer | pyutilz pin found | status |
+|---|---|---|
+| mlframe | 38532cd | old pin, baseline rebuild pending |
+| dash_app_core | 8a40c46 | old pin, baseline rebuild pending |
+| glossum_backend_scripts | none (floats on master) | must pin before a baseline can mean anything |
+| llm_bench | not found in pyproject or requirements | check the other dependency file before rebuilding |
+| algopacksimple | not found in pyproject or requirements | check the other dependency file before rebuilding |
+| autopsia | at `Redline/autopsia` | pin not yet read |
+| claude-usage-notifier, social, flutter_uptime_monitor | 7f4c767 (set 2026-10-21) | gates added today |
+
+The baseline rebuild is not done. Each row needs its own gate run and its own baseline refresh, and the private
+repositories cannot be checked in CI (billing), so each refresh is verified locally first.
