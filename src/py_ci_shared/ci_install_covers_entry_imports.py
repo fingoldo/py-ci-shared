@@ -60,6 +60,7 @@ from ._import_graph import (
     reach,
     read_declared,
 )
+from .ci_workflow_paths import workflow_files
 from .ci_install_covers_conftest import (
     _COVERAGE_VALUED,
     _UV_RUN_VALUED,
@@ -73,7 +74,6 @@ from .ci_install_covers_conftest import (
     _read_yaml,
     _skip_options,
     _strip_wrappers,
-    _workflow_files,
     _working_directory,
 )
 
@@ -391,7 +391,7 @@ def find_ci_install_covers_entry_imports(
     skipped = tuple(exclude)
     run = _Run(repo, declared, dict(name_map or {}), include_pytest)
     read = 0
-    for path in _workflow_files(base):
+    for path in workflow_files(base / ".github" / "workflows"):
         rel = path.relative_to(base).as_posix()
         if any(fragment in rel for fragment in skipped):
             continue

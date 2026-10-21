@@ -66,7 +66,11 @@ _JOBS_RE = re.compile(r"^jobs\s*:\s*$")
 
 
 def workflow_files(workflows_dir: Path) -> list[Path]:
-    return sorted(p for p in list(workflows_dir.glob("*.yml")) + list(workflows_dir.glob("*.yaml")) if p.is_file())
+    """The workflow files in *workflows_dir* with a lowercase ``.yml`` or ``.yaml`` extension, sorted.
+
+    The suffix is checked, not left to the glob: a glob is case-insensitive on Windows, so ``.YML`` would be listed there and not on Linux.
+    """
+    return sorted(p for p in workflows_dir.glob("*") if p.suffix in (".yml", ".yaml") and p.is_file())
 
 
 def strip_yaml_comment(line: str) -> str:

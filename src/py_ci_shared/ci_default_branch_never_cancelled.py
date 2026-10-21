@@ -47,6 +47,7 @@ from typing import Any, Optional, Union
 
 import yaml
 
+from .ci_workflow_paths import workflow_files
 from ._core import Baseline, EmptyScanError, Finding, SourceError, UnparsedFilesError, read_source
 from .ci_install_covers_conftest import _LineLoader
 
@@ -388,11 +389,6 @@ def _check_site(site: _Site, branches: Sequence[str], text_lines: list[str], rel
     return None
 
 
-def _workflow_files(root: Path) -> list[Path]:
-    folder = root / ".github" / "workflows"
-    return sorted(p for p in folder.glob("*") if p.suffix in (".yml", ".yaml") and p.is_file()) if folder.is_dir() else []
-
-
 def _problem(rel: str, message: str, line: int = 1) -> Finding:
     return Finding(rel, line, RULE_UNPARSED, message)
 
@@ -435,7 +431,7 @@ def _scan(root: Path, default_branches: Sequence[str], exclude: Iterable[str]) -
     findings: list[Finding] = []
     problems: list[Finding] = []
     read = 0
-    for path in _workflow_files(root):
+    for path in workflow_files(root / ".github" / "workflows"):
         rel = path.relative_to(root).as_posix()
         if any(fragment in rel for fragment in skipped):
             continue

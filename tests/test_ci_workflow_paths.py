@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from py_ci_shared.ci_workflow_paths import workflow_files
 from py_ci_shared.ci_workflow_paths import assert_workflow_paths_exist, find_missing_workflow_paths
 
 
@@ -167,3 +168,9 @@ class TestScopesAndPins:
         wf, root = _repo(tmp_path, "x")
         (wf / "ci.yml").write_bytes(b"\xef\xbb\xbfpermissions: read-all\njobs:\n  a:\n    steps:\n      - run: echo\n")
         assert find_missing_workflow_paths(wf, root, require_permissions=True) == []
+
+
+def test_workflow_files_lists_only_lowercase_yml_and_yaml(tmp_path):
+    for name in ("a.yml", "b.yaml", "c.YML", "d.txt"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+    assert [p.name for p in workflow_files(tmp_path)] == ["a.yml", "b.yaml"]

@@ -81,6 +81,7 @@ from ._ci_install_parts import (
     parse_version,
     pip_install,
 )
+from .ci_workflow_paths import workflow_files
 from ._core import Baseline, Finding, SourceError, read_source, refresh_requested, scan_python
 
 logger = logging.getLogger(__name__)
@@ -617,11 +618,6 @@ class _JobWalk:
         self.runs.append(PytestRun(self.workflow, self.job_id, line, cwd, list(args), self.provided.copy(), list(self.pythons)))
 
 
-def _workflow_files(root: Path) -> list[Path]:
-    wf = root / ".github" / "workflows"
-    return sorted(p for p in wf.glob("*") if p.suffix in (".yml", ".yaml") and p.is_file()) if wf.is_dir() else []
-
-
 def _working_directory(block: Any) -> str:
     run = block.get("run") if isinstance(block, dict) else None
     return str(run.get("working-directory") or "") if isinstance(run, dict) else ""
@@ -656,7 +652,7 @@ def _pytest_runs(repo: Repo) -> tuple[list[PytestRun], int]:
     """Every pytest invocation in every workflow job, and the number of workflow files read."""
     runs: list[PytestRun] = []
     read = 0
-    for path in _workflow_files(repo.root):
+    for path in workflow_files(repo.root / ".github" / "workflows"):
         found = _workflow_runs(repo, path)
         if found is not None:
             read += 1
