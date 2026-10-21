@@ -310,6 +310,13 @@ def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
     return problems
 
 
+def _floor_problem(repo_root: Path, blobs: Sequence[object], min_files: int) -> list[str]:
+    """A hygiene pass that read fewer text files than *min_files* checked nothing, so its silence proves nothing."""
+    if len(blobs) >= min_files:
+        return []
+    return [f"only {len(blobs)} text file(s) under {repo_root}; expected at least {min_files} -- the hygiene checks are reading nothing"]
+
+
 def assert_repo_hygiene(
     repo_root: Path,
     *,
@@ -318,9 +325,10 @@ def assert_repo_hygiene(
     workflows_dir: "Path | None" = None,
     text_suffixes: Sequence[str] = DEFAULT_TEXT_SUFFIXES,
     audit_dirs_hold_no_scripts: bool = True,
+    min_files: int = 1,
 ) -> None:
     """Fail on tracked generated files, missing required files, a script in an audits/ folder, or an
-    unguarded numeric CI gate."""
+    unguarded numeric CI gate, and when fewer than *min_files* text files were read."""
     import pytest
 
     problems: list[str] = []
@@ -330,6 +338,7 @@ def assert_repo_hygiene(
             f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and conflict on every merge:\n    " + "\n    ".join(tracked[:20])
         )
     blobs = _text_file_bytes(repo_root, text_suffixes, _DEFAULT_SKIP_DIRS)
+    problems += _floor_problem(repo_root, blobs, min_files)
     nul_files = _nul_problems(repo_root, blobs)
     if nul_files:
         problems.append(

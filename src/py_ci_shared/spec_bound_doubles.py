@@ -208,7 +208,7 @@ def files_driving(files: Iterable[Path], entry_points: Iterable[str]) -> list[Pa
     for path in files:
         try:
             text = read_source(path)
-        except SourceError:
+        except SourceError:  # best-effort: fail-closed by design, the unreadable file is kept so the entry-point scan reports it by path
             out.append(path)
             continue
         if any(name in text for name in wanted):

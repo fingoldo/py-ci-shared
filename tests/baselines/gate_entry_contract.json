@@ -1,12 +1,7 @@
 {
   "_comment": "Gate entries of corpus-scanning modules that lacked a min_* floor and/or allow_unparsed on 2026-10-03 (audit K-15). Shrink-only: tests/test_gate_entry_contract.py fails on a NEW entry missing either, and on a line here that no longer applies. Retrofit = add the parameter(s), delete the line.",
   "entries": {
-    "audit_wave_filenames.assert_no_new_audit_wave_filenames": "allow_unparsed",
-    "docs_inventory_parity.assert_no_inventory_drift": "floor,allow_unparsed",
-    "pickle_state_completeness.assert_pickle_round_trips": "floor,allow_unparsed",
-    "repo_hygiene.assert_repo_hygiene": "floor,allow_unparsed",
     "stale_comment_age.assert_no_stale_todos": "floor,allow_unparsed",
-    "test_partition_reachability.assert_partitions_reachable": "floor,allow_unparsed",
-    "timezone_honest.assert_timezone_honest": "allow_unparsed"
+    "test_partition_reachability.assert_partitions_reachable": "floor,allow_unparsed"
   }
 }
