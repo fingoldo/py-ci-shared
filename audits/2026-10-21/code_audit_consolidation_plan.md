@@ -152,3 +152,25 @@ Phase 6. Remove shims and duplicates that no consumer imports, in the next major
 - The mutation harness and its content hash stay in py-ci-shared.
 - The `code_audit_meta` wrapper becomes a thin call on whichever side is chosen.
 - Scanner performance is measured after the decision, on one tree.
+
+## 9. Decision (2026-10-21)
+
+**C-plus.** Checks stay in pyutilz with the logic their library code needs; py-ci-shared holds the gate wrappers, the
+shrink-only ratchets and the tracker; the rules that exist in both repositories are removed from py-ci-shared and
+delegate to pyutilz or to the one py-ci-shared implementation named in the registry counterpart table.
+
+Why, against the open decisions in section 7:
+
+- Option B needs most pyutilz detectors to have no consumer outside py-ci-shared. The inventory shows the opposite:
+  at least six repositories run `code_audit` (mlframe, autopsia, glossum_backend_scripts, llm_bench, dash_app_core,
+  algopacksimple), so moving the logic would turn every fix into a consumer-visible `@v1` change.
+- Option D is worth a third package only once more repositories need the base. None beyond these needs it yet.
+
+Consequences recorded here so they are not forgotten:
+
+- `source_text`: the ban rule and the claims rule are two implementations of one practice, measured in
+  `audits/2026-10-21/source_text_consolidation.md`. Consolidation onto the claims detector with a generated-file exemption
+  is the next change; it changes a blocking gate, so it lands with a CHANGELOG entry and the before/after counts.
+- Consumer pins: the three repositories that gained `code_audit` today are pinned at pyutilz 7f4c767. The others keep
+  their pins until each one's own rebuild, so one repository's baseline is never refreshed against another's pin.
+- Section 7 question 1 is answered by this decision. Questions 2 to 5 stay open for the owner.
