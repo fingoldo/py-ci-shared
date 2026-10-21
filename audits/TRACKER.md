@@ -803,14 +803,14 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **RESOLVED** | Med | `S-2` | pytest-randomly reseeders loaded in sessions without randomly (about 7 s per start) |
 | **RESOLVED** | Low | `S-3` | `warn_days=0` rewritten to the default 7 by an `or` |
 | **RESOLVED** | Med | `S-4` | Mutation sweep verdict split out of a file over the 1000-line budget (harness version 19) |
-| **DEFERRED** | P1 | `S-5` | `bare_except` x3: re-raising by design; waits on the detector reading `audit-exempt` for this check |
-| **DEFERRED** | P1 | `S-6` | `busy_retry_loop`: blocking queue read, not a spin; waits on the same detector change |
-| **DEFERRED** | P1 | `S-7` | `sentinel_guard_mismatch`: false match between two functions; waits on the same detector change |
+| **RESOLVED** | P1 | `S-5` | bare_except: the detector honours `# audit-exempt: bare_except -- <reason>`; the one intended handler in tests/test_mutation_teeth_regressions.py is marked (pyutilz 5372fee, pin in pyproject) |
+| **RESOLVED** | P1 | `S-6` | busy_retry_loop: the detector honours the marker; the deadline-bounded read in _mutation_runner._reply_to is marked (pyutilz 5372fee) |
+| **RESOLVED** | P1 | `S-7` | sentinel_guard_mismatch: the detector honours the marker; the guard on _git_show_version (None on every failure) is marked in sibling_floor_skew (pyutilz 5372fee) |
 | **RESOLVED** | P2 | `S-8` | drifted duplicates: 13 groups down to 1. Merged since the last note: the two `_dotted` helpers of discarded_model_copy and statement_compilation (dotted_chain), and the two root-based `_workflow_files` (now the shared workflow_files, strict on a lowercase .yml/.yaml suffix; the Windows glob had listed .YML). Left on purpose: `register_refresh_option` in six modules is the public API that each consumer's conftest calls, with its own help text; `_dotted` variants that return other types (persisted_negative_probe keeps call receivers, config_call_site_parity returns lists) |
 | **RESOLVED** | P2 | `S-9` | `default_via_or`: all 182 hits classified by reading each caller (audits/2026-10-21/). Three real traps fixed with regression tests: sql_verifier_coverage (empty exclusion reason), stale_comment_age (explicit empty scan_dirs), _mutation_fingerprint (explicit empty python_files, which pytest collects as nothing; harness 24). The rest are false positives or documented contracts |
 | **RESOLVED** | Low | `S-10` | C901 over 10: all 62 functions refactored (bdf3aaa); `complexity_ratchet.json` is empty and enforced by the self-gate test |
 | **RESOLVED** | Med | `S-11` | Corpus gates run on the package itself: 18 more enabled in af7e788, each a self-gate test in tests/test_self_gates.py |
-| **DEFERRED** | Low | `S-12` | Mutation sweep cost in the tests (`four_workers`, `survivors_in_source_order`) |
+| **WON'T FIX** | Low | `S-12` | Mutation sweep cost: measured, the cost is cold child pytest starts (about 7 s each). The one fix, PYTEST_DISABLE_PLUGIN_AUTOLOAD for nested runs, changes which plugins a consumer's tests load, so a mutant can look killed for the wrong reason; kept, cost accepted (audits/2026-10-21/mutation_profile.md) |
 
 ## Round 2026-10-20 — the attack-surface audit (secrets and CI, deserialization, subprocess and git, hot paths)
 
@@ -823,7 +823,7 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **RESOLVED** | P2 | `SEC-3` | corpus_drift records the exception type name only; tests/test_corpus_drift.py::test_snapshot_errors_never_carry_the_exception_text |
 | **RESOLVED** | P2 | `SEC-4` | env_example_round_trip reports the field name and exception type, never the value; the test asserts the value is absent |
 | **RESOLVED** | P2 | `SEC-5` | ci_health and release_guard use a same-host redirect handler, so Authorization never leaves api.github.com; two tests |
-| **DEFERRED** | Low | `SEC-6` | the lint-blocking *-version inputs default to the empty string; pinning them needs exact versions chosen and tested per tool (tool_versions.py holds o |
+| **RESOLVED** | Low | `SEC-6` | the eight lint tools default to exact pins (tool_versions.py: actionlint-py 1.7.12.25, zizmor 1.30.1, codespell 2.4.3, yamllint 1.38.0, bandit 1.9.4, vulture 2.16, interrogate 1.7.0, deptry 0.25.1; each at least two weeks old); a test holds the workflow defaults to them; CHANGELOG entry marks the behaviour change |
 | **RESOLVED** | Low | `SEC-7` | self-ci writes ruff --show-settings to a file and prints its head, so pipefail cannot fail the step |
 | **RESOLVED** | Low | `SEC-8` | ruff-blocking, black-filtered and lint-advisory reject a py-ci-shared-ref that is not letters, digits and ._/- or that starts with -, and fetch with - |
 | **RESOLVED** | Low | `SEC-9` | load_consumers validates repo and name (same fix as DS-2); tests/test_consumers_validation.py |
@@ -842,7 +842,7 @@ Details and measurements: `audits/2026-10-19/followups.md`.
 | **RESOLVED** | Low | `DS-12` | consumer_import_census rejects members that climb out of the destination and uses filter='data' on Python 3.12 and later |
 | **RESOLVED** | P1 | `SUB-1` | _core/git.py sets NoDefaultCurrentDirectoryInExePath at import, which Windows reads at call time; the test asserts the variable, the Windows lookup it |
 | **RESOLVED** | P2 | `SUB-2` | the nested pytest environment and the teeth sweep scrub GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE through git_env |
-| **DEFERRED** | P2 | `SUB-3` | the downloads are now bounded by timeouts; pinning tzdata and checking wheel digests needs the real versions and SHA-256 values, which cannot be writt |
+| **RESOLVED** | P2 | `SUB-3` | embedded_postgres: tzdata pinned to 2026.5 and the pgserver wheel per platform to 0.1.4 (cp312) are checked against pinned SHA-256 before anything is unpacked; a platform without a verified digest refuses with the PG_BIN hint; both downloads have timeouts |
 | **RESOLVED** | P2 | `SUB-4` | BLACK_CMD is split with posix=False on Windows; tests/test_audit_20261020_subprocess.py |
 | **RESOLVED** | P2 | `SUB-5` | every listed subprocess call carries a timeout; warn-only runners report skipped on expiry, mypy_gate fails, black raises, the embedded server and dow |
 | **RESOLVED** | Low | `SUB-6` | same fix as DS-2 |
@@ -865,5 +865,5 @@ Details and measurements: `audits/2026-10-21/meta_test_profile.md`.
 | Disposition | Sev | Finding | Note |
 |---|---|---|---|
 | **RESOLVED** | P1 | `PROF-1` | gate_cache stat walk: os.scandir instead of os.walk and stat; the self-gate run 1365 s to 595 s under cProfile (2a7b663) |
-| **DEFERRED** | Low | `PROF-2` | config._inside_root: two resolve() calls per corpus path, about 3% of the run; kept, the containment check must stay |
-| **DEFERRED** | P2 | `PROF-3` | every gate walks the same tree again (about 280 s); needs a decision on a signature shared between gates and its invalidation |
+| **RESOLVED** | Low | `PROF-2` | config._inside_root: the repository root is resolved once per corpus entry instead of once per path; the symlink containment check is unchanged |
+| **RESOLVED** | P2 | `PROF-3` | every gate walked the tree again: the tree digest is computed once per process and root (gate_cache.tree_digest, forget_tree_digests); a conftest fixture forgets it around every test except the self-gate module (16befa3) |

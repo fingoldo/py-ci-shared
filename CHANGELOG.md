@@ -4,6 +4,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.1
 
+- Behaviour change: the eight lint tools `lint-blocking.yml` runs (actionlint-py, zizmor, codespell, yamllint, bandit, vulture, interrogate, deptry) now default to the exact versions in `tool_versions.py` when a consumer leaves its `*-version` input empty, instead of the newest PyPI release at run time. A consumer that wants a different version sets the input. Each version is at least two weeks old at the time it is chosen.
 - Behaviour change: `phantom_code_references` no longer reports nine classes of false positive (Python protocol names, standard vocabulary
   codes, errno constants, external data file names, one-character symbols, names the repo spells out as strings, bare `self.x` attributes,
   `table.column` pairs spelled in SQL). On the autopsia tree 901 findings become 494. A consumer baseline recorded against the old scanner

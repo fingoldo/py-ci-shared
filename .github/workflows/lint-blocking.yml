@@ -93,35 +93,35 @@ on:
       actionlint-version:
         description: 'Exact actionlint-py version to pin (e.g. "1.7.9"), or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "1.7.12.25"
       zizmor-version:
         description: 'Exact zizmor version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "1.30.1"
       codespell-version:
         description: 'Exact codespell version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "2.4.3"
       yamllint-version:
         description: 'Exact yamllint version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "1.38.0"
       bandit-version:
         description: 'Exact bandit version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "1.9.4"
       vulture-version:
         description: 'Exact vulture version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "2.16"
       interrogate-version:
         description: 'Exact interrogate version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "1.7.0"
       deptry-version:
         description: 'Exact deptry version to pin, or "" for unpinned latest.'
         type: string
-        default: ""
+        default: "0.25.1"
 
 permissions:
   contents: read

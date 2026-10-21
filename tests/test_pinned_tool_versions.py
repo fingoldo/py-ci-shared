@@ -8,7 +8,18 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared import pinned_tool_versions as ptv
-from py_ci_shared.tool_versions import BLACK_VERSION, RUFF_VERSION
+from py_ci_shared.tool_versions import (
+    ACTIONLINT_PY_VERSION,
+    BANDIT_VERSION,
+    BLACK_VERSION,
+    CODESPELL_VERSION,
+    DEPTRY_VERSION,
+    INTERROGATE_VERSION,
+    RUFF_VERSION,
+    VULTURE_VERSION,
+    YAMLLINT_VERSION,
+    ZIZMOR_VERSION,
+)
 
 REPO = Path(__file__).resolve().parent.parent
 _PIN = f'    "ruff=={RUFF_VERSION}",  # a comment\n'
@@ -142,3 +153,24 @@ def test_black_version_is_the_one_the_shared_workflow_runs():
     # a hard-coded pin that differs is the drift this test exists for.
     assert reads_the_constant or pins == {BLACK_VERSION}, f"black-filtered.yml runs black {sorted(pins)}, tool_versions says {BLACK_VERSION}"
     assert pins <= {BLACK_VERSION}, f"black-filtered.yml also pins black {sorted(pins - {BLACK_VERSION})}, tool_versions says {BLACK_VERSION}"
+
+
+LINT_DEFAULTS = {
+    "actionlint": ACTIONLINT_PY_VERSION,
+    "zizmor": ZIZMOR_VERSION,
+    "codespell": CODESPELL_VERSION,
+    "yamllint": YAMLLINT_VERSION,
+    "bandit": BANDIT_VERSION,
+    "vulture": VULTURE_VERSION,
+    "interrogate": INTERROGATE_VERSION,
+    "deptry": DEPTRY_VERSION,
+}
+
+
+def test_lint_blocking_defaults_are_the_pinned_tool_versions() -> None:
+    """An empty *-version input must not mean "newest on PyPI": each default is the version tool_versions.py pins."""
+    text = (REPO / ".github" / "workflows" / "lint-blocking.yml").read_text(encoding="utf-8")
+    for name, pinned in LINT_DEFAULTS.items():
+        m = re.search(rf"\n      {name}-version:\n(?:        [^\n]*\n)+?        default: \"([^\"]*)\"", text)
+        assert m is not None, name
+        assert m.group(1) == pinned, f"{name}: workflow default {m.group(1)!r} is not the pinned {pinned!r}"

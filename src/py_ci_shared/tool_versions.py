@@ -19,3 +19,15 @@ RUFF_VERSION = "0.16.10"
 #: The black the shared ``black-filtered.yml`` workflow runs (its ``BLACK_CMD``); a consumer pins its own ``black==`` to
 #: this so its local hook formats exactly as CI checks. A test holds the workflow to this value.
 BLACK_VERSION = "26.5.1"
+
+#: The lint tools ``lint-blocking.yml`` runs when a consumer leaves its ``*-version`` input empty. Each was the newest release at least
+#: two weeks old when it was chosen; an empty input used to mean "whatever PyPI serves today", so a compromised or broken release ran
+#: in every consumer's CI at once. Bumping one is a deliberate change here, with a CHANGELOG entry.
+ACTIONLINT_PY_VERSION = "1.7.12.25"
+ZIZMOR_VERSION = "1.30.1"
+CODESPELL_VERSION = "2.4.3"
+YAMLLINT_VERSION = "1.38.0"
+BANDIT_VERSION = "1.9.4"
+VULTURE_VERSION = "2.16"
+INTERROGATE_VERSION = "1.7.0"
+DEPTRY_VERSION = "0.25.1"

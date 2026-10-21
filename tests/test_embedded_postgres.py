@@ -133,6 +133,8 @@ def test_fetch_into_a_custom_dest_leaves_its_parent_alone(tmp_path, monkeypatch)
 
     import py_ci_shared.embedded_postgres as ep
 
+    monkeypatch.setattr(ep, "_verified_wheel", _unverified_wheel)
+
     exe = ".exe" if os.name == "nt" else ""
     tools = tmp_path / "tools"
     (tools / "mine").mkdir(parents=True)
@@ -194,12 +196,13 @@ def test_a_cache_unpacked_before_the_timezone_step_gets_the_zone_files(tmp_path,
     """The pgserver build has no timezone/ directory, so SET TimeZone = 'UTC' failed on the embedded server; fetch adds it to an existing cache."""
     import py_ci_shared.embedded_postgres as ep
 
+    monkeypatch.setattr(ep, "_verified_wheel", _unverified_wheel)
     bin_dir = _unpacked_pginstall(tmp_path / "pginstall")
     calls = _fake_pip(monkeypatch, ep)
     assert ep.fetch(bin_dir) == bin_dir
     zones = tmp_path / "pginstall" / "share" / "postgresql" / "timezone"
     assert (zones / "UTC").is_file() and (zones / "Europe" / "Moscow").is_file()
-    assert len(calls) == 1 and "tzdata" in calls[0]
+    assert len(calls) == 1 and "tzdata==2026.5" in calls[0]
 
 
 def test_a_cache_that_has_its_zone_files_is_not_downloaded_again(tmp_path, monkeypatch):
@@ -247,3 +250,39 @@ def test_a_server_left_by_a_killed_process_is_reaped_and_a_live_one_is_kept(tmp_
     _reap_orphans(Path(sys.executable), tmp_path)
     assert not dead.exists()
     assert live.is_dir()
+
+
+def _unverified_wheel(directory, pattern, digest):
+    """Stand-in for the digest check, for tests whose fake wheels have no pinned bytes; the check itself is tested below."""
+    from pathlib import Path as _Path
+
+    return next(_Path(directory).glob(pattern))
+
+
+def test_a_wheel_with_its_pinned_digest_is_accepted(tmp_path):
+    import hashlib
+
+    import py_ci_shared.embedded_postgres as ep
+
+    wheel = tmp_path / "tzdata-2026.5-py2.py3-none-any.whl"
+    wheel.write_bytes(b"zone files")
+    digest = hashlib.sha256(b"zone files").hexdigest()
+    assert ep._verified_wheel(str(tmp_path), "tzdata-*.whl", digest) == wheel
+
+
+def test_a_wheel_that_does_not_match_its_pin_is_refused(tmp_path):
+    import py_ci_shared.embedded_postgres as ep
+
+    (tmp_path / "tzdata-2026.5-py2.py3-none-any.whl").write_bytes(b"tampered")
+    with pytest.raises(RuntimeError, match="does not match its pinned SHA-256"):
+        ep._verified_wheel(str(tmp_path), "tzdata-*.whl", "0" * 64)
+
+
+def test_fetch_refuses_a_platform_without_a_verified_digest_before_downloading(tmp_path, monkeypatch):
+    import py_ci_shared.embedded_postgres as ep
+
+    monkeypatch.setattr(ep, "wheel_platform", lambda *a, **k: "manylinux_2_17_aarch64")
+    calls = _fake_pip(monkeypatch, ep)
+    with pytest.raises(RuntimeError, match="verified digest"):
+        ep.fetch(tmp_path / "pginstall" / "bin")
+    assert calls == []

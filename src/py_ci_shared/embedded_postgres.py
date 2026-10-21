@@ -300,6 +300,18 @@ def run(argv: Sequence[str], *, env_var: str, bin_dir: "Path | None", missing_ex
 #: The pgserver wheel carries a relocatable PostgreSQL build; its binaries do not depend on the Python it was
 #: built for, so a cp312 wheel serves any interpreter.
 PGSERVER_VERSION = "0.1.4"
+#: SHA-256 of the pgserver wheel per platform tag, for the cp312 wheel that ``fetch`` asks pip for. The bytes are checked before
+#: anything is unpacked: a wheel whose digest is not listed, or does not match, is never extracted. A platform with no digest here
+#: fails with the ``PG_BIN`` hint rather than running unverified binaries.
+_PGSERVER_WHEEL_SHA256 = {
+    "win_amd64": "406e9355334e40754160a33d93f18a848720a38cd0b68da50be2ea272c89ed2d",  # pragma: allowlist secret
+    "manylinux_2_17_x86_64": "1a5d07c61d51f2abfef4ef61e2ef5cd014b994f7e09de8d3c140d2cf370e84a8",  # pragma: allowlist secret
+    "macosx_11_0_arm64": "780fa89f26a960cca0215caf471e70848dd8597bd8ceaeba7faf42170278980c",  # pragma: allowlist secret
+    "macosx_10_9_x86_64": "dc34f88561b18bc08edd98a84528f99a3720fe713a4e39a4a6210a4d009fe465",  # pragma: allowlist secret
+}
+#: The tzdata wheel (pure Python, so one digest for every platform) that the timezone database is copied from.
+TZDATA_VERSION = "2026.5"
+_TZDATA_WHEEL_SHA256 = "b683bd1b6659ddcd810ff02ad09ba821d4bf1065072805063eb35c49617905ac"  # pragma: allowlist secret
 #: (sys.platform prefix, normalised machine) -> wheel platform tag. The machine matters: an x86-64 Mac or an arm64 Linux
 #: box given the other architecture's binaries fails at the first exec.
 _WHEEL_PLATFORM = {
@@ -324,6 +336,17 @@ def wheel_platform(sys_platform: "str | None" = None, machine: "str | None" = No
     return next((tag for (key, cpu), tag in _WHEEL_PLATFORM.items() if sys_platform.startswith(key) and cpu == arch), None)
 
 
+def _verified_wheel(directory: str, pattern: str, digest: str) -> Path:
+    """The single wheel matching *pattern* in *directory*, after its SHA-256 has been checked against *digest*."""
+    import hashlib
+
+    wheel = next(Path(directory).glob(pattern))
+    actual = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    if actual != digest:
+        raise RuntimeError(f"{wheel.name} does not match its pinned SHA-256 (got {actual}); refusing to unpack it")
+    return wheel
+
+
 def _install_timezone_database(target: Path) -> None:
     """Give an unpacked pgserver build its ``timezone/`` directory from the ``tzdata`` wheel; a no-op when it is already there.
 
@@ -340,16 +363,16 @@ def _install_timezone_database(target: Path) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         try:
             subprocess.run(
-                [sys.executable, "-m", "pip", "download", "tzdata", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"],
+                [sys.executable, "-m", "pip", "download", f"tzdata=={TZDATA_VERSION}", "--no-deps", "--only-binary=:all:", "-d", tmp, "-q"],
                 check=True,
                 timeout=_DOWNLOAD_TIMEOUT_S,
             )
-            wheel = next(Path(tmp).glob("tzdata-*.whl"))
+            wheel = _verified_wheel(tmp, "tzdata-*.whl", _TZDATA_WHEEL_SHA256)
             with zipfile.ZipFile(wheel) as zf:
                 members = [m for m in zf.namelist() if m.startswith("tzdata/zoneinfo/") and not m.endswith("/")]
                 zf.extractall(tmp, members)
             shutil.copytree(Path(tmp) / "tzdata" / "zoneinfo", tz_dir)
-        except (subprocess.CalledProcessError, StopIteration, OSError) as exc:
+        except (subprocess.CalledProcessError, StopIteration, OSError, RuntimeError) as exc:
             sys.stderr.write(f"!! no timezone database for the embedded Postgres ({type(exc).__name__}): tests that SET TimeZone cannot run on it\n")
 
 
@@ -363,8 +386,8 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
             _install_timezone_database(bin_dir.parent)
         return bin_dir
     tag = wheel_platform()
-    if tag is None:
-        raise RuntimeError(f"no pgserver wheel known for {sys.platform}/{platform.machine()}; set PG_BIN instead")
+    if tag is None or tag not in _PGSERVER_WHEEL_SHA256:
+        raise RuntimeError(f"no pgserver wheel with a verified digest for {sys.platform}/{platform.machine()}; set PG_BIN instead")
     with tempfile.TemporaryDirectory() as tmp:
         subprocess.run(
             [
@@ -386,7 +409,7 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
             check=True,
             timeout=_DOWNLOAD_TIMEOUT_S,
         )
-        wheel = next(Path(tmp).glob("pgserver-*.whl"))
+        wheel = _verified_wheel(tmp, "pgserver-*.whl", _PGSERVER_WHEEL_SHA256[tag])
         with zipfile.ZipFile(wheel) as zf:
             members = [m for m in zf.namelist() if m.startswith("pgserver/pginstall/")]
             zf.extractall(tmp, members)
