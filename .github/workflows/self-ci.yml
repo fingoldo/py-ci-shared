@@ -98,7 +98,8 @@ jobs:
           COVERAGE: ${{ matrix.os == 'ubuntu-24.04' && matrix.python == '3.11' }}
         run: |
           if [ "$COVERAGE" = "true" ]; then
-            python -m pytest tests/ -v -ra --junitxml=junit.xml --cov=py_ci_shared --cov-report=term --cov-report=xml
+            # pytest-cov 6.x under pytest-xdist 3.8 raises INTERNALERROR ('Central' has no configure_node) on every worker; one process avoids the xdist controller.
+            PY_CI_WORKERS=1 python -m pytest tests/ -v -ra --junitxml=junit.xml --cov=py_ci_shared --cov-report=term --cov-report=xml
           else
             python -m pytest tests/ -v -ra --junitxml=junit.xml
           fi

@@ -6,7 +6,7 @@ import pytest
 
 
 def test_crashed_scanner_fails_the_gate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from pyutilz.dev.code_audit import registry
+    from py_ci_shared.code_audit import registry
 
     from py_ci_shared import code_audit_meta
 
@@ -25,7 +25,7 @@ def test_crashed_scanner_fails_the_gate(tmp_path: Path, monkeypatch: pytest.Monk
 def test_a_pyutilz_without_run_all_checked_falls_back_with_a_warning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # A consumer pinned to a pyutilz that predates run_all_checked failed with ImportError on every code-audit test
     # (CI run 38698274157); it must keep working through run_all and be told the crash check is off.
-    from pyutilz.dev.code_audit import registry
+    from py_ci_shared.code_audit import registry
 
     from py_ci_shared import code_audit_meta
 

@@ -193,7 +193,7 @@ class TestImportProbe:
 class TestDrainedCodeAuditEntries:
     @pytest.fixture
     def audit(self, monkeypatch):
-        registry = pytest.importorskip("pyutilz.dev.code_audit.registry")
+        registry = pytest.importorskip("py_ci_shared.code_audit.registry")
         findings: list = []
         # The gate calls registry.run_all_checked since audit S-01 (code_audit.run_all is no longer on its path), so the
         # planted findings go there, paired with an empty "scanners that raised" mapping.
