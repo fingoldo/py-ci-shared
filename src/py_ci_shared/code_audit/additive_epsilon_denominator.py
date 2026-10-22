@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
 # --- additive-epsilon denominators ---------------------------------------
 #
@@ -112,6 +112,8 @@ def scan_additive_epsilon_denominator(
                 else:
                     continue
                 seen.add(key)
+                if is_line_exempt(src_lines, node.lineno, "additive_epsilon_denominator"):
+                    continue
                 findings.append(
                     Finding(
                         check="additive_epsilon_denominator",

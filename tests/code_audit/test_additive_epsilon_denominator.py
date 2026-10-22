@@ -60,3 +60,27 @@ def test_additive_epsilon_threshold_is_configurable(tmp_path: Path):
     _write(tmp_path, "maybe.py", "def f(x, d):\n    return x / (d + 0.01)\n")
     assert scan_additive_epsilon_denominator(tmp_path) == []
     assert len(scan_additive_epsilon_denominator(tmp_path, epsilon_max=0.1)) == 1
+
+
+# --- the audit-exempt marker ----------------------------------------------------------------------
+
+
+def test_additive_epsilon_exempt_marker_with_a_reason_suppresses_the_finding(tmp_path: Path):
+    """A pad that cannot matter (the denominator is already bounded away from zero) is excused at its site, with a reason."""
+    source = "def f(a, d):\n    return a / (d + 1e-12)  # audit-exempt: additive_epsilon_denominator -- d > 1e-9 is checked by the caller\n"
+    _write(tmp_path, "ok.py", source)
+    findings = scan_additive_epsilon_denominator(tmp_path)
+    assert findings == []
+
+
+def test_additive_epsilon_exempt_marker_for_another_check_does_not_suppress(tmp_path: Path):
+    source = "def f(a, d):\n    return a / (d + 1e-12)  # audit-exempt: default_via_or -- unrelated reason\n"
+    _write(tmp_path, "bad.py", source)
+    findings = scan_additive_epsilon_denominator(tmp_path)
+    assert len(findings) == 1
+
+
+def test_additive_epsilon_exempt_marker_without_a_reason_does_not_suppress(tmp_path: Path):
+    _write(tmp_path, "bad.py", "def f(a, d):\n    return a / (d + 1e-12)  # audit-exempt: additive_epsilon_denominator\n")
+    findings = scan_additive_epsilon_denominator(tmp_path)
+    assert len(findings) == 1

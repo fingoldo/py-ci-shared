@@ -4,6 +4,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- The `additive_epsilon_denominator` scanner honours `# audit-exempt: additive_epsilon_denominator -- <reason>` on the division's line, like the
+  other scanners. Before, the marker was silently ignored for this check, so a pad that cannot matter could only be hidden by rewriting the
+  expression. Additive: a line without the marker (and a reason) is flagged as before.
 - **Behaviour change:** the code-audit detectors and their registry now live in `py_ci_shared.code_audit`. The
   `code_audit_meta` gate runs them from here, so a consumer's gate results follow the py-ci-shared pin instead of the
   pyutilz pin. The rules are the same code (copied byte for byte, then modernised to `collections.abc` and built-in
