@@ -148,6 +148,7 @@ def _polarity(func: ast.AST, aliases: set[str]) -> tuple[bool, bool]:
     return positive, negative
 
 
+@functools.cache
 def _coverage() -> dict[str, dict[str, list[str]]]:
     known = _registered_scanner_function_names()
     coverage: dict[str, dict[str, list[str]]] = {name: {"positive": [], "negative": []} for name in get_scanners()}
