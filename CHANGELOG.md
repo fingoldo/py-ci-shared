@@ -4,10 +4,13 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
-- **Behaviour change (fewer findings):** `source_text_claims` no longer treats a name as source text where the assertion itself uses it as a mapping
-  (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`). A string has none of those, so the name holds parsed data, such as a parser's result over a
-  fixture, and a claim about it is not a claim about source text. A consumer's `source_text_assertion` baseline may now list entries that no longer fire:
-  refresh it (it only shrinks). Substring, regex and integer-index checks on source text are flagged as before.
+- **Behaviour change (fewer findings):** `source_text_claims` stopped flagging four shapes that are not claims about source text. (1) A name the assertion
+  itself uses as a mapping (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`): a string has none of those, so it holds parsed data. (2) A file whose path
+  literal ends in a data suffix, now including `.xml`, `.tsv`, `.xsd`, `.svg`, `.obo`, `.owl`, `.rdf`, `.ttl`, `.fasta`, `.pdf`, `.gz`, `.parquet`, `.pkl`, however the path
+  is built (`Path(__file__).parent / "fixtures" / "x.xml"`). (3) `loads` / `load` / `safe_load` from a module named for a data format, so a project's own
+  `from pkg import _json as json` counts as a deserialiser. (4) `f(...) == expected`, where `expected` is read text and the call neither reads nor takes it: a golden-file test
+  measures the function. Substring, regex and integer-index checks on source text, a reader on the call side and a text method of the value are flagged as before.
+  A consumer's `source_text_assertion` baseline may now list entries that no longer fire: refresh it (it only shrinks).
 - The `additive_epsilon_denominator` scanner honours `# audit-exempt: additive_epsilon_denominator -- <reason>` on the division's line, like the
   other scanners. Before, the marker was silently ignored for this check, so a pad that cannot matter could only be hidden by rewriting the
   expression. Additive: a line without the marker (and a reason) is flagged as before.

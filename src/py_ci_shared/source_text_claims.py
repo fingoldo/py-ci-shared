@@ -76,6 +76,14 @@ _FILE_READS = frozenset({"read_text", "read_bytes", "read", "readlines"})
 #: Results of these are structure, not text: parsing is how a meta-linter works, and a regex over source
 #: that yields a list of matches has already stopped being a substring claim.
 _STRUCTURAL = frozenset({"parse", "walk", "iter_child_nodes", "literal_eval", "findall", "finditer", "splitlines"})
+#: A ``loads`` / ``load`` / ``safe_load`` from a module named for one of these formats returns data, whatever the project calls the module.
+_LOAD_FUNCTIONS = frozenset({"loads", "load", "safe_load", "safe_load_all"})
+_DATA_FORMAT_MODULES = ("json", "toml", "yaml", "msgpack", "pickle")
+#: Methods of a string (or bytes) that return text derived from it.
+_TEXT_METHODS = frozenset(
+    {"strip", "lstrip", "rstrip", "lower", "upper", "casefold", "title", "split", "rsplit", "splitlines", "replace", "join", "format", "partition",
+     "rpartition", "removeprefix", "removesuffix", "decode", "encode", "expandtabs", "translate", "ljust", "rjust"}
+)
 #: Deserialisers: what they return is data (a coverage.json whose keys happen to be ``.py`` paths), not program text.
 _DESERIALISERS = frozenset(
     {
@@ -105,7 +113,10 @@ _CODE_LIKE = re.compile(
     r"|(?<![\\\w])[A-Za-z_][\w.]*\("
     r"|\b[a-z_]\w*\s*(?:=|\+=|-=|:=)\s*\S"
 )
-_NON_SOURCE_SUFFIXES = (".json", ".toml", ".md", ".txt", ".csv", ".ini", ".cfg", ".yml", ".yaml", ".html", ".css", ".js", ".log", ".env", ".lock", ".jsonl")
+_NON_SOURCE_SUFFIXES = (
+    ".json", ".toml", ".md", ".txt", ".csv", ".tsv", ".ini", ".cfg", ".yml", ".yaml", ".html", ".xml", ".xsd", ".svg", ".css", ".js", ".log", ".env",
+    ".lock", ".jsonl", ".ttl", ".rdf", ".owl", ".obo", ".fasta", ".pdf", ".gz", ".parquet", ".pkl", ".pickle",
+)
 
 
 @dataclass(frozen=True)
@@ -192,7 +203,14 @@ class _Detector:
 
     # -- what counts as reading source --------------------------------------------------------------
     def _is_deserialiser(self, node: ast.AST) -> bool:
-        return isinstance(node, ast.Call) and (self.aliases.qualified_name(node) or "") in _DESERIALISERS
+        """``json.loads(...)`` and its kin, including a project's own wrapper (``from pkg import _json as json``): what they return is data."""
+        if not isinstance(node, ast.Call):
+            return False
+        qualified = self.aliases.qualified_name(node) or ""
+        if qualified in _DESERIALISERS:
+            return True
+        module, _, function = qualified.rpartition(".")
+        return function in _LOAD_FUNCTIONS and any(kind in module.rsplit(".", 1)[-1].lower() for kind in _DATA_FORMAT_MODULES)
 
     def _walk_text(self, node: ast.AST) -> Iterator[ast.AST]:
         """``ast.walk`` that does not enter a deserialiser call: ``json.loads(p.read_text())`` hands back data."""
@@ -540,10 +558,31 @@ def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: se
     """How *test* checks the content of source text (a reader call or a name holding its text), or None."""
     kind = det.reader_kind(test, scope.paths, scope.tainted)
     if kind is None:
+        if _is_golden_comparison(test, scope.tainted):
+            return None
         mappings = _mapping_names(test)
         used = next((s.id for s in _fast_walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted and id(s) not in mappings), None)
         kind = f"text held in `{used}`" if used and _text_uses(test, scope.tainted) else None
     return kind if kind and (_tests_content(test) or _uses(test, matches)) else None
+
+
+def _is_golden_comparison(test: ast.AST, tainted: set[str]) -> bool:
+    """``f(...) == expected``: a function's result compared with a value read earlier measures the function, not the text.
+
+    One side is a bare name holding read text, the other a call that neither reads nor is a method of that text. A reader
+    on the call side (``_read(path) == "def f"``) or a text method (``text.strip() == "x"``) is still a claim about the text.
+    """
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Eq, ast.NotEq))):
+        return False
+    for call, name in ((test.left, test.comparators[0]), (test.comparators[0], test.left)):
+        if not (isinstance(call, ast.Call) and isinstance(name, ast.Name) and name.id in tainted):
+            continue
+        func = call.func
+        if isinstance(func, ast.Attribute) and (_uses(func.value, tainted) or func.attr in _CONTENT_METHODS or func.attr in _TEXT_METHODS):
+            continue
+        if not any(isinstance(s, ast.Name) and s.id in tainted for s in _fast_walk(call)):
+            return True
+    return False
 
 
 def _claim_site(node: ast.AST, function: str) -> Optional[ast.expr]:

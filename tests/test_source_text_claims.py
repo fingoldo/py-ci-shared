@@ -353,6 +353,65 @@ class TestAParsedFixtureIsNotSourceText:
         assert _lines(tmp_path, body) != []
 
 
+class TestADataFixtureIsNotSource:
+    """A fixture whose path ends in a data suffix is data, however its path is built; the same read of a ``.py`` file is source."""
+
+    HEAD = "from pathlib import Path\n_R = (Path(__file__).parent / 'fixtures' / '{name}').read_{mode}()\n\n\n"
+
+    @pytest.mark.parametrize("name", ["sample.xml", "table.tsv", "terms.obo", "graph.ttl", "page.svg"])
+    def test_a_substring_check_on_a_data_fixture_is_not_a_claim(self, tmp_path, name):
+        body = self.HEAD.format(name=name, mode="text") + "def test_a():\n    assert 'Creative' in _R\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_the_same_read_of_a_python_file_is_a_claim(self, tmp_path):
+        body = self.HEAD.format(name="mod.py", mode="text") + "def test_a():\n    assert 'def f' in _R\n"
+        assert _lines(tmp_path, body) != []
+
+
+class TestAProjectsOwnJsonWrapperIsADeserialiser:
+    """``from pkg import _json as json`` is still json: what ``loads`` returns is data, not the text it was given."""
+
+    HEAD = "from pathlib import Path\nfrom pkg import _json as json\n\n\ndef _read(path: Path):\n    return json.loads(path.read_text(encoding='utf-8'))\n\n\n"
+
+    def test_a_helper_returning_the_wrapper_result_is_not_a_reader(self, tmp_path):
+        body = self.HEAD + "def test_x(tmp_path):\n    after = _read(tmp_path / 'labels.json')\n    assert 'MONDO:1' in after\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_a_wrapper_named_for_another_format_is_not_special(self, tmp_path):
+        body = (
+            "from pathlib import Path\nfrom pkg import fileio as json\n\n\n"
+            "def _read(path: Path):\n    return json.loads(path.read_text(encoding='utf-8'))\n\n\n"
+            "def test_x(tmp_path):\n    after = _read(Path('pkg/mod.py'))\n    assert 'def f' in after\n"
+        )
+        assert _lines(tmp_path, body) != []
+
+
+class TestAGoldenComparisonMeasuresTheFunction:
+    """``load_record(target) == payload`` compares a function's result with a value read earlier; it says nothing about the text."""
+
+    HEAD = "from pathlib import Path\n\n\ndef test_x(tmp_path):\n    payload = Path('pkg/mod.py').read_text()\n"
+
+    def test_a_call_result_equal_to_the_read_value_is_not_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert load_record(tmp_path, 'k') == payload\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_the_value_equal_to_a_call_result_is_not_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert payload == load_record(tmp_path, 'k')\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_a_call_that_takes_the_text_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert normalise(payload) == payload\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_text_method_of_the_value_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert payload.strip() == 'def f(): pass'\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_comparison_with_a_literal_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert payload == 'def f(): pass'\n"
+        assert _lines(tmp_path, body) != []
+
+
 class TestArbitraryFileReads:
     """A file read through a path the detector cannot place is judged by how its text is checked."""
 
