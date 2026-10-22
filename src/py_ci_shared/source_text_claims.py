@@ -429,6 +429,33 @@ def _uses(node: ast.AST, names: set[str]) -> bool:
     return any(isinstance(s, ast.Name) and s.id in names and s.id not in called for s in _fast_walk(node))
 
 
+_MAPPING_METHODS = frozenset({"get", "items", "keys", "values"})
+
+
+def _mapping_names(node: ast.AST) -> set[int]:
+    """Ids of the ``Name`` nodes under *node* that are used the way only a mapping can be: ``x["key"]`` or ``x.get(...)``.
+
+    A string has no string-keyed subscript and no ``get`` / ``items`` / ``keys`` / ``values``, so such a name holds parsed
+    data (a parser's result over a fixture), and a claim about it is a claim about that data, not about source text.
+    """
+    out: set[int] = set()
+    for sub in _fast_walk(node):
+        if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) and isinstance(sub.slice, ast.Constant) and isinstance(sub.slice.value, (str, bytes)):
+            out.add(id(sub.value))
+        elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in _MAPPING_METHODS and isinstance(sub.func.value, ast.Name):
+            out.add(id(sub.func.value))
+    return out
+
+
+def _text_uses(node: ast.AST, names: set[str]) -> bool:
+    """:func:`_uses`, minus the names that the expression itself shows to be mappings."""
+    if not names:
+        return False
+    mappings = _mapping_names(node)
+    called = {c.func.id for c in _fast_walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    return any(isinstance(s, ast.Name) and s.id in names and s.id not in called and id(s) not in mappings for s in _fast_walk(node))
+
+
 def _tests_content(test: ast.AST) -> bool:
     for sub in _fast_walk(test):
         if isinstance(sub, ast.Compare) and any(isinstance(op, (ast.In, ast.NotIn, ast.Eq, ast.NotEq)) for op in sub.ops):
@@ -513,8 +540,9 @@ def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: se
     """How *test* checks the content of source text (a reader call or a name holding its text), or None."""
     kind = det.reader_kind(test, scope.paths, scope.tainted)
     if kind is None:
-        used = next((s.id for s in _fast_walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted), None)
-        kind = f"text held in `{used}`" if used and _uses(test, scope.tainted) else None
+        mappings = _mapping_names(test)
+        used = next((s.id for s in _fast_walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted and id(s) not in mappings), None)
+        kind = f"text held in `{used}`" if used and _text_uses(test, scope.tainted) else None
     return kind if kind and (_tests_content(test) or _uses(test, matches)) else None
 
 

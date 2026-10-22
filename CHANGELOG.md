@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- **Behaviour change (fewer findings):** `source_text_claims` no longer treats a name as source text where the assertion itself uses it as a mapping
+  (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`). A string has none of those, so the name holds parsed data, such as a parser's result over a
+  fixture, and a claim about it is not a claim about source text. A consumer's `source_text_assertion` baseline may now list entries that no longer fire:
+  refresh it (it only shrinks). Substring, regex and integer-index checks on source text are flagged as before.
 - The `additive_epsilon_denominator` scanner honours `# audit-exempt: additive_epsilon_denominator -- <reason>` on the division's line, like the
   other scanners. Before, the marker was silently ignored for this check, so a pad that cannot matter could only be hidden by rewriting the
   expression. Additive: a line without the marker (and a reason) is flagged as before.

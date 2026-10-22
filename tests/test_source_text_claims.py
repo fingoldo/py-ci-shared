@@ -331,6 +331,28 @@ def test_a_deserialised_report_keyed_by_py_paths_is_data_not_source(tmp_path):
     assert [c.function for c in _claims(tmp_path, body)] == ["test_source"]
 
 
+class TestAParsedFixtureIsNotSourceText:
+    """A name that the assertion itself subscripts by a string key, or calls ``.get`` / ``.items`` on, is a mapping, never text."""
+
+    FIXTURE = "from pathlib import Path\n\n_FIXTURE = Path('pkg/mod.py').read_text()\n\n\n"
+
+    def test_a_string_keyed_subscript_of_a_parser_result_is_not_a_text_claim(self, tmp_path):
+        body = self.FIXTURE + "def test_x():\n    front = parse_jats_front(_FIXTURE)\n    assert front['pmid'] == '30535444'\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_get_on_a_parser_result_is_not_a_text_claim(self, tmp_path):
+        body = self.FIXTURE + "def test_x():\n    row = parse_jats_front(_FIXTURE)\n    assert row.get('doi') == '10.1/x'\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_a_substring_check_on_the_same_text_is_still_a_claim(self, tmp_path):
+        body = self.FIXTURE + "def test_x():\n    text = _FIXTURE\n    assert 'def f' in text\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_an_integer_subscript_of_text_is_still_a_claim(self, tmp_path):
+        body = self.FIXTURE + "def test_x():\n    text = _FIXTURE\n    assert text[0] == 'd'\n"
+        assert _lines(tmp_path, body) != []
+
+
 class TestArbitraryFileReads:
     """A file read through a path the detector cannot place is judged by how its text is checked."""
 
