@@ -4,6 +4,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- **Behaviour change (moved, no shim):** the code-audit CLI (`python -m py_ci_shared.code_audit`, module `py_ci_shared.code_audit.cli`) and the field/text agreement record checker (`py_ci_shared.code_audit.field_text_agreement`) moved here from pyutilz, which no longer re-exports them. Import them from their new paths. The CLI's `--format json` output now comes from the standard library `json` with 2-space indent, sorted keys and unescaped non-ASCII, so its bytes can differ from the former `pyutilz.core.jsonlib` output while carrying the same data.
 - **Behaviour change (fewer findings):** `source_text_claims` stopped flagging four shapes that are not claims about source text. (1) A name the assertion
   itself uses as a mapping (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`): a string has none of those, so it holds parsed data. (2) A file whose path
   literal ends in a data suffix, now including `.xml`, `.tsv`, `.xsd`, `.svg`, `.obo`, `.owl`, `.rdf`, `.ttl`, `.fasta`, `.pdf`, `.gz`, `.parquet`, `.pkl`, however the path

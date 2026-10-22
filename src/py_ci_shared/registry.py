@@ -78,7 +78,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_gate_run": "the shared assert_* tail of the AST gates",
     "_consumers": "the consumer repo list and the read-only checkout the scheduled consumer jobs run",
     "_core": "shared reader, corpus, scan, baseline, refresh, aliases and config every gate builds on",
-    "code_audit": "the code-audit base (Finding, file walk, exemption marker, parse cache) the pyutilz detectors run on; its rules are public through pyutilz.dev.code_audit",
+    "code_audit": "the code-audit package: the scanner rules are public through py_ci_shared.code_audit (its base, CLI and record checker live inside it)",
     "_mutation_fingerprint": "private part of mutation_teeth",
     "_mutation_model": "private part of mutation_teeth",
     "_mutation_operators": "private part of mutation_teeth",
