@@ -62,7 +62,8 @@ dev = [
     "tomli>=2.0",
     # schema_snapshot_parity talks to the throwaway server through psycopg2; without it its six server canaries failed in CI.
     "psycopg2-binary>=2.9",
-    "pytest-cov>=5.0",
+    # pytest-cov 7.x fails under pytest-xdist 3.8 (AttributeError: Central has no configure_node) and the run aborts before junit.xml exists.
+    "pytest-cov>=5.0,<7",
     # embedded_postgres reaps the servers of killed processes by checking their pids; without psutil nothing is reaped.
     "psutil>=5.9",
     # tests/conftest.py runs the suite on worker_budget.available_workers() workers when this is installed (PY_CI_WORKERS=1 for serial).
