@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:  # import-time-free: importing code_audit here would be circular -- its facade
     # re-exports this module's names, so the package __init__ runs before this module finishes.
-    from .code_audit._base import Finding
+    from ._base import Finding
 
 # --- a structured field that duplicates information also present in free text ------------------------
 #
