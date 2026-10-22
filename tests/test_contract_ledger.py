@@ -8,15 +8,20 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared.contract_ledger import (
+    assert_documents_identical,
     assert_fixture_fresh,
     assert_ledger_covers,
     changed_files,
+    document_diff,
     fixture_problems,
     ledger_entry_problems,
     ledger_gaps,
     load_ledger,
+    missing_test_references,
+    promise_message_ids,
     snapshot_files,
     store_writers,
+    value_mismatches,
 )
 
 
@@ -124,3 +129,66 @@ def test_store_writers_finds_the_file_a_probe_appends_to(tmp_path: Path) -> None
 def test_store_writers_is_empty_when_the_probe_writes_nothing(tmp_path: Path) -> None:
     (tmp_path / "a.txt").write_text("x", encoding="utf-8")
     assert store_writers(run_probe=lambda: None, roots=[tmp_path]) == []
+
+
+def test_document_diff_names_a_property_added_to_an_existing_schema() -> None:
+    fixture = {"components": {"schemas": {"Foo": {"properties": {"a": {"type": "string"}}}}}}
+    live = {"components": {"schemas": {"Foo": {"properties": {"a": {"type": "string"}, "b": {"type": "integer"}}}, "Bar": {}}}}
+    rows = document_diff(fixture, live)
+    assert [(kind, path) for kind, path, _ in rows] == [("added", "components.schemas.Bar"), ("added", "components.schemas.Foo.properties.b")]
+
+
+def test_document_diff_reports_removed_and_changed_paths_and_nothing_for_equal_documents() -> None:
+    assert document_diff({"a": 1, "b": [1, 2]}, {"a": 1, "b": [1, 2]}) == []
+    rows = document_diff({"a": 1, "gone": 2, "l": [1]}, {"a": 3, "l": [1, 2]})
+    assert [(kind, path) for kind, path, _ in rows] == [("changed", "a"), ("removed", "gone"), ("changed", "l")]
+
+
+def test_assert_documents_identical_passes_for_equal_documents_regardless_of_key_order() -> None:
+    assert_documents_identical(fixture={"a": 1, "b": {"x": 1, "y": 2}}, live={"b": {"y": 2, "x": 1}, "a": 1}, regenerate_hint="regen")
+
+
+def test_assert_documents_identical_fails_naming_the_added_property_and_the_hint() -> None:
+    with pytest.raises(pytest.fail.Exception) as raised:
+        assert_documents_identical(fixture={"s": {"properties": {}}}, live={"s": {"properties": {"new_field": {}}}}, regenerate_hint="run the generator")
+    message = str(raised.value)
+    assert "added s.properties.new_field" in message and "run the generator" in message
+
+
+def test_assert_documents_identical_truncates_a_long_diff_but_counts_all_of_it() -> None:
+    with pytest.raises(pytest.fail.Exception) as raised:
+        assert_documents_identical(fixture={}, live={f"k{i}": i for i in range(50)}, regenerate_hint="h", max_lines=5)
+    assert "50 place(s)" in str(raised.value) and "(+45 more)" in str(raised.value)
+
+
+def test_promise_message_ids_matches_whole_words_only() -> None:
+    catalogue = {
+        "a": "We will retry shortly",
+        "b": "Retrying in 3s",
+        "c": "this willow is fine",
+        "d": "nothing was changed",
+        "e": "it does this AUTOMATICALLY",
+        "f": "a pre-retry step",
+    }
+    assert promise_message_ids(catalogue, ["will", "retrying", "automatically", "retry"]) == ["a", "b", "e"]
+
+
+def test_missing_test_references_flags_missing_file_missing_function_and_incomplete_reference(tmp_path: Path) -> None:
+    (tmp_path / "test_x.py").write_text("def test_present():\n    pass\n\nasync def test_async():\n    pass\n\nclass T:\n    def test_nested(self):\n        pass\n", encoding="utf-8")
+    refs = {
+        "ok": {"path": "test_x.py", "name": "test_present"},
+        "ok_async": {"path": "test_x.py", "name": "test_async"},
+        "no_func": {"path": "test_x.py", "name": "test_absent"},
+        "nested_is_not_top_level": {"path": "test_x.py", "name": "test_nested"},
+        "no_file": {"path": "nope.py", "name": "test_present"},
+        "incomplete": {"path": "test_x.py"},
+    }
+    problems = missing_test_references(refs, tmp_path)
+    assert [p.split(":")[0] for p in problems] == ["incomplete", "nested_is_not_top_level", "no_file", "no_func"]
+
+
+def test_value_mismatches_compares_numbers_by_tolerance_and_reports_both_directions() -> None:
+    assert value_mismatches({"a": 2 / 3, "b": "x"}, {"a": 0.6666666666666666, "b": "x"}) == []
+    problems = value_mismatches({"a": 1.0, "b": "x", "gone": 1}, {"a": 2.0, "b": "x", "extra": 5})
+    assert [p.split(":")[0] for p in problems] == ["a", "extra", "gone"]
+    assert value_mismatches({"flag": True}, {"flag": 1}) != []

@@ -335,9 +335,9 @@ summary = "Shared harness for the \"N files feed a version/cache-key constant th
 [[gate]]
 name = "contract_ledger"
 kind = "gate"
-entries = ["assert_fixture_fresh", "assert_ledger_covers"]
+entries = ["assert_fixture_fresh", "assert_ledger_covers", "assert_documents_identical"]
 since = "1.23.3"
-summary = "Committed ledgers of what an API may emit (literals, status codes), a stale-fixture check, and a before/after writer probe"
+summary = "Committed ledgers of what an API may emit (literals, status codes, promise strings, value shapes), a stale-fixture check, full-document equality that names added and removed paths, and a before/after writer probe"
 
 [[gate]]
 name = "corpus_drift"
