@@ -42,3 +42,6 @@ on py-ci-shared only lazily and only in dev; py-ci-shared imports nothing from p
 - Stage 2 precondition met: `golden/pyutilz.json` reproduces exactly on `pyutilz/src/pyutilz` (0 findings, same rows)
   at the recorded pyutilz commit. The root matters: scanning the repository root (tests and scripts included) gives 426 findings,
   so every comparison after the move must use the same root as the golden file.
+
+- Stages 2, 3 and 3b done: see the tracker rows of the round. The detectors, registry, scan cache and 907 tests live in py-ci-shared;
+  pyutilz keeps aliases. Stage 6 done for nine consumers. Open: stage 4 (one `Finding`), the `_todo_markers` copy, and the release that closes the `pins` job.
