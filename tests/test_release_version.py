@@ -5,10 +5,14 @@ self-ci check), run against scratch git repositories."""
 
 from __future__ import annotations
 
+import atexit
+import functools
 import importlib.util
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any, Optional
 
@@ -218,15 +222,28 @@ def test_wait_for_ci_gives_up_as_pending_after_the_wait():
 # --- release_guard: the command line against a scratch repository ----------------------------------------------------
 
 
+def _build_scratch_repo(root: Path, tags: tuple[str, ...]) -> None:
+    root.mkdir()
+    _git("init", "-q", cwd=root)
+    for i, tag in enumerate(tags):
+        (root / "f.txt").write_text(str(i), encoding="utf-8")
+        _git("add", "f.txt", cwd=root)
+        _git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", f"c{i}", cwd=root)
+        _git("-c", "user.name=t", "-c", "user.email=t@example.com", "tag", "-a", tag, "-m", tag, cwd=root)
+
+
+@functools.cache
+def _scratch_template(tags: tuple[str, ...]) -> Path:
+    """One git repo per tag layout, built once per session: each test copies it instead of re-running ~3 commits and tags."""
+    root = Path(tempfile.mkdtemp(prefix="py-ci-shared-tags-"))
+    atexit.register(shutil.rmtree, root, ignore_errors=True)
+    _build_scratch_repo(root / "template", tags)
+    return root / "template"
+
+
 def _scratch_repo(tmp_path: Path, tags: list[str]) -> Path:
     repo = tmp_path / "repo"
-    repo.mkdir()
-    _git("init", "-q", cwd=repo)
-    for i, tag in enumerate(tags):
-        (repo / "f.txt").write_text(str(i), encoding="utf-8")
-        _git("add", "f.txt", cwd=repo)
-        _git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", f"c{i}", cwd=repo)
-        _git("-c", "user.name=t", "-c", "user.email=t@example.com", "tag", "-a", tag, "-m", tag, cwd=repo)
+    shutil.copytree(_scratch_template(tuple(tags)), repo)
     return repo
 
 
