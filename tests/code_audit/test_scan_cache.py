@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -60,10 +61,18 @@ def test_a_runtime_registered_scanner_is_not_memoised(tmp_path, cache_home, monk
 
 
 def test_a_corrupt_memo_entry_falls_back_to_a_fresh_scan(tmp_path, cache_home):
+    """A corrupt entry must neither be served nor crash the scan: the result equals a cold scan and the entry is rewritten valid."""
     tree = tmp_path / "tree"
     tree.mkdir()
     (tree / "mod.py").write_text(BAD, encoding="utf-8")
-    run_all_checked(tree, checks=[CHECK])
-    for entry in cache_home.rglob("*.json"):
+    cold, cold_failed = run_all_checked(tree, checks=[CHECK])
+    assert cold, "the defective file must be reported on a cold scan"
+    entries = list(cache_home.rglob("*.json"))
+    assert entries, "the cold scan should have written a memo entry"
+    for entry in entries:
         entry.write_bytes(b"not json")
-    assert run_all_checked(tree, checks=[CHECK])[0], "a corrupt entry must not hide the finding"
+    again, again_failed = run_all_checked(tree, checks=[CHECK])
+    assert [(f.check, f.file, f.line) for f in again] == [(f.check, f.file, f.line) for f in cold]
+    assert again_failed == cold_failed
+    for entry in entries:
+        json.loads(entry.read_text(encoding="utf-8"))
