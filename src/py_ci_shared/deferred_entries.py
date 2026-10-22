@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 from ._core.corpus import DEFAULT_EXCLUDE
+from ._core.node_index import walk
+from ._core.source import parse_text
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +77,7 @@ def _count_deferred_in_file(py: Path, prefixes: tuple[str, ...], out: dict[str, 
         logger.warning("_count_deferred_in_file: file unreadable, reported as an error string: %s: %s", type(exc).__name__, exc)
         return f"{py}: {exc}"
     try:
-        tree = ast.parse(src)
+        tree = parse_text(src, str(py))
     except SyntaxError as exc:
         logger.warning("_count_deferred_in_file: file does not parse, not counted: %s: %s", type(exc).__name__, exc)
         return None
@@ -85,7 +87,7 @@ def _count_deferred_in_file(py: Path, prefixes: tuple[str, ...], out: dict[str, 
 
 def _count_deferred_in_tree(tree: ast.AST, stem: str, prefixes: tuple[str, ...], out: dict[str, int]) -> None:
     """Record ``{stem::NAME: entries}`` for every prefix-matching assignment in ``tree`` with a countable literal value."""
-    for node in ast.walk(tree):
+    for node in walk(tree):
         # Both ``X = {...}`` (Assign) and ``X: set[str] = {...}``
         # (AnnAssign) need to be matched — modern code typically
         # uses the annotated form for whitelists.

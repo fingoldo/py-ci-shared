@@ -67,13 +67,13 @@ def _docstring_lines(text: str) -> set[int]:
 def _python_sleep_lines(text: str) -> Optional[set[int]]:
     """The lines holding a real ``time.sleep(...)`` call, or ``None`` when the file does not parse (then the text rule applies)."""
     try:
-        tree = ast.parse(text)
+        tree = parse_text(text)
     except SyntaxError as exc:
         logger.debug("wallclock_test_waits: unparsable, held to the text rule: %s", exc)
         return None
     return {
         node.lineno
-        for node in ast.walk(tree)
+        for node in shared_walk(tree)
         if isinstance(node, ast.Call)
         and isinstance(node.func, ast.Attribute)
         and node.func.attr == "sleep"
