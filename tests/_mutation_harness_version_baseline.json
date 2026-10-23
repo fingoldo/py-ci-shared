@@ -1,5 +1,5 @@
 {
-  "content_hash": "ae77a92e2897c99f",
+  "content_hash": "e5c571f8af2bbd62",
   "hash_format": 2,
   "history": {
     "12": "652ba4425e85760d",
@@ -16,7 +16,8 @@
     "23": "0ade6dd8bb42152c",
     "24": "5e3492aa2902bc16",
     "25": "9cc449eca8b426ba",
-    "26": "ae77a92e2897c99f"
+    "26": "ae77a92e2897c99f",
+    "27": "e5c571f8af2bbd62"
   },
-  "version": "26"
+  "version": "27"
 }

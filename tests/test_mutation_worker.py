@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared import _mutation_worker
+from py_ci_shared._mutation_runner import _pytest_env
 from py_ci_shared.mutation_teeth import _WarmRunner
 
 # A warm worker that does not answer in time returns None, which read as a wrong exit code ("assert None == 1",
@@ -189,3 +190,15 @@ def test_an_interrupt_ends_the_worker_instead_of_becoming_a_reply(monkeypatch, t
     monkeypatch.setattr(_pytest, "main", interrupted)
     with pytest.raises(KeyboardInterrupt):
         worker.main()
+
+
+def test_the_nested_run_does_not_inherit_the_parent_coverage_keys(monkeypatch):
+    """A nested pytest run must not write into the parent's coverage data file: an inherited COV_CORE_* or COVERAGE_* key
+    points it there, and a mode mismatch then fails the whole session with INTERNALERROR (DataError on combine)."""
+    monkeypatch.setenv("COV_CORE_DATAFILE", "/parent/.coverage")
+    monkeypatch.setenv("COV_CORE_SOURCE", "py_ci_shared")
+    monkeypatch.setenv("COVERAGE_FILE", "/parent/.coverage")
+    monkeypatch.setenv("COVERAGE_RCFILE", "/parent/.coveragerc")
+    env = _pytest_env()
+    assert not [k for k in env if k.startswith(("COV_CORE_", "COVERAGE_"))]
+    assert env["PYTEST_ADDOPTS"] == ""

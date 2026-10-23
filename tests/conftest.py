@@ -44,6 +44,19 @@ GIT_ISOLATION = {
 
 
 @pytest.fixture(autouse=True)
+def _no_inherited_coverage_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A test that starts pytest in a subprocess must not inherit the coverage run that is measuring this suite.
+
+    pytest-cov publishes COV_CORE_* and COVERAGE_* in the environment for its own child processes. A nested pytest
+    started with them, but not with the parent's measurement mode, writes statement-mode data next to the parent's
+    branch-mode data, and the parent then fails at combine time with INTERNALERROR (see _mutation_runner._pytest_env).
+    """
+    for key in list(os.environ):
+        if key.startswith(("COV_CORE_", "COVERAGE_")):
+            monkeypatch.delenv(key)
+
+
+@pytest.fixture(autouse=True)
 def _fresh_tree_digests(request: pytest.FixtureRequest) -> Iterator[None]:
     """A test that rewrites files must not leave a gate of a later test a digest of the old tree.
 

@@ -42,7 +42,12 @@ def _pytest_env() -> dict[str, str]:
     """
     # git_env also drops GIT_DIR, GIT_INDEX_FILE and GIT_WORK_TREE: started from a hook, a test that spawns git would otherwise act on
     # the repository that is committing, and a mutant's verdict would depend on how the run was started.
-    env = git_env(base={k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"})
+    # The coverage keys belong to the parent's pytest-cov, which is measuring this run. Inherited, pytest-cov's
+    # COV_CORE_DATAFILE and COVERAGE_FILE point the nested run at the parent's data file, and a nested run with
+    # another measurement mode (branch or statement) writes into it: coverage then refuses to combine the two
+    # ("Can't combine statement coverage data with branch data") and the whole session ends INTERNALERROR. Dropping
+    # them leaves the nested run to measure nothing of the parent's.
+    env = git_env(base={k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS" and not k.startswith(("COV_CORE_", "COVERAGE_"))})
     # The child inherits PYTHONPATH, never the parent's in-process `sys.path`. Without this, a
     # parent running from a checkout spawns a worker that loads the INSTALLED package instead --
     # measured: parent on a worktree, child on `C:\...\py-ci-shared\src`. Every worker-side change
