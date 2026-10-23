@@ -203,19 +203,23 @@ def find_unbound_doubles(
     return _unbound_lines(parse_file(path), frozenset(entry_points), frozenset(name_hints), mock_names)
 
 
+def _text_or_none(path: Path) -> Optional[str]:
+    """The file's text, or None when it cannot be read: the caller keeps such a file so the check reports it by path."""
+    try:
+        return read_source(path)
+    except SourceError as exc:
+        _LOG.warning("%s: unreadable, kept so the entry-point scan reports it by path: %s", path, exc)
+        return None
+
+
 def files_driving(files: Iterable[Path], entry_points: Iterable[str]) -> list[Path]:
     """The test files that mention one of the duck-typed entry points. A file that cannot be read is kept, so the
     check reports it rather than dropping it."""
     wanted = tuple(entry_points)
     out = []
     for path in files:
-        try:
-            text = read_source(path)
-        except SourceError as exc:
-            _LOG.warning("%s: unreadable, kept so the entry-point scan reports it by path: %s", path, exc)
-            out.append(path)
-            continue
-        if any(name in text for name in wanted):
+        text = _text_or_none(path)
+        if text is None or any(name in text for name in wanted):
             out.append(path)
     return out
 
