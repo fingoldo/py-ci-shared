@@ -600,7 +600,7 @@ class TestAnUnmeasuredMutantIsNotReportedAsMeasured:
         release = threading.Event()
 
         class NeverAnswers:
-            def readline(self):
+            def readline(self, *args):
                 release.wait(30)
                 return ""
 
