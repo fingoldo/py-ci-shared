@@ -285,4 +285,6 @@ def test_fetch_refuses_a_platform_without_a_verified_digest_before_downloading(t
     calls = _fake_pip(monkeypatch, ep)
     with pytest.raises(RuntimeError, match="verified digest"):
         ep.fetch(tmp_path / "pginstall" / "bin")
-    assert calls == []
+    # The fake sees every subprocess call in the process: on Windows the platform module runs `ver` through the same hook.
+    # The claim is that no wheel was downloaded, so only pip calls count.
+    assert [c for c in calls if "pip" in c] == []
