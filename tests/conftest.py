@@ -158,7 +158,10 @@ def pytest_cmdline_main(config: pytest.Config) -> None:
         from py_ci_shared.worker_budget import available_workers
 
         # 2 GiB per worker: this suite loads the package and its test doubles, not the numeric libraries, so it needs less than the package default.
-        config.option.numprocesses = available_workers(ram_per_worker_bytes=2 * 2**30)
+        workers = available_workers(ram_per_worker_bytes=2 * 2**30)
+        # One worker means a serial run: leave xdist out, so pytest-cov never meets the xdist controller (see self-ci.yml).
+        if workers > 1:
+            config.option.numprocesses = workers
 
 
 @pytest.hookimpl(tryfirst=True)
