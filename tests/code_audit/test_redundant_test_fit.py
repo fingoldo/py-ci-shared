@@ -53,7 +53,8 @@ def test_b():
     findings = scan_redundant_test_fit_calls(tmp_path)
     checks = {f.check for f in findings}
     assert "redundant_test_fit_call" in checks
-    assert findings and all(f.severity == "Low" for f in findings)
+    assert findings
+    assert all(f.severity == "Low" for f in findings)
 
 
 @pytest.mark.skipif(sys.version_info < (3, 9), reason="scan_redundant_test_fit_calls needs ast.unparse (python>=3.9)")
