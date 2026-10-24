@@ -91,7 +91,7 @@ def _union_members(annotation: ast.AST) -> list[str]:
         try:
             return _union_members(ast.parse(annotation.value, mode="eval").body)
         except SyntaxError as exc:
-            logger.debug("annotation is not parseable, kept as a single member: %s", type(exc).__name__)
+            logger.warning("string annotation %r does not parse, kept as one opaque member and not split: %s", annotation.value, type(exc).__name__)
             return [annotation.value]
     return [ast.unparse(annotation)]
 

@@ -569,3 +569,15 @@ class TestAttributeTruthiness:
 )
 def test_bound_names(name, bound):
     assert bool(BOUND_NAMES.search(name)) is bound
+
+
+def test_an_unparseable_string_annotation_is_logged_at_warning(caplog):
+    """A union written as text that does not parse is kept as one opaque member, and that must be visible, not debug-only."""
+    import ast
+    import logging
+
+    from py_ci_shared.optional_truthiness import _union_members
+
+    with caplog.at_level(logging.WARNING, logger="py_ci_shared.optional_truthiness"):
+        assert _union_members(ast.Constant(value="int |")) == ["int |"]
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
