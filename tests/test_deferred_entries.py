@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from py_ci_shared.deferred_entries import count_user_deferred_entries
@@ -42,6 +43,15 @@ def test_a_worktree_under_the_root_is_not_counted_as_a_second_copy(tmp_path: Pat
     _write(tmp_path, "test_zeta.py", "_USER_DEFERRED_Z = {'a'}\n")
     _write(tmp_path, ".claude/worktrees/w1/test_zeta.py", "_USER_DEFERRED_Z = {'a', 'b', 'c'}\n")
     assert count_user_deferred_entries(tmp_path) == {"test_zeta::_USER_DEFERRED_Z": 1}
+
+
+def test_an_unparseable_file_is_reported_with_the_unreadable_ones(tmp_path: Path, caplog) -> None:
+    """A file that does not parse is an unscanned file, reported like an unreadable one, never a silent zero."""
+    _write(tmp_path, "test_broken.py", "_USER_DEFERRED_B = {\n")
+    with caplog.at_level(logging.WARNING):
+        assert count_user_deferred_entries(tmp_path) == {}
+    assert "could not be read and were not scanned" in caplog.text
+    assert "test_broken.py" in caplog.text
 
 
 def test_a_missing_directory_is_an_empty_count(tmp_path: Path) -> None:

@@ -79,8 +79,8 @@ def _count_deferred_in_file(py: Path, prefixes: tuple[str, ...], out: dict[str, 
     try:
         tree = parse_text(src, str(py))
     except SyntaxError as exc:
-        logger.warning("_count_deferred_in_file: file does not parse, not counted: %s: %s", type(exc).__name__, exc)
-        return None
+        logger.warning("_count_deferred_in_file: file does not parse, reported as unscanned: %s: %s", type(exc).__name__, exc)
+        return f"{py}: does not parse ({type(exc).__name__}: {exc})"
     _count_deferred_in_tree(tree, py.stem, prefixes, out)
     return None
 
