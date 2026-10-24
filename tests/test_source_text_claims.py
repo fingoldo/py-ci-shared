@@ -449,3 +449,23 @@ class TestArbitraryFileReads:
     def test_a_name_bound_to_an_in_check_over_source_is_a_claim(self, tmp_path):
         body = "import inspect\ndef test_x():\n    found = 'x' in inspect.getsource(f)\n    assert found\n"
         assert _lines(tmp_path, body) == [4]
+
+
+class TestALineMarkerExemptsOnlyItsOwnCheck:
+    """A justified per-line ``audit-exempt: source_text_assertion`` on the flagged assert, the same rule the code_audit
+    scanners honour. It must not exempt a line on a short reason or on a marker for another check."""
+
+    HEAD = "from pathlib import Path\n\n\ndef test_x(tmp_path):\n    payload = Path('pkg/mod.py').read_text()\n"
+    FLAGGED = "    assert payload.strip() == 'def f(): pass'"
+
+    def test_a_justified_marker_on_the_flagged_line_exempts_it(self, tmp_path):
+        body = self.HEAD + self.FLAGGED + "  # audit-exempt: source_text_assertion -- the fixture text is the subject of this check\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_a_short_reason_does_not_exempt(self, tmp_path):
+        body = self.HEAD + self.FLAGGED + "  # audit-exempt: source_text_assertion -- short\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_marker_for_another_check_does_not_exempt(self, tmp_path):
+        body = self.HEAD + self.FLAGGED + "  # audit-exempt: assert_in_loop -- a long enough reason for some other check\n"
+        assert _lines(tmp_path, body) != []
