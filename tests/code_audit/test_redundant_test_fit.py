@@ -11,6 +11,17 @@ from py_ci_shared.code_audit import (
 
 from ._helpers import _write
 
+# ---- signature normalisation uses ast.unparse directly (no 3.8 fallback: requires-python >=3.9) ----
+
+def test_call_signature_is_the_unparsed_call_text():
+    import ast
+
+    from py_ci_shared.code_audit.redundant_test_fit import _call_signature
+
+    call = ast.parse("_helper(1, k=x + 1)").body[0].value
+    assert _call_signature(call) == "_helper(1, k=x + 1)"
+
+
 # ---- subpackage facade sensor ------------------------------------------
 
 
@@ -212,28 +223,6 @@ def test_b():
 
 
 # ---- F63: redundant test fit, on the 3.8 floor --------------------------------------
-
-
-def test_redundant_test_fit_calls_works_without_ast_unparse(tmp_path: Path, monkeypatch):
-    """python 3.8 has no ast.unparse; the scanner must not degrade to a silent no-op there."""
-    import ast as _ast
-
-    _write(tmp_path, "test_a.py", """
-def _build_data(n, seed=0):
-    return compute(n, seed)
-
-
-def test_a():
-    d = _build_data(100, seed=0)
-    assert d
-
-
-def test_b():
-    d = _build_data(100, seed=0)
-    assert d
-""")
-    monkeypatch.delattr(_ast, "unparse", raising=False)
-    assert len(scan_redundant_test_fit_calls(tmp_path)) == 1
 
 
 def test_redundant_test_fit_calls_ignores_different_arguments(tmp_path: Path):

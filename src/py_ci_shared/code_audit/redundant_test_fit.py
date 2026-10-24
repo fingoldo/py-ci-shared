@@ -100,11 +100,9 @@ def _call_signature(call: ast.Call) -> str | None:
     those are method calls, not the module-level helper pattern this scanner targets)."""
     if not isinstance(call.func, ast.Name) or not call.func.id.startswith("_"):
         return None
-    # ast.unparse needs python>=3.9. On the supported 3.8 floor fall back to ast.dump, which is a
-    # drop-in here: the signature is only ever compared for EQUALITY, and ast.dump() omits
-    # positions by default, so two syntactically identical calls still normalise to one key.
-    # Returning None there instead made the whole scanner a silent no-op on one CI leg.
-    _unparse = getattr(ast, "unparse", None) or (lambda node: ast.dump(node))  # audit-exempt: default_via_or -- getattr fallback on a callable: ast.unparse is absent on py3.8, the lambda is the fallback
+    # ast.unparse is available on every supported Python (requires-python >=3.9). The signature is only ever
+    # compared for EQUALITY, and an unparse failure is handled below by skipping that one call site.
+    _unparse = ast.unparse
     try:
         args_repr = ", ".join(_unparse(a) for a in call.args)
         kwargs_repr = ", ".join(f"{kw.arg}={_unparse(kw.value)}" for kw in call.keywords)
