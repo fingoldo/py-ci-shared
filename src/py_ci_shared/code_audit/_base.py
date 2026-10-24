@@ -396,7 +396,7 @@ def _line_text(src_lines: list[str], lineno: int) -> str:
 
 # Inline exemption marker: ``# audit-exempt: <check_id> -- <reason>`` on the finding's own line.
 # The reason is mandatory and must be non-empty; a marker without one is not an exemption.
-_EXEMPT_RE = re.compile(r"#\s*audit-exempt:\s*(?P<check>[A-Za-z0-9_]+)\s*--\s*(?P<reason>\S.*?)\s*$")
+_EXEMPT_RE = re.compile(r"#\s*audit-exempt:\s*(?P<check>[A-Za-z0-9_]+)\s*--\s*(?P<reason>\S.{18,}?)\s*$")
 
 
 def is_line_exempt(src_lines: list[str], lineno: int, check: str) -> bool:
