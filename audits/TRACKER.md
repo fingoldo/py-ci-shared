@@ -893,3 +893,23 @@ Every finding in the round has a disposition in its file; the table is the round
 | **RESOLVED** | P2 | option B, stage 4 | one `Finding` type: decided as option 2 (the moved CLI and field/text checker live in py_ci_shared.code_audit; pyutilz's alias shims removed, consumers import py_ci_shared directly). Behaviour change recorded in CHANGELOG (CLI JSON output bytes); no compatibility layer by the owner's instruction
 | **RESOLVED** | P2 | `PROF-4` slow tests in the self-gate suite | scan-cache, positive-case, and release-CLI tests were 20-40 s each. Merged to master (speed commits in 431dc10 and the mutation-strengthened corrupt-entry test in 8258892). 38 s to 0.35 s, 40 s to 1 s, 21 s to 4.4 s, 32 s to 6.2 s. Remaining: release-CLI tests about 10 s each (interpreter start-up per call), accepted
 | **OPEN** | Low | `_todo_markers` copy | `py_ci_shared.code_audit._todo_markers` duplicates `pyutilz.dev.meta_test_utils.scan_todo_markers`; replace pyutilz's copy by an import once the facade exports it |
+
+## Round 2026-10-24 -- threat-model audit of py-ci-shared (seven directions)
+
+Read-only pass plus fixes. Report: `audits/2026-10-24/threat_model.md`. Every finding dispositioned; the four FIX items are committed locally (`1c11b5e`, `0d3ad5d`, `ad03182`, `f9efd7c`) with a test that fails before each fix.
+
+| Disposition | Sev | Finding | Note |
+|---|---|---|---|
+| **RESOLVED** | Med | `T-12` | an unparseable deferred-entry file was counted as zero and the drift gate passed; it is now reported as unscanned (`1c11b5e`) |
+| **RESOLVED** | Low | `T-11` | redundant_test_fit carried a dead py3.8 fallback and a reason that contradicted requires-python >=3.9; now direct `ast.unparse` (`0d3ad5d`) |
+| **RESOLVED** | Low | `T-13` | an unparseable string annotation was logged at debug; now warning (`ad03182`) |
+| **RESOLVED** | Low | `T-01` | an audit-exempt reason shorter than 20 characters is refused; the 15 real markers in the tree all pass (`f9efd7c`) |
+| **ACCEPTED** | Low | `T-02` | `${{ inputs.* }}` in run steps takes values from the calling repo's own pins; not an untrusted input |
+| **ACCEPTED** | Low | `T-03` | write permissions are scoped per job and needed for the release and push steps |
+| **ACCEPTED** | Low | `T-04` | baseline growth via environment is allowed in CI only; a local run cannot grow the committed baseline |
+| **ACCEPTED** | Low | `T-08` | the command for guard_population comes from `tool/check*.sh` inside this repo and runs in the same CI; no new trust boundary |
+| **ACCEPTED** | Info | `T-05` | every action is pinned by SHA |
+| **ACCEPTED** | Info | `T-06` | the version gate and the rollback path are consistent |
+| **ACCEPTED** | Info | `T-07` | `strict=False` is not called anywhere |
+| **ACCEPTED** | Info | `T-09` | the hook installer writes only inside `.git/hooks` |
+| **ACCEPTED** | Info | `T-10` | no `shell=True` anywhere |
