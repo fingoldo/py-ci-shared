@@ -539,6 +539,7 @@ from pathlib import Path  # noqa: F401 -- historic facade name
 from typing import Optional  # noqa: F401 -- historic facade name
 
 from ._base import Finding
+from ._base import is_line_exempt  # noqa: F401 - the per-line audit-exempt rule, shared with the source-text gate
 from .mutable_defaults import scan_mutable_defaults, scan_parameter_aliasing_mutation
 from .closures import scan_late_binding_closures
 from .default_via_or import scan_default_via_or_trap

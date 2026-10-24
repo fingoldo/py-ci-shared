@@ -658,7 +658,7 @@ def find_source_text_claims(
     # The same per-line marker the code_audit scanners honour: a justified `# audit-exempt: source_text_assertion -- <reason>`
     # on the flagged assert line. The marker names the check, so one for another check does not suppress, and the reason
     # rule (20 characters at least) is the one the scanners share.
-    from .code_audit._base import is_line_exempt  # local: code_audit imports this module lazily, so a top-level import cycles
+    from .code_audit import is_line_exempt  # local: code_audit imports this module lazily, so a top-level import cycles
 
     src_lines = text.splitlines()
     return [c for c in sorted(claims.values(), key=lambda c: c.line) if not is_line_exempt(src_lines, c.line, "source_text_assertion")]
