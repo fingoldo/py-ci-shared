@@ -6,6 +6,7 @@ and ``mutation_teeth`` calls these through its own namespace so a test can still
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import itertools
 import json
@@ -13,6 +14,7 @@ from collections import deque
 import logging
 import os
 import queue
+import re
 import shutil
 import signal
 import stat
@@ -181,6 +183,44 @@ def _pytest_flags() -> list[str]:
     if importlib.util.find_spec("pytest_cov") is not None:
         flags.append("--no-cov")
     return flags
+
+
+# An underscore is part of a name (dash_duo), so the word is bounded by letters and digits only.
+_DASH_FIXTURE_WORD = re.compile(r"(?<![A-Za-z0-9])dash(?![A-Za-z0-9])")
+
+
+@functools.lru_cache(maxsize=1)
+def _dash_plugin_installed() -> bool:
+    """Whether pytest-dash is registered. Its plugin imports IPython at every interpreter start, which is most of a cold
+    nested run's cost on machines that have it (about 7 s against 4.5 s without it, measured on a one-test repo)."""
+    from importlib.metadata import entry_points
+
+    return any(entry.name == "dash" for entry in entry_points(group="pytest11"))
+
+
+@functools.lru_cache(maxsize=32)
+def _tree_mentions_dash(root: str) -> bool:
+    """Whether any Python file under *root* names ``dash``, the one place its plugin's fixtures can come from.
+
+    Disabling a plugin changes a verdict only if some test can reach what it provides; a repo that never names it cannot."""
+    for path in Path(root).rglob("*.py"):
+        if ".git" in path.parts or "__pycache__" in path.parts:
+            continue
+        try:
+            if _DASH_FIXTURE_WORD.search(path.read_text(encoding="utf-8", errors="replace")):
+                return True
+        except OSError:
+            return True  # unreadable means unknown, so the plugin stays on
+    return False
+
+
+def _plugin_isolation_flags(root: Path) -> list[str]:
+    """``-p no:dash`` for a nested run whose tree never names dash, otherwise nothing.
+
+    Only the cold nested run gets this. The warm worker is started once per sweep, so its startup is not paid per mutant."""
+    if _dash_plugin_installed() and not _tree_mentions_dash(str(root)):
+        return ["-p", "no:dash"]
+    return []
 
 
 def _first_failing_file(output: str) -> str | None:
@@ -411,7 +451,7 @@ def _run_pytest(test_paths: Sequence[Union[Path, str]], cwd: Path, timeout: floa
     whole process tree is killed, not only pytest.
     """
     return run_with_deadline(
-        [sys.executable, "-m", "pytest", *[str(t) for t in test_paths], *_pytest_flags(), "-x"],
+        [sys.executable, "-m", "pytest", *[str(t) for t in test_paths], *_pytest_flags(), *_plugin_isolation_flags(cwd), "-x"],
         cwd=cwd,
         env=_pytest_env(),
         timeout=timeout,
