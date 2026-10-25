@@ -183,30 +183,48 @@ def _collect_function_scopes(
     bound: dict[int, set[str]],
     names: dict[int, list[ast.Name]],
 ) -> None:
-    """Fill ``bound`` and ``names`` for every function in ``node``'s subtree, iteratively-by-stack, in one traversal."""
+    """Fill ``bound`` and ``names`` for every function in ``node``'s subtree, in one traversal."""
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        fid = id(node)
-        own = bound.setdefault(fid, set())
-        names.setdefault(fid, [])
-        args = node.args
-        for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
-            if isinstance(arg.annotation, ast.Name) and _is_plain_in_tree_class(arg.annotation.id, classes, dynamic):
-                own.add(arg.arg)
-        enclosing = [*enclosing, fid]
-    elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.annotation, ast.Name):
-        if _is_plain_in_tree_class(node.annotation.id, classes, dynamic):
-            for fid in enclosing:
-                bound[fid].add(node.target.id)
-    elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
-        if _is_plain_in_tree_class(node.value.func.id, classes, dynamic):
-            targets = {t.id for t in node.targets if isinstance(t, ast.Name)}
-            for fid in enclosing:
-                bound[fid].update(targets)
+        _open_function(node, classes, dynamic, bound, names)
+        enclosing = [*enclosing, id(node)]
+    elif isinstance(node, (ast.AnnAssign, ast.Assign)):
+        targets = _in_tree_bindings(node, classes, dynamic)
+        for fid in enclosing:
+            bound[fid].update(targets)
     elif isinstance(node, ast.Name):
         for fid in enclosing:
             names[fid].append(node)
     for child in ast.iter_child_nodes(node):
         _collect_function_scopes(child, enclosing, classes, dynamic, bound, names)
+
+
+def _open_function(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    classes: set[str],
+    dynamic: set[str],
+    bound: dict[int, set[str]],
+    names: dict[int, list[ast.Name]],
+) -> None:
+    """Register a function's own annotated parameters as in-tree instances; its scope starts with no names."""
+    own = bound.setdefault(id(node), set())
+    names.setdefault(id(node), [])
+    args = node.args
+    for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
+        if isinstance(arg.annotation, ast.Name) and _is_plain_in_tree_class(arg.annotation.id, classes, dynamic):
+            own.add(arg.arg)
+
+
+def _in_tree_bindings(node: ast.AnnAssign | ast.Assign, classes: set[str], dynamic: set[str]) -> set[str]:
+    """The names an annotated assignment or a constructor call binds to an in-tree class instance."""
+    if isinstance(node, ast.AnnAssign):
+        if isinstance(node.target, ast.Name) and isinstance(node.annotation, ast.Name):
+            if _is_plain_in_tree_class(node.annotation.id, classes, dynamic):
+                return {node.target.id}
+        return set()
+    if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+        if _is_plain_in_tree_class(node.value.func.id, classes, dynamic):
+            return {t.id for t in node.targets if isinstance(t, ast.Name)}
+    return set()
 
 
 def _is_plain_in_tree_class(name: str, classes: set[str], dynamic: set[str]) -> bool:
