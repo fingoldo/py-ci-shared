@@ -160,6 +160,25 @@ def summary_problems(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSE
     return problems
 
 
+_ROUND_HEADINGS_CACHE: dict[Path, tuple[tuple[tuple[str, int, int], ...], tuple[tuple[Path, tuple[str, ...]], ...]]] = {}
+
+
+def _round_headings(audits_dir: Path) -> tuple[tuple[Path, tuple[str, ...]], ...]:
+    """Every round file's ``###`` headings outside fenced blocks, read once per change of the file set and its contents.
+
+    The tracker check runs once per tracker, and each run used to re-read and re-blank every round file: on this repository that was
+    the same work repeated once per tracker. The key is each file's path, mtime and size, so an edit invalidates the entry.
+    """
+    files = round_files(audits_dir)
+    stamp = tuple((str(f), st.st_mtime_ns, st.st_size) for f in files for st in (f.stat(),))
+    hit = _ROUND_HEADINGS_CACHE.get(audits_dir)
+    if hit is not None and hit[0] == stamp:
+        return hit[1]
+    value = tuple((f, tuple(_HEADING.findall(without_fenced_blocks(read_source(f))))) for f in files)
+    _ROUND_HEADINGS_CACHE[audits_dir] = (stamp, value)
+    return value
+
+
 def heading_status_problems(
     audits_dir: Path,
     tracker: Path,
@@ -178,8 +197,8 @@ def heading_status_problems(
             if status:
                 tracked[m.group(1)] = status
     problems: list[str] = []
-    for path in round_files(audits_dir):
-        for heading in _HEADING.findall(without_fenced_blocks(read_source(path))):
+    for path, headings in _round_headings(audits_dir):
+        for heading in headings:
             fid = finding_id_re.match(heading)
             end = suffix.search(heading)
             if fid and end and fid.group(1) in tracked and tracked[fid.group(1)] != end.group(1):

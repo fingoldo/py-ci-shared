@@ -611,6 +611,7 @@ def _token_problem(
     test_paths: set[str],
     spelled: "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]",
     imported: frozenset[str],
+    declared_heads: frozenset[str],
 ) -> "Optional[str]":
     """The violation text for one backticked *token* (without the ``rel:line:`` prefix), or None when it is fine."""
     tf = _TEST_FILE_RE.match(token)
@@ -626,7 +627,7 @@ def _token_problem(
         verdict = _outside_head_verdict(token, im, known, imported)
         if verdict is not None:
             return None if verdict else f"`{token}` does not resolve by import"
-    repo_class = member is not None and f"{head}.*" not in known and any(k.startswith(head + ".") for k in declared)
+    repo_class = member is not None and f"{head}.*" not in known and head in declared_heads
     if head in known and (member is None or f"{head}.{member}" in known):
         return None
     if head in known and not repo_class:
@@ -665,6 +666,8 @@ def find_phantom_code_references(
     # Python's own names resolve without a declaration: builtins (`ValueError`) and stdlib modules (`ftplib.FTP`).
     repo_known = set(declared) | set(extra_known) | _NEVER_REFERENCES
     known = repo_known | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
+    # The heads of every dotted declaration, once: `_token_problem` asks per token whether a head has any member declared.
+    declared_heads = frozenset(k.partition(".")[0] for k in declared if "." in k)
     test_names, test_paths = _test_file_index(repo_root)
     spelled_exact, spelled_words, spelled_constants = _data_name_index(files)
     violations: list[str] = []
@@ -678,7 +681,15 @@ def find_phantom_code_references(
             for m in _BACKTICK_RE.finditer(text):
                 token = m.group(1).strip()
                 problem_text = _token_problem(
-                    token, declared, known, repo_known, test_names, test_paths, (spelled_exact, spelled_words, spelled_constants), imported
+                    token,
+                    declared,
+                    known,
+                    repo_known,
+                    test_names,
+                    test_paths,
+                    (spelled_exact, spelled_words, spelled_constants),
+                    imported,
+                    declared_heads,
                 )
                 if problem_text is not None:
                     violations.append(f"{rel}:{lineno}: {problem_text}")
