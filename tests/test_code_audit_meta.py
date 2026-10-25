@@ -81,9 +81,9 @@ class TestAssertNoNewCodeAuditFindings:
         assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
 
     def test_the_baseline_round_trips_without_orjson(self, tmp_path, monkeypatch):
-        # pyutilz is a separate package and requires orjson to be imported at all; it is loaded first, so the block below tests only what
-        # THIS package does with orjson (nothing: its baseline is written and read with the standard json module).
-        importlib.import_module("pyutilz.dev.code_audit")
+        # The scanner package is loaded first, so the block below tests only what THIS package does with orjson (nothing:
+        # its baseline is written and read with the standard json module).
+        importlib.import_module("py_ci_shared.code_audit")
         monkeypatch.setitem(sys.modules, "orjson", None)  # any `import orjson` now raises ImportError
         src = tmp_path / "src"
         src.mkdir()
@@ -303,8 +303,7 @@ class TestLegacyBaselineMigration:
 
 class TestSnippetlessFingerprint:
     def test_an_empty_snippet_is_keyed_by_detail_not_line(self):
-        from pyutilz.dev.code_audit import Finding
-
+        from py_ci_shared.code_audit import Finding
         from py_ci_shared.code_audit_meta import _key
 
         a = Finding(check="c", severity="Low", file="x.py", line=3, snippet="", detail="swallows OSError")
