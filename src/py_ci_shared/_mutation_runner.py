@@ -209,7 +209,8 @@ def _tree_mentions_dash(root: str) -> bool:
         try:
             if _DASH_FIXTURE_WORD.search(path.read_text(encoding="utf-8", errors="replace")):
                 return True
-        except OSError:
+        except OSError as exc:
+            logger.warning("could not read %s to look for dash, keeping the plugin enabled: %s", path, type(exc).__name__)
             return True  # unreadable means unknown, so the plugin stays on
     return False
 
