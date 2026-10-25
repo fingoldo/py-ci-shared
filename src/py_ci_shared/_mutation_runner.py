@@ -195,7 +195,10 @@ def _dash_plugin_installed() -> bool:
     nested run's cost on machines that have it (about 7 s against 4.5 s without it, measured on a one-test repo)."""
     from importlib.metadata import entry_points
 
-    return any(entry.name == "dash" for entry in entry_points(group="pytest11"))
+    # entry_points(group=...) exists only from 3.10; on 3.9 the call returns a dict of groups instead.
+    found = entry_points()
+    pytest11 = found.select(group="pytest11") if hasattr(found, "select") else found.get("pytest11", ())
+    return any(entry.name == "dash" for entry in pytest11)
 
 
 @functools.lru_cache(maxsize=32)
