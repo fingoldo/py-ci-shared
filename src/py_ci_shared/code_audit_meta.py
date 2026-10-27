@@ -44,6 +44,7 @@ practice while keeping this package's own install graph unchanged.
 from __future__ import annotations
 
 import inspect
+import logging
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -53,6 +54,8 @@ from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested,
 
 if TYPE_CHECKING:
     from .code_audit import Finding
+
+log = logging.getLogger(__name__)
 
 REFRESH_FLAG = "--refresh-code-audit-baseline"
 
@@ -165,6 +168,22 @@ def repo_consumer_roots(root: Path) -> list[Path]:
     return []
 
 
+def _exempt_by_marker(root: Path, f: "Finding") -> bool:
+    """Whether the finding's own line carries a valid ``# audit-exempt: <check> -- <reason>`` marker.
+
+    A reasoned, in-place exemption: the decision lives beside the code it excuses, so it is not a baseline entry
+    that can only be carried forward. An unreadable file is not exempt.
+    """
+    from .code_audit import is_line_exempt
+
+    try:
+        lines = (root / f.file).read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError as exc:
+        log.warning("cannot read %s to check its audit-exempt markers (%s); the finding stays", f.file, type(exc).__name__)
+        return False
+    return is_line_exempt(lines, f.line, f.check)
+
+
 def _run_scanners(
     root: Path, checks: list[str] | None, exclude_dirs: frozenset[str], consumer_roots: Iterable[Path] = ()
 ) -> tuple[list[Finding], dict[str, str]]:
@@ -254,6 +273,7 @@ def assert_no_new_code_audit_findings(
     if consumer_roots is None:
         consumer_roots = repo_consumer_roots(root)
     current, failed = _run_scanners(root, checks, merged_exclude, consumer_roots)
+    current = [f for f in current if not _exempt_by_marker(root, f)]
     if failed:
         # A scanner that raised has no findings to report, so an empty list from it is not a clean result (audit S-01).
         pytest.fail(
