@@ -168,6 +168,22 @@ __all__ = [
 _CACHE_LOCK_TIMEOUT = 60.0
 
 
+def _repo_relative(path: PathArg) -> Path:
+    """The *path* argument as a repo-relative ``Path``, refusing an absolute one.
+
+    An absolute path makes ``sandbox / relative`` resolve to the REAL checkout, so the tests load the original
+    module while the mutant is written into the copy; the sweep then reports every mutant as a survivor. The
+    refusal is stated here rather than left to the later existence check, which an absolute path passes.
+    """
+    relative = Path(path)
+    if relative.is_absolute():
+        raise MutationHarnessError(
+            f"`path` must be relative to `repo_root`, got the absolute {relative.as_posix()}. "
+            "An absolute path resolves inside the real checkout, not the sandbox, so every mutant would read as a survivor."
+        )
+    return relative
+
+
 def _sweep_partition(
     sandbox: Path,
     relative: Path,
@@ -568,7 +584,7 @@ def find_surviving_mutants(
     to run, because "nothing survived" and "nothing was checked" must not read the same.
     """
     repo_root = Path(repo_root).resolve()
-    relative = Path(path)
+    relative = _repo_relative(path)
     ranges = _normalise_lines(lines)
     if jobs < 1:
         raise ValueError(f"jobs must be at least 1, got {jobs}")
@@ -781,7 +797,7 @@ def assert_revert_fails_tests(
     changed are checked, and the work happens in a copy so a failure cannot leave the tree modified.
     """
     repo_root = Path(repo_root).resolve()
-    relative = Path(path)
+    relative = _repo_relative(path)
     sandbox_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
     sandbox = sandbox_parent / repo_root.name
     try:

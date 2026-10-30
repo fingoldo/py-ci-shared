@@ -912,3 +912,18 @@ class TestWarmRunnerState:
 
 def test_source_text_default_is_plain_utf8():
     assert SourceText("x").encode("é") == b"\xc3\xa9"
+
+
+class TestAbsolutePathIsRefused:
+    """An absolute ``path`` resolved inside the real checkout, so every mutant read as a survivor with a misleading origin error."""
+
+    def test_find_surviving_mutants_refuses_an_absolute_path_before_copying(self, tmp_path):
+        repo = tmp_path / "repo"
+        (repo / "src").mkdir(parents=True)
+        module = repo / "src" / "mod.py"
+        module.write_text("def f(x):\n    return x + 1\n", encoding="utf-8")
+        with pytest.raises(MutationHarnessError, match="must be relative to `repo_root`"):
+            mutation_teeth.find_surviving_mutants(module, [Path("tests")], repo, lines=[range(1, 3)], timeout=5, use_cache=False)
+
+    def test_the_helper_passes_a_repo_relative_path_through(self):
+        assert mutation_teeth._repo_relative("src/mod.py") == Path("src/mod.py")
