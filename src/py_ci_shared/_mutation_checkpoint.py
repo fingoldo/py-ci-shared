@@ -13,7 +13,6 @@ writing it) is skipped; the mutant it described is simply judged again.
 from __future__ import annotations
 
 import json
-import threading
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -26,7 +25,6 @@ class SweepCheckpoint:
     def __init__(self, path: Optional[Union[Path, str]], key: str) -> None:
         self._path = Path(path) if path is not None else None
         self._key = key
-        self._lock = threading.Lock()
         self.done: dict[str, dict[str, Any]] = self._load() if self._path is not None else {}
 
     def _load(self) -> dict[str, dict[str, Any]]:
@@ -43,15 +41,18 @@ class SweepCheckpoint:
         return done
 
     def record(self, mutant_key: str, filed: dict[str, int], budget: dict[str, float]) -> None:
-        """Append one judged mutant. *filed* counts the list names it was added to; *budget* is its time charge."""
+        """Append one judged mutant. *filed* counts the list names it was added to; *budget* is its time charge.
+
+        One binary append per line: the sweep's partitions write from separate threads, and an append of a single line
+        is not split with another writer's line, so no lock is held across the I/O.
+        """
         if self._path is None:
             return
         entry = {"key": self._key, "mutant": mutant_key, "filed": filed, "budget": budget}
-        line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
-        with self._lock:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-            with open(self._path, "a", encoding="utf-8") as handle:
-                handle.write(line + "\n")
+        line = (json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with open(self._path, "ab") as handle:
+            handle.write(line)
 
 
 def filed_sizes(state: Any) -> dict[str, int]:

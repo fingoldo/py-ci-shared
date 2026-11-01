@@ -81,6 +81,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "code_audit": "the code-audit package: the scanner rules are public through py_ci_shared.code_audit (its base, CLI and record checker live inside it)",
     "_mutation_fingerprint": "private part of mutation_teeth",
     "_mutation_model": "private part of mutation_teeth",
+    "_mutation_checkpoint": "private part of mutation_teeth: the per-mutant checkpoint a resumed sweep replays",
     "_mutation_operators": "private part of mutation_teeth",
     "_mutation_runner": "private part of mutation_teeth",
     "_mutation_sweep": "private part of mutation_teeth: the per-mutant verdict and the state a sweep carries between mutants",
