@@ -102,6 +102,10 @@ from ._mutation_fingerprint import _first_party_imports as _first_party_imports
 from ._mutation_fingerprint import _installed_pytest_plugins as _installed_pytest_plugins
 from ._mutation_fingerprint import _python_files_patterns as _python_files_patterns
 from ._mutation_fingerprint import fingerprint
+from ._mutation_checkpoint import SweepCheckpoint as SweepCheckpoint
+from ._mutation_checkpoint import filed_sizes as filed_sizes
+from ._mutation_checkpoint import replay as replay
+from ._mutation_checkpoint import sweep_delta as sweep_delta
 from ._mutation_model import _CONTAINER_SAMPLE as _CONTAINER_SAMPLE
 from ._mutation_model import _COPY_IGNORE as _COPY_IGNORE
 from ._mutation_model import _UNJUSTIFIED as _UNJUSTIFIED
@@ -193,6 +197,7 @@ def _sweep_partition(
     timeout: float,
     use_warm_worker: bool,
     verify_baseline: bool = False,
+    checkpoint: Optional[SweepCheckpoint] = None,
 ) -> "tuple[list[Mutant], list[Mutant], list[Mutant], list[Mutant], list[Mutant], dict[str, float]]":
     """One sandbox's share of the mutants.
 
@@ -218,7 +223,7 @@ def _sweep_partition(
     # mid-sweep used to leave the last mutant on disk, which was harmless while every file got
     # its own throwaway copy and becomes contamination of the next file the moment one does not.
     try:
-        return _sweep_mutants(sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker, relative)
+        return _sweep_mutants(sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker, relative, checkpoint)
     finally:
         write_target(target, original, original.text)
 
@@ -233,6 +238,7 @@ def _sweep_mutants(
     timeout: float,
     use_warm_worker: bool,
     relative: Optional[Path] = None,
+    checkpoint: Optional[SweepCheckpoint] = None,
 ) -> "tuple[list[Mutant], list[Mutant], list[Mutant], list[Mutant], list[Mutant], dict[str, float]]":
     """The loop itself, split out so the restore above can wrap it in a `finally`."""
     source = original if isinstance(original, SourceText) else SourceText(original)
@@ -264,8 +270,13 @@ def _sweep_mutants(
             ordered_wider=list(fallback_test_paths),
         )
         for mutant in mutants:
+            if checkpoint is not None and mutant.key in checkpoint.done:
+                replay(state, mutant, checkpoint.done[mutant.key])
+                continue
             started = time.perf_counter()
             state.judged_at = started
+            before = filed_sizes(state)
+            budget_before = dict(state.budget)
             survivors_before = len(state.survivors)
             write_target(target, source, mutant.mutated_file_text)
             try:
@@ -278,6 +289,8 @@ def _sweep_mutants(
                 state.budget["mutants"] += 1
                 # Everything after the verdict is a cold re-check: the confirmation and the wider net.
                 state.budget["recheck"] += max(0.0, time.perf_counter() - state.judged_at)
+            if checkpoint is not None:
+                checkpoint.record(mutant.key, *sweep_delta(state, before, budget_before))
     return state.survivors, state.coverage_gaps, state.inconclusive, state.judged, state.crashed, state.budget
 
 
@@ -413,6 +426,7 @@ def _run_partitions(
     timeout: float,
     use_warm_worker: bool,
     jobs: int,
+    checkpoint: Optional[SweepCheckpoint] = None,
 ) -> list[tuple]:
     """Sweep *representatives* in up to *jobs* sandboxes at once; each result is one partition's verdict lists.
 
@@ -433,7 +447,15 @@ def _run_partitions(
     def _one(slot: int) -> None:
         try:
             results[slot] = _sweep_partition(
-                sandboxes[slot], relative, partitions[slot], test_paths, fallback_test_paths, timeout, use_warm_worker, verify_baseline=slot > 0
+                sandboxes[slot],
+                relative,
+                partitions[slot],
+                test_paths,
+                fallback_test_paths,
+                timeout,
+                use_warm_worker,
+                verify_baseline=slot > 0,
+                checkpoint=checkpoint,
             )
         except Exception as exc:  # collected here and re-raised by the caller (raise errors[0]), so nothing is swallowed
             errors.append(exc)
@@ -505,6 +527,7 @@ def _sweep_in_sandbox(
     use_warm_worker: bool,
     jobs: int,
     allow_empty: bool,
+    checkpoint: Optional[SweepCheckpoint] = None,
 ) -> "MutationRun":
     """The sweep itself, in a sandbox the caller provides or this function copies. Removing a sandbox it made is the caller's job."""
     if not borrowed:
@@ -535,7 +558,7 @@ def _sweep_in_sandbox(
     twins = _group_twins(mutants)
     representatives = [group[0] for group in twins.values()]
 
-    results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs)
+    results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, checkpoint)
     survivors, coverage_gaps, inconclusive, run, crashes, budget = _merge_verdicts(results, twins, mutants)
     outcome = MutationRun(
         survivors=survivors,
@@ -571,6 +594,7 @@ def find_surviving_mutants(
     extra_fingerprint_paths: Sequence[PathArg] = (),
     fallback_test_paths: Sequence[PathArg] = (),
     allow_empty: bool = False,
+    checkpoint_path: Optional[PathArg] = None,
 ) -> MutationRun:
     """Mutants the tests did NOT catch.
 
@@ -602,6 +626,7 @@ def find_surviving_mutants(
         cached = _load_cached_run(cache_file, relative, key)
         if cached is not None:
             return cached
+    checkpoint = SweepCheckpoint(checkpoint_path, key)
 
     # A caller-owned sandbox (from `sweep_files`) is reused as-is: the copy, the cold
     # baseline and the worker start are the fixed costs a multi-file sweep should pay once.
@@ -616,7 +641,7 @@ def find_surviving_mutants(
         sandbox = sandbox_parent / repo_root.name
     try:
         outcome = _sweep_in_sandbox(
-            sandbox, borrowed, repo_root, relative, ranges, limit, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, allow_empty
+            sandbox, borrowed, repo_root, relative, ranges, limit, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, allow_empty, checkpoint
         )
     finally:
         if sandbox_parent is not None:
