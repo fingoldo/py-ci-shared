@@ -122,3 +122,52 @@ def test_assert_raises_on_a_split_and_passes_on_a_joint_block(tmp_path):
     joint = tmp_path / "joint.py"
     joint.write_text(_module("_CACHE = {}\n\ndef f(k, v):\n    with _guard:\n        if k not in _CACHE:\n            _CACHE[k] = v\n"), encoding="utf-8")
     assert_no_check_then_act_outside_lock([joint])
+
+
+_SPLIT_IN_CACHE = """
+    import threading
+
+    _guard = threading.Lock()
+    _items = {}
+
+    def remember(key, value):
+        if key not in _items:
+            with _guard:
+                _items[key] = value
+        return _items[key]
+"""
+
+
+def test_exempt_entry_drops_the_matching_finding(tmp_path):
+    p = tmp_path / "mod.py"
+    p.write_text(_module(_SPLIT_IN_CACHE), encoding="utf-8")
+    assert find_check_then_act_outside_lock([p], min_files=1)
+    assert not find_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "remember"): "pure value, duplicate compute is harmless"})
+
+
+def test_exempt_entry_matches_on_path_suffix_and_function_name(tmp_path):
+    p = tmp_path / "mod.py"
+    p.write_text(_module(_SPLIT_IN_CACHE), encoding="utf-8")
+    assert find_check_then_act_outside_lock([p], min_files=1, exempt={("other.py", "remember"): "wrong file"})
+    assert find_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "forget"): "wrong function"})
+
+
+def test_assert_fails_on_an_exemption_that_matches_nothing(tmp_path):
+    p = tmp_path / "mod.py"
+    p.write_text(_module("def fine():\n    return 1\n"), encoding="utf-8")
+    with pytest.raises(AssertionError, match="match no finding"):
+        assert_no_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "remember"): "stale"})
+
+
+def test_assert_passes_when_every_finding_is_exempt_and_every_exemption_is_live(tmp_path):
+    p = tmp_path / "mod.py"
+    p.write_text(_module(_SPLIT_IN_CACHE), encoding="utf-8")
+    assert_no_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "remember"): "pure value, duplicate compute is harmless"})
+
+
+@pytest.mark.parametrize("reason", ["", "   "])
+def test_exemption_without_a_reason_is_refused(tmp_path, reason):
+    p = tmp_path / "mod.py"
+    p.write_text(_module(_SPLIT_IN_CACHE), encoding="utf-8")
+    with pytest.raises(ValueError, match="non-empty reason"):
+        find_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "remember"): reason})

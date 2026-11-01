@@ -26,7 +26,7 @@ Usage::
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
@@ -151,16 +151,47 @@ def _findings_in_function(fn: ast.AST, rel: str, module_dicts: frozenset[str], l
     return out
 
 
-def _findings_in(parsed: ParsedFile) -> list[Finding]:
+def _findings_in(parsed: ParsedFile) -> list[tuple[Finding, str]]:
     module_dicts = _module_dicts(parsed.tree)
     lock_names = module_lock_names(parsed.tree)
     module_has_lock = bool(lock_names)
-    out: list[Finding] = []
+    out: list[tuple[Finding, str]] = []
     for fn in function_nodes(parsed.tree):
         if not module_has_lock and not any(isinstance(node, _WITH) for node in walk(fn)):
             continue  # no lock anywhere in the module and no `with` in this function: no finding is possible
-        out.extend(_findings_in_function(fn, parsed.rel, module_dicts, lock_names, module_has_lock))
+        name = getattr(fn, "name", "<function>")
+        out.extend((f, name) for f in _findings_in_function(fn, parsed.rel, module_dicts, lock_names, module_has_lock))
     return out
+
+
+def _validate_exempt(exempt: Mapping[tuple[str, str], str]) -> None:
+    for key, reason in exempt.items():
+        if not (isinstance(key, tuple) and len(key) == 2 and all(isinstance(part, str) and part for part in key)):
+            raise ValueError(f"exemption key must be (path suffix, function name), got {key!r}")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError(f"exemption {key!r} needs a non-empty reason")
+
+
+def _unexempt_and_matched(found: list[tuple[Finding, str]], exempt: Mapping[tuple[str, str], str]) -> tuple[list[Finding], set[tuple[str, str]]]:
+    """The findings no exemption covers, and the exemption keys that covered at least one finding."""
+    unexempt: list[Finding] = []
+    matched: set[tuple[str, str]] = set()
+    for finding, name in found:
+        hit = next((key for key in exempt if finding.path.replace("\\", "/").endswith(key[0]) and key[1] == name), None)
+        if hit is None:
+            unexempt.append(finding)
+        else:
+            matched.add(hit)
+    return unexempt, matched
+
+
+def _scan(files: Iterable[Union[str, Path]], min_files: int, allow_unparsed: bool, use_git: Optional[bool]) -> list[tuple[Finding, str]]:
+    scan = scan_python(list(files), min_files=min_files, use_git=use_git)
+    scan.assert_ok(allow_unparsed=allow_unparsed)
+    out: list[tuple[Finding, str]] = []
+    for parsed in scan:
+        out.extend(_findings_in(parsed))
+    return sorted(out, key=lambda pair: (pair[0].path, pair[0].line))
 
 
 def find_check_then_act_outside_lock(
@@ -169,18 +200,19 @@ def find_check_then_act_outside_lock(
     min_files: int = 1,
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
+    exempt: Optional[Mapping[tuple[str, str], str]] = None,
 ) -> list[Finding]:
     """Every check-then-act pair on a shared dict in *files* that no common lock covers, sorted by path and line.
+
+    *exempt* maps ``(path suffix, function name)`` to the reason the site is accepted, and drops the matching findings.
 
     Raises ``EmptyScanError`` below *min_files* parsed files and ``UnparsedFilesError`` for an unreadable file (unless
     *allow_unparsed*).
     """
-    scan = scan_python(list(files), min_files=min_files, use_git=use_git)
-    scan.assert_ok(allow_unparsed=allow_unparsed)
-    out: list[Finding] = []
-    for parsed in scan:
-        out.extend(_findings_in(parsed))
-    return sorted(out, key=lambda f: (f.path, f.line))
+    exempt = exempt or {}
+    _validate_exempt(exempt)
+    unexempt, _matched = _unexempt_and_matched(_scan(files, min_files, allow_unparsed, use_git), exempt)
+    return unexempt
 
 
 def assert_no_check_then_act_outside_lock(
@@ -189,11 +221,21 @@ def assert_no_check_then_act_outside_lock(
     min_files: int = 1,
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
+    exempt: Optional[Mapping[tuple[str, str], str]] = None,
 ) -> None:
-    """Fail on any check-then-act on a shared dict that no single lock covers (see the module docstring)."""
-    found = find_check_then_act_outside_lock(files, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
-    if found:
+    """Fail on any check-then-act on a shared dict that no single lock covers and no *exempt* entry accepts.
+
+    An exemption that matches no finding also fails, so an exempt site that gets fixed (or moves) is removed rather than left
+    as a silent allowance.
+    """
+    exempt = exempt or {}
+    _validate_exempt(exempt)
+    unexempt, matched = _unexempt_and_matched(_scan(files, min_files, allow_unparsed, use_git), exempt)
+    if unexempt:
         raise AssertionError(
-            f"{len(found)} check-then-act-outside-lock finding(s): a test and a write on a shared dict need one lock across both:\n  "
-            + "\n  ".join(f.render() for f in found)
+            f"{len(unexempt)} check-then-act-outside-lock finding(s): a test and a write on a shared dict need one lock across both:\n"
+            + "\n".join(f.render() for f in unexempt)
         )
+    stale = sorted(set(exempt) - matched)
+    if stale:
+        raise AssertionError(f"exemptions match no finding, remove them: {stale}")
