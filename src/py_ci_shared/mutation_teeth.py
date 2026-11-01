@@ -266,11 +266,15 @@ def _sweep_mutants(
         for mutant in mutants:
             started = time.perf_counter()
             state.judged_at = started
+            survivors_before = len(state.survivors)
             write_target(target, source, mutant.mutated_file_text)
             try:
                 _judge(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, fallback_test_paths, relative, state, started)
             finally:
                 restore()
+                # Logged as each verdict lands, not when the sweep ends: a long sweep must not hide its survivors.
+                if len(state.survivors) > survivors_before:
+                    logger.warning("mutation survivor: %s", mutant)
                 state.budget["mutants"] += 1
                 # Everything after the verdict is a cold re-check: the confirmation and the wider net.
                 state.budget["recheck"] += max(0.0, time.perf_counter() - state.judged_at)

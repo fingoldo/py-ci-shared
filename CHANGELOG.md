@@ -4,6 +4,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- `mutation_teeth` logs each surviving mutant at WARNING as its verdict lands, not only when the sweep ends, so a sweep that runs for hours can be read while it runs.
+  Additive: verdicts, the returned `MutationRun` and the cache key are unchanged, and the sweep prints nothing new on a clean run. `HARNESS_VERSION` moves to 31, so a cached
+  verdict computed by version 30 is recomputed once.
 - `contract_ledger` gained five helpers for contract ratchets: `assert_documents_identical` / `document_diff` / `canonical_json` (a committed JSON document, for example an OpenAPI fixture, must equal the live one in full; the failure lists each added, removed and changed path, so a new property on an existing schema is named instead of passing), `promise_message_ids` (catalogue messages containing a promise word as a whole word), `missing_test_references` (ledger rows that name a test that does not exist, resolved by parsing the file), and `value_mismatches` (a ledger's expected values against what the code emitted). Additive.
 
 - **Behaviour change (moved, no shim):** the code-audit CLI (`python -m py_ci_shared.code_audit`, module `py_ci_shared.code_audit.cli`) and the field/text agreement record checker (`py_ci_shared.code_audit.field_text_agreement`) moved here from pyutilz, which no longer re-exports them. Import them from their new paths. The CLI's `--format json` output now comes from the standard library `json` with 2-space indent, sorted keys and unescaped non-ASCII, so its bytes can differ from the former `pyutilz.core.jsonlib` output while carrying the same data.

@@ -1168,3 +1168,52 @@ def test_the_worker_pool_tests_carry_a_budget_above_the_global_timeout():
     """Audit 2026-10-03 WF-12: past pytest-timeout's 300 s, its thread method kills the whole xdist worker."""
     (mark,) = [m for m in TestConcurrencyChangesSpeedAndNothingElse.pytestmark if m.name == "timeout"]
     assert mark.args[0] > 300
+
+
+class TestSurvivorsAreLoggedAsTheyLand:
+    """A sweep over a real suite takes hours, and the survivor list used to be visible only when it ended.
+
+    Each survivor is now logged at WARNING as its verdict lands, so a long sweep can be read while it runs.
+    Logging changes no verdict: the returned list must be the one the log was written from.
+    """
+
+    def _repo(self, tmp_path: Path) -> Path:
+        repo = tmp_path / "repo"
+        (repo / "tests").mkdir(parents=True)
+        open(repo / "m.py", "w", encoding="utf-8", newline="").write(
+            "def clamp(n, cap):\n" "    if n > cap:\n" "        return cap\n" "    return n\n" "\n" "\n" "def unchecked(n):\n" "    return n * 2 + 1\n"
+        )
+        open(repo / "tests" / "test_m.py", "w", encoding="utf-8", newline="").write(
+            "from m import clamp\n"
+            "\n"
+            "\n"
+            "def test_clamp():\n"
+            "    assert clamp(5, 3) == 3\n"
+            "    assert clamp(2, 3) == 2\n"
+            "    assert clamp(3, 3) == 3\n"
+        )
+        return repo
+
+    def test_every_survivor_is_logged_once(self, tmp_path, caplog):
+        import logging
+
+        repo = self._repo(tmp_path)
+        caplog.set_level(logging.WARNING, logger="py_ci_shared.mutation_teeth")
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+
+        logged = [record.getMessage() for record in caplog.records if "mutation survivor" in record.getMessage()]
+        assert outcome.survivors, "the fixture must leave at least one survivor, or this test proves nothing"
+        assert len(logged) == len(outcome.survivors)
+        for survivor in outcome.survivors:
+            assert any(str(survivor.line) in message for message in logged)
+
+    def test_a_killed_mutant_is_not_logged(self, tmp_path, caplog):
+        import logging
+
+        repo = self._repo(tmp_path)
+        caplog.set_level(logging.WARNING, logger="py_ci_shared.mutation_teeth")
+        outcome = mutation_teeth.find_surviving_mutants("m.py", ["tests/test_m.py"], repo, limit=8, timeout=300, use_cache=False)
+
+        assert outcome.killed > 0
+        logged = [record for record in caplog.records if "mutation survivor" in record.getMessage()]
+        assert len(logged) == len(outcome.survivors) < outcome.mutants_run
