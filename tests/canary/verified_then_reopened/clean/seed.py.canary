@@ -1,0 +1,8 @@
+import pickle
+
+
+def seed_safe_load(path):
+    with open(path, "rb") as handle:
+        payload = handle.read()
+    verify_bytes(payload)
+    return pickle.loads(payload)

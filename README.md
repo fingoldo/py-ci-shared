@@ -354,6 +354,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`validation_errors_echo_input`](src/py_ci_shared/validation_errors_echo_input.py) | gate | 1.22.12 | `assert_validation_errors_echo_input` | Validator errors and RequestValidationError handlers that echo the rejected input back into the 422 detail |
 | [`value_bearing_asserts`](src/py_ci_shared/value_bearing_asserts.py) | gate | 1.12.0 | `assert_no_value_bearing_asserts` | No guard that checks a VALUE may ride on an ``assert`` in production code |
 | [`vendored_internal_imports`](src/py_ci_shared/vendored_internal_imports.py) | gate | 1.20.0 | `assert_no_vendored_internal_imports` | No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback |
+| [`verified_then_reopened`](src/py_ci_shared/verified_then_reopened.py) | gate | 1.23.8 | `assert_verified_then_reopened` | A function verifies a file by path (sidecar or hash), then re-opens the same path to load it |
 | [`version_consistency`](src/py_ci_shared/version_consistency.py) | gate | 1.8.0 | `assert_versions_agree` | A package reports one version wherever it states one |
 | [`version_tag_currency`](src/py_ci_shared/version_tag_currency.py) | gate | 1.3.6 | `assert_version_is_tagged` (+1) | A package's declared version, its tags and its consumers' pins agree |
 | [`vulture_warn`](src/py_ci_shared/vulture_warn.py) | cli | 1.0.0 | `main` | Warn-only dead-code check for the pre-commit hook |

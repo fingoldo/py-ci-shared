@@ -1497,6 +1497,13 @@ since = "1.20.0"
 summary = "No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback"
 
 [[gate]]
+name = "verified_then_reopened"
+kind = "gate"
+entries = ["assert_verified_then_reopened"]
+since = "1.23.8"
+summary = "A function verifies a file by path (sidecar or hash), then re-opens the same path to load it"
+
+[[gate]]
 name = "version_consistency"
 kind = "gate"
 entries = ["assert_versions_agree"]

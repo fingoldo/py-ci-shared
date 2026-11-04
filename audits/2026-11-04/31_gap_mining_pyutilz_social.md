@@ -24,7 +24,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Another process os.replace()s the payload between the sidecar check and the open; unverified bytes are unpickled, defeating the integrity check the code advertises.
 - Proposed fix: New AST gate verified_then_reopened (py_ci_shared.verified_then_reopened.find_reopened_after_verify(root, verify_name_regex=...)): same function, same Name path argument, verify call earlier than an open/load sink. Accepted safe pattern: the sink receives bytes from one earlier read (pickle.loads(payload)). Canary: inline the pre-fix safe_load (verify(path); pickle.load(open(path))) -> fail; the current safe_load -> pass.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate verified_then_reopened. Hits: pyutilz 2 TRUE (src/pyutilz/text/tokenizers.py:380 load_tokens; src/pyutilz/core/serialization.py:181 _resolve_serialized_source), social 0.
 
 ## 31-F4 (P2) state_advanced_before_fallible_work: a schedule deadline/last-run stamp or a progress counter is written before the work it gates
 
