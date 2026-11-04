@@ -107,3 +107,19 @@ def test_singletons_enum_members_and_external_names_are_not_string_identity(tmp_
 def test_a_string_sentinel_default_is_still_reported(tmp_path):
     (tmp_path / "cfg.py").write_text("_UNSET = '<unset>'\n\n\ndef get(env_file=_UNSET):\n    return env_file is _UNSET\n", encoding="utf-8")
     assert len(find_identity_comparisons([tmp_path / "cfg.py"], root=tmp_path)) == 1
+
+
+def _identity(tmp_path, body):
+    f = tmp_path / "m.py"
+    f.write_text(body, encoding="utf-8")
+    return find_identity_comparisons([f], root=tmp_path)
+
+
+def test_a_name_rebound_to_a_non_string_is_not_a_string_constant(tmp_path):
+    assert _identity(tmp_path, 'SQL = "a"\nSQL = object()\n\n\ndef f(x):\n    return x is SQL\n') == []
+
+
+@pytest.mark.parametrize("value", ['" ".join(["a", "b"])', 'textwrap.dedent("a")', 'str("a")'])
+def test_built_string_constants_compared_by_identity_are_reported(tmp_path, value):
+    body = f"import textwrap\n\nSQL = {value}\n\n\ndef f(x):\n    return x is SQL\n"
+    assert len(_identity(tmp_path, body)) == 1
