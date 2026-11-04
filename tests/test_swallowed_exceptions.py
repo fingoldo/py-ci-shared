@@ -140,7 +140,7 @@ class TestExemptions:
         """
         assert _lines(tmp_path, src) == []
 
-    def test_finally_blocks_and_release_scopes_are_exempt(self, tmp_path):
+    def test_only_del_and_emit_are_exempt_wholesale_a_finally_judges_its_calls(self, tmp_path):
         src = """
             class H:
                 def __del__(self):
@@ -166,7 +166,8 @@ class TestExemptions:
                     except OSError:
                         pass
         """
-        assert _lines(tmp_path, src) == [23]
+        # 33-F21: a write swallowed in a finally is reported (only release-type calls exempt it); __del__/emit stay exempt
+        assert _lines(tmp_path, src) == [19, 23]
 
     @pytest.mark.parametrize(
         "marker_line",
