@@ -8,7 +8,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A test is copy-pasted and the second copy is never edited to test the case its name promises (name says 'zero to nonzero', body repeats the earlier case). The suite counts it as extra coverage; a mutant on the second branch survives.
 - Proposed fix: New gate duplicate_test_body (py_ci_shared.duplicate_test_body.assert_no_duplicate_test_bodies(test_dirs, min_dump_chars=120, baseline=...)): only functions named test*, same file, identical normalized body AND identical decorator list AND identical signature, docstring ignored. Restricting to test* functions with equal decorators removes the fixture/helper noise that made duplicate_function_body unusable on tests. Canary: copy a test under a new name in a tmp tree -> must fail; change one literal in the copy -> must pass.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate duplicate_test_body. Hits (use_git=False): pyutilz 2 (tests/test_general_audit_20260926.py:381, tests/test_pythonlib_extra.py:88), social 6 (dashboard/tests/test_close_stays_closed.py:74, test_region_gate_is_named.py:70, test_security.py:289, test_views_render.py:270, realtime_applications/tests/test_first_variant_is_what_apply_sends.py:82, test_telegram_bot.py:333); all are exact twins by construction, parent to edit or delete each.
 
 ## 31-F2 (P2) definition_after_entry_guard: a top-level def/class that follows the script's if __name__ == '__main__' entry guard
 
@@ -16,7 +16,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A def is added or moved below the guard; the script crashes with NameError only when run as __main__ (PM2/cron), never under pytest.
 - Proposed fix: Port the social test as a script_entry_points rule definition-after-entry (same module, same script_dirs argument): for each module with an entry guard that calls a module-level name, fail if any FunctionDef/AsyncFunctionDef/ClassDef follows it. Exempt pure sys.modules-aliasing and sys.path guards. Canary: move the guard above a def it needs -> fail; guard as last statement -> pass. Parse-only, no subprocess.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate definition_after_entry_guard (new module rather than a script_entry_points rule, to stay additive and opt-in). Hits: pyutilz 0, social 1 TRUE (realtime_applications/show_top_jobs.py:342 get_dsn below the guard at :334); marketplace_crawler.py FP is excluded because its guard only calls attributes.
 
 ## 31-F3 (P2) verify_then_reopen: a function verifies a file (sidecar/hash) by path, then re-opens the same path to load it (TOCTOU)
 
@@ -24,7 +24,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Another process os.replace()s the payload between the sidecar check and the open; unverified bytes are unpickled, defeating the integrity check the code advertises.
 - Proposed fix: New AST gate verified_then_reopened (py_ci_shared.verified_then_reopened.find_reopened_after_verify(root, verify_name_regex=...)): same function, same Name path argument, verify call earlier than an open/load sink. Accepted safe pattern: the sink receives bytes from one earlier read (pickle.loads(payload)). Canary: inline the pre-fix safe_load (verify(path); pickle.load(open(path))) -> fail; the current safe_load -> pass.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate verified_then_reopened. Hits: pyutilz 2 TRUE (src/pyutilz/text/tokenizers.py:380 load_tokens; src/pyutilz/core/serialization.py:181 _resolve_serialized_source), social 0.
 
 ## 31-F4 (P2) state_advanced_before_fallible_work: a schedule deadline/last-run stamp or a progress counter is written before the work it gates
 
@@ -32,7 +32,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: The scheduler records 'done' then the query fails silently; the next attempt waits a full interval (an hour for the stale-active sweep) and nothing alerts. With counters, a stalled writer reads as healthy progress.
 - Proposed fix: Generalise the social test into py_ci_shared.state_before_work: configurable name regexes for stamps ((last|next)_(full|sweep|run|scan|cycle|refresh)) and counters (processed|written|inserted|saved|sent); flag when the assignment/aug-assign sits in the same statement list immediately before a non-clock Call, unless restored in a finally/except. Canary: stamp-then-query fixture fails; query-then-stamp passes.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate state_before_work (stamp + counter forms, configurable regexes, restored-in-except/finally and stamp-first-ok exemptions). Hits: pyutilz 0, social 0 (regression guard, matches the report); no true hits to fix.
 
 ## 31-F5 (P2) systemexit_in_library_function: sys.exit()/raise SystemExit inside a non-entry function that background threads and library callers reach
 
@@ -40,7 +40,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A library helper written for a CLI is later imported by a thread; a missing config exits only that thread, except Exception does not log it, and the service looks alive while a subsystem is dead.
 - Proposed fix: New AST gate systemexit_in_library: flag when the module has no __main__ guard (or the function is imported by another module); allowlist parameter for opt-in flags and an 'exit-ok: reason' marker. Canary: library module with def get_dsn(): sys.exit(1) imported elsewhere -> fail; same function raising RuntimeError -> pass.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate systemexit_in_library. Hits (tests skipped): pyutilz 0, social 10: upwork_shared/_db.py:652 db_connection, _orchestration.py:329 _verify_proxy, _singleton_lock.py:59 acquire_singleton_lock, realtime_applications/cli_utils.py:324 acquire_singleton_lock, pipeline/runner.py:360 and :409 run_pipeline (library SystemExit, TRUE per the report), run_single_job.py:389 _connect, scripts/analyze_hired_vs_requirements.py:80 and scripts/measure_skill_vocab_case_shift.py:63 _connect, show_top_jobs.py:97 _get_dsn. The CLI-only helpers need an `# exit-ok: reason` marker or a RuntimeError; parent decides per site.
 
 ## 31-F6 (P2) statement_privileges_granted: the (table, privilege) pairs each service's SQL needs are checked against its role's GRANTs
 
@@ -48,7 +48,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A new column write or table is added; unit tests run as the owner role and pass; the least-privilege production role gets 42501 on every write and the scraper loops with zero inserts.
 - Proposed fix: Lift the social test into py_ci_shared.statement_privileges_granted(statement_sources, grants_files, role_of_module): reuse statement_real_engine_coverage statement discovery and sqlglot lineage; parse GRANT lines; fail on a (table, INSERT|UPDATE|DELETE|SELECT) needed by a role with no grant, and on column-level UPDATE grants missing the written column. Canary: delete the UPDATE grant line in a fixture runbook -> fail.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: DEFERRED: needs each consumer grant-file format plus sqlglot lineage; the reference implementation is social test_scraper_sql_needs_are_granted.py and was not prototyped on a second repo, so a shared contract would be guessed. Revisit when a second consumer with GRANT runbooks adopts it; then lift the social test into statement_privileges_granted.
 
 ## 31-F7 (P2) exception_text_bound_to_db_column_unredacted: str(exc) written into an INSERT/UPDATE parameter without the redaction helper
 
@@ -56,7 +56,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A reconnect error containing the DSN is stringified into a JSONB column the dashboard renders; a password reaches the UI and backups.
 - Proposed fix: Configure it as a taint rule on code_audit/provenance_flow.py: source = str/repr/format of a caught exception variable, sink = parameter of execute-family calls, sanitizer names configurable (e.g. _redact). Canary: bound str(e) -> fail; _redact(str(e)) -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: DEFERRED: FP risk high and the 0-hit prototype proves nothing without data flow; the right home is a configured taint rule on code_audit/provenance_flow.py (source str/repr of caught exception, sink execute-family parameter, sanitizer names), which is a change to an existing module rather than a new gate. Deferred until a consumer supplies the sanitizer helper names.
 
 ## 31-F8 (P3) process_lifetime_collection_unbounded: module-level or self dict/list/set that grows inside functions and is never evicted or capped
 
@@ -64,7 +64,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A long-lived scraper or monitor grows a dict by one entry per job/uid or one list item per sample; memory climbs until the host swaps; log throttles stop throttling.
 - Proposed fix: Do not ship the generic form. Ship the narrow one: keys passed to configured throttle/dedupe helpers must not interpolate parameters matching uid|id|path|url unless the helper is declared bounded; plus a pytest helper assert_bounded(container_getter, feed_n=10000) for runtime checks. Canary for the narrow form: log_throttle(f'x:{job_uid}') -> fail, log_throttle(f'x:{source_label}') -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX (generic form) / DEFERRED (narrow throttle-key form): the generic form had about 1 true hit in 16 and the 4 social hits read were all false positives; the narrow throttle-key variant found 5 hits in social, all bounded config keys, so there is no true hit to justify a gate and the helper names are consumer-specific. The runtime helper assert_bounded(container_getter, feed_n) is a better fit and is left to a library follow-up. Hits: no gate built.
 
 ## 31-F9 (P3) dead_optional_collaborator: a *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes
 
@@ -72,7 +72,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A performance or injection hook is added with a default; tests exercise it; production keeps the slow default path indefinitely.
 - Proposed fix: py_ci_shared.optional_collaborator_wired: resolve calls by name (reuse kwarg_forwarding / unresolved_module_attributes call resolution), bind positional and keyword args to the parameter, fail when every non-test call omits it or passes literal None. Canary: function with memo=None called without memo in a tmp package -> fail.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate optional_collaborator_wired with positional+keyword binding. Hits: pyutilz 0, social 0. The two unverified candidates (_build_client_context client_cache, _require_scan_mode fetch_fn) pass a variable positionally at their only production call site, so the gate correctly treats them as wired; no true hits to fix.
 
 ## 31-F10 (P3) monotonic_clock_zero_sentinel: an attribute initialised to 0/0.0 and later compared as time.monotonic() - attr with no unset guard
 
@@ -80,7 +80,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A freshly booted host (or container with a fresh monotonic origin) treats 0.0 as less than an interval ago and skips the first scheduled run.
 - Proposed fix: Low priority. If built, report only when no enclosing condition tests another attribute of the same object that the writer sets together with the timestamp; otherwise require a None sentinel. Canary: self._last=0.0 plus if time.monotonic()-self._last>=N -> fail; with a guarding self.armed -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX: the report measured 0 true of 3 (all guarded by a disabled flag set together with the timestamp) and a precise gate needs flag-aware guard detection; the incident class is already covered by a None-sentinel convention and the social comment at rescan_fl_workhistories_fetch.py:110. Hits: no gate built.
 
 ## 31-F11 (P3) per_call_figure_overwritten_not_summed: a per-call usage/cost attribute assigned by each POST/attempt instead of accumulated
 
@@ -88,7 +88,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A retry or re-issue silently drops the first attempt's spend; budget gates and cost reports under-count.
 - Proposed fix: Not recommended as a generic AST gate. Better: a py_ci_shared pytest helper assert_accumulates(callable, attr, n_calls=2) that drives a provider twice through a fake transport and asserts the figure equals the sum; document it in WRITING_TESTS.md.
 - AST-checkable: False; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX as an AST gate: not AST-checkable (the original defects lived in a helper called once per POST, so a loop rule would not have caught them) and the report itself recommends against it. The recommended alternative, a pytest helper assert_accumulates(callable, attr, n_calls=2) plus a WRITING_TESTS.md note, is a library addition not done in this pass. Hits: no gate built.
 
 ## 31-F12 (P3) cli_flag_spelling_split: the same flag stem registered both as --a-b and --a_b across sibling scripts
 
@@ -96,7 +96,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Operators pass the spelling that works on 19 scripts and get unrecognized arguments on the 20th in the middle of an incident.
 - Proposed fix: Optional tiny gate cli_flag_spelling: fail when one stem has two spellings unless a single add_argument call lists both (alias). Canary: two scripts with --dry-run and --dry_run -> fail; one add_argument carrying both names -> pass.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate cli_flag_spelling (low-FP, built as proposed; reports the minority spelling sites). Hits: pyutilz 0, social 8 TRUE (stem dry_run: --dry-run x8 vs --dry_run x10): marketplace_crawler.py:927, scripts/dispose_terminal_cipher_rows.py:166, scripts/provision_scraper_roles.py:234, scripts/recover_uid_for_cipher_rows.py:440, scripts/rekey_cipher_jobs_details.py:267, scripts/run_cipher_migration.py:368, realtime_applications/cli_utils.py:166, realtime_applications/scripts/extract_additional_skills.py:452; fix by listing both spellings in each add_argument.
 
 ## 31-F13 (P3) nullable_key_negative_control: the engine test of a statement that joins or NOT-EXISTS-es on a nullable column must seed a NULL row
 
@@ -104,4 +104,4 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A statement is covered by a real-Postgres test whose fixtures hold no NULL in the join key, so the NULL-handling bug passes every test.
 - Proposed fix: Port the guard half (sqlglot lineage plus nullability from DDL) next to statement_columns_exist_in_ddl, then add the engine-test half using statement_real_engine_coverage's mapping: the covering test must seed NULL/None for that column. Canary: remove AND col IS NOT NULL from a fixture statement -> guard half fails.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: DEFERRED: the guard half needs sqlglot lineage plus DDL nullability and the engine-test half needs a statement-to-test mapping that social itself has deferred; neither was prototyped, so a shared gate would be unvalidated. Revisit after statement_columns_exist_in_ddl exposes nullability. Hits: no gate built.

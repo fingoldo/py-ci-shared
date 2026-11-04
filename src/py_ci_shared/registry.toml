@@ -208,6 +208,13 @@ since = "1.3.1"
 summary = "Every job in a CI workflow file declares ``timeout-minutes``"
 
 [[gate]]
+name = "cli_flag_spelling"
+kind = "gate"
+entries = ["assert_cli_flag_spelling"]
+since = "1.23.8"
+summary = "The same CLI flag stem registered as both --a-b and --a_b across scripts"
+
+[[gate]]
 name = "clock_day_boundary"
 kind = "gate"
 entries = ["assert_no_clock_day_boundary"]
@@ -409,6 +416,13 @@ since = "1.23.3"
 summary = "Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift"
 
 [[gate]]
+name = "definition_after_entry_guard"
+kind = "gate"
+entries = ["assert_definition_after_entry_guard"]
+since = "1.23.8"
+summary = "A top-level def or class that follows the script's if __name__ == '__main__' entry guard"
+
+[[gate]]
 name = "deletion_gates"
 kind = "library"
 since = "1.4.0"
@@ -469,6 +483,13 @@ kind = "gate"
 entries = ["assert_no_percent_only_duplicate_entries"]
 since = "1.22.12"
 summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
+
+[[gate]]
+name = "duplicate_test_body"
+kind = "gate"
+entries = ["assert_no_duplicate_test_bodies"]
+since = "1.23.8"
+summary = "Two test functions in one file with identical bodies, decorators and signature"
 
 [[gate]]
 name = "edge_function_hygiene"
@@ -926,6 +947,13 @@ since = "1.21.0"
 summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
 
 [[gate]]
+name = "optional_collaborator_wired"
+kind = "gate"
+entries = ["assert_optional_collaborator_wired"]
+since = "1.23.8"
+summary = "A *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes"
+
+[[gate]]
 name = "optional_imports_guarded"
 kind = "gate"
 entries = ["assert_optional_imports_guarded"]
@@ -1309,6 +1337,13 @@ since = "1.19.0"
 summary = "Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed"
 
 [[gate]]
+name = "state_before_work"
+kind = "gate"
+entries = ["assert_state_before_work"]
+since = "1.23.8"
+summary = "A schedule stamp or progress counter is written immediately before the fallible work it gates"
+
+[[gate]]
 name = "statement_columns_exist_in_ddl"
 kind = "gate"
 entries = ["assert_statement_columns_exist_in_ddl"]
@@ -1362,6 +1397,13 @@ kind = "gate"
 entries = ["assert_no_swallowed_exceptions"]
 since = "1.17.0"
 summary = "Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind"
+
+[[gate]]
+name = "systemexit_in_library"
+kind = "gate"
+entries = ["assert_no_systemexit_in_library"]
+since = "1.23.8"
+summary = "sys.exit()/raise SystemExit inside a library function that threads and importers reach"
 
 [[gate]]
 name = "teeth_sweep"
@@ -1481,6 +1523,13 @@ kind = "gate"
 entries = ["assert_no_vendored_internal_imports"]
 since = "1.20.0"
 summary = "No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback"
+
+[[gate]]
+name = "verified_then_reopened"
+kind = "gate"
+entries = ["assert_verified_then_reopened"]
+since = "1.23.8"
+summary = "A function verifies a file by path (sidecar or hash), then re-opens the same path to load it"
 
 [[gate]]
 name = "version_consistency"

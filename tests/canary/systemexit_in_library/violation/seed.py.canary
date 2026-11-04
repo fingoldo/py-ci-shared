@@ -1,0 +1,7 @@
+import sys
+
+
+def seed_get_dsn():
+    if not CONFIG:
+        sys.exit(1)
+    return CONFIG

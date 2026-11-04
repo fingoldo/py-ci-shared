@@ -1,0 +1,4 @@
+def seed_get_dsn():
+    if not CONFIG:
+        raise RuntimeError("no DSN configured")
+    return CONFIG

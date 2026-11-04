@@ -1,0 +1,7 @@
+﻿import pickle
+
+
+def seed_safe_load(path):
+    verify_sidecar(path)
+    with open(path, "rb") as handle:
+        return pickle.load(handle)

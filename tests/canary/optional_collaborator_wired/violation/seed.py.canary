@@ -1,0 +1,6 @@
+def seed_split_buyer_info(text, client_memo=None):
+    return client_memo or text
+
+
+def seed_run():
+    return seed_split_buyer_info("x")

@@ -170,6 +170,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_gate`](src/py_ci_shared/ci_workflow_gate.py) | gate | 1.3.0 | `assert_continue_on_error_is_reviewed` | Every ``continue-on-error |
 | [`ci_workflow_paths`](src/py_ci_shared/ci_workflow_paths.py) | gate | 1.3.6 | `assert_workflow_paths_exist` | A CI workflow does not name paths that do not exist, and declares its permissions |
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
+| [`cli_flag_spelling`](src/py_ci_shared/cli_flag_spelling.py) | gate | 1.23.8 | `assert_cli_flag_spelling` | The same CLI flag stem registered as both --a-b and --a_b across scripts |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`closed_audit_rounds`](src/py_ci_shared/closed_audit_rounds.py) | gate | 1.20.0 | `assert_closed_audit_rounds_append_only` | Files of a closed audit round (``audits/implemented/``) only gain lines over a revision range; edits need an ``Audit-Edit:`` trailer |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
@@ -198,6 +199,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ddl_lock_safety`](src/py_ci_shared/ddl_lock_safety.py) | gate | 1.22.0 | `assert_ddl_files_lock_safe` | Plain SQL files that change a live table bound their lock wait and add constraints and indexes without a blocking scan |
 | [`deferred_drift`](src/py_ci_shared/deferred_drift.py) | gate | 1.12.0 | `assert_deferred_lists_not_grown` | Deferred-debt lists in a meta-test directory may not grow, and a list that shrank must say so |
 | [`deferred_entries`](src/py_ci_shared/deferred_entries.py) | library | 1.23.3 |  | Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift |
+| [`definition_after_entry_guard`](src/py_ci_shared/definition_after_entry_guard.py) | gate | 1.23.8 | `assert_definition_after_entry_guard` | A top-level def or class that follows the script's if __name__ == '__main__' entry guard |
 | [`deletion_gates`](src/py_ci_shared/deletion_gates.py) | library | 1.4.0 |  | Assert that something an audit deliberately REMOVED has not come back |
 | [`destructive_tests_throwaway_only`](src/py_ci_shared/destructive_tests_throwaway_only.py) | gate | 1.21.1 | `assert_destructive_tests_are_throwaway_only` | A test that writes SQL must reach only a throwaway server and be run by an embedded_postgres hook |
 | [`discarded_model_copy`](src/py_ci_shared/discarded_model_copy.py) | gate | 1.17.0 | `assert_no_discarded_model_copy` | A config rebuilt with ``model_copy(update=...)`` into a local must reach something, or the override is lost |
@@ -207,6 +209,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`drifted_duplicate_functions`](src/py_ci_shared/drifted_duplicate_functions.py) | gate | 1.4.0 | `assert_no_drifted_duplicate_functions` | Copies of one function that have drifted apart |
 | [`drifted_duplicate_literals`](src/py_ci_shared/drifted_duplicate_literals.py) | gate | 1.21.0 | `assert_no_drifted_duplicate_literals` | One set of numbers written out in several modules: the literal analogue of drifted_duplicate_functions |
 | [`dup_baseline_percent_key`](src/py_ci_shared/dup_baseline_percent_key.py) | gate | 1.22.12 | `assert_no_percent_only_duplicate_entries` | A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet) |
+| [`duplicate_test_body`](src/py_ci_shared/duplicate_test_body.py) | gate | 1.23.8 | `assert_no_duplicate_test_bodies` | Two test functions in one file with identical bodies, decorators and signature |
 | [`edge_function_hygiene`](src/py_ci_shared/edge_function_hygiene.py) | gate | 1.3.6 | `assert_edge_functions_are_sound` | A serverless edge function is not a hole in the product's own back end |
 | [`effect_assertion_parity`](src/py_ci_shared/effect_assertion_parity.py) | gate | 1.4.0 | `assert_effects_are_asserted` | A side effect the code performs must be one some test actually inspects |
 | [`embedded_postgres`](src/py_ci_shared/embedded_postgres.py) | cli | 1.17.0 | `main` | Run a command against a throwaway local Postgres, and find the main checkout's ``.env`` from a worktree |
@@ -272,6 +275,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |
 | [`numba_seed_range`](src/py_ci_shared/numba_seed_range.py) | gate | 1.17.0 | `assert_numba_seeds_fit_int64` | A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them |
 | [`offline_suite_without_credentials`](src/py_ci_shared/offline_suite_without_credentials.py) | library | 1.21.0 |  | Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read |
+| [`optional_collaborator_wired`](src/py_ci_shared/optional_collaborator_wired.py) | gate | 1.23.8 | `assert_optional_collaborator_wired` | A *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes |
 | [`optional_imports_guarded`](src/py_ci_shared/optional_imports_guarded.py) | gate | 1.22.3 | `assert_optional_imports_guarded` | a module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function |
 | [`optional_truthiness`](src/py_ci_shared/optional_truthiness.py) | gate | 1.4.0 | `assert_optionals_test_for_none` | An optional parameter tested for truth rather than for absence |
 | [`order_losing_filters`](src/py_ci_shared/order_losing_filters.py) | gate | 1.17.0 | `assert_no_order_losing_filters` | Row selections by an index-built mask whose positional twin returns the rows in index order |
@@ -327,6 +331,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`stale_comment_age`](src/py_ci_shared/stale_comment_age.py) | gate | 1.3.6 | `assert_no_stale_todos` | A TODO or a commented-out call does not quietly become permanent |
 | [`stale_source_citations`](src/py_ci_shared/stale_source_citations.py) | gate | 1.17.0 | `assert_no_stale_source_citations` | ``file.py:NNN`` citations that no longer point where they say |
 | [`standard_stream_restore`](src/py_ci_shared/standard_stream_restore.py) | gate | 1.19.0 | `assert_standard_streams_restored_only_if_still_ours` | Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed |
+| [`state_before_work`](src/py_ci_shared/state_before_work.py) | gate | 1.23.8 | `assert_state_before_work` | A schedule stamp or progress counter is written immediately before the fallible work it gates |
 | [`statement_columns_exist_in_ddl`](src/py_ci_shared/statement_columns_exist_in_ddl.py) | gate | 1.22.0 | `assert_statement_columns_exist_in_ddl` | SQL statements in code name only columns the project DDL files define |
 | [`statement_compilation`](src/py_ci_shared/statement_compilation.py) | gate | 1.17.0 | `assert_no_mocked_statement_constructors` | A test that mocks the statement constructor never compiles the statement |
 | [`statement_real_engine_coverage`](src/py_ci_shared/statement_real_engine_coverage.py) | gate | 1.22.0 | `assert_every_statement_has_an_engine_test` | Every SQL statement constant a package defines is exercised by a real-engine test, not only a fake cursor |
@@ -335,6 +340,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`stub_signature_parity`](src/py_ci_shared/stub_signature_parity.py) | gate | 1.21.0 | `assert_stub_signature_parity` | A monkeypatched stub must accept every parameter of the callable it replaces |
 | [`survivorship_scoring`](src/py_ci_shared/survivorship_scoring.py) | gate | 1.17.0 | `assert_no_survivorship_scoring` | A metric scored only on the rows where the prediction happened to be finite |
 | [`swallowed_exceptions`](src/py_ci_shared/swallowed_exceptions.py) | gate | 1.17.0 | `assert_no_swallowed_exceptions` | Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind |
+| [`systemexit_in_library`](src/py_ci_shared/systemexit_in_library.py) | gate | 1.23.8 | `assert_no_systemexit_in_library` | sys.exit()/raise SystemExit inside a library function that threads and importers reach |
 | [`teeth_sweep`](src/py_ci_shared/teeth_sweep.py) | cli | 1.4.0 | `main` | Does anything actually FAIL if an audit fix is undone? Mutate, run the suite, restore |
 | [`test_partition_reachability`](src/py_ci_shared/test_partition_reachability.py) | gate | 1.3.6 | `assert_partitions_reachable` | Every declared test partition is actually selected by some runner |
 | [`timezone_honest`](src/py_ci_shared/timezone_honest.py) | gate | 1.4.1 | `assert_timezone_honest` | Non-test code states its time frame in the expression, and the scan cannot miss a directory |
@@ -352,6 +358,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`validation_errors_echo_input`](src/py_ci_shared/validation_errors_echo_input.py) | gate | 1.22.12 | `assert_validation_errors_echo_input` | Validator errors and RequestValidationError handlers that echo the rejected input back into the 422 detail |
 | [`value_bearing_asserts`](src/py_ci_shared/value_bearing_asserts.py) | gate | 1.12.0 | `assert_no_value_bearing_asserts` | No guard that checks a VALUE may ride on an ``assert`` in production code |
 | [`vendored_internal_imports`](src/py_ci_shared/vendored_internal_imports.py) | gate | 1.20.0 | `assert_no_vendored_internal_imports` | No import of another distribution's private vendored copy (``joblib.externals.cloudpickle``) outside a standalone-first fallback |
+| [`verified_then_reopened`](src/py_ci_shared/verified_then_reopened.py) | gate | 1.23.8 | `assert_verified_then_reopened` | A function verifies a file by path (sidecar or hash), then re-opens the same path to load it |
 | [`version_consistency`](src/py_ci_shared/version_consistency.py) | gate | 1.8.0 | `assert_versions_agree` | A package reports one version wherever it states one |
 | [`version_tag_currency`](src/py_ci_shared/version_tag_currency.py) | gate | 1.3.6 | `assert_version_is_tagged` (+1) | A package's declared version, its tags and its consumers' pins agree |
 | [`vulture_warn`](src/py_ci_shared/vulture_warn.py) | cli | 1.0.0 | `main` | Warn-only dead-code check for the pre-commit hook |

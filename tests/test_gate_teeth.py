@@ -441,6 +441,13 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("import_time_global_side_effects").assert_import_time_global_side_effects(d, use_git=False),
             token="unimorph",
         ),
+        Canary("duplicate_test_body", lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False)),
+        Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
+        Canary("verified_then_reopened", lambda d: _gate("verified_then_reopened").assert_verified_then_reopened(d, use_git=False)),
+        Canary("state_before_work", lambda d: _gate("state_before_work").assert_state_before_work(d, use_git=False)),
+        Canary("systemexit_in_library", lambda d: _gate("systemexit_in_library").assert_no_systemexit_in_library(d, use_git=False)),
+        Canary("optional_collaborator_wired", lambda d: _gate("optional_collaborator_wired").assert_optional_collaborator_wired(d, use_git=False)),
+        Canary("cli_flag_spelling", lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False)),
     ]
 }
 
