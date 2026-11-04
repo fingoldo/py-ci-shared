@@ -184,7 +184,7 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
     failure, whatever the collection is called, and is not an admission.
     """
     for n in _fast_walk(handler):
-        value: Optional[ast.AST] = None
+        value: Optional[ast.expr] = None
         list_name = ""
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _ADMIT_METHODS and n.args:
             value = n.args[-1] if n.func.attr == "insert" else n.args[0]
