@@ -50,9 +50,9 @@ def test_entry_problems_flag_unmapped_without_reason_and_unknown_status() -> Non
         "d": {"status": "mapped"},
     }
     problems = ledger_entry_problems(entries)
-    assert any(p.startswith("a: unmapped without a reason") for p in problems)
-    assert any(p.startswith("b: status") for p in problems)
-    assert not any(p.startswith(("c:", "d:")) for p in problems)
+    assert sum(1 for p in problems if p.startswith("a: unmapped without a reason")) == 1
+    assert sum(1 for p in problems if p.startswith("b: status")) == 1
+    assert sum(1 for p in problems if p.startswith(("c:", "d:"))) == 0
 
 
 def test_entry_problems_require_declared_fields() -> None:
@@ -174,7 +174,9 @@ def test_promise_message_ids_matches_whole_words_only() -> None:
 
 
 def test_missing_test_references_flags_missing_file_missing_function_and_incomplete_reference(tmp_path: Path) -> None:
-    (tmp_path / "test_x.py").write_text("def test_present():\n    pass\n\nasync def test_async():\n    pass\n\nclass T:\n    def test_nested(self):\n        pass\n", encoding="utf-8")
+    (tmp_path / "test_x.py").write_text(
+        "def test_present():\n    pass\n\nasync def test_async():\n    pass\n\nclass T:\n    def test_nested(self):\n        pass\n", encoding="utf-8"
+    )
     refs = {
         "ok": {"path": "test_x.py", "name": "test_present"},
         "ok_async": {"path": "test_x.py", "name": "test_async"},

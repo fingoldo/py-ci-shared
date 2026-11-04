@@ -10,3 +10,9 @@ def seed_connect(dsn):
 
 def seed_pool(dsn):
     return ThreadedConnectionPool(1, 8, dsn)
+
+
+def seed_modern(dsn):
+    import psycopg
+
+    return psycopg.connect(dsn)

@@ -52,6 +52,11 @@ def _rules(root: Path, **kw: object) -> list[str]:
         ("out = df.filter(pl.col('a') == pl.col('b'))", RULE_COLUMNS),
         ("out = df.filter(pl.col('a').cast(pl.Int64).ne(pl.col('b')))", RULE_COLUMNS),
         ("ok = df.select(pl.col('a').min() == pl.col('b').max())", RULE_COLUMNS),
+        ("out = df.filter(pl.col('a') != pl.lit(None))", RULE_NONE),
+        ("out = df.filter(pl.col('a').eq(pl.lit(None)))", RULE_NONE),
+        ("out = df.filter(pl.col('a').is_in([None]))", RULE_NONE),
+        ("out = df.filter(pl.col('a').is_in((1, None)))", RULE_NONE),
+        ("frame = pl.DataFrame({'a': [1]})\n    ok = frame['a'] == frame['b']", RULE_COLUMNS),
     ],
 )
 def test_each_rule_fires(tmp_path: Path, line: str, rule: str) -> None:
@@ -66,6 +71,10 @@ def test_each_rule_fires(tmp_path: Path, line: str, rule: str) -> None:
         "ok = df[c].min() == df[c].max()",
         "ok = df.select(pl.col('a').min().eq_missing(pl.col('a').max()))",
         "out = df.filter(pl.col('a').is_null())",
+        "out = df.filter(pl.col('a') == pl.lit(1))",
+        "out = df.filter(pl.col('a').is_in([1, 2]))",
+        "frame = pd.DataFrame({'a': [1]})\n    ok = frame['a'] == frame['b']",
+        "frame = pl.DataFrame({'a': [1]})\n    ok = frame['a'] == 3",
         "out = df.filter(pl.col('a') == 3)",
         "out = df.filter(pl.col('a').eq_missing(pl.col('b')))",
         "out = df.filter(pl.col('a') == pl.col('b'))  # null-eq-ok: nulls are filtered upstream",

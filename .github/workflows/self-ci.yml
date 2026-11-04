@@ -200,6 +200,15 @@ jobs:
       force-remote-fetch: true
       py-ci-shared-ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
+  # gates.yml is off by default (`enabled: false`), so this job is skipped: it pins the call shape and the remote-install input only.
+  # Turning it on here would run `run-all` on this repo's own enable list, which the self-gate tests already do.
+  integration-gates-remote-install:
+    uses: ./.github/workflows/gates.yml
+    with:
+      enabled: false
+      force-remote-fetch: true
+      py-ci-shared-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
   integration-lint-advisory-remote-fetch:
     uses: ./.github/workflows/lint-advisory.yml
     with:

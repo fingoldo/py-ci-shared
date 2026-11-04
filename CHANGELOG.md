@@ -4,6 +4,15 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- Leftovers of audit 2026-11-04 (30, 33, 34, 35):
+  `tests/test_mutation_speed.py` runs on a stand-in for pytest and the warm worker (17 tests, about 30 s instead of about 12 minutes); two real sweeps stay as `slow` tests that run on CI (`CI` is set) or with `PY_CI_RUN_SLOW=1`.
+  `near_duplicate_function_body` generates candidate pairs from a prefix of each function's rarest shingles; the pairs, and so the findings, are identical (compared on py-ci-shared and pyutilz source).
+  New internal `_core.open_audit` (`count_opens`, `python -m py_ci_shared._core.open_audit`) counts file opens per gate; `tests/test_open_audit.py` caps opens per file for the shared readers.
+  **Behaviour change (fewer findings):** `unread_function_params` no longer reports a knob in a no-op override (`return self`/`return`/`return None` only) of a class that has a base class.
+  `polars_null_equality` (advisory) also reports `pl.lit(None)` comparisons, `is_in([None, ...])` and `frame['a'] == frame['b']` on a visibly polars frame. Additive.
+  New reusable workflow `gates.yml` (`py-ci-shared run-all` for the repo's enabled gates), off unless the caller passes `enabled: true`. Additive.
+  `Canary.tokens` for 25 more gates (multi-shape teeth) and eleven more test files banned from `assert any(substring)`. Test-only.
+
 - `find_surviving_mutants` pays less fixed cost per sweep (audit 2026-11-04, 30-F1..F9). Default: the unmutated primary tests run once, in the warm worker, instead of cold and then warm (and once per extra `jobs` partition); the wider net's baseline runs only when a survivor needs it (`single_baseline=False` restores the old order); the checkpoint stores each mutant's killer file and line, and a resumed or partitioned sweep leads with the killers already learned. Opt-in: `timeout_factor`, `confirm_in_worker` / `cold_confirm_every`, `coverage_prune` (line map from one coverage run; mutants on unexecuted statements skip the primary run), `copy_ignore_patterns`, `ignore_addopts`. Additive; verdicts are unchanged. `HARNESS_VERSION` moves to 33.
 ### New gates from audit 32, 2026-11-04
 

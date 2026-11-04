@@ -3,13 +3,14 @@
 Kept in its own file, separate from the main tests/test_code_audit.py, so it doesn't
 collide with unrelated in-flight work in that file.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 from py_ci_shared.code_audit import scan_near_duplicate_function_body
 
-_NEAR_DUP_PAIR = '''
+_NEAR_DUP_PAIR = """
 def process_records(records, threshold):
     results = []
     for r in records:
@@ -21,9 +22,9 @@ def process_records(records, threshold):
         else:
             results.append({"id": r["id"], "value": 0, "flag": False})
     return results
-'''
+"""
 
-_NEAR_DUP_DRIFTED = '''
+_NEAR_DUP_DRIFTED = """
 def process_entries(entries, cutoff):
     results = []
     for r in entries:
@@ -35,9 +36,9 @@ def process_entries(entries, cutoff):
         else:
             results.append({"id": r["id"], "value": 0, "flag": False})
     return results
-'''
+"""
 
-_SUBSET_SUPERSET = '''
+_SUBSET_SUPERSET = """
 def process_entries(entries, cutoff):
     results = []
     for r in entries:
@@ -60,16 +61,16 @@ def process_entries(entries, cutoff):
                 extra_total *= 2
     print("done", extra_total, len(results))
     return results
-'''
+"""
 
-_UNRELATED = '''
+_UNRELATED = """
 def unrelated_function_totally_different(x, y, z):
     total = 0
     for i in range(x):
         for j in range(y):
             total += i * j + z
     return total
-'''
+"""
 
 
 def _write(root: Path, name: str, content: str) -> None:
@@ -126,3 +127,25 @@ def test_respects_min_nodes_floor(tmp_path):
     findings = scan_near_duplicate_function_body(tmp_path, min_nodes=20)
 
     assert findings == []
+
+
+def test_prefix_filtered_candidates_equal_the_all_postings_reference():
+    """35-F5: the prefix-filtered generator returns the same pairs as counting every posting, on bodies with shared runs, drift and generic tokens."""
+    import random
+
+    from py_ci_shared.code_audit import near_duplicate_function_body as m
+
+    rng = random.Random(7)
+    vocab = [f"t{i}" for i in range(40)]
+    base = [tuple(rng.choice(vocab) for _ in range(rng.randint(8, 60))) for _ in range(25)]
+    entries = []
+    for tokens in base:
+        for _ in range(rng.randint(1, 4)):
+            drifted = list(tokens)
+            for _ in range(rng.randint(0, 6)):
+                drifted[rng.randrange(len(drifted))] = rng.choice(vocab)
+            cut = rng.randint(0, len(drifted) // 3)
+            entries.append((None, None, None, tuple(drifted[cut:] + [rng.choice(vocab)] * rng.randint(0, 5))))
+    entries.append((None, None, None, ()))
+    assert m._candidate_pairs(entries) == m._candidate_pairs_all_postings(entries)
+    assert len(m._candidate_pairs_all_postings(entries)) > 10, "the corpus must produce real candidates, or the equality is vacuous"

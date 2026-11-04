@@ -1,0 +1,3 @@
+"""The same limit, restated under a similar name."""
+
+SEED_STALENESS_LIMIT_H = 48

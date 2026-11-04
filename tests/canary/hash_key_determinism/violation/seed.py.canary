@@ -4,3 +4,14 @@ import json
 
 def seed_key(cfg):
     return hashlib.sha256(json.dumps(cfg).encode()).hexdigest()
+
+
+def seed_local(cfg):
+    blob = json.dumps(cfg)
+    return hashlib.md5(blob.encode()).hexdigest()
+
+
+def seed_update(cfg):
+    h = hashlib.sha1()
+    h.update(json.dumps(cfg).encode())
+    return h.hexdigest()

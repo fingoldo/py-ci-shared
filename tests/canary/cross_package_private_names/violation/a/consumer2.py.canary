@@ -1,0 +1,4 @@
+"""Package a reaches a private name of b through an alias."""
+import b_mod as bm
+
+COUNT = bm._seed_counter

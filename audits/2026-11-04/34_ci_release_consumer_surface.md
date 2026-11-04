@@ -56,7 +56,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A consumer CI whose path filter or shards omit the meta tests silently never runs gates; ci_test_dir_reachability and ci_workflow_timeout_gate are themselves adopted by only 4 of 8.
 - Proposed fix: Add a reusable gates.yml calling py-ci-shared run-all (ConfigError already fails when none enabled) and flag Python repos without a gate runner in adoption_matrix.
 - AST-checkable: False; FP risk: med
-- Disposition: PARTLY RESOLVED, rest DEFERRED. adoption_matrix now flags Python consumers without a [tool.py_ci_shared] enable list (six of eight in the committed matrix). A reusable gates.yml is deferred: a new reusable workflow must also join release_guard's default-ref bump, the README list and five workflow meta-tests, and its value depends on step 8 choosing the enable lists first.
+- Disposition: RESOLVED as an additive, default-off workflow. adoption_matrix flags Python consumers without a [tool.py_ci_shared] enable list. `.github/workflows/gates.yml` is the reusable runner: it installs py-ci-shared at `py-ci-shared-ref` (default: this release, bumped by `release_guard prepare` because the file is in PREP_FILES; the pinned ref or nothing, three attempts, no master fallback), optionally runs the caller's `install-command`, and runs `py-ci-shared run-all` (a ConfigError when nothing is enabled, so an opted-in repo with an empty list is red). The job is `if: inputs.enabled` and `enabled` defaults to false, so adding the file changes no consumer. self-ci calls it once with `enabled: false` and `force-remote-fetch: true` (a skipped job that pins the call shape; turning it on there would repeat what the self-gate tests already run); tests/test_reusable_workflows.py covers the pinned-ref install step, the self-ci remote call, least privilege, timeout, SHA pins and the off-by-default contract. Wiring consumers is step 8.
 
 ## 34-F8 (P3) cli tool subcommand coerces non-int returns to 0; main() maps any KeyError to exit 2
 
@@ -72,7 +72,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Superseded pushes in a consumer burn minutes if its caller lacks a group.
 - Proposed fix: Extend ci_workflow_gate to require concurrency in caller workflows invoking shared ones.
 - AST-checkable: True; FP risk: med
-- Disposition: DEFERRED. Requiring concurrency in caller workflows via ci_workflow_gate makes green consumers red (behaviour change, CHANGELOG 'Behaviour change' rule) and needs a per-consumer audit of which callers lack it; it belongs to step 8, where each consumer is run to green anyway.
+- Disposition: DEFERRED, by scope rather than risk. A `concurrency` group belongs to the CALLER workflow (a reusable workflow's own block does not apply to the caller's runs), so the only lever is a check on callers. An opt-in check could not turn a green consumer red; what stops it is that it is a new gate (module, registry entry, README row, canary, corpus_drift binding), not an option of ci_workflow_gate (the continue-on-error gate, which shares nothing with it), and that making it blocking is the behaviour change the finding names, which needs the per-consumer list of callers without a group first. Taken with the consumer runs of step 8.
 
 ## 34-F10 (P3) lint-blocking skips interrogate, deptry and zizmor silently when inputs are empty/false
 

@@ -1,2 +1,4 @@
 ﻿# the loop in target.py:400 does this
 SEED = 1
+LOG = "suppressed in seed.py:99"
+# see fit() at target.py:1

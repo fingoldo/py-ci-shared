@@ -78,8 +78,8 @@ def test_report_separates_a_rule_that_moved_from_one_that_did_not(repo):
     git("commit", "-qm", "pay one down")
 
     everything = report(str(root), ["tool/meta/baselines"], None, False)
-    assert any("paid" in line and "->" in line for line in everything)
-    assert any("stuck" in line and "==" in line for line in everything)
+    assert sum(1 for line in everything if "paid" in line and "->" in line) == 1
+    assert sum(1 for line in everything if "stuck" in line and "==" in line) == 1
 
     unmoved = report(str(root), ["tool/meta/baselines"], None, True)
     assert [line for line in unmoved if "stuck" in line]

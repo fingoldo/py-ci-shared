@@ -107,11 +107,17 @@ def _kwarg_forwarding_canary(d: Path) -> None:
 CANARIES: dict[str, Canary] = {
     c.gate: c
     for c in [
-        Canary("import_cycles", lambda d: _gate("import_cycles").assert_no_import_cycles(d / "seedpkg", use_git=False), token="seedpkg"),
+        Canary(
+            "import_cycles",
+            lambda d: _gate("import_cycles").assert_no_import_cycles(d / "seedpkg", use_git=False),
+            token="seedpkg",
+            tokens=("import-cycle", "import-order"),
+        ),
         Canary(
             "module_cache_thread_safety",
             lambda d: _gate("module_cache_thread_safety").assert_thread_safe_module_caches(d, use_git=False),
             token="_SEED_CACHE",
+            tokens=("unlocked-cache", "lazy-import-in-delayed", "_SEED_CACHE", "_SEED_MEMO"),
         ),
         Canary(
             "local_copy_report",
@@ -123,7 +129,12 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("hardcoded_token_ceilings").assert_no_hardcoded_token_ceilings(d, use_git=False),
             token="max_tokens",
         ),
-        Canary("lf_file_writes", lambda d: _gate("lf_file_writes").assert_no_crlf_writes(d, use_git=False), token="seed.sh"),
+        Canary(
+            "lf_file_writes",
+            lambda d: _gate("lf_file_writes").assert_no_crlf_writes(d, use_git=False),
+            token="seed.sh",
+            tokens=("seed.sh", "seed.yml", "seed2.sh"),
+        ),
         Canary("machine_specific_paths", lambda d: _gate("machine_specific_paths").assert_no_machine_specific_paths(d, use_git=False), token="alice"),
         Canary(
             "swallowed_exceptions",
@@ -143,7 +154,12 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("discarded_model_copy", lambda d: _gate("discarded_model_copy").assert_no_discarded_model_copy(_py(d), d, {}), token="seed_copy"),
         Canary("drifted_duplicate_functions", lambda d: _gate("drifted_duplicate_functions").assert_no_drifted_duplicate_functions([d]), token="seed_fn"),
-        Canary("drifted_duplicate_literals", lambda d: _gate("drifted_duplicate_literals").assert_no_drifted_duplicate_literals(d, use_git=False), token="221"),
+        Canary(
+            "drifted_duplicate_literals",
+            lambda d: _gate("drifted_duplicate_literals").assert_no_drifted_duplicate_literals(d, use_git=False),
+            token="221",
+            tokens=("literal-set", "named-constant"),
+        ),
         Canary(
             "env_flag_parsing",
             lambda d: _gate("env_flag_parsing").assert_env_flags_use_one_parser(_py(d), d, ("SEED_",), {}),
@@ -163,7 +179,12 @@ CANARIES: dict[str, Canary] = {
             "latched_availability_flags", lambda d: _gate("latched_availability_flags").assert_no_latched_availability_flags([d]), token="_SEED_GPU_AVAILABLE"
         ),
         Canary("module_reload_safety", lambda d: _gate("module_reload_safety").assert_no_reloads_in_code([d], d)),
-        Canary("naive_utcnow", lambda d: _gate("naive_utcnow").assert_no_naive_utcnow(d, use_git=False), token="utcnow"),
+        Canary(
+            "naive_utcnow",
+            lambda d: _gate("naive_utcnow").assert_no_naive_utcnow(d, use_git=False),
+            token="utcnow",
+            tokens=("seed.py:5:", "dtm.datetime.utcnow()", "D.utcnow()"),
+        ),
         Canary("optional_truthiness", lambda d: _gate("optional_truthiness").assert_optionals_test_for_none(files=_py(d), repo_root=d), token="limit"),
         Canary(
             "readme_env_var_parity",
@@ -203,7 +224,12 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("vacuous_loop_assertions").assert_no_new_floorless_loop(_py(d), d, _baseline(d)),
             token="test_seed",
         ),
-        Canary("value_bearing_asserts", lambda d: _gate("value_bearing_asserts").assert_no_value_bearing_asserts(d, use_git=False), token="x > 0"),
+        Canary(
+            "value_bearing_asserts",
+            lambda d: _gate("value_bearing_asserts").assert_no_value_bearing_asserts(d, use_git=False),
+            token="x > 0",
+            tokens=("x > 0", "sum(w) == 1.0", "isinstance(x, int)", "key in table"),
+        ),
         Canary(
             "conceded_defect_pins",
             lambda d: _assert_empty(_gate("conceded_defect_pins").find_conceded_defect_pins(_py(d), d)),
@@ -297,21 +323,43 @@ CANARIES: dict[str, Canary] = {
             "polars_null_equality",
             # advisory by default (warns, never fails); the teeth are what it reports once a repo makes it blocking
             lambda d: _gate("polars_null_equality").assert_polars_null_equality(d, advisory=False, use_git=False),
+            tokens=("polars-compare-none", "polars-null-propagating-eq", "pl.lit(None)", "is_in([None, 1])"),
         ),
         Canary("reiterated_iterable_params", lambda d: _gate("reiterated_iterable_params").assert_no_reiterated_iterable_params(d, use_git=False)),
         Canary("rollback_then_continue", lambda d: _gate("rollback_then_continue").assert_no_rollback_then_continue(d, use_git=False)),
         Canary("stdlib_json_ban", lambda d: _gate("stdlib_json_ban").assert_no_stdlib_json(d, use_git=False), token="seed"),
-        Canary("atomic_write_staging", lambda d: _gate("atomic_write_staging").assert_atomic_write_staging(d, use_git=False)),
+        Canary(
+            "atomic_write_staging",
+            lambda d: _gate("atomic_write_staging").assert_atomic_write_staging(d, use_git=False),
+            tokens=("npsave-suffix", "in-place-rewrite", "seed_save", "seed_savez", "seed_baseline"),
+        ),
         Canary("clock_day_boundary", lambda d: _gate("clock_day_boundary").assert_no_clock_day_boundary(d, use_git=False)),
-        Canary("hash_key_determinism", lambda d: _gate("hash_key_determinism").assert_hash_keys_are_deterministic(d, use_git=False)),
-        Canary("no_xfail_to_defer", lambda d: _gate("no_xfail_to_defer").assert_no_xfail_to_defer(d / "tests", repo_root=d, use_git=False)),
+        Canary(
+            "hash_key_determinism",
+            lambda d: _gate("hash_key_determinism").assert_hash_keys_are_deterministic(d, use_git=False),
+            tokens=("seed_key", "seed_local", "seed_update"),
+        ),
+        Canary(
+            "no_xfail_to_defer",
+            lambda d: _gate("no_xfail_to_defer").assert_no_xfail_to_defer(d / "tests", repo_root=d, use_git=False),
+            tokens=("xfail-not-strict", "no-reason", "untracked-reason", "known-gap-never-closes"),
+        ),
         Canary("sentinel_or_fallback", lambda d: _gate("sentinel_or_fallback").assert_no_sentinel_or_fallback(d, use_git=False)),
         Canary("printed_advice", lambda d: _gate("printed_advice").assert_printed_advice_registered(sorted(d.rglob("*.py")), d, {})),
         Canary("order_losing_filters", lambda d: _gate("order_losing_filters").assert_no_order_losing_filters(sorted(d.rglob("*.py")), d)),
         Canary("kwarg_forwarding", _kwarg_forwarding_canary),
-        Canary("stale_source_citations", lambda d: _gate("stale_source_citations").assert_no_stale_source_citations(d, use_git=False)),
-        Canary("pickle_state_completeness", lambda d: _gate("pickle_state_completeness").assert_no_pickle_state_gaps(d, use_git=False), token="_seed_cache"),
-        Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text"),
+        Canary(
+            "stale_source_citations",
+            lambda d: _gate("stale_source_citations").assert_no_stale_source_citations(d, use_git=False),
+            tokens=("self-citation", "line-past-end", "symbol-not-at-line"),
+        ),
+        Canary(
+            "pickle_state_completeness",
+            lambda d: _gate("pickle_state_completeness").assert_no_pickle_state_gaps(d, use_git=False),
+            token="_seed_cache",
+            tokens=("state-not-excluded", "unpicklable-without-getstate", "_seed_cache", "_seed_pool"),
+        ),
+        Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text", tokens=("write_text", "usedforsecurity")),
         Canary("committed_line_endings", _committed_line_endings_canary, token="seed.txt", parses=False),  # bytes, not syntax
         Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0"),
         Canary(
@@ -331,44 +379,76 @@ CANARIES: dict[str, Canary] = {
                 d / "tests", hook_config_paths=[d / ".pre-commit-config.yaml"], repo_root=d, min_destructive_files=1, use_git=False
             ),
         ),
-        Canary("connection_liveness_kwargs", lambda d: _gate("connection_liveness_kwargs").assert_every_connection_has_liveness_kwargs(d, use_git=False)),
+        Canary(
+            "connection_liveness_kwargs",
+            lambda d: _gate("connection_liveness_kwargs").assert_every_connection_has_liveness_kwargs(d, use_git=False),
+            tokens=("in seed_connect", "in seed_pool", "in seed_modern"),
+        ),
         Canary("unresolved_module_attributes", lambda d: _gate("unresolved_module_attributes").assert_no_unresolved_module_attributes(d, use_git=False)),
         Canary(
             "cross_package_private_names",
             lambda d: _gate("cross_package_private_names").assert_cross_package_private_names({"a": d / "a", "b": d / "b"}, use_git=False),
             token="_seed_helper",
+            tokens=("_seed_helper", "_seed_counter"),
         ),
         Canary("tracked_secret_shapes", _tracked_secret_shapes_canary, token="seed.txt", parses=False),  # a byte reader: no syntax to break
         Canary(
             "unexecuted_function_bodies",
             lambda d: _gate("unexecuted_function_bodies").assert_unexecuted_function_bodies(d / "coverage.json", [d], base=d, use_git=False),
         ),
-        Canary("single_shot_timing_assertion", lambda d: _gate("single_shot_timing_assertion").assert_single_shot_timing_assertion(d, use_git=False)),
+        Canary(
+            "single_shot_timing_assertion",
+            lambda d: _gate("single_shot_timing_assertion").assert_single_shot_timing_assertion(d, use_git=False),
+            tokens=("test_seed_speedup", "test_seed_ceiling"),
+        ),
         Canary("cancellation_prone_moments", lambda d: _gate("cancellation_prone_moments").assert_cancellation_prone_moments(d, use_git=False)),
         Canary(
             "unsafe_deserialization",
             lambda d: _gate("unsafe_deserialization").assert_unsafe_deserialization(d, use_git=False),
             tokens=("torch.load", "pickle.loads", "yaml.load", "np.load", "pd.read_pickle", "pickle.Unpickler(fh).load"),
         ),
-        Canary("unread_function_params", lambda d: _gate("unread_function_params").assert_unread_function_params(d, use_git=False)),
-        Canary("hardcoded_seed_in_library", lambda d: _gate("hardcoded_seed_in_library").assert_hardcoded_seed_in_library(d, use_git=False)),
+        Canary(
+            "unread_function_params",
+            lambda d: _gate("unread_function_params").assert_unread_function_params(d, use_git=False),
+            tokens=("seed_fit_rs", "seed_afit", "seed_kwonly", "SeedModel.seed_method", "sample_weight"),
+        ),
+        Canary(
+            "hardcoded_seed_in_library",
+            lambda d: _gate("hardcoded_seed_in_library").assert_hardcoded_seed_in_library(d, use_git=False),
+            tokens=("seed_split", "seed_rng", "seed_global"),
+        ),
         Canary("constant_fallback_cache_key", lambda d: _gate("constant_fallback_cache_key").assert_constant_fallback_cache_key(d, use_git=False)),
         Canary("ci_default_branch_never_cancelled", lambda d: _gate("ci_default_branch_never_cancelled").assert_ci_default_branch_never_cancelled(d)),
         Canary("ci_install_covers_entry_imports", lambda d: _gate("ci_install_covers_entry_imports").assert_ci_install_covers_entry_imports(d)),
         Canary("optional_imports_guarded", lambda d: _gate("optional_imports_guarded").assert_optional_imports_guarded(d, use_git=False)),
         Canary(
-            "id_keyed_cache_validates_identity", lambda d: _gate("id_keyed_cache_validates_identity").assert_id_keyed_cache_validates_identity(d, use_git=False)
+            "id_keyed_cache_validates_identity",
+            lambda d: _gate("id_keyed_cache_validates_identity").assert_id_keyed_cache_validates_identity(d, use_git=False),
+            tokens=("_SEED_REGISTRY", "_SEED_BY_ID"),
         ),
         Canary("persisted_negative_probe", lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False)),
-        Canary("cuda_kernel_integer_width", lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False)),
-        Canary("psycopg2_param_arity", lambda d: _gate("psycopg2_param_arity").assert_psycopg2_param_arity(d, use_git=False)),
+        Canary(
+            "cuda_kernel_integer_width",
+            lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False),
+            tokens=("(long)i", "unsigned long off"),
+        ),
+        Canary(
+            "psycopg2_param_arity",
+            lambda d: _gate("psycopg2_param_arity").assert_psycopg2_param_arity(d, use_git=False),
+            tokens=("seed.py:5:", "seed.py:9:", "seed.py:13:"),
+        ),
         Canary("module_state_test_reset", lambda d: _gate("module_state_test_reset").assert_module_state_test_reset(d, d / "tests", use_git=False)),
         Canary(
             "ddl_lock_safety",
             lambda d: _gate("ddl_lock_safety").assert_ddl_files_lock_safe(d, sql_dirs=["sql"], use_git=False),
-            parses=False,  # SQL text read by a lexer; undecodable bytes are covered in test_ddl_lock_safety.py
+            parses=False,  # SQL text read by a lexer; undecodable bytes are covered in test_ddl_lock_safety.py,
+            tokens=("ddl-lock-timeout", "ddl-constraint-not-valid", "ddl-index-concurrently", "ddl-table-rewrite"),
         ),
-        Canary("script_entry_points", lambda d: _gate("script_entry_points").assert_script_entry_points(d, ["."])),
+        Canary(
+            "script_entry_points",
+            lambda d: _gate("script_entry_points").assert_script_entry_points(d, ["."]),
+            tokens=("unregistered-entry-point", "cwd-on-sys-path"),
+        ),
         Canary(
             "ci_pin_version_skew",
             # the installed version is passed in: CI pins 1.20.0 in the violation, 1.18.0 in the clean control
@@ -387,7 +467,11 @@ CANARIES: dict[str, Canary] = {
             ),
             token="SEED_UNCOVERED_SQL",
         ),
-        Canary("env_write_restore", lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False)),
+        Canary(
+            "env_write_restore",
+            lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False),
+            tokens=("test_leaks_a_setting_into_every_later_test", "test_update_leaks", "test_putenv_leaks", "test_setdefault_leaks"),
+        ),
         Canary("free_text_in_get_route", lambda d: _gate("free_text_in_get_route").assert_free_text_in_get_route(d, use_git=False)),
         Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False, heavy=True)),
         Canary(
@@ -433,7 +517,11 @@ CANARIES: dict[str, Canary] = {
             token="_SEED_EMPTY",
         ),
         Canary("comment_repo_paths", lambda d: _gate("comment_repo_paths").assert_comment_repo_paths(d, use_git=False)),
-        Canary("nginx_location_headers", lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False)),
+        Canary(
+            "nginx_location_headers",
+            lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False),
+            tokens=("dropped-header", "unresolved-include"),
+        ),
         Canary("validation_errors_echo_input", lambda d: _gate("validation_errors_echo_input").assert_validation_errors_echo_input(d, use_git=False)),
         Canary("predictable_tmp_path", lambda d: _gate("predictable_tmp_path").assert_predictable_tmp_path(d, use_git=False)),
         Canary(

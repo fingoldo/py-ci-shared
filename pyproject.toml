@@ -112,6 +112,7 @@ addopts = "-ra --strict-markers"
 # A hung git or python child fails its test after this long instead of holding the job to its 15-minute limit.
 timeout = 300
 markers = [
+    "slow: a real end-to-end run that takes minutes; skipped locally unless PY_CI_RUN_SLOW=1, always run on CI (CI is set)",
     "py_ci_shared: a gate item generated from [tool.py_ci_shared]",
     "real_database: (fixture tests of offline_suite_without_credentials) a test that may keep its credentials",
     "live_db: (fixture tests of offline_suite_without_credentials) a consumer-configured live marker",

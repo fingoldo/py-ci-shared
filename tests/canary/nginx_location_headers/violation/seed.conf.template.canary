@@ -11,3 +11,13 @@ server {
         add_header Cache-Control no-cache;
     }
 }
+
+server {
+    listen ${PORT};
+    add_header Content-Security-Policy "default-src 'self'" always;
+
+    location /inc {
+        add_header Cache-Control no-store;
+        include snippets/seed_extra.conf;
+    }
+}

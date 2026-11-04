@@ -9,3 +9,12 @@ extern "C" __global__ void seed_gather(const float* X, float* out, int n_cols) {
 """
 
 seed_kernel = cp.RawKernel(SEED_SRC, "seed_gather")
+
+SEED_UNSIGNED_CODE = r"""
+extern "C" __global__ void seed_scatter(float* out, int n_cols) {
+    unsigned long off = blockIdx.x * n_cols;
+    out[off] = 1.0f;
+}
+"""
+
+seed_scatter = cp.RawKernel(SEED_UNSIGNED_CODE, "seed_scatter")

@@ -67,7 +67,7 @@ class TestAssertNoNewCodeAuditFindings:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline)
         seeded = json.loads(baseline.read_text(encoding="utf-8"))
-        assert any("mutable_default" in k for k in seeded)
+        assert sum(1 for k in seeded if "mutable_default" in k) == 1
 
     def test_unchanged_tree_passes_after_seeding(self, tmp_path):
         src = tmp_path / "src"
@@ -140,7 +140,7 @@ class TestAssertNoNewCodeAuditFindings:
         _seed(src, baseline)
 
         seeded = json.loads(baseline.read_text(encoding="utf-8"))
-        assert any("mutable_default" in k for k in seeded)
+        assert sum(1 for k in seeded if "mutable_default" in k) == 1
 
     def test_refresh_flag_detected_via_request_even_when_argv_is_bare(self, tmp_path, monkeypatch):
         """Regression: pytest-xdist workers run with sys.argv == ['-c'] (execnet
@@ -167,7 +167,7 @@ class TestAssertNoNewCodeAuditFindings:
             assert_no_new_code_audit_findings(root=src, baseline_path=baseline, request=_FakeRequest())
 
         seeded = json.loads(baseline.read_text(encoding="utf-8"))
-        assert any("mutable_default" in k for k in seeded)
+        assert sum(1 for k in seeded if "mutable_default" in k) == 1
 
     def test_exclude_dirs_merged_with_defaults(self, tmp_path):
         """A caller-supplied exclude_dirs must not disable the built-in

@@ -60,7 +60,7 @@ def test_the_hire_ordering_in_the_narrow_wrapper_is_reported():
     """The real defect: the wrapper re-sorted by the inner statement's `cd`/`cs`, which are out of scope there."""
     problems = sv.find_fragment_matrix_problems([_builder(fixed=False)])
     assert problems and all(p.startswith("narrow listing[hire]") for p in problems), problems
-    assert any("names `cd`" in p for p in problems) and any("names `cs`" in p for p in problems)
+    assert sum(1 for p in problems if "names `cd`" in p) == 1 and sum(1 for p in problems if "names `cs`" in p) == 1
     assert "['core']" in problems[0]
     with pytest.raises(pytest.fail.Exception, match="broken in some combination"):
         sv.assert_fragment_matrix([_builder(fixed=False)])

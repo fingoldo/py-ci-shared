@@ -6,3 +6,5 @@ def _seed_helper():
 
 
 seed_helper = _seed_helper
+
+_seed_counter = 0

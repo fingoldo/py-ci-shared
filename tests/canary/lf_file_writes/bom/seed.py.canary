@@ -3,3 +3,11 @@
 
 def seed_write(text):
     Path("seed.sh").write_text(text)
+
+
+def seed_yaml(text):
+    open("seed.yml", "w").write(text)
+
+
+def seed_other(text):
+    Path("seed2.sh").write_text(text)

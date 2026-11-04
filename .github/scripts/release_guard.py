@@ -117,6 +117,7 @@ PREP_FILES = (
     ".github/workflows/black-filtered.yml",
     ".github/workflows/ruff-blocking.yml",
     ".github/workflows/lint-advisory.yml",
+    ".github/workflows/gates.yml",
 )
 _PYPROJECT_VERSION = re.compile(r'^(version = ")[^"]+(")', re.M)
 _MODULE_VERSION = re.compile(r'^(__version__ = ")[^"]+(")', re.M)

@@ -9,3 +9,10 @@ def test_seed_speedup():
     parallel()
     t_parallel = time.perf_counter() - t0
     assert t_serial / t_parallel >= 1.15
+
+
+def test_seed_ceiling():
+    t0 = time.perf_counter()
+    serial()
+    elapsed = time.perf_counter() - t0
+    assert elapsed < 5.0

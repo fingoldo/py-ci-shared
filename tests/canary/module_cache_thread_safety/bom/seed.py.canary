@@ -5,3 +5,22 @@ def seed_get(k):
     _SEED_CACHE[k] = 1
     if len(_SEED_CACHE) > 10:
         _SEED_CACHE.popitem()
+
+
+_SEED_MEMO = {}
+
+
+def seed_bump(k):
+    _SEED_MEMO[k] += 1
+
+
+def seed_fold(i):
+    from numpy import mean
+
+    return mean([i])
+
+
+def seed_run():
+    from joblib import Parallel, delayed
+
+    return Parallel(n_jobs=2)(delayed(seed_fold)(i) for i in range(3))

@@ -43,7 +43,7 @@ jobs:
       check-path: src/mlframe
 ```
 
-See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`.
+See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`, `gates.yml` (runs `py-ci-shared run-all` for the gates the repo lists under `[tool.py_ci_shared]`; off unless the caller passes `enabled: true`).
 
 **Use the moving `@v1` tag (2026-08-22 policy change).** `v1` always points at the latest `v1.x`
 release, so cutting a release here propagates to every consumer at once — no per-repo SHA bump.

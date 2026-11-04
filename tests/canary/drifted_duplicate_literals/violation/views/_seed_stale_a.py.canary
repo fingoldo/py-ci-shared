@@ -1,0 +1,3 @@
+"""One staleness limit."""
+
+_SEED_STALE_AFTER_H = 48

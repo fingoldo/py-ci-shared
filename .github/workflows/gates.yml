@@ -1,0 +1,97 @@
+name: Gates (the repo's enabled gates, reusable)
+
+# Runs `py-ci-shared run-all`: every gate the calling repo lists under [tool.py_ci_shared] `enable` in its pyproject.toml.
+# It exists so that gate execution does not depend on a consumer's own test sharding or path filters: a CI whose meta tests
+# are never collected runs no gates at all, and nothing says so. `run-all` fails with a ConfigError when no gate is enabled,
+# so an opted-in repo with an empty list is red, not silently green.
+#
+# Additive and OFF BY DEFAULT: a caller must pass `enabled: true`, so adding this file changes no existing consumer.
+# Nothing here replaces a consumer's own meta tests; it is a second, independent way to run the same gates.
+
+on:
+  workflow_call:
+    inputs:
+      enabled:
+        description: "Run the gates. Default false: the job is skipped, so a caller can be wired in ahead of choosing its enable list."
+        type: boolean
+        default: false
+      py-ci-shared-ref:
+        description: >-
+          Ref of py-ci-shared to install. The default is the release this workflow file belongs to (bumped with the version in
+          every release commit), so a caller pinned to a tag or SHA gets that release's gates rather than master's. A ref that
+          cannot be installed (after three attempts) fails the job: it never falls back to master.
+        type: string
+        default: "v1.23.8"
+      force-remote-fetch:
+        description: "Install py-ci-shared at py-ci-shared-ref even when the caller is py-ci-shared itself (only self-ci sets it)."
+        type: boolean
+        default: false
+      working-directory:
+        description: 'Directory of the project to check, relative to the repository root (a monorepo subproject). Default ".".'
+        type: string
+        default: "."
+      install-command:
+        description: >-
+          Shell command run in working-directory before the gates, to install what the gates import from the repo (for example
+          `uv pip install --system -e ".[dev]"`). Empty: nothing is installed beyond py-ci-shared.
+        type: string
+        default: ""
+      python-version:
+        description: "Python version for the job."
+        type: string
+        default: "3.11"
+
+permissions:
+  contents: read
+
+jobs:
+  gates:
+    if: inputs.enabled
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: ${{ inputs.python-version }}
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with:
+          enable-cache: true
+
+      - name: Install py-ci-shared
+        # The pinned ref or nothing (audit 2026-10-03 WF-4): a failed fetch is retried, never replaced by master.
+        env:
+          PCS_REF: ${{ inputs.py-ci-shared-ref }}
+          FORCE_REMOTE: ${{ inputs.force-remote-fetch }}
+        run: |
+          if [ "${GITHUB_REPOSITORY}" = "fingoldo/py-ci-shared" ] && [ "${FORCE_REMOTE}" != "true" ]; then
+            uv pip install --system -e .
+            exit 0
+          fi
+          case "${PCS_REF}" in
+            -*|*[!A-Za-z0-9._/-]*) echo "::error::py-ci-shared-ref has an unexpected shape: it may hold letters, digits and ._/- only, and may not start with -"; exit 1 ;;
+          esac
+          for attempt in 1 2 3; do
+            if uv pip install --system "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@${PCS_REF}"; then
+              exit 0
+            fi
+            echo "::warning::installing py-ci-shared at ${PCS_REF} failed (attempt ${attempt} of 3)"
+            if [ "$attempt" -lt 3 ]; then sleep $((attempt * 15)); fi
+          done
+          echo "::error::py-ci-shared ref ${PCS_REF} could not be installed; fix py-ci-shared-ref (a tag or SHA that exists). There is no fallback to master."
+          exit 1
+
+      - name: Install the project
+        if: inputs.install-command != ''
+        working-directory: ${{ inputs.working-directory }}
+        env:
+          INSTALL_COMMAND: ${{ inputs.install-command }}
+        run: bash -c "${INSTALL_COMMAND}"
+
+      - name: Run the enabled gates
+        working-directory: ${{ inputs.working-directory }}
+        run: py-ci-shared run-all

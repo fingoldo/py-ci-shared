@@ -7,3 +7,11 @@ def register(host_array, codes):
 
 def lookup(host_array):
     return _SEED_REGISTRY.get(id(host_array))
+
+
+_SEED_BY_ID = {}
+
+
+def seed_remember(obj):
+    _SEED_BY_ID.setdefault(id(obj), 1)
+    return _SEED_BY_ID[id(obj)]
