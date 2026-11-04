@@ -42,6 +42,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `state_before_work` (`assert_state_before_work`): a schedule stamp (`last_/next_ full|sweep|run|scan|cycle|refresh` = clock) or progress counter (`processed|written|...` `+=`) written in the statement just before the call it gates (configurable regexes, restore-in-except exemption).
 - `systemexit_in_library` (`assert_no_systemexit_in_library`): `sys.exit`/`os._exit`/`raise SystemExit` inside a function of a module with no `__main__` guard, or of a function imported by name elsewhere; entry names, opt-in `exit*` params, `# exit-ok: reason` and test files are exempt.
 - `optional_collaborator_wired` (`assert_optional_collaborator_wired`): a `*_memo`/`*_cache`/`*_fn` parameter defaulting to `None` that every non-test call site omits or passes as literal `None` (positional and keyword binding, `self` skipped, ambiguous names and `*args` calls treated as wired).
+- `cli_flag_spelling` (`assert_cli_flag_spelling`): one flag stem registered as `--a-b` in some `add_argument` calls and `--a_b` in others; a call listing both spellings is the accepted alias.
 
 
 ## 1.23.2

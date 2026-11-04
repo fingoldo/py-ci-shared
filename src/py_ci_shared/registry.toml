@@ -208,6 +208,13 @@ since = "1.3.1"
 summary = "Every job in a CI workflow file declares ``timeout-minutes``"
 
 [[gate]]
+name = "cli_flag_spelling"
+kind = "gate"
+entries = ["assert_cli_flag_spelling"]
+since = "1.23.8"
+summary = "The same CLI flag stem registered as both --a-b and --a_b across scripts"
+
+[[gate]]
 name = "clock_day_boundary"
 kind = "gate"
 entries = ["assert_no_clock_day_boundary"]

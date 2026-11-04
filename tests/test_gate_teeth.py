@@ -437,6 +437,7 @@ CANARIES: dict[str, Canary] = {
         Canary("state_before_work", lambda d: _gate("state_before_work").assert_state_before_work(d, use_git=False)),
         Canary("systemexit_in_library", lambda d: _gate("systemexit_in_library").assert_no_systemexit_in_library(d, use_git=False)),
         Canary("optional_collaborator_wired", lambda d: _gate("optional_collaborator_wired").assert_optional_collaborator_wired(d, use_git=False)),
+        Canary("cli_flag_spelling", lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False)),
     ]
 }
 

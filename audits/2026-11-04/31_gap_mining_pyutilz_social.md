@@ -96,7 +96,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Operators pass the spelling that works on 19 scripts and get unrecognized arguments on the 20th in the middle of an incident.
 - Proposed fix: Optional tiny gate cli_flag_spelling: fail when one stem has two spellings unless a single add_argument call lists both (alias). Canary: two scripts with --dry-run and --dry_run -> fail; one add_argument carrying both names -> pass.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate cli_flag_spelling (low-FP, built as proposed; reports the minority spelling sites). Hits: pyutilz 0, social 8 TRUE (stem dry_run: --dry-run x8 vs --dry_run x10): marketplace_crawler.py:927, scripts/dispose_terminal_cipher_rows.py:166, scripts/provision_scraper_roles.py:234, scripts/recover_uid_for_cipher_rows.py:440, scripts/rekey_cipher_jobs_details.py:267, scripts/run_cipher_migration.py:368, realtime_applications/cli_utils.py:166, realtime_applications/scripts/extract_additional_skills.py:452; fix by listing both spellings in each add_argument.
 
 ## 31-F13 (P3) nullable_key_negative_control: the engine test of a statement that joins or NOT-EXISTS-es on a nullable column must seed a NULL row
 

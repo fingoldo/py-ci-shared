@@ -170,6 +170,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`ci_workflow_gate`](src/py_ci_shared/ci_workflow_gate.py) | gate | 1.3.0 | `assert_continue_on_error_is_reviewed` | Every ``continue-on-error |
 | [`ci_workflow_paths`](src/py_ci_shared/ci_workflow_paths.py) | gate | 1.3.6 | `assert_workflow_paths_exist` | A CI workflow does not name paths that do not exist, and declares its permissions |
 | [`ci_workflow_timeout_gate`](src/py_ci_shared/ci_workflow_timeout_gate.py) | gate | 1.3.1 | `assert_all_jobs_have_timeout` | Every job in a CI workflow file declares ``timeout-minutes`` |
+| [`cli_flag_spelling`](src/py_ci_shared/cli_flag_spelling.py) | gate | 1.23.8 | `assert_cli_flag_spelling` | The same CLI flag stem registered as both --a-b and --a_b across scripts |
 | [`clock_day_boundary`](src/py_ci_shared/clock_day_boundary.py) | gate | 1.17.0 | `assert_no_clock_day_boundary` | A test that reads the real clock and shifts it by part of a day fails for part of every day |
 | [`closed_audit_rounds`](src/py_ci_shared/closed_audit_rounds.py) | gate | 1.20.0 | `assert_closed_audit_rounds_append_only` | Files of a closed audit round (``audits/implemented/``) only gain lines over a revision range; edits need an ``Audit-Edit:`` trailer |
 | [`code_audit_meta`](src/py_ci_shared/code_audit_meta.py) | gate | 1.1.0 | `assert_no_new_code_audit_findings` | Shared harness for the "code-audit baseline" meta-test pattern |
