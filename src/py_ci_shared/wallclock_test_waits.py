@@ -4,10 +4,11 @@ Flagged, one finding per line: Dart ``Future.delayed(const Duration(milliseconds
 that needs time to pass should inject the clock (a fake clock, ``fake_async``, a monkeypatched ``time.sleep``) or wait on
 the condition it is really after. A real sleep makes the suite slower on every run and passes or fails with machine load.
 
-Test files are every ``.py`` and ``.dart`` file under a ``test``/``tests`` directory, helpers and ``conftest.py``
-included. Outside a test directory nothing is scanned by this gate, so a ``test_*.py`` exploratory script is not a finding.
+Test files are every ``.py`` and ``.dart`` file under a ``test``/``tests`` directory (helpers and ``conftest.py``
+included); a ``test_*.py`` script outside one is exploratory and not scanned. ``time.sleep``, ``asyncio.sleep``, ``trio.sleep`` and
+``anyio.sleep`` are waits however they were imported in ``python_mode="ast"`` (``asyncio.sleep(0)``, a plain yield, is not).
 A comment line (stripped text starting with ``#``) and a line inside a Python docstring are not waits. Keys are ``<repo-relative path>: <normalized line>``, so re-indenting or moving a line does not
-churn the baseline; two identical lines in one file share one key.
+churn the baseline; identical lines in one file are numbered (``key``, ``key #2``, ...), so each copy is its own finding.
 
 Enable it explicitly (NOT in the default set)::
 
@@ -27,7 +28,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import parse_text
+from ._core import ImportAliases, parse_text
 from ._core import walk as shared_walk
 from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, record_finding, text_scan
 
@@ -36,9 +37,13 @@ logger = logging.getLogger(__name__)
 __all__ = ["WAIT_PATTERNS", "find_wallclock_test_waits", "assert_no_new_wallclock_test_waits"]
 
 WAIT_PATTERNS = (
-    re.compile(r"Future\.delayed\(\s*const Duration\(milliseconds"),  # Dart
-    re.compile(r"\btime\.sleep\("),  # Python
+    re.compile(r"Future\.delayed\(\s*(?:const\s+)?Duration\(milliseconds"),  # Dart
+    re.compile(r"\btime\s*\.\s*sleep\s*\("),  # Python
+    re.compile(r"\b(?:asyncio|trio|anyio)\.sleep\((?!\s*0?\s*\))"),  # Python async
 )
+
+
+_SLEEPS = frozenset({"time.sleep", "asyncio.sleep", "trio.sleep", "anyio.sleep"})
 
 
 def is_wallclock_test_file(rel: str) -> bool:
@@ -71,15 +76,15 @@ def _python_sleep_lines(text: str) -> Optional[set[int]]:
     except SyntaxError as exc:
         logger.debug("wallclock_test_waits: unparsable, held to the text rule: %s", exc)
         return None
-    return {
-        node.lineno
-        for node in shared_walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == "sleep"
-        and isinstance(node.func.value, ast.Name)
-        and node.func.value.id == "time"
-    }
+    aliases = ImportAliases.from_tree(tree, scoped=True)
+    lines: set[int] = set()
+    for node in shared_walk(tree):
+        if isinstance(node, ast.Call) and aliases.qualified_name(node) in _SLEEPS:
+            first = node.args[0] if node.args else None
+            if isinstance(first, ast.Constant) and first.value == 0:
+                continue  # sleep(0) yields the thread, it does not wait
+            lines.add(node.lineno)
+    return lines
 
 
 def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "text") -> dict[str, str]:
@@ -102,9 +107,11 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
         for number, line in enumerate(file.text.splitlines(), start=1):
             if line.lstrip().startswith("#") or number in docstrings:
                 continue
-            if real is not None and number not in real:
-                continue
-            if any(pattern.search(line) for pattern in WAIT_PATTERNS):
+            if real is not None and file.rel.endswith(".py"):
+                waits = number in real
+            else:
+                waits = any(pattern.search(line) for pattern in WAIT_PATTERNS)
+            if waits:
                 record_finding(found, f"{file.rel}: {normalize_line(line)}", f"line {number} waits on the wall clock inside a test")
     return found
 
