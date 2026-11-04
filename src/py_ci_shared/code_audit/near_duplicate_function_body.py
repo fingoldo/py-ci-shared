@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ast
 import difflib
+import math
 import re
 from collections import Counter, defaultdict
 from itertools import chain
@@ -224,8 +225,8 @@ def _collect_entries(
     return entries
 
 
-def _candidate_pairs(entries: list) -> set[tuple[int, int]]:
-    """Return index pairs of entries that share enough shingles to be worth an exact comparison."""
+def _candidate_pairs_all_postings(entries: list) -> set[tuple[int, int]]:
+    """The reference candidate generator: count every shared shingle of every entry (kept as the oracle ``_candidate_pairs`` must equal)."""
     shingle_index: dict[int, list[int]] = defaultdict(list)
     entry_shingles: list[set[int]] = []
     for idx, (_py, _node, _src, tokens) in enumerate(entries):
@@ -248,6 +249,49 @@ def _candidate_pairs(entries: list) -> set[tuple[int, int]]:
         for other, count in shared_counts.items():
             threshold = _MIN_SHARED_SHINGLE_FRACTION * min(len(sh), len(entry_shingles[other]))
             if count >= threshold:
+                candidate_pairs.add((idx, other) if idx < other else (other, idx))
+    return candidate_pairs
+
+
+def _candidate_pairs(entries: list) -> set[tuple[int, int]]:
+    """Return index pairs of entries that share enough shingles to be worth an exact comparison.
+
+    Same pairs as :func:`_candidate_pairs_all_postings`, without counting every posting of every shingle. A pair qualifies when its shared
+    (non-generic) shingles reach ``fraction * min(len)`` of the SMALLER entry, so each pair is looked at once, from its smaller side, and that side
+    only has to follow a prefix of its rarest shingles: if it needs ``need`` shared ones out of ``m``, any qualifying partner holds at least one of
+    any ``m - need + 1`` of them (pigeonhole). The partners found that way get their exact shared count from a set intersection.
+    """
+    shingle_index: dict[int, list[int]] = defaultdict(list)
+    entry_shingles: list[set[int]] = []
+    for idx, (_py, _node, _src, tokens) in enumerate(entries):
+        sh = _shingles(tokens)
+        entry_shingles.append(sh)
+        for h in sh:
+            shingle_index[h].append(idx)
+
+    generic_shingles = {h for h, postings in shingle_index.items() if len(postings) > _MAX_POSTING_LIST}
+    for h in generic_shingles:
+        del shingle_index[h]
+    kept = [sh - generic_shingles if generic_shingles else sh for sh in entry_shingles]
+    # (size, index): a pair is visited from the side that sorts first, which is also the side whose size is the min.
+    rank = [(len(sh), idx) for idx, sh in enumerate(entry_shingles)]
+
+    candidate_pairs: set[tuple[int, int]] = set()
+    for idx, sh in enumerate(entry_shingles):
+        if not sh:
+            continue
+        need = math.ceil(_MIN_SHARED_SHINGLE_FRACTION * len(sh))
+        mine = kept[idx]
+        if len(mine) < need:
+            continue
+        rare_first = sorted(mine, key=lambda h: len(shingle_index[h]))
+        partners: set[int] = set()
+        for h in rare_first[: len(mine) - need + 1]:
+            partners.update(shingle_index[h])
+        for other in partners:
+            if rank[other] <= rank[idx]:
+                continue
+            if len(mine & kept[other]) >= need:
                 candidate_pairs.add((idx, other) if idx < other else (other, idx))
     return candidate_pairs
 
