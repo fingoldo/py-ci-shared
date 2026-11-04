@@ -1,0 +1,7 @@
+﻿import numpy as np
+
+
+def prep(y):
+    if len(np.unique(y)) <= 32:
+        y = y.astype(np.int64)
+    return y

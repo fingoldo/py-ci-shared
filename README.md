@@ -270,6 +270,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`naive_utcnow`](src/py_ci_shared/naive_utcnow.py) | gate | 1.4.1 | `assert_no_naive_utcnow` | No production module builds a timestamp with `datetime.utcnow()` |
 | [`nginx_location_headers`](src/py_ci_shared/nginx_location_headers.py) | gate | 1.22.12 | `assert_nginx_location_headers` | An nginx block with its own add_header repeats every header its enclosing blocks set |
 | [`njit_fastmath_nan`](src/py_ci_shared/njit_fastmath_nan.py) | gate | 1.23.8 | `assert_njit_fastmath_nan` | Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf |
+| [`njit_unsupported_calls`](src/py_ci_shared/njit_unsupported_calls.py) | gate | 1.23.8 | `assert_njit_unsupported_calls` | Flags calls inside compiled numba or torch.jit.script bodies that raise TypingError on another build (typing.cast, np.median, logging, warnings.warn) |
 | [`no_source_text_tests`](src/py_ci_shared/no_source_text_tests.py) | gate | 1.22.12 | `assert_no_source_text_tests` | A test that asserts on the text of a SQL statement (a WHERE or SELECT probe) instead of the rows it returns |
 | [`no_xfail_to_defer`](src/py_ci_shared/no_xfail_to_defer.py) | gate | 1.17.0 | `assert_no_xfail_to_defer` | xfail and skip may mark a limit outside the repository, never park a bug inside it |
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |
@@ -346,6 +347,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`tool_versions`](src/py_ci_shared/tool_versions.py) | library | 1.4.1 |  | The linter versions every consuming repo runs, defined in one place |
 | [`tracked_secret_shapes`](src/py_ci_shared/tracked_secret_shapes.py) | gate | 1.21.1 | `assert_no_tracked_secret_shapes` | Tracked files holding a string of a secret shape the consumer configured |
 | [`tracker_summary_parity`](src/py_ci_shared/tracker_summary_parity.py) | gate | 1.17.0 | `assert_tracker_summaries_agree` | A tracker's summary tables and headings agree with the rows they summarise |
+| [`truncating_discretisation`](src/py_ci_shared/truncating_discretisation.py) | gate | 1.23.8 | `assert_truncating_discretisation` | Flags integer casts guarded only by a distinct-value count, which collapse a fractional target to one class |
 | [`uncalled_functions`](src/py_ci_shared/uncalled_functions.py) | gate | 1.4.0 | `assert_no_new_uncalled_function` | A function that production code never calls |
 | [`unexecuted_function_bodies`](src/py_ci_shared/unexecuted_function_bodies.py) | gate | 1.21.1 | `assert_unexecuted_function_bodies` | A function whose body never runs under the unit coverage run |
 | [`unread_function_params`](src/py_ci_shared/unread_function_params.py) | gate | 1.22.3 | `assert_unread_function_params` | Named function parameters (sample_weight, random_state, seed, n_jobs, verbose, timeout, device) that the body never reads |

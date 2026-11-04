@@ -914,6 +914,13 @@ since = "1.23.8"
 summary = "Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf"
 
 [[gate]]
+name = "njit_unsupported_calls"
+kind = "gate"
+entries = ["assert_njit_unsupported_calls"]
+since = "1.23.8"
+summary = "Flags calls inside compiled numba or torch.jit.script bodies that raise TypingError on another build (typing.cast, np.median, logging, warnings.warn)"
+
+[[gate]]
 name = "no_source_text_tests"
 kind = "gate"
 entries = ["assert_no_source_text_tests"]
@@ -1439,6 +1446,13 @@ kind = "gate"
 entries = ["assert_tracker_summaries_agree"]
 since = "1.17.0"
 summary = "A tracker's summary tables and headings agree with the rows they summarise"
+
+[[gate]]
+name = "truncating_discretisation"
+kind = "gate"
+entries = ["assert_truncating_discretisation"]
+since = "1.23.8"
+summary = "Flags integer casts guarded only by a distinct-value count, which collapse a fractional target to one class"
 
 [[gate]]
 name = "uncalled_functions"

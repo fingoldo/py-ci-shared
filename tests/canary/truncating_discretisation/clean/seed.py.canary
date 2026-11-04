@@ -1,0 +1,7 @@
+import numpy as np
+
+
+def prep(y):
+    if len(np.unique(y)) <= 32 and np.all(y == np.round(y)):
+        y = y.astype(np.int64)
+    return y
