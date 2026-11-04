@@ -954,6 +954,13 @@ since = "1.17.0"
 summary = "Row selections by an index-built mask whose positional twin returns the rows in index order"
 
 [[gate]]
+name = "ordinal_rank_scatter"
+kind = "gate"
+entries = ["assert_ordinal_rank_scatter"]
+since = "1.23.8"
+summary = "Flags ranks[argsort(x)] = arange(n) scatter ranks (ties split by input order, NaN ranked highest)"
+
+[[gate]]
 name = "package_doctests"
 kind = "gate"
 entries = ["assert_package_doctests_pass"]
