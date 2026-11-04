@@ -58,10 +58,12 @@ class DiscardedCopy:
 
 
 def _is_update_copy(node: Optional[ast.AST]) -> bool:
-    """``<expr>.model_copy(update=...)``."""
-    return (
-        isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "model_copy" and any(k.arg == "update" for k in node.keywords)
-    )
+    """``<expr>.model_copy(update=...)`` or ``dataclasses.replace(obj, field=...)``."""
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+        return False
+    if node.func.attr == "model_copy":
+        return any(k.arg == "update" for k in node.keywords)
+    return node.func.attr == "replace" and dotted_chain(node.func.value) == "dataclasses" and bool(node.keywords)
 
 
 def _mentions(node: ast.AST | None, name: str) -> bool:
@@ -110,9 +112,12 @@ def _escapes(func: ast.AST, name: str, _seen: frozenset[str] = frozenset()) -> b
     return False
 
 
-def _own_scope(func: _FunctionNode) -> Iterator[ast.AST]:
-    """Every node of *func* that belongs to its own scope: nested functions, lambdas and classes are their own."""
-    stack: list[ast.AST] = [*func.args.defaults, *[d for d in func.args.kw_defaults if d is not None], *func.body]
+def _own_scope(func: Union[_FunctionNode, ast.Module]) -> Iterator[ast.AST]:
+    """Every node of *func* (a function or the module) that belongs to its own scope: nested functions, lambdas and classes are their own."""
+    if isinstance(func, ast.Module):
+        stack: list[ast.AST] = list(func.body)
+    else:
+        stack = [*func.args.defaults, *[d for d in func.args.kw_defaults if d is not None], *func.body]
     while stack:
         node = stack.pop()
         yield node
@@ -121,10 +126,22 @@ def _own_scope(func: _FunctionNode) -> Iterator[ast.AST]:
         stack.extend(child_nodes(node))
 
 
-def _copies(func: _FunctionNode) -> Iterator[tuple[int, str]]:
-    """``(line, local name)`` for each ``name = / name: T = / (name := ) <x>.model_copy(update=...)`` in *func*'s own scope."""
+_RESULT_DROPPED = "<result dropped>"
+
+
+def _copies(func: Union[_FunctionNode, ast.Module]) -> Iterator[tuple[int, str]]:
+    """``(line, local name)`` for each ``name = / name: T = / (name := ) <x>.model_copy(update=...)`` in *func*'s own scope,
+    for a copy unpacked into a tuple target (``a, b = cfg.model_copy(...), 1``) and for a bare statement that drops the result."""
     for node in _own_scope(func):
-        if isinstance(node, ast.Assign) and _is_update_copy(node.value):
+        if isinstance(node, ast.Expr) and _is_update_copy(node.value):
+            yield node.lineno, _RESULT_DROPPED
+        elif isinstance(node, ast.Assign) and isinstance(node.value, ast.Tuple):
+            for target in node.targets:
+                if isinstance(target, ast.Tuple) and len(target.elts) == len(node.value.elts):
+                    for tgt, val in zip(target.elts, node.value.elts):
+                        if isinstance(tgt, ast.Name) and _is_update_copy(val):
+                            yield node.lineno, tgt.id
+        elif isinstance(node, ast.Assign) and _is_update_copy(node.value):
             yield from ((node.lineno, t.id) for t in node.targets if isinstance(t, ast.Name))
         elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and _is_update_copy(node.value) and isinstance(node.target, ast.Name):
             yield node.lineno, node.target.id
@@ -133,6 +150,7 @@ def _copies(func: _FunctionNode) -> Iterator[tuple[int, str]]:
 def _find_in_scan(scan: ScanResult) -> list[DiscardedCopy]:
     out: list[DiscardedCopy] = []
     for parsed in scan:
+        out.extend(DiscardedCopy(parsed.rel, "<module>", line, name) for line, name in _copies(parsed.tree) if not _escapes(parsed.tree, name))
         for qual, func in qualified_functions(parsed.tree):
             out.extend(DiscardedCopy(parsed.rel, qual, line, name) for line, name in _copies(func) if not _escapes(func, name))
     return sorted(out, key=lambda d: (d.path, d.lineno))
