@@ -431,6 +431,7 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("import_time_global_side_effects").assert_import_time_global_side_effects(d, use_git=False),
             token="unimorph",
         ),
+        Canary("duplicate_test_body", lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False)),
     ]
 }
 

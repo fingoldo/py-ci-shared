@@ -471,6 +471,13 @@ since = "1.22.12"
 summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
 
 [[gate]]
+name = "duplicate_test_body"
+kind = "gate"
+entries = ["assert_no_duplicate_test_bodies"]
+since = "1.23.8"
+summary = "Two test functions in one file with identical bodies, decorators and signature"
+
+[[gate]]
 name = "edge_function_hygiene"
 kind = "gate"
 entries = ["assert_edge_functions_are_sound"]

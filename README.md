@@ -207,6 +207,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`drifted_duplicate_functions`](src/py_ci_shared/drifted_duplicate_functions.py) | gate | 1.4.0 | `assert_no_drifted_duplicate_functions` | Copies of one function that have drifted apart |
 | [`drifted_duplicate_literals`](src/py_ci_shared/drifted_duplicate_literals.py) | gate | 1.21.0 | `assert_no_drifted_duplicate_literals` | One set of numbers written out in several modules: the literal analogue of drifted_duplicate_functions |
 | [`dup_baseline_percent_key`](src/py_ci_shared/dup_baseline_percent_key.py) | gate | 1.22.12 | `assert_no_percent_only_duplicate_entries` | A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet) |
+| [`duplicate_test_body`](src/py_ci_shared/duplicate_test_body.py) | gate | 1.23.8 | `assert_no_duplicate_test_bodies` | Two test functions in one file with identical bodies, decorators and signature |
 | [`edge_function_hygiene`](src/py_ci_shared/edge_function_hygiene.py) | gate | 1.3.6 | `assert_edge_functions_are_sound` | A serverless edge function is not a hole in the product's own back end |
 | [`effect_assertion_parity`](src/py_ci_shared/effect_assertion_parity.py) | gate | 1.4.0 | `assert_effects_are_asserted` | A side effect the code performs must be one some test actually inspects |
 | [`embedded_postgres`](src/py_ci_shared/embedded_postgres.py) | cli | 1.17.0 | `main` | Run a command against a throwaway local Postgres, and find the main checkout's ``.env`` from a worktree |

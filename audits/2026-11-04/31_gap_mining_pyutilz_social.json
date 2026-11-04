@@ -1,0 +1,132 @@
+[
+ {
+  "id": "31-F1",
+  "sev": "P2",
+  "title": "duplicate_test_body_same_file: two test functions with identical bodies, args and decorators (copy-pasted twin that asserts nothing new)",
+  "evidence": "Hand-fixed: pyutilz audits/implemented/2026-10-15/TRACKER.md row T-03 (test_closed_default_dynamic body identical to test_group_by_dynamic_basic). Still live: prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p11.py (ast.dump of body after docstring strip, len>=120 chars, key=body+decorators+args, per file) over pyutilz/tests, social production_scrapers/tests, py-ci-shared/tests found 8 pairs, e.g. pyutilz test_pythonlib_extra.py:61 test_prev_zero_returns_true == :88 test_zero_to_nonzero_is_changed (I read :88, it asserts keys_changed_enough({'x':5},{'x':0}) is True, same as the :61 body); test_cache_hooks.py:112/116 (same exact-message pair, read); social test_upwork_shared_db.py:214 test_reconnect_does_not_call_rollback == :311 test_reconnect_skips_rollback (names confirmed, bodies equal by ast.dump); py-ci-shared tests/test_effect_assertion_parity.py:706. I read 3 of 8 pairs by eye; all were true twins. Nearest gate: code_audit duplicate_function_body (src/py_ci_shared/code_audit/duplicate_function_body.py). It does report test_pythonlib_extra.py when pointed at it (I ran it on a copy, 1 finding), but pyutilz tests/test_meta/test_code_audit_tests_baseline.py:14 documents it is NOT enabled on the test tree because ~30 identical-by-design fixtures, AST helpers and one-line parametrised bodies make it noisy. No registry gate covers tests.",
+  "failure_scenario": "A test is copy-pasted and the second copy is never edited to test the case its name promises (name says 'zero to nonzero', body repeats the earlier case). The suite counts it as extra coverage; a mutant on the second branch survives.",
+  "proposed_fix": "New gate duplicate_test_body (py_ci_shared.duplicate_test_body.assert_no_duplicate_test_bodies(test_dirs, min_dump_chars=120, baseline=...)): only functions named test*, same file, identical normalized body AND identical decorator list AND identical signature, docstring ignored. Restricting to test* functions with equal decorators removes the fixture/helper noise that made duplicate_function_body unusable on tests. Canary: copy a test under a new name in a tmp tree -> must fail; change one literal in the copy -> must pass.",
+  "ast_checkable": true,
+  "fp_risk": "low"
+ },
+ {
+  "id": "31-F2",
+  "sev": "P2",
+  "title": "definition_after_entry_guard: a top-level def/class that follows the script's if __name__ == '__main__' entry guard",
+  "evidence": "Incident: social commit a680fed5 (production_scrapers rescan_fl_workhistories: guard above def _record_cycle_run, NameError at first cycle, 18 startup:NameError rows on MEGASERVER in 3 hours; invisible under pytest because an import runs every def first). Social-only fix: social/upwork/new_scraper/production_scrapers/tests/test_meta/test_no_definition_after_the_script_entry.py (covers only production_scrapers). Not in py-ci-shared: grep of src/py_ci_shared for 'defined after|definition after|after the script' = 0 files; script_entry_points.py (nearest) checks only sys.modules registration, cwd-on-sys.path and stem collisions (docstring lines 1-25). Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p1.py (module-level If(__name__=='__main__') whose body makes a call, with a FunctionDef/ClassDef after it) over pyutilz/src, social/upwork/new_scraper, py-ci-shared/src: pyutilz 0, py-ci-shared 0, social 2. Read both: realtime_applications/show_top_jobs.py:334 (guard, then def get_dsn at :342) is a TRUE hit outside the package the local test covers; production_scrapers/marketplace_crawler.py:36 is a FALSE positive (a sys.path.insert guard, not an entry); requiring the guard body to call a name defined in the module (main()) or sys.exit(main())/asyncio.run(main()) removes it.",
+  "failure_scenario": "A def is added or moved below the guard; the script crashes with NameError only when run as __main__ (PM2/cron), never under pytest.",
+  "proposed_fix": "Port the social test as a script_entry_points rule definition-after-entry (same module, same script_dirs argument): for each module with an entry guard that calls a module-level name, fail if any FunctionDef/AsyncFunctionDef/ClassDef follows it. Exempt pure sys.modules-aliasing and sys.path guards. Canary: move the guard above a def it needs -> fail; guard as last statement -> pass. Parse-only, no subprocess.",
+  "ast_checkable": true,
+  "fp_risk": "low"
+ },
+ {
+  "id": "31-F3",
+  "sev": "P2",
+  "title": "verify_then_reopen: a function verifies a file (sidecar/hash) by path, then re-opens the same path to load it (TOCTOU)",
+  "evidence": "Hand-fixed once: pyutilz audit 2026-09-26 row GEN-8 (safe_load hashed one read and unpickled a second read; fixed at pyutilz/src/pyutilz/core/safe_pickle.py:280-305, reads ONCE, comment at :288). The same shape survives in two other loaders: pyutilz/src/pyutilz/text/tokenizers.py:377 _verify_sidecar(path) then :380 gzip.open(path) + pickle.load(handle) (load_tokens), and pyutilz/src/pyutilz/core/serialization.py:175 verify_sidecar(obj) then :181 open(obj,'rb') (_resolve_serialized_source). I read both. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p5c.py: per function, calls whose name matches verif|sidecar|checksum|check_hash with a Name first arg, followed by line by open/load/read_bytes/read_pickle/fromfile of the same Name: pyutilz 2 hits (both true), social 0, py-ci-shared 0. Nearest gates: unsafe_deserialization (flags unverified pickle.load, not verified-then-reopened), atomic_write_staging, hash_key_determinism; none look at read ordering.",
+  "failure_scenario": "Another process os.replace()s the payload between the sidecar check and the open; unverified bytes are unpickled, defeating the integrity check the code advertises.",
+  "proposed_fix": "New AST gate verified_then_reopened (py_ci_shared.verified_then_reopened.find_reopened_after_verify(root, verify_name_regex=...)): same function, same Name path argument, verify call earlier than an open/load sink. Accepted safe pattern: the sink receives bytes from one earlier read (pickle.loads(payload)). Canary: inline the pre-fix safe_load (verify(path); pickle.load(open(path))) -> fail; the current safe_load -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "low"
+ },
+ {
+  "id": "31-F4",
+  "sev": "P2",
+  "title": "state_advanced_before_fallible_work: a schedule deadline/last-run stamp or a progress counter is written before the work it gates",
+  "evidence": "Social test_meta/test_deadline_stamped_after_work.py docstring: audit 05 P2-3 found two sites and the shape 'recurred three more times in one day' (5 incidents). Same family: social 2dee1a3f (a full scan that collected 0 ids was recorded as success and spent its hour slot), and 2026-10-15 OBS-50 (P1: processed counted before the write and progress keyed on it, so a batch whose every write fails reads as progress). Nearest gates: clock_day_boundary, cancellation_prone_moments (cancellation during work, not stamp ordering), sentinel_cached_as_answer; none model 'clock value assigned to last_*/next_* followed in the same block by a call'. Prototypes C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p7.py (stamp) and C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p10.py (counter += immediately before a write/insert/flush/commit call): 0 hits in pyutilz, social, py-ci-shared. Social keeps its own tree at zero with the local meta-test, so this is a regression guard with 0 FP on 3 trees; the value is for repos without it (mlframe, autopsia, glossum: not scanned).",
+  "failure_scenario": "The scheduler records 'done' then the query fails silently; the next attempt waits a full interval (an hour for the stale-active sweep) and nothing alerts. With counters, a stalled writer reads as healthy progress.",
+  "proposed_fix": "Generalise the social test into py_ci_shared.state_before_work: configurable name regexes for stamps ((last|next)_(full|sweep|run|scan|cycle|refresh)) and counters (processed|written|inserted|saved|sent); flag when the assignment/aug-assign sits in the same statement list immediately before a non-clock Call, unless restored in a finally/except. Canary: stamp-then-query fixture fails; query-then-stamp passes.",
+  "ast_checkable": true,
+  "fp_risk": "med"
+ },
+ {
+  "id": "31-F5",
+  "sev": "P2",
+  "title": "systemexit_in_library_function: sys.exit()/raise SystemExit inside a non-entry function that background threads and library callers reach",
+  "evidence": "Incident: social c421af57: show_top_jobs.get_dsn is imported by the dashboard and called from background threads; the CLI helper _get_dsn called sys.exit(1); SystemExit is not an Exception, so it passed except Exception and silently ended the cache scheduler and the health alerter when no DSN was set. Nearest gates: bare_except / broad_except (handlers only) and fail_open_handlers; nothing flags the raiser. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p12.py (Call sys.exit/exit/quit/os._exit or Raise SystemExit inside any function not named main*/cli*/parse_args*): pyutilz 3 (web/proxy/ip_check.py:141,147 are an opt-in exit_on_fail flag, acceptable), py-ci-shared 4 (all CLI helpers in black_filtered_apply.py, acceptable), social 27, of which 6 sit in modules with no __main__ guard; I read realtime_applications/pipeline/runner.py:409 (library pipeline raises SystemExit(2): true hit) and realtime_applications/cli_utils.py:324 (acquire_singleton_lock sys.exit(4), a CLI helper). Estimate 2-3 true hits per 9 candidates after dropping modules with a __main__ guard and opt-in flags.",
+  "failure_scenario": "A library helper written for a CLI is later imported by a thread; a missing config exits only that thread, except Exception does not log it, and the service looks alive while a subsystem is dead.",
+  "proposed_fix": "New AST gate systemexit_in_library: flag when the module has no __main__ guard (or the function is imported by another module); allowlist parameter for opt-in flags and an 'exit-ok: reason' marker. Canary: library module with def get_dsn(): sys.exit(1) imported elsewhere -> fail; same function raising RuntimeError -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "med"
+ },
+ {
+  "id": "31-F6",
+  "sev": "P2",
+  "title": "statement_privileges_granted: the (table, privilege) pairs each service's SQL needs are checked against its role's GRANTs",
+  "evidence": "Incident: social a7ccd46e + f448a173: scraper_job_auth lacked UPDATE/INSERT; every scan_job_auth_details write failed with 42501 from 2026-10-11 06:20 UTC (scraper_runs showed inserted 0 and db_write:42501 each batch) and no test noticed. Social-only fix: production_scrapers/tests/test_meta/test_scraper_sql_needs_are_granted.py (derives pairs without a database, follows imports, f-string table names, data-modifying CTEs, ON CONFLICT DO UPDATE). Nearest shared gates: sql_function_privileges (registry.toml:1261, only SECURITY DEFINER EXECUTE grants), statement_columns_exist_in_ddl, sql_verify; none compares writes with role grants. Not prototyped (needs each consumer's grant-file format); the reference implementation is the social test.",
+  "failure_scenario": "A new column write or table is added; unit tests run as the owner role and pass; the least-privilege production role gets 42501 on every write and the scraper loops with zero inserts.",
+  "proposed_fix": "Lift the social test into py_ci_shared.statement_privileges_granted(statement_sources, grants_files, role_of_module): reuse statement_real_engine_coverage statement discovery and sqlglot lineage; parse GRANT lines; fail on a (table, INSERT|UPDATE|DELETE|SELECT) needed by a role with no grant, and on column-level UPDATE grants missing the written column. Canary: delete the UPDATE grant line in a fixture runbook -> fail.",
+  "ast_checkable": true,
+  "fp_risk": "med"
+ },
+ {
+  "id": "31-F7",
+  "sev": "P2",
+  "title": "exception_text_bound_to_db_column_unredacted: str(exc) written into an INSERT/UPDATE parameter without the redaction helper",
+  "evidence": "Social test_meta/test_exception_text_is_redacted_before_a_column.py docstring: same shape in six files at once (scraper_runs.extra->>'error', wh_scans.errors_json, crawler_scan_runs); psycopg2 echoes the whole DSN incl. password when it cannot parse it; the logging filter covers records but a column is not a log record. Social-only. Nearest shared: connect_error_echo, validation_errors_echo_input, credential_logging (code_audit), secret_safe_test_output; all concern log/response/test output, none DB parameters. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p6.py (execute/executemany/execute_values call whose argument subtree contains str()/repr() of a name e/exc/err/ex/error): 0 hits in pyutilz, social, py-ci-shared. The 0 is not proof of clean: sites route through a variable or helper the prototype cannot follow, so the true count needs data-flow.",
+  "failure_scenario": "A reconnect error containing the DSN is stringified into a JSONB column the dashboard renders; a password reaches the UI and backups.",
+  "proposed_fix": "Configure it as a taint rule on code_audit/provenance_flow.py: source = str/repr/format of a caught exception variable, sink = parameter of execute-family calls, sanitizer names configurable (e.g. _redact). Canary: bound str(e) -> fail; _redact(str(e)) -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "high"
+ },
+ {
+  "id": "31-F8",
+  "sev": "P3",
+  "title": "process_lifetime_collection_unbounded: module-level or self dict/list/set that grows inside functions and is never evicted or capped",
+  "evidence": "Hand-fixed repeatedly: pyutilz 2026-10-15 P-02 (P1, monitor lists unbounded), P-05 (DLQ rebuilt by slice), C-05 (FIFO eviction unlocked), 2026-09-26 CORE-3 (PerCallAttr store never prunes), social RES-23 (log-throttle dict keyed by job uid, never evicted, about 145 B per key) and test_throttle_keys_stay_bounded.py. Nearest: module_cache_thread_safety (locks, not bounds), id_keyed_cache_validates_identity. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p4b.py (module-level empty container grown in functions, no pop/clear/del/len/rebind/slice in the module): pyutilz 2, social 14, py-ci-shared 0; I read 4 social hits and ALL were false positives (single constant key _screened_cache, eviction through helper _prune_locked, set.discard passed as callback, cache keyed by a fixed name list). C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p4.py (self.<attr> in classes): 5 pyutilz hits, all builders (core/matrix.py CSR constructors). Narrow variant C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p13.py (throttle-call key f-string interpolating an id-like name): 5 hits, all bounded config keys. Conclusion: the class is real (6 fixes) but the fixed trees are clean and naive precision is about 1 in 16.",
+  "failure_scenario": "A long-lived scraper or monitor grows a dict by one entry per job/uid or one list item per sample; memory climbs until the host swaps; log throttles stop throttling.",
+  "proposed_fix": "Do not ship the generic form. Ship the narrow one: keys passed to configured throttle/dedupe helpers must not interpolate parameters matching uid|id|path|url unless the helper is declared bounded; plus a pytest helper assert_bounded(container_getter, feed_n=10000) for runtime checks. Canary for the narrow form: log_throttle(f'x:{job_uid}') -> fail, log_throttle(f'x:{source_label}') -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "high"
+ },
+ {
+  "id": "31-F9",
+  "sev": "P3",
+  "title": "dead_optional_collaborator: a *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes",
+  "evidence": "Social test_meta/test_memo_params_actually_wired.py docstring: split_buyer_info's memo set existed, was unit-tested, and neither production caller passed it (2026-07-23 gap-pass Gap 8), zero benefit for months. Nearest shared: unread_function_params / unread_init_params (parameter never READ), dead_wiring, uncalled_functions. Here the parameter is read; what is missing is a non-None value at call sites. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p8.py over keyword calls: pyutilz 0, py-ci-shared 0, social 5 candidates; I read 3 (build_job_pub_rows client_memo, _split_response client_memo, marketplace_crawler token_fn) and all are passed POSITIONALLY, so the prototype over-reports until positional binding is resolved. Verified live hits: 0 of 3 read; 2 unverified (stage2_client_context._build_client_context client_cache, _scan._require_scan_mode fetch_fn).",
+  "failure_scenario": "A performance or injection hook is added with a default; tests exercise it; production keeps the slow default path indefinitely.",
+  "proposed_fix": "py_ci_shared.optional_collaborator_wired: resolve calls by name (reuse kwarg_forwarding / unresolved_module_attributes call resolution), bind positional and keyword args to the parameter, fail when every non-test call omits it or passes literal None. Canary: function with memo=None called without memo in a tmp package -> fail.",
+  "ast_checkable": true,
+  "fp_risk": "med"
+ },
+ {
+  "id": "31-F10",
+  "sev": "P3",
+  "title": "monotonic_clock_zero_sentinel: an attribute initialised to 0/0.0 and later compared as time.monotonic() - attr with no unset guard",
+  "evidence": "Incident: social 53be70ff: last-full-scan time started at 0.0, which reads as long ago only once the host has been up an hour (monotonic is uptime-based), so a restart in its first hour deferred the first full scan; fixed by None. Awareness also in a comment at production_scrapers/rescan_fl_workhistories_fetch.py:110. Nearest: sentinel_guard_mismatch, constant_fallback_cache_key, timezone_honest; none join zero-init with a monotonic subtraction. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p2b.py (zero-initialised name/attr plus a BinOp monotonic()/perf_counter() - same_name in one file): pyutilz 0, py-ci-shared 0, social 3, all FALSE positives (job_details_batch2.py:445/449/484 and :72/112 are guarded by a disabled flag set together with the timestamp, read at :443-451 and :108-114). A precise gate needs flag-aware guard detection: 0 true of 3.",
+  "failure_scenario": "A freshly booted host (or container with a fresh monotonic origin) treats 0.0 as less than an interval ago and skips the first scheduled run.",
+  "proposed_fix": "Low priority. If built, report only when no enclosing condition tests another attribute of the same object that the writer sets together with the timestamp; otherwise require a None sentinel. Canary: self._last=0.0 plus if time.monotonic()-self._last>=N -> fail; with a guarding self.armed -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "high"
+ },
+ {
+  "id": "31-F11",
+  "sev": "P3",
+  "title": "per_call_figure_overwritten_not_summed: a per-call usage/cost attribute assigned by each POST/attempt instead of accumulated",
+  "evidence": "pyutilz 0b28b77 (OpenRouter cost and OpenAICompatible tokens ASSIGNED per POST, so a call billed twice recorded once; audit 2026-09-26 OR-5) and 43a9926 (generation id read only after a stream finished normally, so a cut stream was unbillable; $0.15 unrecorded). Nearest: per_call_state_on_shared_instance (state shared across concurrent calls, not overwrite within one call), sentinel_cached_as_answer. Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p3.py (self.<cost|tokens|usage|spent|billed|retries|bytes|total> = non-constant inside a for/while): pyutilz 0, py-ci-shared 0, social 1 (upwork_shared/_rate_limit.py:203 _tokens is a token bucket: false positive). The original defects lived in a helper invoked once per POST, not in a loop, so a loop rule would not have caught them; a call-graph rule is required and is not AST-local.",
+  "failure_scenario": "A retry or re-issue silently drops the first attempt's spend; budget gates and cost reports under-count.",
+  "proposed_fix": "Not recommended as a generic AST gate. Better: a py_ci_shared pytest helper assert_accumulates(callable, attr, n_calls=2) that drives a provider twice through a fake transport and asserts the figure equals the sum; document it in WRITING_TESTS.md.",
+  "ast_checkable": false,
+  "fp_risk": "high"
+ },
+ {
+  "id": "31-F12",
+  "sev": "P3",
+  "title": "cli_flag_spelling_split: the same flag stem registered both as --a-b and --a_b across sibling scripts",
+  "evidence": "Social test_meta/test_sibling_family_consistency.py docstring: rescan_active_jobs.py --dry-run vs every sibling's --dry_run (01-code-quality P1, closed by aliasing both). Prototype C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/p14.py (add_argument long-flag stems normalised '-' to '_', report stems with more than one spelling): pyutilz 0 of 3 stems, py-ci-shared 0 of 40, social 1 of 72 (dry_run, 20 sites, now an intentional alias). Nearest: dead_cli_flags (flag declared but unused), a different property.",
+  "failure_scenario": "Operators pass the spelling that works on 19 scripts and get unrecognized arguments on the 20th in the middle of an incident.",
+  "proposed_fix": "Optional tiny gate cli_flag_spelling: fail when one stem has two spellings unless a single add_argument call lists both (alias). Canary: two scripts with --dry-run and --dry_run -> fail; one add_argument carrying both names -> pass.",
+  "ast_checkable": true,
+  "fp_risk": "low"
+ },
+ {
+  "id": "31-F13",
+  "sev": "P3",
+  "title": "nullable_key_negative_control: the engine test of a statement that joins or NOT-EXISTS-es on a nullable column must seed a NULL row",
+  "evidence": "Social production_scrapers/audits/2026-10-15/11_meta_gate_coverage.md GATE-1 (SQL-33, P2): NOT EXISTS on a nullable opening_uid returned every NULL group as a candidate. Guard half built locally (tests/test_meta/test_null_sensitive_statements_are_guarded.py + null_key_lineage.py, baseline empty); the engine-test half is DEFERRED there (needs a statement-to-test mapping). Nearest shared: statement_real_engine_coverage (only checks that a test file references the statement), polars_null_equality (Python side). This is an open consumer item, not yet a py-ci-shared gate. Not prototyped (needs DDL and engine tests of a consumer).",
+  "failure_scenario": "A statement is covered by a real-Postgres test whose fixtures hold no NULL in the join key, so the NULL-handling bug passes every test.",
+  "proposed_fix": "Port the guard half (sqlglot lineage plus nullability from DDL) next to statement_columns_exist_in_ddl, then add the engine-test half using statement_real_engine_coverage's mapping: the covering test must seed NULL/None for that column. Canary: remove AND col IS NOT NULL from a fixture statement -> guard half fails.",
+  "ast_checkable": true,
+  "fp_risk": "med"
+ }
+]

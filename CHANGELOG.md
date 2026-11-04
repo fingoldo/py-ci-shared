@@ -34,6 +34,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
 - `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
 
+### New gates from audit 31, 2026-11-04
+
+- `duplicate_test_body` (`assert_no_duplicate_test_bodies`): two `test*` functions in one file/class with identical body, decorators and signature (opt-in, default off).
+
 ## 1.23.2
 
 - New library `contract_ledger` (`src/py_ci_shared/contract_ledger.py`): the shared mechanism behind the 2026-10-21 contract ratchets in

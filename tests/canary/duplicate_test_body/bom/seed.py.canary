@@ -1,0 +1,10 @@
+﻿def test_seed_zero():
+    result = seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=True)
+    assert result is True
+    assert seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=False) is True
+
+
+def test_seed_zero_copy():
+    result = seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=True)
+    assert result is True
+    assert seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=False) is True
