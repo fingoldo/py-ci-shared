@@ -393,3 +393,29 @@ class TestFloorsAndConstantIterables:
             )
             == [5, 8, 10, 13, 17]
         )
+
+
+def test_unittest_style_assertions_in_a_loop_over_an_empty_iterable_are_reported(tmp_path):
+    body = """
+    class T(TestCase):
+        def test_a(self):
+            for x in self.items():
+                if x:
+                    self.assertTrue(x)
+"""
+    p = _module(tmp_path, "test_a.py", body)
+    found = find_floorless_loops([p], tmp_path)
+    assert [(f.function, f.lineno) for f in found] == [("test_a", 4)]
+
+
+def test_a_unittest_loop_with_a_floor_is_clean(tmp_path):
+    body = """
+    class T(TestCase):
+        def test_a(self):
+            items = self.items()
+            self.assertTrue(items)
+            for x in items:
+                self.assertTrue(x)
+"""
+    p = _module(tmp_path, "test_a.py", body)
+    assert find_floorless_loops([p], tmp_path) == []
