@@ -940,6 +940,13 @@ since = "1.21.0"
 summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
 
 [[gate]]
+name = "oof_buffer_zero_init"
+kind = "gate"
+entries = ["assert_oof_buffer_zero_init"]
+since = "1.23.8"
+summary = "Flags an OOF buffer initialised with zeros/empty and filled per fold from a splitter that may not validate every row"
+
+[[gate]]
 name = "optional_imports_guarded"
 kind = "gate"
 entries = ["assert_optional_imports_guarded"]

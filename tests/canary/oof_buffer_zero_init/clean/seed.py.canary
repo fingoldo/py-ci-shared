@@ -1,0 +1,12 @@
+import numpy as np
+from sklearn.model_selection import KFold
+
+
+def oof_predict(model, X, y, cv):
+    oof = np.full(len(y), np.nan)
+    for tr, va in cv.split(X):
+        oof[va] = model.fit(X[tr], y[tr]).predict(X[va])
+    local = np.zeros(len(y))
+    for tr, va in KFold(3).split(X):
+        local[va] = 1.0
+    return oof, local

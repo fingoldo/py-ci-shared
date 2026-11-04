@@ -1,0 +1,8 @@
+﻿import numpy as np
+
+
+def oof_predict(model, X, y, cv):
+    oof = np.zeros(len(y))
+    for tr, va in cv.split(X):
+        oof[va] = model.fit(X[tr], y[tr]).predict(X[va])
+    return oof
