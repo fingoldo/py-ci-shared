@@ -77,8 +77,18 @@ _PICKLE_LOADS = frozenset(
         "cloudpickle.load",
         "cloudpickle.loads",
         "joblib.load",
+        "pandas.read_pickle",
+        "pandas.io.pickle.read_pickle",
+        "marshal.load",
+        "marshal.loads",
+        "shelve.open",
+        "jsonpickle.decode",
+        "jsonpickle.unpickler.decode",
     }
 )
+#: ``pickle.Unpickler(fh).load()``: the load is a method of an Unpickler instance built in the same expression.
+_UNPICKLER_CTORS = frozenset({"pickle.Unpickler", "pickle._Unpickler", "_pickle.Unpickler", "cPickle.Unpickler", "dill.Unpickler", "cloudpickle.Unpickler"})
+_KERAS_LOADERS = frozenset({"keras.models.load_model", "keras.saving.load_model", "tensorflow.keras.models.load_model", "tf.keras.models.load_model"})
 _GADGET_MODULES = frozenset(
     {"builtins", "__builtin__", "types", "functools", "os", "posix", "nt", "subprocess", "importlib", "sys", "operator", "runpy", "shutil", "pty", "socket"}
 )
@@ -307,12 +317,20 @@ def _keyword_loader_message(node: ast.Call, aliases: ImportAliases) -> Optional[
     qualified = aliases.qualified_name(node) or ""
     if qualified == "torch.load":
         flag = _kw(node, "weights_only")
-        if flag is None or (isinstance(flag, ast.Constant) and flag.value is not True):
+        if flag is None or not (isinstance(flag, ast.Constant) and flag.value is True):
             return "torch.load without weights_only=True unpickles the checkpoint, which executes code"
     elif qualified in ("numpy.load", "np.load"):
         flag = _kw(node, "allow_pickle")
         if isinstance(flag, ast.Constant) and flag.value is True:
             return "np.load(allow_pickle=True) unpickles object arrays, which executes code"
+    elif qualified in _KERAS_LOADERS:
+        flag = _kw(node, "safe_mode")
+        if isinstance(flag, ast.Constant) and flag.value is False:
+            return "load_model(safe_mode=False) deserialises Lambda layers and custom code, which executes it"
+    elif qualified in ("ruamel.yaml.YAML", "ruamel.yaml.main.YAML"):
+        typ = _kw(node, "typ")
+        if isinstance(typ, ast.Constant) and typ.value == "unsafe":
+            return "ruamel YAML(typ='unsafe') can construct arbitrary Python objects; use typ='safe'"
     elif qualified in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all", "yaml.full_load", "yaml.full_load_all"):
         return _yaml_message(node, qualified, aliases)
     return None
@@ -340,6 +358,52 @@ def _scope_calls(scope: ast.AST) -> list[ast.Call]:
     return calls
 
 
+def _load_target(call: ast.Call, aliases: ImportAliases) -> Optional[ast.Call]:
+    """The call whose first argument is the deserialised source: *call* itself for a ``pickle.loads``-family function, the
+    ``Unpickler(fh)`` constructor for ``Unpickler(fh).load()``, else None."""
+    if aliases.qualified_name(call) in _PICKLE_LOADS:
+        return call
+    func = call.func
+    if isinstance(func, ast.Attribute) and func.attr == "load" and isinstance(func.value, ast.Call) and aliases.qualified_name(func.value) in _UNPICKLER_CTORS:
+        return func.value
+    return None
+
+
+def _names_of(node: ast.AST, aliases: ImportAliases) -> set[str]:
+    """Local names read in *node*; imported modules and functions name no data."""
+    return {n.id for n in shared_walk(node) if isinstance(n, ast.Name) and not aliases.is_imported(n.id)}
+
+
+def _related_names(scope: ast.AST, seeds: set[str], aliases: ImportAliases) -> set[str]:
+    """*seeds* plus every name connected to them by an assignment in *scope* (``data = fh.read()`` ties ``data`` to ``fh``)."""
+    pairs: list[set[str]] = []
+    for node in shared_walk(scope):
+        if isinstance(node, ast.Assign):
+            pairs.append(_names_of(node, aliases))
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+            pairs.append(_names_of(node, aliases))
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            pairs.append(_names_of(node.target, aliases) | _names_of(node.iter, aliases))
+    related = set(seeds)
+    changed = True
+    while changed:
+        changed = False
+        for group in pairs:
+            if group & related and not group <= related:
+                related |= group
+                changed = True
+    return related
+
+
+def _touches(candidate: ast.Call, related: set[str], aliases: ImportAliases) -> bool:
+    """Does the verification or producer *candidate* deal with the loaded value? A call with no data at all
+    (``self._check()``) cannot be judged and counts; ``hashlib.sha256(b"unrelated")`` has data and it is not the payload."""
+    names = _names_of(candidate, aliases)
+    if names & related:
+        return True
+    return not names and not any(isinstance(n, ast.Call) and (n.args or n.keywords) for n in shared_walk(candidate))
+
+
 def _is_verifying_call(candidate: ast.Call, call: ast.Call) -> bool:
     """Is *candidate* a hash/signature check or a producer (dump/save) placed before *call*?"""
     return (
@@ -351,19 +415,28 @@ def _is_verifying_call(candidate: ast.Call, call: ast.Call) -> bool:
 
 def _unverified_load(call: ast.Call, calls: list[ast.Call], scope: ast.AST, tree: ast.Module, aliases: ImportAliases) -> bool:
     """Is *call* a pickle-family load of non-literal bytes with no earlier verification in its function or an enclosing one?"""
-    if aliases.qualified_name(call) not in _PICKLE_LOADS:
+    target = _load_target(call, aliases)
+    if target is None:
         return False
-    first = call.args[0] if call.args else None
+    first = target.args[0] if target.args else None
     if isinstance(first, ast.Constant) and not isinstance(first.value, (str, bytes)):
         return False
-    if any(_is_verifying_call(c, call) for c in calls):
+    verifiers = [c for c in calls if _is_verifying_call(c, call)]
+    seeds = _names_of(first, aliases) if first is not None else set()
+    if verifiers and seeds:
+        related = _related_names(scope, seeds, aliases)
+        verifiers = [c for c in verifiers if _touches(c, related, aliases)]
+    if verifiers:
         return False
     return not (isinstance(scope, _FUNCTIONS) and _verified_by_enclosing(tree, scope, call))
 
 
 def _check_pickle_loads(tree: ast.Module, aliases: ImportAliases, safe_loader_functions: set[int], sink: _Sink) -> None:
     """(d) Pickle-family loads with no preceding hash or signature check in the same function."""
-    for scope, qualname in [(tree, "<module>"), *[(f, q) for q, f in qualified_functions(tree)]]:
+    extra = [
+        (n, n.name if isinstance(n, ast.ClassDef) else "<lambda>") for n in shared_walk(tree) if isinstance(n, (ast.ClassDef, ast.Lambda))
+    ]  # a class body and a lambda run code of their own, with no function around them to hold a verification
+    for scope, qualname in [(tree, "<module>"), *[(f, q) for q, f in qualified_functions(tree)], *extra]:
         if id(scope) in safe_loader_functions:
             continue
         calls = _scope_calls(scope)
