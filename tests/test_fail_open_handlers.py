@@ -357,3 +357,28 @@ def test_keeping_the_element_next_to_the_error_is_still_admit_on_error(tmp_path,
             return keep
     """
     assert _rules(tmp_path, body) == ["admit_on_error"]
+
+
+def _admit_rules(tmp_path, body):
+    (tmp_path / "m.py").write_text(body, encoding="utf-8")
+    return [(h.function, h.rule, h.lineno) for h in find_fail_open_handlers([tmp_path / "m.py"], tmp_path)]
+
+
+@pytest.mark.parametrize(
+    "handler",
+    ["out.append(x)", "out += [x]", "out.extend([x])", "out.add(x)", "out[x] = True", "out.insert(0, x)", "yield x"],
+)
+def test_every_admission_spelling_is_reported_exactly_once(tmp_path, handler):
+    src = f"def f(items, out):\n    for x in items:\n        try:\n            check(x)\n        except Exception:\n            {handler}\n"
+    assert _admit_rules(tmp_path, src) == [("f", "admit_on_error", 5)]
+
+
+@pytest.mark.parametrize("handler", ["failed.append(x)", "failed += [x]", "failed.add(x)", "out.append(f'{x}: {e}')"])
+def test_recording_the_failure_is_not_an_admission(tmp_path, handler):
+    src = f"def f(items, out, failed):\n    for x in items:\n        try:\n            check(x)\n        except Exception as e:\n            {handler}\n"
+    assert _admit_rules(tmp_path, src) == []
+
+
+def test_a_flag_set_true_in_the_handler_and_returned_is_return_true(tmp_path):
+    src = "def check_allowed(x):\n    ok = False\n    try:\n        ok = check(x)\n    except Exception:\n        ok = True\n    return ok\n"
+    assert _admit_rules(tmp_path, src) == [("check_allowed", "gate_returns_true", 5)]
