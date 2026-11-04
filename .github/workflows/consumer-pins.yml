@@ -3,12 +3,18 @@ name: Consumer pins
 # Daily: check out every consumer in configs/consumers.toml read-only and run adoption_matrix over them. Fails when a
 # repo's py-ci-shared pins disagree, move, lag the latest release tag by more than 2 releases, or a gate skips itself when the package is
 # missing. Private repos need the CONSUMER_READ_TOKEN secret (a fine-grained token with contents:read on them);
-# without it they are skipped with a warning, while a clone that should work and fails is an error.
+# without it the run FAILS (an expired token must not turn into a green run that checks only the public repos); start it by hand with
+# allow-skipped-private to run without the secret. A clone that should work and fails is an error.
 
 on:
   schedule:
     - cron: "17 5 * * *"
   workflow_dispatch:
+    inputs:
+      allow-skipped-private:
+        description: "Do not fail when the CONSUMER_READ_TOKEN secret is absent and private consumers are skipped"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -40,11 +46,14 @@ jobs:
       - name: Check out the consumers
         env:
           CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
+          ALLOW_SKIPPED_PRIVATE: ${{ inputs.allow-skipped-private }}
         run: |
           if [ -z "$CONSUMER_READ_TOKEN" ]; then
             echo "::warning title=CONSUMER_READ_TOKEN not set::private consumer repos are skipped; only the public ones are checked"
           fi
-          python -m py_ci_shared._consumers checkout configs/consumers.toml \
+          strict="--fail-on-skipped-private"
+          if [ "$ALLOW_SKIPPED_PRIVATE" = "true" ]; then strict=""; fi
+          python -m py_ci_shared._consumers checkout configs/consumers.toml $strict \
             --dest "$RUNNER_TEMP/consumers" --repos-file "$RUNNER_TEMP/consumers/repos.toml"
 
       # --allow-behind 2: a fixed pin may lag the latest release tag by up to 2 releases before the job fails (a consumer

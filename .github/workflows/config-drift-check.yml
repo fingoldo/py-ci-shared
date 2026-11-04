@@ -41,4 +41,6 @@ jobs:
 
       - name: Run config drift check
         shell: bash
+        env:
+          CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
         run: python -m py_ci_shared.config_drift_check | tee -a "$GITHUB_STEP_SUMMARY"
