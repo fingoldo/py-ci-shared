@@ -18,7 +18,9 @@ A parameter counts as read when its name is loaded anywhere in the function body
 included (``seed = check(seed)`` and ``seed += 1`` read it). A body that calls ``locals()`` or ``vars()`` counts as
 reading everything. Not reported: functions whose body is only a docstring, ``pass``, ``...`` or
 ``raise NotImplementedError``; ``@abstractmethod`` and ``@overload`` definitions; methods of ``Protocol`` classes;
-methods that override a base signature, recognised by a ``super().<same name>`` call or an ``@override`` decorator.
+methods that override a base signature, recognised by a ``super().<same name>`` call or an ``@override`` decorator; and a method of a
+class with a base class whose whole body is ``return self``/``return``/``return None`` (a stateless ``fit(self, X, sample_weight=None): return self``
+accepts the knob because the base interface requires it, and has nothing that could have used it).
 
 Known false-positive shape: a callback or hook whose signature is fixed by a framework and which ignores one of these
 names without saying so (an override without ``super()`` or ``@override``). Prefix the parameter with an underscore,
@@ -77,6 +79,17 @@ def _is_stub(body: list[ast.stmt]) -> bool:
     return True
 
 
+def _is_noop_override_body(body: list[ast.stmt]) -> bool:
+    """Only a docstring and ``return self``, ``return`` or ``return None``: nothing in it could have used a parameter."""
+    statements = (
+        body[1:] if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str) else body
+    )
+    if len(statements) != 1 or not isinstance(statements[0], ast.Return):
+        return False
+    value = statements[0].value
+    return value is None or (isinstance(value, ast.Name) and value.id == "self") or (isinstance(value, ast.Constant) and value.value is None)
+
+
 def _calls_super_method(func: ast.AST, name: str) -> bool:
     for node in shared_walk(func):
         if isinstance(node, ast.Attribute) and node.attr == name and isinstance(node.value, ast.Call):
@@ -117,20 +130,22 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     lines = lines or []
     out: list[Finding] = []
 
-    def visit(node: ast.AST, prefix: str, in_protocol: bool) -> None:
+    def visit(node: ast.AST, prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         for child in child_nodes(node):
             if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.", _is_protocol(child, aliases))
+                visit(child, f"{prefix}{child.name}.", _is_protocol(child, aliases), bool(child.bases))
             elif isinstance(child, _FUNCTIONS):
-                check(child, prefix, in_protocol)
+                check(child, prefix, in_protocol, subclass)
                 visit(child, f"{prefix}{child.name}.<locals>.", False)
             else:
-                visit(child, prefix, in_protocol)
+                visit(child, prefix, in_protocol, subclass)
 
-    def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], prefix: str, in_protocol: bool) -> None:
+    def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         a = func.args
         params = [p for p in (*a.posonlyargs, *a.args, *a.kwonlyargs) if p.arg in NAMED_PARAMS]
         if not params or func.name == "__init__" or in_protocol or _is_stub(func.body):
+            return
+        if subclass and _is_noop_override_body(func.body):
             return
         if any(_decorator_name(d) in _MARKER_DECORATORS for d in func.decorator_list) or _calls_super_method(func, func.name):
             return

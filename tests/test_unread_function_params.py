@@ -128,3 +128,21 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
 def test_exclude_skips_paths_by_fragment(tmp_path):
     root = _corpus(tmp_path, {"gen/m.py": VIOLATION.encode(), "lib/m.py": VIOLATION.encode()})
     assert [f.path for f in find_unread_function_params(root, use_git=False, exclude=("gen/",))] == ["lib/m.py"]
+
+
+def test_a_noop_override_in_a_subclass_may_ignore_a_knob_its_base_interface_requires(tmp_path):
+    """33-F28: ``fit(self, X, sample_weight=None): return self`` has nothing that could use the weight."""
+    for i, body in enumerate(["return self", "return", "return None", '"""Nothing to fit."""\n        return self']):
+        assert _found(tmp_path / f"ok{i}", f"class T(Base):\n    def fit(self, X, sample_weight=None):\n        {body}\n") == []
+
+
+def test_the_noop_exemption_needs_a_base_class_and_a_body_that_does_nothing(tmp_path):
+    expected = ["fit: parameter 'sample_weight' is accepted but never read"]
+    # no base class: a plain function or a root class has no interface that requires the knob
+    assert _found(tmp_path / "a", "def fit(self, X, sample_weight=None):\n    return self\n") == expected
+    assert _found(tmp_path / "b", "class T:\n    def fit(self, X, sample_weight=None):\n        return self\n") == [f"T.{expected[0]}"]
+    # real work that ignores the weight is the defect the gate exists for
+    assert _found(tmp_path / "c", "class T(Base):\n    def fit(self, X, sample_weight=None):\n        self.m = X.mean()\n        return self\n") == [
+        f"T.{expected[0]}"
+    ]
+    assert _found(tmp_path / "d", "class T(Base):\n    def fit(self, X, sample_weight=None):\n        return X\n") == [f"T.{expected[0]}"]

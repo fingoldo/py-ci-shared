@@ -12,10 +12,10 @@ Three rules, in files that import polars:
   ``.get_column(...)``/``.to_series()`` chain, or a name assigned once from one in the same function (numpy arrays
   and pandas columns skip NaN the same way, but are not polars and are left alone: a file importing polars also
   handles plenty of numpy);
-* ``polars-compare-none``: ``pl.col(...) == None`` / ``!= None`` / ``.eq(None)``: always null, never True; the intent is
-  ``is_null()``/``is_not_null()``;
-* ``polars-null-propagating-eq``: ``==``/``!=``/``.eq()``/``.ne()`` between two ``pl.col(...)`` expressions, where a
-  null on either side drops the row.
+* ``polars-compare-none``: ``pl.col(...) == None`` / ``!= None`` / ``== pl.lit(None)`` / ``.eq(None)`` and
+  ``pl.col(...).is_in([None])``: always null (or never matching), never True; the intent is ``is_null()``/``is_not_null()``;
+* ``polars-null-propagating-eq``: ``==``/``!=``/``.eq()``/``.ne()`` between two ``pl.col(...)`` expressions, or between two
+  ``frame["a"]`` / ``frame["b"]`` columns of a visibly polars frame, where a null on either side drops the row.
 
 The first two are almost always bugs; the third is sometimes intended, which is why the gate is advisory by default:
 ``assert_polars_null_equality`` warns (``PolarsNullEqualityWarning``) instead of failing, unless ``advisory=False``. A
@@ -100,8 +100,28 @@ def _is_polars_value(node: ast.AST, aliases: ImportAliases, local: dict[str, ast
     return False
 
 
-def _is_none(node: ast.AST) -> bool:
-    return isinstance(node, ast.Constant) and node.value is None
+def _is_none(node: ast.AST, aliases: Optional[ImportAliases] = None) -> bool:
+    """``None``, or (given *aliases*) ``pl.lit(None)``."""
+    if isinstance(node, ast.Constant) and node.value is None:
+        return True
+    return (
+        aliases is not None
+        and isinstance(node, ast.Call)
+        and (aliases.qualified_name(node) or "") in ("polars.lit", "polars.functions.lit")
+        and len(node.args) == 1
+        and isinstance(node.args[0], ast.Constant)
+        and node.args[0].value is None
+    )
+
+
+def _is_column_item(node: ast.AST, aliases: ImportAliases, local: dict[str, ast.expr]) -> bool:
+    """``frame["name"]`` where ``frame`` is visibly a polars DataFrame."""
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, str)
+        and _is_polars_value(node.value, aliases, local)
+    )
 
 
 def _compare_findings(node: ast.Compare, aliases: ImportAliases, local: dict[str, ast.expr]) -> list[tuple[str, str]]:
@@ -119,9 +139,9 @@ def _compare_findings(node: ast.Compare, aliases: ImportAliases, local: dict[str
                         f"`{ast.unparse(node)}` skips nulls: an all-null column is not constant, [1, null] is; count nulls or compare with eq_missing",
                     )
                 )
-            elif (_is_col(left, aliases) and _is_none(right)) or (_is_none(left) and _is_col(right, aliases)):
+            elif (_is_col(left, aliases) and _is_none(right, aliases)) or (_is_none(left, aliases) and _is_col(right, aliases)):
                 out.append((RULE_NONE, f"`{ast.unparse(node)}` is always null; use is_null()/is_not_null()"))
-            elif _is_col(left, aliases) and _is_col(right, aliases):
+            elif (_is_col(left, aliases) and _is_col(right, aliases)) or (_is_column_item(left, aliases, local) and _is_column_item(right, aliases, local)):
                 out.append((RULE_COLUMNS, f"`{ast.unparse(node)}` drops rows where either side is null; use eq_missing/ne_missing if null should match null"))
         left = right
     return out
@@ -129,10 +149,14 @@ def _compare_findings(node: ast.Compare, aliases: ImportAliases, local: dict[str
 
 def _call_findings(node: ast.Call, aliases: ImportAliases) -> list[tuple[str, str]]:
     func = node.func
+    if isinstance(func, ast.Attribute) and func.attr == "is_in" and len(node.args) == 1 and _is_col(func.value, aliases):
+        items = node.args[0]
+        if isinstance(items, (ast.List, ast.Tuple, ast.Set)) and any(_is_none(item) for item in items.elts):
+            return [(RULE_NONE, f"`{ast.unparse(node)}` never matches a null; test is_null() separately")]
     if not isinstance(func, ast.Attribute) or func.attr not in ("eq", "ne") or len(node.args) != 1 or not _is_col(func.value, aliases):
         return []
     arg = node.args[0]
-    if _is_none(arg):
+    if _is_none(arg, aliases):
         return [(RULE_NONE, f"`{ast.unparse(node)}` is always null; use is_null()/is_not_null()")]
     if _is_col(arg, aliases):
         return [(RULE_COLUMNS, f"`{ast.unparse(node)}` drops rows where either side is null; use {func.attr}_missing if null should match null")]
