@@ -1,0 +1,11 @@
+import numpy as np
+from numba import njit
+
+
+@njit
+def mean(x):
+    return np.mean(x)
+
+
+def med(x):
+    return np.median(x)

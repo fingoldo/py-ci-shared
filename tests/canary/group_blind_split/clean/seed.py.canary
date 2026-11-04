@@ -1,0 +1,7 @@
+from sklearn.model_selection import GroupKFold, KFold
+
+
+def make_folds(X, y, groups):
+    if groups is None:
+        return list(KFold(5).split(X))
+    return list(GroupKFold(5).split(X, y, groups))

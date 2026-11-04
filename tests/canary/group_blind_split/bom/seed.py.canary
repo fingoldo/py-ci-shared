@@ -1,0 +1,5 @@
+﻿from sklearn.model_selection import KFold
+
+
+def make_folds(X, y, groups):
+    return list(KFold(5).split(X))

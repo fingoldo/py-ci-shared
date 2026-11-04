@@ -1,0 +1,5 @@
+from scipy.stats import rankdata
+
+
+def _rank_to_uniform(x):
+    return rankdata(x) / len(x)

@@ -448,11 +448,22 @@ CANARIES: dict[str, Canary] = {
         Canary("systemexit_in_library", lambda d: _gate("systemexit_in_library").assert_no_systemexit_in_library(d, use_git=False)),
         Canary("optional_collaborator_wired", lambda d: _gate("optional_collaborator_wired").assert_optional_collaborator_wired(d, use_git=False)),
         Canary("cli_flag_spelling", lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False)),
+        Canary("njit_fastmath_nan", lambda d: _gate("njit_fastmath_nan").assert_njit_fastmath_nan(d, use_git=False)),
+        Canary("ordinal_rank_scatter", lambda d: _gate("ordinal_rank_scatter").assert_ordinal_rank_scatter(d, use_git=False)),
+        Canary("group_blind_split", lambda d: _gate("group_blind_split").assert_group_blind_split(d, use_git=False)),
+        Canary("oof_buffer_zero_init", lambda d: _gate("oof_buffer_zero_init").assert_oof_buffer_zero_init(d, use_git=False)),
+        Canary("ml_api_contracts", lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False)),
+        Canary("njit_unsupported_calls", lambda d: _gate("njit_unsupported_calls").assert_njit_unsupported_calls(d, use_git=False)),
+        Canary("truncating_discretisation", lambda d: _gate("truncating_discretisation").assert_truncating_discretisation(d, use_git=False)),
     ]
 }
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",
+    "estimator_invariants": "runtime assertions over a caller's estimator factory, no source corpus to scan; test_estimator_invariants.py pins it with toy estimators",
+    "numeric_edge_matrix": "runtime adversarial-input matrix over a caller's function, no source corpus to scan; test_numeric_edge_matrix.py pins it with toy metrics",
+    "target_leak_canary": "runtime statistical check over a caller's transformer factory, no source corpus to scan; test_target_leak_canary.py pins it with toy encoders",
     "arb_checks": "reads Flutter .arb JSON catalogues keyed by locale; its subject is catalogue parity, covered by test_arb_checks.py",
     "audit_round_format": "Markdown tracker/round bookkeeping, not a code scanner",
     "baseline_hygiene": "audits a baseline file's own notes; subject is a JSON document, not a corpus",

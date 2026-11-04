@@ -1,0 +1,8 @@
+import numpy as np
+
+
+def _rank_to_uniform(x):
+    order = np.argsort(x, kind="mergesort")
+    ranks = np.empty(len(x))
+    ranks[order] = np.arange(len(x))
+    return ranks / len(x)

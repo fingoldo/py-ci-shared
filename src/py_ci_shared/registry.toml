@@ -108,6 +108,13 @@ cli = true
 summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes"
 
 [[gate]]
+name = "cache_key_sensitivity"
+kind = "gate"
+entries = ["assert_key_sensitive"]
+since = "1.23.8"
+summary = "assert_key_sensitive: every input that changes a memoised result must change its cache key"
+
+[[gate]]
 name = "cancellation_prone_moments"
 kind = "gate"
 entries = ["assert_cancellation_prone_moments"]
@@ -556,6 +563,13 @@ since = "1.4.0"
 summary = "An additive epsilon must not guard a denominator whose magnitude falls off geometrically"
 
 [[gate]]
+name = "estimator_invariants"
+kind = "gate"
+entries = ["assert_column_order_invariant", "assert_frame_type_parity", "assert_n_jobs_invariant"]
+since = "1.23.8"
+summary = "Column-order, n_jobs and frame-type invariance assertions for estimators"
+
+[[gate]]
 name = "external_fact_tables"
 kind = "gate"
 entries = ["assert_external_fact_tables_current"]
@@ -651,6 +665,13 @@ kind = "gate"
 entries = ["assert_no_unsynchronized_gpu_timings"]
 since = "1.3.6"
 summary = "A wall-clock measurement taken around GPU work must synchronize the device before the timer stops"
+
+[[gate]]
+name = "group_blind_split"
+kind = "gate"
+entries = ["assert_group_blind_split"]
+since = "1.23.8"
+summary = "Flags a function that receives groups but builds a KFold/ShuffleSplit/train_test_split without them"
 
 [[gate]]
 name = "guard_population"
@@ -863,6 +884,13 @@ since = "1.13.0"
 summary = "A meta-test does not import a private name of the package it polices, unless a permitted entry says why"
 
 [[gate]]
+name = "ml_api_contracts"
+kind = "gate"
+entries = ["assert_ml_api_contracts"]
+since = "1.23.8"
+summary = "Regression guards: best_iteration used as a count without +1, argmax compared to raw labels, estimator __init__ rewriting its own parameter"
+
+[[gate]]
 name = "module_cache_thread_safety"
 kind = "gate"
 entries = ["assert_thread_safe_module_caches"]
@@ -914,6 +942,20 @@ since = "1.22.12"
 summary = "An nginx block with its own add_header repeats every header its enclosing blocks set"
 
 [[gate]]
+name = "njit_fastmath_nan"
+kind = "gate"
+entries = ["assert_njit_fastmath_nan"]
+since = "1.23.8"
+summary = "Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf"
+
+[[gate]]
+name = "njit_unsupported_calls"
+kind = "gate"
+entries = ["assert_njit_unsupported_calls"]
+since = "1.23.8"
+summary = "Flags calls inside compiled numba or torch.jit.script bodies that raise TypingError on another build (typing.cast, np.median, logging, warnings.warn)"
+
+[[gate]]
 name = "no_source_text_tests"
 kind = "gate"
 entries = ["assert_no_source_text_tests"]
@@ -941,10 +983,24 @@ since = "1.17.0"
 summary = "A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them"
 
 [[gate]]
+name = "numeric_edge_matrix"
+kind = "gate"
+entries = ["assert_edge_contract", "assert_population_covered"]
+since = "1.23.8"
+summary = "Adversarial-input matrix (empty, one row, constant, all-NaN, inf, ties, float32 extreme) for metrics and kernels"
+
+[[gate]]
 name = "offline_suite_without_credentials"
 kind = "library"
 since = "1.21.0"
 summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
+
+[[gate]]
+name = "oof_buffer_zero_init"
+kind = "gate"
+entries = ["assert_oof_buffer_zero_init"]
+since = "1.23.8"
+summary = "Flags an OOF buffer initialised with zeros/empty and filled per fold from a splitter that may not validate every row"
 
 [[gate]]
 name = "optional_collaborator_wired"
@@ -973,6 +1029,13 @@ kind = "gate"
 entries = ["assert_no_order_losing_filters"]
 since = "1.17.0"
 summary = "Row selections by an index-built mask whose positional twin returns the rows in index order"
+
+[[gate]]
+name = "ordinal_rank_scatter"
+kind = "gate"
+entries = ["assert_ordinal_rank_scatter"]
+since = "1.23.8"
+summary = "Flags ranks[argsort(x)] = arange(n) scatter ranks (ties split by input order, NaN ranked highest)"
 
 [[gate]]
 name = "package_doctests"
@@ -1399,6 +1462,13 @@ since = "1.17.0"
 summary = "Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind"
 
 [[gate]]
+name = "target_leak_canary"
+kind = "gate"
+entries = ["assert_no_train_target_leak", "assert_oof_scores_at_chance"]
+since = "1.23.8"
+summary = "assert_no_train_target_leak: a feature builder must not correlate with a pure-noise target on its own training rows"
+
+[[gate]]
 name = "systemexit_in_library"
 kind = "gate"
 entries = ["assert_no_systemexit_in_library"]
@@ -1446,6 +1516,13 @@ kind = "gate"
 entries = ["assert_tracker_summaries_agree"]
 since = "1.17.0"
 summary = "A tracker's summary tables and headings agree with the rows they summarise"
+
+[[gate]]
+name = "truncating_discretisation"
+kind = "gate"
+entries = ["assert_truncating_discretisation"]
+since = "1.23.8"
+summary = "Flags integer casts guarded only by a distinct-value count, which collapse a fractional target to one class"
 
 [[gate]]
 name = "uncalled_functions"

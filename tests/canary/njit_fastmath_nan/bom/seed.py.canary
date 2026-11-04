@@ -1,0 +1,7 @@
+﻿import numpy as np
+from numba import njit
+
+
+@njit(fastmath=True)
+def f(x):
+    return np.nan if np.isnan(x).any() else 0.0
