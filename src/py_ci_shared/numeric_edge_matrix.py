@@ -107,7 +107,7 @@ def _call(fn: Callable[..., Any], args: tuple[Any, ...]) -> tuple[str, Any]:
         warnings.simplefilter("error", RuntimeWarning)
         try:
             return "ok", fn(*args)
-        except Exception as exc:
+        except Exception as exc:  # best-effort: the exception is returned as data and judged by _raised_verdict, never dropped
             return "raised", exc
 
 
@@ -116,7 +116,7 @@ def _all_nan(value: Any) -> bool:
 
     try:
         arr = np.asarray(value, dtype=float)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError):  # best-effort: non-numeric output is 'not NaN', which the caller reports as a failure
         return False
     return bool(np.isnan(arr).all())
 
@@ -126,7 +126,7 @@ def _all_finite(value: Any) -> bool:
 
     try:
         return bool(np.isfinite(np.asarray(value, dtype=float)).all())
-    except (TypeError, ValueError):
+    except (TypeError, ValueError):  # best-effort: non-numeric output is 'not finite', which the caller reports as a failure
         return False
 
 

@@ -9,11 +9,11 @@ from py_ci_shared.cache_key_sensitivity import assert_key_sensitive
 BASE = {"X": (1, 2, 3), "y": (0, 1, 0), "verbose": 0}
 
 
-def good_key(X, y, verbose):
+def good_key(X, y, verbose):  # unused-ok: the key function must accept every BASE kwarg
     return hash((tuple(X), tuple(y)))
 
 
-def ignores_y(X, y, verbose):
+def ignores_y(X, y, verbose):  # unused-ok: the key function must accept every BASE kwarg
     return hash((tuple(X),))
 
 
@@ -36,7 +36,7 @@ def test_a_key_that_includes_verbosity_fails_the_insensitive_check():
 
 
 def test_an_id_based_key_is_caught_by_the_content_variation():
-    def id_key(X, y, verbose):
+    def id_key(X, y, verbose):  # unused-ok: the key function must accept every BASE kwarg
         return id(X)
 
     with pytest.raises(AssertionError, match=r"'X' changes the result|not deterministic|'y' changes"):
@@ -51,7 +51,7 @@ def test_a_parameter_in_neither_table_is_a_population_failure():
 def test_a_nondeterministic_key_fails():
     counter = iter(range(100))
 
-    def drifting(X, y, verbose):
+    def drifting(X, y, verbose):  # unused-ok: the key function must accept every BASE kwarg
         return next(counter)
 
     with pytest.raises(AssertionError, match="not deterministic"):

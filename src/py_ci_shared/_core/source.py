@@ -76,30 +76,41 @@ def read_bytes_cached(path: PathLike) -> bytes:
 
     Raises ``OSError`` exactly as ``read_bytes`` does. A file modified in the last few seconds is read from disk every time, so an edit-then-rescan never sees stale bytes.
     """
-    global _BYTES_TOTAL
     spath = os.fspath(path)
     try:
         st = os.stat(spath)
-    except OSError:
-        return Path(spath).read_bytes()  # raises the real error
+    except OSError:  # best-effort: the retry below re-raises the real OSError, nothing is swallowed
+        return Path(spath).read_bytes()
     sig = (st.st_mtime_ns, st.st_size, st.st_ino)
-    with _LOCK:
-        hit = _BYTES.get(spath)
-        if hit is not None and hit[0] == sig and hit[1] - st.st_mtime_ns > _RACY_NS:
-            return hit[2]
+    cached = _cached_bytes(spath, sig, st.st_mtime_ns)
+    if cached is not None:
+        return cached
     raw = Path(spath).read_bytes()
     read_ns = time.time_ns()
     if len(raw) <= _BYTES_MAX_FILE:
-        with _LOCK:
-            old = _BYTES.pop(spath, None)
-            if old is not None:
-                _BYTES_TOTAL -= len(old[2])
-            if _BYTES_TOTAL + len(raw) > _BYTES_MAX_TOTAL:
-                _BYTES.clear()
-                _BYTES_TOTAL = 0
-            _BYTES[spath] = (sig, read_ns, raw)
-            _BYTES_TOTAL += len(raw)
+        _store_bytes(spath, sig, read_ns, raw)
     return raw
+
+
+def _cached_bytes(spath: str, sig: tuple[int, int, int], mtime_ns: int) -> Optional[bytes]:
+    with _LOCK:
+        hit = _BYTES.get(spath)
+        if hit is not None and hit[0] == sig and hit[1] - mtime_ns > _RACY_NS:
+            return hit[2]
+    return None
+
+
+def _store_bytes(spath: str, sig: tuple[int, int, int], read_ns: int, raw: bytes) -> None:
+    global _BYTES_TOTAL
+    with _LOCK:
+        old = _BYTES.pop(spath, None)
+        if old is not None:
+            _BYTES_TOTAL -= len(old[2])
+        if _BYTES_TOTAL + len(raw) > _BYTES_MAX_TOTAL:
+            _BYTES.clear()
+            _BYTES_TOTAL = 0
+        _BYTES[spath] = (sig, read_ns, raw)
+        _BYTES_TOTAL += len(raw)
 
 
 def _decode(path: Path, raw: bytes) -> str:

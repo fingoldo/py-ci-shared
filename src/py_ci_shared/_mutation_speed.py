@@ -158,7 +158,8 @@ class CoverageMap:
         try:
             lines = {int(k): (None if v is None else [str(x) for x in v]) for k, v in data["lines"].items()}
             starts = {int(k): int(v) for k, v in data["starts"].items()}
-        except (KeyError, TypeError, ValueError, AttributeError):
+        except (KeyError, TypeError, ValueError, AttributeError) as exc:
+            logger.warning("CoverageMap.from_json: unusable stored coverage (%s: %s), recomputing", type(exc).__name__, exc)
             return None
         return cls(lines, starts)
 

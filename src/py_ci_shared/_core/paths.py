@@ -33,7 +33,7 @@ def exists_exact_case(path: Union[str, "os.PathLike[str]"], root: Optional[Union
             continue
         try:
             names = os.listdir(current if str(current) else ".")
-        except OSError:
+        except OSError:  # best-effort: an unlistable dir only skips a case-spelling refinement, exists() already said yes
             return True  # cannot list (permissions): exists() already said yes, do not invent a finding
         if part not in names:
             return False

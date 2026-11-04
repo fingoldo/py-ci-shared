@@ -51,7 +51,7 @@ class _Fake:
         except Exception:
             return 1
 
-    def run_pytest(self, test_paths, cwd, timeout, *flags):
+    def run_pytest(self, test_paths, cwd, timeout, *flags):  # unused-ok: mirrors the real runner signature, a fake needs no timeout
         self.cold_calls += 1
         rc = self.code(Path(cwd), test_paths, flags)
         out = "FAILED tests/test_m.py::test_clamp\n" if rc == 1 else ""

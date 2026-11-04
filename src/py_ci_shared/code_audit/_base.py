@@ -299,7 +299,8 @@ def _safe_parse(path: Path) -> Optional[ast.Module]:
     except (SourceReadError, SourceParseError) as exc:
         logger.debug("_safe_parse: %s skipped by the code audit: %s", path, exc)
         return None
-    except (RecursionError, MemoryError):
+    except (RecursionError, MemoryError) as exc:
+        logger.warning("_safe_parse: %s skipped, parser resources exhausted: %s", path, type(exc).__name__)
         # a syntactically VALID file with a deeply nested expression (a generated parser table, a long `a + a + ...`) blows the recursion limit in ast.parse; one input's parser-resource
         # failure is handled like an unparseable file instead of killing the whole run (and, under the process pool, an opaque worker death naming no file).
         return None

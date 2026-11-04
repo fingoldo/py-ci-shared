@@ -50,7 +50,7 @@ def assert_column_order_invariant(
     reordered = X[list(X.columns[::-1])]
     try:
         other = getattr(est, method)(reordered)
-    except refusals:
+    except refusals:  # best-effort: a refusal in `refusals` is the documented accepted outcome of this invariant
         return
     if not _same(reference, other, atol, rtol):
         raise AssertionError(f"{type(est).__name__}.{method} changes when the columns are reordered (columns {list(X.columns)} reversed) and does not refuse")

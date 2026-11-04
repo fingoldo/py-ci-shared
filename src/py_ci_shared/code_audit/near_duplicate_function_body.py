@@ -281,19 +281,21 @@ def _candidate_pairs(entries: list) -> set[tuple[int, int]]:
         if not sh:
             continue
         need = math.ceil(_MIN_SHARED_SHINGLE_FRACTION * len(sh))
-        mine = kept[idx]
-        if len(mine) < need:
+        if len(kept[idx]) < need:
             continue
-        rare_first = sorted(mine, key=lambda h: len(shingle_index[h]))
-        partners: set[int] = set()
-        for h in rare_first[: len(mine) - need + 1]:
-            partners.update(shingle_index[h])
-        for other in partners:
-            if rank[other] <= rank[idx]:
-                continue
-            if len(mine & kept[other]) >= need:
+        for other in _partners(kept[idx], need, shingle_index):
+            if rank[other] > rank[idx] and len(kept[idx] & kept[other]) >= need:
                 candidate_pairs.add((idx, other) if idx < other else (other, idx))
     return candidate_pairs
+
+
+def _partners(mine: set[int], need: int, shingle_index: dict[int, list[int]]) -> set[int]:
+    """Entries holding at least one of the ``len(mine) - need + 1`` rarest shingles of ``mine`` (pigeonhole prefix)."""
+    rare_first = sorted(mine, key=lambda h: len(shingle_index[h]))
+    partners: set[int] = set()
+    for h in rare_first[: len(mine) - need + 1]:
+        partners.update(shingle_index[h])
+    return partners
 
 
 def _near_duplicate_finding(

@@ -19,7 +19,9 @@ Usage in a consumer's meta test::
     from py_ci_shared.oof_buffer_zero_init import assert_oof_buffer_zero_init
 
     def test_oof_buffer_zero_init():
-        assert_oof_buffer_zero_init("src", baseline_path="tests/baselines/oof_buffer_zero_init.json")
+        assert_oof_buffer_zero_init("src", baseline_path=BASELINE_PATH)
+
+``BASELINE_PATH`` is the consumer's own baseline file, kept in the consumer's repository.
 """
 
 from __future__ import annotations
@@ -84,7 +86,8 @@ def _splitter_of(iterable: ast.expr) -> ast.expr:
 
 def _is_fold_loop(loop: ast.AST, params: set[str]) -> bool:
     """A loop over ``<splitter>.split(...)`` or over a splitter-like parameter/attribute, unpacking (train, valid)."""
-    assert isinstance(loop, (ast.For, ast.AsyncFor))
+    if not isinstance(loop, (ast.For, ast.AsyncFor)):
+        raise TypeError(f"expected a for loop, got {type(loop).__name__}")
     node = loop.iter
     while isinstance(node, ast.Call) and _call_name(node) in _UNWRAP and node.args:
         node = node.args[0]

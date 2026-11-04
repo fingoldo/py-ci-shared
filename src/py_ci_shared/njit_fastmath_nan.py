@@ -21,7 +21,9 @@ Usage in a consumer's meta test::
     from py_ci_shared.njit_fastmath_nan import assert_njit_fastmath_nan
 
     def test_njit_fastmath_nan():
-        assert_njit_fastmath_nan("src", baseline_path="tests/baselines/njit_fastmath_nan.json")
+        assert_njit_fastmath_nan("src", baseline_path=BASELINE_PATH)
+
+``BASELINE_PATH`` is the consumer's own baseline file, kept in the consumer's repository.
 """
 
 from __future__ import annotations

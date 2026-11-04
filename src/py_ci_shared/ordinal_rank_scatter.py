@@ -18,7 +18,9 @@ Usage in a consumer's meta test::
     from py_ci_shared.ordinal_rank_scatter import assert_ordinal_rank_scatter
 
     def test_ordinal_rank_scatter():
-        assert_ordinal_rank_scatter("src", baseline_path="tests/baselines/ordinal_rank_scatter.json")
+        assert_ordinal_rank_scatter("src", baseline_path=BASELINE_PATH)
+
+``BASELINE_PATH`` is the consumer's own baseline file, kept in the consumer's repository.
 """
 
 from __future__ import annotations

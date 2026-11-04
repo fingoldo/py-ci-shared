@@ -19,7 +19,9 @@ Usage in a consumer's meta test::
     from py_ci_shared.group_blind_split import assert_group_blind_split
 
     def test_group_blind_split():
-        assert_group_blind_split("src", baseline_path="tests/baselines/group_blind_split.json")
+        assert_group_blind_split("src", baseline_path=BASELINE_PATH)
+
+``BASELINE_PATH`` is the consumer's own baseline file, kept in the consumer's repository.
 """
 
 from __future__ import annotations

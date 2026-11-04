@@ -109,17 +109,27 @@ def _mutations(node: ast.AST) -> list[tuple[str, int, str]]:
             if name is not None:
                 out.append((name, line, "del"))
     for target in targets:
-        name = _stored_subscript_base(target)
-        if name is not None:
-            out.append((name, line, "item assignment"))
-        elif isinstance(target, ast.Attribute) and target.attr in _MUTATED_ATTRIBUTES and isinstance(target.value, ast.Name):
-            out.append((target.value.id, line, f".{target.attr} assignment"))
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-        flagged = any(kw.arg == "inplace" and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in node.keywords)
-        root = _root_name(node.func.value) if flagged else None
-        if root is not None:
-            out.append((root, line, f".{node.func.attr}(inplace=True)"))
+        out.extend(_target_mutation(target, line))
+    if isinstance(node, ast.Call):
+        out.extend(_inplace_mutation(node, line))
     return out
+
+
+def _target_mutation(target: ast.expr, line: int) -> list[tuple[str, int, str]]:
+    name = _stored_subscript_base(target)
+    if name is not None:
+        return [(name, line, "item assignment")]
+    if isinstance(target, ast.Attribute) and target.attr in _MUTATED_ATTRIBUTES and isinstance(target.value, ast.Name):
+        return [(target.value.id, line, f".{target.attr} assignment")]
+    return []
+
+
+def _inplace_mutation(node: ast.Call, line: int) -> list[tuple[str, int, str]]:
+    if not isinstance(node.func, ast.Attribute):
+        return []
+    flagged = any(kw.arg == "inplace" and isinstance(kw.value, ast.Constant) and kw.value.value is True for kw in node.keywords)
+    root = _root_name(node.func.value) if flagged else None
+    return [(root, line, f".{node.func.attr}(inplace=True)")] if root is not None else []
 
 
 def _rebound(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], name: str) -> bool:

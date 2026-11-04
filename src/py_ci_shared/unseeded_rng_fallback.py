@@ -20,7 +20,9 @@ Usage in a consumer's meta test::
     from py_ci_shared.unseeded_rng_fallback import assert_unseeded_rng_fallback
 
     def test_unseeded_rng_fallback():
-        assert_unseeded_rng_fallback("src", baseline_path="tests/baselines/unseeded_rng_fallback.json")
+        assert_unseeded_rng_fallback("src", baseline_path=BASELINE_PATH)
+
+``BASELINE_PATH`` is the consumer's own baseline file, kept in the consumer's repository.
 """
 
 from __future__ import annotations

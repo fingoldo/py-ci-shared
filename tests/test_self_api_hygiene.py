@@ -90,38 +90,47 @@ def _callee(call: ast.Call) -> str:
     return ".".join(reversed(parts)) or "<dynamic>"
 
 
+def _defines_all(tree: ast.Module) -> bool:
+    if any(isinstance(s, ast.Assign) and any(getattr(t, "id", "") == "__all__" for t in s.targets) for s in tree.body):
+        return True
+    return any(isinstance(s, (ast.AnnAssign, ast.AugAssign)) and getattr(s.target, "id", "") == "__all__" for s in tree.body)
+
+
+def _public_function_offenders(rel: str, tree: ast.Module, out: "dict[str, dict[str, int]]") -> None:
+    for stmt in tree.body:
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and not stmt.name.startswith("_"):
+            if not _fully_annotated(stmt):
+                out["unannotated"][f"{rel}::{stmt.name}"] = 1
+            if ast.get_docstring(stmt) is None:
+                out["no_docstring"][f"{rel}::{stmt.name}"] = 1
+
+
+def _import_time_offenders(rel: str, tree: ast.Module, out: "dict[str, dict[str, int]]") -> None:
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            name = _callee(stmt.value)
+            if name.split(".")[-1] in _REGISTRATION_METHODS:
+                continue
+            key = f"{rel}::{name}"
+            out["import_time_calls"][key] = out["import_time_calls"].get(key, 0) + 1
+
+
 def current() -> "dict[str, dict[str, int]]":
     """The tree's offenders for every rule, as ``{rule: {key: count}}``."""
     cli = _cli_modules()
     out: "dict[str, dict[str, int]]" = {k: {} for k in ("unannotated", "no_docstring", "no_all", "library_print", "import_time_calls")}
     for rel, tree in _modules():
         public = _is_public_module(rel)
-        if (
-            public
-            and not rel.endswith("__init__.py")
-            and not any(isinstance(s, ast.Assign) and any(getattr(t, "id", "") == "__all__" for t in s.targets) for s in tree.body)
-        ):
-            if not any(isinstance(s, (ast.AnnAssign, ast.AugAssign)) and getattr(s.target, "id", "") == "__all__" for s in tree.body):
-                out["no_all"][rel] = 1
+        if public and not rel.endswith("__init__.py") and not _defines_all(tree):
+            out["no_all"][rel] = 1
         if public:
-            for stmt in tree.body:
-                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and not stmt.name.startswith("_"):
-                    if not _fully_annotated(stmt):
-                        out["unannotated"][f"{rel}::{stmt.name}"] = 1
-                    if ast.get_docstring(stmt) is None:
-                        out["no_docstring"][f"{rel}::{stmt.name}"] = 1
+            _public_function_offenders(rel, tree, out)
         if rel.split("/")[-1] not in cli and rel not in cli and not rel.endswith("__main__.py"):
             lines = (SRC / rel).read_text(encoding="utf-8-sig").split("\n")
             for scope in _print_calls(tree, lines):
                 key = f"{rel}::{scope}"
                 out["library_print"][key] = out["library_print"].get(key, 0) + 1
-        for stmt in tree.body:
-            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
-                name = _callee(stmt.value)
-                if name.split(".")[-1] in _REGISTRATION_METHODS:
-                    continue
-                key = f"{rel}::{name}"
-                out["import_time_calls"][key] = out["import_time_calls"].get(key, 0) + 1
+        _import_time_offenders(rel, tree, out)
     return out
 
 
