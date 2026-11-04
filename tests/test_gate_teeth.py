@@ -431,6 +431,7 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("import_time_global_side_effects").assert_import_time_global_side_effects(d, use_git=False),
             token="unimorph",
         ),
+        Canary("njit_fastmath_nan", lambda d: _gate("njit_fastmath_nan").assert_njit_fastmath_nan(d, use_git=False)),
     ]
 }
 

@@ -267,6 +267,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`mypy_gate`](src/py_ci_shared/mypy_gate.py) | cli | 1.3.6 | `main` | Run mypy as a gate that requires COMPLETION, not merely a zero exit code |
 | [`naive_utcnow`](src/py_ci_shared/naive_utcnow.py) | gate | 1.4.1 | `assert_no_naive_utcnow` | No production module builds a timestamp with `datetime.utcnow()` |
 | [`nginx_location_headers`](src/py_ci_shared/nginx_location_headers.py) | gate | 1.22.12 | `assert_nginx_location_headers` | An nginx block with its own add_header repeats every header its enclosing blocks set |
+| [`njit_fastmath_nan`](src/py_ci_shared/njit_fastmath_nan.py) | gate | 1.23.8 | `assert_njit_fastmath_nan` | Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf |
 | [`no_source_text_tests`](src/py_ci_shared/no_source_text_tests.py) | gate | 1.22.12 | `assert_no_source_text_tests` | A test that asserts on the text of a SQL statement (a WHERE or SELECT probe) instead of the rows it returns |
 | [`no_xfail_to_defer`](src/py_ci_shared/no_xfail_to_defer.py) | gate | 1.17.0 | `assert_no_xfail_to_defer` | xfail and skip may mark a limit outside the repository, never park a bug inside it |
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |

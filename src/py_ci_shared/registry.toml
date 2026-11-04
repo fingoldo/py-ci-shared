@@ -893,6 +893,13 @@ since = "1.22.12"
 summary = "An nginx block with its own add_header repeats every header its enclosing blocks set"
 
 [[gate]]
+name = "njit_fastmath_nan"
+kind = "gate"
+entries = ["assert_njit_fastmath_nan"]
+since = "1.23.8"
+summary = "Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf"
+
+[[gate]]
 name = "no_source_text_tests"
 kind = "gate"
 entries = ["assert_no_source_text_tests"]

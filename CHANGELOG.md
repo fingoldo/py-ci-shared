@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+### New gates from audit 32, 2026-11-04
+
+- `njit_fastmath_nan` (opt-in gate): an `@njit`/`@jit`/`@vectorize` kernel compiled with NaN/inf-assuming `fastmath` (`True`, or a flag set with `nnan`/`ninf`/`fast`, literal or module constant) whose own body tests or produces NaN/inf. Marker `# fastmath-nan-ok: <reason>`. Additive.
+
 - `find_surviving_mutants(..., checkpoint_path=...)` records every judged mutant to a JSON-lines file as its verdict lands, keyed by the sweep's fingerprint. A sweep killed midway resumes from it: the mutants already judged are not run again, and their survivors, coverage gaps and budget are replayed onto the current objects. Additive: without `checkpoint_path` nothing changes. `HARNESS_VERSION` moves to 32.
 - `mutation_teeth` logs each surviving mutant at WARNING as its verdict lands, not only when the sweep ends, so a sweep that runs for hours can be read while it runs.
   Additive: verdicts, the returned `MutationRun` and the cache key are unchanged, and the sweep prints nothing new on a clean run. `HARNESS_VERSION` moves to 31, so a cached
