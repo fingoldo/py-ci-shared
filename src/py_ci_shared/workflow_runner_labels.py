@@ -26,7 +26,7 @@ import argparse
 import logging
 import re
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
@@ -86,6 +86,24 @@ def _has_update_channel(root: Path) -> bool:
     return any((root / rel).is_file() for rel in _RENOVATE)
 
 
+def _yaml_lines(text: str) -> "Iterator[tuple[int, str, str]]":
+    """``(number, line, code)`` for each workflow line that is YAML structure: a ``run:``/``name:``-style value, and the
+    ``|``/``>`` block under one, is prose or a script, so a runner label named there is text, not a runner."""
+    block_indent = -1  # indent of the text-valued key whose block scalar we are inside
+    for no, line in enumerate(text.splitlines(), start=1):
+        code = _code(line)
+        indent = len(line) - len(line.lstrip())
+        if block_indent >= 0:
+            if line.strip() and indent > block_indent:
+                continue
+            block_indent = -1
+        if _TEXT_KEYS.match(code):
+            if _BLOCK_SCALAR.search(code):
+                block_indent = indent
+            continue
+        yield no, line, code
+
+
 def find_workflow_runner_label_problems(repo_root: PathLike, *, min_files: int = 0, allow_unparsed: bool = False) -> list[Finding]:
     """Every moving runner label, plus one repo finding when pinned actions have no update channel.
 
@@ -106,18 +124,7 @@ def find_workflow_runner_label_problems(repo_root: PathLike, *, min_files: int =
             if allow_unparsed:
                 continue
             raise
-        block_indent = -1  # indent of the text-valued key whose `|`/`>` block we are inside
-        for no, line in enumerate(text.splitlines(), start=1):
-            code = _code(line)
-            indent = len(line) - len(line.lstrip())
-            if block_indent >= 0:
-                if line.strip() and indent > block_indent:
-                    continue
-                block_indent = -1
-            if _TEXT_KEYS.match(code):
-                if _BLOCK_SCALAR.search(code):
-                    block_indent = indent
-                continue
+        for no, line, code in _yaml_lines(text):
             if _USES.match(code) and not code.split("uses:", 1)[1].strip().strip("'\"").startswith("./"):
                 pinned += 1
             if MARKER in line[len(code) :]:

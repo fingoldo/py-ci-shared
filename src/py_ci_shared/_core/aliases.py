@@ -53,6 +53,47 @@ def module_of(path: Path, src_root: Path, root_package: str) -> str:
     return pkg if path.stem == "__init__" else f"{pkg}.{path.stem}"
 
 
+def _scope_roots(scope: ast.AST) -> "list[ast.AST]":
+    """The statements (or the body expression of a lambda) that run in *scope*, last first so ``pop()`` walks in source order."""
+    if isinstance(scope, ast.Lambda):
+        return [scope.body]
+    return list(scope.body)[::-1]  # type: ignore[attr-defined,no-any-return]
+
+
+def _scope_params(scope: ast.AST) -> "list[str]":
+    if not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        return []
+    a = scope.args
+    args = [*a.posonlyargs, *a.args, *a.kwonlyargs, *([a.vararg] if a.vararg else []), *([a.kwarg] if a.kwarg else [])]
+    return [arg.arg for arg in args]
+
+
+def _bound_targets(n: ast.AST) -> "list[tuple[ast.AST, Optional[ast.expr]]]":
+    """``(target, assigned value or None)`` pairs the statement *n* binds (assignment, loop, ``with`` and walrus targets)."""
+    if isinstance(n, ast.Assign):
+        return [(t, n.value) for t in n.targets]
+    if isinstance(n, ast.AnnAssign):
+        return [(n.target, n.value)]
+    if isinstance(n, (ast.AugAssign, ast.For, ast.AsyncFor, ast.NamedExpr)):
+        return [(n.target, None)]
+    if isinstance(n, (ast.With, ast.AsyncWith)):
+        return [(item.optional_vars, None) for item in n.items if item.optional_vars is not None]
+    if isinstance(n, ast.ExceptHandler) and n.name:
+        return [(ast.Name(id=n.name, ctx=ast.Store()), None)]
+    return []
+
+
+def _target_names(target: ast.AST, value: "Optional[ast.expr]") -> "list[tuple[str, Optional[ast.expr]]]":
+    """``(name, assigned value or None)`` for each name an assignment target binds (tuple and star targets carry no single value)."""
+    if isinstance(target, ast.Name):
+        return [(target.id, value)]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return [pair for e in target.elts for pair in _target_names(e, None)]
+    if isinstance(target, ast.Starred):
+        return _target_names(target.value, None)
+    return []
+
+
 class ImportAliases:
     """``local name -> qualified dotted target`` for one module."""
 
@@ -159,75 +200,45 @@ class ImportAliases:
             cur = parents.get(id(cur))
         return chain
 
-    def _bindings_of(self, scope: ast.AST) -> "dict[str, Optional[str]]":
-        """``name -> qualified target`` bound in *scope*'s own body; ``None`` marks a shadowing, non-resolvable binding."""
-        cached = self._scope_bindings.get(id(scope))
-        if cached is not None:
-            return cached
+    def _scan_scope(self, scope: ast.AST) -> "tuple[dict[str, str], dict[str, list[Optional[ast.expr]]]]":
+        """``(imports, other bindings)`` of *scope*'s own body: name -> target for imports, name -> assigned values for the rest."""
         imports: dict[str, str] = {}
         others: "dict[str, list[Optional[ast.expr]]]" = {}
-
-        def other(name: str, value: "Optional[ast.expr]") -> None:
-            others.setdefault(name, []).append(value)
-
-        def targets(t: ast.AST, value: "Optional[ast.expr]") -> None:
-            if isinstance(t, ast.Name):
-                other(t.id, value)
-            elif isinstance(t, (ast.Tuple, ast.List)):
-                for e in t.elts:
-                    targets(e, None)
-            elif isinstance(t, ast.Starred):
-                targets(t.value, None)
-
-        stack: "list[ast.AST]"
-        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-            a = scope.args
-            for arg in [*a.posonlyargs, *a.args, *a.kwonlyargs, *([a.vararg] if a.vararg else []), *([a.kwarg] if a.kwarg else [])]:
-                other(arg.arg, None)
-        if isinstance(scope, ast.Lambda):
-            stack = [scope.body]
-        else:
-            stack = list(scope.body)[::-1]  # type: ignore[attr-defined]
+        for arg in _scope_params(scope):
+            others.setdefault(arg, []).append(None)
+        stack: "list[ast.AST]" = _scope_roots(scope)
         while stack:
             n = stack.pop()
             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                other(n.name, None)
+                others.setdefault(n.name, []).append(None)
                 continue  # its body is another scope
             if isinstance(n, ast.Lambda):
                 continue
             if isinstance(n, (ast.Import, ast.ImportFrom)):
                 imports.update(self._collect([n], self._package))
-            elif isinstance(n, ast.Assign):
-                for t in n.targets:
-                    targets(t, n.value)
-            elif isinstance(n, ast.AnnAssign):
-                targets(n.target, n.value)
-            elif isinstance(n, ast.AugAssign):
-                targets(n.target, None)
-            elif isinstance(n, (ast.For, ast.AsyncFor)):
-                targets(n.target, None)
-            elif isinstance(n, (ast.With, ast.AsyncWith)):
-                for item in n.items:
-                    if item.optional_vars is not None:
-                        targets(item.optional_vars, None)
-            elif isinstance(n, ast.NamedExpr):
-                targets(n.target, None)
-            elif isinstance(n, ast.ExceptHandler) and n.name:
-                other(n.name, None)
             elif isinstance(n, (ast.Global, ast.Nonlocal)):
                 for g in n.names:
                     imports.setdefault(g, self.mapping.get(g, g))  # declared elsewhere: not a local shadow
+            else:
+                for target, value in _bound_targets(n):
+                    for name, bound in _target_names(target, value):
+                        others.setdefault(name, []).append(bound)
             stack.extend(reversed(list(ast.iter_child_nodes(n))))
+        return imports, others
+
+    def _bindings_of(self, scope: ast.AST) -> "dict[str, Optional[str]]":
+        """``name -> qualified target`` bound in *scope*'s own body; ``None`` marks a shadowing, non-resolvable binding."""
+        cached = self._scope_bindings.get(id(scope))
+        if cached is not None:
+            return cached
+        imports, others = self._scan_scope(scope)
         out: "dict[str, Optional[str]]" = dict(imports)  # an import beats a plain rebind (`try: import x` / `except: x = None`)
         self._scope_bindings[id(scope)] = out  # registered before alias resolution, which may look names up in this scope
         for name, values in others.items():
             if name in imports:
                 continue
             one = values[0] if len(values) == 1 else None
-            resolved: Optional[str] = None
-            if one is not None and isinstance(one, (ast.Name, ast.Attribute)):
-                resolved = self._alias_of(one, name)
-            out[name] = resolved
+            out[name] = self._alias_of(one, name) if isinstance(one, (ast.Name, ast.Attribute)) else None
         return out
 
     def _alias_of(self, value: ast.expr, own_name: str) -> Optional[str]:

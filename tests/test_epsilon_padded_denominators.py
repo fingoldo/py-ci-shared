@@ -71,6 +71,7 @@ def test_a_module_constant_epsilon_is_resolved_but_an_unknown_name_is_not(tmp_pa
     """33-F27: a once-bound module constant that is a small positive literal is as good as the literal; a name of unknown value is not guessed at."""
     root = _module(tmp_path, ["EPS = 1e-12", "", "", "def f():", "    return num / (d**k + EPS)"])
     assert len(find_epsilon_padded_power_denominators([root])) == 1
+    (tmp_path / "b").mkdir()
     root = _module(tmp_path / "b", ["def f(eps):", "    return num / (d**k + eps)"])
     assert find_epsilon_padded_power_denominators([root]) == []
 
