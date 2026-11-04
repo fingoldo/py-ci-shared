@@ -236,3 +236,37 @@ def test_bom_unparsable_and_empty_corpora(tmp_path: Path):
     _module(empty, ["x = 1"], name="ok.py")
     with pytest.raises(AssertionError, match=r"broken.py"):
         assert_no_latched_availability_flags([empty])
+
+
+@pytest.mark.parametrize("name", ["_HAVE_GPU", "_USE_NUMBA", "_CUDA_OK", "_GPU", "_NO_GPU", "_DISABLED", "_ENABLED"])
+def test_common_capability_flag_names_are_latched_too(tmp_path, name):
+    lines = [f"{name} = None", "", "", "def probe():", f"    global {name}", "    try:", "        import x", "    except Exception:", f"        {name} = False"]
+    found = find_latched_availability_flags([_module(tmp_path, lines)])
+    assert [(f.flag, f.lineno, f.function) for f in found] == [(name, 9, "probe")]
+
+
+def test_an_unrelated_global_name_is_still_ignored(tmp_path):
+    lines = ["_TOKEN = None", "", "", "def probe():", "    global _TOKEN", "    try:", "        import x", "    except Exception:", "        _TOKEN = False"]
+    assert find_latched_availability_flags([_module(tmp_path, lines)]) == []
+
+
+def test_a_cached_probe_returning_false_from_a_broad_except_is_a_latch(tmp_path):
+    lines = [
+        "import functools",
+        "",
+        "",
+        "@functools.lru_cache(None)",
+        "def has_gpu():",
+        "    try:",
+        "        import cupy",
+        "        return True",
+        "    except Exception:",
+        "        return False",
+    ]
+    found = find_latched_availability_flags([_module(tmp_path, lines)])
+    assert [(f.flag, f.lineno, f.function) for f in found] == [("return False", 10, "has_gpu")]
+
+
+def test_an_uncached_probe_returning_false_is_fine(tmp_path):
+    lines = ["def has_gpu():", "    try:", "        import cupy", "        return True", "    except Exception:", "        return False"]
+    assert find_latched_availability_flags([_module(tmp_path, lines)]) == []
