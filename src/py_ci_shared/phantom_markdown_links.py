@@ -34,7 +34,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from urllib.parse import unquote
 
-from ._core import SourceError, read_source, relative_posix
+from ._core import SourceError, exists_exact_case, read_source, relative_posix
 
 # An inline link or image: [text](target) / ![alt](target), the target optionally in <...> and optionally followed
 # by a "title". Text may hold one level of nested brackets (a badge image inside a link).
@@ -119,8 +119,9 @@ def find_phantom_markdown_links(md_files: Iterable[Path], repo_root: Path) -> li
             local = _local_path(raw)
             if local is None:
                 continue
-            resolved = repo_root / local.lstrip("/") if local.startswith("/") else path.parent / local
-            if resolved.exists():
+            base = repo_root if local.startswith("/") else path.parent
+            resolved = base / local.lstrip("/")
+            if exists_exact_case(resolved, base):
                 continue
             violations.append(f"{rel}:{lineno}: dead markdown-link target {raw.strip('<>')!r}")
     return violations

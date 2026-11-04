@@ -32,6 +32,7 @@ from .errors import (
 )
 from .findings import UNPARSED_RULE, Finding
 from .git import GitError, git_output, git_text, run_git
+from .paths import exists_exact_case
 from .node_index import TreeVisitor, child_nodes, nodes_of, parent_map, parent_of, tree_cached, tree_memo, walk
 from .refresh import ENV_VAR as REFRESH_ENV_VAR
 from .refresh import GENERIC_OPTION as REFRESH_OPTION
@@ -44,6 +45,7 @@ from .source import clear_parse_cache, parse_file, parse_source, parse_text, rea
 
 __all__ = [
     "DEFAULT_EXCLUDE",
+    "exists_exact_case",
     "REFRESH_ENV_VAR",
     "REFRESH_GROW_ENV_VAR",
     "REFRESH_GROW_OPTION",

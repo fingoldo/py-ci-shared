@@ -35,7 +35,19 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ParsedFile, ScanResult, SourceError, SourceProblem, iter_files, parse_source, read_source, relative_posix
+from ._core import (
+    DEFAULT_EXCLUDE,
+    Finding,
+    exists_exact_case,
+    ParsedFile,
+    ScanResult,
+    SourceError,
+    SourceProblem,
+    iter_files,
+    parse_source,
+    read_source,
+    relative_posix,
+)
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -148,7 +160,7 @@ def _scan(repo_root: Path, files: Optional[Iterable[Path]], roots: Sequence[str]
         scan.files.append(ParsedFile(path, rel, tree, source))
         for lineno, text in lines:
             for token in _paths_in(text, pattern):
-                if not (repo_root / token).exists():
+                if not exists_exact_case(repo_root / token, repo_root):
                     message = f"names `{token}`, which does not exist under the repo root"
                     findings.append(Finding(rel, lineno, RULE, message, key=f"{RULE}::{rel}::{token}"))
     return sorted(findings, key=lambda f: (f.path, f.line, f.message)), scan
