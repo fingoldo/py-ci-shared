@@ -432,6 +432,7 @@ CANARIES: dict[str, Canary] = {
             token="unimorph",
         ),
         Canary("duplicate_test_body", lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False)),
+        Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
     ]
 }
 

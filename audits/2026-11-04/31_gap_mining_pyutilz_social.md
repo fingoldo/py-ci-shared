@@ -16,7 +16,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A def is added or moved below the guard; the script crashes with NameError only when run as __main__ (PM2/cron), never under pytest.
 - Proposed fix: Port the social test as a script_entry_points rule definition-after-entry (same module, same script_dirs argument): for each module with an entry guard that calls a module-level name, fail if any FunctionDef/AsyncFunctionDef/ClassDef follows it. Exempt pure sys.modules-aliasing and sys.path guards. Canary: move the guard above a def it needs -> fail; guard as last statement -> pass. Parse-only, no subprocess.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: gate definition_after_entry_guard (new module rather than a script_entry_points rule, to stay additive and opt-in). Hits: pyutilz 0, social 1 TRUE (realtime_applications/show_top_jobs.py:342 get_dsn below the guard at :334); marketplace_crawler.py FP is excluded because its guard only calls attributes.
 
 ## 31-F3 (P2) verify_then_reopen: a function verifies a file (sidecar/hash) by path, then re-opens the same path to load it (TOCTOU)
 

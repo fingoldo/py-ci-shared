@@ -37,6 +37,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ### New gates from audit 31, 2026-11-04
 
 - `duplicate_test_body` (`assert_no_duplicate_test_bodies`): two `test*` functions in one file/class with identical body, decorators and signature (opt-in, default off).
+- `definition_after_entry_guard` (`assert_definition_after_entry_guard`): a module-level def/class below a `__main__` entry guard whose body calls a module name (NameError only when run as a script).
+
 
 ## 1.23.2
 

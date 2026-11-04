@@ -409,6 +409,13 @@ since = "1.23.3"
 summary = "Counts the entries of each deferred-debt collection in a meta-test directory, the input of deferred_drift"
 
 [[gate]]
+name = "definition_after_entry_guard"
+kind = "gate"
+entries = ["assert_definition_after_entry_guard"]
+since = "1.23.8"
+summary = "A top-level def or class that follows the script's if __name__ == '__main__' entry guard"
+
+[[gate]]
 name = "deletion_gates"
 kind = "library"
 since = "1.4.0"

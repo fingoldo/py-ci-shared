@@ -1,0 +1,10 @@
+def seed_main():
+    return 0
+
+
+def seed_late_helper():
+    pass
+
+
+if __name__ == "__main__":
+    seed_main()
