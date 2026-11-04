@@ -87,3 +87,29 @@ def test_bom_unparsable_empty_and_the_ratchet(tmp_path):
     (tmp_path / "e").mkdir()
     with pytest.raises(pytest.fail.Exception, match="parsed"):
         assert_no_sentinel_or_fallback(tmp_path / "e", use_git=False)
+
+
+@pytest.mark.parametrize(
+    "expr",
+    [
+        "x.maxTokens or 30",
+        "x.timeout_s or 30",
+        "x.MAX_TOKENS or 30",
+        "(v := x.max_tokens) or 30",
+        "x.seed if x.seed else 5",
+        "os.environ.get('TIMEOUT') or '30'",
+    ],
+)
+def test_case_unit_walrus_and_ifexp_spellings_are_reported_once(tmp_path, expr):
+    assert len(_found(tmp_path, expr)) == 1
+
+
+def test_the_marker_on_the_last_line_of_a_multi_line_or_exempts_it(tmp_path):
+    src = "def f(x):\n    return (\n        x.seed\n        or 30  # falsy-ok: zero is invalid here\n    )\n"
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    assert find_sentinel_or_fallback(tmp_path, use_git=False)[0] == []
+
+
+def test_a_test_module_at_the_root_is_excluded_like_one_under_tests(tmp_path):
+    (tmp_path / "test_a.py").write_text("def f(x):\n    return x.seed or 5\n", encoding="utf-8")
+    assert find_sentinel_or_fallback(tmp_path, use_git=False)[0] == []
