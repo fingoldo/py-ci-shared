@@ -1,0 +1,7 @@
+import numpy as np
+
+
+def pick_folds(n, rng=None, seed=0):
+    if rng is None:
+        rng = np.random.default_rng(seed)
+    return rng.permutation(n)

@@ -455,6 +455,7 @@ CANARIES: dict[str, Canary] = {
         Canary("ml_api_contracts", lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False)),
         Canary("njit_unsupported_calls", lambda d: _gate("njit_unsupported_calls").assert_njit_unsupported_calls(d, use_git=False)),
         Canary("truncating_discretisation", lambda d: _gate("truncating_discretisation").assert_truncating_discretisation(d, use_git=False)),
+        Canary("unseeded_rng_fallback", lambda d: _gate("unseeded_rng_fallback").assert_unseeded_rng_fallback(d, use_git=False)),
     ]
 }
 

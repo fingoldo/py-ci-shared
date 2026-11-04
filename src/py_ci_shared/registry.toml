@@ -1574,6 +1574,13 @@ since = "1.22.3"
 summary = "Deserialization that can execute attacker-chosen code: module-wide find_class allowlists, torch.load without weights_only, np.load allow_pickle, unverified pickle loads, yaml.load without a safe Loader"
 
 [[gate]]
+name = "unseeded_rng_fallback"
+kind = "gate"
+entries = ["assert_unseeded_rng_fallback"]
+since = "1.23.8"
+summary = "Flags a function that turns a missing seed into an OS-entropy generator (default_rng()/RandomState()/random.Random() with no seed)"
+
+[[gate]]
 name = "vacuous_loop_assertions"
 kind = "gate"
 entries = ["assert_no_new_floorless_loop"]
