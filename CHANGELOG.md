@@ -34,6 +34,18 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
 - `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
 
+### Speed and self meta-tests, 2026-11-04
+
+- Scan speed, output unchanged: the code-audit scanners walk through one memoised walk (`_core.node_index.walk` now caches any subtree, `code_audit._base.walk_nodes` / `child_nodes`) and one parse cache (`_safe_parse` is `_core.source.parse_file`); a pyutilz/src scan takes about 35 percent less wall time and found the same findings. `_core.source.read_bytes_cached` serves repeated reads of an unchanged file from memory (5.8x fewer opens in a gate-suite pattern). A shrink-only test keeps raw `ast.walk` out of `code_audit/`.
+- **Behaviour change (more files parsed):** the code-audit scanners now decode source as the interpreter does (BOM, PEP 263 cookie), so a BOM-prefixed file that they used to skip as unparsable is scanned. A consumer may see new findings in such files; fix them or baseline them.
+- `budget = "warn"` now also prints a BUDGET summary line, a GitHub warning annotation per gate over budget and a job-summary list; the exit code is unchanged.
+- `py-ci-shared tool <module>`: a `main` returning anything but `None` or an int exits 2 with a message instead of 0; a `KeyError` raised inside a gate keeps its traceback instead of exiting 2.
+- `config_drift_check` covers every consumer of `configs/consumers.toml` (private ones with `CONSUMER_READ_TOKEN`), and a consumer without `[tool.ruff]` / `[tool.mypy]` is no longer reported as diverging on it.
+- `_consumers checkout --fail-on-skipped-private`; the scheduled consumer-pins job uses it (manual runs can set `allow-skipped-private`).
+- `adoption_matrix` counts pre-commit hook ids and gate names listed in `.py` files, and prints ranked gaps, unadopted modules, Python consumers without a gate runner and reusable workflows a consumer does not call (`ranked_gaps`, `is_python_repo`, `has_gate_runner`).
+- `lint-blocking.yml` reports tools its inputs skip (interrogate, deptry, zizmor); `self-ci.yml` has non-blocking Windows legs for Python 3.9 and 3.13.
+- New self meta-tests: `tests/test_self_api_hygiene.py` (annotations, docstrings, `__all__`, library `print`, import-time calls, shrink-only baselines) and an exemption-validity check in `tests/test_gate_teeth.py`.
+
 ## 1.23.2
 
 - New library `contract_ledger` (`src/py_ci_shared/contract_ledger.py`): the shared mechanism behind the 2026-10-21 contract ratchets in
