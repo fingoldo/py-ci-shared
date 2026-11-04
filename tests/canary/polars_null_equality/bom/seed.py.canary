@@ -3,3 +3,15 @@
 
 def seed_filter(df):
     return df.filter(pl.col("seed") == None)  # noqa: E711
+
+
+def seed_lit(df):
+    return df.filter(pl.col("seed") != pl.lit(None))
+
+
+def seed_is_in(df):
+    return df.filter(pl.col("seed").is_in([None, 1]))
+
+
+def seed_columns(df):
+    return df.filter(pl.col("seed_a") == pl.col("seed_b"))

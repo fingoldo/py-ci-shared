@@ -1,3 +1,18 @@
 def seed_guard(x):
     assert x > 0
     return x
+
+
+def seed_sum(w):
+    assert sum(w) == 1.0
+    return w
+
+
+def seed_type(x):
+    assert isinstance(x, int)
+    return x
+
+
+def seed_member(key, table):
+    assert key in table
+    return key

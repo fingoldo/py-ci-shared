@@ -7,3 +7,10 @@
     def run(self):
         self._seed_cache = {}
         self._lock = object()
+
+
+class SeedPoolOwner:
+    def start(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        self._seed_pool = ThreadPoolExecutor(2)

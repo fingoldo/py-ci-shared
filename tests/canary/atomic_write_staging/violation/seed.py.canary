@@ -7,3 +7,13 @@ def seed_save(path, a):
     tmp = f"{path}.tmp"
     np.save(tmp, a)
     os.replace(tmp, path)
+
+
+def seed_savez(path, a):
+    tmp = f"{path}.part"
+    np.savez(tmp, a=a)
+    os.replace(tmp, path)
+
+
+def seed_baseline(root, text):
+    (root / "baseline.json").write_text(text)

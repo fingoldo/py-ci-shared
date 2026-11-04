@@ -3,3 +3,11 @@ _SQL = "UPDATE jobs SET state = %s, note = %s WHERE uid = %s"
 
 def mark(cur, uid):
     cur.execute(_SQL, ("done", uid))
+
+
+def named(cur):
+    cur.execute("SELECT %(a)s, %(b)s", {"a": 1})
+
+
+def mixed(cur):
+    cur.execute("SELECT %s", {"a": 1})

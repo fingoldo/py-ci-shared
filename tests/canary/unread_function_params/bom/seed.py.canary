@@ -1,2 +1,19 @@
 ﻿def seed_fit(X, sample_weight=None):
     return X
+
+
+def seed_fit_rs(X, random_state=None):
+    return X
+
+
+async def seed_afit(X, n_jobs=1):
+    return X
+
+
+def seed_kwonly(X, *, device="cpu"):
+    return X
+
+
+class SeedModel:
+    def seed_method(self, X, verbose=0):
+        return X

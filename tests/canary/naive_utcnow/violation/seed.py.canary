@@ -3,3 +3,15 @@ from datetime import datetime
 
 def seed_now():
     return datetime.utcnow()
+
+
+def seed_module_form():
+    import datetime as dtm
+
+    return dtm.datetime.utcnow()
+
+
+def seed_alias_form():
+    from datetime import datetime as D
+
+    return D.utcnow()

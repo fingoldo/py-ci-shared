@@ -3,3 +3,9 @@ from pathlib import Path
 
 def seed_write(p):
     Path(p).write_text("x", newline="\n")
+
+
+def seed_hash(data):
+    import hashlib
+
+    return hashlib.md5(data, usedforsecurity=False)

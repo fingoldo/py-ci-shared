@@ -4,3 +4,15 @@
 def test_leaks_a_setting_into_every_later_test():
     os.environ["MLFRAME_FE_GPU_STRICT"] = "1"
     assert os.environ["MLFRAME_FE_GPU_STRICT"] == "1"
+
+
+def test_update_leaks():
+    os.environ.update({"SEED_B": "1"})
+
+
+def test_putenv_leaks():
+    os.putenv("SEED_C", "1")
+
+
+def test_setdefault_leaks():
+    os.environ.setdefault("SEED_D", "1")
