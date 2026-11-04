@@ -185,3 +185,13 @@ def pytest_configure(config: pytest.Config) -> None:
     with its entry point registered.
     """
     bound_randomly_reseeders(config)
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list) -> None:
+    """Tests marked ``slow`` (a real mutation sweep, minutes each) run on CI (``CI`` is set there) or with ``PY_CI_RUN_SLOW=1``, not in a local targeted run."""
+    if os.environ.get("CI") or os.environ.get("PY_CI_RUN_SLOW"):
+        return
+    skip = pytest.mark.skip(reason="slow: runs on CI, or locally with PY_CI_RUN_SLOW=1")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip)
