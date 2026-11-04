@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, text_files
+from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, text_scan
 
 __all__ = ["GUARD_GLOBS", "find_guards_without_fixture", "assert_every_guard_named_by_a_test"]
 
@@ -38,11 +38,15 @@ def _is_direct_tool_guard(rel: str) -> bool:
 
 def find_guards_without_fixture(root: Union[str, Path]) -> dict[str, str]:
     """``{path: description}`` for each ``tool/check*`` guard that no test file, CI workflow or git hook names."""
-    guards = [f for f in text_files(root, GUARD_GLOBS, under=("tool",)) if _is_direct_tool_guard(f.rel)]
-    tests = text_files(root, ("*.py", "*.dart"), under=_TEST_ROOTS)
-    tests += text_files(root, ("*.yml", "*.yaml"), under=(".github",))
-    tests += text_files(root, ("*",), under=(".githooks",))
-    found: dict[str, str] = {}
+    guard_files, guard_bad = text_scan(root, GUARD_GLOBS, under=("tool",))
+    guards = [f for f in guard_files if _is_direct_tool_guard(f.rel)]
+    tests, bad = text_scan(root, ("*.py", "*.dart"), under=_TEST_ROOTS)
+    for patterns, under in ((("*.yml", "*.yaml"), (".github",)), (("*",), (".githooks",))):
+        more, more_bad = text_scan(root, patterns, under=under)
+        tests += more
+        bad.update(more_bad)
+    found = {k: v for k, v in guard_bad.items() if _is_direct_tool_guard(k.rsplit(": ", 1)[0])}
+    found.update(bad)  # an unreadable test file may be the one that names a guard: say so rather than call the guard unnamed
     for guard in guards:
         name = guard.rel.rsplit("/", 1)[1]
         named = re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w-])")

@@ -29,7 +29,7 @@ from typing import Optional, Union
 
 from ._core import parse_text
 from ._core import walk as shared_walk
-from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, text_files
+from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, record_finding, text_scan
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +92,9 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
     """
     if python_mode not in ("text", "ast"):
         raise ValueError(f"python_mode must be 'text' or 'ast', not {python_mode!r}")
-    found: dict[str, str] = {}
-    for file in text_files(root, ("*.py", "*.dart")):
+    files, unreadable = text_scan(root, ("*.py", "*.dart"))
+    found = {k: v for k, v in unreadable.items() if is_wallclock_test_file(k.rsplit(": ", 1)[0])}
+    for file in files:
         if not is_wallclock_test_file(file.rel):
             continue
         docstrings = _docstring_lines(file.text) if file.rel.endswith(".py") else set()
@@ -104,7 +105,7 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
             if real is not None and number not in real:
                 continue
             if any(pattern.search(line) for pattern in WAIT_PATTERNS):
-                found[f"{file.rel}: {normalize_line(line)}"] = f"line {number} waits on the wall clock inside a test"
+                record_finding(found, f"{file.rel}: {normalize_line(line)}", f"line {number} waits on the wall clock inside a test")
     return found
 
 
