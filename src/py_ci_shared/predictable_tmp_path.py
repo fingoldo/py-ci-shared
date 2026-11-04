@@ -42,18 +42,51 @@ def _is_gettempdir(node: ast.AST) -> bool:
     return getattr(func, "attr", None) == "gettempdir" or getattr(func, "id", None) == "gettempdir"
 
 
-def _operands_of_path_build(node: ast.AST) -> Optional[list[ast.AST]]:
-    """The operands of a join/Path/``/`` expression, or None when the node builds no path."""
+def _tmp_names(tree: ast.Module) -> set[str]:
+    """Names assigned exactly once, to the shared temp directory (``t = tempfile.gettempdir()``)."""
+    counts: dict[str, int] = {}
+    tmp: set[str] = set()
+    for node in shared_walk(tree):
+        if isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    counts[target.id] = counts.get(target.id, 0) + 1
+                    if _is_tmp_source(node.value, set()):
+                        tmp.add(target.id)
+    return {name for name in tmp if counts[name] == 1}
+
+
+def _is_tmp_source(node: ast.AST, names: set[str]) -> bool:
+    """The shared temp directory itself: ``gettempdir()``, ``tempfile.tempdir``, a name bound to one, or a literal ``/tmp`` path."""
+    if _is_gettempdir(node):
+        return True
+    if isinstance(node, ast.Name):
+        return node.id in names
+    if isinstance(node, ast.Attribute):
+        return node.attr == "tempdir" and getattr(node.value, "id", "") == "tempfile"
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and (node.value == "/tmp" or node.value.startswith("/tmp/"))
+
+
+def _builds_path(node: ast.AST) -> Optional[list[ast.AST]]:
+    """The operands of a join/Path/``/``/``+``/f-string expression, or None when the node builds no path."""
     if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) in _BUILDER_NAMES:
         return list(node.args)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Div, ast.Add)):
         return [node.left, node.right]
+    if isinstance(node, ast.JoinedStr):
+        return [v.value for v in node.values if isinstance(v, ast.FormattedValue)]
     return None
 
 
 def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
-    """``id(node) -> source of its innermost enclosing function``; top-level code maps to the whole module."""
+    """``id(node) -> source of its innermost enclosing function``; module-level code maps to the module-level statements only
+    (a ``getlogin`` in one function does not make an unrelated module-level temp path per-user)."""
     out: dict[int, str] = {}
+    module_stmts = [s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    module_text = "\n".join(ast.get_source_segment(source, s) or "" for s in module_stmts)
+    for stmt in module_stmts:
+        for sub in shared_walk(stmt):
+            out[id(sub)] = module_text
     for scope in shared_walk(tree):
         if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
             text = ast.get_source_segment(source, scope) or ""
@@ -65,11 +98,19 @@ def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
 def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     lines = source.splitlines()
     scope_text = _per_user_scope_text(tree, source)
-    out: list[Finding] = []
+    names = _tmp_names(tree)
+    candidates: list[ast.AST] = []
     for node in shared_walk(tree):
-        operands = _operands_of_path_build(node)
-        if operands is None or not any(_is_gettempdir(sub) for op in operands for sub in shared_walk(op)):
-            continue
+        operands = _builds_path(node)
+        if operands is not None and any(_is_tmp_source(sub, names) for op in operands for sub in shared_walk(op)):
+            candidates.append(node)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):
+            candidates.append(node)
+    inner = {id(sub) for c in candidates for sub in shared_walk(c) if sub is not c}
+    out: list[Finding] = []
+    for node in candidates:
+        if id(node) in inner:
+            continue  # `Path(gettempdir()) / "x"`: one finding for the whole expression, not one per nested builder
         line_no = getattr(node, "lineno", 0)
         line = lines[line_no - 1] if 0 < line_no <= len(lines) else ""
         if SUPPRESSION in line:
