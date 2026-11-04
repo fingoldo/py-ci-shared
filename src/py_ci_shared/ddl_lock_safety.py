@@ -87,6 +87,10 @@ _CONCURRENT_OTHER = re.compile(r"(?is)^(?:DROP\s+INDEX|REINDEX\b.*?)\s+(?:\(.*?\
 _BEGIN = re.compile(r"(?is)^(?:BEGIN|START\s+TRANSACTION)\b")
 _END = re.compile(r"(?is)^(?:COMMIT|END|ROLLBACK|ABORT)\b")
 _ADD_CONSTRAINT = re.compile(rf"(?is)^ADD\s+(?:CONSTRAINT\s+(?P<name>{_IDENT})\s+)?(?P<kind>CHECK|FOREIGN\s+KEY)\b")
+_ADD_KEY = re.compile(rf"(?is)^ADD\s+(?:CONSTRAINT\s+(?P<name>{_IDENT})\s+)?(?P<kind>PRIMARY\s+KEY|UNIQUE)\b(?P<rest>.*)$")
+_SET_NOT_NULL = re.compile(rf"(?is)^ALTER\s+(?:COLUMN\s+)?(?P<col>{_IDENT})\s+SET\s+NOT\s+NULL\b")
+_USING_INDEX = re.compile(r"(?i)\bUSING\s+INDEX\b")
+_SET_LOCAL = re.compile(r"(?is)^SET\s+LOCAL\b")
 _ADD_COLUMN = re.compile(rf"(?is)^ADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?P<col>{_IDENT})\s+(?P<rest>.+)$")
 _ALTER_TYPE = re.compile(rf"(?is)^ALTER\s+(?:COLUMN\s+)?(?P<col>{_IDENT})\s+(?:SET\s+DATA\s+)?TYPE\b")
 _SERIAL = re.compile(r"(?i)^(?:small|big)?serial\b")
@@ -246,7 +250,19 @@ def _lock_timeout_findings(rel: str, src: str, live: list[_Stmt], cmd: list[_Stm
     if first_alter is None:
         return []
     alter_at = _where(src, first_alter.start)
-    if any(_where(cmd_src, s.start) < alter_at and _bounded(s, cmd_src) for s in cmd):
+    session_bound = False
+    local_bound = False
+    for s in cmd:
+        if _where(cmd_src, s.start) >= alter_at:
+            break
+        if _END.match(s.flat):
+            local_bound = False  # SET LOCAL lasts until the transaction ends
+        elif _bounded(s, cmd_src):
+            if _SET_LOCAL.match(s.flat):
+                local_bound = True
+            else:
+                session_bound = True
+    if session_bound or local_bound:
         return []
     table = _norm(_ALTER_TABLE.match(first_alter.flat).group("table"))  # type: ignore[union-attr]
     return [
@@ -268,6 +284,31 @@ def _constraint_findings(rel: str, cmd: list[_Stmt], cmd_src: str, created: set[
         if not am or _tiny(table, tiny) or table in created:
             continue
         for clause in _top_level_commas(am.group("rest")):
+            km = _ADD_KEY.match(clause)
+            if km and not _USING_INDEX.search(clause):
+                kind = " ".join(km.group("kind").upper().split())
+                out.append(
+                    Finding(
+                        rel,
+                        _line(cmd_src, s.start),
+                        RULE_CONSTRAINT,
+                        f"ADD {kind} on {table} builds its index under ACCESS EXCLUSIVE and blocks every write. "
+                        f"Run CREATE UNIQUE INDEX CONCURRENTLY first, then `ADD {kind} USING INDEX <name>`, or list {table} in tiny_tables with a reason",
+                    )
+                )
+                continue
+            nm = _SET_NOT_NULL.match(clause)
+            if nm:
+                out.append(
+                    Finding(
+                        rel,
+                        _line(cmd_src, s.start),
+                        RULE_CONSTRAINT,
+                        f"ALTER COLUMN {_norm(nm.group('col'))} SET NOT NULL on {table} scans the whole table under ACCESS EXCLUSIVE. "
+                        f"Add a CHECK ({_norm(nm.group('col'))} IS NOT NULL) NOT VALID, VALIDATE it, then SET NOT NULL, or list {table} in tiny_tables with a reason",
+                    )
+                )
+                continue
             cm = _ADD_CONSTRAINT.match(clause)
             if cm and not _NOT_VALID.search(clause):
                 label = " ".join(cm.group("kind").upper().split()) + (f" {_norm(cm.group('name'))}" if cm.group("name") else "")
