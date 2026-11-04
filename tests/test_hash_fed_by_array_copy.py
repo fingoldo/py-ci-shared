@@ -173,3 +173,22 @@ def test_bom_unparsable_and_empty_corpora(tmp_path: Path):
     (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
     with pytest.raises(AssertionError, match=r"broken.py"):
         assert_no_hash_fed_by_array_copy([tmp_path])
+
+
+def test_other_checksums_and_a_copy_held_in_a_variable_are_flagged(tmp_path):
+    lines = [
+        "def f(a, b):",
+        "    x = zlib.crc32(a.tobytes())",
+        "    y = xxhash.xxh64(a.tobytes())",
+        "    raw = b.tobytes()",
+        "    z = hashlib.sha256(raw)",
+        "    return x, y, z",
+    ]
+    (tmp_path / "m.py").write_bytes((NEWLINE.join(lines) + NEWLINE).encode("utf-8"))
+    assert [f.lineno for f in find_hashes_fed_by_array_copy([tmp_path])] == [2, 3, 5]
+
+
+def test_a_variable_assigned_twice_is_not_assumed_to_be_the_copy(tmp_path):
+    lines = ["def f(a, b):", "    raw = b.tobytes()", "    raw = b", "    return hashlib.sha256(raw)"]
+    (tmp_path / "m.py").write_bytes((NEWLINE.join(lines) + NEWLINE).encode("utf-8"))
+    assert find_hashes_fed_by_array_copy([tmp_path]) == []

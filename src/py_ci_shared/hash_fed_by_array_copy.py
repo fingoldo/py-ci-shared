@@ -51,7 +51,10 @@ __all__ = [
 ]
 
 # Names that take the bytes to be hashed as their first positional argument (or ``data=``).
-_HASH_CONSTRUCTORS = frozenset({"sha256", "sha512", "sha1", "md5", "blake2b", "blake2s", "sha224", "sha384", "sha3_256", "sha3_512", "new"})
+_HASH_CONSTRUCTORS = frozenset(
+    {"sha256", "sha512", "sha1", "md5", "blake2b", "blake2s", "sha224", "sha384", "sha3_256", "sha3_512", "new"}
+    | {"crc32", "adler32", "xxh32", "xxh64", "xxh128", "xxh3_64", "xxh3_128", "xxh32_digest", "xxh64_digest", "xxh3_64_digest"}
+)
 
 
 class Finding:
@@ -108,10 +111,10 @@ def _hash_sink_arguments(node: ast.Call, aliases: Optional[ImportAliases] = None
     return list(node.args[:1]) + data_kw
 
 
-def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliases]) -> Optional[Finding]:
+def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliases], copies: frozenset[str] = frozenset()) -> Optional[Finding]:
     """A finding when *node* is a hash sink handed the result of ``.tobytes()``."""
     for argument in _hash_sink_arguments(node, aliases):
-        if _is_tobytes_call(argument):
+        if _is_tobytes_call(argument) or (isinstance(argument, ast.Name) and argument.id in copies):
             try:
                 rendered = ast.unparse(node)
             except Exception as exc:
@@ -121,12 +124,26 @@ def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliase
     return None
 
 
+def _copy_names(tree: ast.Module) -> frozenset[str]:
+    """Names assigned exactly once, to ``<array>.tobytes()`` (``b = a.tobytes(); sha256(b)`` is the same copy in two steps)."""
+    counts: dict[str, int] = {}
+    copies: set[str] = set()
+    for node in nodes_of(tree, ast.Assign):
+        for target in node.targets:
+            if isinstance(target, ast.Name):
+                counts[target.id] = counts.get(target.id, 0) + 1
+                if _is_tobytes_call(node.value):
+                    copies.add(target.id)
+    return frozenset(n for n in copies if counts[n] == 1)
+
+
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
         aliases = ImportAliases.from_tree(parsed.tree)
         calls = sorted(nodes_of(parsed.tree, ast.Call), key=lambda n: (n.lineno, n.col_offset))
-        findings.extend(f for f in (_hash_fed_finding(parsed.path, c, aliases) for c in calls) if f is not None)
+        copies = _copy_names(parsed.tree)
+        findings.extend(f for f in (_hash_fed_finding(parsed.path, c, aliases, copies) for c in calls) if f is not None)
     return findings
 
 
