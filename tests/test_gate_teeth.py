@@ -781,3 +781,36 @@ def test_every_scanning_gate_has_a_canary_or_a_reasoned_exemption() -> None:
     assert not short, f"Give every exemption a reason: {short}"
     dirs = {p.name for p in CANARY_DIR.iterdir() if p.is_dir()}
     assert dirs == set(CANARIES), f"Canary dirs and CANARIES disagree: {sorted(dirs ^ set(CANARIES))}"
+
+
+def test_canary_exemptions_are_valid_and_still_needed() -> None:
+    """35-F9: an EXEMPT gate must be a registry gate (not a typo), and none may have grown a corpus scan since it was exempted: a module that now calls ``scan_python``/``iter_files`` gets
+    a canary instead. Gates that scan a corpus AND cannot be seeded as files must say so in ``CORPUS_SCAN_EXEMPT_REASONS`` below, so the choice is recorded and reviewed.
+    """
+    from py_ci_shared._core.gate_contract import scans_a_corpus
+
+    names = {g.name for g in registry.GATES}
+    unknown = sorted(k for k in EXEMPT if k not in names and k not in registry.discover_modules())
+    assert not unknown, f"EXEMPT keys naming no module: {unknown}"
+    scanning = sorted(
+        k
+        for k in EXEMPT
+        if (_SRC_DIR / f"{k}.py").is_file() and scans_a_corpus((_SRC_DIR / f"{k}.py").read_text(encoding="utf-8-sig")) and k not in CORPUS_SCAN_EXEMPT_REASONS
+    )
+    assert not scanning, f"EXEMPT gates that now scan a corpus; give them a canary or record why not in CORPUS_SCAN_EXEMPT_REASONS: {scanning}"
+    stale = sorted(k for k in CORPUS_SCAN_EXEMPT_REASONS if k not in EXEMPT)
+    assert not stale, f"CORPUS_SCAN_EXEMPT_REASONS entries no longer in EXEMPT: {stale}"
+    assert all(len(v) >= 20 for v in CORPUS_SCAN_EXEMPT_REASONS.values())
+
+
+CORPUS_SCAN_EXEMPT_REASONS: dict[str, str] = {
+    "config_getattr_default_parity": "its input is live pydantic schema classes; the corpus helper only locates the source files that read them",
+    "docs_inventory_parity": "compares precomputed problem lists from pyproject and docs; the corpus helper only lists files, there is no per-file verdict to seed",
+    "edge_function_hygiene": "checks a Supabase edge-function directory layout (TypeScript), which a .canary Python fixture cannot model",
+    "function_complexity": "a compatibility API over complexity_ratchet, whose canary seeds the same measurement",
+    "inert_patch_targets": "works from a precomputed module-facts index; the corpus helper builds that index and is exercised by its own tests",
+    "prompt_field_parity": "compares prompt templates with schema fields; the corpus helper only locates the template files",
+    "repo_hygiene": "tracked-file and layout rules that need a repository work tree; covered by tests/test_repo_hygiene.py on real repositories",
+    "stale_comment_age": "ages comments through blame, which needs commit history a fixture directory does not have",
+}
+_SRC_DIR = Path(__file__).resolve().parents[1] / "src" / "py_ci_shared"
