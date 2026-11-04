@@ -50,10 +50,34 @@ def _is_external(target: str) -> bool:
     return bool(_SCHEME_RE.match(target)) or target.startswith("//")
 
 
+_HTML_ATTR_RE = re.compile(r"""<(?:img|a|source|video|audio|link|script|iframe)\b[^>]*?\b(?:src|href)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.IGNORECASE)
+
+
+def _paragraph_targets(start: int, lines: "list[str]") -> "list[tuple[int, str]]":
+    """Targets of one paragraph (consecutive prose lines): the link text may wrap over lines, so the regex runs over the joined text and each hit
+    is placed on the line its target starts on. HTML ``<img src>`` / ``<a href>`` attributes are read per line."""
+    text = "\n".join(lines)
+    out: list[tuple[int, str]] = [(start + text.count("\n", 0, m.start(1)), m.group(1)) for m in _MD_LINK_RE.finditer(text)]
+    for offset, line in enumerate(lines):
+        out.extend((start + offset, m.group(1) if m.group(1) is not None else m.group(2)) for m in _HTML_ATTR_RE.finditer(line))
+        ref = _MD_REF_DEF_RE.match(line)
+        if ref:
+            out.append((start + offset, ref.group(1)))
+    return out
+
+
 def _link_targets(source: str) -> "list[tuple[int, str]]":
-    """``(line, target)`` for every inline link, image and reference definition outside fenced code and code spans."""
+    """``(line, target)`` for every inline link, image, HTML ``src``/``href`` and reference definition outside fenced code and code spans."""
     out: list[tuple[int, str]] = []
     fence: "str | None" = None
+    para: list[str] = []
+    para_start = 1
+
+    def flush() -> None:
+        if para:
+            out.extend(_paragraph_targets(para_start, para))
+            para.clear()
+
     for lineno, line in enumerate(source.splitlines(), start=1):
         opener = _FENCE_RE.match(line)
         if fence is not None:
@@ -61,14 +85,17 @@ def _link_targets(source: str) -> "list[tuple[int, str]]":
                 fence = None
             continue
         if opener:
+            flush()
             fence = opener.group(1)
             continue
-        text = _CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), line)
-        out.extend((lineno, m.group(1)) for m in _MD_LINK_RE.finditer(text))
-        ref = _MD_REF_DEF_RE.match(text)
-        if ref:
-            out.append((lineno, ref.group(1)))
-    return out
+        if not line.strip():
+            flush()
+            continue
+        if not para:
+            para_start = lineno
+        para.append(_CODE_SPAN_RE.sub(lambda m: " " * len(m.group(0)), line))
+    flush()
+    return sorted(out)
 
 
 def _local_path(target: str) -> "str | None":
