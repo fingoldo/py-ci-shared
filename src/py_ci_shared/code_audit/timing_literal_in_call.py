@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a bare numeric literal that sets a wait, timeout or backoff at its call site ---------------
 #
@@ -42,13 +42,13 @@ def _nonzero_numbers(node: ast.AST) -> list[ast.Constant]:
     """
     offsets = {
         id(operand)
-        for parent in ast.walk(node)
+        for parent in walk_nodes(node)
         if isinstance(parent, ast.BinOp) and isinstance(parent.op, (ast.Add, ast.Sub))
         for operand in (parent.left, parent.right)
     }
     return [
         child
-        for child in ast.walk(node)
+        for child in walk_nodes(node)
         if isinstance(child, ast.Constant)
         and isinstance(child.value, (int, float))
         and not isinstance(child.value, bool)

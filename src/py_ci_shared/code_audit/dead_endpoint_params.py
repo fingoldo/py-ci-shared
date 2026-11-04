@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index, walk_nodes
 
 # --- an HTTP endpoint parameter the handler never reads ------------------------------------------
 
@@ -67,7 +68,7 @@ def _request_bound_params(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[tu
 
 def _loaded_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
     """Every name read in *fn*'s body, nested functions included. The docstring is a string, not a name."""
-    return {n.id for stmt in fn.body for n in ast.walk(stmt) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    return {n.id for stmt in fn.body for n in walk_nodes(stmt) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
 def scan_dead_endpoint_parameters(
@@ -116,15 +117,17 @@ def scan_dead_endpoint_parameters(
             for arg, source in params:
                 if arg.arg in loaded:
                     continue
-                findings.append(Finding(
-                    check="dead_endpoint_parameter",
-                    severity="P2",
-                    file=rel,
-                    line=arg.lineno,
-                    snippet=_line_text(src_lines, arg.lineno),
-                    detail=(
-                        f"`{fn.name}` takes `{arg.arg}` from the request ({source}) but never reads it: clients see it "
-                        f"in the API schema and send it, and it changes nothing. Use it, or remove it from the endpoint."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="dead_endpoint_parameter",
+                        severity="P2",
+                        file=rel,
+                        line=arg.lineno,
+                        snippet=_line_text(src_lines, arg.lineno),
+                        detail=(
+                            f"`{fn.name}` takes `{arg.arg}` from the request ({source}) but never reads it: clients see it "
+                            f"in the API schema and send it, and it changes nothing. Use it, or remove it from the endpoint."
+                        ),
+                    )
+                )
     return findings

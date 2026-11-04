@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_cached, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _own_nodes, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_cached, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _own_nodes, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- uncached constant-cost probe ----------------------------------------
 
@@ -59,12 +59,12 @@ def _has_module_level_memo(func: ast.FunctionDef | ast.AsyncFunctionDef) -> bool
     exempted a genuinely uncached probe. The declared name must actually be stored to.
     """
     declared: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             declared.update(node.names)
     if not declared:
         return False
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) and node.id in declared:
             return True
         if isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Store) and isinstance(node.value, ast.Name) and node.value.id in declared:
@@ -135,7 +135,11 @@ def _probe_call(node: ast.Call, probe_imports: dict[str, str]) -> tuple[str, str
         # `_dotted_name_or_partial` renders the receiver as "" for anything but a Name chain, so the
         # registered `Path.mkdir` entry could only ever match `Path.mkdir(p)`, which nobody writes.
         receiver = node.func.value
-        receiver_name = receiver.func.id if isinstance(receiver, ast.Call) and isinstance(receiver.func, ast.Name) else (receiver.id if isinstance(receiver, ast.Name) else None)
+        receiver_name = (
+            receiver.func.id
+            if isinstance(receiver, ast.Call) and isinstance(receiver.func, ast.Name)
+            else (receiver.id if isinstance(receiver, ast.Name) else None)
+        )
         if receiver_name in (None, "Path") or receiver_name not in {"os", "shutil", "subprocess"}:
             match = ("Path.mkdir", "hits the filesystem")
             dotted = f"{receiver_name}.mkdir" if receiver_name else "Path(...).mkdir"

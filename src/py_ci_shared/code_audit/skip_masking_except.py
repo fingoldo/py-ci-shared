@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- except-block that masks a real test failure as a skip ---------------
 
@@ -13,7 +14,7 @@ def _except_body_calls_pytest_skip(handler: ast.ExceptHandler) -> bool:
     """True if ``handler``'s body contains a call to ``pytest.skip(...)`` (module-attribute form)
     or a bare ``skip(...)`` (``from pytest import skip``)."""
     for stmt in handler.body:
-        for n in ast.walk(stmt):
+        for n in walk_nodes(stmt):
             if not isinstance(n, ast.Call):
                 continue
             func = n.func
@@ -72,18 +73,20 @@ def scan_except_skip_masks_call_under_test(
                     continue
                 if is_line_exempt(src_lines, node.lineno, "except_skip_masks_call_under_test"):
                     continue
-                findings.append(Finding(
-                    check="except_skip_masks_call_under_test",
-                    severity="P1",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        "try-block does more than import a module (calls the function/class under "
-                        "test or other real work) and its except handler calls pytest.skip(...) -- "
-                        "a genuine API break gets silently reclassified as a skip instead of failing "
-                        "the test. If this really is an optional-dependency guard, narrow the try "
-                        "body to just the import."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="except_skip_masks_call_under_test",
+                        severity="P1",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            "try-block does more than import a module (calls the function/class under "
+                            "test or other real work) and its except handler calls pytest.skip(...) -- "
+                            "a genuine API break gets silently reclassified as a skip instead of failing "
+                            "the test. If this really is an optional-dependency guard, narrow the try "
+                            "body to just the import."
+                        ),
+                    )
+                )
     return findings

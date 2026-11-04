@@ -6,7 +6,7 @@ Usage::
         --repos-file "$RUNNER_TEMP/consumers/repos.toml" [--corpus-only]
 
 The token comes from ``CONSUMER_READ_TOKEN``. A private repo without a token is skipped with a GitHub ``::warning::``
-annotation (the job stays green but says so loudly); a clone that should work (a public repo, or any repo while a
+annotation (the job stays green but says so loudly; ``--fail-on-skipped-private`` makes it exit 1, which the scheduled consumer-pins job uses); a clone that should work (a public repo, or any repo while a
 token is set) and fails is an error, exit 1. The written repos file is the ``[[repo]]`` form
 :func:`py_ci_shared.adoption_matrix.load_repo_list` reads.
 """
@@ -167,6 +167,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--dest", required=True, help="directory the repos are cloned into")
     p.add_argument("--repos-file", required=True, help="write the [[repo]] list of the cloned repos here")
     p.add_argument("--corpus-only", action="store_true", help="only the consumers marked corpus = true")
+    p.add_argument(
+        "--fail-on-skipped-private",
+        action="store_true",
+        help="exit 1 when a private consumer was skipped for want of a token (an expired token then turns the scheduled job red instead of silently checking only the public repos)",
+    )
     args = parser.parse_args(argv)
     consumers = load_consumers(Path(args.config))
     if args.corpus_only:
@@ -180,6 +185,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     write_repos_file(Path(args.repos_file), result.cloned)
     sys.stdout.write(f"cloned {len(result.cloned)}, skipped {len(result.skipped)} (no token), failed {len(result.failed)}\n")
     if result.failed:
+        return 1
+    if args.fail_on_skipped_private and result.skipped:
+        sys.stderr.write(
+            f"_consumers: {len(result.skipped)} private consumer(s) were not checked ({TOKEN_ENV} missing or empty): {', '.join(c.name for c in result.skipped)}\n"
+        )
         return 1
     if not result.cloned:
         sys.stderr.write("_consumers: nothing was cloned, so nothing would be checked\n")

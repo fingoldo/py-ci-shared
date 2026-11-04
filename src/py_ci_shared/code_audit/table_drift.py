@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- header and row built from two different places -----------------------------------------------
 #
@@ -65,7 +65,7 @@ def _fieldnames_literal(ctor: ast.Call) -> set[str] | None:
 
 def _collect_assigned_dictwriters(fn: ast.AST, writers: "dict[str, tuple[set[str], int]]", anonymous: "list[tuple[set[str], int]]") -> None:
     """Record DictWriter headers bound by an assignment: a plain name into ``writers``, anything else into ``anonymous``."""
-    for stmt in ast.walk(fn):
+    for stmt in walk_nodes(fn):
         if not isinstance(stmt, ast.Assign) or not isinstance(stmt.value, ast.Call):
             continue
         ctor = stmt.value
@@ -83,7 +83,7 @@ def _collect_assigned_dictwriters(fn: ast.AST, writers: "dict[str, tuple[set[str
 
 def _collect_unbound_dictwriters(fn: ast.AST, writers: "dict[str, tuple[set[str], int]]", anonymous: "list[tuple[set[str], int]]") -> None:
     """Record DictWriter headers on calls never bound to a name, skipping any already recorded by line."""
-    for call in ast.walk(fn):
+    for call in walk_nodes(fn):
         if isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "DictWriter":
             if not any(call.lineno == line for _h, line in list(writers.values()) + anonymous):
                 literal = _fieldnames_literal(call)
@@ -98,7 +98,7 @@ def _dictwriter_drifts(fn: ast.AST) -> "list[tuple[int, set[str], set[str]]]":
         return []
     only = (list(writers.values()) + anonymous)[0] if len(writers) + len(anonymous) == 1 else None
     drifts: "list[tuple[int, set[str], set[str]]]" = []
-    for call in ast.walk(fn):
+    for call in walk_nodes(fn):
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr == "writerow" and call.args):
             continue
         receiver = call.func.value
@@ -120,7 +120,7 @@ def _dictwriter_drifts(fn: ast.AST) -> "list[tuple[int, set[str], set[str]]]":
 def _unpaired_wide_fstrings(fn: ast.AST, min_fields: int) -> "tuple[int, list[int]] | None":
     """``(first line, sorted distinct field counts)`` when a function formats a wide table from
     two or more f-strings whose replacement-field counts disagree, else ``None``."""
-    wide = [(node, _format_field_count(node)) for node in ast.walk(fn) if isinstance(node, ast.JoinedStr) and _format_field_count(node) >= min_fields]
+    wide = [(node, _format_field_count(node)) for node in walk_nodes(fn) if isinstance(node, ast.JoinedStr) and _format_field_count(node) >= min_fields]
     counts = {count for _node, count in wide}
     if len(wide) >= 2 and len(counts) > 1:
         return min(node.lineno for node, _count in wide), sorted(counts)

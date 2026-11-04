@@ -1,4 +1,5 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Union
 
 from ._base import (
+    child_nodes,
+    walk_nodes,
     walk_tree,
     Finding,
     _DEFAULT_EXCLUDE_DIRS,
@@ -59,7 +62,7 @@ def _reads(node: ast.AST, names: set[str]) -> bool:
         return False
     if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in names:
         return True
-    return any(_reads(child, names) for child in ast.iter_child_nodes(node))
+    return any(_reads(child, names) for child in child_nodes(node))
 
 
 def _derived(stmts: list[ast.stmt], names: set[str]) -> set[str]:
@@ -67,7 +70,7 @@ def _derived(stmts: list[ast.stmt], names: set[str]) -> set[str]:
     ``for row in rows``), to a fixed point."""
     bindings: list[tuple[str, ast.AST]] = []
     for stmt in stmts:
-        for node in ast.walk(stmt):
+        for node in walk_nodes(stmt):
             if isinstance(node, ast.Assign):
                 bindings += [(t.id, node.value) for t in node.targets if isinstance(t, ast.Name)]
             elif isinstance(node, (ast.For, ast.AsyncFor, ast.comprehension)) and isinstance(node.target, ast.Name):
@@ -88,14 +91,14 @@ def _receiving_calls(stmts: list[ast.stmt], names: set[str]) -> list[ast.Call]:
     return [
         node
         for stmt in stmts
-        for node in ast.walk(stmt)
+        for node in walk_nodes(stmt)
         if isinstance(node, ast.Call) and not _is_len(node) and any(_reads(arg, names) for arg in [*node.args, *(k.value for k in node.keywords)])
     ]
 
 
 def _skips_rows(node: ast.AST, constants: dict[str, str]) -> bool:
     """True if *node* carries the SQL of an insert that can write fewer rows than it is handed."""
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         if isinstance(sub, (ast.Constant, ast.JoinedStr, ast.Name, ast.Attribute)):
             text = _sql_text(sub, constants)
             if text and _SKIPPING_INSERT.search(text):
@@ -201,7 +204,7 @@ def _counter_assignments(stmts: list[ast.stmt]) -> list[tuple[ast.stmt, ast.expr
     out: list[tuple[ast.stmt, ast.expr, str]] = []
     targets: list[ast.expr]
     for stmt in stmts:
-        for node in ast.walk(stmt):
+        for node in walk_nodes(stmt):
             if isinstance(node, ast.Assign):
                 targets, value = node.targets, node.value
             elif isinstance(node, ast.AugAssign) and isinstance(node.op, ast.Add):
@@ -236,19 +239,21 @@ def _function_findings(fn: _FuncDef, rel: str, src_lines: list[str], module_cons
     for stmt, target, name in assignments:
         if not _writes_lossily(own, {name}, constants, helpers, hops=1):
             continue
-        out.append(Finding(
-            check="write_counted_from_input",
-            severity="P2",
-            file=rel,
-            line=stmt.lineno,
-            snippet=_line_text(src_lines, stmt.lineno),
-            detail=(
-                f"`{getattr(ast, 'unparse', ast.dump)(target)}` counts len({name}), the rows handed to an insert that can skip "
-                f"rows (ON CONFLICT DO NOTHING / DO UPDATE ... WHERE / INSERT IGNORE); a re-run reports them "
-                f"all again while writing none. Count what the statement wrote (rowcount, RETURNING, or the "
-                f"table before and after), or name the counter for what it holds (`..._read`)."
-            ),
-        ))
+        out.append(
+            Finding(
+                check="write_counted_from_input",
+                severity="P2",
+                file=rel,
+                line=stmt.lineno,
+                snippet=_line_text(src_lines, stmt.lineno),
+                detail=(
+                    f"`{getattr(ast, 'unparse', ast.dump)(target)}` counts len({name}), the rows handed to an insert that can skip "
+                    f"rows (ON CONFLICT DO NOTHING / DO UPDATE ... WHERE / INSERT IGNORE); a re-run reports them "
+                    f"all again while writing none. Count what the statement wrote (rowcount, RETURNING, or the "
+                    f"table before and after), or name the counter for what it holds (`..._read`)."
+                ),
+            )
+        )
     return out
 
 

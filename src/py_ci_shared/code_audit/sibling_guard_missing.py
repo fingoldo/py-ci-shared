@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse
+from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
 # --- one sibling missing the guard all the others open with -----------------------------------
 #
@@ -55,7 +55,7 @@ def _leading_guard(func: ast.FunctionDef | ast.AsyncFunctionDef) -> tuple[str, a
 def _names_in(node: ast.AST) -> set[str]:
     """Names and attribute names mentioned anywhere in this subtree."""
     found: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         if isinstance(sub, ast.Name):
             found.add(sub.id)
         elif isinstance(sub, ast.Attribute):
@@ -69,7 +69,7 @@ def _tests_any_of(func: ast.AST, names: set[str]) -> bool:
     A guard spelled differently, or placed later in the body, is still a guard -- reporting it
     would be telling the author to write the check they already wrote.
     """
-    for sub in ast.walk(func):
+    for sub in walk_nodes(func):
         test = None
         if isinstance(sub, (ast.If, ast.IfExp, ast.While)):
             test = sub.test
@@ -90,7 +90,7 @@ def _self_attributes(node: ast.AST) -> set[str]:
     object's state, so the object's state is what the link has to be made of.
     """
     found: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         if isinstance(sub, ast.Attribute) and isinstance(sub.value, ast.Name) and sub.value.id in ("self", "cls"):
             found.add(sub.attr)
     return found

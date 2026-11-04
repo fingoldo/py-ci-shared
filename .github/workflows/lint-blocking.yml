@@ -148,6 +148,29 @@ jobs:
         with:
           enable-cache: true
 
+      # A caller that leaves interrogate-source-path or deptry-install-command empty, or run-zizmor false, counts as using this
+      # workflow while those tools never run (audit 2026-11-04 34-F10). Say so in the log and the job summary; never fails.
+      - name: Report tools skipped by their inputs
+        working-directory: .
+        env:
+          INTERROGATE_PATH: ${{ inputs.interrogate-source-path }}
+          DEPTRY_INSTALL: ${{ inputs.deptry-install-command }}
+          RUN_ZIZMOR: ${{ inputs.run-zizmor }}
+        run: |
+          skipped=()
+          if [ -z "$INTERROGATE_PATH" ]; then skipped+=("interrogate (interrogate-source-path is empty)"); fi
+          if [ -z "$DEPTRY_INSTALL" ]; then skipped+=("deptry (deptry-install-command is empty)"); fi
+          if [ "$RUN_ZIZMOR" != "true" ]; then skipped+=("zizmor (run-zizmor is false)"); fi
+          for tool in "${skipped[@]}"; do
+            echo "::notice title=lint-blocking tool skipped::${tool}: this caller does not run it"
+          done
+          if [ "${#skipped[@]}" -gt 0 ]; then
+            {
+              echo "### lint-blocking: tools skipped by this caller's inputs"
+              for tool in "${skipped[@]}"; do echo "- ${tool}"; done
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # Mirrors the pre-commit actionlint hook so a workflow-file bug (bad expression,
       # duplicate key, unknown runner label, shell-syntax error in a run: block) can't
       # reach master even via --no-verify. actionlint-version pins the actionlint-py PACKAGE

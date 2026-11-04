@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import ast
 import logging
+import os
 import re
 import sys
 from collections.abc import Iterable, Sequence
@@ -58,6 +59,9 @@ __all__ = [
     "find_module_usage",
     "find_pins",
     "find_silent_skips",
+    "has_gate_runner",
+    "is_python_repo",
+    "ranked_gaps",
     "known_modules",
     "load_repo_list",
     "main",
@@ -437,12 +441,52 @@ def _py_import_modules(text: str) -> list[str]:
     return out
 
 
+_HOOK_ID = re.compile(r"^\s*-?\s*id:\s*['\"]?([A-Za-z0-9_.-]+)['\"]?\s*$")
+_REPO_LINE = re.compile(r"^\s*-?\s*repo:")
+_MIN_LISTED_GATES = 2
+_PYTHON_REPO_MIN_FILES = 25
+
+
+def _precommit_modules(text: str, known: set[str]) -> list[str]:
+    """Hook ids of the ``repo:`` block that points at py-ci-shared, when an id is a module name (``id: repo_hygiene`` or ``id: repo-hygiene``)."""
+    out: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if _REPO_LINE.match(line):
+            inside = bool(_PRECOMMIT_REPO.match(line))
+        elif inside:
+            m = _HOOK_ID.match(line)
+            if m and m.group(1).replace("-", "_") in known:
+                out.append(m.group(1).replace("-", "_"))
+    return out
+
+
+def _listed_gate_names(text: str, known: set[str]) -> list[str]:
+    """Gate names a ``.py`` file lists as strings: a list, tuple or set literal holding at least two module names is a parametrized gate list
+    (``@pytest.mark.parametrize("gate", ["repo_hygiene", "import_cycles"])``) that the import-based count cannot see (34-F12). One lone string is not counted, as a word such as
+    ``registry`` is also an ordinary string."""
+    try:
+        tree = parse_text(text)
+    except (SyntaxError, ValueError):
+        return []
+    out: list[str] = []
+    for node in _fast_walk(tree):
+        if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+            hits = [e.value for e in node.elts if isinstance(e, ast.Constant) and isinstance(e.value, str) and e.value in known]
+            if len(hits) >= _MIN_LISTED_GATES:
+                out += hits
+    return out
+
+
 def _usage_names(text: str, path: Path, known: set[str]) -> list[str]:
     """Every module name one file refers to, in the order its reference kinds are checked."""
     names = [m.group(1) for m in _MODULE_REF.finditer(text)]
     names += [m.group(1) for m in _CLI_RUN.finditer(text) if m.group(1) in known]
     if path.suffix == ".py":
         names += _py_import_modules(text)
+        names += _listed_gate_names(text, known)
+    if path.name == ".pre-commit-config.yaml":
+        names += _precommit_modules(text, known)
     if path.name == "pyproject.toml":
         names += _config_modules(path)
     return names
@@ -916,12 +960,103 @@ def _finding_lines(reports: Sequence[RepoReport]) -> list[str]:
     return lines
 
 
+def is_python_repo(root: Path) -> bool:
+    """Whether *root* is a Python project: at least ``_PYTHON_REPO_MIN_FILES`` ``.py`` files outside the excluded directories.
+
+    A Flutter or docs repo carries a ``pyproject.toml`` and a script or two for its tooling; ranking its missing Python gates would bury the real gaps."""
+    seen = 0
+    for _dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _USAGE_EXCLUDE]
+        seen += sum(name.endswith(".py") for name in filenames)
+        if seen >= _PYTHON_REPO_MIN_FILES:
+            return True
+    return False
+
+
+@dataclass(frozen=True)
+class GapRow:
+    """One module adopted by some Python consumers and missing in the others."""
+
+    module: str
+    adopters: tuple[str, ...]
+    missing: tuple[str, ...]
+
+
+def ranked_gaps(reports: Sequence[RepoReport], modules: Iterable[str], python_repos: Optional[Iterable[str]] = None) -> tuple[list[GapRow], list[str]]:
+    """``(gaps, unadopted)`` over the Python consumers (34-F1, 34-F2).
+
+    ``gaps`` holds every module at least one but not every Python repo uses, most-adopted first (then by name): the gates a repo is missing that its siblings already run.
+    ``unadopted`` is every module no Python repo uses at all. Adoption is the whole of what :func:`find_module_usage` sees: imports, ``py_ci_shared.<module>`` and CLI runs in any text
+    file, ``[tool.py_ci_shared]`` enable lists and gate tables, pre-commit hook ids, and gate names listed in a ``.py`` file.
+    """
+    chosen = set(python_repos) if python_repos is not None else {r.name for r in reports if is_python_repo(r.root)}
+    repos = [r for r in reports if r.name in chosen]
+    gaps: list[GapRow] = []
+    unadopted: list[str] = []
+    for m in sorted(set(modules)):
+        adopters = tuple(r.name for r in repos if m in r.modules)
+        if not adopters:
+            unadopted.append(m)
+        elif len(adopters) < len(repos):
+            gaps.append(GapRow(m, adopters, tuple(r.name for r in repos if m not in r.modules)))
+    gaps.sort(key=lambda g: (-len(g.adopters), g.module))
+    return gaps, unadopted
+
+
+def _gap_lines(reports: Sequence[RepoReport], modules: Optional[Iterable[str]]) -> list[str]:
+    names = sorted(modules or [])
+    if not names:
+        return []
+    python_repos = [r for r in reports if is_python_repo(r.root)]
+    if len(python_repos) < 2:
+        return []
+    gaps, unadopted = ranked_gaps(reports, names)
+    lines = [
+        "",
+        "## Ranked gaps",
+        "",
+        f"Python consumers: {len(python_repos)} ({', '.join(r.name for r in python_repos)}). Most-adopted modules first; the missing repos are where to enable it next.",
+        "",
+    ]
+    lines += ["| module | adopters | missing in |", "|---|---|---|"]
+    lines += [f"| `{g.module}` | {len(g.adopters)}/{len(python_repos)} | {', '.join(g.missing)} |" for g in gaps]
+    lines += ["", f"## Enabled nowhere ({len(unadopted)})", "", ", ".join(f"`{m}`" for m in unadopted) or "None."]
+    lines += _runner_and_workflow_lines(python_repos)
+    return lines
+
+
+def has_gate_runner(root: Path) -> bool:
+    """Whether the repo's ``pyproject.toml`` enables gates in ``[tool.py_ci_shared]`` (``py-ci-shared run-all`` has something to run)."""
+    path = root / "pyproject.toml"
+    if not path.is_file():
+        return False
+    return bool(_config_modules(path))
+
+
+def _runner_and_workflow_lines(python_repos: Sequence[RepoReport]) -> list[str]:
+    """Python consumers without a ``[tool.py_ci_shared]`` runner (34-F7) and the reusable workflows each lacks that a sibling calls (34-F6)."""
+    lines = ["", "## Python consumers without a `[tool.py_ci_shared]` gate runner", ""]
+    bare = [r.name for r in python_repos if not has_gate_runner(r.root)]
+    lines.append(", ".join(bare) if bare else "None.")
+    used = {r.name: {p.target for p in r.pins if p.target.startswith("workflow:")} for r in python_repos}
+    everything = sorted(set().union(*used.values())) if used else []
+    lines += ["", "## Reusable workflows a Python consumer does not call", ""]
+    rows = [
+        f"- {r.name}: " + ", ".join(f"`{t[len('workflow:'):]}`" for t in everything if t not in used[r.name])
+        for r in python_repos
+        if any(t not in used[r.name] for t in everything)
+    ]
+    lines += rows or ["None."]
+    return lines
+
+
 def render_markdown(reports: Sequence[RepoReport], *, modules: Optional[Iterable[str]] = None, title: str = "py-ci-shared adoption matrix") -> str:
-    """The report: per-repo summary, pins, module matrix (modules x repos), workflow matrix, findings."""
+    """The report: per-repo summary, pins, module matrix (modules x repos), ranked gaps, workflow matrix, findings."""
     lines = [f"# {title}", ""]
     lines += _summary_lines(reports)
     lines += _pin_lines(reports)
     lines += _module_lines(reports, modules)
+    lines += _gap_lines(reports, modules)
     lines += _workflow_lines(reports)
     lines += _finding_lines(reports)
     lines.append("")

@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse
+from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
 # --- a test whose every assertion is inside a loop that may not run ----------------------------
 #
@@ -39,7 +39,7 @@ _ASSERT_CALLS = ("assert_called", "assert_not_called", "assert_has_calls", "asse
 def _assertion_nodes(func: ast.AST) -> list[ast.AST]:
     """Every statement that asserts something: a bare `assert`, a mock check, `pytest.raises`."""
     found: list[ast.AST] = []
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Assert):
             found.append(node)
         elif isinstance(node, ast.Call):
@@ -66,7 +66,7 @@ def _nonempty_literal_names(scopes: list[ast.AST]) -> set[str]:
     """
     bound: set[str] = set()
     for scope in scopes:
-        for node in ast.walk(scope):
+        for node in walk_nodes(scope):
             if not isinstance(node, (ast.Assign, ast.AnnAssign)):
                 continue
             value = node.value
@@ -125,19 +125,19 @@ def _vacuous_loop_findings(
     assertions = _assertion_nodes(func)
     if not assertions:
         return []
-    loops = [node for node in ast.walk(func) if isinstance(node, (ast.For, ast.AsyncFor))]
+    loops = [node for node in walk_nodes(func) if isinstance(node, (ast.For, ast.AsyncFor))]
     if not loops:
         return []
 
     inside: set[int] = set()
     for loop in loops:
-        inside |= {id(sub) for sub in ast.walk(loop)} - {id(loop)}
+        inside |= {id(sub) for sub in walk_nodes(loop)} - {id(loop)}
     if any(id(node) not in inside for node in assertions):
         return []
 
     findings: list[Finding] = []
     for loop in loops:
-        owned = [node for node in assertions if id(node) in {id(sub) for sub in ast.walk(loop)}]
+        owned = [node for node in assertions if id(node) in {id(sub) for sub in walk_nodes(loop)}]
         if not owned or _cannot_be_empty(loop.iter, known):
             continue
         # Only a collection PRODUCED here: a call, or a comprehension. Iterating a name

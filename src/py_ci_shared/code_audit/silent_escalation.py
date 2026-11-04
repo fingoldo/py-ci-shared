@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines, walk_nodes
 from .broad_except import _has_log_call, _has_raise, _is_broad_except, _handler_has_documented_rationale
 
 # --- logged-but-not-escalated except ---------------------------------------
@@ -14,9 +15,16 @@ from .broad_except import _has_log_call, _has_raise, _is_broad_except, _handler_
 # "collect problems, report them at the end" convention (as opposed to
 # failing fast). Projects with their own naming convention pass their own
 # set via the ``escalation_attrs`` kwarg.
-DEFAULT_ESCALATION_ATTRS: frozenset[str] = frozenset({
-    "validation_errors", "errors", "warnings", "issues", "problems", "failures",
-})
+DEFAULT_ESCALATION_ATTRS: frozenset[str] = frozenset(
+    {
+        "validation_errors",
+        "errors",
+        "warnings",
+        "issues",
+        "problems",
+        "failures",
+    }
+)
 
 
 _ESCALATION_METHOD_NAMES = frozenset({"append", "extend", "warn", "add_error", "add_warning"})
@@ -93,7 +101,7 @@ def _escalates_to(handler: ast.ExceptHandler, escalation_attrs: frozenset[str]) 
       (``return {"error": str(e)}``) -- the Phase0-style bool/dict-return
       escalation contract.
     """
-    return any(_node_escalates(node, escalation_attrs) for node in ast.walk(handler))
+    return any(_node_escalates(node, escalation_attrs) for node in walk_nodes(handler))
 
 
 def _node_escalates(node: ast.AST, escalation_attrs: frozenset[str]) -> bool:
@@ -196,19 +204,21 @@ def scan_log_only_except(
             for handler in node.handlers:
                 if not _is_log_only_handler(handler, escalation_attrs, lines):
                     continue
-                findings.append(Finding(
-                    check="log_only_except",
-                    severity="P2",
-                    file=rel,
-                    line=handler.lineno,
-                    snippet=_line_text(lines, handler.lineno),
-                    detail=(
-                        "except handler logs the failure but never appends to "
-                        f"a {sorted(escalation_attrs)} collection or re-raises -- "
-                        "a caller reading only the return value / a persisted "
-                        "success flag has no way to learn this failed, even "
-                        "though this file otherwise uses that "
-                        "collect-and-report convention."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="log_only_except",
+                        severity="P2",
+                        file=rel,
+                        line=handler.lineno,
+                        snippet=_line_text(lines, handler.lineno),
+                        detail=(
+                            "except handler logs the failure but never appends to "
+                            f"a {sorted(escalation_attrs)} collection or re-raises -- "
+                            "a caller reading only the return value / a persisted "
+                            "success flag has no way to learn this failed, even "
+                            "though this file otherwise uses that "
+                            "collect-and-report convention."
+                        ),
+                    )
+                )
     return findings

@@ -1,22 +1,29 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # Call names that release a pooled/held resource back for reuse. Projects with
 # their own release-function naming convention pass their own set via the
 # ``release_call_names`` kwarg.
-DEFAULT_RELEASE_CALL_NAMES: frozenset[str] = frozenset({
-    "release_conn", "_release_conn", "release_connection", "putconn", "release_singleton_lock",
-})
+DEFAULT_RELEASE_CALL_NAMES: frozenset[str] = frozenset(
+    {
+        "release_conn",
+        "_release_conn",
+        "release_connection",
+        "putconn",
+        "release_singleton_lock",
+    }
+)
 
 
 def _names_read_in(node: ast.AST) -> set[str]:
     """Every identifier read (``ast.Load`` context) anywhere inside ``node``."""
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    return {n.id for n in walk_nodes(node) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
 
 
 def _release_call_args_in_finally_blocks(func_node: ast.AST, exclude_subtree: ast.AST, release_call_names: frozenset[str]) -> set[str]:
@@ -33,13 +40,13 @@ def _release_call_args_in_finally_blocks(func_node: ast.AST, exclude_subtree: as
     semaphore is specifically designed for concurrent acquire/release from
     multiple tasks, unlike a raw connection object.
     """
-    exclude_nodes = set(ast.walk(exclude_subtree))
+    exclude_nodes = set(walk_nodes(exclude_subtree))
     found: set[str] = set()
-    for node in ast.walk(func_node):
+    for node in walk_nodes(func_node):
         if not isinstance(node, ast.Try) or node in exclude_nodes:
             continue
         for stmt in node.finalbody:
-            for call in ast.walk(stmt):
+            for call in walk_nodes(stmt):
                 if call in exclude_nodes or not isinstance(call, ast.Call):
                     continue
                 func = call.func
@@ -100,10 +107,10 @@ def scan_shielded_resource_release_race(
         for outer in walk_tree(tree):
             if not isinstance(outer, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            nested_async_defs = {n.name: n for n in ast.walk(outer) if isinstance(n, ast.AsyncFunctionDef) and n is not outer}
+            nested_async_defs = {n.name: n for n in walk_nodes(outer) if isinstance(n, ast.AsyncFunctionDef) and n is not outer}
             if not nested_async_defs:
                 continue
-            for node in ast.walk(outer):
+            for node in walk_nodes(outer):
                 closure_name = _shielded_closure_name(node)
                 if closure_name is None or closure_name not in nested_async_defs:
                     continue
@@ -113,18 +120,20 @@ def scan_shielded_resource_release_race(
                 overlap = closure_reads & released_elsewhere
                 if not overlap:
                     continue
-                findings.append(Finding(
-                    check="shielded_resource_release_race",
-                    severity="P0",
-                    file=rel,
-                    line=outer.lineno,
-                    snippet=_line_text(src_lines, outer.lineno),
-                    detail=(
-                        f"asyncio.shield({closure_name}()) reads {sorted(overlap)}, also released in an "
-                        "enclosing finally: block outside the shielded closure -- the shielded task can "
-                        "still be using the resource the caller's own finally: just released back to the "
-                        "pool. Acquire a fully independent resource INSIDE the shielded closure and "
-                        "release it in that closure's own finally:, never sharing the outer function's."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="shielded_resource_release_race",
+                        severity="P0",
+                        file=rel,
+                        line=outer.lineno,
+                        snippet=_line_text(src_lines, outer.lineno),
+                        detail=(
+                            f"asyncio.shield({closure_name}()) reads {sorted(overlap)}, also released in an "
+                            "enclosing finally: block outside the shielded closure -- the shielded task can "
+                            "still be using the resource the caller's own finally: just released back to the "
+                            "pool. Acquire a fully independent resource INSIDE the shielded closure and "
+                            "release it in that closure's own finally:, never sharing the outer function's."
+                        ),
+                    )
+                )
     return findings

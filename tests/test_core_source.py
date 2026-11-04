@@ -118,3 +118,53 @@ class TestParseFile:
         assert parse_cache_size() == 0
         p.write_bytes(b"def f():\n    pass\n")
         assert len(parse_file(p).body) == 1
+
+
+def test_read_bytes_cached_serves_a_stable_file_without_reopening(tmp_path, monkeypatch):
+    """35-F3: an old, unchanged file is opened once per process; a file touched in the last seconds, or changed, is always read afresh."""
+    import os
+    import time
+    from pathlib import Path
+
+    from py_ci_shared._core import source
+
+    source.clear_parse_cache()
+    f = tmp_path / "a.txt"
+    f.write_bytes(b"one")
+    old = time.time() - 3600
+    os.utime(f, (old, old))
+    opened = []
+    real = Path.read_bytes
+
+    def counting(self):
+        opened.append(str(self))
+        return real(self)
+
+    monkeypatch.setattr(Path, "read_bytes", counting)
+    assert source.read_bytes_cached(f) == b"one"
+    assert source.read_bytes_cached(f) == b"one"
+    assert len(opened) == 1, "the second read of an unchanged old file must come from the cache"
+    f.write_bytes(b"three")  # size changes, so the signature differs even with the same mtime
+    os.utime(f, (old, old))
+    assert source.read_bytes_cached(f) == b"three"
+    fresh = tmp_path / "b.txt"
+    fresh.write_bytes(b"x")
+    opened.clear()
+    source.read_bytes_cached(fresh)
+    source.read_bytes_cached(fresh)
+    assert len(opened) == 2, "a file modified moments ago is never trusted to the cache (racy timestamp)"
+    source.clear_parse_cache()
+
+
+def test_subtree_walk_is_memoised_and_keeps_ast_walk_order():
+    """35-F1: walking a nested function twice reuses one node list, in exactly ``ast.walk`` order."""
+    import ast
+
+    from py_ci_shared._core.node_index import walk
+
+    tree = ast.parse("def f():\n    def g():\n        return 1 + 2\n    return g\n")
+    inner = tree.body[0]
+    assert list(walk(inner)) == list(ast.walk(inner))
+    assert list(walk(tree)) == list(ast.walk(tree))
+    first = [n for n in walk(inner)]
+    assert all(a is b for a, b in zip(first, walk(inner)))

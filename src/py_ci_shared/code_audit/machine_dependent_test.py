@@ -10,7 +10,19 @@ import ast
 from pathlib import Path
 from typing import Optional, Union
 
-from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import (
+    walk_tree,
+    Finding,
+    is_line_exempt,
+    is_test_file,
+    _DEFAULT_EXCLUDE_DIRS,
+    _iter_py_files,
+    _line_text,
+    _read_src_lines,
+    _safe_parse,
+    walk_nodes,
+    child_nodes,
+)
 
 _FunctionDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
@@ -77,7 +89,7 @@ def _own_body_nodes(fn: ast.AST) -> list[ast.AST]:
     stack: list[ast.AST] = [fn]
     while stack:
         node = stack.pop()
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
                 continue
             out.append(child)
@@ -105,12 +117,12 @@ def _elapsed_names_in(body: list[ast.AST]) -> set[str]:
 def _wall_clock_findings_in_fn(fn: _FunctionDef, rel: str, src_lines: list[str]) -> list[Finding]:
     """Findings for one test function: each assert comparing an elapsed duration."""
     findings: list[Finding] = []
-    body = list(ast.walk(fn))
+    body = list(walk_nodes(fn))
     elapsed_names = _elapsed_names_in(body)
     for node in body:
         if not isinstance(node, ast.Assert):
             continue
-        for cmp_node in ast.walk(node.test):
+        for cmp_node in walk_nodes(node.test):
             if not isinstance(cmp_node, ast.Compare):
                 continue
             if not (_is_duration(cmp_node.left, elapsed_names) or any(_is_duration(c, elapsed_names) for c in cmp_node.comparators)):
@@ -254,10 +266,10 @@ def _deleted_attributes(node: ast.AST) -> list[tuple[ast.AST, str, int]]:
 def _guarded_lines(fn: ast.AST) -> set[int]:
     """Line numbers inside a ``try`` or an ``if``/``else`` within ``fn`` - i.e. conditionally executed."""
     guarded: set[int] = set()
-    for node in ast.walk(fn):
+    for node in walk_nodes(fn):
         if not isinstance(node, (ast.Try, ast.If)):
             continue
-        for inner in ast.walk(node):
+        for inner in walk_nodes(node):
             lineno = getattr(inner, "lineno", None)
             if lineno is not None:
                 guarded.add(lineno)
@@ -307,7 +319,7 @@ def scan_deleted_attribute_read_unconditionally(
         for fn in walk_tree(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            body = list(ast.walk(fn))
+            body = list(walk_nodes(fn))
             reads = _unguarded_first_reads(body, _guarded_lines(fn))
             for node in body:
                 for owner, attr, lineno in _deleted_attributes(node):

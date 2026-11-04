@@ -5,7 +5,19 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
+from ._base import (
+    walk_tree,
+    Finding,
+    is_test_file,
+    _DEFAULT_EXCLUDE_DIRS,
+    _arg_names,
+    _iter_py_files,
+    _line_text,
+    _read_src_lines,
+    _safe_parse,
+    _subscript_index,
+    walk_nodes,
+)
 
 # --- a shared accumulator that some call sites write around ------------------------------------
 #
@@ -45,7 +57,7 @@ _ACCUMULATOR_HINTS = ("stat", "count", "counter", "metric", "tally", "total", "h
 def _mutated_structures(node: ast.AST, module_level: frozenset[str]) -> set[str]:
     """The SHARED structures this subtree writes to, by subscript or by a mutating method."""
     written: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         target: ast.expr | None = None
         if isinstance(sub, ast.Subscript) and isinstance(sub.ctx, (ast.Store, ast.Del)):
             target = sub.value
@@ -86,7 +98,7 @@ def _keys_by_parameter(func: ast.AST, structure: str) -> bool:
     if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
         return False
     params = set(_arg_names(func))
-    for sub in ast.walk(func):
+    for sub in walk_nodes(func):
         subscript: ast.Subscript | None = None
         if isinstance(sub, ast.Subscript) and isinstance(sub.ctx, ast.Store):
             subscript = sub
@@ -123,8 +135,11 @@ def _accumulates(node: ast.AST, structure: str) -> bool:
             return False
         # `stats[k] = stats.get(k, 0) + 1` is `+=` spelled out, and is the same bypass.
         return any(
-            isinstance(sub, ast.Attribute) and sub.attr == "get" and isinstance(sub.value, (ast.Attribute, ast.Name)) and (sub.value.attr if isinstance(sub.value, ast.Attribute) else sub.value.id) == structure
-            for sub in ast.walk(node.value)
+            isinstance(sub, ast.Attribute)
+            and sub.attr == "get"
+            and isinstance(sub.value, (ast.Attribute, ast.Name))
+            and (sub.value.attr if isinstance(sub.value, ast.Attribute) else sub.value.id) == structure
+            for sub in walk_nodes(node.value)
         )
     return False
 
@@ -139,7 +154,7 @@ def _is_lock_with(node: ast.With | ast.AsyncWith) -> bool:
     """
     names: set[str] = set()
     for item in node.items:
-        for sub in ast.walk(item.context_expr):
+        for sub in walk_nodes(item.context_expr):
             if isinstance(sub, ast.Attribute):
                 names.add(sub.attr)
             elif isinstance(sub, ast.Name):
@@ -155,11 +170,11 @@ def _lines_under_a_lock(func: ast.AST) -> set[int]:
     reported fifteen sites in one codebase, most of them inside `with self._ids_lock:`.
     """
     protected: set[int] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, (ast.With, ast.AsyncWith)) or not _is_lock_with(node):
             continue
         for stmt in node.body:
-            for sub in ast.walk(stmt):
+            for sub in walk_nodes(stmt):
                 line = getattr(sub, "lineno", None)
                 if line is not None:
                     protected.add(line)
@@ -237,7 +252,7 @@ def _bypasses_in(
 
 def _first_bypass(func: ast.AST, structure: str, protected: set[int]) -> int | None:
     """The line of the first unprotected accumulation into ``structure`` in this function."""
-    for sub in ast.walk(func):
+    for sub in walk_nodes(func):
         if not isinstance(sub, (ast.Assign, ast.AugAssign)) or not _accumulates(sub, structure):
             continue
         if sub.lineno not in protected:

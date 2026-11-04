@@ -4,13 +4,14 @@ Shared-gate counterpart: py_ci_shared.swallowed_exceptions reports a handler who
 pass/continue, in production code only. This scanner reports any broad handler without a warning-level
 log or re-raise, in every tree, so it stays.
 """
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from typing import Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- broad-except swallow (wave 16) -------------------------------------
 
@@ -21,7 +22,7 @@ _LOG_METHODS = frozenset({"warning", "error", "critical", "exception", "warn"})
 def _has_log_call(stmts: list[ast.stmt]) -> bool:
     """True if ``stmts`` contains a logger.warning/error/critical/exception call."""
     for s in stmts:
-        for n in ast.walk(s):
+        for n in walk_nodes(s):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
                 if n.func.attr in _LOG_METHODS:
                     return True
@@ -31,7 +32,7 @@ def _has_log_call(stmts: list[ast.stmt]) -> bool:
 def _has_raise(stmts: list[ast.stmt]) -> bool:
     """True if ``stmts`` contains a ``raise`` statement (including a bare re-raise)."""
     for s in stmts:
-        for n in ast.walk(s):
+        for n in walk_nodes(s):
             if isinstance(n, ast.Raise):
                 return True
     return False
@@ -47,7 +48,7 @@ def _has_debug_only_log_call(stmts: list[ast.stmt]) -> bool:
     if _has_log_call(stmts):
         return False
     for s in stmts:
-        for n in ast.walk(s):
+        for n in walk_nodes(s):
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "debug":
                 return True
     return False
@@ -65,7 +66,7 @@ def _is_default_literal(node: Optional[ast.expr]) -> bool:
 def _returns_or_assigns_default(stmts: list[ast.stmt]) -> bool:
     """True if ``stmts`` return a bare default, or assign one at their own level (``x = None``, ``out[k] = inf``)."""
     for s in stmts:
-        for n in ast.walk(s):
+        for n in walk_nodes(s):
             if isinstance(n, ast.Return) and _is_default_literal(n.value):
                 return True
         if isinstance(s, ast.Assign) and _is_default_literal(s.value):
@@ -140,15 +141,28 @@ def _is_broad_except(handler: ast.ExceptHandler) -> bool:
 # swallowed in production (the file may not exist, the dir may already be
 # cleaned up, the process may have already exited). Suppress the broad-except
 # warning when the try body is a single call to one of these.
-_BEST_EFFORT_OPS = frozenset({
-    # filesystem
-    "chmod", "unlink", "remove", "rmdir", "makedirs", "mkdir", "rmtree",
-    "close", "flush",
-    # process
-    "kill", "terminate", "wait",
-    # logging / metrics teardown
-    "stop", "shutdown", "join",
-})
+_BEST_EFFORT_OPS = frozenset(
+    {
+        # filesystem
+        "chmod",
+        "unlink",
+        "remove",
+        "rmdir",
+        "makedirs",
+        "mkdir",
+        "rmtree",
+        "close",
+        "flush",
+        # process
+        "kill",
+        "terminate",
+        "wait",
+        # logging / metrics teardown
+        "stop",
+        "shutdown",
+        "join",
+    }
+)
 
 
 def _try_body_is_imports_only(try_body: list[ast.stmt]) -> bool:
@@ -181,8 +195,13 @@ def _try_body_is_best_effort_op(try_body: list[ast.stmt]) -> bool:
 
 
 _DOCUMENTED_RATIONALE_MARKERS = (
-    "nosec", "opportunistic", "best-effort", "best effort",
-    "fallback", "fall back", "falls back",
+    "nosec",
+    "opportunistic",
+    "best-effort",
+    "best effort",
+    "fallback",
+    "fall back",
+    "falls back",
 )
 
 
@@ -209,9 +228,10 @@ def _is_flaggable_handler(handler: ast.ExceptHandler, src_lines: list[str]) -> b
     return _is_broad_except(handler) and _is_silent_swallow(handler) and not _handler_has_documented_rationale(handler, src_lines)
 
 
-def scan_broad_except_swallows(root: Path,
-                               exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                               ) -> list[Finding]:
+def scan_broad_except_swallows(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find broad ``except Exception:`` / ``except:`` handlers whose body
     silently passes/continues/returns without any logger.warning/error
     call or re-raise. These are the classic silent-data-drop sites.
@@ -242,16 +262,18 @@ def scan_broad_except_swallows(root: Path,
                 if not _is_flaggable_handler(handler, src_lines):
                     continue
                 kind = "bare except" if handler.type is None else "except Exception"
-                findings.append(Finding(
-                    check="broad_except_swallow",
-                    severity="P1",
-                    file=rel,
-                    line=handler.lineno,
-                    snippet=_line_text(src_lines, handler.lineno),
-                    detail=(
-                        f"{kind} with silent body (pass/continue/return, "
-                        f"no logger.warning/error, no re-raise). "
-                        f"Operators get no signal when this fires."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="broad_except_swallow",
+                        severity="P1",
+                        file=rel,
+                        line=handler.lineno,
+                        snippet=_line_text(src_lines, handler.lineno),
+                        detail=(
+                            f"{kind} with silent body (pass/continue/return, "
+                            f"no logger.warning/error, no re-raise). "
+                            f"Operators get no signal when this fires."
+                        ),
+                    )
+                )
     return findings

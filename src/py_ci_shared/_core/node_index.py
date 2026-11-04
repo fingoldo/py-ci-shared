@@ -35,7 +35,7 @@ _B = TypeVar("_B", bound=ast.AST)
 _INDEX: "weakref.WeakKeyDictionary[ast.AST, dict[type, tuple[list[int], list[ast.AST]]]]" = weakref.WeakKeyDictionary()
 # tree -> {key: value}
 _MEMO: "weakref.WeakKeyDictionary[ast.AST, dict[Hashable, Any]]" = weakref.WeakKeyDictionary()
-# module tree -> every node below it in ``ast.walk`` order, the root itself left out (a value referencing its key would keep the tree alive)
+# tree or subtree root -> every node below it in ``ast.walk`` order, the root itself left out (a value referencing its key would keep the tree alive)
 _DESCENDANTS: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.WeakKeyDictionary()
 _LOCK = threading.Lock()
 
@@ -75,16 +75,15 @@ def walk(node: ast.AST) -> "Iterator[ast.AST]":
     """``ast.walk`` with the same breadth-first order, about 1.5x faster: the stdlib version goes through two generator
     layers (``iter_child_nodes`` over ``iter_fields``) per node, and every gate here walks millions of nodes.
 
-    A module tree is walked once per process: the node list is kept next to the tree (weakly keyed, freed with it) and every later
-    ``walk`` of that tree replays it. On the mlframe suite gates called ``walk`` on the same trees 221 million times, almost all of them
+    A tree, or any subtree a gate walks (a function inside a module), is walked once per process: the node list is kept next to the node (weakly keyed, freed with it) and every
+    later ``walk`` of that node replays it. On the mlframe suite gates called ``walk`` on the same trees 221 million times, almost all of them
     repeats. Trees are shared and read-only (see :func:`py_ci_shared._core.source.parse_source`); a caller that mutates one must not use this.
     """
-    if not isinstance(node, ast.Module):
-        return _walk(node)
     return itertools.chain((node,), _descendants(node))
 
 
-def _descendants(tree: ast.Module) -> "list[ast.AST]":
+def _descendants(tree: ast.AST) -> "list[ast.AST]":
+    """Every node below *tree* in ``ast.walk`` order (the root left out), kept for any node, so a scanner that walks each function of a module costs one pass, not one per nesting level."""
     with _LOCK:
         hit = _DESCENDANTS.get(tree)
     if hit is not None:
@@ -148,7 +147,7 @@ def _index(tree: ast.AST) -> "dict[type, tuple[list[int], list[ast.AST]]]":
     if hit is not None:
         return hit
     by_type: "dict[type, tuple[list[int], list[ast.AST]]]" = {}
-    nodes = _descendants(tree) if isinstance(tree, ast.Module) else list(itertools.islice(_walk(tree), 1, None))
+    nodes = _descendants(tree)
     for pos, node in enumerate(nodes, start=1):  # position 0 is the root: see nodes_of
         entry = by_type.get(type(node))
         if entry is None:

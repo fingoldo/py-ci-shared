@@ -15,24 +15,58 @@ default), and values are compared by their canonical JSON form, so list- and tab
 from __future__ import annotations
 
 import json
+import os
 import sys
 import urllib.request
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, Optional
 
+from ._consumers import load_consumers
 from ._toml_compat import tomllib
 
-CONSUMERS = {
+# The two repos this report began with; used only when configs/consumers.toml is not beside the package (an installed wheel).
+FALLBACK_CONSUMERS = {
     "mlframe": "https://raw.githubusercontent.com/fingoldo/mlframe/master/pyproject.toml",
     "pyutilz": "https://raw.githubusercontent.com/fingoldo/pyutilz/master/pyproject.toml",
 }
+CONSUMERS_FILE = Path(__file__).resolve().parents[2] / "configs" / "consumers.toml"
+TOKEN_ENV = "CONSUMER_READ_TOKEN"
+
+
+def consumer_urls(path: Path = CONSUMERS_FILE, token: Optional[str] = None) -> tuple[dict[str, str], list[str]]:
+    """``({name: url of its pyproject.toml}, [private consumers skipped for want of a token])`` for every consumer in ``configs/consumers.toml``.
+
+    A public repo is read from raw.githubusercontent.com on its own ``branch``; a private one through the contents API, which ``_fetch_pyproject`` authenticates with
+    ``CONSUMER_READ_TOKEN``. Before 34-F3 two repos were hard-coded (and on ``master``), so ruff/mypy drift in the other consumers never showed.
+    """
+    if not path.is_file():
+        return dict(FALLBACK_CONSUMERS), []
+    urls: dict[str, str] = {}
+    skipped: list[str] = []
+    for consumer in load_consumers(path):
+        if consumer.private:
+            if not (token if token is not None else os.environ.get(TOKEN_ENV)):
+                skipped.append(consumer.name)
+                continue
+            urls[consumer.name] = f"https://api.github.com/repos/{consumer.repo}/contents/pyproject.toml?ref={consumer.branch}"
+        else:
+            urls[consumer.name] = f"https://raw.githubusercontent.com/{consumer.repo}/{consumer.branch}/pyproject.toml"
+    return urls, skipped
+
 
 RUFF_FIELDS_TO_COMPARE = ("extend", "target-version", "line-length")
 MYPY_FIELDS_TO_COMPARE = ("python_version", "disallow_untyped_defs", "warn_return_any")
 
 
 def _fetch_pyproject(url: str) -> dict:
-    with urllib.request.urlopen(url, timeout=15) as resp:  # nosec B310 -- fixed, first-party GitHub raw-content URLs, not user input
+    headers = {}
+    token = os.environ.get(TOKEN_ENV)
+    if token and url.startswith("https://api.github.com/"):
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw+json"}
+    with urllib.request.urlopen(
+        urllib.request.Request(url, headers=headers), timeout=15
+    ) as resp:  # nosec B310 -- fixed, first-party GitHub raw-content URLs, not user input
         doc: dict = tomllib.loads(resp.read().decode("utf-8"))
         return doc
 
@@ -49,7 +83,9 @@ def _diff_section(section_name: str, fields: tuple, parsed: dict) -> list[str]:
     lines = []
     values = {}
     for repo, doc in parsed.items():
-        section = doc.get("tool", {}).get(section_name, {})
+        if section_name not in doc.get("tool", {}):
+            continue  # a consumer without the table (a Flutter or docs repo) is not "diverging" on a tool it does not use
+        section = doc["tool"][section_name]
         values[repo] = {f: section.get(f) for f in fields}
     for field in fields:
         seen = {repo: v[field] for repo, v in values.items()}
@@ -63,7 +99,12 @@ def _diff_section(section_name: str, fields: tuple, parsed: dict) -> list[str]:
 def main(consumers: Optional[Mapping[str, str]] = None, fetch: Optional[Callable[[str], dict]] = None) -> int:
     parsed = {}
     fetch_one = fetch or _fetch_pyproject
-    for repo, url in (consumers if consumers is not None else CONSUMERS).items():
+    skipped: list[str] = []
+    if consumers is None:
+        consumers, skipped = consumer_urls()
+    if skipped:
+        print(f"WARNING: {len(skipped)} private consumer(s) skipped, {TOKEN_ENV} is not set: {', '.join(skipped)}", file=sys.stderr)
+    for repo, url in consumers.items():
         # PERF203: 2 network calls total, not a hot loop; broad catch so one consumer's fetch failure doesn't abort the report
         try:
             parsed[repo] = fetch_one(url)

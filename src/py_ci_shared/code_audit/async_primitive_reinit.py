@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, module_level_names, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, module_level_names, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # asyncio coordination primitives whose whole purpose is being SHARED across
 # concurrent callers -- one created fresh per call is a private, useless copy.
@@ -110,11 +111,11 @@ def _attribute_assigned_primitive_calls(func: ast.AST, module_names: frozenset[s
     pattern (``__init__``, a lazy-descriptor's ``__get__``, or a
     global-declared module-level lazy singleton), so these are never
     flagged regardless of which method they appear in."""
-    global_names = frozenset(name for node in ast.walk(func) if isinstance(node, ast.Global) for name in node.names)
+    global_names = frozenset(name for node in walk_nodes(func) if isinstance(node, ast.Global) for name in node.names)
     direct: set[ast.AST] = set()
     local_var_of_call: dict[str, ast.AST] = {}
     persisted_var_names: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Assign):
             targets, value = node.targets, node.value
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
@@ -154,7 +155,7 @@ def _fanout_limiter_calls(
     not expressible anyway -- each call builds its own closures too -- so this
     exemption cannot mask a genuine shared-primitive bug.
     """
-    closure_reads = {n.id for nested in nested_defs for n in ast.walk(nested) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
+    closure_reads = {n.id for nested in nested_defs for n in walk_nodes(nested) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)}
     # Same idiom, written with a helper instead of a closure:
     #     sem = asyncio.Semaphore(n); await _run_pipeline_for(session, sem, ...)
     # The primitive is created here and handed to the work THIS call starts.
@@ -166,7 +167,7 @@ def _fanout_limiter_calls(
     # the primitive DIRECTLY in this body (`async with sem:`) stays flagged.
     handed_off = {
         n.id
-        for node in ast.walk(func)
+        for node in walk_nodes(func)
         if isinstance(node, ast.Call)
         for n in [*node.args, *(kw.value for kw in node.keywords)]
         if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
@@ -175,13 +176,14 @@ def _fanout_limiter_calls(
     if not consumed_elsewhere:
         return set()
     exempt: set[ast.AST] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.Assign) or len(node.targets) != 1:
             continue
         target = node.targets[0]
         if isinstance(target, ast.Name) and target.id in consumed_elsewhere:
             exempt.add(node.value)
     return exempt
+
 
 def scan_async_primitive_reinit_per_call(
     root: Path,
@@ -242,18 +244,18 @@ def scan_async_primitive_reinit_per_call(
             # Only the function's OWN body -- a nested def's primitive calls are
             # reported when THAT nested def is visited on its own turn of the
             # outer ast.walk, so don't double-report by walking into it here.
-            nested_defs = {n for n in ast.walk(func) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n is not func}
+            nested_defs = {n for n in walk_nodes(func) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n is not func}
             attr_assigned = _attribute_assigned_primitive_calls(func, module_names)
             fanout_exempt = _fanout_limiter_calls(func, nested_defs)
             # A default argument is evaluated ONCE, at `def` time, so such a primitive IS shared by
             # every call -- the opposite of this scanner's defect, and its advice would break it.
-            default_nodes = {id(sub) for default in [*func.args.defaults, *func.args.kw_defaults] if default is not None for sub in ast.walk(default)}
+            default_nodes = {id(sub) for default in [*func.args.defaults, *func.args.kw_defaults] if default is not None for sub in walk_nodes(default)}
             # Precomputed ONCE per function: `node in ast.walk(nested)` inside the node loop re-walked
             # every nested def from scratch for every node of the enclosing function, which is
             # quadratic in function size -- worst on exactly the large async orchestration functions
             # this scanner exists to audit. 3.80 s -> 2.30 s over src/pyutilz, identical findings.
-            nested_node_ids = {id(n) for nested in nested_defs for n in ast.walk(nested)}
-            for node in ast.walk(func):
+            nested_node_ids = {id(n) for nested in nested_defs for n in walk_nodes(nested)}
+            for node in walk_nodes(func):
                 if id(node) in nested_node_ids:
                     continue
                 if id(node) in default_nodes:
@@ -264,17 +266,19 @@ def scan_async_primitive_reinit_per_call(
                     continue
                 callee = node.func
                 primitive = callee.attr if isinstance(callee, ast.Attribute) else getattr(callee, "id", "?")
-                findings.append(Finding(
-                    check="async_primitive_reinit_per_call",
-                    severity="P1",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        f"asyncio.{primitive}() created inside {func.name}()'s body -- every call gets its "
-                        "own private instance, so concurrent callers never actually coordinate through it. Create "
-                        "the primitive once (module scope, an __init__-set instance attribute, or a cached "
-                        "factory) so every caller shares the SAME object."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="async_primitive_reinit_per_call",
+                        severity="P1",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            f"asyncio.{primitive}() created inside {func.name}()'s body -- every call gets its "
+                            "own private instance, so concurrent callers never actually coordinate through it. Create "
+                            "the primitive once (module scope, an __init__-set instance attribute, or a cached "
+                            "factory) so every caller shares the SAME object."
+                        ),
+                    )
+                )
     return findings

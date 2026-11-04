@@ -62,6 +62,46 @@ def resolve_cached(path: PathLike) -> Path:
     return hit
 
 
+# path as given -> (stat signature, time it was read, bytes). One process-wide copy of a file's bytes for every reader (parse, text gates, content hashing): a gate suite used to open each file ~14 times,
+# and an open is the slow part on NTFS with a virus scanner (audit 2026-11-04 35-F3). Trusted under the same racy-timestamp rule as ``_FAST``; files over ``_BYTES_MAX_FILE`` are never kept and
+# the whole table is dropped when it passes ``_BYTES_MAX_TOTAL``, so memory is bounded whatever the corpus.
+_BYTES: dict[str, tuple[tuple[int, int, int], int, bytes]] = {}
+_BYTES_TOTAL = 0
+_BYTES_MAX_FILE = 4_000_000
+_BYTES_MAX_TOTAL = 400_000_000
+
+
+def read_bytes_cached(path: PathLike) -> bytes:
+    """``Path(path).read_bytes()`` served from a process-wide cache while the file's stat signature (mtime, size, inode) is unchanged and old enough to trust.
+
+    Raises ``OSError`` exactly as ``read_bytes`` does. A file modified in the last few seconds is read from disk every time, so an edit-then-rescan never sees stale bytes.
+    """
+    global _BYTES_TOTAL
+    spath = os.fspath(path)
+    try:
+        st = os.stat(spath)
+    except OSError:
+        return Path(spath).read_bytes()  # raises the real error
+    sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    with _LOCK:
+        hit = _BYTES.get(spath)
+        if hit is not None and hit[0] == sig and hit[1] - st.st_mtime_ns > _RACY_NS:
+            return hit[2]
+    raw = Path(spath).read_bytes()
+    read_ns = time.time_ns()
+    if len(raw) <= _BYTES_MAX_FILE:
+        with _LOCK:
+            old = _BYTES.pop(spath, None)
+            if old is not None:
+                _BYTES_TOTAL -= len(old[2])
+            if _BYTES_TOTAL + len(raw) > _BYTES_MAX_TOTAL:
+                _BYTES.clear()
+                _BYTES_TOTAL = 0
+            _BYTES[spath] = (sig, read_ns, raw)
+            _BYTES_TOTAL += len(raw)
+    return raw
+
+
 def _decode(path: Path, raw: bytes) -> str:
     if path.suffix.lower() in _PYTHON_SUFFIXES:
         try:
@@ -90,7 +130,7 @@ def read_source(path: PathLike) -> str:
     """
     p = Path(path)
     try:
-        raw = p.read_bytes()
+        raw = read_bytes_cached(p)
     except OSError as exc:
         raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
     return _decode(p, raw)
@@ -144,7 +184,7 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     if stable is not None:
         return stable
     try:
-        raw = p.read_bytes()
+        raw = read_bytes_cached(spath)
         read_ns = time.time_ns()
         key = str(resolve_cached(spath))
     except OSError as exc:
@@ -187,7 +227,10 @@ def clear_parse_cache() -> None:
     """Drop every cached tree and what was derived from it (frees memory in long-lived processes; correctness never depends on it)."""
     from . import corpus, node_index
 
+    global _BYTES_TOTAL
     with _LOCK:
+        _BYTES.clear()
+        _BYTES_TOTAL = 0
         _CACHE.clear()
         _FAST.clear()
         _RESOLVED.clear()

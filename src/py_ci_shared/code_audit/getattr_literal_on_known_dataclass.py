@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 
 def _dataclass_fields(tree: ast.Module) -> dict[str, set[str]]:
@@ -78,7 +78,7 @@ def _is_dataclass_decorator(dec: ast.expr) -> bool:
 def _assigned_dataclass_types(func: ast.AST, known: dict[str, set[str]]) -> dict[str, str]:
     """``{local name -> dataclass name}`` for names assigned from a known dataclass constructor or annotated with one."""
     types: dict[str, str] = {}
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
             cls_name = node.value.func.id
             if cls_name in known:
@@ -131,7 +131,7 @@ def _getattr_literal_findings(
 ) -> list[Finding]:
     """P1 findings for three-argument ``getattr`` on a typed local whose literal name the dataclass lacks."""
     findings: list[Finding] = []
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr"):
             continue
         if len(node.args) != 3 or node.keywords:

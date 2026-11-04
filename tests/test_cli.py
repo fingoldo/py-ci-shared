@@ -281,3 +281,21 @@ class TestAudit20261003:
 
 def _takes_files(files: "list[Path]") -> None:
     """A stand-in entry whose ``files`` takes a list of paths."""
+
+
+def test_over_budget_is_announced_under_warn_without_changing_the_exit_code(monkeypatch, tmp_path, capsys):
+    """35-F4: a gate 10x over budget used to leave one stderr line in a log; now the totals carry a BUDGET line, Actions gets an annotation, the job summary a block, and exit stays 0."""
+    from py_ci_shared import cli
+
+    summary = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+    slow = GateResult("slow_gate", PASSED, "", seconds=30.0, budget_s=3.0)
+    fast = GateResult("fast_gate", PASSED, "", seconds=0.1, budget_s=3.0)
+    assert cli._report([slow, fast], "warn") == 0
+    out = capsys.readouterr().out
+    assert "BUDGET 1 gate(s) over budget" in out and "exit code unchanged" in out
+    assert "::warning title=py-ci-shared gate over budget::slow_gate" in out and "fast_gate took" not in out
+    assert "slow_gate" in summary.read_text(encoding="utf-8") and "fast_gate" not in summary.read_text(encoding="utf-8")
+    assert cli._report([slow], "fail") == 1  # control: fail mode still fails
+    assert cli._report([fast], "warn") == 0

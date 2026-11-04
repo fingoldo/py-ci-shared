@@ -1,25 +1,48 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from typing import Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- mutation-during-iteration ------------------------------------------
 
 
-_MUTATING_DICT_METHODS = frozenset({
-    "pop", "popitem", "clear", "update", "setdefault",
-})
-_MUTATING_LIST_METHODS = frozenset({
-    "append", "extend", "insert", "pop", "remove", "clear",
-})
-_MUTATING_SET_METHODS = frozenset({
-    "add", "discard", "remove", "pop", "clear", "update",
-    "difference_update", "intersection_update", "symmetric_difference_update",
-})
+_MUTATING_DICT_METHODS = frozenset(
+    {
+        "pop",
+        "popitem",
+        "clear",
+        "update",
+        "setdefault",
+    }
+)
+_MUTATING_LIST_METHODS = frozenset(
+    {
+        "append",
+        "extend",
+        "insert",
+        "pop",
+        "remove",
+        "clear",
+    }
+)
+_MUTATING_SET_METHODS = frozenset(
+    {
+        "add",
+        "discard",
+        "remove",
+        "pop",
+        "clear",
+        "update",
+        "difference_update",
+        "intersection_update",
+        "symmetric_difference_update",
+    }
+)
 
 
 def _iter_target_chain(node: ast.AST) -> Optional[str]:
@@ -68,21 +91,23 @@ def _delete_findings(child: ast.Delete, node: ast.For | ast.AsyncFor, iter_chain
         if isinstance(tgt, ast.Subscript):
             sub_chain = _iter_target_chain(tgt.value)
             if sub_chain == iter_chain:
-                findings.append(Finding(
-                    check="mutation_during_iteration",
-                    severity="P0",
-                    file=rel,
-                    line=child.lineno,
-                    snippet=_line_text(src_lines, child.lineno),
-                    detail=(
-                        f"``del {iter_chain}[...]`` while iterating "
-                        f"the same collection at line {node.lineno}. "
-                        f"Dict / set mutation raises RuntimeError; "
-                        f"list mutation silently skips elements. "
-                        f"Iterate over ``list({iter_chain})`` or "
-                        f"``{iter_chain}.copy()`` instead."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="mutation_during_iteration",
+                        severity="P0",
+                        file=rel,
+                        line=child.lineno,
+                        snippet=_line_text(src_lines, child.lineno),
+                        detail=(
+                            f"``del {iter_chain}[...]`` while iterating "
+                            f"the same collection at line {node.lineno}. "
+                            f"Dict / set mutation raises RuntimeError; "
+                            f"list mutation silently skips elements. "
+                            f"Iterate over ``list({iter_chain})`` or "
+                            f"``{iter_chain}.copy()`` instead."
+                        ),
+                    )
+                )
     return findings
 
 
@@ -117,14 +142,16 @@ def _assign_findings(child: ast.Assign, node: ast.For | ast.AsyncFor, iter_chain
                         f"IndexError) but verify the index is still meaningful "
                         f"relative to the in-progress iteration."
                     )
-                findings.append(Finding(
-                    check="mutation_during_iteration",
-                    severity="P1",
-                    file=rel,
-                    line=child.lineno,
-                    snippet=_line_text(src_lines, child.lineno),
-                    detail=detail,
-                ))
+                findings.append(
+                    Finding(
+                        check="mutation_during_iteration",
+                        severity="P1",
+                        file=rel,
+                        line=child.lineno,
+                        snippet=_line_text(src_lines, child.lineno),
+                        detail=detail,
+                    )
+                )
     return findings
 
 
@@ -157,7 +184,7 @@ def _call_findings(child: ast.Call, node: ast.For | ast.AsyncFor, iter_chain: st
 def _loop_mutation_findings(node: ast.For | ast.AsyncFor, iter_chain: str, rel: str, src_lines: list[str]) -> list[Finding]:
     """Every mutation of ``iter_chain`` inside the body of loop ``node``."""
     findings: list[Finding] = []
-    for child in ast.walk(node):
+    for child in walk_nodes(node):
         if child is node:
             continue
         if isinstance(child, ast.Delete):

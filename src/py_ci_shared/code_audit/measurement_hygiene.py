@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- numbers that claim more than the code behind them supports ------------------------------------
 #
@@ -32,7 +32,7 @@ _NUMBER_CLAIM_RE = re.compile(rf"\b({_GROUPED_INT})\s+(?:of|out of)\s+({_GROUPED
 
 def _int_or_float_conversion_nearby(fn: ast.AST, lineno: int, window: int = 3) -> bool:
     """Whether the regex match is fed to int()/float() nearby - a bare pattern is not a parse."""
-    for node in ast.walk(fn):
+    for node in walk_nodes(fn):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in {"int", "float"} and abs(node.lineno - lineno) <= window:
             return True
     return False
@@ -61,7 +61,7 @@ def scan_regex_integer_parse(
         for fn in walk_tree(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            for call in ast.walk(fn):
+            for call in walk_nodes(fn):
                 if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute) and call.func.attr in {"search", "match", "findall", "fullmatch"}):
                     continue
                 if not (call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str)):
@@ -77,7 +77,9 @@ def scan_regex_integer_parse(
                         file=rel,
                         line=call.lineno,
                         snippet=_line_text(src_lines, call.lineno),
-                        detail=(f"bare \\d+ over free text in {fn.name}() truncates silently: '4.10' -> 4, '2,054' -> 2, 'approaching 100%' -> 100. Parse decimals and separators, or refuse."),
+                        detail=(
+                            f"bare \\d+ over free text in {fn.name}() truncates silently: '4.10' -> 4, '2,054' -> 2, 'approaching 100%' -> 100. Parse decimals and separators, or refuse."
+                        ),
                     )
                 )
     return findings
@@ -98,10 +100,10 @@ def _assert_lower_bounds(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast
     # the docstring claim against every `>`/`>=` in the function reports it at the wrong
     # line. Of the real assert bounds, only the weakest (minimum) one is the effective gate.
     bounds: list[ast.Compare] = []
-    for assert_node in ast.walk(fn):
+    for assert_node in walk_nodes(fn):
         if not isinstance(assert_node, ast.Assert):
             continue
-        for cmp_node in ast.walk(assert_node.test):
+        for cmp_node in walk_nodes(assert_node.test):
             if not (isinstance(cmp_node, ast.Compare) and len(cmp_node.ops) == 1 and isinstance(cmp_node.ops[0], (ast.Gt, ast.GtE))):
                 continue
             right = cmp_node.comparators[0]
@@ -152,7 +154,9 @@ def scan_thresholds_below_documented_result(
                         file=rel,
                         line=weakest.lineno,
                         snippet=_line_text(src_lines, weakest.lineno),
-                        detail=(f"{fn.name}() documents {claimed} but asserts >= {asserted}: the gate is set below the behaviour it describes, so a regression to {asserted} passes."),
+                        detail=(
+                            f"{fn.name}() documents {claimed} but asserts >= {asserted}: the gate is set below the behaviour it describes, so a regression to {asserted} passes."
+                        ),
                     )
                 )
     return findings

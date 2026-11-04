@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a failure stored in the cache as though it were the answer --------------------------------
 #
@@ -156,7 +156,7 @@ def scan_sentinel_cached_as_answer(
         seen: set[int] = set()
         for body, origin_line, origin_desc in _failure_path_scopes(tree):
             for root_stmt in body:
-                for stmt in ast.walk(root_stmt):
+                for stmt in walk_nodes(root_stmt):
                     if not isinstance(stmt, ast.stmt):
                         continue
                     write = _cache_write(stmt)

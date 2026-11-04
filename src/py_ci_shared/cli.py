@@ -23,6 +23,7 @@ import argparse
 import importlib
 import inspect
 import logging
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -68,8 +69,31 @@ def _load(repo: Optional[str]) -> RepoConfig:
     return config
 
 
+def _announce_over_budget(overs: "list[str]", mode: str) -> None:
+    """Make budget overruns impossible to miss under ``budget = "warn"`` without changing the exit code (35-F4).
+
+    One summary line on stdout after the totals, a GitHub ``::warning::`` annotation per gate (it shows on the run page and the PR, not only in a log nobody opens) and, when the runner
+    provides ``GITHUB_STEP_SUMMARY``, a block in the job summary. ``budget = "fail"`` already fails the run, so only the summary line is added there.
+    """
+    _print(f'BUDGET {len(overs)} gate(s) over budget (budget = "{mode}"); ' + ("exit code 1." if mode == "fail" else "exit code unchanged."))
+    if mode == "fail":
+        return
+    in_actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    for over in overs:
+        if in_actions:
+            _print(f"::warning title=py-ci-shared gate over budget::{over}")
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        try:
+            with open(summary, "a", encoding="utf-8") as handle:
+                handle.write("### Gates over budget\n\n" + "".join(f"- {over}\n" for over in overs))
+        except OSError as exc:  # a summary that cannot be written must not fail the run
+            _print(f"BUDGET could not write the job summary: {exc}", err=True)
+
+
 def _report(results: Sequence[GateResult], mode: str) -> int:
     code = 0
+    overs: "list[str]" = []
     for result in results:
         mark = {PASSED: "PASS", FAILED: "FAIL", SKIPPED: "SKIP", ERROR: "ERROR"}[result.status]
         _print(f"{mark:5} {result.name} ({result.seconds:.2f}s)")
@@ -77,6 +101,7 @@ def _report(results: Sequence[GateResult], mode: str) -> int:
             _print("      " + result.message.replace("\n", "\n      "))
         over = budget_verdict(result, mode)
         if over:
+            overs.append(over)
             _print(f"{'BUDGET':5} {over}", err=True)
             if mode == "fail":
                 code = max(code, 1)
@@ -86,6 +111,8 @@ def _report(results: Sequence[GateResult], mode: str) -> int:
             code = 2
     counts = {s: sum(r.status == s for r in results) for s in (PASSED, FAILED, SKIPPED, ERROR)}
     _print(", ".join(f"{n} {s}" for s, n in counts.items()))
+    if overs:
+        _announce_over_budget(overs, mode)
     return code
 
 
@@ -116,7 +143,10 @@ def _cmd_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_tool(args: argparse.Namespace) -> int:
-    spec = registry.by_name(args.module)
+    try:
+        spec = registry.by_name(args.module)
+    except KeyError as exc:  # the one lookup that is a usage error; a KeyError raised inside a gate must keep its traceback
+        raise ConfigError(str(exc.args[0]) if exc.args else args.module) from exc
     if not spec.cli:
         raise ConfigError(f"{spec.name} has no command line; `py-ci-shared list` marks the ones that do")
     main = importlib.import_module(spec.module).main
@@ -130,7 +160,13 @@ def _cmd_tool(args: argparse.Namespace) -> int:
             result = main()
         finally:
             sys.argv = saved
-    return result if isinstance(result, int) else 0
+    if result is None:
+        return 0
+    if isinstance(result, int):
+        return result
+    raise ConfigError(
+        f"{spec.name}.main returned {type(result).__name__}, not an exit code (None or int); fix the tool, a findings list read as success hides every finding"
+    )
 
 
 def _cmd_new_gate(args: argparse.Namespace) -> int:
@@ -191,7 +227,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "refresh":
             return _cmd_run(args, everything=False, refresh=True)
         if args.command == "config-path":
-            _print(str(config_path(args.name)))
+            try:
+                _print(str(config_path(args.name)))
+            except KeyError as exc:
+                raise ConfigError(str(exc.args[0]) if exc.args else args.name) from exc
             return 0
         if args.command == "tool":
             return _cmd_tool(args)
@@ -199,7 +238,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return _cmd_new_gate(args)
         _print(__version__)
         return 0
-    except (ConfigError, KeyError) as exc:
+    except ConfigError as exc:
         logger.warning("cli.py line 201: substituted a fallback after %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared: {exc.args[0] if exc.args else exc}", err=True)
         return 2

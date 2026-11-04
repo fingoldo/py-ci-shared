@@ -6,7 +6,19 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _module_sql_constants, _read_src_lines, _safe_parse, _sql_table_of, _sql_text
+from ._base import (
+    walk_tree,
+    Finding,
+    _DEFAULT_EXCLUDE_DIRS,
+    _iter_py_files,
+    _line_text,
+    _module_sql_constants,
+    _read_src_lines,
+    _safe_parse,
+    _sql_table_of,
+    _sql_text,
+    walk_nodes,
+)
 
 # --- a COUNT round trip that the fetch beside it already answers -------------------------------
 #
@@ -55,7 +67,7 @@ def _outer_query(sql: str) -> str:
 def _queries_in(func: ast.AST, constants: dict[str, str]) -> list[tuple[str, int]]:
     """(sql, line) for every query this function executes, in source order."""
     found: list[tuple[str, int]] = []
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.Call) or not node.args:
             continue
         callee = node.func

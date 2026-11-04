@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
 # --- a falsy in-band sentinel meeting a caller guard that tests `is None` ----------------------
 #
@@ -37,16 +37,22 @@ def _returns_falsy_from_except(func: ast.AST) -> list[tuple[object, int]]:
     indistinguishable from success that this rule is about.
     """
     out: list[tuple[object, int]] = []
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.ExceptHandler):
             continue
-        for sub in ast.walk(node):
+        for sub in walk_nodes(node):
             if not isinstance(sub, ast.Return) or sub.value is None:
                 continue
             value = sub.value
             # `return -1` parses as UnaryOp(USub, Constant(1)), never as Constant(-1), so the
             # `-1` sentinel the module header cites as its motivating case never matched.
-            if isinstance(value, ast.UnaryOp) and isinstance(value.op, ast.USub) and isinstance(value.operand, ast.Constant) and isinstance(value.operand.value, (int, float)) and not isinstance(value.operand.value, bool):
+            if (
+                isinstance(value, ast.UnaryOp)
+                and isinstance(value.op, ast.USub)
+                and isinstance(value.operand, ast.Constant)
+                and isinstance(value.operand.value, (int, float))
+                and not isinstance(value.operand.value, bool)
+            ):
                 value = ast.copy_location(ast.Constant(value=-value.operand.value), value)
             if isinstance(value, ast.Constant) and any(value.value is s or (type(value.value) is type(s) and value.value == s) for s in _FALSY_SENTINELS):
                 out.append((value.value, sub.lineno))
@@ -57,7 +63,7 @@ def _returns_falsy_from_except(func: ast.AST) -> list[tuple[object, int]]:
 
 def _returns_none_anywhere(func: ast.AST) -> bool:
     """Does this function also return None explicitly? Then `is None` guards are legitimate."""
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Return):
             if node.value is None:
                 return True

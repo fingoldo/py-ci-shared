@@ -79,3 +79,29 @@ def test_every_exemption_still_needs_its_reason():
     assert not stale, f"exempt modules without a site: {stale}"
     assert all(reason.strip() for reason in EXEMPT.values())
     assert SCANNER_PACKAGE_REASON.strip()
+
+
+# Raw ``ast.walk`` / ``ast.iter_child_nodes`` calls left in the scanner package (35-F1). They were 183 and 20; each re-traversed what the memoised walk already held (32 percent of a pyutilz scan).
+# Shrink-only: a new scanner walks through ``walk_nodes`` / ``walk_tree`` / ``child_nodes`` from ``code_audit._base``.
+SCANNER_RAW_TRAVERSAL_BASELINE = 0
+
+
+def _raw_scanner_traversals() -> "dict[str, int]":
+    out: "dict[str, int]" = {}
+    for path in sorted((SRC / "code_audit").glob("*.py")):
+        n = 0
+        for node in ast.walk(ast.parse(path.read_bytes())):
+            f = node.func if isinstance(node, ast.Call) else None
+            if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and f.value.id == "ast" and f.attr in ("walk", "iter_child_nodes"):
+                n += 1
+        if n:
+            out[path.name] = n
+    return out
+
+
+def test_scanner_package_has_no_raw_ast_walk():
+    """Shrink-only ratchet: the count may fall, never rise above the baseline."""
+    found = _raw_scanner_traversals()
+    assert (
+        sum(found.values()) <= SCANNER_RAW_TRAVERSAL_BASELINE
+    ), f"raw ast.walk / ast.iter_child_nodes in code_audit scanners: {found}; use walk_nodes / child_nodes from ._base"

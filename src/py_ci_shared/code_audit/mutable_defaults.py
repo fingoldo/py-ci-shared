@@ -1,4 +1,5 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
@@ -6,16 +7,44 @@ from pathlib import Path
 from typing import Optional
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
+from ._base import (
+    walk_tree,
+    Finding,
+    _DEFAULT_EXCLUDE_DIRS,
+    _arg_names,
+    _iter_py_files,
+    _line_text,
+    _read_src_lines,
+    _safe_parse,
+    _subscript_index,
+    walk_nodes,
+    child_nodes,
+)
 
 # --- Class A: mutable defaults ------------------------------------------
 
 
-_MUTATING_METHODS = frozenset({
-    "append", "extend", "insert", "pop", "clear", "remove", "sort",
-    "reverse", "setdefault", "update", "add", "discard", "popitem",
-    "__setitem__", "__delitem__", "__iadd__", "__ior__",
-})
+_MUTATING_METHODS = frozenset(
+    {
+        "append",
+        "extend",
+        "insert",
+        "pop",
+        "clear",
+        "remove",
+        "sort",
+        "reverse",
+        "setdefault",
+        "update",
+        "add",
+        "discard",
+        "popitem",
+        "__setitem__",
+        "__delitem__",
+        "__iadd__",
+        "__ior__",
+    }
+)
 
 _MUTABLE_LITERAL_TYPES = (ast.List, ast.Dict, ast.Set)
 _MUTABLE_CALLS = frozenset({"list", "dict", "set"})
@@ -23,8 +52,14 @@ _MUTABLE_CALLS = frozenset({"list", "dict", "set"})
 # containers five downstream repos' own copies of this check flagged and this one did not: an array or a
 # frame built as a default is one object every call writes into.
 _MUTABLE_FACTORIES = {
-    "defaultdict": "dict", "OrderedDict": "dict", "Counter": "dict", "ChainMap": "dict", "deque": "list",
-    "ndarray": "ndarray", "DataFrame": "DataFrame", "Series": "Series",
+    "defaultdict": "dict",
+    "OrderedDict": "dict",
+    "Counter": "dict",
+    "ChainMap": "dict",
+    "deque": "list",
+    "ndarray": "ndarray",
+    "DataFrame": "DataFrame",
+    "Series": "Series",
 }
 
 
@@ -65,13 +100,13 @@ def _shadows_param(node: ast.AST, param_name: str) -> bool:
 def _walk_skipping_shadowed_scopes(func: ast.AST, param_name: str) -> Iterator[ast.AST]:
     """Like ast.walk(func), but stops descending into nested function/lambda scopes that
     redeclare param_name as their own parameter (a shadow of the outer binding)."""
-    todo = list(ast.iter_child_nodes(func))
+    todo = list(child_nodes(func))
     while todo:
         node = todo.pop()
         yield node
         if _shadows_param(node, param_name):
             continue
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
 
 
 def _param_is_mutated(func: ast.FunctionDef | ast.AsyncFunctionDef, param_name: str) -> bool:
@@ -210,7 +245,7 @@ def _branch_paths(func: ast.AST) -> dict[int, tuple[tuple[int, int], ...]]:
                 for stmt in arm:
                     visit(stmt, (*path, (id(node), index)))
             return
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             visit(child, path)
 
     visit(func, ())
@@ -240,7 +275,7 @@ def _augassign_target_is_a_scalar_counter(func: ast.AST, local_name: str, node: 
     """
     if not (isinstance(node.value, ast.Constant) and isinstance(node.value.value, (int, float)) and not isinstance(node.value.value, bool)):
         return False
-    for other in ast.walk(func):
+    for other in walk_nodes(func):
         if isinstance(other, ast.Subscript):
             index = _subscript_index(other)  # 3.8 wraps the index in ast.Index; `.slice` alone never matched a Name there
             if isinstance(index, ast.Name) and index.id == local_name:
@@ -337,7 +372,7 @@ def _find_param_aliasing_mutation(func: ast.FunctionDef | ast.AsyncFunctionDef) 
     aliases: dict[str, str] = {}  # local_name -> param_name
     alias_paths: dict[str, tuple[tuple[int, int], ...]] = {}  # local_name -> the branch path the alias was established in
     hits: list[tuple[str, str, int]] = []
-    nodes = sorted(ast.walk(func), key=lambda n: getattr(n, "lineno", 0))
+    nodes = sorted(walk_nodes(func), key=lambda n: getattr(n, "lineno", 0))
     for node in nodes:
         node_path = paths.get(id(node), ())
         if _track_param_alias(node, aliases, alias_paths, param_names, node_path):
@@ -350,9 +385,10 @@ def _find_param_aliasing_mutation(func: ast.FunctionDef | ast.AsyncFunctionDef) 
     return hits
 
 
-def scan_parameter_aliasing_mutation(root: Path,
-                                     exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                                     ) -> list[Finding]:
+def scan_parameter_aliasing_mutation(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find ``local = param`` (bare rebind, no ``.copy()``) followed by an in-place mutation of
     ``local`` -- the mutation silently reaches the caller's object through the un-copied
     parameter reference.
@@ -382,24 +418,27 @@ def scan_parameter_aliasing_mutation(root: Path,
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             for param_name, local_name, lineno in _find_param_aliasing_mutation(node):
-                findings.append(Finding(
-                    check="parameter_aliasing_mutation",
-                    severity="P0",
-                    file=rel,
-                    line=lineno,
-                    snippet=_line_text(src_lines, lineno),
-                    detail=(
-                        f"`{local_name} = {param_name}` (bare alias, no `.copy()`) then mutated "
-                        f"in place -- this silently mutates the CALLER's `{param_name}` object "
-                        "too, since no copy was ever made."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="parameter_aliasing_mutation",
+                        severity="P0",
+                        file=rel,
+                        line=lineno,
+                        snippet=_line_text(src_lines, lineno),
+                        detail=(
+                            f"`{local_name} = {param_name}` (bare alias, no `.copy()`) then mutated "
+                            f"in place -- this silently mutates the CALLER's `{param_name}` object "
+                            "too, since no copy was ever made."
+                        ),
+                    )
+                )
     return findings
 
 
-def scan_mutable_defaults(root: Path,
-                          exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                          ) -> list[Finding]:
+def scan_mutable_defaults(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find ``def f(x=[]) / ={} / =set() / =list() / =dict() / =set()`` defaults.
 
     Severity rule: parameter mutated in body -> P0 (state leaks across
@@ -434,12 +473,14 @@ def scan_mutable_defaults(root: Path,
                 detail = f"def {node.name}(..., {arg_node.arg}={label}()): " + (
                     "MUTATED in body -> shared state leaks across callers" if mutated else "default is mutable but never mutated in body (Low)"
                 )
-                findings.append(Finding(
-                    check="mutable_default",
-                    severity=sev,
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=detail,
-                ))
+                findings.append(
+                    Finding(
+                        check="mutable_default",
+                        severity=sev,
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=detail,
+                    )
+                )
     return findings

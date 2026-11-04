@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 # --- per-call state on a shared instance ---------------------------------
 
@@ -22,7 +22,7 @@ _PERCALL_PREFIXES = ("last_", "_last_", "current_", "_current_")
 
 def _mentions_lock(node: ast.AST) -> bool:
     """Whether a ``with``/``async with`` context expression names something lock-shaped."""
-    for inner in ast.walk(node):
+    for inner in walk_nodes(node):
         name = inner.id if isinstance(inner, ast.Name) else (inner.attr if isinstance(inner, ast.Attribute) else None)
         if name is None:
             continue
@@ -42,7 +42,7 @@ def _self_attr_stores(func: ast.AST, self_name: str) -> dict[str, tuple[int, boo
 
     def walk(node: ast.AST, locked: bool) -> None:
         """Recurses the tree, carrying whether the current node sits inside a lock-shaped ``with`` block."""
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             child_locked = locked
             if isinstance(child, (ast.With, ast.AsyncWith)) and not locked:
                 child_locked = any(_mentions_lock(item.context_expr) for item in child.items)
@@ -68,7 +68,7 @@ def _self_attr_loads(func: ast.AST, self_name: str) -> set[str]:
     """Every ``self.<attr>`` read in ``func``."""
     return {
         node.attr
-        for node in ast.walk(func)
+        for node in walk_nodes(func)
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == self_name and isinstance(node.ctx, ast.Load)
     }
 
@@ -92,7 +92,7 @@ def _shared_from_stores_and_caches(trees: dict[Path, ast.Module]) -> set[str]:
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 decorators = " ".join(ast.dump(d) for d in node.decorator_list)
                 if "lru_cache" in decorators or "'cache'" in decorators or '"cache"' in decorators:
-                    for inner in ast.walk(node):
+                    for inner in walk_nodes(node):
                         if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
                             shared.add(inner.func.id)
     return shared
@@ -108,10 +108,10 @@ def _registry_container_names(trees: dict[Path, ast.Module]) -> set[str]:
         for stmt in tree.body:
             if not isinstance(stmt, (ast.Assign, ast.AnnAssign)) or stmt.value is None:
                 continue
-            for container in ast.walk(stmt.value):
+            for container in walk_nodes(stmt.value):
                 if not isinstance(container, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
                     continue
-                for element in ast.walk(container):
+                for element in walk_nodes(container):
                     if isinstance(element, ast.Constant) and isinstance(element.value, str) and element.value.isidentifier() and element.value[:1].isupper():
                         names.add(element.value)
     return names

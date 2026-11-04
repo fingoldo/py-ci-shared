@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- an invariant asserted in prose and nowhere else -----------------------------------------------
 #
@@ -38,7 +38,7 @@ def _callers_within(tree: ast.AST) -> dict[str, set[str]]:
     for outer in walk_tree(tree):
         if not isinstance(outer, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        for inner in ast.walk(outer):
+        for inner in walk_nodes(outer):
             if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
                 callers.setdefault(inner.func.id, set()).add(outer.name)
     return callers
@@ -124,7 +124,9 @@ def scan_unenforced_docstring_invariants(
                     file=rel,
                     line=node.lineno,
                     snippet=_line_text(src_lines, node.lineno),
-                    detail=(f'{node.name!r} documents an absolute invariant no test names: "{sentence[:160]}". Assert it, or soften the wording to what the code actually promises.'),
+                    detail=(
+                        f'{node.name!r} documents an absolute invariant no test names: "{sentence[:160]}". Assert it, or soften the wording to what the code actually promises.'
+                    ),
                 )
             )
     return findings

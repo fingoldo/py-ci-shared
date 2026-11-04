@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index, walk_nodes
 
 # --- a counter written but never initialised by the reset that owns its dict --------------------
 #
@@ -51,7 +51,7 @@ def _is_counter_attribute(node: ast.AST) -> str | None:
 def _declared_by(method: ast.AST) -> dict[str, set[str]]:
     """{attribute: keys} this method initialises, from `self.stats = {...}` literals."""
     declared: dict[str, set[str]] = {}
-    for stmt in ast.walk(method):
+    for stmt in walk_nodes(method):
         # AnnAssign too -- `self.stats: dict = {...}` is the annotated spelling this project's
         # conventions mandate, and skipping it silently disabled the whole check for such code.
         if isinstance(stmt, ast.Assign):
@@ -88,8 +88,13 @@ def _written_by_read_modify_write(node: ast.AST, attr: str, written: dict[str, i
     if isinstance(node, ast.Assign) and len(node.targets) == 1:
         store = node.targets[0]
         if isinstance(store, ast.Subscript) and _is_counter_attribute(store.value) == attr:
-            for sub in ast.walk(node.value):
-                if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr == "get" and _is_counter_attribute(sub.func.value) == attr:
+            for sub in walk_nodes(node.value):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and sub.func.attr == "get"
+                    and _is_counter_attribute(sub.func.value) == attr
+                ):
                     _note_key(written, _subscript_index(store), node.lineno)
 
 
@@ -112,7 +117,7 @@ def _written_keys(cls: ast.ClassDef, attr: str) -> dict[str, int]:
     # this rule's only false positives. `+=`, `.get(k, 0) + n`, `.setdefault(k, ...)` and an
     # increment helper all ACCUMULATE, which is where "cumulative since process start while its
     # siblings are per-cycle" comes from.
-    for node in ast.walk(cls):
+    for node in walk_nodes(cls):
         _written_by_augassign(node, attr, written)
         # `self.stats[k] = self.stats.get(k, 0) + n` -- a read-modify-write, so it accumulates.
         _written_by_read_modify_write(node, attr, written)

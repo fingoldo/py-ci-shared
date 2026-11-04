@@ -6,7 +6,7 @@ import ast
 from collections.abc import Iterator
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 _EXIT_STMTS = (ast.Continue, ast.Return, ast.Raise, ast.Break)
 
@@ -43,7 +43,7 @@ _LOGGING_RECEIVERS = frozenset({"log", "logger", "logging", "_log", "_logger"})
 def _shared_tokens(node: ast.AST) -> set[str]:
     """Names and string literals mentioned anywhere in this node."""
     tokens: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         if isinstance(sub, ast.Name):
             tokens.add(sub.id)
         elif isinstance(sub, ast.Attribute):
@@ -115,7 +115,12 @@ def _only_initialises(block: list[ast.stmt]) -> bool:
             continue
         if isinstance(value, (ast.List, ast.Set, ast.Tuple)) and not value.elts:
             continue
-        if isinstance(value, ast.Call) and isinstance(value.func, ast.Name)                 and value.func.id in {"set", "list", "dict", "Counter", "defaultdict"} and not value.args:
+        if (
+            isinstance(value, ast.Call)
+            and isinstance(value.func, ast.Name)
+            and value.func.id in {"set", "list", "dict", "Counter", "defaultdict"}
+            and not value.args
+        ):
             continue
         return False
     return True
@@ -123,7 +128,7 @@ def _only_initialises(block: list[ast.stmt]) -> bool:
 
 def _only_logs(block: list[ast.stmt]) -> bool:
     """Does this block do nothing but log? Then it is not the work a following record records."""
-    calls = [sub for stmt in block for sub in ast.walk(stmt) if isinstance(sub, ast.Call)]
+    calls = [sub for stmt in block for sub in walk_nodes(stmt) if isinstance(sub, ast.Call)]
     if not calls:
         return False
     for call in calls:
@@ -139,12 +144,12 @@ def _only_logs(block: list[ast.stmt]) -> bool:
 
 def _calls_in(node: ast.AST) -> bool:
     """Does this subtree contain a call? A guard with no call guards no work."""
-    return any(isinstance(sub, ast.Call) for sub in ast.walk(node))
+    return any(isinstance(sub, ast.Call) for sub in walk_nodes(node))
 
 
 def _blocks(func: ast.AST) -> Iterator[list[ast.stmt]]:
     """Every statement list in this function, so the rule sees siblings rather than the whole tree."""
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         for field in ("body", "orelse", "finalbody"):
             block = getattr(node, field, None)
             if isinstance(block, list) and block:
@@ -210,7 +215,7 @@ def _is_exempt_guard(stmt: ast.If) -> bool:
 
 def _has_exit(node: ast.AST) -> bool:
     """Does this subtree contain an early exit? A guard or follower with one is not reached on the success path."""
-    return any(isinstance(sub, _EXIT_STMTS) for sub in ast.walk(node))
+    return any(isinstance(sub, _EXIT_STMTS) for sub in walk_nodes(node))
 
 
 def _first_unguarded_record(
