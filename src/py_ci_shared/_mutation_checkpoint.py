@@ -25,7 +25,14 @@ class SweepCheckpoint:
     def __init__(self, path: Optional[Union[Path, str]], key: str) -> None:
         self._path = Path(path) if path is not None else None
         self._key = key
+        #: The line-to-test-files map of an earlier run with this fingerprint (``coverage_prune``), if one was stored.
+        self.coverage: Optional[dict[str, Any]] = None
         self.done: dict[str, dict[str, Any]] = self._load() if self._path is not None else {}
+
+    @property
+    def killers(self) -> "list[tuple[int, str]]":
+        """``(line, killer file)`` of every recorded kill, so a resumed or partitioned sweep starts with the order an earlier one learned."""
+        return [(e["line"], e["killer"]) for e in self.done.values() if isinstance(e.get("line"), int) and isinstance(e.get("killer"), str)]
 
     def _load(self) -> dict[str, dict[str, Any]]:
         if self._path is None or not self._path.is_file():
@@ -36,23 +43,38 @@ class SweepCheckpoint:
                 entry = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(entry, dict) and entry.get("key") == self._key and isinstance(entry.get("mutant"), str):
+            if not isinstance(entry, dict) or entry.get("key") != self._key:
+                continue
+            if isinstance(entry.get("coverage"), dict):
+                self.coverage = entry["coverage"]
+            if isinstance(entry.get("mutant"), str):
                 done[entry["mutant"]] = entry
         return done
 
-    def record(self, mutant_key: str, filed: dict[str, int], budget: dict[str, float]) -> None:
+    def record_coverage(self, data: dict[str, Any]) -> None:
+        """Store the line map once, so a resume does not pay for the coverage run again."""
+        self._append({"key": self._key, "coverage": data})
+        self.coverage = data
+
+    def record(self, mutant_key: str, filed: dict[str, int], budget: dict[str, float], killer: Optional[str] = None, line: Optional[int] = None) -> None:
         """Append one judged mutant. *filed* counts the list names it was added to; *budget* is its time charge.
 
         One binary append per line: the sweep's partitions write from separate threads, and an append of a single line
         is not split with another writer's line, so no lock is held across the I/O.
         """
+        entry: dict[str, Any] = {"key": self._key, "mutant": mutant_key, "filed": filed, "budget": budget}
+        if killer:
+            entry["killer"] = killer  # the test file that failed first: the next sweep leads with it
+            entry["line"] = line
+        self._append(entry)
+
+    def _append(self, entry: dict[str, Any]) -> None:
         if self._path is None:
             return
-        entry = {"key": self._key, "mutant": mutant_key, "filed": filed, "budget": budget}
-        line = (json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+        raw = (json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
         self._path.parent.mkdir(parents=True, exist_ok=True)
         with open(self._path, "ab") as handle:
-            handle.write(line)
+            handle.write(raw)
 
 
 def filed_sizes(state: Any) -> dict[str, int]:

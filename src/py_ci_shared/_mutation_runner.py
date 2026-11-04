@@ -447,7 +447,7 @@ def _remove_tree(path: Union[Path, str]) -> None:
     warnings.warn(f"mutation teeth could not remove its sandbox {target}: {shown}", stacklevel=2)
 
 
-def _run_pytest(test_paths: Sequence[Union[Path, str]], cwd: Path, timeout: float):
+def _run_pytest(test_paths: Sequence[Union[Path, str]], cwd: Path, timeout: float, *extra_flags: str):
     """Run pytest, or return ``None`` when it did not finish inside *timeout*.
 
     The timeout is mandatory rather than optional: swapping ``<`` for ``<=`` produces
@@ -455,7 +455,7 @@ def _run_pytest(test_paths: Sequence[Union[Path, str]], cwd: Path, timeout: floa
     whole process tree is killed, not only pytest.
     """
     return run_with_deadline(
-        [sys.executable, "-m", "pytest", *[str(t) for t in test_paths], *_pytest_flags(), *_plugin_isolation_flags(cwd), "-x"],
+        [sys.executable, "-m", "pytest", *[str(t) for t in test_paths], *_pytest_flags(), *extra_flags, *_plugin_isolation_flags(cwd), "-x"],
         cwd=cwd,
         env=_pytest_env(),
         timeout=timeout,
@@ -493,6 +493,8 @@ class _WarmRunner:
         #: ``check_origin=True`` reports where each of them was really loaded from.
         self.target = target
         self.module_names = list(module_names)
+        #: Extra pytest flags for every request (``-o addopts=`` when a sweep opts out of the consumer's addopts).
+        self.extra_flags: list[str] = []
         self.process: Any = None
         #: The file whose failure ended the last run, if the worker reported one.
         self.last_failed: str | None = None
@@ -550,7 +552,7 @@ class _WarmRunner:
         if self.process is None or self.process.poll() is not None:
             return None
         request_id = next(self._ids)
-        request: dict[str, Any] = {"cmd": "run", "id": request_id, "args": [str(t) for t in test_paths] + _pytest_flags() + ["-x"]}
+        request: dict[str, Any] = {"cmd": "run", "id": request_id, "args": [str(t) for t in test_paths] + _pytest_flags() + self.extra_flags + ["-x"]}
         if check_origin and self.target is not None:
             request["target"] = str(self.target)
             request["names"] = self.module_names
