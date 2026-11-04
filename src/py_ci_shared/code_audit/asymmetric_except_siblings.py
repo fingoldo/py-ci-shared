@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- one sibling's except handler weaker than its twin's ----------------------------------------
 #
@@ -67,14 +67,14 @@ def _guards_compatibly(inner: ast.Try, outer_exceptions: frozenset[str]) -> bool
 def _recovery_calls(handler: ast.ExceptHandler, exceptions: frozenset[str]) -> dict[str, tuple[bool, int]]:
     """{recovery function name: (is it wrapped in a compatible try, line of the call)}."""
     wrapped_ids: set[int] = set()
-    for node in ast.walk(handler):
+    for node in walk_nodes(handler):
         if isinstance(node, ast.Try) and _guards_compatibly(node, exceptions):
             for stmt in node.body:
-                for sub in ast.walk(stmt):
+                for sub in walk_nodes(stmt):
                     wrapped_ids.add(id(sub))
 
     calls: dict[str, tuple[bool, int]] = {}
-    for node in ast.walk(handler):
+    for node in walk_nodes(handler):
         if not isinstance(node, ast.Call):
             continue
         target = node.func
@@ -118,7 +118,7 @@ def _class_recovery_sites(cls: ast.ClassDef) -> dict[tuple[frozenset[str], str],
     """(exception names, recovery call) -> [(method, wrapped, line)] across this class's methods."""
     seen: dict[tuple[frozenset[str], str], list[tuple[str, bool, int]]] = {}
     for method in _methods_of(cls):
-        for node in ast.walk(method):
+        for node in walk_nodes(method):
             if not isinstance(node, ast.ExceptHandler):
                 continue
             exceptions = _handler_exception_names(node)

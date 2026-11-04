@@ -1,4 +1,5 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
@@ -6,7 +7,7 @@ import re
 from pathlib import Path
 from collections.abc import Iterable
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 
 def _alias_own_lineno(alias: ast.alias, node: "ast.Import | ast.ImportFrom", src_lines: list[str], claimed: set[int]) -> int:
@@ -136,7 +137,7 @@ def _names_referenced_in_file(tree: ast.Module, skip_import_lines: set[int]) -> 
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
             # Any expression, not just a literal: ``__all__ = sorted({"a", "b"})`` names the same re-exports.
-            for elt in ast.walk(node.value):
+            for elt in walk_nodes(node.value):
                 if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
                     referenced.add(elt.value)
     return referenced
@@ -264,18 +265,20 @@ def scan_possibly_dead_import(
                 continue  # possibly a facade re-export consumed as <module>.name elsewhere
             if _is_consumed_by_another_files_from_import(name, py, from_import_names_by_file):
                 continue  # a facade re-export consumed via `from this_module import name` elsewhere
-            findings.append(Finding(
-                check="possibly_dead_import",
-                severity="Low",
-                file=rel,
-                line=lineno,
-                snippet=_line_text(src_lines, lineno),
-                detail=(
-                    f"'{display}' binds '{name}', never referenced as a bare name in this file and never "
-                    f"accessed as '<anything>.{name}' anywhere in the scanned corpus -- looks genuinely "
-                    f"unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way "
-                    f"this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an "
-                    f"external consumer outside this scan root), leave a comment explaining why."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="possibly_dead_import",
+                    severity="Low",
+                    file=rel,
+                    line=lineno,
+                    snippet=_line_text(src_lines, lineno),
+                    detail=(
+                        f"'{display}' binds '{name}', never referenced as a bare name in this file and never "
+                        f"accessed as '<anything>.{name}' anywhere in the scanned corpus -- looks genuinely "
+                        f"unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way "
+                        f"this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an "
+                        f"external consumer outside this scan root), leave a comment explaining why."
+                    ),
+                )
+            )
     return findings

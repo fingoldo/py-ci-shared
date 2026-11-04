@@ -3,6 +3,7 @@
 Shared-gate counterpart: py_ci_shared.drifted_duplicate_functions reports same-named module-level copies
 that drifted apart. This scanner reports identical bodies under any name, which the gate never does.
 """
+
 from __future__ import annotations
 
 import ast
@@ -10,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Union
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
 _MIN_BODY_NODES = 8  # skip trivial bodies (pass, ..., a bare `return None`/`return False`/`return self._x`)
 
@@ -30,7 +31,7 @@ def _node_count(body: list) -> int:
     statement-count gate even though it's genuinely non-trivial code); counting LINES
     overcounts a one-line ``return None`` that happens to sit under a multi-line decorated
     signature. Recursive node count avoids both traps."""
-    return sum(1 for stmt in body for _ in ast.walk(stmt))
+    return sum(1 for stmt in body for _ in walk_nodes(stmt))
 
 
 def _normalized_body(body: list) -> str:
@@ -126,17 +127,19 @@ def scan_duplicate_function_body(
             rel = py.relative_to(root).as_posix()
             if is_line_exempt(src_lines, node.lineno, "duplicate_function_body"):
                 continue
-            findings.append(Finding(
-                check="duplicate_function_body",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    f"def {node.name}(...) has a structurally identical body to "
-                    f"{first_rel}:{first_node.lineno} (def {first_node.name}) -- extract into one "
-                    "shared function/module and import it from both call sites instead of "
-                    "maintaining copies that can silently drift apart."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="duplicate_function_body",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        f"def {node.name}(...) has a structurally identical body to "
+                        f"{first_rel}:{first_node.lineno} (def {first_node.name}) -- extract into one "
+                        "shared function/module and import it from both call sites instead of "
+                        "maintaining copies that can silently drift apart."
+                    ),
+                )
+            )
     return findings

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a test stub that raises, into production code that swallows -----------------------------
 #
@@ -55,7 +55,7 @@ def _stub_names_that_raise(scope: ast.AST) -> set[str]:
     tainted all five, and the rule's single hit on a real repository was a false positive.
     """
     names: set[str] = set()
-    for node in ast.walk(scope):
+    for node in walk_nodes(scope):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node is not scope:
             if _raises_unconditionally(node):
                 names.add(node.name)
@@ -69,7 +69,7 @@ def _asserts_on_a_raise(func: ast.AST) -> bool:
     call's RETURN VALUE, which means the test exercises the degradation path on purpose -- is
     decided separately by :func:`_spy_style_assertions`, not here.
     """
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Call):
             target = node.func
             name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", None)
@@ -85,7 +85,7 @@ def _spy_style_assertions(func: ast.AST) -> bool:
     "never called", and asserts something adjacent. If the test asserts on the driving call's
     return value instead, the swallow is the behaviour under test.
     """
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Attribute) and (node.attr in ("called", "call_count", "call_args", "call_args_list") or node.attr.startswith("assert_")):
             return True
     return False
@@ -105,7 +105,7 @@ def _handler_is_broad(handler: ast.ExceptHandler) -> bool:
 
 def _reraises(handler: ast.ExceptHandler) -> bool:
     """Does this handler re-raise? Then it does not swallow, whatever else it does."""
-    return any(isinstance(n, ast.Raise) for n in ast.walk(handler))
+    return any(isinstance(n, ast.Raise) for n in walk_nodes(handler))
 
 
 def _swallowing_calls(tree: ast.AST) -> set[str]:
@@ -117,7 +117,7 @@ def _swallowing_calls(tree: ast.AST) -> set[str]:
         if not any(_handler_is_broad(h) and not _reraises(h) for h in node.handlers):
             continue
         for stmt in node.body:
-            for sub in ast.walk(stmt):
+            for sub in walk_nodes(stmt):
                 if isinstance(sub, ast.Call):
                     target = sub.func
                     name = target.attr if isinstance(target, ast.Attribute) else getattr(target, "id", None)
@@ -147,7 +147,7 @@ def _patched_attr_of(node: ast.Call) -> str | None:
 def _patched_targets_of_raising_stubs(func: ast.AST, raising_stubs: set[str]) -> list[tuple[str, int]]:
     """(patched attribute name, line) for every patch installing one of *raising_stubs*."""
     out: list[tuple[str, int]] = []
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.Call):
             continue
         target = node.func

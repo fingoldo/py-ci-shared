@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a docstring still describing constants the code no longer has -----------------------------
 #
@@ -88,7 +88,7 @@ def _docstring_numbers(doc: str) -> list[str]:
 def _body_numbers(func: ast.AST) -> set[str]:
     """Every numeric literal in the function body, as text, so "5" matches 5 and 5.0 matches 5.0."""
     numbers: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             numbers.add(str(node.value))
             if isinstance(node.value, float) and node.value.is_integer():
@@ -98,7 +98,7 @@ def _body_numbers(func: ast.AST) -> set[str]:
 
 def _reads_configuration(func: ast.AST) -> bool:
     """Does the body fetch a value from configuration or the environment?"""
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         # `os.environ["PRUNE"]` is the normal spelling for `environ`, which is in _CONFIG_READERS;
         # only matching Call nodes saw the `.get(...)` form and nothing else.
         if isinstance(node, ast.Subscript):

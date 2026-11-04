@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a caller's argument dropped because a signature did not name it ----------------------------
 
@@ -25,13 +26,13 @@ def _signature_parameter_names(node: ast.AST) -> bool:
 def _parameter_set_names(fn: ast.AST) -> set[str]:
     """Local names bound to a signature's parameter names inside *fn*."""
     out: set[str] = set()
-    for node in ast.walk(fn):
+    for node in walk_nodes(fn):
         if isinstance(node, ast.Assign) and _signature_parameter_names(node.value):
             out |= {t.id for t in node.targets if isinstance(t, ast.Name)}
         elif isinstance(node, ast.Try):
             # `try: params = set(signature(x).parameters)  except (ValueError, TypeError): params = set()`
             for handler in node.handlers:
-                for sub in ast.walk(handler):
+                for sub in walk_nodes(handler):
                     if isinstance(sub, ast.Assign):
                         out |= {t.id for t in sub.targets if isinstance(t, ast.Name) and t.id in out}
     return out
@@ -53,7 +54,7 @@ def _gated_parameter(test: ast.expr, parameter_sets: set[str]) -> str:
 
 def _passes_the_value_on(body: list[ast.stmt], name: str) -> bool:
     """True if *body* forwards the gated argument: ``kwargs["thinking"] = thinking`` or ``kwargs.update(...)``."""
-    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+    for node in walk_nodes(ast.Module(body=body, type_ignores=[])):
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Subscript) for t in node.targets):
             return True
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("update", "setdefault", "append"):
@@ -65,7 +66,7 @@ def _passes_the_value_on(body: list[ast.stmt], name: str) -> bool:
 
 def _says_something(body: list[ast.stmt]) -> bool:
     """True if *body* reports the drop: a log/warn/print call, or a raise."""
-    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+    for node in walk_nodes(ast.Module(body=body, type_ignores=[])):
         if isinstance(node, ast.Raise):
             return True
         if isinstance(node, ast.Call):
@@ -109,24 +110,26 @@ def scan_signature_gated_kwarg_drops(
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             parameter_sets = _parameter_set_names(fn)
-            for node in ast.walk(fn):
+            for node in walk_nodes(fn):
                 # A gate whose negative branch reports the drop is the fix, not the defect; a silent else is still a drop.
                 if not isinstance(node, ast.If) or _says_something(node.orelse):
                     continue
                 name = _gated_parameter(node.test, parameter_sets)
                 if not name or not _passes_the_value_on(node.body, name):
                     continue
-                findings.append(Finding(
-                    check="signature_gated_kwarg_drop",
-                    severity="P2",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        f"`{name}` is forwarded only when the callee's signature names it, and dropped in silence "
-                        f"when it does not: the call then runs with the callee's default and the caller is never "
-                        f"told. Report the drop in the negative branch. Note that a signature taking `**kwargs` "
-                        f"names no parameters of its own, so a forwarding subclass reads as accepting nothing."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="signature_gated_kwarg_drop",
+                        severity="P2",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            f"`{name}` is forwarded only when the callee's signature names it, and dropped in silence "
+                            f"when it does not: the call then runs with the callee's default and the caller is never "
+                            f"told. Report the drop in the negative branch. Note that a signature taking `**kwargs` "
+                            f"names no parameters of its own, so a forwarding subclass reads as accepting nothing."
+                        ),
+                    )
+                )
     return findings

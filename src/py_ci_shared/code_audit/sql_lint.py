@@ -1,11 +1,24 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _module_sql_constants, _read_src_lines, _safe_parse, _sql_text, is_line_exempt
+from ._base import (
+    walk_tree,
+    Finding,
+    _DEFAULT_EXCLUDE_DIRS,
+    _iter_py_files,
+    _line_text,
+    _module_sql_constants,
+    _read_src_lines,
+    _safe_parse,
+    _sql_text,
+    is_line_exempt,
+    walk_nodes,
+)
 
 # --- SQL-literal heuristics -----------------------------------------------
 
@@ -84,21 +97,23 @@ def scan_sql_aggregate_before_cast(
                     continue
                 if _CAST_RE.search(arg):
                     continue
-                findings.append(Finding(
-                    check="sql_aggregate_before_cast",
-                    severity="P2",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        f"{m.group(1).upper()}() wraps a raw JSON-text extraction "
-                        "(->>'...' / ->'...') with no ::type cast anywhere in its "
-                        "argument -- aggregates/compares the TEXT representation, "
-                        "which sorts lexicographically rather than by the real "
-                        "value's type. Cast inside the aggregate's own parens, "
-                        "e.g. MIN((col->>'key')::timestamptz)."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="sql_aggregate_before_cast",
+                        severity="P2",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            f"{m.group(1).upper()}() wraps a raw JSON-text extraction "
+                            "(->>'...' / ->'...') with no ::type cast anywhere in its "
+                            "argument -- aggregates/compares the TEXT representation, "
+                            "which sorts lexicographically rather than by the real "
+                            "value's type. Cast inside the aggregate's own parens, "
+                            "e.g. MIN((col->>'key')::timestamptz)."
+                        ),
+                    )
+                )
     return findings
 
 
@@ -145,7 +160,7 @@ def _string_constants(tree: ast.Module) -> list[tuple[ast.expr, str]]:
     for n in walk_tree(tree):
         if not isinstance(n, ast.JoinedStr):
             continue
-        for part in ast.walk(n):
+        for part in walk_nodes(n):
             if isinstance(part, ast.Constant):
                 inside_fstring.add(id(part))
         text = _sql_text(n, constants)
@@ -193,20 +208,22 @@ def scan_sql_limit_without_order_by(
                 continue
             if is_line_exempt(src_lines, node.lineno, "sql_limit_without_order_by"):
                 continue
-            findings.append(Finding(
-                check="sql_limit_without_order_by",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    "SQL literal has a LIMIT clause with no ORDER BY -- which "
-                    "rows survive the cap is arbitrary DB physical order, not "
-                    "reproducible across runs. Add an ORDER BY matching the "
-                    "intended selection criterion, or LIMIT 1 if any single "
-                    "row is acceptable."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="sql_limit_without_order_by",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        "SQL literal has a LIMIT clause with no ORDER BY -- which "
+                        "rows survive the cap is arbitrary DB physical order, not "
+                        "reproducible across runs. Add an ORDER BY matching the "
+                        "intended selection criterion, or LIMIT 1 if any single "
+                        "row is acceptable."
+                    ),
+                )
+            )
     return findings
 
 
@@ -241,19 +258,21 @@ def scan_sql_offset_pagination(
                 continue
             if not (_LIMIT_RE.search(sql) and _OFFSET_RE.search(sql)):
                 continue
-            findings.append(Finding(
-                check="sql_offset_pagination",
-                severity="Low",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    "SQL literal paginates via LIMIT+OFFSET. Verify the "
-                    "filtered result set is stable across batches -- if this "
-                    "query's own loop also mutates a column referenced in "
-                    "its WHERE clause between batches, OFFSET will silently "
-                    "skip rows. Prefer keyset pagination (WHERE id > "
-                    ":last_id ORDER BY id LIMIT :n) when in doubt."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="sql_offset_pagination",
+                    severity="Low",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        "SQL literal paginates via LIMIT+OFFSET. Verify the "
+                        "filtered result set is stable across batches -- if this "
+                        "query's own loop also mutates a column referenced in "
+                        "its WHERE clause between batches, OFFSET will silently "
+                        "skip rows. Prefer keyset pagination (WHERE id > "
+                        ":last_id ORDER BY id LIMIT :n) when in doubt."
+                    ),
+                )
+            )
     return findings

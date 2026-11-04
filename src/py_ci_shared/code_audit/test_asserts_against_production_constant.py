@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a test that checks the code against the code -----------------------------------------------
 #
@@ -71,10 +71,10 @@ def _arithmetic_over(node: ast.expr, constants: set[str]) -> set[str]:
     # check for the (very common) approximate spelling, even though `approx` is already listed as an
     # assertion helper. Unwrap to the value it wraps, then apply the ordinary rule.
     node = _unwrap_approx(node)
-    if any(isinstance(sub, ast.Call) for sub in ast.walk(node)):
+    if any(isinstance(sub, ast.Call) for sub in walk_nodes(node)):
         return set()
     used: set[str] = set()
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         # `assert f() == -BASE_DELAY` re-derives the expectation just as `BASE_DELAY * -1` does.
         if isinstance(sub, ast.UnaryOp) and isinstance(sub.op, (ast.USub, ast.UAdd)) and isinstance(sub.operand, ast.Name) and sub.operand.id in constants:
             used.add(sub.operand.id)
@@ -83,7 +83,7 @@ def _arithmetic_over(node: ast.expr, constants: set[str]) -> set[str]:
         if _is_path_construction(sub):
             continue
         for operand in (sub.left, sub.right):
-            for name in ast.walk(operand):
+            for name in walk_nodes(operand):
                 if isinstance(name, ast.Name) and name.id in constants:
                     used.add(name.id)
     return used
@@ -122,7 +122,7 @@ def _unwrap_approx(node: ast.expr) -> ast.expr:
 
 def _mentions(node: ast.expr, constants: set[str]) -> bool:
     """Whether this expression mentions any of the production constants at all."""
-    return any(isinstance(sub, ast.Name) and sub.id in constants for sub in ast.walk(node))
+    return any(isinstance(sub, ast.Name) and sub.id in constants for sub in walk_nodes(node))
 
 
 def _asserted_comparisons(tree: ast.Module) -> list[tuple[ast.expr, ast.expr, int]]:
@@ -132,7 +132,7 @@ def _asserted_comparisons(tree: ast.Module) -> list[tuple[ast.expr, ast.expr, in
     in_test: set[int] = set()
     for fn in walk_tree(tree):
         if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name.startswith("test_"):
-            for sub in ast.walk(fn):
+            for sub in walk_nodes(fn):
                 in_test.add(id(sub))
     for node in walk_tree(tree):
         if isinstance(node, ast.Assert) and isinstance(node.test, ast.Compare):

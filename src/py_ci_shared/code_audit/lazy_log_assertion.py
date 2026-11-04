@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- asserting a FORMATTED string against a lazily-formatted log record ------------------------
 #
@@ -98,7 +98,7 @@ def _touches_a_log_record(node: ast.AST) -> str | None:
     Requires BOTH a logger level and a call-record attribute in the same expression, so
     `log.warning.call_args` matches and a bare `mock.call_args` on some unrelated mock does not.
     """
-    attrs = {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+    attrs = {n.attr for n in walk_nodes(node) if isinstance(n, ast.Attribute)}
     record = attrs & _CALL_RECORD_ATTRS
     if record and (attrs & _LOG_LEVELS):
         return sorted(record)[0]
@@ -124,7 +124,7 @@ def _assertion_expression(node: ast.AST) -> ast.expr | None:
 def _asserted_literals(test: ast.AST) -> list[str]:
     """String literals this assertion compares against something."""
     out: list[str] = []
-    for node in ast.walk(test):
+    for node in walk_nodes(test):
         if isinstance(node, ast.Compare):
             out.extend(side.value for side in [node.left, *node.comparators] if isinstance(side, ast.Constant) and isinstance(side.value, str))
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _UNITTEST_ASSERTIONS:

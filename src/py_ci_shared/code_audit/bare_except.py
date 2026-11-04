@@ -4,12 +4,13 @@ Shared-gate counterpart: py_ci_shared.swallowed_exceptions reports a silent hand
 catch in production code only. This scanner also covers tests and scripts and every bare/BaseException
 handler that does not re-raise, whatever its body, so it stays.
 """
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
 # --- bare `except:` / `except BaseException:` ----------------------------
 
@@ -26,7 +27,7 @@ def _is_bare_except(handler: ast.ExceptHandler) -> bool:
         return False
     # Bare re-raise exemption applies to BOTH shapes -- a bare `except:` whose body immediately
     # re-raises swallows nothing either, exactly as the docstring promises.
-    for sub in ast.walk(handler):
+    for sub in walk_nodes(handler):
         if isinstance(sub, ast.Raise) and sub.exc is None:
             return False
     return True
@@ -61,16 +62,18 @@ def scan_bare_except(
             for handler in node.handlers:
                 if not _is_bare_except(handler) or is_line_exempt(src_lines, handler.lineno, "bare_except"):
                     continue
-                findings.append(Finding(
-                    check="bare_except",
-                    severity="P1",
-                    file=rel,
-                    line=handler.lineno,
-                    snippet=_line_text(src_lines, handler.lineno),
-                    detail=(
-                        "bare `except:` (or `except BaseException:`) swallows KeyboardInterrupt/"
-                        "SystemExit and masks real bugs. Replace with `except Exception:` or a "
-                        "narrower specific exception type."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="bare_except",
+                        severity="P1",
+                        file=rel,
+                        line=handler.lineno,
+                        snippet=_line_text(src_lines, handler.lineno),
+                        detail=(
+                            "bare `except:` (or `except BaseException:`) swallows KeyboardInterrupt/"
+                            "SystemExit and masks real bugs. Replace with `except Exception:` or a "
+                            "narrower specific exception type."
+                        ),
+                    )
+                )
     return findings

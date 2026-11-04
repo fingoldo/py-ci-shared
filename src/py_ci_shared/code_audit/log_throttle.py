@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
 _LOG_METHODS = ("warning", "error", "exception", "critical")
 _THROTTLE_HINTS = ("throttle", "rate_limit", "ratelimit", "debounce")
@@ -24,7 +25,7 @@ def _guard_looks_throttled(test: ast.expr) -> bool:
     """True if an ``if`` test guarding a log call plausibly already throttles it: calls a
     helper whose name contains a throttle-shaped hint, or uses a modulo/interval-counter idiom
     (``if i % N == 0``, a common cheap throttle)."""
-    for node in ast.walk(test):
+    for node in walk_nodes(test):
         if isinstance(node, ast.Call):
             name = _call_name(node.func)
             if name and any(h in name.lower() for h in _THROTTLE_HINTS):
@@ -88,14 +89,14 @@ def _loop_body_has_bounded_retry_break(stmts: list[ast.stmt]) -> bool:
     True:` test itself, so it was invisible to the existing check.
     """
     for stmt in stmts:
-        for node in ast.walk(stmt):
+        for node in walk_nodes(stmt):
             if not isinstance(node, ast.If):
                 continue
             # The retry-bound comparison may be combined with other conditions via `and`/`or`
             # (e.g. `if not interactive or attempts >= max_retries: raise`), not just a bare
             # Compare -- walk the whole test expression for a qualifying Compare anywhere in it.
-            has_retry_bound = any(isinstance(sub, ast.Compare) and _loop_looks_bounded_retry(sub) for sub in ast.walk(node.test))
-            if has_retry_bound and any(isinstance(s, (ast.Break, ast.Raise)) for s in ast.walk(node)):
+            has_retry_bound = any(isinstance(sub, ast.Compare) and _loop_looks_bounded_retry(sub) for sub in walk_nodes(node.test))
+            if has_retry_bound and any(isinstance(s, (ast.Break, ast.Raise)) for s in walk_nodes(node)):
                 return True
     return False
 
@@ -113,7 +114,7 @@ def _loop_body_has_meaningful_sleep(stmts: list[ast.stmt]) -> bool:
     would, and only uses the Event form so ``stop()`` returns immediately instead of blocking for a
     full interval. Measured false positive: ``system/hardware_monitor.py``'s sampling thread."""
     for stmt in stmts:
-        for node in ast.walk(stmt):
+        for node in walk_nodes(stmt):
             if isinstance(node, ast.Call) and _call_name(node.func) in {"sleep", "wait"} and node.args:
                 return True
     return False
@@ -161,7 +162,7 @@ def _collect_log_calls(stmt: ast.stmt) -> "list[ast.Call]":
             if not isinstance(node, ast.Call):
                 raise AssertionError(f"expected ast.Call, got {type(node).__name__}")
             out.append(node)
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
     return out
 
 
@@ -254,7 +255,7 @@ def _visit_if_aware(
     elif isinstance(node, ast.If):
         _visit_if_branches(node, loop_depth, guarded, findings, rel, src_lines, single_shot)
     else:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             _visit_if_aware(child, loop_depth, guarded, findings, rel, src_lines, single_shot)
 
 

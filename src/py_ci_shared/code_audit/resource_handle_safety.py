@@ -1,11 +1,12 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from typing import Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
 # --- resource-acquisition calls not wrapped in `with` ----------------------
 
@@ -38,7 +39,7 @@ def _build_parent_map(tree: ast.AST) -> dict:
     """Return ``{id(child): parent_node}`` for every node in ``tree``."""
     parent_map: dict = {}
     for parent in walk_tree(tree):
-        for child in ast.iter_child_nodes(parent):
+        for child in child_nodes(parent):
             parent_map[id(child)] = parent
     return parent_map
 
@@ -59,7 +60,7 @@ def _is_under_with_statement(call: ast.Call, chain: list) -> bool:
     for ancestor in chain:
         if isinstance(ancestor, ast.With):
             for item in ancestor.items:
-                for sub in ast.walk(item.context_expr):
+                for sub in walk_nodes(item.context_expr):
                     if sub is call:
                         return True
     return False
@@ -100,17 +101,19 @@ def scan_resource_handle_safety(
                 continue
             if is_line_exempt(src_lines, node.lineno, "resource_handle_safety"):
                 continue
-            findings.append(Finding(
-                check="resource_handle_safety",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    "resource-acquisition call (open()/Popen()/NamedTemporaryFile()) outside a "
-                    "`with` block; handle close/cleanup on exception is not guaranteed. Use "
-                    "`with open(...) as f:` form, OR this is a confirmed intentional case (e.g. "
-                    "handle returned as part of a public API)."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="resource_handle_safety",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        "resource-acquisition call (open()/Popen()/NamedTemporaryFile()) outside a "
+                        "`with` block; handle close/cleanup on exception is not guaranteed. Use "
+                        "`with open(...) as f:` form, OR this is a confirmed intentional case (e.g. "
+                        "handle returned as part of a public API)."
+                    ),
+                )
+            )
     return findings

@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse
+from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
 # --- prose naming the caller, after the caller stopped calling ---------------------------------
 #
@@ -49,7 +49,7 @@ def _documented_callers(text: str) -> set[str]:
 def _calls_made_by(func: ast.AST) -> set[str]:
     """Every name this function calls, bare or through an attribute."""
     called: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.Call):
             continue
         if isinstance(node.func, ast.Name):

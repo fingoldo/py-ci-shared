@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- duplicate conditions (copy-paste bugs) ----------------------------------
 #
@@ -41,7 +42,7 @@ def _contains_bare_function_call(node: ast.AST) -> bool:
     but isn't one -- purity can't be determined statically, so this operand shape is skipped
     rather than risk a false positive on it.
     """
-    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) for n in ast.walk(node))
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) for n in walk_nodes(node))
 
 
 def _elif_branch_ids(tree: ast.Module) -> set[int]:
@@ -68,19 +69,21 @@ def _boolop_findings(node: ast.BoolOp, rel: str, src_lines: list[str]) -> list[F
         key = _operand_key(operand)
         if key in seen:
             op_word = "and" if isinstance(node.op, ast.And) else "or"
-            findings.append(Finding(
-                check="duplicate_condition",
-                severity="P2",
-                file=rel,
-                line=operand.lineno,
-                snippet=_line_text(src_lines, operand.lineno),
-                detail=(
-                    f"identical operand repeated in one `{op_word}` "
-                    f"expression -- likely a copy-paste typo where the "
-                    f"second operand was meant to be a different value; "
-                    f"the intended second check is silently never performed."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="duplicate_condition",
+                    severity="P2",
+                    file=rel,
+                    line=operand.lineno,
+                    snippet=_line_text(src_lines, operand.lineno),
+                    detail=(
+                        f"identical operand repeated in one `{op_word}` "
+                        f"expression -- likely a copy-paste typo where the "
+                        f"second operand was meant to be a different value; "
+                        f"the intended second check is silently never performed."
+                    ),
+                )
+            )
         else:
             seen[key] = operand
     return findings
@@ -96,19 +99,21 @@ def _elif_chain_findings(node: ast.If, rel: str, src_lines: list[str]) -> list[F
         current = current.orelse[0]
         key = _operand_key(current.test)
         if key in chain_tests:
-            findings.append(Finding(
-                check="duplicate_condition",
-                severity="P2",
-                file=rel,
-                line=current.test.lineno,
-                snippet=_line_text(src_lines, current.test.lineno),
-                detail=(
-                    f"elif test is identical to the branch at line "
-                    f"{chain_tests[key]} in the same if/elif chain -- "
-                    f"this branch is unreachable dead code (the earlier "
-                    f"branch always wins)."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="duplicate_condition",
+                    severity="P2",
+                    file=rel,
+                    line=current.test.lineno,
+                    snippet=_line_text(src_lines, current.test.lineno),
+                    detail=(
+                        f"elif test is identical to the branch at line "
+                        f"{chain_tests[key]} in the same if/elif chain -- "
+                        f"this branch is unreachable dead code (the earlier "
+                        f"branch always wins)."
+                    ),
+                )
+            )
         else:
             chain_tests[key] = current.test.lineno
     return findings
@@ -124,26 +129,29 @@ def _dict_key_findings(node: ast.Dict, rel: str, src_lines: list[str]) -> list[F
         if not (isinstance(k, ast.Constant) and isinstance(k.value, (str, int, float, bool))):
             continue  # only literal keys are reliably comparable
         if k.value in seen_keys:
-            findings.append(Finding(
-                check="duplicate_dict_key",
-                severity="P2",
-                file=rel,
-                line=k.lineno,
-                snippet=_line_text(src_lines, k.lineno),
-                detail=(
-                    f"key {k.value!r} already set at line {seen_keys[k.value]} "
-                    f"in this dict literal -- Python keeps only the LAST value, "
-                    f"so the earlier entry is silently discarded with no error."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="duplicate_dict_key",
+                    severity="P2",
+                    file=rel,
+                    line=k.lineno,
+                    snippet=_line_text(src_lines, k.lineno),
+                    detail=(
+                        f"key {k.value!r} already set at line {seen_keys[k.value]} "
+                        f"in this dict literal -- Python keeps only the LAST value, "
+                        f"so the earlier entry is silently discarded with no error."
+                    ),
+                )
+            )
         else:
             seen_keys[k.value] = k.lineno
     return findings
 
 
-def scan_duplicate_conditions(root: Path,
-                              exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                              ) -> list[Finding]:
+def scan_duplicate_conditions(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find structurally identical repeated conditions and dict-literal
     keys:
 

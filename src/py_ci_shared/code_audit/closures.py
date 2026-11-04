@@ -1,11 +1,12 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from typing import Any, Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 # --- Class B: late-binding closures over loop vars ----------------------
 
@@ -26,16 +27,39 @@ def _loop_target_names(node: ast.For | ast.AsyncFor) -> set[str]:
     return _loop_target_names_from_target(node.target)
 
 
-_SYNCHRONOUS_CONSUMERS = frozenset({
-    # builtins that exhaust their callable arg before returning.
-    "sorted", "min", "max", "filter", "map", "any", "all", "sum", "next",
-    "reduce", "groupby", "takewhile", "dropwhile",
-})
+_SYNCHRONOUS_CONSUMERS = frozenset(
+    {
+        # builtins that exhaust their callable arg before returning.
+        "sorted",
+        "min",
+        "max",
+        "filter",
+        "map",
+        "any",
+        "all",
+        "sum",
+        "next",
+        "reduce",
+        "groupby",
+        "takewhile",
+        "dropwhile",
+    }
+)
 
-_STORING_METHODS = frozenset({
-    "append", "extend", "insert", "setdefault", "__setitem__",
-    "register", "add_callback", "schedule", "submit", "apply_async",
-})
+_STORING_METHODS = frozenset(
+    {
+        "append",
+        "extend",
+        "insert",
+        "setdefault",
+        "__setitem__",
+        "register",
+        "add_callback",
+        "schedule",
+        "submit",
+        "apply_async",
+    }
+)
 
 
 def _ancestor_chain(target: ast.AST, root: ast.stmt) -> list[ast.AST]:
@@ -54,7 +78,7 @@ def _ancestor_chain(target: ast.AST, root: ast.stmt) -> list[ast.AST]:
             chain.extend(stack)
             found[0] = True
             return
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             _walk(child, [*stack, node])
 
     _walk(root, [])
@@ -159,7 +183,7 @@ def _closure_escapes_iteration(closure_node: ast.AST, loop_body: list[ast.stmt])
 def _loop_closure_findings(node: Any, loop_vars: set, rel: str, src_lines: list) -> list[Finding]:
     """Findings for lambdas and nested defs inside one ``for`` loop that capture its variables and escape the iteration."""
     found: list[Finding] = []
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
         if sub is node:
             continue
         if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -174,19 +198,21 @@ def _loop_closure_findings(node: Any, loop_vars: set, rel: str, src_lines: list)
             continue
         if not _closure_escapes_iteration(sub, node.body):
             continue
-        found.append(Finding(
-            check="late_binding_closure",
-            severity="P1",
-            file=rel,
-            line=sub.lineno,
-            snippet=_line_text(src_lines, sub.lineno),
-            detail=(
-                f"lambda inside for-loop captures loop var(s) "
-                f"{sorted(captured)!r}; closure escapes iteration "
-                f"(stored/yielded). Bind as default: "
-                f"`lambda x=x: ...`."
-            ),
-        ))
+        found.append(
+            Finding(
+                check="late_binding_closure",
+                severity="P1",
+                file=rel,
+                line=sub.lineno,
+                snippet=_line_text(src_lines, sub.lineno),
+                detail=(
+                    f"lambda inside for-loop captures loop var(s) "
+                    f"{sorted(captured)!r}; closure escapes iteration "
+                    f"(stored/yielded). Bind as default: "
+                    f"`lambda x=x: ...`."
+                ),
+            )
+        )
     return found
 
 
@@ -219,7 +245,7 @@ def _comprehension_lambda_findings(node: Any, loop_vars: set, rel: str, src_line
     found: list[Finding] = []
     elts = [node.elt] if hasattr(node, "elt") else [node.key, node.value]
     for elt in elts:
-        for sub in ast.walk(elt):
+        for sub in walk_nodes(elt):
             if not isinstance(sub, ast.Lambda):
                 continue
             own_defaults = {a.arg for a in (*sub.args.posonlyargs, *sub.args.args, *sub.args.kwonlyargs)}
@@ -231,18 +257,20 @@ def _comprehension_lambda_findings(node: Any, loop_vars: set, rel: str, src_line
             # into the resulting list/set/dict/generator -- it always escapes the
             # iteration that created it, unlike a bare `for` loop where escape depends
             # on what the loop body does with the closure.
-            found.append(Finding(
-                check="late_binding_closure",
-                severity="P1",
-                file=rel,
-                line=sub.lineno,
-                snippet=_line_text(src_lines, sub.lineno),
-                detail=(
-                    f"lambda inside comprehension/generator expression captures loop var(s) "
-                    f"{sorted(captured)!r}; every lambda in the comprehension shares the same "
-                    f"post-iteration binding. Bind as default: `lambda x=x: ...`."
-                ),
-            ))
+            found.append(
+                Finding(
+                    check="late_binding_closure",
+                    severity="P1",
+                    file=rel,
+                    line=sub.lineno,
+                    snippet=_line_text(src_lines, sub.lineno),
+                    detail=(
+                        f"lambda inside comprehension/generator expression captures loop var(s) "
+                        f"{sorted(captured)!r}; every lambda in the comprehension shares the same "
+                        f"post-iteration binding. Bind as default: `lambda x=x: ...`."
+                    ),
+                )
+            )
     return found
 
 
@@ -262,9 +290,10 @@ def _file_closure_findings(tree: ast.AST, rel: str, src_lines: list) -> list[Fin
     return findings
 
 
-def scan_late_binding_closures(root: Path,
-                               exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                               ) -> list[Finding]:
+def scan_late_binding_closures(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find ``lambda`` / nested ``def`` inside a ``for`` loop that
     references the loop variable AND escapes the iteration.
 

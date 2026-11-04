@@ -6,7 +6,7 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- vacuous truth in a matching predicate --------------------------------------------------------
 #
@@ -75,7 +75,7 @@ def scan_vacuous_empty_pattern_match(
             # the WHOLE file on every call, so slicing eagerly per function was O(functions x file
             # size): 23.5 s over `tests/` against 0.45 s for the same 7 findings.
             fn_src: "str | None" = None
-            for node in ast.walk(fn):
+            for node in walk_nodes(fn):
                 hit = _bare_name_iterable_of_all(node)
                 if hit is None:
                     continue

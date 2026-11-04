@@ -1,4 +1,5 @@
 """Scanner tests for registry_invariants, split verbatim out of the former tests/test_code_audit.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -67,7 +68,10 @@ def test_no_scanner_emits_a_severity_outside_the_vocabulary(tmp_path: Path):
     produce a severity the CLI's filter cannot see."""
     from py_ci_shared.code_audit._base import SEVERITIES
 
-    _write(tmp_path, "bad.py", """
+    _write(
+        tmp_path,
+        "bad.py",
+        """
 class NeverRaisedError(Exception):
     pass
 
@@ -77,7 +81,8 @@ def g(items=[]):
         pass
     except:
         pass
-""")
+""",
+    )
     findings = run_all(tmp_path, parallel=False)
     assert findings
     assert {f.severity for f in findings} <= set(SEVERITIES)
@@ -179,24 +184,29 @@ def test_snippet_is_correct_after_a_form_feed(tmp_path: Path):
     assert findings[0].snippet == "except:"
 
 
-def test_parse_cache_is_bounded_and_clearable(tmp_path: Path):
-    """F208 regression: an unbounded process-global retained one full AST per version of every file
-    ever parsed, with no eviction and no way to release it."""
+def test_parse_cache_is_shared_with_core_and_clearable(tmp_path: Path):
+    """F208 regression + 35-F2: the scanners' tree cache is ``_core.source``'s (one parse per file per run, one verdict on whether a file parses), and clearing it releases the trees."""
+    from py_ci_shared._core import source
     from py_ci_shared.code_audit import _base
 
     _base.clear_parse_cache()
-    assert len(_base._PARSE_CACHE) == 0
-    monkey = _base._PARSE_CACHE_MAX_ENTRIES
-    _base._PARSE_CACHE_MAX_ENTRIES = 3
-    try:
-        for i in range(10):
-            f = tmp_path / f"m{i}.py"
-            f.write_text(f"x = {i}\n", encoding="utf-8")
-            _base._safe_parse(f)
-        assert len(_base._PARSE_CACHE) <= 3
-    finally:
-        _base._PARSE_CACHE_MAX_ENTRIES = monkey
-        _base.clear_parse_cache()
+    assert source.parse_cache_size() == 0
+    f = tmp_path / "m.py"
+    f.write_text("x = 1\n", encoding="utf-8")
+    tree = _base._safe_parse(f)
+    assert tree is source.parse_file(f), "two caches would hand out two different trees"
+    assert source.parse_cache_size() == 1
+    _base.clear_parse_cache()
+    assert source.parse_cache_size() == 0
+
+
+def test_safe_parse_reads_a_bom_file_like_core(tmp_path: Path):
+    """35-F2: the plain-UTF-8 reader kept U+FEFF and skipped the file; both layers now decode as the interpreter does."""
+    from py_ci_shared.code_audit import _base
+
+    f = tmp_path / "bom.py"
+    f.write_bytes(b"\xef\xbb\xbfx = 1\n")
+    assert _base._safe_parse(f) is not None
 
 
 def test_iter_py_files_never_resolves_a_path(tmp_path: Path, monkeypatch):

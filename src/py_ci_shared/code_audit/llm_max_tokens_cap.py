@@ -1,10 +1,11 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # LLMProvider methods whose ``max_tokens`` kwarg defaults to 0 ("provider max") --
 # see pyutilz.llm.base.LLMProvider.generate/generate_json.
@@ -34,7 +35,7 @@ def _provider_var_names(tree: ast.AST) -> set[str]:
         if not isinstance(node, ast.Assign):
             continue
         value = node.value
-        if not any(isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "get_llm_provider" for inner in ast.walk(value)):
+        if not any(isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "get_llm_provider" for inner in walk_nodes(value)):
             continue
         for target in node.targets:
             if isinstance(target, ast.Name):
@@ -94,16 +95,18 @@ def scan_llm_call_missing_max_tokens_cap(
             max_tokens_kw = next((kw for kw in node.keywords if kw.arg == "max_tokens"), None)
             if max_tokens_kw is not None and not _is_zero_literal(max_tokens_kw.value):
                 continue  # an explicit, non-zero cap is passed -- fine
-            findings.append(Finding(
-                check="llm_call_missing_max_tokens_cap",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    f"{func.value.id}.{func.attr}(...) has no explicit, non-zero max_tokens -- this "
-                    "defaults to 0 ('use provider max'), an unbounded-cost/latency output length. Pass an "
-                    "explicit, reasoned cap (as a sibling call site elsewhere in the codebase likely already does)."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="llm_call_missing_max_tokens_cap",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        f"{func.value.id}.{func.attr}(...) has no explicit, non-zero max_tokens -- this "
+                        "defaults to 0 ('use provider max'), an unbounded-cost/latency output length. Pass an "
+                        "explicit, reasoned cap (as a sibling call site elsewhere in the codebase likely already does)."
+                    ),
+                )
+            )
     return findings

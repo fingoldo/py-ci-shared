@@ -3,13 +3,26 @@
 Shared-gate counterpart: py_ci_shared.sentinel_or_fallback reports value-or-fallback only on a declared
 list of setting names (max_tokens, seed, timeout...). This scanner is the general shape with heuristics.
 """
+
 from __future__ import annotations
 import logging
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, _subscript_index
+from ._base import (
+    walk_tree,
+    Finding,
+    _DEFAULT_EXCLUDE_DIRS,
+    _iter_py_files,
+    _line_text,
+    _read_src_lines,
+    _safe_parse,
+    is_line_exempt,
+    _subscript_index,
+    walk_nodes,
+    child_nodes,
+)
 
 # --- default-via-or trap (wave 14) --------------------------------------
 
@@ -42,7 +55,13 @@ def _is_trivial_default(value: ast.AST) -> bool:
     # the getter would have returned anyway (empty in, empty out); there is no distinct caller
     # intent to clobber. Only the ZERO-ARG form counts as trivial -- ``list(some_iter) or
     # default`` is a real computed value, not this idiom.
-    if isinstance(value, ast.Call) and isinstance(value.func, ast.Name) and value.func.id in ("set", "list", "dict", "tuple", "frozenset") and not value.args and not value.keywords:
+    if (
+        isinstance(value, ast.Call)
+        and isinstance(value.func, ast.Name)
+        and value.func.id in ("set", "list", "dict", "tuple", "frozenset")
+        and not value.args
+        and not value.keywords
+    ):
         return True
     return False
 
@@ -156,10 +175,10 @@ def _enclosing_symbols(tree: ast.AST) -> dict[int, str]:
 
     def walk(node: ast.AST, prefix: str) -> None:
         """Descend, carrying the dotted name of the nearest enclosing def/class."""
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 name = f"{prefix}.{child.name}" if prefix else child.name
-                for inner in ast.walk(child):
+                for inner in walk_nodes(child):
                     out.setdefault(id(inner), name)
                 walk(child, name)
             else:
@@ -177,6 +196,7 @@ def _site(lhs: ast.AST, rhs: ast.AST, symbol: str = "") -> str:
     file rather than the violation it records. Unparsing both operands keeps the key stable across edits
     elsewhere in the file while still naming which expression was flagged.
     """
+
     def _short(node: ast.AST, limit: int = 40) -> str:
         """One operand as compact source text, truncated so a long expression cannot dominate the key."""
         # Deliberately NOT wrapped in a try/except returning a placeholder. A swallowed failure here would
@@ -275,23 +295,34 @@ def _is_constructor_call(node: ast.AST) -> bool:
 #                        intentional divide-by-zero guard, not a trap.
 # ``len(...)``:          returns int (always >= 0); ``len(x) or N`` is the
 #                        common "empty-collection fallback" idiom.
-_DOCUMENTED_SAFE_LHS_FUNCS = frozenset({
-    "cpu_count",  # os / psutil / multiprocessing
-    "std", "var", "nanstd", "nanvar",  # numpy stats: 0.0 only when all-equal
-    "len",  # always int >= 0; ``or N`` is empty-fallback idiom
-})
+_DOCUMENTED_SAFE_LHS_FUNCS = frozenset(
+    {
+        "cpu_count",  # os / psutil / multiprocessing
+        "std",
+        "var",
+        "nanstd",
+        "nanvar",  # numpy stats: 0.0 only when all-equal
+        "len",  # always int >= 0; ``or N`` is empty-fallback idiom
+    }
+)
 
 
-_TRANSPARENT_WRAPPER_FUNCS = frozenset({
-    # Coercions that don't change the "is the value falsy when source was None
-    # or 0 / 0.0" semantics: if the inner call returns None, the wrapper
-    # raises or returns 0/0.0 - either way the trap analysis is the same as
-    # the inner call. We unwrap to check the inner.
-    "int", "float", "bool",
-    # Reducers that take multiple args; we treat the LAST arg as the
-    # candidate (common idiom: `max(1, os.cpu_count() or 1)`).
-    "max", "min", "abs",
-})
+_TRANSPARENT_WRAPPER_FUNCS = frozenset(
+    {
+        # Coercions that don't change the "is the value falsy when source was None
+        # or 0 / 0.0" semantics: if the inner call returns None, the wrapper
+        # raises or returns 0/0.0 - either way the trap analysis is the same as
+        # the inner call. We unwrap to check the inner.
+        "int",
+        "float",
+        "bool",
+        # Reducers that take multiple args; we treat the LAST arg as the
+        # candidate (common idiom: `max(1, os.cpu_count() or 1)`).
+        "max",
+        "min",
+        "abs",
+    }
+)
 
 
 def _unwrap_lhs(lhs: ast.AST) -> ast.AST:
@@ -363,13 +394,15 @@ def _lhs_is_documented_safe(lhs: ast.AST) -> bool:
 # triage (2026-07) across a downstream consumer's codebase: this shape
 # accounted for the overwhelming majority of this scanner's findings and
 # every single one triaged was a false positive.
-_BOOLEAN_CONTEXT_FIELDS: frozenset[tuple[type, str]] = frozenset({
-    (ast.If, "test"),
-    (ast.While, "test"),
-    (ast.Assert, "test"),
-    (ast.IfExp, "test"),
-    (ast.comprehension, "ifs"),
-})
+_BOOLEAN_CONTEXT_FIELDS: frozenset[tuple[type, str]] = frozenset(
+    {
+        (ast.If, "test"),
+        (ast.While, "test"),
+        (ast.Assert, "test"),
+        (ast.IfExp, "test"),
+        (ast.comprehension, "ifs"),
+    }
+)
 
 
 def _build_parent_field_map(tree: ast.AST) -> dict[int, tuple[ast.AST, str]]:
@@ -418,12 +451,34 @@ _BOOLEAN_VALUED_CALL_NAMES = frozenset({"bool", "isinstance", "issubclass", "has
 # documented ``-> bool`` method on ``pathlib.Path`` or on ``str``/``set``, never an arbitrary
 # falsy value. Measured on a downstream repo (2026-09-03): ``(root / target).exists() or
 # any(root.glob(target))`` was reported as a default-substitution trap.
-_BOOLEAN_VALUED_METHOD_NAMES = frozenset({
-    "all", "any", "startswith", "endswith",
-    "exists", "is_dir", "is_file", "is_absolute", "is_symlink", "is_relative_to", "samefile",
-    "isidentifier", "isdigit", "isalpha", "isalnum", "isspace", "isupper", "islower", "istitle",
-    "isdecimal", "isnumeric", "issubset", "issuperset", "isdisjoint",
-})
+_BOOLEAN_VALUED_METHOD_NAMES = frozenset(
+    {
+        "all",
+        "any",
+        "startswith",
+        "endswith",
+        "exists",
+        "is_dir",
+        "is_file",
+        "is_absolute",
+        "is_symlink",
+        "is_relative_to",
+        "samefile",
+        "isidentifier",
+        "isdigit",
+        "isalpha",
+        "isalnum",
+        "isspace",
+        "isupper",
+        "islower",
+        "istitle",
+        "isdecimal",
+        "isnumeric",
+        "issubset",
+        "issuperset",
+        "isdisjoint",
+    }
+)
 
 
 def _is_predicate_name(name: str) -> bool:
@@ -465,7 +520,7 @@ def _assigned_names_and_values(node: ast.AST) -> list[tuple[str, ast.AST]]:
     if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name):
         return [(node.target.id, node)]  # an augmented assign is never a bool
     if isinstance(node, (ast.For, ast.comprehension)):
-        return [(t.id, node) for t in ast.walk(node.target) if isinstance(t, ast.Name)]
+        return [(t.id, node) for t in walk_nodes(node.target) if isinstance(t, ast.Name)]
     return []
 
 
@@ -566,6 +621,7 @@ def _is_regex_group_alternation(lhs: ast.AST, rhs: ast.AST) -> bool:
     the documented way to ask "whichever alternative matched"; there is no caller-supplied falsy
     value for it to clobber (a group that matched the empty string and a group that did not match
     mean the same thing to the caller)."""
+
     def _is_group_call(node: ast.AST) -> bool:
         """True for a ``<match>.group(...)``/``.groupdict(...)`` call, whatever the match object is called."""
         return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in ("group", "groupdict")
@@ -578,6 +634,7 @@ def _is_same_key_on_other_receiver(lhs: ast.AST, rhs: ast.AST) -> bool:
     off two different mappings. That is a lookup-chain ("ask the specific record, else the parent
     default record"), not a default-value substitution: both sides are the same field, so a falsy
     value under one receiver and absence under it are indistinguishable to the caller."""
+
     def _get_parts(node: ast.AST) -> "tuple[ast.AST, ast.AST] | None":
         """``(receiver, key expression)`` of a ``<expr>.get(<key>)`` call. The key does NOT have to
         be a string literal: ``_QWERTY_ADJACENT.get(ch) or _YCUKEN_ADJACENT.get(ch)`` (one lookup
@@ -700,6 +757,7 @@ _RE_MATCH_FUNCS = frozenset({"search", "match", "fullmatch"})
 
 def _is_regex_pattern_alternation(lhs: ast.AST, rhs: ast.AST) -> bool:
     """``re.search(p1, s) or re.search(p2, s)``: trying two patterns in turn, not substituting a default."""
+
     def is_match(node: ast.AST) -> bool:
         return (
             isinstance(node, ast.Call)
@@ -741,9 +799,10 @@ def _pair_is_exempt(lhs: ast.AST, rhs: ast.AST, path_names: frozenset[str] = fro
     return _is_getattr_alias_fallback(lhs, rhs) or _lhs_default_is_also_the_or_fallback(lhs, rhs)
 
 
-def scan_default_via_or_trap(root: Path,
-                             exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                             ) -> list[Finding]:
+def scan_default_via_or_trap(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find ``x = arg or DEFAULT`` where ``DEFAULT`` is a non-trivial
     literal/call that would silently clobber falsy-but-valid values
     (``0``, ``""``, ``[]`` non-empty container, etc.) the caller passed.
@@ -797,12 +856,14 @@ def scan_default_via_or_trap(root: Path,
                 # node, so check whether its left operand is wrapped in such a
                 # call-chain back up the tree.
                 sev, detail = _classify(lhs, rhs, symbols.get(id(node), ""))
-                findings.append(Finding(
-                    check="default_via_or",
-                    severity=sev,
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=detail,
-                ))
+                findings.append(
+                    Finding(
+                        check="default_via_or",
+                        severity=sev,
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=detail,
+                    )
+                )
     return findings

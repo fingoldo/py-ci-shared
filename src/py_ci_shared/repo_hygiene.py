@@ -72,6 +72,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, iter_files
+from ._core.source import read_bytes_cached
 
 logger = logging.getLogger(__name__)
 
@@ -211,7 +212,7 @@ def _walk_text_files(repo_root: Path, text_suffixes: Sequence[str], skip_dirs: I
 def _read_bytes_or_none(path: Path) -> "bytes | None":
     """The file's bytes, or None when it cannot be read -- a vanished or unreadable file is not a finding."""
     try:
-        return path.read_bytes()
+        return read_bytes_cached(path)
     except OSError as exc:
         logger.debug("could not read file bytes: %s", type(exc).__name__)
         return None

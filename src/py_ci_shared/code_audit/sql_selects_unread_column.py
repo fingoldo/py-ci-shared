@@ -6,7 +6,18 @@ import ast
 import re
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _module_sql_constants, _read_src_lines, _safe_parse, _sql_text
+from ._base import (
+    walk_tree,
+    Finding,
+    _DEFAULT_EXCLUDE_DIRS,
+    _iter_py_files,
+    _line_text,
+    _module_sql_constants,
+    _read_src_lines,
+    _safe_parse,
+    _sql_text,
+    walk_nodes,
+)
 
 # --- a SELECT list wider than the rows anyone reads --------------------------------------------
 #
@@ -75,8 +86,8 @@ def _plain_targets(target: ast.expr) -> list[str] | None:
 
 def _read_names(scope: ast.AST, ignore: ast.AST) -> set[str]:
     """Every name LOADED in this scope, skipping the subtree that binds them."""
-    skip = set(map(id, ast.walk(ignore)))
-    return {node.id for node in ast.walk(scope) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and id(node) not in skip}
+    skip = set(map(id, walk_nodes(ignore)))
+    return {node.id for node in walk_nodes(scope) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and id(node) not in skip}
 
 
 _FETCH_METHODS = frozenset({"fetchone", "fetchall", "fetchmany"})
@@ -90,7 +101,7 @@ def _from_cursor(expr: ast.expr, cursor_names: "set[str]") -> bool:
     """
     if isinstance(expr, ast.Name) and expr.id in cursor_names:
         return True
-    for sub in ast.walk(expr):
+    for sub in walk_nodes(expr):
         if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in _FETCH_METHODS:
             receiver = sub.func.value
             if not cursor_names or (isinstance(receiver, ast.Name) and receiver.id in cursor_names) or not isinstance(receiver, ast.Name):
@@ -105,7 +116,7 @@ def _executed_selects(func: ast.AST, constants: dict[str, str]) -> tuple[list[tu
     """Return the SELECT lists ``func`` executes (with their call lines) and the cursor names they run on."""
     executed: list[tuple[list[str], int]] = []
     cursor_names: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if not isinstance(node, ast.Call):
             continue
         callee = node.func
@@ -127,7 +138,7 @@ def _row_names_of_query(func: ast.AST, cursor_names: set[str]) -> set[str]:
     # Without this link the check matched ANY same-arity unpacking in the function -- an
     # unrelated `lo, hi = compute()` was reported as "this query fetches `name`".
     row_names: set[str] = set()
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.Assign) and node.targets and isinstance(node.targets[0], ast.Name) and _from_cursor(node.value, cursor_names):
             row_names.add(node.targets[0].id)
     return row_names
@@ -212,7 +223,7 @@ def scan_sql_selects_unread_column(
             columns, sql_line = executed[0]
             row_names = _row_names_of_query(func, cursor_names)
 
-            for node in ast.walk(func):
+            for node in walk_nodes(func):
                 unpack = _unpack_target_and_source(node)
                 if unpack is None:
                     continue

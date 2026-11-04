@@ -14,27 +14,18 @@ from pathlib import Path
 from collections.abc import Iterable, Iterator
 from typing import Optional
 
-# (path, mtime_ns, size) -> parsed tree (or None for an unparsable file).
-# run_all() runs every registered scanner over the SAME file set in one
-# process; each scanner independently called _safe_parse on every file
-# before this cache existed, so a ~60-scanner registry re-read + re-parsed
-# every file up to 60x. Keying on mtime_ns+size (not just path) means an
-# in-process edit-then-rescan (e.g. a scanner's own test fixture rewriting
-# a tmp file between assertions) still gets a fresh parse instead of a
-# stale cached one.
-# Bounded (LRU) because it is a process-global with no natural end of life: a watch loop, a long
-# test session rewriting tmp fixtures between assertions, or an editor plugin scanning on every save
-# retains one full ast.Module per distinct (path, mtime_ns, size) forever otherwise.
-_PARSE_CACHE: "OrderedDict[tuple[str, int, int], Optional[ast.Module]]" = OrderedDict()
+from .._core.node_index import child_nodes, walk as walk_nodes
+from .._core.source import SourceParseError, SourceReadError, parse_file
 
-# One full corpus is the working set a single run_all() needs; the cap is generous enough that a
+# Parse trees live in ONE cache, ``_core.source`` (see ``_safe_parse``); this module keeps only the source-line cache below.
+
+# One full corpus is the working set a single run_all() needs (it bounds the source-line cache); the cap is generous enough that a
 # realistic repo (a few thousand files) never evicts mid-run, and small enough to bound a daemon.
 _PARSE_CACHE_MAX_ENTRIES = 20000
 
 
-# Same key, same bound, same rationale as _PARSE_CACHE, for the source TEXT the scanners quote in
-# their snippets: _safe_parse cached the tree and threw the text away, so every scanner that wanted
-# a snippet re-read and re-split the whole corpus itself.
+# Keyed on (path, mtime_ns, size) and bounded (LRU) like the parse cache once was, for the source TEXT the scanners quote in their snippets: the tree cache
+# keeps no line table, so every scanner that wanted a snippet re-read and re-split the whole corpus itself.
 _SRC_LINES_CACHE: "OrderedDict[tuple[str, int, int], list[str]]" = OrderedDict()
 
 # Guards both caches: a hit is move_to_end-then-read and a miss is insert-then-evict, and a scan run from a thread
@@ -47,9 +38,12 @@ logger = logging.getLogger(__name__)
 
 def clear_parse_cache() -> None:
     """Drop every cached parse tree and cached source text. Call it when a long-lived process is done with a scan."""
+    from .._core.source import clear_parse_cache as clear_core_parse_cache
+
     with _CACHE_LOCK:
-        _PARSE_CACHE.clear()
         _SRC_LINES_CACHE.clear()
+    clear_core_parse_cache()
+
 
 # --- public types --------------------------------------------------------
 
@@ -110,17 +104,32 @@ class Finding:
 
 
 _PY_EXTS = (".py",)
-_DEFAULT_EXCLUDE_DIRS = frozenset({
-    "__pycache__", ".git", ".venv", "venv", "env", ".env", ".tox",
-    "build", "dist", "node_modules", ".mypy_cache", ".pytest_cache",
-    ".ruff_cache", ".idea", ".vscode", "htmlcov",
-    # `.claude` holds Claude Code's agent worktrees, each a COMPLETE checkout of the repo being audited.
-    # Without this, every scanner reports each violation once for the real tree and once more per nested
-    # worktree - measured on autopsia with 49 of them, which turned 12 meta-ratchet tests red with findings
-    # whose paths all read `<repo>/.claude/worktrees/agent-*/...`. A nested checkout is never the code under
-    # audit, and its own tests do not run from here.
-    ".claude",
-})
+_DEFAULT_EXCLUDE_DIRS = frozenset(
+    {
+        "__pycache__",
+        ".git",
+        ".venv",
+        "venv",
+        "env",
+        ".env",
+        ".tox",
+        "build",
+        "dist",
+        "node_modules",
+        ".mypy_cache",
+        ".pytest_cache",
+        ".ruff_cache",
+        ".idea",
+        ".vscode",
+        "htmlcov",
+        # `.claude` holds Claude Code's agent worktrees, each a COMPLETE checkout of the repo being audited.
+        # Without this, every scanner reports each violation once for the real tree and once more per nested
+        # worktree - measured on autopsia with 49 of them, which turned 12 meta-ratchet tests red with findings
+        # whose paths all read `<repo>/.claude/worktrees/agent-*/...`. A nested checkout is never the code under
+        # audit, and its own tests do not run from here.
+        ".claude",
+    }
+)
 
 
 def _is_excluded(path: Path, root: Path, exclude_dirs: frozenset[str], root_resolved: Optional[Path] = None) -> bool:
@@ -280,64 +289,25 @@ def _iter_py_files(root: Path, exclude_dirs: frozenset[str]) -> Iterable[Path]:
 
 
 def _safe_parse(path: Path) -> Optional[ast.Module]:
-    """Read and ``ast.parse`` ``path`` as UTF-8, returning None on read failure (I/O, decode) or a syntax error instead of raising.
+    """The tree of ``path`` from the one process-wide parse cache (``_core.source.parse_source``), or None when the file cannot be read, decoded or parsed.
 
-    Cached per (path, mtime_ns, size) for the life of the process -- see
-    ``_PARSE_CACHE``'s module-level docstring for why this matters when
-    ``run_all()`` runs dozens of scanners over the same file set.
+    Decoding is the interpreter's own (BOM, PEP 263 cookie), so a file saved with a BOM parses here exactly as it does for every other gate; this layer used to keep a second cache
+    keyed on (path, mtime_ns, size) and read plain UTF-8, which could disagree with ``_core`` about whether a file parses and parsed every file twice per run.
     """
     try:
-        stat = path.stat()
-    except OSError as exc:
-        logger.warning("_safe_parse: stat failed, file skipped by the code audit: %s: %s", type(exc).__name__, exc)
+        return parse_file(path)
+    except (SourceReadError, SourceParseError) as exc:
+        logger.debug("_safe_parse: %s skipped by the code audit: %s", path, exc)
         return None
-    cache_key = (str(path), stat.st_mtime_ns, stat.st_size)
-    with _CACHE_LOCK:
-        try:
-            tree = _PARSE_CACHE[cache_key]
-        except KeyError:
-            pass
-        else:
-            _PARSE_CACHE.move_to_end(cache_key)
-            return tree
-
-    try:
-        src = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError):
-        tree = None
-    else:
-        try:
-            tree = ast.parse(src, filename=str(path))
-        except (SyntaxError, RecursionError, MemoryError):
-            # RecursionError/MemoryError alongside SyntaxError: a syntactically VALID file with a
-            # deeply nested expression (a machine-generated constants/parser-table module, a long
-            # `a + a + ...` concatenation) makes ast.parse blow the recursion limit, which is not a
-            # SyntaxError -- so it propagated out of this function, out of run_all(), and killed the
-            # entire scan with a traceback instead of skipping one file (and under the
-            # ProcessPoolExecutor path, as an opaque worker death naming no file at all). Both are
-            # parser-resource failures on one input, handled exactly like an unparseable file.
-            tree = None
-
-    with _CACHE_LOCK:
-        _PARSE_CACHE[cache_key] = tree
-        while len(_PARSE_CACHE) > _PARSE_CACHE_MAX_ENTRIES:
-            _PARSE_CACHE.popitem(last=False)
-    return tree
+    except (RecursionError, MemoryError):
+        # a syntactically VALID file with a deeply nested expression (a generated parser table, a long `a + a + ...`) blows the recursion limit in ast.parse; one input's parser-resource
+        # failure is handled like an unparseable file instead of killing the whole run (and, under the process pool, an opaque worker death naming no file).
+        return None
 
 
 def walk_tree(tree: ast.AST) -> list[ast.AST]:
-    """``list(ast.walk(tree))``, computed once per tree.
-
-    Every scanner in this package walks the same parse trees, and a full ``ast.walk`` of the corpus costs
-    about as much as the parse itself (~1.1M nodes per scanner, measured). The walk is memoised on the tree
-    object, so its lifetime is the tree's own: when ``_PARSE_CACHE`` evicts a tree, its node list goes with it.
-    The list shares the tree's nodes and holds no copies; callers must not mutate it.
-    """
-    nodes = getattr(tree, "_walk_nodes", None)
-    if nodes is None:
-        nodes = list(ast.walk(tree))
-        tree._walk_nodes = nodes  # type: ignore[attr-defined]
-    return nodes
+    """``list(ast.walk(tree))``, computed once per tree and shared with every other gate (``_core.node_index``); callers must not mutate the list."""
+    return list(walk_nodes(tree))
 
 
 def _read_src_lines(path: Path) -> list[str]:
@@ -349,7 +319,7 @@ def _read_src_lines(path: Path) -> list[str]:
     occurrence while ``Finding.line`` stays right, so the report cites the wrong source text.
     Returns ``[]`` if the file cannot be read.
 
-    Memoised per (path, mtime_ns, size) alongside ``_PARSE_CACHE``, and for the same reason: 77 of
+    Memoised per (path, mtime_ns, size), and for the same reason as the parse cache: 77 of
     the scanner modules call this, so one ``run_all()`` re-read and re-split every file of the
     corpus once per scanner -- I/O and decoding the process had already done dozens of times over.
     The returned list is shared between callers; scanners only ever index into it (via
@@ -424,6 +394,7 @@ def _arg_names(func_node: ast.AST) -> list[str]:
     if a.kwarg:
         args.append(a.kwarg.arg)
     return args
+
 
 # An f-string interpolation renders as this in recovered SQL, never as nothing. Dropping it
 # splices the text on either side together: `f"SELECT COUNT(*) FROM {table} WHERE ..."` collapsed
@@ -521,7 +492,7 @@ def _module_aliases(tree: ast.Module) -> "dict[str, str]":
     name back into what it actually refers to.
     """
     aliases: "dict[str, str]" = {}
-    for node in ast.walk(tree):
+    for node in walk_nodes(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 aliases[alias.asname or alias.name.split(".")[0]] = alias.name if alias.asname else alias.name.split(".")[0]
@@ -538,13 +509,13 @@ def _own_nodes(func: ast.AST) -> "Iterator[ast.AST]":
     double-reports every finding inside it and leaks names out of the nested scope into the
     enclosing one, so an unrelated same-named outer variable gets flagged.
     """
-    todo: "list[ast.AST]" = list(ast.iter_child_nodes(func))
+    todo: "list[ast.AST]" = child_nodes(func)
     while todo:
         node = todo.pop()
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             continue
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
 
 
 _SQL_FROM = re.compile(r"\bFROM\s+([A-Za-z_][\w.\"]*)", re.I)

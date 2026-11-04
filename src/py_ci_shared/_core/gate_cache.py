@@ -19,6 +19,8 @@ import os
 from pathlib import Path
 from typing import Any, Optional
 
+from .source import read_bytes_cached
+
 logger = logging.getLogger(__name__)
 
 NO_CACHE_ENV = "PY_CI_SHARED_NO_CACHE"
@@ -84,7 +86,7 @@ def tree_digest(root: Path) -> str:
     for rel, _size, _mtime in _stat_signature(root):
         path = root / rel
         try:
-            content = path.read_bytes()
+            content = read_bytes_cached(path)
         except OSError:
             content = b"<unreadable>"
         digest.update(rel.encode("utf-8") + b"\x00" + hashlib.sha256(content).digest())

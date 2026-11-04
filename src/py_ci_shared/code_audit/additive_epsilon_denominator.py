@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
 # --- additive-epsilon denominators ---------------------------------------
 #
@@ -49,7 +49,7 @@ def _is_epsilon_sum(node: ast.AST, epsilon_max: float) -> bool:
 def _epsilon_padded_names(scope: ast.AST, epsilon_max: float) -> set[str]:
     """Names bound in ``scope`` to an epsilon-padded sum -- ``denom = var + 1e-12`` followed by ``x / denom``."""
     names: set[str] = set()
-    for node in ast.walk(scope):
+    for node in walk_nodes(scope):
         # `AnnAssign` (`denom: float = d + 1e-12`) binds the name exactly as a plain assignment does,
         # and a chained `a = denom = d + 1e-12` binds EVERY target, not just the first.
         if isinstance(node, ast.Assign) and _is_epsilon_sum(node.value, epsilon_max):
@@ -97,7 +97,7 @@ def scan_additive_epsilon_denominator(
         seen: set[tuple[int, int]] = set()
         for scope in scopes:
             padded = _epsilon_padded_names(scope, epsilon_max)
-            for node in ast.walk(scope):
+            for node in walk_nodes(scope):
                 if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Div):
                     continue
                 # Keyed on (line, column): two padded divisions can share one line.

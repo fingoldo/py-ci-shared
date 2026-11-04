@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
 # --- non-neutral literal substituted by a silent except handler ----------
 #
@@ -81,14 +81,14 @@ def _handler_exception_names(handler: ast.ExceptHandler) -> set[str]:
     if handler.type is None:
         return set()
     names: set[str] = set()
-    for node in ast.walk(handler.type):
+    for node in walk_nodes(handler.type):
         if isinstance(node, ast.Attribute):
             names.add(node.attr)
         elif isinstance(node, ast.Name):
             names.add(node.id)
     # `except orjson.JSONDecodeError` walks to both the Attribute and the `orjson` Name; the module
     # component is not an exception class, so drop any name that is only a prefix of a dotted one.
-    for node in ast.walk(handler.type):
+    for node in walk_nodes(handler.type):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
             names.discard(node.value.id)
     return names
@@ -140,7 +140,7 @@ def _guards_an_import(try_body: list) -> bool:
     false positives (12 of 30 sampled mlframe sites, 9 of 41 pyutilz sites).
     """
     for stmt in try_body:
-        for node in ast.walk(stmt):
+        for node in walk_nodes(stmt):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 return True
     return False
@@ -148,7 +148,7 @@ def _guards_an_import(try_body: list) -> bool:
 
 def _is_audible(handler: ast.ExceptHandler, log_methods: frozenset[str], functions: frozenset[str]) -> bool:
     """True when the handler re-raises, or logs at warning level or above."""
-    for node in ast.walk(handler):
+    for node in walk_nodes(handler):
         if isinstance(node, ast.Raise):
             return True
         if not isinstance(node, ast.Call):
@@ -190,7 +190,7 @@ def _own_nodes(handler: ast.ExceptHandler) -> "Iterator[ast.AST]":
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             continue
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
 
 
 def _target_name(target: ast.AST) -> str:
@@ -240,7 +240,9 @@ def _substituted_literal(handler: ast.ExceptHandler) -> str | None:
     return min(candidates, key=lambda c: c[0])[1]
 
 
-def _flagged_substitution(handler: ast.ExceptHandler, try_body: list[ast.stmt], audible_log_methods: frozenset[str], audible_functions: frozenset[str]) -> str | None:
+def _flagged_substitution(
+    handler: ast.ExceptHandler, try_body: list[ast.stmt], audible_log_methods: frozenset[str], audible_functions: frozenset[str]
+) -> str | None:
     """The substituted literal this handler is flagged for, or None when it is excused or substitutes nothing."""
     if _is_import_error_only(handler) or _is_audible(handler, audible_log_methods, audible_functions):
         return None

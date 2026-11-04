@@ -3,6 +3,7 @@
 Shared-gate counterpart: py_ci_shared.drifted_duplicate_functions groups copies by name and signature.
 This scanner compares bodies across names, so the two report different pairs.
 """
+
 from __future__ import annotations
 
 import ast
@@ -13,7 +14,7 @@ from itertools import chain
 from pathlib import Path
 from typing import Optional as _Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 from .duplicate_function_body import _stripped_body, _node_count, _normalized_body
 
 # Fuzzy matching a trivial body (a short property getter, a one-line delegate) produces spurious
@@ -93,8 +94,25 @@ import builtins as _builtins_module
 # was wrongly exempted). Only a call to a NAMED, presumably project-defined function/method is
 # a genuine signal that both sites funnel through one already-shared implementation.
 _BUILTIN_CALL_NAMES = frozenset(dir(_builtins_module)) | {
-    "append", "extend", "update", "get", "items", "keys", "values", "pop", "join", "format",
-    "split", "strip", "lower", "upper", "replace", "startswith", "endswith", "sort", "copy",
+    "append",
+    "extend",
+    "update",
+    "get",
+    "items",
+    "keys",
+    "values",
+    "pop",
+    "join",
+    "format",
+    "split",
+    "strip",
+    "lower",
+    "upper",
+    "replace",
+    "startswith",
+    "endswith",
+    "sort",
+    "copy",
 }
 
 
@@ -103,7 +121,7 @@ def _called_names(node: "ast.FunctionDef | ast.AsyncFunctionDef") -> set[str]:
     body (``foo(...)`` -> ``"foo"``, ``self.bar(...)``/``obj.bar(...)`` -> ``"bar"``), excluding
     builtins and common dunder-protocol method names (see ``_BUILTIN_CALL_NAMES``)."""
     names: set[str] = set()
-    for child in ast.walk(node):
+    for child in walk_nodes(node):
         if not isinstance(child, ast.Call):
             continue
         func = child.func
@@ -149,7 +167,7 @@ def _is_deprecated_alias_boilerplate(node: "ast.FunctionDef | ast.AsyncFunctionD
     alias's logic copy-pasted into another (they don't even delegate to the same callee), it's
     every alias independently following the same documented shim convention.
     """
-    for child in ast.walk(node):
+    for child in walk_nodes(node):
         if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute) and child.func.attr == "warn":
             for arg in list(child.args) + [kw.value for kw in child.keywords]:
                 if isinstance(arg, ast.Name) and arg.id.endswith("Warning"):
@@ -163,7 +181,7 @@ def _is_nested(outer: "ast.FunctionDef | ast.AsyncFunctionDef", inner: "ast.Func
     file/tree; the caller is responsible for that check."""
     if outer is inner:
         return False
-    return any(child is inner for child in ast.walk(outer))
+    return any(child is inner for child in walk_nodes(outer))
 
 
 def _shingles(tokens: tuple[str, ...], k: int = _SHINGLE_SIZE) -> set[int]:

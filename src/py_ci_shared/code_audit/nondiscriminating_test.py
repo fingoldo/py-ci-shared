@@ -10,7 +10,7 @@ import ast
 from pathlib import Path
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, is_line_exempt, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_line_exempt, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 # --- test functions that cannot fail -------------------------------------
 #
@@ -56,12 +56,12 @@ def _own_nodes(func: ast.AST) -> Iterator[ast.AST]:
     Only the body: ``ast.iter_child_nodes`` would also yield ``decorator_list``, which turns the
     declarative ``@pytest.mark.xfail`` this scanner RECOMMENDS into an imperative-xfail finding.
     """
-    stack: list[ast.AST] = list(func.body) if isinstance(func, _FUNC_NODES) else list(ast.iter_child_nodes(func))
+    stack: list[ast.AST] = list(func.body) if isinstance(func, _FUNC_NODES) else list(child_nodes(func))
     while stack:
         node = stack.pop()
         yield node
         if not isinstance(node, _FUNC_NODES):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
 
 
 def _has_any_check(func: ast.AST, asserting_calls: frozenset[str]) -> bool:
@@ -87,16 +87,16 @@ def _swallows_assertion_error(func: ast.AST) -> bool:
     for node in _own_nodes(func):
         if not isinstance(node, ast.ExceptHandler):
             continue
-        caught = {"BaseException"} if node.type is None else {n.id for n in ast.walk(node.type) if isinstance(n, ast.Name)}
+        caught = {"BaseException"} if node.type is None else {n.id for n in walk_nodes(node.type) if isinstance(n, ast.Name)}
         if not (caught & {"AssertionError", "Exception", "BaseException"}):
             continue
-        if any(isinstance(inner, ast.Raise) for inner in ast.walk(node)):
+        if any(isinstance(inner, ast.Raise) for inner in walk_nodes(node)):
             continue
         # A handler containing its own assertion is CHECKING the failure, not swallowing it.
-        if any(isinstance(inner, ast.Assert) for inner in ast.walk(node)):
+        if any(isinstance(inner, ast.Assert) for inner in walk_nodes(node)):
             continue
         # `pytest.fail(...)` / `self.fail(...)` fails HARDER than the assertion it replaces.
-        if any(isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute) and inner.func.attr == "fail" for inner in ast.walk(node)):
+        if any(isinstance(inner, ast.Call) and isinstance(inner.func, ast.Attribute) and inner.func.attr == "fail" for inner in walk_nodes(node)):
             continue
         return True
     return False
@@ -110,7 +110,7 @@ def _every_assert_is_conditional(func: ast.AST) -> bool:
     conditional: set[int] = set()
     for node in _own_nodes(func):
         if isinstance(node, ast.If):
-            conditional.update(id(inner) for inner in ast.walk(node) if isinstance(inner, ast.Assert))
+            conditional.update(id(inner) for inner in walk_nodes(node) if isinstance(inner, ast.Assert))
     return all(id(a) in conditional for a in asserts)
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 
 def _class_attribute_names(root: Path, exclude_dirs: frozenset[str]) -> set[str]:
@@ -118,7 +118,7 @@ def _dynamic_attribute_classes(tree: ast.Module) -> set[str]:
     for node in walk_tree(tree):
         if not isinstance(node, ast.ClassDef):
             continue
-        for inner in ast.walk(node):
+        for inner in walk_nodes(node):
             if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "setattr" and len(inner.args) >= 2:
                 target, name_arg = inner.args[0], inner.args[1]
                 if isinstance(target, ast.Name) and target.id == "self" and not isinstance(name_arg, ast.Constant):
@@ -194,7 +194,7 @@ def _collect_function_scopes(
     elif isinstance(node, ast.Name):
         for fid in enclosing:
             names[fid].append(node)
-    for child in ast.iter_child_nodes(node):
+    for child in child_nodes(node):
         _collect_function_scopes(child, enclosing, classes, dynamic, bound, names)
 
 
@@ -235,7 +235,7 @@ def _is_plain_in_tree_class(name: str, classes: set[str], dynamic: set[str]) -> 
 def _function_receiver_ids(func: ast.FunctionDef | ast.AsyncFunctionDef, classes: set[str], dynamic: set[str]) -> set[int]:
     """``id`` of every Name inside ``func`` that is bound to an in-tree class instance (annotated or constructed)."""
     local = _in_tree_bound_names(func, classes, dynamic)
-    return {id(node) for node in ast.walk(func) if isinstance(node, ast.Name) and node.id in local}
+    return {id(node) for node in walk_nodes(func) if isinstance(node, ast.Name) and node.id in local}
 
 
 def _in_tree_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef, classes: set[str], dynamic: set[str]) -> set[str]:
@@ -245,7 +245,7 @@ def _in_tree_bound_names(func: ast.FunctionDef | ast.AsyncFunctionDef, classes: 
     for arg in (*args.posonlyargs, *args.args, *args.kwonlyargs):
         if isinstance(arg.annotation, ast.Name) and _is_plain_in_tree_class(arg.annotation.id, classes, dynamic):
             local.add(arg.arg)
-    for node in ast.walk(func):
+    for node in walk_nodes(func):
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.annotation, ast.Name):
             if _is_plain_in_tree_class(node.annotation.id, classes, dynamic):
                 local.add(node.target.id)
@@ -260,7 +260,7 @@ def _self_receiver_ids(tree: ast.Module, dynamic: set[str]) -> set[int]:
     ids: set[int] = set()
     for cls in walk_tree(tree):
         if isinstance(cls, ast.ClassDef) and cls.name not in dynamic:
-            ids |= {id(node) for node in ast.walk(cls) if isinstance(node, ast.Name) and node.id == "self"}
+            ids |= {id(node) for node in walk_nodes(cls) if isinstance(node, ast.Name) and node.id == "self"}
     return ids
 
 

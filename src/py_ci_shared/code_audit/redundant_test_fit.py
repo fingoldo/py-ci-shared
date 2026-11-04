@@ -1,11 +1,12 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 import logging
 
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _is_excluded, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _is_excluded, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- redundant test computation (expensive fit re-run across test functions) -----
 #
@@ -31,7 +32,28 @@ from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE
 # Calls a data factory may make while still being a data factory: constructing or mutating a literal
 # container costs nothing, so their presence says nothing about expensiveness either way.
 _CHEAP_CALLEES = frozenset(
-    {"dict", "list", "set", "tuple", "str", "int", "float", "bool", "len", "range", "sorted", "update", "append", "extend", "copy", "add", "setdefault", "get", "format", "join"}
+    {
+        "dict",
+        "list",
+        "set",
+        "tuple",
+        "str",
+        "int",
+        "float",
+        "bool",
+        "len",
+        "range",
+        "sorted",
+        "update",
+        "append",
+        "extend",
+        "copy",
+        "add",
+        "setdefault",
+        "get",
+        "format",
+        "join",
+    }
 )
 
 
@@ -50,7 +72,7 @@ def _is_literal_data_factory(func_node: ast.FunctionDef | ast.AsyncFunctionDef) 
     each caller's baseline.
     """
     builds_a_literal_container = False
-    for node in ast.walk(func_node):
+    for node in walk_nodes(func_node):
         if isinstance(node, ast.Dict) and node.keys:
             builds_a_literal_container = True
         elif isinstance(node, (ast.List, ast.Set, ast.Tuple)) and node.elts:
@@ -78,14 +100,14 @@ def _iteration_bound_names(func_node: ast.FunctionDef | ast.AsyncFunctionDef) ->
     genuine duplicate; binding-by-iteration is the precise distinction.
     """
     bound: set[str] = set()
-    for node in ast.walk(func_node):
+    for node in walk_nodes(func_node):
         targets = []
         if isinstance(node, (ast.For, ast.AsyncFor)):
             targets = [node.target]
         elif isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
             targets = [gen.target for gen in node.generators]
         for target in targets:
-            bound |= {n.id for n in ast.walk(target) if isinstance(n, ast.Name)}
+            bound |= {n.id for n in walk_nodes(target) if isinstance(n, ast.Name)}
     return bound
 
 
@@ -127,13 +149,13 @@ def _literal_call_occurrences(tree: ast.Module) -> dict[str, list[tuple[str, int
     occurrences: dict[str, list[tuple[str, int]]] = {}
     for test_fn in _enclosing_test_functions(tree):
         loop_bound = _iteration_bound_names(test_fn)
-        for node in ast.walk(test_fn):
+        for node in walk_nodes(test_fn):
             if not isinstance(node, ast.Call):
                 continue
             sig = _call_signature(node)
             if sig is None:
                 continue
-            if any(isinstance(n, ast.Name) and n.id in loop_bound for arg in (*node.args, *(kw.value for kw in node.keywords)) for n in ast.walk(arg)):
+            if any(isinstance(n, ast.Name) and n.id in loop_bound for arg in (*node.args, *(kw.value for kw in node.keywords)) for n in walk_nodes(arg)):
                 continue
             func_name = sig.split("(", 1)[0]
             if func_name in cached_names:

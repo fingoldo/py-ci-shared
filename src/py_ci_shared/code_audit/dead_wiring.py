@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- dead wiring: built, measured, documented, never called ---------------------------------------
 #
@@ -28,7 +28,7 @@ def _names_mentioned(node: ast.AST) -> set[str]:
     including them trades a few false negatives for far fewer false positives.
     """
     out: set[str] = set()
-    for child in ast.walk(node):
+    for child in walk_nodes(node):
         if isinstance(child, ast.Name):
             out.add(child.id)
         elif isinstance(child, ast.Attribute):

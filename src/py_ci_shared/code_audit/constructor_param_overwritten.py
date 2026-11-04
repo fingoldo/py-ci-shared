@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- a constructor argument another method overwrites from configuration -----------------------
 
@@ -66,7 +66,7 @@ _CONFIG_READS = {"cfg", "config", "getenv", "environ", "get_config", "settings",
 def _reads_config(node: ast.AST) -> bool:
     """Does this subtree read configuration or the environment?"""
 
-    for sub in ast.walk(node):
+    for sub in walk_nodes(node):
 
         if isinstance(sub, ast.Call):
 
@@ -126,7 +126,7 @@ def _param_backed_attributes(init: ast.FunctionDef | ast.AsyncFunctionDef) -> di
 
     bound: dict[str, str] = {}
 
-    for stmt in ast.walk(init):
+    for stmt in walk_nodes(init):
 
         if not isinstance(stmt, ast.Assign):
 
@@ -163,7 +163,7 @@ def _assigns_by_method(methods: list, init: ast.AST, bound: dict) -> "dict[str, 
 
             continue
 
-        for stmt in ast.walk(method):
+        for stmt in walk_nodes(method):
 
             if not isinstance(stmt, (ast.Assign, ast.AugAssign)):
 
@@ -201,7 +201,7 @@ def _overwrite_candidates(methods: list, init: ast.AST, bound: dict) -> "list[tu
 def _direct_config_overwrites(method: Any, bound: dict) -> "list[tuple[str, str, str, int]]":
     """Overwrites inside ``method`` whose assigned expression itself reads config."""
     out: "list[tuple[str, str, str, int]]" = []
-    for stmt in ast.walk(method):
+    for stmt in walk_nodes(method):
         if not isinstance(stmt, (ast.Assign, ast.AugAssign)):
             continue
         if stmt.value is None or not _reads_config(stmt.value):
@@ -214,7 +214,7 @@ def _direct_config_overwrites(method: Any, bound: dict) -> "list[tuple[str, str,
 def _config_via_sibling_calls(method: Any, assigns: dict) -> "list[tuple[str, str, str, int]]":
     """Overwrites ``method`` makes indirectly: a ``self.<sibling>(...)`` call fed a config read."""
     out: "list[tuple[str, str, str, int]]" = []
-    for call in ast.walk(method):
+    for call in walk_nodes(method):
         if not (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)):
             continue
         if not (isinstance(call.func.value, ast.Name) and call.func.value.id == "self"):

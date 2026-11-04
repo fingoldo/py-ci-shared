@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 # --- a defensive import guard for a module already imported unconditionally --------------------
 #
@@ -97,7 +97,7 @@ def _statements_in(body: "list[ast.stmt]") -> "Iterator[ast.stmt]":
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
-        todo.extend(child for child in ast.iter_child_nodes(node) if isinstance(child, ast.stmt))
+        todo.extend(child for child in child_nodes(node) if isinstance(child, ast.stmt))
 
 
 def _catches_import_error(node: ast.Try) -> bool:
@@ -150,10 +150,10 @@ def scan_unreachable_import_fallback(
         # runtime handler that can be dead. Its import is not counted as certain above; the handler is skipped here.
         type_only_tries = {
             id(inner)
-            for guard in ast.walk(tree)
+            for guard in walk_nodes(tree)
             if isinstance(guard, ast.If) and _is_type_checking_guard(guard.test)
             for stmt in guard.body
-            for inner in ast.walk(stmt)
+            for inner in walk_nodes(stmt)
         }
         for node in walk_tree(tree):
             if not isinstance(node, ast.Try) or id(node) in type_only_tries:

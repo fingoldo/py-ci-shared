@@ -1,11 +1,12 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
 # --- discarded coroutine (missed await) ---------------------------------------
 #
@@ -33,18 +34,19 @@ from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _l
 def _walk_module_level(tree: ast.Module) -> "Iterator[ast.AST]":
     """Like ``walk_tree(tree)`` but never descends into a function body -- those are visited as
     their own scope, so descending here would double-report every finding inside one."""
-    todo: list[ast.AST] = list(ast.iter_child_nodes(tree))
+    todo: list[ast.AST] = list(child_nodes(tree))
     while todo:
         node = todo.pop()
         yield node
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             continue
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
 
 
-def scan_missed_await(root: Path,
-                      exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
-                      ) -> list[Finding]:
+def scan_missed_await(
+    root: Path,
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
+) -> list[Finding]:
     """Find statement-level calls to a same-module ``async def`` that are
     neither awaited nor wrapped in a task -- the coroutine is created and
     silently discarded, so the async function's body never executes.
@@ -81,7 +83,7 @@ def _bare_async_call_findings(
     """Findings for statement-level calls to ``async_names`` inside one scope (``func``, or the module body when ``func is tree``)."""
     rebound = _rebound_names(tree, func)
     out: list[Finding] = []
-    for stmt in (_walk_module_level(tree) if func is tree else ast.walk(func)):
+    for stmt in (_walk_module_level(tree) if func is tree else walk_nodes(func)):
         if not isinstance(stmt, ast.Expr):
             continue
         call = stmt.value
@@ -89,26 +91,28 @@ def _bare_async_call_findings(
             continue
         name = call.func.id
         if name in async_names and name not in rebound:
-            out.append(Finding(
-                check="missed_await",
-                severity="P1",
-                file=rel,
-                line=call.lineno,
-                snippet=_line_text(src_lines, call.lineno),
-                detail=(
-                    f"`{name}(...)` is an async def in this module, called as a "
-                    f"bare statement with the coroutine discarded -- its body "
-                    f"never runs. Add `await` (or wrap in a task) so the "
-                    f"operation actually executes."
-                ),
-            ))
+            out.append(
+                Finding(
+                    check="missed_await",
+                    severity="P1",
+                    file=rel,
+                    line=call.lineno,
+                    snippet=_line_text(src_lines, call.lineno),
+                    detail=(
+                        f"`{name}(...)` is an async def in this module, called as a "
+                        f"bare statement with the coroutine discarded -- its body "
+                        f"never runs. Add `await` (or wrap in a task) so the "
+                        f"operation actually executes."
+                    ),
+                )
+            )
     return out
 
 
 def _rebound_names(tree: ast.Module, func: ast.AST) -> set[str]:
     """Names that shadow a module-level async function inside ``func``: local imports, assignments, parameters, nested defs."""
     rebound: set[str] = set()
-    for n in (_walk_module_level(tree) if func is tree else ast.walk(func)):
+    for n in (_walk_module_level(tree) if func is tree else walk_nodes(func)):
         if isinstance(n, (ast.Import, ast.ImportFrom)):
             for alias in n.names:
                 rebound.add((alias.asname or alias.name).split(".")[0])
@@ -183,7 +187,9 @@ class _BlockingCallFinder(ast.NodeVisitor):
         """Stop traversal at a nested sync function's own scope."""
         return None
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_AsyncFunctionDef(
+        self, node: ast.AsyncFunctionDef
+    ) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
         """Stop traversal at a nested async function's own scope."""
         return None
 
@@ -224,16 +230,18 @@ def scan_sync_blocking_in_async(
                 if not isinstance(call.func, ast.Attribute):  # _is_blocking_call only appends Calls whose .func is an Attribute; not a security check
                     raise AssertionError(f"expected Attribute callee, got {type(call.func).__name__}")
                 attr = call.func.attr
-                findings.append(Finding(
-                    check="sync_blocking_in_async",
-                    severity="P1",
-                    file=rel,
-                    line=call.lineno,
-                    snippet=_line_text(src_lines, call.lineno),
-                    detail=(
-                        f"`...{attr}(...)` is a synchronous blocking call inside `async def "
-                        f"{func.name}` with no `await`/`asyncio.to_thread` wrapper -- stalls the "
-                        "WHOLE event loop (every other in-flight coroutine), not just this task."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="sync_blocking_in_async",
+                        severity="P1",
+                        file=rel,
+                        line=call.lineno,
+                        snippet=_line_text(src_lines, call.lineno),
+                        detail=(
+                            f"`...{attr}(...)` is a synchronous blocking call inside `async def "
+                            f"{func.name}` with no `await`/`asyncio.to_thread` wrapper -- stalls the "
+                            "WHOLE event loop (every other in-flight coroutine), not just this task."
+                        ),
+                    )
+                )
     return findings

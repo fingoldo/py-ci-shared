@@ -1,11 +1,12 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 from pathlib import Path
 from collections.abc import Iterator
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
 # --- unbounded or silently-exhausting retry loop --------------------------
 #
@@ -33,13 +34,13 @@ def _own_nodes(loop: ast.AST) -> "Iterator[ast.AST]":
     whose children ``ast.walk`` has already queued, so a ``break``/``raise`` belonging to the
     nested loop was still found and silenced the enclosing retry loop.
     """
-    todo: list[ast.AST] = [c for c in ast.iter_child_nodes(loop)]
+    todo: list[ast.AST] = [c for c in child_nodes(loop)]
     while todo:
         node = todo.pop()
         yield node
         if isinstance(node, (ast.While, ast.For, ast.AsyncFor, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             continue
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
 
 
 def _loop_has_break(loop: ast.While) -> bool:
@@ -61,7 +62,7 @@ def _loop_has_bounding_raise(loop: ast.While) -> bool:
 
 def _try_has_sleep_or_continue(node: ast.AST) -> bool:
     """True if ``node``'s subtree contains a ``continue`` or a call to a function/method named ``sleep``."""
-    for n in ast.walk(node):
+    for n in walk_nodes(node):
         if isinstance(n, ast.Continue):
             return True
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "sleep":
@@ -73,7 +74,7 @@ def _try_has_sleep_or_continue(node: ast.AST) -> bool:
 
 def _except_has_sleep(handler: ast.ExceptHandler) -> bool:
     """True if ``handler``'s body contains a call to a function/method named ``sleep``."""
-    for n in ast.walk(handler):
+    for n in walk_nodes(handler):
         if isinstance(n, ast.Call) and (
             (isinstance(n.func, ast.Attribute) and n.func.attr == "sleep") or (isinstance(n.func, ast.Name) and n.func.id == "sleep")
         ):
@@ -92,7 +93,7 @@ def _try_body_has_blocking_wait_with_timeout(try_node: ast.Try) -> bool:
     the wild (a queue-drain loop) during the first real run of this scanner.
     """
     for stmt in try_node.body:
-        for n in ast.walk(stmt):
+        for n in walk_nodes(stmt):
             if isinstance(n, ast.Call) and any(kw.arg == "timeout" for kw in n.keywords):
                 return True
     return False
@@ -127,7 +128,7 @@ def scan_retry_loops(
         for node in walk_tree(tree):
             if not (isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True):
                 continue
-            try_nodes = [n for n in ast.walk(node) if isinstance(n, ast.Try)]
+            try_nodes = [n for n in walk_nodes(node) if isinstance(n, ast.Try)]
             if not try_nodes:
                 continue
             has_retry_shape = any(_try_has_sleep_or_continue(t) for t in try_nodes)
@@ -136,30 +137,34 @@ def scan_retry_loops(
             any_except_has_sleep = any(_except_has_sleep(h) for t in try_nodes for h in t.handlers)
             any_blocking_wait = any(_try_body_has_blocking_wait_with_timeout(t) for t in try_nodes)
             if not any_except_has_sleep and not any_blocking_wait and not is_line_exempt(src_lines, node.lineno, "busy_retry_loop"):
-                findings.append(Finding(
-                    check="busy_retry_loop",
-                    severity="P1",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        "`while True:` retry loop's except handler has no `sleep()` -- a "
-                        "persistently-failing operation busy-loops at 100% CPU forever instead "
-                        "of backing off."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="busy_retry_loop",
+                        severity="P1",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            "`while True:` retry loop's except handler has no `sleep()` -- a "
+                            "persistently-failing operation busy-loops at 100% CPU forever instead "
+                            "of backing off."
+                        ),
+                    )
+                )
             elif not _loop_has_break(node) and not _loop_has_bounding_raise(node):
-                findings.append(Finding(
-                    check="unbounded_retry_loop",
-                    severity="Low",
-                    file=rel,
-                    line=node.lineno,
-                    snippet=_line_text(src_lines, node.lineno),
-                    detail=(
-                        "`while True:` retry loop with a sleep-backed except handler but no "
-                        "visible `break` -- confirm this is a deliberate 'retry forever' design "
-                        "(e.g. waiting for a service at startup), not a missing upper bound on a "
-                        "condition that should eventually give up and raise."
-                    ),
-                ))
+                findings.append(
+                    Finding(
+                        check="unbounded_retry_loop",
+                        severity="Low",
+                        file=rel,
+                        line=node.lineno,
+                        snippet=_line_text(src_lines, node.lineno),
+                        detail=(
+                            "`while True:` retry loop with a sleep-backed except handler but no "
+                            "visible `break` -- confirm this is a deliberate 'retry forever' design "
+                            "(e.g. waiting for a service at startup), not a missing upper bound on a "
+                            "condition that should eventually give up and raise."
+                        ),
+                    )
+                )
     return findings

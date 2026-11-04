@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 
 def _is_data_sweep(node: ast.expr) -> bool:
@@ -32,7 +32,7 @@ def _body_accumulates(body: list[ast.stmt]) -> bool:
     A loop that already accumulates is reporting the whole set somewhere; the assert inside it is
     then usually a cheap per-item guard rather than the loop's only verdict.
     """
-    for node in ast.walk(ast.Module(body=body, type_ignores=[])):
+    for node in walk_nodes(ast.Module(body=body, type_ignores=[])):
         if isinstance(node, ast.AugAssign):
             return True
         if isinstance(node, ast.Call):
@@ -90,7 +90,7 @@ def scan_assert_in_loop_reports_only_the_first(
         for node in walk_tree(tree):
             if not isinstance(node, ast.For) or not _is_data_sweep(node.iter) or _body_accumulates(node.body):
                 continue
-            for stmt in ast.walk(ast.Module(body=node.body, type_ignores=[])):
+            for stmt in walk_nodes(ast.Module(body=node.body, type_ignores=[])):
                 if not isinstance(stmt, ast.Assert):
                     continue
                 # The iterated source and the loop variable go in `detail`, not just the line number: a
