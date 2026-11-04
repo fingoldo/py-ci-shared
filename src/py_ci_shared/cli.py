@@ -143,7 +143,10 @@ def _cmd_list(args: argparse.Namespace) -> int:
 
 
 def _cmd_tool(args: argparse.Namespace) -> int:
-    spec = registry.by_name(args.module)
+    try:
+        spec = registry.by_name(args.module)
+    except KeyError as exc:  # the one lookup that is a usage error; a KeyError raised inside a gate must keep its traceback
+        raise ConfigError(str(exc.args[0]) if exc.args else args.module) from exc
     if not spec.cli:
         raise ConfigError(f"{spec.name} has no command line; `py-ci-shared list` marks the ones that do")
     main = importlib.import_module(spec.module).main
@@ -157,7 +160,13 @@ def _cmd_tool(args: argparse.Namespace) -> int:
             result = main()
         finally:
             sys.argv = saved
-    return result if isinstance(result, int) else 0
+    if result is None:
+        return 0
+    if isinstance(result, int):
+        return result
+    raise ConfigError(
+        f"{spec.name}.main returned {type(result).__name__}, not an exit code (None or int); fix the tool, a findings list read as success hides every finding"
+    )
 
 
 def _cmd_new_gate(args: argparse.Namespace) -> int:
@@ -218,7 +227,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "refresh":
             return _cmd_run(args, everything=False, refresh=True)
         if args.command == "config-path":
-            _print(str(config_path(args.name)))
+            try:
+                _print(str(config_path(args.name)))
+            except KeyError as exc:
+                raise ConfigError(str(exc.args[0]) if exc.args else args.name) from exc
             return 0
         if args.command == "tool":
             return _cmd_tool(args)
@@ -226,7 +238,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return _cmd_new_gate(args)
         _print(__version__)
         return 0
-    except (ConfigError, KeyError) as exc:
+    except ConfigError as exc:
         logger.warning("cli.py line 201: substituted a fallback after %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared: {exc.args[0] if exc.args else exc}", err=True)
         return 2

@@ -49,6 +49,14 @@ jobs:
           # rides on them (3.11 only), unlike the ubuntu legs. tests/test_reusable_workflows.py allows exactly these two.
           - os: windows-latest  # moving-label-ok: deliberate, see the comment above; the OS a consumer's developer runs now is the point of this leg
             python: "3.11"
+          # The floor and the newest Python on Windows too, non-blocking first (preview: true => continue-on-error): a 3.9 or 3.13 break
+          # that depends on Windows path handling (the tomllib fallback path, subprocess quoting) was invisible to the 3.11-only leg (audit 2026-11-04 34-F11).
+          - os: windows-latest  # moving-label-ok: same deliberate Windows leg as above, at the Python floor
+            python: "3.9"
+            preview: true
+          - os: windows-latest  # moving-label-ok: same deliberate Windows leg as above, at the newest Python
+            python: "3.13"
+            preview: true
           - os: macos-latest  # moving-label-ok: deliberate, see the comment above; the OS a consumer's developer runs now is the point of this leg
             python: "3.11"
     # bash on every OS (it ships on the Windows runners too): the run: blocks below use POSIX
