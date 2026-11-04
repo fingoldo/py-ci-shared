@@ -152,18 +152,23 @@ def _date(text: str) -> Optional[_dt.date]:
     return max(dates) if dates else None
 
 
+def _load_tree(root: Path, rel: str, problems: list[Finding]) -> Optional[tuple[list[str], ast.Module]]:
+    """The source lines and tree of ``root/rel``; an unreadable file becomes a Finding in *problems* and returns None."""
+    try:
+        source, tree = parse_source(root / rel)
+    except SourceError as exc:
+        problems.append(Finding(rel, (exc.line if exc.line is not None else 1), RULE, f"{_UNREADABLE}: {exc.kind}: {exc.message}"))
+        return None
+    return source.splitlines(), tree
+
+
 def _resolve(root: Path, declared: dict[tuple[str, str], int]) -> tuple[list[FactTable], list[Finding]]:
     found: list[FactTable] = []
     problems: list[Finding] = []
     trees: dict[str, Optional[tuple[list[str], ast.Module]]] = {}
     for (rel, name), days in sorted(declared.items()):
         if rel not in trees:
-            try:
-                source, tree = parse_source(root / rel)
-                trees[rel] = (source.splitlines(), tree)
-            except SourceError as exc:
-                trees[rel] = None
-                problems.append(Finding(rel, (exc.line if exc.line is not None else 1), RULE, f"{_UNREADABLE}: {exc.kind}: {exc.message}"))
+            trees[rel] = _load_tree(root, rel, problems)
         entry = trees[rel]
         if entry is None:
             continue

@@ -64,7 +64,7 @@ def _is_tmp_source(node: ast.AST, names: set[str]) -> bool:
         return node.id in names
     if isinstance(node, ast.Attribute):
         return node.attr == "tempdir" and getattr(node.value, "id", "") == "tempfile"
-    return isinstance(node, ast.Constant) and isinstance(node.value, str) and (node.value == "/tmp" or node.value.startswith("/tmp/"))
+    return isinstance(node, ast.Constant) and isinstance(node.value, str) and (node.value == "/tmp" or node.value.startswith("/tmp/"))  # tmp-path-ok: the detector's own literal
 
 
 def _builds_path(node: ast.AST) -> Optional[list[ast.AST]]:
@@ -104,7 +104,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
         operands = _builds_path(node)
         if operands is not None and any(_is_tmp_source(sub, names) for op in operands for sub in shared_walk(op)):
             candidates.append(node)
-        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):  # tmp-path-ok: the detector's own literal
             candidates.append(node)
     inner = {id(sub) for c in candidates for sub in shared_walk(c) if sub is not c}
     out: list[Finding] = []

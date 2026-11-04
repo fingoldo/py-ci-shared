@@ -406,7 +406,7 @@ def _pop_config(args):
     return config_path, rest
 
 
-def _check_one(path, config_path):
+def _differs_or_unreadable(path, config_path):
     """True when the filtered result differs from the file, or the file could not be checked."""
     try:
         changed, _, _ = process_one(path, config_path)
@@ -432,7 +432,7 @@ def _run_check(args, config_path):
     candidates = files_black_would_change(files, config_path)
     # One Black process per candidate, run side by side: the threads only wait on subprocesses.
     with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(8, os.cpu_count() or 1))) as pool:
-        verdicts = list(pool.map(lambda path: _check_one(path, config_path), candidates))
+        verdicts = list(pool.map(lambda path: _differs_or_unreadable(path, config_path), candidates))
     changed_files = [path for path, changed in zip(candidates, verdicts) if changed]
     if changed_files:
         print(f"{len(changed_files)}/{len(files)} files have non-excluded-class Black findings:")

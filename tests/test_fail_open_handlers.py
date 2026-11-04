@@ -71,6 +71,21 @@ def test_recording_the_failed_element_is_not_admit_on_error(tmp_path):
     assert _rules(tmp_path, body) == []
 
 
+@pytest.mark.parametrize("name", ["missing", "unresolved_modules", "absent"])
+def test_recording_the_element_in_a_missing_collection_is_not_admit_on_error(tmp_path, name):
+    body = f"""
+        def probe(specs):
+            {name} = {{}}
+            for spec in specs:
+                try:
+                    load(spec)
+                except ModuleNotFoundError:
+                    {name}[spec] = 1
+            return {name}
+    """
+    assert _rules(tmp_path, body) == []
+
+
 def test_a_deciding_function_returning_true_on_error_is_found(tmp_path):
     body = """
         def spec_is_ok(spec):

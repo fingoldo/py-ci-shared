@@ -132,7 +132,7 @@ def _marked_best_effort(lines: list[str], handler: ast.ExceptHandler) -> bool:
     return any(_BEST_EFFORT in lines[j] for j in (i - 1, i) if 0 <= j < len(lines))
 
 
-_FAILURE_LIST_RE = re.compile(r"fail|reject|drop|skip|error|bad|invalid|broken|unparsed|unreadable|problem|violation", re.IGNORECASE)
+_FAILURE_LIST_RE = re.compile(r"fail|reject|drop|skip|error|bad|invalid|broken|unparsed|unreadable|problem|violation|missing|absent|unresolved", re.IGNORECASE)
 
 
 def _is_message(node: ast.AST) -> bool:
