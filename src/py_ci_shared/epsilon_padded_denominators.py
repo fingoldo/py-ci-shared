@@ -42,6 +42,7 @@ import ast
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Optional
 
 from ._core.scan import scan_roots_excluding
 from ._core import ScanResult, nodes_of
@@ -78,11 +79,35 @@ class Finding:
         return f"{self.path.as_posix()}:{self.lineno}  {self.source}"
 
 
-def _is_small_positive_literal(node: ast.AST) -> bool:
-    """A numeric constant small enough to be a guard rather than a term."""
+def _is_small_positive_literal(node: ast.AST, consts: "Optional[dict[str, float]]" = None) -> bool:
+    """A numeric constant small enough to be a guard rather than a term: a literal, a module constant bound once to one
+    (``EPS = 1e-12``), or ``np.finfo(...).eps`` / ``sys.float_info.epsilon``."""
+    if isinstance(node, ast.Name):
+        return node.id in (consts or {})
+    if isinstance(node, ast.Attribute) and node.attr in ("eps", "epsilon"):
+        return True
     return (
         isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool) and 0 < abs(node.value) <= _EPSILON_CEILING
     )
+
+
+def _small_constants(tree: ast.Module) -> "dict[str, float]":
+    """Module-level names assigned exactly once, to a small positive number."""
+    counts: dict[str, int] = {}
+    small: dict[str, float] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            pairs = [(t, stmt.value) for t in stmt.targets]
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            pairs = [(stmt.target, stmt.value)]
+        else:
+            continue
+        for target, value in pairs:
+            if isinstance(target, ast.Name):
+                counts[target.id] = counts.get(target.id, 0) + 1
+                if _is_small_positive_literal(value):
+                    small[target.id] = 0.0  # only membership matters
+    return {name: v for name, v in small.items() if counts[name] == 1}
 
 
 def _falls_off_geometrically(node: ast.AST) -> bool:
@@ -112,10 +137,10 @@ def _add_terms(node: ast.AST) -> list[ast.expr]:
     return [node]  # type: ignore[list-item]
 
 
-def _is_padded_power(denominator: ast.AST) -> bool:
+def _is_padded_power(denominator: ast.AST, consts: "Optional[dict[str, float]]" = None) -> bool:
     """A sum with a small literal term and a geometrically-shrinking term, however many terms it has."""
     terms = _add_terms(denominator)
-    return len(terms) > 1 and any(_is_small_positive_literal(t) for t in terms) and any(_falls_off_geometrically(t) for t in terms)
+    return len(terms) > 1 and any(_is_small_positive_literal(t, consts) for t in terms) and any(_falls_off_geometrically(t) for t in terms)
 
 
 def _report(path: Path, node: ast.AST) -> Finding:
@@ -127,21 +152,24 @@ def _report(path: Path, node: ast.AST) -> Finding:
     return Finding(path, getattr(node, "lineno", 0), rendered[:160])
 
 
-def _is_padded_division(node: ast.AST) -> bool:
+def _is_padded_division(node: ast.AST, consts: "Optional[dict[str, float]]" = None) -> bool:
     """A division whose denominator is a power with a small literal added: ``a / (r**d + eps)``, ``x /= r**d + eps`` or ``np.divide(k, r**d + eps)``."""
     if isinstance(node, ast.BinOp):
-        return isinstance(node.op, ast.Div) and _is_padded_power(node.right)
+        if isinstance(node.op, ast.Pow) and isinstance(node.right, ast.UnaryOp) and isinstance(node.right.op, ast.USub):
+            return isinstance(node.right.operand, ast.Constant) and node.right.operand.value == 1 and _is_padded_power(node.left, consts)  # (r**d + eps) ** -1
+        return isinstance(node.op, (ast.Div, ast.FloorDiv)) and _is_padded_power(node.right, consts)
     if isinstance(node, ast.AugAssign):
-        return isinstance(node.op, ast.Div) and _is_padded_power(node.value)
+        return isinstance(node.op, (ast.Div, ast.FloorDiv)) and _is_padded_power(node.value, consts)
     func = node.func  # type: ignore[attr-defined]
     name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
-    return name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1])  # type: ignore[attr-defined]
+    return name in _DIVIDE_CALLS and len(node.args) >= 2 and _is_padded_power(node.args[1], consts)  # type: ignore[attr-defined]
 
 
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
-        hits = [n for n in nodes_of(parsed.tree, ast.BinOp, ast.AugAssign, ast.Call) if _is_padded_division(n)]
+        consts = _small_constants(parsed.tree)
+        hits = [n for n in nodes_of(parsed.tree, ast.BinOp, ast.AugAssign, ast.Call) if _is_padded_division(n, consts)]
         hits.sort(key=lambda n: (getattr(n, "lineno", 0), getattr(n, "col_offset", 0)))
         findings.extend(_report(parsed.path, n) for n in hits)
     return findings
