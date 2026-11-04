@@ -108,8 +108,30 @@ def line_has_marker(source_lines: Sequence[str], line: int, marker: str) -> bool
     """True when the 1-based *line* of the source carries ``# <marker>`` (an explicit, reviewable opt-out)."""
     if not marker or not 0 < line <= len(source_lines):
         return False
-    text = source_lines[line - 1]
-    return "#" in text and marker in text[text.index("#") :]
+    comment = _comment_of(source_lines[line - 1])
+    return comment is not None and marker in comment
+
+
+def _comment_of(text: str) -> Optional[str]:
+    """The trailing ``#`` comment of one line, ignoring a ``#`` inside a quoted string (``x = "# lf-ok"``). When a quote is left
+    open on the line (a multi-line string, or an apostrophe in YAML prose) the first ``#`` is taken, as before."""
+    quote = ""
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == "\\":
+                i += 1
+            elif ch == quote:
+                quote = ""
+        elif ch in "\"'":
+            quote = ch
+        elif ch == "#":
+            return text[i:]
+        i += 1
+    if quote:
+        return text[text.index("#") :] if "#" in text else None
+    return None
 
 
 @tree_cached
