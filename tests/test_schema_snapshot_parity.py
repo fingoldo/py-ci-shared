@@ -256,7 +256,7 @@ def test_a_failed_connect_names_the_class_and_sqlstate_but_not_the_dsn(tmp_path)
         sp.refresh_snapshot(tmp_path / "s.json", dsn_env="D", schemas=["app"], source="x", environ={"D": dsn})
     text = str(info.value)
     assert "OperationalError" in text and "SQLSTATE" in text
-    assert not any(secret in text for secret in ("s3cr3t-pw", "leaky_user", "leaky_db", "127.0.0.1"))
+    assert sum(1 for secret in ("s3cr3t-pw", "leaky_user", "leaky_db", "127.0.0.1") if secret in text) == 0
     assert info.value.__cause__ is None and info.value.__suppress_context__
 
 
@@ -349,7 +349,7 @@ def test_a_second_pass_that_changes_the_catalogue_is_not_idempotent(server, tmp_
         encoding="utf-8",
     )
     result = sp.find_schema_snapshot_problems(sql, snap, server_dsn=server)
-    assert any(f.rule == "not-idempotent" and "second time changed the catalogue" in f.message for f in result.findings)
+    assert sum(1 for f in result.findings if f.rule == "not-idempotent" and "second time changed the catalogue" in f.message) == 1
 
 
 @needs_server

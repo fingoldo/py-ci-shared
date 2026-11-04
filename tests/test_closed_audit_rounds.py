@@ -79,8 +79,8 @@ def test_deleting_or_moving_out_a_closed_file_is_reported(repo: Path) -> None:
     _git(repo, "rm", "-q", "audits/implemented/2026-09-01/TRACKER.md")
     _commit(repo)
     messages = [m for _, _, m in _found(repo)]
-    assert any("moved out of audits/implemented/ to attic/report.md" in m for m in messages)
-    assert any("a closed audit file was deleted" in m for m in messages)
+    assert sum(1 for m in messages if "moved out of audits/implemented/ to attic/report.md" in m) == 1
+    assert sum(1 for m in messages if "a closed audit file was deleted" in m) == 1
 
 
 def test_a_table_row_outside_a_tracker_is_frozen(repo: Path) -> None:

@@ -58,11 +58,11 @@ class TestStaleAndAbsolutePaths:
     def test_windows_absolute_path_is_flagged(self, tmp_path):
         p = _json_baseline(tmp_path, {"C:\\Users\\Admin\\repo\\lib\\a.dart#0": _GOOD_NOTE})
         problems = find_baseline_problems(p)
-        assert any("absolute path" in x for x in problems)
+        assert sum(1 for x in problems if "absolute path" in x) == 1
 
     def test_posix_home_path_is_flagged(self, tmp_path):
         p = _json_baseline(tmp_path, {"/home/ci/repo/lib/a.dart#0": _GOOD_NOTE})
-        assert any("absolute path" in x for x in find_baseline_problems(p))
+        assert sum(1 for x in find_baseline_problems(p) if "absolute path" in x) == 1
 
 
 class TestTextAllowlist:

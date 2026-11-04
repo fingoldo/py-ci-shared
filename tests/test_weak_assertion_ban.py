@@ -16,6 +16,17 @@ STRICT_FILES = (
     "test_unsafe_deserialization_gaps.py",
     "test_text_ratchet_gaps.py",
     "test_core_scoped_imports.py",
+    "test_sql_verify_fragment_matrix.py",
+    "test_baseline_hygiene.py",
+    "test_baseline_trend.py",
+    "test_closed_audit_rounds.py",
+    "test_contract_ledger.py",
+    "code_audit/test_unraised_exceptions.py",
+    "code_audit/test_default_via_or.py",
+    "test_hook_hygiene.py",
+    "test_code_audit_meta.py",
+    "test_stub_signature_parity.py",
+    "test_schema_snapshot_parity.py",
 )
 WEAK = re.compile(r"^\s*assert any\(|^\s*assert (?:found|findings)\s*$", re.MULTILINE)
 

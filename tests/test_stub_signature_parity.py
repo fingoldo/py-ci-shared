@@ -214,6 +214,6 @@ def _mutant(old: str, new: str, monkeypatch: pytest.MonkeyPatch) -> types.Module
 )
 def test_teeth_reverting_the_core_condition_loses_the_motivating_case(tmp_path, monkeypatch, old, new, lost):
     root = _canary(tmp_path, "violation")
-    assert any(f.message.endswith(lost) for f in find_stub_signature_parity(root, use_git=False))
+    assert sum(1 for f in find_stub_signature_parity(root, use_git=False) if f.message.endswith(lost)) == 1
     mutant = _mutant(old, new, monkeypatch)
-    assert not any(f.message.endswith(lost) for f in mutant.find_stub_signature_parity(root, use_git=False)), "the mutant still bites"
+    assert sum(1 for f in mutant.find_stub_signature_parity(root, use_git=False) if f.message.endswith(lost)) == 0, "the mutant still bites"

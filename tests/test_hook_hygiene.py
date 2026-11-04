@@ -72,7 +72,7 @@ class TestStagingAndVerdicts:
     def test_grep_derived_verdict_is_flagged(self, tmp_path):
         d = _hooks(tmp_path, '#!/bin/sh\nflutter analyze | grep "error -" && exit 1\n')
         problems = find_hook_hygiene_problems(d)
-        assert any("human-readable output" in p for p in problems)
+        assert sum(1 for p in problems if "human-readable output" in p) == 1
 
     def test_grep_verdict_rule_can_be_disabled(self, tmp_path):
         d = _hooks(tmp_path, '#!/bin/sh\nflutter analyze | grep "error -" && exit 1\n')
@@ -137,7 +137,7 @@ class TestHookVsCiParity:
         (tmp_path / "tool").mkdir(exist_ok=True)
         (tmp_path / "tool" / "run-guards.sh").write_text("#!/bin/sh\necho nothing to do\n", encoding="utf-8")
         problems = find_hook_hygiene_problems(d, repo_root=tmp_path, workflows_dir=wf, runner_scripts=["tool/run-guards.sh"])
-        assert any("does not discover guards by glob" in x for x in problems)
+        assert sum(1 for x in problems if "does not discover guards by glob" in x) == 1
 
     def test_a_runner_that_does_not_exist_is_reported(self, tmp_path):
         d, wf = self._repo(
@@ -146,7 +146,7 @@ class TestHookVsCiParity:
             "jobs:\n  a:\n    steps:\n      - run: bash tool/run-guards.sh\n",
         )
         problems = find_hook_hygiene_problems(d, repo_root=tmp_path, workflows_dir=wf, runner_scripts=["tool/run-guards.sh"])
-        assert any("which does not exist" in x for x in problems)
+        assert sum(1 for x in problems if "which does not exist" in x) == 1
 
 
 class TestAssert:
