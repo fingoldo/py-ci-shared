@@ -141,3 +141,25 @@ def test_a_marker_without_a_reason_does_not_suppress_the_finding(tmp_path):
 def test_a_marker_on_another_line_does_not_suppress_the_finding(tmp_path):
     body = _LOCKED_WRITE.format(marker="") + "\n# lock-io-ok: the wrong line, so the call is still reported\n"
     assert len(_lines(tmp_path, body)) == 1
+
+
+@pytest.mark.parametrize(
+    ("lock", "call"),
+    [
+        ("lock", 'cur.execute("select 1")'),
+        ("lock", "self.conn.commit()"),
+        ("lock", 'p.write_text("a")'),
+        ("self._mutex", "time.sleep(1)"),
+        ("self._Lock", "time.sleep(1)"),
+    ],
+)
+def test_more_blocking_calls_and_lock_spellings_are_reported_once(tmp_path, lock, call):
+    body = f"import time\n\n\ndef f(self, lock, cur, p):\n    with {lock}:\n        {call}\n"
+    assert len(_lines(tmp_path, body)) == 1
+
+
+def test_asyncio_sleep_under_an_async_lock_is_reported_and_a_clock_is_not_a_lock(tmp_path):
+    body = "import asyncio\n\n\nasync def f(lock):\n    async with lock:\n        await asyncio.sleep(1)\n"
+    assert len(_lines(tmp_path, body)) == 1
+    body = "import time\n\n\ndef f(clock):\n    with clock:\n        time.sleep(1)\n"
+    assert _lines(tmp_path, body) == []
