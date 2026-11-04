@@ -50,7 +50,9 @@ _JOBS_HEADER_RE = re.compile(r"^jobs:\s*(?:#.*)?$")
 # (those sit at a deeper indent). Captures the indent width so job-block boundaries can be
 # detected purely from indentation, without needing a real YAML parser.
 _JOB_HEADER_RE = re.compile(r"^(?P<indent>[ ]+)(?P<job_id>[\w-]+|\"[^\"]+\"|'[^']+'):\s*(?:#.*)?$")
-_TIMEOUT_MINUTES_RE = re.compile(r"^\s*timeout-minutes:\s*\S")
+_TIMEOUT_MINUTES_RE = re.compile(r"^\s*timeout-minutes:\s*(?P<value>\S.*)$")
+#: The cap a job-level timeout may not exceed. 360 is the platform default, so a value at or above it bounds nothing.
+DEFAULT_MAX_MINUTES = 120
 # A `uses:` key directly inside the job's own block (one level deeper than the job header) marks
 # it as a reusable-workflow-call job -- GitHub's schema forbids `timeout-minutes` there entirely.
 _USES_KEY_RE = re.compile(r"^\s*uses:\s*\S")
@@ -65,6 +67,26 @@ class JobTimeout:
     line: int
     has_timeout: bool
     reusable: bool
+    #: The scalar written after ``timeout-minutes:`` (comment and quotes stripped); None when the key is absent.
+    value: Optional[str] = None
+
+    def timeout_problem(self, max_minutes: int = DEFAULT_MAX_MINUTES) -> Optional[str]:
+        """Why the declared timeout does not bound the job (zero, negative, the 360 default, above *max_minutes*, not a number), else None."""
+        if not self.has_timeout:
+            return "no timeout-minutes"
+        text = (self.value or "").strip()
+        if text.startswith("${{"):
+            return None
+        if not re.fullmatch(r"-?\d+", text):
+            return f"timeout-minutes {text!r} is not an integer"
+        minutes = int(text)
+        if minutes < 1:
+            return f"timeout-minutes {minutes} is not positive"
+        if minutes >= 360:
+            return f"timeout-minutes {minutes} equals or exceeds the 360-minute platform default, so it bounds nothing"
+        if minutes > max_minutes:
+            return f"timeout-minutes {minutes} exceeds the cap of {max_minutes}"
+        return None
 
 
 def _indent(line: str) -> int:
@@ -85,8 +107,10 @@ def _record_key(current: dict, line: str, stripped: str, indent: int) -> None:
         current["key_indent"] = indent
     if indent != current["key_indent"] or stripped.startswith("-"):
         return
-    if _TIMEOUT_MINUTES_RE.match(line):
+    match = _TIMEOUT_MINUTES_RE.match(line)
+    if match:
         current["timeout"] = True
+        current["value"] = re.sub(r"\s+#.*$", "", match.group("value")).strip().strip("\"'")
     elif _USES_KEY_RE.match(line):
         current["uses"] = True
 
@@ -107,7 +131,7 @@ def collect_jobs(workflow_path: Path) -> list[JobTimeout]:
     def close() -> None:
         nonlocal current
         if current is not None:
-            jobs.append(JobTimeout(current["id"], current["line"], current["timeout"], current["uses"]))
+            jobs.append(JobTimeout(current["id"], current["line"], current["timeout"], current["uses"], current.get("value")))
         current = None
 
     for lineno, line in enumerate(lines, start=1):
@@ -135,17 +159,18 @@ def collect_jobs(workflow_path: Path) -> list[JobTimeout]:
     return jobs
 
 
-def find_jobs_missing_timeout(workflow_path: Path) -> list[str]:
+def find_jobs_missing_timeout(workflow_path: Path, max_minutes: int = DEFAULT_MAX_MINUTES) -> list[str]:
     """Return the job id of every NON-reusable-workflow-call job under ``jobs:`` in
     ``workflow_path`` that has no job-level ``timeout-minutes:`` key. A job with a job-level
     ``uses:`` key (a reusable-workflow-call job) is skipped entirely -- ``timeout-minutes`` is not
     a valid key there per GitHub's own schema. A step-level ``timeout-minutes`` or ``uses`` is a
-    property of that step and counts for neither.
+    property of that step and counts for neither. A value that bounds nothing counts as missing: ``0`` or a negative
+    number, a non-integer, the 360-minute platform default or more, or more than *max_minutes* (default 120).
     """
-    return [job.job_id for job in collect_jobs(workflow_path) if not job.reusable and not job.has_timeout]
+    return [job.job_id for job in collect_jobs(workflow_path) if not job.reusable and job.timeout_problem(max_minutes)]
 
 
-def assert_all_jobs_have_timeout(workflow_path: Path, exempt_jobs: "frozenset[str] | None" = None) -> None:
+def assert_all_jobs_have_timeout(workflow_path: Path, exempt_jobs: "frozenset[str] | None" = None, max_minutes: int = DEFAULT_MAX_MINUTES) -> None:
     """Fail if any job in ``workflow_path`` has no ``timeout-minutes:``. ``exempt_jobs`` allowlists
     job ids that deliberately rely on the platform default (rare -- prefer setting an explicit,
     generous timeout over exempting a job outright, so the intent is visible in the YAML itself).
@@ -158,7 +183,7 @@ def assert_all_jobs_have_timeout(workflow_path: Path, exempt_jobs: "frozenset[st
             f"no job found under a top-level `jobs:` in {workflow_path} -- either the file is not a workflow or its "
             "layout is one this scanner cannot read; either way nothing was checked"
         )
-    missing = [job.job_id for job in jobs if not job.reusable and not job.has_timeout]
+    missing = [job.job_id for job in jobs if not job.reusable and job.timeout_problem(max_minutes)]
     if exempt_jobs:
         missing = [j for j in missing if j not in exempt_jobs]
     if missing:
