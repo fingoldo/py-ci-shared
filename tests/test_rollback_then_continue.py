@@ -161,3 +161,41 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
     _write(src, "m.py", BAD + BAD.replace("def importer", "def importer2").replace("importer:", "importer2:"))
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_no_rollback_then_continue(src, baseline_path=baseline, refresh=False, use_git=False)
+
+
+def _handler_variants(handler_body: str) -> list[int]:
+    src = (
+        "def importer(session, rows):\n    imported = 0\n    for row in rows:\n        try:\n            session.add(row)\n            imported += 1\n"
+        "            if imported % 100 == 0:\n                session.commit()\n        except Exception as e:\n" + handler_body + "    session.commit()\n"
+    )
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        root = Path(d)
+        _write(root, "m.py", src)
+        return [f.line for f in find_rollback_then_continue(root, use_git=False)]
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        "            msg = str(e)\n            session.rollback()\n",
+        "            session.rollback()\n            errors = errors + 1\n",
+        "            session.rollback()\n            last_error = repr(e)\n",
+        "            _safe_rollback(session)\n",
+    ],
+)
+def test_a_capture_or_counter_assignment_is_not_an_accumulator_reset(handler):
+    assert _handler_variants(handler) == [9]
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        "            session.rollback()\n            batch = []\n",
+        "            session.rollback()\n            pending = 0\n",
+        "            session.rollback()\n            raise\n",
+    ],
+)
+def test_a_real_reset_still_exempts(handler):
+    assert _handler_variants(handler) == []
