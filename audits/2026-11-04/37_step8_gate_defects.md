@@ -10,10 +10,10 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F2 | skip_as_pass | flags a warning `echo` that contains the word "skipped" (`tool/check-hooks-were-not-bypassed.sh:65`) | polyvocab_app | OPEN |
 | 37-F3 | machine_specific_paths | takes the sed regex `s://.*::` for a URL (`tool/check-edge-function-auth.sh:47`) | polyvocab_app | OPEN |
 | 37-F4 | fail_open_handlers | `return exc.sqlstate` in an except is flagged as a silent default return although it returns the failure's own data | polyvocab_app | OPEN |
-| 37-F5 | ci_pin_version_skew | `AttributeError: 'WindowsPath' object has no attribute 'rsplit'` on Windows through `run-all` | claude-usage-notifier, flutter_app_core | OPEN |
+| 37-F5 | ci_pin_version_skew | `AttributeError: 'WindowsPath' object has no attribute 'rsplit'` on Windows through `run-all` | claude-usage-notifier, flutter_app_core, llm_bench, algopacksimple, dash_app_core | OPEN |
 | 37-F6 | tracked_secret_shapes, sibling_floor_skew, import_side_effects | hard-fail or error on a repo with no applicable subject (no config table / no pyproject / no test_*.py); should SKIP | flutter repos | OPEN |
 | 37-F7 | pickle_state_completeness | flags plain counters that are meant to be pickled (`SpeechAccounting.cached_chars`) | pyutilz | OPEN |
-| 37-F8 | env_flag_parsing | flags path and number variables, not boolean flags | pyutilz | OPEN |
+| 37-F8 | env_flag_parsing | flags path, number, URL, secret-key and credential-presence reads, not only boolean flags | pyutilz, llm_bench, dash_app_core, algopacksimple | OPEN |
 | 37-F9 | runtime_registry_mutation | flags an import-time registering decorator (`kernel_tuner`) | pyutilz | OPEN |
 | 37-F10 | unsafe_deserialization | flags `pd.read_pickle` on bytes that come from a sidecar-verified helper | pyutilz | OPEN |
 | 37-F11 | patch_target_read_at_call | misses late reads through `getattr(sys.modules.get(pkg), NAME)`, a `_pkg().NAME` helper and function-local `from X import Y` | pyutilz, autopsia | OPEN |
@@ -29,5 +29,10 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F21 | workflow_runner_labels | `--fix .` creates an untracked `.github/dependabot.yml` | glossum | OPEN |
 | 37-F22 | secret_assertion_operands | flags non-secret env names (OMP_NUM_THREADS, CUDA_PATH, PYTHONHASHSEED); needs a secret-name filter | mlframe | OPEN |
 | 37-F23 | checkout_resolution | fails in a worktree because the editable install points at the main checkout | mlframe | OPEN |
+| 37-F24 | module_reload_safety | TOML `allowed` entries arrive as lists and raise `unhashable type: 'list'`; test files are scanned as production code; `del sys.modules[k]` that restores a snapshot is flagged | algopacksimple (`test_bot_audit.py:127`, `tests/test_trading_strategy.py:82`) | OPEN |
+| 37-F25 | fail_open_handlers (admit_on_error) | a rate-limit counter `d[name] = count` inside an `except` in a loop is read as admitting the loop element | algopacksimple (`simplemethods/walkforward/runner.py:577`) | OPEN |
+| 37-F26 | baseline_hygiene | cannot read a list-shaped baseline (the code-audit baseline), expects `{key: note}` | llm_bench | OPEN |
+| 37-F27 | git_child_env | does not recognise the helper `_without_git_hook_env` that scrubs `GIT_*` | llm_bench | OPEN |
+| 37-F28 | gate config (`[tool.py_ci_shared]`) | a gate with a `[gates.X]` table must not also be in `enable`; the error says so but the generated examples do not | llm_bench, algopacksimple | OPEN |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
