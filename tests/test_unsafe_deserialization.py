@@ -94,7 +94,7 @@ def test_torch_load_needs_weights_only_true(tmp_path):
     assert len(_found(tmp_path / "a", base % "")) == 1
     assert len(_found(tmp_path / "b", base % ", weights_only=False")) == 1
     assert _found(tmp_path / "c", base % ", weights_only=True") == []
-    assert _found(tmp_path / "d", base % ", weights_only=flag") == []
+    assert len(_found(tmp_path / "d", base % ", weights_only=flag")) == 1  # 33-F7: a non-literal flag is not a guarantee
 
 
 def test_numpy_load_with_allow_pickle_true_is_reported_but_not_false_or_default(tmp_path):

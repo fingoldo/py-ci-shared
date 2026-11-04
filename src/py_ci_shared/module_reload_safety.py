@@ -335,7 +335,7 @@ def find_unpaired_reloads(
     scan = scan_python(tests_dir, min_files=min_files, exclude=DEFAULT_EXCLUDE)
     if min_files:
         scan.check_floor()
-    parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree)) for f in scan}
+    parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree, scoped=True)) for f in scan}
     conftests = _conftest_fixtures(tests_dir, parsed_by_path)
     root = tests_dir.resolve()
     out: list[ReloadSite] = [_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed) if p.rel not in exempt]
@@ -382,7 +382,7 @@ def _reloads_in_code(
         out.extend(s for s in (_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed)) if (s.path, s.line) not in ok)
         parsed_count += scan.parsed_count
         for parsed in scan:
-            aliases = ImportAliases.from_tree(parsed.tree)
+            aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
             rel = relative_posix(parsed.path, repo_root)
             for node in _fast_walk(parsed.tree):
                 prim = reload_primitive(node, aliases)

@@ -155,6 +155,8 @@ def _is_sync_name(name: str) -> bool:
 # A device-to-host copy blocks until the device has finished the work it reads, so it ends a timed region the way a
 # synchronize does (``cp.asnumpy(d_R)`` after the matmul).
 _BLOCKING_COPIES = frozenset({"asnumpy"})
+# Tensor methods that copy to the host and so wait for the device whatever the receiver is called: `m(x.cuda()).cpu()`.
+_IMPLICIT_SYNC_METHODS = frozenset({"cpu", "item", "numpy", "tolist"})
 
 
 def _is_sync_call(node: ast.Call) -> bool:
@@ -163,6 +165,8 @@ def _is_sync_call(node: ast.Call) -> bool:
     func = node.func
     if isinstance(func, ast.Attribute):
         if func.attr in _BLOCKING_COPIES and _gpu_call_name(node):
+            return True
+        if func.attr in _IMPLICIT_SYNC_METHODS:
             return True
         return _is_sync_name(func.attr)
     if isinstance(func, ast.Name):

@@ -1,4 +1,4 @@
-"""A script that prints SKIPPED and then exits 0 reports a pass. Opt-in ratchet over ``tool/``, ``scripts/`` and ``.githooks/``.
+"""A script that prints SKIPPED and then exits 0 reports a pass. Opt-in ratchet over ``tool/``, ``tools/``, ``scripts/``, ``.githooks/`` and ``.github/``.
 
 A guard that cannot run here (a missing tool, an absent credential, a platform it does not cover) should fail or exit
 non-zero with its reason. Printing ``SKIPPED`` and exiting 0 lets the check go green while nothing was checked, and CI
@@ -35,15 +35,18 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.source import indent_width
-from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, text_files
+from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, record_finding, text_scan
 
 __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
 
 #: Top-level directories whose scripts are guards.
-SKIP_DIRS = ("tool", "scripts", ".githooks")
+SKIP_DIRS = ("tool", "tools", "scripts", ".githooks", ".github")
 
-_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b[^\n]*\bSKIPPED\b")
-_EXIT_ZERO = re.compile(r"(?<![\w.])(?:exit\s+0(?![\w.])|sys\.exit\(\s*0\s*\)|exit\(\s*0\s*\))")
+_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b[^\n]*\b(?i:skipped)\b")
+# Zero by status: an explicit 0, or none at all (a bare `exit` returns the last command's status, `sys.exit()` and `SystemExit(None)` are 0).
+_EXIT_ZERO = re.compile(
+    r"(?<![\w.])(?:exit\s+0(?![\w.])|exit(?=\s*(?:;|&|\||#|$))|(?:sys\.)?(?:exit|quit)\(\s*(?:0|None)?\s*\)|raise\s+SystemExit(?:\(\s*(?:0|None)?\s*\))?(?![\w.(]))"
+)
 # Shell: the block ends at its closing keyword or at the next function header; any return/exit reached first ends it too.
 _SH_BLOCK_END = re.compile(r"^\s*(?:fi|esac|done|else|elif|return|exit)\b|^\s*\}|^\s*(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{?\s*$")
 _PY_BLOCK_END = re.compile(r"^\s*(?:return|raise|continue|break)\b")
@@ -76,24 +79,22 @@ def _python_block_exits_zero(lines: list[str], index: int) -> bool:
     return False
 
 
-def _skip_lines(rel: str, text: str) -> dict[str, str]:
+def _skip_lines(rel: str, text: str, found: dict[str, str]) -> None:
     lines = text.splitlines()
     python = rel.endswith(".py")
-    found: dict[str, str] = {}
     for index, line in enumerate(lines):
         if not _PRINTS_SKIPPED.search(line):
             continue
         exits = _python_block_exits_zero(lines, index) if python else _shell_block_exits_zero(lines, index)
         if exits:
-            found[f"{rel}: {normalize_line(line)}"] = f"line {index + 1} prints SKIPPED and its block exits 0, which reads as a pass"
-    return found
+            record_finding(found, f"{rel}: {normalize_line(line)}", f"line {index + 1} prints SKIPPED and its block exits 0, which reads as a pass")
 
 
 def find_skip_as_pass(root: Union[str, Path]) -> dict[str, str]:
     """``{key: description}`` for every SKIPPED-then-exit-0 block under :data:`SKIP_DIRS` of *root*."""
-    found: dict[str, str] = {}
-    for file in text_files(root, ("*",), under=SKIP_DIRS):
-        found.update(_skip_lines(file.rel, file.text))
+    files, found = text_scan(root, ("*",), under=SKIP_DIRS)
+    for file in files:
+        _skip_lines(file.rel, file.text, found)
     return found
 
 

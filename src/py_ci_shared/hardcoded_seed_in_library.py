@@ -31,6 +31,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
@@ -43,16 +44,58 @@ RULE = "hardcoded-seed-in-library"
 SUPPRESSION = "# seed-ok:"
 DEFAULT_EXCLUDE_FRAGMENTS = ("tests/", "_benchmarks/")
 
-_SEED_PARAMS = frozenset({"random_state", "seed", "rng"})
+_SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|rng|rs)s?(?:$|_)")
 _SEED_KEYWORDS = frozenset({"random_state", "seed"})
 _SEEDERS = frozenset({"numpy.random.default_rng", "numpy.random.RandomState", "numpy.random.seed", "random.seed", "torch.manual_seed", "random.Random"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-def _int_literal(node: ast.AST) -> bool:
+def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
+    """The int *node* evaluates to when it is a literal, a folded ``+ - * // %`` of literals, or a module constant bound once to one."""
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, int) and not isinstance(node.value, bool) else None
+    if isinstance(node, ast.Name):
+        return consts.get(node.id)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-        node = node.operand
-    return isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool)
+        inner = _int_value(node.operand, consts)
+        return None if inner is None else (-inner if isinstance(node.op, ast.USub) else inner)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod)):
+        left, right = _int_value(node.left, consts), _int_value(node.right, consts)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        return None if right == 0 else (left // right if isinstance(node.op, ast.FloorDiv) else left % right)
+    return None
+
+
+def _module_int_constants(tree: ast.Module) -> "dict[str, int]":
+    """Module-level names assigned exactly once, to an int (``SEED = 42``)."""
+    counts: dict[str, int] = {}
+    values: dict[str, ast.expr] = {}
+    for stmt in tree.body:
+        targets: list[ast.expr] = []
+        if isinstance(stmt, ast.Assign):
+            targets, value = list(stmt.targets), stmt.value
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            targets, value = [stmt.target], stmt.value
+        else:
+            continue
+        for target in targets:
+            if isinstance(target, ast.Name):
+                counts[target.id] = counts.get(target.id, 0) + 1
+                values[target.id] = value
+    out: dict[str, int] = {}
+    for name, value in values.items():
+        if counts[name] == 1:
+            folded = _int_value(value, out)
+            if folded is not None:
+                out[name] = folded
+    return out
 
 
 def _suppressed(lines: list[str], node: ast.AST) -> bool:
@@ -63,7 +106,7 @@ def _suppressed(lines: list[str], node: ast.AST) -> bool:
 
 def _own_params(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> set[str]:
     a = func.args
-    return {p.arg for p in (*a.posonlyargs, *a.args, *a.kwonlyargs) if p.arg in _SEED_PARAMS}
+    return {p.arg for p in (*a.posonlyargs, *a.args, *a.kwonlyargs) if _SEED_PARAM_RE.search(p.arg)}
 
 
 def _tests_param(test: ast.AST, params: set[str]) -> Optional[str]:
@@ -79,12 +122,33 @@ def _tests_param(test: ast.AST, params: set[str]) -> Optional[str]:
     return None
 
 
+def _follows_seed_return(child: ast.AST, parent: ast.AST, params: set[str]) -> bool:
+    """*child* sits in a statement list after ``if <seed> is not None: ... return``: the fall-through is the no-seed default."""
+    for field in ("body", "orelse", "finalbody"):
+        block = getattr(parent, field, None)
+        if not isinstance(block, list):
+            continue
+        for index, stmt in enumerate(block):
+            if stmt is child:
+                for earlier in block[:index]:
+                    if (
+                        isinstance(earlier, ast.If)
+                        and _tests_param(earlier.test, params) == "set"
+                        and earlier.body
+                        and isinstance(earlier.body[-1], (ast.Return, ast.Raise, ast.Continue, ast.Break))
+                    ):
+                        return True
+    return False
+
+
 def _is_default_for_missing_seed(call: ast.Call, parents: dict[int, ast.AST], params: set[str]) -> bool:
     """A literal seed that only applies when the caller supplied none (``if rng is None: rng = default_rng(0)``,
     ``rng or default_rng(0)``, ``x if seed is not None else default_rng(0)``) does not drop the caller's seed."""
     child: ast.AST = call
     parent = parents.get(id(child))
     while parent is not None:
+        if _follows_seed_return(child, parent, params):
+            return True
         if isinstance(parent, (ast.If, ast.IfExp)):
             state = _tests_param(parent.test, params)
             in_body = any(child is s for s in (parent.body if isinstance(parent.body, list) else [parent.body]))
@@ -99,13 +163,18 @@ def _is_default_for_missing_seed(call: ast.Call, parents: dict[int, ast.AST], pa
     return False
 
 
-def _seed_description(call: ast.Call, aliases: ImportAliases) -> str:
-    """How *call* hard-codes a seed (``seed=0``, ``default_rng(0)``), or an empty string when it does not."""
+def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[dict[str, int]]" = None) -> str:
+    """How *call* hard-codes a seed (``seed=0``, ``default_rng(0)``, ``**{"random_state": 7}``), or an empty string when it does not."""
+    known = consts or {}
     what = ""
     for keyword in call.keywords:
-        if keyword.arg in _SEED_KEYWORDS and _int_literal(keyword.value):
+        if keyword.arg in _SEED_KEYWORDS and _int_value(keyword.value, known) is not None:
             what = f"{keyword.arg}={ast.unparse(keyword.value)}"
-    if not what and (aliases.qualified_name(call) in _SEEDERS) and call.args and _int_literal(call.args[0]):
+        elif keyword.arg is None and isinstance(keyword.value, ast.Dict):
+            for key, val in zip(keyword.value.keys, keyword.value.values):
+                if isinstance(key, ast.Constant) and key.value in _SEED_KEYWORDS and _int_value(val, known) is not None:
+                    what = f"{key.value}={ast.unparse(val)}"
+    if not what and (aliases.qualified_name(call) in _SEEDERS) and call.args and _int_value(call.args[0], known) is not None:
         what = f"{ast.unparse(call.func)}({ast.unparse(call.args[0])})"
     return what
 
@@ -118,8 +187,8 @@ def _own_calls(func: ast.AST) -> Iterator[tuple[ast.Call, dict[int, ast.AST]]]:
         parents[id(child)] = func
     while stack:
         node = stack.pop()
-        if isinstance(node, (*_FUNCTIONS, ast.ClassDef, ast.Lambda)):
-            continue  # judged as their own scope
+        if isinstance(node, (*_FUNCTIONS, ast.ClassDef)):
+            continue  # judged as their own scope (a lambda is part of the function that writes it)
         for child in child_nodes(node):
             parents[id(child)] = node
             stack.append(child)
@@ -127,38 +196,42 @@ def _own_calls(func: ast.AST) -> Iterator[tuple[ast.Call, dict[int, ast.AST]]]:
             yield node, parents
 
 
-def _check_seeds(func: ast.AST, qualname: str, params: list[str], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+def _check_seeds(
+    func: ast.AST, qualname: str, params: list[str], rel: str, aliases: ImportAliases, lines: list[str], consts: "Optional[dict[str, int]]" = None
+) -> list[Finding]:
     """The findings of one function that takes its own seed parameter(s) *params*."""
     out: list[Finding] = []
     for node, parents in _own_calls(func):
         if _is_default_for_missing_seed(node, parents, set(params)):
             continue
-        what = _seed_description(node, aliases)
+        what = _seed_description(node, aliases, consts)
         if what and not _suppressed(lines, node):
             out.append(Finding(rel, node.lineno, RULE, f"{qualname}: {what} hard-codes a seed in a function that takes its own {'/'.join(params)}"))
     return out
 
 
-def _visit_seed_scopes(node: ast.AST, prefix: str, inherited: frozenset[str], rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+def _visit_seed_scopes(
+    node: ast.AST, prefix: str, inherited: frozenset[str], rel: str, aliases: ImportAliases, lines: list[str], consts: "Optional[dict[str, int]]" = None
+) -> list[Finding]:
     """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
     out: list[Finding] = []
     for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
-            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines))
+            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines, consts))
         elif isinstance(child, _FUNCTIONS):
             params = frozenset(_own_params(child)) | inherited
             qualname = f"{prefix}{child.name}"
             if params:
-                out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines))
-            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines))
+                out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines, consts))
+            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines, consts))
         else:
-            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines))
+            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines, consts))
     return out
 
 
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
-    return _visit_seed_scopes(tree, "", frozenset(), rel, aliases, lines or [])
+    return _visit_seed_scopes(tree, "", frozenset(), rel, aliases, lines or [], _module_int_constants(tree))
 
 
 def find_hardcoded_seed_in_library(
@@ -183,7 +256,7 @@ def find_hardcoded_seed_in_library(
     for parsed in scan:
         if any(f"/{fragment}" in f"/{parsed.rel}" for fragment in skipped):
             continue
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree, scoped=True), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

@@ -171,3 +171,27 @@ def test_unparsable_and_bom_files(tmp_path):
     assert_no_discarded_model_copy([ok], tmp_path, {})
     with pytest.raises(AssertionError, match=r"broken.py"):
         assert_no_discarded_model_copy([ok, broken], tmp_path, {})
+
+
+def _discarded(tmp_path, body):
+    f = tmp_path / "m.py"
+    f.write_text(body, encoding="utf-8")
+    return [(d.function, d.lineno, d.name) for d in find_discarded_model_copies([f], tmp_path)]
+
+
+def test_a_bare_model_copy_statement_is_a_discarded_result(tmp_path):
+    assert _discarded(tmp_path, 'def f(cfg):\n    cfg.model_copy(update={"a": 1})\n') == [("f", 2, "<result dropped>")]
+
+
+def test_a_tuple_target_copy_that_reaches_nothing_is_reported(tmp_path):
+    body = 'def f(cfg):\n    c2, x = cfg.model_copy(update={"a": 1}), 1\n    return x\n'
+    assert _discarded(tmp_path, body) == [("f", 2, "c2")]
+
+
+def test_dataclasses_replace_assigned_and_dropped_is_reported(tmp_path):
+    assert _discarded(tmp_path, "import dataclasses\n\n\ndef f(cfg):\n    c2 = dataclasses.replace(cfg, a=1)\n") == [("f", 5, "c2")]
+
+
+def test_a_module_level_discarded_copy_is_reported_and_a_returned_one_is_not(tmp_path):
+    assert _discarded(tmp_path, 'c2 = cfg.model_copy(update={"a": 1})\n') == [("<module>", 1, "c2")]
+    assert _discarded(tmp_path, 'def f(cfg):\n    c2 = cfg.model_copy(update={"a": 1})\n    return c2\n') == []

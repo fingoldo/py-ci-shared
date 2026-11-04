@@ -76,3 +76,37 @@ def test_a_stale_allowlist_entry_and_an_empty_scan_are_rejected(tmp_path):
         assert_env_flags_use_one_parser([p], tmp_path, ("P_",), allowed={"P_A": "was hand-parsed once"})
     with pytest.raises(AssertionError, match="lost its subject"):
         assert_env_flags_use_one_parser([], tmp_path, ("P_",), min_files=1)
+
+
+def _reads(tmp_path, body, prefixes=("MY_",)):
+    f = tmp_path / "m.py"
+    f.write_text(body, encoding="utf-8")
+    return [(r.lineno, r.var, r.shape) for r in find_hand_parsed_env_flags([f], tmp_path, prefixes)]
+
+
+def test_the_two_step_idiom_is_reported_at_the_use(tmp_path):
+    body = 'import os\n\n\ndef f():\n    v = os.environ.get("MY_F")\n    if v == "1":\n        return 1\n'
+    assert _reads(tmp_path, body) == [(6, "MY_F", "compared with '1'")]
+
+
+def test_walrus_bool_and_environ_alias_and_constant_name_are_reported(tmp_path):
+    body = (
+        'import os\nN = "MY_F"\nenv = os.environ\n\n\ndef f():\n    a = bool(os.environ.get("MY_A"))\n    b = (v := os.environ.get("MY_B")) == "1"\n'
+        '    c = env.get("MY_C") == "1"\n    d = os.environ.get(N) == "1"\n'
+    )
+    assert [(ln, var) for ln, var, _ in _reads(tmp_path, body)] == [(7, "MY_A"), (8, "MY_B"), (9, "MY_C"), (10, "MY_F")]
+
+
+def test_prefix_match_is_case_insensitive(tmp_path):
+    body = 'import os\n\nx = os.environ.get("my_flag") == "1"\n'
+    assert _reads(tmp_path, body) == [(3, "my_flag", "compared with '1'")]
+
+
+def test_a_backend_selector_and_a_default_string_are_not_flags(tmp_path):
+    body = 'import os\n\na = os.environ.get("MY_DIR") in ("a", "b")\nb = os.environ.get("MY_DIR") or "a"\n'
+    assert _reads(tmp_path, body) == []
+
+
+def test_a_boolean_membership_and_a_reassigned_name_are_handled(tmp_path):
+    body = 'import os\n\na = os.environ.get("MY_X", "") in ("1", "true")\nv = os.environ.get("MY_Y")\nv = "1"\nif v == "1":\n    pass\n'
+    assert [(ln, var) for ln, var, _ in _reads(tmp_path, body)] == [(3, "MY_X")]

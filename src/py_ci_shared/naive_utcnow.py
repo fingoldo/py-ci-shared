@@ -60,6 +60,12 @@ def _is_utcnow_call(node: ast.AST) -> bool:
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "utcnow"
 
 
+def _root_name(node: ast.AST) -> str:
+    while isinstance(node, ast.Attribute):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else ""
+
+
 def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
     """Every ``<x>.utcnow`` / ``<x>.utcfromtimestamp`` REFERENCE, called or not.
 
@@ -69,7 +75,7 @@ def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
     ``Field(default_factory=datetime.utcnow)`` produces the same naive value on every row. The one exclusion goes
     through the import aliases: ``arrow.utcnow()``/``pendulum`` return aware values.
     """
-    aliases = ImportAliases.from_tree(tree)
+    aliases = ImportAliases.from_tree(tree, scoped=True)
     called: dict[int, ast.Call] = {}
     for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
@@ -79,7 +85,7 @@ def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
         if not (isinstance(node, ast.Attribute) and node.attr in NAIVE_UTC_METHODS):
             continue
         qualified = aliases.qualified_name(node)
-        if qualified is not None and qualified.split(".", 1)[0] in _AWARE_LIBRARIES:
+        if qualified is not None and qualified.split(".", 1)[0] in _AWARE_LIBRARIES and aliases.is_imported(_root_name(node)):
             continue
         out.append(called.get(id(node), node))
     return sorted(out, key=lambda n: (n.lineno, n.col_offset))

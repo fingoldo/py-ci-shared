@@ -19,8 +19,11 @@ Not reported:
 * a metadata probe or touch of a listed file (``stat``/``getmtime``/``scandir``/``utime``...): it can vanish in
   between, and skipping it is the answer;
 * best-effort cleanup: every call in the ``try`` body is a release-type method or function (``close``,
-  ``unlink``, ``remove``, ``rmtree``, ``kill``, ``terminate``, ``shutdown``, ...), or the handler sits in a ``finally``
-  block or in ``__del__``/``__exit__``/``__aexit__``/``close``/``emit`` (a logging handler must not log its own failure);
+  ``unlink``, ``remove``, ``rmtree``, ``kill``, ``terminate``, ``shutdown``, ...), or the handler sits in ``__del__`` or
+  ``emit`` (a logging handler must not log its own failure). A handler in a ``finally`` block or in ``__exit__``/
+  ``__aexit__``/``close`` is judged like any other: only the release-type calls above exempt it, so a swallowed
+  ``commit()``/``save()`` there is reported;
+* ``with contextlib.suppress(Exception|OSError|...)`` is judged exactly like the equivalent silent handler;
 * a handler marked ``# swallow-ok: <reason>`` (or bandit's ``# nosec B110``/``B112``, which acknowledges exactly this
   shape) on the ``except`` line, the line above it, or its first body line.
 
@@ -81,7 +84,7 @@ _NEUTRAL = frozenset(
     {"startswith", "endswith", "exists", "is_file", "is_dir", "isinstance", "hasattr", "getattr", "len", "str", "int", "fileno", "getpgid", "Path"}
 )
 _KILL_COMMANDS = frozenset({"taskkill", "kill", "pkill"})
-_CLEANUP_SCOPES = frozenset({"__del__", "__exit__", "__aexit__", "close", "aclose", "emit"})
+_NEVER_RAISE_SCOPES = frozenset({"__del__", "emit"})
 _MARKER = re.compile(r"#\s*swallow-ok:\s*\S|#\s*nosec\b.*\bB11[02]\b")
 
 
@@ -202,17 +205,14 @@ class _Visitor(TreeVisitor):
     def __init__(self, f: ParsedFile, quiet_log_is_silent: bool) -> None:
         self.f = f
         self.quiet_log_is_silent = quiet_log_is_silent
-        self.aliases = ImportAliases.from_tree(f.tree)
+        self.aliases = ImportAliases.from_tree(f.tree, scoped=True)
         self.lines = f.source.splitlines()
         self.scope: list[str] = []
-        self.in_finally = 0
         self.findings: list[Finding] = []
 
     def _function(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> None:
         self.scope.append(node.name)
-        saved, self.in_finally = self.in_finally, 0
         self.generic_visit(node)
-        self.in_finally = saved
         self.scope.pop()
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
@@ -233,13 +233,45 @@ class _Visitor(TreeVisitor):
             self.visit(stmt)
         for handler in node.handlers:
             self.visit(handler)
-        self.in_finally += 1
         for stmt in node.finalbody:
             self.visit(stmt)
-        self.in_finally -= 1
 
     def visit_TryStar(self, node: ast.AST) -> None:
         self.visit_Try(node)  # type: ignore[arg-type]
+
+    def visit_With(self, node: ast.With) -> None:
+        self._judge_suppress(node)
+        self.generic_visit(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._judge_suppress(node)
+        self.generic_visit(node)
+
+    def _judge_suppress(self, node: Union[ast.With, ast.AsyncWith]) -> None:
+        """``with contextlib.suppress(Exception|OSError): ...`` is ``except ...: pass`` spelled differently."""
+        caught: Optional[str] = None
+        for item in node.items:
+            call = item.context_expr
+            if not (isinstance(call, ast.Call) and self.aliases.qualified_name(call) == "contextlib.suppress"):
+                continue
+            for arg in call.args:
+                name = self.aliases.qualified_name(arg) or ""
+                if name in _BROAD or name in _IO:
+                    caught = name.replace("builtins.", "")
+        if caught is None or self._benign(node.body) or self._exempt_scope():
+            return
+        first_body = node.body[0].lineno if node.body else node.lineno
+        if any(1 <= ln <= len(self.lines) and _MARKER.search(self.lines[ln - 1]) for ln in {node.lineno - 1, node.lineno, first_body}):
+            return
+        where = ".".join(self.scope) or "<module>"
+        first = ast.unparse(node.body[0]).splitlines()[0] if node.body else ""
+        message = f"`suppress({caught})` in {where} swallows a failure of `{first[:100]}`"
+        self.findings.append(Finding(self.f.rel, node.lineno, RULE, message))
+
+    def _exempt_scope(self) -> bool:
+        """``emit`` and ``__del__`` must not raise or log their own failure. A ``finally`` or ``close``-like scope is exempt
+        only for best-effort release calls (:meth:`_benign`): a swallowed ``commit``/``save`` there loses data silently."""
+        return bool(self.scope) and self.scope[-1] in _NEVER_RAISE_SCOPES
 
     @staticmethod
     def _benign(body: list[ast.stmt]) -> bool:
@@ -249,7 +281,7 @@ class _Visitor(TreeVisitor):
         caught = _caught(handler, self.aliases)
         if caught is None or not is_silent_handler(handler, quiet_log_is_silent=self.quiet_log_is_silent):
             return
-        if self.in_finally or (self.scope and self.scope[-1] in _CLEANUP_SCOPES) or self._benign(node.body):
+        if self._exempt_scope() or self._benign(node.body):
             return
         if _marked(self.lines, handler):
             return

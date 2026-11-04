@@ -42,6 +42,9 @@ __all__ = [
 
 # Substrings that make a boolean module global read as an availability or failure verdict.
 _FLAG_MARKERS = ("AVAILABLE", "FAILED", "USABLE", "SUPPORTED", "PRESENT", "WORKS", "BROKEN")
+# Whole underscore-separated words that make a name read as a capability verdict (``_HAVE_GPU``, ``_USE_NUMBA``, ``_CUDA_OK``).
+_FLAG_WORDS = frozenset({"HAVE", "HAS", "USE", "OK", "ENABLED", "DISABLED", "GPU", "CUDA", "NUMBA", "READY", "NO"})
+_CACHE_DECORATORS = frozenset({"functools.cache", "functools.lru_cache", "functools.cached_property"})
 
 # The exception types that make a handler broad enough to swallow a transient fault, however they are spelled.
 _BROAD = frozenset({"Exception", "BaseException"})
@@ -105,7 +108,7 @@ def _is_broad(handler: ast.ExceptHandler, aliases: Optional[ImportAliases] = Non
 def _looks_like_a_flag(name: str) -> bool:
     """Whether the name reads as an availability or failure verdict."""
     upper = name.upper()
-    return any(marker in upper for marker in _FLAG_MARKERS)
+    return any(marker in upper for marker in _FLAG_MARKERS) or bool(_FLAG_WORDS & set(upper.split("_")))
 
 
 def _own_scope(function: _FunctionNode) -> Iterator[ast.AST]:
@@ -137,6 +140,32 @@ def _handler_statements(handler: ast.ExceptHandler) -> Iterator[ast.AST]:
             stack.extend(child_nodes(node))
 
 
+def _is_cached(function: _FunctionNode, aliases: ImportAliases) -> bool:
+    for decorator in function.decorator_list:
+        if aliases.qualified_name(decorator) in _CACHE_DECORATORS:
+            return True
+    return False
+
+
+def _cached_falsy_returns(path: Path, qualname: str, function: _FunctionNode, own: list[ast.AST], aliases: ImportAliases) -> list[Finding]:
+    """A ``functools.cache``d probe whose broad ``except`` returns a falsy constant latches the failure for the process."""
+    if not _is_cached(function, aliases):
+        return []
+    out: list[Finding] = []
+    for node in own:
+        if not isinstance(node, _TRY_TYPES):
+            continue
+        for handler in getattr(node, "handlers", []):
+            if not _is_broad(handler, aliases):
+                continue
+            out.extend(
+                Finding(path, stmt.lineno, "return " + ("None" if stmt.value is None else repr(stmt.value.value)), qualname)
+                for stmt in _handler_statements(handler)
+                if isinstance(stmt, ast.Return) and (stmt.value is None or (isinstance(stmt.value, ast.Constant) and not stmt.value.value))
+            )
+    return out
+
+
 def _findings(scan: ScanResult) -> list[Finding]:
     findings: list[Finding] = []
     for parsed in scan:
@@ -145,6 +174,7 @@ def _findings(scan: ScanResult) -> list[Finding]:
         module_names = _module_level_names(tree)
         for qualname, function in qualified_functions(tree):
             own = list(_own_scope(function))
+            findings.extend(_cached_falsy_returns(parsed.path, qualname, function, own, aliases))
             declared_global = {n for node in own if isinstance(node, ast.Global) for n in node.names}
             if not declared_global:
                 continue

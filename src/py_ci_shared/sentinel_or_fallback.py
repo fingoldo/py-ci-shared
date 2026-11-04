@@ -24,6 +24,7 @@ from typing import Any, Optional, Union
 from ._core import DEFAULT_EXCLUDE, Finding, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
+from ._text_ratchet import is_test_path
 
 __all__ = ["DEFAULT_SENTINEL_NAMES", "REFRESH_FLAG", "assert_no_sentinel_or_fallback", "find_sentinel_or_fallback", "sentinel_read"]
 
@@ -39,13 +40,29 @@ _DEFAULT_EXCLUDE = frozenset({"tests", "test", "testing"})
 _MARKER = re.compile(r"#\s*falsy-ok:\s*\S")
 
 
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_UNIT_SUFFIX = re.compile(r"_(?:s|sec|secs|seconds|ms|millis|milliseconds|minutes)$")
+
+
+def _canon(name: object) -> str:
+    """``maxTokens`` / ``MAX_TOKENS`` -> ``max_tokens``; ``timeout_s`` -> ``timeout``."""
+    return _UNIT_SUFFIX.sub("", _CAMEL.sub("_", str(name)).lower())
+
+
+def _in(name: object, names: frozenset[str]) -> bool:
+    return str(name) in names or _canon(name) in names
+
+
 def sentinel_read(node: ast.expr, names: frozenset[str]) -> Optional[str]:
-    """The declared setting *node* reads (``x.seed``, ``d["seed"]``, ``d.get("seed")``, ``getattr(x, "seed")``, ``seed``)."""
+    """The declared setting *node* reads (``x.seed``, ``d["seed"]``, ``d.get("seed")``, ``getattr(x, "seed")``, ``seed``,
+    ``(seed := x.seed)``). Names match case-insensitively, as camelCase and without a unit suffix (``maxTokens``, ``timeout_s``)."""
+    if isinstance(node, ast.NamedExpr):
+        return sentinel_read(node.value, names) or sentinel_read(node.target, names)
     if isinstance(node, ast.Name):
-        return node.id if node.id in names else None
+        return node.id if _in(node.id, names) else None
     if isinstance(node, ast.Attribute):
-        return node.attr if node.attr in names else None
-    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and node.slice.value in names:
+        return node.attr if _in(node.attr, names) else None
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and _in(node.slice.value, names):
         return str(node.slice.value)
     if isinstance(node, ast.Call) and node.args:
         key = None
@@ -53,7 +70,7 @@ def sentinel_read(node: ast.expr, names: frozenset[str]) -> Optional[str]:
             key = node.args[0]
         elif isinstance(node.func, ast.Name) and node.func.id == "getattr" and len(node.args) >= 2:
             key = node.args[1]
-        if isinstance(key, ast.Constant) and key.value in names:
+        if isinstance(key, ast.Constant) and _in(key.value, names):
             return str(key.value)
     return None
 
@@ -71,14 +88,23 @@ def find_sentinel_or_fallback(
 ) -> tuple[list[Finding], ScanResult]:
     """``(findings, scan)``: one finding per ``or`` operand that reads a declared setting and can be replaced."""
     wanted = frozenset(names)
-    scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
+    parts = frozenset(exclude_parts)
+    skip_test_modules = bool({"tests", "test"} & parts)  # exclude_parts=() opts tests back in
+    scan = scan_python(root, exclude=DEFAULT_EXCLUDE | parts, use_git=use_git)
     findings: list[Finding] = []
     for f in scan:
+        if skip_test_modules and is_test_path(f.rel):
+            continue  # a test module at the root is as much a test as one under tests/
         lines = f.source.splitlines()
         for node in _fast_walk(f.tree):
+            if isinstance(node, ast.IfExp):
+                read = sentinel_read(node.test, wanted)
+                if read is not None and ast.dump(node.test) == ast.dump(node.body) and not _falsy_constant(node.orelse):
+                    findings.append(Finding(f.rel, node.lineno, RULE, f"`{ast.unparse(node)}` replaces a falsy {read} (0 is a value for it)"))
+                continue
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
-            if 1 <= node.lineno <= len(lines) and _MARKER.search(lines[node.lineno - 1]):
+            if any(_MARKER.search(lines[i]) for i in range(max(node.lineno - 1, 0), min(node.end_lineno or node.lineno, len(lines)))):
                 continue
             for i, operand in enumerate(node.values[:-1]):
                 name = sentinel_read(operand, wanted)

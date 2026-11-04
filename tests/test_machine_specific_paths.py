@@ -158,3 +158,24 @@ def test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygie
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
     assert json.loads(text)
+
+
+def _kinds(tmp_path, rel, body):
+    _write(tmp_path, rel, body)
+    return [(f.path, f.line, f.rule) for f in find_machine_specific_paths(tmp_path, use_git=False)]
+
+
+def test_a_dsn_of_any_scheme_with_a_real_password_is_reported(tmp_path):
+    at = chr(64)  # built at run time so no credential-shaped literal sits in this repository
+    body = f"A = 'amqp://svc:s3cr3tpw{at}mq.internal/'\nB = 'https://bot:ghp_realtoken{at}host/x'\nC = 'redis://u:password{at}h/0'\n"
+    assert _kinds(tmp_path, "m.py", body) == [("m.py", 1, "db-url"), ("m.py", 2, "db-url")]
+
+
+def test_a_concatenated_and_a_bytes_drive_path_are_reported_once_each(tmp_path):
+    body = "A = 'D:' + '/data'\nB = b'D:/data'\n"
+    assert _kinds(tmp_path, "m.py", body) == [("m.py", 1, "drive-path"), ("m.py", 2, "drive-path")]
+
+
+@pytest.mark.parametrize("rel", [".env", "run.sh", "setup.ps1", "cfg/app.json"])
+def test_env_shell_and_json_files_are_scanned_by_default(tmp_path, rel):
+    assert _kinds(tmp_path, rel, "OUT=D:/data/out\n") == [(rel, 1, "drive-path")]

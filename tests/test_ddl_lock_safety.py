@@ -219,7 +219,6 @@ def test_a_rewriting_alter_is_reported_and_marked_or_tiny_files_are_not(tmp_path
         "ADD COLUMN s text DEFAULT 'random()'",
         "ADD COLUMN b boolean DEFAULT false CHECK (b IS NOT NULL)",
         "ALTER COLUMN price SET DEFAULT 0",
-        "ALTER COLUMN price SET NOT NULL",
     ],
 )
 def test_non_rewriting_alters_are_not_reported(tmp_path, clause):
@@ -317,3 +316,31 @@ def test_an_unterminated_pasteable_header_does_not_hide_the_lock_timeout_below_i
 def test_set_and_alter_on_one_line_are_ordered_by_column(tmp_path):
     assert _rules(_sql(tmp_path / "a", a="SET lock_timeout = '5s'; ALTER TABLE jobs ADD COLUMN n text;\n")) == []
     assert _rules(_sql(tmp_path / "b", a="ALTER TABLE jobs ADD COLUMN n text; SET lock_timeout = '5s';\n")) == [("ddl-lock-timeout", 1)]
+
+
+@pytest.mark.parametrize(
+    "stmt",
+    ["ALTER TABLE t ADD PRIMARY KEY (a);", "ALTER TABLE t ADD CONSTRAINT c UNIQUE (a);", "ALTER TABLE t ALTER COLUMN a SET NOT NULL;"],
+)
+def test_blocking_key_and_not_null_statements_are_reported(tmp_path, stmt):
+    root = _sql(tmp_path, m=f"SET lock_timeout = '1s';\n{stmt}\n")
+    assert _rules(root) == [("ddl-constraint-not-valid", 2)]
+
+
+def test_a_key_added_using_an_existing_index_and_a_tiny_table_are_fine(tmp_path):
+    root = _sql(tmp_path, m="SET lock_timeout = '1s';\nALTER TABLE t ADD CONSTRAINT c UNIQUE USING INDEX t_a_idx;\n")
+    assert _rules(root) == []
+    root = _sql(tmp_path / "x", m="SET lock_timeout = '1s';\nALTER TABLE t ALTER COLUMN a SET NOT NULL;\n")
+    assert _rules(root, tiny_tables={"t": "10 rows"}) == []
+
+
+def test_set_local_lock_timeout_does_not_survive_the_end_of_its_transaction(tmp_path):
+    body = "BEGIN;\nSET LOCAL lock_timeout = '1s';\nCOMMIT;\nALTER TABLE t ADD COLUMN b int;\n"
+    assert _rules(_sql(tmp_path, m=body)) == [("ddl-lock-timeout", 4)]
+    body = "BEGIN;\nSET LOCAL lock_timeout = '1s';\nALTER TABLE t ADD COLUMN b int;\nCOMMIT;\n"
+    assert _rules(_sql(tmp_path / "ok", m=body)) == []
+
+
+def test_a_session_lock_timeout_survives_the_end_of_a_transaction(tmp_path):
+    body = "SET lock_timeout = '1s';\nBEGIN;\nCOMMIT;\nALTER TABLE t ADD COLUMN b int;\n"
+    assert _rules(_sql(tmp_path, m=body)) == []

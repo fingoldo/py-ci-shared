@@ -7,7 +7,7 @@ The shipped instance: two corpus importers reported thousands of senses imported
 
 Flagged: an ``except`` handler that calls ``.rollback()`` (any receiver, awaited or not), on a ``try`` inside a
 ``for``/``while`` body (not inside a nested function), where neither the handler nor the ``try``'s ``finally`` resets
-state or leaves the loop: no assignment (an accumulator reset), no ``.clear()``/``.pop()``, no ``raise``, ``break`` or
+state or leaves the loop: no accumulator reset (an assignment of a constant, an empty literal or a no-argument constructor), no ``.clear()``/``.pop()``, no ``raise``, ``break`` or
 ``return``. Also exempt, because the rollback then loses only the failing item: a ``try`` whose body opens a
 savepoint (``begin_nested()``) or commits its own item (a ``.commit()`` in it, unless under a batching ``if`` such
 as ``i % 100 == 0`` or ``len(batch) >= n``), and a loop that writes nothing (no ``add``/``merge``/``delete``/``flush``/``executemany``/``execute_values``/
@@ -57,9 +57,40 @@ def _calls(nodes: Sequence[ast.AST], attr: str) -> bool:
     return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == attr for n in _walk_own(nodes))
 
 
+def _rolls_back(nodes: Sequence[ast.AST]) -> bool:
+    """``x.rollback()`` or a helper whose name says it rolls back (``_safe_rollback(session)``)."""
+    for n in _walk_own(nodes):
+        if isinstance(n, ast.Call):
+            name = n.func.attr if isinstance(n.func, ast.Attribute) else n.func.id if isinstance(n.func, ast.Name) else ""
+            if name == "rollback" or (name and "rollback" in name.lower()):
+                return True
+    return False
+
+
+_EMPTY_CTORS = frozenset({"list", "dict", "set", "deque", "defaultdict", "OrderedDict", "Counter"})
+
+
+def _is_reset_value(value: Optional[ast.expr]) -> bool:
+    """An accumulator reset: a constant, an empty literal, or a no-argument constructor (``batch = []``, ``n = 0``).
+    ``msg = str(e)`` and ``errors = errors + 1`` record the failure; they do not give the batch back."""
+    if isinstance(value, ast.Constant):
+        return True
+    if isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+        return not value.elts
+    if isinstance(value, ast.Dict):
+        return not value.keys
+    if isinstance(value, ast.Call) and not value.args and not value.keywords:
+        func = value.func
+        name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+        return name in _EMPTY_CTORS
+    return False
+
+
 def _resets_or_leaves(nodes: Sequence[ast.AST]) -> bool:
     for n in _walk_own(nodes):
-        if isinstance(n, (ast.Raise, ast.Break, ast.Return, ast.Assign, ast.AnnAssign)):
+        if isinstance(n, (ast.Raise, ast.Break, ast.Return)):
+            return True
+        if isinstance(n, (ast.Assign, ast.AnnAssign)) and _is_reset_value(n.value):
             return True
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in ("clear", "pop"):
             return True
@@ -168,7 +199,7 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
         if _calls(node.body, "begin_nested") or _commits_per_item(node.body) or not _writes(loop.body):
             continue
         for handler in node.handlers:
-            if not _calls(handler.body, "rollback") or line_has_marker(lines, handler.lineno, MARKER):
+            if not _rolls_back(handler.body) or line_has_marker(lines, handler.lineno, MARKER):
                 continue
             if _resets_or_leaves(handler.body) or _resets_or_leaves(node.finalbody):
                 continue

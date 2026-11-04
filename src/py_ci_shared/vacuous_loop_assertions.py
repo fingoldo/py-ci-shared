@@ -102,7 +102,15 @@ def _is_check(s: ast.stmt) -> bool:
     if isinstance(s, ast.Expr) and isinstance(s.value, ast.Call):
         func = s.value.func
         name = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
-        return name in _FAIL_CALLS
+        if name in _FAIL_CALLS:
+            return True
+        # unittest style: self.assertTrue(...), self.assertEqual(...), self.fail(...)
+        return (
+            isinstance(func, ast.Attribute)
+            and isinstance(func.value, ast.Name)
+            and func.value.id in ("self", "cls")
+            and (name.startswith("assert") or name == "fail")
+        )
     return False
 
 
@@ -179,6 +187,15 @@ def _enclosing_loops(fn: _FuncDef) -> "dict[int, frozenset[int]]":
     return out
 
 
+def _assert_test(node: ast.AST) -> "ast.expr | None":
+    """The checked expression of ``assert x`` or of a unittest ``self.assertTrue(x)`` / ``self.assertGreater(len(x), 0)`` statement."""
+    if isinstance(node, ast.Assert):
+        return node.test
+    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and node.value.args and _is_check(node):
+        return ast.Tuple(elts=list(node.value.args), ctx=ast.Load())
+    return None
+
+
 def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | ast.AsyncFor, enclosing: "dict[int, frozenset[int]] | None" = None) -> bool:
     """An `assert` OUTSIDE the loop that mentions the iterable's own source text, `len(...)` of
     it, or the loop variable's name -- see the module docstring for what this does and does not
@@ -191,18 +208,19 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
 
     loop_ids = {id(n) for n in _fast_walk(loop)}
     for node in _own_nodes(fn):
-        if id(node) in loop_ids or not isinstance(node, ast.Assert):
+        test = _assert_test(node)
+        if id(node) in loop_ids or test is None:
             continue
         if not enclosing.get(id(node), frozenset()) <= allowed_loops:
             continue
         try:
-            test_src = ast.unparse(node.test)
+            test_src = ast.unparse(test)
         except Exception:  # swallow-ok: an assert that cannot be unparsed is skipped, so the loop is reported, not hidden
             continue
-        mentioned = {n.id for n in _fast_walk(node.test) if isinstance(n, ast.Name)}
+        mentioned = {n.id for n in _fast_walk(test) if isinstance(n, ast.Name)}
         if any(all((src in mentioned) if src.isidentifier() else (src in test_src) for src in needed) for needed in alternatives):
             return True
-        if var_names & {n.id for n in _fast_walk(node.test) if isinstance(n, ast.Name)}:
+        if var_names & mentioned:
             return True
     return False
 

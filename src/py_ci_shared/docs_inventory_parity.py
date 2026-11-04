@@ -29,7 +29,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Optional
 
-from ._core import DEFAULT_EXCLUDE, SourceReadError, iter_files, read_source
+from ._core import DEFAULT_EXCLUDE, SourceReadError, exists_exact_case, iter_files, read_source
 
 # Package names as they appear in a dependency spec, stripped of version/marker/extras.
 _REQUIREMENT_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
@@ -359,7 +359,7 @@ def find_phantom_doc_paths(
                 # `tests/*.spec.ts` because that is what a reader standing in `e2e/` types, and the
                 # prose is right - only a repo-root reading of it is wrong.
                 candidates = [*roots, doc_path.parent]
-                if any((root / target).exists() or any(root.glob(target)) for root in candidates):
+                if any(exists_exact_case(root / target, root) or any(root.glob(target)) for root in candidates):
                     continue
                 problems.append(f"{_doc_label(doc_path, repo_root)}:{line_number}: `{target}` does not exist in the repo")
     return problems

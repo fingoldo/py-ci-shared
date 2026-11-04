@@ -67,13 +67,22 @@ def test_a_safe_form_is_not_reported(tmp_path: Path, label: str, line: str):
     assert find_epsilon_padded_power_denominators([root]) == [], f"{label} should not be reported"
 
 
-def test_the_addend_being_a_name_is_out_of_scope_deliberately(tmp_path: Path):
-    """A named epsilon cannot be judged by parsing, so it is left unreported rather than guessed at.
-
-    Pinned so that widening the rule to names has to change a test that says so.
-    """
+def test_a_module_constant_epsilon_is_resolved_but_an_unknown_name_is_not(tmp_path: Path):
+    """33-F27: a once-bound module constant that is a small positive literal is as good as the literal; a name of unknown value is not guessed at."""
     root = _module(tmp_path, ["EPS = 1e-12", "", "", "def f():", "    return num / (d**k + EPS)"])
+    assert len(find_epsilon_padded_power_denominators([root])) == 1
+    (tmp_path / "b").mkdir()
+    root = _module(tmp_path / "b", ["def f(eps):", "    return num / (d**k + eps)"])
     assert find_epsilon_padded_power_denominators([root]) == []
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["z = num / (d**k + np.finfo(float).eps)", "z = num // (d**k + 1e-12)", "z = (d**k + 1e-12) ** -1"],
+)
+def test_finfo_eps_floor_division_and_a_negative_one_power_are_reported(tmp_path: Path, line: str):
+    root = _module(tmp_path, _fn(line))
+    assert len(find_epsilon_padded_power_denominators([root])) == 1
 
 
 def test_the_assertion_names_every_site_and_suggests_the_clamp(tmp_path: Path):

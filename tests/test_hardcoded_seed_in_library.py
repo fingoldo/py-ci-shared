@@ -146,3 +146,33 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
     root = _corpus(tmp_path / "one", {"a.py": b"x = 1\n"})
     with pytest.raises(EmptyScanError):
         find_hardcoded_seed_in_library(root, min_files=2, use_git=False)
+
+
+def _seed_lines(tmp_path, src):
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    return [f.line for f in find_hardcoded_seed_in_library(tmp_path, use_git=False)]
+
+
+@pytest.mark.parametrize(
+    "src",
+    [
+        "SEED = 42\n\n\ndef f(X, random_state=None):\n    return split(X, random_state=SEED)\n",
+        "def f(X, seed=None):\n    return split(X, seed=40 + 2)\n",
+        'def f(X, seed=None):\n    return Model(**{"random_state": 7})\n',
+        "def f(X, rng_seed=None):\n    return split(X, seed=3)\n",
+        "def f(X, rs=None):\n    return split(X, random_state=3)\n",
+        "def f(X, seed=None):\n    g = lambda: split(X, seed=3)\n    return g\n",
+    ],
+)
+def test_hardcoded_seed_spellings_that_were_missed_are_reported_once(tmp_path, src):
+    assert len(_seed_lines(tmp_path, src)) == 1
+
+
+def test_a_literal_in_the_fall_through_after_a_seed_branch_is_the_default(tmp_path):
+    src = "def f(seed=None):\n    if seed is not None:\n        return g(seed=seed)\n    return g(seed=7)\n"
+    assert _seed_lines(tmp_path, src) == []
+
+
+def test_a_rebound_module_constant_is_not_folded(tmp_path):
+    src = "SEED = 1\nSEED = 2\n\n\ndef f(X, seed=None):\n    return split(X, seed=SEED)\n"
+    assert _seed_lines(tmp_path, src) == []

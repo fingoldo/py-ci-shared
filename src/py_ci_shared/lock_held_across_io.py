@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
@@ -44,6 +45,9 @@ LOCK_CONSTRUCTORS = frozenset({"Lock", "RLock", "Condition"})
 _IO_MODULES = frozenset({"requests", "httpx", "socket", "subprocess"})
 _IO_NAMES = frozenset({"connect", "getconn", "urlopen"})
 _WRITE_MODE_CHARS = frozenset("wax+")
+#: DB-API calls that go to the server, on a receiver named like a cursor, connection or session.
+_DB_METHODS = frozenset({"execute", "executemany", "commit", "fetchone", "fetchall", "fetchmany"})
+_DB_RECEIVER = re.compile(r"^_*(?:cur|cursor|conn|connection|session|db)$", re.IGNORECASE)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 _WITH = (ast.With, ast.AsyncWith)
 
@@ -60,7 +64,12 @@ def _last_segment(node: ast.AST) -> str:
 
 
 def _named_like_a_lock(segment: str) -> bool:
-    return segment in {"lock", "rlock", "condition"} or segment.endswith(("_lock", "_rlock", "_condition", "Lock", "RLock", "Condition"))
+    lowered = segment.lower().lstrip("_")
+    return (
+        lowered in {"lock", "rlock", "condition", "mutex", "sem", "semaphore"}
+        or segment.lower().endswith(("_lock", "_rlock", "_condition", "_mutex", "_sem", "_semaphore"))
+        or segment.endswith(("Lock", "RLock", "Condition", "Mutex", "Semaphore"))
+    )
 
 
 def module_lock_names(tree: ast.Module) -> frozenset[str]:
@@ -95,8 +104,12 @@ def io_label(call: ast.Call, aliases: ImportAliases) -> Optional[str]:
     last = _last_segment(call.func)
     if last == "open":
         return f"{name}(write mode)" if _open_writes(call) else None
-    if name == "time.sleep":
+    if name in ("time.sleep", "asyncio.sleep"):
         return name
+    if last in ("write_text", "write_bytes"):
+        return f"{name}(file write)"
+    if last in _DB_METHODS and isinstance(call.func, ast.Attribute) and _DB_RECEIVER.match(_last_segment(call.func.value)):
+        return f"{name}(database round trip)"
     if name.split(".", 1)[0] in _IO_MODULES and "." in name:
         return name
     if last in _IO_NAMES or last.startswith("connect_"):

@@ -161,28 +161,60 @@ def _reports_the_error(value: ast.expr, exc_name: Optional[str]) -> bool:
     return any(isinstance(a, ast.Name) and a.id == exc_name for a in _fast_walk(value))
 
 
-def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
-    """True when the handler calls ``<list>.append(...)`` with an argument built from one of ``names`` (``spec``,
-    ``(spec, 0)``, ``spec.name``), into a list not named for failures.
+_ADMIT_METHODS = frozenset({"append", "add", "extend", "insert", "appendleft", "extendleft"})
 
-    ``failed.append(k)`` records the failure; ``survivors.append(spec)`` admits the element that failed. An appended
-    value that carries the caught exception (``problems.append(f"{path}: {exc}")``) or is a formatted message string
-    reports the failure, whatever the list is called, and is not an admission.
+
+def _mentions(node: ast.AST, names: set[str]) -> bool:
+    return any(isinstance(a, ast.Name) and a.id in names for a in _fast_walk(node))
+
+
+def _target_name(target: ast.AST) -> str:
+    if isinstance(target, ast.Subscript):
+        target = target.value
+    return target.id if isinstance(target, ast.Name) else (target.attr if isinstance(target, ast.Attribute) else "")
+
+
+def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
+    """True when the handler admits the loop's element: ``<list>.append/add/extend/insert(...)``, ``out += [x]``,
+    ``out[x] = ...`` or a ``yield`` of a value built from one of ``names`` (``spec``, ``(spec, 0)``, ``spec.name``), into a
+    collection not named for failures.
+
+    ``failed.append(k)`` records the failure; ``survivors.append(spec)`` admits the element that failed. A value that
+    carries the caught exception (``problems.append(f"{path}: {exc}")``) or is a formatted message string reports the
+    failure, whatever the collection is called, and is not an admission.
     """
     for n in _fast_walk(handler):
-        if (
-            isinstance(n, ast.Call)
-            and isinstance(n.func, ast.Attribute)
-            and n.func.attr == "append"
-            and len(n.args) == 1
-            and any(isinstance(a, ast.Name) and a.id in names for a in _fast_walk(n.args[0]))
-            and not _reports_the_error(n.args[0], handler.name)
-        ):
-            target = n.func.value
-            list_name = target.id if isinstance(target, ast.Name) else (target.attr if isinstance(target, ast.Attribute) else "")
-            if not _FAILURE_LIST_RE.search(list_name):
-                return True
+        value: Optional[ast.expr] = None
+        list_name = ""
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr in _ADMIT_METHODS and n.args:
+            value = n.args[-1] if n.func.attr == "insert" else n.args[0]
+            list_name = _target_name(n.func.value)
+        elif isinstance(n, ast.AugAssign) and isinstance(n.op, ast.Add):
+            value, list_name = n.value, _target_name(n.target)
+        elif isinstance(n, ast.Assign) and any(isinstance(t, ast.Subscript) for t in n.targets):
+            sub = next(t for t in n.targets if isinstance(t, ast.Subscript))
+            value, list_name = sub.slice, _target_name(sub)
+        elif isinstance(n, (ast.Yield, ast.YieldFrom)) and n.value is not None:
+            value = n.value
+        if value is None or not _mentions(value, names) or _reports_the_error(value, handler.name):
+            continue
+        if not _FAILURE_LIST_RE.search(list_name):
+            return True
     return False
+
+
+def _binds_true_then_returns(handler: ast.ExceptHandler, scope: Optional[ast.AST]) -> bool:
+    """``ok = True`` in the handler and ``return ok`` in the deciding function: ``return True`` spelled in two steps."""
+    if scope is None:
+        return False
+    flags = {
+        t.id
+        for n in _fast_walk(handler)
+        if isinstance(n, ast.Assign) and isinstance(n.value, ast.Constant) and n.value.value is True
+        for t in n.targets
+        if isinstance(t, ast.Name)
+    }
+    return bool(flags) and any(isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id in flags for n in _fast_walk(scope))
 
 
 def _silent_default_return(handler: ast.ExceptHandler, lines: list[str]) -> bool:
@@ -221,12 +253,14 @@ def _is_finite_guarded_reject(node: ast.If) -> bool:
     return False
 
 
-def _handler_findings(handler: ast.ExceptHandler, rel: str, name: str, lines: list[str], is_gate: bool, loop_vars: frozenset[str]) -> list[FailOpenHandler]:
+def _handler_findings(
+    handler: ast.ExceptHandler, rel: str, name: str, lines: list[str], is_gate: bool, loop_vars: frozenset[str], scope: Optional[ast.AST] = None
+) -> list[FailOpenHandler]:
     """The rules one ``except`` handler breaks (admit, gate-returns-true, quiet substitution, silent default)."""
     found: list[FailOpenHandler] = []
     if loop_vars and _appends_name(handler, set(loop_vars)):
         found.append(FailOpenHandler(rel, name, handler.lineno, "admit_on_error", "the handler keeps the loop's element because evaluating it failed"))
-    if is_gate and _returns_true(handler):
+    if is_gate and (_returns_true(handler) or _binds_true_then_returns(handler, scope)):
         found.append(FailOpenHandler(rel, name, handler.lineno, "gate_returns_true", "an error in a deciding function returns True"))
     if _assigns_a_value(handler) and _logs_quietly(handler) and not _logs_loudly(handler) and not _marked_best_effort(lines, handler):
         found.append(FailOpenHandler(rel, name, handler.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
@@ -249,7 +283,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
             if isinstance(child, (ast.For, ast.AsyncFor)):
                 vars_here = loop_vars | {n.id for n in _fast_walk(child.target) if isinstance(n, ast.Name)}
             if isinstance(child, ast.ExceptHandler):
-                found.extend(_handler_findings(child, rel, name, lines, is_gate, loop_vars))
+                found.extend(_handler_findings(child, rel, name, lines, is_gate, loop_vars, fn))
             if isinstance(child, ast.If) and _is_finite_guarded_reject(child):
                 found.append(FailOpenHandler(rel, name, child.lineno, "finite_guarded_reject", "NaN/inf skip this rejection"))
             visit(child, vars_here)

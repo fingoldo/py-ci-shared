@@ -366,3 +366,9 @@ def test_a_kernel_after_the_last_blocking_copy_is_still_reported(tmp_path):
     )
     (tmp_path / "b.py").write_text(src, encoding="utf-8")
     assert [f.detail.split("(")[0] for f in find_unsynchronized_gpu_timings([tmp_path / "b.py"])] == ["times cp.matmul"]
+
+
+def test_a_host_copy_method_ends_the_timed_region_like_a_sync(tmp_path: Path) -> None:
+    assert _measure(tmp_path, "r = cp.matmul(a, b)", "r.cpu()") == []
+    assert _measure(tmp_path, "r = cp.matmul(a, b)", "r.item()") == []
+    assert [f.shape for f in _measure(tmp_path, "r = cp.matmul(a, b)", "r.shape")] == ["direct-gpu-call"]

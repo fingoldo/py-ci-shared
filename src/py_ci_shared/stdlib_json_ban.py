@@ -45,7 +45,7 @@ def _is_json(module: Optional[str]) -> bool:
 
 
 def _imports(tree: ast.Module) -> list[tuple[int, str]]:
-    aliases = ImportAliases.from_tree(tree)
+    aliases = ImportAliases.from_tree(tree, scoped=True)
     out: list[tuple[int, str]] = []
     for node in _fast_walk(tree):
         if isinstance(node, ast.Import):

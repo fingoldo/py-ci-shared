@@ -138,3 +138,22 @@ class TestAuditRegressions:
         bad.write_bytes(b"[x](y.md) \xff\xfe\n")
         (out,) = find_phantom_markdown_links([bad], tmp_path)
         assert "unreadable" in out
+
+
+def test_html_img_and_anchor_targets_are_checked(tmp_path):
+    (tmp_path / "real.md").write_text("x", encoding="utf-8")
+    md = _write(tmp_path, "README.md", '<p align="center"><img src="missing.png" width="10"></p>\n<a href="missing.md">x</a> <a href="real.md">ok</a>\n')
+    assert find_phantom_markdown_links([md], tmp_path) == [
+        "README.md:1: dead markdown-link target 'missing.png'",
+        "README.md:2: dead markdown-link target 'missing.md'",
+    ]
+
+
+def test_link_text_wrapped_over_two_lines_is_checked(tmp_path):
+    md = _write(tmp_path, "README.md", "see [a\nb](missing.md) here\n")
+    assert find_phantom_markdown_links([md], tmp_path) == ["README.md:2: dead markdown-link target 'missing.md'"]
+
+
+def test_a_blank_line_ends_a_paragraph_so_brackets_do_not_pair_across_it(tmp_path):
+    md = _write(tmp_path, "README.md", "a [open\n\nstill (not-a-link) b]\n")
+    assert find_phantom_markdown_links([md], tmp_path) == []

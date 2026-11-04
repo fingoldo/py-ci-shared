@@ -69,3 +69,32 @@ def test_suppression_marker_and_assert_both_behave(tmp_path):
     assert find_predictable_tmp_path(root, use_git=False) == []
     with pytest.raises(AssertionError, match="predictable-tmp-path"):
         assert_predictable_tmp_path(_corpus(tmp_path / "bad", {"mod.py": VIOLATION.encode()}), use_git=False)
+
+
+def _tmp_lines(tmp_path, body):
+    (tmp_path / "m.py").write_text(body, encoding="utf-8")
+    return [f.line for f in find_predictable_tmp_path(tmp_path, use_git=False)]
+
+
+def test_a_nested_path_build_is_one_finding(tmp_path):
+    assert _tmp_lines(tmp_path, 'from pathlib import Path\nfrom tempfile import gettempdir\n\nlock = Path(gettempdir()) / "x.lock"\n') == [4]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'import os\nimport tempfile\n\nt = tempfile.gettempdir()\nlock = os.path.join(t, "x.lock")\n',
+        'import tempfile\n\nlock = f"{tempfile.gettempdir()}/x.lock"\n',
+        'import tempfile\n\nlock = tempfile.gettempdir() + "/x.lock"\n',
+        'import os\nimport tempfile\n\nlock = os.path.join(tempfile.tempdir, "x.lock")\n',
+        'lock = "/tmp/x.lock"\n',
+        'from pathlib import Path\n\nlock = Path("/tmp") / "x.lock"\n',
+    ],
+)
+def test_other_spellings_of_the_shared_temp_directory_are_reported_once(tmp_path, body):
+    assert len(_tmp_lines(tmp_path, body)) == 1
+
+
+def test_a_getlogin_in_another_function_does_not_exempt_a_module_level_build(tmp_path):
+    body = 'import os\nimport tempfile\n\nLOCK = os.path.join(tempfile.gettempdir(), "x.lock")\n\n\ndef user():\n    return os.getlogin()\n'
+    assert _tmp_lines(tmp_path, body) == [4]

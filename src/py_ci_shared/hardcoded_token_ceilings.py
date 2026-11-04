@@ -13,8 +13,12 @@ Flagged, for each name in *names* (``max_tokens``, ``max_output_tokens``, ``max_
 * a keyword argument with an int literal: ``create(..., max_tokens=4096)``;
 * a dict entry with an int literal: ``{"max_tokens": 4096}``;
 * a parameter default: ``def call(prompt, max_tokens=4096)``;
-* a literal fallback: ``max_tokens=cfg.limit or 4096``, ``d.get("max_tokens", 4096)``,
-  ``getattr(p, "max_output_tokens", 4096)``.
+* a literal fallback: ``max_tokens=cfg.limit or 4096``, ``cfg.max_tokens or 4096`` wherever it appears (assignment, ``return``),
+  ``d.get("max_tokens", 4096)``, ``d.setdefault("max_tokens", 4096)``, ``getattr(p, "max_output_tokens", 4096)``;
+* an assignment to such a name: ``self.max_tokens = 4096``, ``MAX_TOKENS = 4096``;
+* a module constant bound once to an int, passed on (``CAP = 4096; create(max_tokens=CAP)``); ``2**12`` and ``4096.0`` count as literals.
+
+Names match case-insensitively and as camelCase (``maxTokens``).
 
 Not flagged: ``0`` (every provider in use reads it as "use your maximum"), values below *allow_below* (default 16:
 a liveness probe asking for one token is deliberate), test directories (a literal there is the subject of a test),
@@ -31,6 +35,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -44,29 +49,81 @@ __all__ = ["DEFAULT_NAMES", "RULE", "REFRESH_FLAG", "find_hardcoded_token_ceilin
 RULE = "hardcoded-token-ceiling"
 REFRESH_FLAG = "--refresh-token-ceilings-baseline"
 MARKER = "token-ceiling-ok"
-DEFAULT_NAMES: frozenset[str] = frozenset({"max_tokens", "max_output_tokens", "max_completion_tokens", "max_tokens_to_sample", "maxOutputTokens"})
+DEFAULT_NAMES: frozenset[str] = frozenset(
+    {"max_tokens", "max_output_tokens", "max_completion_tokens", "max_tokens_to_sample", "maxOutputTokens", "max_new_tokens", "num_predict"}
+)
+_CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
-def _int_literal(node: Optional[ast.expr]) -> Optional[int]:
-    if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
-        return node.value
+def _canon(name: object) -> str:
+    """``maxOutputTokens`` / ``MAX_OUTPUT_TOKENS`` -> ``max_output_tokens``."""
+    return _CAMEL.sub("_", str(name)).lower()
+
+
+_Consts = dict[str, int]
+
+
+def _int_literal(node: Optional[ast.expr], consts: Optional[_Consts] = None) -> Optional[int]:
+    """The int *node* is: a literal, an int-valued float, ``a ** b`` / ``a * b`` / ``a + b`` of those, or a module constant bound once."""
+    if isinstance(node, ast.Constant):
+        value = node.value
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, float) and value.is_integer():
+            return int(value)
+        return None
+    if isinstance(node, ast.Name):
+        return (consts or {}).get(node.id)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Pow, ast.Mult, ast.Add)):
+        left, right = _int_literal(node.left, consts), _int_literal(node.right, consts)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Pow):
+            return left**right if 0 <= right <= 64 and abs(left) <= 1 << 16 else None
+        return left * right if isinstance(node.op, ast.Mult) else left + right
     return None
 
 
-def _literal_in(value: ast.expr) -> Iterator[tuple[int, str]]:
+def _module_consts(tree: ast.Module) -> _Consts:
+    """Module-level names assigned exactly once, to an int."""
+    counts: dict[str, int] = {}
+    values: dict[str, ast.expr] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            pairs = [(tg, stmt.value) for tg in stmt.targets]
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            pairs = [(stmt.target, stmt.value)]
+        else:
+            continue
+        for target, value in pairs:
+            if isinstance(target, ast.Name):
+                counts[target.id] = counts.get(target.id, 0) + 1
+                values[target.id] = value
+    out: _Consts = {}
+    for name, value in values.items():
+        if counts[name] == 1:
+            literal = _int_literal(value, out)
+            if literal is not None:
+                out[name] = literal
+    return out
+
+
+def _literal_in(value: ast.expr, consts: Optional[_Consts] = None) -> Iterator[tuple[int, str]]:
     """``(literal, shape)`` for an int literal *value* or an int literal fallback inside it."""
-    direct = _int_literal(value)
+    direct = _int_literal(value, consts)
     if direct is not None:
         yield direct, "literal"
         return
     if isinstance(value, ast.BoolOp) and isinstance(value.op, ast.Or):
         for operand in value.values:
-            fallback = _int_literal(operand)
+            fallback = _int_literal(operand, consts)
             if fallback is not None:
                 yield fallback, "fallback"
     if isinstance(value, ast.IfExp):
         for branch in (value.body, value.orelse):
-            fallback = _int_literal(branch)
+            fallback = _int_literal(branch, consts)
             if fallback is not None:
                 yield fallback, "fallback"
 
@@ -74,14 +131,14 @@ def _literal_in(value: ast.expr) -> Iterator[tuple[int, str]]:
 def _defaulted_lookup(call: ast.Call, names: frozenset[str]) -> Optional[tuple[str, int]]:
     """``d.get("max_tokens", 4096)`` / ``getattr(p, "max_output_tokens", 4096)`` -> ``(name, 4096)``."""
     func = call.func
-    if isinstance(func, ast.Attribute) and func.attr == "get" and len(call.args) == 2:
+    if isinstance(func, ast.Attribute) and func.attr in ("get", "setdefault") and len(call.args) == 2:
         key, default = call.args
     elif isinstance(func, ast.Name) and func.id == "getattr" and len(call.args) == 3:
         key, default = call.args[1], call.args[2]
     else:
         return None
     value = _int_literal(default)
-    if isinstance(key, ast.Constant) and key.value in names and value is not None:
+    if isinstance(key, ast.Constant) and _canon(key.value) in names and value is not None:
         return str(key.value), value
     return None
 
@@ -89,20 +146,20 @@ def _defaulted_lookup(call: ast.Call, names: frozenset[str]) -> Optional[tuple[s
 _Site = tuple[ast.AST, str, int, str]
 
 
-def _call_sites(node: ast.Call, names: frozenset[str]) -> Iterator[_Site]:
+def _call_sites(node: ast.Call, names: frozenset[str], consts: _Consts) -> Iterator[_Site]:
     for kw in node.keywords:
-        if kw.arg in names:
-            for literal, shape in _literal_in(kw.value):
+        if kw.arg is not None and _canon(kw.arg) in names:
+            for literal, shape in _literal_in(kw.value, consts):
                 yield kw.value, kw.arg, literal, shape
     lookup = _defaulted_lookup(node, names)
     if lookup is not None:
         yield node, lookup[0], lookup[1], "fallback"
 
 
-def _dict_sites(node: ast.Dict, names: frozenset[str]) -> Iterator[_Site]:
+def _dict_sites(node: ast.Dict, names: frozenset[str], consts: _Consts) -> Iterator[_Site]:
     for key, value in zip(node.keys, node.values):
-        if isinstance(key, ast.Constant) and key.value in names:
-            for literal, shape in _literal_in(value):
+        if isinstance(key, ast.Constant) and _canon(key.value) in names:
+            for literal, shape in _literal_in(value, consts):
                 yield value, str(key.value), literal, shape
 
 
@@ -112,19 +169,71 @@ def _default_sites(node: Union[ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda
     pairs = list(zip(positional[len(positional) - len(args.defaults) :], args.defaults))
     pairs += [(a, d) for a, d in zip(args.kwonlyargs, args.kw_defaults) if d is not None]
     for arg, default in pairs:
-        if arg.arg in names:
+        if _canon(arg.arg) in names:
             for literal, _ in _literal_in(default):
                 yield default, arg.arg, literal, "default"
 
 
+def _read_name(node: ast.AST, names: frozenset[str]) -> Optional[str]:
+    """The ceiling setting *node* reads (``cfg.max_tokens``, ``max_tokens``, ``d["max_tokens"]``, ``d.get("max_tokens")``)."""
+    if isinstance(node, ast.Name):
+        return node.id if _canon(node.id) in names else None
+    if isinstance(node, ast.Attribute):
+        return node.attr if _canon(node.attr) in names else None
+    if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) and _canon(node.slice.value) in names:
+        return str(node.slice.value)
+    if isinstance(node, ast.Call) and node.args and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+        key = node.args[0]
+        if isinstance(key, ast.Constant) and _canon(key.value) in names:
+            return str(key.value)
+    return None
+
+
+def _or_sites(node: ast.BoolOp, names: frozenset[str], consts: _Consts) -> Iterator[_Site]:
+    """``cfg.max_tokens or 4096`` anywhere (a ``return``, an assignment, an argument): the defaulted capability number."""
+    if not isinstance(node.op, ast.Or):
+        return
+    name = next((n for n in (_read_name(v, names) for v in node.values) if n), None)
+    if name is None:
+        return
+    for operand in node.values:
+        fallback = _int_literal(operand, consts)
+        if fallback is not None:
+            yield node, name, fallback, "fallback"
+
+
+def _assign_sites(node: Union[ast.Assign, ast.AnnAssign], names: frozenset[str], consts: _Consts) -> Iterator[_Site]:
+    """``self.max_tokens = 4096`` / ``MAX_TOKENS = 4096`` / ``max_tokens = cfg.max_tokens or 4096``."""
+    value = node.value
+    if value is None:
+        return
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    for target in targets:
+        name = _read_name(target, names)
+        if name is not None:
+            for literal, shape in _literal_in(value, consts):
+                yield value, name, literal, shape
+
+
 def _sites(tree: ast.Module, names: frozenset[str]) -> Iterator[_Site]:
-    """``(node, name, literal, shape)`` for every literal ceiling in *tree*."""
+    """``(node, name, literal, shape)`` for every literal ceiling in *tree*, each node and literal once."""
+    consts = _module_consts(tree)
+    seen: set[tuple[int, int]] = set()
     for node in _fast_walk(tree):
+        found: Iterator[_Site] = iter(())
         if isinstance(node, ast.Call):
-            yield from _call_sites(node, names)
+            found = _call_sites(node, names, consts)
         elif isinstance(node, ast.Dict):
-            yield from _dict_sites(node, names)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            found = _dict_sites(node, names, consts)
+        elif isinstance(node, ast.BoolOp):
+            found = _or_sites(node, names, consts)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            found = _assign_sites(node, names, consts)
+        for site in found:
+            if (id(site[0]), site[2]) not in seen:
+                seen.add((id(site[0]), site[2]))
+                yield site
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
             yield from _default_sites(node, names)
 
 
@@ -152,7 +261,7 @@ def _collect(
     root: Union[str, Path], *, names: Iterable[str], allow_below: int, skip_dir_names: Iterable[str], include_tests: bool, use_git: Optional[bool]
 ) -> tuple[list[Finding], ScanResult]:
     scan = scan_tree(root, skip=skip_set(skip_dir_names, include_tests=include_tests), use_git=use_git)
-    wanted = frozenset(names)
+    wanted = frozenset(_canon(n) for n in names)
     findings = [f for parsed in scan for f in _file_findings(parsed, wanted, allow_below)]
     return sorted(findings, key=lambda f: (f.path, f.line)), scan
 

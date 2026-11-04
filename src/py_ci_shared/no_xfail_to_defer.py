@@ -11,7 +11,7 @@ turns it red. Per test file:
   xfail whose reason names an external component is exempt: a live model or network may pass by chance;
 * ``no-reason``: an xfail or an unconditional ``pytest.mark.skip`` / ``pytest.skip()`` / ``pytest.xfail()`` with no
   reason text;
-* ``untracked-reason``: an xfail (marker or ``pytest.xfail("...")``) whose reason names no external component
+* ``untracked-reason``: an xfail (marker or ``pytest.xfail("...")``) or an unconditional skip whose reason names no external component
   (:data:`EXTERNAL_WORDS`, plus the caller's ``external=``) and no tracked issue (``#123``, ``ABC-123``, an URL).
   Free text is a judgement, so this rule is what the baseline ratchets: the count may only fall. Only the literal
   words are read (f-string parts included); a reason computed from names, or built around a variable that holds the
@@ -259,6 +259,16 @@ def find_xfail_to_defer(
     return findings, scan
 
 
+def _judge_skip(call: Optional[ast.Call], label: str, external: frozenset[str]) -> list[tuple[str, str]]:
+    """An unconditional skip parks a test for good: it needs a reason, and the reason must name an external limit or a tracked issue."""
+    reason = _reason(call, positional_reason=True)
+    if not reason or not reason.strip():
+        return [(RULE_NO_REASON, f"{label} with no reason")]
+    if _reason_is_computed(call, positional_reason=True) or _is_tracked(reason, external):
+        return []
+    return [(RULE_UNTRACKED, f"{label} reason names no external component or tracked issue: {reason[:100]!r}")]
+
+
 def _node_findings(
     node: ast.AST,
     aliases: ImportAliases,
@@ -273,8 +283,8 @@ def _node_findings(
             return _known_gap_findings(node, parents, repo_strict, ext)
         if name == "pytest.xfail":
             return _judge_xfail(node, imperative=True, repo_strict=repo_strict, external=ext)
-        if name == "pytest.skip" and not _is_conditional(node, parents) and not _reason(node, positional_reason=True):
-            return [(RULE_NO_REASON, "pytest.skip() with no reason")]
+        if name == "pytest.skip" and not _is_conditional(node, parents):
+            return _judge_skip(node, "pytest.skip()", ext)
     if not isinstance(node, (ast.Call, ast.Attribute)):
         return []
     parent = parents.get(id(node))
@@ -284,8 +294,8 @@ def _node_findings(
     call = node if isinstance(node, ast.Call) else None
     if kind == "xfail":
         return _judge_xfail(call, imperative=False, repo_strict=repo_strict, external=ext)
-    if kind == "skip" and not _reason(call, positional_reason=True):
-        return [(RULE_NO_REASON, "pytest.mark.skip with no reason")]
+    if kind == "skip":
+        return _judge_skip(call, "pytest.mark.skip", ext)
     return []
 
 

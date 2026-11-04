@@ -40,6 +40,12 @@ def _stringish(node: ast.AST, known: "set[str] | frozenset[str]" = frozenset()) 
         return node.id in known
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
         return _stringish(node.left, known) or _stringish(node.right, known)
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Name) and func.id == "str":
+            return True
+        if isinstance(func, ast.Attribute) and func.attr in ("join", "format", "dedent", "strip", "lower", "upper", "replace"):
+            return func.attr in ("join", "format", "dedent") or _stringish(func.value, known)  # `" ".join(..)`, `textwrap.dedent(..)`
     return False
 
 
@@ -70,13 +76,18 @@ def _bound_strings(body: list[ast.stmt]) -> set[str]:
     """Names bound in this scope to a string/bytes value: ``X = "a"``, ``X: str = f"..."``, ``A, B = "a", "b"``, and
     ``Y = X + "suffix"`` where ``X`` is one of them."""
     names: set[str] = set()
+    rebound: set[str] = set()  # names the scope also binds to something that is not a string: not a constant
     for node in _scope_statements(body):
         if isinstance(node, ast.Assign):
             for target in node.targets:
-                names |= _pairs(target, node.value, names)
+                found = _pairs(target, node.value, names)
+                names |= found
+                rebound |= {n.id for n in _fast_walk(target) if isinstance(n, ast.Name)} - found
         elif isinstance(node, ast.AnnAssign) and node.value is not None:
-            names |= _pairs(node.target, node.value, names)
-    return names
+            found = _pairs(node.target, node.value, names)
+            names |= found
+            rebound |= {n.id for n in _fast_walk(node.target) if isinstance(n, ast.Name)} - found
+    return names - rebound
 
 
 def _pairs(target: ast.AST, value: ast.AST, known: set[str]) -> set[str]:

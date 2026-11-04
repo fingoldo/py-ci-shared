@@ -74,3 +74,36 @@ def test_a_real_sleep_inside_tests_is_still_a_finding(tmp_path: Path) -> None:
 def test_a_sleep_inside_a_docstring_is_not_a_finding(tmp_path: Path) -> None:
     _tree(tmp_path, "tests/test_poll.py", 'def test_x():\n    """Do not time.sleep(1) here."""\n    assert True\n')
     assert find_wallclock_test_waits(tmp_path) == {}
+
+
+def _waits(tmp_path, rel, body, mode="ast"):
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    return [v.split("line ")[1].split(" ")[0] for v in find_wallclock_test_waits(tmp_path, python_mode=mode).values()]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "from time import sleep\n\n\ndef t():\n    sleep(1)\n",
+        "import time as t\n\n\ndef x():\n    t.sleep(1)\n",
+        "import asyncio\n\n\nasync def x():\n    await asyncio.sleep(1)\n",
+        "import trio\n\n\nasync def x():\n    await trio.sleep(1)\n",
+    ],
+)
+def test_ast_mode_sees_renamed_imports_and_async_sleeps(tmp_path, body):
+    assert _waits(tmp_path, "tests/test_a.py", body) == ["5"]
+
+
+def test_a_yield_sleep_zero_and_an_unrelated_sleep_method_are_not_waits(tmp_path):
+    body = "import asyncio\n\n\nasync def x(self):\n    await asyncio.sleep(0)\n    self.sleep(3)\n"
+    assert _waits(tmp_path, "tests/test_a.py", body) == []
+
+
+def test_dart_delay_without_const_is_a_wait(tmp_path):
+    assert _waits(tmp_path, "test/a_test.dart", "void main() {\n  await Future.delayed(Duration(milliseconds: 50));\n}\n") == ["2"]
+
+
+def test_text_mode_sees_spaced_time_dot_sleep(tmp_path):
+    assert _waits(tmp_path, "tests/a.py", "import time\n\n\ndef t():\n    time . sleep (1)\n", mode="text") == ["5"]

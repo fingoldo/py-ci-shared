@@ -43,7 +43,7 @@ __all__ = ["DEFAULT_CONFIG_PATTERNS", "REFRESH_FLAG", "RULES", "find_machine_spe
 
 REFRESH_FLAG = "--refresh-machine-paths-baseline"
 MARKER = "machine-path-ok"
-DEFAULT_CONFIG_PATTERNS: tuple[str, ...] = ("*.yml", "*.yaml", "*.toml", "*.cfg", "*.ini")
+DEFAULT_CONFIG_PATTERNS: tuple[str, ...] = ("*.yml", "*.yaml", "*.toml", "*.cfg", "*.ini", "*.env", "*.json", "*.sh", "*.ps1")
 PLACEHOLDER_USERS = frozenset(
     {"user", "username", "users", "you", "me", "name", "runner", "runneradmin", "public", "default", "all users", "someone", "example", "xxx", "foo", "shared"}
 )
@@ -51,7 +51,7 @@ _NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 RULES: dict[str, re.Pattern[str]] = {
     "user-home-path": re.compile(rf"(?i)(?:\b[a-z]:[\\/]+users[\\/]+({_NAME}))|(?:(?<![\w.~-])/(?:home|Users)/({_NAME})(?=/))"),
     "model-cache-path": re.compile(r"(?i:\.cache[\\/]+(?:huggingface|torch|stanza)\b)|(?:^|[\\/])stanza_resources(?![\w])"),
-    "db-url": re.compile(r"(?i)\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|mssql)(?:\+\w+)?://([^\s'\"/@:]+):([^\s'\"/@]+)@"),
+    "db-url": re.compile(r"(?i)\b[a-z][a-z0-9]*(?:\+[a-z0-9]+)*://([^\s'\"/@:]+):([^\s'\"/@]+)@"),  # any scheme: a pasted DSN of any service leaks
     "drive-path": re.compile(r"(?<![A-Za-z0-9])[D-Zd-z]:[\\/]+[\w.$~-]"),
 }
 _PLACEHOLDER_SECRET = re.compile(r"[<>{}$%*]|^\.\.\.$")
@@ -100,17 +100,35 @@ def _hits(text: str, allow: Sequence[re.Pattern[str]], *, workflow: bool = False
             yield m.start(), rule, shown[:_MAX_SHOWN]
 
 
+def _literal_text(node: ast.AST) -> Optional[str]:
+    """The text of a str or bytes constant, or of a ``+`` chain of them (``"D:" + "\\data"``); None for anything else."""
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, str):
+            return node.value
+        if isinstance(node.value, bytes):
+            return node.value.decode("latin-1")
+        return None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _literal_text(node.left), _literal_text(node.right)
+        if left is not None and right is not None:
+            return left + right
+    return None
+
+
 def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> list[Finding]:
     docstrings = docstring_ids(parsed.tree)
     lines = parsed.source.splitlines()
     out: list[Finding] = []
+    seen: set[tuple[int, str, str]] = set()
     for node in _fast_walk(parsed.tree):
-        if not isinstance(node, ast.Constant) or not isinstance(node.value, str) or id(node) in docstrings:
+        text = _literal_text(node)
+        if text is None or id(node) in docstrings or not isinstance(node, (ast.Constant, ast.BinOp)):
             continue
-        for offset, rule, shown in _hits(node.value, allow):
-            line = node.lineno + node.value.count("\n", 0, offset)
-            if line_has_marker(lines, line, MARKER) or line_has_marker(lines, node.lineno, MARKER):
+        for offset, rule, shown in _hits(text, allow):
+            line = node.lineno + text.count("\n", 0, offset)
+            if line_has_marker(lines, line, MARKER) or line_has_marker(lines, node.lineno, MARKER) or (line, rule, shown) in seen:
                 continue
+            seen.add((line, rule, shown))
             out.append(_finding(parsed.rel, line, rule, shown))
     return out
 

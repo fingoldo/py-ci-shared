@@ -1,5 +1,30 @@
-﻿import torch
+﻿import pickle
+
+import numpy as np
+import pandas as pd
+import torch
+import yaml
 
 
 def seed_load(path):
     return torch.load(path)
+
+
+def seed_pickle(blob):
+    return pickle.loads(blob)
+
+
+def seed_yaml(text):
+    return yaml.load(text)
+
+
+def seed_npy(path):
+    return np.load(path, allow_pickle=True)
+
+
+def seed_frame(path):
+    return pd.read_pickle(path)
+
+
+def seed_stream(fh):
+    return pickle.Unpickler(fh).load()
