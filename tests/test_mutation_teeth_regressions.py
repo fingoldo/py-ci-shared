@@ -34,9 +34,9 @@ def _seam(monkeypatch, name, value):
 
     Patching only ``mutation_teeth`` silently stops reaching the verdict code, so every seam is set on both modules that may read it.
     """
-    from py_ci_shared import _mutation_sweep
+    from py_ci_shared import _mutation_speed, _mutation_sweep
 
-    for module in (mutation_teeth, _mutation_sweep):
+    for module in (mutation_teeth, _mutation_sweep, _mutation_speed):
         if hasattr(module, name):
             monkeypatch.setattr(module, name, value)
 
@@ -447,7 +447,7 @@ class TestExtraSandboxes:
         cold = FakeCold("m.py", lambda text, _p: 0, on_call=edit_repo)
         _seam(monkeypatch, "_run_pytest", cold)
         fake_warm.default = 1
-        _sweep(repo, jobs=2)
+        _sweep(repo, jobs=2, single_baseline=False)
 
         extra_baselines = [c for c in cold.calls[1:] if c[1] == original]
         assert extra_baselines, "the extra sandbox had no unmutated baseline of its own"
@@ -458,6 +458,24 @@ class TestExtraSandboxes:
         cold = FakeCold("m.py", lambda text, _p: 0, on_call=None)
         cold.verdict = lambda text, _p: 0 if len(cold.calls) == 1 else 1
         _seam(monkeypatch, "_run_pytest", cold)
+        with pytest.raises(MutationHarnessError, match="extra sandbox"):
+            _sweep(repo, jobs=2, single_baseline=False)
+
+    def test_with_one_baseline_the_extra_sandboxes_warm_worker_judges_it(self, tmp_path, monkeypatch, fake_warm):
+        repo = _repo(tmp_path, "def f(a, b):\n    return a + b * 2\n")
+        original = (repo / "m.py").read_text(encoding="utf-8")
+        cold = FakeCold("m.py", lambda text, _p: 0)
+        _seam(monkeypatch, "_run_pytest", cold)
+        fake_warm.default = 1
+        _sweep(repo, jobs=2)
+        assert not [c for c in cold.calls if c[1] == original], "no cold baseline is expected: the warm workers run the unmutated tests"
+        assert len([w for w in fake_warm.instances if original in w.runs]) == 2, "both partitions' workers ran the unmutated file first"
+
+    def test_with_one_baseline_a_failing_extra_sandbox_is_refused_after_the_cold_tie_break(self, tmp_path, monkeypatch, fake_warm):
+        repo = _repo(tmp_path, "def f(a, b):\n    return a + b * 2\n")
+        original = (repo / "m.py").read_text(encoding="utf-8")
+        _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 1))
+        fake_warm.script = {original: [0, 1]}
         with pytest.raises(MutationHarnessError, match="extra sandbox"):
             _sweep(repo, jobs=2)
 
@@ -532,7 +550,9 @@ class TestTheCache:
             try:
                 for i in range(15):
                     mutation_teeth._store_cached_run(cache, Path(f"{prefix}{i}.py"), "k", self._run(""))
-            except BaseException as exc:  # pragma: no cover - reported below  # audit-exempt: bare_except -- the exception is kept in errors and the test asserts none below, so nothing is swallowed
+            except (
+                BaseException
+            ) as exc:  # pragma: no cover - reported below  # audit-exempt: bare_except -- the exception is kept in errors and the test asserts none below, so nothing is swallowed
                 errors.append(exc)
 
         threads = [threading.Thread(target=writer, args=(p,)) for p in ("a", "b", "c")]

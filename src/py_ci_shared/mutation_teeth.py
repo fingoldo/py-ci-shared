@@ -108,6 +108,7 @@ from ._mutation_checkpoint import replay as replay
 from ._mutation_checkpoint import sweep_delta as sweep_delta
 from ._mutation_model import _CONTAINER_SAMPLE as _CONTAINER_SAMPLE
 from ._mutation_model import _COPY_IGNORE as _COPY_IGNORE
+from ._mutation_model import copy_ignore as copy_ignore
 from ._mutation_model import _UNJUSTIFIED as _UNJUSTIFIED
 from ._mutation_model import HARNESS_VERSION, REFRESH_FLAG, Mutant, MutationHarnessError, MutationRun, SourceText
 from ._mutation_model import _mutant_from_json as _mutant_from_json
@@ -139,13 +140,18 @@ from ._mutation_runner import _pytest_flags as _pytest_flags
 from ._mutation_runner import _remove_tree as _remove_tree
 from ._mutation_runner import _run_pytest as _run_pytest
 from ._mutation_runner import _WarmRunner as _WarmRunner
+from ._mutation_speed import CoverageMap, NearestKiller, SweepOptions, baseline_error, build_coverage_map, effective_timeout
 from ._mutation_sweep import (
     PathArg,
-    _check_origin,
     _check_unmutated,
     _group_twins,
     _judge,
     _module_names,
+    _baseline_phase,
+    _confirm_worker_for,
+    _log_sweep_end,
+    _prepare_mutant,
+    _seed_order,
     _SweepState,
 )
 from ._mutation_worker import _CRASH_EXCEPTIONS as _CRASH_EXCEPTIONS
@@ -198,6 +204,7 @@ def _sweep_partition(
     use_warm_worker: bool,
     verify_baseline: bool = False,
     checkpoint: Optional[SweepCheckpoint] = None,
+    opts: Optional[SweepOptions] = None,
 ) -> "tuple[list[Mutant], list[Mutant], list[Mutant], list[Mutant], list[Mutant], dict[str, float]]":
     """One sandbox's share of the mutants.
 
@@ -212,8 +219,10 @@ def _sweep_partition(
     """
     target = sandbox / relative
     original = read_target(target)
-    if verify_baseline:
-        baseline = _run_pytest(test_paths, sandbox, timeout)
+    opts = opts or SweepOptions(single_baseline=False)
+    # With one baseline, the extra sandbox's warm worker judges the unmutated tests itself instead of a cold run first.
+    if verify_baseline and not (opts.single_baseline and use_warm_worker):
+        baseline = _run_pytest(test_paths, sandbox, timeout, *opts.extra_flags)
         if baseline is None or not _classify(baseline, f"the unmutated baseline in {sandbox}"):
             raise MutationHarnessError(
                 f"the unmutated tests do not pass in the extra sandbox {sandbox}, so its kills would mean nothing. "
@@ -223,7 +232,9 @@ def _sweep_partition(
     # mid-sweep used to leave the last mutant on disk, which was harmless while every file got
     # its own throwaway copy and becomes contamination of the next file the moment one does not.
     try:
-        return _sweep_mutants(sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker, relative, checkpoint)
+        return _sweep_mutants(
+            sandbox, target, original, mutants, test_paths, fallback_test_paths, timeout, use_warm_worker, relative, checkpoint, opts, verify_baseline
+        )
     finally:
         write_target(target, original, original.text)
 
@@ -239,6 +250,8 @@ def _sweep_mutants(
     use_warm_worker: bool,
     relative: Optional[Path] = None,
     checkpoint: Optional[SweepCheckpoint] = None,
+    opts: Optional[SweepOptions] = None,
+    extra_sandbox: bool = False,
 ) -> "tuple[list[Mutant], list[Mutant], list[Mutant], list[Mutant], list[Mutant], dict[str, float]]":
     """The loop itself, split out so the restore above can wrap it in a `finally`."""
     source = original if isinstance(original, SourceText) else SourceText(original)
@@ -248,59 +261,82 @@ def _sweep_mutants(
     def restore() -> None:
         write_target(target, source, source.text)
 
-    with _WarmRunner(sandbox, timeout, target=target, module_names=names) as warm:
-        if use_warm_worker:
-            warm_baseline = warm.run(test_paths, check_origin=True)
-            if warm_baseline is None:
-                use_warm_worker = False
-            else:
-                _check_origin(warm.last_origin, relative)
-                if not _classify_code(warm_baseline, "the unmutated baseline in the warm worker"):
-                    raise MutationHarnessError(
-                        "the tests pass in a fresh process but fail inside the reused worker, so "
-                        "every mutant would be recorded as killed for a reason unrelated to the "
-                        "mutation. Re-run with `use_warm_worker=False` to get a usable result, and "
-                        "treat the difference between the two processes as the bug."
-                    )
-        state = _SweepState(
-            ordered=list(test_paths),
-            # The wider net gets the same treatment as the primary set, and for a bigger prize: it is
-            # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
-            # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
-            ordered_wider=list(fallback_test_paths),
-        )
-        for mutant in mutants:
-            if checkpoint is not None and mutant.key in checkpoint.done:
-                replay(state, mutant, checkpoint.done[mutant.key])
-                continue
-            started = time.perf_counter()
-            state.judged_at = started
-            before = filed_sizes(state)
-            budget_before = dict(state.budget)
-            survivors_before = len(state.survivors)
-            write_target(target, source, mutant.mutated_file_text)
-            try:
-                _judge(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, fallback_test_paths, relative, state, started)
-            finally:
+    opts = opts or SweepOptions(single_baseline=False)
+    nearest = NearestKiller()
+    confirm_worker: Optional[_WarmRunner] = None
+    try:
+        with _WarmRunner(sandbox, timeout, target=target, module_names=names) as warm:
+            warm.extra_flags = list(opts.extra_flags)
+            use_warm_worker = _baseline_phase(warm, sandbox, test_paths, timeout, relative, opts, extra_sandbox, use_warm_worker)
+            # The per-mutant timeout follows the measured baseline when the caller asked for it; `timeout` stays the cap.
+            timeout = warm.timeout = effective_timeout(timeout, opts.timeout_factor, opts.baseline_seconds)
+            state = _SweepState(
+                ordered=list(test_paths),
+                # The wider net gets the same treatment as the primary set, and for a bigger prize: it is
+                # dozens of files, `-x` stops at the first failure, and the measurement says these re-checks
+                # are where a sweep's time goes -- 88% of the wall clock on the worst-covered file.
+                ordered_wider=list(fallback_test_paths),
+                opts=opts,
+            )
+            confirm_worker = state.confirm_worker = _confirm_worker_for(sandbox, timeout, target, names, opts, use_warm_worker)
+            _seed_order(state, checkpoint, nearest)
+            lazy = opts.wider
+
+            def resolve_wider() -> "Sequence[PathArg]":
+                # The net's unmutated check needs the ORIGINAL file; the mutant is put back right after.
                 restore()
-                # Logged as each verdict lands, not when the sweep ends: a long sweep must not hide its survivors.
-                if len(state.survivors) > survivors_before:
-                    logger.warning("mutation survivor: %s", mutant)
-                state.budget["mutants"] += 1
-                # Everything after the verdict is a cold re-check: the confirmation and the wider net.
-                state.budget["recheck"] += max(0.0, time.perf_counter() - state.judged_at)
-            if checkpoint is not None:
-                checkpoint.record(mutant.key, *sweep_delta(state, before, budget_before))
+                try:
+                    assert lazy is not None
+                    return lazy.resolve(sandbox, timeout, opts.extra_flags)
+                finally:
+                    write_target(target, source, current[0])
+
+            current = [source.text]
+            if lazy is not None:
+                state.wider_resolver = resolve_wider
+            for mutant in mutants:
+                if checkpoint is not None and mutant.key in checkpoint.done:
+                    replay(state, mutant, checkpoint.done[mutant.key])
+                    continue
+                started = time.perf_counter()
+                state.judged_at = started
+                before = filed_sizes(state)
+                budget_before = dict(state.budget)
+                survivors_before = len(state.survivors)
+                _prepare_mutant(state, mutant, nearest)
+                current[0] = mutant.mutated_file_text
+                write_target(target, source, mutant.mutated_file_text)
+                try:
+                    _judge(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, fallback_test_paths, relative, state, started)
+                finally:
+                    restore()
+                    # Logged as each verdict lands, not when the sweep ends: a long sweep must not hide its survivors.
+                    if len(state.survivors) > survivors_before:
+                        logger.warning("mutation survivor: %s", mutant)
+                    state.budget["mutants"] += 1
+                    # Everything after the verdict is a cold re-check: the confirmation and the wider net.
+                    state.budget["recheck"] += max(0.0, time.perf_counter() - state.judged_at)
+                nearest.add(mutant.line, state.last_killer)
+                if checkpoint is not None:
+                    checkpoint.record(mutant.key, *sweep_delta(state, before, budget_before), killer=state.last_killer, line=mutant.line)
+            _log_sweep_end(state)
+    finally:
+        if confirm_worker is not None:
+            confirm_worker.stop()
     return state.survivors, state.coverage_gaps, state.inconclusive, state.judged, state.crashed, state.budget
 
 
 # ── the cache ─────────────────────────────────────────────────────────────────────────────────────
-def _scope_key(lines: Optional[list[range]], limit: Optional[int], fallback_test_paths: Sequence[PathArg], allow_empty: bool) -> object:
+def _scope_key(
+    lines: Optional[list[range]], limit: Optional[int], fallback_test_paths: Sequence[PathArg], allow_empty: bool, extra_flags: Sequence[str] = ()
+) -> object:
     """Everything that changes WHICH mutants run, for the fingerprint.
 
     ``lines=None`` (the whole file) and ``lines=[]`` (nothing) are different scopes and key differently.
     """
-    return (_scope_of(lines), limit, [str(t) for t in (fallback_test_paths or ())], bool(allow_empty))
+    base = (_scope_of(lines), limit, [str(t) for t in (fallback_test_paths or ())], bool(allow_empty))
+    # Only when set, so every key written without the option stays the key it was.
+    return (*base, list(extra_flags)) if extra_flags else base
 
 
 def _try_lock(fd: int) -> bool:
@@ -427,6 +463,8 @@ def _run_partitions(
     use_warm_worker: bool,
     jobs: int,
     checkpoint: Optional[SweepCheckpoint] = None,
+    opts: Optional[SweepOptions] = None,
+    ignore: Any = _COPY_IGNORE,
 ) -> list[tuple]:
     """Sweep *representatives* in up to *jobs* sandboxes at once; each result is one partition's verdict lists.
 
@@ -456,6 +494,7 @@ def _run_partitions(
                 use_warm_worker,
                 verify_baseline=slot > 0,
                 checkpoint=checkpoint,
+                opts=opts,
             )
         except Exception as exc:  # collected here and re-raised by the caller (raise errors[0]), so nothing is swallowed
             errors.append(exc)
@@ -468,7 +507,7 @@ def _run_partitions(
             extras_parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_extra_"))
             for index in range(1, len(partitions)):
                 extra = extras_parent / f"{index}" / sandbox.name
-                shutil.copytree(sandbox, extra, ignore=_COPY_IGNORE, symlinks=False)
+                shutil.copytree(sandbox, extra, ignore=ignore, symlinks=False)
                 sandboxes.append(extra)
         threads = [threading.Thread(target=_one, args=(i,)) for i in range(1, len(partitions))]
         for thread in threads:
@@ -514,6 +553,31 @@ def _merge_verdicts(
     return survivors, coverage_gaps, inconclusive, run, crashes, budget
 
 
+def _line_map(
+    sandbox: Path, relative: Path, test_paths: "Sequence[PathArg]", timeout: float, opts: SweepOptions, checkpoint: Optional[SweepCheckpoint]
+) -> "Optional[CoverageMap]":
+    """The line -> test files map, from the checkpoint when an earlier run with this fingerprint stored it, else from one coverage run.
+
+    That run IS the unmutated baseline of the primary set: it must pass, or the sweep is refused as it always was.
+    """
+    if checkpoint is not None and checkpoint.coverage is not None:
+        stored = CoverageMap.from_json(checkpoint.coverage)
+        if stored is not None:
+            return stored
+    started = time.perf_counter()
+    result, built = build_coverage_map(sandbox, relative, test_paths, timeout, opts.extra_flags)
+    if result is None:
+        raise MutationHarnessError(
+            f"the unmutated baseline did not finish within {timeout}s, so nothing can be concluded. Raise `timeout`, or narrow `test_paths`."
+        )
+    if not _classify(result, "the unmutated baseline"):
+        raise baseline_error(None, result)
+    opts.baseline_seconds = time.perf_counter() - started
+    if built is not None and checkpoint is not None:
+        checkpoint.record_coverage(built.to_json())
+    return built
+
+
 def _sweep_in_sandbox(
     sandbox: Path,
     borrowed: bool,
@@ -528,10 +592,13 @@ def _sweep_in_sandbox(
     jobs: int,
     allow_empty: bool,
     checkpoint: Optional[SweepCheckpoint] = None,
+    opts: Optional[SweepOptions] = None,
+    ignore: Any = _COPY_IGNORE,
 ) -> "MutationRun":
     """The sweep itself, in a sandbox the caller provides or this function copies. Removing a sandbox it made is the caller's job."""
+    opts = opts or SweepOptions(single_baseline=False)
     if not borrowed:
-        shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
+        shutil.copytree(repo_root, sandbox, ignore=ignore, symlinks=False)
     target = sandbox / relative
     if not target.is_file():
         raise MutationHarnessError(
@@ -545,8 +612,10 @@ def _sweep_in_sandbox(
             "so a pass would check nothing. Widen `lines`, or pass `allow_empty=True` where an empty scope is expected."
         )
 
+    mapped = _line_map(sandbox, relative, test_paths, timeout, opts, checkpoint) if opts.coverage_prune and mutants else None
+    opts.coverage = mapped
     fallback_test_paths, wider_baseline_note = _check_unmutated(
-        sandbox, relative, test_paths, fallback_test_paths, timeout, use_warm_worker, bool(mutants), limit_name=None
+        sandbox, relative, test_paths, fallback_test_paths, timeout, use_warm_worker, bool(mutants), limit_name=None, opts=opts, skip_primary=mapped is not None
     )
 
     for mutant in mutants:
@@ -558,7 +627,7 @@ def _sweep_in_sandbox(
     twins = _group_twins(mutants)
     representatives = [group[0] for group in twins.values()]
 
-    results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, checkpoint)
+    results = _run_partitions(sandbox, relative, representatives, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, checkpoint, opts, ignore)
     survivors, coverage_gaps, inconclusive, run, crashes, budget = _merge_verdicts(results, twins, mutants)
     outcome = MutationRun(
         survivors=survivors,
@@ -573,7 +642,7 @@ def _sweep_in_sandbox(
         killed_by_crash=crashes,
         coverage_gaps=coverage_gaps,
         inconclusive=inconclusive,
-        wider_net_note=wider_baseline_note,
+        wider_net_note=wider_baseline_note or (opts.wider.note if opts.wider is not None else ""),
         timings={k: round(v, 3) for k, v in budget.items()},
     )
     return outcome
@@ -595,6 +664,13 @@ def find_surviving_mutants(
     fallback_test_paths: Sequence[PathArg] = (),
     allow_empty: bool = False,
     checkpoint_path: Optional[PathArg] = None,
+    single_baseline: bool = True,
+    timeout_factor: Optional[float] = None,
+    confirm_in_worker: bool = False,
+    cold_confirm_every: int = 10,
+    coverage_prune: bool = False,
+    copy_ignore_patterns: Sequence[str] = (),
+    ignore_addopts: bool = False,
 ) -> MutationRun:
     """Mutants the tests did NOT catch.
 
@@ -610,17 +686,40 @@ def find_surviving_mutants(
     pass, tests that import the target from outside the sandbox, a pytest exit code that means
     something other than pass or fail, or -- unless *allow_empty* -- a scope that produced no mutant
     to run, because "nothing survived" and "nothing was checked" must not read the same.
+
+    Options that only change what a sweep costs (the verdicts are the same unless noted):
+
+    - *single_baseline* (default on): the unmutated primary tests run ONCE, in the warm worker, instead of cold and then warm (and once more per extra
+      ``jobs`` partition); the wider net's baseline runs only when a survivor first needs the net. A cold run is the tie-break when the worker reports
+      a failure. ``False`` restores the cold-then-warm baselines.
+    - *timeout_factor*: per-mutant timeout = clamp(max(30, factor * measured baseline seconds), *timeout*); *timeout* stays the cap.
+    - *confirm_in_worker* (opt-in): warm survivors are re-checked in a second long-lived worker instead of a cold process, except every
+      *cold_confirm_every*-th survivor, which stays cold.
+    - *coverage_prune* (opt-in, needs ``coverage``): one coverage run builds a line -> test files map. A mutant on a statement no test executes is a
+      survivor without a primary run; others run only the files that execute it (a survivor is still confirmed on the whole set). Code a test runs in a
+      subprocess is not seen, so such a mutant can read as a survivor when it is killable: keep this off for repos whose tests shell out.
+    - *copy_ignore_patterns*: extra glob names left out of the sandbox copy (build output, data the tests do not read).
+    - *ignore_addopts* (opt-in): runs every nested pytest with ``-o addopts=``, so the repo's own addopts (``--durations``, plugins) are not paid per mutant.
     """
     repo_root = Path(repo_root).resolve()
     relative = _repo_relative(path)
     ranges = _normalise_lines(lines)
+    extra_flags = ("-o", "addopts=") if ignore_addopts else ()
+    opts = SweepOptions(
+        single_baseline=single_baseline,
+        timeout_factor=timeout_factor,
+        confirm_in_worker=confirm_in_worker,
+        cold_confirm_every=cold_confirm_every,
+        coverage_prune=coverage_prune,
+        extra_flags=extra_flags,
+    )
     if jobs < 1:
         raise ValueError(f"jobs must be at least 1, got {jobs}")
 
     cache_file = Path(cache_path) if cache_path else None
     # Anything that changes WHICH mutants run belongs in the key. Omitting these made raising
     # `limit` after a truncated sweep a silent no-op whenever a cache file was in play.
-    scope = _scope_key(ranges, limit, fallback_test_paths, allow_empty)
+    scope = _scope_key(ranges, limit, fallback_test_paths, allow_empty, extra_flags)
     key = fingerprint(repo_root, relative, test_paths, extra_fingerprint_paths, scope=scope)
     if use_cache and cache_file and cache_file.is_file():
         cached = _load_cached_run(cache_file, relative, key)
@@ -641,7 +740,21 @@ def find_surviving_mutants(
         sandbox = sandbox_parent / repo_root.name
     try:
         outcome = _sweep_in_sandbox(
-            sandbox, borrowed, repo_root, relative, ranges, limit, test_paths, fallback_test_paths, timeout, use_warm_worker, jobs, allow_empty, checkpoint
+            sandbox,
+            borrowed,
+            repo_root,
+            relative,
+            ranges,
+            limit,
+            test_paths,
+            fallback_test_paths,
+            timeout,
+            use_warm_worker,
+            jobs,
+            allow_empty,
+            checkpoint,
+            opts,
+            copy_ignore(copy_ignore_patterns),
         )
     finally:
         if sandbox_parent is not None:
@@ -698,7 +811,7 @@ def sweep_files(
                 # the cache is warm and the reason the copy is not hoisted out of the loop.
                 parent = Path(tempfile.mkdtemp(prefix="mutation_teeth_"))
                 shared = parent / repo_root.name
-                shutil.copytree(repo_root, shared, ignore=_COPY_IGNORE, symlinks=False)
+                shutil.copytree(repo_root, shared, ignore=copy_ignore(common.get("copy_ignore_patterns", ())), symlinks=False)
             out[key] = find_surviving_mutants(
                 source,
                 test_paths,
