@@ -416,7 +416,7 @@ def find_unsafe_deserialization(
     for parsed in scan:
         if any(fragment in parsed.rel for fragment in skipped):
             continue
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree, scoped=True), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

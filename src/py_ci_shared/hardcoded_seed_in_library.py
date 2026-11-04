@@ -183,7 +183,7 @@ def find_hardcoded_seed_in_library(
     for parsed in scan:
         if any(f"/{fragment}" in f"/{parsed.rel}" for fragment in skipped):
             continue
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree, scoped=True), parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

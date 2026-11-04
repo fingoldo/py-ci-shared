@@ -202,7 +202,7 @@ class _Visitor(TreeVisitor):
     def __init__(self, f: ParsedFile, quiet_log_is_silent: bool) -> None:
         self.f = f
         self.quiet_log_is_silent = quiet_log_is_silent
-        self.aliases = ImportAliases.from_tree(f.tree)
+        self.aliases = ImportAliases.from_tree(f.tree, scoped=True)
         self.lines = f.source.splitlines()
         self.scope: list[str] = []
         self.in_finally = 0
