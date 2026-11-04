@@ -48,7 +48,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A new column write or table is added; unit tests run as the owner role and pass; the least-privilege production role gets 42501 on every write and the scraper loops with zero inserts.
 - Proposed fix: Lift the social test into py_ci_shared.statement_privileges_granted(statement_sources, grants_files, role_of_module): reuse statement_real_engine_coverage statement discovery and sqlglot lineage; parse GRANT lines; fail on a (table, INSERT|UPDATE|DELETE|SELECT) needed by a role with no grant, and on column-level UPDATE grants missing the written column. Canary: delete the UPDATE grant line in a fixture runbook -> fail.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: DEFERRED: needs each consumer grant-file format plus sqlglot lineage; the reference implementation is social test_scraper_sql_needs_are_granted.py and was not prototyped on a second repo, so a shared contract would be guessed. Revisit when a second consumer with GRANT runbooks adopts it; then lift the social test into statement_privileges_granted.
 
 ## 31-F7 (P2) exception_text_bound_to_db_column_unredacted: str(exc) written into an INSERT/UPDATE parameter without the redaction helper
 
@@ -56,7 +56,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A reconnect error containing the DSN is stringified into a JSONB column the dashboard renders; a password reaches the UI and backups.
 - Proposed fix: Configure it as a taint rule on code_audit/provenance_flow.py: source = str/repr/format of a caught exception variable, sink = parameter of execute-family calls, sanitizer names configurable (e.g. _redact). Canary: bound str(e) -> fail; _redact(str(e)) -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: DEFERRED: FP risk high and the 0-hit prototype proves nothing without data flow; the right home is a configured taint rule on code_audit/provenance_flow.py (source str/repr of caught exception, sink execute-family parameter, sanitizer names), which is a change to an existing module rather than a new gate. Deferred until a consumer supplies the sanitizer helper names.
 
 ## 31-F8 (P3) process_lifetime_collection_unbounded: module-level or self dict/list/set that grows inside functions and is never evicted or capped
 
@@ -64,7 +64,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A long-lived scraper or monitor grows a dict by one entry per job/uid or one list item per sample; memory climbs until the host swaps; log throttles stop throttling.
 - Proposed fix: Do not ship the generic form. Ship the narrow one: keys passed to configured throttle/dedupe helpers must not interpolate parameters matching uid|id|path|url unless the helper is declared bounded; plus a pytest helper assert_bounded(container_getter, feed_n=10000) for runtime checks. Canary for the narrow form: log_throttle(f'x:{job_uid}') -> fail, log_throttle(f'x:{source_label}') -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX (generic form) / DEFERRED (narrow throttle-key form): the generic form had about 1 true hit in 16 and the 4 social hits read were all false positives; the narrow throttle-key variant found 5 hits in social, all bounded config keys, so there is no true hit to justify a gate and the helper names are consumer-specific. The runtime helper assert_bounded(container_getter, feed_n) is a better fit and is left to a library follow-up. Hits: no gate built.
 
 ## 31-F9 (P3) dead_optional_collaborator: a *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes
 
@@ -80,7 +80,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A freshly booted host (or container with a fresh monotonic origin) treats 0.0 as less than an interval ago and skips the first scheduled run.
 - Proposed fix: Low priority. If built, report only when no enclosing condition tests another attribute of the same object that the writer sets together with the timestamp; otherwise require a None sentinel. Canary: self._last=0.0 plus if time.monotonic()-self._last>=N -> fail; with a guarding self.armed -> pass.
 - AST-checkable: True; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX: the report measured 0 true of 3 (all guarded by a disabled flag set together with the timestamp) and a precise gate needs flag-aware guard detection; the incident class is already covered by a None-sentinel convention and the social comment at rescan_fl_workhistories_fetch.py:110. Hits: no gate built.
 
 ## 31-F11 (P3) per_call_figure_overwritten_not_summed: a per-call usage/cost attribute assigned by each POST/attempt instead of accumulated
 
@@ -88,7 +88,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A retry or re-issue silently drops the first attempt's spend; budget gates and cost reports under-count.
 - Proposed fix: Not recommended as a generic AST gate. Better: a py_ci_shared pytest helper assert_accumulates(callable, attr, n_calls=2) that drives a provider twice through a fake transport and asserts the figure equals the sum; document it in WRITING_TESTS.md.
 - AST-checkable: False; FP risk: high
-- Disposition: OPEN
+- Disposition: WON'T FIX as an AST gate: not AST-checkable (the original defects lived in a helper called once per POST, so a loop rule would not have caught them) and the report itself recommends against it. The recommended alternative, a pytest helper assert_accumulates(callable, attr, n_calls=2) plus a WRITING_TESTS.md note, is a library addition not done in this pass. Hits: no gate built.
 
 ## 31-F12 (P3) cli_flag_spelling_split: the same flag stem registered both as --a-b and --a_b across sibling scripts
 
@@ -104,4 +104,4 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A statement is covered by a real-Postgres test whose fixtures hold no NULL in the join key, so the NULL-handling bug passes every test.
 - Proposed fix: Port the guard half (sqlglot lineage plus nullability from DDL) next to statement_columns_exist_in_ddl, then add the engine-test half using statement_real_engine_coverage's mapping: the covering test must seed NULL/None for that column. Canary: remove AND col IS NOT NULL from a fixture statement -> guard half fails.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: DEFERRED: the guard half needs sqlglot lineage plus DDL nullability and the engine-test half needs a statement-to-test mapping that social itself has deferred; neither was prototyped, so a shared gate would be unvalidated. Revisit after statement_columns_exist_in_ddl exposes nullability. Hits: no gate built.
