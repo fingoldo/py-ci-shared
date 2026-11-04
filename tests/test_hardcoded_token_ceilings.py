@@ -55,7 +55,7 @@ def test_parameter_defaults_positional_and_keyword_only(tmp_path: Path) -> None:
         "client.create(max_tokens=1)",
         "client.create(max_tokens=limit)",
         "client.create(max_tokens=provider.max_output_tokens)",
-        "client.create(max_new_tokens=50)",
+        "client.create(max_new_tokens=8)",
         "client.create(temperature=4096)",
         'payload = {"max_tokens": limit}',
         'n = req.get("temperature", 1024)',
@@ -69,9 +69,9 @@ def test_negative_controls(tmp_path: Path, line: str) -> None:
 
 
 def test_custom_names_and_threshold(tmp_path: Path) -> None:
-    _write(tmp_path, "m.py", "def f(c):\n    c.gen(max_new_tokens=50)\n    c.gen(max_tokens=10)\n")
+    _write(tmp_path, "m.py", "def f(c):\n    c.gen(reply_budget=50)\n    c.gen(max_tokens=10)\n")
     assert _found(tmp_path) == []
-    assert [line for _, line, _ in _found(tmp_path, names={"max_new_tokens", "max_tokens"}, allow_below=1)] == [2, 3]
+    assert [line for _, line, _ in _found(tmp_path, names={"reply_budget", "max_tokens"}, allow_below=1)] == [2, 3]
 
 
 def test_tests_skipped_by_default(tmp_path: Path) -> None:
@@ -112,3 +112,29 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
     _write(src, "m.py", "def f(c, p):\n    c.gen(max_tokens=4096)\n    c.gen(max_tokens=4096)\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_no_hardcoded_token_ceilings(src, baseline_path=baseline, refresh=False, use_git=False)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def f(cfg):\n    max_tokens = cfg.max_tokens or 4096\n    return max_tokens\n",
+        "def f(cfg):\n    return cfg.max_tokens or 4096\n",
+        "class A:\n    def __init__(self):\n        self.max_tokens = 4096\n",
+        "MAX_TOKENS = 4096\n",
+        "CAP = 4096\n\n\ndef f(c):\n    return c.create(max_tokens=CAP)\n",
+        "def f(c):\n    return c.create(max_tokens=2**12)\n",
+        "def f(c):\n    return c.create(max_tokens=4096.0)\n",
+        "def f(d):\n    d.setdefault('max_tokens', 4096)\n",
+        "def f(c):\n    return c.create(maxOutputTokens=4096)\n",
+        "def f(c):\n    return c.generate(max_new_tokens=4096)\n",
+        "def f(c):\n    return c.generate(num_predict=4096)\n",
+    ],
+)
+def test_assignment_or_constant_and_alias_spellings_are_reported_exactly_once(tmp_path, body):
+    _write(tmp_path, "m.py", body)
+    assert len(_found(tmp_path)) == 1
+
+
+def test_a_non_ceiling_assignment_and_an_or_without_a_ceiling_name_are_clean(tmp_path):
+    _write(tmp_path, "m.py", "RETRIES = 4096\n\n\ndef f(cfg):\n    return cfg.retries or 4096\n")
+    assert _found(tmp_path) == []
