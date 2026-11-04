@@ -1,0 +1,4 @@
+﻿class Selector:
+    def transform(self, X):
+        X["total"] = X["a"] + X["b"]
+        return X

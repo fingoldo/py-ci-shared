@@ -115,6 +115,13 @@ since = "1.23.8"
 summary = "assert_key_sensitive: every input that changes a memoised result must change its cache key"
 
 [[gate]]
+name = "caller_frame_mutation"
+kind = "gate"
+entries = ["assert_caller_frame_mutation"]
+since = "1.23.8"
+summary = "Advisory (warns by default): a function that mutates a DataFrame parameter in place (X[col]=..., X.columns=..., inplace=True) without copying it"
+
+[[gate]]
 name = "cancellation_prone_moments"
 kind = "gate"
 entries = ["assert_cancellation_prone_moments"]
