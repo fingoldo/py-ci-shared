@@ -867,7 +867,7 @@ name = "loop_invariant_cast"
 kind = "gate"
 entries = ["assert_loop_invariant_cast"]
 since = "1.22.4"
-summary = "Flags a cast/copy call inside a loop whose argument never changes across the function"
+summary = "Flags a cast/copy call inside a loop whose argument never changes across the function; opt-in heavy=True also flags argsort/sort/unique/quantile/median/bincount/... on loop-invariant operands"
 
 [[gate]]
 name = "machine_specific_paths"

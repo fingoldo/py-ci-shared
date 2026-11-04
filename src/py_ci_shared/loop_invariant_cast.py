@@ -29,25 +29,36 @@ HERE, since within one call of the function the parameter value is constant acro
 definition -- the cast only ever needs to run once per call regardless. Suppress a deliberate per-iteration
 recompute (e.g. a defensive re-copy guarding against upstream aliasing) with ``# loop-invariant-ok: <reason>``.
 
+Second, opt-in rule set (``heavy=True``; rule ``loop-invariant-heavy-call``): the same waste for the O(N log N)
+calls ``np.argsort/sort/unique/lexsort/quantile/percentile/median/bincount/cumsum/corrcoef`` and
+``scipy.stats.rankdata`` (plus the method spellings ``x.argsort()/unique()/quantile()/median()/cumsum()``). A call
+inside a loop body (the loop's own iterable is not its body) is reported when EVERY operand (positional and keyword
+values; the receiver counts for the method spelling) is loop-invariant: no operand contains a call (``rng.choice(...)`` differs per
+iteration), and no name in it is bound, mutated in place (``x[i] = ...``, ``.shuffle(x)``, ``.append``) or a loop
+target anywhere inside the innermost enclosing loop. A call under an ``if``/``elif``/ternary whose test reads a
+loop-variant name is a per-iteration dispatch and is not reported. A call needs at least one positional operand
+(``np.bincount(codes, weights=w[j])`` varies through its keyword, so it is not reported). Suppress with
+``# loop-invariant-ok`` on any line of the call. The default (``heavy=False``) behaves exactly as before.
+
 Usage in a consumer's meta test::
 
     from py_ci_shared.loop_invariant_cast import assert_loop_invariant_cast
 
     def test_no_loop_invariant_casts():
-        assert_loop_invariant_cast("src")
+        assert_loop_invariant_cast("src", heavy=True)
 """
 
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator
+from collections.abc import Collection, Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core import walk as shared_walk
 
-__all__ = ["RULE", "assert_loop_invariant_cast", "find_loop_invariant_cast"]
+__all__ = ["DEFAULT_HEAVY_FUNCS", "HEAVY_RULE", "RULE", "assert_loop_invariant_cast", "find_loop_invariant_cast"]
 
 RULE = "loop-invariant-cast"
 SUPPRESSION = "# loop-invariant-ok:"
@@ -227,10 +238,144 @@ def _function_findings(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], rel: 
     return out
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+HEAVY_RULE = "loop-invariant-heavy-call"
+HEAVY_SUPPRESSION = "# loop-invariant-ok"
+
+DEFAULT_HEAVY_FUNCS = frozenset(
+    {
+        "numpy.argsort",
+        "numpy.sort",
+        "numpy.unique",
+        "numpy.lexsort",
+        "numpy.quantile",
+        "numpy.percentile",
+        "numpy.median",
+        "numpy.bincount",
+        "numpy.cumsum",
+        "numpy.corrcoef",
+        "scipy.stats.rankdata",
+    }
+)
+# Method spellings (``x.argsort()``); ``.sort()`` is left out because it sorts in place and returns ``None``.
+_HEAVY_METHODS = frozenset({"argsort", "unique", "quantile", "median", "cumsum"})
+_MUTATING_METHODS = frozenset(
+    {"shuffle", "sort", "fill", "put", "resize", "partition", "setflags", "update", "append", "extend", "insert", "pop", "clear", "remove", "add"}
+)
+_ARG_MUTATING_METHODS = frozenset({"shuffle", "fill", "put", "partition"})
+_SCOPE_BOUNDARIES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
+_IMPURE_OPERANDS = (ast.Call, ast.Lambda, ast.NamedExpr, ast.Await, ast.Yield, ast.YieldFrom)
+
+
+def _store_root(target: ast.AST) -> Optional[str]:
+    while isinstance(target, (ast.Attribute, ast.Subscript, ast.Starred)):
+        target = target.value
+    return target.id if isinstance(target, ast.Name) else None
+
+
+def _mutation_roots(node: ast.AST) -> Iterator[str]:
+    """Names a single node rebinds or mutates in place."""
+    if isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        yield node.id
+    elif isinstance(node, (ast.Attribute, ast.Subscript)) and isinstance(node.ctx, (ast.Store, ast.Del)):
+        root = _store_root(node)
+        if root is not None:
+            yield root
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        if node.func.attr in _MUTATING_METHODS:
+            root = _store_root(node.func.value)
+            if root is not None:
+                yield root
+        if node.func.attr in _ARG_MUTATING_METHODS:
+            yield from (a.id for a in node.args if isinstance(a, ast.Name))
+
+
+def _variant_names(loop: ast.AST) -> set[str]:
+    """Names rebound or mutated anywhere inside *loop*, its target and header included."""
+    out: set[str] = set()
+    for node in shared_walk(loop):
+        out.update(_mutation_roots(node))
+    return out
+
+
+def _heavy_operands(call: ast.Call, funcs: Collection[str], aliases: ImportAliases) -> Optional[list[ast.expr]]:
+    """The operands of a recognised heavy call (positional and keyword values; the receiver counts for the method spelling), else ``None``."""
+    if any(isinstance(a, ast.Starred) for a in call.args):
+        return None
+    keywords = [kw.value for kw in call.keywords]
+    if aliases.qualified_name(call) in funcs:
+        return [*call.args, *keywords] if call.args else None
+    func = call.func
+    if isinstance(func, ast.Attribute) and func.attr in _HEAVY_METHODS and isinstance(func.value, ast.Name) and not aliases.is_imported(func.value.id):
+        return [func.value, *call.args, *keywords]
+    return None
+
+
+def _invariant_operand(expr: ast.expr, variant: set[str]) -> bool:
+    nodes = list(shared_walk(expr))
+    if any(isinstance(n, _IMPURE_OPERANDS) for n in nodes):
+        return False
+    return not any(isinstance(n, ast.Name) and n.id in variant for n in nodes)
+
+
+def _loop_holding(call: ast.Call, parents: dict[int, ast.AST]) -> Optional[tuple[ast.AST, list[ast.expr]]]:
+    """The nearest loop whose per-iteration body holds *call* (its iterable is not its body), plus the tests of the
+    ``if``/ternary nodes between the two; ``None`` when no loop holds it before a function/class boundary."""
+    tests: list[ast.expr] = []
+    child: ast.AST = call
+    cur = parents.get(id(call))
+    while cur is not None and not isinstance(cur, (ast.Module, *_SCOPE_BOUNDARIES)):
+        if isinstance(cur, (ast.For, ast.AsyncFor)) and child is not cur.iter:
+            return cur, tests
+        if isinstance(cur, ast.While):
+            return cur, tests
+        if isinstance(cur, (ast.If, ast.IfExp)) and child is not cur.test:
+            tests.append(cur.test)
+        child, cur = cur, parents.get(id(cur))
+    return None
+
+
+def _heavy_marked(lines: list[str], call: ast.Call) -> bool:
+    end = getattr(call, "end_lineno", None) or call.lineno
+    return any(HEAVY_SUPPRESSION in lines[n - 1] for n in range(call.lineno, end + 1) if 1 <= n <= len(lines))
+
+
+def _heavy_function_findings(
+    func: Union[ast.FunctionDef, ast.AsyncFunctionDef], rel: str, aliases: ImportAliases, lines: list[str], funcs: Collection[str]
+) -> list[Finding]:
+    parents: dict[int, ast.AST] = {}
+    for parent in shared_walk(func):
+        for child in child_nodes(parent):
+            parents[id(child)] = parent
     out: list[Finding] = []
+    variant_cache: dict[int, set[str]] = {}
+    for call in (n for n in shared_walk(func) if isinstance(n, ast.Call)):
+        operands = _heavy_operands(call, funcs, aliases)
+        held = _loop_holding(call, parents) if operands is not None else None
+        if operands is None or held is None:
+            continue
+        loop, tests = held
+        variant = variant_cache.setdefault(id(loop), _variant_names(loop))
+        if not all(_invariant_operand(a, variant) for a in operands) or not all(_invariant_operand(t, variant) for t in tests):
+            continue
+        if _heavy_marked(lines, call):
+            continue
+        shown = ast.unparse(call)
+        shown = shown if len(shown) <= 100 else shown[:97] + "..."
+        out.append(Finding(rel, call.lineno, HEAVY_RULE, f"every operand is loop-invariant, so this O(N log N) work repeats per iteration: {shown}"))
+    return out
+
+
+def _findings_in(
+    tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str], heavy: bool = False, heavy_funcs: Collection[str] = DEFAULT_HEAVY_FUNCS
+) -> list[Finding]:
+    out: list[Finding] = []
+    seen: set[tuple[int, str]] = set()
     for func in (n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS)):
         out.extend(_function_findings(func, rel, aliases, lines))
+        if heavy:
+            # a call in a function nested inside another is walked from both; one finding per source line
+            out.extend(f for f in _heavy_function_findings(func, rel, aliases, lines, heavy_funcs) if (f.line, f.message) not in seen)
+            seen.update((f.line, f.message) for f in out if f.rule == HEAVY_RULE)
     return out
 
 
@@ -241,10 +386,13 @@ def find_loop_invariant_cast(
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
     exclude: Iterable[str] = (),
+    heavy: bool = False,
+    heavy_funcs: Collection[str] = DEFAULT_HEAVY_FUNCS,
 ) -> list[Finding]:
     """Every finding under *root*, sorted by path and line.
 
-    *exclude* holds path fragments (matched against the POSIX relative path) of files to skip. Raises
+    *exclude* holds path fragments (matched against the POSIX relative path) of files to skip. *heavy* adds the
+    ``loop-invariant-heavy-call`` rule set over the qualified names in *heavy_funcs*. Raises
     ``EmptyScanError`` when fewer than *min_files* files parsed and ``UnparsedFilesError`` for a file that cannot
     be read or parsed (unless *allow_unparsed*): a gate that cannot read the code must not pass it.
     """
@@ -255,7 +403,7 @@ def find_loop_invariant_cast(
     for parsed in scan:
         if any(fragment in parsed.rel for fragment in skipped):
             continue
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines(), heavy, heavy_funcs))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 
@@ -268,10 +416,17 @@ def assert_loop_invariant_cast(
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
     exclude: Iterable[str] = (),
+    heavy: bool = False,
+    heavy_funcs: Collection[str] = DEFAULT_HEAVY_FUNCS,
 ) -> None:
     """Fail on any finding, or with *baseline_path* on any finding the baseline does not accept."""
-    found = find_loop_invariant_cast(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git, exclude=exclude)
-    guidance = "hoist the cast above the loop (compute it once); or `# loop-invariant-ok: <reason>` for a deliberate per-iteration re-copy"
+    found = find_loop_invariant_cast(
+        root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git, exclude=exclude, heavy=heavy, heavy_funcs=heavy_funcs
+    )
+    guidance = (
+        "hoist the cast (or, with heavy=True, the sort/unique/quantile/... call) above the loop and compute it once; "
+        "or `# loop-invariant-ok: <reason>` for a deliberate per-iteration recompute"
+    )
     if baseline_path is not None:
         baseline = Baseline(baseline_path, gate="loop_invariant_cast", refresh_command="PY_CI_SHARED_REFRESH=loop_invariant_cast")
         baseline.enforce(found, refresh=refresh, guidance=guidance).raise_for_pytest()

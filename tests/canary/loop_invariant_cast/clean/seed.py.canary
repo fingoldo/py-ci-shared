@@ -1,5 +1,15 @@
+import numpy as np
+
+
 def score_all(baselines, y):
     """``y`` never changes across baselines; cast once before the loop instead of once per iteration."""
     y_int = y.astype("int64")
     for name in baselines:
         print(name, y_int)
+
+
+def rank_all(baselines, y):
+    """``y`` never changes across baselines; sort once before the loop."""
+    order = np.argsort(y)
+    for name in baselines:
+        print(name, order)

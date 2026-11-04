@@ -389,7 +389,7 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("env_write_restore", lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False)),
         Canary("free_text_in_get_route", lambda d: _gate("free_text_in_get_route").assert_free_text_in_get_route(d, use_git=False)),
-        Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False)),
+        Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False, heavy=True)),
         Canary(
             "llm_output_caps",
             lambda d: _gate("llm_output_caps").assert_no_new_output_caps(
