@@ -913,3 +913,102 @@ Read-only pass plus fixes. Report: `audits/2026-10-24/threat_model.md`. Every fi
 | **ACCEPTED** | Info | `T-07` | `strict=False` is not called anywhere |
 | **ACCEPTED** | Info | `T-09` | the hook installer writes only inside `.git/hooks` |
 | **ACCEPTED** | Info | `T-10` | no `shell=True` anywhere |
+
+## Round 2026-11-04 -- gate expansion, mutation speed, gate quality (six dimensions)
+
+Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-------------|
+| 30-F1 | P1 | The unmutated suite is run twice per sweep (cold baseline, then warm baseline) and a third time per extra jobs partition; 31% of a small sweep | OPEN |
+| 30-F2 | P1 | Every surviving mutant is re-run COLD on the full test_paths (survivor re-check): 5x the warm cost, 28% of a small sweep | OPEN |
+| 30-F3 | P1 | No per-line coverage map: mutants on lines no test executes run the whole suite (and a cold confirm and the wider net) before being declared survivors | OPEN |
+| 30-F4 | P2 | Killer file per line is not persisted; ordering state is per partition and per run | OPEN |
+| 30-F5 | P2 | Per-mutant timeout is a constant (300s default), not derived from the measured baseline | OPEN |
+| 30-F6 | P2 | Wider-net baseline and each wider-net re-check multiply fixed cost for files with fallback_test_paths | OPEN |
+| 30-F7 | P2 | Sandbox copy: shutil.copytree of the whole repo for every sweep and every extra jobs partition; ignore list is name-only | OPEN |
+| 30-F8 | P3 | Already implemented, no action: -x, -p no:cacheprovider, twin dedup, lead_with ordering, checkpoint/resume | OPEN |
+| 30-F9 | P3 | Warm worker is 23% slower on autopsia but default use_warm_worker=True; no auto-fallback | OPEN |
+| 30-F10 | P3 | Not recommended: in-process importlib.reload mutation | OPEN |
+| 31-F1 | P2 | duplicate_test_body_same_file: two test functions with identical bodies, args and decorators (copy-pasted twin that asserts nothing new) | OPEN |
+| 31-F2 | P2 | definition_after_entry_guard: a top-level def/class that follows the script's if __name__ == '__main__' entry guard | OPEN |
+| 31-F3 | P2 | verify_then_reopen: a function verifies a file (sidecar/hash) by path, then re-opens the same path to load it (TOCTOU) | OPEN |
+| 31-F4 | P2 | state_advanced_before_fallible_work: a schedule deadline/last-run stamp or a progress counter is written before the work it gates | OPEN |
+| 31-F5 | P2 | systemexit_in_library_function: sys.exit()/raise SystemExit inside a non-entry function that background threads and library callers reach | OPEN |
+| 31-F6 | P2 | statement_privileges_granted: the (table, privilege) pairs each service's SQL needs are checked against its role's GRANTs | OPEN |
+| 31-F7 | P2 | exception_text_bound_to_db_column_unredacted: str(exc) written into an INSERT/UPDATE parameter without the redaction helper | OPEN |
+| 31-F8 | P3 | process_lifetime_collection_unbounded: module-level or self dict/list/set that grows inside functions and is never evicted or capped | OPEN |
+| 31-F9 | P3 | dead_optional_collaborator: a *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes | OPEN |
+| 31-F10 | P3 | monotonic_clock_zero_sentinel: an attribute initialised to 0/0.0 and later compared as time.monotonic() - attr with no unset guard | OPEN |
+| 31-F11 | P3 | per_call_figure_overwritten_not_summed: a per-call usage/cost attribute assigned by each POST/attempt instead of accumulated | OPEN |
+| 31-F12 | P3 | cli_flag_spelling_split: the same flag stem registered both as --a-b and --a_b across sibling scripts | OPEN |
+| 31-F13 | P3 | nullable_key_negative_control: the engine test of a statement that joins or NOT-EXISTS-es on a nullable column must seed a NULL row | OPEN |
+| 32-F1 | P1 | Gate njit_fastmath_nnan: @njit(fastmath=True) (nnan/ninf) on a kernel whose body produces or tests NaN/inf | OPEN |
+| 32-F2 | P1 | Runtime harness numeric_edge_matrix: adversarial-input matrix (empty, single-class, all-NaN, ties, +/-inf, constant, float32-overflow, 1 row) driven over every registered metric/kernel, plus CPU-vs-GPU backend parity | OPEN |
+| 32-F3 | P1 | Runtime target-leak canary: transformers/encoders that emit train-row features must be out-of-fold (fit_transform on a pure-noise target must show ~0 train correlation) | OPEN |
+| 32-F4 | P2 | Gate ordinal_rank_scatter: ranks built as ranks[argsort(x)] = arange(...) (ties split arbitrarily, NaN ranked highest) instead of average ranks | OPEN |
+| 32-F5 | P2 | Gate group_blind_split: function that receives groups/group ids but builds KFold/StratifiedKFold/ShuffleSplit/train_test_split without them | OPEN |
+| 32-F6 | P2 | Gate caller_frame_mutation: public function mutates a DataFrame parameter in place (X[col]=..., X.columns=..., inplace=True) without a copy | OPEN |
+| 32-F7 | P2 | Gate oof_buffer_zero_init: OOF/holdout buffer initialised with zeros/empty and filled per fold from a caller-supplied splitter (rows no fold validates keep 0) | OPEN |
+| 32-F8 | P2 | Gate unseeded_rng_fallback: library function turns rng/random_state=None into an OS-entropy generator (np.random.default_rng() / RandomState() / random.Random()) on a selection or fit path | OPEN |
+| 32-F9 | P2 | Runtime harness cache_key_sensitivity: every input that changes the memoised result must change the cache key | OPEN |
+| 32-F10 | P2 | Runtime harness estimator_input_invariants: column-order, n_jobs/worker-count and frame-type invariance of fit/predict results | OPEN |
+| 32-F11 | P3 | Ratchet explicit_ddof: np.std/np.var/np.nanstd/.std() without ddof in statistics code (numpy ddof=0 vs pandas/polars ddof=1) | OPEN |
+| 32-F12 | P3 | Promote mlframe-local ML meta-tests to py-ci-shared so pyutilz/social/glossum get them: njit_unsupported_calls, truncating_target_discretisation, perm_loop_invariants, frame_copy_in_target_loops, no_sklearn_metrics_in_production | OPEN |
+| 32-F13 | P3 | Gate loop_invariant_heavy_call: np.sort/argsort/unique/quantile/median/bincount/searchsorted on a loop-invariant array inside a Python loop | OPEN |
+| 32-F14 | P3 | Regression guard gates for already-fixed shapes: boosting best_iteration used as a tree count without +1, raw-label compare against argmax of a proba matrix, estimator __init__ rewriting its own parameter | OPEN |
+| 32-F15 | P3 | Honest negative results (no new gate proposed): fit-before-split leakage, list(set()) column order, tuple/dict key omission by static scan | OPEN |
+| 33-F1 | P1 | ImportAliases is one flat per-module map, last import wins and unimported names resolve to themselves: a stray same-named import anywhere hides every use; a parameter/local named like a library is judged as that library | OPEN |
+| 33-F2 | P2 | Text-ratchet gates silently skip any file that is not valid UTF-8 (skip_as_pass, wallclock_test_waits, guard_without_fixture, git_child_env, dup_baseline_percent_key) | OPEN |
+| 33-F3 | P2 | Text-ratchet findings are keyed by 'path: normalized line', so N identical lines in one file collapse to one key and a baseline entry for one hides every later copy | OPEN |
+| 33-F4 | P2 | Case-mismatched paths pass on Windows (case-insensitive FS) in every exists()-based reference gate; fail on Linux CI | OPEN |
+| 33-F5 | P2 | swallowed_exceptions does not see contextlib.suppress(Exception/OSError), the exact semantic twin of 'except: pass' | OPEN |
+| 33-F6 | P2 | unsafe_deserialization: any earlier sha256/hmac/verify call in the function counts as verification of an unrelated payload | OPEN |
+| 33-F7 | P2 | unsafe_deserialization coverage holes: pandas.read_pickle, pickle.Unpickler(fh).load() used directly, class-body and lambda call sites, marshal/shelve/jsonpickle/keras load_model, ruamel typ='unsafe' | OPEN |
+| 33-F8 | P2 | rollback_then_continue treats ANY assignment in the handler as an accumulator reset, so 'msg = str(e); session.rollback()' and 'errors = errors + 1' exempt the shipped bug shape | OPEN |
+| 33-F9 | P2 | fail_open_handlers admit_on_error only recognises list.append of the loop element | OPEN |
+| 33-F10 | P2 | hardcoded_seed_in_library misses a module constant seed, expression seeds, seeds in dict literals, and only recognises params literally named random_state/seed/rng; flags the 'only when caller gave none' else-branch | OPEN |
+| 33-F11 | P2 | ci_workflow_timeout_gate accepts any value of timeout-minutes: 0, 360 (the default), 99999, negative, non-numeric | OPEN |
+| 33-F12 | P2 | wallclock_test_waits detects only the literal 'time.sleep(' and non-const Dart delays are missed, in BOTH text and ast mode | OPEN |
+| 33-F13 | P2 | machine_specific_paths db-url rule only knows postgres/mongodb schemes; mysql/redis/amqp credentials, string concatenation and non-default config files are not scanned | OPEN |
+| 33-F14 | P2 | latched_availability_flags decides 'availability flag' by 7 upper-case substrings; _HAVE_GPU, _CUDA_OK, _USE_NUMBA, _HAS_CUPY, _ENABLED, _OK, _GPU are not flagged, nor is a class-attribute or lru_cache latch | OPEN |
+| 33-F15 | P2 | optional/ratcheted-config gates that detect the setting by name only: sentinel_or_fallback and hardcoded_token_ceilings miss indirection and assignment forms | OPEN |
+| 33-F16 | P2 | discarded_model_copy ignores the bare statement 'cfg.model_copy(update=...)' and tuple targets | OPEN |
+| 33-F17 | P2 | env_flag_parsing misses the dominant two-step idiom and aliasing: v = os.environ.get('X'); if v == '1' | OPEN |
+| 33-F18 | P2 | predictable_tmp_path: gettempdir stored in a variable, concatenated, formatted or read as tempfile.tempdir / '/tmp/...' is not reported; any getlogin anywhere in the module suppresses; duplicate finding per site | OPEN |
+| 33-F19 | P2 | ddl_lock_safety rule 2 covers only CHECK/FOREIGN KEY; ADD PRIMARY KEY/UNIQUE and SET NOT NULL (full scans/index builds under ACCESS EXCLUSIVE) pass; SET LOCAL lock_timeout before a COMMIT still counts | OPEN |
+| 33-F20 | P3 | skip_as_pass: bare 'exit', lower-case 'skipped', 'sys.exit()' and 'raise SystemExit(0)' are not recognised; tools/ and .github/scripts are outside SKIP_DIRS | OPEN |
+| 33-F21 | P3 | swallowed_exceptions blind spots: handler nested in a finally is exempt regardless of its call, 'close'/'emit'/'__exit__' scopes are exempt even when they do real work, class bodies work but tests/scripts dirs are excluded by default | OPEN |
+| 33-F22 | P3 | identity_comparisons flags a local that shadows the module-level string, a name later rebound to a non-string, and conditionally bound names; misses str()/join/dedent-built constants | OPEN |
+| 33-F23 | P3 | lock_held_across_io: cursor.execute / Path.write_text under a lock, asyncio.sleep under async with lock, lock.acquire()/release() pairs and self._mutex are not judged | OPEN |
+| 33-F24 | P3 | vacuous_loop_assertions: unittest self.assert* in an if inside a loop over an empty iterable is not recognised; while loops not judged | OPEN |
+| 33-F25 | P3 | workflow_runner_labels (regex over text) flags the label inside run: strings and name: fields and misses upper-case spellings | OPEN |
+| 33-F26 | P3 | phantom_markdown_links ignores HTML <img src>/<a href>, multi-line link text and anchors; comment_repo_paths ignores trailing comments after shell code and Makefile/ps1/go/sql | OPEN |
+| 33-F27 | P3 | epsilon_padded_denominators misses a named EPS constant, np.finfo(...).eps, a power stored in a variable first, floor division and x ** -1 | OPEN |
+| 33-F28 | P3 | no_xfail_to_defer reports each decorator-xfail twice; reason checks do not apply to skip with a reason; unread_function_params flags interface-required overrides | OPEN |
+| 33-F29 | P3 | Smaller detector gaps: single_shot_timing_assertion (datetime.now diffs, benchmark-fixture .elapsed), hash_fed_by_array_copy (xxhash, crc32, variable-then-hash, memoryview), gpu_timing_sync (jax without block_until_ready; .cpu() flagged), order_losing_filters (polars is_in with .take form, helper-split mask), polars_null_equality (df['a'] == df['b'], lit(None), is_in([None])) | OPEN |
+| 33-F30 | P3 | Teeth/canary corpus: 117 of 146 canaries have a single violation file with one seeded shape, and the teeth check only requires 'raises and names the seed token' | OPEN |
+| 33-F31 | P3 | Several gate unit tests assert only 'some finding contains substring' (any(... in v for v in problems.values())) so extra/duplicate findings and wrong counts pass | OPEN |
+| 33-F32 | P3 | line_has_marker accepts the opt-out marker anywhere after the first '#' on the line, including inside a string literal | OPEN |
+| 34-F1 | P1 | Ranked adoption matrix: gates adopted by 4-7 of 8 Python consumers but missing in specific repos | OPEN |
+| 34-F2 | P1 | 29 registered modules are referenced by no consumer (enabled nowhere) | OPEN |
+| 34-F3 | P2 | config_drift_check hard-codes two consumers instead of reading configs/consumers.toml | OPEN |
+| 34-F4 | P2 | consumer-pins daily job silently degrades to public repos when CONSUMER_READ_TOKEN is absent | OPEN |
+| 34-F5 | P2 | Pin skew across consumers: six different py-ci-shared SHAs, flutter_app_core at v1.22.8 | OPEN |
+| 34-F6 | P2 | Reusable lint workflows adopted unevenly; dash_app_core uses none | OPEN |
+| 34-F7 | P2 | No reusable workflow runs the gate suite; gate execution depends on each consumer's own tests | OPEN |
+| 34-F8 | P3 | cli tool subcommand coerces non-int returns to 0; main() maps any KeyError to exit 2 | OPEN |
+| 34-F9 | P3 | Reusable workflows define no concurrency group | OPEN |
+| 34-F10 | P3 | lint-blocking skips interrogate, deptry and zizmor silently when inputs are empty/false | OPEN |
+| 34-F11 | P3 | OS/Python matrix hole: Windows and macOS legs run 3.11 only; all other workflows 3.11 only | OPEN |
+| 34-F12 | P3 | adoption measurement may under-count: autopsia shows 32 gates with no [tool.py_ci_shared] table despite 16k files | OPEN |
+| 35-F1 | P1 | ~32% of a code_audit scan of pyutilz is raw ast.walk: 183 call sites in 65 scanners bypass the memoised walk, and subtree walks re-walk the corpus ~5x | OPEN |
+| 35-F2 | P2 | code_audit._base._safe_parse and _core.source.parse_source are two separate parse caches: every file is parsed (and walked) twice in one run_all | OPEN |
+| 35-F3 | P2 | Pre-push self gate is I/O-bound, not parse-bound: _io.open is 340s of 606s profiled (23,576 opens, ~14 reads per file); parse only 6s | OPEN |
+| 35-F4 | P2 | budget="warn" lets repo_hygiene (363s vs 30s) and standard_stream_restore (39.8s vs 30s) pass the self gate with exit 0 | OPEN |
+| 35-F5 | P3 | near_duplicate_function_body._candidate_pairs is O(n^2) over functions | OPEN |
+| 35-F6 | P3 | No self meta-test for public API quality: 20 of 1018 public module-level functions not fully annotated, 68 lack docstrings, 194 public modules lack __all__ | OPEN |
+| 35-F7 | P3 | print() in non-CLI library modules: 14 calls in arb_checks, baseline_ratchet, import_layering, sql_verify (not cli=true in registry) | OPEN |
+| 35-F8 | P3 | No self meta-test on module-level call statements: 113 top-level Expr(Call) statements in library modules | OPEN |
+| 35-F9 | P3 | Canary exemptions: 35 of 179 gates have no tests/canary/<name>/ directory; staleness of EXEMPT entries is not asserted | OPEN |
+| 35-F10 | P3 | Verified already satisfied (no action): bare except 0, registry sorted/unique, registry vs README 0 absent, registry vs tests 0 missing, cli=true without main 0, registry entries naming absent functions 0 | OPEN |
