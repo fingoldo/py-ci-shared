@@ -54,6 +54,7 @@ class Canary:
     gate: str
     run: Callable[[Path], object]
     token: str = "seed"  # must appear in the failure the violation (and the BOM variant) produces
+    tokens: tuple = ()  # EVERY one must appear: one per seeded shape, so a gate neutered on all but one branch still fails
     parses: bool = True  # False: the gate reads text by regex, so there is no "unparsable" input to feed it
     empty: bool = True  # False: the gate's contract has no floor on this input (documented per entry)
     xfail: dict = field(default_factory=dict)  # case -> gate-defect reason (strict)
@@ -124,7 +125,12 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("lf_file_writes", lambda d: _gate("lf_file_writes").assert_no_crlf_writes(d, use_git=False), token="seed.sh"),
         Canary("machine_specific_paths", lambda d: _gate("machine_specific_paths").assert_no_machine_specific_paths(d, use_git=False), token="alice"),
-        Canary("swallowed_exceptions", lambda d: _gate("swallowed_exceptions").assert_no_swallowed_exceptions(d, use_git=False), token="OSError"),
+        Canary(
+            "swallowed_exceptions",
+            lambda d: _gate("swallowed_exceptions").assert_no_swallowed_exceptions(d, use_git=False),
+            token="OSError",
+            tokens=("seed_replace", "seed_bare", "seed_exception", "seed_base", "seed_tuple", "seed_suppress"),
+        ),
         Canary("alembic_concurrently", lambda d: _gate("alembic_concurrently").assert_concurrently_is_in_autocommit_blocks(d)),
         Canary("connect_error_echo", lambda d: _gate("connect_error_echo").assert_no_connect_error_echo(d, use_git=False), token="seed_probe"),
         Canary(
@@ -339,7 +345,11 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("single_shot_timing_assertion", lambda d: _gate("single_shot_timing_assertion").assert_single_shot_timing_assertion(d, use_git=False)),
         Canary("cancellation_prone_moments", lambda d: _gate("cancellation_prone_moments").assert_cancellation_prone_moments(d, use_git=False)),
-        Canary("unsafe_deserialization", lambda d: _gate("unsafe_deserialization").assert_unsafe_deserialization(d, use_git=False)),
+        Canary(
+            "unsafe_deserialization",
+            lambda d: _gate("unsafe_deserialization").assert_unsafe_deserialization(d, use_git=False),
+            tokens=("torch.load", "pickle.loads", "yaml.load", "np.load", "pd.read_pickle", "pickle.Unpickler(fh).load"),
+        ),
         Canary("unread_function_params", lambda d: _gate("unread_function_params").assert_unread_function_params(d, use_git=False)),
         Canary("hardcoded_seed_in_library", lambda d: _gate("hardcoded_seed_in_library").assert_hardcoded_seed_in_library(d, use_git=False)),
         Canary("constant_fallback_cache_key", lambda d: _gate("constant_fallback_cache_key").assert_constant_fallback_cache_key(d, use_git=False)),
@@ -696,9 +706,13 @@ def test_gate_bites_its_canary(gate: str, case: str, tmp_path: Path) -> None:
     elif case == "violation":
         assert failure is not None, f"{gate} missed its seeded violation"
         assert c.token in failure, f"{gate} failed on the violation, but not naming the seed {c.token!r}:\n{failure}"
+        missing = [tok for tok in c.tokens if tok not in failure]
+        assert not missing, f"{gate} reported its violation but missed seeded shape(s) {missing}:\n{failure}"
     elif case == "bom":
         assert failure is not None, f"{gate} passed a BOM-prefixed copy of its violation"
         assert c.token in failure, f"{gate} failed on the BOM variant without naming the seed {c.token!r}:\n{failure}"
+        missing = [tok for tok in c.tokens if tok not in failure]
+        assert not missing, f"{gate} reported its BOM violation but missed seeded shape(s) {missing}:\n{failure}"
         # The BOM copy must be reported exactly as the plain violation is, not as an unreadable file.
         plain_dir = _materialize(gate, "violation", tmp_path / "plain")
         plain = _outcome(lambda: c.run(plain_dir))

@@ -1,4 +1,5 @@
-﻿import os
+﻿import contextlib
+import os
 
 
 def seed_replace(a, b):
@@ -6,3 +7,36 @@ def seed_replace(a, b):
         os.replace(a, b)
     except OSError:
         pass
+
+
+def seed_bare(a, b):
+    try:
+        os.replace(a, b)
+    except:
+        pass
+
+
+def seed_exception(a, b):
+    try:
+        os.replace(a, b)
+    except Exception:
+        pass
+
+
+def seed_base(a, b):
+    try:
+        os.replace(a, b)
+    except BaseException:
+        pass
+
+
+def seed_tuple(a, b):
+    try:
+        os.replace(a, b)
+    except (ValueError, OSError):
+        pass
+
+
+def seed_suppress(a, b):
+    with contextlib.suppress(OSError):
+        os.replace(a, b)

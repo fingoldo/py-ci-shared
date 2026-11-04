@@ -162,18 +162,18 @@ class TestTappableSemantics:
         src = "Semantics(button: true, child: GestureDetector(onTap: a, onDoubleTap: b, child: MinTapTargetBox(child: x)))"
         files, read = _reader({"lib/a.dart": src})
         problems = scan_tappable_semantics(files, read)
-        assert any("onDoubleTap" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "onDoubleTap" in v) == 1
 
     def test_named_context_parameter_is_flagged(self):
         files, read = _reader({"lib/a.dart": "Widget _buildCard({required BuildContext context, required String title}) { return x; }"})
         problems = scan_tappable_semantics(files, read)
-        assert any("NAMED parameter" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "NAMED parameter" in v) == 1
 
     def test_tooltip_repeating_the_semantics_label_is_flagged(self):
         src = "Semantics(button: true, label: name, child: Tooltip(message: name, child: MinTapTargetBox(child: x)))"
         files, read = _reader({"lib/a.dart": src})
         problems = scan_tappable_semantics(files, read)
-        assert any("announced twice" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "announced twice" in v) == 1
 
     def test_exclude_semantics_on_the_wrapper_closes_the_duplicate(self):
         """`excludeSemantics` on the Semantics drops every descendant node, the tooltip's included."""
@@ -229,11 +229,11 @@ class TestParseSerializeCatch:
 
     def test_now_fallback_is_flagged(self):
         files, read = _reader({"lib/m.dart": "createdAt: parse(json['c']) ?? DateTime.now(),"})
-        assert any("?? DateTime.now()" in v for v in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for v in scan_parse_serialize_catch(files, read).values() if "?? DateTime.now()" in v) == 1
 
     def test_json_decode_outside_try_is_flagged(self):
         files, read = _reader({"lib/s.dart": "final data = jsonDecode(raw);"})
-        assert any("jsonDecode" in v for v in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for v in scan_parse_serialize_catch(files, read).values() if "jsonDecode" in v) == 1
 
     def test_json_decode_inside_try_passes(self):
         files, read = _reader({"lib/s.dart": "try {\n  final data = jsonDecode(raw);\n} catch (e) { log(e); }"})
@@ -241,11 +241,11 @@ class TestParseSerializeCatch:
 
     def test_enum_orelse_default_is_flagged(self):
         files, read = _reader({"lib/u.dart": "values.firstWhere((v) => v.name == s, orElse: () => Theme.muted);"})
-        assert any("non-nullable default" in v for v in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for v in scan_parse_serialize_catch(files, read).values() if "non-nullable default" in v) == 1
 
     def test_socket_exception_without_client_exception_is_flagged(self):
         files, read = _reader({"lib/r.dart": "try { x(); } on SocketException { return null; }"})
-        assert any("SocketException" in v for v in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for v in scan_parse_serialize_catch(files, read).values() if "SocketException" in v) == 1
 
     def test_socket_and_client_exception_together_pass(self):
         files, read = _reader({"lib/r.dart": "try { x(); } on SocketException { a(); } on ClientException { b(); }"})
@@ -267,7 +267,7 @@ class TestProviderStateHygiene:
 
     def test_unawaited_prefs_write_is_flagged(self):
         files, read = _reader({"lib/a.dart": "prefs.setString('k', v);"})
-        assert any("neither awaited" in v for v in scan_provider_state_hygiene(files, read).values())
+        assert sum(1 for v in scan_provider_state_hygiene(files, read).values() if "neither awaited" in v) == 1
 
     def test_awaited_prefs_write_passes(self):
         files, read = _reader({"lib/a.dart": "await prefs.setString('k', v);"})
@@ -275,7 +275,7 @@ class TestProviderStateHygiene:
 
     def test_tostring_with_display_name_is_flagged(self):
         files, read = _reader({"lib/m.dart": "String toString() => 'Profile(name: $displayName)';"})
-        assert any("toString()" in v for v in scan_provider_state_hygiene(files, read).values())
+        assert sum(1 for v in scan_provider_state_hygiene(files, read).values() if "toString()" in v) == 1
 
     def test_pii_free_tostring_passes(self):
         files, read = _reader({"lib/m.dart": "String toString() => 'Profile(id: $id, settings: ${s.length})';"})
@@ -323,7 +323,7 @@ class TestRefinements:
 
     def test_parsed_timestamp_fallback_is_still_flagged(self):
         files, read = _reader({"lib/m.dart": "createdAt: DateTime.tryParse(json['created_at']) ?? DateTime.now(),"})
-        assert any("?? DateTime.now()" in v for v in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for v in scan_parse_serialize_catch(files, read).values() if "?? DateTime.now()" in v) == 1
 
     def test_list_first_fallback_is_not_an_enum_default(self):
         files, read = _reader({"lib/r.dart": "subs.firstWhere((s) => s.isActive, orElse: () => subs.first);"})
@@ -359,7 +359,7 @@ class TestRefinements:
         src = "GestureDetector(onTap: x, child: MinTapTargetBox(child: c))"
         files, read = _reader({"lib/a.dart": src})
         problems = scan_tappable_semantics(files, read)
-        assert any("announced role" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "announced role" in v) == 1
 
 
 class TestEnclosingSemantics:
@@ -407,7 +407,7 @@ class TestEnclosingSemantics:
         src = "Row(children: [Semantics(button: true, child: a), GestureDetector(onTap: x, child: MinTapTargetBox(child: c))])"
         files, read = _reader({"lib/a.dart": src})
         problems = scan_tappable_semantics(files, read)
-        assert any("announced role" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "announced role" in v) == 1
 
 
 class TestNonUiLabelCalls:
@@ -440,8 +440,8 @@ class TestCommentStrippingAndKeys:
     def test_a_url_in_a_string_does_not_hide_the_rest_of_the_line(self):
         files, read = _reader({"lib/w.dart": "Text('Visit https://x.com now'); final c = Color(0xFF112233);"})
         found = scan_hardcoded_ui_strings(files, read)
-        assert any("Visit https://x.com now" in d for d in found.values())
-        assert any("Color(0xFF112233)" in d for d in found.values())
+        assert sum(1 for d in found.values() if "Visit https://x.com now" in d) == 1
+        assert sum(1 for d in found.values() if "Color(0xFF112233)" in d) == 1
 
     def test_real_comments_are_still_stripped(self):
         files, read = _reader({"lib/w.dart": "// Text('Hello world')\n/* Text('Other text') /* nested */ still comment */\nfinal x = 1;"})
@@ -474,7 +474,7 @@ class TestCommentStrippingAndKeys:
 class TestTryAndPrefsRegressions:
     def test_a_word_containing_try_is_not_a_try_block(self):
         files, read = _reader({"lib/j.dart": "final entry = 1; final retry = 2;\nfinal v = jsonDecode(s);"})
-        assert any("jsonDecode outside a try" in d for d in scan_parse_serialize_catch(files, read).values())
+        assert sum(1 for d in scan_parse_serialize_catch(files, read).values() if "jsonDecode outside a try" in d) == 1
 
     def test_a_real_try_block_passes(self):
         files, read = _reader({"lib/j.dart": "try {\n  final v = jsonDecode(s);\n} catch (e) {}"})
@@ -516,23 +516,23 @@ class TestTargetWrappers:
 
     def test_a_wrapper_below_24_is_a_finding_and_does_not_exempt(self):
         problems = self._scan(_COMPACT.replace("minWidth: 24", "minWidth: 20") + _CHIP, target_wrappers=["_CompactTapTarget"])
-        assert any("_CompactTapTarget does not constrain" in v for v in problems.values())
-        assert any("no MinTapTargetBox" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "_CompactTapTarget does not constrain" in v) == 1
+        assert sum(1 for v in problems.values() if "no MinTapTargetBox" in v) == 1
 
     def test_a_wrapper_constraining_one_axis_only_does_not_exempt(self):
         problems = self._scan(_COMPACT.replace("minWidth: 24, ", "") + _CHIP, target_wrappers=["_CompactTapTarget"])
-        assert any("does not constrain" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "does not constrain" in v) == 1
 
     def test_an_ordinary_widget_named_as_a_wrapper_is_a_finding(self):
         src = "class Card extends StatelessWidget { Widget build(c) => Padding(padding: p, child: child); }\n"
         src += "Semantics(button: true, child: Card(child: InkWell(onTap: go, child: Icon(Icons.add))))\n"
         problems = self._scan(src, target_wrappers=["Card"])
-        assert any("wrapper Card does not constrain" in v for v in problems.values())
-        assert any("no MinTapTargetBox" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "wrapper Card does not constrain" in v) == 1
+        assert sum(1 for v in problems.values() if "no MinTapTargetBox" in v) == 1
 
     def test_an_undefined_wrapper_is_a_finding(self):
         problems = self._scan(_CHIP.replace("_CompactTapTarget", "_Nowhere"), target_wrappers=["_Nowhere"])
-        assert any("_Nowhere is defined in none of the scanned files" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "_Nowhere is defined in none of the scanned files" in v) == 1
 
     def test_a_function_wrapper_is_verified_by_its_body(self):
         src = "Widget compact(Widget child) => ConstrainedBox(constraints: BoxConstraints(minWidth: 32, minHeight: 32), child: child);\n"
@@ -566,31 +566,31 @@ class TestInlineTextMarker:
         assert self._scan(self._with_marker()) == {}
 
     def test_unmarked_text_link_is_flagged(self):
-        assert any("no MinTapTargetBox" in v for v in self._scan(_LINK).values())
+        assert sum(1 for v in self._scan(_LINK).values() if "no MinTapTargetBox" in v) == 1
 
     def test_marker_among_other_comment_lines_still_counts(self):
         assert self._scan(self._with_marker(_MARK + "  // more prose about the link\n")) == {}
 
     def test_marker_separated_by_code_does_not_count(self):
         src = self._with_marker(_MARK + "  key: k,\n")
-        assert any("no MinTapTargetBox" in v for v in self._scan(src).values())
+        assert sum(1 for v in self._scan(src).values() if "no MinTapTargetBox" in v) == 1
 
     def test_marker_without_reason_is_a_finding(self):
         problems = self._scan(self._with_marker("  // tap-target: inline-text\n"))
-        assert any("invalid inline-text" in v and "no reason" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "invalid inline-text" in v and "no reason" in v) == 1
 
     def test_marker_on_an_icon_button_is_a_finding(self):
         src = self._with_marker(link=_LINK.replace("Text(text, style: style?.copyWith(decoration: TextDecoration.underline))", "Icon(Icons.add)"))
         problems = self._scan(src)
-        assert any("invalid inline-text" in v and "Icon" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "invalid inline-text" in v and "Icon" in v) == 1
 
     def test_marker_on_padded_text_is_a_finding(self):
         src = self._with_marker(link=_LINK.replace("child: Text(", "child: Padding(padding: p, child: Text(").replace(")))),\n  ),", "))))),\n  ),"))
         problems = self._scan(src)
-        assert any("invalid inline-text" in v and "Padding" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "invalid inline-text" in v and "Padding" in v) == 1
 
     def test_marker_does_not_silence_the_role_rule(self):
         src = _MARK + "GestureDetector(\n  onTap: open,\n  child: Text(text),\n)\n"
         problems = self._scan(src)
         assert not any("MinTapTargetBox" in v or "invalid" in v for v in problems.values())
-        assert any("announced role" in v for v in problems.values())
+        assert sum(1 for v in problems.values() if "announced role" in v) == 1

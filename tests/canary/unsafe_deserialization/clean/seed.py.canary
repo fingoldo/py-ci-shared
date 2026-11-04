@@ -1,5 +1,15 @@
+import numpy as np
 import torch
+import yaml
 
 
 def seed_load(path):
     return torch.load(path, weights_only=True)
+
+
+def seed_yaml(text):
+    return yaml.safe_load(text)
+
+
+def seed_npy(path):
+    return np.load(path)
