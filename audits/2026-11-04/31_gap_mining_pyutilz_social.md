@@ -72,7 +72,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A performance or injection hook is added with a default; tests exercise it; production keeps the slow default path indefinitely.
 - Proposed fix: py_ci_shared.optional_collaborator_wired: resolve calls by name (reuse kwarg_forwarding / unresolved_module_attributes call resolution), bind positional and keyword args to the parameter, fail when every non-test call omits it or passes literal None. Canary: function with memo=None called without memo in a tmp package -> fail.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate optional_collaborator_wired with positional+keyword binding. Hits: pyutilz 0, social 0. The two unverified candidates (_build_client_context client_cache, _require_scan_mode fetch_fn) pass a variable positionally at their only production call site, so the gate correctly treats them as wired; no true hits to fix.
 
 ## 31-F10 (P3) monotonic_clock_zero_sentinel: an attribute initialised to 0/0.0 and later compared as time.monotonic() - attr with no unset guard
 

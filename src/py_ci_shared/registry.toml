@@ -940,6 +940,13 @@ since = "1.21.0"
 summary = "Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read"
 
 [[gate]]
+name = "optional_collaborator_wired"
+kind = "gate"
+entries = ["assert_optional_collaborator_wired"]
+since = "1.23.8"
+summary = "A *_memo/*_cache/*_fn parameter with a None default that no production call site ever passes"
+
+[[gate]]
 name = "optional_imports_guarded"
 kind = "gate"
 entries = ["assert_optional_imports_guarded"]
