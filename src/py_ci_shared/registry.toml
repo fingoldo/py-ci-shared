@@ -108,6 +108,13 @@ cli = true
 summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes"
 
 [[gate]]
+name = "cache_key_sensitivity"
+kind = "gate"
+entries = ["assert_key_sensitive"]
+since = "1.23.8"
+summary = "assert_key_sensitive: every input that changes a memoised result must change its cache key"
+
+[[gate]]
 name = "cancellation_prone_moments"
 kind = "gate"
 entries = ["assert_cancellation_prone_moments"]
@@ -535,6 +542,13 @@ since = "1.4.0"
 summary = "An additive epsilon must not guard a denominator whose magnitude falls off geometrically"
 
 [[gate]]
+name = "estimator_invariants"
+kind = "gate"
+entries = ["assert_column_order_invariant", "assert_frame_type_parity", "assert_n_jobs_invariant"]
+since = "1.23.8"
+summary = "Column-order, n_jobs and frame-type invariance assertions for estimators"
+
+[[gate]]
 name = "external_fact_tables"
 kind = "gate"
 entries = ["assert_external_fact_tables_current"]
@@ -946,6 +960,13 @@ kind = "gate"
 entries = ["assert_numba_seeds_fit_int64"]
 since = "1.17.0"
 summary = "A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them"
+
+[[gate]]
+name = "numeric_edge_matrix"
+kind = "gate"
+entries = ["assert_edge_contract", "assert_population_covered"]
+since = "1.23.8"
+summary = "Adversarial-input matrix (empty, one row, constant, all-NaN, inf, ties, float32 extreme) for metrics and kernels"
 
 [[gate]]
 name = "offline_suite_without_credentials"
@@ -1404,6 +1425,13 @@ kind = "gate"
 entries = ["assert_no_swallowed_exceptions"]
 since = "1.17.0"
 summary = "Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind"
+
+[[gate]]
+name = "target_leak_canary"
+kind = "gate"
+entries = ["assert_no_train_target_leak", "assert_oof_scores_at_chance"]
+since = "1.23.8"
+summary = "assert_no_train_target_leak: a feature builder must not correlate with a pure-noise target on its own training rows"
 
 [[gate]]
 name = "teeth_sweep"

@@ -443,6 +443,10 @@ CANARIES: dict[str, Canary] = {
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",
+    "estimator_invariants": "runtime assertions over a caller's estimator factory, no source corpus to scan; test_estimator_invariants.py pins it with toy estimators",
+    "numeric_edge_matrix": "runtime adversarial-input matrix over a caller's function, no source corpus to scan; test_numeric_edge_matrix.py pins it with toy metrics",
+    "target_leak_canary": "runtime statistical check over a caller's transformer factory, no source corpus to scan; test_target_leak_canary.py pins it with toy encoders",
     "arb_checks": "reads Flutter .arb JSON catalogues keyed by locale; its subject is catalogue parity, covered by test_arb_checks.py",
     "audit_round_format": "Markdown tracker/round bookkeeping, not a code scanner",
     "baseline_hygiene": "audits a baseline file's own notes; subject is a JSON document, not a corpus",

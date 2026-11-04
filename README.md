@@ -156,6 +156,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`baseline_ratchet`](src/py_ci_shared/baseline_ratchet.py) | library | 1.3.6 |  | Shared ratchet for structural checks with a pre-existing backlog |
 | [`baseline_trend`](src/py_ci_shared/baseline_trend.py) | cli | 1.3.6 | `main` | How each baselined rule's count has moved over time, read out of git history |
 | [`black_filtered_apply`](src/py_ci_shared/black_filtered_apply.py) | cli | 1.0.0 | `main` | Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes |
+| [`cache_key_sensitivity`](src/py_ci_shared/cache_key_sensitivity.py) | gate | 1.23.8 | `assert_key_sensitive` | assert_key_sensitive: every input that changes a memoised result must change its cache key |
 | [`cancellation_prone_moments`](src/py_ci_shared/cancellation_prone_moments.py) | gate | 1.22.3 | `assert_cancellation_prone_moments` | Variance, skewness and kurtosis built from raw power sums cancel catastrophically on large-offset data |
 | [`changelog_promise_parity`](src/py_ci_shared/changelog_promise_parity.py) | gate | 1.3.1 | `assert_changelog_bullets_satisfy_pattern` | Shared checks for the "a CHANGELOG bullet promises something, does the promise ever get kept" consistency pattern |
 | [`check_then_act_outside_lock`](src/py_ci_shared/check_then_act_outside_lock.py) | gate | 1.22.12 | `assert_no_check_then_act_outside_lock` | A membership test or get on a shared dict, then a write to it, with no lock held across both |
@@ -216,6 +217,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`env_flag_parsing`](src/py_ci_shared/env_flag_parsing.py) | gate | 1.17.0 | `assert_env_flags_use_one_parser` | Boolean environment flags read by hand, each with its own idea of what "on" means |
 | [`env_write_restore`](src/py_ci_shared/env_write_restore.py) | gate | 1.22.1 | `assert_env_write_restore` | A test restores every os.environ write it makes |
 | [`epsilon_padded_denominators`](src/py_ci_shared/epsilon_padded_denominators.py) | gate | 1.4.0 | `assert_no_epsilon_padded_power_denominators` | An additive epsilon must not guard a denominator whose magnitude falls off geometrically |
+| [`estimator_invariants`](src/py_ci_shared/estimator_invariants.py) | gate | 1.23.8 | `assert_column_order_invariant` (+2) | Column-order, n_jobs and frame-type invariance assertions for estimators |
 | [`external_fact_tables`](src/py_ci_shared/external_fact_tables.py) | gate | 1.20.0 | `assert_external_fact_tables_current` | Declared vendor fact tables (prices, limits) cite a source URL and a check date younger than their limit |
 | [`fail_message_quality`](src/py_ci_shared/fail_message_quality.py) | gate | 1.12.0 | `assert_fail_messages_actionable` | Every ``pytest.fail`` message in a meta-test directory tells the reviewer what to do |
 | [`fail_open_handlers`](src/py_ci_shared/fail_open_handlers.py) | gate | 1.17.0 | `assert_no_new_fail_open_handlers` | Fail-open exception handlers in gate code |
@@ -275,6 +277,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`no_xfail_to_defer`](src/py_ci_shared/no_xfail_to_defer.py) | gate | 1.17.0 | `assert_no_xfail_to_defer` | xfail and skip may mark a limit outside the repository, never park a bug inside it |
 | [`nondiscriminating_shapes`](src/py_ci_shared/nondiscriminating_shapes.py) | library | 1.17.0 |  | Assertion shapes that pass whether or not the property under test holds |
 | [`numba_seed_range`](src/py_ci_shared/numba_seed_range.py) | gate | 1.17.0 | `assert_numba_seeds_fit_int64` | A full-64-bit seed handed to numba, which types seeds as int64 and rejects half of them |
+| [`numeric_edge_matrix`](src/py_ci_shared/numeric_edge_matrix.py) | gate | 1.23.8 | `assert_edge_contract` (+1) | Adversarial-input matrix (empty, one row, constant, all-NaN, inf, ties, float32 extreme) for metrics and kernels |
 | [`offline_suite_without_credentials`](src/py_ci_shared/offline_suite_without_credentials.py) | library | 1.21.0 |  | Opt-in pytest plugin: tests not marked ``real_database`` run with credential env vars and ``.env`` loading blanked, and a failure names the variable read |
 | [`oof_buffer_zero_init`](src/py_ci_shared/oof_buffer_zero_init.py) | gate | 1.23.8 | `assert_oof_buffer_zero_init` | Flags an OOF buffer initialised with zeros/empty and filled per fold from a splitter that may not validate every row |
 | [`optional_imports_guarded`](src/py_ci_shared/optional_imports_guarded.py) | gate | 1.22.3 | `assert_optional_imports_guarded` | a module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function |
@@ -341,6 +344,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`stub_signature_parity`](src/py_ci_shared/stub_signature_parity.py) | gate | 1.21.0 | `assert_stub_signature_parity` | A monkeypatched stub must accept every parameter of the callable it replaces |
 | [`survivorship_scoring`](src/py_ci_shared/survivorship_scoring.py) | gate | 1.17.0 | `assert_no_survivorship_scoring` | A metric scored only on the rows where the prediction happened to be finite |
 | [`swallowed_exceptions`](src/py_ci_shared/swallowed_exceptions.py) | gate | 1.17.0 | `assert_no_swallowed_exceptions` | Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind |
+| [`target_leak_canary`](src/py_ci_shared/target_leak_canary.py) | gate | 1.23.8 | `assert_no_train_target_leak` (+1) | assert_no_train_target_leak: a feature builder must not correlate with a pure-noise target on its own training rows |
 | [`teeth_sweep`](src/py_ci_shared/teeth_sweep.py) | cli | 1.4.0 | `main` | Does anything actually FAIL if an audit fix is undone? Mutate, run the suite, restore |
 | [`test_partition_reachability`](src/py_ci_shared/test_partition_reachability.py) | gate | 1.3.6 | `assert_partitions_reachable` | Every declared test partition is actually selected by some runner |
 | [`timezone_honest`](src/py_ci_shared/timezone_honest.py) | gate | 1.4.1 | `assert_timezone_honest` | Non-test code states its time frame in the expression, and the scan cannot miss a directory |
