@@ -1,4 +1,4 @@
-"""A script that prints SKIPPED and then exits 0 reports a pass. Opt-in ratchet over ``tool/``, ``scripts/`` and ``.githooks/``.
+"""A script that prints SKIPPED and then exits 0 reports a pass. Opt-in ratchet over ``tool/``, ``tools/``, ``scripts/``, ``.githooks/`` and ``.github/``.
 
 A guard that cannot run here (a missing tool, an absent credential, a platform it does not cover) should fail or exit
 non-zero with its reason. Printing ``SKIPPED`` and exiting 0 lets the check go green while nothing was checked, and CI
@@ -40,10 +40,13 @@ from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_lin
 __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
 
 #: Top-level directories whose scripts are guards.
-SKIP_DIRS = ("tool", "scripts", ".githooks")
+SKIP_DIRS = ("tool", "tools", "scripts", ".githooks", ".github")
 
-_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b[^\n]*\bSKIPPED\b")
-_EXIT_ZERO = re.compile(r"(?<![\w.])(?:exit\s+0(?![\w.])|sys\.exit\(\s*0\s*\)|exit\(\s*0\s*\))")
+_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b[^\n]*\b(?i:skipped)\b")
+# Zero by status: an explicit 0, or none at all (a bare `exit` returns the last command's status, `sys.exit()` and `SystemExit(None)` are 0).
+_EXIT_ZERO = re.compile(
+    r"(?<![\w.])(?:exit\s+0(?![\w.])|exit(?=\s*(?:;|&|\||#|$))|(?:sys\.)?(?:exit|quit)\(\s*(?:0|None)?\s*\)|raise\s+SystemExit(?:\(\s*(?:0|None)?\s*\))?(?![\w.(]))"
+)
 # Shell: the block ends at its closing keyword or at the next function header; any return/exit reached first ends it too.
 _SH_BLOCK_END = re.compile(r"^\s*(?:fi|esac|done|else|elif|return|exit)\b|^\s*\}|^\s*(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{?\s*$")
 _PY_BLOCK_END = re.compile(r"^\s*(?:return|raise|continue|break)\b")

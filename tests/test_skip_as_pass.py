@@ -95,3 +95,28 @@ def test_a_recorded_skip_passes_and_a_new_one_fails(tmp_path: Path, capsys: pyte
     baseline.parent.mkdir(parents=True)
     baseline.write_text(json.dumps({"accepted": {key: "docker is optional here; the report says so"}}), encoding="utf-8")
     assert_no_new_skip_as_pass(tmp_path)
+
+
+@pytest.mark.parametrize(
+    ("rel", "body"),
+    [
+        ("tool/a.sh", 'echo "SKIPPED: none"\nexit\n'),
+        ("tool/a.sh", 'echo "skipped: none"; exit 0\n'),
+        ("tool/a.py", 'import sys\nprint("SKIPPED")\nsys.exit()\n'),
+        ("tool/a.py", 'print("SKIPPED")\nraise SystemExit(0)\n'),
+        ("tools/a.sh", "echo SKIPPED; exit 0\n"),
+        (".github/scripts/a.sh", "echo SKIPPED; exit 0\n"),
+    ],
+)
+def test_more_skip_then_zero_spellings_are_reported_once(tmp_path, rel, body):
+    path = tmp_path / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    assert len(find_skip_as_pass(tmp_path)) == 1
+
+
+def test_a_nonzero_exit_after_skipped_is_still_clean(tmp_path):
+    (tmp_path / "tool").mkdir()
+    (tmp_path / "tool" / "a.sh").write_text("echo SKIPPED\nexit 1\n", encoding="utf-8")
+    (tmp_path / "tool" / "b.py").write_text('import sys\nprint("SKIPPED")\nsys.exit(2)\nraise SystemExit("boom")\n', encoding="utf-8")
+    assert find_skip_as_pass(tmp_path) == {}
