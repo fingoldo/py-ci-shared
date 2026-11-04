@@ -45,7 +45,6 @@ def test_reports_moving_labels_and_the_missing_update_channel(tmp_path: Path) ->
     assert _found(root) == [
         (".github/workflows/ci.yml", 8, "moving-runner-label"),
         (".github/workflows/ci.yml", 8, "moving-runner-label"),
-        (".github/workflows/ci.yml", 12, "moving-runner-label"),  # inside a quoted run string: still a label in YAML text
         (".github/dependabot.yml", 1, "no-actions-update-channel"),
     ]
     assert "1 pinned `uses:`" in find_workflow_runner_label_problems(root)[-1].message
@@ -106,3 +105,24 @@ def test_assert_and_cli(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     assert main([str(root), "--fix"]) == 0
     assert "fixed .github/workflows/ci.yml" in capsys.readouterr().out
     assert main([str(root), "--label", "bad"]) == 1
+
+
+def _wf_findings(tmp_path, body):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text(body, encoding="utf-8")
+    return [(f.line, f.rule) for f in find_workflow_runner_label_problems(tmp_path) if f.rule == "moving-runner-label"]
+
+
+def test_a_label_named_in_a_run_script_or_a_step_name_is_text_not_a_runner(tmp_path):
+    body = (
+        "jobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps:\n"
+        "      - name: ubuntu-latest check\n      - run: echo ubuntu-latest\n"
+        "      - run: |\n          echo windows-latest\n          echo macos-latest\n      - run: echo ok\n"
+    )
+    assert _wf_findings(tmp_path, body) == []
+
+
+def test_upper_case_labels_and_matrix_values_are_still_moving(tmp_path):
+    body = "jobs:\n  a:\n    runs-on: Ubuntu-Latest\n    strategy:\n      matrix:\n        os: [ubuntu-24.04, MacOS-Latest]\n"
+    assert _wf_findings(tmp_path, body) == [(3, "moving-runner-label"), (6, "moving-runner-label")]

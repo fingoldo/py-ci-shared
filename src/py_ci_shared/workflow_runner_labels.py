@@ -46,7 +46,10 @@ __all__ = [
 MARKER = "moving-label-ok"
 #: What each moving label resolved to on GitHub-hosted runners in 2026-10.
 PINNED_LABELS: dict[str, str] = {"ubuntu": "ubuntu-24.04", "windows": "windows-2025", "macos": "macos-15"}
-_LATEST = re.compile(r"\b(ubuntu|windows|macos)-latest\b")
+_LATEST = re.compile(r"\b(ubuntu|windows|macos)-latest\b", re.IGNORECASE)
+#: Keys whose value is prose or a script, never a runner: a label named there is text, not a moving runner.
+_TEXT_KEYS = re.compile(r"^\s*-?\s*(?:run|name|description|if|shell|id)\s*:", re.IGNORECASE)
+_BLOCK_SCALAR = re.compile(r":\s*[|>][+-]?\d*\s*$")
 _USES = re.compile(r"^\s*-?\s*uses:\s*['\"]?([^\s'\"#]+)@([^\s'\"#]+)")
 _DEPENDABOT = (".github/dependabot.yml", ".github/dependabot.yaml")
 _RENOVATE = ("renovate.json", "renovate.json5", ".github/renovate.json", ".github/renovate.json5", ".renovaterc", ".renovaterc.json")
@@ -103,14 +106,24 @@ def find_workflow_runner_label_problems(repo_root: PathLike, *, min_files: int =
             if allow_unparsed:
                 continue
             raise
+        block_indent = -1  # indent of the text-valued key whose `|`/`>` block we are inside
         for no, line in enumerate(text.splitlines(), start=1):
             code = _code(line)
+            indent = len(line) - len(line.lstrip())
+            if block_indent >= 0:
+                if line.strip() and indent > block_indent:
+                    continue
+                block_indent = -1
+            if _TEXT_KEYS.match(code):
+                if _BLOCK_SCALAR.search(code):
+                    block_indent = indent
+                continue
             if _USES.match(code) and not code.split("uses:", 1)[1].strip().strip("'\"").startswith("./"):
                 pinned += 1
             if MARKER in line[len(code) :]:
                 continue
             out.extend(
-                Finding(rel, no, "moving-runner-label", f"`{m.group(0)}` moves when GitHub re-points it; pin `{PINNED_LABELS[m.group(1)]}`")
+                Finding(rel, no, "moving-runner-label", f"`{m.group(0)}` moves when GitHub re-points it; pin `{PINNED_LABELS[m.group(1).lower()]}`")
                 for m in _LATEST.finditer(code)
             )
     if pinned and not _has_update_channel(root):
@@ -152,7 +165,7 @@ def fix_workflow_runner_labels(repo_root: PathLike, *, labels: Optional[Mapping[
         for line in lines:
             code = _code(line)
             if MARKER not in line[len(code) :]:
-                code = _LATEST.sub(lambda m: mapping[m.group(1)], code)
+                code = _LATEST.sub(lambda m: mapping[m.group(1).lower()], code)
             new.append(code + line[len(_code(line)) :])
         if new != lines:
             _write_like(path, "\n".join(new))
