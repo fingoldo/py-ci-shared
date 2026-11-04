@@ -1,0 +1,8 @@
+class Est(BaseEstimator):
+    def __init__(self, depth=3):
+        self.depth = depth
+
+
+def refit(model, y_true, proba, classes):
+    n_estimators = model.best_iteration + 1
+    return n_estimators, classes[proba.argmax(axis=1)] == y_true

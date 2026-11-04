@@ -435,6 +435,7 @@ CANARIES: dict[str, Canary] = {
         Canary("ordinal_rank_scatter", lambda d: _gate("ordinal_rank_scatter").assert_ordinal_rank_scatter(d, use_git=False)),
         Canary("group_blind_split", lambda d: _gate("group_blind_split").assert_group_blind_split(d, use_git=False)),
         Canary("oof_buffer_zero_init", lambda d: _gate("oof_buffer_zero_init").assert_oof_buffer_zero_init(d, use_git=False)),
+        Canary("ml_api_contracts", lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False)),
     ]
 }
 

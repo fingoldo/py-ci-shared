@@ -849,6 +849,13 @@ since = "1.13.0"
 summary = "A meta-test does not import a private name of the package it polices, unless a permitted entry says why"
 
 [[gate]]
+name = "ml_api_contracts"
+kind = "gate"
+entries = ["assert_ml_api_contracts"]
+since = "1.23.8"
+summary = "Regression guards: best_iteration used as a count without +1, argmax compared to raw labels, estimator __init__ rewriting its own parameter"
+
+[[gate]]
 name = "module_cache_thread_safety"
 kind = "gate"
 entries = ["assert_thread_safe_module_caches"]
