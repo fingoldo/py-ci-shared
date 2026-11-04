@@ -338,6 +338,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`stub_signature_parity`](src/py_ci_shared/stub_signature_parity.py) | gate | 1.21.0 | `assert_stub_signature_parity` | A monkeypatched stub must accept every parameter of the callable it replaces |
 | [`survivorship_scoring`](src/py_ci_shared/survivorship_scoring.py) | gate | 1.17.0 | `assert_no_survivorship_scoring` | A metric scored only on the rows where the prediction happened to be finite |
 | [`swallowed_exceptions`](src/py_ci_shared/swallowed_exceptions.py) | gate | 1.17.0 | `assert_no_swallowed_exceptions` | Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind |
+| [`systemexit_in_library`](src/py_ci_shared/systemexit_in_library.py) | gate | 1.23.8 | `assert_no_systemexit_in_library` | sys.exit()/raise SystemExit inside a library function that threads and importers reach |
 | [`teeth_sweep`](src/py_ci_shared/teeth_sweep.py) | cli | 1.4.0 | `main` | Does anything actually FAIL if an audit fix is undone? Mutate, run the suite, restore |
 | [`test_partition_reachability`](src/py_ci_shared/test_partition_reachability.py) | gate | 1.3.6 | `assert_partitions_reachable` | Every declared test partition is actually selected by some runner |
 | [`timezone_honest`](src/py_ci_shared/timezone_honest.py) | gate | 1.4.1 | `assert_timezone_honest` | Non-test code states its time frame in the expression, and the scan cannot miss a directory |

@@ -40,7 +40,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A library helper written for a CLI is later imported by a thread; a missing config exits only that thread, except Exception does not log it, and the service looks alive while a subsystem is dead.
 - Proposed fix: New AST gate systemexit_in_library: flag when the module has no __main__ guard (or the function is imported by another module); allowlist parameter for opt-in flags and an 'exit-ok: reason' marker. Canary: library module with def get_dsn(): sys.exit(1) imported elsewhere -> fail; same function raising RuntimeError -> pass.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate systemexit_in_library. Hits (tests skipped): pyutilz 0, social 10: upwork_shared/_db.py:652 db_connection, _orchestration.py:329 _verify_proxy, _singleton_lock.py:59 acquire_singleton_lock, realtime_applications/cli_utils.py:324 acquire_singleton_lock, pipeline/runner.py:360 and :409 run_pipeline (library SystemExit, TRUE per the report), run_single_job.py:389 _connect, scripts/analyze_hired_vs_requirements.py:80 and scripts/measure_skill_vocab_case_shift.py:63 _connect, show_top_jobs.py:97 _get_dsn. The CLI-only helpers need an `# exit-ok: reason` marker or a RuntimeError; parent decides per site.
 
 ## 31-F6 (P2) statement_privileges_granted: the (table, privilege) pairs each service's SQL needs are checked against its role's GRANTs
 

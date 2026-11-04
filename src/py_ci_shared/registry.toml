@@ -1385,6 +1385,13 @@ since = "1.17.0"
 summary = "Exception handlers that swallow a broad or I/O failure and carry on with the state the failure left behind"
 
 [[gate]]
+name = "systemexit_in_library"
+kind = "gate"
+entries = ["assert_no_systemexit_in_library"]
+since = "1.23.8"
+summary = "sys.exit()/raise SystemExit inside a library function that threads and importers reach"
+
+[[gate]]
 name = "teeth_sweep"
 kind = "cli"
 since = "1.4.0"

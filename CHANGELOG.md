@@ -40,6 +40,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `definition_after_entry_guard` (`assert_definition_after_entry_guard`): a module-level def/class below a `__main__` entry guard whose body calls a module name (NameError only when run as a script).
 - `verified_then_reopened` (`assert_verified_then_reopened`): a function verifies a file by path (sidecar/hash) and then opens the same path again to load it (TOCTOU).
 - `state_before_work` (`assert_state_before_work`): a schedule stamp (`last_/next_ full|sweep|run|scan|cycle|refresh` = clock) or progress counter (`processed|written|...` `+=`) written in the statement just before the call it gates (configurable regexes, restore-in-except exemption).
+- `systemexit_in_library` (`assert_no_systemexit_in_library`): `sys.exit`/`os._exit`/`raise SystemExit` inside a function of a module with no `__main__` guard, or of a function imported by name elsewhere; entry names, opt-in `exit*` params, `# exit-ok: reason` and test files are exempt.
 
 
 ## 1.23.2

@@ -435,6 +435,7 @@ CANARIES: dict[str, Canary] = {
         Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
         Canary("verified_then_reopened", lambda d: _gate("verified_then_reopened").assert_verified_then_reopened(d, use_git=False)),
         Canary("state_before_work", lambda d: _gate("state_before_work").assert_state_before_work(d, use_git=False)),
+        Canary("systemexit_in_library", lambda d: _gate("systemexit_in_library").assert_no_systemexit_in_library(d, use_git=False)),
     ]
 }
 
