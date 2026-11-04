@@ -10,3 +10,9 @@
 8. LAST: wire as many meta-tests as possible into EVERY Python repo active in the last six months (git log since 2026-05), and run each repo to green.
    Mutation tests (mutation_teeth) are excluded: the owner runs them by hand because they are too slow.
    Findings the new gates surface are fixed in code, not baselined.
+
+## Owner decisions 2026-11-05
+
+- 32-F8 `unseeded_rng_fallback` and 32-F13 `loop_invariant_heavy_call`: build AND wire into consumers (step 8), fixing true hits in code.
+- 32-F6 `caller_frame_mutation`: build it; wire into consumers only as a WARNING (advisory, never blocking); the owner is unsure about the in-place cleaner convention.
+- Order after the branches are merged: F8, F6, F13.
