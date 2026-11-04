@@ -434,6 +434,7 @@ CANARIES: dict[str, Canary] = {
         Canary("duplicate_test_body", lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False)),
         Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
         Canary("verified_then_reopened", lambda d: _gate("verified_then_reopened").assert_verified_then_reopened(d, use_git=False)),
+        Canary("state_before_work", lambda d: _gate("state_before_work").assert_state_before_work(d, use_git=False)),
     ]
 }
 

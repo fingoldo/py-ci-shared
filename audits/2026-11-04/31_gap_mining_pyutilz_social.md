@@ -32,7 +32,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: The scheduler records 'done' then the query fails silently; the next attempt waits a full interval (an hour for the stale-active sweep) and nothing alerts. With counters, a stalled writer reads as healthy progress.
 - Proposed fix: Generalise the social test into py_ci_shared.state_before_work: configurable name regexes for stamps ((last|next)_(full|sweep|run|scan|cycle|refresh)) and counters (processed|written|inserted|saved|sent); flag when the assignment/aug-assign sits in the same statement list immediately before a non-clock Call, unless restored in a finally/except. Canary: stamp-then-query fixture fails; query-then-stamp passes.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED: gate state_before_work (stamp + counter forms, configurable regexes, restored-in-except/finally and stamp-first-ok exemptions). Hits: pyutilz 0, social 0 (regression guard, matches the report); no true hits to fix.
 
 ## 31-F5 (P2) systemexit_in_library_function: sys.exit()/raise SystemExit inside a non-entry function that background threads and library callers reach
 

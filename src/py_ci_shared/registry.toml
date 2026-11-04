@@ -1323,6 +1323,13 @@ since = "1.19.0"
 summary = "Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed"
 
 [[gate]]
+name = "state_before_work"
+kind = "gate"
+entries = ["assert_state_before_work"]
+since = "1.23.8"
+summary = "A schedule stamp or progress counter is written immediately before the fallible work it gates"
+
+[[gate]]
 name = "statement_columns_exist_in_ddl"
 kind = "gate"
 entries = ["assert_statement_columns_exist_in_ddl"]

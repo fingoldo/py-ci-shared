@@ -1,0 +1,8 @@
+﻿import time
+
+
+class SeedScheduler:
+    def seed_sweep(self):
+        self.last_full_sweep = time.monotonic()
+        rows = self.query_stale()
+        return rows
