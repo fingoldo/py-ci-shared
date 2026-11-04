@@ -8,6 +8,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - `njit_fastmath_nan` (opt-in gate): an `@njit`/`@jit`/`@vectorize` kernel compiled with NaN/inf-assuming `fastmath` (`True`, or a flag set with `nnan`/`ninf`/`fast`, literal or module constant) whose own body tests or produces NaN/inf. Marker `# fastmath-nan-ok: <reason>`. Additive.
 - `ordinal_rank_scatter` (opt-in gate): `ranks[argsort(x)] = arange(n)` rank construction (tied values split by input order, NaN ranked highest) in a function with no tie vocabulary. Marker `# ordinal-rank-ok: <reason>`. Additive.
+- `group_blind_split` (opt-in gate): a function with a groups-like parameter that builds KFold/ShuffleSplit/train_test_split without it (the `if groups is None` fallback branch is exempt). Marker `# group-blind-ok: <reason>`, config `allowed={path::function: reason}`. Additive.
 
 - `find_surviving_mutants(..., checkpoint_path=...)` records every judged mutant to a JSON-lines file as its verdict lands, keyed by the sweep's fingerprint. A sweep killed midway resumes from it: the mutants already judged are not run again, and their survivors, coverage gaps and budget are replayed onto the current objects. Additive: without `checkpoint_path` nothing changes. `HARNESS_VERSION` moves to 32.
 - `mutation_teeth` logs each surviving mutant at WARNING as its verdict lands, not only when the sweep ends, so a sweep that runs for hours can be read while it runs.

@@ -433,6 +433,7 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("njit_fastmath_nan", lambda d: _gate("njit_fastmath_nan").assert_njit_fastmath_nan(d, use_git=False)),
         Canary("ordinal_rank_scatter", lambda d: _gate("ordinal_rank_scatter").assert_ordinal_rank_scatter(d, use_git=False)),
+        Canary("group_blind_split", lambda d: _gate("group_blind_split").assert_group_blind_split(d, use_git=False)),
     ]
 }
 

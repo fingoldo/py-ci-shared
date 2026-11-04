@@ -632,6 +632,13 @@ since = "1.3.6"
 summary = "A wall-clock measurement taken around GPU work must synchronize the device before the timer stops"
 
 [[gate]]
+name = "group_blind_split"
+kind = "gate"
+entries = ["assert_group_blind_split"]
+since = "1.23.8"
+summary = "Flags a function that receives groups but builds a KFold/ShuffleSplit/train_test_split without them"
+
+[[gate]]
 name = "guard_population"
 kind = "gate"
 entries = ["assert_guards_examine_something"]
