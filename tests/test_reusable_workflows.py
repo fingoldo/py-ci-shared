@@ -61,11 +61,12 @@ def test_every_third_party_action_is_pinned_to_a_full_sha(path: Path):
     assert not loose, f"{path.name}: action refs not pinned to a 40-hex SHA: {loose}"
 
 
-# The three reusable workflows that fetch or install py-ci-shared itself, and the step that does it.
+# The reusable workflows that fetch or install py-ci-shared itself, and the step that does it.
 SELF_FETCH = {
     "ruff-blocking.yml": "Resolve PY_CI_SHARED_DIR",
     "lint-advisory.yml": "Resolve PY_CI_SHARED_DIR",
     "black-filtered.yml": "Install py-ci-shared",
+    "gates.yml": "Install py-ci-shared",
 }
 
 
@@ -440,3 +441,14 @@ def test_upload_codecov_forwards_plugins_and_keeps_the_stock_default():
     (step,) = [s for s in action["runs"]["steps"] if str(s.get("uses", "")).startswith("codecov/codecov-action@")]
     assert step["with"]["plugins"] == "${{ inputs.plugins }}"
     assert step["with"]["files"] == "${{ inputs.files }}"
+
+
+def test_gates_workflow_is_off_unless_the_caller_enables_it():
+    """34-F7: the reusable gate runner is additive; a caller that does not pass `enabled: true` gets a skipped job."""
+    data = _load(REPO / ".github" / "workflows" / "gates.yml")
+    inputs = data[True]["workflow_call"]["inputs"]
+    assert inputs["enabled"]["default"] is False
+    job = data["jobs"]["gates"]
+    assert job["if"] == "inputs.enabled"
+    runs = [step.get("run", "") for step in job["steps"]]
+    assert "py-ci-shared run-all" in runs
