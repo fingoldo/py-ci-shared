@@ -158,3 +158,19 @@ class TestCorpusAndBaseline:
         (tests / "test_b.py").write_text('import pytest\n@pytest.mark.xfail(reason="also ours", strict=True)\ndef test_b():\n    pass\n', encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="untracked-reason"):
             assert_no_xfail_to_defer(tests, baseline_path=bl, use_git=False)
+
+
+def _skip_findings(tmp_path, body):
+    (tmp_path / "test_a.py").write_text(body, encoding="utf-8")
+    findings, _ = find_xfail_to_defer(tmp_path, use_git=False)
+    return [(f.line, f.rule) for f in findings]
+
+
+def test_an_unconditional_skip_with_a_fix_later_reason_is_untracked(tmp_path):
+    body = 'import pytest\n\n\n@pytest.mark.skip(reason="broken, fix later")\ndef test_a():\n    pass\n\n\ndef test_b():\n    pytest.skip("bug, fix later")\n'
+    assert _skip_findings(tmp_path, body) == [(4, "untracked-reason"), (10, "untracked-reason")]
+
+
+def test_a_skip_naming_a_tracked_issue_or_a_condition_is_clean(tmp_path):
+    body = 'import pytest\n\n\n@pytest.mark.skip(reason="blocked by #123")\ndef test_a():\n    pass\n\n\ndef test_b(x):\n    if x:\n        pytest.skip("no gpu here")\n'
+    assert _skip_findings(tmp_path, body) == []
