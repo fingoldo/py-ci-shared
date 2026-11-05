@@ -28,13 +28,13 @@ def repo(tmp_path):
 
 def test_the_work_tree_probes_run_once_per_root(repo, monkeypatch):
     seen: list[tuple[str, ...]] = []
-    real = corpus._git
+    real = corpus.run_git
 
-    def counting(root, *args):
+    def counting(root, *args, **kwargs):
         seen.append(args)
-        return real(root, *args)
+        return real(root, *args, **kwargs)
 
-    monkeypatch.setattr(corpus, "_git", counting)
+    monkeypatch.setattr(corpus, "run_git", counting)
 
     for _ in range(3):
         git_listing(repo)

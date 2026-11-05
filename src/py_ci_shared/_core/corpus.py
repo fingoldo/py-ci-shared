@@ -23,6 +23,7 @@ Rules here:
 from __future__ import annotations
 
 import fnmatch
+import logging
 import os
 import subprocess
 import threading
@@ -34,6 +35,8 @@ from .errors import CorpusError
 from .git import GitError, git_text, run_git
 
 PathLike = Union[str, "os.PathLike[str]"]
+
+logger = logging.getLogger(__name__)
 
 #: Directory names never part of a source corpus. The union of the seven per-gate lists this replaces
 #: (db_transaction_completeness, effect_assertion_parity, llm_call_archive_gate, naive_utcnow, prompt_field_parity,
@@ -85,6 +88,36 @@ def _git(root: Path, *args: str) -> "Optional[subprocess.CompletedProcess[bytes]
         return None
 
 
+_LS_FILES_ATTEMPTS = 3
+
+
+def _ls_files(root: Path, args: list[str]) -> bytes:
+    """stdout of ``git ls-files`` in *root*. A timeout, or a non-zero exit with no stderr, is retried up to two more times
+    (each retry logged at WARNING with the exit code); anything else, or the last failure, raises :class:`CorpusError`
+    naming the exit code, git's stderr (or ``no stderr``) and the working directory."""
+    detail = ""
+    for attempt in range(1, _LS_FILES_ATTEMPTS + 1):
+        try:
+            proc = run_git(root, *args)
+        except GitError as exc:
+            if not exc.timed_out:
+                raise CorpusError(f"git ls-files could not run in the work tree {root}: {exc}; refusing to fall back to a walk") from exc
+            detail = f"timed out ({exc}); exit code none"
+            transient = True
+        else:
+            if proc.returncode == 0:
+                return proc.stdout
+            stderr = git_text(proc.stderr).strip()[:300]
+            detail = f"exit code {proc.returncode}, stderr: {stderr or 'no stderr'}"
+            transient = not stderr
+        if not transient or attempt == _LS_FILES_ATTEMPTS:
+            break
+        logger.warning("git ls-files in %s failed (attempt %d of %d; %s); retrying", root, attempt, _LS_FILES_ATTEMPTS, detail)
+    raise CorpusError(
+        f"git ls-files failed in the work tree {root} (cwd {os.getcwd()}): {detail}; refusing to fall back to a walk that would read ignored files"
+    )
+
+
 def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[str]]:
     """Root-relative POSIX paths git would commit under *root*, or ``None`` when *root* is not usable via git.
 
@@ -109,11 +142,8 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
     args = ["ls-files", "-z", "--cached"]
     if include_untracked:
         args += ["--others", "--exclude-standard"]
-    listing = _git(root, *args)
-    if listing is None or listing.returncode != 0:
-        detail = git_text(listing.stderr).strip()[:300] if listing is not None else "git disappeared"
-        raise CorpusError(f"git ls-files failed in the work tree {root}: {detail}; refusing to fall back to a walk that would read ignored files")
-    names = listing.stdout.decode("utf-8", "surrogateescape").split("\0")
+    stdout = _ls_files(root, args)
+    names = stdout.decode("utf-8", "surrogateescape").split("\0")
     # --cached and --others can both list a path in a conflicted state; dedupe.
     return sorted({n for n in names if n})
 

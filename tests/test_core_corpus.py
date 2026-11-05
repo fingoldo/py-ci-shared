@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import subprocess
 from pathlib import Path
@@ -176,3 +177,70 @@ def test_the_walk_leaves_submodule_checkouts_out_like_git_does(tmp_path):
     _touch(tmp_path, "a.py", "vendor/sub/inner.py", "vendor/plain/kept.py")
     (tmp_path / "vendor" / "sub" / ".git").write_text("gitdir: ../../.git/modules/sub\n", encoding="utf-8")
     assert _rels(tmp_path, iter_files(tmp_path, use_git=False)) == ["a.py", "vendor/plain/kept.py"]
+
+
+def _flaky_ls_files(monkeypatch, plan):
+    """Replace each `git ls-files` call in turn with the next entry of *plan*: ``("exit", rc, stderr)`` or ``"timeout"``.
+
+    Once the plan is spent the real git runs. Returns the list of calls seen so a test can count retries.
+    """
+    real = subprocess.run
+    seen: list[str] = []
+    steps = list(plan)
+
+    def run(argv, *args, **kwargs):  # type: ignore[no-untyped-def]
+        if "ls-files" in list(argv):
+            seen.append("ls-files")
+            if steps:
+                step = steps.pop(0)
+                if step == "timeout":
+                    raise subprocess.TimeoutExpired(argv, kwargs.get("timeout") or 120)
+                _, rc, stderr = step
+                return subprocess.CompletedProcess(argv, rc, b"", stderr)
+        return real(argv, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return seen
+
+
+@needs_git
+class TestTransientListingFailures:
+    """A git that exits non-zero with no stderr, or times out, is retried; the same failure every time is an error that
+    names the exit code, the stderr (or its absence) and the working directory."""
+
+    def _repo(self, tmp_path: Path) -> Path:
+        _git_init(tmp_path)
+        _touch(tmp_path, "a.py", "generated/junk.py")
+        (tmp_path / ".gitignore").write_text("generated/\n", encoding="utf-8")
+        return tmp_path
+
+    def test_one_silent_failure_is_retried_with_a_warning(self, tmp_path, monkeypatch, caplog):
+        repo = self._repo(tmp_path)
+        seen = _flaky_ls_files(monkeypatch, [("exit", 3221225794, b"")])
+        with caplog.at_level(logging.WARNING, logger="py_ci_shared._core.corpus"):
+            assert _rels(repo, iter_files(repo)) == ["a.py"]
+        assert len(seen) == 2
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING and "ls-files" in r.getMessage()]
+        assert len(warnings) == 1
+        assert "3221225794" in warnings[0].getMessage()
+
+    def test_a_single_timeout_is_retried(self, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        seen = _flaky_ls_files(monkeypatch, ["timeout"])
+        assert _rels(repo, iter_files(repo)) == ["a.py"]
+        assert len(seen) == 2
+
+    def test_a_failure_every_time_raises_with_exit_code_and_cwd(self, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        seen = _flaky_ls_files(monkeypatch, [("exit", 7, b"")] * 10)
+        with pytest.raises(CorpusError, match=r"exit code 7, stderr: no stderr") as info:
+            iter_files(repo)
+        assert len(seen) == 3  # the first attempt and two retries
+        assert str(Path.cwd()) in str(info.value)
+
+    def test_a_failure_with_stderr_is_not_retried(self, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        seen = _flaky_ls_files(monkeypatch, [("exit", 128, b"fatal: index file corrupt")] * 10)
+        with pytest.raises(CorpusError, match=r"exit code 128, stderr: fatal: index file corrupt"):
+            iter_files(repo)
+        assert len(seen) == 1
