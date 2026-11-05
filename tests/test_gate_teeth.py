@@ -547,6 +547,7 @@ CANARIES: dict[str, Canary] = {
         Canary("unseeded_rng_fallback", lambda d: _gate("unseeded_rng_fallback").assert_unseeded_rng_fallback(d, use_git=False)),
         Canary("caller_frame_mutation", lambda d: _gate("caller_frame_mutation").assert_caller_frame_mutation(d, use_git=False, advisory=False)),
         Canary("cuda_kernel_pointer_types", lambda d: _gate("cuda_kernel_pointer_types").assert_cuda_kernel_pointer_types(d, use_git=False)),
+        Canary("cuda_launch_geometry", lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False)),
     ]
 }
 

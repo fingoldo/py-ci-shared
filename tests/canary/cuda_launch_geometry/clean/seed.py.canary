@@ -1,0 +1,8 @@
+import cupy as cp
+
+
+def run(kernel, x, out, n, device_props, one_thread_kernel):
+    block = min(256, device_props["max_threads_per_block"])
+    kernel(((n + block - 1) // block,), (block,), (x, out, n))
+    one_thread_kernel((1,), (1,), (x, out))
+    kernel((n // 32 + 1,), (32,), (x, out, n))  # launch-ok: one warp per item, the kernel reduces with shuffles across exactly 32 lanes

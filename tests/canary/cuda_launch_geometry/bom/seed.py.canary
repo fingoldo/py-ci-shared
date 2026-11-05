@@ -1,0 +1,10 @@
+﻿import cupy as cp
+
+THREADS = 256
+
+
+def run(kernel, x, out, n):
+    kernel((n // 256 + 1,), (256,), (x, out, n))
+    kernel((n // THREADS + 1,), (THREADS,), (x, out, n))
+    width = 128
+    kernel((n // width + 1,), (width,), (x, out, n))
