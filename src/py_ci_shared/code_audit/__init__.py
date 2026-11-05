@@ -349,7 +349,7 @@ list[Finding]):
 
 - ``scan_todo_hygiene``: an un-attributed ``TODO``/``FIXME``/``XXX``/``HACK``
   comment (no assignee in parens, ISO date, or ``@mention``). Thin wrapper
-  over ``pyutilz.dev.meta_test_utils.scan_todo_markers``.
+  over ``py_ci_shared.meta_test_utils.scan_todo_markers``.
 
 - ``scan_import_cycles``: a multi-node cycle in the package's internal
   top-level import graph (Tarjan SCC over an AST-built dependency graph,

@@ -26,7 +26,7 @@ checks as one with SQL and prose prompts (glossum):
 * The gate's own blind spots, as checks: :func:`invisible_keys`, :func:`undemonstrated_fields`,
   :func:`structural_names_prompted`.
 
-Baselining is the caller's (``pyutilz.dev.meta_test_utils.findings_ratchet`` or ``baseline_ratchet``): some
+Baselining is the caller's (``py_ci_shared.meta_test_utils.findings_ratchet`` or ``baseline_ratchet``): some
 entries are fields a model MAY volunteer and the pipeline reasonably ignores, and sorting those from real
 losses is per-field work. What must not happen is a NEW unread field appearing silently.
 """

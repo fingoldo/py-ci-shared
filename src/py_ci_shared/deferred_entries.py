@@ -2,8 +2,8 @@
 
 A meta-test that tolerates known debt keeps it in a named literal (``_USER_DEFERRED_*``, ``_GRANDFATHERED_*``); the
 counts this module returns are what :mod:`py_ci_shared.deferred_drift` holds to a shrink-only baseline. The counter
-was first written in pyutilz's ``dev.meta_test_utils``, which py-ci-shared then imported back, so the two packages
-depended on each other. The directory walk excludes :data:`py_ci_shared._core.corpus.DEFAULT_EXCLUDE`, the one
+was first written in pyutilz's ``dev.meta_test_utils``; that module now lives here as :mod:`py_ci_shared.meta_test_utils`
+and pyutilz no longer has a copy. The directory walk excludes :data:`py_ci_shared._core.corpus.DEFAULT_EXCLUDE`, the one
 exclusion set every py-ci-shared scanner uses, so a worktree or a virtualenv under the root is never counted as a
 second copy of the tests.
 """

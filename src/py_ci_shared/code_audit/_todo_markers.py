@@ -1,8 +1,8 @@
 """The debt-marker scan the ``todo_hygiene`` detector runs: TODO, FIXME, XXX and HACK comment lines, and whether one carries an
 attribution (an assignee, a date or an at-mention).
 
-Copied from ``pyutilz.dev.meta_test_utils`` so the detector needs nothing from pyutilz. The two copies must stay equal until
-pyutilz's copy is replaced by an import from here; the two must be compared by hand until then.
+Duplicates ``py_ci_shared.meta_test_utils.scan_todo_markers`` (moved there from pyutilz) so the detector does not import the
+meta-test helpers. The two copies must stay equal until one is replaced by an import of the other.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from .._core.corpus import iter_files_pruned
 
 logger = logging.getLogger(__name__)
 
-# Path fragments excluded from the production scan by default (the same set pyutilz's meta_test_utils uses).
+# Path fragments excluded from the production scan by default (the same set meta_test_utils uses).
 _DEFAULT_EXCLUDED_FRAGMENTS = ("test", "tests", "__pycache__")
 
 MARKER_LINE_RE = re.compile(

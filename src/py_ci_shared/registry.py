@@ -79,6 +79,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_consumers": "the consumer repo list and the read-only checkout the scheduled consumer jobs run",
     "_core": "shared reader, corpus, scan, baseline, refresh, aliases and config every gate builds on",
     "code_audit": "the code-audit package: the scanner rules are public through py_ci_shared.code_audit (its base, CLI and record checker live inside it)",
+    "meta_test_utils": "building blocks consumers import into their own meta-tests (corpus, public surface, signature capture, ratchets), not a gate",
     "_mutation_fingerprint": "private part of mutation_teeth",
     "_mutation_model": "private part of mutation_teeth",
     "_mutation_checkpoint": "private part of mutation_teeth: the per-mutant checkpoint a resumed sweep replays",

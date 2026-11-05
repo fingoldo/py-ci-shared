@@ -3,7 +3,7 @@
 Every meta-test that tolerates known debt keeps it in a named collection (``_USER_DEFERRED_*``,
 ``_GRANDFATHERED``, a repo's own ``_KNOWN_*``). Adding an entry costs nothing and removing one costs a fix, so
 left alone they only grow. mlframe, pyutilz and production_scrapers each carried the same ~90-line tracker over
-``pyutilz.dev.meta_test_utils.count_user_deferred_entries``; this is that tracker, once.
+``count_user_deferred_entries`` (once in pyutilz's meta_test_utils); this is that tracker, once.
 
 It is stricter than the copies in one way, and deliberately. They reported a SHRUNK list on stderr and passed,
 so the baseline kept the old, higher count and the list could grow back to it unnoticed -- the same hole
