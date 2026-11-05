@@ -46,3 +46,24 @@ report is committed. Push py-ci-shared first, tag it, then:
 - glossum_backend_scripts, social: check their CI install step for the py-ci-shared ref (not inspected); they import the module in tests only.
 - pyutilz: no pin to move (no declared dependency); its remaining tests that import `py_ci_shared.meta_test_utils` are skipped by
   `tests/conftest.py` `collect_ignore` where py-ci-shared is absent (py-ci-shared needs Python 3.9+).
+
+## Tests run (PYTHONPATH pointing at this checkout's src; one file at a time)
+
+- py-ci-shared: test_meta_test_utils 11, _roundtrip 48, _capture_signature 11, _dead_helpers 1, _todo_hygiene 2, _audit_regressions 6,
+  _pruned_walk 4, test_no_unpruned_tree_walk 13, test_package_inventory 514, all passed (roundtrip and capture_signature re-run after
+  the ruff fixes made by the commit hook).
+- pyutilz: test_api_stability 1, test_deferred_drift 1, test_dev_pruned_walk 4, test_no_unpruned_tree_walk 13, test_uncalled_functions_gate 1,
+  test_dev_fixes_regression 15, test_domain_core_dev_system_audit_20260903 34 passed. test_test_source_parity: 1 passed, 1 failed on
+  `tests/code_audit/test_pyutilz_bound_redundant_test_fit.py` having no target module; that file and the missing exemption are not part of
+  this change.
+- mlframe: test_deferred_drift 1, test_dead_helpers 1, test_api_stability 2 passed.
+- autopsia (worktree on d2201df3, clinical_hpoa.jsonl copied in): test_paid_objects_survive_their_round_trip 5 passed,
+  test_audit_dispositions_are_backed 3 passed 1 xfailed; test_mutation_teeth failed with MutationHarnessError (its unmutated baseline
+  exceeded 300 s on the loaded machine; the module imported fine).
+
+## Not run or not committed
+
+- glossum_backend_scripts: its two test files refuse to run (DATABASE_URL names the production database); only the import was changed.
+- social: the two edited files are NOT committed; the repo's pre-commit meta-test hooks fail on 9 pre-existing `lock-held-across-io`
+  findings in files this change does not touch.
+- Pins are unchanged (see above).
