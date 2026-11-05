@@ -225,3 +225,11 @@ class TestCorpusAndBaseline:
         (root / "a.py").write_text("# moved\n\n" + (root / "a.py").read_text(encoding="utf-8"), encoding="utf-8")
         after = {f.key for f in find_import_cycles(root, use_git=False)[0]}
         assert before == after and len(before) == 2
+
+
+def test_an_audit_exempt_marker_on_a_member_line_one_exempts_the_cycle(tmp_path):
+    root = _pkg(tmp_path, _SPLIT)
+    assert [r[0] for r in _rules(root) if r[0] == RULE_CYCLE] == [RULE_CYCLE]
+    a_py = root / "a.py"
+    a_py.write_text("# audit-exempt: import_cycle -- the cycle is intentional: f and g are used lazily\n" + a_py.read_text(encoding="utf-8"), encoding="utf-8")
+    assert [r for r in _rules(root) if r[0] == RULE_CYCLE] == []

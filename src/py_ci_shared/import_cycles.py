@@ -28,6 +28,7 @@ Usage from a repository's meta tests::
 from __future__ import annotations
 
 import ast
+import re
 import sys
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -44,6 +45,8 @@ REFRESH_FLAG = "--refresh-import-cycles-baseline"
 GATE = "import-cycles"
 RULE_CYCLE = "import-cycle"
 RULE_ORDER = "import-order"
+#: The line a module carries to exempt the import cycle it sits in (same grammar as pyutilz's audit-exempt marker: a reason is required).
+_CYCLE_EXEMPT = re.compile(r"#\s*audit-exempt:\s*import_cycle\s*--\s*\S.{18,}?\s*$")
 
 
 @dataclass(frozen=True)
@@ -346,9 +349,12 @@ def find_import_cycles(
     edges = {name: {e.target for e in mod.events if e.target != name and not _is_implicit_parent(name, e)} for name, mod in graph.items()}
     everything = set(graph)
     findings: list[Finding] = []
+    first_lines = {f.rel: next(iter(f.source.splitlines()), "") for f in scan}
     for comp in _sccs(edges):
         if len(comp) < 2:
             continue
+        if any(_CYCLE_EXEMPT.search(first_lines.get(graph[m].rel, "")) for m in comp):
+            continue  # a member's first line carries the audit-exempt marker for this cycle
         display = " -> ".join([*comp, comp[0]])
         first = graph[comp[0]]
         findings.append(Finding(first.rel, 1, RULE_CYCLE, f"{len(comp)}-module import cycle: {display}", key=f"{RULE_CYCLE}::{' | '.join(comp)}"))
