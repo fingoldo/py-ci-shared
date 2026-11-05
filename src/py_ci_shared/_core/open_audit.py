@@ -11,7 +11,6 @@ from __future__ import annotations
 import builtins
 import contextlib
 import io
-import pathlib
 import os
 import sys
 import threading
@@ -79,17 +78,13 @@ def count_opens(only_under: Optional[str] = None) -> Iterator[OpenCounts]:
                 counts.add(path, _gate_of(sys._getframe(1)))
         return real(file, *args, **kwargs)
 
-    # ``open`` and ``io.open`` are one function bound under two names; Python 3.9's ``Path`` calls it through its accessor, bound at import.
-    accessor = getattr(pathlib, "_NormalAccessor", None)
+    # ``Path.open`` on every supported Python ends in ``io.open``, which this patch counts once. The accessor is not patched:
+    # wrapping it as well counted each open twice on 3.9 (``io.open`` calls ``pathlib._NormalAccessor.open`` through the opener).
     io.open = builtins.open = counting  # type: ignore[assignment]
-    if accessor is not None:
-        accessor.open = staticmethod(counting)
     try:
         yield counts
     finally:
         io.open = builtins.open = real  # type: ignore[assignment]
-        if accessor is not None:
-            accessor.open = staticmethod(real)
 
 
 def main() -> int:
