@@ -560,3 +560,81 @@ def test_the_baseline_form_accepts_a_recorded_finding_and_fails_a_new_one(tmp_pa
     (root / ".pre-commit-config.yaml").write_text(_hook("l", "python -m pytest tests"), encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match=r"test_second[.]py"):
         assert_destructive_tests_are_throwaway_only(root / "tests", **common)
+
+
+# A repository whose tests reach their database only through a session guard (glossum's tests/db_safety.py shape): no
+# throwaway accessor, no embedded_postgres runner, and a conftest hook that refuses a production URL before collection.
+GUARDED_CONFTEST = """\
+from tests.db_safety import production_refusal
+
+
+def pytest_configure(config):
+    refusal = production_refusal({"DATABASE_URL": "postgres:///glossum_test"}, {})
+    if refusal:
+        raise SystemExit(refusal)
+"""
+GUARD_OUTSIDE_A_HOOK = """\
+from tests.db_safety import production_refusal
+
+
+def check():
+    return production_refusal({"DATABASE_URL": "postgres:///glossum_test"}, {})
+"""
+UNGUARDED_WRITE = """\
+import psycopg2
+
+
+def test_write():
+    connection = psycopg2.connect("postgres:///glossum_test")
+    connection.cursor().execute("DELETE FROM ledger")
+"""
+
+
+def test_a_session_guard_in_the_conftest_covers_the_writing_tests_below_it(tmp_path):
+    root = _repo(
+        tmp_path,
+        {"tests/conftest.py": GUARDED_CONFTEST, "tests/test_write.py": UNGUARDED_WRITE, ".pre-commit-config.yaml": _hook("unit", "python -m pytest tests")},
+    )
+    assert _find(root, refusal_guards=("production_refusal",), min_destructive_files=1) == []
+
+
+def test_without_the_guard_name_the_same_conftest_changes_nothing(tmp_path):
+    root = _repo(
+        tmp_path,
+        {"tests/conftest.py": GUARDED_CONFTEST, "tests/test_write.py": UNGUARDED_WRITE, ".pre-commit-config.yaml": _hook("unit", "python -m pytest tests")},
+    )
+    assert set(_rules(_find(root, min_destructive_files=1))) == {RULE_NO_ACCESSOR, RULE_RUNNER}
+
+
+def test_a_guard_called_outside_a_pytest_hook_guards_nothing(tmp_path):
+    root = _repo(
+        tmp_path,
+        {"tests/conftest.py": GUARD_OUTSIDE_A_HOOK, "tests/test_write.py": UNGUARDED_WRITE, ".pre-commit-config.yaml": _hook("unit", "python -m pytest tests")},
+    )
+    assert set(_rules(_find(root, refusal_guards=("production_refusal",), min_destructive_files=1))) == {RULE_NO_ACCESSOR, RULE_RUNNER}
+
+
+def test_a_guard_covers_only_its_own_directory_and_below(tmp_path):
+    root = _repo(
+        tmp_path,
+        {
+            "tests/conftest.py": GUARDED_CONFTEST,
+            "tests/unit/test_write.py": UNGUARDED_WRITE,
+            "other/tests/test_write.py": UNGUARDED_WRITE,
+            ".pre-commit-config.yaml": _hook("unit", "python -m pytest tests other/tests"),
+        },
+    )
+    found = _find(root, tests=["tests", "other/tests"], refusal_guards=("production_refusal",), min_destructive_files=2)
+    assert {f.path for f in found} == {"other/tests/test_write.py"}
+    assert set(_rules(found)) == {RULE_NO_ACCESSOR, RULE_RUNNER}
+
+
+def test_a_guarded_file_still_reports_an_explicit_production_read(tmp_path):
+    reads_production = UNGUARDED_WRITE.replace('"postgres:///glossum_test"', 'os.environ["DATABASE_URL"]').replace(
+        "import psycopg2", "import os\nimport psycopg2"
+    )
+    root = _repo(
+        tmp_path,
+        {"tests/conftest.py": GUARDED_CONFTEST, "tests/test_write.py": reads_production, ".pre-commit-config.yaml": _hook("unit", "python -m pytest tests")},
+    )
+    assert _rules(_find(root, refusal_guards=("production_refusal",), min_destructive_files=1)) == [RULE_PRODUCTION_DSN]

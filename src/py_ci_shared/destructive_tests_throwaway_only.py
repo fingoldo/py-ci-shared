@@ -25,6 +25,11 @@ run`` before pytest. A file named by no entry never runs, which ``marker_runner_
 here it is reported too, because the runner is what makes the file safe. Unit tests that only hand a fake cursor SQL
 text open no connection, carry no marker and read no DSN, so they are not destructive.
 
+A repository whose tests reach their database only through a session guard (a ``conftest.py`` ``pytest_*`` hook that calls a
+refusal function, e.g. ``production_refusal``) passes its name as ``refusal_guards``: every test file in that directory and below
+is then guarded and needs neither a throwaway accessor nor a runner. Explicit production reads are still reported. A call outside
+a ``pytest_*`` function guards nothing.
+
 A test that is provably transaction-rollback only goes in ``allow`` with a reason; an allowlist entry that no longer
 matches a destructive file is itself reported, so the list cannot rot.
 
@@ -56,7 +61,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.node_index import docstring_ids
-from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, ScanResult, read_source, scan_python
+from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, ScanResult, parse_file, read_source, scan_python
 from ._core import walk as shared_walk
 from ._core.gate_contract import check_scan
 from .marker_runner_coverage import expression_selects, keyword_selects
@@ -330,6 +335,31 @@ def _entries(commands: Iterable[tuple[str, str]], *, addopts: str, runner_patter
     return out
 
 
+def _guarded_dirs(roots: Sequence[Path], repo_root: Path, guards: frozenset[str]) -> set[str]:
+    """Repo-relative directories whose ``conftest.py`` calls a refusal guard inside a ``pytest_*`` session hook.
+
+    Such a guard refuses the whole session before collection when a database URL names production, so every test file below
+    that directory reaches only databases the guard let through. A guard called outside a ``pytest_*`` function, or never
+    called, guards nothing: the hook is what stops the session."""
+    dirs: set[str] = set()
+    if not guards:
+        return dirs
+    for root in roots:
+        for conftest in sorted(Path(root).rglob("conftest.py")):
+            tree = parse_file(conftest)
+            for node in shared_walk(tree):
+                if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("pytest_")):
+                    continue
+                if any(isinstance(c, ast.Call) and _callee_name(c) in guards for c in shared_walk(node)):
+                    rel = conftest.resolve().relative_to(repo_root.resolve()).as_posix()
+                    dirs.add(posixpath.dirname(rel))
+    return dirs
+
+
+def _guarded(rel: str, dirs: set[str]) -> bool:
+    return any(d == "" or rel == d or rel.startswith(d + "/") for d in dirs)
+
+
 def _names(entry: _Entry, file: str, markers: "set[str]") -> bool:
     """The invocation spells the file or a directory above it AND its ``-m`` selects the file's database markers (so a unit
     job's ``-m "not integration"`` over ``tests/`` does not run an ``integration`` file). A pathless one collects by
@@ -368,13 +398,17 @@ def _allow_key(rel: str, allow: Mapping[str, str]) -> Optional[str]:
     return next((key for key in allow if rel == key or rel.endswith("/" + key)), None)
 
 
-def _file_findings(rel: str, facts: _Facts, entries: Sequence[_Entry], accessor_names: str) -> list[Finding]:
-    """The findings of one destructive test file: where its DSN comes from, and what runs it."""
+def _file_findings(rel: str, facts: _Facts, entries: Sequence[_Entry], accessor_names: str, guarded: bool = False) -> list[Finding]:
+    """The findings of one destructive test file: where its DSN comes from, and what runs it.
+
+    A *guarded* file (its directory's session hook refuses production URLs) needs neither a throwaway accessor nor a runner."""
     line = facts.first_write_line
     out = [
         Finding(rel, at, RULE_PRODUCTION_DSN, f"writes SQL and {what}; a writing test reads its DSN only through {accessor_names}")
         for at, what in facts.production
     ]
+    if guarded:
+        return out
     if not facts.throwaway_calls and not facts.production:
         out.append(Finding(rel, line, RULE_NO_ACCESSOR, f"writes SQL against a database but never calls {accessor_names}"))
     naming = [e for e in entries if _names(e, rel, facts.markers)]
@@ -419,6 +453,7 @@ def find_destructive_tests_throwaway_only(
     allow: Optional[Mapping[str, str]] = None,
     allow_runners: Optional[Mapping[str, str]] = None,
     runner_pattern: str = DEFAULT_RUNNER_PATTERN,
+    refusal_guards: Sequence[str] = (),
     addopts: str = "",
     min_files: int = 1,
     min_destructive_files: int = 0,
@@ -445,6 +480,7 @@ def find_destructive_tests_throwaway_only(
     entries = _entries((command for config in configs for command in _commands(config)), addopts=addopts, runner_pattern=re.compile(runner_pattern))
     entries = [e if not any(key in e.label for key in allow_runners) else replace(e, throwaway=True) for e in entries]
     env_pattern = re.compile(forbidden_env_pattern)
+    guarded_dirs = _guarded_dirs(roots, root_path, frozenset(refusal_guards))
     findings: list[Finding] = []
     destructive = 0
     used_allow: set[str] = set()
@@ -465,7 +501,7 @@ def find_destructive_tests_throwaway_only(
         if allowed is not None:
             used_allow.add(allowed)
             continue
-        findings.extend(_file_findings(rel, facts, entries, "/".join(throwaway_accessors)))
+        findings.extend(_file_findings(rel, facts, entries, "/".join(throwaway_accessors), guarded=_guarded(rel, guarded_dirs)))
     findings.extend(
         Finding(key, 1, RULE_STALE_ALLOW, f"allowlisted ({allow[key]!r}) but no destructive test file matches it any more; remove the entry")
         for key in sorted(set(allow) - used_allow)
@@ -490,6 +526,7 @@ def assert_destructive_tests_are_throwaway_only(
     allow: Optional[Mapping[str, str]] = None,
     allow_runners: Optional[Mapping[str, str]] = None,
     runner_pattern: str = DEFAULT_RUNNER_PATTERN,
+    refusal_guards: Sequence[str] = (),
     addopts: str = "",
     baseline_path: Optional[Union[str, Path]] = None,
     refresh: bool = False,
@@ -511,6 +548,7 @@ def assert_destructive_tests_are_throwaway_only(
         allow=allow,
         allow_runners=allow_runners,
         runner_pattern=runner_pattern,
+        refusal_guards=refusal_guards,
         addopts=addopts,
         min_files=min_files,
         min_destructive_files=min_destructive_files,
