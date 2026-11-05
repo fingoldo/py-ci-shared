@@ -366,6 +366,15 @@ def absence_comparisons(source: str) -> list[tuple[int, str, str]]:
     ]
 
 
+#: A reader call in a verifier is a line or two; anything longer is judged by its text, never handed to the parser.
+_MAX_PARSED_EXPR_CHARS = 2000
+
+
+def _is_whole_file_text(stripped: str, names: "set[str]") -> bool:
+    """The text test for an expression the parser cannot take: a reader call with no subscript anywhere."""
+    return any(stripped.startswith(f"{r}(") for r in names) and stripped.endswith(")") and "[" not in stripped
+
+
 def is_whole_file_read(expr: str, readers: Iterable[str] = ("src", "sibling_src")) -> bool:
     """``src("x.py")`` is a whole file; ``src("x.py").split(...)[1][:200]`` is a slice a reader can audit.
 
@@ -373,11 +382,14 @@ def is_whole_file_read(expr: str, readers: Iterable[str] = ("src", "sibling_src"
     the whole file; only a subscript applied to what the reader returns narrows it.
     """
     names = set(readers)
+    stripped = expr.strip()
+    if len(stripped) > _MAX_PARSED_EXPR_CHARS:  # CPython 3.9 on Windows overflows the C stack (a fatal exit, not a RecursionError) on a deep chain
+        return _is_whole_file_text(stripped, names)
     try:
-        node: ast.expr = ast.parse(expr.strip(), mode="eval").body
+        node: ast.expr = ast.parse(stripped, mode="eval").body
     except (SyntaxError, RecursionError, MemoryError, ValueError):  # a huge expression must fall back to the text test, not crash the gate
-        stripped = expr.strip()
-        return any(stripped.startswith(f"{r}(") for r in names) and stripped.endswith(")") and "[" not in stripped
+        by_text = _is_whole_file_text(stripped, names)
+        return by_text
     while isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
         node = node.func.value  # src(x).lower() is still the whole file
     return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names

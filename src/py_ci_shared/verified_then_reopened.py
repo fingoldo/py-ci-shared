@@ -25,11 +25,11 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, child_nodes, scan_python, walk
 
 __all__ = ["DEFAULT_SINK_NAMES", "DEFAULT_VERIFY_REGEX", "RULE", "assert_verified_then_reopened", "find_reopened_after_verify"]
 
@@ -61,7 +61,7 @@ def _pos(node: ast.AST) -> tuple:
 
 
 def _rebinds(fn: ast.AST, key: str, lo: tuple, hi: tuple) -> bool:
-    for node in ast.walk(fn):
+    for node in walk(fn):
         targets: list = []
         if isinstance(node, ast.Assign):
             targets = list(node.targets)
@@ -74,20 +74,20 @@ def _rebinds(fn: ast.AST, key: str, lo: tuple, hi: tuple) -> bool:
 
 
 def _functions(tree: ast.Module) -> Iterable:
-    return [n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    return [n for n in walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
 
 
 def _own_calls(fn: ast.AST) -> list:
     """Calls in *fn* excluding nested function bodies, in source order."""
     calls: list = []
-    stack = list(ast.iter_child_nodes(fn))
+    stack = list(child_nodes(fn))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
             continue
         if isinstance(node, ast.Call):
             calls.append(node)
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return sorted(calls, key=_pos)
 
 

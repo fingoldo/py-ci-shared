@@ -28,7 +28,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = ["RULE", "assert_optional_collaborator_wired", "find_unwired_optional_collaborators"]
 
@@ -87,8 +87,8 @@ def _index(files: list) -> tuple:
     defs: dict = {}
     calls: dict = {}
     for parsed in files:
-        classes = {id(m) for c in ast.walk(parsed.tree) if isinstance(c, ast.ClassDef) for m in c.body}
-        for node in ast.walk(parsed.tree):
+        classes = {id(m) for c in walk(parsed.tree) if isinstance(c, ast.ClassDef) for m in c.body}
+        for node in walk(parsed.tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 defs.setdefault(node.name, []).append((parsed, node, id(node) in classes))
             elif isinstance(node, ast.Call) and (name := _callee(node.func)) is not None:

@@ -91,6 +91,8 @@ class FakeWarm:
     script: ClassVar[dict[str, list[Any]]] = {}
     default: Any = 0
     origin: Optional[dict[str, Any]] = None
+    #: A sandbox path fragment whose worker fails the unmutated file; replies by location, not by arrival order (partitions run on threads).
+    fail_baseline_under: Optional[str] = None
 
     def poll(self):
         return None
@@ -102,6 +104,8 @@ class FakeWarm:
         self.last_origin = FakeWarm.origin if check_origin else None
         text = Path(self.target).read_text(encoding="utf-8") if self.target else ""
         self.runs.append(text)
+        if FakeWarm.fail_baseline_under and text == self.original and FakeWarm.fail_baseline_under in self.sandbox.as_posix():
+            return 1
         queue = FakeWarm.script.get(text)
         # The unmutated file passes unless a script says otherwise, as a real baseline does.
         reply = queue.pop(0) if queue else (0 if text == self.original else FakeWarm.default)
@@ -139,6 +143,7 @@ def fake_warm(monkeypatch):
     FakeWarm.script = {}
     FakeWarm.default = 0
     FakeWarm.origin = None
+    FakeWarm.fail_baseline_under = None
     _seam(monkeypatch, "_WarmRunner", FakeWarm)
     return FakeWarm
 
@@ -473,9 +478,8 @@ class TestExtraSandboxes:
 
     def test_with_one_baseline_a_failing_extra_sandbox_is_refused_after_the_cold_tie_break(self, tmp_path, monkeypatch, fake_warm):
         repo = _repo(tmp_path, "def f(a, b):\n    return a + b * 2\n")
-        original = (repo / "m.py").read_text(encoding="utf-8")
         _seam(monkeypatch, "_run_pytest", FakeCold("m.py", lambda text, _p: 1))
-        fake_warm.script = {original: [0, 1]}
+        fake_warm.fail_baseline_under = "mutation_teeth_extra_"
         with pytest.raises(MutationHarnessError, match="extra sandbox"):
             _sweep(repo, jobs=2)
 

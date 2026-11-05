@@ -24,7 +24,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = ["RULE", "assert_cli_flag_spelling", "find_cli_flag_spelling_splits"]
 
@@ -51,7 +51,7 @@ def find_cli_flag_spelling_splits(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     sites: dict = {}
     for parsed in scan:
-        for node in ast.walk(parsed.tree):
+        for node in walk(parsed.tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "add_argument"):
                 continue
             options = _long_options(node)

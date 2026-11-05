@@ -32,7 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, child_nodes, scan_python, walk
 
 __all__ = ["RULE", "assert_state_before_work", "find_state_before_work"]
 
@@ -62,7 +62,7 @@ def _target_name(node: ast.AST) -> Optional[str]:
 
 
 def _is_clock_value(value: ast.AST) -> bool:
-    return any(isinstance(n, ast.Call) and _final(n.func) in _CLOCKS for n in ast.walk(value))
+    return any(isinstance(n, ast.Call) and _final(n.func) in _CLOCKS for n in walk(value))
 
 
 def _calls(stmt: ast.stmt) -> list:
@@ -74,16 +74,16 @@ def _calls(stmt: ast.stmt) -> list:
             continue
         if isinstance(node, ast.Call):
             out.append(node)
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return out
 
 
 def _restored(fn: ast.AST, name: str) -> bool:
     """*name* is assigned inside an ``except``/``finally`` of *fn*: the stamp is put back on failure."""
-    for node in ast.walk(fn):
+    for node in walk(fn):
         if isinstance(node, ast.Try):
             for part in [*node.handlers, *[ast.Module(body=node.finalbody, type_ignores=[])]]:
-                for sub in ast.walk(part):
+                for sub in walk(part):
                     targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target] if isinstance(sub, (ast.AugAssign, ast.AnnAssign)) else []
                     if any(_target_name(t) == name for t in targets):
                         return True
@@ -91,7 +91,7 @@ def _restored(fn: ast.AST, name: str) -> bool:
 
 
 def _statement_lists(tree: ast.Module) -> Iterable:
-    for fn in ast.walk(tree):
+    for fn in walk(tree):
         if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         stack: list = [fn]
@@ -104,9 +104,7 @@ def _statement_lists(tree: ast.Module) -> Iterable:
             for handler in getattr(node, "handlers", []):
                 yield fn, handler.body
                 stack.append(handler)
-            stack.extend(
-                c for c in ast.iter_child_nodes(node) if isinstance(c, ast.stmt) and not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
-            )
+            stack.extend(c for c in child_nodes(node) if isinstance(c, ast.stmt) and not isinstance(c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
 
 
 def _classify(cur: ast.stmt, stamp: "re.Pattern[str]", counter: "re.Pattern[str]") -> tuple:

@@ -26,7 +26,7 @@ import builtins
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = ["RULE", "assert_definition_after_entry_guard", "find_definitions_after_entry_guard"]
 
@@ -48,7 +48,7 @@ def _is_main_guard(node: ast.stmt) -> bool:
 
 def _calls_a_module_name(guard: ast.If) -> bool:
     for stmt in guard.body:
-        for node in ast.walk(stmt):
+        for node in walk(stmt):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id not in _BUILTINS:
                 return True
     return False

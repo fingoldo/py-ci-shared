@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
+from ._core import parse_text, walk
 from ._mutation_model import Mutant, MutationHarnessError
 from ._mutation_runner import _classify, _plugin_isolation_flags, _pytest_env, _pytest_flags, _run_pytest, _scan_of, run_with_deadline
 
@@ -166,9 +167,9 @@ class CoverageMap:
 
 def statement_starts(source: str) -> "dict[int, int]":
     """Every line of every simple statement (and of a compound statement's header) -> the statement's first line."""
-    tree = ast.parse(source)
+    tree = parse_text(source)
     out: "dict[int, int]" = {}
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if not isinstance(node, ast.stmt):
             continue
         end = getattr(node, "end_lineno", None) or node.lineno

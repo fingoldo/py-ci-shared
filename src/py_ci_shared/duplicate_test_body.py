@@ -26,7 +26,7 @@ import ast
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = ["RULE", "assert_no_duplicate_test_bodies", "find_duplicate_test_bodies"]
 
@@ -48,7 +48,7 @@ def _signature(fn: _FuncDef) -> tuple:
 
 def _scopes(tree: ast.Module) -> list:
     scopes: list = [tree.body]
-    scopes.extend(node.body for node in ast.walk(tree) if isinstance(node, ast.ClassDef))
+    scopes.extend(node.body for node in walk(tree) if isinstance(node, ast.ClassDef))
     return scopes
 
 

@@ -31,7 +31,7 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, child_nodes, scan_python
 from ._core import walk as shared_walk
 
 __all__ = ["DEFAULT_GROUP_PARAMS", "DEFAULT_SPLITTERS", "RULE", "SUPPRESSION", "assert_group_blind_split", "find_group_blind_split"]
@@ -89,7 +89,7 @@ def _findings_in(
         mine = [p for p in _params(func) if p in group_params]
         if not mine or f"{rel}::{func.name}" in allowed:
             continue
-        parents = {id(c): p for p in shared_walk(func) for c in ast.iter_child_nodes(p)}
+        parents = {id(c): p for p in shared_walk(func) for c in child_nodes(p)}
         for call in (n for n in shared_walk(func) if isinstance(n, ast.Call)):
             name = _call_name(call)
             if name not in splitters or call.lineno in seen:

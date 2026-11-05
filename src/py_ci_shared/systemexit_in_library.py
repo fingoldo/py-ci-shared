@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, child_nodes, scan_python, walk
 
 __all__ = ["RULE", "assert_no_systemexit_in_library", "find_systemexit_in_library"]
 
@@ -53,7 +53,7 @@ def _imported_names(trees: dict) -> dict:
     """``{name: {rel paths that import it by name}}`` over every scanned module."""
     out: dict = {}
     for rel, tree in trees.items():
-        for node in ast.walk(tree):
+        for node in walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     out.setdefault(alias.name, set()).add(rel)
@@ -76,7 +76,7 @@ def _exit_kind(node: ast.AST) -> Optional[str]:
 
 def _function_exits(fn: ast.AST) -> list:
     out: list = []
-    stack = list(ast.iter_child_nodes(fn))
+    stack = list(child_nodes(fn))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
@@ -84,7 +84,7 @@ def _function_exits(fn: ast.AST) -> list:
         kind = _exit_kind(node)
         if kind is not None:
             out.append((node, kind))
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return out
 
 
@@ -128,7 +128,7 @@ def find_systemexit_in_library(
             continue
         guarded = _has_main_guard(parsed.tree)
         lines = parsed.source.splitlines()
-        for fn in ast.walk(parsed.tree):
+        for fn in walk(parsed.tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or entry.search(fn.name):
                 continue
             if any(opt_in.search(p) for p in _params(fn)):

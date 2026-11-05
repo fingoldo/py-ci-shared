@@ -29,9 +29,9 @@ def _one(tmp_path: Path, src: str) -> list:
 
 def test_reports_the_seeded_leak(tmp_path):
     found = find_env_write_restore(_canary(tmp_path, "violation"), use_git=False)
-    assert [(f.path, f.line, f.rule) for f in found] == [("seed.py", 5, gate.RULE)]
+    assert [(f.path, f.line, f.rule) for f in found] == [("seed.py", line, gate.RULE) for line in (5, 10, 14, 18)]
     assert found[0].message == "test_leaks_a_setting_into_every_later_test: os.environ['MLFRAME_FE_GPU_STRICT'] = '1'"
-    with pytest.raises(AssertionError, match=r"1 env-write-restore finding"):
+    with pytest.raises(AssertionError, match=r"4 env-write-restore finding"):
         assert_env_write_restore(tmp_path, use_git=False)
 
 
