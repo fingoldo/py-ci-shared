@@ -100,3 +100,8 @@ def test_assert_raises_on_a_shared_placeholder_and_passes_when_clean(tmp_path):
     good = tmp_path / "good.py"
     good.write_text("def f():\n    return []\n", encoding="utf-8")
     assert_no_shared_mutable_placeholders([good])
+
+
+@pytest.mark.parametrize("value", ["threading.RLock()", "RLock()", "threading.Lock()"])
+def test_a_lock_returned_by_reference_is_not_a_mutable_placeholder(tmp_path, value):
+    assert _lines(tmp_path, f"import threading\nfrom threading import RLock\n_LOCK = {value}\n\n\ndef guard():\n    return _LOCK\n") == []

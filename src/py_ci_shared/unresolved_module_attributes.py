@@ -425,6 +425,10 @@ def _alias_candidates(binding: _Binding, file: Path, dirs: Sequence[Path], resol
     else:
         bases = list(dirs)
         prefix = ""
+        # A bare name the importer's own (non-package) directory defines is that module, not a same-named sibling's.
+        own = [] if (file.parent / "__init__.py").is_file() else [file.parent]
+        if own and resolver.candidates_in(own, binding.module or binding.member):
+            bases = own
     if not binding.member:
         return prefix + binding.module, resolver.candidates_in(bases, binding.module)
     dotted = f"{binding.module}.{binding.member}" if binding.module else binding.member

@@ -290,3 +290,37 @@ def test_an_unparsable_file_fails_and_the_floor_counts_parsed_files(tmp_path):
     with pytest.raises(AssertionError, match=r"bad\.py"):
         assert_writes_have_replay([bad, good], tmp_path, {}, min_files=1)
     assert_writes_have_replay([good], tmp_path, {}, min_files=1)
+
+
+def test_a_helper_called_by_an_import_time_decorator_factory_is_import_time(tmp_path):
+    reg = _write(
+        tmp_path,
+        "reg.py",
+        """
+        _REGISTRY = {}
+
+        def _record(name, fn):
+            _REGISTRY[name] = fn
+
+        def kernel_tuner(name):
+            def deco(fn):
+                _record(name, fn)
+                return fn
+            return deco
+    """,
+    )
+    use = _write(
+        tmp_path,
+        "use.py",
+        """
+        from reg import _REGISTRY, kernel_tuner
+
+        @kernel_tuner("k")
+        def k():
+            return 1
+
+        def late():
+            _REGISTRY["x"] = 1
+    """,
+    )
+    assert _found(tmp_path, reg, use) == ["late:_REGISTRY"]

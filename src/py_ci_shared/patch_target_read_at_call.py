@@ -146,8 +146,13 @@ def _record_function_reads(facts: _Facts, module: _Module, func: ast.AST) -> Non
         elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "getattr" and len(node.args) >= 2:
             target = module.aliases.qualified_name(node.args[0])
             attr_node = node.args[1]
-            if target is not None and isinstance(attr_node, ast.Constant) and isinstance(attr_node.value, str):
-                facts.function_qualified.add(f"{target}.{attr_node.value}")
+            if isinstance(attr_node, ast.Constant) and isinstance(attr_node.value, str):
+                facts.function_attrs.add(attr_node.value)  # `getattr(sys.modules.get(pkg), NAME)`: a read through any object
+                if target is not None:
+                    facts.function_qualified.add(f"{target}.{attr_node.value}")
+        elif isinstance(node, ast.ImportFrom):
+            # A function-local `from X import NAME` reads the module's NAME at call time.
+            facts.function_attrs.update(alias.name for alias in node.names)
 
 
 def _facts_of(module: _Module) -> _Facts:
@@ -169,7 +174,10 @@ def _is_inert(name: str, owner: _Module, facts: _Facts, all_facts: dict[str, _Fa
     by_import, otherwise = facts.module_bindings.get(name, (False, False))
     if not by_import or otherwise:
         return False
-    if name in facts.global_names or name in facts.function_loads or name in facts.function_attrs:
+    if name in facts.global_names or name in facts.function_loads:
+        return False
+    # An attribute read anywhere in the package may be read through the module object (`_pkg().NAME` in a helper module).
+    if any(name in other.function_attrs for other in all_facts.values()):
         return False
     dotted = f"{owner.name}.{name}"
     return not any(dotted in other.function_qualified for other in all_facts.values())

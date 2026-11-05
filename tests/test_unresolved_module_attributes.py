@@ -392,3 +392,17 @@ def test_a_bare_name_does_not_match_a_differently_cased_directory(tmp_path):
     # On a case-folding filesystem ``mrmr`` must not be found for a bare name spelled ``MRMR``.
     files = {"mrmr/__init__.py": "VALUE = 1\n", "user.py": "import MRMR as MRMRX\n\n\ndef run():\n    return MRMRX.VALUE\n"}
     assert _hits(tmp_path, files) == []
+
+
+def test_a_bare_module_name_resolves_to_the_importers_own_package_first(tmp_path):
+    """Two sibling projects each ship a db.py; app.py reads ONLY_B, which is missing from its own db.py."""
+    hits = _hits(
+        tmp_path,
+        {
+            "proj_a/db.py": "ONLY_A = 1\n",
+            "proj_b/db.py": "ONLY_B = 2\n",
+            "proj_a/app.py": "import db\n\n\ndef run():\n    return db.ONLY_B\n",
+        },
+        resolve_roots=[tmp_path / "proj_b"],
+    )
+    assert hits == ["proj_a/app.py:5:'db.ONLY_B'"]
