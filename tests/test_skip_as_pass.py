@@ -120,3 +120,8 @@ def test_a_nonzero_exit_after_skipped_is_still_clean(tmp_path):
     (tmp_path / "tool" / "a.sh").write_text("echo SKIPPED\nexit 1\n", encoding="utf-8")
     (tmp_path / "tool" / "b.py").write_text('import sys\nprint("SKIPPED")\nsys.exit(2)\nraise SystemExit("boom")\n', encoding="utf-8")
     assert find_skip_as_pass(tmp_path) == {}
+
+
+def test_a_warning_that_mentions_skipped_is_not_a_skip_marker(tmp_path: Path) -> None:
+    _tree(tmp_path, "tool/hooks.sh", 'echo "warning: hook checks were skipped for this push"\nexit 0\n')
+    assert find_skip_as_pass(tmp_path) == {}

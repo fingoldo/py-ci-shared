@@ -42,7 +42,8 @@ __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
 #: Top-level directories whose scripts are guards.
 SKIP_DIRS = ("tool", "tools", "scripts", ".githooks", ".github")
 
-_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b[^\n]*\b(?i:skipped)\b")
+# The printed message begins with the status word: a warning that merely contains "skipped" is not a skip marker.
+_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b\s*\(?\s*(?:-[a-zA-Z]+\s+)?[\"']?(?i:skipped)\b")
 # Zero by status: an explicit 0, or none at all (a bare `exit` returns the last command's status, `sys.exit()` and `SystemExit(None)` are 0).
 _EXIT_ZERO = re.compile(
     r"(?<![\w.])(?:exit\s+0(?![\w.])|exit(?=\s*(?:;|&|\||#|$))|(?:sys\.)?(?:exit|quit)\(\s*(?:0|None)?\s*\)|raise\s+SystemExit(?:\(\s*(?:0|None)?\s*\))?(?![\w.(]))"
