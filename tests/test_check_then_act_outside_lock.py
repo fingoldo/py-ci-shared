@@ -171,3 +171,27 @@ def test_exemption_without_a_reason_is_refused(tmp_path, reason):
     p.write_text(_module(_SPLIT_IN_CACHE), encoding="utf-8")
     with pytest.raises(ValueError, match="non-empty reason"):
         find_check_then_act_outside_lock([p], min_files=1, exempt={("mod.py", "remember"): reason})
+
+
+def test_a_test_and_write_under_a_guard_helper_that_takes_the_lock_is_not_a_finding(tmp_path):
+    body = textwrap.dedent("""
+        import threading
+        from contextlib import contextmanager
+
+        class Cache:
+            def __init__(self):
+                self._lock = threading.Lock()
+                self._items = {}
+
+            @contextmanager
+            def _guard(self):
+                with self._lock:
+                    yield
+
+            def put(self, key, value):
+                with self._guard():
+                    if key not in self._items:
+                        self._items[key] = value
+        """)
+    (tmp_path / "m.py").write_text(body, encoding="utf-8")
+    assert find_check_then_act_outside_lock([tmp_path / "m.py"], use_git=False) == []

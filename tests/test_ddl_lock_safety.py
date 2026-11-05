@@ -113,8 +113,8 @@ def test_a_unique_or_primary_key_constraint_is_not_a_check_or_foreign_key(tmp_pa
 
 
 def test_a_pasteable_comment_command_counts_like_a_statement(tmp_path):
-    body = "SET lock_timeout = '5s';\n-- Run this one:\n--   ALTER TABLE big\n--     ADD CONSTRAINT c CHECK (x > 0);\n"
-    assert _rules(_sql(tmp_path, a=body)) == [("ddl-constraint-not-valid", 3)]
+    header = "-- Run this one:\n--   ALTER TABLE big\n--     ADD CONSTRAINT c CHECK (x > 0);\nSET lock_timeout = '5s';\n"
+    assert _rules(_sql(tmp_path, a=header)) == [("ddl-constraint-not-valid", 2)]
     prose = "SET lock_timeout = '5s';\n-- we never ADD CONSTRAINT c CHECK here\n"
     assert _rules(_sql(tmp_path / "p", a=prose)) == []
 
@@ -344,3 +344,8 @@ def test_set_local_lock_timeout_does_not_survive_the_end_of_its_transaction(tmp_
 def test_a_session_lock_timeout_survives_the_end_of_a_transaction(tmp_path):
     body = "SET lock_timeout = '1s';\nBEGIN;\nCOMMIT;\nALTER TABLE t ADD COLUMN b int;\n"
     assert _rules(_sql(tmp_path, m=body)) == []
+
+
+def test_a_pasteable_comment_below_the_live_sql_is_not_read_as_a_statement(tmp_path):
+    body = "SET lock_timeout = '5s';\nALTER TABLE jobs ADD COLUMN note text;\n-- Rollback, after the backfill:\n--   ALTER TABLE big\n--     ADD CONSTRAINT c CHECK (x > 0);\n"
+    assert [r for r in _rules(_sql(tmp_path, a=body)) if r[0] == "ddl-constraint-not-valid"] == []

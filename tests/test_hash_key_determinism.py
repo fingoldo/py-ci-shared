@@ -156,3 +156,17 @@ class TestCorpusAndBaseline:
         (src / "n.py").write_text("import hashlib, json\ndef g(c):\n    return hashlib.md5(json.dumps(c).encode())\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="unsorted-json-key"):
             assert_hash_keys_are_deterministic(src, baseline_path=bl, use_git=False)
+
+
+def test_a_digest_of_the_exact_bytes_sent_on_the_wire_is_not_flagged(tmp_path):
+    wire = "import hashlib\nimport json\n\ndef archive(payload, sock):\n    body = json.dumps(payload)\n    sock.sendall(body.encode())\n    return hashlib.sha256(body.encode()).hexdigest()\n"
+    (tmp_path / "m.py").write_text(wire, encoding="utf-8")
+    findings, _scan = find_unsorted_hash_keys(tmp_path, use_git=False)
+    assert findings == []
+
+
+def test_a_digest_of_a_normalised_dump_that_is_never_sent_is_still_flagged(tmp_path):
+    normalised = "import hashlib\nimport json\n\ndef key_of(payload):\n    return hashlib.sha256(json.dumps(payload).encode()).hexdigest()\n"
+    (tmp_path / "m.py").write_text(normalised, encoding="utf-8")
+    findings, _scan = find_unsorted_hash_keys(tmp_path, use_git=False)
+    assert [f.line for f in findings] == [5]

@@ -89,3 +89,18 @@ def test_assert_and_baseline(tmp_path):
     (tmp_path / "n.py").write_text(PRE_FIX, encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match=r"n\.py"):
         assert_verified_then_reopened(tmp_path, use_git=False, baseline_path=base)
+
+
+def test_a_size_check_is_not_verification_so_its_reopen_is_clean(tmp_path):
+    truncate = "import os\n\ndef truncate_to(path, size):\n    verify_size(path, size)\n    with open(path, 'r+b') as handle:\n        handle.truncate(size)\n"
+    assert _find(tmp_path, truncate) == []
+
+
+def test_a_reopen_marked_with_a_reason_is_accepted(tmp_path):
+    marked = PRE_FIX.replace("with open(path, 'rb') as handle:", "with open(path, 'rb') as handle:  # reopen-ok: sidecar is a size only")
+    assert _find(tmp_path, marked) == []
+
+
+def test_a_reopen_marker_without_a_reason_does_not_suppress(tmp_path):
+    bare = PRE_FIX.replace("with open(path, 'rb') as handle:", "with open(path, 'rb') as handle:  # reopen-ok:")
+    assert [f.line for f in _find(tmp_path, bare)] == [5]

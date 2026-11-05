@@ -73,12 +73,39 @@ def _named_like_a_lock(segment: str) -> bool:
 
 
 def module_lock_names(tree: ast.Module) -> frozenset[str]:
-    """Attribute and variable names bound anywhere in the module to a Lock, RLock or Condition constructor."""
+    """Attribute and variable names bound anywhere in the module to a Lock, RLock or Condition constructor, plus the
+    names of guard helpers: a function whose body takes such a lock in a ``with``, so ``with self._guard():`` holds it."""
     names: set[str] = set()
     for node in shared_walk(tree):
         if isinstance(node, ast.Assign) and _last_segment(node.value) in LOCK_CONSTRUCTORS and isinstance(node.value, ast.Call):
             names.update(_last_segment(t) for t in node.targets if _last_segment(t))
+    for node in shared_walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _takes_a_lock(node, names):
+            names.add(node.name)
     return frozenset(names)
+
+
+def _takes_a_lock(fn: ast.AST, lock_names: set[str]) -> bool:
+    return any(
+        isinstance(node, (ast.With, ast.AsyncWith)) and any(is_lock_like(item.context_expr, frozenset(lock_names)) for item in node.items)
+        for node in shared_walk(fn)
+    )
+
+
+_NON_THREAD_LOCK = re.compile(r"(?i)(^|_)(file_?lock|flock|advisory_?lock|claim_?lock)$|^(file_?lock|portalocker|fcntl)")
+_CROSS_PROCESS_MODULES = frozenset({"filelock", "portalocker", "fcntl", "msvcrt"})
+
+
+def is_thread_lock(expr: ast.AST, aliases: ImportAliases, lock_names: frozenset[str]) -> bool:
+    """True when a lock-like ``with`` item is a thread lock. A cross-process file lock (``FileLock``, ``portalocker``,
+    ``fcntl.flock``) or a database advisory claim (``claim_lock``, ``try_claim_lock``) is not: it does not queue threads
+    in this process, so the I/O it guards is not a stall of the other threads."""
+    if not is_lock_like(expr, lock_names):
+        return False
+    qualified = aliases.qualified_name(expr.func) if isinstance(expr, ast.Call) else aliases.qualified_name(expr)
+    if qualified and qualified.split(".", 1)[0] in _CROSS_PROCESS_MODULES:
+        return False
+    return not _NON_THREAD_LOCK.search(_last_segment(expr))
 
 
 def is_lock_like(expr: ast.AST, lock_names: frozenset[str]) -> bool:
@@ -152,7 +179,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     for node in shared_walk(parsed.tree):
         if not isinstance(node, _WITH):
             continue
-        held = [ast.unparse(item.context_expr) for item in node.items if is_lock_like(item.context_expr, lock_names)]
+        held = [ast.unparse(item.context_expr) for item in node.items if is_thread_lock(item.context_expr, aliases, lock_names)]
         if not held:
             continue
         for call in _calls_under(node.body):

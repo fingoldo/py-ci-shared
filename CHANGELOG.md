@@ -10,6 +10,12 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   `secret_assertion_operands` treats `os.environ.get("NAME")` with a non-secret literal name as harmless, like the subscript and `getenv` forms.
   `validation_errors_echo_input` does not judge validators of a `BaseSettings` class (not a request path).
   `assert_modules_resolve_to_checkout` puts the checkout's own package first on `sys.path` (a worktree under an editable install of the main checkout no longer fails).
+- Gate defects of audit 2026-11-04, round 37, group 3 (concurrency and SQL), 37-F15..F18 and 37-F33:
+  **Behaviour change (fewer findings):** `ddl_lock_safety` reads a `--   ALTER ...` paste-ready command only in the file's leading comment header; a commented-out statement below the first SQL statement is comment text and is no longer a finding.
+  **Behaviour change (fewer findings):** `lock_held_across_io` no longer counts a cross-process file lock (`FileLock`, `portalocker`, `fcntl`, `claim_lock`, `try_claim_lock`, `*_file_lock`) as a thread lock; I/O under it is not a stall of other threads.
+  **Behaviour change (more findings):** `check_then_act_outside_lock` treats a `with self._guard():` as holding a lock when `_guard` is a module function that takes a lock, so a test and a write under it are judged as one lock.
+  `hash_key_determinism` does not report a `json.dumps` whose text is sent on the wire (a send, write or request call, or a `data`/`content`/`body` keyword): its digest names the exact bytes archived.
+  `verified_then_reopened` does not treat a size or length check as verification, and accepts a reopen marked `# reopen-ok: <reason>`.
 
 - Leftovers of audit 2026-11-04 (30, 33, 34, 35):
   `tests/test_mutation_speed.py` runs on a stand-in for pytest and the warm worker (17 tests, about 30 s instead of about 12 minutes); two real sweeps stay as `slow` tests that run on CI (`CI` is set) or with `PY_CI_RUN_SLOW=1`.

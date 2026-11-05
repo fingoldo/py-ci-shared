@@ -10,8 +10,11 @@ Reported, per function: a call whose final name matches *verify_name_regex* (def
 ``np.load``/``pickle.load``-style callees named in *sink_names* given the path as first argument, or a method on the path itself
 (``path.read_bytes()``, ``path.open()``). A re-binding of the path between the two calls ends the match.
 
+A size check (a verify-style name containing ``size`` or ``length``) is not verification: it proves a length, not the bytes, so it does not
+start a finding (a truncate that is only size-checked is not a TOCTOU on verified content).
+
 Not reported: the sink receiving bytes from an earlier read (``pickle.loads(payload)``), a different path, a sink before the verify call, a verify
-function that is itself the sink's only consumer.
+function that is itself the sink's only consumer, a size-only check, and a reopen whose line carries ``# reopen-ok: <reason>`` (a reason is required).
 
 Usage::
 
@@ -37,6 +40,8 @@ RULE = "verified-then-reopened"
 DEFAULT_VERIFY_REGEX = r"verif|sidecar|checksum|check_hash"
 DEFAULT_SINK_NAMES: frozenset = frozenset({"open", "load", "read_bytes", "read_text", "read_pickle", "fromfile", "memmap", "read_csv", "read_parquet"})
 _METHOD_SINKS = frozenset({"read_bytes", "read_text", "open"})
+_SIZE_CHECK = re.compile(r"size|length", re.IGNORECASE)
+_REOPEN_OK = re.compile(r"#\s*reopen-ok:\s*\S")
 
 
 def _final(func: ast.AST) -> Optional[str]:
@@ -102,13 +107,13 @@ def _sink_path(call: ast.Call, sinks: frozenset) -> Optional[str]:
     return None
 
 
-def _findings_in(tree: ast.Module, rel: str, verify: "re.Pattern[str]", sinks: frozenset) -> list:
+def _findings_in(tree: ast.Module, rel: str, verify: "re.Pattern[str]", sinks: frozenset, lines: list) -> list:
     out: list = []
     for fn in _functions(tree):
         calls = _own_calls(fn)
         for i, vcall in enumerate(calls):
             name = _final(vcall.func)
-            if name is None or not verify.search(name) or not vcall.args:
+            if name is None or not verify.search(name) or _SIZE_CHECK.search(name) or not vcall.args:
                 continue
             key = _expr_key(vcall.args[0])
             if key is None:
@@ -117,6 +122,8 @@ def _findings_in(tree: ast.Module, rel: str, verify: "re.Pattern[str]", sinks: f
                 if later is vcall or _pos(later) <= _pos(vcall) or _sink_path(later, sinks) != key:
                     continue
                 if _rebinds(fn, key, _pos(vcall), _pos(later)):
+                    break
+                if 0 < later.lineno <= len(lines) and _REOPEN_OK.search(lines[later.lineno - 1]):
                     break
                 out.append(
                     Finding(
@@ -150,7 +157,7 @@ def find_reopened_after_verify(
     pattern, sinks = re.compile(verify_name_regex, re.IGNORECASE), frozenset(sink_names)
     out: list[Finding] = []
     for parsed in scan:
-        out.extend(_findings_in(parsed.tree, parsed.rel, pattern, sinks))
+        out.extend(_findings_in(parsed.tree, parsed.rel, pattern, sinks, parsed.source.splitlines()))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 
