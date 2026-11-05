@@ -58,12 +58,38 @@ def _is_under_with_statement(call: ast.Call, chain: list) -> bool:
     """True if any ancestor of ``call`` is a ``with`` statement and the call appears inside one
     of its ``items`` (the context-manager position)."""
     for ancestor in chain:
-        if isinstance(ancestor, ast.With):
+        if isinstance(ancestor, (ast.With, ast.AsyncWith)):
             for item in ancestor.items:
                 for sub in walk_nodes(item.context_expr):
                     if sub is call:
                         return True
     return False
+
+
+def _names_closed_by_atexit(tree: ast.AST) -> set[str]:
+    """Names ``X`` for which the module registers ``atexit.register(X.close)``: a handle kept open for the whole
+    process and closed at interpreter exit is released by its owner's documented choice."""
+    names: set[str] = set()
+    for node in walk_tree(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "register"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "atexit"
+            and node.args
+            and isinstance(node.args[0], ast.Attribute)
+            and node.args[0].attr == "close"
+            and isinstance(node.args[0].value, ast.Name)
+        ):
+            names.add(node.args[0].value.id)
+    return names
+
+
+def _is_bound_to_closed_at_exit(call: ast.Call, parent_map: dict, closed_at_exit: set[str]) -> bool:
+    """True when the call is the value of ``X = open(...)`` and ``X`` is closed by ``atexit`` in this module."""
+    parent = parent_map.get(id(call))
+    return isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name) and parent.targets[0].id in closed_at_exit
 
 
 def scan_resource_handle_safety(
@@ -93,11 +119,14 @@ def scan_resource_handle_safety(
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
         parent_map = _build_parent_map(tree)
+        closed_at_exit = _names_closed_by_atexit(tree)
         for node in walk_tree(tree):
             if not isinstance(node, ast.Call) or not _is_resource_call(node):
                 continue
             chain = _ancestor_chain_via_parent_map(node, parent_map)
             if _is_under_with_statement(node, chain):
+                continue
+            if _is_bound_to_closed_at_exit(node, parent_map, closed_at_exit):
                 continue
             if is_line_exempt(src_lines, node.lineno, "resource_handle_safety"):
                 continue

@@ -228,6 +228,17 @@ def _is_flaggable_handler(handler: ast.ExceptHandler, src_lines: list[str]) -> b
     return _is_broad_except(handler) and _is_silent_swallow(handler) and not _handler_has_documented_rationale(handler, src_lines)
 
 
+def _logging_emit_try_ids(tree: ast.AST) -> set[int]:
+    """ids of the ``try`` statements inside a ``emit(self, record)`` method: the ``logging.Handler`` contract says a
+    handler's emit() must never raise into the logging call, so a swallow there is the required behaviour
+    (glossum/llm/benchmark_mode.py:175)."""
+    ids: set[int] = set()
+    for fn in walk_tree(tree):
+        if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name == "emit" and any(a.arg == "record" for a in fn.args.args):
+            ids.update(id(sub) for sub in walk_tree(fn) if isinstance(sub, ast.Try))
+    return ids
+
+
 def scan_broad_except_swallows(
     root: Path,
     exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,
@@ -248,8 +259,9 @@ def scan_broad_except_swallows(
             continue
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
+        handler_tries = _logging_emit_try_ids(tree)
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try):
+            if not isinstance(node, ast.Try) or id(node) in handler_tries:
                 continue
             # Suppress whole Try if the body is one of the documented-safe
             # shapes (import guard / single best-effort op). The handler

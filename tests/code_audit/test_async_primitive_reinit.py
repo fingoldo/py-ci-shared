@@ -195,3 +195,41 @@ async def handle():
         pass
 ''')
     assert scan_async_primitive_reinit_per_call(tmp_path, primitive_names=frozenset({"Event"})) == []
+
+
+def test_async_primitive_reinit_local_alias_of_module_cache_not_flagged(tmp_path: Path):
+    # glossum/core/loop_locks.py: the cache is a module-level dict; the local `locks` is that cache's
+    # per-loop entry (setdefault), so `locks[name] = lock` persists the lock into shared state.
+    _write(tmp_path, "loop_locks.py", """
+import asyncio
+import weakref
+
+_LOOP_LOCKS = weakref.WeakKeyDictionary()
+
+
+def loop_lock(name):
+    locks = _LOOP_LOCKS.setdefault(asyncio.get_running_loop(), {})
+    lock = locks.get(name)
+    if lock is None:
+        lock = asyncio.Lock()
+        locks[name] = lock
+    return lock
+""")
+    assert scan_async_primitive_reinit_per_call(tmp_path) == []
+
+
+def test_async_primitive_reinit_local_container_not_from_module_still_flagged(tmp_path: Path):
+    # negative control: the local dict is a fresh literal, so the lock is private to each call
+    _write(tmp_path, "private.py", """
+import asyncio
+
+_CACHE = {}
+
+
+def make(name):
+    locks = {}
+    lock = asyncio.Lock()
+    locks[name] = lock
+    return lock
+""")
+    assert len(scan_async_primitive_reinit_per_call(tmp_path)) == 1

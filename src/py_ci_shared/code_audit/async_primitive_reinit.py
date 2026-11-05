@@ -100,6 +100,25 @@ def _assignment_pairs(targets: list[ast.expr], value: ast.expr) -> list[tuple[li
     return [(list(targets), value)]
 
 
+def _module_backed_local_names(func: ast.AST, module_names: frozenset[str]) -> frozenset[str]:
+    """Local names bound to an entry of a module-level container: ``locks = _CACHE.setdefault(loop, {})``,
+    ``entry = _CACHE.get(key)``, ``entry = _CACHE[key]``. Storing into such a local (``locks[name] = lock``) writes
+    the shared cache, so it is a persistent target exactly as a direct write to the module container is.
+    A local bound to a fresh literal or constructor is not module-backed and stays private to the call."""
+    if not module_names:
+        return frozenset()
+    names: set[str] = set()
+    for node in walk_nodes(func):
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            continue
+        root: ast.AST = node.value
+        while isinstance(root, (ast.Call, ast.Attribute, ast.Subscript)):
+            root = root.func if isinstance(root, ast.Call) else root.value
+        if isinstance(root, ast.Name) and root.id in module_names and not isinstance(node.value, ast.Name):
+            names.add(node.targets[0].id)
+    return frozenset(names)
+
+
 def _attribute_assigned_primitive_calls(func: ast.AST, module_names: frozenset[str] = frozenset()) -> set[ast.AST]:
     """Primitive-constructor call nodes that eventually reach a persistent
     target (see ``_is_persistent_target``) ANYWHERE inside ``func`` --
@@ -112,6 +131,8 @@ def _attribute_assigned_primitive_calls(func: ast.AST, module_names: frozenset[s
     global-declared module-level lazy singleton), so these are never
     flagged regardless of which method they appear in."""
     global_names = frozenset(name for node in walk_nodes(func) if isinstance(node, ast.Global) for name in node.names)
+    module_backed = _module_backed_local_names(func, module_names)
+    module_names = module_names | module_backed
     direct: set[ast.AST] = set()
     local_var_of_call: dict[str, ast.AST] = {}
     persisted_var_names: set[str] = set()

@@ -184,3 +184,32 @@ def f():
     findings = scan_broad_except_swallows(tmp_path)
     assert len(findings) == 1
     assert "bare except" in findings[0].detail
+
+
+def test_broad_except_inside_logging_emit_not_flagged(tmp_path: Path):
+    # glossum/llm/benchmark_mode.py: a logging.Handler.emit() must never raise into the logging call
+    _write(tmp_path, "handler.py", """
+import logging
+
+
+class CaptureHandler(logging.Handler):
+    def emit(self, record):
+        try:
+            self.write(self.format(record))
+        except Exception:
+            pass
+""")
+    assert scan_broad_except_swallows(tmp_path) == []
+
+
+def test_broad_except_same_body_outside_emit_still_flagged(tmp_path: Path):
+    # negative control: the identical swallow in an ordinary method is still a silent drop
+    _write(tmp_path, "worker.py", """
+class Worker:
+    def run(self, record):
+        try:
+            self.write(record)
+        except Exception:
+            pass
+""")
+    assert len(scan_broad_except_swallows(tmp_path)) == 1
