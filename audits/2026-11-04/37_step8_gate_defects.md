@@ -20,10 +20,10 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F12 | identity_comparisons | flags `is` on StrEnum members (`node.kind is NodeKind.CAUSE`) | autopsia | OPEN |
 | 37-F13 | shared_mutable_placeholder | flags `threading.RLock()` | autopsia | OPEN |
 | 37-F14 | no_source_text_tests | flags prose containing the word "FROM" | autopsia | OPEN |
-| 37-F15 | verified_then_reopened | flags a size-checked truncate reopen; no suppression marker | autopsia, mlframe | OPEN |
-| 37-F16 | hash_key_determinism | flags digests of exact wire bytes that key an archive | autopsia | OPEN |
-| 37-F17 | check_then_act_outside_lock | blind to a call made under a guard | autopsia | OPEN |
-| 37-F18 | lock_held_across_io | treats a cross-process file lock and a database advisory claim (`claim_lock`) as a thread lock | autopsia, glossum | OPEN |
+| 37-F15 | verified_then_reopened | flags a size-checked truncate reopen; no suppression marker | autopsia, mlframe | RESOLVED 5ae727c |
+| 37-F16 | hash_key_determinism | flags digests of exact wire bytes that key an archive | autopsia | RESOLVED 5ae727c |
+| 37-F17 | check_then_act_outside_lock | blind to a call made under a guard | autopsia | RESOLVED 5ae727c |
+| 37-F18 | lock_held_across_io | treats a cross-process file lock and a database advisory claim (`claim_lock`) as a thread lock | autopsia, glossum | RESOLVED 5ae727c |
 | 37-F19 | git_child_env, wallclock_test_waits | look for a `tool/meta/baselines` directory the repo does not have | autopsia | OPEN |
 | 37-F20 | validation_errors_echo_input | flags validators of the env-loaded Settings class, which is not a 422 request path | glossum | OPEN |
 | 37-F21 | workflow_runner_labels | `--fix .` creates an untracked `.github/dependabot.yml` | glossum | OPEN |
@@ -38,7 +38,7 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F30 | import_cycles | does not honour the `# audit-exempt: import_cycle` marker that the same cycle carries in upwork_shared/_circuit.py:1 | social | OPEN |
 | 37-F31 | sentinel_or_fallback | ignores `# falsy-ok:` on an `x if x else y` expression, although its docstring promises the marker (run_screening.py:231, 282) | social | OPEN |
 | 37-F32 | env_flag_parsing | reports `PROXY_USER` (a credential string) as a boolean flag for `if not user` and `user == ""` (_observability_lookups.py:92) | social | OPEN |
-| 37-F33 | ddl_lock_safety | reads SQL inside a `--` comment (RUNBOOK sql: a commented-out SET NOT NULL) | social | OPEN |
+| 37-F33 | ddl_lock_safety | reads SQL inside a `--` comment (RUNBOOK sql: a commented-out SET NOT NULL) | social | RESOLVED 5ae727c |
 | 37-F34 | unresolved_module_attributes | resolves a bare `db` to dashboard/db.py when the code means the sibling project's db.py; not safe monorepo-wide per project | social | OPEN |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
