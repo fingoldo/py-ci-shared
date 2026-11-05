@@ -212,7 +212,7 @@ def _staged_blobs(worktree: Path) -> dict[str, str]:
 
 
 def _files_under(directory: Path) -> list[Path]:
-    return sorted(path for path in directory.rglob("*") if path.is_file())
+    return sorted(path for path in directory.rglob("*") if path.is_file())  # walk-ok: lists a directory of worktrees on purpose, entering them is the point
 
 
 def _file_content_ids(repo: Path, path: Path, object_format: str) -> set[str]:

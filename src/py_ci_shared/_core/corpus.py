@@ -128,6 +128,20 @@ def _walk(root: Path, exclude: frozenset[str]) -> Iterator[str]:
             yield (rel_dir / name).as_posix()
 
 
+def iter_files_pruned(root: PathLike, suffixes: Sequence[str] = (), exclude_dirs: Iterable[str] = DEFAULT_EXCLUDE) -> list[Path]:
+    """Sorted files under *root* whose NAME ends with one of *suffixes* (any file when empty), never entering *exclude_dirs*.
+
+    The replacement for ``root.rglob(...)`` and an unpruned ``os.walk(root)``: those descend into ``.claude``, where Claude Code keeps
+    its agent worktrees, each a COMPLETE copy of the repository, and a gate handed the repo root then reads every copy (one audit test
+    took 19 to 30 minutes with about 20 of them). Directories are pruned before they are entered and only components BELOW *root* are
+    judged, so where *root* itself lives never matters. A missing *root* yields an empty list. Symlinked files are listed, as ``rglob`` did.
+    """
+    base = Path(root)
+    skip = frozenset(exclude_dirs)
+    ends = tuple(suffixes)
+    return [base.joinpath(*rel.split("/")) for rel in sorted(_walk(base, skip)) if not ends or rel.endswith(ends)]
+
+
 def _matches(rel: str, patterns: Sequence[str]) -> bool:
     name = rel.rsplit("/", 1)[-1]
     return any(fnmatch.fnmatchcase(rel if "/" in pat else name, pat) for pat in patterns)

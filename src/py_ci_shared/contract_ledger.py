@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from py_ci_shared._core.corpus import iter_files_pruned
 from py_ci_shared._core.source import parse_file
 
 __all__ = [
@@ -140,16 +141,12 @@ def assert_fixture_fresh(
 
 def snapshot_files(root: Path, *, skip_dirs: Iterable[str] = ()) -> dict[str, int]:
     """Relative POSIX path to byte size for every file under ``root``. A missing root is an empty snapshot."""
-    skip = frozenset(skip_dirs)
+    skip = frozenset(skip_dirs) | {".claude"}
     out: dict[str, int] = {}
     if not root.is_dir():
         return out
-    for path in root.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in iter_files_pruned(root, exclude_dirs=skip):
         rel = path.relative_to(root)
-        if any(part in skip for part in rel.parts):
-            continue
         out[rel.as_posix()] = path.stat().st_size
     return out
 

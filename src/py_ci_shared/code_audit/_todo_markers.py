@@ -12,6 +12,8 @@ import re
 from collections.abc import Iterable
 from pathlib import Path
 
+from .._core.corpus import iter_files_pruned
+
 logger = logging.getLogger(__name__)
 
 # Path fragments excluded from the production scan by default (the same set pyutilz's meta_test_utils uses).
@@ -38,7 +40,7 @@ def scan_todo_markers(
     excluded_fragments = set(_DEFAULT_EXCLUDED_FRAGMENTS) | set(extra_excludes)
     out: list[tuple[Path, int, str, str]] = []
     unreadable: list[str] = []
-    for py in package_dir.rglob("*.py"):
+    for py in iter_files_pruned(package_dir, (".py",), excluded_fragments | {".claude"}):
         if any(frag in py.parts for frag in excluded_fragments):
             continue
         try:

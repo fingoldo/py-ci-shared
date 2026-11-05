@@ -69,7 +69,7 @@ def _index_tree(root: Path, exclude_dirs: frozenset[str]) -> tuple[dict[str, lis
 
     files: dict[str, list[Path]] = {}
     dirs: set[str] = set()
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, dirnames, filenames in os.walk(root):  # walk-ok: pruned below by exclude_dirs and every dot-directory, .claude among them
         dirnames[:] = sorted(d for d in dirnames if d not in exclude_dirs and not d.startswith("."))
         dirs.update(dirnames)
         for name in filenames:

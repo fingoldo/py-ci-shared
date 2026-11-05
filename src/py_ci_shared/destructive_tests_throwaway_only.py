@@ -60,6 +60,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.corpus import iter_files_pruned
 from ._core.node_index import docstring_ids
 from ._core import Baseline, CorpusError, Finding, ImportAliases, ParsedFile, ScanResult, parse_file, read_source, scan_python
 from ._core import walk as shared_walk
@@ -345,7 +346,9 @@ def _guarded_dirs(roots: Sequence[Path], repo_root: Path, guards: frozenset[str]
     if not guards:
         return dirs
     for root in roots:
-        for conftest in sorted(Path(root).rglob("conftest.py")):
+        for conftest in iter_files_pruned(Path(root), ("conftest.py",)):
+            if conftest.name != "conftest.py":
+                continue
             tree = parse_file(conftest)
             for node in shared_walk(tree):
                 if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("pytest_")):

@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._ci_install_parts import Provided, Repo, add_project, add_target, dependency_group, norm
+from ._core.corpus import iter_files_pruned
 from ._core import Baseline, EmptyScanError, Finding, SourceError, UnparsedFilesError, parse_source
 from ._import_graph import (
     MORE_ALIASES,
@@ -279,7 +280,7 @@ def _pytest_files(repo: Repo, entry: _Entry) -> list[Path]:
         target = entry.cwd / name
         if not target.exists() or not repo.inside(target):
             continue
-        found = [target] if target.is_file() else sorted(p for p in target.rglob("*.py") if _TEST_FILE.fullmatch(p.name))
+        found = [target] if target.is_file() else [p for p in iter_files_pruned(target, (".py",)) if _TEST_FILE.fullmatch(p.name)]
         files.extend(p for p in found if not any(p.resolve() == i or i in p.resolve().parents for i in ignored))
     return files
 

@@ -771,7 +771,7 @@ def is_python_repo(root: Path) -> bool:
 
     A Flutter or docs repo carries a ``pyproject.toml`` and a script or two for its tooling; ranking its missing Python gates would bury the real gaps."""
     seen = 0
-    for _dirpath, dirnames, filenames in os.walk(root):
+    for _dirpath, dirnames, filenames in os.walk(root):  # walk-ok: pruned in the next line by _USAGE_EXCLUDE, which contains .claude
         dirnames[:] = [d for d in dirnames if d not in _USAGE_EXCLUDE]
         seen += sum(name.endswith(".py") for name in filenames)
         if seen >= _PYTHON_REPO_MIN_FILES:

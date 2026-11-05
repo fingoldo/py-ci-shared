@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _read_src_lines, is_line_exempt
+from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _read_src_lines, is_line_exempt
 
 _CHECK = "source_text_assertion"
 
@@ -40,10 +40,8 @@ def scan_source_text_assertions(
     from py_ci_shared._core.errors import SourceError  # the detector's own error for a file it cannot read
 
     out: list[Finding] = []
-    for path in sorted(root.rglob("*.py")):
+    for path in _iter_py_files(root, exclude_dirs):
         parts = path.relative_to(root).parts
-        if any(part in exclude_dirs for part in parts[:-1]):
-            continue
         if not (path.name.startswith("test_") or any(part in ("tests", "test") for part in parts[:-1])):
             continue
         try:

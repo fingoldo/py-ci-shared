@@ -53,13 +53,13 @@ Usage (from a repo's own ``tool/meta/scanners.py``)::
 from __future__ import annotations
 
 import logging
-import os
 import posixpath
 import re
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from pathlib import Path
 
 from ._core import SourceError, read_source
+from ._core.corpus import iter_files_pruned
 from ._core.source import PathLike
 
 Reader = Callable[[str], str]
@@ -688,24 +688,21 @@ def dart_files_under(repo_root: PathLike, root: str, *, generated_prefixes: Sequ
     """
     base = Path(repo_root) / root
     out: list[str] = []
-    for dirpath, dirnames, filenames in os.walk(base):
-        dirnames.sort()
-        for name in sorted(filenames):
-            if not name.endswith(".dart") or name.endswith((".g.dart", ".freezed.dart")):
-                continue
-            full = Path(dirpath) / name
-            try:
-                head = read_source(full)[:400]
-            except SourceError as exc:
-                logger.warning(
-                    "dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc
-                )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
-                head = ""
-            if any(marker in head for marker in GENERATED_MARKERS):
-                continue
-            rel = full.relative_to(repo_root).as_posix()
-            if not rel.startswith(tuple(generated_prefixes)):
-                out.append(rel)
+    for full in iter_files_pruned(base, (".dart",)):
+        if full.name.endswith((".g.dart", ".freezed.dart")):
+            continue
+        try:
+            head = read_source(full)[:400]
+        except SourceError as exc:
+            logger.warning(
+                "dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc
+            )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
+            head = ""
+        if any(marker in head for marker in GENERATED_MARKERS):
+            continue
+        rel = full.relative_to(repo_root).as_posix()
+        if not rel.startswith(tuple(generated_prefixes)):
+            out.append(rel)
     return out
 
 

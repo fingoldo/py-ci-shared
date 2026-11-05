@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
 from ._core import parse_text, walk
+from ._core.corpus import iter_files_pruned
 from ._mutation_model import Mutant, MutationHarnessError
 from ._mutation_runner import _classify, _plugin_isolation_flags, _pytest_env, _pytest_flags, _run_pytest, _scan_of, run_with_deadline
 
@@ -198,7 +199,7 @@ def expand_test_files(sandbox: Path, test_paths: "Sequence[PathArg]") -> "list[s
     for entry in test_paths:
         base = sandbox / str(entry).split("::")[0]
         if base.is_dir():
-            found = sorted(p for p in base.rglob("*.py") if "__pycache__" not in p.parts)
+            found = iter_files_pruned(base, (".py",))
         else:
             found = [base]
         files.extend(p.relative_to(sandbox).as_posix() for p in found if p.suffix == ".py")

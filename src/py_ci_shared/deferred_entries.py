@@ -17,7 +17,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
-from ._core.corpus import DEFAULT_EXCLUDE
+from ._core.corpus import DEFAULT_EXCLUDE, iter_files_pruned
 from ._core.node_index import walk
 from ._core.source import parse_text
 
@@ -32,8 +32,8 @@ def _rglob_test_files(root: Path) -> "typing.Iterator[Path]":
     ``.claude`` holds Claude Code's agent worktrees, each a COMPLETE checkout of the repo being scanned. Without the
     exclusion, a caller that passes the repo root walks every worktree's own test suite too, and the counts multiply.
     """
-    for p in root.rglob("test_*.py"):
-        if not any(part in DEFAULT_EXCLUDE for part in p.relative_to(root).parts[:-1]):
+    for p in iter_files_pruned(root, (".py",), DEFAULT_EXCLUDE):
+        if p.name.startswith("test_"):
             yield p
 
 

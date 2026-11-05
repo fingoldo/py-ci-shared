@@ -6,7 +6,7 @@ import logging
 import ast
 from pathlib import Path
 
-from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _is_excluded, _line_text, _read_src_lines, _safe_parse, walk_nodes
+from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 # --- redundant test computation (expensive fit re-run across test functions) -----
 #
@@ -208,11 +208,7 @@ def scan_redundant_test_fit_calls(
     computation is wasteful but produces the SAME deterministic result each time).
     """
     findings: list[Finding] = []
-    for py in root.rglob("*.py"):
-        if not py.is_file():
-            continue
-        if _is_excluded(py, root, exclude_dirs):
-            continue
+    for py in _iter_py_files(root, exclude_dirs):
         if not is_test_file(py, root):
             continue
         tree = _safe_parse(py)

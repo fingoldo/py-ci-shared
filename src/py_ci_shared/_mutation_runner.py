@@ -28,6 +28,7 @@ from pathlib import Path
 from collections.abc import Iterator
 from typing import Any, Optional, Union
 
+from ._core.corpus import iter_files_pruned
 from ._core.git import git_env
 from ._mutation_model import MutationHarnessError
 from ._mutation_worker import is_crash_message
@@ -201,20 +202,24 @@ def _dash_plugin_installed() -> bool:
     return any(entry.name == "dash" for entry in pytest11)
 
 
+def _names_dash(path: Path) -> Optional[bool]:
+    """Whether *path* names ``dash``; None when it cannot be read (unknown)."""
+    try:
+        return bool(_DASH_FIXTURE_WORD.search(path.read_text(encoding="utf-8", errors="replace")))
+    except OSError as exc:
+        logger.warning("could not read %s to look for dash, keeping the plugin enabled: %s", path, type(exc).__name__)
+        return None
+
+
 @functools.lru_cache(maxsize=32)
 def _tree_mentions_dash(root: str) -> bool:
     """Whether any Python file under *root* names ``dash``, the one place its plugin's fixtures can come from.
 
     Disabling a plugin changes a verdict only if some test can reach what it provides; a repo that never names it cannot."""
-    for path in Path(root).rglob("*.py"):
-        if ".git" in path.parts or "__pycache__" in path.parts:
-            continue
-        try:
-            if _DASH_FIXTURE_WORD.search(path.read_text(encoding="utf-8", errors="replace")):
-                return True
-        except OSError as exc:
-            logger.warning("could not read %s to look for dash, keeping the plugin enabled: %s", path, type(exc).__name__)
-            return True  # unreadable means unknown, so the plugin stays on
+    for path in iter_files_pruned(Path(root), (".py",)):
+        verdict = _names_dash(path)
+        if verdict is None or verdict:  # unreadable means unknown, so the plugin stays on
+            return True
     return False
 
 

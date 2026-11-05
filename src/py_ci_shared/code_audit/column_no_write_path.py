@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .._core.corpus import iter_files_pruned
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines
 
 # --- a column the schema declares that no statement anywhere can fill --------------------------
@@ -101,7 +102,7 @@ def _collect_sql_declarations(root: Path, sql_root: Path) -> tuple[dict[str, lis
     """`{table: [(column, line, rel_path)]}` over every .sql file, plus each file's comment-stripped text."""
     declarations: dict[str, list[tuple[str, int, str]]] = {}
     sql_texts: list[str] = []
-    for path in sorted(sql_root.rglob("*.sql")):
+    for path in iter_files_pruned(sql_root, (".sql",)):
         text = _strip_comments(path.read_text(encoding="utf-8", errors="replace"))
         sql_texts.append(text)
         for table, columns in _declared_columns(text).items():
