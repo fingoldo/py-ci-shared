@@ -24,7 +24,7 @@ from ._core import (
     SourceProblem,
     child_nodes,
     iter_files,
-    read_source,
+    read_text_if_not_binary,
     refresh_requested,
     relative_posix,
     scan_python,
@@ -98,7 +98,9 @@ def read_text_corpus(root: PathLike, *, patterns: Sequence[str], skip: Iterable[
     for path in iter_files(base, patterns, exclude=frozenset(skip), use_git=use_git):
         rel = relative_posix(path, base)
         try:
-            corpus.files.append(TextFile(path, rel, read_source(path)))
+            text = read_text_if_not_binary(path)
+            if text is not None:  # a binary file (image, archive, profile) is not text: skipped, not reported
+                corpus.files.append(TextFile(path, rel, text))
         except SourceError as exc:
             corpus.unreadable.append(SourceProblem(exc.path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message))
     return corpus

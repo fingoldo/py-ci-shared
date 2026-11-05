@@ -41,7 +41,7 @@ from .refresh import GROW_OPTION as REFRESH_GROW_OPTION
 from .refresh import grow_requested, refresh_requested, register_refresh_options
 from .scan import ParsedFile, ScanResult, SourceProblem, scan_python
 from .scopes import Scope, iter_scopes, qualified_functions, scope_nodes
-from .source import clear_parse_cache, parse_file, parse_source, parse_text, read_source
+from .source import clear_parse_cache, parse_file, parse_source, parse_text, read_source, read_text_if_not_binary
 
 __all__ = [
     "DEFAULT_EXCLUDE",
@@ -96,6 +96,7 @@ __all__ = [
     "parse_source",
     "parse_text",
     "read_source",
+    "read_text_if_not_binary",
     "refresh_requested",
     "qualified_functions",
     "register_refresh_options",

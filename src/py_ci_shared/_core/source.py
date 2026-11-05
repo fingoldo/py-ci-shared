@@ -147,6 +147,26 @@ def read_source(path: PathLike) -> str:
     return _decode(p, raw)
 
 
+#: Bytes probed for a NUL when deciding whether a file is binary; the same window git uses.
+_BINARY_PROBE_BYTES = 8000
+
+
+def read_text_if_not_binary(path: PathLike) -> Optional[str]:
+    """The decoded text of *path*, or ``None`` when its first bytes hold a NUL (a binary file: an image, an archive, a profile).
+
+    Binary files are not text and not unreadable text, so a gate reading a text corpus skips them instead of reporting them.
+    Undecodable text still raises :class:`SourceReadError`. Shares the bytes cache with :func:`read_source`: one open per file.
+    """
+    p = Path(path)
+    try:
+        raw = read_bytes_cached(p)
+    except OSError as exc:
+        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
+    if b"\x00" in raw[:_BINARY_PROBE_BYTES]:
+        return None
+    return _decode(p, raw)
+
+
 def _parse_text(path: Path, text: str) -> ast.Module:
     try:
         return ast.parse(text, filename=str(path), type_comments=False)

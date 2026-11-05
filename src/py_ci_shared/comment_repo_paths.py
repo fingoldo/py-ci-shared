@@ -45,7 +45,7 @@ from ._core import (
     SourceProblem,
     iter_files,
     parse_source,
-    read_source,
+    read_text_if_not_binary,
     relative_posix,
 )
 from ._core.node_index import walk as _fast_walk
@@ -148,7 +148,10 @@ def _scan(repo_root: Path, files: Optional[Iterable[Path]], roots: Sequence[str]
                 source, tree = parse_source(path)
                 lines = _python_comments(source, tree)
             else:
-                source = read_source(path)
+                text = read_text_if_not_binary(path)
+                if text is None:  # a binary file (image, archive, profile) carries no comments
+                    continue
+                source = text
                 markers = _markers(path, rel, source, roots)
                 if markers is None:
                     continue
