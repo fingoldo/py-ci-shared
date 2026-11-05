@@ -168,3 +168,9 @@ def test_cli_exit_codes(tmp_path, capsys):
     assert "[sibling-floor-skew]" in capsys.readouterr().out
     assert sfs.main([str(tmp_path / "missing"), "--no-network"]) == 2
     assert sfs.main([str(root), "--resolve-in", "nopath"]) == 2
+
+
+def test_no_pyproject_is_a_skip_with_a_reason_for_the_gate(tmp_path):
+    # audit 37-F6: with no pyproject.toml there are no floors, so the gate has no subject and skips
+    with pytest.raises(pytest.skip.Exception, match="pyproject"):
+        sfs.assert_sibling_floor_skew(tmp_path, network=False)

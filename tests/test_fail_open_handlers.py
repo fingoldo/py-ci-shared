@@ -397,3 +397,16 @@ def test_recording_the_failure_is_not_an_admission(tmp_path, handler):
 def test_a_flag_set_true_in_the_handler_and_returned_is_return_true(tmp_path):
     src = "def check_allowed(x):\n    ok = False\n    try:\n        ok = check(x)\n    except Exception:\n        ok = True\n    return ok\n"
     assert _admit_rules(tmp_path, src) == [("check_allowed", "gate_returns_true", 5)]
+
+
+@pytest.mark.parametrize(
+    "stored",
+    ["count", "counts.get(x, 0) + 1"],
+)
+def test_a_counter_keyed_by_the_loop_element_is_not_admit_on_error(tmp_path, stored):
+    # audit 37-F25: `d[name] = count` stores a number under the element as a key; it does not admit the element
+    src = (
+        "def f(items, counts, failures):\n    for x in items:\n        try:\n            check(x)\n        except Exception:\n"
+        f"            count = {stored}\n            counts[x] = count\n"
+    )
+    assert _admit_rules(tmp_path, src) == []

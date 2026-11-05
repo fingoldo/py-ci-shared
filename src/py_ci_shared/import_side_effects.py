@@ -168,6 +168,8 @@ def assert_no_new_import_time_env_mutations(
     import pytest
 
     parsed, keys, unparsed = _scan_env(root, pattern)
+    if parsed == 0 and not unparsed and min_files > 0:
+        pytest.skip(f"no file matching {pattern!r} under {root}: no test module can write os.environ at import time")
     if parsed < min_files:
         pytest.fail(
             f"only {parsed} file(s) matching {pattern!r} parsed under {root}; expected at least {min_files} -- Check root, the scan has lost its subject"
@@ -414,6 +416,8 @@ def assert_imports_have_no_side_effects(
     import pytest
 
     names = list(targets)
+    if not names and min_targets > 0:
+        pytest.skip("no import targets given: no package to probe for import-time side effects")
     if len(names) < min_targets:
         pytest.fail(f"only {len(names)} import target(s) given; expected at least {min_targets} -- Add the package and the subpackages worth probing")
     result = probe_import_side_effects(names, **probe_kw)

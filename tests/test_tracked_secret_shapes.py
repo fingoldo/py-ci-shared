@@ -225,3 +225,22 @@ def test_the_incident_shape_matches_a_real_length_token_and_not_a_short_or_prefi
     body = f"{PREFIX}\n{PREFIX}0f1e2d\n{PREFIX}{'0f' * 9}\n{HEX_ONLY}\n"
     repo = _repo(tmp_path, {"a.txt": body.encode()})
     assert _at(tss.find_tracked_secret_shapes(repo, shapes=ONE)) == [("a.txt", 4)]  # 18 hex digits is below the 20 floor
+
+
+def test_the_gate_skips_with_a_reason_when_no_shape_table_or_pyproject_exists(tmp_path):
+    # audit 37-F6: a repo with no secret-shape config has no subject for this gate, so it skips instead of erroring
+    no_pyproject = _repo(tmp_path / "a", {"a.txt": b"x = 1\n"})
+    with pytest.raises(pytest.skip.Exception, match="secret_shapes"):
+        tss.assert_no_tracked_secret_shapes(no_pyproject)
+    no_table = _repo(tmp_path / "b", {"a.txt": b"x = 1\n", "pyproject.toml": b"[tool.other]\nx = 1\n"})
+    with pytest.raises(pytest.skip.Exception, match="secret_shapes"):
+        tss.assert_no_tracked_secret_shapes(no_table)
+
+
+def test_the_gate_still_fails_on_a_malformed_config_and_on_a_real_finding(tmp_path):
+    broken = _repo(tmp_path / "a", {"a.txt": b"x = 1\n", "pyproject.toml": b"[tool.py_ci_shared\n"})
+    with pytest.raises(ConfigError, match="not valid TOML"):
+        tss.assert_no_tracked_secret_shapes(broken)
+    seeded = _repo(tmp_path / "b", {"pyproject.toml": WIDE_CONFIG, "bad.py": f"{FAKE}\n".encode()})
+    with pytest.raises(AssertionError, match="secret-shaped"):
+        tss.assert_no_tracked_secret_shapes(seeded)

@@ -366,7 +366,11 @@ def assert_sibling_floor_skew(
     allow_unparsed: bool = False,
 ) -> None:
     """Fail on any skewed or unresolvable install site, or with *baseline_path* on one the (shrink-only) baseline does
-    not accept."""
+    not accept. Skips with a reason when *repo_root* has no ``pyproject.toml``: there are no floors to compare."""
+    import pytest
+
+    if not (Path(repo_root) / "pyproject.toml").is_file():
+        pytest.skip(f"no pyproject.toml under {repo_root}: no sibling floors to compare the workflows against")
     found = find_sibling_floor_skew(
         repo_root, siblings=siblings, owner=owner, resolve_in=resolve_in, network=network, resolver=resolver, allow_unparsed=allow_unparsed
     )

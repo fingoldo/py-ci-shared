@@ -11,9 +11,6 @@ Entries are read as ``{"accepted": {...}}`` or a bare ``{key: note}`` object, sk
 
 Enable it explicitly (NOT in the default set)::
 
-    [tool.py_ci_shared]
-    enable = ["dup_baseline_percent_key"]
-
     [tool.py_ci_shared.gates.dup_baseline_percent_key]
     module = "dup_baseline_percent_key"
     entry = "assert_no_percent_only_duplicate_entries"

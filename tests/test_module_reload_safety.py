@@ -280,3 +280,55 @@ class TestAuditRegressions:
         _file(tmp_path, "test_bad.py", "import importlib\ndef (:\n")
         sites = find_unpaired_reloads(tmp_path)
         assert sorted((s.path, s.primitive.split(":")[0]) for s in sites) == [("test_bad.py", "unparsable"), ("test_bom.py", "importlib.reload")]
+
+
+def test_allowlist_entries_from_toml_are_lists_and_still_match(tmp_path):
+    # audit 37-F24: TOML hands an allowlist entry over as a two-element list, which cannot be a set member as it is
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "prod.py").write_text("import importlib\nimportlib.reload(importlib)\n", encoding="utf-8")
+    assert_no_reloads_in_code([src], tmp_path, allowed=[["src/prod.py", "importlib.reload(importlib)"]])
+    with pytest.raises(pytest.fail.Exception, match="reload"):
+        assert_no_reloads_in_code([src], tmp_path, allowed=[])
+
+
+def test_test_modules_are_not_scanned_as_production_code(tmp_path):
+    # audit 37-F24: a reload in a test module is a test concern, judged by the test-side scan
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "prod.py").write_text("x = 1\n", encoding="utf-8")
+    (src / "test_stubs.py").write_text("import importlib\nimportlib.reload(importlib)\n", encoding="utf-8")
+    assert_no_reloads_in_code([src], tmp_path)
+    (src / "prod2.py").write_text("import importlib\nimportlib.reload(importlib)\n", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"prod2\.py"):
+        assert_no_reloads_in_code([src], tmp_path)
+
+
+def test_a_del_sys_modules_that_restores_a_snapshot_is_paired(tmp_path):
+    # audit 37-F24: `del sys.modules[k]` for every name the snapshot lacks is a restore, not a leak
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_restore.py").write_text(
+        textwrap.dedent("""
+            import sys
+
+            def test_a():
+                saved = dict(sys.modules)
+                try:
+                    import json  # noqa: F401
+                finally:
+                    for k in list(sys.modules):
+                        if k not in saved:
+                            del sys.modules[k]
+            """),
+        encoding="utf-8",
+    )
+    assert_no_unpaired_reloads(tests, min_files=1)
+
+
+def test_a_bare_del_sys_modules_with_no_snapshot_is_still_unpaired(tmp_path):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_leak.py").write_text("import sys\n\ndef test_a():\n    del sys.modules['json']\n", encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match="reload site"):
+        assert_no_unpaired_reloads(tests, min_files=1)

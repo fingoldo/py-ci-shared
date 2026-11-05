@@ -46,7 +46,7 @@ _SUBPROCESS_CALLS = frozenset({"run", "Popen", "check_output", "check_call", "ca
 _DART_SPAWN = re.compile(r"Process\.(?:run|runSync|start)\(\s*['\"]git['\"]")
 # GIT_ is case-sensitive (an environment variable name); the helper names are not, so _cleanEnv and clean_env both count.
 _NO_PARENT_ENV = re.compile(r"\bincludeParentEnvironment\s*:\s*false\b")
-_SCRUBBER = re.compile(r"GIT_|(?i:git_?env|clean_?env|scrub|strip)")
+_SCRUBBER = re.compile(r"GIT_|(?i:git_?env|clean_?env|scrub|strip|without_?git|git_?hook_?env)")
 
 
 def _is_git_argv(node: ast.expr) -> bool:
@@ -74,9 +74,12 @@ def _assigned_sources(source: str, tree: ast.Module) -> dict[str, list[str]]:
     return assigned
 
 
-def _env_scrubs(env: ast.expr, source: str, assigned: dict[str, list[str]]) -> bool:
+def _env_scrubs(env: ast.expr, source: str, assigned: dict[str, list[str]], functions: dict[str, str]) -> bool:
     if isinstance(env, ast.Name):
         return any(_SCRUBBER.search(text) for text in assigned.get(env.id, []))
+    if isinstance(env, ast.Call) and isinstance(env.func, ast.Name) and env.func.id in functions:
+        # a helper judged by the environment it builds: its body names GIT_* (audit 37-F27)
+        return "GIT_" in functions[env.func.id] or bool(_SCRUBBER.search(functions[env.func.id]))
     return bool(_SCRUBBER.search(ast.get_source_segment(source, env) or ""))
 
 
@@ -84,6 +87,7 @@ def _python_spawns(rel: str, path: Path, found: dict[str, str]) -> None:
     source, tree = parse_source(path)
     lines = source.splitlines()
     assigned = _assigned_sources(source, tree)
+    functions = {n.name: ast.get_source_segment(source, n) or "" for n in tree.body if isinstance(n, ast.FunctionDef)}
     calls = sorted((n for n in shared_walk(tree) if isinstance(n, ast.Call)), key=lambda n: (n.lineno, n.col_offset))
     for node in calls:
         func = node.func
@@ -92,7 +96,7 @@ def _python_spawns(rel: str, path: Path, found: dict[str, str]) -> None:
         if not node.args or not _is_git_argv(node.args[0]):
             continue
         env = next((kw.value for kw in node.keywords if kw.arg == "env"), None)
-        if env is not None and _env_scrubs(env, source, assigned):
+        if env is not None and _env_scrubs(env, source, assigned, functions):
             continue
         line = lines[node.lineno - 1]
         why = "passes no env=" if env is None else "passes an env that neither drops GIT_* nor calls a scrubbing helper"

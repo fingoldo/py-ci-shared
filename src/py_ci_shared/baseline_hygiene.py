@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import re
+from typing import Optional
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -83,6 +84,16 @@ def _entries(baseline_path: Path) -> dict[str, str]:
     return _text_entries(text)
 
 
+def _keyed_record(item: object) -> Optional[tuple[str, str]]:
+    """``(key, note)`` of a list-shaped record ``{"key" | "id", "note" | "reason"}`` (audit 37-F26); None for anything else."""
+    if not isinstance(item, dict):
+        return None
+    key = next((item[k] for k in ("key", "id") if isinstance(item.get(k), str)), None)
+    if key is None:
+        return None
+    return key, _note_of(next((item[k] for k in ("note", "reason") if k in item), ""))
+
+
 def _json_entries(data: object) -> dict[str, str]:
     """``{key: note}`` from parsed JSON baseline *data* (see :func:`_entries`)."""
     accepted: object = data
@@ -99,7 +110,11 @@ def _json_entries(data: object) -> dict[str, str]:
             out[key] = _note_of(value)
     elif isinstance(accepted, list):
         for item in accepted:
-            out["|".join(item) if isinstance(item, (list, tuple)) else str(item)] = ""
+            record = _keyed_record(item)
+            if record is not None:
+                out[record[0]] = record[1]
+            else:
+                out["|".join(item) if isinstance(item, (list, tuple)) else str(item)] = ""
     return out
 
 

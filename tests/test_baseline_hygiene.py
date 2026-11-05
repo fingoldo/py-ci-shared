@@ -151,3 +151,14 @@ def test_a_note_in_another_script_counts_its_words(tmp_path):
     assert find_baseline_problems(ok) == []
     short = _json_baseline(tmp_path, {"src/x.py": "оставлено навсегда"})
     assert len(find_baseline_problems(short)) == 1
+
+
+def test_a_top_level_list_of_keyed_records_is_read_with_its_notes(tmp_path):
+    # audit 37-F26: the code-audit baseline is a list of {key, note} records, not a {key: note} map
+    good = tmp_path / "code_audit.json"
+    good.write_text(json.dumps([{"key": "a.py::f", "note": "the rate limiter keeps this loop element on purpose; reviewed in the audit"}]), encoding="utf-8")
+    assert find_baseline_problems(good) == []
+    bare = tmp_path / "bare.json"
+    bare.write_text(json.dumps([{"key": "a.py::f"}]), encoding="utf-8")
+    problems = find_baseline_problems(bare)
+    assert problems and "no human reason" in problems[0]
