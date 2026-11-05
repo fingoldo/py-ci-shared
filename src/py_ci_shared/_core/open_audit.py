@@ -12,6 +12,7 @@ import builtins
 import contextlib
 import io
 import os
+import pathlib
 import sys
 import threading
 from collections import Counter
@@ -80,11 +81,19 @@ def count_opens(only_under: Optional[str] = None) -> Iterator[OpenCounts]:
 
     # ``Path.open`` on every supported Python ends in ``io.open``, which this patch counts once. The accessor is not patched:
     # wrapping it as well counted each open twice on 3.9 (``io.open`` calls ``pathlib._NormalAccessor.open`` through the opener).
+    # Python 3.10 alone calls ``pathlib._NormalAccessor.open`` (bound to the original ``io.open`` when pathlib was imported) from
+    # ``Path.open`` and never reaches ``io.open``: count that entry point there, where nothing else counts the open.
+    accessor = getattr(pathlib, "_NormalAccessor", None) if sys.version_info[:2] == (3, 10) else None
+    real_accessor_open = accessor.open if accessor is not None else None
+    if accessor is not None:
+        accessor.open = staticmethod(counting)  # type: ignore[assignment]
     io.open = builtins.open = counting  # type: ignore[assignment]
     try:
         yield counts
     finally:
         io.open = builtins.open = real  # type: ignore[assignment]
+        if accessor is not None:
+            accessor.open = real_accessor_open  # type: ignore[assignment]
 
 
 def main() -> int:
