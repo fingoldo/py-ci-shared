@@ -35,5 +35,10 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F27 | git_child_env | does not recognise the helper `_without_git_hook_env` that scrubs `GIT_*` | llm_bench | OPEN |
 | 37-F28 | gate config (`[tool.py_ci_shared]`) | a gate with a `[gates.X]` table must not also be in `enable`; the error says so but the generated examples do not | llm_bench, algopacksimple | OPEN |
 | 37-F29 | drifted_duplicate_functions | reads `@overload` stubs as copies of each other (five `build_*_prompt` stubs) | glossum | OPEN |
+| 37-F30 | import_cycles | does not honour the `# audit-exempt: import_cycle` marker that the same cycle carries in upwork_shared/_circuit.py:1 | social | OPEN |
+| 37-F31 | sentinel_or_fallback | ignores `# falsy-ok:` on an `x if x else y` expression, although its docstring promises the marker (run_screening.py:231, 282) | social | OPEN |
+| 37-F32 | env_flag_parsing | reports `PROXY_USER` (a credential string) as a boolean flag for `if not user` and `user == ""` (_observability_lookups.py:92) | social | OPEN |
+| 37-F33 | ddl_lock_safety | reads SQL inside a `--` comment (RUNBOOK sql: a commented-out SET NOT NULL) | social | OPEN |
+| 37-F34 | unresolved_module_attributes | resolves a bare `db` to dashboard/db.py when the code means the sibling project's db.py; not safe monorepo-wide per project | social | OPEN |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
