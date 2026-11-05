@@ -179,3 +179,13 @@ def test_a_concatenated_and_a_bytes_drive_path_are_reported_once_each(tmp_path):
 @pytest.mark.parametrize("rel", [".env", "run.sh", "setup.ps1", "cfg/app.json"])
 def test_env_shell_and_json_files_are_scanned_by_default(tmp_path, rel):
     assert _kinds(tmp_path, rel, "OUT=D:/data/out\n") == [(rel, 1, "drive-path")]
+
+
+def test_a_sed_expression_is_not_a_db_url(tmp_path):
+    _write(tmp_path, "tool/check.sh", 'sed -E "s://.*::root@:" file\n')
+    assert [r for r in _found(tmp_path) if r[2] == "db-url"] == []
+
+
+def test_a_real_dsn_with_inline_password_is_still_a_db_url(tmp_path):
+    _write(tmp_path, "tool/check.sh", 'DSN="postgresql://app:hunter2@db:5432/x"\n')  # pragma: allowlist secret
+    assert [r[2] for r in _found(tmp_path)] == ["db-url"]

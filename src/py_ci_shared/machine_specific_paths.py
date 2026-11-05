@@ -51,7 +51,9 @@ _NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"
 RULES: dict[str, re.Pattern[str]] = {
     "user-home-path": re.compile(rf"(?i)(?:\b[a-z]:[\\/]+users[\\/]+({_NAME}))|(?:(?<![\w.~-])/(?:home|Users)/({_NAME})(?=/))"),
     "model-cache-path": re.compile(r"(?i:\.cache[\\/]+(?:huggingface|torch|stanza)\b)|(?:^|[\\/])stanza_resources(?![\w])"),
-    "db-url": re.compile(r"(?i)\b[a-z][a-z0-9]*(?:\+[a-z0-9]+)*://([^\s'\"/@:]+):([^\s'\"/@]+)@"),  # any scheme: a pasted DSN of any service leaks
+    "db-url": re.compile(
+        r"(?i)\b[a-z][a-z0-9]*(?:\+[a-z0-9]+)*://([^\s'\"/@:*\\^$()\[\]{}|?]+):([^\s'\"/@*\\]+)@"
+    ),  # any scheme: a pasted DSN of any service leaks
     "drive-path": re.compile(r"(?<![A-Za-z0-9])[D-Zd-z]:[\\/]+[\w.$~-]"),
 }
 _PLACEHOLDER_SECRET = re.compile(r"[<>{}$%*]|^\.\.\.$")
