@@ -54,12 +54,14 @@ def _bindings(body_nodes: "list[ast.Assign]") -> "dict[str, Optional[int]]":
 
 
 def _is_launch(call: ast.Call) -> bool:
+    """``kernel((grid...), (block...), (args...))``: the grid and the block hold sizes, so a string or float constant among them (``itertools.product(("a", "b"), (3, 5), ...)``) is not a launch."""
     return (
         len(call.args) >= 3
         and isinstance(call.args[0], ast.Tuple)
         and isinstance(call.args[1], ast.Tuple)
         and bool(call.args[1].elts)
         and isinstance(call.args[2], (ast.Tuple, ast.List))
+        and not any(isinstance(e, ast.Constant) and not isinstance(e.value, int) for e in (*call.args[0].elts, *call.args[1].elts))
     )
 
 

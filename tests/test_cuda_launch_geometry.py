@@ -62,6 +62,12 @@ def test_a_module_constant_and_a_local_literal_are_the_same_literal(tmp_path):
     assert [f.line for f in _found(tmp_path, body)] == [5, 7]
 
 
+def test_a_cartesian_grid_of_strings_and_numbers_is_not_a_launch(tmp_path):
+    """``itertools.product(("a", "b"), (3, 5), (0.1, 0.2))`` has the shape of a launch but its first two tuples hold strings and floats, not sizes."""
+    body = 'grid = list(itertools.product(("full", "pick"), (3, 5, 7), (0.01, 0.05)))\nratio = list(itertools.product((0.5, 1.0), (256, 128), (x, out)))'
+    assert _found(tmp_path, body) == []
+
+
 def test_a_name_bound_twice_or_to_something_else_is_not_a_literal(tmp_path):
     """A name that is rebound, or bound to a call, is not judged."""
     body = "width = 128\nwidth = dev.pick()\nkernel((n,), (width,), (x, out))\nsize = dev.pick()\nkernel((n,), (size,), (x, out))"
