@@ -19,6 +19,9 @@ statement that looks harmless queues every writer on a production table behind i
    ``-- rewrite-ok: <reason>`` accepts them. An unknown function in a ``DEFAULT`` is not flagged: the scan cannot know its volatility
    (pass ``volatile_functions`` to name more).
 
+*applied_files* maps a repo-relative path to the reason the migration is already applied and its history must not change: every finding of
+that file is dropped, and a listed file that is gone or has no finding is reported as a stale exemption (``ddl-applied-exemption-stale``).
+
 *tiny_tables* maps ``table -> reason`` for tables small enough that a validating scan, a plain index build or a rewrite is instant (a bare name
 matches that table in any schema); it never excuses rule 1 or the BEGIN rule. A blank reason is a ``ValueError``.
 
@@ -51,6 +54,7 @@ RULE_LOCK_TIMEOUT = "ddl-lock-timeout"
 RULE_CONSTRAINT = "ddl-constraint-not-valid"
 RULE_INDEX = "ddl-index-concurrently"
 RULE_REWRITE = "ddl-table-rewrite"
+RULE_APPLIED_STALE = "ddl-applied-exemption-stale"
 
 #: Functions whose result differs per row or per call, so a column ``DEFAULT`` using one cannot be stored as catalogue metadata.
 DEFAULT_VOLATILE_FUNCTIONS = (
@@ -431,11 +435,42 @@ def _rewrite_findings(rel: str, src: str, live: list[_Stmt], tiny: Mapping[str, 
     return out
 
 
+def _applied_exemptions(applied_files: Optional[Mapping[str, str]]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key, reason in (applied_files or {}).items():
+        if not str(reason).strip():
+            raise ValueError(f"applied_files entry {key!r} needs a non-empty reason saying why the migration is already applied")
+        out[str(key).replace("\\", "/")] = reason
+    return out
+
+
+def _drop_applied(found: list[Finding], applied: Mapping[str, str], scanned: set[str]) -> list[Finding]:
+    """Remove every finding of an applied file; a listed file that is not scanned or has no finding is a stale exemption."""
+    if not applied:
+        return found
+    with_findings = {f.path for f in found}
+    kept = [f for f in found if f.path not in applied]
+    for path in sorted(applied):
+        if path not in scanned or path not in with_findings:
+            why = "no longer exists under sql_dirs" if path not in scanned else "has no finding"
+            kept.append(
+                Finding(
+                    path,
+                    1,
+                    RULE_APPLIED_STALE,
+                    f"applied_files entry {path!r} {why} (stale exemption); remove it so the exemption cannot outlive its cause",
+                    key=f"{RULE_APPLIED_STALE}::stale::{path}",
+                )
+            )
+    return kept
+
+
 def find_ddl_lock_findings(
     root: Union[str, Path],
     *,
     sql_dirs: Iterable[Union[str, Path]],
     tiny_tables: Optional[Mapping[str, str]] = None,
+    applied_files: Optional[Mapping[str, str]] = None,
     check_rewrites: bool = True,
     volatile_functions: Iterable[str] = (),
     min_files: int = 1,
@@ -452,6 +487,7 @@ def find_ddl_lock_findings(
     blank = sorted(k for k, v in (tiny_tables or {}).items() if not str(v).strip())
     if blank:
         raise ValueError(f"tiny_tables entries need a reason saying why the table is small: {blank}")
+    applied = _applied_exemptions(applied_files)
     volatile = (*DEFAULT_VOLATILE_FUNCTIONS, *volatile_functions)
     base = Path(root)
     files: list[Path] = []
@@ -460,8 +496,10 @@ def find_ddl_lock_findings(
     out: list[Finding] = []
     problems: list[str] = []
     read = 0
+    scanned: set[str] = set()
     for path in sorted(set(files)):
         rel = relative_posix(path, base)
+        scanned.add(rel)
         try:
             src = read_source(path)
         except SourceReadError as exc:
@@ -478,7 +516,7 @@ def find_ddl_lock_findings(
         raise UnparsedFilesError(
             f"{len(problems)} SQL file(s) could not be read, so no gate can vouch for them. Re-save them as UTF-8:\n  " + "\n  ".join(problems)
         )
-    return sorted(out, key=lambda f: (f.path, f.line))
+    return sorted(_drop_applied(out, applied, scanned), key=lambda f: (f.path, f.line))
 
 
 def assert_ddl_files_lock_safe(
@@ -486,6 +524,7 @@ def assert_ddl_files_lock_safe(
     *,
     sql_dirs: Iterable[Union[str, Path]],
     tiny_tables: Optional[Mapping[str, str]] = None,
+    applied_files: Optional[Mapping[str, str]] = None,
     check_rewrites: bool = True,
     volatile_functions: Iterable[str] = (),
     baseline_path: Optional[Union[str, Path]] = None,
@@ -500,6 +539,7 @@ def assert_ddl_files_lock_safe(
         root,
         sql_dirs=sql_dirs,
         tiny_tables=tiny_tables,
+        applied_files=applied_files,
         check_rewrites=check_rewrites,
         volatile_functions=volatile_functions,
         min_files=min_files,

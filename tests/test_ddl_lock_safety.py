@@ -349,3 +349,47 @@ def test_a_session_lock_timeout_survives_the_end_of_a_transaction(tmp_path):
 def test_a_pasteable_comment_below_the_live_sql_is_not_read_as_a_statement(tmp_path):
     body = "SET lock_timeout = '5s';\nALTER TABLE jobs ADD COLUMN note text;\n-- Rollback, after the backfill:\n--   ALTER TABLE big\n--     ADD CONSTRAINT c CHECK (x > 0);\n"
     assert [r for r in _rules(_sql(tmp_path, a=body)) if r[0] == "ddl-constraint-not-valid"] == []
+
+
+# --- applied_files: already-applied migrations are exempt only when listed --------------------------------------------------------------------
+
+_UNSAFE = "ALTER TABLE jobs ADD COLUMN note text;\n"
+
+
+def test_an_applied_file_with_a_finding_is_exempt_only_when_listed(tmp_path):
+    root = _sql(tmp_path, a=_UNSAFE, b=_UNSAFE)
+    assert [f.path for f in _find(root)] == ["sql/a.sql", "sql/b.sql"]
+    kept = _find(root, applied_files={"sql/a.sql": "applied 2026-10-01, history frozen"})
+    assert [(f.path, f.rule) for f in kept] == [("sql/b.sql", "ddl-lock-timeout")]
+
+
+def test_an_applied_file_entry_accepts_backslash_separators(tmp_path):
+    root = _sql(tmp_path, a=_UNSAFE)
+    assert _find(root, applied_files={r"sql\a.sql": "applied 2026-10-01"}) == []
+
+
+def test_a_listed_applied_file_with_no_finding_is_reported_stale(tmp_path):
+    root = _sql(tmp_path, a=_UNSAFE, b="SELECT 1;\n")
+    found = _find(root, applied_files={"sql/a.sql": "applied", "sql/b.sql": "applied"})
+    assert [(f.path, f.rule) for f in found] == [("sql/b.sql", "ddl-applied-exemption-stale")]
+    assert "has no finding" in found[0].message
+
+
+def test_a_listed_applied_file_that_no_longer_exists_is_reported_stale(tmp_path):
+    root = _sql(tmp_path, a=_UNSAFE)
+    found = _find(root, applied_files={"sql/gone.sql": "applied"})
+    assert [(f.path, f.rule) for f in found] == [("sql/a.sql", "ddl-lock-timeout"), ("sql/gone.sql", "ddl-applied-exemption-stale")]
+    assert "no longer exists" in found[1].message
+
+
+@pytest.mark.parametrize("reason", ["", "   "])
+def test_an_applied_file_entry_without_a_reason_is_refused(tmp_path, reason):
+    with pytest.raises(ValueError, match="applied_files"):
+        _find(_sql(tmp_path, a=_UNSAFE), applied_files={"sql/a.sql": reason})
+
+
+def test_assert_passes_once_the_only_finding_is_an_applied_file(tmp_path):
+    root = _sql(tmp_path, a=_UNSAFE)
+    with pytest.raises(AssertionError, match="ddl-lock-safety finding"):
+        assert_ddl_files_lock_safe(root, sql_dirs=["sql"], use_git=False)
+    assert_ddl_files_lock_safe(root, sql_dirs=["sql"], use_git=False, applied_files={"sql/a.sql": "applied 2026-10-01"})
