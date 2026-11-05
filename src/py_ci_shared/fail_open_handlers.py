@@ -221,6 +221,9 @@ def _silent_default_return(handler: ast.ExceptHandler, lines: list[str]) -> bool
     """True when the handler's whole body is one ``return`` and nothing in the handler logs, raises or is marked best-effort."""
     if len(handler.body) != 1 or not isinstance(handler.body[0], ast.Return):
         return False
+    returned = handler.body[0].value
+    if handler.name and returned is not None and _mentions(returned, {handler.name}):
+        return False  # the return hands back the failure's own data (``return exc.sqlstate``), not a default
     return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
 
 

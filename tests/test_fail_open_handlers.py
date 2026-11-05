@@ -397,3 +397,15 @@ def test_recording_the_failure_is_not_an_admission(tmp_path, handler):
 def test_a_flag_set_true_in_the_handler_and_returned_is_return_true(tmp_path):
     src = "def check_allowed(x):\n    ok = False\n    try:\n        ok = check(x)\n    except Exception:\n        ok = True\n    return ok\n"
     assert _admit_rules(tmp_path, src) == [("check_allowed", "gate_returns_true", 5)]
+
+
+def test_returning_the_exceptions_own_data_is_not_a_silent_default(tmp_path):
+    body = """
+        def read(conn):
+            try:
+                return conn.run()
+            except DBError as exc:
+                return exc.sqlstate
+    """
+    assert _rules(tmp_path, body) == []
+    assert _rules(tmp_path, body.replace("return exc.sqlstate", "return None")) == ["silent_default_return"]
