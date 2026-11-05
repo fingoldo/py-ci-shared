@@ -60,3 +60,36 @@ def test_two_different_numeric_fields_chained_with_or_stay_flagged(tmp_path):
 def test_the_same_key_read_twice_is_still_flagged(tmp_path):
     source = 'def f(spec):\n    return spec.get("rev") or spec.get("rev", 3)\n'
     assert _flagged(tmp_path, source) != []
+
+
+# ---- 2026-11-05 glossum false positives: each shape below is a reviewed non-trap ----------
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # a getattr flag read with a boolean default is a boolean operand (flag or predicate)
+        'def f(r):\n    return {"ok": getattr(r, "is_skip_notice", False) or len(r.errors) == 0}\n',
+        'def f(r):\n    return {"ok": getattr(r, "is_skip_notice", False) or not has_fatal(r.errors)}\n',
+        # the RHS reads the raw response that the LHS field was parsed from: the same payload
+        'def f(row):\n    parsed = row.get("parsed") or safe_json_load(row.get("response"))\n',
+        # a string constant as the getattr default is a text fallback
+        'def f(coro_func, op):\n    label = op or getattr(coro_func, "__name__", "db_save")\n',
+        # an f-string or string concatenation is a display default
+        'def f(x):\n    return x["tag"] or "ZZZ" + x["headline"]\n',
+    ],
+)
+def test_glossum_2026_11_05_reviewed_shapes_are_not_traps(tmp_path: Path, source: str):
+    assert _flagged(tmp_path, source) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # negative controls: the same shapes with a non-boolean getattr default, or another receiver, stay flagged
+        'def f(r):\n    return {"ok": getattr(r, "count", 0) or len(r.errors) == 0}\n',
+        'def f(row, other):\n    parsed = row.get("parsed") or make_payload(other.get("response"))\n',
+    ],
+)
+def test_glossum_2026_11_05_negative_controls_stay_flagged(tmp_path: Path, source: str):
+    assert _flagged(tmp_path, source) != []

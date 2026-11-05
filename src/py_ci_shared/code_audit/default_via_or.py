@@ -573,7 +573,7 @@ def _is_boolean_valued(node: ast.AST, bool_names: frozenset[str] = frozenset()) 
     (``_loop_looks_bounded_retry``, ``_loop_body_has_meaningful_sleep``) are recognised as the same
     predicate-shaped-name convention, confirmed on this project's own code_audit scanners, all of
     which are declared ``-> bool`` and used exactly like ``is_*``."""
-    if isinstance(node, ast.Compare):
+    if isinstance(node, ast.Compare) or _is_getattr_with_bool_default(node):
         return True
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
         return True
@@ -591,6 +591,22 @@ def _is_boolean_valued(node: ast.AST, bool_names: frozenset[str] = frozenset()) 
     if isinstance(node, ast.BoolOp):
         return all(_is_boolean_valued(v, bool_names) for v in node.values)
     return False
+
+
+def _is_getattr_with_bool_default(node: ast.AST) -> bool:
+    """``getattr(obj, "is_skip_notice", False)``: a flag read whose default is a bool constant, so the value is a bool.
+
+    Measured in glossum (2026-11-05): ``getattr(result, "is_skip_notice", False) or len(errors) == 0`` is a flag
+    OR a predicate, not a value default; the pair is exempt once the flag side is recognised as boolean.
+    """
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) == 3
+        and isinstance(node.args[2], ast.Constant)
+        and isinstance(node.args[2].value, bool)
+    )
 
 
 def _is_alternative_source_read(rhs: ast.AST) -> bool:
@@ -710,7 +726,37 @@ def _is_text_fallback(rhs: ast.AST) -> bool:
     default (``", ".join(names) or "none"``, ``name or "<module>"``, ``exc.msg or "invalid syntax"``, ``f"{x or '?'}"``). A text fallback
     cannot change a numeric or flag setting, so the trap the scanner exists for does not arise here.
     """
+    if isinstance(rhs, ast.Call) and isinstance(rhs.func, ast.Name) and rhs.func.id == "getattr" and len(rhs.args) == 3:
+        # ``getattr(fn, "__name__", "db_save")``: a name read with a string default
+        rhs = rhs.args[2]
+    if isinstance(rhs, ast.BinOp) and isinstance(rhs.op, ast.Add):
+        # ``"ZZZ" + x["headline"]``: a display string built from a literal prefix
+        leftmost: ast.AST = rhs.left
+        while isinstance(leftmost, ast.BinOp) and isinstance(leftmost.op, ast.Add):
+            leftmost = leftmost.left
+        rhs = leftmost
     return isinstance(rhs, ast.JoinedStr) or (isinstance(rhs, ast.Constant) and isinstance(rhs.value, str))
+
+
+def _receiver_of_read(node: ast.AST) -> "str | None":
+    """The dump of the object a ``recv.get(...)`` or ``recv[...]`` read is taken from, or None for other shapes."""
+    if isinstance(node, ast.Call) and _get_call_key(node) is not None and isinstance(node.func, ast.Attribute):
+        return ast.dump(node.func.value)
+    if isinstance(node, ast.Subscript):
+        return ast.dump(node.value)
+    return None
+
+
+def _is_fallback_parse_of_same_receiver(lhs: ast.AST, rhs: ast.AST) -> bool:
+    """``row.get("parsed") or safe_json_load(row.get("response"))``: the RHS re-reads another field of the same record.
+
+    The fallback reads a different source (the raw response field) of the same receiver, so it is an alternative read,
+    not a default literal. A read off a different receiver is still a default-shaped call and stays flagged.
+    """
+    lhs_recv = _receiver_of_read(lhs)
+    if lhs_recv is None or not isinstance(rhs, ast.Call):
+        return False
+    return any(_receiver_of_read(arg) == lhs_recv for arg in rhs.args)
 
 
 _PATH_TYPE_NAMES = frozenset({"Path", "PurePath", "PosixPath", "WindowsPath"})
@@ -794,7 +840,7 @@ def _pair_is_exempt(lhs: ast.AST, rhs: ast.AST, path_names: frozenset[str] = fro
         return True  # a path is never falsy: the or can only stand in for None
     if _is_regex_pattern_alternation(lhs, rhs):
         return True  # alternatives tried in turn, not a default substituted for a falsy value
-    if _lhs_is_documented_safe(lhs) or _is_alias_key_fallback(lhs, rhs):
+    if _lhs_is_documented_safe(lhs) or _is_alias_key_fallback(lhs, rhs) or _is_fallback_parse_of_same_receiver(lhs, rhs):
         return True
     return _is_getattr_alias_fallback(lhs, rhs) or _lhs_default_is_also_the_or_fallback(lhs, rhs)
 
