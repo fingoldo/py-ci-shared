@@ -390,6 +390,13 @@ since = "1.22.3"
 summary = "CUDA kernel source strings use 64-bit integer types: no platform-width long, no int-typed products of two sizes"
 
 [[gate]]
+name = "cuda_kernel_pointer_types"
+kind = "gate"
+entries = ["assert_cuda_kernel_pointer_types"]
+since = "1.23.8"
+summary = "CUDA kernel pointer parameters are type-templated, not a bare double* / float*: a float32 buffer bound to a double* is read past its end"
+
+[[gate]]
 name = "dart_scanners"
 kind = "library"
 since = "1.3.6"

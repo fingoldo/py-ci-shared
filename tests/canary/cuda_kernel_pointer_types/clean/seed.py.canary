@@ -1,0 +1,25 @@
+import cupy as cp
+
+SEED_SRC = r"""
+extern "C" __global__ void seed_argmax(const {REAL}* __restrict__ M, const long long n, {ACC}* __restrict__ out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = M[i];
+}
+"""
+
+REVIEWED_SRC = r"""
+// dtype-ok: a timestamp needs float64; the host uploads float64 explicitly
+extern "C" __global__ void seed_residue(const double* __restrict__ T, const long long n, double* __restrict__ out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = T[i];
+}
+"""
+
+seed_kernel = cp.RawKernel(SEED_SRC.replace("{REAL}", "float").replace("{ACC}", "double"), "seed_argmax")
+residue = cp.RawKernel(REVIEWED_SRC, "seed_residue")
+
+
+def pick(cp, x, out):
+    kind = "float" if x.dtype == cp.float32 else "double"
+    seed_kernel((1,), (1,), (x, 1, out))
+    return kind

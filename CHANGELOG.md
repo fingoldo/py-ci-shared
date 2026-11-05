@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- New gate `cuda_kernel_pointer_types` (additive): a `__global__` function with a `double*` parameter and no `{REAL}` placeholder among its parameters (hard, `cuda-bare-double-pointer`), the same for `float*` (advisory, `include_advisory`), and a `"float" if X.dtype == ... else "double"` kernel-type probe whose `X` is never a launch argument by name (hard, `cuda-type-probe-not-launched`). A float32 buffer bound to a `double*` is read past its end; the context is poisoned and a later thrust call aborts the interpreter. Marker `// dtype-ok: <reason>` in the kernel string (or `# dtype-ok:` on the probe line); baseline supported. Found in mlframe: the `row_argmax` kernel read its float32 operands as double.
+
 - Gate defects from audit 2026-11-04 step 8 (`audits/2026-11-04/37_step8_gate_defects.md`):
   **Behaviour change:** `assert_installed_matches_ci_pin` takes `pin_repo` instead of `repo`. The config layer filled any parameter named `repo` with the repo root, so the gate crashed (`'WindowsPath' object has no attribute 'rsplit'`). A `[tool.py_ci_shared.gates.ci_pin_version_skew] repo = ...` entry must be renamed to `pin_repo`.
   `env_flag_parsing` judges only boolean flags: a path, number, URL, host, credential or secret read is not reported, and a comparison counts only against a spelling of on/off.

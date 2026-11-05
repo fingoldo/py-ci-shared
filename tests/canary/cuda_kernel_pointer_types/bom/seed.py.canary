@@ -1,0 +1,15 @@
+﻿import cupy as cp
+
+SEED_SRC = r"""
+extern "C" __global__ void seed_argmax(const double* __restrict__ M, const long long n, double* __restrict__ out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = M[i];
+}
+"""
+
+seed_kernel = cp.RawKernel(SEED_SRC, "seed_argmax")
+
+
+def pick(cp, x):
+    kind = "float" if x.dtype == cp.float32 else "double"
+    return seed_kernel, kind, x.astype(cp.float32)
