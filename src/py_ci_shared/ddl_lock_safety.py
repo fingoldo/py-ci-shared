@@ -208,12 +208,18 @@ def _top_level_commas(text: str) -> list[str]:
 
 
 def _with_pasteable_commands(src: str) -> str:
-    """*src* with each ``--   command`` comment line turned into code and the last line of every such block closed with ``;``, so a
-    header that omits its terminator does not fuse with the live statement below it. Line numbers are unchanged."""
+    """*src* with each ``--   command`` comment line of the leading comment header turned into code, and the last line of every such block closed
+    with ``;``, so a header that omits its terminator does not fuse with the live statement below it. Line numbers are unchanged.
+
+    Only the header counts: comment text below the first statement is not SQL the operator runs, so a commented-out ``ALTER`` in a runbook
+    body stays comment."""
     lines = src.split("\n")
     out: list[str] = []
+    in_header = True
     for i, line in enumerate(lines):
-        if _PASTEABLE.match(line):
+        if in_header and line.strip() and not line.lstrip().startswith("--"):
+            in_header = False
+        if in_header and _PASTEABLE.match(line):
             line = "  " + line[2:]
             if i + 1 >= len(lines) or not _PASTEABLE.match(lines[i + 1]):
                 body = line.rstrip("\r")

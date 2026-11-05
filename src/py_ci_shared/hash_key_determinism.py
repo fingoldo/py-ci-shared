@@ -17,7 +17,11 @@ hash in the same function:
   substring test as often as a set lookup.)
 
 Not reported: payloads whose order is the value (a list/tuple display, a comprehension, ``sorted(...)``, a string or
-number), as long as no dict literal is inside; and a call whose line carries ``# unsorted-ok: <reason>``.
+number), as long as no dict literal is inside; a call whose line carries ``# unsorted-ok: <reason>``; and an exact-bytes payload:
+the dump is the text sent on the wire (it reaches a send, write or request call, directly or through a local name, or is passed
+as a ``data``/``content``/``body`` keyword). That text must stay byte-identical to what the peer received, so its digest names the
+exact artifact archived; sorting its keys would change the bytes sent. A dump that is hashed for a key and never sent is the
+content-normalising case and is still reported.
 """
 
 from __future__ import annotations
@@ -41,6 +45,10 @@ _DUMPS = frozenset({"json.dumps", "orjson.dumps", "simplejson.dumps", "ujson.dum
 _HASH_PREFIXES = ("hashlib.", "xxhash.", "mmh3.", "blake3.", "zlib.crc32", "zlib.adler32", "binascii.crc32")
 _HASHY_NAME = re.compile(r"hash|digest|fingerprint|checksum|crc32|sha\d|md5|blake", re.IGNORECASE)
 _KEY_NAME = re.compile(r"(^|_)(key|cache_key|dedup_key|fingerprint|digest|hash)$", re.IGNORECASE)
+_WIRE_SINK_NAMES = frozenset(
+    {"send", "sendall", "send_bytes", "post", "put", "patch", "request", "urlopen", "write", "write_bytes", "write_text", "publish", "produce"}
+)
+_WIRE_KEYWORDS = frozenset({"data", "content", "body"})
 _MAP_KEY_METHODS = frozenset({"get", "setdefault", "pop", "add", "__contains__"})
 _MARKER = re.compile(r"#\s*unsorted-ok:\s*\S")
 _DEFAULT_EXCLUDE = frozenset({"tests", "test", "testing"})
@@ -127,6 +135,34 @@ def _sink_reason(dumps: ast.Call, scope: _Scope, aliases: ImportAliases, tainted
     return None
 
 
+def _is_wire_call(call: ast.Call) -> bool:
+    leaf = call.func.attr if isinstance(call.func, ast.Attribute) else (call.func.id if isinstance(call.func, ast.Name) else "")
+    return leaf in _WIRE_SINK_NAMES or any(kw.arg in _WIRE_KEYWORDS for kw in call.keywords)
+
+
+def _wire_names(scope: _Scope) -> frozenset[str]:
+    """Local names whose value is an argument of a call that sends or writes it."""
+    names: set[str] = set()
+    for n in scope.nodes:
+        if isinstance(n, ast.Call) and _is_wire_call(n):
+            names.update(a.id for a in _arg_nodes(n) if isinstance(a, ast.Name))
+    return frozenset(names)
+
+
+def _is_exact_bytes(dumps: ast.Call, scope: _Scope, wire: frozenset[str]) -> bool:
+    node: ast.AST = dumps
+    while id(node) in scope.parents:
+        parent = scope.parents[id(node)]
+        if isinstance(parent, ast.Call) and node is not parent.func and _is_wire_call(parent):
+            return True
+        if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
+            return parent.targets[0].id in wire
+        if isinstance(parent, ast.stmt):
+            return False
+        node = parent
+    return False
+
+
 def _tainted_names(scope: _Scope, aliases: ImportAliases) -> dict[str, str]:
     """Local names that reach a hash sink (``h.update(text.encode())``) -> why."""
     out: dict[str, str] = {}
@@ -141,6 +177,7 @@ def _tainted_names(scope: _Scope, aliases: ImportAliases) -> dict[str, str]:
 def _scope_findings(f: ParsedFile, fn: _FunctionNode, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
     scope = _Scope(fn)
     tainted = _tainted_names(scope, aliases)
+    wire = _wire_names(scope)
     where = getattr(fn, "name", "<module>")
     out: list[Finding] = []
     for n in scope.nodes:
@@ -152,7 +189,7 @@ def _scope_findings(f: ParsedFile, fn: _FunctionNode, aliases: ImportAliases, li
         if 1 <= n.lineno <= len(lines) and _MARKER.search(lines[n.lineno - 1]):
             continue
         reason = _sink_reason(n, scope, aliases, tainted)
-        if reason is not None:
+        if reason is not None and not _is_exact_bytes(n, scope, wire):
             out.append(Finding(f.rel, n.lineno, RULE, f"{where}: `{name}({ast.unparse(n.args[0])[:60]})` without key sorting is {reason}"))
     return out
 

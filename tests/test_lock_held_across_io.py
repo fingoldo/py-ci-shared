@@ -163,3 +163,24 @@ def test_asyncio_sleep_under_an_async_lock_is_reported_and_a_clock_is_not_a_lock
     assert len(_lines(tmp_path, body)) == 1
     body = "import time\n\n\ndef f(clock):\n    with clock:\n        time.sleep(1)\n"
     assert _lines(tmp_path, body) == []
+
+
+@pytest.mark.parametrize(
+    "lock, body",
+    [
+        ("FileLock(path)", "with open(path, 'a') as handle:\n            handle.write('row')"),
+        ("claim_lock(cur, 42)", "cur.execute('select 1')"),
+        ("try_claim_lock(conn, 'job')", "time.sleep(1)"),
+        ("self._file_lock", "time.sleep(1)"),
+    ],
+)
+def test_a_cross_process_lock_or_database_claim_is_not_a_thread_lock(tmp_path, lock, body):
+    src = f"import time\nfrom filelock import FileLock\n\ndef f(self, path, cur, conn):\n    with {lock}:\n        {body}\n"
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    assert find_lock_held_across_io([tmp_path / "m.py"], use_git=False) == []
+
+
+def test_a_thread_lock_still_holds_its_io_finding(tmp_path):
+    src = "import time\nimport threading\n\nclass C:\n    def __init__(self):\n        self._state_lock = threading.Lock()\n\n    def f(self):\n        with self._state_lock:\n            time.sleep(1)\n"
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    assert [f.line for f in find_lock_held_across_io([tmp_path / "m.py"], use_git=False)] == [10]
