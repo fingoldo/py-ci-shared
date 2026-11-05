@@ -108,3 +108,21 @@ def test_a_probe_that_fails_is_reported_with_its_output(tmp_path):
     assert "ModuleNotFoundError" in str(exc.value) or "No module named" in str(exc.value)
     good = _orig(tmp_path / "g", "zz_copy_pkg4")
     assert_a_copy_imports_itself(good, "zz_copy_pkg4", tmp_path / "g" / "work", timeout=120)
+
+
+def test_a_worktree_resolves_its_own_package_when_another_checkout_is_first_on_the_path(tmp_path, monkeypatch):
+    """An editable install points at the main checkout while the suite runs in a worktree: the worktree's package must win (37-F23)."""
+    for name in [m for m in sys.modules if m == "zz_wt_pkg" or m.startswith("zz_wt_pkg.")]:
+        del sys.modules[name]
+    main = tmp_path / "main"
+    worktree = tmp_path / "worktree"
+    for root in (main, worktree):
+        (root / "src" / "zz_wt_pkg").mkdir(parents=True)
+        (root / "src" / "zz_wt_pkg" / "__init__.py").write_text("", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(main / "src"))
+    try:
+        assert module_resolution_problems(worktree, ["zz_wt_pkg"]) == []
+        assert Path(sys.modules["zz_wt_pkg"].__file__).resolve().is_relative_to(worktree.resolve())
+    finally:
+        for name in [m for m in sys.modules if m == "zz_wt_pkg" or m.startswith("zz_wt_pkg.")]:
+            del sys.modules[name]
