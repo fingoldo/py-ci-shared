@@ -48,6 +48,9 @@ from collections.abc import Iterable
 from typing import Any, Callable, Optional
 import logging
 
+from ._core.git import GitError, run_git
+from ._core.node_index import nodes_of
+from ._core.source import parse_source
 from ._core.corpus import DEFAULT_EXCLUDE, iter_files_pruned
 from .code_audit import DEFAULT_EXCLUDE_DIRS as _DEFAULT_EXCLUDE_DIRS
 from .deferred_entries import count_user_deferred_entries
@@ -181,12 +184,12 @@ def public_top_level_symbols(path: Path) -> list[tuple[str, int]]:
     ``consumer_corpus``.
     """
     try:
-        src = path.read_text(encoding="utf-8")
+        path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         logger.warning("public_top_level_symbols: file unreadable, no symbols collected: %s: %s", type(exc).__name__, exc)
         return []
     try:
-        tree = ast.parse(src)
+        tree = parse_source(path)[1]
     except SyntaxError as exc:
         logger.warning("public_top_level_symbols: file does not parse, no symbols collected: %s: %s", type(exc).__name__, exc)
         return []
@@ -683,25 +686,19 @@ def _repo_symbols(repo_root: Path) -> frozenset[str]:
     An audit row citing `resolve_symptom` or `prior_basis` names something as real as a path - a function
     and a stored field. Reading only paths made 362 such rows read as citing nothing.
     """
-    import ast
-
     skip = _REPO_SCAN_SKIP_DIRS
     names: set[str] = set()
     unreadable: list[str] = []
     for py in iter_files_pruned(repo_root, (".py",), skip):
         try:
-            tree = ast.parse(py.read_text(encoding="utf-8", errors="replace"))
+            tree = parse_source(py)[1]
         except (SyntaxError, ValueError, OSError) as exc:
             unreadable.append(f"{py}: {exc}")
             continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                names.add(node.name)
-            elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-                names.add(node.id)
-            elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
-                # Field names of the rows this repository writes, which audit rows cite as often as functions.
-                names.add(node.value)
+        names.update(n.name for n in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+        names.update(n.id for n in nodes_of(tree, ast.Name) if isinstance(n.ctx, ast.Store))
+        # Field names of the rows this repository writes, which audit rows cite as often as functions.
+        names.update(n.value for n in nodes_of(tree, ast.Constant) if isinstance(n.value, str) and n.value.isidentifier())
     if unreadable:
         logger.warning("%d file(s) could not be read and were not scanned: %s", len(unreadable), "; ".join(unreadable))
     return frozenset(names)
@@ -709,16 +706,12 @@ def _repo_symbols(repo_root: Path) -> frozenset[str]:
 
 def _is_a_commit_this_repo_has(cite: str, repo_root: Path) -> bool:
     """A short SHA is a citation of the change itself, and the strongest one an audit row can carry."""
-    import subprocess  # nosec B404 - reads git metadata of the repository under test, no external input
-
     if not (7 <= len(cite) <= 40) or not all(c in "0123456789abcdef" for c in cite.lower()):
         return False
     try:
-        done = subprocess.run(  # nosec B603 B607 - fixed argv, no shell, `cite` validated as hex above
-            ["git", "cat-file", "-e", f"{cite}^{{commit}}"], cwd=repo_root, capture_output=True, timeout=15, check=False
-        )
+        done = run_git(repo_root, "cat-file", "-e", f"{cite}^{{commit}}", timeout=15)
     # audit-exempt: non_neutral_except_fallback -- git unavailable means the commit cannot be verified; False is the honest answer to the predicate
-    except (OSError, subprocess.SubprocessError) as exc:
+    except GitError as exc:
         logger.warning("_is_a_commit_this_repo_has: git unavailable, commit cannot be verified: %s: %s", type(exc).__name__, exc)
         return False
     return done.returncode == 0
