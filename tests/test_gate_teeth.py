@@ -240,6 +240,7 @@ CANARIES: dict[str, Canary] = {
             "import_side_effects",
             lambda d: _gate("import_side_effects").assert_no_new_import_time_env_mutations(d, _baseline(d), refresh=False),
             token="SEED_X",
+            empty=False,  # 37-F6: no test_*.py is no subject, so the gate skips with a reason instead of failing
         ),
         Canary(
             "private_imports",
@@ -361,7 +362,7 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text", tokens=("write_text", "usedforsecurity")),
         Canary("committed_line_endings", _committed_line_endings_canary, token="seed.txt", parses=False),  # bytes, not syntax
-        Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0"),
+        Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0", empty=False),  # 37-F6: no pyproject is no subject, a skip with a reason
         Canary(
             "consumer_import_census",
             lambda d: _gate("consumer_import_census").assert_consumer_imports_resolve(d / "lib", "seedlib", [("app", d / "app")], use_git=False),
