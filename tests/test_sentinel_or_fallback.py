@@ -113,3 +113,8 @@ def test_the_marker_on_the_last_line_of_a_multi_line_or_exempts_it(tmp_path):
 def test_a_test_module_at_the_root_is_excluded_like_one_under_tests(tmp_path):
     (tmp_path / "test_a.py").write_text("def f(x):\n    return x.seed or 5\n", encoding="utf-8")
     assert find_sentinel_or_fallback(tmp_path, use_git=False)[0] == []
+
+
+def test_falsy_ok_marker_on_a_conditional_expression_is_honoured(tmp_path):
+    assert len(_found(tmp_path, "x.seed if x.seed else DEFAULT")) == 1
+    assert _found(tmp_path, "x.seed if x.seed else DEFAULT  # falsy-ok: 0 is a real seed here") == []

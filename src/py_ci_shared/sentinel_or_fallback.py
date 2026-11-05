@@ -79,6 +79,12 @@ def _falsy_constant(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and not node.value
 
 
+def _marked(lines: list[str], node: ast.expr) -> bool:
+    """True when a ``# falsy-ok:`` marker sits on a line the expression spans."""
+    end = node.end_lineno or node.lineno
+    return any(_MARKER.search(lines[i]) for i in range(node.lineno - 1, min(end, len(lines))))
+
+
 def find_sentinel_or_fallback(
     root: Union[str, Path, Iterable[Union[str, Path]]],
     *,
@@ -99,12 +105,12 @@ def find_sentinel_or_fallback(
         for node in _fast_walk(f.tree):
             if isinstance(node, ast.IfExp):
                 read = sentinel_read(node.test, wanted)
-                if read is not None and ast.dump(node.test) == ast.dump(node.body) and not _falsy_constant(node.orelse):
+                if read is not None and ast.dump(node.test) == ast.dump(node.body) and not _falsy_constant(node.orelse) and not _marked(lines, node):
                     findings.append(Finding(f.rel, node.lineno, RULE, f"`{ast.unparse(node)}` replaces a falsy {read} (0 is a value for it)"))
                 continue
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
-            if any(_MARKER.search(lines[i]) for i in range(max(node.lineno - 1, 0), min(node.end_lineno or node.lineno, len(lines)))):
+            if _marked(lines, node):
                 continue
             for i, operand in enumerate(node.values[:-1]):
                 name = sentinel_read(operand, wanted)
