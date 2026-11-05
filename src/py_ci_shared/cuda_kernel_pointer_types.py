@@ -22,7 +22,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.cuda_kernel_pointer_types import assert_cuda_kernel_pointer_types
 
     def test_cuda_kernel_pointer_types():
-        assert_cuda_kernel_pointer_types("src", min_files=50, baseline_path="tests/_cuda_pointer_types_baseline.json")
+        assert_cuda_kernel_pointer_types("src", min_files=50, baseline_path="the consumer's own baseline file")
 """
 
 from __future__ import annotations
