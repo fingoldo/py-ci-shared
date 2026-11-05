@@ -19,7 +19,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.cuda_launch_geometry import assert_cuda_launch_geometry
 
     def test_cuda_launches_take_their_block_size_from_the_device():
-        assert_cuda_launch_geometry("src", min_files=50, baseline_path="tests/test_meta/_cuda_launch_geometry_baseline.json")
+        assert_cuda_launch_geometry("src", min_files=50, baseline_path="the consumer's own baseline file")
 """
 
 from __future__ import annotations
