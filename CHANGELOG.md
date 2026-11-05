@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- New command `py-ci-shared tool pytest_run OUTFILE <paths and pytest options>` (additive): pytest with the flags a developer machine needs (`PYTHONUNBUFFERED=1`, `-s`, `--durations=200`, `--no-cov` and `-n 0` when the plugins are installed, `-p no:cacheprovider`), the whole output in OUTFILE ending with `exit=<code>`, `-q` refused. README "Running pytest on a developer machine" and CLAUDE.md "Running tests" say why each flag is there.
+
 - New gate `cuda_kernel_pointer_types` (additive): a `__global__` function with a `double*` parameter and no `{REAL}` placeholder among its parameters (hard, `cuda-bare-double-pointer`), the same for `float*` (advisory, `include_advisory`), and a `"float" if X.dtype == ... else "double"` kernel-type probe whose `X` is never a launch argument by name (hard, `cuda-type-probe-not-launched`). A float32 buffer bound to a `double*` is read past its end; the context is poisoned and a later thrust call aborts the interpreter. Marker `// dtype-ok: <reason>` in the kernel string (or `# dtype-ok:` on the probe line); baseline supported. Found in mlframe: the `row_argmax` kernel read its float32 operands as double.
 
 - Gate defects from audit 2026-11-04 step 8 (`audits/2026-11-04/37_step8_gate_defects.md`):
