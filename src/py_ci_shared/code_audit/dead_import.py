@@ -185,6 +185,10 @@ def _corpus_import_index(roots: "Path | Iterable[Path]", exclude_dirs: frozenset
             for node in walk_tree(tree):
                 if isinstance(node, ast.Attribute):
                     attr_names.add(node.attr)
+                elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
+                    # A name spelled as a string is consumed by name: a contract list checked with
+                    # hasattr()/getattr() (glossum PRE_SPLIT_PUBLIC_NAMES) reads the facade export this way.
+                    attr_names.add(node.value)
                 elif isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         if alias.name != "*":

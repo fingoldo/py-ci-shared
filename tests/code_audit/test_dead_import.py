@@ -377,3 +377,30 @@ def test_it():
     with_consumers, failed = run_all_checked(pkg, checks=["possibly_dead_import"], parallel=False, consumer_roots=[tests])
     assert failed == {}
     assert [f.snippet for f in with_consumers] == ["from pkg.impl import orphan"]
+
+
+def test_a_facade_name_listed_as_a_string_contract_is_not_dead(tmp_path):
+    # glossum/storage/orm_models/__init__.py: PG_UUID is re-exported and listed as a string in a test's
+    # PRE_SPLIT_PUBLIC_NAMES contract, checked with hasattr(); the name is consumed through its string spelling.
+    _write(tmp_path, "facade.py", """
+from sqlalchemy import PG_UUID
+""")
+    _write(tmp_path, "test_facade.py", """
+PRE_SPLIT_PUBLIC_NAMES = ["PG_UUID"]
+
+
+def test_names(m):
+    assert all(hasattr(m, n) for n in PRE_SPLIT_PUBLIC_NAMES)
+""")
+    assert scan_possibly_dead_import(tmp_path) == []
+
+
+def test_an_unused_import_with_no_string_spelling_is_still_flagged(tmp_path):
+    # negative control: nothing spells the name anywhere, so the import is dead
+    _write(tmp_path, "lone.py", """
+from os import sep_unused_marker
+""")
+    _write(tmp_path, "test_other.py", """
+NAMES = ["something_else"]
+""")
+    assert len(scan_possibly_dead_import(tmp_path)) == 1
