@@ -84,3 +84,25 @@ async def f(path):
         await fh.write("x")
 """)
     assert scan_resource_handle_safety(tmp_path) == []
+
+
+def test_resource_handle_closed_by_atexit_not_flagged(tmp_path: Path):
+    # glossum/scripts/_full_phase1_all_rounds.py: a log handle kept open for the process, closed by atexit
+    _write(tmp_path, "runner.py", """
+import atexit
+
+log_fp = open("run.log", "a")
+atexit.register(log_fp.close)
+""")
+    assert scan_resource_handle_safety(tmp_path) == []
+
+
+def test_resource_handle_not_registered_for_atexit_still_flagged(tmp_path: Path):
+    # negative control: the same handle with no close registered at exit
+    _write(tmp_path, "runner_bad.py", """
+import atexit
+
+log_fp = open("run.log", "a")
+log_fp.write("start")
+""")
+    assert len(scan_resource_handle_safety(tmp_path)) == 1
