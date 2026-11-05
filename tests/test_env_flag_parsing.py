@@ -110,3 +110,34 @@ def test_a_backend_selector_and_a_default_string_are_not_flags(tmp_path):
 def test_a_boolean_membership_and_a_reassigned_name_are_handled(tmp_path):
     body = 'import os\n\na = os.environ.get("MY_X", "") in ("1", "true")\nv = os.environ.get("MY_Y")\nv = "1"\nif v == "1":\n    pass\n'
     assert [(ln, var) for ln, var, _ in _reads(tmp_path, body)] == [(3, "MY_X")]
+
+
+def test_only_boolean_flags_are_judged(tmp_path):
+    """Paths, numbers, URLs, hosts, credentials and secrets read in a truth test or a comparison are not boolean flags (37-F8, 37-F32)."""
+    p = _write(
+        tmp_path,
+        "m.py",
+        "import os\n"
+        "if not os.environ.get('P_MODEL_PATH'):\n"
+        "    pass\n"
+        "if os.getenv('P_DB_URL'):\n"
+        "    pass\n"
+        "if not os.environ.get('P_PROXY_USER'):\n"
+        "    pass\n"
+        "if os.environ.get('P_PROXY_USER') == '':\n"
+        "    pass\n"
+        "if os.environ.get('P_API_KEY'):\n"
+        "    pass\n"
+        "if os.environ.get('P_CREDENTIALS') == '':\n"
+        "    pass\n"
+        "if os.environ.get('P_WORKERS') == '4':\n"
+        "    pass\n"
+        "if os.environ.get('P_BACKEND') == 'gpu':\n"
+        "    pass\n",
+    )
+    assert find_hand_parsed_env_flags([p], tmp_path, ("P_",)) == []
+
+
+def test_a_boolean_flag_compared_with_a_spelling_of_on_is_still_judged(tmp_path):
+    p = _write(tmp_path, "m.py", "import os\nif os.environ.get('P_VERBOSE') == 'yes':\n    pass\n")
+    assert [(r.var, r.shape) for r in find_hand_parsed_env_flags([p], tmp_path, ("P_",))] == [("P_VERBOSE", "compared with 'yes'")]

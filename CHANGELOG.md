@@ -4,6 +4,13 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+- Gate defects from audit 2026-11-04 step 8 (`audits/2026-11-04/37_step8_gate_defects.md`):
+  **Behaviour change:** `assert_installed_matches_ci_pin` takes `pin_repo` instead of `repo`. The config layer filled any parameter named `repo` with the repo root, so the gate crashed (`'WindowsPath' object has no attribute 'rsplit'`). A `[tool.py_ci_shared.gates.ci_pin_version_skew] repo = ...` entry must be renamed to `pin_repo`.
+  `env_flag_parsing` judges only boolean flags: a path, number, URL, host, credential or secret read is not reported, and a comparison counts only against a spelling of on/off.
+  `secret_assertion_operands` treats `os.environ.get("NAME")` with a non-secret literal name as harmless, like the subscript and `getenv` forms.
+  `validation_errors_echo_input` does not judge validators of a `BaseSettings` class (not a request path).
+  `assert_modules_resolve_to_checkout` puts the checkout's own package first on `sys.path` (a worktree under an editable install of the main checkout no longer fails).
+
 - Leftovers of audit 2026-11-04 (30, 33, 34, 35):
   `tests/test_mutation_speed.py` runs on a stand-in for pytest and the warm worker (17 tests, about 30 s instead of about 12 minutes); two real sweeps stay as `slow` tests that run on CI (`CI` is set) or with `PY_CI_RUN_SLOW=1`.
   `near_duplicate_function_body` generates candidate pairs from a prefix of each function's rarest shingles; the pairs, and so the findings, are identical (compared on py-ci-shared and pyutilz source).

@@ -21,6 +21,7 @@ Usage from a repository's meta tests::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
@@ -49,6 +50,13 @@ class EnvFlagRead:
 
 
 _BOOL_WORDS = frozenset({"0", "1", "true", "false", "yes", "no", "on", "off", "y", "n", "t", "f", ""})
+#: A variable whose name says it holds something other than a switch: a path, a number, a URL or host, a credential or a secret.
+#: Such a read is a presence or value check, so it is not judged (37-F8, 37-F32).
+_NOT_A_FLAG = re.compile(
+    r"(?:^|_)(PATHS?|DIRS?|FILES?|ROOT|URLS?|URIS?|DSN|HOSTS?|PORT|USERS?|USERNAME|PASS|PASSWORD|PWD|TOKEN|SECRET|KEY|CREDENTIALS?|AUTH"
+    r"|COUNT|NUM|ROWS|LIMIT|SIZE|TIMEOUT|SECONDS|THREADS|WORKERS)$",
+    re.IGNORECASE,
+)
 
 
 class _Ctx:
@@ -128,7 +136,7 @@ def _compare_shape(node: ast.Compare, ctx: _Ctx) -> list[tuple[str, str]]:
         return []
     op = node.ops[0]
     right = node.comparators[0]
-    if isinstance(op, (ast.Eq, ast.NotEq)) and isinstance(right, ast.Constant) and isinstance(right.value, str):
+    if isinstance(op, (ast.Eq, ast.NotEq)) and isinstance(right, ast.Constant) and isinstance(right.value, str) and right.value.lower() in _BOOL_WORDS:
         return [(var, f"compared with {right.value!r}")]
     if isinstance(op, (ast.In, ast.NotIn)) and isinstance(right, (ast.Set, ast.List, ast.Tuple)) and _boolean_literals(right):
         return [(var, "membership in a literal collection")]
@@ -160,7 +168,8 @@ def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
     ctx = _Ctx(tree, prefixes)
     for node in _fast_walk(tree):
         for var, shape in _boolean_shapes(node, ctx):
-            yield node, var, shape
+            if not _NOT_A_FLAG.search(var):
+                yield node, var, shape
 
 
 def _reads_in(tree: ast.Module, rel: str, prefixes: Sequence[str]) -> list[EnvFlagRead]:

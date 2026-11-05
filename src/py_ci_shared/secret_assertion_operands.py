@@ -92,13 +92,15 @@ def _secret_name(name: str) -> bool:
 
 
 def _harmless_env_read(node: ast.AST) -> bool:
-    """``os.environ["HOME"]`` or ``os.getenv("HOME")``: one variable, named by a literal that does not look secret.
+    """``os.environ["HOME"]``, ``os.getenv("HOME")`` or ``os.environ.get("HOME")``: one variable, named by a literal that does not look secret.
 
-    pytest prints only the subscript's or call's VALUE there. ``os.environ.get("HOME")`` is not harmless: pytest
-    explains the bound method ``environ.get``, whose repr is the whole environment."""
+    pytest prints only the value of such a read (checked on pytest 8: the operand is the VALUE, never the environment), so
+    a non-secret name is harmless. A secret-shaped name, or a read whose name is not a literal, stays tainted."""
     if isinstance(node, ast.Subscript) and _is_environ(node.value):
         key: ast.AST = node.slice
     elif isinstance(node, ast.Call) and _call_name(node.func) in _ENV_GETTERS and node.args:
+        key = node.args[0]
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get" and _is_environ(node.func.value) and node.args:
         key = node.args[0]
     else:
         return False

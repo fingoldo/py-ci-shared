@@ -57,10 +57,10 @@ _COMMENT_VERSION = re.compile(r"#\s*v?(\d+\.\d+\.\d+)\b")
 _NUMBER = re.compile(r"\d+(?:\.\d+)*")
 
 
-def _pin_pattern(repo: str) -> "re.Pattern[str]":
-    name = re.escape(repo.rsplit("/", 1)[-1])
+def _pin_pattern(pin_repo: str) -> "re.Pattern[str]":
+    name = re.escape(pin_repo.rsplit("/", 1)[-1])
     # `owner/repo...@ref` (pip URL, uses:) or the reusable-workflow input `<repo>-ref: <sha>`
-    return re.compile(re.escape(repo) + r"[\w./-]*@([A-Za-z0-9._/-]+)|(?<![\w-])" + name + r"-ref:\s*([A-Za-z0-9._/-]+)")
+    return re.compile(re.escape(pin_repo) + r"[\w./-]*@([A-Za-z0-9._/-]+)|(?<![\w-])" + name + r"-ref:\s*([A-Za-z0-9._/-]+)")
 
 
 def _vtuple(version: str) -> Optional[tuple[int, ...]]:
@@ -211,7 +211,7 @@ def find_pin_skew_findings(
     tolerate_ahead: bool = False,
     known_releases: Iterable[str] = (),
     max_lag: int = DEFAULT_MAX_LAG,
-    repo: str = DEFAULT_REPO,
+    pin_repo: str = DEFAULT_REPO,
     min_files: int = 1,
     allow_unparsed: bool = False,
 ) -> list[Finding]:
@@ -225,7 +225,7 @@ def find_pin_skew_findings(
     files = workflow_files(base / workflows_dir)
     if len(files) < min_files:
         raise EmptyScanError(f"ci_pin_version_skew: {len(files)} workflow file(s) under {base / workflows_dir}, expected at least {min_files}")
-    pins = _read_pins(base, files, _pin_pattern(repo), allow_unparsed)
+    pins = _read_pins(base, files, _pin_pattern(pin_repo), allow_unparsed)
     pinned = [(pin, vt) for pin in pins if pin.version is not None for vt in [_vtuple(pin.version)] if vt is not None]
     installed_text = installed_version if installed_version is not None else installed_py_ci_shared_version()
     out = [_no_version(pin) for pin in pins if pin.version is None]
@@ -243,7 +243,7 @@ def assert_installed_matches_ci_pin(
     tolerate_ahead: bool = False,
     known_releases: Iterable[str] = (),
     max_lag: int = DEFAULT_MAX_LAG,
-    repo: str = DEFAULT_REPO,
+    pin_repo: str = DEFAULT_REPO,
     min_files: int = 1,
     allow_unparsed: bool = False,
 ) -> None:
@@ -255,7 +255,7 @@ def assert_installed_matches_ci_pin(
         tolerate_ahead=tolerate_ahead,
         known_releases=known_releases,
         max_lag=max_lag,
-        repo=repo,
+        pin_repo=pin_repo,
         min_files=min_files,
         allow_unparsed=allow_unparsed,
     )

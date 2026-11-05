@@ -136,3 +136,12 @@ def test_the_ref_input_of_the_reusable_workflows_is_a_pin_too(tmp_path):
     body = f"- {USES % SHA}  # v1.20.0" + chr(10) + f"      py-ci-shared-ref: {SHA}  # v1.18.0" + chr(10)
     found = find_pin_skew_findings(_wf(tmp_path, {"a-ci.yml": body}), installed_version="1.20.0")
     assert sorted((f.line, f.rule) for f in found) == [(1, "ci-pin-mixed"), (2, "ci-pin-installed-newer")]
+
+
+def test_the_config_layer_kwargs_are_accepted_by_the_gate(tmp_path):
+    """resolve_kwargs fills any parameter named ``repo`` with the repo root (a Path); the gate must accept that call (37-F5)."""
+    from py_ci_shared._core.config import resolve_kwargs
+
+    root = _wf(tmp_path, {"a-ci.yml": f"- {USES % SHA}  # v1.20.0\n"})
+    kwargs = resolve_kwargs(assert_installed_matches_ci_pin, {"installed_version": "1.20.0"}, root)
+    assert_installed_matches_ci_pin(**kwargs)

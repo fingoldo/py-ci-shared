@@ -325,17 +325,27 @@ def _seed_helpers(per_file: _PerFile, helpers: _HelperArgs) -> _Seeded:
     return seeded
 
 
+def _settings_methods(tree: ast.Module) -> set[int]:
+    """ids of the methods of a BaseSettings class (or a class named *Settings): read from the environment at startup, not per request."""
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and any(_final_name(b) == "BaseSettings" or (_final_name(b) or "").endswith("Settings") for b in node.bases):
+            out.update(id(m) for m in node.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)))
+    return out
+
+
 def _collect(files: list[ParsedFile]) -> list[Finding]:
     out: list[Finding] = []
     per_file: _PerFile = [(p, ImportAliases.from_tree(p.tree), list(qualified_functions(p.tree, locals_marker=False))) for p in files]
     helpers: _HelperArgs = {}
     for parsed, aliases, functions in per_file:
         added = _handlers(parsed.tree)
+        settings = _settings_methods(parsed.tree)
         for where, fn in functions:
             problem = _handler_problem(fn) if _registered(fn, added) else None
             if problem is not None:
                 out.append(_finding(parsed.rel, fn.lineno, where, SHAPE_HANDLER, f"RequestValidationError handler {problem}"))
-            value = _validator_value(fn, aliases)
+            value = None if id(fn) in settings else _validator_value(fn, aliases)
             if value is None:
                 continue
             tainted = _propagate(fn, {value})

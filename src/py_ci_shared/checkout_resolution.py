@@ -41,11 +41,32 @@ logger = logging.getLogger(__name__)
 _COPY_IGNORE = ("__pycache__", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", "*.egg-info", ".venv", "venv", "node_modules")
 
 
+def _prefer_checkout(root: Path, module_names: list[str]) -> None:
+    """Put the checkout's own package first on ``sys.path`` and forget copies imported from elsewhere.
+
+    A worktree (or any second checkout) under an editable install imports the install's tree, so the suite would examine
+    code it does not contain. The package found under ``root/src`` (or ``root``) is put first, and modules of that package
+    imported from outside *root* are dropped so the next import takes the checkout's copy (37-F23).
+    """
+    for top in sorted({name.split(".")[0] for name in module_names}):
+        for base in (root / "src", root):
+            if (base / top / "__init__.py").is_file():
+                if not sys.path or sys.path[0] != str(base):
+                    sys.path.insert(0, str(base))
+                for name in [m for m in sys.modules if m == top or m.startswith(top + ".")]:
+                    origin = getattr(sys.modules[name], "__file__", None)
+                    if origin is None or root not in Path(origin).resolve().parents:
+                        del sys.modules[name]
+                break
+
+
 def module_resolution_problems(repo_root: Path, module_names: Iterable[str]) -> list[str]:
     """One message per module that is a namespace portion or resolves outside *repo_root*."""
     root = repo_root.resolve()
     problems = []
-    for name in module_names:
+    names = list(module_names)
+    _prefer_checkout(root, names)
+    for name in names:
         module = importlib.import_module(name)
         origin = getattr(module, "__file__", None)
         if origin is None:

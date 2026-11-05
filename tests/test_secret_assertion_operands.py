@@ -20,7 +20,7 @@ OFFENDERS = {
     "environ_membership": 'import os\ndef test_a():\n    assert "K" not in os.environ\n',
     "environ_imported_name": 'from os import environ\ndef test_a():\n    assert "K" not in environ\n',
     "environ_subscript": 'import os\ndef test_a():\n    assert os.environ["DATABASE_URL"] == "v"\n',
-    "environ_get_of_any_name": 'import os\ndef test_a():\n    assert os.environ.get("HOME") == "v"\n',
+    "environ_get_of_secret_name": 'import os\ndef test_a():\n    assert os.environ.get("API_TOKEN") == "v"\n',
     "getenv_under_a_message": 'import os\ndef test_a():\n    assert os.getenv("UPWORK_DB_DSN") is None, "set"\n',
     "environ_get_via_name": 'import os\ndef test_a():\n    dsn = os.environ.get("DATABASE_URL", "").strip()\n    assert dsn == "x"\n',
     "resolver_via_name": "from dashboard import db\ndef test_a():\n    dsn = db.dsn_or_none()\n    assert dsn is None\n",
@@ -45,6 +45,9 @@ SAFE = {
     "predicate_resolver": "from dashboard import db\ndef test_a():\n    assert db.dsn_is_configured() is False\n",
     "one_plain_variable": 'import os\ndef test_a():\n    assert os.environ["HOME"] == "v"\n    assert os.getenv("LANG") == "v"\n',
     "assert_raises": 'import os\nclass T:\n    def test_a(self):\n        self.assertRaises(KeyError, os.environ.__getitem__, "K")\n',
+    "non_secret_get": 'import os\ndef test_a():\n    assert os.environ.get("OMP_NUM_THREADS") == "4"\n',
+    "non_secret_get_path": 'import os\ndef test_a():\n    assert os.environ.get("CUDA_PATH") is not None\n',
+    "non_secret_hashseed": 'import os\ndef test_a():\n    assert os.environ.get("PYTHONHASHSEED", "0") == "0"\n',
 }
 
 

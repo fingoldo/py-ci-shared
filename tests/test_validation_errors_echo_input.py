@@ -351,3 +351,18 @@ def test_an_unparsable_file_fails_by_name_unless_allowed(tmp_path):
 def test_an_empty_corpus_fails_the_floor(tmp_path):
     with pytest.raises(EmptyScanError):
         find_validation_errors_echo_input(tmp_path, use_git=False)
+
+
+def test_a_validator_of_an_env_loaded_settings_class_is_not_a_request_path(tmp_path):
+    """A BaseSettings class reads the environment at startup; its validation errors never become a 422 body (37-F20)."""
+    head = HEAD + "from pydantic_settings import BaseSettings\n"
+    body = """
+class Cfg(BaseSettings):
+    @field_validator("port")
+    @classmethod
+    def _port(cls, value):
+        if value < 0:
+            raise ValueError(f"bad port {value}")
+        return value
+"""
+    assert _find(tmp_path, body, head) == []
