@@ -40,5 +40,6 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F32 | env_flag_parsing | reports `PROXY_USER` (a credential string) as a boolean flag for `if not user` and `user == ""` (_observability_lookups.py:92) | social | OPEN |
 | 37-F33 | ddl_lock_safety | reads SQL inside a `--` comment (RUNBOOK sql: a commented-out SET NOT NULL) | social | OPEN |
 | 37-F34 | unresolved_module_attributes | resolves a bare `db` to dashboard/db.py when the code means the sibling project's db.py; not safe monorepo-wide per project | social | RESOLVED in 86c3ed7 |
+| 37-F35 | fail_open_handlers, drifted_duplicate_literals (autopsia consumer) | 102 fail-open and 75 drifted-literal entries in autopsia are false positives recorded in audits/2026-11-05/gate_false_positives.md (file:line and reason each); the gates must stop flagging them, then autopsia's baselines go to zero | autopsia | OPEN |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
