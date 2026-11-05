@@ -328,7 +328,7 @@ def _seed_helpers(per_file: _PerFile, helpers: _HelperArgs) -> _Seeded:
 def _settings_methods(tree: ast.Module) -> set[int]:
     """ids of the methods of a BaseSettings class (or a class named *Settings): read from the environment at startup, not per request."""
     out: set[int] = set()
-    for node in ast.walk(tree):
+    for node in shared_walk(tree):
         if isinstance(node, ast.ClassDef) and any(_final_name(b) == "BaseSettings" or (_final_name(b) or "").endswith("Settings") for b in node.bases):
             out.update(id(m) for m in node.body if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)))
     return out

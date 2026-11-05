@@ -257,7 +257,7 @@ def _functions(tree: ast.Module) -> Iterator[tuple[_FunctionNode, bool, list[_Fu
 
 def _called_names(func: _FunctionNode) -> set[str]:
     """Bare names of the functions *func* calls."""
-    return {n.func.id for n in ast.walk(func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+    return {n.func.id for n in _fast_walk(func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
 
 
 def _writes(parsed: list[ParsedFile]) -> list[RegistryWrite]:
