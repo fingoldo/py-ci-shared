@@ -88,6 +88,15 @@ def _signature_key(fn: _FunctionNode) -> str:
     return ",".join(parts)
 
 
+def _is_overload_stub(fn: _FunctionNode) -> bool:
+    """A ``@overload`` signature: the stubs of one function differ by annotation by design, and are not copies of each other."""
+    for deco in fn.decorator_list:
+        target = deco.func if isinstance(deco, ast.Call) else deco
+        if (target.id if isinstance(target, ast.Name) else target.attr if isinstance(target, ast.Attribute) else "") == "overload":
+            return True
+    return False
+
+
 def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
     """Functions defined at module scope, including those inside a module-level ``if``/``try``/``with`` (the
     ``try: from fast import f`` / ``except ImportError: def f(...)`` fallback), but not methods or nested defs."""
@@ -95,7 +104,8 @@ def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
     while stack:
         node = stack.pop(0)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield node
+            if not _is_overload_stub(node):
+                yield node
         elif isinstance(node, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
             stack.extend(node.body)
             stack.extend(getattr(node, "orelse", []))

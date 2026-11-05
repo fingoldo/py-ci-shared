@@ -38,6 +38,13 @@ __all__ = ["RULE", "assert_no_source_text_tests", "find_source_text_tests"]
 
 RULE = "source-text-test"
 SQL_PROBE = re.compile(r"\b(?:SELECT|INSERT|UPDATE|DELETE|FROM|WHERE|JOIN|GROUP BY|ORDER BY|OR TRUE)\b|OR\s+1\s*=\s*1\b")
+SQL_SHAPE = re.compile(r"^\s*(?:SELECT|INSERT|UPDATE|DELETE|WITH)\b|\b(?:DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\w+\s+SET|SELECT\b.*\bFROM)\b", re.DOTALL)
+
+
+def _is_sql_text(literal: str) -> bool:
+    """A bare probe keyword, or a literal shaped like a statement; ``FROM`` in an English sentence is neither."""
+    stripped = literal.strip()
+    return SQL_PROBE.fullmatch(stripped) is not None or SQL_SHAPE.search(stripped) is not None
 
 
 def _text_literals(node: ast.Assert) -> Iterator[str]:
@@ -55,7 +62,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
             continue
         for literal in _text_literals(node):
             hit = SQL_PROBE.search(literal)
-            if hit is not None:
+            if hit is not None and _is_sql_text(literal):
                 out.append(
                     Finding(
                         parsed.rel,

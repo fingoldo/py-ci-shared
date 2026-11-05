@@ -230,3 +230,28 @@ class TestCorpusAndBaseline:
         (src / "n.py").write_text("import threading\nclass D:\n    def f(self):\n        self._l = threading.Event()\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match=r"threading.Event"):
             assert_no_pickle_state_gaps(src, baseline_path=bl, use_git=False)
+
+
+def test_a_counter_updated_by_augmented_assignment_is_not_a_cache(tmp_path):
+    body = """
+        class SpeechAccounting:
+            def __init__(self):
+                self.cached_chars = 0
+            def add(self, n):
+                self.cached_chars += n
+            def __getstate__(self):
+                return self.__dict__.copy()
+    """
+    assert _static(tmp_path, body) == []
+
+
+def test_a_dict_cache_set_on_use_under_a_copy_getstate_is_still_reported(tmp_path):
+    body = """
+        class Model:
+            def __getstate__(self):
+                return self.__dict__.copy()
+            def predict(self, x):
+                self.cached_rows = {}
+                return x
+    """
+    assert _static(tmp_path, body) == [(RULE_NOT_EXCLUDED, 6)]

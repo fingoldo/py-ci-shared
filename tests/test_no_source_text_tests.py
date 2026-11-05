@@ -62,3 +62,8 @@ def test_assert_raises_on_a_probe_and_passes_on_row_checks(tmp_path):
     good = tmp_path / "test_good.py"
     good.write_text("def test_q():\n    assert [1] == [1]\n", encoding="utf-8")
     assert_no_source_text_tests([good])
+
+
+@pytest.mark.parametrize("assertion", ['assert "copied FROM the cache" in text', 'assert "Pick a value FROM the list" in out'])
+def test_prose_containing_from_is_not_sql_text(tmp_path, assertion):
+    assert _lines(tmp_path, f"def test_msg():\n    {assertion}\n") == []

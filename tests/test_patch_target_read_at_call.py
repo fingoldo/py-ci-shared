@@ -156,3 +156,16 @@ def test_assert_fails_on_a_finding_and_a_baseline_accepts_only_what_it_recorded(
     (root / "test_more.py").write_bytes(TEST_PATCHES.replace(b"test_cap_limits", b"test_more_limits"))
     with pytest.raises(pytest.fail.Exception, match=r"test_more\.py"):
         assert_patch_target_read_at_call([root / "test_service.py", root / "test_more.py"], [root], baseline_path=baseline, use_git=False)
+
+
+LATE_READS = {
+    "getattr_on_sys_modules": b"import sys\n\n\ndef cap(n):\n    return min(n, getattr(sys.modules.get('reexport'), 'LIMIT'))\n",
+    "helper_module_attribute": b"import importlib\n\n\ndef _pkg():\n    return importlib.import_module('reexport')\n\n\ndef cap(n):\n    return min(n, _pkg().LIMIT)\n",
+    "function_local_from_import": b"def cap(n):\n    from reexport import LIMIT\n    return min(n, LIMIT)\n",
+}
+
+
+@pytest.mark.parametrize("service", sorted(LATE_READS))
+def test_a_late_read_of_the_module_name_makes_the_patch_live(tmp_path, service):
+    """getattr on a module object, a helper returning the module, and a function-local import all read the name at call time."""
+    assert _found(tmp_path, _base(LATE_READS[service])) == []

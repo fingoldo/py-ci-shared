@@ -8,7 +8,7 @@ local ``rows = Rows(); return rows``) does not have the defect, and neither does
 A placeholder is a name assigned, directly in a module or function body, to a list, dict or set literal, to a builtin
 collection constructor (``list()``, ``dict()``, ``set()``, ``deque()``, ``defaultdict()``, ``OrderedDict()``, ``Counter()``,
 ``bytearray()``), or to a call of a capitalised name (a class such as ``Rows()``), except a few immutable value types
-(``Path``, ``Decimal``, ``frozenset``, ...). A ``return NAME`` is a finding when ``NAME`` is a placeholder of an enclosing
+(``Path``, ``Decimal``, ``frozenset``, ...) and the synchronisation primitives (``threading.RLock()``), which are shared on purpose. A ``return NAME`` is a finding when ``NAME`` is a placeholder of an enclosing
 scope (module, or a function a nested function sits in), and the returning function does not rebind the name itself.
 
 Not judged: a function that rebinds the name (a parameter, a local assignment, a ``global`` declaration does count as the
@@ -38,6 +38,8 @@ __all__ = ["RULE", "assert_no_shared_mutable_placeholders", "find_shared_mutable
 
 RULE = "shared-mutable-placeholder"
 _BUILTIN_COLLECTIONS = frozenset({"list", "dict", "set", "deque", "defaultdict", "OrderedDict", "Counter", "bytearray"})
+#: Synchronisation primitives are handed out to be shared: a lock returned by reference is the intended object.
+_SYNC_PRIMITIVES = frozenset({"Lock", "RLock", "Condition", "Semaphore", "BoundedSemaphore", "Event", "Barrier"})
 _IMMUTABLE_CONSTRUCTORS = frozenset({"Path", "PurePath", "PosixPath", "WindowsPath", "Decimal", "Fraction", "frozenset", "Enum", "Pattern"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
@@ -60,6 +62,8 @@ def is_placeholder_value(value: ast.AST) -> bool:
     name = _callee(value)
     if name in _BUILTIN_COLLECTIONS:
         return True
+    if name in _SYNC_PRIMITIVES:
+        return False
     return bool(name) and name[0].isupper() and name not in _IMMUTABLE_CONSTRUCTORS
 
 

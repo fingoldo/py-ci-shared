@@ -225,6 +225,19 @@ def _is_flag_value(value: ast.expr) -> bool:
     return isinstance(value, ast.Constant) and (value.value is None or isinstance(value.value, (bool, int, float)))
 
 
+def _counter_names(cls: ast.ClassDef) -> set[str]:
+    """Attributes a method grows with ``self.x += n`` or ``self.x -= n``: a counter, not a cache."""
+    return {
+        n.target.attr
+        for n in _fast_walk(cls)
+        if isinstance(n, ast.AugAssign)
+        and isinstance(n.op, (ast.Add, ast.Sub))
+        and isinstance(n.target, ast.Attribute)
+        and isinstance(n.target.value, ast.Name)
+        and n.target.value.id == "self"
+    }
+
+
 def _methods(cls: ast.ClassDef) -> dict[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]:
     return {n.name: n for n in cls.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
 
@@ -236,9 +249,10 @@ def _class_findings(rel: str, cls: ast.ClassDef, aliases: ImportAliases, module_
     lazy = [(m.name, name, value, line) for m in methods.values() if m.name not in _STATE_EXEMPT_METHODS for name, value, line in _self_attr_targets(m)]
     if isinstance(getstate, ast.FunctionDef) and _is_copy_form(getstate):
         named = _names_in(getstate, {**module_collections, **_string_collections(cls.body)})
+        counters = _counter_names(cls)
         seen: set[str] = set()
         for method, name, value, line in lazy:
-            if name in seen or name in named or not _is_runtime_name(name) or _is_flag_value(value):
+            if name in seen or name in named or name in counters or not _is_runtime_name(name) or _is_flag_value(value):
                 continue
             seen.add(name)
             message = f"{cls.name}.{method} sets runtime state self.{name}, which {cls.name}.__getstate__ copies (it never names it)"

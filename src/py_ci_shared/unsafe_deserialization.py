@@ -102,7 +102,7 @@ _DANGEROUS_NAMES = frozenset(
 _SAFE_YAML = frozenset({"SafeLoader", "CSafeLoader", "BaseLoader", "CBaseLoader"})
 # A dump/dumps/save earlier in the same function means the bytes were produced here (a round-trip), not received.
 _PRODUCERS = frozenset({"dump", "dumps", "save", "to_pickle"})
-_VERIFY = re.compile(r"sha256|hmac|verify", re.IGNORECASE)
+_VERIFY = re.compile(r"sha256|hmac|verif|sidecar", re.IGNORECASE)  # verify, verified, verification; a sidecar-checked read
 _DENY_NAME = re.compile(r"deny|block|forbid|unsafe|banned|reject|disallow", re.IGNORECASE)
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 

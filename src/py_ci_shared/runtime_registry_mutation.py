@@ -255,6 +255,11 @@ def _functions(tree: ast.Module) -> Iterator[tuple[_FunctionNode, bool, list[_Fu
     yield from visit(tree, False, [])
 
 
+def _called_names(func: _FunctionNode) -> set[str]:
+    """Bare names of the functions *func* calls."""
+    return {n.func.id for n in ast.walk(func) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+
+
 def _writes(parsed: list[ParsedFile]) -> list[RegistryWrite]:
     helpers = _import_time_helpers((f.rel, f.tree) for f in parsed)
     # A registry is usually written through an import (``from .registry import _REGISTRY``), so every module-level
@@ -265,11 +270,20 @@ def _writes(parsed: list[ParsedFile]) -> list[RegistryWrite]:
         return writes
     for f in parsed:
         local_aliases = _import_aliases_of(f.tree, registries)
-        exempt: set[int] = set()
-        for func, in_class, outer in _functions(f.tree):
-            # A decorator factory's inner function runs when the (import-time) factory applies it.
-            if _runs_at_import(func, f.rel, in_class, helpers) or any(id(o) in exempt for o in outer):
-                exempt.add(id(func))
+        functions = list(_functions(f.tree))
+        # A decorator factory's inner function runs when the (import-time) factory applies it, and so does a function of
+        # this module that such code calls (``deco`` calls ``_record``): both are exempt, transitively.
+        exempt: set[int] = {id(func) for func, in_class, _ in functions if _runs_at_import(func, f.rel, in_class, helpers)}
+        changed = True
+        while changed:
+            changed = False
+            called = set().union(*(_called_names(func) for func, _, _ in functions if id(func) in exempt))
+            for func, in_class, outer in functions:
+                if id(func) not in exempt and (any(id(o) in exempt for o in outer) or (not in_class and func.name in called)):
+                    exempt.add(id(func))
+                    changed = True
+        for func, _, _ in functions:
+            if id(func) in exempt:
                 continue
             writes += [RegistryWrite(f.rel, func.name, line, reg) for line, reg in _writes_in(func, registries, local_aliases)]
     return sorted(writes, key=lambda w: (w.path, w.lineno))

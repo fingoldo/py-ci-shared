@@ -123,3 +123,10 @@ def test_a_name_rebound_to_a_non_string_is_not_a_string_constant(tmp_path):
 def test_built_string_constants_compared_by_identity_are_reported(tmp_path, value):
     body = f"import textwrap\n\nSQL = {value}\n\n\ndef f(x):\n    return x is SQL\n"
     assert len(_identity(tmp_path, body)) == 1
+
+
+def test_a_str_enum_member_is_a_singleton_even_when_another_class_shares_its_name(tmp_path):
+    (tmp_path / "kinds.py").write_text('from enum import StrEnum\n\n\nclass NodeKind(StrEnum):\n    CAUSE = "cause"\n', encoding="utf-8")
+    (tmp_path / "labels.py").write_text('class Labels:\n    CAUSE = "label"\n', encoding="utf-8")
+    (tmp_path / "use.py").write_text("from kinds import NodeKind\n\n\ndef f(node):\n    return node.kind is NodeKind.CAUSE\n", encoding="utf-8")
+    assert find_identity_comparisons([tmp_path / "kinds.py", tmp_path / "labels.py", tmp_path / "use.py"], root=tmp_path) == []

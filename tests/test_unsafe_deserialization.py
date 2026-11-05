@@ -188,3 +188,12 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
 def test_exclude_skips_paths_by_fragment(tmp_path):
     root = _corpus(tmp_path, {"vendored/m.py": VIOLATION.encode(), "lib/m.py": VIOLATION.encode()})
     assert [f.path for f in find_unsafe_deserialization(root, use_git=False, exclude=("vendored/",))] == ["lib/m.py"]
+
+
+def test_pandas_read_pickle_of_sidecar_verified_bytes_is_not_reported(tmp_path):
+    source = (
+        "import io\nimport pandas as pd\n\n\ndef load_frame(path):\n    data = read_sidecar_verified(path)\n"
+        "    return pd.read_pickle(io.BytesIO(data))\n\n\ndef load_raw(path):\n    return pd.read_pickle(path)\n"
+    )
+    found = _found(tmp_path, source)
+    assert len(found) == 1 and "load_raw" in found[0], found

@@ -190,3 +190,26 @@ def test_a_stale_allow_entry_fails(tmp_path: Path):
 def test_an_empty_corpus_fails(tmp_path: Path):
     with pytest.raises(AssertionError, match="parsed"):
         assert_no_drifted_duplicate_functions([tmp_path])
+
+
+def test_overload_stubs_are_not_copies_of_each_other(tmp_path: Path):
+    """The @overload stubs of one function share a name and differ in their annotations, not in their behaviour."""
+    _write(
+        tmp_path,
+        "api.py",
+        [
+            "from typing import overload",
+            "@overload",
+            "def build_prompt(x: int) -> str: ...",
+            "@overload",
+            "def build_prompt(x: str) -> str:",
+            "    '''Stub for strings.'''",
+            "    ...",
+            "@overload",
+            "def build_prompt(x: bytes) -> str:",
+            "    ...",
+            "def build_prompt(x):",
+            "    return str(x)",
+        ],
+    )
+    assert find_drifted_duplicate_functions([tmp_path]) == []

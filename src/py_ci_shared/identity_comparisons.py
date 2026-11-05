@@ -119,8 +119,11 @@ class _ModuleConstants:
     def __init__(self, tree: ast.Module) -> None:
         self.module = _bound_strings(tree.body)
         self.classes: dict[str, set[str]] = {}
+        self.enum_classes: set[str] = set()
         for node in _fast_walk(tree):
-            if isinstance(node, ast.ClassDef) and not _is_enum_class(node):
+            if isinstance(node, ast.ClassDef) and _is_enum_class(node):
+                self.enum_classes.add(node.name)
+            elif isinstance(node, ast.ClassDef):
                 self.classes.setdefault(node.name, set()).update(_bound_strings(node.body))
 
     @property
@@ -176,6 +179,7 @@ class _Index:
             for name in _module_names(relative_posix(p.path.resolve(), base.resolve()) if base is not None else p.path.name):
                 self.by_module.setdefault(name, consts)
         self.all_class_names: set[str] = set().union(*(c.class_names for c in self.by_file.values())) if self.by_file else set()
+        self.enum_names: set[str] = set().union(*(c.enum_classes for c in self.by_file.values())) if self.by_file else set()
 
     def is_string_constant(self, node: ast.AST, here: _ModuleConstants, aliases: ImportAliases) -> bool:
         if isinstance(node, ast.Name):
@@ -185,6 +189,8 @@ class _Index:
         if isinstance(node, ast.Attribute):
             if self._qualified(aliases.qualified_name(node)):
                 return True
+            if _name(node.value) in self.enum_names:  # `NodeKind.CAUSE`: a member of an Enum class is a singleton
+                return False
             # `self.SQL` / `Cls.SQL` / `obj.SQL`: an attribute read through an instance cannot be resolved statically, so
             # it is matched against the CLASS constants of the scanned modules (not their module-level names).
             return node.attr in here.class_names or node.attr in self.all_class_names
