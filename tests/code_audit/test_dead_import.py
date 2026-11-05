@@ -379,18 +379,24 @@ def test_it():
     assert [f.snippet for f in with_consumers] == ["from pkg.impl import orphan"]
 
 
-def test_a_facade_name_listed_as_a_string_contract_is_not_dead(tmp_path):
-    # glossum/storage/orm_models/__init__.py: PG_UUID is re-exported and listed as a string in a test's
-    # PRE_SPLIT_PUBLIC_NAMES contract, checked with hasattr(); the name is consumed through its string spelling.
+def test_a_bare_string_spelling_of_an_import_is_not_a_use(tmp_path):
+    # a dict key / log label that happens to spell the module name is not a reference to the import
+    _write(tmp_path, "uses_key.py", """
+import json
+
+CONFIG = {"json": 1}
+""")
+    findings = scan_possibly_dead_import(tmp_path)
+    assert [f.snippet for f in findings] == ["import json"]
+
+
+def test_a_getattr_string_lookup_counts_as_a_use(tmp_path):
     _write(tmp_path, "facade.py", """
 from sqlalchemy import PG_UUID
 """)
     _write(tmp_path, "test_facade.py", """
-PRE_SPLIT_PUBLIC_NAMES = ["PG_UUID"]
-
-
 def test_names(m):
-    assert all(hasattr(m, n) for n in PRE_SPLIT_PUBLIC_NAMES)
+    assert getattr(m, "PG_UUID")
 """)
     assert scan_possibly_dead_import(tmp_path) == []
 

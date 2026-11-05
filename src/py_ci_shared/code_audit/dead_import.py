@@ -133,14 +133,36 @@ def _names_referenced_in_file(tree: ast.Module, skip_import_lines: set[int]) -> 
     for node in walk_tree(tree):
         if isinstance(node, ast.Name) and node.lineno not in skip_import_lines:
             referenced.add(node.id)
-    # `__all__ = ["name", ...]` string-literal entries count as usage (an explicit re-export).
+    # `__all__ = ["name", ...]` entries and dynamic-lookup string arguments count as usage.
+    return referenced | _string_spelled_references(tree)
+
+
+_DYNAMIC_LOOKUP_CALLS = frozenset({"getattr", "hasattr", "setattr", "delattr", "import_module", "__import__"})
+
+
+def _string_spelled_references(tree: ast.Module) -> set[str]:
+    """Names a module consumes by spelling them as a string, and only where a string is a genuine reference:
+    the entries of a module-level ``__all__`` and the string arguments of a dynamic-lookup call
+    (``getattr``/``hasattr``/``setattr``/``delattr``/``importlib.import_module``/``__import__``). Any other
+    string literal (a dict key, a log message, a label) is NOT a reference to an import of the same name."""
+    names: set[str] = set()
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
             # Any expression, not just a literal: ``__all__ = sorted({"a", "b"})`` names the same re-exports.
             for elt in walk_nodes(node.value):
                 if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
-                    referenced.add(elt.value)
-    return referenced
+                    names.add(elt.value)
+    for call in walk_tree(tree):
+        if not isinstance(call, ast.Call):
+            continue
+        func = call.func
+        callee = func.id if isinstance(func, ast.Name) else func.attr if isinstance(func, ast.Attribute) else None
+        if callee not in _DYNAMIC_LOOKUP_CALLS:
+            continue
+        for arg in call.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value.isidentifier():
+                names.add(arg.value)
+    return names
 
 
 def _attribute_names_in_corpus(root: Path, exclude_dirs: frozenset[str]) -> set[str]:
@@ -185,14 +207,11 @@ def _corpus_import_index(roots: "Path | Iterable[Path]", exclude_dirs: frozenset
             for node in walk_tree(tree):
                 if isinstance(node, ast.Attribute):
                     attr_names.add(node.attr)
-                elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.isidentifier():
-                    # A name spelled as a string is consumed by name: a contract list checked with
-                    # hasattr()/getattr() (glossum PRE_SPLIT_PUBLIC_NAMES) reads the facade export this way.
-                    attr_names.add(node.value)
                 elif isinstance(node, ast.ImportFrom):
                     for alias in node.names:
                         if alias.name != "*":
                             names.add(alias.name)
+            attr_names |= _string_spelled_references(tree)
             by_file[py] = names
     return attr_names, by_file
 
