@@ -6,10 +6,10 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 
 | # | Gate | Defect | Seen in | Disposition |
 |---|------|--------|---------|-------------|
-| 37-F1 | skip_as_pass, comment_repo_paths | read tracked binary files (.png, .zip, .prof) as text and report them as unreadable; no way to exclude | polyvocab_app, glossum | OPEN |
-| 37-F2 | skip_as_pass | flags a warning `echo` that contains the word "skipped" (`tool/check-hooks-were-not-bypassed.sh:65`) | polyvocab_app | OPEN |
-| 37-F3 | machine_specific_paths | takes the sed regex `s://.*::` for a URL (`tool/check-edge-function-auth.sh:47`) | polyvocab_app | OPEN |
-| 37-F4 | fail_open_handlers | `return exc.sqlstate` in an except is flagged as a silent default return although it returns the failure's own data | polyvocab_app | OPEN |
+| 37-F1 | skip_as_pass, comment_repo_paths | read tracked binary files (.png, .zip, .prof) as text and report them as unreadable; no way to exclude | polyvocab_app, glossum | RESOLVED f965a27 |
+| 37-F2 | skip_as_pass | flags a warning `echo` that contains the word "skipped" (`tool/check-hooks-were-not-bypassed.sh:65`) | polyvocab_app | RESOLVED c8985f0 |
+| 37-F3 | machine_specific_paths | takes the sed regex `s://.*::` for a URL (`tool/check-edge-function-auth.sh:47`) | polyvocab_app | RESOLVED 4782aa3 |
+| 37-F4 | fail_open_handlers | `return exc.sqlstate` in an except is flagged as a silent default return although it returns the failure's own data | polyvocab_app | RESOLVED d9665da |
 | 37-F5 | ci_pin_version_skew | `AttributeError: 'WindowsPath' object has no attribute 'rsplit'` on Windows through `run-all` | claude-usage-notifier, flutter_app_core, llm_bench, algopacksimple, dash_app_core | OPEN |
 | 37-F6 | tracked_secret_shapes, sibling_floor_skew, import_side_effects | hard-fail or error on a repo with no applicable subject (no config table / no pyproject / no test_*.py); should SKIP | flutter repos | OPEN |
 | 37-F7 | pickle_state_completeness | flags plain counters that are meant to be pickled (`SpeechAccounting.cached_chars`) | pyutilz | OPEN |
@@ -35,8 +35,8 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F27 | git_child_env | does not recognise the helper `_without_git_hook_env` that scrubs `GIT_*` | llm_bench | OPEN |
 | 37-F28 | gate config (`[tool.py_ci_shared]`) | a gate with a `[gates.X]` table must not also be in `enable`; the error says so but the generated examples do not | llm_bench, algopacksimple | OPEN |
 | 37-F29 | drifted_duplicate_functions | reads `@overload` stubs as copies of each other (five `build_*_prompt` stubs) | glossum | OPEN |
-| 37-F30 | import_cycles | does not honour the `# audit-exempt: import_cycle` marker that the same cycle carries in upwork_shared/_circuit.py:1 | social | OPEN |
-| 37-F31 | sentinel_or_fallback | ignores `# falsy-ok:` on an `x if x else y` expression, although its docstring promises the marker (run_screening.py:231, 282) | social | OPEN |
+| 37-F30 | import_cycles | does not honour the `# audit-exempt: import_cycle` marker that the same cycle carries in upwork_shared/_circuit.py:1 | social | RESOLVED de1aa90 |
+| 37-F31 | sentinel_or_fallback | ignores `# falsy-ok:` on an `x if x else y` expression, although its docstring promises the marker (run_screening.py:231, 282) | social | RESOLVED 32755e5 |
 | 37-F32 | env_flag_parsing | reports `PROXY_USER` (a credential string) as a boolean flag for `if not user` and `user == ""` (_observability_lookups.py:92) | social | OPEN |
 | 37-F33 | ddl_lock_safety | reads SQL inside a `--` comment (RUNBOOK sql: a commented-out SET NOT NULL) | social | OPEN |
 | 37-F34 | unresolved_module_attributes | resolves a bare `db` to dashboard/db.py when the code means the sibling project's db.py; not safe monorepo-wide per project | social | OPEN |

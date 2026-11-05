@@ -61,6 +61,17 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
 - `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
 
+### Gate defects 2026-11-04
+
+Step 8 consumer reports (`audits/2026-11-04/37_step8_gate_defects.md`). Each entry is a false positive or a missing marker; the gate now honours the marker the consumer already wrote.
+
+- **Behaviour change:** the text corpora behind `skip_as_pass` and `comment_repo_paths` (and every gate built on `read_text_corpus`) skip a binary file (a NUL in its first 8000 bytes: an image, an archive, a profile) instead of reporting it as unreadable text. Undecodable text is still an unreadable finding. New helper `_core.read_text_if_not_binary`.
+- `skip_as_pass` flags a `SKIPPED` marker only when the printed message begins with that word; a warning that merely contains "skipped" and exits 0 is not a finding.
+- `machine_specific_paths` no longer reads a sed expression such as `s://.*::` as a `db-url`: the user part of a DSN excludes `*`, `\`, `^`, `$`, brackets and braces, and the password part excludes `*` and `\`. A real DSN with an inline password is still a finding.
+- `fail_open_handlers` `silent_default_return` does not fire when the handler returns the bound exception or a part of it (`return exc.sqlstate`): that hands back the failure's own data.
+- `sentinel_or_fallback` honours `# falsy-ok: <reason>` on a conditional expression (`x.seed if x.seed else DEFAULT`) as its docstring promises, not only on an `or` chain.
+- **Behaviour change:** `import_cycles` exempts a cycle when a member module's first line carries `# audit-exempt: import_cycle -- <reason>` (the reason is required, as for every `audit-exempt` marker).
+
 ### Gate quality 2026-11-04
 
 Audit 33 (`audits/2026-11-04/33_existing_gate_quality.md`). Every change makes a gate stricter or removes a false positive; the entries that can turn a green consumer red are marked.
