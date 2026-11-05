@@ -1191,6 +1191,13 @@ since = "1.7.0"
 summary = "Every pytest marker a test suite uses is registered"
 
 [[gate]]
+name = "pytest_run"
+kind = "cli"
+since = "1.23.8"
+cli = true
+summary = "Runs pytest with the mandatory developer flags (unbuffered, -s, --durations=200, no coverage, one process) and writes the whole output to a file"
+
+[[gate]]
 name = "randomly_seed_guard"
 kind = "library"
 since = "1.17.0"

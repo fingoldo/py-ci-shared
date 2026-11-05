@@ -310,6 +310,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`pytest_addopts_path_runs`](src/py_ci_shared/pytest_addopts_path_runs.py) | gate | 1.17.0 | `assert_path_runs_select_tests` | A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them |
 | [`pytest_known_gap`](src/py_ci_shared/pytest_known_gap.py) | library | 1.22.3 |  | known_gap(reason, gap_closed): xfail while an external limit is open, fail once the measurement shows it closed |
 | [`pytest_markers`](src/py_ci_shared/pytest_markers.py) | gate | 1.7.0 | `assert_markers_registered` | Every pytest marker a test suite uses is registered |
+| [`pytest_run`](src/py_ci_shared/pytest_run.py) | cli | 1.23.8 | `main` | Runs pytest with the mandatory developer flags (unbuffered, -s, --durations=200, no coverage, one process) and writes the whole output to a file |
 | [`randomly_seed_guard`](src/py_ci_shared/randomly_seed_guard.py) | library | 1.17.0 |  | Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it |
 | [`readme_env_var_parity`](src/py_ci_shared/readme_env_var_parity.py) | gate | 1.3.0 | `assert_readme_documents_every_env_var` (+1) | Every environment variable production code reads via ``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's |
 | [`reiterated_iterable_params`](src/py_ci_shared/reiterated_iterable_params.py) | gate | 1.17.0 | `assert_no_reiterated_iterable_params` | A parameter typed ``Iterable`` (or ``Iterator``/``Generator``) consumed more than once |
@@ -465,6 +466,19 @@ The older console scripts (`safe-precommit`, `py-ci-install-safe-hook`, `py-ci-s
 `python -m py_ci_shared.<module>` command still work. The pre-commit manifest (`.pre-commit-hooks.yaml`)
 publishes `py-ci-shared-run-all`, `pinned-tool-versions`, `worktree-hygiene` and `mypy-gate` hooks next to
 `mypy-full-manual`.
+
+## Running pytest on a developer machine
+
+`py-ci-shared tool pytest_run OUTFILE <paths and pytest options>` runs pytest with the flags a developer machine needs and writes everything to `OUTFILE`; read the file after the run. Set by hand, each of them
+has cost a run: `PYTHONUNBUFFERED=1` and `-s` (pytest captures stdout and prints the tracebacks only when the session ends, so a run killed by a timeout leaves nothing to read), `--durations=200`,
+no `-q` (it buffers the progress), no `| tail` / `| grep` on a live run (a pipe holds every line until the process exits), `--no-cov` (the coverage teardown dies with `PermissionError` on a locked
+`.coverage` file on Windows), `-n 0` (xdist workers exhaust the RAM of a small machine) and `-p no:cacheprovider`. `--no-cov` and `-n 0` are added only when the plugin is installed, an option of your own
+(`-n 3`, `--durations=20`, `-x`) replaces its default, and `-q` is refused. The command prints the exit code, pytest's summary line and the file's path; the file ends with `exit=<code>`.
+
+```bash
+py-ci-shared tool pytest_run /tmp/run.txt tests/test_a.py tests/test_b.py -k name
+python -m py_ci_shared.pytest_run /tmp/run.txt tests/test_a.py        # the same
+```
 
 ## Baselines, refresh and what now fails
 

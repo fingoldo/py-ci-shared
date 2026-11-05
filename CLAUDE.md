@@ -19,6 +19,11 @@
 - A new `find_*` must bind from a repo root in `corpus_drift.BINDINGS` or be listed in `corpus_drift.NON_CORPUS`
   with a reason.
 
+## Running tests
+
+- Run pytest through `py-ci-shared tool pytest_run OUTFILE <paths>` (README, "Running pytest on a developer machine"): unbuffered, `-s`, `--durations=200`, no coverage, one process, the whole output in a file that you read after the run. Do not use `-q`, and do not pipe a live run through `tail` or `grep`: the file stays empty until the process ends.
+- Run the tests of what you changed, not a whole directory.
+
 ## Before pushing
 
 - Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@0.16.1 check src tests`.
