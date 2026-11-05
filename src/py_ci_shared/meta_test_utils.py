@@ -21,9 +21,9 @@ particular framework — they accept a ``package_dir: Path`` and operate
 on filesystem state.
 
 Used by:
-  * pyutilz's own ``tests/test_meta/`` (PT-1..PT-9)
-  * mlframe's ``tests/test_meta/`` (Ext #0..#7, MT-1..MT-7)
-  * autopsia's ``tests/test_meta/`` and downstream projects that want the same suite without copy-paste
+  * pyutilz's own meta-test package (PT-1..PT-9)
+  * mlframe's meta-test package (Ext #0..#7, MT-1..MT-7)
+  * autopsia's meta-test package and downstream projects that want the same suite without copy-paste
 
 Moved here from ``pyutilz.dev.meta_test_utils`` (pyutilz keeps no re-export): import it as ``py_ci_shared.meta_test_utils``.
 
@@ -49,7 +49,7 @@ from typing import Any, Callable, Optional
 import logging
 
 from ._core.corpus import DEFAULT_EXCLUDE, iter_files_pruned
-from .code_audit._base import _DEFAULT_EXCLUDE_DIRS
+from .code_audit import DEFAULT_EXCLUDE_DIRS as _DEFAULT_EXCLUDE_DIRS
 from .deferred_entries import count_user_deferred_entries
 
 logger = logging.getLogger(__name__)
@@ -247,7 +247,8 @@ def capture_signature(obj: object) -> str:
     """
     try:
         sig = inspect.signature(obj)  # type: ignore[arg-type]  # obj is intentionally untyped object; non-callables are caught below and yield "<no-signature>"
-    except (ValueError, TypeError, RuntimeError) as exc:  # audit-exempt: non_neutral_except_fallback -- placeholder for an uninspectable callable, shown in the output rather than substituted as a measurement
+    # audit-exempt: non_neutral_except_fallback -- placeholder for an uninspectable callable, shown in the output rather than substituted as a measurement
+    except (ValueError, TypeError, RuntimeError) as exc:
         logger.debug("capture_signature: callable has no inspectable signature: %s: %s", type(exc).__name__, exc)
         return "<no-signature>"
     params = []
@@ -308,6 +309,9 @@ def _surface_kind(obj: object) -> str:
     return "value"
 
 
+_UNREADABLE = object()  # sentinel: the attribute raised on read; recorded as a placeholder, never as a value
+
+
 def capture_module_surface(mod: object) -> dict[str, str]:
     """Return ``{public_name: kind_string}`` for every public symbol
     on a module (skips dunders + private). Used by API-stability
@@ -341,7 +345,13 @@ def capture_module_surface(mod: object) -> dict[str, str]:
             continue
         try:
             obj = getattr(mod, name)
-        except Exception:  # audit-exempt: non_neutral_except_fallback -- placeholder for an attribute that cannot be read at import time, reported by name
+        # audit-exempt: non_neutral_except_fallback -- placeholder for an attribute that cannot be read at import time, reported by name
+        except Exception as exc:
+            logger.warning(
+                "%s: attribute %s is not readable at import time (%s): recorded as a placeholder", getattr(mod, "__name__", "?"), name, type(exc).__name__
+            )
+            obj = _UNREADABLE
+        if obj is _UNREADABLE:
             out[name] = "<inaccessible-at-import-time>"
             continue
         if inspect.ismodule(obj):
@@ -551,6 +561,7 @@ def optional_scalar_fields(cls: type, skip: Iterable[str] = ()) -> dict[str, obj
     populate those; this helper only covers the shapes it can generate an
     unambiguous, comparable sentinel for.
     """
+    skip = frozenset(skip)  # consumed once per field below; a generator would be exhausted after the first use
     hints = typing.get_type_hints(cls)
     out: dict[str, object] = {}
     for f in dataclasses.fields(cls):
@@ -706,7 +717,8 @@ def _is_a_commit_this_repo_has(cite: str, repo_root: Path) -> bool:
         done = subprocess.run(  # nosec B603 B607 - fixed argv, no shell, `cite` validated as hex above
             ["git", "cat-file", "-e", f"{cite}^{{commit}}"], cwd=repo_root, capture_output=True, timeout=15, check=False
         )
-    except (OSError, subprocess.SubprocessError) as exc:  # audit-exempt: non_neutral_except_fallback -- git unavailable means the commit cannot be verified; False is the honest answer to the predicate
+    # audit-exempt: non_neutral_except_fallback -- git unavailable means the commit cannot be verified; False is the honest answer to the predicate
+    except (OSError, subprocess.SubprocessError) as exc:
         logger.warning("_is_a_commit_this_repo_has: git unavailable, commit cannot be verified: %s: %s", type(exc).__name__, exc)
         return False
     return done.returncode == 0

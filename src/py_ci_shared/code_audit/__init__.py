@@ -609,6 +609,7 @@ from .async_primitive_reinit import scan_async_primitive_reinit_per_call
 from .llm_max_tokens_cap import scan_llm_call_missing_max_tokens_cap
 from .per_call_state_on_shared_instance import scan_per_call_state_on_shared_instance
 from .uncached_constant_cost_probe import scan_uncached_constant_cost_probe
+
 # Every registered scanner is importable from the package: the registry is the single source of
 # truth for what exists, and a meta-test pins the registry and this facade in bijection.
 from .accumulator_helper_bypassed import scan_accumulator_helper_bypassed
@@ -637,6 +638,7 @@ from .test_asserts_against_production_constant import scan_test_asserts_against_
 from .unit_suffix_mismatch import scan_unit_suffix_mismatch
 from .vacuous_loop_assertion import scan_vacuous_loop_assertion
 from .unreachable_import_fallback import scan_unreachable_import_fallback
+
 # SCANNERS is deliberately NOT re-exported: the registry is private, read via get_scanners()
 # and written via register_scanner() (whose duplicate-name guard direct assignment bypassed).
 from .registry import OPT_IN_ONLY, describe_scanners, render_check_catalogue, run_all, register_scanner, get_scanners
@@ -777,3 +779,5 @@ for _submod_name, _submod_value in list(globals().items()):
     if isinstance(_submod_value, _types.ModuleType) and _submod_value.__name__.startswith(__name__ + "."):
         globals().pop(_submod_name, None)
 del _submod_name, _submod_value, _types
+
+from ._base import _DEFAULT_EXCLUDE_DIRS as DEFAULT_EXCLUDE_DIRS  # noqa: F401 -- public name for other subpackages (meta_test_utils)

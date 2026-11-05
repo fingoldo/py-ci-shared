@@ -13,8 +13,8 @@ Each default has a failure behind it:
 
 Usage::
 
-    py-ci-shared tool pytest_run OUTFILE tests/test_a.py tests/test_b.py -k name
-    python -m py_ci_shared.pytest_run OUTFILE tests/test_a.py
+    py-ci-shared tool pytest_run OUTFILE <test files> -k name
+    python -m py_ci_shared.pytest_run OUTFILE <one test file>
 
 The file gets pytest's output and a last line ``exit=<code>``; the command prints the exit code, the pytest summary line and the file's path once the run is over. A pytest option of
 your own (``-n 3``, ``--durations=20``, ``-x``) replaces the matching default. ``-q`` / ``--quiet`` is refused.
@@ -24,12 +24,15 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import logging
 import re
 import subprocess
 import sys
 from pathlib import Path
 from collections.abc import Callable, Sequence
 from typing import Optional, Union
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_DURATIONS", "build_command", "main", "run_pytest", "summary_line"]
 
@@ -79,7 +82,8 @@ def summary_line(out_file: Union[str, Path]) -> str:
     """pytest's last summary line (``== 3 passed, 1 skipped in 2.1s ==``) of the finished run in *out_file*, or an empty string."""
     try:
         lines = Path(out_file).read_text(encoding="utf-8", errors="replace").splitlines()
-    except OSError:
+    except OSError as exc:
+        logger.warning("pytest_run output %s is unreadable (%s): no summary line", out_file, type(exc).__name__)
         return ""
     for line in reversed(lines):
         if _SUMMARY.match(line.strip()):
