@@ -69,3 +69,18 @@ def f(p):
         return fh.read()
 """)
     assert scan_resource_handle_safety(tmp_path) == []
+
+
+# ---- async with: the context manager is an AsyncWith node, not a With -------------------
+
+
+def test_resource_handle_safety_async_with_block_not_flagged(tmp_path: Path):
+    _write(tmp_path, "ok_async.py", """
+import aiofiles
+
+
+async def f(path):
+    async with aiofiles.open(path, "w") as fh:
+        await fh.write("x")
+""")
+    assert scan_resource_handle_safety(tmp_path) == []

@@ -58,7 +58,7 @@ def _is_under_with_statement(call: ast.Call, chain: list) -> bool:
     """True if any ancestor of ``call`` is a ``with`` statement and the call appears inside one
     of its ``items`` (the context-manager position)."""
     for ancestor in chain:
-        if isinstance(ancestor, ast.With):
+        if isinstance(ancestor, (ast.With, ast.AsyncWith)):
             for item in ancestor.items:
                 for sub in walk_nodes(item.context_expr):
                     if sub is call:

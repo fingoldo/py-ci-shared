@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.3)
 
+### Gate false positives 2026-11-05
+
+- `resource_handle_safety`: an `async with aiofiles.open(...)` block counts as a context manager (`ast.AsyncWith`). **Behaviour change:** the 3 aiofiles findings in glossum (`frequency_importer.py:294,452`, `kaikki_importer/__init__.py:355`) disappear.
+
 - New gate `cuda_kernel_pointer_types` (additive): a `__global__` function with a `double*` parameter and no `{REAL}` placeholder among its parameters (hard, `cuda-bare-double-pointer`), the same for `float*` (advisory, `include_advisory`), and a `"float" if X.dtype == ... else "double"` kernel-type probe whose `X` is never a launch argument by name (hard, `cuda-type-probe-not-launched`). A float32 buffer bound to a `double*` is read past its end; the context is poisoned and a later thrust call aborts the interpreter. Marker `// dtype-ok: <reason>` in the kernel string (or `# dtype-ok:` on the probe line); baseline supported. Found in mlframe: the `row_argmax` kernel read its float32 operands as double.
 
 - Gate defects from audit 2026-11-04 step 8 (`audits/2026-11-04/37_step8_gate_defects.md`):
