@@ -51,8 +51,12 @@ from typing import Any, Optional, Union
 
 from ._core import CorpusError, EmptyScanError, Finding
 from ._core.config import ConfigError
+import logging
+
 from ._toml_compat import tomllib
 from .committed_line_endings import _blobs, _cat_blobs  # one reader of index blobs; a second copy would drift
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "ALLOW_MARKER",
@@ -161,7 +165,8 @@ def _no_shape_table(path: PathLike) -> bool:
         return True
     try:
         node: Any = tomllib.loads(file.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        logger.warning("%s is unreadable (%s): treated as having a shape table, so the gate runs", file, type(exc).__name__)
         return False
     for key in CONFIG_TABLE:
         node = node.get(key) if isinstance(node, dict) else None
