@@ -35,6 +35,7 @@ from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, child_nodes, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._text_ratchet import is_test_path
 
 _RELOADERS = frozenset({"importlib.reload", "imp.reload"})
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
@@ -125,21 +126,28 @@ class _Restores:
 
     def has_restore(self, scope: ast.AST, snapshots: Optional[set[str]] = None, *, in_finalizer: bool = False, depth: int = 0) -> bool:
         snaps = set(snapshots or ()) | _snapshots(scope, self.aliases)
-        for sub in _fast_walk(scope):
-            if isinstance(sub, ast.Assign) and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, self.aliases) for t in sub.targets):
-                if _uses(sub.value, snaps):
-                    return True
-            if isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute):
-                f = sub.func
-                if f.attr == "update" and (_is_sys_modules(f.value, self.aliases) or (isinstance(f.value, ast.Attribute) and f.value.attr == "__dict__")):
-                    if any(_uses(arg, snaps) for arg in sub.args):
-                        return True
-                if f.attr == "addfinalizer" and sub.args and depth < 3 and self._finalizer_restores(sub.args[0], snaps, depth):
-                    return True
-                if f.attr == "dict" and self.aliases.qualified_name(f) in ("unittest.mock.patch.dict", "mock.patch.dict"):
-                    if sub.args and _is_sys_modules(sub.args[0], self.aliases):
-                        return True
+        return any(self._restores_at(sub, snaps, depth) for sub in _fast_walk(scope))
+
+    def _restores_at(self, sub: ast.AST, snaps: set[str], depth: int) -> bool:
+        if isinstance(sub, ast.Assign) and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, self.aliases) for t in sub.targets):
+            return _uses(sub.value, snaps)
+        if isinstance(sub, (ast.For, ast.If, ast.While)):  # `if k not in saved: del sys.modules[k]` restores by deleting what the snapshot lacks
+            return self._snapshot_guarded_delete(sub, snaps)
+        return isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and self._call_restores(sub, sub.func, snaps, depth)
+
+    def _call_restores(self, call: ast.Call, f: ast.Attribute, snaps: set[str], depth: int) -> bool:
+        if f.attr == "update" and (_is_sys_modules(f.value, self.aliases) or (isinstance(f.value, ast.Attribute) and f.value.attr == "__dict__")):
+            return any(_uses(arg, snaps) for arg in call.args)
+        if f.attr == "addfinalizer":
+            return bool(call.args) and depth < 3 and self._finalizer_restores(call.args[0], snaps, depth)
+        if f.attr == "dict" and self.aliases.qualified_name(f) in ("unittest.mock.patch.dict", "mock.patch.dict"):
+            return bool(call.args) and _is_sys_modules(call.args[0], self.aliases)
         return False
+
+    def _snapshot_guarded_delete(self, loop: ast.AST, snaps: set[str]) -> bool:
+        """A loop or branch whose test or iterable reads a snapshot and whose body deletes from ``sys.modules``."""
+        header = loop.iter if isinstance(loop, ast.For) else loop.test  # type: ignore[attr-defined]
+        return _uses(header, snaps) and any(isinstance(d, ast.Delete) and reload_primitive(d, self.aliases) for d in _fast_walk(loop))
 
     def _finalizer_restores(self, arg: ast.AST, snaps: set[str], depth: int) -> bool:
         if isinstance(arg, ast.Lambda):
@@ -374,16 +382,18 @@ def _reloads_in_code(
     roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = (), allow_unparsed: bool = False
 ) -> "tuple[list[ReloadSite], int]":
     """``(sites, parsed file count)`` for :func:`find_reloads_in_code`."""
-    ok = set(allowed)
+    ok = {tuple(entry) for entry in allowed}
     out: list[ReloadSite] = []
     parsed_count = 0
     for root in roots:
         scan = scan_python(Path(root), min_files=0, root=repo_root, exclude=DEFAULT_EXCLUDE)
-        out.extend(s for s in (_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed)) if (s.path, s.line) not in ok)
-        parsed_count += scan.parsed_count
+        out.extend(s for s in (_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed)) if (s.path, s.line) not in ok and not is_test_path(s.path))
         for parsed in scan:
-            aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
             rel = relative_posix(parsed.path, repo_root)
+            if is_test_path(rel):  # a test module reloading its own stubs is judged by find_unpaired_reloads, not as production code
+                continue
+            parsed_count += 1
+            aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
             for node in _fast_walk(parsed.tree):
                 prim = reload_primitive(node, aliases)
                 if prim is None:
@@ -407,12 +417,12 @@ def assert_no_reloads_in_code(
     fewer than *min_files* parsed files (a scan that lost its subject)."""
     import pytest
 
-    allowed = list(allowed)
+    entries = [tuple(entry) for entry in allowed]  # a TOML entry arrives as a list, which is not hashable
     roots = list(roots)
     unexcused, parsed_count = _reloads_in_code(roots, repo_root, allowed=(), allow_unparsed=allow_unparsed)
     present = {(s.path, s.line) for s in unexcused} | {(s.path, s.text) for s in unexcused}
-    sites = [s for s in unexcused if (s.path, s.line) not in set(allowed) and (s.path, s.text) not in set(allowed)]
-    stale = [entry for entry in allowed if tuple(entry) not in present]
+    sites = [s for s in unexcused if (s.path, s.line) not in set(entries) and (s.path, s.text) not in set(entries)]
+    stale = [entry for entry in entries if entry not in present]
     problems: list[str] = []
     if parsed_count < min_files:
         problems.append(f"only {parsed_count} file(s) parsed under {[str(r) for r in roots]}; expected at least {min_files}. The scan lost its subject.")

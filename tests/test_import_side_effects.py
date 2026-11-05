@@ -126,3 +126,11 @@ def test_an_environment_write_is_reported_by_key_never_by_value(tmp_path):
     reported = " ".join(what for what, _origin in result.violations)
     assert "PCS_PROBE_TOKEN" in reported, "the write was not reported at all"
     assert "s3cret-value-xyz" not in reported, "the report carries the value"
+
+
+def test_a_repo_with_no_test_files_or_targets_skips_with_a_reason(tmp_path):
+    # audit 37-F6: no test_*.py and no import targets leave the gates nothing to judge, so they skip
+    with pytest.raises(pytest.skip.Exception, match="test_"):
+        assert_no_new_import_time_env_mutations(tmp_path)
+    with pytest.raises(pytest.skip.Exception, match="import target"):
+        assert_imports_have_no_side_effects([])

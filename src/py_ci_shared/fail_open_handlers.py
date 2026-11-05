@@ -193,6 +193,10 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
             value, list_name = n.value, _target_name(n.target)
         elif isinstance(n, ast.Assign) and any(isinstance(t, ast.Subscript) for t in n.targets):
             sub = next(t for t in n.targets if isinstance(t, ast.Subscript))
+            # `counts[x] = count` stores a number (not the element) under the element as a key: a counter, not an admission.
+            stores_a_count = not isinstance(n.value, ast.Constant) and (not _mentions(n.value, names) or _mentions(n.value, {_target_name(sub)}))
+            if stores_a_count:
+                continue
             value, list_name = sub.slice, _target_name(sub)
         elif isinstance(n, (ast.Yield, ast.YieldFrom)) and n.value is not None:
             value = n.value

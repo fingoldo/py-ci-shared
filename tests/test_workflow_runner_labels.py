@@ -78,13 +78,13 @@ def test_the_floor(tmp_path: Path) -> None:
 
 def test_fix_rewrites_labels_keeps_crlf_and_adds_the_update_channel(tmp_path: Path) -> None:
     root = _repo(tmp_path, WF.replace("\n", "\r\n"))
-    assert fix_workflow_runner_labels(root, labels={"windows": "windows-2022"}) == [".github/workflows/ci.yml", ".github/dependabot.yml"]
+    assert fix_workflow_runner_labels(root, labels={"windows": "windows-2022"}) == [".github/workflows/ci.yml"]
     data = (root / ".github/workflows/ci.yml").read_bytes()
     assert b"[ubuntu-24.04, windows-2022]  # both move\r\n" in data and b"runs-on: macos-latest  # moving-label-ok" in data
     assert b"\r\r" not in data and b"a comment about ubuntu-latest" in data
-    assert 'package-ecosystem: "github-actions"' in (root / ".github/dependabot.yml").read_text()
+    assert not (root / ".github/dependabot.yml").exists()
     assert b'echo "macos-15 is only text here"' in data  # the fix rewrites what the check reports, no more
-    assert _found(root) == []
+    assert [rule for _path, _line, rule in _found(root)] == ["no-actions-update-channel"]
 
 
 def test_fix_extends_an_existing_dependabot_file_only_when_updates_is_last(tmp_path: Path) -> None:
@@ -102,8 +102,10 @@ def test_assert_and_cli(tmp_path: Path, capsys: pytest.CaptureFixture) -> None:
     with pytest.raises(AssertionError, match="--fix"):
         assert_workflow_runner_labels_pinned(root)
     assert main([str(root)]) == 1
-    assert main([str(root), "--fix"]) == 0
+    assert main([str(root), "--fix"]) == 1  # the fixer never creates the update channel, so its finding remains
     assert "fixed .github/workflows/ci.yml" in capsys.readouterr().out
+    (root / ".github" / "dependabot.yml").write_text("version: 2\nupdates:\n  - package-ecosystem: pip\n    directory: /\n")
+    assert main([str(root), "--fix"]) == 0
     assert main([str(root), "--label", "bad"]) == 1
 
 
@@ -126,3 +128,10 @@ def test_a_label_named_in_a_run_script_or_a_step_name_is_text_not_a_runner(tmp_p
 def test_upper_case_labels_and_matrix_values_are_still_moving(tmp_path):
     body = "jobs:\n  a:\n    runs-on: Ubuntu-Latest\n    strategy:\n      matrix:\n        os: [ubuntu-24.04, MacOS-Latest]\n"
     assert _wf_findings(tmp_path, body) == [(3, "moving-runner-label"), (6, "moving-runner-label")]
+
+
+def test_fix_never_creates_the_update_channel_file(tmp_path: Path) -> None:
+    # audit 37-F21: the fixer edits the workflows it names; an untracked .github/dependabot.yml is a file it must not create
+    root = _repo(tmp_path, WF)
+    assert ".github/dependabot.yml" not in fix_workflow_runner_labels(root, labels={"windows": "windows-2022"})
+    assert not (root / ".github/dependabot.yml").exists()

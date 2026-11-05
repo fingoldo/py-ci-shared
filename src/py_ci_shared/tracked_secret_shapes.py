@@ -154,6 +154,20 @@ def load_shapes(config_path: PathLike) -> dict[str, Any]:
     return node
 
 
+def _no_shape_table(path: PathLike) -> bool:
+    """True when *path* is missing or has no shape table; a file that exists but does not parse is not "no table"."""
+    file = Path(path)
+    if not file.is_file():
+        return True
+    try:
+        node: Any = tomllib.loads(file.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    for key in CONFIG_TABLE:
+        node = node.get(key) if isinstance(node, dict) else None
+    return not isinstance(node, dict) or not node
+
+
 def _excluded(path: str, patterns: Sequence[str]) -> bool:
     return any(fnmatch.fnmatchcase(path, p) or path.startswith(p.rstrip("/") + "/") for p in patterns)
 
@@ -253,7 +267,15 @@ def assert_no_tracked_secret_shapes(
     min_files: int = 1,
     allow_unparsed: bool = False,
 ) -> None:
-    """Fail on any tracked secret-shaped string. No baseline exists: rotate the credential, then remove or mark the line."""
+    """Fail on any tracked secret-shaped string. No baseline exists: rotate the credential, then remove or mark the line.
+
+    Skips with a reason when no shapes are configured (no pyproject.toml, or none with the shape table): the repo has no
+    subject for this gate. A malformed config or an unreadable file still fails.
+    """
+    import pytest
+
+    if shapes is None and _no_shape_table(config_path or Path(repo_root) / "pyproject.toml"):
+        pytest.skip(f"no [{'.'.join(CONFIG_TABLE)}] table in {config_path or Path(repo_root) / 'pyproject.toml'}: no secret shapes configured")
     report = scan_tracked_secret_shapes(
         repo_root,
         shapes=shapes,

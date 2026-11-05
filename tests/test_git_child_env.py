@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import py_ci_shared.git_child_env as gce
 from py_ci_shared.git_child_env import assert_no_new_unscrubbed_git_spawns, find_unscrubbed_git_spawns
 
 
@@ -77,3 +78,49 @@ def test_dart_scrubbed_map_literal_without_a_nested_call_is_not_found(tmp_path: 
     unscrubbed = LITERAL_DART.replace("if (!e.key.startsWith('GIT_')) ", "")
     (description,) = find_unscrubbed_git_spawns(_tree(tmp_path, "test/repo_test.dart", unscrubbed)).values()
     assert "neither drops GIT_*" in description
+
+
+def test_a_helper_that_scrubs_git_by_name_or_by_its_returned_env_is_recognised(tmp_path):
+    # audit 37-F27: `_without_git_hook_env` scrubs GIT_* and is not named like git_env/clean_env/scrub/strip
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_helper.py").write_text(
+        "import os\n"
+        "import subprocess\n"
+        "\n"
+        "def _without_git_hook_env():\n"
+        "    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}\n"
+        "\n"
+        "def _hook_free():\n"
+        "    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}\n"
+        "\n"
+        "def test_a():\n"
+        "    subprocess.run(['git', 'status'], env=_without_git_hook_env())\n"
+        "\n"
+        "def test_b():\n"
+        "    subprocess.run(['git', 'status'], env=_hook_free())\n",
+        encoding="utf-8",
+    )
+    assert gce.find_unscrubbed_git_spawns(tmp_path) == {}
+
+
+def test_a_helper_that_keeps_git_variables_is_still_flagged(tmp_path):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_helper.py").write_text(
+        "import os\nimport subprocess\n\ndef _make_env():\n    return dict(os.environ)\n\n"
+        "def test_a():\n    subprocess.run(['git', 'status'], env=_make_env())\n",
+        encoding="utf-8",
+    )
+    assert len(gce.find_unscrubbed_git_spawns(tmp_path)) == 1
+
+
+def test_a_repo_without_a_baseline_directory_fails_only_on_a_finding(tmp_path):
+    # audit 37-F19: an absent tool/meta/baselines is fine when clean; a real unscrubbed spawn still fails
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "test_clean.py").write_text("def test_a():\n    assert 1 == 1\n", encoding="utf-8")
+    gce.assert_no_new_unscrubbed_git_spawns(tmp_path)
+    (tests / "test_spawn.py").write_text("import subprocess\n\ndef test_a():\n    subprocess.run(['git', 'status'])\n", encoding="utf-8")
+    with pytest.raises(AssertionError):
+        gce.assert_no_new_unscrubbed_git_spawns(tmp_path)

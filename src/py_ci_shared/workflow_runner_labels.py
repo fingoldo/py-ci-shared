@@ -177,18 +177,15 @@ def fix_workflow_runner_labels(repo_root: PathLike, *, labels: Optional[Mapping[
         if new != lines:
             _write_like(path, "\n".join(new))
             changed.append(path.relative_to(root).as_posix())
-    if any(f.rule == "no-actions-update-channel" for f in find_workflow_runner_label_problems(root, min_files=0)):
-        target = next((root / rel for rel in _DEPENDABOT if (root / rel).is_file()), root / _DEPENDABOT[0])
-        if target.is_file():
-            text = read_source(target).replace("\r\n", "\n")
-            top = [line.split(":", 1)[0] for line in text.split("\n") if line and not line[0].isspace() and not line.startswith("#")]
-            if not top or top[-1] != "updates":
-                raise CoreError(f"{target}: `updates:` is not the last top-level key; add the github-actions entry by hand")
-            text = text.rstrip("\n") + "\n" + _DEPENDABOT_ENTRY
-        else:
-            text = "version: 2\nupdates:\n" + _DEPENDABOT_ENTRY
-        _write_like(target, text)
-        changed.append(target.relative_to(root).as_posix())
+    # The fixer extends an existing dependabot file and never creates one (audit 37-F21); without one the finding stays for the human.
+    existing = next((root / rel for rel in _DEPENDABOT if (root / rel).is_file()), None)
+    if existing is not None and any(f.rule == "no-actions-update-channel" for f in find_workflow_runner_label_problems(root, min_files=0)):
+        text = read_source(existing).replace("\r\n", "\n")
+        top = [line.split(":", 1)[0] for line in text.split("\n") if line and not line[0].isspace() and not line.startswith("#")]
+        if not top or top[-1] != "updates":
+            raise CoreError(f"{existing}: `updates:` is not the last top-level key; add the github-actions entry by hand")
+        _write_like(existing, text.rstrip("\n") + "\n" + _DEPENDABOT_ENTRY)
+        changed.append(existing.relative_to(root).as_posix())
     return changed
 
 

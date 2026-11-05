@@ -107,3 +107,10 @@ def test_dart_delay_without_const_is_a_wait(tmp_path):
 
 def test_text_mode_sees_spaced_time_dot_sleep(tmp_path):
     assert _waits(tmp_path, "tests/a.py", "import time\n\n\ndef t():\n    time . sleep (1)\n", mode="text") == ["5"]
+
+
+def test_a_repo_without_a_baseline_directory_passes_when_nothing_is_found(tmp_path):
+    # audit 37-F19: tool/meta/baselines is optional; with no findings an absent baseline must not fail the gate
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_clean.py").write_text("def test_a():\n    assert 1 == 1\n", encoding="utf-8")
+    assert_no_new_wallclock_test_waits(tmp_path)

@@ -409,3 +409,16 @@ def test_returning_the_exceptions_own_data_is_not_a_silent_default(tmp_path):
     """
     assert _rules(tmp_path, body) == []
     assert _rules(tmp_path, body.replace("return exc.sqlstate", "return None")) == ["silent_default_return"]
+
+
+@pytest.mark.parametrize(
+    "stored",
+    ["count", "counts.get(x, 0) + 1"],
+)
+def test_a_counter_keyed_by_the_loop_element_is_not_admit_on_error(tmp_path, stored):
+    # audit 37-F25: `d[name] = count` stores a number under the element as a key; it does not admit the element
+    src = (
+        "def f(items, counts, failures):\n    for x in items:\n        try:\n            check(x)\n        except Exception:\n"
+        f"            count = {stored}\n            counts[x] = count\n"
+    )
+    assert _admit_rules(tmp_path, src) == []

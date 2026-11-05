@@ -176,7 +176,9 @@ def _gate_runs(pyproject: Path, table: dict[str, Any]) -> list[GateRun]:
     def add(run: GateRun, where: str) -> None:
         other = seen.get(_canonical(run.name))
         if other is not None:
-            raise ConfigError(f"{pyproject}: gate {run.name!r} is enabled twice: both {other} and {where}; keep one")
+            hint = "a [tool.py_ci_shared.gates.<name>] table already enables its gate, so remove the name from `enable`"
+            keep = hint if "`enable`" in (other, where) else "keep one"
+            raise ConfigError(f"{pyproject}: gate {run.name!r} is enabled twice: both {other} and {where}; {keep}")
         seen[_canonical(run.name)] = where
         runs.append(run)
 
