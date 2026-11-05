@@ -34,5 +34,6 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F26 | baseline_hygiene | cannot read a list-shaped baseline (the code-audit baseline), expects `{key: note}` | llm_bench | OPEN |
 | 37-F27 | git_child_env | does not recognise the helper `_without_git_hook_env` that scrubs `GIT_*` | llm_bench | OPEN |
 | 37-F28 | gate config (`[tool.py_ci_shared]`) | a gate with a `[gates.X]` table must not also be in `enable`; the error says so but the generated examples do not | llm_bench, algopacksimple | OPEN |
+| 37-F29 | drifted_duplicate_functions | reads `@overload` stubs as copies of each other (five `build_*_prompt` stubs) | glossum | OPEN |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
