@@ -64,8 +64,35 @@ class DriftGroup:
 _FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
+# Fields whose presence or spelling varies between interpreter versions without changing the code: the source
+# form of a string literal, and the type-comment slot that the parser fills only on some grammars.
+_VOLATILE_FIELDS = frozenset({"kind", "type_comment"})
+
+
+def _canonical(value: object) -> str:
+    """A version-stable rendering of an AST node or field value.
+
+    ``ast.dump`` is not stable across interpreters: Python 3.11 prints ``args=[]``, ``keywords=[]`` and
+    ``type_ignores=[]`` where 3.14 omits them, which halved the similarity of identical bodies. This renders
+    only what the code says: empty lists, unset optional fields and the implicit ``Load`` context are skipped.
+    """
+    if isinstance(value, ast.AST):
+        parts = []
+        for field in value._fields:
+            if field in _VOLATILE_FIELDS:
+                continue
+            child = getattr(value, field, None)
+            if child is None or child == [] or (field == "ctx" and isinstance(child, ast.Load)):
+                continue
+            parts.append(f"{field}={_canonical(child)}")
+        return f"{type(value).__name__}({','.join(parts)})"
+    if isinstance(value, list):
+        return "[" + ",".join(_canonical(item) for item in value) + "]"
+    return repr(value)
+
+
 def _body_dump(fn: _FunctionNode) -> str:
-    """The function's defaults and body as an AST dump, with a leading docstring dropped.
+    """The function's defaults and body as a canonical rendering, with a leading docstring dropped.
 
     Defaults are part of what is compared, not of the grouping key: ``g(x, n=5)`` and ``g(x, n=10)`` are copies of
     one function whose default drifted.
@@ -73,9 +100,9 @@ def _body_dump(fn: _FunctionNode) -> str:
     body = list(fn.body)
     if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
         body = body[1:]
-    defaults = ast.dump(ast.Tuple(elts=[*fn.args.defaults, *[d for d in fn.args.kw_defaults if d is not None]], ctx=ast.Load()))
+    defaults = [*fn.args.defaults, *[d for d in fn.args.kw_defaults if d is not None]]
     kind = "async " if isinstance(fn, ast.AsyncFunctionDef) else ""
-    return kind + defaults + ast.dump(ast.Module(body=body, type_ignores=[]))
+    return kind + _canonical(defaults) + _canonical(body)
 
 
 def _signature_key(fn: _FunctionNode) -> str:

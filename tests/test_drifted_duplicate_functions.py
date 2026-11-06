@@ -213,3 +213,48 @@ def test_overload_stubs_are_not_copies_of_each_other(tmp_path: Path):
         ],
     )
     assert find_drifted_duplicate_functions([tmp_path]) == []
+
+
+_KEY_OF_SPPAS = [
+    "import unicodedata",
+    "",
+    "",
+    "def key_of(word: str) -> str:",
+    '    """The join key of a spelling: lower case, no accent mark."""',
+    '    plain = unicodedata.normalize("NFD", word.lower())',
+    '    return "".join(ch for ch in plain if unicodedata.category(ch) != "Mn")',
+]
+_KEY_OF_PHONITALIA = [
+    "import unicodedata",
+    "",
+    "",
+    "def key_of(word: str) -> str:",
+    '    """The join key of a spelling: lower case, no apostrophe accent, no accent mark."""',
+    '    plain = unicodedata.normalize("NFD", word.lower().replace("\'", ""))',
+    '    return "".join(ch for ch in plain if unicodedata.category(ch) != "Mn")',
+]
+
+
+def test_known_glossum_pair_groups_at_the_threshold(tmp_path: Path):
+    """The key_of copies of glossum's sppas_it and phonitalia_it differ by one ``.replace`` call.
+
+    Their similarity came out at 0.93 on Python 3.14 and 0.44 on Python 3.11, because ``ast.dump`` spells the
+    empty ``args``/``keywords`` lists differently across versions. Pinned here so the grouping cannot depend on the
+    interpreter again.
+    """
+    _write(tmp_path, "sppas_it.py", _KEY_OF_SPPAS)
+    _write(tmp_path, "phonitalia_it.py", _KEY_OF_PHONITALIA)
+    groups = find_drifted_duplicate_functions([tmp_path])
+    assert [g.name for g in groups] == ["key_of"], [str(g) for g in groups]
+    assert groups[0].similarity >= 0.90
+
+
+def test_body_dump_is_the_same_text_on_every_interpreter():
+    """Pins the canonical rendering: it must not carry an empty ``args=[]`` or ``keywords=[]`` that one version omits."""
+    import ast
+
+    from py_ci_shared.drifted_duplicate_functions import _body_dump
+
+    fn = ast.parse("def f(x):\n    return g(x)\n").body[0]
+    assert isinstance(fn, ast.FunctionDef)
+    assert _body_dump(fn) == "[][Return(value=Call(func=Name(id='g'),args=[Name(id='x')]))]"
