@@ -82,3 +82,40 @@ def test_handler_with_an_assignment_before_return_is_not_this_rule(tmp_path):
                 return value
     """
     assert "silent_default_return" not in _rules(tmp_path, body)
+
+
+@pytest.mark.parametrize("name", ["_encode", "_freeze_object", "_key", "stable_key", "encode_payload"])
+def test_a_key_builder_fallback_that_swallows_no_io_error_is_not_flagged(tmp_path, name):
+    # audit 2026-11-06 tracker 37-F35: a key or encoding builder falls back to a deep copy on TypeError (no I/O involved)
+    body = f"""
+        def {name}(value):
+            try:
+                return json.dumps(value)
+            except TypeError:
+                return copy.deepcopy(value)
+    """
+    assert _rules(tmp_path, body) == []
+
+
+@pytest.mark.parametrize("caught", ["OSError", "subprocess.SubprocessError", "sqlite3.Error", "Exception", ""])
+def test_a_key_builder_that_swallows_an_io_or_broad_error_is_still_flagged(tmp_path, caught):
+    clause = f"except {caught}:" if caught else "except:"
+    body = f"""
+        def _git_key(path):
+            try:
+                return read_head(path)
+            {clause}
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_key_named_reader_that_swallows_os_error_is_still_flagged(tmp_path):
+    body = """
+        def read_key_file(path):
+            try:
+                return path.read_text()
+            except OSError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]

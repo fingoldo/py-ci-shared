@@ -247,6 +247,27 @@ _OPTIONAL_IMPORT_ERRORS = frozenset({"ImportError", "ModuleNotFoundError"})
 _ABSENT_ERRORS = frozenset({"FileNotFoundError"})
 #: A function whose name says it reads a cache, stamp, token, digest or signature: a failure there is a miss the caller recomputes.
 _CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNORECASE)
+#: A function whose name says it builds a key, an encoding or a frozen snapshot: a fallback there swaps one deterministic
+#: representation for another (``json.dumps`` for ``deepcopy``). Accepted only while the handler swallows no I/O error.
+_KEY_BUILDER_NAME_RE = re.compile(r"(?:^|_)(?:key|encode|freeze)(?:_|$)", re.IGNORECASE)
+#: Exception names whose swallowing can hide a failed read (a file, a subprocess, a database); a bare ``except`` is one too.
+_IO_ERROR_NAMES = frozenset(
+    {
+        "OSError",
+        "IOError",
+        "EnvironmentError",
+        "FileNotFoundError",
+        "PermissionError",
+        "IsADirectoryError",
+        "SubprocessError",
+        "CalledProcessError",
+        "TimeoutExpired",
+        "Error",
+        "OperationalError",
+        "Exception",
+        "BaseException",
+    }
+)
 
 
 #: A local SQLite read: the only failure that a missing table or file raises through ``execute``.
@@ -275,7 +296,15 @@ def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str, try_node: Optio
         return True
     if _local_db_fallback(handler, try_node):
         return True
+    if _KEY_BUILDER_NAME_RE.search(fn_name) and not _swallows_io_error(handler):
+        return True
     return bool(_CACHE_MISS_NAME_RE.search(fn_name))
+
+
+def _swallows_io_error(handler: ast.ExceptHandler) -> bool:
+    """True when the handler catches a read failure, or everything (a bare ``except`` or ``except Exception``)."""
+    caught = _caught_names(handler)
+    return not caught or bool(caught & _IO_ERROR_NAMES)
 
 
 def _carries_reason(returned: ast.expr) -> bool:

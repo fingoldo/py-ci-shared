@@ -48,3 +48,52 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F40 | fail_open_handlers | treats a handler whose only log is `log_throttle(...)` as silent (overlaps 37-F36) | mlframe | RESOLVED d7f1cf4: class E. A DEBUG `log_throttle` substitution is now flagged (canary failed on master). Earlier note: not reproduced: the log_throttle-only handler cases pass on master (a logging-and-returning handler has two statements, so silent_default_return never fires); the admission side is covered by 60c6e50. A log_throttle DEBUG handler that substitutes a value is a missed case (false negative), not a false positive; not in scope here |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).
+
+## 37-F35 per-key disposition (2026-11-06, recomputed)
+
+Recomputed with the detector at 70f2152 over autopsia `bc787483` (`tests/test_meta/_fail_open_handlers_baseline.json`, 102 keys). 42 keys were still flagged before this change, not the 37 the row above recorded (70f2152 re-flagged the value-parse fallbacks). After the key-builder narrowing: 39 still flagged.
+
+| Key (autopsia path::function) | Shape | Decision | Reason |
+|---|---|---|---|
+| api_rate_limit.py::max_concurrent_heavy | 1 env | kept flagged | bad env value keeps default, no log |
+| api_rate_limit.py::heavy_queue_wait_seconds | 1 env | kept flagged | bad env value keeps default, no log |
+| reason/request_budget.py::_float_env | 1 env | kept flagged | bad env value keeps default, no log |
+| api_rate_limit.py::_is_trusted | 2 fail-closed | kept flagged: fail-closed | unparseable host is not trusted |
+| pickle_cache_integrity.py::_secret | 2 | kept flagged: fail-closed | MAC key read |
+| pickle_cache_integrity.py::load_verified | 2 | kept flagged: fail-closed | MAC verification |
+| pickle_cache_integrity.py::trailer_mac | 2 | kept flagged: fail-closed | MAC trailer |
+| pickle_cache_integrity.py::load_verified_bytes | 2 | kept flagged: fail-closed | MAC verification |
+| pickle_cache_integrity.py::signed_pickle | 2 | kept flagged: fail-closed | signing |
+| input_keyed_cache.py::load_record (x2) | 2 | kept flagged: fail-closed | digest verification of recorded inputs |
+| kb/overlay_freshness_verdict.py::load_valid | 2 | kept flagged: fail-closed | verification of recorded verdict |
+| reason/consilium_store.py::is_minted_case_id | 2 | kept flagged: fail-closed | HMAC tag check |
+| reason/cupy_probe.py::cupy_device_usable | 2 | kept flagged: fail-closed | device probe |
+| differential_cache.py::_encode | 5 builder | narrowed | json.dumps TypeError to deepcopy, no I/O error swallowed |
+| differential_cache.py::_freeze_object | 5 builder | narrowed | pickle failure to deepcopy, no I/O error swallowed |
+| kb/overlay_input_stamp.py::_key | 5 builder | narrowed | relative_to ValueError, no I/O error swallowed |
+| input_keyed_cache.py::_git | 5 | kept flagged | catches OSError and SubprocessError: swallowed I/O |
+| kb/cochrane/full_text.py::_doi_version | 5 | needs owner decision | name is not key/encode/freeze; a version comparison, and a version-named rule would also widen to value parsers |
+| graph_side_tables.py::_kept_in_table_order | 5 | needs owner decision | KeyError fallback is result-identical, but the name is not a key builder |
+| vocab/structure.py::_read (x2) | 3 | needs autopsia edit | catches sqlite3.Error; rule accepts only OperationalError. Changing the except to sqlite3.OperationalError clears it |
+| vocab/local_install.py::_read | 3 | needs autopsia edit | catches sqlite3.Error (same) |
+| vocab/ccsr_icd10cm.py::categories_for | 3 | needs autopsia edit | catches sqlite3.Error (same) |
+| vocab/ccsr_icd10cm.py::causes_for_category | 3 | needs autopsia edit | catches sqlite3.Error (same) |
+| api_noema_reference.py::_base_rate_priors | 3 absent file | needs autopsia edit | catches OSError; rule accepts FileNotFoundError |
+| graph_loading.py::load_seed | 3 absent file | needs autopsia edit | catches OSError; rule accepts FileNotFoundError |
+| reason/clinical_overlays.py::_load_with_overlays | 3 absent file | needs autopsia edit | catches OSError; rule accepts FileNotFoundError |
+| ingest/fhir_import.py::_age_years | value parse | kept flagged | unparseable value to default (70f2152 rule) |
+| ingest/integrity.py::is_stale | value parse | kept flagged | unparseable value to default (70f2152 rule) |
+| reason/clinical_support_severity.py::_patient_age_years | value parse | kept flagged | unparseable age becomes no age (70f2152 rule) |
+| vocab/orphanet.py::_parse_hpoa_frequency | value parse | kept flagged | unparseable value to None (70f2152 rule) |
+| ingest/mortality_codes.py::_xref_patterns_checked | unclassified | kept flagged | catches Exception on import; autopsia could narrow to ImportError |
+| ingest/sources.py::fetch_epmc_fulltext | unclassified | kept flagged | catches Exception, no log; network fallback |
+| ingest/to_graph_edges.py::modifier_to_moderator | unclassified | needs owner decision | returns a reason code; _carries_reason accepts only text with a space or colon |
+| ingest/attempt_quarantine.py::split_archive | unclassified | needs owner decision | unreadable line counted and kept in real output, not logged |
+| kb/cochrane/discovery.py::discover | unclassified | needs owner decision | skipped record logged at INFO is flagged as substitution |
+| reason/eliminate_masses_wide.py::wide_masses | unclassified | needs owner decision | designed EliminationTooWideError with exact fallback |
+| reason/byte_budget_cache.py::array_nbytes | unclassified | needs owner decision | 0-byte fallback under-counts a budget |
+| reason/clinical_history.py::_family_history_var | unclassified | needs owner decision | resolver ValueError or KeyError silently becomes None |
+| vocab/expand.py::analytes | unclassified | kept flagged | silent empty dict on bad JSON |
+| reason/renal_clearance.py::load_drug_renal_clearance | unclassified | kept flagged | documented, not logged; WARNING log would clear it |
+
+Baseline refresh needed in autopsia: 63 keys go stale (60 already unflagged at 70f2152 plus the 3 narrowed here); 39 remain.
