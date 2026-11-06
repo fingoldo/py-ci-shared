@@ -221,13 +221,56 @@ def _binds_true_then_returns(handler: ast.ExceptHandler, scope: Optional[ast.AST
     return bool(flags) and any(isinstance(n, ast.Return) and isinstance(n.value, ast.Name) and n.value.id in flags for n in _fast_walk(scope))
 
 
-def _silent_default_return(handler: ast.ExceptHandler, lines: list[str]) -> bool:
+def _caught_names(handler: ast.ExceptHandler) -> set[str]:
+    """The exception class names an ``except`` clause catches (``except (A, B)`` -> ``{"A", "B"}``); empty for a bare ``except``."""
+    if handler.type is None:
+        return set()
+    types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+    return {t.id if isinstance(t, ast.Name) else t.attr for t in types if isinstance(t, (ast.Name, ast.Attribute))}
+
+
+#: A handler that only catches a missing optional dependency: the caller is built to run without it.
+_OPTIONAL_IMPORT_ERRORS = frozenset({"ImportError", "ModuleNotFoundError"})
+#: A handler that only catches a missing file: absence is a state the caller sees, not a hidden failure.
+_ABSENT_ERRORS = frozenset({"FileNotFoundError"})
+#: A function whose name says it reads a cache, stamp, token, digest or signature: a failure there is a miss the caller recomputes.
+_CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNORECASE)
+
+
+def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str) -> bool:
+    """True for the fallbacks that are correct by construction: an optional import, a missing file, or a cache miss."""
+    caught = _caught_names(handler)
+    if caught and (caught <= _OPTIONAL_IMPORT_ERRORS or caught <= _ABSENT_ERRORS):
+        return True
+    return bool(_CACHE_MISS_NAME_RE.search(fn_name))
+
+
+def _carries_reason(returned: ast.expr) -> bool:
+    """True when the returned value holds a human-readable message (a string with a space or a colon): the failure is reported in-band."""
+    for n in _fast_walk(returned):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and (" " in n.value or ":" in n.value):
+            return True
+    return False
+
+
+def _hands_off_exception(handler: ast.ExceptHandler) -> bool:
+    """True when the handler stores the caught exception itself (``error = e``) for the caller to raise or report."""
+    if not handler.name:
+        return False
+    return any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Name) and n.value.id == handler.name for n in _fast_walk(handler))
+
+
+def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name: str = "") -> bool:
     """True when the handler's whole body is one ``return`` and nothing in the handler logs, raises or is marked best-effort."""
     if len(handler.body) != 1 or not isinstance(handler.body[0], ast.Return):
         return False
     returned = handler.body[0].value
     if handler.name and returned is not None and _mentions(returned, {handler.name}):
         return False  # the return hands back the failure's own data (``return exc.sqlstate``), not a default
+    if returned is not None and _carries_reason(returned):
+        return False  # the returned value says what failed (``DatasetSummary(..., "not installed in this checkout")``)
+    if _reasoned_fallback(handler, fn_name):
+        return False
     return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
 
 
@@ -269,9 +312,15 @@ def _handler_findings(
         found.append(FailOpenHandler(rel, name, handler.lineno, "admit_on_error", "the handler keeps the loop's element because evaluating it failed"))
     if is_gate and (_returns_true(handler) or _binds_true_then_returns(handler, scope)):
         found.append(FailOpenHandler(rel, name, handler.lineno, "gate_returns_true", "an error in a deciding function returns True"))
-    if _assigns_a_value(handler) and _logs_quietly(handler) and not _logs_loudly(handler) and not _marked_best_effort(lines, handler):
+    if (
+        _assigns_a_value(handler)
+        and _logs_quietly(handler)
+        and not _logs_loudly(handler)
+        and not _marked_best_effort(lines, handler)
+        and not _hands_off_exception(handler)
+    ):
         found.append(FailOpenHandler(rel, name, handler.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
-    if not found and _silent_default_return(handler, lines):
+    if not found and _silent_default_return(handler, lines, name.rsplit(".", 1)[-1]):
         found.append(FailOpenHandler(rel, name, handler.lineno, "silent_default_return", "the handler returns a default and logs nothing"))
     return found
 

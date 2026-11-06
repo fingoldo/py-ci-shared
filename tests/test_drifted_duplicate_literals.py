@@ -257,3 +257,31 @@ def test_teeth_name_similarity_is_what_finds_the_threshold(tmp_path: Path, monke
     monkeypatch.setattr(gate, "_similar", never)
     assert _find(tmp_path) == []
     assert calls, "the substitution was not applied: _similar was never called"
+
+
+def test_constants_named_for_different_roles_that_share_a_role_word_are_not_reported(tmp_path: Path):
+    """A role word (floor, mean, seed, cap...) says what kind of number a constant is, not what it is about."""
+    _write(tmp_path, "a.py", ["_PROBE_FLOOR = 0.0001"])
+    _write(tmp_path, "b.py", ["_WEIGHT_FLOOR = 0.0001"])
+    _write(tmp_path, "c.py", ["_TIMEOUT_CAP = 0.0001"])
+    assert _find(tmp_path) == []
+
+
+def test_constants_sharing_a_subject_word_are_still_reported(tmp_path: Path):
+    _write(tmp_path, "a.py", ["_STALE_AFTER_H = 48"])
+    _write(tmp_path, "b.py", ["STALE_LIMIT_HOURS = 48"])
+    assert [f.rule for f in _find(tmp_path)] == [RULE_CONSTANT]
+
+
+def test_a_set_of_calendar_years_is_not_a_duplicated_threshold(tmp_path: Path):
+    """Years in a tuple are dates (the same as the dates the module already ignores), so two modules listing them agree by coincidence."""
+    _write(tmp_path, "a.py", ["PUB_YEARS = (2014, 2023)"])
+    _write(tmp_path, "b.py", ["PUB_YEARS = (2014, 2023)"])
+    _write(tmp_path, "c.py", ["PUB_YEARS = (2014, 2023)"])
+    assert _find(tmp_path) == []
+
+
+def test_a_set_of_measured_figures_is_still_reported_when_restated(tmp_path: Path):
+    _write(tmp_path, "a.py", ["CAVEAT = (22.7, 26.0)"])
+    _write(tmp_path, "b.py", ["CAVEAT = (22.7, 26.0)"])
+    assert [f.rule for f in _find(tmp_path)] == [RULE_SET]

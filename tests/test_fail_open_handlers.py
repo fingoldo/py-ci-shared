@@ -422,3 +422,133 @@ def test_a_counter_keyed_by_the_loop_element_is_not_admit_on_error(tmp_path, sto
         f"            count = {stored}\n            counts[x] = count\n"
     )
     assert _admit_rules(tmp_path, src) == []
+
+
+# 2026-11-06 false positives: an optional import, an absent file, a message-carrying status and a cache miss are reasoned
+# fallbacks. The same shapes with a broader catch or a required input stay flagged.
+
+
+@pytest.mark.parametrize("caught", ["ImportError", "ModuleNotFoundError", "(ImportError, ModuleNotFoundError)"])
+def test_an_optional_import_that_returns_a_default_is_not_flagged(tmp_path, caught):
+    body = f"""
+        def load_tqdm():
+            try:
+                import tqdm
+            except {caught}:
+                return None
+            return tqdm.tqdm
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_handler_catching_an_import_error_and_an_os_error_is_still_flagged(tmp_path):
+    body = """
+        def load_tqdm(path):
+            try:
+                import tqdm
+            except (ImportError, OSError):
+                return None
+            return tqdm.tqdm
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_an_absent_file_that_returns_a_default_is_not_flagged(tmp_path):
+    body = """
+        def read_payload(path):
+            try:
+                return path.read_bytes()
+            except FileNotFoundError:
+                return None
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_an_unreadable_file_that_returns_a_default_is_still_flagged(tmp_path):
+    body = """
+        def read_payload(path):
+            try:
+                return path.read_bytes()
+            except OSError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_status_record_that_carries_the_reason_is_not_flagged(tmp_path):
+    body = """
+        def summary(conn):
+            try:
+                return count(conn)
+            except sqlite3.OperationalError:
+                return DatasetSummary("VSAC", None, "not installed in this checkout")
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_bare_default_with_no_reason_is_still_flagged(tmp_path):
+    body = """
+        def summary(conn):
+            try:
+                return count(conn)
+            except sqlite3.OperationalError:
+                return DatasetSummary("VSAC", None, None)
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+@pytest.mark.parametrize("name", ["_file_stamp", "_kb_cache_token", "embedded_seed_stamp", "_probe_digest", "_signature", "_cache_token"])
+def test_a_cache_or_stamp_miss_that_returns_none_is_not_flagged(tmp_path, name):
+    body = f"""
+        def {name}(path):
+            try:
+                return path.stat().st_mtime
+            except OSError:
+                return None
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_gate_helper_that_returns_none_on_error_is_still_flagged(tmp_path):
+    body = """
+        def load_candidates(path):
+            try:
+                return read(path)
+            except OSError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_handing_the_exception_to_the_caller_is_not_a_quiet_substitution(tmp_path):
+    body = """
+        import logging
+        log = logging.getLogger(__name__)
+
+        def attempt(batch):
+            error = None
+            try:
+                return call(batch)
+            except (ValueError, RuntimeError) as e:
+                log.debug("batch failed")
+                error = e
+            return error
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_quiet_substitution_with_a_fallback_value_is_still_flagged(tmp_path):
+    body = """
+        import logging
+        log = logging.getLogger(__name__)
+
+        def attempt(batch):
+            result = None
+            try:
+                result = call(batch)
+            except ValueError:
+                log.debug("batch failed")
+                result = 0
+            return result
+    """
+    assert _rules(tmp_path, body) == ["quiet_substitution"]

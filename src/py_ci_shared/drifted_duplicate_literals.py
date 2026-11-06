@@ -103,6 +103,19 @@ _GENERIC_WORDS = frozenset(
         "bytes",
         "rows",
         "items",
+        # Role words: a floor, cap, mean, seed or window says what a number does, not what it is about.
+        "floor",
+        "ceiling",
+        "cap",
+        "tol",
+        "tolerance",
+        "mean",
+        "seed",
+        "ttl",
+        "window",
+        "prior",
+        "timeout",
+        "weight",
     }
     | set(_UNIT_ALIASES.values())
 )
@@ -131,6 +144,11 @@ def _number(node: ast.AST) -> Optional[float]:
         inner = _number(node.operand)
         return -inner if inner is not None else None
     return None
+
+
+def _is_year(value: float) -> bool:
+    """A calendar year (1900-2100) is a date, as the dates in text already are: two modules listing the same years agree by coincidence."""
+    return isinstance(value, int) and 1900 <= value <= 2100
 
 
 def _numeric_collection(node: ast.AST) -> Optional[list[float]]:
@@ -169,7 +187,7 @@ def _text_numbers(text: str, ignore: frozenset[float]) -> frozenset[float]:
     for match in _NUMBER.finditer(cleaned):
         raw = match.group(1).replace(",", "")
         value = float(raw) if "." in raw else int(raw)
-        if value not in ignore:
+        if value not in ignore and not _is_year(value):
             out.add(value)
     return frozenset(out)
 
@@ -199,7 +217,7 @@ def _kept(values: Optional[list[float]], ignore: frozenset[float]) -> Optional[f
     """The values that are not ignored, when at least two are left."""
     if values is None:
         return None
-    kept = frozenset(v for v in values if v not in ignore)
+    kept = frozenset(v for v in values if v not in ignore and not _is_year(v))
     return kept if len(kept) >= 2 else None
 
 
