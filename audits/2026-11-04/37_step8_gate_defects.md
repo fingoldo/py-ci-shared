@@ -43,8 +43,8 @@ Every row is worked: RESOLVED with what was done, or WON'T FIX with the reason. 
 | 37-F35 | fail_open_handlers, drifted_duplicate_literals (autopsia consumer) | 102 fail-open and 75 drifted-literal entries in autopsia are false positives recorded in audits/2026-11-05/gate_false_positives.md (file:line and reason each); the gates must stop flagging them, then autopsia's baselines go to zero | autopsia | OPEN |
 | 37-F36 | fail_open_handlers | flags `admit_on_error` handlers that log at WARNING through `log_throttle` and store a constant under a loop key (`_dcd_pair_su_batch.py::pair_su_batch`, `_gpu_resident_operand_build.py::_upload_dtype_groups`, `_mrmr_fingerprints.py::_replay_fitted_state`, `polynom_pair_fe.py::_run_polynom_pair_f_same_pairs_old_per`) | mlframe | OPEN: audits/2026-11-06/mlframe_gate_false_positives.md class A |
 | 37-F37 | drifted_duplicate_literals (literal-set) | flags per-kernel row-count sweep grids as drifted copies (`literal-set::(10000, 50000)`, `(20000, 100000)`, `(5000, 10000)`, `(8000, 32000)` in mlframe) | mlframe | OPEN: class B, needs a marker for separate measurement grids |
-| 37-F38 | xfail / skip gate | flags skips that mlframe re-recorded with reasons in 15e10766c; exact keys not yet enumerated | mlframe | OPEN: class C, enumerate from `git show 15e10766c` |
-| 37-F39 | literal marker gates | does not follow variable-built markers; sites not yet enumerated | mlframe | OPEN: class D |
+| 37-F38 | literal-set grids | (see 37-F37; the same class, split in mlframe baselines) | mlframe | OPEN: class B |
+| 37-F39 | xfail untracked-reason | does not follow skip markers built in a variable under a runtime condition (eight entries in mlframe `_xfail_baseline.json`) | mlframe | OPEN: class C |
 | 37-F40 | fail_open_handlers | treats a handler whose only log is `log_throttle(...)` as silent (overlaps 37-F36) | mlframe | OPEN: class E |
 
 More rows are appended as the remaining consumer reports arrive (social, llm_bench group).

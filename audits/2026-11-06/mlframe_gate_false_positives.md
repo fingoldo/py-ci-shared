@@ -32,21 +32,27 @@ Why it is a false positive: the sets are measurement grids that happen to share 
 
 Proposed narrowing: exempt a literal set that carries a `# literal-set-ok:` marker (or a per-file reason) over reading it as drift; it is the same mechanism the other gates use.
 
-## Class C: xfail skip gate
+## Class C: xfail / skip markers built in a variable
 
-Gate: the xfail/skip gate. Rule: a skip with no matching marker is flagged.
+Gate: `untracked-reason` in the xfail baseline (`tests/test_meta/_xfail_baseline.json`, entries added in `5d03a6467`). Rule: a `pytest.mark.skip` whose reason names no external component or tracked issue is flagged.
 
-Evidence: mlframe re-recorded the xfail baseline with reasons in `15e10766c` (commit message: "Re-record the gate baselines after merging origin/master"). The agent's summary names "the xfail skip". Exact baseline keys are in the diff of that commit; they were not re-listed here.
+Evidence: eight entries, each a skip that is added only under a runtime condition, so the marker is built in a variable and the gate does not follow it:
+- `conftest.py`: "requires sequential execution; xdist parallelism active" (added only when xdist runs).
+- `conftest.py`: "skipped by default; pass --run-biz-transformer ..." (added only without the flag).
+- `conftest.py`: "skipped by default; pass --run-fuzz ..." (added only without the flag).
+- `conftest.py`: "skipped by default; pass --run-heavy-automl ..." (added only without the flag).
+- `conftest.py`: "skipped in --fast mode" (added only in fast mode).
+- `feature_selection/conftest.py`: "MLFRAME_FAST=1 set; slow-marked test skipped ..." (added only when the env var is set).
+- `training/fuzz/test_fuzz_suite.py`: "LTR combo ...: requested models have no native ranker" (conditional on the combo, not generated).
+- `estimators/test_biz_val_early_stopping_wrapper.py`: "incompatible with continuous features" (runtime skip from the base model, a limit of sklearn, not a parked bug).
 
-Status: class recorded, keys not yet enumerated. Enumerate them from `git show 15e10766c` before narrowing the rule.
+Why it is a false positive: the skip reason is a flag or environment condition, and the marker exists only while that condition holds. The gate reads the variable name as a literal reason and cannot see the condition.
 
-## Class D: literal gates do not follow variable-built markers
+Proposed narrowing: treat a skip whose marker is added under an `if` on a pytest option, an env var, or xdist as conditional, and accept the reason when the condition names the option. Or record the option name in the reason check.
 
-Gate: literal-marker gates (the `*-ok:` markers). Rule: a marker built at runtime (a variable or f-string) is not seen, so the gate reports the site as unmarked.
+## Class D: merged into class C
 
-Evidence: the agent's summary names "the literal gates' non-following of variable-built markers". Exact sites are not listed in its report.
-
-Status: class recorded, sites not yet enumerated. Enumerate them from the mlframe baselines before narrowing.
+The "literal gates do not follow variable-built markers" class named in the mlframe report is the same root cause as class C (a marker built in a variable). No separate sites were found, so it is not a second class.
 
 ## Class E: `log_throttle` handlers
 
