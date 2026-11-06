@@ -585,3 +585,88 @@ def test_a_warning_handler_that_keeps_the_element_is_still_admit_on_error(tmp_pa
                     survivors.append(spec)
     """
     assert _rules(tmp_path, body) == ["admit_on_error"]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        """
+        def parse_age(birth):
+            try:
+                parts = [int(p) for p in birth.split("-")]
+                return parts[0]
+            except (ValueError, TypeError):
+                return None
+        """,
+        """
+        def parse_when(text):
+            try:
+                return date.fromisoformat(text[:10])
+            except ValueError:
+                return None
+        """,
+    ],
+)
+def test_an_unparseable_value_that_returns_none_is_not_flagged(tmp_path, body):
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_parse_guard_around_a_lookup_is_still_flagged(tmp_path):
+    body = """
+        def load_age(path):
+            try:
+                return int(read_text(path))
+            except ValueError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_parse_guard_catching_os_error_is_still_flagged(tmp_path):
+    body = """
+        def parse_age(birth):
+            try:
+                return int(birth)
+            except OSError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_missing_local_table_that_answers_none_is_not_flagged(tmp_path):
+    body = """
+        def display_ru(code, db_path=None):
+            db = sqlite3.connect(db_path)
+            try:
+                row = db.execute("SELECT display_ru FROM loinc_code_ru WHERE code = ?", (code,)).fetchone()
+            except sqlite3.OperationalError:
+                return None
+            finally:
+                db.close()
+            return row[0] if row else None
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_broad_sqlite_error_that_answers_none_is_still_flagged(tmp_path):
+    body = """
+        def display_ru(code, db_path=None):
+            db = sqlite3.connect(db_path)
+            try:
+                row = db.execute("SELECT display_ru FROM loinc_code_ru WHERE code = ?", (code,)).fetchone()
+            except sqlite3.Error:
+                return None
+            return row[0] if row else None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_an_operational_error_around_a_non_sqlite_call_is_still_flagged(tmp_path):
+    body = """
+        def load_rows(path):
+            try:
+                return read_rows(path)
+            except sqlite3.OperationalError:
+                return None
+    """
+    assert _rules(tmp_path, body) == ["silent_default_return"]

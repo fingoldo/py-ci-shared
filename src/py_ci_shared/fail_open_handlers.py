@@ -239,10 +239,46 @@ _ABSENT_ERRORS = frozenset({"FileNotFoundError"})
 _CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNORECASE)
 
 
-def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str) -> bool:
-    """True for the fallbacks that are correct by construction: an optional import, a missing file, or a cache miss."""
+#: A parse of one input value: the only calls a guarded parse may make (no I/O, no lookups, no model calls).
+_PARSE_CALLS = frozenset(
+    {"int", "float", "date", "datetime", "Decimal", "fromisoformat", "strptime", "split", "rsplit", "partition", "strip", "lstrip", "rstrip", "lower", "upper", "isdigit", "append", "len"}
+)
+#: The parse errors a value-parse raises.
+_PARSE_ERRORS = frozenset({"ValueError", "TypeError"})
+#: A local SQLite read: the only failure that a missing table or file raises through ``execute``.
+_SQLITE_READ_CALLS = frozenset({"execute", "fetchone", "fetchall"})
+
+
+def _call_names(nodes: list[ast.stmt]) -> set[str]:
+    """Every name a call in *nodes* invokes (``int``, ``split``, ``execute``)."""
+    return {name for stmt in nodes for n in _fast_walk(stmt) if (name := _call_attr(n)) is not None}
+
+
+def _parse_fallback(handler: ast.ExceptHandler, try_node: Optional[ast.Try]) -> bool:
+    """True for ``try: <parse one value> except (ValueError, TypeError): return <default>``: the input is unparseable and the
+    caller receives "no value". Only a try whose body makes parse calls and nothing else qualifies."""
+    caught = _caught_names(handler)
+    if try_node is None or not caught or not caught <= _PARSE_ERRORS:
+        return False
+    calls = _call_names(try_node.body)
+    return bool(calls) and calls <= _PARSE_CALLS
+
+
+def _local_db_fallback(handler: ast.ExceptHandler, try_node: Optional[ast.Try]) -> bool:
+    """True for ``try: <read a local SQLite table> except sqlite3.OperationalError: return <default>``: a missing table or
+    install answers "not installed". A broader ``sqlite3.Error``, or a try that makes no SQLite read, is not accepted."""
+    if try_node is None or _caught_names(handler) != {"OperationalError"}:
+        return False
+    return bool(_call_names(try_node.body) & _SQLITE_READ_CALLS)
+
+
+def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str, try_node: Optional[ast.Try] = None) -> bool:
+    """True for the fallbacks that are correct by construction: an optional import, a missing file, a cache miss, an
+    unparseable input value, or a local SQLite table that is not installed."""
     caught = _caught_names(handler)
     if caught and (caught <= _OPTIONAL_IMPORT_ERRORS or caught <= _ABSENT_ERRORS):
+        return True
+    if _parse_fallback(handler, try_node) or _local_db_fallback(handler, try_node):
         return True
     return bool(_CACHE_MISS_NAME_RE.search(fn_name))
 
@@ -262,7 +298,7 @@ def _hands_off_exception(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Name) and n.value.id == handler.name for n in _fast_walk(handler))
 
 
-def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name: str = "") -> bool:
+def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name: str = "", try_node: Optional[ast.Try] = None) -> bool:
     """True when the handler's whole body is one ``return`` and nothing in the handler logs, raises or is marked best-effort."""
     if len(handler.body) != 1 or not isinstance(handler.body[0], ast.Return):
         return False
@@ -271,7 +307,7 @@ def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name
         return False  # the return hands back the failure's own data (``return exc.sqlstate``), not a default
     if returned is not None and _carries_reason(returned):
         return False  # the returned value says what failed (``DatasetSummary(..., "not installed in this checkout")``)
-    if _reasoned_fallback(handler, fn_name):
+    if _reasoned_fallback(handler, fn_name, try_node):
         return False
     return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
 
@@ -306,7 +342,14 @@ def _is_finite_guarded_reject(node: ast.If) -> bool:
 
 
 def _handler_findings(
-    handler: ast.ExceptHandler, rel: str, name: str, lines: list[str], is_gate: bool, loop_vars: frozenset[str], scope: Optional[ast.AST] = None
+    handler: ast.ExceptHandler,
+    rel: str,
+    name: str,
+    lines: list[str],
+    is_gate: bool,
+    loop_vars: frozenset[str],
+    scope: Optional[ast.AST] = None,
+    try_node: Optional[ast.Try] = None,
 ) -> list[FailOpenHandler]:
     """The rules one ``except`` handler breaks (admit, gate-returns-true, quiet substitution, silent default)."""
     found: list[FailOpenHandler] = []
@@ -324,7 +367,7 @@ def _handler_findings(
         and not _hands_off_exception(handler)
     ):
         found.append(FailOpenHandler(rel, name, handler.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
-    if not found and _silent_default_return(handler, lines, name.rsplit(".", 1)[-1]):
+    if not found and _silent_default_return(handler, lines, name.rsplit(".", 1)[-1], try_node):
         found.append(FailOpenHandler(rel, name, handler.lineno, "silent_default_return", "the handler returns a default and logs nothing"))
     return found
 
@@ -333,6 +376,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
     """Findings inside one function or module body (nested functions and classes are scanned on their own)."""
     found: list[FailOpenHandler] = []
     name: str = qualname or str(getattr(fn, "name", "<module>"))
+    try_of: dict[int, ast.Try] = {id(h): n for n in _fast_walk(fn) if isinstance(n, ast.Try) for h in n.handlers}
     is_gate = not isinstance(fn, ast.Module) and bool(gate_re.search(fn.name))
 
     def visit(node: ast.AST, loop_vars: frozenset[str]) -> None:
@@ -343,7 +387,7 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
             if isinstance(child, (ast.For, ast.AsyncFor)):
                 vars_here = loop_vars | {n.id for n in _fast_walk(child.target) if isinstance(n, ast.Name)}
             if isinstance(child, ast.ExceptHandler):
-                found.extend(_handler_findings(child, rel, name, lines, is_gate, loop_vars, fn))
+                found.extend(_handler_findings(child, rel, name, lines, is_gate, loop_vars, fn, try_of.get(id(child))))
             if isinstance(child, ast.If) and _is_finite_guarded_reject(child):
                 found.append(FailOpenHandler(rel, name, child.lineno, "finite_guarded_reject", "NaN/inf skip this rejection"))
             visit(child, vars_here)
