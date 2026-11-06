@@ -158,6 +158,7 @@ class _Detector:
         self.module_paths = self._path_names(tree.body)
         self.helpers: set[str] = set()
         self.fixtures: set[str] = set()
+        self.parse_only = self._parse_only_params()
         if follow_helpers:
             self.helpers = self._reader_helpers()
             self.fixtures = self._source_fixtures()
@@ -268,6 +269,41 @@ class _Detector:
                         out.add(node.name)
         return out
 
+    def _parse_only_params(self) -> dict[str, frozenset[int]]:
+        """Module-level functions mapped to the positions of their parameters that are only handed to an AST parser.
+
+        ``orm_reads(src, table_of)`` parses *src* and returns the names it found: the text argument does not come back out of the call,
+        so a call taints its result only through the positions this does not cover.
+        """
+        out: dict[str, frozenset[int]] = {}
+        for node in self.tree.body:
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            parsed: set[int] = set()
+            for call in _fast_walk(node):
+                if isinstance(call, ast.Call) and _call_name(call) in _PARSE_ONLY_CALLS and call.args:
+                    parsed.update(id(s) for s in _fast_walk(call.args[0]))
+            positions: set[int] = set()
+            for index, arg in enumerate([*node.args.posonlyargs, *node.args.args]):
+                uses = [s for s in _fast_walk(node) if isinstance(s, ast.Name) and s.id == arg.arg]
+                if uses and all(id(s) in parsed for s in uses):
+                    positions.add(index)
+            if positions:
+                out[node.name] = frozenset(positions)
+        return out
+
+    def _flows(self, node: ast.AST, tainted: set[str]) -> bool:
+        """:func:`_uses`, except a tainted argument at a position :attr:`parse_only` names does not carry the text out of its call."""
+        if not tainted:
+            return False
+        dropped: set[int] = set()
+        for call in _fast_walk(node):
+            if isinstance(call, ast.Call) and isinstance(call.func, ast.Name) and call.func.id in self.parse_only:
+                for index, arg in enumerate(call.args):
+                    if index in self.parse_only[call.func.id]:
+                        dropped.update(id(s) for s in _fast_walk(arg))
+        return _uses_outside(node, tainted, dropped)
+
     def _source_fixtures(self) -> set[str]:
         """Same-file ``@pytest.fixture`` functions whose return or yield value is source text."""
         out: set[str] = set()
@@ -297,7 +333,7 @@ class _Detector:
                     value = node.value
                     if isinstance(value, ast.Call) and (_call_name(value) in _STRUCTURAL or self._is_deserialiser(value)):
                         continue
-                    if self.reader_kind(value, path_names, tainted) or _uses(value, tainted):
+                    if self.reader_kind(value, path_names, tainted) or self._flows(value, tainted):
                         tainted.update(_target_names(node))
                 elif (
                     isinstance(node, (ast.For, ast.AsyncFor))
@@ -451,6 +487,17 @@ def _uses(node: ast.AST, names: set[str]) -> bool:
         return False
     called = {c.func.id for c in _fast_walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
     return any(isinstance(s, ast.Name) and s.id in names and s.id not in called for s in _fast_walk(node))
+
+
+_PARSE_ONLY_CALLS = frozenset({"parse", "walk", "iter_child_nodes"})
+
+
+def _uses_outside(node: ast.AST, names: set[str], dropped: set[int]) -> bool:
+    """:func:`_uses`, ignoring the Name nodes whose ids are in *dropped*."""
+    if not names:
+        return False
+    called = {c.func.id for c in _fast_walk(node) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)}
+    return any(isinstance(s, ast.Name) and s.id in names and s.id not in called and id(s) not in dropped for s in _fast_walk(node))
 
 
 _MAPPING_METHODS = frozenset({"get", "items", "keys", "values"})

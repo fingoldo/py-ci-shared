@@ -97,3 +97,13 @@ def test_cached_module_walk_equals_ast_walk_and_does_not_pin_the_tree():
     del tree, sub, expected
     gc.collect()
     assert ref() is None
+
+
+def test_resolve_cached_anchors_a_relative_path_before_resolving(tmp_path, monkeypatch):
+    """Windows ``Path.resolve()`` can return a relative, missing path unchanged; the cached value must still be absolute."""
+    from pathlib import Path
+
+    real_resolve = Path.resolve
+    monkeypatch.setattr(Path, "resolve", lambda self, strict=False: self if not self.is_absolute() else real_resolve(self, strict=strict))
+    monkeypatch.chdir(tmp_path)
+    assert src.resolve_cached("missing.py").is_absolute()

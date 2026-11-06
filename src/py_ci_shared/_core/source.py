@@ -58,7 +58,7 @@ def resolve_cached(path: PathLike) -> Path:
     with _LOCK:
         hit = _RESOLVED.get(key)
         if hit is None:
-            hit = _RESOLVED[key] = Path(spelled).resolve()
+            hit = _RESOLVED[key] = Path(os.path.abspath(spelled)).resolve()  # anchor first: Windows resolve() can leave a relative, missing path relative
     return hit
 
 

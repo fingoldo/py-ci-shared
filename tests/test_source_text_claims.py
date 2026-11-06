@@ -521,3 +521,44 @@ class TestAFunctionsOutputEqualToTheSourceFileIsNotAClaim:
     def test_a_key_of_a_mapping_a_call_returned_is_not_a_claim(self, tmp_path):
         body = self.HEAD + "    contents = closure(tmp_path)\n    assert contents['pkg/mod.py'] == Path('pkg/mod.py').read_bytes()\n"
         assert _lines(tmp_path, body) == []
+
+
+class TestAParsedArgumentDoesNotCarryTheText:
+    """A text argument that a same-file function only hands to an AST parser does not make the call's result source text."""
+
+    HELPER = (
+        "import ast\n"
+        "from pathlib import Path\n"
+        "def orm_reads(source, table_of):\n"
+        "    tree = ast.parse(source)\n"
+        "    return {table_of[n.id] for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id in table_of}\n"
+    )
+
+    def test_a_table_name_found_by_parsing_a_file_is_not_a_source_text_claim(self, tmp_path):
+        body = self.HELPER + (
+            "def _scan():\n"
+            "    read = set()\n"
+            "    for py in Path('pkg').rglob('*.py'):\n"
+            "        src = py.read_text(encoding='utf-8')\n"
+            "        read |= orm_reads(src, {})\n"
+            "    return read\n"
+            "def test_x():\n"
+            "    read = _scan()\n"
+            "    assert 'sense_frames' in read\n"
+        )
+        assert _lines(tmp_path, body) == []
+
+    def test_a_real_read_through_the_same_helper_is_still_a_claim(self, tmp_path):
+        body = self.HELPER + "def test_x():\n    read = orm_reads(Path('mod.py').read_text(encoding='utf-8'), {})\n    assert 'sense_frames' in read\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_helper_that_returns_a_slice_of_its_text_still_carries_it(self, tmp_path):
+        body = (
+            "from pathlib import Path\n"
+            "def head(src):\n"
+            "    return src[:3]\n"
+            "def test_x():\n"
+            "    chunk = head(Path('mod.py').read_text(encoding='utf-8'))\n"
+            "    assert 'x' in chunk\n"
+        )
+        assert _lines(tmp_path, body) != []

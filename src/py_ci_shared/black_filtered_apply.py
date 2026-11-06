@@ -117,7 +117,9 @@ def run_black_stdin(src: str, config_path: str, filename=None) -> str:
     and .pyi mode apply, and an excluded file comes back unchanged."""
     cmd = [*_BLACK_CMD, "-q", "--config", config_path]
     if filename:
-        cmd += ["--stdin-filename", str(filename)]
+        # Black drops a stdin path it cannot resolve outside the project root (files.resolves_outside_root_or_cannot_stat), and a relative
+        # path to a file that does not exist is not resolved on Windows: pass the absolute path so the filename decides force-exclude and .pyi.
+        cmd += ["--stdin-filename", os.path.abspath(str(filename))]
     proc = subprocess.run(
         [*cmd, "-"],
         input=src.encode("utf-8"),

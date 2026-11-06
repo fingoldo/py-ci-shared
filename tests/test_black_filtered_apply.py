@@ -356,3 +356,25 @@ class TestCheckModeSkipsFilesBlackLeavesAlone:
         assert exc.value.code == 1
         out = capsys.readouterr().out
         assert "1/2 files have non-excluded-class Black findings" in out and "bad.py" in out and "ok.py" not in out
+
+
+class TestStdinFilenameIsAbsolute:
+    """A relative stdin filename is handed to Black as an absolute path, so Black's force-exclude and .pyi decisions do not depend on how Windows resolves it."""
+
+    def test_relative_filename_is_passed_to_black_absolute(self, tmp_path, monkeypatch):
+        import os
+        import subprocess
+
+        from py_ci_shared import black_filtered_apply as bfa
+
+        seen = []
+
+        def fake_run(cmd, **kwargs):
+            seen.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout=kwargs.get("input"), stderr=b"")
+
+        monkeypatch.setattr(bfa.subprocess, "run", fake_run)
+        monkeypatch.chdir(tmp_path)
+        bfa.run_black_stdin("x = 1\n", "cfg.toml", filename="pkg/mod.py")
+        flag = seen[0].index("--stdin-filename") + 1
+        assert os.path.isabs(seen[0][flag]) and seen[0][flag] == os.path.join(str(tmp_path), "pkg", "mod.py")
