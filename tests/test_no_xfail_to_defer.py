@@ -174,3 +174,43 @@ def test_an_unconditional_skip_with_a_fix_later_reason_is_untracked(tmp_path):
 def test_a_skip_naming_a_tracked_issue_or_a_condition_is_clean(tmp_path):
     body = 'import pytest\n\n\n@pytest.mark.skip(reason="blocked by #123")\ndef test_a():\n    pass\n\n\ndef test_b(x):\n    if x:\n        pytest.skip("no gpu here")\n'
     assert _skip_findings(tmp_path, body) == []
+
+
+_OPTION_GATED_SKIP = """\
+import pytest
+
+
+def pytest_collection_modifyitems(config, items):
+    if not config.getoption("--run-fuzz"):
+        skip_fuzz = pytest.mark.skip(reason="skipped by default; pass --run-fuzz to include long fuzz-combo tests")
+        for item in items:
+            if "fuzz" in item.keywords:
+                item.add_marker(skip_fuzz)
+"""
+
+_FAST_MODE_SKIP = """\
+import pytest
+
+
+def pytest_collection_modifyitems(config, items):
+    if not is_fast_mode():
+        return
+    skip_slow = pytest.mark.skip(reason="skipped in --fast mode")
+    for item in items:
+        if "slow" in item.keywords:
+            item.add_marker(skip_slow)
+"""
+
+
+def test_a_variable_built_skip_added_under_an_option_is_not_untracked(tmp_path):
+    # mlframe tests/conftest.py (audit 2026-11-06 class C): the marker exists only while the option is absent
+    assert _found(tmp_path, _OPTION_GATED_SKIP) == []
+
+
+def test_a_variable_built_skip_after_a_fast_mode_return_guard_is_not_untracked(tmp_path):
+    assert _found(tmp_path, _FAST_MODE_SKIP) == []
+
+
+def test_a_variable_built_skip_with_no_runtime_condition_is_still_untracked(tmp_path):
+    body = 'import pytest\n\ndef pytest_collection_modifyitems(config, items):\n    skip_bug = pytest.mark.skip(reason="broken, fix later")\n    for item in items:\n        if "bad" in item.keywords:\n            item.add_marker(skip_bug)\n'
+    assert _found(tmp_path, body) == [(RULE_UNTRACKED, 4)]

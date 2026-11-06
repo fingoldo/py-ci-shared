@@ -225,6 +225,25 @@ def _is_conditional(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
     return False
 
 
+#: A test-selection condition: an option, an environment variable or xdist (``if not config.getoption("--run-fuzz")``).
+_RUNTIME_CONDITION = re.compile(r"\b(getoption|getenv|environ|xdist|numprocesses|dist|fast|is_fast_mode|running_under_xdist)\b")
+
+
+def _conditional_marker_calls(tree: ast.Module) -> set[int]:
+    """ids of the mark calls bound to a name (``skip_fuzz = pytest.mark.skip(reason=...)``) in a scope with an ``if`` on a
+    runtime condition: the marker is attached only while that condition holds, so its reason is not parked for good."""
+    out: set[int] = set()
+    scopes: list[ast.AST] = [tree, *(n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
+    for scope in scopes:
+        nodes = list(_fast_walk(scope))
+        if not any(isinstance(n, ast.If) and _RUNTIME_CONDITION.search(ast.unparse(n.test)) for n in nodes):
+            continue
+        for n in nodes:
+            if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):
+                out.add(id(n.value))
+    return out
+
+
 def find_xfail_to_defer(
     tests_root: Union[str, Path, Iterable[Union[str, Path]]],
     *,
@@ -250,10 +269,13 @@ def find_xfail_to_defer(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         parents = {id(c): n for n in _fast_walk(f.tree) for c in child_nodes(n)}
+        conditional = _conditional_marker_calls(f.tree)
         for node in _fast_walk(f.tree):
             if isinstance(node, ast.Call) and isinstance(parents.get(id(node)), ast.Attribute):
                 continue  # ``pytest.mark.xfail(...).with_args`` and similar: the outer call is judged
             results = _node_findings(node, aliases, parents, xfail_strict, ext, gap_modules)
+            if id(node) in conditional:
+                results = [r for r in results if r[0] != RULE_UNTRACKED]  # attached only under a runtime condition
             findings.extend(Finding(f.rel, getattr(node, "lineno", 1), rule, message) for rule, message in results)
     findings.sort(key=lambda x: (x.path, x.line, x.rule))
     return findings, scan

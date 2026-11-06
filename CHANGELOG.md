@@ -16,6 +16,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ### Gate false positives 2026-11-06
 
+- **Behaviour change:** `no_xfail_to_defer` `untracked-reason` no longer judges a `pytest.mark.skip`/`xfail` call bound to a name (`skip_fuzz = pytest.mark.skip(reason=...)`) in a scope that also has an `if` on a runtime condition (`config.getoption`, `os.environ`, `getenv`, xdist, fast mode): the marker is attached only while that condition holds. A marker with no such condition in its scope is still judged, and `xfail-not-strict` and `no-reason` still apply. Consumers: a baseline entry for such a marker no longer matches, so refresh the baseline (it only shrinks) to clear it.
+
 - **Behaviour change:** `drifted_duplicate_literals` `literal-set` no longer counts a literal set whose line (or the line above) carries `# literal-set-ok: <reason>`: a row-count sweep grid measured for one kernel is a separate measurement, not a copy. Only the marked site leaves the group. Consumers: a baseline group that loses its last unmarked copy no longer matches, so the gate reports it as stale; refresh the baseline (it only shrinks) to clear it.
 
 - **Behaviour change:** `fail_open_handlers` `admit_on_error` no longer flags a handler that logs at WARNING or above (a logger call or `log_throttle(..., logging.WARNING, ...)`) and stores a constant under the loop key (`out[i] = 0.0`): the failure is reported and a constant is recorded, not the element. A loud handler that keeps the element (`survivors.append(spec)`) stays flagged. Consumers: the baseline entries for such handlers no longer match, so the gate reports them as stale; refresh the baseline (it only shrinks) to clear them.
