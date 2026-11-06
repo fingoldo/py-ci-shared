@@ -19,6 +19,7 @@ Three rules, each quiet on ordinary code:
   larger, so ``"22.7% vs 26.0%"`` matches a caveat that also quotes ``1,652``. A literal passed straight to a call
   (``figsize=(12, 8)``, ``np.zeros((3, 4))``) is a shape, not a threshold, and is not a site; neither are docstrings,
   version tuples, dates, times and dotted versions inside strings.
+  A set carrying ``# literal-set-ok: <reason>`` on its line (or the line above) is a separate measurement, not a copy.
 * ``named-constant``: one value bound to ALL_CAPS module constants with similar names in two modules
   (``_STALE_AFTER_H = 48`` and ``STALENESS_LIMIT_H = 48``): names share a word, or a stem of at least four letters.
 * ``threshold``: one value compared against similarly named operands in at least *min_threshold_modules* modules
@@ -49,7 +50,7 @@ from typing import Any, Optional, Union
 from ._core.node_index import docstring_ids
 from ._core import UNJUSTIFIED_MARKER, Baseline, Finding, ParsedFile, ScanResult, refresh_requested
 from ._core import walk as shared_walk
-from ._gate_report import report, scan_tree, skip_set
+from ._gate_report import line_has_marker, report, scan_tree, skip_set
 
 __all__ = [
     "DEFAULT_IGNORE",
@@ -63,6 +64,7 @@ __all__ = [
 ]
 
 RULE_SET = "literal-set"
+LITERAL_SET_MARKER = "literal-set-ok:"
 RULE_CONSTANT = "named-constant"
 RULE_THRESHOLD = "threshold"
 REFRESH_FLAG = "--refresh-duplicate-literals-baseline"
@@ -378,6 +380,11 @@ def _file_sites(parsed: ParsedFile, ignore: frozenset[float]) -> tuple[list[Lite
     return list(_sites(parsed, ignore)), list(_constants(parsed, ignore)), list(_comparisons(parsed, ignore))
 
 
+def _separate_measurement(lines: list[str], line: int) -> bool:
+    """True when the site's line or the line above carries ``# literal-set-ok: <reason>``: a grid measured for its own kernel."""
+    return line_has_marker(lines, line, LITERAL_SET_MARKER) or line_has_marker(lines, line - 1, LITERAL_SET_MARKER)
+
+
 def _collect(
     root: Union[str, Path],
     *,
@@ -396,7 +403,8 @@ def _collect(
     compares: list[LiteralSite] = []
     for parsed in scan:
         a, b, c = _file_sites(parsed, ignored)
-        sets += a
+        lines = parsed.source.splitlines()
+        sets += [site for site in a if not _separate_measurement(lines, site.line)]
         constants += b
         compares += c
     findings: list[Finding] = []

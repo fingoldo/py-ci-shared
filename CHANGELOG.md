@@ -16,6 +16,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ### Gate false positives 2026-11-06
 
+- **Behaviour change:** `drifted_duplicate_literals` `literal-set` no longer counts a literal set whose line (or the line above) carries `# literal-set-ok: <reason>`: a row-count sweep grid measured for one kernel is a separate measurement, not a copy. Only the marked site leaves the group. Consumers: a baseline group that loses its last unmarked copy no longer matches, so the gate reports it as stale; refresh the baseline (it only shrinks) to clear it.
+
 - **Behaviour change:** `fail_open_handlers` `admit_on_error` no longer flags a handler that logs at WARNING or above (a logger call or `log_throttle(..., logging.WARNING, ...)`) and stores a constant under the loop key (`out[i] = 0.0`): the failure is reported and a constant is recorded, not the element. A loud handler that keeps the element (`survivors.append(spec)`) stays flagged. Consumers: the baseline entries for such handlers no longer match, so the gate reports them as stale; refresh the baseline (it only shrinks) to clear them.
 
 - **Behaviour change:** `default_via_or` no longer flags `x / (total or 1)`: a zero denominator replaced by the unit default is a deliberate guard, so the ratio is zero rather than an error. Only a unit default directly on the right of a division is exempt; `n / (d or 5)` and `n * (d or 1)` stay findings. The non-direct guard (`tot = s or 1`, then `/ tot`) stays flagged because it needs data flow the scanner does not track.

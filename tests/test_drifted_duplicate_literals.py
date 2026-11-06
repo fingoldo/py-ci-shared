@@ -285,3 +285,23 @@ def test_a_set_of_measured_figures_is_still_reported_when_restated(tmp_path: Pat
     _write(tmp_path, "a.py", ["CAVEAT = (22.7, 26.0)"])
     _write(tmp_path, "b.py", ["CAVEAT = (22.7, 26.0)"])
     assert [f.rule for f in _find(tmp_path)] == [RULE_SET]
+
+
+def test_a_marked_sweep_grid_restated_in_two_modules_is_not_drift(tmp_path: Path):
+    # mlframe (audit 2026-11-06 class B): per-kernel row-count sweep grids share points but are separate measurements
+    marked = "_SWEEP_ROWS = (10000, 50000)  # literal-set-ok: separate sweep, sized to this kernel's own crossover"
+    _write(tmp_path, "filters/_basis_cells.py", [marked])
+    _write(tmp_path, "filters/_lof_cells.py", ["_SWEEP_ROWS = (10000, 50000)  # literal-set-ok: LOF crossover, its own measurement"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_SET] == []
+
+
+def test_the_marker_on_the_line_above_exempts_a_grid(tmp_path: Path):
+    _write(tmp_path, "a.py", ["# literal-set-ok: pair-SU prerank sweep, its own crossover", "GRID = (5000, 10000)"])
+    _write(tmp_path, "b.py", ["GRID = (5000, 10000)"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_SET] == []
+
+
+def test_an_unmarked_restated_grid_is_still_drift(tmp_path: Path):
+    _write(tmp_path, "a.py", ["GRID = (5000, 10000)  # sweep"])
+    _write(tmp_path, "b.py", ["GRID = (5000, 10000)"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_SET] == [RULE_SET]
