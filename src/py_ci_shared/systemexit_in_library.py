@@ -10,7 +10,7 @@ that became shared).
 
 Test files (``tests/`` directories, ``test_*.py``, ``conftest.py``) are skipped unless *include_tests*.
 
-Not reported: functions named like an entry (*entry_names* regex, default ``main|cli|parse_args|_main|run_cli|entry``); a function with a
+Not reported: functions named like an entry (*entry_names* regex, default anchored: exactly ``main``/``cli``/``run_cli``/``parse_args``/``entry`` (leading underscores allowed) or a ``main_``/``cli_`` prefix, so ``get_domain_dsn`` and ``client_config`` are not exempt); a function with a
 parameter whose name matches *opt_in_param_regex* (default ``exit``: an opt-in ``exit_on_fail`` flag); a line carrying
 ``# exit-ok: <reason>`` (on the line or the line above); an exit at module level inside the guard.
 
@@ -35,7 +35,7 @@ __all__ = ["RULE", "assert_no_systemexit_in_library", "find_systemexit_in_librar
 
 RULE = "systemexit-in-library"
 MARKER = "exit-ok"
-DEFAULT_ENTRY_NAMES = r"main|cli|parse_args|_main|run_cli|entry"
+DEFAULT_ENTRY_NAMES = r"^_*(?:main|cli|run_cli|parse_args|entry|entrypoint)$|^_*(?:main|cli)_"
 DEFAULT_OPT_IN_PARAM = r"exit"
 _EXIT_CALLS = frozenset({"exit", "quit", "_exit"})
 

@@ -176,3 +176,33 @@ def test_a_literal_in_the_fall_through_after_a_seed_branch_is_the_default(tmp_pa
 def test_a_rebound_module_constant_is_not_folded(tmp_path):
     src = "SEED = 1\nSEED = 2\n\n\ndef f(X, seed=None):\n    return split(X, seed=SEED)\n"
     assert _seed_lines(tmp_path, src) == []
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        "CatBoostClassifier(random_seed=42)",
+        "M(rng=1)",
+        "M(seed_value=3)",
+        "np.random.SeedSequence(7)",
+        "np.random.Generator(np.random.PCG64(1))",
+        "torch.Generator().manual_seed(7)",
+        "tf.random.set_seed(1)",
+        "keras.utils.set_random_seed(1)",
+    ],
+)
+def test_other_seed_spellings_are_reported(tmp_path, call):
+    src = f"import numpy as np\nimport torch\nimport tensorflow as tf\nimport keras\n\n\ndef fit(X, random_state=None):\n    return {call}\n"
+    assert len(_found(tmp_path, src)) == 1
+
+
+def test_local_int_constant_is_folded_and_rebinding_is_not(tmp_path):
+    base = "import numpy as np\n\n\ndef f(seed=None):\n"
+    assert len(_found(tmp_path, base + "    s = 42\n    return np.random.default_rng(s)\n")) == 1
+    assert _found(tmp_path, base + "    s = seed\n    return np.random.default_rng(s)\n") == []
+    assert _found(tmp_path, base + "    s = 42\n    s = seed\n    return np.random.default_rng(s)\n") == []
+
+
+def test_forwarding_the_callers_seed_to_new_spellings_is_clean(tmp_path):
+    src = "def fit(X, random_state=None):\n    return CatBoostClassifier(random_seed=random_state)\n"
+    assert _found(tmp_path, src) == []

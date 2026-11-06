@@ -107,3 +107,14 @@ def test_assert_and_baseline(tmp_path):
     _write(tmp_path, {"n.py": LIB})
     with pytest.raises(pytest.fail.Exception, match=r"n\.py"):
         assert_no_systemexit_in_library(tmp_path, use_git=False, baseline_path=base)
+
+
+@pytest.mark.parametrize("name", ["get_domain_dsn", "client_dsn", "remaining_budget", "decline_request", "load_entry_settings"])
+def test_helper_names_merely_containing_an_entry_word_are_not_exempt(tmp_path, name):
+    found = _find(tmp_path, f"import sys\n\ndef {name}():\n    sys.exit(1)\n")
+    assert [f.line for f in found] == [4]
+
+
+@pytest.mark.parametrize("name", ["main", "_main", "cli", "run_cli", "parse_args", "main_loop", "cli_entry"])
+def test_real_entry_names_stay_exempt(tmp_path, name):
+    assert _find(tmp_path, f"import sys\n\ndef {name}():\n    sys.exit(1)\n") == []

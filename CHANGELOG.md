@@ -739,3 +739,9 @@ Release and CI:
 - `install-pyutilz` defaults to a pinned pyutilz commit instead of the branch tip.
 - This repo's CI tests Python 3.9 to 3.13, installs the dev extra without a fallback, measures coverage and runs
   its own gates on itself with `py-ci-shared run-all`.
+
+### Gate false negatives 2026-11-07 (audit 40)
+
+- **Behaviour change:** `systemexit_in_library` `entry_names` default is anchored. It was an unanchored substring search, so `get_domain_dsn`, `client_dsn`, `remaining_budget` and `decline_request` were exempt as entries. Now only `main`, `cli`, `run_cli`, `parse_args`, `entry`, `entrypoint` (leading underscores allowed) and `main_*`/`cli_*` are exempt. What to do: a real entry point with another name goes in `entry_names=` or gets `# exit-ok: <reason>`.
+- **Behaviour change:** `swallowed_exceptions` also judges the `OSError` subclasses (`ConnectionError` family, `TimeoutError`, `BrokenPipeError`, `BlockingIOError`, `InterruptedError`, `socket.error`/`timeout`/`gaierror`, `os.error`, `select.error`), a module-level tuple constant (`ERRS = (OSError, ...)`; `except ERRS`), and `suppress(*errs)` (an unresolvable starred argument counts as broad). What to do: handle the failure, or mark `# swallow-ok: <reason>`; the baseline refresh accepts existing sites.
+- **Behaviour change:** `hardcoded_seed_in_library` also sees the keywords `random_seed`, `rng`, `rand_state`, `seed_value`, a local name assigned once to an int (`s = 42; default_rng(s)`), and the seeders `SeedSequence`, `PCG64`/`MT19937`/`Philox`/`SFC64`, `.manual_seed()`, `tf.random.set_seed`, `keras.utils.set_random_seed`, `transformers.set_seed`, `seed_everything`. What to do: forward the function's own seed, or mark `# seed-ok: <reason>`.

@@ -55,7 +55,15 @@ GATE = "swallowed-exceptions"
 RULE = "swallowed-exception"
 _DEFAULT_EXCLUDE = frozenset({"tests", "test", "testing", "benchmarks", "bench", "_benchmarks", "examples", "scripts", "probes"})
 _BROAD = frozenset({"BaseException", "Exception", "builtins.BaseException", "builtins.Exception"})
-_IO = frozenset({"OSError", "IOError", "EnvironmentError", "PermissionError", "shutil.Error", "builtins.OSError", "builtins.PermissionError"})
+_OSERROR_FAMILY = (
+    "OSError IOError EnvironmentError PermissionError ConnectionError ConnectionResetError ConnectionAbortedError ConnectionRefusedError "
+    "BrokenPipeError TimeoutError BlockingIOError InterruptedError ChildProcessError IsADirectoryError NotADirectoryError"
+).split()
+_IO = frozenset(
+    {"shutil.Error", "socket.error", "socket.timeout", "socket.gaierror", "socket.herror", "os.error", "select.error"}
+    | set(_OSERROR_FAMILY)
+    | {f"builtins.{n}" for n in _OSERROR_FAMILY}
+)
 _QUIET_LOG_LEVELS = frozenset({"debug", "info", "trace"})
 _CLEANUP = frozenset(
     {"close", "aclose", "unlink", "remove", "rmdir", "rmtree", "removedirs", "kill", "terminate", "cancel", "shutdown", "disconnect"}
@@ -89,16 +97,49 @@ _NEVER_RAISE_SCOPES = frozenset({"__del__", "emit"})
 _MARKER = re.compile(r"#\s*swallow-ok:\s*\S|#\s*nosec\b.*\bB11[02]\b")
 
 
-def _caught(handler: ast.ExceptHandler, aliases: ImportAliases) -> Optional[str]:
+def _module_tuples(tree: ast.Module) -> dict[str, ast.expr]:
+    """Module-level names bound once to a tuple/list of exception expressions (``ERRS = (OSError, ValueError)``)."""
+    seen: dict[str, int] = {}
+    out: dict[str, ast.expr] = {}
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            targets, value = stmt.targets, stmt.value
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            targets, value = [stmt.target], stmt.value
+        else:
+            continue
+        for t in targets:
+            if isinstance(t, ast.Name):
+                seen[t.id] = seen.get(t.id, 0) + 1
+                out[t.id] = value
+    return {n: v for n, v in out.items() if seen[n] == 1 and isinstance(v, (ast.Tuple, ast.List, ast.Name, ast.Attribute))}
+
+
+def _leaves(expr: ast.expr, consts: dict[str, ast.expr], depth: int = 0) -> list[ast.expr]:
+    """The exception expressions in *expr*, expanding tuples, ``*starred`` and module constants bound to tuples."""
+    if isinstance(expr, (ast.Tuple, ast.List)):
+        return [leaf for e in expr.elts for leaf in _leaves(e, consts, depth + 1)]
+    if isinstance(expr, ast.Starred):
+        return _leaves(expr.value, consts, depth + 1)
+    if isinstance(expr, ast.Name) and expr.id in consts and depth < 6:
+        return _leaves(consts[expr.id], consts, depth + 1)
+    return [expr]
+
+
+def _broad_or_io(exprs: Iterable[ast.expr], aliases: ImportAliases, consts: dict[str, ast.expr]) -> Optional[str]:
+    for expr in exprs:
+        for t in _leaves(expr, consts):
+            name = aliases.qualified_name(t) or ""
+            if name in _BROAD or name in _IO:
+                return name.replace("builtins.", "")
+    return None
+
+
+def _caught(handler: ast.ExceptHandler, aliases: ImportAliases, consts: Optional[dict[str, ast.expr]] = None) -> Optional[str]:
     """The in-scope type the handler catches (``"bare"`` for ``except:``), or None when it is out of scope."""
     if handler.type is None:
         return "bare"
-    types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-    for t in types:
-        name = aliases.qualified_name(t) or ""
-        if name in _BROAD or name in _IO:
-            return name.replace("builtins.", "")
-    return None
+    return _broad_or_io([handler.type], aliases, consts or {})
 
 
 def _is_quiet_log(stmt: ast.stmt) -> bool:
@@ -207,6 +248,7 @@ class _Visitor(TreeVisitor):
         self.f = f
         self.quiet_log_is_silent = quiet_log_is_silent
         self.aliases = ImportAliases.from_tree(f.tree, scoped=True)
+        self.consts = _module_tuples(f.tree)
         self.lines = f.source.splitlines()
         self.scope: list[str] = []
         self.findings: list[Finding] = []
@@ -255,10 +297,9 @@ class _Visitor(TreeVisitor):
             call = item.context_expr
             if not (isinstance(call, ast.Call) and self.aliases.qualified_name(call) == "contextlib.suppress"):
                 continue
-            for arg in call.args:
-                name = self.aliases.qualified_name(arg) or ""
-                if name in _BROAD or name in _IO:
-                    caught = name.replace("builtins.", "")
+            caught = _broad_or_io(call.args, self.aliases, self.consts) or caught
+            if caught is None and any(isinstance(a, ast.Starred) and self._unresolved(a) for a in call.args):
+                caught = "*..."
         if caught is None or self._benign(node.body) or self._exempt_scope():
             return
         first_body = node.body[0].lineno if node.body else node.lineno
@@ -268,6 +309,10 @@ class _Visitor(TreeVisitor):
         first = unparse_stable(node.body[0]).splitlines()[0] if node.body else ""
         message = f"`suppress({caught})` in {where} swallows a failure of `{first[:100]}`"
         self.findings.append(Finding(self.f.rel, node.lineno, RULE, message))
+
+    def _unresolved(self, star: ast.Starred) -> bool:
+        """``suppress(*errs)`` whose ``errs`` is not a module constant we can read: assumed broad."""
+        return not (isinstance(star.value, ast.Name) and star.value.id in self.consts)
 
     def _exempt_scope(self) -> bool:
         """``emit`` and ``__del__`` must not raise or log their own failure. A ``finally`` or ``close``-like scope is exempt
@@ -279,7 +324,7 @@ class _Visitor(TreeVisitor):
         return _is_best_effort(body) or _is_import_probe(body) or _is_fallback(body)
 
     def _judge(self, node: ast.Try, handler: ast.ExceptHandler) -> None:
-        caught = _caught(handler, self.aliases)
+        caught = _caught(handler, self.aliases, self.consts)
         if caught is None or not is_silent_handler(handler, quiet_log_is_silent=self.quiet_log_is_silent):
             return
         if self._exempt_scope() or self._benign(node.body):

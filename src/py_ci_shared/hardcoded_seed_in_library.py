@@ -6,7 +6,7 @@ variance across runs) measures nothing, a "different seed" ensemble member is a 
 interval built from those runs is exactly zero wide. The reverse bug, an unseeded callee, is caught by the failure
 being visible; this one is silent because every run is perfectly reproducible, just not with the caller's seed.
 
-Reported, inside a function that has its OWN ``random_state``/``seed``/``rng`` parameter (an enclosing function's
+Reported, inside a function that has its OWN ``random_state``/``seed``/``rng`` parameter (seed keywords: random_state, seed, random_seed, rng, rand_state, seed_value; a local name assigned once to an int counts as a literal) (an enclosing function's
 parameter counts for a nested function):
 
 * a call with a ``random_state=<int literal>`` or ``seed=<int literal>`` keyword;
@@ -46,8 +46,35 @@ SUPPRESSION = "# seed-ok:"
 DEFAULT_EXCLUDE_FRAGMENTS = ("tests/", "_benchmarks/")
 
 _SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|rng|rs)s?(?:$|_)")
-_SEED_KEYWORDS = frozenset({"random_state", "seed"})
-_SEEDERS = frozenset({"numpy.random.default_rng", "numpy.random.RandomState", "numpy.random.seed", "random.seed", "torch.manual_seed", "random.Random"})
+_SEED_KEYWORDS = frozenset({"random_state", "seed", "random_seed", "rng", "rand_state", "seed_value"})
+_SEEDERS = frozenset(
+    {
+        "numpy.random.default_rng",
+        "numpy.random.RandomState",
+        "numpy.random.seed",
+        "numpy.random.SeedSequence",
+        "numpy.random.PCG64",
+        "numpy.random.PCG64DXSM",
+        "numpy.random.MT19937",
+        "numpy.random.Philox",
+        "numpy.random.SFC64",
+        "random.seed",
+        "random.Random",
+        "torch.manual_seed",
+        "torch.random.manual_seed",
+        "torch.cuda.manual_seed",
+        "torch.cuda.manual_seed_all",
+        "tensorflow.random.set_seed",
+        "tensorflow.set_random_seed",
+        "keras.utils.set_random_seed",
+        "tensorflow.keras.utils.set_random_seed",
+        "transformers.set_seed",
+        "pytorch_lightning.seed_everything",
+        "lightning.seed_everything",
+        "lightning.pytorch.seed_everything",
+    }
+)
+_SEED_METHODS = frozenset({"manual_seed"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -175,9 +202,39 @@ def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[
             for key, val in zip(keyword.value.keys, keyword.value.values):
                 if isinstance(key, ast.Constant) and key.value in _SEED_KEYWORDS and _int_value(val, known) is not None:
                     what = f"{key.value}={unparse_stable(val)}"
-    if not what and (aliases.qualified_name(call) in _SEEDERS) and call.args and _int_value(call.args[0], known) is not None:
+    seeds_by_call = aliases.qualified_name(call) in _SEEDERS or (isinstance(call.func, ast.Attribute) and call.func.attr in _SEED_METHODS)
+    if not what and seeds_by_call and call.args and _int_value(call.args[0], known) is not None:
         what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"
     return what
+
+
+def _local_int_constants(func: ast.AST, inherited: "Optional[dict[str, int]]") -> "dict[str, int]":
+    """*inherited* plus the names *func* itself assigns exactly once, to an int (``s = 42`` then ``default_rng(s)``)."""
+    counts: dict[str, int] = {}
+    values: dict[str, ast.expr] = {}
+    stack = list(child_nodes(func))
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (*_FUNCTIONS, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    counts[t.id] = counts.get(t.id, 0) + 1
+                    values[t.id] = node.value
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.With)):
+            for sub in ast.walk(node.target if hasattr(node, "target") else node):
+                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+                    counts[sub.id] = counts.get(sub.id, 0) + 2  # rebound by something we do not fold: never constant
+        stack.extend(child_nodes(node))
+    params = {a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)} if isinstance(func, _FUNCTIONS) else set()
+    out = {k: v for k, v in (inherited or {}).items() if k not in counts and k not in params}
+    for name, value in values.items():
+        if counts[name] == 1 and name not in params:
+            folded = _int_value(value, out)
+            if folded is not None:
+                out[name] = folded
+    return out
 
 
 def _own_calls(func: ast.AST) -> Iterator[tuple[ast.Call, dict[int, ast.AST]]]:
@@ -202,6 +259,7 @@ def _check_seeds(
 ) -> list[Finding]:
     """The findings of one function that takes its own seed parameter(s) *params*."""
     out: list[Finding] = []
+    consts = _local_int_constants(func, consts)
     for node, parents in _own_calls(func):
         if _is_default_for_missing_seed(node, parents, set(params)):
             continue

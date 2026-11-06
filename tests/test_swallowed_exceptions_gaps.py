@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from py_ci_shared.swallowed_exceptions import find_swallowed_exceptions
 
 
@@ -47,3 +49,34 @@ def test_real_work_swallowed_in_close_is_reported_but_emit_stays_exempt(tmp_path
         "    def emit(self, r):\n        try:\n            self.write(r)\n        except Exception:\n            pass\n"
     )
     assert [line for line, _ in _found(tmp_path, src)] == [6]
+
+
+def _swallow(tmp_path, src):
+    from py_ci_shared.swallowed_exceptions import find_swallowed_exceptions
+
+    (tmp_path / "m.py").write_text(src, encoding="utf-8")
+    return find_swallowed_exceptions(tmp_path, use_git=False)[0]
+
+
+@pytest.mark.parametrize("exc", ["ConnectionError", "TimeoutError", "BrokenPipeError", "socket.error", "os.error", "(ValueError, ConnectionResetError)"])
+def test_oserror_subclasses_are_io_swallows(tmp_path, exc):
+    src = f"import socket, os\ndef f(p):\n    try:\n        p.write_text('x')\n    except {exc}:\n        pass\n"
+    assert len(_swallow(tmp_path, src)) == 1
+
+
+def test_named_exception_tuple_constant_is_resolved(tmp_path):
+    src = "ERRS = (ValueError, OSError)\ndef f(p):\n    try:\n        p.write_text('x')\n    except ERRS:\n        pass\n"
+    assert len(_swallow(tmp_path, src)) == 1
+    narrow = "ERRS = (ValueError, KeyError)\ndef f(p):\n    try:\n        p.write_text('x')\n    except ERRS:\n        pass\n"
+    assert _swallow(tmp_path, narrow) == []
+
+
+@pytest.mark.parametrize("args", ["ConnectionError, TimeoutError", "*ERRS", "*unknown"])
+def test_suppress_covers_family_and_starred(tmp_path, args):
+    src = f"import contextlib\nERRS = (OSError,)\ndef f(p, unknown=()):\n    with contextlib.suppress({args}):\n        p.write_text('x')\n"
+    assert len(_swallow(tmp_path, src)) == 1
+
+
+def test_suppress_of_narrow_constant_is_clean(tmp_path):
+    src = "import contextlib\nERRS = (KeyError,)\ndef f(p):\n    with contextlib.suppress(*ERRS):\n        p.write_text('x')\n"
+    assert _swallow(tmp_path, src) == []
