@@ -241,7 +241,26 @@ _CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNOR
 
 #: A parse of one input value: the only calls a guarded parse may make (no I/O, no lookups, no model calls).
 _PARSE_CALLS = frozenset(
-    {"int", "float", "date", "datetime", "Decimal", "fromisoformat", "strptime", "split", "rsplit", "partition", "strip", "lstrip", "rstrip", "lower", "upper", "isdigit", "append", "len"}
+    {
+        "int",
+        "float",
+        "date",
+        "datetime",
+        "Decimal",
+        "fromisoformat",
+        "strptime",
+        "split",
+        "rsplit",
+        "partition",
+        "strip",
+        "lstrip",
+        "rstrip",
+        "lower",
+        "upper",
+        "isdigit",
+        "append",
+        "len",
+    }
 )
 #: The parse errors a value-parse raises.
 _PARSE_ERRORS = frozenset({"ValueError", "TypeError"})
