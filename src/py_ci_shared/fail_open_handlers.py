@@ -101,6 +101,13 @@ def _log_call_level(node: ast.AST) -> Optional[str]:
     return None
 
 
+def _log_throttle_level(node: ast.AST) -> Optional[str]:
+    """For ``log_throttle(logger, key, LEVEL, ...)``, the level's name (the level is the third argument)."""
+    if isinstance(node, ast.Call) and _call_attr(node) == "log_throttle" and len(node.args) >= 3:
+        return _level_name(node.args[2])
+    return None
+
+
 def _logs_loudly(handler: ast.ExceptHandler) -> bool:
     """True when the handler raises, or logs at WARNING or above (a ``logging.WARNING`` argument counts)."""
     for n in _fast_walk(handler):
@@ -117,8 +124,11 @@ def _logs_loudly(handler: ast.ExceptHandler) -> bool:
 
 
 def _logs_quietly(handler: ast.ExceptHandler) -> bool:
-    """True when the handler logs at DEBUG or INFO (``log.debug(..)``, or ``log.log(logging.DEBUG, ..)``)."""
-    return any(_call_attr(n) in _QUIET_LEVELS or _log_call_level(n) in _QUIET_LEVEL_NAMES for n in _fast_walk(handler))
+    """True when the handler logs at DEBUG or INFO (``log.debug(..)``, ``log.log(logging.DEBUG, ..)``, or
+    ``log_throttle(logger, key, logging.DEBUG, ..)``)."""
+    return any(
+        _call_attr(n) in _QUIET_LEVELS or _log_call_level(n) in _QUIET_LEVEL_NAMES or _log_throttle_level(n) in _QUIET_LEVEL_NAMES for n in _fast_walk(handler)
+    )
 
 
 def _assigns_a_value(handler: ast.ExceptHandler) -> bool:

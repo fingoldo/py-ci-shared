@@ -670,3 +670,35 @@ def test_an_operational_error_around_a_non_sqlite_call_is_still_flagged(tmp_path
                 return None
     """
     assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_debug_log_throttle_handler_that_substitutes_a_value_is_a_quiet_substitution(tmp_path):
+    # audit 2026-11-06 class E / tracker 37-F40: log_throttle at DEBUG is as quiet as logger.debug, so the fallback is silent
+    body = """
+        import logging
+
+        def fit(batch):
+            try:
+                result = run(batch)
+            except Exception as e:
+                log_throttle(logger, "fit.batch", logging.DEBUG, "batch failed: %s", e)
+                result = 0
+            return result
+    """
+    assert _rules(tmp_path, body) == ["quiet_substitution"]
+
+
+def test_a_warning_log_throttle_handler_that_substitutes_a_value_is_accepted(tmp_path):
+    # the negative control: a loud log_throttle substitution is not flagged, so the DEBUG rule does not over-flag
+    body = """
+        import logging
+
+        def fit(batch):
+            try:
+                result = run(batch)
+            except Exception as e:
+                log_throttle(logger, "fit.batch", logging.WARNING, "batch failed: %s", e)
+                result = 0
+            return result
+    """
+    assert _rules(tmp_path, body) == []
