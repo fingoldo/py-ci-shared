@@ -1100,6 +1100,20 @@ class TestAMutantThatStopsPytestStartingIsAKill:
         for code in (2, 3, 4, 5):
             assert _classify_code(code, "a mutant", baseline_verified=True) is False
 
+    def test_a_crashed_interpreter_is_a_kill_on_a_mutant(self):
+        from py_ci_shared.mutation_teeth import _classify_code
+
+        # 0xC0000005 is the access violation a mutated numba kernel raised on an out-of-bounds read;
+        # a negative return code is a POSIX signal. Both are the interpreter dying, not a refusal.
+        for code in (3221225477, 0xC00000FD, -11):
+            assert _classify_code(code, "a mutant", baseline_verified=True) is False
+
+    def test_a_crashed_interpreter_still_refuses_on_the_baseline(self):
+        from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
+
+        with pytest.raises(MutationHarnessError, match="neither pass"):
+            _classify_code(3221225477, "the unmutated baseline")
+
     def test_every_could_not_run_code_still_refuses_on_the_baseline(self):
         from py_ci_shared.mutation_teeth import MutationHarnessError, _classify_code
 

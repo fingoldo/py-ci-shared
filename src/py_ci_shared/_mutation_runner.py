@@ -711,6 +711,18 @@ def _lead_with(paths: list[Union[Path, str]], first: str) -> list[Union[Path, st
 _MUTATION_BROKE_THE_RUN = frozenset({2, 3, 4, 5})
 
 
+def _is_abnormal_exit(code: int) -> bool:
+    """True when the interpreter itself died: a POSIX signal (a negative return code) or a Windows
+    exception (an NTSTATUS code, 0xC0000000 and up, such as the 0xC0000005 access violation a mutated
+    numba kernel raises on an out-of-bounds read). No pytest outcome produces these on its own."""
+    return code < 0 or code >= 0xC0000000
+
+
+def _breaks_the_run(code: int) -> bool:
+    """True when a mutant's exit code means the run could not finish: a could-not-run code or a crash."""
+    return code in _MUTATION_BROKE_THE_RUN or _is_abnormal_exit(code)
+
+
 def _classify_code(code: int, what: str, *, baseline_verified: bool = False) -> bool:
     """True if the tests PASSED. Raises when the exit code means neither pass nor fail.
 
@@ -729,7 +741,7 @@ def _classify_code(code: int, what: str, *, baseline_verified: bool = False) -> 
         return True
     if code == 1:
         return False
-    if baseline_verified and code in _MUTATION_BROKE_THE_RUN:
+    if baseline_verified and _breaks_the_run(code):
         return False
     raise MutationHarnessError(
         f"pytest exited {code} on {what}, which is neither pass (0) nor fail (1). "
@@ -748,7 +760,7 @@ def _classify(result, what: str, *, baseline_verified: bool = False) -> bool:
         return True
     if result.returncode == 1:
         return False
-    if baseline_verified and result.returncode in _MUTATION_BROKE_THE_RUN:
+    if baseline_verified and _breaks_the_run(result.returncode):
         return False
     raise MutationHarnessError(
         f"pytest exited {result.returncode} on {what}, which is neither pass (0) nor fail (1). "

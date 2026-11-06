@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional, Union
 from ._mutation_model import Mutant, MutationHarnessError
 from ._mutation_speed import LazyWiderBaseline, NearestKiller, SweepOptions, baseline_error, narrowed_paths, warm_advice
 from ._mutation_runner import (
-    _MUTATION_BROKE_THE_RUN,
+    _breaks_the_run,
     _classify,
     _classify_code,
     _lead_with,
@@ -120,10 +120,10 @@ def _primary_verdict(
         passed = _classify(result, f"mutant {mutant}", baseline_verified=True)
         if not passed:
             state.last_killer = _scan_of(result).first_failing_file
-        crash = not passed and (result.returncode in _MUTATION_BROKE_THE_RUN or _scan_of(result).killed_by_crash)
+        crash = not passed and (_breaks_the_run(result.returncode) or _scan_of(result).killed_by_crash)
     else:
         passed = _classify_code(code, f"mutant {mutant}", baseline_verified=True)
-        crash = not passed and (code in _MUTATION_BROKE_THE_RUN or warm.last_crash)
+        crash = not passed and (_breaks_the_run(code) or warm.last_crash)
     if not passed:
         return False, crash
     return _confirm_survivor(mutant, use_warm_worker, test_paths, sandbox, timeout, state)
@@ -149,7 +149,7 @@ def _confirm_survivor(
             if worker.last_failed:
                 state.last_killer = worker.last_failed
             if not _classify_code(code, f"survivor re-check {mutant}", baseline_verified=True):
-                return False, code in _MUTATION_BROKE_THE_RUN or worker.last_crash
+                return False, _breaks_the_run(code) or worker.last_crash
             return True, False
         worker.restart()  # it died: this survivor is confirmed cold, the next one gets a live worker
     cold_started = time.perf_counter()
@@ -159,7 +159,7 @@ def _confirm_survivor(
         return None, False
     if not _classify(confirm, f"survivor re-check {mutant}", baseline_verified=True):
         state.last_killer = _scan_of(confirm).first_failing_file
-        return False, confirm.returncode in _MUTATION_BROKE_THE_RUN or _scan_of(confirm).killed_by_crash
+        return False, _breaks_the_run(confirm.returncode) or _scan_of(confirm).killed_by_crash
     return True, False
 
 
