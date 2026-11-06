@@ -1,0 +1,90 @@
+[
+  {
+    "id": "45-F1",
+    "sev": "P0",
+    "title": "Finding messages built from ast.unparse are baseline keys, and ast.unparse output differs between Python 3.9 and 3.11+ (lambda with no args, parenthesised for-targets, star-subscripts)",
+    "evidence": "Finding.key = rule::path::message (_core/findings.py:24-25); alembic_concurrently.py:129 and ~59 modules put ast.unparse(node) into the message. Demonstration (scratchpad audit45/d.py, same migration file `op.execute(lambda: \"CREATE INDEX CONCURRENTLY ...\")`): py3.9.25 key = `alembic-concurrently::001_x.py::op.execute(lambda : 'CREATE INDEX ...')`; py3.11.15 and py3.14 key = `...op.execute(lambda: 'CREATE INDEX ...')`. audit45/u.py unparse diff 3.9 vs 3.11/3.13/3.14: `lambda : (yield)` vs `lambda: (yield)`; `for (a, b) in c:` vs `for a, b in c:`; `x[*a]` is a SyntaxError on 3.9. 3.11 vs 3.13 vs 3.14 identical on the 29 probes (3.12+ f-string quote reuse not reachable from 3.9/3.11 sources).",
+    "failure_scenario": "A baseline refreshed on the 3.11 leg (the only leg with COVERAGE / refresh) holds key `...lambda: ...`; the ubuntu 3.9/3.10 legs compute `...lambda : ...`, so the accepted finding looks NEW (red shard) and the baseline entry looks STALE. Consumers see a 3.9-only failure that no edit of the code can explain, or a 'stale baseline' failure on 3.11 after someone refreshes on 3.9.",
+    "proposed_fix": "Add _core.unparse_stable(node) that renders via ast.unparse and then normalises the known 3.9 differences (regex `lambda :` -> `lambda:`, strip redundant parens after `for`/`async for` targets), or build message text from the source segment (ast.get_source_segment, whitespace-collapsed) instead of unparse. Add a meta test banning raw ast.unparse inside Finding(...) message/key arguments and a cross-version canary that runs one unparse-keyed gate on a lambda fixture.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "RESOLVED in 10a487c"
+  },
+  {
+    "id": "45-F2",
+    "sev": "P0",
+    "title": "resource_leak_checks._imported_library uses sys.stdlib_module_names with an empty fallback, so on 3.9 every stdlib first-import counts as 'a library was imported' and suppresses real leak findings",
+    "evidence": "resource_leak_checks.py:92 `stdlib = getattr(sys, \"stdlib_module_names\", frozenset())` (attribute exists from 3.10). Demonstration (audit45/rl.py: snapshot sys.modules, import only colorsys and zoneinfo, call _imported_library): py3.9.25 -> True; py3.11.15 -> False; py3.14 -> False. The identical defect was already fixed in resource_leak_guard._is_stdlib (K-5, 2026-10-03) and _ci_install_parts/_core.is_stdlib, which have a builtin/path fallback; this copy was missed. imported=True is consumed at resource_leak_checks.py:160-169 to skip stream, sys.path and warnings.filters leak reports.",
+    "failure_scenario": "A test that lazily imports a stdlib module and leaves warnings.filters / sys.stdout / sys.path modified is reported as a leak on 3.10-3.13 and silently passed on the 3.9 leg (prepended-filters and wrapped-stream exemptions apply). The gate gives different findings on identical code per interpreter, and the floor leg is the weaker one.",
+    "proposed_fix": "Use the shared stdlib predicate (_core.is_stdlib or resource_leak_guard._is_stdlib) in resource_leak_checks._imported_library. Meta-test: ban `getattr(sys, \"stdlib_module_names\"` with a literal empty default anywhere in src (5 modules reference the attribute; undeclared_imports.py:107 and phantom_code_references.py:668 use the empty default too, harmless there today).",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "RESOLVED in 10a487c"
+  },
+  {
+    "id": "45-F3",
+    "sev": "P1",
+    "title": "near_duplicate_function_body tokenises ast.dump output, so the SequenceMatcher ratio against fixed 0.99/0.98 thresholds depends on the interpreter",
+    "evidence": "code_audit/near_duplicate_function_body.py:78-90 (_tokenize of _normalized_body = ast.dump, duplicate_function_body.py:44) and thresholds at :27-28. audit45/tk.py: token count of one 5-statement function: 3.9 = 652, 3.11 = 652, 3.13 = 597, 3.14 = 597 (3.13+ omits empty list fields). audit45/tk2.py, two 11-statement bodies differing in one statement: ratio 3.11 = 0.9904 (>=0.99, reported) vs 3.14 = 0.9895 (not reported); n=12: 0.9912 vs 0.9904 (both). Same class as the drifted_duplicate_functions fix e873e5d, but that fix did not touch this module. (A full scan_near_duplicate_function_body run on a synthetic corpus returned 0 on all four versions, so the end-to-end flip is demonstrated at ratio level, not through the scanner.)",
+    "failure_scenario": "A near-duplicate pair sitting within ~0.001 of the threshold is a finding on the 3.9-3.12 legs and absent on 3.13/3.14 (or the reverse after the next CPython release changes dump again). Baseline accepted on one leg is stale on another; local 3.14 runs pass what CI 3.11 fails.",
+    "proposed_fix": "Reuse drifted_duplicate_functions._canonical (version-stable rendering) for _normalized_body / tokenisation in near_duplicate_function_body and duplicate_function_body; add a test that the token list of a fixture equals a literal tuple so any CPython dump change fails loudly.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "RESOLVED in 10a487c"
+  },
+  {
+    "id": "45-F4",
+    "sev": "P1",
+    "title": "self-ci matrix has no Python 3.14 leg anywhere and the Windows 3.9 / 3.13 legs are non-blocking; macOS and Windows run 3.11 only",
+    "evidence": ".github/workflows/self-ci.yml:37-61: ubuntu-24.04 x [3.9..3.13]; windows 3.11 (blocking), windows 3.9 and 3.13 `preview: true` (continue-on-error); macos 3.11 only; ubuntu-26.04 3.11/3.13 preview. No 3.14 and no 3.12 off Linux. The owner's default interpreter on this machine is 3.14 (py -0p), and e873e5d (3.14 ast.dump) was found locally, not by CI.",
+    "failure_scenario": "A 3.14-only or Windows-3.9-only regression (the ast.dump class, tomli fallback with Windows paths, 45-F1/F2/F3) ships green; the blocking legs cannot see it.",
+    "proposed_fix": "Add python 3.14 (ubuntu-24.04 if a build exists, else as preview) and promote windows 3.9 from preview to blocking once its first green run is recorded; add a cross-version canary test (F1/F3 style) so version drift is caught on any leg that does run.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "RESOLVED in 10a487c"
+  },
+  {
+    "id": "45-F5",
+    "sev": "P2",
+    "title": "No cross-version equivalence test: nothing runs the same gate fixtures on two interpreters and compares keys, so every unparse/dump/stdlib-names divergence is found by accident",
+    "evidence": "tests/ has no test comparing outputs across interpreters (ls tests | grep -i 'platform|windows|crlf|version' lists only tool-version/pin tests). Three divergences were found in this audit within one hour by running the same code on 3.9/3.11/3.13/3.14 (audit45/*.py).",
+    "failure_scenario": "The next ast.dump/unparse/stdlib difference (3.15) is again found only by a consumer's red shard.",
+    "proposed_fix": "A script/test that, when a second interpreter is available (uv python find 3.9), runs a fixed list of unparse-keyed and dump-keyed gates on a golden corpus in a subprocess for each interpreter and asserts equal key sets; run in the CI matrix leg that has both. Golden-key test for unparse of a frozen list of expression shapes (lambda, for-target, starred subscript).",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "45-F6",
+    "sev": "P3",
+    "title": "atomic_write_text and install_safe_hook do os.replace with no retry on Windows PermissionError, while _mutation_runner.rmtree has a 3-attempt retry",
+    "evidence": "_core/baseline.py:69, install_safe_hook.py:96, code_audit/_scan_cache.py:98, api_floor.py:212 call os.replace(tmp, target) once; _mutation_runner.py:437-450 retries 3 times with chmod for the same Windows file-locking reason. Not reproduced (no AV/indexer lock available); read-only finding.",
+    "failure_scenario": "A baseline refresh or hook install raises PermissionError when an editor/indexer holds the target open on Windows; the temp file is cleaned, the refresh fails once and succeeds on rerun.",
+    "proposed_fix": "Put a short retry (3 tries, 0.05-0.2s backoff on PermissionError, Windows only) inside _core.atomic_write_text and make the other three call it.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "45-F7",
+    "sev": "P3",
+    "title": "Stale 'supports 3.8' comments and dead ast.unparse/hasattr fallbacks contradict requires-python >= 3.9",
+    "evidence": "pyproject.toml:13 requires-python >=3.9; meta_test_utils.py:733 says 'this package supports 3.8' above a hand-rolled removesuffix; code_audit/default_via_or.py:206-225 and assert_in_loop.py:100-104 keep `getattr(ast, 'unparse', ast.dump)` fallbacks that can never fire on 3.9+ but would give a different (dump-based) key if they did; timezone_honest.py:142 and baseline_trend.py:169 use removeprefix/removesuffix freely, so the 3.8 claim is already false.",
+    "failure_scenario": "Cosmetic today; the fallbacks are an untested second key format.",
+    "proposed_fix": "Delete the 3.8 fallbacks and comments, call ast.unparse directly (or the F1 helper).",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "45-F8",
+    "sev": "P3",
+    "title": "Checked and found robust (recorded to prevent re-audit): CRLF text gates, bash on Windows, tomllib fallback, subprocess executable names, committed line endings",
+    "evidence": "audit45/crlf.py: find_skip_as_pass and find_wallclock_test_waits return identical findings for LF and CRLF files on 3.9 and 3.14. guard_population._bash() avoids System32 WSL bash (guard_population.py:165-181). _toml_compat.py falls back to tomli; all 385 modules import on 3.9/3.11/3.13/3.14 (audit45/imp.py) with only third-party ImportErrors on bare interpreters (tomli/yaml/pytest not installed there). _core/git.py:32 handles the Windows cwd-before-PATH trap; committed_line_endings reads index blobs; no open()/read_text() without encoding in src; .gitattributes forces eol=lf.",
+    "failure_scenario": "none",
+    "proposed_fix": "none",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  }
+]
