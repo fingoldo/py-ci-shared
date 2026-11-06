@@ -104,6 +104,9 @@ _CONTENT_METHODS = frozenset({"count", "search", "match", "fullmatch", "findall"
 #: the `dis` functions. Reader names are added per call.
 _TRIGGER_TOKENS = ("read_text", "read_bytes", "readlines", ".read(", "open(", "co_code", "co_consts", "co_names", "get_instructions", "code_info", "dis(")
 _POSITION_METHODS = frozenset({"find", "index", "rfind", "rindex"})
+#: Iterators whose items are matches or parsed nodes of a text, not its lines: a comprehension over them yields extracted
+#: names, so the text it iterated over does not travel into its result (``splitlines`` lines ARE text and stay out).
+_MATCH_ITERATORS = frozenset({"finditer", "findall", "parse", "walk", "iter_child_nodes"})
 #: Pytest fixtures whose paths hold output the code under test wrote: reading it back is a behavioural check.
 _TMP_ROOTS = frozenset({"tmp_path", "tmpdir", "tmp_path_factory", "tmpdir_factory"})
 _CODE_LIKE = re.compile(
@@ -220,7 +223,10 @@ class _Detector:
             if self._is_deserialiser(sub):
                 continue
             yield sub
-            stack.extend(child_nodes(sub))
+            if isinstance(sub, ast.comprehension) and isinstance(sub.iter, ast.Call) and _call_name(sub.iter) in _MATCH_ITERATORS:
+                stack.extend(child for child in child_nodes(sub) if child is not sub.iter)
+            else:
+                stack.extend(child_nodes(sub))
 
     def reader_kind(self, node: ast.AST, path_names: set[str], tainted: set[str]) -> str | None:
         """How *node* yields source text, or None. Checks readers, file reads, helpers and tainted names."""
@@ -556,6 +562,8 @@ def _fails_in_body(node: ast.If) -> bool:
 
 def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: set[str]) -> Optional[str]:
     """How *test* checks the content of source text (a reader call or a name holding its text), or None."""
+    if _is_output_against_source_read(det, test, scope):
+        return None
     kind = det.reader_kind(test, scope.paths, scope.tainted)
     if kind is None:
         if _is_golden_comparison(test, scope.tainted):
@@ -564,6 +572,34 @@ def _source_claim_kind(det: _Detector, test: ast.AST, scope: _Scope, matches: se
         used = next((s.id for s in _fast_walk(test) if isinstance(s, ast.Name) and s.id in scope.tainted and id(s) not in mappings), None)
         kind = f"text held in `{used}`" if used and _text_uses(test, scope.tainted) else None
     return kind if kind and (_tests_content(test) or _uses(test, matches)) else None
+
+
+def _is_output_against_source_read(det: _Detector, test: ast.AST, scope: _Scope) -> bool:
+    """``closure(p)[k] == Path("pkg/mod.py").read_bytes()``: a call's output compared with a fresh read of a source file.
+
+    The read side is the expected value; the output side must be a call's result or a key of one, so the
+    assertion measures what the call returns. A literal, or a call that takes the text, stays a claim.
+    """
+    if not (isinstance(test, ast.Compare) and len(test.ops) == 1 and isinstance(test.ops[0], (ast.Eq, ast.NotEq))):
+        return False
+    for output, expected in ((test.left, test.comparators[0]), (test.comparators[0], test.left)):
+        if det.reader_kind(expected, scope.paths, scope.tainted) is None:
+            continue
+        if det.reader_kind(output, scope.paths, scope.tainted) is not None or _text_uses(output, scope.tainted):
+            continue
+        call_names = _call_results(scope.body)
+        if any(isinstance(sub, ast.Call) or (isinstance(sub, ast.Name) and sub.id in call_names) for sub in _fast_walk(output)):
+            return True
+    return False
+
+
+def _call_results(body: list[ast.stmt]) -> set[str]:
+    """Names in *body* bound to an expression that contains a call: ``contents = closure(tmp)`` holds what a call returned."""
+    out: set[str] = set()
+    for node in _walk_scope(body):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and node.value is not None and any(isinstance(s, ast.Call) for s in _fast_walk(node.value)):
+            out.update(_target_names(node))
+    return out
 
 
 def _is_golden_comparison(test: ast.AST, tainted: set[str]) -> bool:

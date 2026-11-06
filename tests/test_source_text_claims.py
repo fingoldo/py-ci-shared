@@ -469,3 +469,55 @@ class TestALineMarkerExemptsOnlyItsOwnCheck:
     def test_a_marker_for_another_check_does_not_exempt(self, tmp_path):
         body = self.HEAD + self.FLAGGED + "  # audit-exempt: assert_in_loop -- a long enough reason for some other check\n"
         assert _lines(tmp_path, body) != []
+
+
+class TestAMatchComprehensionIsStructureNotText:
+    """``{m.group(1) for m in PAT.finditer(path.read_text())}`` yields the names a regex extracted, not the text. Only the
+    iterator's matches reach the comprehension's result, so a claim about that set measures the extraction."""
+
+    HEAD = "import re\nfrom pathlib import Path\nSCHEMA = Path('storage/schema.sql')\n\n\ndef test_x():\n"
+
+    def test_a_set_of_names_matched_out_of_a_schema_is_not_a_claim(self, tmp_path):
+        body = self.HEAD + "    known = {m.group(1) for m in re.finditer(r'CREATE TABLE ([a-z_]+)', SCHEMA.read_text())}\n    assert 'llm' in known\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_the_names_accumulated_by_augassign_are_not_a_claim(self, tmp_path):
+        body = self.HEAD + (
+            "    known = set()\n    known |= {m.group(1).lower() for m in re.finditer(r'CREATE TABLE ([a-z_]+)', SCHEMA.read_text())}\n"
+            "    assert 'llm' in known\n"
+        )
+        assert _lines(tmp_path, body) == []
+
+    def test_the_text_itself_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    text = SCHEMA.read_text()\n    assert 'CREATE TABLE llm' in text\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_lines_of_the_text_are_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    lines = {ln for ln in SCHEMA.read_text().splitlines()}\n    assert 'CREATE TABLE llm' in lines\n"
+        assert _lines(tmp_path, body) != []
+
+
+class TestAFunctionsOutputEqualToTheSourceFileIsNotAClaim:
+    """``closure(p)[k] == Path("pkg/mod.py").read_bytes()`` checks what the function returns against the file's own bytes."""
+
+    HEAD = "from pathlib import Path\n\n\ndef test_x(tmp_path):\n"
+
+    def test_a_call_result_equal_to_a_fresh_read_of_the_source_is_not_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert closure(tmp_path)['pkg/mod.py'] == Path('pkg/mod.py').read_bytes()\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_the_read_on_the_left_is_not_a_claim_either(self, tmp_path):
+        body = self.HEAD + "    assert Path('pkg/mod.py').read_text() == closure(tmp_path)\n"
+        assert _lines(tmp_path, body) == []
+
+    def test_a_call_that_takes_the_read_text_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert normalise(Path('pkg/mod.py').read_bytes()) == b'x'\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_literal_against_a_read_is_still_a_claim(self, tmp_path):
+        body = self.HEAD + "    assert 'def f' == Path('pkg/mod.py').read_text()\n"
+        assert _lines(tmp_path, body) != []
+
+    def test_a_key_of_a_mapping_a_call_returned_is_not_a_claim(self, tmp_path):
+        body = self.HEAD + "    contents = closure(tmp_path)\n    assert contents['pkg/mod.py'] == Path('pkg/mod.py').read_bytes()\n"
+        assert _lines(tmp_path, body) == []
