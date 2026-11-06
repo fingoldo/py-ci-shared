@@ -112,8 +112,22 @@ def precommit_ruff_revs(precommit_text: str) -> list[str]:
     for repo in repos if isinstance(repos, list) else []:
         if isinstance(repo, dict) and _RUFF_PRE_COMMIT_URL.match(str(repo.get("repo", "")).strip()) and repo.get("rev") is not None:
             rev = str(repo["rev"]).strip()
-            revs.append(rev[1:] if rev[:1] in ("v", "V") else rev)
+            if _FULL_SHA.fullmatch(rev):
+                # A commit SHA is pinned for immutability; the release it is must be named in a ``# vX.Y.Z`` comment on the same line.
+                # YAML drops comments, so the version is read from the text. Without it the rev is reported as unversioned.
+                named = _sha_comment_pattern(rev).search(precommit_text)
+                revs.append(named.group(1) if named else f"sha:{rev}")
+            else:
+                revs.append(rev[1:] if rev[:1] in ("v", "V") else rev)
     return revs
+
+
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def _sha_comment_pattern(rev: str) -> "re.Pattern[str]":
+    """Pattern for the ``# vX.Y.Z`` comment that names the release of the commit ``rev`` in a pre-commit config."""
+    return re.compile(re.escape(rev) + r"[ \t]+#[ \t]*v(\d+(?:\.\d+)*)")
 
 
 def find_problems(
@@ -124,8 +138,12 @@ def find_problems(
     """One message per disagreement between the shared version, the repo's pin, the installed tool and
     any ``ruff-pre-commit`` rev."""
     problems: list[str] = [
-        f"ruff: .pre-commit-config.yaml runs astral-sh/ruff-pre-commit at v{rev} while py-ci-shared's "
-        f"workflows run {RUFF_VERSION}. Set its rev to v{RUFF_VERSION}"
+        (
+            f"ruff: .pre-commit-config.yaml pins astral-sh/ruff-pre-commit to a commit SHA with no '# v{RUFF_VERSION}' comment naming its release"
+            if rev.startswith("sha:")
+            else f"ruff: .pre-commit-config.yaml runs astral-sh/ruff-pre-commit at v{rev} while py-ci-shared's "
+            f"workflows run {RUFF_VERSION}. Set its rev to v{RUFF_VERSION}"
+        )
         for rev in precommit_ruff_revs(precommit_text)
         if rev != RUFF_VERSION
     ]

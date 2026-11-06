@@ -84,6 +84,31 @@ class TestRuffPreCommitRev:
 
         assert ptv.precommit_ruff_revs(text) == ["0.1.0", "0.2.0"]
 
+    _SHA = "f12be1ebaa5351c1fc76472de98db2c3446c8253"  # pragma: allowlist secret
+    _SHA_CONFIG = "repos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n    rev: {sha}{comment}\n    hooks:\n      - id: ruff\n"
+
+    def test_a_sha_pin_naming_the_shared_version_passes(self) -> None:
+        text = self._SHA_CONFIG.format(sha=self._SHA, comment=f"  # v{RUFF_VERSION}  # pragma: allowlist secret")
+
+        assert ptv.find_problems(_PIN, installed=_matching, precommit_text=text) == []
+
+    def test_a_sha_pin_naming_another_release_is_named(self) -> None:
+        text = self._SHA_CONFIG.format(sha=self._SHA, comment="  # v0.11.0")
+
+        problems = ptv.find_problems(_PIN, installed=_matching, precommit_text=text)
+
+        assert len(problems) == 1 and "ruff-pre-commit at v0.11.0" in problems[0]
+
+    def test_a_sha_pin_without_a_version_comment_is_refused(self) -> None:
+        problems = ptv.find_problems(_PIN, installed=_matching, precommit_text=self._SHA_CONFIG.format(sha=self._SHA, comment=""))
+
+        assert len(problems) == 1 and "commit SHA with no" in problems[0]
+
+    def test_the_sha_comment_version_is_what_is_read(self) -> None:
+        text = self._SHA_CONFIG.format(sha=self._SHA, comment=f"  # v{RUFF_VERSION}")
+
+        assert ptv.precommit_ruff_revs(text) == [RUFF_VERSION]
+
 
 def test_this_repos_own_dev_pin_is_the_shared_version() -> None:
     """timezone_honest's tests run the dev-extra ruff; it must be the version the workflows run."""
