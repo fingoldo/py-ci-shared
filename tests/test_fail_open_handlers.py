@@ -607,8 +607,9 @@ def test_a_warning_handler_that_keeps_the_element_is_still_admit_on_error(tmp_pa
         """,
     ],
 )
-def test_an_unparseable_value_that_returns_none_is_not_flagged(tmp_path, body):
-    assert _rules(tmp_path, body) == []
+def test_an_unparseable_value_that_returns_none_is_flagged(tmp_path, body):
+    # The silent_default_return spec flags a parse that falls back to a default (test_silent_default_return.py).
+    assert _rules(tmp_path, body) == ["silent_default_return"]
 
 
 def test_a_parse_guard_around_a_lookup_is_still_flagged(tmp_path):

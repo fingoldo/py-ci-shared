@@ -249,31 +249,6 @@ _ABSENT_ERRORS = frozenset({"FileNotFoundError"})
 _CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNORECASE)
 
 
-#: A parse of one input value: the only calls a guarded parse may make (no I/O, no lookups, no model calls).
-_PARSE_CALLS = frozenset(
-    {
-        "int",
-        "float",
-        "date",
-        "datetime",
-        "Decimal",
-        "fromisoformat",
-        "strptime",
-        "split",
-        "rsplit",
-        "partition",
-        "strip",
-        "lstrip",
-        "rstrip",
-        "lower",
-        "upper",
-        "isdigit",
-        "append",
-        "len",
-    }
-)
-#: The parse errors a value-parse raises.
-_PARSE_ERRORS = frozenset({"ValueError", "TypeError"})
 #: A local SQLite read: the only failure that a missing table or file raises through ``execute``.
 _SQLITE_READ_CALLS = frozenset({"execute", "fetchone", "fetchall"})
 
@@ -281,16 +256,6 @@ _SQLITE_READ_CALLS = frozenset({"execute", "fetchone", "fetchall"})
 def _call_names(nodes: list[ast.stmt]) -> set[str]:
     """Every name a call in *nodes* invokes (``int``, ``split``, ``execute``)."""
     return {name for stmt in nodes for n in _fast_walk(stmt) if (name := _call_attr(n)) is not None}
-
-
-def _parse_fallback(handler: ast.ExceptHandler, try_node: Optional[ast.Try]) -> bool:
-    """True for ``try: <parse one value> except (ValueError, TypeError): return <default>``: the input is unparseable and the
-    caller receives "no value". Only a try whose body makes parse calls and nothing else qualifies."""
-    caught = _caught_names(handler)
-    if try_node is None or not caught or not caught <= _PARSE_ERRORS:
-        return False
-    calls = _call_names(try_node.body)
-    return bool(calls) and calls <= _PARSE_CALLS
 
 
 def _local_db_fallback(handler: ast.ExceptHandler, try_node: Optional[ast.Try]) -> bool:
@@ -302,12 +267,13 @@ def _local_db_fallback(handler: ast.ExceptHandler, try_node: Optional[ast.Try]) 
 
 
 def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str, try_node: Optional[ast.Try] = None) -> bool:
-    """True for the fallbacks that are correct by construction: an optional import, a missing file, a cache miss, an
-    unparseable input value, or a local SQLite table that is not installed."""
+    """True for the fallbacks that are correct by construction: an optional import, a missing file, a cache miss, or a
+    local SQLite table that is not installed. A parse that falls back to a default is NOT one of them: the existing
+    silent_default_return spec flags ``try: return int(text) except ValueError: return default``."""
     caught = _caught_names(handler)
     if caught and (caught <= _OPTIONAL_IMPORT_ERRORS or caught <= _ABSENT_ERRORS):
         return True
-    if _parse_fallback(handler, try_node) or _local_db_fallback(handler, try_node):
+    if _local_db_fallback(handler, try_node):
         return True
     return bool(_CACHE_MISS_NAME_RE.search(fn_name))
 
