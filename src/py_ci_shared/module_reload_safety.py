@@ -28,6 +28,7 @@ site in a file that names one is reported with that warning, since only a subpro
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -364,7 +365,7 @@ def find_unpaired_reloads(
 
 
 def _statement_text(source: str, node: ast.AST) -> str:
-    return " ".join((ast.get_source_segment(source, node) or ast.unparse(node)).split())
+    return " ".join((ast.get_source_segment(source, node) or unparse_stable(node)).split())
 
 
 def find_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = ()) -> list[ReloadSite]:

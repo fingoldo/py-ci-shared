@@ -17,6 +17,7 @@ strings), or a name imported from a module outside the scan (``p.kind is inspect
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 import os
 from collections.abc import Iterable, Iterator
@@ -233,7 +234,7 @@ def _find(scan: ScanResult, base: Optional[Path], names: "set[str] | None", root
                 hit = any(index.is_string_constant(side, here, aliases) for side in sides) and not any(index.is_external(side, aliases) for side in sides)
             if hit:
                 rel = relative_posix(parsed.path, root) if root else parsed.path.as_posix()
-                problems.append(f"{rel}:{node.lineno}: `{ast.unparse(node)[:100]}` compares a string constant by identity -- use ==")
+                problems.append(f"{rel}:{node.lineno}: `{unparse_stable(node)[:100]}` compares a string constant by identity -- use ==")
     return problems
 
 

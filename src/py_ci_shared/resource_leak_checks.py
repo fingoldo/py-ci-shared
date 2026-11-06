@@ -33,6 +33,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from ._ci_install_parts import is_stdlib
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["STATE_CHECKS", "StateSnapshot", "restore_state", "state_leaks", "take_state"]
@@ -89,10 +91,9 @@ def _permitted(kind: str, value: str, allow: Iterable[str]) -> bool:
 
 def _imported_library(before: StateSnapshot) -> bool:
     """A module outside the runner and the standard library was imported since *before*: a first import can configure."""
-    stdlib: frozenset[str] = getattr(sys, "stdlib_module_names", frozenset())
     for module in set(sys.modules) - before.modules:
         top = module.split(".", 1)[0]
-        if top in _RUNNER_MODULES or top.startswith("_pytest") or top.startswith("test_") or top == "conftest" or top in stdlib:
+        if top in _RUNNER_MODULES or top.startswith("_pytest") or top.startswith("test_") or top == "conftest" or is_stdlib(top):
             continue
         return True
     return False

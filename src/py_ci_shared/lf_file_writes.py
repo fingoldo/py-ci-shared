@@ -29,6 +29,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -129,7 +130,7 @@ class _Resolver:
 
     def lf_required(self, expr: ast.expr, scopes: Sequence[int]) -> bool:
         chain = self.exprs(expr, scopes)
-        texts = [ast.unparse(e) for e in chain]
+        texts = [unparse_stable(e) for e in chain]
         if any(_TEMP.search(t) for t in texts):
             return False  # a scratch file in a temp directory is never committed or linted
         if self.suffix_re is not None and any(self.suffix_re.search(t) for t in texts):
@@ -199,7 +200,7 @@ def _file_findings(parsed: ParsedFile, suffixes: Sequence[str], name_pattern: Op
             continue
         if not resolver.lf_required(target, scopes.get(id(node), [id(tree)])):
             continue
-        shown = ast.unparse(target)
+        shown = unparse_stable(target)
         shown = shown if len(shown) <= _MAX_SHOWN else shown[: _MAX_SHOWN - 3] + "..."
         where = functions.get(id(node), "<module>")
         out.append(Finding(parsed.rel, node.lineno, RULE, f"{where}: text-mode write to {shown} without newline=, so Windows writes CRLF"))

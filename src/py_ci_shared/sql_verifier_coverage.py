@@ -17,6 +17,7 @@ in ``pkg/__init__.py`` is ``pkg.NAME``. A file that cannot be read or parsed fai
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -214,7 +215,7 @@ def verifier_lists(verifier: Path, *, listed_name: str = "STATEMENTS", excluded_
             for key, reason in zip(value.keys, value.values):
                 if key is not None and _string_value(key):
                     text = _string_value(reason)
-                    excluded[_string_value(key) or ""] = text if text is not None else ast.unparse(reason)
+                    excluded[_string_value(key) or ""] = text if text is not None else unparse_stable(reason)
     return listed, excluded
 
 

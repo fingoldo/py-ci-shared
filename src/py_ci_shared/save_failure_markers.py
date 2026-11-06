@@ -25,6 +25,7 @@ be read or parsed.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import io
 import logging
 import re
@@ -65,7 +66,7 @@ def _leading_text(node: ast.expr) -> Optional[str]:
             if isinstance(part, ast.Constant) and isinstance(part.value, str):
                 out.append(part.value)
             elif isinstance(part, ast.FormattedValue):
-                out.append("{" + ast.unparse(part.value) + "}")
+                out.append("{" + unparse_stable(part.value) + "}")
             if ":" in "".join(out):
                 break
         return "".join(out)

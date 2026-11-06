@@ -20,6 +20,7 @@ from the bytecode. The subject is the source.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
@@ -82,7 +83,7 @@ def collect_value_bearing_asserts(
             if isinstance(node, ast.Assert):
                 seen += 1
                 if not is_narrowing_assert(node.test, allow_isinstance=allow_isinstance, strict=strict):
-                    expr = ast.unparse(node.test)
+                    expr = unparse_stable(node.test)
                     findings.append(Finding(f.rel, node.lineno, RULE, expr, key=_key(f.rel, expr)))
     findings.sort(key=lambda x: (x.path, x.line))
     return findings, seen, scan

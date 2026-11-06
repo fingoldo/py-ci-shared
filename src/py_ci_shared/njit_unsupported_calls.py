@@ -24,6 +24,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional, Union
@@ -76,7 +77,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list
             seen.add(call.lineno)
             if 1 <= call.lineno <= len(lines) and SUPPRESSION in lines[call.lineno - 1]:
                 continue
-            shown = name or ast.unparse(call.func)
+            shown = name or unparse_stable(call.func)
             out.append(Finding(rel, call.lineno, RULE, f"'{shown}' inside compiled '{func.name}': {reason}"))
     return out
 

@@ -29,6 +29,7 @@ see will not be caught, and the honest answer to that is the next widening, in o
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import io
 import logging
 import re
@@ -137,13 +138,13 @@ def _read_subject(call: ast.Call, aliases: ImportAliases) -> Optional[str]:
     """Source text of what *call* reads or parses, or ``None`` when it is not a read/parse call."""
     func = call.func
     if isinstance(func, ast.Attribute) and func.attr in _READ_ATTRS:
-        return ast.unparse(func.value)
+        return unparse_stable(func.value)
     if isinstance(func, ast.Attribute) and func.attr in ("read", "readlines") and isinstance(func.value, ast.Call):
         opener = func.value
         if aliases.qualified_name(opener) in _OPEN_NAMES and opener.args:
-            return ast.unparse(opener.args[0])
+            return unparse_stable(opener.args[0])
     if aliases.qualified_name(call) in _PARSE_NAMES and call.args:
-        return ast.unparse(call.args[0])
+        return unparse_stable(call.args[0])
     return None
 
 

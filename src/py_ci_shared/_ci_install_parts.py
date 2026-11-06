@@ -7,6 +7,7 @@ arguments of ``pip install``/``uv pip install``, read statically from the repo.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import functools
 import logging
 import os
@@ -572,7 +573,7 @@ def _any_of(ps: Sequence[Guard]) -> Guard:
 
 
 def _is_version_info(node: ast.expr) -> bool:
-    return ast.unparse(node.value if isinstance(node, ast.Subscript) else node) in ("sys.version_info", "version_info")
+    return unparse_stable(node.value if isinstance(node, ast.Subscript) else node) in ("sys.version_info", "version_info")
 
 
 _COMPARE_OPS = {ast.Lt: "<", ast.LtE: "<=", ast.Gt: ">", ast.GtE: ">=", ast.Eq: "==", ast.NotEq: "!="}
@@ -610,7 +611,7 @@ def version_guard(test: ast.expr) -> Optional[Guard]:
 
 
 def is_type_checking(test: ast.expr) -> bool:
-    return ast.unparse(test) in ("TYPE_CHECKING", "typing.TYPE_CHECKING")
+    return unparse_stable(test) in ("TYPE_CHECKING", "typing.TYPE_CHECKING")
 
 
 def catches_import_error(node: ast.Try) -> bool:
@@ -618,7 +619,7 @@ def catches_import_error(node: ast.Try) -> bool:
         if handler.type is None:
             return True
         names = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
-        if any(ast.unparse(n).split(".")[-1] in _IMPORT_ERRORS for n in names):
+        if any(unparse_stable(n).split(".")[-1] in _IMPORT_ERRORS for n in names):
             return True
     return False
 
@@ -701,8 +702,11 @@ def is_stdlib(name: str) -> bool:
         logger.debug("could not resolve module spec, treated as not stdlib: %s", type(exc).__name__)
         return False
     origin = getattr(spec, "origin", None) or ""
-    stdlib = sysconfig.get_paths().get("stdlib", "")
-    return bool(origin and stdlib and os.path.normcase(origin).startswith(os.path.normcase(stdlib)) and "site-packages" not in origin)
+    paths = sysconfig.get_paths()
+    # Windows keeps the compiled standard-library extensions (``_zoneinfo``, ``_ssl``) in ``<prefix>\DLLs``, outside ``Lib``.
+    roots = [paths.get(k, "") for k in ("stdlib", "platstdlib")] + [os.path.join(sys.base_prefix, "DLLs")]
+    in_stdlib = any(root and os.path.normcase(origin).startswith(os.path.normcase(root)) for root in roots)
+    return bool(origin and in_stdlib and "site-packages" not in origin)
 
 
 @functools.lru_cache(maxsize=1)

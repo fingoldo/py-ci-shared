@@ -37,6 +37,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
@@ -249,7 +250,7 @@ def _moment_finding(node: ast.BinOp, anchor: ast.AST, rel: str, lines: list[str]
     lo, hi = getattr(anchor, "lineno", node.lineno), getattr(anchor, "end_lineno", None) or node.lineno
     if _suppressed(lines, lo, hi):
         return None
-    shown = ast.unparse(node)
+    shown = unparse_stable(node)
     shown = shown if len(shown) <= 100 else shown[:97] + "..."
     return Finding(rel, node.lineno, RULE, f"moment from raw power sums cancels catastrophically on large-offset data: {shown}")
 

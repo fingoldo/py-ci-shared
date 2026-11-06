@@ -51,6 +51,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Collection, Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
@@ -225,7 +226,7 @@ def _function_findings(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], rel: 
             continue
         if _suppressed(lines, node.lineno):
             continue
-        shown = ast.unparse(call)
+        shown = unparse_stable(call)
         shown = shown if len(shown) <= 100 else shown[:97] + "..."
         out.append(
             Finding(
@@ -359,7 +360,7 @@ def _heavy_function_findings(
             continue
         if _heavy_marked(lines, call):
             continue
-        shown = ast.unparse(call)
+        shown = unparse_stable(call)
         shown = shown if len(shown) <= 100 else shown[:97] + "..."
         out.append(Finding(rel, call.lineno, HEAVY_RULE, f"every operand is loop-invariant, so this O(N log N) work repeats per iteration: {shown}"))
     return out

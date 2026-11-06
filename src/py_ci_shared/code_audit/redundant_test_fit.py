@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 
 import ast
+from .._core.unparse import unparse_stable
 from pathlib import Path
 
 from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
@@ -124,7 +125,7 @@ def _call_signature(call: ast.Call) -> str | None:
         return None
     # ast.unparse is available on every supported Python (requires-python >=3.9). The signature is only ever
     # compared for EQUALITY, and an unparse failure is handled below by skipping that one call site.
-    _unparse = ast.unparse
+    _unparse = unparse_stable
     try:
         args_repr = ", ".join(_unparse(a) for a in call.args)
         kwargs_repr = ", ".join(f"{kw.arg}={_unparse(kw.value)}" for kw in call.keywords)

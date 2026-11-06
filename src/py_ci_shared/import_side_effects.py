@@ -21,6 +21,7 @@ comment added above one does not re-report it; a baseline entry nothing reproduc
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import json
 import logging
 import os
@@ -119,7 +120,7 @@ def import_time_env_mutations(tree: ast.Module) -> list[tuple[int, str]]:
                 aliases.qualified_name(f) in _ENV_WRITERS
             )
         if hit:
-            out.append((getattr(node, "lineno", 0), ast.unparse(node)[:160]))
+            out.append((getattr(node, "lineno", 0), unparse_stable(node)[:160]))
     return sorted(out)
 
 

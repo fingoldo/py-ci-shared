@@ -29,6 +29,7 @@ functions, matching this package's other modules.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -223,7 +224,7 @@ def find_env_var_reads(files: Iterable[Path], *, reader_funcs: Iterable[str] = (
         default = None
         if isinstance(node, ast.Call):
             default = node.args[1] if len(node.args) > 1 else next((kw.value for kw in node.keywords if kw.arg == "default"), None)
-        out[name] = (Path(parsed.path), node.lineno, ast.unparse(default) if default is not None else None)
+        out[name] = (Path(parsed.path), node.lineno, unparse_stable(default) if default is not None else None)
     return out
 
 

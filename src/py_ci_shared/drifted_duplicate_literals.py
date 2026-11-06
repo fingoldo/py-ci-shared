@@ -40,6 +40,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
@@ -212,7 +213,7 @@ def _ladder_values(node: ast.If, ignore: frozenset[float]) -> tuple[list[float],
 
 
 def _versionish(node: ast.Compare) -> bool:
-    return any(_VERSION_NAME.search(ast.unparse(op)) for op in [node.left, *node.comparators] if _number(op) is None and _numeric_collection(op) is None)
+    return any(_VERSION_NAME.search(unparse_stable(op)) for op in [node.left, *node.comparators] if _number(op) is None and _numeric_collection(op) is None)
 
 
 def _kept(values: Optional[list[float]], ignore: frozenset[float]) -> Optional[frozenset[float]]:

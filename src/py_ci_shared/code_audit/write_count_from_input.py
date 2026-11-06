@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.unparse import unparse_stable
 import re
 from pathlib import Path
 from typing import Union
@@ -247,7 +248,7 @@ def _function_findings(fn: _FuncDef, rel: str, src_lines: list[str], module_cons
                 line=stmt.lineno,
                 snippet=_line_text(src_lines, stmt.lineno),
                 detail=(
-                    f"`{getattr(ast, 'unparse', ast.dump)(target)}` counts len({name}), the rows handed to an insert that can skip "
+                    f"`{unparse_stable(target)}` counts len({name}), the rows handed to an insert that can skip "
                     f"rows (ON CONFLICT DO NOTHING / DO UPDATE ... WHERE / INSERT IGNORE); a re-run reports them "
                     f"all again while writing none. Count what the statement wrote (rowcount, RETURNING, or the "
                     f"table before and after), or name the counter for what it holds (`..._read`)."

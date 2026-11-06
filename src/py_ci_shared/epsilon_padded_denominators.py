@@ -39,6 +39,7 @@ check that gets baselined.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -118,7 +119,7 @@ def _falls_off_geometrically(node: ast.AST) -> bool:
         # ``x * x`` is ``x ** 2`` written out; comparing the rendered operands catches it without
         # resolving names, which a parse-only check cannot do anyway.
         try:
-            return ast.unparse(node.left) == ast.unparse(node.right)
+            return unparse_stable(node.left) == unparse_stable(node.right)
         except Exception as exc:  # best-effort: unparse of a diagnostic rendering; the finding is reported without it
             logger.warning("epsilon_padded_denominators.py handler at line 96 substituted a fallback for %s: %s", type(exc).__name__, exc)
             logger.debug("could not unparse expression pair: %s", type(exc).__name__)
@@ -145,7 +146,7 @@ def _is_padded_power(denominator: ast.AST, consts: "Optional[dict[str, float]]" 
 
 def _report(path: Path, node: ast.AST) -> Finding:
     try:
-        rendered = ast.unparse(node)
+        rendered = unparse_stable(node)
     except Exception as exc:
         logger.warning("epsilon_padded_denominators.py line 123: substituted a fallback after %s: %s", type(exc).__name__, exc)
         rendered = "<unrenderable>"

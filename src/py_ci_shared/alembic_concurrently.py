@@ -24,6 +24,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
@@ -126,7 +127,7 @@ def collect_unguarded_concurrently(versions_dir: Path) -> "tuple[list[Finding], 
     """``(findings, scan)``: one Finding per unguarded call (key: file name + normalised call), unparsed files in the scan."""
     versions_dir = Path(versions_dir)
     scan = scan_python(sorted(versions_dir.glob("*.py")), root=versions_dir, min_files=1)
-    findings = [Finding(f.rel, call.lineno, RULE, ast.unparse(call)) for f in scan for call in _unguarded_calls(f.tree)]
+    findings = [Finding(f.rel, call.lineno, RULE, unparse_stable(call)) for f in scan for call in _unguarded_calls(f.tree)]
     return findings, scan
 
 

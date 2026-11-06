@@ -27,6 +27,7 @@ content-normalising case and is still reported.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -61,11 +62,11 @@ def _sorts_keys(call: ast.Call, name: str) -> bool:
         if kw.arg == "sort_keys":
             return not (isinstance(kw.value, ast.Constant) and not kw.value.value)
         if kw.arg == "option" and name.startswith("orjson"):
-            return "OPT_SORT_KEYS" in ast.unparse(kw.value)
+            return "OPT_SORT_KEYS" in unparse_stable(kw.value)
         if kw.arg is None:
             return True  # **kwargs may carry sort_keys: not provable either way, so not reported
     if name.startswith("orjson") and len(call.args) > 2:
-        return "OPT_SORT_KEYS" in ast.unparse(call.args[2])
+        return "OPT_SORT_KEYS" in unparse_stable(call.args[2])
     return False
 
 
@@ -113,9 +114,9 @@ def _sink_reason(dumps: ast.Call, scope: _Scope, aliases: ImportAliases, tainted
     while id(node) in scope.parents:
         parent = scope.parents[id(node)]
         if isinstance(parent, ast.Call) and node is not parent.func and _is_hash_sink(parent, aliases):
-            return f"hashed by {ast.unparse(parent.func)}(...)"
+            return f"hashed by {unparse_stable(parent.func)}(...)"
         if isinstance(parent, ast.Subscript) and node is parent.slice:
-            return f"used as the key of {ast.unparse(parent.value)}[...]"
+            return f"used as the key of {unparse_stable(parent.value)}[...]"
         if (
             isinstance(parent, ast.Call)
             and isinstance(parent.func, ast.Attribute)
@@ -123,7 +124,7 @@ def _sink_reason(dumps: ast.Call, scope: _Scope, aliases: ImportAliases, tainted
             and parent.args
             and node is parent.args[0]
         ):
-            return f"used as the key of {ast.unparse(parent.func)}(...)"
+            return f"used as the key of {unparse_stable(parent.func)}(...)"
         if isinstance(parent, ast.Assign) and len(parent.targets) == 1 and isinstance(parent.targets[0], ast.Name):
             target = parent.targets[0].id
             if _KEY_NAME.search(target):
@@ -170,7 +171,7 @@ def _tainted_names(scope: _Scope, aliases: ImportAliases) -> dict[str, str]:
         if isinstance(n, ast.Call) and _is_hash_sink(n, aliases):
             for sub in _arg_nodes(n):
                 if isinstance(sub, ast.Name):
-                    out.setdefault(sub.id, f"reaches {ast.unparse(n.func)}(...) through `{sub.id}`")
+                    out.setdefault(sub.id, f"reaches {unparse_stable(n.func)}(...) through `{sub.id}`")
     return out
 
 
@@ -190,7 +191,7 @@ def _scope_findings(f: ParsedFile, fn: _FunctionNode, aliases: ImportAliases, li
             continue
         reason = _sink_reason(n, scope, aliases, tainted)
         if reason is not None and not _is_exact_bytes(n, scope, wire):
-            out.append(Finding(f.rel, n.lineno, RULE, f"{where}: `{name}({ast.unparse(n.args[0])[:60]})` without key sorting is {reason}"))
+            out.append(Finding(f.rel, n.lineno, RULE, f"{where}: `{name}({unparse_stable(n.args[0])[:60]})` without key sorting is {reason}"))
     return out
 
 

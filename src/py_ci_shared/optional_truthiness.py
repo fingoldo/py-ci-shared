@@ -42,6 +42,7 @@ excuse a site: ``set_params`` bypasses it (the reason 1256fff4d fixed ``max_refi
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 import re
 from collections import Counter
@@ -73,7 +74,7 @@ def _union_members(annotation: ast.AST) -> list[str]:
     if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
         return _union_members(annotation.left) + _union_members(annotation.right)
     if isinstance(annotation, ast.Subscript):
-        base = ast.unparse(annotation.value).split(".")[-1]
+        base = unparse_stable(annotation.value).split(".")[-1]
         inner = annotation.slice
         if base == "Annotated":
             first = inner.elts[0] if isinstance(inner, ast.Tuple) and inner.elts else inner
@@ -83,7 +84,7 @@ def _union_members(annotation: ast.AST) -> list[str]:
             # Optional[X] means X | None: the None is implicit and has to be added, or the
             # whole spelling reads as non-optional.
             return [*members, "None"] if base == "Optional" else members
-        return [ast.unparse(annotation)]  # dict[str, int] stays one opaque member
+        return [unparse_stable(annotation)]  # dict[str, int] stays one opaque member
     if isinstance(annotation, ast.Constant) and annotation.value is None:
         return ["None"]
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
@@ -93,7 +94,7 @@ def _union_members(annotation: ast.AST) -> list[str]:
         except SyntaxError as exc:
             logger.warning("string annotation %r does not parse, kept as one opaque member and not split: %s", annotation.value, type(exc).__name__)
             return [annotation.value]
-    return [ast.unparse(annotation)]
+    return [unparse_stable(annotation)]
 
 
 def _optional_of_meaningful_falsy(annotation: ast.AST | None) -> bool:
@@ -299,7 +300,7 @@ def _self_name(fn: _FuncLike, in_class: bool) -> "Optional[str]":
     positional = list(fn.args.posonlyargs) + list(fn.args.args)
     if not positional:
         return None
-    decorators = {ast.unparse(d).split(".")[-1] for d in fn.decorator_list}
+    decorators = {unparse_stable(d).split(".")[-1] for d in fn.decorator_list}
     if in_class and not decorators & {"staticmethod", "classmethod"}:
         return positional[0].arg
     return "self" if positional[0].arg == "self" else None
@@ -430,7 +431,7 @@ def _scan_attr_function(fn: _FuncLike, scope: _Scope, model: _AttrModel, bound: 
                     scope.carried[targets[0].id] = attr
         for expr, attr in _truth_tests_of(fn, lambda e: _carried_attr(e, scope, model, bound)):
             why = f"(bound from `self.{attr}`)" if isinstance(expr, ast.Name) else ""
-            out.add((scope.rel, getattr(expr, "lineno", 1), ast.unparse(expr), why))
+            out.add((scope.rel, getattr(expr, "lineno", 1), unparse_stable(expr), why))
         for node in nodes:
             if isinstance(node, ast.Call) and (node.keywords or node.args):
                 _follow_call(node, scope, model, bound, out)

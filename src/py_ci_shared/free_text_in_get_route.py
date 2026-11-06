@@ -33,6 +33,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -101,7 +102,7 @@ def _is_text_annotation(annotation: Optional[ast.AST]) -> bool:
         return True
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         return annotation.value.replace(" ", "") in {"str", "Optional[str]", "str|None", "None|str"}
-    text = ast.unparse(annotation).replace(" ", "")
+    text = unparse_stable(annotation).replace(" ", "")
     if text in {"str", "Optional[str]", "typing.Optional[str]", "str|None", "None|str"}:
         return True
     if text.startswith(("Annotated[", "typing.Annotated[", "typing_extensions.Annotated[")) and isinstance(annotation, ast.Subscript):

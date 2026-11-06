@@ -7,6 +7,7 @@ what the project declares (``[project.dependencies]`` and each extra) and which 
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import functools
 import re
 from collections import deque
@@ -72,8 +73,8 @@ def _import_flags(tree: ast.Module) -> frozenset[str]:
 def _suppresses_import_error(node: Union[ast.With, ast.AsyncWith]) -> bool:
     for item in node.items:
         call = item.context_expr
-        if isinstance(call, ast.Call) and ast.unparse(call.func).split(".")[-1] == "suppress":
-            if any(ast.unparse(a).split(".")[-1] in ("ImportError", "ModuleNotFoundError", "Exception", "BaseException") for a in call.args):
+        if isinstance(call, ast.Call) and unparse_stable(call.func).split(".")[-1] == "suppress":
+            if any(unparse_stable(a).split(".")[-1] in ("ImportError", "ModuleNotFoundError", "Exception", "BaseException") for a in call.args):
                 return True
     return False
 

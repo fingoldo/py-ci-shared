@@ -32,6 +32,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 import re
 from collections.abc import Iterator, Mapping, Sequence
@@ -80,16 +81,16 @@ def _env_write_text(node: ast.AST, aliases: ImportAliases) -> Optional[str]:
     if isinstance(node, (ast.Assign, ast.AugAssign)):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         if any(isinstance(t, ast.Subscript) and _is_environ(t.value, aliases) for t in targets):
-            return ast.unparse(node)[:_MAX_TEXT]
+            return unparse_stable(node)[:_MAX_TEXT]
     elif isinstance(node, ast.Delete):
         if any(isinstance(t, ast.Subscript) and _is_environ(t.value, aliases) for t in node.targets):
-            return ast.unparse(node)[:_MAX_TEXT]
+            return unparse_stable(node)[:_MAX_TEXT]
     elif isinstance(node, ast.Call):
         f = node.func
         if isinstance(f, ast.Attribute) and f.attr in _MUTATING_METHODS and _is_environ(f.value, aliases):
-            return ast.unparse(node)[:_MAX_TEXT]
+            return unparse_stable(node)[:_MAX_TEXT]
         if aliases.qualified_name(f) in _ENV_WRITERS or (isinstance(f, ast.Attribute) and f.attr in ("putenv", "unsetenv")):
-            return ast.unparse(node)[:_MAX_TEXT]
+            return unparse_stable(node)[:_MAX_TEXT]
     return None
 
 
@@ -106,7 +107,7 @@ def _is_scoping_call(expr: ast.AST) -> bool:
     if not isinstance(expr, ast.Call):
         return False
     try:
-        text = ast.unparse(expr.func)
+        text = unparse_stable(expr.func)
     except (
         Exception
     ) as exc:  # pragma: no cover - unparse of an odd node  # best-effort: the fallback only decides whether an odd call node counts as a write; unparse failing is not a real verdict

@@ -40,6 +40,7 @@ A package defines its own ``KEEPALIVES = {...}`` literal (or imports the one her
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -202,7 +203,7 @@ class _Gate:
                 else:
                     out.keys.update(keys)
         else:
-            out.problems.append(f"**{ast.unparse(node)} is a mapping of unknown origin; spread a shared mapping ({', '.join(sorted(self.shared))})")
+            out.problems.append(f"**{unparse_stable(node)} is a mapping of unknown origin; spread a shared mapping ({', '.join(sorted(self.shared))})")
 
     def _candidates(self, name: str, qualified: str, rel: str, out: _Keys) -> list[tuple[str, set[str], bool]]:
         """The definitions a use of *name* in file *rel* can mean: this file's own, else those of the module it is imported

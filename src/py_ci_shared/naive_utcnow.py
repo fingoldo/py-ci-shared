@@ -35,6 +35,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
@@ -94,7 +95,7 @@ def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
 def collect_naive_utcnow(root: Path, *, skip_dir_names: Iterable[str] = (), use_git: Optional[bool] = None) -> tuple[list[Finding], ScanResult]:
     """``(findings, scan)`` for *root*. Unparsed files are in ``scan.unparsed``, not dropped."""
     scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(skip_dir_names), use_git=use_git)
-    findings = [Finding(f.rel, node.lineno, RULE, ast.unparse(node)) for f in scan for node in _offending_nodes(f.tree)]
+    findings = [Finding(f.rel, node.lineno, RULE, unparse_stable(node)) for f in scan for node in _offending_nodes(f.tree)]
     return findings, scan
 
 

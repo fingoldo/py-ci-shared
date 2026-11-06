@@ -22,6 +22,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from pathlib import Path
 from typing import Optional, Union
@@ -60,7 +61,7 @@ def _int_cast_target(node: ast.AST) -> Optional[ast.Name]:
     if not isinstance(receiver, ast.Name):
         return None
     arg = node.args[0]
-    text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else ast.unparse(arg)
+    text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else unparse_stable(arg)
     return receiver if _INT_DTYPE.match(text) else None
 
 

@@ -32,6 +32,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
@@ -136,13 +137,13 @@ def _compare_findings(node: ast.Compare, aliases: ImportAliases, local: dict[str
                 out.append(
                     (
                         RULE_MINMAX,
-                        f"`{ast.unparse(node)}` skips nulls: an all-null column is not constant, [1, null] is; count nulls or compare with eq_missing",
+                        f"`{unparse_stable(node)}` skips nulls: an all-null column is not constant, [1, null] is; count nulls or compare with eq_missing",
                     )
                 )
             elif (_is_col(left, aliases) and _is_none(right, aliases)) or (_is_none(left, aliases) and _is_col(right, aliases)):
-                out.append((RULE_NONE, f"`{ast.unparse(node)}` is always null; use is_null()/is_not_null()"))
+                out.append((RULE_NONE, f"`{unparse_stable(node)}` is always null; use is_null()/is_not_null()"))
             elif (_is_col(left, aliases) and _is_col(right, aliases)) or (_is_column_item(left, aliases, local) and _is_column_item(right, aliases, local)):
-                out.append((RULE_COLUMNS, f"`{ast.unparse(node)}` drops rows where either side is null; use eq_missing/ne_missing if null should match null"))
+                out.append((RULE_COLUMNS, f"`{unparse_stable(node)}` drops rows where either side is null; use eq_missing/ne_missing if null should match null"))
         left = right
     return out
 
@@ -152,14 +153,14 @@ def _call_findings(node: ast.Call, aliases: ImportAliases) -> list[tuple[str, st
     if isinstance(func, ast.Attribute) and func.attr == "is_in" and len(node.args) == 1 and _is_col(func.value, aliases):
         items = node.args[0]
         if isinstance(items, (ast.List, ast.Tuple, ast.Set)) and any(_is_none(item) for item in items.elts):
-            return [(RULE_NONE, f"`{ast.unparse(node)}` never matches a null; test is_null() separately")]
+            return [(RULE_NONE, f"`{unparse_stable(node)}` never matches a null; test is_null() separately")]
     if not isinstance(func, ast.Attribute) or func.attr not in ("eq", "ne") or len(node.args) != 1 or not _is_col(func.value, aliases):
         return []
     arg = node.args[0]
     if _is_none(arg, aliases):
-        return [(RULE_NONE, f"`{ast.unparse(node)}` is always null; use is_null()/is_not_null()")]
+        return [(RULE_NONE, f"`{unparse_stable(node)}` is always null; use is_null()/is_not_null()")]
     if _is_col(arg, aliases):
-        return [(RULE_COLUMNS, f"`{ast.unparse(node)}` drops rows where either side is null; use {func.attr}_missing if null should match null")]
+        return [(RULE_COLUMNS, f"`{unparse_stable(node)}` drops rows where either side is null; use {func.attr}_missing if null should match null")]
     return []
 
 

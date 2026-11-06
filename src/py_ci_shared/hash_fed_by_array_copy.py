@@ -34,6 +34,7 @@ incrementally, which is a restructuring rather than a substitution.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -116,7 +117,7 @@ def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliase
     for argument in _hash_sink_arguments(node, aliases):
         if _is_tobytes_call(argument) or (isinstance(argument, ast.Name) and argument.id in copies):
             try:
-                rendered = ast.unparse(node)
+                rendered = unparse_stable(node)
             except Exception as exc:
                 logger.warning("hash_fed_by_array_copy.py line 116: substituted a fallback after %s: %s", type(exc).__name__, exc)
                 rendered = "<unrenderable>"

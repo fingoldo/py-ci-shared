@@ -45,6 +45,7 @@ self-verifying, no-allowlist check can state without judging the many still-corr
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import errno
 import functools
 import importlib
@@ -57,10 +58,19 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional
 
+from ._ci_install_parts import is_stdlib
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, load_json, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
 logger = logging.getLogger(__name__)
+
+
+class _KnownNames(set):  # type: ignore[type-arg]
+    """The names a reference may start with: the repo's declarations and builtins, plus every standard-library module
+    (asked of ``is_stdlib``, which also knows the 3.9 stdlib that has no ``sys.stdlib_module_names``)."""
+
+    def __contains__(self, item: object) -> bool:
+        return set.__contains__(self, item) or (isinstance(item, str) and "." not in item and is_stdlib(item))
 
 # A backticked token. Kept narrow on purpose: identifiers, dotted members, a trailing "(" and test-file
 # names; anything with spaces, operators or quotes is prose in code font, not a reference.
@@ -235,7 +245,7 @@ def _base_names(node: ast.ClassDef) -> list[str]:
     out = []
     for base in node.bases:
         target = base.value if isinstance(base, ast.Subscript) else base
-        out.append(ast.unparse(target).split(".")[-1])
+        out.append(unparse_stable(target).split(".")[-1])
     return out
 
 
@@ -660,12 +670,11 @@ def find_phantom_code_references(
     ``pyutilz.llm.get_llm_provider``) is real when it resolves by import, attribute by attribute, so a misspelled
     ``os.path.joinn`` is reported and an external path a comment cites is not."""
     import builtins
-    import sys
 
     files = list(files)
     # Python's own names resolve without a declaration: builtins (`ValueError`) and stdlib modules (`ftplib.FTP`).
     repo_known = set(declared) | set(extra_known) | _NEVER_REFERENCES
-    known = repo_known | set(dir(builtins)) | set(getattr(sys, "stdlib_module_names", ()))
+    known = _KnownNames(repo_known | set(dir(builtins)))
     # The heads of every dotted declaration, once: `_token_problem` asks per token whether a head has any member declared.
     declared_heads = frozenset(k.partition(".")[0] for k in declared if "." in k)
     test_names, test_paths = _test_file_index(repo_root)

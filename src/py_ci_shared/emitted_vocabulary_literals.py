@@ -38,6 +38,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -312,7 +313,7 @@ def _check_call(
     for arg in args:
         got = resolver.values(arg, f, node)
         if got is None:
-            text = ast.unparse(arg)
+            text = unparse_stable(arg)
             if text not in pass_through:
                 message = (
                     f"{site.label()} is passed `{text}`, which cannot be resolved to literals; route it through a named "

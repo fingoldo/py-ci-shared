@@ -39,6 +39,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 
@@ -81,7 +82,7 @@ def _receiver(call: ast.Call) -> str:
     func = call.func
     if not isinstance(func, ast.Attribute):
         raise TypeError(f"release call without a receiver at line {call.lineno}")
-    return ast.unparse(func.value)
+    return unparse_stable(func.value)
 
 
 def _protected_calls(tree: ast.AST, release: str) -> list[ast.Call]:

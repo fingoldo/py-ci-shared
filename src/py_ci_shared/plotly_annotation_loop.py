@@ -24,6 +24,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -101,7 +102,7 @@ def _file_findings(parsed: ParsedFile, limit: int) -> list[Finding]:
             continue
         method = call.func.attr if isinstance(call.func, ast.Attribute) else "?"
         where = functions.get(id(call), "<module>")
-        receiver = ast.unparse(call.func.value) if isinstance(call.func, ast.Attribute) else "?"
+        receiver = unparse_stable(call.func.value) if isinstance(call.func, ast.Attribute) else "?"
         out.append(
             Finding(parsed.rel, call.lineno, RULE, f"{where}: {receiver}.{method}() runs once per loop item (quadratic); batch into one layout assignment")
         )

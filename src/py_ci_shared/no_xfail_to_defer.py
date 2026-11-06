@@ -35,6 +35,7 @@ both resolve to ``tests._known_gap``).
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import configparser
 import re
 from collections.abc import Iterable
@@ -236,7 +237,7 @@ def _conditional_marker_calls(tree: ast.Module) -> set[int]:
     scopes: list[ast.AST] = [tree, *(n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
     for scope in scopes:
         nodes = list(_fast_walk(scope))
-        if not any(isinstance(n, ast.If) and _RUNTIME_CONDITION.search(ast.unparse(n.test)) for n in nodes):
+        if not any(isinstance(n, ast.If) and _RUNTIME_CONDITION.search(unparse_stable(n.test)) for n in nodes):
             continue
         for n in nodes:
             if isinstance(n, ast.Assign) and isinstance(n.value, ast.Call) and len(n.targets) == 1 and isinstance(n.targets[0], ast.Name):

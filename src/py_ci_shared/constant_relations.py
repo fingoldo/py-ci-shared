@@ -40,6 +40,7 @@ How this differs from its neighbours:
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import dataclasses
 import importlib
 import logging
@@ -215,7 +216,7 @@ class _Evaluator:
             try:
                 return _BINARY[type(node.op)](left, right)
             except ZeroDivisionError as exc:
-                raise RelationError(f"division by zero in `{ast.unparse(node)}`") from exc
+                raise RelationError(f"division by zero in `{unparse_stable(node)}`") from exc
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
             operand = self.value(node.operand)
             return -operand if isinstance(node.op, ast.USub) else operand
@@ -225,7 +226,7 @@ class _Evaluator:
                 ref = self.names.get(dotted, dotted)
                 self.values[dotted] = _number(resolve_reference(ref, root=self.root), dotted)
             return self.values[dotted]
-        raise RelationError(f"`{ast.unparse(node)}` is outside the grammar (numbers, names, + - * /, comparisons)")
+        raise RelationError(f"`{unparse_stable(node)}` is outside the grammar (numbers, names, + - * /, comparisons)")
 
 
 def evaluate(relation: Relation, *, root: Optional[Path] = None) -> tuple[bool, str]:
@@ -240,11 +241,11 @@ def evaluate(relation: Relation, *, root: Optional[Path] = None) -> tuple[bool, 
     sides = [tree.left, *tree.comparators]
     values = [ev.value(side) for side in sides]
     holds = True
-    rendered = [f"{ast.unparse(sides[0])} = {values[0]:g}"]
+    rendered = [f"{unparse_stable(sides[0])} = {values[0]:g}"]
     for i, op in enumerate(tree.ops):
         symbol, fn = _COMPARE[type(op)]
         holds &= fn(values[i], values[i + 1])
-        rendered.append(f"{symbol} {ast.unparse(sides[i + 1])} = {values[i + 1]:g}")
+        rendered.append(f"{symbol} {unparse_stable(sides[i + 1])} = {values[i + 1]:g}")
     refs = ", ".join(f"{k}={v:g}" for k, v in ev.values.items())
     return holds, " ".join(rendered) + (f"  [{refs}]" if refs else "")
 

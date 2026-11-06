@@ -39,6 +39,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -110,14 +111,14 @@ def _is_key_function(func: _Func) -> bool:
 
 def _none_is_documented(func: _Func) -> bool:
     """Does the return annotation or the docstring say ``None`` is a legitimate result?"""
-    annotation = ast.unparse(func.returns) if func.returns is not None else ""
+    annotation = unparse_stable(func.returns) if func.returns is not None else ""
     return "None" in annotation or "Optional" in annotation or "None" in (ast.get_docstring(func) or "")
 
 
 def _fallback_text(inner: ast.AST, constants: dict[str, ast.AST], returned: set[str]) -> str:
     """The source of the literal a handler statement returns (or assigns to a returned name); empty when it is not one."""
     if isinstance(inner, ast.Return) and _is_literal(inner.value, constants):
-        return ast.unparse(inner.value) if inner.value is not None else "None"
+        return unparse_stable(inner.value) if inner.value is not None else "None"
     if (
         isinstance(inner, ast.Assign)
         and len(inner.targets) == 1
@@ -125,7 +126,7 @@ def _fallback_text(inner: ast.AST, constants: dict[str, ast.AST], returned: set[
         and inner.targets[0].id in returned
         and _is_literal(inner.value, constants)
     ):
-        return ast.unparse(inner.value)
+        return unparse_stable(inner.value)
     return ""
 
 

@@ -25,6 +25,7 @@ entry that no longer matches an offender (stale), so the list only shrinks.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -232,7 +233,7 @@ def offenders_in_source(source: str, path: str = "<string>", *, resolvers: Itera
             for expr in _printed_operands(node):
                 hit = taint.first_tainted(expr)
                 if hit is not None:
-                    found.append((qual or "<module>", getattr(node, "lineno", 0), ast.unparse(hit)))
+                    found.append((qual or "<module>", getattr(node, "lineno", 0), unparse_stable(hit)))
                     break
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 visit(node, f"{qual}.{node.name}" if qual else node.name, names)

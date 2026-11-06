@@ -34,6 +34,7 @@ losses is per-field work. What must not happen is a NEW unread field appearing s
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 import re
 from collections.abc import Iterable, Mapping, Sequence
@@ -423,7 +424,7 @@ def _annotation_members(node: ast.AST) -> "list[ast.AST]":
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
         return _annotation_members(node.left) + _annotation_members(node.right)
     if isinstance(node, ast.Subscript):
-        origin = ast.unparse(node.value).split(".")[-1]
+        origin = unparse_stable(node.value).split(".")[-1]
         if origin in _WRAPPERS:
             inner = node.slice
             elts = inner.elts if isinstance(inner, ast.Tuple) else [inner]
@@ -437,7 +438,7 @@ def _is_container(annotation: ast.AST) -> bool:
     """Is any non-None member of *annotation* a container (``Sequence[str]``, ``Optional[list]``, ``frozenset[int]``)?"""
     for member in _annotation_members(annotation):
         target = member.value if isinstance(member, ast.Subscript) else member
-        if isinstance(target, (ast.Name, ast.Attribute)) and ast.unparse(target).split(".")[-1] in _CONTAINERS:
+        if isinstance(target, (ast.Name, ast.Attribute)) and unparse_stable(target).split(".")[-1] in _CONTAINERS:
             return True
     return False
 
@@ -447,7 +448,7 @@ def _scalar_annotations(cls: ast.ClassDef) -> list[tuple[str, str]]:
     out = []
     for stmt in cls.body:
         if isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
-            ann = ast.unparse(stmt.annotation) if stmt.annotation else ""
+            ann = unparse_stable(stmt.annotation) if stmt.annotation else ""
             if not _is_container(stmt.annotation):
                 out.append((stmt.target.id, ann))
     return out

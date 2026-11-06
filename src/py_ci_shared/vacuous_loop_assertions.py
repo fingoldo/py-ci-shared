@@ -54,6 +54,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -214,7 +215,7 @@ def _floor_exists(fn: ast.FunctionDef | ast.AsyncFunctionDef, loop: ast.For | as
         if not enclosing.get(id(node), frozenset()) <= allowed_loops:
             continue
         try:
-            test_src = ast.unparse(test)
+            test_src = unparse_stable(test)
         except Exception:  # swallow-ok: an assert that cannot be unparsed is skipped, so the loop is reported, not hidden
             continue
         mentioned = {n.id for n in _fast_walk(test) if isinstance(n, ast.Name)}
@@ -240,7 +241,7 @@ def _assignments(fn: _FuncDef) -> "dict[str, list[ast.expr]]":
 
 def _src(node: ast.AST) -> "str | None":
     try:
-        return ast.unparse(node)
+        return unparse_stable(node)
     except Exception as exc:  # unparse is best-effort; missing it just narrows the check
         logger.debug("could not unparse node: %s", type(exc).__name__)
         return None

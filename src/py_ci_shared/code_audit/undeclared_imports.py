@@ -6,10 +6,10 @@ not exist. This scanner reports a third-party import missing from the declared d
 from __future__ import annotations
 
 import ast
-import sys
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
+from .._ci_install_parts import is_stdlib
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
 # --- undeclared cross-domain imports -------------------------------------
@@ -103,9 +103,6 @@ _PACKAGE_OWN_GROUPS: dict[str, tuple[str, ...]] = {
     "tensorflow": ("tensorflow",),
 }
 
-# Stdlib module names never flagged (Python 3.10+ ships sys.stdlib_module_names).
-_STDLIB = frozenset(getattr(sys, "stdlib_module_names", ()))
-
 
 def _domain_for(rel_path: str) -> Optional[str]:
     """Return the ``_DOMAIN_OWN_GROUP`` key matching ``rel_path`` (longest-prefix match), or None."""
@@ -173,7 +170,7 @@ def scan_undeclared_imports(
         rel = py.relative_to(root).as_posix()
 
         for pkg_name, lineno in _top_level_import_roots(tree):
-            if pkg_name in _STDLIB or pkg_name == "pyutilz":
+            if is_stdlib(pkg_name) or pkg_name == "pyutilz":
                 continue
             declared_groups = _PACKAGE_OWN_GROUPS.get(pkg_name)
             if declared_groups is None:

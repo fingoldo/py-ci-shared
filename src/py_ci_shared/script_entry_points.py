@@ -35,6 +35,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import concurrent.futures
 import logging
 import os
@@ -170,7 +171,7 @@ def _cwd_path_edits(tree: ast.Module, aliases: ImportAliases) -> list[tuple[int,
         if _reads_file(arg, from_file):
             continue
         if _reads_cwd(arg, from_cwd):
-            out.append((node.lineno, ast.unparse(node)))
+            out.append((node.lineno, unparse_stable(node)))
     return sorted(out)
 
 

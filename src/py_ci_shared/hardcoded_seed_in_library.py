@@ -31,6 +31,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -169,13 +170,13 @@ def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[
     what = ""
     for keyword in call.keywords:
         if keyword.arg in _SEED_KEYWORDS and _int_value(keyword.value, known) is not None:
-            what = f"{keyword.arg}={ast.unparse(keyword.value)}"
+            what = f"{keyword.arg}={unparse_stable(keyword.value)}"
         elif keyword.arg is None and isinstance(keyword.value, ast.Dict):
             for key, val in zip(keyword.value.keys, keyword.value.values):
                 if isinstance(key, ast.Constant) and key.value in _SEED_KEYWORDS and _int_value(val, known) is not None:
-                    what = f"{key.value}={ast.unparse(val)}"
+                    what = f"{key.value}={unparse_stable(val)}"
     if not what and (aliases.qualified_name(call) in _SEEDERS) and call.args and _int_value(call.args[0], known) is not None:
-        what = f"{ast.unparse(call.func)}({ast.unparse(call.args[0])})"
+        what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"
     return what
 
 

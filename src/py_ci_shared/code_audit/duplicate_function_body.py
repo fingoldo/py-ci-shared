@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Union
 
+from ..drifted_duplicate_functions import _canonical
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
 _MIN_BODY_NODES = 8  # skip trivial bodies (pass, ..., a bare `return None`/`return False`/`return self._x`)
@@ -35,13 +36,14 @@ def _node_count(body: list) -> int:
 
 
 def _normalized_body(body: list) -> str:
-    """Structural AST dump of a (docstring-stripped) body -- not the function's
+    """Structural rendering of a (docstring-stripped) body -- ``drifted_duplicate_functions._canonical``, stable across
+    interpreters unlike ``ast.dump`` -- not the function's
     name/signature/decorators -- with no line/col metadata, so two functions whose logic
     is byte-identical normalize to the same string regardless of name, file, formatting,
     comments, or docstring prose."""
     if not body:
         return ""
-    return ast.dump(ast.Module(body=body, type_ignores=[]), annotate_fields=True, include_attributes=False)
+    return _canonical(ast.Module(body=body, type_ignores=[]))
 
 
 _FuncNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]

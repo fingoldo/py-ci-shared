@@ -36,6 +36,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 import re
 from collections.abc import Iterable
@@ -266,7 +267,7 @@ def _call_name(node: ast.Call) -> str:
 
 def _call_label(node: ast.Call) -> str:
     try:
-        return ast.unparse(node.func)
+        return unparse_stable(node.func)
     except (
         Exception
     ) as exc:  # pragma: no cover - ast.unparse handles every parsed node  # best-effort: the rendering is a label for the message; the call is judged on its own nodes

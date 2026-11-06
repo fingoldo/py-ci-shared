@@ -23,6 +23,7 @@ has a floor on what it parsed: a check whose pattern stopped matching reports a 
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import collections
 import re
 from collections.abc import Iterable
@@ -360,7 +361,7 @@ def assert_rounds_filed(
 def absence_comparisons(source: str) -> list[tuple[int, str, str]]:
     """``(line, left, right)`` for every ``X not in Y`` comparison in *source*."""
     return [
-        (node.lineno, ast.unparse(node.left), ast.unparse(node.comparators[0]))
+        (node.lineno, unparse_stable(node.left), unparse_stable(node.comparators[0]))
         for node in _fast_walk(parse_text(source))
         if isinstance(node, ast.Compare) and node.ops and isinstance(node.ops[0], ast.NotIn)
     ]

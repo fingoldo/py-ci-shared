@@ -20,6 +20,7 @@ with the skip recorded so a reader can tell "checked and clean" from "not checke
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import functools
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
@@ -89,7 +90,7 @@ def _is_dynamic_call(node: ast.Call) -> bool:
     if name == "update" and isinstance(func, ast.Attribute) and isinstance(func.value, ast.Call):
         if getattr(func.value.func, "id", "") in ("globals", "vars"):
             return True
-    return bool(name == "setattr" and node.args and "sys.modules" in ast.unparse(node.args[0]))
+    return bool(name == "setattr" and node.args and "sys.modules" in unparse_stable(node.args[0]))
 
 
 def _star_import_sources(tree: ast.Module, importing: str, *, is_package: bool) -> list[str | None]:

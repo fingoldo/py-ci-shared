@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -68,7 +69,7 @@ def _const(node: ast.AST, aliases: ImportAliases) -> Optional[int]:
         return fn(left, right) if fn else None
     if isinstance(node, ast.Attribute) and node.attr == "max" and isinstance(node.value, ast.Call):
         qualified = aliases.qualified_name(node.value) or ""
-        if qualified.endswith("iinfo") and node.value.args and "uint64" in ast.unparse(node.value.args[0]):
+        if qualified.endswith("iinfo") and node.value.args and "uint64" in unparse_stable(node.value.args[0]):
             return 2**64 - 1
     return None
 
@@ -106,7 +107,7 @@ def _wide_binop(node: ast.BinOp, aliases: ImportAliases) -> Optional[str]:
         bound = _const(node.right, aliases)
         if bound is not None and bound <= INT64_LIMIT:
             return None
-        if isinstance(node.right, (ast.Name, ast.Attribute)) and _MASK_NAME.search(ast.unparse(node.right)):
+        if isinstance(node.right, (ast.Name, ast.Attribute)) and _MASK_NAME.search(unparse_stable(node.right)):
             return None
     return _wide_source(node.left, aliases)
 
@@ -119,7 +120,7 @@ def _unsigned_64_format(fmt: ast.expr) -> bool:
 
 
 def _wide_bound(node: ast.Call, short: str, aliases: ImportAliases) -> Optional[str]:
-    if any(k.arg == "dtype" and "uint64" in ast.unparse(k.value) for k in node.keywords):
+    if any(k.arg == "dtype" and "uint64" in unparse_stable(k.value) for k in node.keywords):
         return f"{short}(..., dtype=uint64)"
     candidates = [*node.args[:2], *(k.value for k in node.keywords if k.arg in ("high", "b", "stop"))]
     bounds = [b for b in (_const(a, aliases) for a in candidates) if b is not None]
@@ -133,7 +134,7 @@ def _wide_call(node: ast.Call, aliases: ImportAliases) -> Optional[str]:
     if short == "int":
         return _wide_source(node.args[0], aliases)
     if short in ("unpack", "unpack_from"):
-        return f"struct.{short}({ast.unparse(node.args[0])})" if _unsigned_64_format(node.args[0]) else None
+        return f"struct.{short}({unparse_stable(node.args[0])})" if _unsigned_64_format(node.args[0]) else None
     if short in ("getrandbits", "randbits"):
         bits = _const(node.args[0], aliases)
         return f"{short}({bits})" if bits is not None and bits >= 64 else None
@@ -227,7 +228,7 @@ class _FileCheck:
             why = self._source_of(arg, scopes)
             if why:
                 where = self.functions.get(id(call), "<module>")
-                msg = f"{where}: {short}({ast.unparse(arg)}) can receive a seed >= 2**63 ({why}); mask it to 63 bits"
+                msg = f"{where}: {short}({unparse_stable(arg)}) can receive a seed >= 2**63 ({why}); mask it to 63 bits"
                 self.out.append(Finding(self.parsed.rel, call.lineno, RULE, msg))
                 return
 

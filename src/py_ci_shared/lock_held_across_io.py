@@ -30,6 +30,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -179,7 +180,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     for node in shared_walk(parsed.tree):
         if not isinstance(node, _WITH):
             continue
-        held = [ast.unparse(item.context_expr) for item in node.items if is_thread_lock(item.context_expr, aliases, lock_names)]
+        held = [unparse_stable(item.context_expr) for item in node.items if is_thread_lock(item.context_expr, aliases, lock_names)]
         if not held:
             continue
         for call in _calls_under(node.body):

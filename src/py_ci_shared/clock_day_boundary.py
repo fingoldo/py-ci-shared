@@ -24,6 +24,7 @@ scanner, run by ``code_audit_meta``.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -94,13 +95,13 @@ def _crosses_part_of_a_day(seconds: Optional[float]) -> bool:
 
 
 def _is_frozen(fn: _FunctionNode, aliases: ImportAliases) -> bool:
-    if any(_FREEZER_DECORATORS.search(ast.unparse(d)) for d in fn.decorator_list):
+    if any(_FREEZER_DECORATORS.search(unparse_stable(d)) for d in fn.decorator_list):
         return True
     if any(a.arg in _FREEZER_FIXTURES for a in fn.args.args):
         return True
     for n in _fast_walk(fn):
         if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "setattr" and n.args:
-            target = ast.unparse(n.args[0]) + (ast.unparse(n.args[1]) if len(n.args) > 1 else "")
+            target = unparse_stable(n.args[0]) + (unparse_stable(n.args[1]) if len(n.args) > 1 else "")
             if "time" in target or "datetime" in target:
                 return True
     return False
@@ -157,7 +158,7 @@ def _fn_findings(rel: str, fn: _FunctionNode, aliases: ImportAliases, lines: lis
             line = lines[node.lineno - 1] if node.lineno <= len(lines) else ""
             if _NORMALISERS.search(line) or _MARKER.search(line) or _in_lifetime_claim(fn, node):
                 continue
-            message = f"{fn.name} shifts the real clock by part of a day (`{ast.unparse(node)[:80]}`): pin both ends to a fixed instant"
+            message = f"{fn.name} shifts the real clock by part of a day (`{unparse_stable(node)[:80]}`): pin both ends to a fixed instant"
             out.append(Finding(rel, node.lineno, RULE, message))
             break
     return out

@@ -38,6 +38,7 @@ Existing sites are ratcheted by the baseline. Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -264,7 +265,7 @@ class _Visitor(TreeVisitor):
         if any(1 <= ln <= len(self.lines) and _MARKER.search(self.lines[ln - 1]) for ln in {node.lineno - 1, node.lineno, first_body}):
             return
         where = ".".join(self.scope) or "<module>"
-        first = ast.unparse(node.body[0]).splitlines()[0] if node.body else ""
+        first = unparse_stable(node.body[0]).splitlines()[0] if node.body else ""
         message = f"`suppress({caught})` in {where} swallows a failure of `{first[:100]}`"
         self.findings.append(Finding(self.f.rel, node.lineno, RULE, message))
 
@@ -286,7 +287,7 @@ class _Visitor(TreeVisitor):
         if _marked(self.lines, handler):
             return
         where = ".".join(self.scope) or "<module>"
-        first = ast.unparse(node.body[0]).splitlines()[0] if node.body else ""
+        first = unparse_stable(node.body[0]).splitlines()[0] if node.body else ""
         message = f"`except {caught}` in {where} swallows a failure of `{first[:100]}`"
         self.findings.append(Finding(self.f.rel, handler.lineno, RULE, message))
 

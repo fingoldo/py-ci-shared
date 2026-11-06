@@ -28,6 +28,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from pathlib import Path
 from typing import Optional, Union
@@ -99,7 +100,7 @@ def _unit_findings(unit: _Unit, rel: str, py_lines: list[str], include_float: bo
 def _probe_findings(tree: ast.Module, rel: str, py_lines: list[str]) -> list[Finding]:
     """``"float" if X.dtype == <float32> else "double"`` selectors whose ``X`` the module never passes to a launch tuple by name."""
     named = {
-        ast.unparse(el)
+        unparse_stable(el)
         for call in nodes_of(tree, ast.Call)
         for arg in call.args
         if isinstance(arg, ast.Tuple)
@@ -120,7 +121,7 @@ def _probe_findings(tree: ast.Module, rel: str, py_lines: list[str]) -> list[Fin
                 and node.orelse.value == "double"
             ):
                 continue
-            probed = ast.unparse(node.test.left.value)
+            probed = unparse_stable(node.test.left.value)
             line = py_lines[node.lineno - 1] if 0 < node.lineno <= len(py_lines) else ""
             if probed in named or ("#" in line and MARKER in line[line.index("#") :]):
                 continue

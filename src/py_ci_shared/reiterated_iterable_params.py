@@ -25,6 +25,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable, Sequence
 from pathlib import Path
@@ -194,7 +195,7 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
             if count >= 2:
                 owner = names.get(id(func), "<module>")
                 qual = func.name if owner == "<module>" else f"{owner}.{func.name}"
-                shown = ast.unparse(param.annotation) if param.annotation is not None else "?"
+                shown = unparse_stable(param.annotation) if param.annotation is not None else "?"
                 out.append(Finding(parsed.rel, func.lineno, RULE, f"{qual}({param.arg}: {shown}) is consumed {count} times on one path"))
     return out
 

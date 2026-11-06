@@ -32,6 +32,7 @@ functions, matching this package's other modules.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable
 from pathlib import Path
@@ -216,7 +217,7 @@ def _calls_in_tree(tree: ast.Module, path: Path, root: Path, cfg_function_names:
                 section=section,
                 key=key,
                 default_node=_arg_node(node, 2, "default"),
-                type_src=ast.unparse(type_node) if type_node is not None else None,
+                type_src=unparse_stable(type_node) if type_node is not None else None,
             )
         )
     return found
@@ -429,7 +430,7 @@ class ConstantResolver:
         silently treated as equal to a different unresolved expression)."""
         if node is None:
             return None
-        src = ast.unparse(node)
+        src = unparse_stable(node)
         try:
             return ast.literal_eval(node)
         except (ValueError, SyntaxError, TypeError):
@@ -706,7 +707,7 @@ def assert_no_divergent_cfg_get_call_site_defaults(
         types = {(default_type_repr if c.type_src is None else c.type_src) for c in resolvable_calls}
         if len(resolved_defaults) > 1 or len(types) > 1:
             sites = ", ".join(
-                f"{c.file}:{c.line}(default={ast.unparse(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in resolvable_calls
+                f"{c.file}:{c.line}(default={unparse_stable(c.default_node) if c.default_node else None!r}, type_={c.type_src!r})" for c in resolvable_calls
             )
             bad.append(f"[{section}] {key}: divergent default/type_ across call sites: {sites}")
     if bad:

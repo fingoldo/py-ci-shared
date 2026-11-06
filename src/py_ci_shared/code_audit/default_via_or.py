@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 
 import ast
+from .._core.unparse import unparse_stable
 from pathlib import Path
 
 from ._base import (
@@ -205,8 +206,7 @@ def _site(lhs: ast.AST, rhs: ast.AST, symbol: str = "") -> str:
         # `ast.unparse` is stdlib from 3.9 and handles every expression node a BoolOp operand can be;
         # on the supported 3.8 floor `ast.dump` is the fallback -- more verbose, but still distinct per
         # site, which is the only property this key needs.
-        _unparse = getattr(ast, "unparse", None) or ast.dump
-        text = " ".join(_unparse(node).split())
+        text = " ".join(unparse_stable(node).split())
         return text if len(text) <= limit else text[: limit - 3] + "..."
 
     expression = f"{_short(lhs)} or {_short(rhs)}"
@@ -222,9 +222,8 @@ def _expr_repr(node: ast.AST) -> "str | None":
     unrenderable node (the caller then declines to claim equality) keeps that failure explicit
     instead of silently reading as "different".
     """
-    _unparse = getattr(ast, "unparse", None) or ast.dump
     try:
-        return " ".join(_unparse(node).split())
+        return " ".join(unparse_stable(node).split())
     except (ValueError, RecursionError) as exc:
         logger.debug("_expr_repr: expression cannot be unparsed: %s: %s", type(exc).__name__, exc)
         return None

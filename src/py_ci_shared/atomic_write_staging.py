@@ -20,6 +20,7 @@ Existing findings are ratcheted by the baseline.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -110,9 +111,9 @@ def _renamed_sources(nodes: list[ast.AST], aliases: ImportAliases) -> set[str]:
         if not isinstance(n, ast.Call):
             continue
         if aliases.qualified_name(n.func) in _RENAMERS and n.args:
-            out.add(ast.unparse(n.args[0]))
+            out.add(unparse_stable(n.args[0]))
         elif isinstance(n.func, ast.Attribute) and n.func.attr in _RENAME_METHODS and n.args and not isinstance(n.func.value, ast.Constant):
-            out.add(ast.unparse(n.func.value))
+            out.add(unparse_stable(n.func.value))
     return out
 
 
@@ -125,14 +126,14 @@ def _npsave_findings(f: ParsedFile, fn: _FunctionNode, nodes: list[ast.AST], ali
             continue
         want = _SAVERS.get(aliases.qualified_name(n.func) or "")
         target = n.args[0]
-        if want is None or ast.unparse(target) not in renamed:
+        if want is None or unparse_stable(target) not in renamed:
             continue
         if isinstance(target, ast.Name) and (target.id in handles or _is_open_call(assigned.get(target.id))):
             continue
         tail = _suffix_of(target, assigned)
         if tail is None or tail.endswith(want):
             continue
-        message = f"{fn.name}: np.save-family writes `{ast.unparse(target)}` + '{want}' (its path ends {tail[-24:]!r}), then renames `{ast.unparse(target)}`"
+        message = f"{fn.name}: np.save-family writes `{unparse_stable(target)}` + '{want}' (its path ends {tail[-24:]!r}), then renames `{unparse_stable(target)}`"
         out.append(Finding(f.rel, n.lineno, RULE_NPSAVE, message))
     return out
 
@@ -154,9 +155,9 @@ def _write_target(call: ast.Call) -> Optional[ast.expr]:
 
 
 def _names_cache(expr: ast.expr, assigned: dict[str, ast.expr]) -> bool:
-    text = ast.unparse(expr)
+    text = unparse_stable(expr)
     if isinstance(expr, ast.Name) and expr.id in assigned:
-        text += " " + ast.unparse(assigned[expr.id])
+        text += " " + unparse_stable(assigned[expr.id])
     return bool(_CACHE_WORD.search(text))
 
 
@@ -173,7 +174,7 @@ def _rewrite_findings(f: ParsedFile, fn: _FunctionNode, nodes: list[ast.AST], al
             continue
         if 1 <= n.lineno <= len(lines) and _MARKER.search(lines[n.lineno - 1]):
             continue
-        out.append(Finding(f.rel, n.lineno, RULE_REWRITE, f"{fn.name}: rewrites `{ast.unparse(target)}` in place; write a sibling and os.replace it"))
+        out.append(Finding(f.rel, n.lineno, RULE_REWRITE, f"{fn.name}: rewrites `{unparse_stable(target)}` in place; write a sibling and os.replace it"))
     return out
 
 

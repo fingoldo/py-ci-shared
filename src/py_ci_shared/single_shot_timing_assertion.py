@@ -40,6 +40,7 @@ not recognised unless its name is in ``single_shot_helpers``.
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -418,7 +419,7 @@ def _skip_after_measure(func: ast.AST, analysis: _Analysis) -> None:
         cur = parents.get(id(node))
         while cur is not None and cur is not func:
             if isinstance(cur, (ast.If, ast.IfExp, ast.While)):
-                words.append(ast.unparse(cur.test))
+                words.append(unparse_stable(cur.test))
             cur = parents.get(id(cur))
         if _SKIP_CAUSE.search(" ".join(words)):
             analysis.problems.append(

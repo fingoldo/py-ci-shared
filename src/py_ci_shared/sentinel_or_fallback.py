@@ -16,6 +16,7 @@ carrying ``# falsy-ok: <reason>`` is exempt. Fix with ``x if x is not None else 
 from __future__ import annotations
 
 import ast
+from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -106,7 +107,7 @@ def find_sentinel_or_fallback(
             if isinstance(node, ast.IfExp):
                 read = sentinel_read(node.test, wanted)
                 if read is not None and ast.dump(node.test) == ast.dump(node.body) and not _falsy_constant(node.orelse) and not _marked(lines, node):
-                    findings.append(Finding(f.rel, node.lineno, RULE, f"`{ast.unparse(node)}` replaces a falsy {read} (0 is a value for it)"))
+                    findings.append(Finding(f.rel, node.lineno, RULE, f"`{unparse_stable(node)}` replaces a falsy {read} (0 is a value for it)"))
                 continue
             if not (isinstance(node, ast.BoolOp) and isinstance(node.op, ast.Or)):
                 continue
@@ -117,7 +118,7 @@ def find_sentinel_or_fallback(
                 rest = node.values[i + 1 :]
                 if name is None or all(_falsy_constant(r) for r in rest):
                     continue
-                message = f"`{ast.unparse(operand)} or {ast.unparse(rest[0])}` replaces a falsy {name} (0 is a value for it)"
+                message = f"`{unparse_stable(operand)} or {unparse_stable(rest[0])}` replaces a falsy {name} (0 is a value for it)"
                 findings.append(Finding(f.rel, node.lineno, RULE, message))
     findings.sort(key=lambda x: (x.path, x.line))
     return findings, scan
