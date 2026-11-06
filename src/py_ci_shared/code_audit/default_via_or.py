@@ -420,6 +420,19 @@ def _build_parent_field_map(tree: ast.AST) -> dict[int, tuple[ast.AST, str]]:
     return parent_map
 
 
+def _is_unit_divisor_guard(node: ast.AST, parent_map: dict[int, tuple[ast.AST, str]]) -> bool:
+    """True for ``n / (total or 1)``: a zero denominator is replaced by 1 on purpose, so the ratio is
+    zero rather than a ZeroDivisionError. Only the unit default qualifies; ``n / (d or 5)`` changes the
+    answer and stays a finding."""
+    parent = parent_map.get(id(node))
+    if parent is None:
+        return False
+    owner, field = parent
+    if not (isinstance(owner, ast.BinOp) and field == "right" and isinstance(owner.op, (ast.Div, ast.FloorDiv, ast.Mod))):
+        return False
+    return isinstance(node, ast.BoolOp) and isinstance(node.values[-1], ast.Constant) and node.values[-1].value == 1
+
+
 def _is_in_boolean_context(node: ast.AST, parent_map: dict[int, tuple[ast.AST, str]]) -> bool:
     """Walk up through nested BoolOp/``not`` wrappers (e.g. ``(a or b) and
     c``, ``not (a or b)``) to the first "real" parent field, and check
@@ -886,7 +899,7 @@ def scan_default_via_or_trap(
                 continue
             # Skip when the whole BoolOp is immediately coerced by bool(...) -- the OR's
             # intermediate value is unobservable regardless of what either side evaluates to.
-            if _is_wrapped_in_bool_call(node, parent_map):
+            if _is_wrapped_in_bool_call(node, parent_map) or _is_unit_divisor_guard(node, parent_map):
                 continue
             # Adjacent operand pairs, so a chain of any length is covered: `arg or fallback or 5`
             # carries the flagged trap on its FIRST pair (a falsy-but-valid `arg` silently becomes

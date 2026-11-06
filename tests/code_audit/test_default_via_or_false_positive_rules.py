@@ -93,3 +93,20 @@ def test_glossum_2026_11_05_reviewed_shapes_are_not_traps(tmp_path: Path, source
 )
 def test_glossum_2026_11_05_negative_controls_stay_flagged(tmp_path: Path, source: str):
     assert _flagged(tmp_path, source) != []
+
+
+def test_a_unit_divisor_guard_is_not_a_trap(tmp_path):
+    """``ratio = n / (total or 1)``: a zero denominator becomes 1 on purpose so the ratio is zero, not an error."""
+    source = "def f(n, cnt):\n    return n / (sum(cnt.values()) or 1)\n"
+    assert _flagged(tmp_path, source) == []
+
+
+def test_a_non_unit_divisor_default_is_still_a_trap(tmp_path):
+    """A divisor default other than 1 changes the answer, so it stays flagged."""
+    source = "def f(n, cnt):\n    return n / (cnt.get('a') or 5)\n"
+    assert _flagged(tmp_path, source) == [2]
+
+
+def test_a_unit_default_outside_a_division_is_still_a_trap(tmp_path):
+    source = "def f(n, cnt):\n    return n * (cnt.get('a') or 1)\n"
+    assert _flagged(tmp_path, source) == [2]
