@@ -552,3 +552,36 @@ def test_a_quiet_substitution_with_a_fallback_value_is_still_flagged(tmp_path):
             return result
     """
     assert _rules(tmp_path, body) == ["quiet_substitution"]
+
+
+def test_a_warning_log_throttle_handler_that_stores_a_constant_is_not_admit_on_error(tmp_path):
+    # mlframe _dcd_pair_su_batch.py::pair_su_batch (audit 2026-11-06 class A): the element scores 0.0 and is logged at WARNING
+    body = """
+        import logging
+
+        def pair_su_batch(pairs, out):
+            for i, pair in enumerate(pairs):
+                try:
+                    out[i] = score(pair)
+                except Exception as e:
+                    log_throttle(logger, "pair_su.score", logging.WARNING, "pair %r scores 0.0: %s", pair, e)
+                    out[i] = 0.0
+    """
+    assert _rules(tmp_path, body) == []
+
+
+def test_a_warning_handler_that_keeps_the_element_is_still_admit_on_error(tmp_path):
+    # the loud log does not launder an admission that keeps the element
+    body = """
+        import logging
+
+        def apply_gate(specs):
+            survivors = []
+            for spec in specs:
+                try:
+                    evaluate(spec)
+                except Exception as e:
+                    logger.warning("cannot evaluate %s: %s", spec, e)
+                    survivors.append(spec)
+    """
+    assert _rules(tmp_path, body) == ["admit_on_error"]

@@ -174,7 +174,7 @@ def _target_name(target: ast.AST) -> str:
     return target.id if isinstance(target, ast.Name) else (target.attr if isinstance(target, ast.Attribute) else "")
 
 
-def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
+def _appends_name(handler: ast.ExceptHandler, names: set[str], loud: bool = False) -> bool:
     """True when the handler admits the loop's element: ``<list>.append/add/extend/insert(...)``, ``out += [x]``,
     ``out[x] = ...`` or a ``yield`` of a value built from one of ``names`` (``spec``, ``(spec, 0)``, ``spec.name``), into a
     collection not named for failures.
@@ -193,6 +193,8 @@ def _appends_name(handler: ast.ExceptHandler, names: set[str]) -> bool:
             value, list_name = n.value, _target_name(n.target)
         elif isinstance(n, ast.Assign) and any(isinstance(t, ast.Subscript) for t in n.targets):
             sub = next(t for t in n.targets if isinstance(t, ast.Subscript))
+            if loud and isinstance(n.value, ast.Constant):
+                continue  # a loud handler that stores a constant under the loop key (``out[i] = 0.0``) records the failure
             # `counts[x] = count` stores a number (not the element) under the element as a key: a counter, not an admission.
             stores_a_count = not isinstance(n.value, ast.Constant) and (not _mentions(n.value, names) or _mentions(n.value, {_target_name(sub)}))
             if stores_a_count:
@@ -308,7 +310,9 @@ def _handler_findings(
 ) -> list[FailOpenHandler]:
     """The rules one ``except`` handler breaks (admit, gate-returns-true, quiet substitution, silent default)."""
     found: list[FailOpenHandler] = []
-    if loop_vars and _appends_name(handler, set(loop_vars)):
+    # A handler that logs at WARNING or above (logger or log_throttle) and stores a constant under the loop key reports
+    # the failure and records a constant, not the element; a loud handler that keeps the element is still an admission.
+    if loop_vars and _appends_name(handler, set(loop_vars), loud=_logs_loudly(handler)):
         found.append(FailOpenHandler(rel, name, handler.lineno, "admit_on_error", "the handler keeps the loop's element because evaluating it failed"))
     if is_gate and (_returns_true(handler) or _binds_true_then_returns(handler, scope)):
         found.append(FailOpenHandler(rel, name, handler.lineno, "gate_returns_true", "an error in a deciding function returns True"))
