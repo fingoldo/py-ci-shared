@@ -124,7 +124,7 @@ def _string_interior_lines(text: str) -> frozenset[int]:
     try:
         ast.parse(text)
         tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
-    except (SyntaxError, ValueError, tokenize.TokenError):
+    except (SyntaxError, ValueError, tokenize.TokenError):  # best-effort: text that is not Python has no string literals, so the plain line rule applies
         return frozenset()
     inside: set[int] = set()
     for tok in tokens:
