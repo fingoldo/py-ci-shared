@@ -46,7 +46,8 @@ def test_the_checked_in_list_names_every_consumer_with_owner_repo_and_branch():
     assert consumers["polyvocab_app"].branch == "staging"
     assert consumers["llm_bench"].branch == "main" and consumers["mlframe"].branch == "master"
     corpus = sorted(n for n, c in consumers.items() if c.corpus)
-    assert 2 <= len(corpus) <= 3 and all(not consumers[n].private for n in corpus), corpus
+    # The nightly corpus is a decided set (every scanning gate runs over each member): growing it is a deliberate edit of this line.
+    assert corpus == ["algopacksimple", "glossum_backend_scripts", "llm_bench", "mlframe", "pyutilz"], corpus
 
 
 @pytest.mark.parametrize(

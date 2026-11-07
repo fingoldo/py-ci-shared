@@ -121,11 +121,11 @@ class Baseline:
             print(f"{label}: the scan found {len(found)} entr(ies), fewer than its floor of {min_found} - it is not reaching the code.", file=sys.stderr)
             return 1
         if fail_on_empty_scan and not found and accepted:
-            print(
+            message = (
                 f"{label}: the scan found nothing, yet {self.path} accepts {len(accepted)} entr(ies). Either the scan stopped "
-                f"matching, or the whole backlog was paid off - then run {self.refresh_command} to record that.",
-                file=sys.stderr,
+                f"matching, or the whole backlog was paid off - then run {self.refresh_command} to record that."
             )
+            print(message, file=sys.stderr)
             return 1
         new = {key: value for key, value in found.items() if key not in accepted}
         stale = [key for key in accepted if key not in found]
@@ -137,10 +137,7 @@ class Baseline:
             print("", file=sys.stderr)
             print(guidance, file=sys.stderr)
             print("", file=sys.stderr)
-            print(
-                f"If this one is a considered exception, add it to {self.path} with a note saying why.",
-                file=sys.stderr,
-            )
+            print(f"If this one is a considered exception, add it to {self.path} with a note saying why.", file=sys.stderr)
             return 1
 
         unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note))
@@ -158,7 +155,7 @@ class Baseline:
                 print(f"  {key}", file=sys.stderr)
             return 1
 
-        print(f"{label}: no new violations ({len(accepted)} accepted, baselined)")
+        sys.stdout.write(f"{label}: no new violations ({len(accepted)} accepted, baselined)\n")
         return 0
 
     def regenerate(self, found: Mapping[str, str], *, grow: Optional[bool] = None) -> None:

@@ -6,7 +6,6 @@
  },
  "library_print": {
   "arb_checks.py::assert_arb_catalogues_are_sound": 1,
-  "baseline_ratchet.py::Baseline.enforce": 3,
   "import_layering.py::assert_layering": 1,
   "sql_verify.py::check": 2,
   "sql_verify.py::check_loader": 3,

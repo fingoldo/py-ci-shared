@@ -286,7 +286,7 @@ def _claim_files(audits_dir: Path) -> list[Path]:
     files = round_files(audits_dir)
     for parent in (audits_dir, audits_dir / "implemented"):
         if parent.is_dir():
-            files += sorted(p for p in parent.glob("**/TRACKER*.md") if p not in files)
+            files += sorted(p for p in parent.glob("**/TRACKER*.md") if p not in files)  # walk-ok: audits_dir holds markdown rounds only, no worktrees
     return files
 
 

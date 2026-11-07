@@ -150,7 +150,7 @@ def _snapshot(repo: Path, dest: Path) -> str:
 
 def _gate_test_files(tree: Path) -> list[str]:
     found = []
-    for path in sorted(tree.rglob("test_*.py")):
+    for path in sorted(tree.rglob("test_*.py")):  # walk-ok: tree is a fresh git-archive extraction of HEAD, it holds no worktrees
         if any(part.startswith(".") or part in ("node_modules", "site-packages") for part in path.relative_to(tree).parts):
             continue
         try:
@@ -208,7 +208,7 @@ def _relative(row: StaleRow, tree: Path) -> StaleRow:
 
 
 def _count_mutation_baselines(tree: Path) -> int:
-    return sum(1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix())
+    return sum(1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix())  # walk-ok: git-archive extraction of HEAD, no worktrees
 
 
 def sweep_repo(repo: Path, *, python: str = sys.executable, timeout: float = 1800.0) -> RepoResult:
@@ -235,6 +235,7 @@ def sweep_repo(repo: Path, *, python: str = sys.executable, timeout: float = 180
 
 
 def render_markdown(results: Sequence[RepoResult]) -> str:
+    """The sweep as a markdown table, one row per repo."""
     lines = ["# Stale baseline sweep", "", "| repo | commit | test files | would be red | stale entries | note |", "|---|---|---|---|---|---|"]
     for r in results:
         note = r.problem or r.pytest_summary
@@ -253,6 +254,7 @@ def render_markdown(results: Sequence[RepoResult]) -> str:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """CLI entry: sweep each repo given and print the table; with --fail-on-stale exit 1 when a consumer would newly go red."""
     parser = argparse.ArgumentParser(prog="stale_baseline_sweep", description=__doc__.splitlines()[0])
     parser.add_argument("repos", nargs="+", type=Path, help="consumer checkouts (read-only: HEAD is extracted with git archive)")
     parser.add_argument("--python", default=sys.executable, help="interpreter that runs the consumers' pytest (default: this one)")
