@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, child_nodes, scan_python, walk
 
 __all__ = [
     "MARKER",
@@ -99,7 +99,7 @@ def _merge(arms: "list[_State]", kind: str) -> _State:
 
 
 def _stored_in_comprehensions(node: ast.AST) -> "set[str]":
-    return {n.id for gen in getattr(node, "generators", []) for n in ast.walk(gen.target) if isinstance(n, ast.Name)}
+    return {n.id for gen in getattr(node, "generators", []) for n in walk(gen.target) if isinstance(n, ast.Name)}
 
 
 def _names(node: ast.AST) -> "Iterator[tuple[str, ast.Name]]":
@@ -109,12 +109,12 @@ def _names(node: ast.AST) -> "Iterator[tuple[str, ast.Name]]":
         current = stack.pop()
         if isinstance(current, ast.Name):
             yield current.id, current
-        for child in ast.iter_child_nodes(current):
+        for child in child_nodes(current):
             if isinstance(child, _SCOPES):
                 continue
             if isinstance(child, _COMPREHENSIONS):
                 hidden = _stored_in_comprehensions(child)
-                stack.extend(n for n in ast.walk(child) if isinstance(n, ast.Name) and n.id not in hidden and not isinstance(n.ctx, ast.Store))
+                stack.extend(n for n in walk(child) if isinstance(n, ast.Name) and n.id not in hidden and not isinstance(n.ctx, ast.Store))
                 continue
             stack.append(child)
 
@@ -141,7 +141,7 @@ def _aliases_bound(stmt: ast.stmt) -> "set[str]":
 
 def _pattern_names(pattern: ast.AST) -> "set[str]":
     out: "set[str]" = set()
-    for node in ast.walk(pattern):
+    for node in walk(pattern):
         for attr in ("name", "rest"):
             value = getattr(node, attr, None)
             if isinstance(value, str) and type(node).__name__.startswith("Match"):
@@ -336,7 +336,7 @@ def _nested_statements(stmts: "list[ast.stmt]") -> "Iterator[ast.stmt]":
         node = stack.pop()
         yield node
         if not isinstance(node, _SCOPES):
-            stack.extend(c for c in ast.iter_child_nodes(node) if isinstance(c, ast.stmt))
+            stack.extend(c for c in child_nodes(node) if isinstance(c, ast.stmt))
             stack.extend(h for h in getattr(node, "handlers", []))
             stack.extend(s for case in getattr(node, "cases", []) for s in case.body)
 
@@ -348,7 +348,7 @@ def _all_stores(stmts: "list[ast.stmt]") -> "set[str]":
         if isinstance(s, ast.ExceptHandler):
             continue
         out |= _aliases_bound(s)
-        for child in ast.iter_child_nodes(s):
+        for child in child_nodes(s):
             if not isinstance(child, (ast.stmt, ast.ExceptHandler)) and not isinstance(child, _SCOPES):
                 out |= _stores(child)
         out |= _pattern_names_of(s)
@@ -368,7 +368,7 @@ def _has_break(loop: ast.stmt) -> bool:
         if isinstance(node, (ast.For, ast.AsyncFor, ast.While)):
             stack.extend(node.orelse)
             continue
-        stack.extend(c for c in ast.iter_child_nodes(node) if isinstance(c, ast.stmt))
+        stack.extend(c for c in child_nodes(node) if isinstance(c, ast.stmt))
     return False
 
 
@@ -379,7 +379,7 @@ def _declared_nonlocal(body: "list[ast.stmt]") -> "set[str]":
         node = stack.pop()
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             out.update(node.names)
-        stack.extend(c for c in ast.iter_child_nodes(node) if isinstance(c, ast.stmt))
+        stack.extend(c for c in child_nodes(node) if isinstance(c, ast.stmt))
     return out
 
 
@@ -407,7 +407,7 @@ def _scope_findings(rel: str, lines: "list[str]", body: "list[ast.stmt]", params
 
 def _findings_in(tree: ast.Module, rel: str, lines: "list[str]") -> "list[Finding]":
     out = _scope_findings(rel, lines, tree.body, set())
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             out.extend(_scope_findings(rel, lines, node.body, _params(node)))
     return out

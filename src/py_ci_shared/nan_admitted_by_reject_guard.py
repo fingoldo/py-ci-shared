@@ -30,7 +30,7 @@ import ast
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, nodes_of, scan_python
+from ._core import Baseline, Finding, nodes_of, scan_python, walk
 
 __all__ = [
     "MARKER",
@@ -86,7 +86,7 @@ def _reject_rule(body: "list[ast.stmt]") -> Optional[str]:
 
 
 def _has_float_evidence(fn: ast.AST) -> bool:
-    for node in ast.walk(fn):
+    for node in walk(fn):
         if isinstance(node, ast.Name) and node.id in _FLOAT_NAMES:
             return True
         if isinstance(node, ast.Attribute) and node.attr in _FLOAT_NAMES:
@@ -98,7 +98,7 @@ def _has_float_evidence(fn: ast.AST) -> bool:
 
 def _checks_nan_before(fn: ast.AST, name: str, line: int) -> bool:
     """An ``isnan``/``isfinite`` call on *name*, or ``name != name`` / ``name == name``, earlier in the function."""
-    for node in ast.walk(fn):
+    for node in walk(fn):
         if getattr(node, "lineno", line) >= line:
             continue
         if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) in _NAN_TESTS:

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = [
     "DEFAULT_GUARD",
@@ -75,11 +75,11 @@ def _is_kernel(fn: "ast.FunctionDef | ast.AsyncFunctionDef") -> bool:
 def _guarded_calls(fn: ast.AST, guard: str) -> "set[int]":
     """``id()`` of every call lexically inside a ``with <guard>():`` block of *fn*."""
     out: "set[int]" = set()
-    for node in ast.walk(fn):
+    for node in walk(fn):
         if not isinstance(node, (ast.With, ast.AsyncWith)):
             continue
         if any(isinstance(i.context_expr, ast.Call) and _call_name(i.context_expr.func) == guard for i in node.items):
-            out.update(id(c) for c in ast.walk(node) if isinstance(c, ast.Call))
+            out.update(id(c) for c in walk(node) if isinstance(c, ast.Call))
     return out
 
 
@@ -104,7 +104,7 @@ def _pool_rule(call: ast.Call) -> Optional[str]:
 def _callees(fn: ast.AST, guard: str) -> "set[str]":
     """Names called in *fn* outside the guard, plus bare names handed to any call (`pool.map(work, xs)`, `Thread(target=work)`, `delayed(work)`): a pool worker calls them."""
     guarded = _guarded_calls(fn, guard)
-    calls = [c for c in ast.walk(fn) if isinstance(c, ast.Call)]
+    calls = [c for c in walk(fn) if isinstance(c, ast.Call)]
     out = {_call_name(c.func) for c in calls if id(c) not in guarded}
     for c in calls:
         out |= {a.id for a in c.args if isinstance(a, ast.Name)}
@@ -116,7 +116,7 @@ def _callees(fn: ast.AST, guard: str) -> "set[str]":
 def _dispatch_tables(tree: ast.AST) -> "dict[str, set[str]]":
     """``{table: function names it holds}`` for ``NAME = {"key": fn, ...}`` literals: a lookup then a call hides the callee from a plain call graph."""
     tables: "dict[str, set[str]]" = {}
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Dict):
             members = {v.id for v in node.value.values if isinstance(v, ast.Name)}
             for target in node.targets:
@@ -146,14 +146,14 @@ class _Graph:
         self.where.setdefault(fn.name, []).append(rel)
         edges = _callees(fn, self.guard)
         if not _guarded_calls(fn, self.guard):
-            mentioned = {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+            mentioned = {n.id for n in walk(fn) if isinstance(n, ast.Name)}
             for table, members in tables.items():
                 if table in mentioned:
                     edges |= members
         self.calls[(rel, fn.name)] = edges
         if _is_kernel(fn):
             self.kernels.add(fn.name)
-        for call in ast.walk(fn):
+        for call in walk(fn):
             rule = _pool_rule(call) if isinstance(call, ast.Call) else None
             if rule is not None and not _marked(lines, [call.lineno, fn.lineno]):  # type: ignore[attr-defined]
                 self.pools.append((rel, fn.name, call.lineno, rule))  # type: ignore[attr-defined]
@@ -183,7 +183,7 @@ def _build(scan: "object", guard: str, skip_dirs: "frozenset[str]") -> _Graph:
             continue
         tables = _dispatch_tables(parsed.tree)
         lines = parsed.source.splitlines()
-        for node in ast.walk(parsed.tree):
+        for node in walk(parsed.tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 graph.add_function(parsed.rel, node, tables, lines)
     return graph

@@ -26,7 +26,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, scan_python, walk
 
 __all__ = [
     "MARKER",
@@ -76,13 +76,13 @@ def _verb_rule(name: str) -> Optional[str]:
 
 
 def _names(fn: ast.AST) -> "set[str]":
-    return {n.id for n in ast.walk(fn) if isinstance(n, ast.Name)}
+    return {n.id for n in walk(fn) if isinstance(n, ast.Name)}
 
 
 def _self_calls(fn: ast.AST) -> "set[str]":
     return {
         c.func.attr
-        for c in ast.walk(fn)
+        for c in walk(fn)
         if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and isinstance(c.func.value, ast.Name) and c.func.value.id in ("self", "cls")
     }
 
@@ -135,7 +135,7 @@ def _findings_in(tree: ast.Module, rel: str, lines: "list[str]") -> "list[Findin
         return []
     functions = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
     out: "list[Finding]" = []
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, ast.ClassDef):
             out.extend(_class_findings(node, rel, lines, functions, caches))
     return out

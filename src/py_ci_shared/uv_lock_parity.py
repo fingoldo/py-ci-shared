@@ -52,7 +52,7 @@ RULE_NO_ROOT = "uv-lock-no-root-package"
 
 _REQ = re.compile(r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[(?P<extras>[^\]]*)\])?\s*(?P<rest>.*)$")
 _EXTRA_MARKER = re.compile(r"""extra\s*==\s*['"]([^'"]+)['"]""")
-_DIRECT_KEYS = ("git", "url", "path", "directory", "editable", "virtual")
+_DIRECT_KEYS = ("url", "git", "path", "directory", "editable", "virtual")
 
 
 def _norm(name: str) -> str:
