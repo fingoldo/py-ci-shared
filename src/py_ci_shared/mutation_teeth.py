@@ -615,7 +615,7 @@ def _sweep_in_sandbox(
     mapped = _line_map(sandbox, relative, test_paths, timeout, opts, checkpoint) if opts.coverage_prune and mutants else None
     opts.coverage = mapped
     fallback_test_paths, wider_baseline_note = _check_unmutated(
-        sandbox, relative, test_paths, fallback_test_paths, timeout, use_warm_worker, bool(mutants), limit_name=None, opts=opts, skip_primary=mapped is not None
+        sandbox, relative, test_paths, fallback_test_paths, timeout, use_warm_worker, bool(mutants), opts=opts, skip_primary=mapped is not None
     )
 
     for mutant in mutants:

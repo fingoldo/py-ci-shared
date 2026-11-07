@@ -53,10 +53,6 @@ def _git_rev_parse(*args: str) -> str:
     return git_text(out.stdout).strip()
 
 
-def _git_dir() -> Path:
-    return Path(_git_rev_parse("--git-dir"))
-
-
 def _hooks_dir() -> Path:
     """The directory git runs hooks from: ``core.hooksPath`` when set, else ``<git-dir>/hooks`` (``--git-path hooks``
     answers both, and a linked worktree's shared hooks too)."""

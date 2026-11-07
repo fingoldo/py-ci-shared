@@ -24,7 +24,9 @@ from .source import read_bytes_cached
 logger = logging.getLogger(__name__)
 
 NO_CACHE_ENV = "PY_CI_SHARED_NO_CACHE"
-_SKIP_DIRS = frozenset({".git", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".venv", "venv", "node_modules", ".py_ci_cache"})
+_SKIP_DIRS = frozenset(
+    {".git", ".claude", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".tox", ".venv", "venv", "node_modules", ".py_ci_cache"}
+)
 
 
 def enabled() -> bool:

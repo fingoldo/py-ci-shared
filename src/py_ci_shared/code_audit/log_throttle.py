@@ -6,19 +6,11 @@ import ast
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
+from .._core.call_names import func_name_or_none as _call_name
 
 _LOG_METHODS = ("warning", "error", "exception", "critical")
 _THROTTLE_HINTS = ("throttle", "rate_limit", "ratelimit", "debounce")
 _BOUNDED_RETRY_HINTS = ("retr", "attempt")
-
-
-def _call_name(node: ast.AST) -> str | None:
-    """Return a Call's callable name (bare ``Name.id`` or ``Attribute.attr``), else None."""
-    if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return node.attr
-    return None
 
 
 def _guard_looks_throttled(test: ast.expr) -> bool:

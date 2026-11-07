@@ -223,11 +223,6 @@ def _calls_in_tree(tree: ast.Module, path: Path, root: Path, cfg_function_names:
     return found
 
 
-def _find_cfg_get_calls_in_file(path: Path, root: Path, cfg_function_names: frozenset[str]) -> list[CfgGetCall]:
-    """Call sites in one file. Raises ``_core.SourceError`` when the file cannot be read or parsed."""
-    return _calls_in_tree(parse_file(path), path, root, cfg_function_names)
-
-
 def scan_cfg_get_calls(
     root: Path,
     files: Iterable[Path],

@@ -6,7 +6,8 @@
 #
 # pre-commit stage: seconds. pre-push stage: the self-gates CI's self-ci.yml enforces (the 2026-10-04 v1.21.0 push
 # failed CI on unregistered pytest markers, a complexity limit and the README install tag because only the changed
-# files' tests had been run). Measured 2026-10-04 on a loaded machine: the gate subset takes ~4 min with -n 2 (1075 tests);
+# files' tests had been run). Measured 2026-11-07 on a loaded machine: the gate subset is 1,612 tests, 202 s serial (about 4 min with -n 2 once the
+# tree digest skips .claude);
 # the full suite takes ~20 min there, so the rest of tests/ is left to CI.
 
 default_install_hook_types: [pre-commit, pre-push]

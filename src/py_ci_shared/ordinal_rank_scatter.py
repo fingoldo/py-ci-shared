@@ -32,6 +32,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["RULE", "SUPPRESSION", "assert_ordinal_rank_scatter", "find_ordinal_rank_scatter"]
 
@@ -46,15 +47,6 @@ _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 def _rank_like(name: str) -> bool:
     return "rank" in name.lower() or name in {"r", "rk"}
-
-
-def _call_name(node: ast.AST) -> Optional[str]:
-    if isinstance(node, ast.Call):
-        if isinstance(node.func, ast.Attribute):
-            return node.func.attr
-        if isinstance(node.func, ast.Name):
-            return node.func.id
-    return None
 
 
 def _is_order_call(node: ast.AST) -> bool:

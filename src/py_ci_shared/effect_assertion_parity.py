@@ -390,28 +390,6 @@ def _is_real_connect(node: ast.AST) -> bool:
     return (isinstance(root, ast.Name) and root.id in _REAL_DB_MODULES) or (isinstance(root, ast.Attribute) and root.attr in _REAL_DB_MODULES)
 
 
-def _exercises_against_a_real_database(tree: ast.AST) -> bool:
-    """True when this test opens a database of its own -- so it is not mocking, it is running.
-
-    A test that calls ``sqlite3.connect(tmp_path / "x.sqlite")``, drives the module, and then queries
-    the result back is STRONGER evidence than any mock assertion: it observes the rows, not the call.
-    The check could not see that, so it reported such modules as uninspected -- and this module's own
-    docstring says those "belong in the baseline with a note", which means hand-maintaining an entry
-    per module for the one case that is actually well tested.
-
-    Measured on autopsia: 22 vocabulary installers connect to SQLite directly and are each covered by
-    a test that installs into a temp file and SELECTs the rows back. That is 66 of its 93 reported
-    effects, every one of them a false report.
-
-    The signal is deliberately narrow -- a `connect` on a real driver, called BY THE TEST. A mocking
-    test patches `connect` instead, and `patch("sqlite3.connect")` is a call to `patch`, not to
-    `connect`. Same limitation as everything else here: it answers "does anything exercise this",
-    not "does the assertion afterwards check the right thing". :func:`_real_database_tests` narrows it to the test
-    functions that also call into the module under test.
-    """
-    return any(_is_real_connect(node) for node in _fast_walk(tree))
-
-
 #: How a fixture says it is building a real database handle, beyond a driver's own ``connect``.
 _REAL_DB_FACTORIES = frozenset({"create_engine", "create_async_engine"})
 
@@ -448,35 +426,8 @@ def _fixtures_backed_by_a_real_database_in(tree: ast.AST) -> set[str]:
     return backed
 
 
-def _fixture_names_backed_by_a_real_database(conftest: Path) -> set[str]:
-    """Fixture names in *conftest* that hand out a handle to a REAL database.
-
-    The third shape of the same false report, and the one with the best evidence behind it. A
-    project with a `db_session` fixture bound to a live server -- glossum requires `_test` in the
-    URL and wraps every test in a SAVEPOINT it rolls back -- exercises its writes against Postgres
-    itself. There is no mock anywhere to assert on, and the check reported all 55 of its effects.
-
-    Resolved one level: a fixture that opens the database, and a fixture that merely REQUESTS one
-    that does. That covers the ordinary `_db_engine` -> `db_session` split without turning this into
-    a dependency solver.
-    """
-    tree = _tree(conftest)
-    return set() if tree is None else _fixtures_backed_by_a_real_database_in(tree)
-
-
 def _test_functions(tree: ast.AST) -> list["ast.FunctionDef | ast.AsyncFunctionDef"]:
     return [n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name.startswith("test")]
-
-
-def _requests_a_real_database_fixture(tree: ast.AST, fixtures: frozenset[str]) -> bool:
-    """True when a test function in *tree* asks for one of *fixtures* by parameter name."""
-    if not fixtures:
-        return False
-    for node in _test_functions(tree):
-        params = {a.arg for a in node.args.args} | {a.arg for a in node.args.kwonlyargs}
-        if params & fixtures:
-            return True
-    return False
 
 
 def _calls_into(node: ast.AST, aliases: ImportAliases, module_names: Collection[str]) -> bool:
@@ -638,39 +589,6 @@ def _mock_inspections(tree: ast.Module, effects: Sequence[str], helpers: Optiona
     return found
 
 
-def _inspects(
-    path: Path,
-    effects: Sequence[str],
-    db_fixtures: frozenset[str] = frozenset(),
-    helpers: Mapping[str, Collection[str]] | None = None,
-    *,
-    module_names: Optional[Collection[str]] = None,
-) -> set[str]:
-    """Effects this test inspects on a mock: ``x.commit.assert_called()``, ``x.execute.call_args``.
-
-    Matched on the ATTRIBUTE CHAIN rather than on text, so ``# commit is asserted below`` in a comment
-    and a local variable called ``commit`` are both correctly ignored. With *module_names* (the dotted names of the
-    module under test) a real-database run is credited only when one test function both runs against the database and
-    calls into that module; without it, any real-database use in the file credits every effect.
-    """
-    tree = _tree(path)
-    if tree is None:
-        return set()
-    # A test that opens its own database is exercising every effect the module performs, and
-    # observing the ROWS rather than the call. Nothing more specific is needed or available.
-    if module_names is not None:
-        if _real_database_tests(tree, db_fixtures, module_names):
-            return set(effects)
-    elif _exercises_against_a_real_database(tree) or _requests_a_real_database_fixture(tree, db_fixtures):
-        return set(effects)
-    return _mock_inspections(tree, effects, helpers)
-
-
-def _cached_imported_names(path: Path) -> frozenset[str]:
-    """``_imported_names`` for *path* (absolute imports only). Kept for callers; parsing is cached by ``_core``."""
-    return frozenset(_imported_names(path))
-
-
 def _py_files(root: Path) -> "list[Path]":
     """Every ``.py`` under *root*, with skipped directories never entered (``_core.iter_files``: git's listing inside a
     work tree, a pruned walk outside one)."""
@@ -801,12 +719,6 @@ def build_import_map(repo_root: Path, *, package_name: str = "", src_dir: str = 
         for name in reached:
             hits.setdefault(by_module[name].relative_to(repo_root).as_posix(), set()).add(test.relative_to(repo_root).as_posix())
     return {source: sorted(found) for source, found in sorted(hits.items())}
-
-
-def _patches_a_real_driver_cached(path: Path) -> bool:
-    """``_patches_a_real_driver`` for a file (parsing is cached by ``_core`` on the file's mtime and size)."""
-    tree = _tree(path)
-    return False if tree is None else _patches_a_real_driver(tree)
 
 
 def _module_dotted_names(module: str, repo_root: Path) -> set[str]:

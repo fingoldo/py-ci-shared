@@ -16,6 +16,7 @@ from typing import Optional
 
 from .._core.node_index import child_nodes, walk as walk_nodes
 from .._core.source import SourceParseError, SourceReadError, parse_file
+from .._core.node_index import dotted_name as dotted_name  # the one copy lives in _core
 
 # Parse trees live in ONE cache, ``_core.source`` (see ``_safe_parse``); this module keeps only the source-line cache below.
 
@@ -132,21 +133,6 @@ _DEFAULT_EXCLUDE_DIRS = frozenset(
 )
 
 
-def _is_excluded(path: Path, root: Path, exclude_dirs: frozenset[str], root_resolved: Optional[Path] = None) -> bool:
-    """Whether ``path`` sits in an excluded directory BELOW ``root``.
-
-    One implementation, called from every scanner that walks a tree, because three copies of this decision
-    is how the bug it now prevents got in: two of them matched ``exclude_dirs`` against the ABSOLUTE path's
-    components, so an ancestor of the scan root silenced the whole scan. Passing the same tree as a relative
-    path found 359 findings and as an absolute path found 0, with no error either way.
-    """
-    try:
-        relative = path.resolve().relative_to(root_resolved if root_resolved is not None else root.resolve())
-    except ValueError:  # a symlink pointing outside the tree - judge it by its own path
-        relative = path
-    return any(part in exclude_dirs for part in relative.parts)
-
-
 # The ONE set of decorator names that count as "this function memoizes its result". Two scanners
 # each carried their own, one of them two names long, so widening it after a false positive fixed
 # one scanner and left the other reporting the same function.
@@ -173,23 +159,6 @@ def is_cached(func: "ast.FunctionDef | ast.AsyncFunctionDef", decorator_names: I
 def is_locals_or_globals_call(node: ast.expr) -> bool:
     """True for a bare, no-argument ``locals()``/``globals()`` call node."""
     return isinstance(node, ast.Call) and not node.args and not node.keywords and isinstance(node.func, ast.Name) and node.func.id in ("locals", "globals")
-
-
-def dotted_name(node: ast.expr) -> str:
-    """Render a Name/Attribute chain as ``"a.b.c"``, or ``""`` when the chain is not Name-rooted.
-
-    ``""`` for a subscript or call receiver (``registry[k].run()``, ``f().g``) rather than a partial
-    rendering, so a caller can treat the empty string as "cannot say" without also having to detect
-    a leading dot.
-    """
-    parts: list[str] = []
-    while isinstance(node, ast.Attribute):
-        parts.append(node.attr)
-        node = node.value
-    if not isinstance(node, ast.Name):
-        return ""
-    parts.append(node.id)
-    return ".".join(reversed(parts))
 
 
 def module_level_names(tree: ast.Module) -> "frozenset[str]":

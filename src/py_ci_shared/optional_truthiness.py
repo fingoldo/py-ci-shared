@@ -53,6 +53,7 @@ from typing import Callable, Optional, Union
 
 from ._core import SourceError, child_nodes, parse_file, parse_source, relative_posix, walk
 from ._core import walk as shared_walk
+from ._core.call_names import func_name as _call_name
 
 logger = logging.getLogger(__name__)
 
@@ -361,12 +362,6 @@ def _build_model(trees: "list[tuple[str, ast.Module]]", relevant: "list[tuple[st
                 if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     model.funcs.setdefault(fn.name, []).append((rel, fn))
     return model
-
-
-def _call_name(func: ast.AST) -> str:
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return func.id if isinstance(func, ast.Name) else ""
 
 
 @dataclass

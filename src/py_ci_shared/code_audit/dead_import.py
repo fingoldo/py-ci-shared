@@ -165,28 +165,6 @@ def _string_spelled_references(tree: ast.Module) -> set[str]:
     return names
 
 
-def _attribute_names_in_corpus(root: Path, exclude_dirs: frozenset[str]) -> set[str]:
-    """Every ``.attr`` name accessed anywhere (``obj.attr``) across the whole corpus -- the
-    cheap, repo-wide "is this name EVER accessed as an attribute" signal used to avoid flagging a
-    facade re-export (``from module_b import some_name`` in module_a, only ever consumed
-    elsewhere as ``module_a.some_name``) as a dead import. Deliberately not import-alias-resolved
-    (no attempt to confirm the attribute access is on THIS SPECIFIC module) -- a cheap, safe-by-
-    construction (favors false negatives, never manufactures a finding) whole-corpus scan."""
-    return _corpus_import_index(root, exclude_dirs)[0]
-
-
-def _from_import_names_by_file(root: Path, exclude_dirs: frozenset[str]) -> dict[Path, set[str]]:
-    """For every file, the set of names it pulls in via ``from <anything> import name`` (star
-    imports excluded). Used to detect a name re-exported from a facade ``__init__.py`` and
-    consumed by a DIFFERENT file doing ``from that_facade import name`` -- a shape invisible to
-    ``_attribute_names_in_corpus`` (the name never appears as ``X.name`` anywhere, only as the
-    ``from`` import's own target list) and invisible to the per-file bare-name check (the
-    consuming reference lives in a different file entirely). Confirmed as a real false-positive
-    class: mlframe package ``__init__.py`` facades re-exporting via ``from .submodule import
-    Name`` for downstream ``from mlframe.pkg import Name`` consumers were flagged wholesale."""
-    return _corpus_import_index(root, exclude_dirs)[1]
-
-
 def _corpus_import_index(roots: "Path | Iterable[Path]", exclude_dirs: frozenset[str]) -> "tuple[set[str], dict[Path, set[str]]]":
     """Both whole-corpus indexes in ONE ``ast.walk`` per file: the attribute names and the per-file
     ``from ... import`` names.

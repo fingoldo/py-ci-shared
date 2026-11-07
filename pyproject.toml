@@ -264,6 +264,7 @@ root = "."
 baseline_path = "tests/baselines/function_length.json"
 
 [tool.py_ci_shared.gates.complexity_ratchet]
+budget_s = 120  # measured 50 s over src and tests; the default 30 s printed a standing BUDGET line on a clean tree
 files = ["src/**/*.py", "tests/**/*.py"]
 root = "."
 baseline_path = "tests/baselines/complexity_ratchet.json"
@@ -393,6 +394,7 @@ root = "tests"
 
 [tool.py_ci_shared.gates.unread_function_params]
 root = "tests"
+budget_s = 120  # measured 73 s over tests/ on a loaded machine; the default 30 s printed a standing BUDGET line on a clean tree
 
 [tool.py_ci_shared.gates.validation_errors_echo_input]
 root = "tests"
@@ -413,3 +415,10 @@ roots = ["src", "tests"]
 
 [tool.py_ci_shared.gates.hash_fed_by_array_copy]
 roots = ["src", "tests"]
+
+[tool.py_ci_shared.gates.import_cycles]
+src_root = "src/py_ci_shared"
+package = "py_ci_shared"
+
+[tool.py_ci_shared.gates.systemexit_in_library]
+root = "src/py_ci_shared"

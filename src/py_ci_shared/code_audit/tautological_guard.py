@@ -39,11 +39,6 @@ def _target_key(node: ast.AST) -> str | None:
     return None
 
 
-def _root_of(key: str) -> str:
-    """`c.mean` and `c` share the root `c` -- a threshold on an attribute is pinned by pinning the object."""
-    return key.split(".")[0].split("[")[0]
-
-
 def _classify_and_operands(node: ast.BoolOp) -> tuple[dict[str, ast.expr], dict[str, ast.expr]]:
     """Split an ``and`` expression's comparison operands into ``(thresholded, pinned)`` maps keyed by target."""
     thresholded: dict[str, ast.expr] = {}

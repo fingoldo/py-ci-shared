@@ -26,6 +26,7 @@ from pathlib import Path
 
 from ._core import ParsedFile, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["SurvivorshipScore", "DEFAULT_METRIC_NAMES", "find_survivorship_scoring", "assert_no_survivorship_scoring"]
 
@@ -65,12 +66,6 @@ class SurvivorshipScore:
 
     def __repr__(self) -> str:
         return f"{self.path}:{self.lineno} {self.metric}(... [{self.mask}]) in {self.function}()"
-
-
-def _call_name(node: ast.Call) -> str | None:
-    """The called name, attribute access included (``metrics.rmse`` reads as ``rmse``)."""
-    func = node.func
-    return getattr(func, "attr", getattr(func, "id", None))
 
 
 def _finite_masks(func: ast.AST) -> set[str]:

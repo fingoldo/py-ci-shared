@@ -186,12 +186,6 @@ def _env_var_reads_in_file(
     return found
 
 
-def _env_var_names_in_file(
-    tree: ast.AST, loop_var_literals: dict[str, set[str]], aliases: Optional[ImportAliases] = None, reader_funcs: frozenset[str] = frozenset()
-) -> set[str]:
-    return {name for name, _ in _env_var_reads_in_file(tree, loop_var_literals, aliases, reader_funcs)}
-
-
 def _scan(files: Iterable[Path], min_files: int = 0) -> ScanResult:
     return scan_python([Path(p) for p in files], min_files=min_files)
 

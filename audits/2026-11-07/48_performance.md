@@ -2,7 +2,7 @@
 
 Read-only. Machine: 22 logical CPUs, LoadPercentage 100 on every sample, 51 to 71 python processes from other sessions. Timings were
 repeated where cheap; loaded and quiet numbers are both given and labelled. Python 3.14.3, Windows 11. Findings are in
-`48_performance.json` (same ids); this file holds the evidence narrative. All dispositions OPEN.
+`48_performance.json` (same ids); this file holds the evidence narrative. Dispositions are recorded per finding below.
 
 ## Measurements
 
@@ -39,16 +39,27 @@ Serial sum 202 s, 1,612 tests; the hook comment says about 4 minutes and 1,075 t
 - 48-F1 P1: the gate cache digest hashes `.claude/worktrees` (28,948 of 31,137 entries, 183 MB) although `corpus.DEFAULT_EXCLUDE`
   and the corpus docstring already say those are full repo copies. A cache lookup costs 25.7 to 65 s; excluding `.claude` costs 0.79 s.
   Three back-to-back single-gate runs took 78.4, 63.8, 64.1 s for a gate that takes 3.6 s.
+  Disposition: RESOLVED in the commit carrying this change (SHA in the hand-off report; a commit cannot name itself): _SKIP_DIRS gains '.claude'. Measured on the main checkout (28,948 of 31,155 stat entries under .claude): tree_digest 44.97 s before, 2.53 s after (2,207 entries, 0 under .claude), loaded machine, same session. Test test_the_tree_digest_ignores_agent_worktrees_under_dot_claude failed first (the fake .claude/worktrees tree was listed), passes now. Gate results unchanged by construction: the digest only forms the cache key and no gate reads it. The proposal to derive the file set from corpus.git_listing / DEFAULT_EXCLUDE was not taken because build/ and .benchmarks might hold files a gate reads; only .claude is skipped.
 - 48-F2 P2: the digest reads every file into the bytes cache (199.6 MB).
+  Disposition: DEFERRED: waits on a decision about the racy-window stat signature (a correctness trade-off for the cache key). After F1 the digest reads 2,207 files in 2.5 s, and the bytes it caches are reused by the gates that read the same files, so the remaining saving is small.
 - 48-F3 P2: mlframe scale, 34x RSS per source byte, 10 to 13 s per warm scan, node index +0.56 GB.
+  Disposition: DEFERRED: mlframe-scale memory and listing memoisation is a design change in _core/corpus and the source caches; needs its own measured round on a quiet machine (the audit numbers are one loaded sample).
 - 48-F4 P2: `child_nodes` unmemoised, 10.4 M calls, 80 s cumulative of 419 s in the profile; `isinstance` 126.9 M calls.
+  Disposition: DEFERRED: child_nodes memoisation touches _core/node_index used by every gate and by the detection modules other audits changed this round; waits on those landing, then needs a before/after of run-all finding lists.
 - 48-F5 P2: `iter_files` re-resolves paths, 62 percent of a warm scan, 24,424 `_getfinalpathname` calls.
+  Disposition: DEFERRED: iter_files path re-resolution lives in _core/corpus, shared with audit 40/41/42 changes in flight; waits on them.
 - 48-F6 P3: parse cache works (12,752 requests, 1,727 real `ast.parse`, 5.9 s); 412 repeat parses remain, mostly text under 1000 chars.
+  Disposition: DEFERRED: P3, below F4 by the audit's own ranking; waits on F4.
 - 48-F7 P3: 41 `git ls-files` spawns per run-all.
+  Disposition: DEFERRED: git_listing memoisation needs an invalidation key on .git/index plus untracked files; waits on the F3 corpus work.
 - 48-F8 P3: stale hook comment; self gates run twice in CI (pytest step and `run-all (self)` step).
+  Disposition: RESOLVED in the commit carrying this change (SHA in the hand-off report) for the stale hook comment: .pre-commit-config.yaml now quotes the 2026-11-07 measurement (1,612 tests, 202 s serial); the first-test digest cost is removed by F1. DEFERRED for the self gates running twice in CI (pytest step and run-all (self) step): that is the CI workflow, owned by the audit 43/46/47 agent.
 - 48-F9 P3: wall-clock budgets measure load (repo_hygiene 6.4 s then 50.3 s).
+  Disposition: RESOLVED in the commit carrying this change (SHA in the hand-off report) for the standing BUDGET line: unread_function_params and complexity_ratchet get budget_s = 120 in pyproject with the measured 73 s and 50 s. DEFERRED for reporting CPU time next to wall time (a runner change; wall-clock budgets still measure machine load).
 - 48-F10 P3: mutation harness; generation 1.6 to 26.7 ms per mutant, serial test runs dominate (not run, out of scope).
+  Disposition: WON'T FIX: the audit itself finds generation is 1 to 2 percent of a mutation run and recommends no change; coverage-based test selection is a separate feature.
 - 48-F11 P3: 151 gate-cache files never pruned; 500-key cap holds about nine tree versions.
+  Disposition: DEFERRED: a per-(gate, tree) cap and pruning of dead repo entries need a store-format decision; after F1 the tree digest changes far less often, so the 500-key cap holds many more versions.
 
 ## Caveats
 

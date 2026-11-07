@@ -8,7 +8,7 @@
     "proposed_fix": "Make the digest cover exactly what the corpus layer covers: take the file list from corpus.git_listing (tracked + untracked-not-ignored) or at minimum reuse corpus.DEFAULT_EXCLUDE as _SKIP_DIRS. Keep content hashing for those files only. Add a test with a fake .claude/worktrees/x/ tree asserting that the digest is unchanged when a file inside it changes and a timing-free assertion that _stat_signature never lists it.",
     "ast_checkable": false,
     "fp_risk": "low-medium: a gate that reads a file inside an excluded dir (e.g. build/ or .benchmarks) would become stale-cacheable; check no gate kwargs point under DEFAULT_EXCLUDE dirs, or hash gate-declared extra paths",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in the commit carrying this change (SHA in the hand-off report; a commit cannot name itself): _SKIP_DIRS gains '.claude'. Measured on the main checkout (28,948 of 31,155 stat entries under .claude): tree_digest 44.97 s before, 2.53 s after (2,207 entries, 0 under .claude), loaded machine, same session. Test test_the_tree_digest_ignores_agent_worktrees_under_dot_claude failed first (the fake .claude/worktrees tree was listed), passes now. Gate results unchanged by construction: the digest only forms the cache key and no gate reads it. The proposal to derive the file set from corpus.git_listing / DEFAULT_EXCLUDE was not taken because build/ and .benchmarks might hold files a gate reads; only .claude is skipped."
   },
   {
     "id": "48-F2",
@@ -19,7 +19,7 @@
     "proposed_fix": "Hash with a streaming read that bypasses read_bytes_cached (hashlib.file_digest) for files not in the corpus, or use the (size, mtime_ns, inode) signature for files older than the racy window and read only the recent ones, the rule _FAST already uses. Bound the digest to the F1 file set.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: waits on a decision about the racy-window stat signature (a correctness trade-off for the cache key). After F1 the digest reads 2,207 files in 2.5 s, and the bytes it caches are reused by the gates that read the same files, so the remaining saving is small."
   },
   {
     "id": "48-F3",
@@ -30,7 +30,7 @@
     "proposed_fix": "(a) memoise the corpus listing and the per-file identity/relative path per (root, patterns, exclude) for a run, invalidated by the cheap stat signature, so warm scans are O(files) dict lookups; (b) drop the descendants list for trees no longer needed (weak keys already free them, but source._CACHE strongly holds every tree: use a bounded LRU on tree count or total node count); (c) record peak RSS and per-gate scan time in the GateResult so budgets can be set on memory.",
     "ast_checkable": false,
     "fp_risk": "low for (a), medium for (b): a gate that holds a ParsedFile list keeps its trees alive anyway",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: mlframe-scale memory and listing memoisation is a design change in _core/corpus and the source caches; needs its own measured round on a quiet machine (the audit numbers are one loaded sample)."
   },
   {
     "id": "48-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Memoise children per tree: tree_memo(tree_of_node, 'children', ...) building {id(node): tuple(children)} once during the _descendants pass, and have child_nodes look up the list; or store the list on a weak dict keyed by node like _DESCENDANTS. Add a counter-based test (child_nodes field reads per node <= 1 across two gates over the same tree).",
     "ast_checkable": true,
     "fp_risk": "low: trees are documented read-only",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: child_nodes memoisation touches _core/node_index used by every gate and by the detection modules other audits changed this round; waits on those landing, then needs a before/after of run-all finding lists."
   },
   {
     "id": "48-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "In relative_posix compute resolve_cached(root) once per call site (hoist out of the per-file lambda in iter_files) and use os.path.relpath on already-absolute listing results from git_listing, which are root-relative strings by construction (no resolve needed for git mode).",
     "ast_checkable": false,
     "fp_risk": "low-medium: symlinked checkouts (tests/test_core_corpus_symlinks.py) depend on the resolve semantics",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: iter_files path re-resolution lives in _core/corpus, shared with audit 40/41/42 changes in flight; waits on them."
   },
   {
     "id": "48-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Lower priority than 48-F1/F4. Cache _docstring_lines results per tree via tree_memo (one docstring-line set per module) and let unresolved_imports use the ScanResult's already-parsed tree instead of parse_source per path again.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: P3, below F4 by the audit's own ranking; waits on F4."
   },
   {
     "id": "48-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Memoise git_listing per (root, flags) keyed on the mtime of .git/index plus the stat signature of untracked files, instead of never; or share one listing across the gates of a run_gate loop (cli._cmd_run) and clear it between runs, as _USABLE_ROOTS already does for the probes.",
     "ast_checkable": false,
     "fp_risk": "medium: the comment in corpus.py says a gate may write a file and list again (stale listing)",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: git_listing memoisation needs an invalidation key on .git/index plus untracked files; waits on the F3 corpus work."
   },
   {
     "id": "48-F8",
@@ -85,7 +85,7 @@
     "proposed_fix": "Fix F1 (removes ~20 s from the first test per worker). Update the comment from a measured run, or drop the numbers. In self-ci.yml either deselect test_self_gates in the pytest step or drop the run-all step, and keep one of them. Put test_parity_with_ruff_on_this_package under a marker that runs once in CI.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in the commit carrying this change (SHA in the hand-off report) for the stale hook comment: .pre-commit-config.yaml now quotes the 2026-11-07 measurement (1,612 tests, 202 s serial); the first-test digest cost is removed by F1. DEFERRED for the self gates running twice in CI (pytest step and run-all (self) step): that is the CI workflow, owned by the audit 43/46/47 agent."
   },
   {
     "id": "48-F9",
@@ -96,7 +96,7 @@
     "proposed_fix": "Report process CPU time (time.process_time) next to wall time and compare the budget with CPU time, or normalise by a measured calibration loop; print both.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in the commit carrying this change (SHA in the hand-off report) for the standing BUDGET line: unread_function_params and complexity_ratchet get budget_s = 120 in pyproject with the measured 73 s and 50 s. DEFERRED for reporting CPU time next to wall time (a runner change; wall-clock budgets still measure machine load)."
   },
   {
     "id": "48-F10",
@@ -107,7 +107,7 @@
     "proposed_fix": "No change to generation needed (1 to 2 percent). If runtime matters: partition mutants by test file and run several workers with separate sandbox copies of the target (the docstring rejects this for a measured 1.2 to 1.6x); more valuable is test selection by coverage so each mutant runs only tests that execute its line.",
     "ast_checkable": false,
     "fp_risk": "n/a",
-    "disposition": "OPEN"
+    "disposition": "WON'T FIX: the audit itself finds generation is 1 to 2 percent of a mutation run and recommends no change; coverage-based test selection is a separate feature."
   },
   {
     "id": "48-F11",
@@ -118,6 +118,6 @@
     "proposed_fix": "Key the cap per (gate, tree) rather than a flat 500; remove store files whose repo path no longer exists; read the file once per process.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: a per-(gate, tree) cap and pruning of dead repo entries need a store-format decision; after F1 the tree digest changes far less often, so the 500-key cap holds many more versions."
   }
 ]

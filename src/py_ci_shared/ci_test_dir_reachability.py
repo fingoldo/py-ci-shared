@@ -215,14 +215,6 @@ def pytest_invocations(ci_text: str) -> list[PytestInvocation]:
     return out
 
 
-def _has_pathless_pytest_invocation(ci_text: str) -> bool:
-    """True if any ``pytest`` command in ``ci_text`` passes no positional path.
-
-    Such a run collects from ``testpaths``/rootdir, so it reaches every ``tests/`` subdir.
-    """
-    return any(not inv.paths for inv in pytest_invocations(ci_text))
-
-
 def _test_subdirs(repo_root: Path) -> set[str]:
     tests_dir = repo_root / "tests"
     if not tests_dir.is_dir():

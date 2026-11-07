@@ -322,21 +322,6 @@ def _guards_presence_of(test: ast.expr, attr: str) -> bool:
     return False
 
 
-def _sentinel_names_for(body: "list[ast.stmt]", attr: str) -> "set[str]":
-    """Names assigned from ``getattr(mod, attr, <sentinel>)`` anywhere in this scope."""
-    names: set[str] = set()
-    for node in _fast_walk(ast.Module(body=list(body), type_ignores=[])):
-        if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
-            continue
-        call = node.value
-        if not (isinstance(call.func, ast.Name) and call.func.id == "getattr" and len(call.args) >= 3):
-            continue
-        if not (isinstance(call.args[1], ast.Constant) and call.args[1].value == attr):
-            continue
-        names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-    return names
-
-
 def _attribute_targets(target: ast.expr) -> "list[ast.Attribute]":
     """``m.X`` targets of an assignment, including inside tuple/list/starred unpacking (``m.A, m.B = 1, 2``)."""
     if isinstance(target, ast.Attribute):

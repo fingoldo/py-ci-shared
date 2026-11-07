@@ -108,3 +108,18 @@ def test_an_unwritable_cache_costs_only_the_next_run(repo, monkeypatch):
     monkeypatch.setattr(gate_cache, "_store_path", lambda _root: blocker / "cache.json")
     assert runner.run_gate(config, run).status == runner.PASSED
     assert calls == ["call"]
+
+
+def test_the_tree_digest_ignores_agent_worktrees_under_dot_claude(tmp_path):
+    """``.claude/worktrees`` holds complete repo copies; hashing them made a cache lookup cost tens of seconds (audit 48-F1)."""
+    root = tmp_path / "repo"
+    (root / ".claude" / "worktrees" / "x").mkdir(parents=True)
+    (root / "module.py").write_text("X = 1\n", encoding="utf-8")
+    copy = root / ".claude" / "worktrees" / "x" / "module.py"
+    copy.write_text("X = 1\n", encoding="utf-8")
+    assert not [entry for entry in gate_cache._stat_signature(root) if entry[0].startswith(".claude")]
+    before = gate_cache.tree_digest(root)
+    gate_cache.forget_tree_digests()
+    copy.write_text("X = 2\n", encoding="utf-8")
+    assert gate_cache.tree_digest(root) == before
+    gate_cache.forget_tree_digests()

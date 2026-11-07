@@ -219,7 +219,6 @@ def _check_unmutated(
     timeout: float,
     use_warm_worker: bool,
     have_mutants: bool,
-    limit_name: None = None,
     opts: Optional[SweepOptions] = None,
     skip_primary: bool = False,
 ) -> "tuple[Sequence[PathArg], str]":

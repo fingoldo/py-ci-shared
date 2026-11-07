@@ -33,6 +33,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, child_nodes, scan_python
 from ._core import walk as shared_walk
+from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["DEFAULT_GROUP_PARAMS", "DEFAULT_SPLITTERS", "RULE", "SUPPRESSION", "assert_group_blind_split", "find_group_blind_split"]
 
@@ -50,14 +51,6 @@ def _params(func: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> list[str]:
     a = func.args
     names = [x.arg for x in (*a.posonlyargs, *a.args, *a.kwonlyargs)]
     return names
-
-
-def _call_name(call: ast.Call) -> Optional[str]:
-    if isinstance(call.func, ast.Name):
-        return call.func.id
-    if isinstance(call.func, ast.Attribute):
-        return call.func.attr
-    return None
 
 
 def _mentions(node: ast.AST, names: Collection[str]) -> bool:

@@ -45,6 +45,7 @@ from typing import Optional, Union
 from ._core.scopes import own_nodes
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core import walk as shared_walk
+from ._core.call_names import call_name as _call_name
 
 __all__ = ["RULE", "assert_cancellation_prone_moments", "find_cancellation_prone_moments"]
 
@@ -83,11 +84,6 @@ def _factors(node: ast.AST) -> list[ast.AST]:
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
         return _factors(node.left) + _factors(node.right)
     return [node]
-
-
-def _call_name(call: ast.Call) -> str:
-    func = call.func
-    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
 
 
 def _is_power_sum_call(node: ast.AST) -> bool:

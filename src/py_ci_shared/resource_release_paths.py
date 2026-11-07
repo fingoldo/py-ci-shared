@@ -97,11 +97,6 @@ def _protected_calls(tree: ast.AST, release: str) -> list[ast.Call]:
     return out
 
 
-def _release_is_protected(tree: ast.AST, release: str) -> bool:
-    """True when some ``finally`` or ``with`` body calls ``.<release>(...)``."""
-    return bool(_protected_calls(tree, release))
-
-
 def _unprotected_lines(tree: ast.AST, release: str) -> list[int]:
     protected = _protected_calls(tree, release)
     protected_ids = {id(c) for c in protected}

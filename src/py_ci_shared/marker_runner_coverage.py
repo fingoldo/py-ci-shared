@@ -300,11 +300,6 @@ def _parse_invocation(command: str) -> "tuple[tuple[str, ...], str | None, str |
     return tuple(paths), expression, keyword
 
 
-def _paths_and_expression(command: str) -> "tuple[tuple[str, ...], str | None]":
-    paths, expression, _ = _parse_invocation(command)
-    return paths, expression
-
-
 def _python_invocations(source: str) -> "list[str]":
     """``pytest ...`` command lines a Python script runs as an argument list
     (``subprocess.call([sys.executable, "-m", "pytest", "-m", "gpu", ...])``): the string elements after the ``pytest``

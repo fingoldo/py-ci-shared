@@ -54,6 +54,7 @@ from typing import Any, Optional, Union
 
 from ._core import Baseline, BaselineError, ImportAliases, SourceError, child_nodes, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
+from ._core.call_names import call_name as _call_name
 
 __all__ = [
     "DEFAULT_READERS",
@@ -81,8 +82,31 @@ _LOAD_FUNCTIONS = frozenset({"loads", "load", "safe_load", "safe_load_all"})
 _DATA_FORMAT_MODULES = ("json", "toml", "yaml", "msgpack", "pickle")
 #: Methods of a string (or bytes) that return text derived from it.
 _TEXT_METHODS = frozenset(
-    {"strip", "lstrip", "rstrip", "lower", "upper", "casefold", "title", "split", "rsplit", "splitlines", "replace", "join", "format", "partition",
-     "rpartition", "removeprefix", "removesuffix", "decode", "encode", "expandtabs", "translate", "ljust", "rjust"}
+    {
+        "strip",
+        "lstrip",
+        "rstrip",
+        "lower",
+        "upper",
+        "casefold",
+        "title",
+        "split",
+        "rsplit",
+        "splitlines",
+        "replace",
+        "join",
+        "format",
+        "partition",
+        "rpartition",
+        "removeprefix",
+        "removesuffix",
+        "decode",
+        "encode",
+        "expandtabs",
+        "translate",
+        "ljust",
+        "rjust",
+    }
 )
 #: Deserialisers: what they return is data (a coverage.json whose keys happen to be ``.py`` paths), not program text.
 _DESERIALISERS = frozenset(
@@ -117,8 +141,36 @@ _CODE_LIKE = re.compile(
     r"|\b[a-z_]\w*\s*(?:=|\+=|-=|:=)\s*\S"
 )
 _NON_SOURCE_SUFFIXES = (
-    ".json", ".toml", ".md", ".txt", ".csv", ".tsv", ".ini", ".cfg", ".yml", ".yaml", ".html", ".xml", ".xsd", ".svg", ".css", ".js", ".log", ".env",
-    ".lock", ".jsonl", ".ttl", ".rdf", ".owl", ".obo", ".fasta", ".pdf", ".gz", ".parquet", ".pkl", ".pickle",
+    ".json",
+    ".toml",
+    ".md",
+    ".txt",
+    ".csv",
+    ".tsv",
+    ".ini",
+    ".cfg",
+    ".yml",
+    ".yaml",
+    ".html",
+    ".xml",
+    ".xsd",
+    ".svg",
+    ".css",
+    ".js",
+    ".log",
+    ".env",
+    ".lock",
+    ".jsonl",
+    ".ttl",
+    ".rdf",
+    ".owl",
+    ".obo",
+    ".fasta",
+    ".pdf",
+    ".gz",
+    ".parquet",
+    ".pkl",
+    ".pickle",
 )
 
 
@@ -133,13 +185,6 @@ class SourceTextClaim:
     def key(self, rel: str) -> str:
         """``rel::function::kind`` -- stable across line shifts, which is what a baseline needs."""
         return f"{rel}::{self.function}::{self.kind}"
-
-
-def _call_name(node: ast.Call) -> str:
-    func = node.func
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return func.id if isinstance(func, ast.Name) else ""
 
 
 def _string_constants(node: ast.AST) -> Iterator[str]:
@@ -511,7 +556,12 @@ def _mapping_names(node: ast.AST) -> set[int]:
     """
     out: set[int] = set()
     for sub in _fast_walk(node):
-        if isinstance(sub, ast.Subscript) and isinstance(sub.value, ast.Name) and isinstance(sub.slice, ast.Constant) and isinstance(sub.slice.value, (str, bytes)):
+        if (
+            isinstance(sub, ast.Subscript)
+            and isinstance(sub.value, ast.Name)
+            and isinstance(sub.slice, ast.Constant)
+            and isinstance(sub.slice.value, (str, bytes))
+        ):
             out.add(id(sub.value))
         elif isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute) and sub.func.attr in _MAPPING_METHODS and isinstance(sub.func.value, ast.Name):
             out.add(id(sub.func.value))

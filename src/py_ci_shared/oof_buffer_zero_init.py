@@ -33,6 +33,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["RULE", "SUPPRESSION", "assert_oof_buffer_zero_init", "find_oof_buffer_zero_init"]
 
@@ -46,15 +47,6 @@ _SPLITTERISH = re.compile(r"cv|split|fold", re.IGNORECASE)
 _OOF_NAME = re.compile(r"oof|out_of_fold|holdout|hold_out", re.IGNORECASE)
 _COVERAGE = re.compile(r"isnan|isfinite|coverage|covered|\.fill\(", re.IGNORECASE)
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
-
-
-def _call_name(node: ast.AST) -> Optional[str]:
-    if isinstance(node, ast.Call):
-        if isinstance(node.func, ast.Attribute):
-            return node.func.attr
-        if isinstance(node.func, ast.Name):
-            return node.func.id
-    return None
 
 
 def _buffers(func: ast.AST) -> dict[str, tuple[int, str]]:

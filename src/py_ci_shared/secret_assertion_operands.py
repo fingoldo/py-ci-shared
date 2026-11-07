@@ -34,6 +34,7 @@ from typing import Optional
 from ._core.scopes import own_nodes
 from ._core import Finding, ScanResult, child_nodes, parse_text, scan_python
 from ._core.gate_contract import check_scan
+from ._core.call_names import func_name_or_none as _call_name
 
 __all__ = [
     "DEFAULT_RESOLVERS",
@@ -78,14 +79,6 @@ def _is_environ(node: ast.AST) -> bool:
     if isinstance(node, ast.Attribute):
         return node.attr in ("environ", "environb") and isinstance(node.value, ast.Name) and node.value.id == "os"
     return isinstance(node, ast.Name) and node.id in ("environ", "environb")
-
-
-def _call_name(func: ast.AST) -> Optional[str]:
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return None
 
 
 def _secret_name(name: str) -> bool:

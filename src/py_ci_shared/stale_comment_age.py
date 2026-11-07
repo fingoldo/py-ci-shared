@@ -299,12 +299,6 @@ def _blame_times(repo_root: Path, rel_path: str, lines: Sequence[int]) -> dict[i
     return times
 
 
-def _blame_ages(repo_root: Path, rel_path: str, lines: Sequence[int], now: Optional[float] = None) -> dict[int, float]:
-    """Return ``{line_number: age_in_days}`` for ``lines`` of ``rel_path``, measured at ``now`` (default: the real clock)."""
-    at = time.time() if now is None else now
-    return {n: (at - t) / 86400.0 for n, t in _blame_times(repo_root, rel_path, lines).items()}
-
-
 def _history_problem(repo_root: Path) -> Optional[str]:
     """Why ``git blame`` cannot give real ages here, or ``None``. A shallow clone attributes every line older than
     its boundary to the boundary commit, so every TODO looks as young as the newest commit and the gate passes."""

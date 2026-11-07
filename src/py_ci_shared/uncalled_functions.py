@@ -229,12 +229,6 @@ def _visit_references(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset
         _visit_references(child, shadowed, own, loaded, aliases)
 
 
-def _referenced_names(tree: ast.Module) -> set[str]:
-    """Names *tree* loads, with its own aliased imports resolved to the original name (see :func:`_references`)."""
-    loaded, aliases = _references(tree)
-    return loaded | {original for local, original in aliases.items() if local in loaded}
-
-
 def reexported_public_api(files: Iterable[Path], root: Path) -> dict[str, Exemption]:
     """Map each name a package ``__init__`` re-exports (``from x import f`` or listed in ``__all__``) to a PUBLIC_API exemption.
 

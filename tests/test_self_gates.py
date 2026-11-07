@@ -54,6 +54,8 @@ def test_the_dogfood_set_covers_the_gates_this_repo_can_break():
         "wallclock_test_waits",
         "standard_stream_restore",
         "hash_fed_by_array_copy",
+        "import_cycles",
+        "systemexit_in_library",
     }
     assert expected <= enabled, f"dropped from [tool.py_ci_shared]: {sorted(expected - enabled)}"
     workflows = {p.name for p in (REPO / ".github" / "workflows").glob("*.yml")}

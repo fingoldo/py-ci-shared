@@ -6,6 +6,7 @@ import ast
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index, walk_nodes
+from .._core.call_names import call_name as _call_name
 
 # --- an HTTP endpoint parameter the handler never reads ------------------------------------------
 
@@ -14,18 +15,6 @@ _ROUTE_METHODS = frozenset({"get", "post", "put", "delete", "patch", "head", "op
 # Parameter sources that bind a value from the request. `Depends` / `Security` are deliberately absent: a
 # dependency is often wanted only for its side effect (an auth check, a session), so an unused one is not dead.
 _REQUEST_SOURCES = frozenset({"Query", "Path", "Header", "Cookie", "Body", "Form", "File"})
-
-
-def _call_name(node: ast.expr) -> str:
-    """The trailing identifier of a call's function (``fastapi.Query(...)`` -> ``Query``), else ``""``."""
-    if not isinstance(node, ast.Call):
-        return ""
-    func = node.func
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return ""
 
 
 def _is_route(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:

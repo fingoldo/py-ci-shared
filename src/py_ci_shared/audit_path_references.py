@@ -23,6 +23,7 @@ from typing import NamedTuple, Optional
 
 from ._core import scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.call_names import func_name as _call_name
 
 _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
@@ -46,10 +47,6 @@ def _docstring_nodes(tree: ast.AST) -> set[int]:
 
 
 _PATH_CALLS = frozenset({"join", "Path", "PurePath", "PosixPath", "WindowsPath", "PurePosixPath", "PureWindowsPath"})
-
-
-def _call_name(func: ast.expr) -> str:
-    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
 
 
 def _path_chains(tree: ast.AST) -> dict[int, list[str]]:

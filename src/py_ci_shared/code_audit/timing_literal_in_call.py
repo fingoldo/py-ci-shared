@@ -6,6 +6,7 @@ import ast
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
+from .._core.call_names import call_name_or_none as _call_name
 
 # --- a bare numeric literal that sets a wait, timeout or backoff at its call site ---------------
 #
@@ -22,16 +23,6 @@ from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _l
 _SLEEP_CALLS = frozenset({"sleep", "sleep_async"})
 _BACKOFF_KEYWORDS = frozenset({"backoff", "jitter", "retry_wait", "retry_delay"})
 _SKIPPED_TOP_DIRS = frozenset({"tests", "scripts"})
-
-
-def _call_name(call: ast.Call) -> str | None:
-    """The simple name of the called function, for ``f(...)`` and ``obj.f(...)`` alike."""
-    func = call.func
-    if isinstance(func, ast.Name):
-        return func.id
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    return None
 
 
 def _nonzero_numbers(node: ast.AST) -> list[ast.Constant]:

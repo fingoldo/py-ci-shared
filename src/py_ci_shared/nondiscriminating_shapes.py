@@ -41,6 +41,7 @@ from typing import Optional
 
 from ._core import ImportAliases, child_nodes
 from ._core.node_index import walk as _fast_walk
+from ._core.call_names import call_name as _call_name
 
 __all__ = ["shape_reasons", "SHAPE_HELP"]
 
@@ -186,11 +187,6 @@ def _checks_elements(test: ast.AST) -> bool:
             if not any(_describes_container(side) for side in [node.left, *node.comparators]):
                 return True
     return False
-
-
-def _call_name(node: ast.AST) -> str:
-    func = getattr(node, "func", None)
-    return func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
 
 
 def _len_nonempty_target(test: ast.AST) -> Optional[ast.expr]:

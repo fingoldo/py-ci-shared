@@ -56,11 +56,6 @@ _AWARE_LIBRARIES = frozenset({"arrow", "pendulum"})
 RULE = "naive-utcnow"
 
 
-def _is_utcnow_call(node: ast.AST) -> bool:
-    """`<anything>.utcnow()` -- kept for callers; the scan itself also matches the uncalled reference."""
-    return isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "utcnow"
-
-
 def _root_name(node: ast.AST) -> str:
     while isinstance(node, ast.Attribute):
         node = node.value

@@ -174,10 +174,6 @@ def _names_in(exprs: list[ast.expr]) -> set[str]:
     return {n.id for e in exprs for n in _fast_walk(e) if isinstance(n, ast.Name)}
 
 
-def _after(statements: list[ast.stmt], line: int) -> list[ast.stmt]:
-    return [s for s in statements if s.lineno > line]
-
-
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, source: str) -> list[Finding]:
     lines = source.splitlines()
     out: list[Finding] = []

@@ -143,7 +143,7 @@ class _Restores:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 self.defs.setdefault(node.name, []).append(node)
 
-    def has_restore(self, scope: ast.AST, snapshots: Optional[set[str]] = None, *, in_finalizer: bool = False, depth: int = 0) -> bool:
+    def has_restore(self, scope: ast.AST, snapshots: Optional[set[str]] = None, *, depth: int = 0) -> bool:
         snaps = set(snapshots or ()) | _snapshots(scope, self.aliases)
         return any(self._restores_at(sub, snaps, depth) for sub in _fast_walk(scope))
 
@@ -170,9 +170,9 @@ class _Restores:
 
     def _finalizer_restores(self, arg: ast.AST, snaps: set[str], depth: int) -> bool:
         if isinstance(arg, ast.Lambda):
-            return self.has_restore(arg.body, snaps, in_finalizer=True, depth=depth + 1)
+            return self.has_restore(arg.body, snaps, depth=depth + 1)
         if isinstance(arg, ast.Name):
-            return any(self.has_restore(d, snaps, in_finalizer=True, depth=depth + 1) for d in self.defs.get(arg.id, ()))
+            return any(self.has_restore(d, snaps, depth=depth + 1) for d in self.defs.get(arg.id, ()))
         if isinstance(arg, ast.Call):  # functools.partial(sys.modules.update, saved)
             return any(_uses(a, snaps) for a in arg.args) and any(
                 isinstance(a, ast.Attribute) and a.attr == "update" and _is_sys_modules(a.value, self.aliases) for a in arg.args

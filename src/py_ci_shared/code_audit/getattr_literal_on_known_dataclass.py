@@ -12,18 +12,6 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 
-def _dataclass_fields(tree: ast.Module) -> dict[str, set[str]]:
-    """``{class name -> its declared field names}`` for every ``@dataclass``-decorated class in one module.
-
-    Only annotated class-body assignments count as fields (``x: int``), which is what a dataclass actually
-    turns into a constructor parameter / instance attribute - a plain ``x = 3`` inside the class body is a
-    class-level constant, not a field, and including it would let a genuine miss on the real fields hide
-    behind an unrelated class constant of the same name.
-    """
-    members, bases, decorated = _class_shapes(tree)
-    return {name: _resolved_members(name, members, bases) for name in decorated}
-
-
 def _class_shapes(tree: ast.Module) -> tuple[dict[str, set[str]], dict[str, set[str]], set[str]]:
     """``(own members, base class names, @dataclass-decorated class names)`` for every class here.
 
