@@ -61,11 +61,11 @@
   `.github/scripts/release_guard.py`.
 - A back-port tag below the newest release (v1.18.1 after v1.19.0) is refused: it would move `v1` backwards for
   every consumer.
-- `publish` and `rollback` run in the `release` environment. Owner step (repository settings, not code): give the
-  environment a deployment rule allowing only `v*` tags and the default branch, and move `RELEASE_TOKEN` from the
-  repository secrets into it, so a tag pushed from an edited release.yml cannot read it.
-  The owner has chosen NOT to do this (decision 2026-11-07): `RELEASE_TOKEN` stays a repository secret, so any workflow in this repository,
-  including one on a branch, can read it. Accepted risk, documented only; audits/2026-11-07/51 (51-F8) lists the steps to close it.
+- `publish` and `rollback` run in the `release` environment (`environment: release` in release.yml). Verified 2026-11-07 with the GitHub API:
+  the environment exists, `RELEASE_TOKEN` is an ENVIRONMENT secret (not a repository secret), and its deployment policy allows only the
+  `master` branch and `v*` tags, so a tag pushed from an edited release.yml on another ref cannot read it. Not configured, by the owner's
+  decision: a required reviewer (so a push to master that edits release.yml can still publish without a human approval). Accepted risk;
+  audits/2026-11-07/51 (51-F8) has the one-step way to add it.
 - Consumers track `@v1`, so keep README's "Compatibility promise for `@v1`": within v1 only additive changes and
   defect fixes that make a gate stricter. Any change that can turn a green consumer red, or that changes what a
   refresh writes, gets a CHANGELOG entry starting **Behaviour change** with what to do.
