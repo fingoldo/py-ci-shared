@@ -199,7 +199,12 @@ def _consumed_values(node: ast.AST) -> list[ast.AST]:
 def _numeric_vars(tree: ast.Module, ctx: _Ctx) -> frozenset[str]:
     """Variables whose value this file also uses as a number, a path or a list: not a boolean switch, whatever its name."""
     out: set[str] = set()
-    for node in _fast_walk(tree):
+    nodes = list(_fast_walk(tree))
+    # ``bool(int(read))`` is the hand-parsed switch itself, not a numeric use
+    switch_parses = {id(n.args[0]) for n in nodes if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "bool" and len(n.args) == 1}
+    for node in nodes:
+        if id(node) in switch_parses:
+            continue
         for value in _consumed_values(node):
             var = ctx.read(value)
             if var is not None:
