@@ -315,28 +315,41 @@ def _yaml_message(node: ast.Call, qualified: str, aliases: ImportAliases) -> Opt
     return None
 
 
+def _flag_is(node: ast.Call, name: str, value: object) -> bool:
+    flag = _kw(node, name)
+    return isinstance(flag, ast.Constant) and flag.value is value
+
+
+def _torch_message(node: ast.Call) -> Optional[str]:
+    if not _flag_is(node, "weights_only", True):
+        return "torch.load without weights_only=True unpickles the checkpoint, which executes code"
+    return None
+
+
+def _numpy_message(node: ast.Call) -> Optional[str]:
+    flag = _kw(node, "allow_pickle")
+    if isinstance(flag, ast.Constant) and flag.value is True:
+        return "np.load(allow_pickle=True) unpickles object arrays, which executes code"
+    if flag is not None and not isinstance(flag, ast.Constant):
+        return "np.load(allow_pickle=<variable>) may unpickle object arrays, which executes code; pass the literal False"
+    return None
+
+
 def _keyword_loader_message(node: ast.Call, aliases: ImportAliases) -> Optional[str]:
     """(b)(c)(e) The message for a ``torch.load`` / ``np.load`` / ``yaml.load`` call that unpickles or constructs arbitrary objects, else None."""
     qualified = aliases.qualified_name(node) or ""
     if qualified == "torch.load":
-        flag = _kw(node, "weights_only")
-        if flag is None or not (isinstance(flag, ast.Constant) and flag.value is True):
-            return "torch.load without weights_only=True unpickles the checkpoint, which executes code"
-    elif qualified in ("numpy.load", "np.load"):
-        flag = _kw(node, "allow_pickle")
-        if isinstance(flag, ast.Constant) and flag.value is True:
-            return "np.load(allow_pickle=True) unpickles object arrays, which executes code"
-        if flag is not None and not isinstance(flag, ast.Constant):
-            return "np.load(allow_pickle=<variable>) may unpickle object arrays, which executes code; pass the literal False"
-    elif qualified in _KERAS_LOADERS:
-        flag = _kw(node, "safe_mode")
-        if isinstance(flag, ast.Constant) and flag.value is False:
-            return "load_model(safe_mode=False) deserialises Lambda layers and custom code, which executes it"
-    elif qualified in ("ruamel.yaml.YAML", "ruamel.yaml.main.YAML"):
+        return _torch_message(node)
+    if qualified in ("numpy.load", "np.load"):
+        return _numpy_message(node)
+    if qualified in _KERAS_LOADERS:
+        return "load_model(safe_mode=False) deserialises Lambda layers and custom code, which executes it" if _flag_is(node, "safe_mode", False) else None
+    if qualified in ("ruamel.yaml.YAML", "ruamel.yaml.main.YAML"):
         typ = _kw(node, "typ")
         if isinstance(typ, ast.Constant) and typ.value == "unsafe":
             return "ruamel YAML(typ='unsafe') can construct arbitrary Python objects; use typ='safe'"
-    elif qualified in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all", "yaml.full_load", "yaml.full_load_all"):
+        return None
+    if qualified in ("yaml.load", "yaml.load_all", "yaml.unsafe_load", "yaml.unsafe_load_all", "yaml.full_load", "yaml.full_load_all"):
         return _yaml_message(node, qualified, aliases)
     return None
 

@@ -92,32 +92,52 @@ def _render(key: _Key) -> str:
     return f"self.{key[1]}" if key[0] == "self" else key[1]
 
 
-def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access], acts: list[_Access], guarded: bool = False) -> None:
-    """Sort one node into a check (a membership test or ``get`` on a key) or an act (a subscript write to a key)."""
-    if isinstance(node, ast.Compare):
-        for op, container in zip(node.ops, node.comparators):
-            key = _key_of(container, module_dicts)
-            if key is not None and isinstance(op, (ast.In, ast.NotIn)):
-                checks.append(_Access(key, node.lineno, locks))
-    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
-        key = _key_of(node.func.value, module_dicts)
-        if key is not None:
+def _record_compare(node: ast.Compare, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access]) -> None:
+    for op, container in zip(node.ops, node.comparators):
+        key = _key_of(container, module_dicts)
+        if key is not None and isinstance(op, (ast.In, ast.NotIn)):
             checks.append(_Access(key, node.lineno, locks))
-    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _MUTATORS:
-        key = _key_of(node.func.value, module_dicts)
-        idempotent = node.func.attr == "pop" and (len(node.args) >= 2 or bool(node.keywords))  # `d.pop(k, None)` cannot fail or double-act
-        if key is not None and not idempotent:
+
+
+def _record_call(node: ast.Call, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access], acts: list[_Access], guarded: bool) -> None:
+    func = node.func
+    if not isinstance(func, ast.Attribute):
+        return
+    key = _key_of(func.value, module_dicts)
+    if key is None:
+        return
+    if func.attr == "get":
+        checks.append(_Access(key, node.lineno, locks))
+    elif func.attr in _MUTATORS:
+        idempotent = func.attr == "pop" and (len(node.args) >= 2 or bool(node.keywords))  # `d.pop(k, None)` cannot fail or double-act
+        if not idempotent:
             acts.append(_Access(key, node.lineno, locks, guarded and bool(locks)))
-    elif isinstance(node, ast.Delete):
+
+
+def _record_write(
+    node: Union[ast.Delete, ast.Assign, ast.AugAssign, ast.AnnAssign], locks: frozenset[int], module_dicts: frozenset[str], acts: list[_Access], guarded: bool
+) -> None:
+    """A ``del d[k]`` (guarded when it re-decides under the lock) or a subscript assignment."""
+    if isinstance(node, ast.Delete):
         keys = (_key_of(t.value, module_dicts) for t in node.targets if isinstance(t, ast.Subscript))
         acts.extend(_Access(key, node.lineno, locks, guarded and bool(locks)) for key in keys if key is not None)
-    elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
-        for target in targets:
-            if isinstance(target, ast.Subscript):
-                key = _key_of(target.value, module_dicts)
-                if key is not None:
-                    acts.append(_Access(key, node.lineno, locks))
+        return
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+    for target in targets:
+        if isinstance(target, ast.Subscript):
+            key = _key_of(target.value, module_dicts)
+            if key is not None:
+                acts.append(_Access(key, node.lineno, locks))
+
+
+def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access], acts: list[_Access], guarded: bool = False) -> None:
+    """Sort one node into a check (a membership test or ``get`` on a key) or an act (a subscript write, ``del`` or mutator call on a key)."""
+    if isinstance(node, ast.Compare):
+        _record_compare(node, locks, module_dicts, checks)
+    elif isinstance(node, ast.Call):
+        _record_call(node, locks, module_dicts, checks, acts, guarded)
+    elif isinstance(node, (ast.Delete, ast.Assign, ast.AugAssign, ast.AnnAssign)):
+        _record_write(node, locks, module_dicts, acts, guarded)
 
 
 def _accesses(fn: ast.AST, module_dicts: frozenset[str], lock_names: frozenset[str]) -> tuple[list[_Access], list[_Access], bool]:

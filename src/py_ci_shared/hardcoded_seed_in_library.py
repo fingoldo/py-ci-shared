@@ -208,8 +208,8 @@ def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[
     return what
 
 
-def _local_int_constants(func: ast.AST, inherited: "Optional[dict[str, int]]") -> "dict[str, int]":
-    """*inherited* plus the names *func* itself assigns exactly once, to an int (``s = 42`` then ``default_rng(s)``)."""
+def _scan_local_bindings(func: ast.AST) -> "tuple[dict[str, int], dict[str, ast.expr]]":
+    """``(rebind counts, single-assignment values)`` of the names *func* binds outside nested scopes; a rebind by anything but a plain assignment counts double."""
     counts: dict[str, int] = {}
     values: dict[str, ast.expr] = {}
     stack = list(child_nodes(func))
@@ -227,6 +227,12 @@ def _local_int_constants(func: ast.AST, inherited: "Optional[dict[str, int]]") -
                 if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
                     counts[sub.id] = counts.get(sub.id, 0) + 2  # rebound by something we do not fold: never constant
         stack.extend(child_nodes(node))
+    return counts, values
+
+
+def _local_int_constants(func: ast.AST, inherited: "Optional[dict[str, int]]") -> "dict[str, int]":
+    """*inherited* plus the names *func* itself assigns exactly once, to an int (``s = 42`` then ``default_rng(s)``)."""
+    counts, values = _scan_local_bindings(func)
     params = {a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)} if isinstance(func, _FUNCTIONS) else set()
     out = {k: v for k, v in (inherited or {}).items() if k not in counts and k not in params}
     for name, value in values.items():
