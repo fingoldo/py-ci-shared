@@ -1456,6 +1456,13 @@ since = "1.8.0"
 summary = "No SQLAlchemy ``text()`` bind parameter is followed directly by a ``::`` cast"
 
 [[gate]]
+name = "stale_baseline_sweep"
+kind = "cli"
+since = "1.23.10"
+cli = true
+summary = "Read-only report of the stale baseline entries in each consumer checkout that a strict ratchet turns red on the next bump"
+
+[[gate]]
 name = "stale_comment_age"
 kind = "gate"
 entries = ["assert_no_stale_todos"]

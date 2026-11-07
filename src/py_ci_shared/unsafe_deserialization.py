@@ -535,7 +535,7 @@ def find_unsafe_deserialization(
     *allow_unparsed*): a gate that cannot read the code must not pass it.
     """
     skipped = tuple(exclude)
-    scan = scan_python(root, min_files=min_files, use_git=use_git)
+    scan = scan_python(root, min_files=min_files, use_git=use_git, include_stubs=True)
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:

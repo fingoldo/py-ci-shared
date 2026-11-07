@@ -763,3 +763,50 @@ class TestGateSwallowsError:
     )
     def test_negative_controls(self, tmp_path, text):
         assert "gate_swallows_error" not in _rules(tmp_path, text)
+
+
+# ---- fail-closed predicates (audit 41-F7) ----
+
+_PREDICATE_FALSE = {
+    "is_allowed": "try:\n        return policy(x)\n    except Exception:\n        return False",
+    "check_ready": "try:\n        x.ping()\n        return True\n    except ConnectionError:\n        return False",
+    "cuda_ok": "try:\n        import cupy\n        return cupy.cuda.is_available()\n    except Exception:\n        return False",
+    "verify_mac": "try:\n        check(x)\n        return True\n    except Exception:\n        return False",
+    "_is_trusted": "try:\n        return verify(x)\n    except OSError:\n        return None",
+    "has_access": "try:\n        return lookup(x)\n    except Exception:\n        return 0",
+    "valid_signature_bytes": "try:\n        return parse(x)\n    except Exception:\n        return ''",
+}
+
+
+@pytest.mark.parametrize("name", sorted(_PREDICATE_FALSE))
+def test_a_predicate_that_denies_on_error_is_not_flagged(tmp_path, name):
+    body = f"def {name}(x):\n    {_PREDICATE_FALSE[name]}\n"
+    assert _rules(tmp_path, body) == []
+
+
+@pytest.mark.parametrize("name", ["is_allowed", "check_ready", "cuda_ok", "verify_mac", "_is_trusted"])
+def test_a_predicate_that_admits_on_error_is_still_flagged(tmp_path, name):
+    body = f"def {name}(x):\n    try:\n        return policy(x)\n    except Exception:\n        return True\n"
+    assert _rules(tmp_path, body) != []
+
+
+def test_a_predicate_returning_a_non_falsy_default_is_still_flagged(tmp_path):
+    body = "def is_allowed(x):\n    try:\n        return policy(x)\n    except OSError:\n        return default\n"
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+@pytest.mark.parametrize("name", ["load_flag", "read_setting"])
+def test_a_non_predicate_returning_false_on_error_is_still_flagged(tmp_path, name):
+    body = f"def {name}(x):\n    try:\n        return read(x)\n    except Exception:\n        return False\n"
+    assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_fail_closed_marker_documents_a_non_predicate_name(tmp_path):
+    marked = "def trailer_mac(x):\n    try:\n        return mac(x)\n    # fail-closed: a bad MAC denies\n    except Exception:\n        return False\n"
+    assert _rules(tmp_path, marked) == []
+    assert _rules(tmp_path, marked.replace("# fail-closed: a bad MAC denies", "# nothing")) == ["silent_default_return"]
+
+
+def test_a_name_that_contains_a_predicate_word_in_the_middle_is_not_a_predicate(tmp_path):
+    body = "def load_checkpoint(x):\n    try:\n        return read(x)\n    except Exception:\n        return None\n"
+    assert _rules(tmp_path, body) == ["silent_default_return"]

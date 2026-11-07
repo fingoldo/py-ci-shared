@@ -176,7 +176,7 @@ def find_predictable_tmp_path(
     Raises ``EmptyScanError`` when fewer than *min_files* files parsed and ``UnparsedFilesError`` for a file that
     cannot be read or parsed (unless *allow_unparsed*): a gate that cannot read the code must not pass it.
     """
-    scan = scan_python(root, min_files=min_files, use_git=use_git)
+    scan = scan_python(root, min_files=min_files, use_git=use_git, include_stubs=True)
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:

@@ -109,8 +109,9 @@ def scan_python(
     exclude: Iterable[str] = DEFAULT_EXCLUDE,
     include_untracked: bool = True,
     use_git: Optional[bool] = None,
+    include_stubs: bool = False,
 ) -> ScanResult:
-    """Parse every Python file in a corpus.
+    """Parse every Python file in a corpus. ``include_stubs=True`` also takes ``.pyi``/``.pyw`` and any-case ``.py`` (see :func:`iter_files`).
 
     *files_or_root* is a directory (enumerated with :func:`iter_files`), or an iterable whose entries are files or
     directories; each directory entry is enumerated with :func:`iter_files` under the same *patterns* and *exclude*.
@@ -126,7 +127,10 @@ def scan_python(
         base = Path(files_or_root)
         if rel_root is None:
             rel_root = base
-        pairs = [(p, rel_root) for p in iter_files(base, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)]
+        pairs = [
+            (p, rel_root)
+            for p in iter_files(base, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git, include_stubs=include_stubs)
+        ]
     else:
         # Deduped on the RESOLVED path: one file reached as "pkg" and as "/abs/pkg/m.py" is scanned once, under the
         # first spelling (audit 2026-10-03 K-8: twice before, so every finding counted double in a baseline).
@@ -135,7 +139,7 @@ def scan_python(
             new_pairs: list[tuple[Path, Optional[Path]]]
             if entry.is_dir():
                 entry_root = rel_root if rel_root is not None else entry
-                found = iter_files(entry, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git)
+                found = iter_files(entry, patterns, exclude=exclude, include_untracked=include_untracked, use_git=use_git, include_stubs=include_stubs)
                 new_pairs = [(p, entry_root) for p in found]
             elif entry.exists():
                 new_pairs = [(entry, rel_root)]

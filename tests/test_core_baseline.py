@@ -40,12 +40,21 @@ class TestMultiset:
         b.enforce([_f("x", 1), _f("x", 2)], refresh=True)
         assert b.enforce([_f("x", 1), _f("x", 2)]).ok  # control: both accepted
 
-    def test_fewer_than_accepted_is_stale_not_a_failure(self, tmp_path):
+    def test_fewer_than_accepted_is_stale_and_fails(self, tmp_path):
         b = Baseline(tmp_path / "b.json")
         b.enforce([_f("x"), _f("x")], refresh=True)
         outcome = b.enforce([_f("x")])
-        assert outcome.ok and outcome.stale == ["rule::a.py::x"]
-        assert b.enforce([_f("x"), _f("x")]).stale == []
+        assert not outcome.ok and not outcome.blocking and outcome.stale == ["rule::a.py::x"]
+        clean = b.enforce([_f("x"), _f("x")])
+        assert clean.stale == [] and clean.ok
+
+    def test_a_surplus_count_cannot_be_refilled_for_free(self, tmp_path):
+        b = Baseline(tmp_path / "b.json")
+        b.enforce([_f("x"), _f("x"), _f("x")], refresh=True)
+        assert not b.enforce([_f("x")]).ok  # two slots are now free
+        b.enforce([_f("x")], refresh=True)  # the refresh shrinks the count to 1
+        assert not b.enforce([_f("x"), _f("x"), _f("x")]).ok  # a regression to 3 is new again
+        assert b.enforce([_f("x")]).ok
 
     def test_list_format_duplicates_count(self, tmp_path):
         p = tmp_path / "b.json"

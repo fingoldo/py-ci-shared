@@ -491,7 +491,7 @@ def _run(
             f"{len(outcome.stale)} function(s) in {Path(baseline_path).name} gained coverage (their bodies now run); the ratchet only shrinks, so remove them "
             "by refreshing the baseline (--refresh-baseline), or the baseline stops meaning anything for them:\n    " + "\n    ".join(outcome.stale)
         )
-    if not outcome.ok:
+    if outcome.blocking:
         lines.append(outcome.message)
     return ("fail", "\n".join(lines)) if lines else ("ok", outcome.message)
 

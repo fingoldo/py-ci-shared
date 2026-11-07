@@ -189,9 +189,15 @@ def iter_files_pruned(root: PathLike, suffixes: Sequence[str] = (), exclude_dirs
     return [base.joinpath(*rel.split("/")) for rel in sorted(_walk(base, skip)) if not ends or rel.endswith(ends)]
 
 
-def _matches(rel: str, patterns: Sequence[str]) -> bool:
+def _matches(rel: str, patterns: Sequence[str], include_stubs: bool = False) -> bool:
     name = rel.rsplit("/", 1)[-1]
+    if include_stubs and name.lower().endswith(PYTHON_SUFFIXES):
+        return True
     return any(fnmatch.fnmatchcase(rel if "/" in pat else name, pat) for pat in patterns)
+
+
+#: The suffixes ``read_source`` decodes as Python. ``include_stubs=True`` matches all of them, case-insensitively (``X.PY`` imports fine on Windows and macOS).
+PYTHON_SUFFIXES = (".py", ".pyi", ".pyw")
 
 
 #: Excluded names that are junk only when untracked. A tracked ``src/pkg/build/m.py`` is a real package, and git says so; dot-directories
@@ -230,8 +236,12 @@ def iter_files(
     exclude: Iterable[str] = DEFAULT_EXCLUDE,
     include_untracked: bool = True,
     use_git: Optional[bool] = None,
+    include_stubs: bool = False,
 ) -> list[Path]:
     """Sorted files under *root* matching any of *patterns*, as absolute-ish ``root / rel`` paths.
+
+    ``include_stubs=True`` (opt-in; the default corpus is unchanged) additionally matches every Python source suffix
+    (``.py``, ``.pyi``, ``.pyw``) case-insensitively, so a stub or an ``X.PY`` is part of the corpus (audit 42-F9).
 
     *patterns* are ``fnmatch`` patterns against the file NAME, or against the root-relative POSIX path when the
     pattern contains ``/``. *exclude* is a set of directory/file names matched against root-relative components
@@ -256,7 +266,7 @@ def iter_files(
     tracked = _TrackedNames(base, rels is not None and use_git is not False)
     for rel in rels:
         parts = rel.split("/")
-        if not _matches(rel, patterns):
+        if not _matches(rel, patterns, include_stubs):
             continue
         hit = skip.intersection(parts)
         if hit and not tracked.exempts(rel, hit):

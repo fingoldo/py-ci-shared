@@ -38,14 +38,23 @@ def test_an_accepted_finding_passes_and_the_count_is_reported(tmp_path: Path, ca
     assert "no new violations (1 accepted, baselined)" in capsys.readouterr().out
 
 
-def test_paid_debt_is_reported_but_does_not_fail(tmp_path: Path, capsys) -> None:
+def test_paid_debt_fails_until_the_baseline_is_refreshed(tmp_path: Path, capsys) -> None:
     baseline = make(tmp_path)
     baseline.save({"lib/gone.dart": "deliberate: for now", "lib/kept.dart": "deliberate: for now"})
     code = baseline.enforce({"lib/kept.dart": "900 lines"}, label="check: size", guidance="Split it.")
-    out = capsys.readouterr().out
-    assert code == 0, "failing a push for fixing something would be perverse"
-    assert "lib/gone.dart" in out
-    assert "regen_baselines.py to prune" in out
+    err = capsys.readouterr().err
+    assert code == 1, "a fixed violation leaves a free slot for a later regression of the same key"
+    assert "lib/gone.dart" in err
+    assert "regen_baselines.py to prune" in err
+
+
+def test_a_fixed_violation_cannot_be_taken_back_for_free(tmp_path: Path) -> None:
+    baseline = make(tmp_path)
+    baseline.save({"a.py": "deliberate: x", "b.py": "deliberate: x"})
+    assert baseline.enforce({"a.py": "v"}, label="l", guidance="g") == 1  # b.py was fixed: stale
+    baseline.regenerate({"a.py": "v"})  # the shrink-only refresh drops b.py
+    assert baseline.enforce({"a.py": "v", "b.py": "v"}, label="l", guidance="g") == 1  # the regression is new, not free
+    assert baseline.enforce({"a.py": "v"}, label="l", guidance="g") == 0  # control: the refreshed baseline is clean
 
 
 def test_regeneration_keeps_the_note_and_drops_what_is_fixed(tmp_path: Path) -> None:
@@ -140,7 +149,11 @@ def test_run_rules_passes_per_rule_floors(tmp_path: Path, capsys) -> None:
     assert run_rules({"r": lambda: {}}, {"r": ("check: r", "g")}, directory=str(tmp_path), min_found={"r": 1}) == 1
 
 
-def test_an_empty_scan_may_opt_out_of_the_floor(tmp_path: Path) -> None:
+def test_an_empty_scan_that_opts_out_of_the_floor_still_fails_on_the_stale_entries(tmp_path: Path, capsys) -> None:
     baseline = make(tmp_path)
     baseline.save({"lib/gone.dart": "deliberate: for now"})
+    assert baseline.enforce({}, label="check", guidance="g", fail_on_empty_scan=False) == 1
+    err = capsys.readouterr().err
+    assert "no longer violate the rule" in err and "stopped" not in err
+    baseline.regenerate({})
     assert baseline.enforce({}, label="check", guidance="g", fail_on_empty_scan=False) == 0

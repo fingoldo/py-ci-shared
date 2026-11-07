@@ -130,7 +130,7 @@ def find_systemexit_in_library(
     Raises ``EmptyScanError`` when fewer than *min_files* files parsed and ``UnparsedFilesError`` for a file that
     cannot be read or parsed (unless *allow_unparsed*): a gate that cannot read the code must not pass it.
     """
-    scan = scan_python(root, min_files=min_files, use_git=use_git)
+    scan = scan_python(root, min_files=min_files, use_git=use_git, include_stubs=True)
     scan.assert_ok(allow_unparsed=allow_unparsed)
     parsed_files = list(scan)
     imported = _imported_names({p.rel: p.tree for p in parsed_files})

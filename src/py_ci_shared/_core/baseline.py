@@ -259,7 +259,8 @@ def write_ratchet(
 
 @dataclass
 class BaselineOutcome:
-    """What one enforcement found. ``ok`` is False when the gate must fail."""
+    """What one enforcement found. ``ok`` is False when the gate must fail: a new finding, an unjustified or missing baseline, or a
+    stale entry (a fixed violation, or a count above what is still found: its slot would be free for a later regression)."""
 
     new: list[str] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)
@@ -269,8 +270,13 @@ class BaselineOutcome:
     message: str = ""
 
     @property
+    def blocking(self) -> bool:
+        """A problem that fails even where stale entries are tolerated: new findings, unjustified entries, a missing baseline."""
+        return bool(self.new or self.unjustified or self.missing)
+
+    @property
     def ok(self) -> bool:
-        return not (self.new or self.unjustified or self.missing)
+        return not (self.blocking or self.stale)
 
     def raise_for_pytest(self, *, fail_on_stale: bool = True) -> None:
         """``pytest.skip`` after a refresh, ``pytest.fail`` on a problem, nothing when clean."""
@@ -278,7 +284,7 @@ class BaselineOutcome:
 
         if self.refreshed:
             refreshed_skip(self.message)
-        if not self.ok or (fail_on_stale and self.stale):
+        if self.blocking or (fail_on_stale and self.stale):
             pytest.fail(self.message, pytrace=False)
 
 

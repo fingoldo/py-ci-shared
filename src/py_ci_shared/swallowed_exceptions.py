@@ -354,7 +354,7 @@ def find_swallowed_exceptions(
     *quiet_log_is_silent* also reports a handler whose only action is a DEBUG/INFO log call. It is off by default:
     repositories that convert every swallow into a debug line have made that line their record of it.
     """
-    scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git)
+    scan = scan_python(root, exclude=DEFAULT_EXCLUDE | frozenset(exclude_parts), use_git=use_git, include_stubs=True)
     findings: list[Finding] = []
     for f in scan:
         visitor = _Visitor(f, quiet_log_is_silent)

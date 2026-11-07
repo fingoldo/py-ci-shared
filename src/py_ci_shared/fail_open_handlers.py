@@ -18,6 +18,10 @@ existed to stop:
   value. A ``# best-effort:`` marker on the ``except`` line (or the line above) honours a fallback that cannot change a result.
   A handler another rule already reports (``except: return True`` in a deciding function) is not reported a second time.
 
+  Fail-closed predicates are exempt: a predicate-named function (``is_*``, ``has_*``, ``can_*``, ``verify*``, ``check*``, ``valid*``, ``*_ok``,
+  ``*_trusted``, ``*_valid``, ``*_verified``, ``*_usable``, ``*_available``) whose handler returns ``False``/``None``/``0``/``''`` denies on error, and a
+  ``# fail-closed: <reason>`` marker on the ``except`` line (or the line above) documents the same for any other name. ``return True`` still counts.
+
 * ``gate_swallows_error``: in a gate-named function an ``except`` for ``Exception``, ``OSError``, ``SyntaxError``, ``ValueError`` (or a bare one) whose whole
   body is ``pass``, ``continue``, ``sys.exit(0)``, ``pytest.skip(...)`` or ``print(...)``: the failure ends as a pass. Logging at WARNING or above, raising, or a
   ``# best-effort:`` marker honours the handler.
@@ -335,6 +339,30 @@ def _hands_off_exception(handler: ast.ExceptHandler) -> bool:
     return any(isinstance(n, ast.Assign) and isinstance(n.value, ast.Name) and n.value.id == handler.name for n in _fast_walk(handler))
 
 
+#: A function used as a boolean predicate: the caller treats a falsy answer as "deny", so an error answered with ``False`` is the safe direction.
+_PREDICATE_NAME_RE = re.compile(r"^_*(?:is_|has_|can_|check(?:_|$)|verify|valid)|(?:_ok|_trusted|_valid|_verified|_usable|_available)$", re.IGNORECASE)
+_FAIL_CLOSED = "# fail-closed:"
+
+
+def _falsy_literal(returned: Optional[ast.expr]) -> bool:
+    """True for a bare ``return`` and for ``return False/None/0/''``."""
+    if returned is None:
+        return True
+    return isinstance(returned, ast.Constant) and returned.value in (False, None, 0, "") and not isinstance(returned.value, float)
+
+
+def _fail_closed_predicate(returned: Optional[ast.expr], handler: ast.ExceptHandler, lines: list[str], fn_name: str) -> bool:
+    """True when a predicate-named function (``is_allowed``, ``check_ready``, ``cuda_ok``, ``_is_trusted``), or any function whose ``except`` line
+    (or the line above) carries ``# fail-closed: <reason>``, answers a falsy literal: an error then denies instead of admitting, which is the fail-closed direction.
+    ``return True`` (fail-open) and a non-predicate returning ``False`` are not covered."""
+    if not _falsy_literal(returned):
+        return False
+    if _PREDICATE_NAME_RE.search(fn_name):
+        return True
+    i = handler.lineno - 1
+    return any(_FAIL_CLOSED in lines[j] for j in (i - 1, i) if 0 <= j < len(lines))
+
+
 def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name: str = "", try_node: Optional[ast.Try] = None) -> bool:
     """True when the handler's whole body is one ``return`` and nothing in the handler logs, raises or is marked best-effort."""
     if len(handler.body) != 1 or not isinstance(handler.body[0], ast.Return):
@@ -344,7 +372,7 @@ def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name
         return False  # the return hands back the failure's own data (``return exc.sqlstate``), not a default
     if returned is not None and _carries_reason(returned):
         return False  # the returned value says what failed (``DatasetSummary(..., "not installed in this checkout")``)
-    if _reasoned_fallback(handler, fn_name, try_node):
+    if _reasoned_fallback(handler, fn_name, try_node) or _fail_closed_predicate(returned, handler, lines, fn_name):
         return False
     return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
 

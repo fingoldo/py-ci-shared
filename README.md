@@ -348,6 +348,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`sql_verifier_coverage`](src/py_ci_shared/sql_verifier_coverage.py) | gate | 1.12.0 | `assert_verifier_covers_statements` | Every SQL statement a package defines is on its SQL verifier's list, and the list names nothing that has gone |
 | [`sql_verify`](src/py_ci_shared/sql_verify.py) | gate | 1.4.0 | `assert_fragment_matrix` | Execute every SQL statement a project ships against a real PostgreSQL server |
 | [`sqlalchemy_text_binds`](src/py_ci_shared/sqlalchemy_text_binds.py) | gate | 1.8.0 | `assert_no_colon_cast_binds` | No SQLAlchemy ``text()`` bind parameter is followed directly by a ``::`` cast |
+| [`stale_baseline_sweep`](src/py_ci_shared/stale_baseline_sweep.py) | cli | 1.23.10 | `main` | Read-only report of the stale baseline entries in each consumer checkout that a strict ratchet turns red on the next bump |
 | [`stale_comment_age`](src/py_ci_shared/stale_comment_age.py) | gate | 1.3.6 | `assert_no_stale_todos` | A TODO or a commented-out call does not quietly become permanent |
 | [`stale_source_citations`](src/py_ci_shared/stale_source_citations.py) | gate | 1.17.0 | `assert_no_stale_source_citations` | ``file.py:NNN`` citations that no longer point where they say |
 | [`standard_stream_restore`](src/py_ci_shared/standard_stream_restore.py) | gate | 1.19.0 | `assert_standard_streams_restored_only_if_still_ours` | Code that swaps sys.stdout/sys.stderr restores them only while its own stream is still installed |

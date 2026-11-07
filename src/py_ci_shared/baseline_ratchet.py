@@ -15,9 +15,9 @@ What the copies learned, kept here:
 * **Every accepted entry carries a note.** JSON has no comments, so the note is the value. A bare list of
   paths tells a later reader nothing about whether an entry is a considered exception or an oversight.
   ``baseline_hygiene`` is the check that the notes stay human.
-* **A key that is accepted but no longer found is reported, not enforced.** Failing a push for FIXING
-  something would be perverse; a baseline nobody prunes stops meaning anything, so it is printed every run
-  and pruned by a regeneration.
+* **A key that is accepted but no longer found fails the run.** The slot a fixed violation leaves is free for a later
+  regression of the same key, so a baseline nobody prunes stops being a ratchet; the failure names the refresh command,
+  and the refresh only shrinks (it drops the entry, nothing is lost).
 * **Regeneration preserves existing notes.** Otherwise the first regeneration silently replaces every
   human reason with the scanner's own sentence.
 * **A scan that finds nothing while the baseline holds entries fails.** Every accepted entry going stale at once
@@ -107,13 +107,14 @@ class Baseline:
     # ---- use ----
 
     def enforce(self, found: Mapping[str, str], *, label: str, guidance: str, min_found: int = 0, fail_on_empty_scan: bool = True) -> int:
-        """Fail on any entry in ``found`` the baseline does not accept; return a process exit code.
+        """Fail on any entry in ``found`` the baseline does not accept, and on any accepted entry no longer found (stale); return a process exit code.
 
         ``found`` maps a stable key - a repo-relative path, or ``path:line`` - to a short description of
         the violation, which is what a reader sees when the check fails. Also fails when ``found`` has fewer
         than *min_found* entries, and when it is empty while the baseline accepts entries (every entry stale at
         once): both read as a scan that stopped reaching the code. A caller whose scan can legitimately clear everything
-        (a mutation run that kills every survivor) passes ``fail_on_empty_scan=False``.
+        (a mutation run that kills every survivor) passes ``fail_on_empty_scan=False``: it still fails on the stale entries, with the
+        prune message instead of the "scan stopped matching" diagnosis, and passes once the baseline is refreshed.
         """
         accepted = self.load()
         if len(found) < min_found:
@@ -152,9 +153,10 @@ class Baseline:
             return 1
 
         if stale:
-            print(f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule - " f"run {self.refresh_command} to prune:")
+            print(f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule - run {self.refresh_command} to prune:", file=sys.stderr)
             for key in sorted(stale):
-                print(f"  {key}")
+                print(f"  {key}", file=sys.stderr)
+            return 1
 
         print(f"{label}: no new violations ({len(accepted)} accepted, baselined)")
         return 0
