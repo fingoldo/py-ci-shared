@@ -319,7 +319,7 @@ def test_module_usage_imports_python_m_yaml_config_and_audits_excluded(tmp_path)
             """,
             "audits/x.py": "import py_ci_shared.baseline_trend\n",
             "README.md": "python -m py_ci_shared.vulture_warn\n",
-            "scripts/x.py": "import py_ci_shared.no_such_module\n",
+            "scripts/x.py": "import py_ci_shared.no_such_module\nprint(py_ci_shared.__file__, py_ci_shared.__version__)\n",
         },
     )
     used, unknown = find_module_usage(root)

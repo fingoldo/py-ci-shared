@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.10)
 
+- `adoption_matrix` no longer reports a dunder attribute of the package (`py_ci_shared.__file__`, `__version__`) as an `unknown-module` (fewer findings; pyutilz's pin-coverage test reads `py_ci_shared.__file__`).
+
 ### Strict private consumers, public names, registry summaries (audits 46-F8, 47-F5, 43-F6, 43-F8)
 
 - **Behaviour change (ci-health, corpus-drift):** a private consumer skipped for want of `CONSUMER_READ_TOKEN` is now a RED row (`ci_health --fail-on-skipped-private`: a table row `NOT CHECKED`, an `::error::` annotation, exit 1) and `corpus-drift.yml` passes `--fail-on-skipped-private` to its checkout, exactly as `consumer-pins.yml` already did. The scheduled `ci-health.yml` and `corpus-drift.yml` pass the flag unless a manual run sets the new `allow-skipped-private` input. While the secret is missing or expired both scheduled jobs are red; `consumer-pins` was already red for the same reason. The flag is off by default on the command line (`ci_health` and `_consumers checkout` keep their warning). What to do: keep the fine-grained secret `CONSUMER_READ_TOKEN` (actions:read, contents:read, metadata:read on the private consumers) valid; it was created on 2026-11-07 and `consumer-pins` then cloned all 13 consumers. If it expires, renew it, or run the jobs by hand with `allow-skipped-private`. With the private repos now actually read, what shows red is real consumer state (a run found mlframe with silent importorskip skips and social with unpinned workflows), not these changes. With the secret absent, public consumers are still checked out and scanned; the strict flag only decides the exit code.

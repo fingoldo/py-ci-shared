@@ -526,6 +526,8 @@ def find_module_usage(repo_root: PathLike, modules: Optional[Iterable[str]] = No
     unknown: dict[str, set[str]] = {}
 
     def note(name: str, rel: str) -> None:
+        if name.startswith("__") and name.endswith("__"):  # an attribute of the package (``py_ci_shared.__file__``, ``__version__``), never a module
+            return
         (used if name in known else unknown).setdefault(name, set()).add(rel)
 
     for path in iter_files(root, _USAGE_PATTERNS, exclude=_USAGE_EXCLUDE, include_untracked=False):
