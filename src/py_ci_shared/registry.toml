@@ -841,6 +841,14 @@ since = "1.4.0"
 summary = "A broad ``except`` must not cache a process-lifetime \"unavailable\" verdict"
 
 [[gate]]
+name = "launch_dtype_audit"
+kind = "gate"
+entries = ["assert_launch_dtypes"]
+since = "1.23.10"
+cli = true
+summary = "Every array bound to a CUDA kernel pointer has that pointer's element type, templated kernels included; checked at launch with no GPU needed"
+
+[[gate]]
 name = "lf_file_writes"
 kind = "gate"
 entries = ["assert_no_crlf_writes"]
@@ -989,6 +997,20 @@ kind = "gate"
 entries = ["assert_njit_fastmath_nan"]
 since = "1.23.8"
 summary = "Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf"
+
+[[gate]]
+name = "njit_twin_parity"
+kind = "gate"
+entries = ["assert_njit_twin_parity"]
+since = "1.23.10"
+summary = "A numba kernel and its py_func (or a hand-written fallback) return bit-identical results on seeded inputs, output buffers included"
+
+[[gate]]
+name = "njit_twin_untested"
+kind = "gate"
+entries = ["assert_njit_twin_untested"]
+since = "1.23.10"
+summary = "A numba kernel with a pure-Python twin (flag fallback, twin name, redefinition, parity marker) that no test runs against the same input"
 
 [[gate]]
 name = "njit_unsupported_calls"

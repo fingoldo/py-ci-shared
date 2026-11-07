@@ -57,6 +57,8 @@ dev = [
     # were never exercised.
     "pre-commit>=3.0",
     "numpy>=1.22",
+    # njit_twin_parity's real-dispatcher tests compile a kernel and compare it with its py_func; without numba they skip (the fake-dispatcher tests still run).
+    "numba>=0.58",
     # 2.1.0 was published with a duplicate extra in its pyproject, which uv refuses to build from the sdist.
     "sqlalchemy>=2.0,!=2.1.0",
     "tomli>=2.0",

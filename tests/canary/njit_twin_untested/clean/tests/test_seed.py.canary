@@ -1,0 +1,19 @@
+import seed
+
+
+def test_dispatch_numba_off_matches_on(monkeypatch):
+    on = seed.dispatch(3.0)
+    monkeypatch.setattr(seed, "_HAS_NUMBA", False)
+    assert seed.dispatch(3.0) == on
+
+
+def test_scale_matches_its_twin():
+    assert seed.scale.py_func(3.0) == seed.scale_py(3.0)
+
+
+def test_twice_matches_py_func():
+    assert seed.twice.py_func(3.0) == seed.twice(3.0)
+
+
+def test_marked_matches_py_func():
+    assert seed.marked.py_func(3.0) == seed.marked(3.0)

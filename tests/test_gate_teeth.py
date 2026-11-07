@@ -691,6 +691,11 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("tool_config_env_vars_set_in_every_tool_job").assert_tool_config_env_vars_set_in_every_tool_job(d, use_git=False),
             tokens=("tool-env-var-unset-in-job", "tool-env-var-unset-in-test-job"),
         ),
+        Canary(
+            "njit_twin_untested",
+            lambda d: _gate("njit_twin_untested").assert_njit_twin_untested(d, use_git=False),
+            tokens=("njit-flag-fallback-untested", "njit-twin-name-untested", "njit-redefined-twin-untested", "njit-parity-marker-untested"),
+        ),
     ]
 }
 
@@ -699,6 +704,8 @@ EXEMPT: dict[str, str] = {
     "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",
     "estimator_invariants": "runtime assertions over a caller's estimator factory, no source corpus to scan; test_estimator_invariants.py pins it with toy estimators",
     "numeric_edge_matrix": "runtime adversarial-input matrix over a caller's function, no source corpus to scan; test_numeric_edge_matrix.py pins it with toy metrics",
+    "njit_twin_parity": "runtime comparison of a caller's numba kernel with its py_func, no source corpus to scan; test_njit_twin_parity.py pins it with fake dispatchers and real numba",
+    "launch_dtype_audit": "runtime launch-argument check around a caller's CUDA kernel, no source corpus to scan; test_launch_dtype_audit.py pins it with fake kernels and arrays",
     "target_leak_canary": "runtime statistical check over a caller's transformer factory, no source corpus to scan; test_target_leak_canary.py pins it with toy encoders",
     "arb_checks": "reads Flutter .arb JSON catalogues keyed by locale; its subject is catalogue parity, covered by test_arb_checks.py",
     "audit_round_format": "Markdown tracker/round bookkeeping, not a code scanner",

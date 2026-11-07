@@ -260,6 +260,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`instance_clear_leaves_module_cache`](src/py_ci_shared/instance_clear_leaves_module_cache.py) | gate | 1.23.10 | `assert_instance_clear_leaves_module_cache` | A clear/reset/release method touches only self state while sibling methods use a module-level cache container |
 | [`kwarg_forwarding`](src/py_ci_shared/kwarg_forwarding.py) | library | 1.17.0 |  | Optional arguments a wrapper, a caller or a same-class delegate drops on the way to the function it reaches |
 | [`latched_availability_flags`](src/py_ci_shared/latched_availability_flags.py) | gate | 1.4.0 | `assert_no_latched_availability_flags` | A broad ``except`` must not cache a process-lifetime "unavailable" verdict |
+| [`launch_dtype_audit`](src/py_ci_shared/launch_dtype_audit.py) | gate | 1.23.10 | `assert_launch_dtypes` | Every array bound to a CUDA kernel pointer has that pointer's element type, templated kernels included; checked at launch with no GPU needed |
 | [`lf_file_writes`](src/py_ci_shared/lf_file_writes.py) | gate | 1.17.0 | `assert_no_crlf_writes` | Text-mode writes that put CRLF into a file that must stay LF |
 | [`llm_call_archive_gate`](src/py_ci_shared/llm_call_archive_gate.py) | gate | 1.5.0 | `assert_every_llm_call_is_archived` | Every paid LLM call goes through the place that keeps its raw answer |
 | [`llm_output_caps`](src/py_ci_shared/llm_output_caps.py) | gate | 1.22.6 | `assert_no_new_output_caps` (+2) | No LLM call carries a numeric output or reasoning cap someone chose: a ratchet that fails by name, opt-in per repo |
@@ -281,6 +282,8 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`nested_numba_parallel_guard`](src/py_ci_shared/nested_numba_parallel_guard.py) | gate | 1.23.10 | `assert_nested_numba_parallel_guard` | A parallel=True / prange numba kernel reachable from a thread pool runs under one process-wide guard |
 | [`nginx_location_headers`](src/py_ci_shared/nginx_location_headers.py) | gate | 1.22.12 | `assert_nginx_location_headers` | An nginx block with its own add_header repeats every header its enclosing blocks set |
 | [`njit_fastmath_nan`](src/py_ci_shared/njit_fastmath_nan.py) | gate | 1.23.8 | `assert_njit_fastmath_nan` | Flags @njit(fastmath=True) kernels whose body produces or tests NaN/inf |
+| [`njit_twin_parity`](src/py_ci_shared/njit_twin_parity.py) | gate | 1.23.10 | `assert_njit_twin_parity` | A numba kernel and its py_func (or a hand-written fallback) return bit-identical results on seeded inputs, output buffers included |
+| [`njit_twin_untested`](src/py_ci_shared/njit_twin_untested.py) | gate | 1.23.10 | `assert_njit_twin_untested` | A numba kernel with a pure-Python twin (flag fallback, twin name, redefinition, parity marker) that no test runs against the same input |
 | [`njit_unsupported_calls`](src/py_ci_shared/njit_unsupported_calls.py) | gate | 1.23.8 | `assert_njit_unsupported_calls` | Flags calls inside compiled numba or torch.jit.script bodies that raise TypingError on another build (typing.cast, np.median, logging, warnings.warn) |
 | [`no_source_text_tests`](src/py_ci_shared/no_source_text_tests.py) | gate | 1.22.12 | `assert_no_source_text_tests` | A test that asserts on the text of a SQL statement (a WHERE or SELECT probe) instead of the rows it returns |
 | [`no_xfail_to_defer`](src/py_ci_shared/no_xfail_to_defer.py) | gate | 1.17.0 | `assert_no_xfail_to_defer` | An xfail or skip may mark a limit outside the repository, never park a bug inside it |
@@ -1193,6 +1196,35 @@ from py_ci_shared.kwarg_forwarding import find_dropped_variant_params
 def test_variants_forward_their_bases_options():
     assert not find_dropped_variant_params(SOURCE_FILES, REPO_ROOT, delegates=DELEGATES)
 ```
+
+## Numba twins and CUDA launch dtypes (`njit_twin_parity`, `njit_twin_untested`, `launch_dtype_audit`)
+
+Two defect families that a static gate cannot settle alone, each with a runtime helper and, for the first, an inventory gate.
+
+**A pure-Python fallback that rounds differently from its numba kernel** (mlframe 1b56cfb90: the fallback divided by `weights[0]`, the kernel multiplied by `1.0 / weights[0]`, 205 of 400 elements differed). In a test:
+
+```python
+from py_ci_shared.njit_twin_parity import assert_njit_twin_parity
+
+def test_kernel_matches_its_python_twin():
+    assert_njit_twin_parity(_kernel, lambda rng: (rng.normal(size=400), 0.4), cases=5)           # kernel vs kernel.py_func
+    assert_njit_twin_parity(_kernel, lambda rng: (rng.normal(size=400), 0.4), twin=_fallback)     # vs a hand-written fallback
+```
+
+Equality is bitwise (NaN equals NaN, `-0.0` differs from `0.0`) over the return value and every array argument after the call; `rtol`/`atol` loosen it where a different summation order is documented. The failure names the case, the seed, the element, both values and their bit patterns. Without numba (or with `NUMBA_DISABLE_JIT=1`, where the kernel is its own twin) the test skips with the reason; it never passes vacuously.
+
+`njit_twin_untested` says where that test is owed, without listing every `@njit` function: a plain function branching on a numba flag while calling a kernel (`njit-flag-fallback-untested`), a kernel with a plainly named twin in its module (`njit-twin-name-untested`), one name defined with and without `@njit` (`njit-redefined-twin-untested`), or a def marked `# parity-test:` (`njit-parity-marker-untested`). A test file is evidence when it reaches the kernel through `py_func` or the helper, toggles the flag by name, or names both twins. `# parity-ok: <reason>` waives one def. Typical call: `assert_njit_twin_untested("src", tests_root="tests", baseline_path=...)`.
+
+**A buffer of the wrong element type bound to a CUDA pointer** (mlframe 6e2cc9c97: `const double*` over float32 operands, then `Fatal Python error: Aborted` kernels later). `cuda_kernel_pointer_types` flags the declaration; for a `{REAL}`-templated kernel the declaration is fine and the defect is the launch. `launch_dtype_audit` checks the launch:
+
+```python
+from py_ci_shared.launch_dtype_audit import assert_launch_dtypes, audited_kernel
+
+assert_launch_dtypes(SRC, "row_argmax", (x32, out, np.int32(n)), defines={"REAL": "float"})   # no kernel needed
+kernel = audited_kernel(cp.RawKernel(code, "row_argmax"), SRC, "row_argmax", {"REAL": "float"})  # refuses a bad launch
+```
+
+`python -m py_ci_shared.launch_dtype_audit script.py` runs a script with `cupy.RawKernel`/`RawModule` replaced by auditing twins and exits 1 on a mismatch. Nothing here imports cupy or numpy at import time, so the helper's own tests use fake kernels and arrays on every runner; py-ci-shared needs no GPU leg for it. A consumer that has a GPU job runs its real launches through `audited_kernel` or `audit_cupy()` there.
 
 ## Using the shared ruff config
 

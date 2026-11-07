@@ -1,0 +1,40 @@
+﻿from numba import njit
+
+_HAS_NUMBA = True
+
+
+@njit
+def _kernel(x):
+    return x * 2.0
+
+
+def dispatch(x):
+    if _HAS_NUMBA:
+        return _kernel(x)
+    return x * 2.0
+
+
+@njit
+def scale(x):
+    return x * 0.5
+
+
+def scale_py(x):
+    return x * 0.5
+
+
+if _HAS_NUMBA:
+
+    @njit
+    def twice(x):
+        return x + x
+
+else:
+
+    def twice(x):
+        return x + x
+
+
+@njit  # parity-test: same recurrence as the loop in the notebook
+def marked(x):
+    return x - 1.0
