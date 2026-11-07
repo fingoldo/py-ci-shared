@@ -87,3 +87,10 @@ def test_assert_and_baseline(tmp_path):
     _write(tmp_path, {"d.py": _script("'--x-y'"), "e.py": _script("'--x_y'"), "f.py": _script("'--x_y'")})
     with pytest.raises(pytest.fail.Exception, match=r"d\.py"):
         assert_cli_flag_spelling(tmp_path, use_git=False, baseline_path=base)
+
+
+def test_the_shortest_possible_long_option_is_still_compared(tmp_path):
+    """Three characters is the floor (`--` alone is the end-of-options marker). Only `-` and `_` count as spelling variants, so the
+    shortest splittable stem is the lone separator: `--_` x2 against `---` x1. (Audit 44-F8 proposed `--n` vs `--N`; case never splits.)"""
+    found = _find(tmp_path, {"a.py": _script("'--_'"), "b.py": _script("'--_'"), "c.py": _script("'---'")})
+    assert [(f.path, f.message.split()[0]) for f in found] == [("c.py", "---")]

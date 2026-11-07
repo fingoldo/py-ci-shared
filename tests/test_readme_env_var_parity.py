@@ -402,6 +402,8 @@ class TestRegisterRefreshOption:
         parser = self._make_parser()
         register_refresh_option(parser)
         register_refresh_option(parser)
+        assert parser.parse([REFRESH_FLAG]).refresh_readme_env_var_baseline is True
+        assert sum(REFRESH_FLAG in o.names() for o in parser._anonymous.options) == 1
 
 
 def test_find_env_vars_read_resolves_string_constants(tmp_path):

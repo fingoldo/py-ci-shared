@@ -207,6 +207,8 @@ class TestRegisterRefreshOption:
         parser = self._make_parser()
         register_refresh_option(parser)
         register_refresh_option(parser)  # must not raise (pytest.Parser raises ValueError on conflict)
+        assert parser.parse([REFRESH_FLAG]).refresh_code_audit_baseline is True
+        assert sum(REFRESH_FLAG in o.names() for o in parser._anonymous.options) == 1
 
 
 class TestKeysSurviveRelocation:

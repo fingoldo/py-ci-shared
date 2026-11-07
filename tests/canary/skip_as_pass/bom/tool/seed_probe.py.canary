@@ -1,0 +1,4 @@
+﻿import sys
+if not sys.argv[1:]:
+    print("SKIPPED: seed has no docker")
+    sys.exit(0)

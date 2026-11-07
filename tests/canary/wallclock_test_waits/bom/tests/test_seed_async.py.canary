@@ -1,0 +1,5 @@
+﻿import asyncio
+
+
+async def test_seed_async_poll():
+    await asyncio.sleep(1)

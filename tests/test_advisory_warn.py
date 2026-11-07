@@ -51,3 +51,30 @@ def test_a_trailing_src_path_does_not_crash_the_hook():
     proc = subprocess.run([sys.executable, "-m", "py_ci_shared.advisory_warn", "a.py", "--src-path"], capture_output=True, text=True, env=env, check=False)
     assert proc.returncode == 0, proc.stderr
     assert "--src-path was given without a value" in proc.stderr
+
+
+@pytest.fixture
+def exits(monkeypatch):
+    """Like ``calls`` but each tool exits with the code ``codes[tool]`` (default 0)."""
+    codes: dict = {}
+
+    def run(cmd, **kwargs):
+        tool = next((t for t in ("ruff", "pip_audit") if t in cmd), "")
+        return subprocess.CompletedProcess(cmd, codes.get(tool, 0))
+
+    monkeypatch.setattr(advisory_warn.subprocess, "run", run)
+    monkeypatch.setattr(advisory_warn, "_tool_installed", lambda name: True)
+    monkeypatch.delenv("PY_CI_SHARED_SRC_PATH", raising=False)
+    return codes
+
+
+def test_clean_tools_print_no_banner(exits, capsys):
+    assert advisory_warn.main(["--src-path", "src/pkg", "src/pkg/a.py"]) == 0
+    assert "WARNINGS ONLY" not in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failing", ["ruff", "pip_audit"])
+def test_a_non_zero_tool_exit_prints_the_advisory_banner_and_still_exits_zero(exits, capsys, failing):
+    exits[failing] = 1
+    assert advisory_warn.main(["--src-path", "src/pkg", "src/pkg/a.py"]) == 0
+    assert "WARNINGS ONLY" in capsys.readouterr().err

@@ -114,3 +114,13 @@ def test_a_repo_without_a_baseline_directory_passes_when_nothing_is_found(tmp_pa
     (tmp_path / "tests").mkdir()
     (tmp_path / "tests" / "test_clean.py").write_text("def test_a():\n    assert 1 == 1\n", encoding="utf-8")
     assert_no_new_wallclock_test_waits(tmp_path)
+
+
+@pytest.mark.parametrize("call", ["asyncio.sleep(1)", "trio.sleep(2)", "anyio.sleep(0.1)"])
+def test_text_mode_sees_async_sleeps_in_a_file_that_does_not_parse(tmp_path, call):
+    assert _waits(tmp_path, "tests/test_a.py", f"async def t(:\n    await {call}\n", mode="text") == ["2"]
+
+
+@pytest.mark.parametrize("call", ["asyncio.sleep(0)", "asyncio.sleep()", "trio.sleep( 0 )"])
+def test_text_mode_exempts_the_zero_and_no_argument_yield(tmp_path, call):
+    assert _waits(tmp_path, "tests/test_a.py", f"async def t(:\n    await {call}\n", mode="text") == []

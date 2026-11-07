@@ -362,7 +362,9 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("api_floor", lambda d: _gate("api_floor").assert_api_floor(d, use_git=False), token="write_text", tokens=("write_text", "usedforsecurity")),
         Canary("committed_line_endings", _committed_line_endings_canary, token="seed.txt", parses=False),  # bytes, not syntax
-        Canary("sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0", empty=False),  # 37-F6: no pyproject is no subject, a skip with a reason
+        Canary(
+            "sibling_floor_skew", lambda d: _gate("sibling_floor_skew").assert_sibling_floor_skew(d, network=False), token="pyutilz@v1.0.0", empty=False
+        ),  # 37-F6: no pyproject is no subject, a skip with a reason
         Canary(
             "consumer_import_census",
             lambda d: _gate("consumer_import_census").assert_consumer_imports_resolve(d / "lib", "seedlib", [("app", d / "app")], use_git=False),
@@ -618,9 +620,19 @@ EXEMPT: dict[str, str] = {
 # Their corpora hold no floor: an empty corpus is a clean one (empty=False); dup_baseline_percent_key reads one named file, so it fails without it.
 CANARIES.update(
     {
-        "skip_as_pass": Canary("skip_as_pass", lambda d: _gate("skip_as_pass").assert_no_new_skip_as_pass(d), parses=False, empty=False),
+        "skip_as_pass": Canary(
+            "skip_as_pass",
+            lambda d: _gate("skip_as_pass").assert_no_new_skip_as_pass(d),
+            parses=False,
+            empty=False,
+            tokens=("seed_docker.sh", "seed_probe.py"),  # the shell half and the Python half of the gate
+        ),
         "wallclock_test_waits": Canary(
-            "wallclock_test_waits", lambda d: _gate("wallclock_test_waits").assert_no_new_wallclock_test_waits(d), parses=False, empty=False
+            "wallclock_test_waits",
+            lambda d: _gate("wallclock_test_waits").assert_no_new_wallclock_test_waits(d),
+            parses=False,
+            empty=False,
+            tokens=("test_seed_poll.py", "test_seed_async.py"),  # time.sleep and the async sleep family
         ),
         "guard_without_fixture": Canary(
             "guard_without_fixture", lambda d: _gate("guard_without_fixture").assert_every_guard_named_by_a_test(d), parses=False, empty=False
@@ -887,6 +899,44 @@ def test_canary_fixture_has_teeth(gate: str) -> None:
         assert broken, f"{gate}: unparsable/ is empty"
         for p in broken:
             assert _parse_error(p, p.read_bytes()) is not None, f"{gate}: {p.name} parses, so it cannot test the unparsed path"
+
+
+# Audit 2026-11-07 44-F1: a canary that pins only the default token 'seed' proves one detection branch. The ceiling may only go down; give a canary
+# `tokens=` (one per seeded shape) and lower it. Plan for the rest: gates whose own unit tests already pin each branch go last.
+_DEFAULT_TOKEN_ONLY_CEILING = 77
+
+# Audit 2026-11-07 44-F7: tokens that any message about the gate or the file carries. Frozen; may only shrink.
+_GENERIC_TOKENS = frozenset({"seed", "main", "alice", "limit", "WHERE", "OSError"})
+_WEAK_TOKENS_FROZEN = frozenset(
+    {
+        "git_dependency_pins:main",
+        "machine_specific_paths:alice",
+        "optional_truthiness:limit",
+        "no_source_text_tests:WHERE",
+        "naive_utcnow:utcnow",
+        "swallowed_exceptions:OSError",
+    }
+)
+
+
+def _weak_tokens() -> set[str]:
+    weak = set()
+    for gate, c in CANARIES.items():
+        for tok in {c.token, *c.tokens} - {"seed"}:
+            if tok in _GENERIC_TOKENS or tok in gate:
+                weak.add(f"{gate}:{tok}")
+    return weak
+
+
+def test_default_token_only_canaries_never_grow() -> None:
+    thin = sorted(g for g, c in CANARIES.items() if c.token == "seed" and not c.tokens)
+    assert len(thin) <= _DEFAULT_TOKEN_ONLY_CEILING, f"a new canary pins only the default token 'seed'; add tokens= (one per detection branch): {thin}"
+    assert len(thin) >= _DEFAULT_TOKEN_ONLY_CEILING - 3, f"lower _DEFAULT_TOKEN_ONLY_CEILING to {len(thin)} so the ratchet keeps its grip"
+
+
+def test_weak_canary_tokens_never_grow() -> None:
+    weak = _weak_tokens()
+    assert weak <= _WEAK_TOKENS_FROZEN, f"a canary token any message echoes proves nothing: {sorted(weak - _WEAK_TOKENS_FROZEN)}"
 
 
 def _scanning_modules() -> set[str]:

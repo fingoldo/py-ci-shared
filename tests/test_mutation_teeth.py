@@ -855,12 +855,14 @@ class TestSubstitutionNeedsARuleAndHasOne:
         """A perturbation that breaks the pattern is not a mutant no test kills -- it is not a
         mutant. Emitting it would put a permanent unkillable entry in every survivor list."""
         body = _RAW_ANCHORED
-        for mutant in self._mutants(tmp_path, body):
-            if "regex widened" in mutant.description:
-                import re as _re
+        widened = [m for m in self._mutants(tmp_path, body) if "regex widened" in m.description]
 
-                pattern = mutant.mutated_file_text.split('r"')[1].split('"')[0]
-                _re.compile(pattern)
+        assert widened, "the anchored pattern must yield a widened mutant, or this test checks nothing"
+        for mutant in widened:
+            import re as _re
+
+            pattern = mutant.mutated_file_text.split('r"')[1].split('"')[0]
+            _re.compile(pattern)
 
     def test_a_literal_is_swapped_for_a_confusable_one_from_the_same_file(self, tmp_path):
         """The vocabulary is the file's own, so the rule invents nothing: if `NFKD` and `NFKC` both
@@ -1059,7 +1061,10 @@ class TestSkippingTheSyntaxCheckIsSafe:
         src = tmp_path / "m.py"
         open(src, "w", encoding="utf-8", newline="").write("def f(*args):\n    return args\n")
 
-        for mutant in mutation_teeth.generate_mutants(src)[0]:
+        mutants = mutation_teeth.generate_mutants(src)[0]
+
+        assert mutants, "`def f(*args): return args` must yield mutants, or the parse check below is vacuous"
+        for mutant in mutants:
             ast.parse(mutant.mutated_file_text)
 
 

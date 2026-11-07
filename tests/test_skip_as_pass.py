@@ -125,3 +125,13 @@ def test_a_nonzero_exit_after_skipped_is_still_clean(tmp_path):
 def test_a_warning_that_mentions_skipped_is_not_a_skip_marker(tmp_path: Path) -> None:
     _tree(tmp_path, "tool/hooks.sh", 'echo "warning: hook checks were skipped for this push"\nexit 0\n')
     assert find_skip_as_pass(tmp_path) == {}
+
+
+def test_a_same_indent_return_ends_the_block_so_a_later_exit_is_not_its_exit(tmp_path: Path) -> None:
+    body = 'import sys\n\n\ndef f():\n    print("SKIPPED: no docker")\n    return\n    sys.exit(0)\n'
+    assert find_skip_as_pass(_tree(tmp_path, "scripts/run_docker.py", body)) == {}
+
+
+def test_a_deeper_return_does_not_end_the_block_so_the_exit_at_the_print_indent_is_found(tmp_path: Path) -> None:
+    body = 'import sys\n\n\ndef f(y):\n    print("SKIPPED: no docker")\n    if y:\n        return\n    sys.exit(0)\n'
+    assert list(find_skip_as_pass(_tree(tmp_path, "scripts/run_docker.py", body))) == ['scripts/run_docker.py: print("SKIPPED: no docker")']
