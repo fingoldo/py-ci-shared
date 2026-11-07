@@ -8,7 +8,7 @@
     "proposed_fix": "Add `allow: Mapping[str,str]` (relpath::function -> reason) and a `# shared-ok: <reason>` marker on the return line or the assignment, and a baseline_path like the other ratchets. Narrow the placeholder test: a capitalised call counts only for a short list of container-like classes (Rows-style) or when the module also mutates the name (`.append`, `[k] =`, `.update`) in a function that is not the returner; a never-mutated singleton is not a placeholder.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: marker '# shared-mutable-placeholder-ok: <reason>' (assignment or return line, or a comment line above) and classes ending Executor/Pool/Client/Session/Engine/Queue/Logger/ContextVar/Local/Manager are not placeholders; 9 tests failed before. Literal list/dict/set and Rows-style classes are still flagged. Counts 0 -> 0 on pcs and pyutilz."
   },
   {
     "id": "41-F2",
@@ -19,7 +19,7 @@
     "proposed_fix": "Add a 'reasoned control-flow exception' set: a handler whose caught names are all in {StopIteration, StopAsyncIteration, KeyError, IndexError, queue.Empty, ProcessLookupError, ZeroDivisionError, asyncio.CancelledError, asyncio.TimeoutError} and whose try body is one expression/statement (a lookup, a next(), a wait_for, a kill) is not a silent default. Keep OSError, Exception and bare except flagged.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: KeyError/IndexError/StopIteration/StopAsyncIteration/Empty/ProcessLookupError/ZeroDivisionError/CancelledError around a one-statement try are not a silent default; OSError, Exception, TimeoutError and multi-statement bodies stay flagged (TimeoutError left out on purpose: a timeout is a failure)."
   },
   {
     "id": "41-F3",
@@ -30,7 +30,7 @@
     "proposed_fix": "Decide the rule and make the three places agree. If a bad env value that keeps its default IS a fail-open (the 37 per-key decision), edit the CHANGELOG bullet to say so and drop the 5 value-parse keys from the '13' count. If it is not, delete the two tests and add the parse-guard exemption the CHANGELOG describes. Add a meta test that every 'no longer flags' CHANGELOG bullet in a 'Gate false positives' section names a test (changelog_promise_parity already exists for README claims; extend it).",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: CHANGELOG corrected, code unchanged. Evidence for the code side: commit 70f2152 re-flagged value-parse fallbacks on purpose, tests/test_fail_open_handlers.py pins it, and the 2026-11-04 per-key decision says so. The autopsia '13 keys' became 8. The suggested changelog-bullet-names-a-test meta test is DEFERRED."
   },
   {
     "id": "41-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Apply `_separate_measurement` to `b` and `c` as well (same marker, or a second marker `# threshold-ok: <reason>`), and add 1e-6..1e-300 epsilon floors compared against a variance/std/norm/denominator name to the default ignore of the threshold rule (a float safety floor is not a tuned limit).",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: '# literal-set-ok:' now exempts named-constant and threshold sites too. The epsilon-floor default ignore for the threshold rule is DEFERRED (needs the operand-name heuristic); the marker is the per-site exit."
   },
   {
     "id": "41-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "Judge only when the right operand is a str-typed expression: a name containing sql/query/stmt/statement/text/body/rendered, a call returning str (`str(...)`, `.format`, `compile(...)`), or an f-string. Skip a right operand that is `.headers[...]`, `.keys()`, a set/list/dict display or comprehension, or a name ending in s (collection).",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: a collection right operand (display, comprehension, .keys(), name ending in s, .headers) is not a probe; sql/stmt/query names are still flagged."
   },
   {
     "id": "41-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Use the data flow in the same function: a read whose value (or the local it is bound to) reaches `int()`, `float()`, `Path()`, `os.path.*`, `.split`, `.isdigit` or an arithmetic operator is not a boolean flag. Compare with '0'/'1' counts only when no numeric use of the same value exists.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809 + 050fa0d: a variable the same file also feeds to int/float/Path/os.path/.split/arithmetic/ordering is not a switch; bool(int(read)) stays a switch. pyutilz 1 -> 0, pcs 4 -> 3."
   },
   {
     "id": "41-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Replace the name regex for fail-closed: a handler that returns a falsy literal (False, None, 0, '') in a function whose result is used as a boolean predicate (name starts with is_/has_/can_/verify/check/valid or ends with _ok/_trusted) and whose caller treats False as deny is exempt; remove 'token' and 'digest' from `_CACHE_MISS_NAME_RE` or require the try body to be a cache read.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: replacing the name regex for fail-closed helpers needs the autopsia 9-key decision (needs owner decision); removing 'token'/'digest' would turn consumers red."
   },
   {
     "id": "41-F8",
@@ -85,7 +85,7 @@
     "proposed_fix": "Report only classes that are plausibly pickled: referenced in a `pickle.dump(s)`, `joblib.dump`, `Pool.map`/`ProcessPoolExecutor.submit` argument position in the scanned corpus, subclass of an sklearn BaseEstimator, a dataclass, or named in a user-provided `pickled_classes` list. Add `# pickle-ok: <reason>` on the assignment.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: '# pickle-ok: <reason>' on the assignment line or the comment line above. The 'only classes plausibly pickled' narrowing is DEFERRED (needs cross-file pickle-site resolution)."
   },
   {
     "id": "41-F9",
@@ -96,7 +96,7 @@
     "proposed_fix": "Ignore sets that are subsets of the integer-type bounds (127, 128, 255, 32767, 32768, 65535, 2147483647), the common significance/confidence levels (0.01, 0.05, 0.1, 0.025, 0.975, 0.9, 0.95, 0.99) and registered ports; or let the config extend DEFAULT_IGNORE with a documented `ignore_sets`.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: integer type bounds (127, 32767, 65535, 2147483647) and significance levels (0.01, 0.025, 0.05, 0.1, 0.9, 0.975) added to the ignored numbers; ports not added (no registry)."
   },
   {
     "id": "41-F10",
@@ -107,7 +107,7 @@
     "proposed_fix": "Treat a dict display whose keys are all string literals, `dataclasses.asdict`, `vars(self)` of a dataclass and `NamedTuple._asdict()` as ordered. Keep flagging a dict built by comprehension over a set or a dict from a parameter.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: dict display with string-constant keys (nested displays likewise) and dataclasses.asdict are fixed-order; comprehension, ** unpack and parameter payloads stay flagged. vars(self)/_asdict not covered (DEFERRED)."
   },
   {
     "id": "41-F11",
@@ -118,7 +118,7 @@
     "proposed_fix": "Resolve a Name argument to its single literal binding in the function (or to a literal tuple iterated by a for/parametrize) and apply the same non-secret-name filter; keep flagging an unresolvable name.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: a name bound once to a str constant, or looped over str constants, is judged by those names; parametrize-supplied names stay flagged."
   },
   {
     "id": "41-F12",
@@ -129,7 +129,7 @@
     "proposed_fix": "Require that the SKIPPED line is the last statement before the exit in the same block (no command between) or that the exit is the script's only exit path; otherwise the line is a progress message.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: shell-shape heuristic, low volume, one consumer baseline; needs a block parser to do right."
   },
   {
     "id": "41-F13",
@@ -140,7 +140,7 @@
     "proposed_fix": "Rewrite 37-F35 as a table of the 16 open keys with a per-key owner (gate / autopsia / owner decision), split 37-F40 into a RESOLVED false-positive part and a separate row for the false-negative DEBUG log_throttle finding, and close 37-F19 as WON'T FIX (not reproducible) with the date. Extend tracker_summary_parity to reject a RESOLVED cell that contains 'not reproduced' or 'NOT REPRODUCED'.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: edits the 2026-11-04 tracker (another audit's file) and extends tracker_summary_parity; not done in this pass."
   },
   {
     "id": "41-F14",
@@ -151,6 +151,6 @@
     "proposed_fix": "Tell glossum (disposition note in its audit file, not a py-ci-shared change): GF-1 resolved by `applied_files`, GF-2 not reproduced. Add to py-ci-shared's ddl_lock_safety tests a pin for ADD UNIQUE without NOT VALID alternative and SET NOT NULL so a later loss is caught here.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809 (pin only): test_ddl_lock_safety gains the ADD UNIQUE (no CONSTRAINT) pin; SET NOT NULL and ADD CONSTRAINT UNIQUE were already pinned. The glossum disposition note is the parent's: GF-1 closed by applied_files, GF-2 not reproduced."
   }
 ]

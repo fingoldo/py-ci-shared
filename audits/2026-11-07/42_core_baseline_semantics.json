@@ -8,7 +8,7 @@
     "proposed_fix": "Apply the name list only to the first component below root, or in git mode only to untracked (--others) files, since a tracked file is corpus by definition.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: iter_files keeps TRACKED files under build/dist/venv/node_modules/site-packages in git mode (one extra git ls-files --cached only when such a path is listed); dot-dirs and __pycache__ stay excluded; test TestTrackedDirectoryNamedLikeBuildOutput failed before the fix. Corpus counts unchanged on pcs (838) and pyutilz (616)."
   },
   {
     "id": "42-F2",
@@ -19,7 +19,7 @@
     "proposed_fix": "Match fragments against p.relative_to(root).as_posix(), and call result.assert_ok() inside the helper.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: scan_roots_excluding matches root-relative paths; test_scan_roots_excluding_matches_fragments_against_the_root_relative_path failed before. The helper-level assert_ok was NOT added: the assert_* entry points already call check_floor/unparsed, and the find_* callers would turn red."
   },
   {
     "id": "42-F3",
@@ -30,7 +30,7 @@
     "proposed_fix": "Resolve markers from tokenize COMMENT tokens (one shared comments_by_line(source) per file) and make line_has_marker and the per-gate regexes use it.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: line_has_marker ignores lines inside a multi-line string (tokenize, only when the text parses as Python). The per-gate regex markers (atomic_write_staging etc.) run on raw lines and are NOT changed: DEFERRED, waits on moving them to a shared comments_by_line."
   },
   {
     "id": "42-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Return 1 on stale (like raise_for_pytest default), or at least when the key reappears.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: returning 1 on stale entries turns every consumer with a stale baseline red; needs an owner decision and a consumer-by-consumer refresh sweep first."
   },
   {
     "id": "42-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "Make ok include stale (or add ok_strict) and migrate the .ok-only callers.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: same reason as 42-F4 (BaselineOutcome.ok including stale/surplus changes two callers and every consumer); needs the same sweep."
   },
   {
     "id": "42-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Add st_ctime_ns to the signature (utime cannot preserve it) and correct the docstring.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809 on POSIX: stat signature gains st_ctime_ns (test skipped on Windows). On Windows ctime is the creation time, so the gap remains there; documented in the code and CHANGELOG."
   },
   {
     "id": "42-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Use an unambiguous separator or reject a string containing it.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: a list baseline holding a pair and the string it joins to raises BaselineError; test_a_pair_and_a_string_that_join_alike_are_refused."
   },
   {
     "id": "42-F8",
@@ -85,7 +85,7 @@
     "proposed_fix": "Parse with an object_pairs_hook that raises BaselineError on a duplicate key.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 3ba0809: duplicate JSON keys raise BaselineError (Behaviour change entry); test_a_duplicate_json_key_is_refused."
   },
   {
     "id": "42-F9",
@@ -96,7 +96,7 @@
     "proposed_fix": "Match the suffix case-insensitively; scan stubs where gates parse them.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: matching .PY/.pyi/.pyw widens every gate's corpus (stubs, odd-case files on Linux) and can turn consumers red; needs a per-gate decision on stubs."
   },
   {
     "id": "42-F10",
@@ -107,7 +107,7 @@
     "proposed_fix": "Put the enclosing qualified name or normalized statement into the message; add a meta-test flagging messages without it.",
     "ast_checkable": false,
     "fp_risk": "high",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: needs enclosing-symbol text in many gates' messages (fp_risk high); belongs with a meta-test design, not a point fix."
   },
   {
     "id": "42-F11",
@@ -118,6 +118,6 @@
     "proposed_fix": "Raise CorpusError on dubious ownership when .git exists at root; make _walk prune any directory containing .git.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: raising on dubious ownership and pruning nested .git dirs in _walk change corpus membership on runners; needs a separate pass with consumer measurements."
   }
 ]

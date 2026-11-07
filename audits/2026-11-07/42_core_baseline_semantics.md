@@ -8,7 +8,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A project with a legitimate subpackage named build, dist, venv or node_modules has all its code silently unscanned by nearly every gate, with no unparsed finding; min_files still passes because other files parse.
 - Proposed fix: Apply the name list only to the first component below root, or in git mode only to untracked (--others) files, since a tracked file is corpus by definition.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: iter_files keeps TRACKED files under build/dist/venv/node_modules/site-packages in git mode (one extra git ls-files --cached only when such a path is listed); dot-dirs and __pycache__ stay excluded; test TestTrackedDirectoryNamedLikeBuildOutput failed before the fix. Corpus counts unchanged on pcs (838) and pyutilz (616).
 
 ## 42-F2 (P1) scan_roots_excluding matches the exclude fragments against the ABSOLUTE posix path (the ARCH-14 defect again): a checkout under a directory containing a fragment parses zero files
 
@@ -16,7 +16,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: drifted_duplicate_functions, epsilon_padded_denominators, hash_fed_by_array_copy, latched_availability_flags and others scan nothing when the repo lives under a matching directory; the result is a pass unless the caller remembers check_floor (scan_python does not raise).
 - Proposed fix: Match fragments against p.relative_to(root).as_posix(), and call result.assert_ok() inside the helper.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: scan_roots_excluding matches root-relative paths; test_scan_roots_excluding_matches_fragments_against_the_root_relative_path failed before. The helper-level assert_ok was NOT added: the assert_* entry points already call check_floor/unparsed, and the find_* callers would turn red.
 
 ## 42-F3 (P2) line_has_marker treats text inside a multi-line string literal as a trailing comment, so a '# <gate>-ok: reason' line in a docstring or triple-quoted string suppresses a finding
 
@@ -24,7 +24,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A finding on line N is suppressed by a docstring example or fixture string mentioning the marker on that physical line.
 - Proposed fix: Resolve markers from tokenize COMMENT tokens (one shared comments_by_line(source) per file) and make line_has_marker and the per-gate regexes use it.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: line_has_marker ignores lines inside a multi-line string (tokenize, only when the text parses as Python). The per-gate regex markers (atomic_write_staging etc.) run on raw lines and are NOT changed: DEFERRED, waits on moving them to a shared comments_by_line.
 
 ## 42-F4 (P2) baseline_ratchet.Baseline.enforce exits 0 on stale entries and is key-only: a fixed violation leaves a slot that a later regression of the same key takes for free
 
@@ -32,7 +32,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: b.py is cleaned, nobody runs the refresh because exit 0 hid it, months later b.py regresses under the same key and is accepted; the shrink-only rule is only as strong as the stale failure.
 - Proposed fix: Return 1 on stale (like raise_for_pytest default), or at least when the key reappears.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: returning 1 on stale entries turns every consumer with a stale baseline red; needs an owner decision and a consumer-by-consumer refresh sweep first.
 
 ## 42-F5 (P2) _core Baseline.enforce BaselineOutcome.ok ignores stale entries and surplus counts; callers that test only .ok accept up to the old count
 
@@ -40,7 +40,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: After a partial paydown the gate keeps free slots; new violations pass until someone refreshes.
 - Proposed fix: Make ok include stale (or add ok_strict) and migrate the .ok-only callers.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: same reason as 42-F4 (BaselineOutcome.ok including stale/surplus changes two callers and every consumer); needs the same sweep.
 
 ## 42-F6 (P3) parse and bytes caches trust a stat signature (mtime_ns, size, ino) for files older than 3s: a same-size rewrite with a preserved mtime serves the old tree
 
@@ -48,7 +48,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A long-lived process (watcher, IDE integration, run after cp -p / rsync -t / tar restore) gates stale source and passes a broken file.
 - Proposed fix: Add st_ctime_ns to the signature (utime cannot preserve it) and correct the docstring.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809 on POSIX: stat signature gains st_ctime_ns (test skipped on Windows). On Windows ctime is the creation time, so the gap remains there; documented in the code and CHANGELOG.
 
 ## 42-F7 (P3) List-form baseline entries are joined with '|', colliding with a plain string key containing '|'
 
@@ -56,7 +56,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: Two distinct accepted entries merge into one count; a pair can accept a literal key.
 - Proposed fix: Use an unambiguous separator or reject a string containing it.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: a list baseline holding a pair and the string it joins to raises BaselineError; test_a_pair_and_a_string_that_join_alike_are_refused.
 
 ## 42-F8 (P3) Duplicate JSON keys in a baseline resolve last-wins silently, so a bad merge can raise a count unnoticed
 
@@ -64,7 +64,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A merge or hand edit leaving two entries raises the allowed count with no growth refusal.
 - Proposed fix: Parse with an object_pairs_hook that raises BaselineError on a duplicate key.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: duplicate JSON keys raise BaselineError (Behaviour change entry); test_a_duplicate_json_key_is_refused.
 
 ## 42-F9 (P3) iter_files default pattern '*.py' is case-sensitive and ignores .pyi/.pyw although source.py decodes them as Python
 
@@ -72,7 +72,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A file named X.PY (imports fine on Windows and macOS) or a stub is never scanned and produces no finding.
 - Proposed fix: Match the suffix case-insensitively; scan stubs where gates parse them.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: matching .PY/.pyi/.pyw widens every gate's corpus (stubs, odd-case files on Linux) and can turn consumers red; needs a per-gate decision on stubs.
 
 ## 42-F10 (P3) Finding.key omits the line, so replacing one violation by another with an identical message in the same file passes the count check
 
@@ -80,7 +80,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: Fix violation A, add violation B elsewhere in the file: counts equal, gate green, the ratchet did not shrink.
 - Proposed fix: Put the enclosing qualified name or normalized statement into the message; add a meta-test flagging messages without it.
 - AST-checkable: False; FP risk: high
-- Disposition: OPEN
+- Disposition: DEFERRED: needs enclosing-symbol text in many gates' messages (fp_risk high); belongs with a meta-test design, not a point fix.
 
 ## 42-F11 (P3) git_listing returns None (silent walk fallback) for dubious ownership, and the walk and git modes disagree on nested repositories
 
@@ -88,5 +88,5 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: On a runner with safe.directory unset the corpus widens to ignored files and nested clones; findings differ between machines.
 - Proposed fix: Raise CorpusError on dubious ownership when .git exists at root; make _walk prune any directory containing .git.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: raising on dubious ownership and pruning nested .git dirs in _walk change corpus membership on runners; needs a separate pass with consumer measurements.
 

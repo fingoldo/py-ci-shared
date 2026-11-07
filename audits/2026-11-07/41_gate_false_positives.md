@@ -19,7 +19,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A consumer with a lazy-singleton accessor (`def get_executor(): return _EXEC`, `def session(): return _SESSION`) is blocked on correct code. The only escape the API offers is passing a narrower file list, which turns the gate off for the whole file, including its real defects (a `_EMPTY = []` default handed to callers in the same file).
 - Proposed fix: Add `allow: Mapping[str,str]` (relpath::function -> reason) and a `# shared-ok: <reason>` marker on the return line or the assignment, and a baseline_path like the other ratchets. Narrow the placeholder test: a capitalised call counts only for a short list of container-like classes (Rows-style) or when the module also mutates the name (`.append`, `[k] =`, `.update`) in a function that is not the returner; a never-mutated singleton is not a placeholder.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: marker '# shared-mutable-placeholder-ok: <reason>' (assignment or return line, or a comment line above) and classes ending Executor/Pool/Client/Session/Engine/Queue/Logger/ContextVar/Local/Manager are not placeholders; 9 tests failed before. Literal list/dict/set and Rows-style classes are still flagged. Counts 0 -> 0 on pcs and pyutilz.
 
 ## 41-F2 (P2) fail_open_handlers `silent_default_return` flags ordinary control-flow exceptions (StopIteration, KeyError, queue.Empty, ProcessLookupError, ZeroDivisionError, AttributeError, TimeoutError, CancelledError, UnicodeDecodeError, JSONDecodeError, CalledProcessError) in any function
 
@@ -27,7 +27,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A repo adopting the gate gets one finding per `except KeyError: return None` / `except queue.Empty: return None` / `os.kill` probe. The only escapes are the per-handler `# best-effort:` comment (which asserts the fallback 'cannot change a result', not true for a lookup miss that the caller branches on) or the baseline; autopsia already carries 39 such keys (audits/2026-11-04/37 per-key table).
 - Proposed fix: Add a 'reasoned control-flow exception' set: a handler whose caught names are all in {StopIteration, StopAsyncIteration, KeyError, IndexError, queue.Empty, ProcessLookupError, ZeroDivisionError, asyncio.CancelledError, asyncio.TimeoutError} and whose try body is one expression/statement (a lookup, a next(), a wait_for, a kill) is not a silent default. Keep OSError, Exception and bare except flagged.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: KeyError/IndexError/StopIteration/StopAsyncIteration/Empty/ProcessLookupError/ZeroDivisionError/CancelledError around a one-statement try are not a silent default; OSError, Exception, TimeoutError and multi-statement bodies stay flagged (TimeoutError left out on purpose: a timeout is a failure).
 
 ## 41-F3 (P2) CHANGELOG 'Gate false positives 2026-11-06' says a single-value parse guard (`int(x)` / `except ValueError: return default`) is no longer flagged; the code and its tests still flag it
 
@@ -35,7 +35,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A consumer reads the CHANGELOG, expects `_float_env` / `_age_years` baseline entries to go stale and shrink, and instead keeps seeing them (or removes them by hand and goes red). The 13-key shrink the CHANGELOG reports for autopsia (8 sqlite + 5 parse) is overstated by the parse half.
 - Proposed fix: Decide the rule and make the three places agree. If a bad env value that keeps its default IS a fail-open (the 37 per-key decision), edit the CHANGELOG bullet to say so and drop the 5 value-parse keys from the '13' count. If it is not, delete the two tests and add the parse-guard exemption the CHANGELOG describes. Add a meta test that every 'no longer flags' CHANGELOG bullet in a 'Gate false positives' section names a test (changelog_promise_parity already exists for README claims; extend it).
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: CHANGELOG corrected, code unchanged. Evidence for the code side: commit 70f2152 re-flagged value-parse fallbacks on purpose, tests/test_fail_open_handlers.py pins it, and the 2026-11-04 per-key decision says so. The autopsia '13 keys' became 8. The suggested changelog-bullet-names-a-test meta test is DEFERRED.
 
 ## 41-F4 (P2) `# literal-set-ok:` exempts only the `literal-set` rule; the `threshold` and `named-constant` rules of drifted_duplicate_literals have no marker, so numeric-zero floors and per-kernel constants can only be baselined
 
@@ -43,7 +43,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: Every kernel module that guards a division with its own `std < 1e-12` joins one threshold group; a consumer that follows the 37-F37 advice and writes the marker still fails, and has no per-site escape: it must freeze the group in a baseline, which then silently covers a real drift of that value.
 - Proposed fix: Apply `_separate_measurement` to `b` and `c` as well (same marker, or a second marker `# threshold-ok: <reason>`), and add 1e-6..1e-300 epsilon floors compared against a variance/std/norm/denominator name to the default ignore of the threshold rule (a float safety floor is not a tuned limit).
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: '# literal-set-ok:' now exempts named-constant and threshold sites too. The epsilon-floor default ignore for the threshold rule is DEFERRED (needs the operand-name heuristic); the marker is the per-site exit.
 
 ## 41-F5 (P2) no_source_text_tests reports any upper-case SQL keyword in a membership assert whatever the right operand is (HTTP Allow header, event list, dict keys, set of operations)
 
@@ -51,7 +51,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A REST test that checks the allowed methods, a state-machine test over enum names `INSERT`/`UPDATE`, or an email-header test is flagged as a source-text probe. The only exits are a baseline or the whole-file exclusion.
 - Proposed fix: Judge only when the right operand is a str-typed expression: a name containing sql/query/stmt/statement/text/body/rendered, a call returning str (`str(...)`, `.format`, `compile(...)`), or an f-string. Skip a right operand that is `.headers[...]`, `.keys()`, a set/list/dict display or comprehension, or a name ending in s (collection).
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: a collection right operand (display, comprehension, .keys(), name ending in s, .headers) is not a probe; sql/stmt/query names are still flagged.
 
 ## 41-F6 (P2) env_flag_parsing reports numeric and path-like variables read by truthiness or compared with '0'/'1' whenever the variable name is not on its short word list
 
@@ -59,7 +59,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A repo with `MYPROJ_JOBS`, `MYPROJ_CACHE`, `MYPROJ_RETRIES`, `MYPROJ_VERBOSITY` is told to route them through a boolean env parser, which would turn `MYPROJ_RETRIES=3` into `True`. Following the gate's advice breaks the code.
 - Proposed fix: Use the data flow in the same function: a read whose value (or the local it is bound to) reaches `int()`, `float()`, `Path()`, `os.path.*`, `.split`, `.isdigit` or an arithmetic operator is not a boolean flag. Compare with '0'/'1' counts only when no numeric use of the same value exists.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809 + 050fa0d: a variable the same file also feeds to int/float/Path/os.path/.split/arithmetic/ordering is not a switch; bool(int(read)) stays a switch. pyutilz 1 -> 0, pcs 4 -> 3.
 
 ## 41-F7 (P2) fail_open_handlers still flags fail-closed verification and deny helpers (`return False` in `is_allowed`, `check_ready`, MAC and signature checks); only names containing 'signature' or 'token' escape by accident
 
@@ -67,7 +67,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: The exemption by function name is inconsistent: `trailer_mac` and `_is_trusted` stay flagged, `verify_signature` does not. A returned False/None from a verifier is the safe direction (denial), so the finding names a defect that is not there, and the name regex also hides a real fail-open in a function called `get_token` that returns a default credential.
 - Proposed fix: Replace the name regex for fail-closed: a handler that returns a falsy literal (False, None, 0, '') in a function whose result is used as a boolean predicate (name starts with is_/has_/can_/verify/check/valid or ends with _ok/_trusted) and whose caller treats False as deny is exempt; remove 'token' and 'digest' from `_CACHE_MISS_NAME_RE` or require the try body to be a cache read.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: DEFERRED: replacing the name regex for fail-closed helpers needs the autopsia 9-key decision (needs owner decision); removing 'token'/'digest' would turn consumers red.
 
 ## 41-F8 (P2) pickle_state_completeness `unpicklable-without-getstate` flags every class that assigns a Thread, lock or connection outside __init__, including classes that are never pickled; no marker
 
@@ -75,7 +75,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A service object that owns a worker thread, a lock created lazily or a DB connection is reported although nothing in the program pickles it. The consumer baselines one entry per such class, and the baseline no longer separates classes that travel through joblib/multiprocessing from classes that never leave the process; 37-F7 already showed this gate over-reports.
 - Proposed fix: Report only classes that are plausibly pickled: referenced in a `pickle.dump(s)`, `joblib.dump`, `Pool.map`/`ProcessPoolExecutor.submit` argument position in the scanned corpus, subclass of an sklearn BaseEstimator, a dataclass, or named in a user-provided `pickled_classes` list. Add `# pickle-ok: <reason>` on the assignment.
 - AST-checkable: True; FP risk: med
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: '# pickle-ok: <reason>' on the assignment line or the comment line above. The 'only classes plausibly pickled' narrowing is DEFERRED (needs cross-file pickle-site resolution).
 
 ## 41-F9 (P3) drifted_duplicate_literals `literal-set` groups dtype bounds, significance levels and port pairs because they are not in DEFAULT_IGNORE
 
@@ -83,7 +83,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: Standard constants (type limits, confidence levels) become findings the first time two modules write them, and the only per-site exit is the marker, which a reviewer has to remember for every new pair.
 - Proposed fix: Ignore sets that are subsets of the integer-type bounds (127, 128, 255, 32767, 32768, 65535, 2147483647), the common significance/confidence levels (0.01, 0.05, 0.1, 0.025, 0.975, 0.9, 0.95, 0.99) and registered ports; or let the config extend DEFAULT_IGNORE with a documented `ignore_sets`.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: integer type bounds (127, 32767, 65535, 2147483647) and significance levels (0.01, 0.025, 0.05, 0.1, 0.9, 0.975) added to the ignored numbers; ports not added (no registry).
 
 ## 41-F10 (P3) hash_key_determinism flags `json.dumps` of a dict literal with a fixed key order and of `dataclasses.asdict(obj)` that is hashed without sort_keys
 
@@ -91,7 +91,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: Digest keys built from a literal record are reported as non-deterministic. The fix the gate asks for (sort_keys=True) is harmless but changes every existing digest of an on-disk cache, so a consumer prefers to baseline it.
 - Proposed fix: Treat a dict display whose keys are all string literals, `dataclasses.asdict`, `vars(self)` of a dataclass and `NamedTuple._asdict()` as ordered. Keep flagging a dict built by comprehension over a set or a dict from a parameter.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: dict display with string-constant keys (nested displays likewise) and dataclasses.asdict are fixed-order; comprehension, ** unpack and parameter payloads stay flagged. vars(self)/_asdict not covered (DEFERRED).
 
 ## 41-F11 (P3) secret_assertion_operands: 37-F22 closed the literal-name form only; `key = 'OMP_NUM_THREADS'; assert os.environ.get(key) == '1'` is still flagged
 
@@ -99,7 +99,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A test that parametrizes the variable name (`for name in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS')`) or binds it first is flagged even though every possible name is non-secret. mlframe GATE-5 (45 hits) was the family that motivated 37-F22.
 - Proposed fix: Resolve a Name argument to its single literal binding in the function (or to a literal tuple iterated by a for/parametrize) and apply the same non-secret-name filter; keep flagging an unresolvable name.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809: a name bound once to a str constant, or looped over str constants, is judged by those names; parametrize-supplied names stay flagged.
 
 ## 41-F12 (P3) skip_as_pass treats `echo "SKIPPED <optional step>"` followed by `exit 0` after the real checks ran as a skipped guard
 
@@ -107,7 +107,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A script that reports an optional sub-step as skipped and then finishes its real work is listed as skip-as-pass; the baseline needs a note per script. Low volume (opt-in gate, 1 consumer baseline) so the cost is a note, not a block.
 - Proposed fix: Require that the SKIPPED line is the last statement before the exit in the same block (no command between) or that the exit is the script's only exit path; otherwise the line is a progress message.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: shell-shape heuristic, low volume, one consumer baseline; needs a block parser to do right.
 
 ## 41-F13 (P3) Tracker rows 37-F35 and 37-F40 carry stale or contradictory text, and 37-F19 stays 'NOT REPRODUCED' without a closing action
 
@@ -115,7 +115,7 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: A reader cannot tell from the tracker which of the 39 autopsia keys are still gate false positives and which need a consumer edit; the next round re-measures the same keys (feedback 'read TRACKER row first').
 - Proposed fix: Rewrite 37-F35 as a table of the 16 open keys with a per-key owner (gate / autopsia / owner decision), split 37-F40 into a RESOLVED false-positive part and a separate row for the false-negative DEBUG log_throttle finding, and close 37-F19 as WON'T FIX (not reproducible) with the date. Extend tracker_summary_parity to reject a RESOLVED cell that contains 'not reproduced' or 'NOT REPRODUCED'.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: edits the 2026-11-04 tracker (another audit's file) and extends tracker_summary_parity; not done in this pass.
 
 ## 41-F14 (P3) Glossum's gate_false_positives GF-2 ('gate may have lost detection of ADD UNIQUE / SET NOT NULL') is not reproduced: the current ddl_lock_safety still reports both migrations, so the baseline entries glossum removed are live findings
 
@@ -123,4 +123,4 @@ Question: do the false-positive classes already closed stay closed, and which ne
 - Failure scenario: Glossum either removed baseline entries that still match (then its next gate run is red) or already passes `applied_files`; either way its 76 notes now cite a gap that is closed, and GF-2 sends the next auditor looking for a lost detection that does not exist.
 - Proposed fix: Tell glossum (disposition note in its audit file, not a py-ci-shared change): GF-1 resolved by `applied_files`, GF-2 not reproduced. Add to py-ci-shared's ddl_lock_safety tests a pin for ADD UNIQUE without NOT VALID alternative and SET NOT NULL so a later loss is caught here.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED 3ba0809 (pin only): test_ddl_lock_safety gains the ADD UNIQUE (no CONSTRAINT) pin; SET NOT NULL and ADD CONSTRAINT UNIQUE were already pinned. The glossum disposition note is the parent's: GF-1 closed by applied_files, GF-2 not reproduced.
