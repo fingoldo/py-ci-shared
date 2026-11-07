@@ -111,7 +111,7 @@ gates.yml:35 default: "v1.23.8". CLAUDE.md line 47 says 'the three reusable work
 - Proposed fix: In consumer-pins (online, --resolve-in) add a rule: a pin comment vX.Y.Z must resolve (git rev-parse vX.Y.Z^{commit}) to the pinned SHA; otherwise the comment must use the accepted 'master <sha7>' form. Expose it as ci-pin-comment-not-release.
 - AST/offline checkable: yes (adoption_matrix with a tag resolver)
 - False-positive risk: low
-- Disposition: DEFERRED: needs Pin to carry the trailing vX.Y.Z comment through the pin readers in adoption_matrix plus a tag resolver rule (ci-pin-comment-not-release); waits on that refactor. Same work as 47-F2.
+- Disposition: RESOLVED in the commit "adoption_matrix: report a pin whose # vX.Y.Z comment is not that release's commit (ci-pin-comment-not-release)": a Pin carries its trailing comment and adoption_matrix with --resolve-in reports ci-pin-comment-not-release when the tag named in a `# vX.Y.Z` comment is not the pinned commit (or does not exist); without a checkout the comments are not checked and a note says so. Report-only unless --strict-pin-comments, so consumer-pins stays green; tests/test_adoption_pin_comment.py (temp git repos: wrong SHA flagged, tagged SHA and abbreviated tagged SHA clean, comment without a version clean, missing tag flagged). The "master <sha7>" form is not checked. DEFERRED in the consumer repos: mlframe, pyutilz, social, dash_app_core, llm_bench, algopacksimple carry the wrong comments (listed in the CHANGELOG entry).
 
 ## 46-F11 (P3) ci_verdict accepts any success run for the SHA of any event and branch, including a pull_request run that tested the merge ref
 

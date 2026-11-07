@@ -19,7 +19,7 @@
     "proposed_fix": "Add a check in adoption_matrix: when a `# vX.Y.Z` comment follows a pin, resolve the tag and report `pin-comment-mismatch` if it differs from the pinned commit. Correct the 8 comments.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "DEFERRED: same work as 46-F10 (pin comment vs tag commit in adoption_matrix); the 8 wrong comments live in consumer repos (dash_app_core, llm_bench, algopacksimple, mlframe, pyutilz, glossum_backend_scripts, social)."
+    "disposition": "RESOLVED in the commit \"adoption_matrix: report a pin whose # vX.Y.Z comment is not that release's commit (ci-pin-comment-not-release)\": same rule as 46-F10, named ci-pin-comment-not-release (not pin-comment-mismatch). Correcting the wrong comments is work in the consumer repos (mlframe, pyutilz, social, dash_app_core, llm_bench, algopacksimple); glossum_backend_scripts pins a commit-subject comment and is not flagged."
   },
   {
     "id": "47-F3",
