@@ -155,7 +155,8 @@ def _gate_test_files(tree: Path) -> list[str]:
             continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except OSError as exc:
+            logger.warning("stale sweep: could not read %s (%s); it is not run", path, type(exc).__name__)
             continue
         if "py_ci_shared" in text and "mutation" not in path.name:
             found.append(path.relative_to(tree).as_posix())
@@ -178,7 +179,12 @@ def _run_pytest(tree: Path, files: Sequence[str], out_path: Path, *, python: str
         return "", f"could not start {python}: {exc}"
     lines = [line for line in proc.stdout.decode("utf-8", "replace").splitlines() if line.strip()]
     summary = lines[-1] if lines else ""
-    problem = "" if proc.returncode in (0, 1) else f"pytest exited {proc.returncode} ({summary or 'no output'}); the rows may be partial"
+    tail = " | ".join(proc.stderr.decode("utf-8", "replace").strip().splitlines()[-3:])
+    problem = (
+        ""
+        if proc.returncode in (0, 1)
+        else f"pytest exited {proc.returncode} ({summary or 'no output'}{'; stderr: ' + tail if tail else ''}); the rows may be partial"
+    )
     return summary, problem
 
 
