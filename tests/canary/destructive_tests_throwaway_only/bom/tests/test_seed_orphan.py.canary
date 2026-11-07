@@ -1,0 +1,7 @@
+﻿import psycopg2
+
+
+def test_seed_orphan_deletes(dsn):
+    connection = psycopg2.connect(dsn)
+    with connection.cursor() as cursor:
+        cursor.execute("DELETE FROM seed_orphans WHERE tag = %s", ("~01test",))

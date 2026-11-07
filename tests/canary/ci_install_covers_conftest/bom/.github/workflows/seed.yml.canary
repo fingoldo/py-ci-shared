@@ -19,3 +19,14 @@ jobs:
         run: |
           pytest -p no:randomly \
             tests/
+  poetry-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: poetry install
+      - run: pytest tests/
+  tox-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: tox -e py311

@@ -135,12 +135,15 @@ CANARIES: dict[str, Canary] = {
             token="seed.sh",
             tokens=("seed.sh", "seed.yml", "seed2.sh"),
         ),
-        Canary("machine_specific_paths", lambda d: _gate("machine_specific_paths").assert_no_machine_specific_paths(d, use_git=False), token="alice"),
+        Canary(
+            "machine_specific_paths",
+            lambda d: _gate("machine_specific_paths").assert_no_machine_specific_paths(d, use_git=False),
+            tokens=("[user-home-path]", "[model-cache-path]", "[db-url]", "[drive-path]"),
+        ),
         Canary(
             "swallowed_exceptions",
             lambda d: _gate("swallowed_exceptions").assert_no_swallowed_exceptions(d, use_git=False),
-            token="OSError",
-            tokens=("seed_replace", "seed_bare", "seed_exception", "seed_base", "seed_tuple", "seed_suppress"),
+            tokens=("[swallowed-exception]", "seed_replace", "seed_bare", "seed_exception", "seed_base", "seed_tuple", "seed_suppress"),
         ),
         Canary("alembic_concurrently", lambda d: _gate("alembic_concurrently").assert_concurrently_is_in_autocommit_blocks(d)),
         Canary("connect_error_echo", lambda d: _gate("connect_error_echo").assert_no_connect_error_echo(d, use_git=False), token="seed_probe"),
@@ -170,7 +173,7 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "fail_open_handlers",
             lambda d: _gate("fail_open_handlers").assert_no_new_fail_open_handlers(_py(d), d, _baseline(d), refresh=False),
-            token="seed_check",
+            tokens=("[gate_returns_true]", "[admit_on_error]", "[silent_default_return]", "[gate_swallows_error]", "[quiet_substitution]"),
         ),
         Canary("gpu_timing_sync", lambda d: _gate("gpu_timing_sync").assert_no_unsynchronized_gpu_timings(_py(d), d), token="seed_measure"),
         Canary("hash_fed_by_array_copy", lambda d: _gate("hash_fed_by_array_copy").assert_no_hash_fed_by_array_copy([d])),
@@ -182,10 +185,13 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "naive_utcnow",
             lambda d: _gate("naive_utcnow").assert_no_naive_utcnow(d, use_git=False),
-            token="utcnow",
             tokens=("seed.py:5:", "dtm.datetime.utcnow()", "D.utcnow()"),
         ),
-        Canary("optional_truthiness", lambda d: _gate("optional_truthiness").assert_optionals_test_for_none(files=_py(d), repo_root=d), token="limit"),
+        Canary(
+            "optional_truthiness",
+            lambda d: _gate("optional_truthiness").assert_optionals_test_for_none(files=_py(d), repo_root=d),
+            tokens=("`limit` is an optional number", "`self.time_budget_s` is an optional number"),
+        ),
         Canary(
             "readme_env_var_parity",
             lambda d: _gate("readme_env_var_parity").assert_readme_documents_every_env_var(_py(d), d / "README.md"),
@@ -299,11 +305,12 @@ CANARIES: dict[str, Canary] = {
             "ci_install_covers_conftest",
             lambda d: _gate("ci_install_covers_conftest").assert_ci_install_covers_conftest(d),
             token="py-ci-shared",  # pyutilz's numba-coverage.yml before e6db9af: [dev] installed, requirements-dev.txt not
+            tokens=("[ci-install-missing]", "[ci-install-unmapped]", "[ci-install-unevaluated]"),
         ),
         Canary(
             "git_dependency_pins",
             lambda d: _gate("git_dependency_pins").assert_all_git_dependencies_pinned(d / "pyproject.toml"),
-            token="main",  # the finding is the unpinned ref
+            tokens=("release-branch", "<no ref>", "abc1234", "seeduv: branch=dev-branch"),  # a branch, no ref, a short SHA, a [tool.uv.sources] table
         ),
         Canary("entry_points_resolvable", lambda d: _gate("entry_points_resolvable").assert_all_entry_points_resolvable(d / "pyproject.toml"), token="seed"),
         Canary(
@@ -374,12 +381,24 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(d, {"seed.py:SEED_PRICING": 45}, today=_FACT_DAY),
         ),
         Canary("vendored_internal_imports", lambda d: _gate("vendored_internal_imports").assert_no_vendored_internal_imports(d, use_git=False)),
-        Canary("stub_signature_parity", lambda d: _gate("stub_signature_parity").assert_stub_signature_parity(d, use_git=False)),
+        Canary(
+            "stub_signature_parity",
+            lambda d: _gate("stub_signature_parity").assert_stub_signature_parity(d, use_git=False),
+            # one rule id for every stub form, so each is named by its rendered stub
+            tokens=("stub _submit(", "stub lambda(*_a)", "stub lambda(job_uid, fl_cid)"),
+        ),
         Canary("wrapper_protocol_parity", lambda d: _gate("wrapper_protocol_parity").assert_wrapper_protocol_parity(d, use_git=False)),
         Canary(
             "destructive_tests_throwaway_only",
             lambda d: _gate("destructive_tests_throwaway_only").assert_destructive_tests_are_throwaway_only(
                 d / "tests", hook_config_paths=[d / ".pre-commit-config.yaml"], repo_root=d, min_destructive_files=1, use_git=False
+            ),
+            # destructive-test-allowlist-stale needs an allowlist the canary runner does not pass
+            tokens=(
+                "[destructive-test-production-dsn]",
+                "[destructive-test-non-throwaway-runner]",
+                "[destructive-test-never-run]",
+                "[destructive-test-no-throwaway-accessor]",
             ),
         ),
         Canary(
@@ -462,6 +481,7 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "statement_columns_exist_in_ddl",
             lambda d: _gate("statement_columns_exist_in_ddl").assert_statement_columns_exist_in_ddl(d, ddl_dirs=["sql"], use_git=False),
+            tokens=("seed.SEED_STALE_SQL", "seed.SEED_INSERT_SQL", "seed.SEED_CONFIRM_SQL"),  # a SELECT, an INSERT and an UPDATE naming the missing column
         ),
         Canary(
             "statement_real_engine_coverage",
@@ -475,7 +495,16 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("env_write_restore").assert_env_write_restore(d, use_git=False),
             tokens=("test_leaks_a_setting_into_every_later_test", "test_update_leaks", "test_putenv_leaks", "test_setdefault_leaks"),
         ),
-        Canary("free_text_in_get_route", lambda d: _gate("free_text_in_get_route").assert_free_text_in_get_route(d, use_git=False)),
+        Canary(
+            "free_text_in_get_route",
+            lambda d: _gate("free_text_in_get_route").assert_free_text_in_get_route(d, use_git=False),
+            # one rule id; the shapes are a free-text name in the path, one in the query string, and a long-bounded string
+            tokens=(
+                "'term' is named like free text and travels in the path",
+                "'chief_complaint' is named like free text and travels in the query",
+                "'phrase' accepts up to 300",
+            ),
+        ),
         Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False, heavy=True)),
         Canary(
             "llm_output_caps",
@@ -512,7 +541,7 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "no_source_text_tests",
             lambda d: _gate("no_source_text_tests").assert_no_source_text_tests(_py(d)),
-            token="WHERE",
+            token="[source-text-test]",
         ),
         Canary(
             "shared_mutable_placeholder",
@@ -525,7 +554,17 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("nginx_location_headers").assert_nginx_location_headers(d, use_git=False),
             tokens=("dropped-header", "unresolved-include"),
         ),
-        Canary("validation_errors_echo_input", lambda d: _gate("validation_errors_echo_input").assert_validation_errors_echo_input(d, use_git=False)),
+        Canary(
+            "validation_errors_echo_input",
+            lambda d: _gate("validation_errors_echo_input").assert_validation_errors_echo_input(d, use_git=False),
+            # the rule id is one string for all shapes, so each shape is named by its message
+            tokens=(
+                "in a validator helper puts",
+                "in a validator puts",
+                "drops `input` only for some errors",
+                "returns exc.errors() with each error's `input`",
+            ),
+        ),
         Canary("predictable_tmp_path", lambda d: _gate("predictable_tmp_path").assert_predictable_tmp_path(d, use_git=False)),
         Canary(
             "import_time_global_side_effects",
@@ -548,7 +587,12 @@ CANARIES: dict[str, Canary] = {
         Canary("truncating_discretisation", lambda d: _gate("truncating_discretisation").assert_truncating_discretisation(d, use_git=False)),
         Canary("unseeded_rng_fallback", lambda d: _gate("unseeded_rng_fallback").assert_unseeded_rng_fallback(d, use_git=False)),
         Canary("caller_frame_mutation", lambda d: _gate("caller_frame_mutation").assert_caller_frame_mutation(d, use_git=False, advisory=False)),
-        Canary("cuda_kernel_pointer_types", lambda d: _gate("cuda_kernel_pointer_types").assert_cuda_kernel_pointer_types(d, use_git=False)),
+        Canary(
+            "cuda_kernel_pointer_types",
+            lambda d: _gate("cuda_kernel_pointer_types").assert_cuda_kernel_pointer_types(d, use_git=False),
+            # cuda-bare-float-pointer is only reported with include_float, which the canary runner does not pass
+            tokens=("[cuda-bare-double-pointer]", "[cuda-type-probe-not-launched]"),
+        ),
         Canary("cuda_launch_geometry", lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False)),
         Canary(
             "possibly_unbound_local",
@@ -940,20 +984,11 @@ def test_canary_fixture_has_teeth(gate: str) -> None:
 
 # Audit 2026-11-07 44-F1: a canary that pins only the default token 'seed' proves one detection branch. The ceiling may only go down; give a canary
 # `tokens=` (one per seeded shape) and lower it. Plan for the rest: gates whose own unit tests already pin each branch go last.
-_DEFAULT_TOKEN_ONLY_CEILING = 77
+_DEFAULT_TOKEN_ONLY_CEILING = 71
 
 # Audit 2026-11-07 44-F7: tokens that any message about the gate or the file carries. Frozen; may only shrink.
 _GENERIC_TOKENS = frozenset({"seed", "main", "alice", "limit", "WHERE", "OSError"})
-_WEAK_TOKENS_FROZEN = frozenset(
-    {
-        "git_dependency_pins:main",
-        "machine_specific_paths:alice",
-        "optional_truthiness:limit",
-        "no_source_text_tests:WHERE",
-        "naive_utcnow:utcnow",
-        "swallowed_exceptions:OSError",
-    }
-)
+_WEAK_TOKENS_FROZEN: frozenset[str] = frozenset()
 
 
 def _weak_tokens() -> set[str]:

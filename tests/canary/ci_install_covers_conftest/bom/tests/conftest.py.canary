@@ -8,3 +8,5 @@ def pytest_addoption(parser):
         from py_ci_shared.code_audit_meta import register_refresh_option
 
         register_refresh_option(parser)
+
+import seed_nowhere_pkg  # noqa: F401

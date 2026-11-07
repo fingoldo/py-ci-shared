@@ -31,3 +31,29 @@ def seed_empty(v):
         return int(v)
     except ValueError:
         return []
+
+def seed_gate_skip(items):
+    for item in items:
+        try:
+            int(item)
+        except ValueError:
+            continue
+
+
+def seed_collect(items):
+    kept = []
+    for item in items:
+        try:
+            int(item)
+        except ValueError:
+            kept.append(item)
+    return kept
+
+
+def seed_quiet(v):
+    try:
+        out = int(v)
+    except ValueError:
+        out = 0
+        logger.debug("bad value")
+    return out

@@ -37,3 +37,7 @@ class SeedRequest(BaseModel):
 async def seed_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     cleaned = [{k: v for k, v in e.items() if k != "input"} if str(e.get("type", "")).endswith("too_long") else e for e in exc.errors()]
     return JSONResponse(status_code=422, content={"detail": cleaned})
+
+@app.exception_handler(RequestValidationError)
+async def seed_plain_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})

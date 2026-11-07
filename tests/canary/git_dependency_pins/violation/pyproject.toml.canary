@@ -6,4 +6,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-extra = ["seedextra @ git+https://github.com/o/seedextra.git@main"]
+extra = ["seedextra @ git+https://github.com/o/seedextra.git@release-branch"]
+seednoref = ["seednoref @ git+https://github.com/o/seednoref.git"]
+seedshort = ["seedshort @ git+https://github.com/o/seedshort.git@abc1234"]
+
+[tool.uv.sources]
+seeduv = { git = "https://github.com/o/seeduv.git", branch = "dev-branch" }

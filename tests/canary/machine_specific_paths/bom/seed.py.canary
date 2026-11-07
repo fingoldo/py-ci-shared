@@ -1,1 +1,4 @@
 ﻿SEED_CACHE_DIR = r"C:\Users\alice\seed_cache"
+SEED_MODEL_DIR = "/data/.cache/huggingface/seed"
+SEED_DB_URL = "postgresql://seeduser:s3cr3tvalue@db.internal/seed"  # pragma: allowlist secret
+SEED_DATA_DIR = "D:/seed_data/raw"
