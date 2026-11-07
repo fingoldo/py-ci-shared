@@ -52,7 +52,7 @@
     "proposed_fix": "A script/test that, when a second interpreter is available (uv python find 3.9), runs a fixed list of unparse-keyed and dump-keyed gates on a golden corpus in a subprocess for each interpreter and asserts equal key sets; run in the CI matrix leg that has both. Golden-key test for unparse of a frozen list of expression shapes (lambda, for-target, starred subscript).",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in aec2d6a (tests/test_cross_interpreter_keys.py runs one corpus through unparse- and fingerprint-keyed gates on each other installed Python and compares keys; the golden unparse list already existed in tests/test_unparse_stable.py; wiring a CI leg that installs a second interpreter stays with the matrix, the test uses PY_CI_SHARED_OTHER_PYTHONS or uv pythons and skips when none)"
   },
   {
     "id": "45-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Put a short retry (3 tries, 0.05-0.2s backoff on PermissionError, Windows only) inside _core.atomic_write_text and make the other three call it.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in aec2d6a (_core.replace_file retries a Windows PermissionError 3 times; atomic_write_text, install_safe_hook, _scan_cache and api_floor use it; tests/test_replace_file_retry.py)"
   },
   {
     "id": "45-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Delete the 3.8 fallbacks and comments, call ast.unparse directly (or the F1 helper).",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED in aec2d6a (the 3.8 comments and the hand-rolled removesuffix are gone; the getattr(ast, 'unparse') fallbacks were already removed in 10a487c; test in tests/test_unparse_stable.py)"
   },
   {
     "id": "45-F8",
@@ -85,6 +85,6 @@
     "proposed_fix": "none",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "WON'T FIX (no defect: finding records robust areas to prevent re-audit)"
   }
 ]

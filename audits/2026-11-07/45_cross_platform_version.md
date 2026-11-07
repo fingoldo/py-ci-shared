@@ -42,7 +42,7 @@ Interpreters run: CPython 3.9.25, 3.11.15, 3.13.14 (uv-managed, `py -0p`) and 3.
 - Failure scenario: the next dump/unparse change (3.15) is found by a consumer's red shard.
 - Proposed fix: a test that runs a golden corpus through the unparse- and dump-keyed gates under each available interpreter (subprocess, `uv python find`) and asserts equal key sets, plus a golden unparse test for lambda, for-target and starred subscript.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED in aec2d6a (tests/test_cross_interpreter_keys.py runs one corpus through unparse- and fingerprint-keyed gates on each other installed Python and compares keys; the golden unparse list already existed in tests/test_unparse_stable.py; wiring a CI leg that installs a second interpreter stays with the matrix, the test uses PY_CI_SHARED_OTHER_PYTHONS or uv pythons and skips when none)
 
 ## 45-F6 (P3) os.replace without a Windows retry in four writers
 
@@ -50,7 +50,7 @@ Interpreters run: CPython 3.9.25, 3.11.15, 3.13.14 (uv-managed, `py -0p`) and 3.
 - Failure scenario: an indexer holding the target makes a refresh or hook install raise PermissionError once.
 - Proposed fix: short Windows-only retry inside `atomic_write_text`; the others call it.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED in aec2d6a (_core.replace_file retries a Windows PermissionError 3 times; atomic_write_text, install_safe_hook, _scan_cache and api_floor use it; tests/test_replace_file_retry.py)
 
 ## 45-F7 (P3) Stale "supports 3.8" comments and dead unparse/dump fallbacks
 
@@ -58,7 +58,7 @@ Interpreters run: CPython 3.9.25, 3.11.15, 3.13.14 (uv-managed, `py -0p`) and 3.
 - Failure scenario: cosmetic; the fallbacks are an untested second key format.
 - Proposed fix: delete them.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED in aec2d6a (the 3.8 comments and the hand-rolled removesuffix are gone; the getattr(ast, 'unparse') fallbacks were already removed in 10a487c; test in tests/test_unparse_stable.py)
 
 ## 45-F8 (P3) Checked and robust (do not re-audit)
 
@@ -66,4 +66,4 @@ Interpreters run: CPython 3.9.25, 3.11.15, 3.13.14 (uv-managed, `py -0p`) and 3.
 - Failure scenario: none.
 - Proposed fix: none.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: WON'T FIX (no defect: finding records robust areas to prevent re-audit)
