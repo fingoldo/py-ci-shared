@@ -55,8 +55,8 @@ def test_the_written_tree_names_the_new_version_in_every_place_the_release_test_
     assert re.search(r'^version = "99\.0\.0"', _text(tree, "pyproject.toml"), re.M)
     assert re.search(r'^__version__ = "99\.0\.0"', _text(tree, "src/py_ci_shared/__init__.py"), re.M)
     assert set(re.findall(r"py-ci-shared\.git@(v[\d.]+)", _text(tree, "README.md"))) == {"v99.0.0"}
-    assert guard.PREP_FILES[4:], "no workflow among the prepared files"
-    for name in guard.PREP_FILES[4:]:
+    assert guard.WORKFLOW_FILES, "no workflow among the prepared files"
+    for name in guard.WORKFLOW_FILES:
         assert 'default: "v99.0.0"' in _text(tree, name), name
 
 

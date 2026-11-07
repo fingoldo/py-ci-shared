@@ -32,19 +32,14 @@ jobs:
         with:
           python-version: "3.11"
 
-      # Direct ${{ }} substitution (not the env-var-then-shell-expand pattern used elsewhere in
-      # this repo): install-command is a multi-line shell SCRIPT, not a single token. Expanding
-      # it as an unquoted `${VAR}` would word-split it on every whitespace/newline and execute
-      # the result as ONE command's argv instead of running each line as its own statement; a
-      # generic zizmor auto-fix made exactly this mistake here, caught by actionlint's shellcheck
-      # (SC2086) immediately after. install-command is also only ever set by the calling
-      # workflow's own `with:` block (trusted, first-party config), not by any external/
-      # attacker-controlled GitHub context -- the injection risk the env-var pattern guards
-      # against elsewhere does not apply to this input.
+      # install-command is a multi-line shell SCRIPT: it reaches the step through the environment and runs as `bash -eo pipefail -c "$VAR"` (the quoted
+      # variable keeps every line a statement, and nothing from the caller is expanded into the script text).
       - name: Install project + docs deps
         shell: bash
-        # zizmor: ignore[template-injection] -- see the comment above.
-        run: ${{ inputs.install-command }}
+        env:
+          INSTALL_COMMAND: ${{ inputs.install-command }}
+        # Through the environment, not expanded into the script; `-eo pipefail` is what GitHub's own bash shell line adds, so a multi-line command stops at its first failure.
+        run: bash -eo pipefail -c "$INSTALL_COMMAND"
 
       - name: Build site
         run: mkdocs build --site-dir site

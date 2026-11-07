@@ -87,6 +87,9 @@ BILLING_MARKERS = ("recent account payments have failed", "spending limit")
 #: Conclusions that say nothing about the code: the run was stopped or never meant to run.
 IGNORED_CONCLUSIONS = frozenset({"cancelled", "skipped", "stale"})
 GREEN_CONCLUSIONS = frozenset({"success", "neutral"})
+#: Scheduled runs in a row, newest first, that were all cancelled before the workflow counts as red: a nightly job that its own timeout cancels every
+#: night never fails, so conclusions alone read it as healthy (corpus-drift: 2 successes in its last 51 runs).
+CANCELLED_STREAK_RED = 3
 DEFAULT_MAX_RED_DAYS = 2.0
 RUNS_PER_PAGE = 100
 #: Pages of runs read per workflow while no success has been seen; past that the streak is a lower bound.
@@ -169,7 +172,49 @@ def _days(now: datetime, since: Optional[datetime]) -> float:
     return max((now - since).total_seconds() / 86400.0, 0.0) if since else 0.0
 
 
+def cancelled_schedule_streak(runs: Iterable[dict]) -> list[dict]:
+    """The newest completed ``schedule`` runs that were ALL cancelled, newest first (empty when the newest scheduled run was not cancelled)."""
+    scheduled = sorted(
+        (r for r in runs if r.get("event") == "schedule" and r.get("status") == "completed"), key=lambda r: (r.get("created_at") or "", r["id"]), reverse=True
+    )
+    streak: list[dict] = []
+    for run in scheduled:
+        if run.get("conclusion") != "cancelled":
+            break
+        streak.append(run)
+    return streak
+
+
 def assess_workflow(
+    workflow: dict, runs: Iterable[dict], now: datetime, *, billing: bool = False, billing_run_ids: Iterable[int] = ()
+) -> Optional[WorkflowHealth]:
+    """:func:`_assess_conclusions`, then a scheduled workflow whose last :data:`CANCELLED_STREAK_RED` scheduled runs were all cancelled is red.
+
+    Cancelled runs say nothing about the code, but a nightly job cancelled every night by its own timeout has measured nothing for as long as the streak lasts.
+    A workflow already red by its failures keeps that verdict."""
+    runs = list(runs)
+    health = _assess_conclusions(workflow, runs, now, billing=billing, billing_run_ids=billing_run_ids)
+    streak = cancelled_schedule_streak(runs)
+    if len(streak) < CANCELLED_STREAK_RED or (health is not None and health.status == "red"):
+        return health
+    newer_real = [r for r in relevant_runs(runs) if (r.get("created_at") or "") > (streak[0].get("created_at") or "")]
+    if newer_real:
+        return health
+    since = _ts(streak[-1].get("created_at"))
+    return WorkflowHealth(
+        str(workflow.get("name") or streak[0].get("name") or "?"),
+        str(workflow.get("path") or ""),
+        "red",
+        red_since=since,
+        last_success=health.last_success if health else None,
+        lower_bound=health is None or health.last_success is None,
+        red_runs=len(streak),
+        latest_url=str(streak[0].get("html_url") or ""),
+        days_red=_days(now, since),
+    )
+
+
+def _assess_conclusions(
     workflow: dict, runs: Iterable[dict], now: datetime, *, billing: bool = False, billing_run_ids: Iterable[int] = ()
 ) -> Optional[WorkflowHealth]:
     """The health of ``workflow`` (an item of ``/actions/workflows``) from its ``runs``; ``None`` when none counts.
@@ -458,7 +503,7 @@ def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bo
             if default_branch != consumer.branch:
                 runs += _paged_runs(api, base, event="schedule")
             ordered = relevant_runs(runs)
-            runs_by[int(wf["id"])] = ordered
+            runs_by[int(wf["id"])] = runs  # unfiltered: assess_workflow reads the cancelled scheduled runs too
             billing_ids += _billing_refusals(api, consumer.repo, ordered)
     except ApiError as exc:
         logger.debug("GitHub API call failed, consumer reported with an error: %s", type(exc).__name__)

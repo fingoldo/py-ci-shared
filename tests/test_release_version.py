@@ -98,14 +98,34 @@ def test_every_registry_since_is_a_release_up_to_the_declared_version():
     assert ahead == {}, f"since is ahead of pyproject's {VERSION}: {ahead}. Bump the version or correct since."
 
 
-@pytest.mark.parametrize("name", ["black-filtered.yml", "ruff-blocking.yml", "lint-advisory.yml"])
-def test_each_reusable_workflow_defaults_to_its_own_release(name: str):
-    """A caller pinned to a tag gets that tag's configs: the default ref is the version the file ships in."""
+REUSABLE = ["black-filtered.yml", "ruff-blocking.yml", "lint-advisory.yml", "gates.yml"]
+
+
+def _ref_default(name: str) -> str:
     data = yaml.safe_load((WORKFLOWS / name).read_text(encoding="utf-8"))
-    inputs = data[True]["workflow_call"]["inputs"]  # PyYAML reads the bare `on` key as True
-    assert (
-        inputs["py-ci-shared-ref"]["default"] == f"v{VERSION}"
-    ), f"{name}: py-ci-shared-ref defaults to {inputs['py-ci-shared-ref']['default']!r}; set it to v{VERSION} with the version bump"
+    return data[True]["workflow_call"]["inputs"]["py-ci-shared-ref"]["default"]  # PyYAML reads the bare `on` key as True
+
+
+def test_the_reusable_workflow_list_is_the_list_release_guard_prepares():
+    assert [Path(n).name for n in guard.WORKFLOW_FILES] == REUSABLE
+
+
+def test_the_reusable_workflows_default_to_one_ref_that_exists_or_is_being_released():
+    """Between a release and the next, a caller on master gets the LAST PUBLISHED tag (43-F3, 46-F6, 46-F7).
+
+    The bump-to-next-release commit leaves the defaults alone; `release_guard.py prepare X.Y.Z --write` moves all four to v{VERSION} in the commit that
+    is then tagged. A default naming a tag that does not exist makes every caller's install fail with no fallback, and four files disagreeing mixes
+    two versions in one consumer pipeline."""
+    defaults = {n: _ref_default(n) for n in REUSABLE}
+    assert len(set(defaults.values())) == 1, f"the four reusable workflows name different refs: {defaults}"
+    ref = next(iter(defaults.values()))
+    tags = _tags()
+    assert ref in tags or ref == f"v{VERSION}", (
+        f"py-ci-shared-ref defaults to {ref}, which is neither a published tag (newest {tags[-1:]}) nor the release being prepared v{VERSION}; "
+        "keep it at the last published tag until `release_guard.py prepare` moves it"
+    )
+    if ref != f"v{VERSION}":
+        assert ref == tags[-1], f"{ref} is not the newest published tag {tags[-1]}: a caller on master would run old configs"
 
 
 def test_the_readme_install_tag_is_the_newest_release_or_this_one():
@@ -208,7 +228,7 @@ def test_wait_for_ci_polls_until_the_run_finishes():
 
     state, _ = guard.wait_for_ci(api, "o/r", "abc", wait=600, poll=5, sleep=slept.append, clock=lambda: 0.0)
     assert state == "green" and slept == [5, 5]
-    assert calls[0] == "repos/o/r/actions/workflows/self-ci.yml/runs?head_sha=abc&per_page=50"
+    assert calls[0] == "repos/o/r/actions/workflows/self-ci.yml/runs?head_sha=abc&branch=master&per_page=50"
 
 
 def test_wait_for_ci_gives_up_as_pending_after_the_wait():
@@ -330,3 +350,101 @@ def test_the_rollback_procedure_is_documented():
     claude = (REPO / "CLAUDE.md").read_text(encoding="utf-8")
     assert "Rolling back a release" in claude and "rollback-to" in claude
     assert "rollback-to" in (REPO / "README.md").read_text(encoding="utf-8")
+
+
+# --- audit 2026-11-07 46-F1: ci-green needs the full SHA ---------------------------------------------------------------
+
+
+@pytest.mark.parametrize("sha", ["213ce77", "A" * 40, "a" * 39, ""])
+def test_ci_green_refuses_anything_but_a_full_lowercase_sha(sha: str):
+    """GitHub matches head_sha on all 40 characters, so a short SHA is answered 'never ran' for a green commit (46-F1)."""
+    out = _cli("ci-green", "--repo", "o/r", "--sha", sha)
+    assert out.returncode == 2, out.stdout + out.stderr
+    assert "40-character" in out.stdout + out.stderr
+
+
+def test_rollback_requires_a_published_release_when_the_releases_are_known():
+    """A tag whose Release run failed (v1.23.2, v1.23.0 once) exists but never passed verify (46-F12)."""
+    tags = ["v1.18.0", "v1.19.0", "v1.20.0"]
+    bad = guard.rollback_problem("v1.19.0", tags, ["v1.18.0", "v1.20.0"])
+    assert bad is not None and "no GitHub release" in bad and "v1.20.0, v1.18.0" in bad
+    assert guard.rollback_problem("v1.18.0", tags, ["v1.18.0"]) is None
+    assert guard.rollback_problem("v1.19.0", tags, None) is None
+
+
+def test_ci_verdict_says_how_to_recover_a_commit_with_only_cancelled_runs():
+    verdict, why = guard.ci_verdict([{"status": "completed", "conclusion": "cancelled", "html_url": "u"}])
+    assert verdict == "red" and "workflow_dispatch" in why
+    assert "workflow_dispatch" not in guard.ci_verdict([{"status": "completed", "conclusion": "failure"}])[1]
+
+
+def test_failed_legs_of_a_green_run_are_named():
+    """A continue-on-error leg that failed leaves the run green (46-F3): the jobs say otherwise."""
+    jobs = [{"name": "test (ubuntu, 3.11)", "conclusion": "success"}, {"name": "test (windows-latest, 3.9, true)", "conclusion": "failure"}]
+    assert guard.failed_job_names(jobs) == ["test (windows-latest, 3.9, true)"]
+    assert guard.green_run_id([{"id": 1, "conclusion": "failure"}, {"id": 2, "conclusion": "success"}]) == 2
+    assert guard.green_run_id([]) is None
+
+
+def _self_ci() -> dict:
+    return yaml.safe_load((WORKFLOWS / "self-ci.yml").read_text(encoding="utf-8"))
+
+
+def test_self_ci_push_runs_are_grouped_per_commit_so_a_newer_push_cannot_cancel_a_queued_run():
+    """With cancel-in-progress false a ref-wide group still replaces the one pending run (46-F2): the release commit lost its only run."""
+    data = _self_ci()
+    assert "github.sha" in data["concurrency"]["group"]
+    assert "pull_request" in data["concurrency"]["group"] and "github.ref" in data["concurrency"]["group"]
+    assert data[True]["workflow_dispatch"] is None or data[True]["workflow_dispatch"] == {}, "a SHA with only a cancelled run needs a way to get a fresh one"
+
+
+def test_every_continue_on_error_matrix_leg_has_a_reporter_job():
+    """46-F3: a failing preview leg leaves the run green, so a job with `if: always()` must list the failed legs."""
+    data = _self_ci()
+    assert "continue-on-error" in data["jobs"]["test"]
+    reporter = data["jobs"]["preview-report"]
+    assert reporter["needs"] == "test" and "always()" in str(reporter["if"]) and reporter["permissions"]["actions"] == "read"
+
+
+def test_release_verify_waits_for_the_observed_worst_case_queue_and_checks_prepare():
+    """46-F5 (queue plus run reached 2 h) and 46-F7 (the tagged commit must be a fixed point of prepare)."""
+    verify = _release()["jobs"]["verify"]
+    runs = _runs(verify)
+    wait = int(re.search(r"ci-green .*--wait (\d+)", runs).group(1))  # type: ignore[union-attr]
+    assert wait >= 6000 and verify["timeout-minutes"] * 60 > wait
+    assert "release_guard.py prepare" in runs and "--check" in runs
+
+
+def test_only_release_yml_names_the_release_token():
+    """46-F9: the token that force-moves v1 is read by one workflow only; any other file naming it is a second way to leak it."""
+    named = sorted(p.name for p in WORKFLOWS.glob("*.yml") if "secrets.RELEASE_TOKEN" in p.read_text(encoding="utf-8"))
+    assert named == ["release.yml"], named
+
+
+# --- CHANGELOG headings (audit 43-F1) ---------------------------------------------------------------------------------
+
+
+def _changelog_headings() -> list[str]:
+    text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
+    return [m.group(1).strip() for m in re.finditer(r"^## (.+)$", text, re.M)]
+
+
+def test_every_release_tag_from_1_23_0_has_a_changelog_heading():
+    """A consumer bumping from one release to another must be able to see which release brought a Behaviour change (43-F1).
+
+    v1.23.3 to v1.23.8 once sat under 'Unreleased (next: 1.23.3)'; map entries to the tag that first contains them (`git blame`, `git tag --contains`)."""
+    headings = set(_changelog_headings())
+    missing = [t for t in _tags() if _key(t) >= (1, 23, 0) and t[1:] not in headings]
+    assert missing == [], f"CHANGELOG.md has no '## X.Y.Z' heading for {missing}"
+
+
+def test_the_changelog_top_heading_is_the_unreleased_next_version_or_the_release_being_tagged():
+    first = _changelog_headings()[0]
+    assert first in (
+        f"Unreleased (next: {VERSION})",
+        VERSION,
+    ), f"the newest CHANGELOG heading is '## {first}'; expected '## Unreleased (next: {VERSION})' (or '## {VERSION}' in the commit that is tagged)"
+    tag = f"v{VERSION}"
+    if tag in _tags() and _git("rev-parse", f"{tag}^{{commit}}") == _git("rev-parse", "HEAD"):
+        assert first == VERSION, f"this is the commit tagged {tag}: rename '## {first}' to '## {VERSION}'"
+    assert _changelog_headings().count("Unreleased") == 0, "a bare '## Unreleased' belongs to no release; use '## Unreleased (next: X.Y.Z)' once"

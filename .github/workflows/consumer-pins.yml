@@ -62,7 +62,7 @@ jobs:
       - name: Adoption matrix
         run: |
           python -m py_ci_shared.adoption_matrix --repos-file "$RUNNER_TEMP/consumers/repos.toml" \
-            --resolve-in . --allow-behind 2 --output adoption-matrix.md
+            --resolve-in . --allow-behind 2 --waivers configs/pin_waivers.toml --output adoption-matrix.md
 
       - name: Job summary
         if: always()

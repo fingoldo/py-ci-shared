@@ -69,12 +69,18 @@ def major_move_problem(tag: str, tags: Iterable[str]) -> Optional[str]:
     return None
 
 
-def rollback_problem(target: str, tags: Iterable[str]) -> Optional[str]:
-    """Why the major tag may not be pointed at ``target`` by the emergency dispatch, or ``None``."""
+def rollback_problem(target: str, tags: Iterable[str], published: Optional[Iterable[str]] = None) -> Optional[str]:
+    """Why the major tag may not be pointed at ``target`` by the emergency dispatch, or ``None``.
+
+    ``published`` is the tag names that have a GitHub release (``None`` when the API could not be read, which skips the check): a tag whose Release
+    run failed is an existing tag that never passed verify and must not become ``v1``."""
     if release_key(target) is None:
         return f"{target!r} is not a vX.Y.Z release tag"
     if target not in set(tags):
         return f"{target} is not an existing tag; roll back only to a release that already shipped"
+    if published is not None and target not in set(published):
+        newest = ", ".join(release_tags(published)[-5:][::-1]) or "none"
+        return f"{target} has no GitHub release (its Release run failed or never ran); roll back to a published one, newest first: {newest}"
     return None
 
 
@@ -103,9 +109,12 @@ def ci_verdict(runs: Sequence[dict]) -> tuple[str, str]:
     if any(r.get("status") != "completed" for r in runs):
         return "pending", "self-ci is still running for this commit"
     if not runs:
-        return "red", "self-ci never ran for this commit (tag a commit that was pushed to master)"
+        return "red", "self-ci never ran for this commit on master (tag a commit that was pushed to master)"
     worst = ", ".join(f"{r.get('conclusion')} {r.get('html_url', '')}" for r in runs)
-    return "red", f"self-ci did not succeed for this commit: {worst}"
+    hint = ""
+    if all(r.get("conclusion") == "cancelled" for r in runs):
+        hint = " (only cancelled runs: start a fresh one with `gh workflow run self-ci.yml --ref master`, workflow_dispatch, then re-run Release)"
+    return "red", f"self-ci did not succeed for this commit: {worst}{hint}"
 
 
 #: Every file that names the release, relative to the repository root.
@@ -119,6 +128,8 @@ PREP_FILES = (
     ".github/workflows/lint-advisory.yml",
     ".github/workflows/gates.yml",
 )
+#: The four reusable workflows whose ``py-ci-shared-ref`` default moves with the release (the tail of ``PREP_FILES``).
+WORKFLOW_FILES = PREP_FILES[4:]
 _PYPROJECT_VERSION = re.compile(r'^(version = ")[^"]+(")', re.M)
 _MODULE_VERSION = re.compile(r'^(__version__ = ")[^"]+(")', re.M)
 _README_TAG = re.compile(r"py-ci-shared\.git@(v\d+\.\d+\.\d+)")
@@ -178,8 +189,8 @@ def _workflow_edit(text: str, version: str, name: str) -> str:
 def release_edits(version: str, texts: dict[str, str], published_tag: str) -> dict[str, str]:
     """The new text of every file in ``PREP_FILES`` for a release ``version``, given the newest PUBLISHED release tag.
 
-    Between a release and the next the version is bumped in six places that must agree before the tag is pushed: ``pyproject.toml``, the module's
-    ``__version__``, the README install tag(s), the three reusable workflows' default ref, and the ``since`` of every module not yet in a published
+    Between a release and the next the version is bumped in five kinds of place that must agree before the tag is pushed: ``pyproject.toml``, the module's
+    ``__version__``, the README install tag(s), the four reusable workflows' default ref, and the ``since`` of every module not yet in a published
     release. ``tests/test_release_version.py`` checks them, but only on a tagged commit's Release run, which is too late to fix without a new tag
     (v1.22.0 and v1.22.2 were both tagged with the README still on the previous release).
     """
@@ -194,7 +205,7 @@ def release_edits(version: str, texts: dict[str, str], published_tag: str) -> di
         "README.md": _catalogue_edit(_readme_edit(texts["README.md"], version), version, published),
         "src/py_ci_shared/registry.toml": _registry_edit(texts["src/py_ci_shared/registry.toml"], version, published),
     }
-    for name in PREP_FILES[4:]:
+    for name in WORKFLOW_FILES:
         out[name] = _workflow_edit(texts[name], version, name)
     return out
 
@@ -260,6 +271,7 @@ def wait_for_ci(
     sha: str,
     *,
     workflow: str = "self-ci.yml",
+    branch: str = "master",
     wait: float = 0.0,
     poll: float = 30.0,
     sleep: Callable[[float], None] = time.sleep,
@@ -268,15 +280,58 @@ def wait_for_ci(
     """Poll ``workflow``'s runs for ``sha`` until green or red, or ``wait`` seconds pass (then the verdict is pending)."""
     end = clock() + wait
     while True:
-        runs = api(f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&per_page=50").get("workflow_runs", [])
+        runs = api(f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&branch={branch}&per_page=50").get("workflow_runs", [])
         verdict = ci_verdict(runs)
         if verdict[0] != "pending" or clock() >= end:
             return verdict
         sleep(poll)
 
 
+def green_run_id(runs: Sequence[dict]) -> Optional[int]:
+    """The id of the first successful run among ``runs`` (what ``ci_verdict`` called green), or ``None``."""
+    return next((r.get("id") for r in runs if r.get("conclusion") in GREEN), None)
+
+
+def failed_job_names(jobs: Sequence[dict]) -> list[str]:
+    """Names of the jobs that failed inside a run that is green overall: a ``continue-on-error`` preview leg reports exactly like that."""
+    return [str(j.get("name")) for j in jobs if j.get("conclusion") == "failure"]
+
+
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+
+def sha_problem(sha: str) -> Optional[str]:
+    """Why ``sha`` cannot be used to look up runs (GitHub matches ``head_sha`` on all 40 characters), or ``None``."""
+    if FULL_SHA.fullmatch(sha):
+        return None
+    return f"--sha {sha!r} is not a full commit SHA; pass the full 40-character lowercase SHA (git rev-parse <rev>), a short one finds no run"
+
+
 def _say(line: str) -> None:
     sys.stdout.write(line + "\n")
+
+
+def _release_names(args: argparse.Namespace) -> Optional[list[str]]:
+    """Tag names with a GitHub release, or ``None`` when ``--repo`` was not given or the API cannot be read."""
+    if not getattr(args, "repo", None):
+        return None
+    token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
+    try:
+        return [r.get("tag_name", "") for r in _github(token)(f"repos/{args.repo}/releases?per_page=100")]
+    except OSError:
+        return None
+
+
+def _warn_failed_legs(api: Callable[[str], Any], args: argparse.Namespace) -> None:
+    """Annotate failed jobs of the green run: a non-blocking preview leg that is red must not pass unseen."""
+    try:
+        runs = api(f"repos/{args.repo}/actions/workflows/{args.workflow}/runs?head_sha={args.sha}&branch=master&per_page=50").get("workflow_runs", [])
+        run_id = green_run_id(runs)
+        jobs = api(f"repos/{args.repo}/actions/runs/{run_id}/jobs?per_page=100").get("jobs", []) if run_id else []
+    except OSError:
+        return
+    for name in failed_job_names(jobs):
+        _say(f"::warning title=failed leg in a green run::{name}")
 
 
 def _main_prepare(args: argparse.Namespace) -> int:
@@ -300,6 +355,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         p = sub.add_parser(name)
         p.add_argument("tag")
         p.add_argument("--repo-dir", default=".")
+        p.add_argument("--repo", default=None, help="owner/name: with it, rollback also requires the tag to have a GitHub release")
     ci = sub.add_parser("ci-green")
     ci.add_argument("--repo", required=True)
     ci.add_argument("--sha", required=True)
@@ -318,12 +374,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.cmd == "prepare":
         return _main_prepare(args)
     if args.cmd == "ci-green":
+        bad = sha_problem(args.sha)
+        if bad:
+            _say(f"::error::{bad}")
+            return 2
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
         state, why = wait_for_ci(_github(token), args.repo, args.sha, workflow=args.workflow, wait=args.wait, poll=args.poll)
         _say(why if state == "green" else f"::error::{why}")
+        if state == "green":
+            _warn_failed_legs(_github(token), args)
         return 0 if state == "green" else 1
     tags = _git_tags(Path(args.repo_dir))
-    problem = major_move_problem(args.tag, tags) if args.cmd == "major-move" else rollback_problem(args.tag, tags)
+    problem = major_move_problem(args.tag, tags) if args.cmd == "major-move" else rollback_problem(args.tag, tags, _release_names(args))
     if problem:
         _say(f"::error::{problem}")
         return 1

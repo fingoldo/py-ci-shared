@@ -5,12 +5,17 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  # A commit whose push run was cancelled can get a fresh run (`gh workflow run self-ci.yml --ref master`); release_guard ci-green says so.
+  workflow_dispatch:
 
 # Every other workflow in this repo has this guard (see mlframe/black-filtered.yml's 2026-07-06
 # incident comment for why); self-ci.yml was the one exception, found in a CI/CD architecture
 # review.
+#
+# Push runs are grouped per COMMIT, not per ref: with cancel-in-progress false a ref-wide group still replaces the one PENDING run by a newer push,
+# so a release commit whose run was still queued behind a long queue was left with only a cancelled run and ci-green could never pass for its tag.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -168,6 +173,33 @@ jobs:
   # 100% docstring coverage (currently ~62%) to pass, and docs.yml needs a real mkdocs.yml this
   # repo doesn't have -- not exhaustive coverage of every reusable workflow, but real coverage of
   # the ones that are.
+  # continue-on-error at job level makes GitHub report the failed leg as failure but the RUN as success, so a Windows/3.9 regression read green for days
+  # This job lists every failed leg of this run in the step summary and as an annotation, and release_guard ci-green
+  # prints the failed jobs of a green run. Promotion rule: a preview leg green on 10 consecutive master runs loses its `preview: true`.
+  preview-report:
+    needs: test
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: List the failed legs of this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          failed=$(gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" --jq '.jobs[] | select(.conclusion == "failure") | .name')
+          if [ -z "$failed" ]; then
+            echo "No failed legs." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          printf '### Failed legs (a preview leg is non-blocking and leaves the run green)\n\n%s\n' "$failed" >> "$GITHUB_STEP_SUMMARY"
+          while IFS= read -r name; do
+            echo "::warning title=failed leg::$name"
+          done <<< "$failed"
+
   integration-ruff-blocking:
     uses: ./.github/workflows/ruff-blocking.yml
     with:

@@ -548,3 +548,52 @@ def test_a_redirect_within_the_same_host_is_followed():
     followed = ci_health._SameHostRedirects().redirect_request(request, None, 301, "Moved", {}, "https://api.github.com/repositories/1")
 
     assert followed is not None and followed.full_url == "https://api.github.com/repositories/1"
+
+
+# --- a scheduled workflow cancelled every night is red (audit 46-F4) ---------------------------------------------------
+
+
+LATER = datetime(2026, 10, 9, 5, 41, tzinfo=timezone.utc)
+
+
+def _sched(run_id: int, day: int, conclusion: str) -> dict:
+    return _run(run_id, f"2026-10-{day:02d}T05:00:00Z", conclusion, event="schedule")
+
+
+def test_three_cancelled_scheduled_runs_in_a_row_make_the_workflow_red():
+    from py_ci_shared.ci_health import CANCELLED_STREAK_RED
+
+    runs = [_sched(5, 5, "cancelled"), _sched(4, 4, "cancelled"), _sched(3, 3, "cancelled"), _sched(2, 2, "success")]
+    assert CANCELLED_STREAK_RED == 3
+    w = assess_workflow(GREEN_WF, runs, LATER)
+    assert w is not None and w.status == "red" and w.red_runs == 3
+    assert w.red_since == datetime(2026, 10, 3, 5, 0, tzinfo=timezone.utc) and w.last_success == datetime(2026, 10, 2, 5, 0, tzinfo=timezone.utc)
+    assert w.days_red > 2
+
+
+def test_a_cancelled_streak_of_scheduled_runs_with_no_success_at_all_is_a_lower_bound():
+    w = assess_workflow(GREEN_WF, [_sched(i, i, "cancelled") for i in (3, 2, 1)], NOW)
+    assert w is not None and w.status == "red" and w.lower_bound
+
+
+@pytest.mark.parametrize(
+    "runs",
+    [
+        [_sched(5, 5, "cancelled"), _sched(4, 4, "cancelled"), _sched(2, 2, "success")],  # only two
+        [_sched(5, 5, "cancelled"), _sched(4, 4, "success"), _sched(3, 3, "cancelled"), _sched(2, 2, "cancelled")],  # a success breaks the streak
+        [_run(i, f"2026-10-0{i}T05:00:00Z", "cancelled") for i in (5, 4, 3)] + [_sched(2, 2, "success")],  # push runs: a human cancelled them
+        [_sched(5, 5, "cancelled"), _sched(4, 4, "cancelled"), _sched(3, 3, "cancelled"), _run(6, "2026-10-06T05:00:00Z", "success")],  # a newer green run
+    ],
+)
+def test_other_cancellations_are_not_red(runs: list):
+    w = assess_workflow(GREEN_WF, runs, NOW)
+    assert w is None or w.status == "green"
+
+
+def test_this_repository_watches_its_own_schedules():
+    from py_ci_shared._consumers import load_consumers
+
+    config = Path(__file__).resolve().parents[1] / "configs" / "self_watch.toml"
+    assert [c.repo for c in load_consumers(config)] == ["fingoldo/py-ci-shared"]
+    workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci-health.yml").read_text(encoding="utf-8")
+    assert "configs/self_watch.toml" in workflow

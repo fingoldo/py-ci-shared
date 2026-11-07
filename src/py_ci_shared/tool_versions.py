@@ -20,6 +20,9 @@ RUFF_VERSION = "0.16.10"
 #: this so its local hook formats exactly as CI checks. A test holds the workflow to this value.
 BLACK_VERSION = "26.5.1"
 
+#: The mypy ``self-ci.yml`` installs for this repository's own type check (``mypy src/py_ci_shared``); a test holds the workflow to this value.
+MYPY_VERSION = "2.1.0"
+
 #: The lint tools ``lint-blocking.yml`` runs when a consumer leaves its ``*-version`` input empty. Each was the newest release at least
 #: two weeks old when it was chosen; an empty input used to mean "whatever PyPI serves today", so a compromised or broken release ran
 #: in every consumer's CI at once. Bumping one is a deliberate change here, with a CHANGELOG entry.

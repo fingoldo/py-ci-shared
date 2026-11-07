@@ -44,11 +44,20 @@ jobs:
           fi
           python -m py_ci_shared.ci_health configs/consumers.toml --max-red-days 2 --output ci-health.md
 
+      # This repository's own schedules: corpus-drift was cancelled every night for 10 days and nothing watched it.
+      - name: Self-watch report
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m py_ci_shared.ci_health configs/self_watch.toml --max-red-days 2 --output ci-health-self.md
+
       - name: Upload the report
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: ci-health
-          path: ci-health.md
+          path: |
+            ci-health.md
+            ci-health-self.md
           if-no-files-found: ignore
           retention-days: 30

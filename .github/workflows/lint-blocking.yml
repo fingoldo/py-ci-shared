@@ -256,17 +256,14 @@ jobs:
           PIN: ${{ inputs.interrogate-version }}
           INTERROGATE_CONFIG: ${{ inputs.interrogate-config }}
 
-      # Direct ${{ }} substitution: deptry-install-command is a multi-line shell SCRIPT, not a
-      # single token -- expanding it as an unquoted `${VAR}` would word-split it on every
-      # whitespace/newline and execute the result as ONE command's argv instead of running each
-      # line as its own statement. Only ever set by the calling workflow's own `with:` block
-      # (trusted, first-party config), so the injection risk the env-var pattern guards against
-      # elsewhere does not apply. See docs.yml for the same fix and the fuller rationale.
+      # install-command is a multi-line shell SCRIPT: it reaches the step through the environment and runs as `bash -eo pipefail -c "$VAR"` (the quoted
+      # variable keeps every line a statement, and nothing from the caller is expanded into the script text).
       - name: Install project (for deptry)
         if: inputs.deptry-install-command != ''
         shell: bash
-        # zizmor: ignore[template-injection] -- see the comment above.
-        run: ${{ inputs.deptry-install-command }}
+        env:
+          DEPTRY_INSTALL_COMMAND: ${{ inputs.deptry-install-command }}
+        run: bash -eo pipefail -c "$DEPTRY_INSTALL_COMMAND"
 
       # `uvx deptry .` (unlike every other uvx step above) is WRONG here: uvx runs deptry in its
       # own isolated tool venv, completely separate from wherever deptry-install-command just

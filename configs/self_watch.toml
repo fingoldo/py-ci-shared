@@ -1,0 +1,9 @@
+# This repository's own scheduled workflows (corpus-drift, ci-health, consumer-pins), read by ci-health.yml's second step with the same
+# `python -m py_ci_shared.ci_health` as the consumers in consumers.toml. Kept apart from consumers.toml: this repo is not a consumer of itself, so the
+# consumer-pins and corpus-drift jobs must not clone it as one. A scheduled workflow whose last three scheduled runs were all cancelled is red here.
+
+[[consumer]]
+name = "py-ci-shared"
+repo = "fingoldo/py-ci-shared"
+branch = "master"
+private = false

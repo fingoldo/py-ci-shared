@@ -64,7 +64,9 @@ jobs:
           python -m py_ci_shared._consumers checkout configs/consumers.toml --corpus-only \
             --dest "$RUNNER_TEMP/corpus" --repos-file "$RUNNER_TEMP/corpus/repos.toml"
 
+      # A step timeout below the job's 90 minutes: one slow finder used to consume the whole job, so the snapshot never finished and nothing was compared.
       - name: Snapshot tonight's counts
+        timeout-minutes: 75
         run: python -m py_ci_shared.corpus_drift snapshot --repos-file "$RUNNER_TEMP/corpus/repos.toml" --output corpus-drift-snapshot.json
 
       # On master only: a workflow_dispatch with accept: true from another branch must not become master's baseline.

@@ -357,7 +357,7 @@ summary = "Shared harness for the \"N files feed a version/cache-key constant th
 name = "contract_ledger"
 kind = "gate"
 entries = ["assert_fixture_fresh", "assert_ledger_covers", "assert_documents_identical"]
-since = "1.23.3"
+since = "1.23.2"
 summary = "Committed ledgers of what an API may emit (literals, status codes, promise strings, value shapes), a stale-fixture check, full-document equality that names added and removed paths, and a before/after writer probe"
 
 [[gate]]
@@ -509,7 +509,7 @@ summary = "One set of numbers written out in several modules: the literal analog
 name = "dup_baseline_percent_key"
 kind = "gate"
 entries = ["assert_no_percent_only_duplicate_entries"]
-since = "1.22.12"
+since = "1.22.8"
 summary = "A duplicate-body baseline lists one pair twice because only its similarity percentage moved (opt-in ratchet)"
 
 [[gate]]
@@ -573,7 +573,7 @@ summary = "Boolean environment flags read by hand, each with its own idea of wha
 name = "env_write_restore"
 kind = "gate"
 entries = ["assert_env_write_restore"]
-since = "1.22.1"
+since = "1.22.3"
 summary = "A test restores every os.environ write it makes"
 
 [[gate]]
@@ -670,7 +670,7 @@ summary = "The line ranges a diff actually touched, per file"
 name = "git_child_env"
 kind = "gate"
 entries = ["assert_no_new_unscrubbed_git_spawns"]
-since = "1.22.12"
+since = "1.22.8"
 summary = "A test that spawns git passes an environment with GIT_* removed, or it runs against the hook's repository (opt-in ratchet)"
 
 [[gate]]
@@ -705,7 +705,7 @@ summary = "A guard script is actually looking at something"
 name = "guard_without_fixture"
 kind = "gate"
 entries = ["assert_every_guard_named_by_a_test"]
-since = "1.22.12"
+since = "1.22.8"
 summary = "A tool/check* guard that no test file names is never run against bad input (opt-in ratchet)"
 
 [[gate]]
@@ -852,7 +852,7 @@ tests = ["tests/test_llm_preservation_gates.py"]
 name = "llm_output_caps"
 kind = "gate"
 entries = ["assert_no_new_output_caps", "assert_known_caps_only_shrink", "assert_each_known_cap_states_its_reason"]
-since = "1.22.5"
+since = "1.22.6"
 summary = "No LLM call carries a numeric output or reasoning cap someone chose: a ratchet that fails by name, opt-in per repo"
 
 [[gate]]
@@ -880,7 +880,7 @@ summary = "A blocking call (connect, HTTP, subprocess, sleep, file write) made w
 name = "loop_invariant_cast"
 kind = "gate"
 entries = ["assert_loop_invariant_cast"]
-since = "1.22.4"
+since = "1.22.5"
 summary = "Flags a cast/copy call inside a loop whose argument never changes across the function; opt-in heavy=True also flags argsort/sort/unique/quantile/median/bincount/... on loop-invariant operands"
 
 [[gate]]
@@ -1070,7 +1070,7 @@ summary = "The doctests a package ships actually run, and there are some to run"
 name = "patch_target_read_at_call"
 kind = "gate"
 entries = ["assert_patch_target_read_at_call"]
-since = "1.22.12"
+since = "1.22.9"
 summary = "A monkeypatch of a module-level name that the module only re-exports is inert: the code under test reads its own binding"
 
 [[gate]]
@@ -1126,7 +1126,7 @@ summary = "Advisory: polars comparisons whose null handling silently changes the
 name = "predictable_tmp_path"
 kind = "gate"
 entries = ["assert_predictable_tmp_path"]
-since = "1.22.12"
+since = "1.22.13"
 summary = "A path built under gettempdir() with no per-user component (audit X-12): a predictable lock or cache name another local user can pre-create"
 
 [[gate]]
@@ -1353,7 +1353,7 @@ summary = "A test must not assert on a wall-clock ratio or ceiling derived from 
 name = "skip_as_pass"
 kind = "gate"
 entries = ["assert_no_new_skip_as_pass"]
-since = "1.22.12"
+since = "1.22.8"
 summary = "A tool/scripts/.githooks script that prints SKIPPED and exits 0 reports a pass (opt-in ratchet)"
 
 [[gate]]
@@ -1668,7 +1668,7 @@ summary = "Warn-only dead-code check for the pre-commit hook"
 name = "wallclock_test_waits"
 kind = "gate"
 entries = ["assert_no_new_wallclock_test_waits"]
-since = "1.22.12"
+since = "1.22.8"
 summary = "A test does not sleep on the wall clock (Future.delayed of a Duration, time.sleep) (opt-in ratchet)"
 
 [[gate]]

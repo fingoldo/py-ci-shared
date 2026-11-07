@@ -35,8 +35,8 @@ jobs:
     # Pinned, not ubuntu-latest (which moves to 26.04 from 2026-10-19). Move to ubuntu-26.04 once self-ci's
     # ubuntu-26.04 leg is green; see the comment on that leg for what to verify.
     runs-on: ubuntu-24.04
-    # Up to 30 minutes waiting for self-ci of the tagged commit, then the whole suite.
-    timeout-minutes: 60
+    # Up to 100 minutes waiting for self-ci of the tagged commit (observed queue plus run: 2 h on the single ubuntu label), then the whole suite.
+    timeout-minutes: 120
     permissions:
       contents: read
       actions: read  # self-ci's runs for the tagged commit
@@ -86,11 +86,18 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: python .github/scripts/release_guard.py major-move "$TAG"
 
+      # The tagged commit must be a fixed point of `prepare`: the version, README tag and every workflow default already name this release.
+      - name: The tagged commit is prepared for this release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: python .github/scripts/release_guard.py prepare "${TAG#v}" --check --repo "$GITHUB_REPOSITORY"
+
       - name: self-ci succeeded for the tagged commit
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
-        run: python .github/scripts/release_guard.py ci-green --repo "$GITHUB_REPOSITORY" --sha "$SHA" --wait 1800
+        run: python .github/scripts/release_guard.py ci-green --repo "$GITHUB_REPOSITORY" --sha "$SHA" --wait 6000
 
       # The Postgres binaries are on the runner but not on PATH; without PG_BIN the real-server tests skip.
       - name: Point PG_BIN at the runner's Postgres
@@ -178,8 +185,9 @@ jobs:
 
       - name: The target is a release that shipped
         env:
+          GH_TOKEN: ${{ github.token }}
           TARGET: ${{ inputs.rollback-to }}
-        run: python3 .github/scripts/release_guard.py rollback "$TARGET"
+        run: python3 .github/scripts/release_guard.py rollback "$TARGET" --repo "$GITHUB_REPOSITORY"
 
       - name: Point the major tag at it
         env:

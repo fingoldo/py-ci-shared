@@ -25,6 +25,11 @@ Usage::
     python -m py_ci_shared.adoption_matrix ../mlframe ../pyutilz --output adoption.md
     python -m py_ci_shared.adoption_matrix --repos-file consumers.toml --resolve-in ../py-ci-shared --advisory
 
+A pin that lags further than ``--allow-behind`` can be accepted for a while with ``--waivers FILE`` (``[[waiver]]`` tables: ``name``, ``oldest``
+(the oldest release tag the repo may pin), ``until`` (an ISO date) and ``reason``). Until that date the lag down to ``oldest`` is reported as a
+``pin-waiver`` note and does not fail; from the day after, the repo fails as a ``stale-pin`` again and the finding says the waiver expired.
+That separates accepted lag from neglect, so one standing red job does not hide a real moving or unresolvable pin.
+
 A repos file holds ``repos = ["../mlframe", ...]`` (relative to the file) or ``[[repo]]`` tables with ``path`` and an
 optional ``name``.
 """
@@ -39,6 +44,7 @@ import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
@@ -588,6 +594,7 @@ class RepoReport:
     resolved: dict[str, Optional[str]] = field(default_factory=dict)
     behind: dict[str, tuple[int, str]] = field(default_factory=dict)  # pin ref -> (releases behind, latest release)
     allow_behind: int = 0
+    waiver_note: str = ""
 
     def pin_key(self, pin: Pin) -> str:
         """The identity two pins must share to agree: resolved SHA, else the SHA's 7-char prefix, else the label."""
@@ -646,6 +653,8 @@ class RepoReport:
             for p in self.unresolvable_pins
         )
         out.extend(self.silent_skips)
+        if self.waiver_note and self.pins:
+            out.append(Finding(self.pins[0].path, self.pins[0].line, "pin-waiver", self.waiver_note))
         return out
 
 
@@ -683,6 +692,43 @@ def scan_repo(
                 if lag is not None:
                     report.behind[p.ref] = lag
     return report
+
+
+@dataclass(frozen=True)
+class Waiver:
+    """An accepted lag for one consumer: it may pin as far back as ``oldest`` until the day ``until`` (inclusive)."""
+
+    name: str
+    oldest: str
+    until: date
+    reason: str
+
+
+def load_waivers(path: PathLike) -> dict[str, Waiver]:
+    """The ``[[waiver]]`` tables of ``path`` by consumer name; a missing key, a bad date or a non-release ``oldest`` is a ``CoreError``."""
+    data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
+    out: dict[str, Waiver] = {}
+    for row in data.get("waiver", []):
+        try:
+            waiver = Waiver(str(row["name"]), str(row["oldest"]), date.fromisoformat(str(row["until"])), str(row["reason"]))
+        except (KeyError, ValueError) as exc:
+            raise CoreError(f"{path}: a [[waiver]] needs name, oldest (vX.Y.Z), until (YYYY-MM-DD) and reason: {exc!r}") from exc
+        if not is_release_tag(waiver.oldest) or not waiver.reason.strip():
+            raise CoreError(f"{path}: waiver {waiver.name!r}: oldest must be a vX.Y.Z tag and reason must be given")
+        out[waiver.name] = waiver
+    return out
+
+
+def waived_allowance(waiver: Optional[Waiver], releases: Sequence[str], base: int, today: date) -> tuple[int, str]:
+    """``(allow_behind, note)`` for one consumer: ``base``, widened to the releases after ``waiver.oldest`` while the waiver has not expired."""
+    if waiver is None:
+        return base, ""
+    if today > waiver.until:
+        return base, f"waiver for {waiver.name} expired on {waiver.until}: bump the pin or renew the waiver ({waiver.reason})"
+    if waiver.oldest not in releases:
+        return base, f"waiver for {waiver.name} names {waiver.oldest}, which is not a release tag here; it grants nothing"
+    after = len(releases) - 1 - list(releases).index(waiver.oldest)
+    return max(base, after), f"waived until {waiver.until} down to {waiver.oldest} ({waiver.reason})"
 
 
 def _cell(text: str) -> str:
@@ -899,6 +945,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--output", help="also write the markdown report to this file")
     parser.add_argument("--advisory", action="store_true", help="report only; exit 0 even when a repo fails")
     parser.add_argument("--no-local-copies", action="store_true", help="skip the local-copy scan")
+    parser.add_argument("--waivers", help="TOML file of dated per-consumer lag waivers (see the module docstring)")
     parser.add_argument("--allow-behind", type=int, default=0, help="releases a fixed pin may lag the latest tag (default 0; needs --resolve-in)")
     args = parser.parse_args(argv)
     roots: list[tuple[str, Path]] = [(Path(r).resolve().name, Path(r).resolve()) for r in args.repos]
@@ -912,10 +959,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 2
     resolver = RefResolver(args.resolve_in) if args.resolve_in else None
     modules = known_modules()
-    reports = [
-        scan_repo(root, name=name, modules=modules, resolver=resolver, local_copies=not args.no_local_copies, allow_behind=args.allow_behind)
-        for name, root in _unique_names(roots)
-    ]
+    waivers = load_waivers(args.waivers) if args.waivers else {}
+    releases = resolver.releases() if resolver is not None else []
+    reports = []
+    for name, root in _unique_names(roots):
+        allow, note = waived_allowance(waivers.get(name), releases, args.allow_behind, datetime.now(timezone.utc).date())
+        report = scan_repo(root, name=name, modules=modules, resolver=resolver, local_copies=not args.no_local_copies, allow_behind=allow)
+        report.waiver_note = note
+        reports.append(report)
     text = render_markdown(reports, modules=[m for m in modules if not m.startswith("_")])
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")

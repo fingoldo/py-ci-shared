@@ -2,25 +2,24 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## Unreleased (next: 1.23.3)
+## Unreleased (next: 1.23.10)
 
-- New module `py_ci_shared.meta_test_utils` (additive): the meta-test building blocks (`consumer_corpus`, `public_top_level_symbols`, `capture_signature`, `capture_module_surface`, `findings_ratchet`, `unbacked_audit_dispositions`, `assert_fields_roundtrip`, `optional_scalar_fields`, `enumerate_test_files`, `scan_todo_markers`, `count_user_deferred_entries` and the rest of its `__all__`), moved here verbatim from `pyutilz.dev.meta_test_utils`, which no longer exists (no re-export in pyutilz). Registered as an internal module. It walks through `_core.corpus.iter_files_pruned` (no `walk-ok` marker, no baseline) and reads its ratchet baselines with stdlib `json`, so py-ci-shared still imports nothing from pyutilz. **A consumer must pin a py-ci-shared version that contains it** (autopsia `test`/`dev` extras and workflows, mlframe and glossum through `PY_CI_SHARED_DIR`). Its tests moved with it (`tests/test_meta_test_utils*.py`). See `audits/2026-11-05_meta_test_utils_move.md`.
+### Release and CI surface 2026-11-07 (audits 43, 46, 47)
 
-- Tree walks no longer enter `.claude` (Claude Code's agent worktrees, each a COMPLETE copy of the repository; one consumer audit test took 19 to 30 minutes with about 20 of them). New `_core.corpus.iter_files_pruned(root, suffixes, exclude_dirs)` is the pruned walk; `llm_output_caps.numeric_output_caps`, `destructive_tests_throwaway_only` (conftest guards), `_mutation_runner` and `_mutation_speed` (test discovery), `contract_ledger.snapshot_files`, `ci_install_covers_entry_imports` (pytest paths), `dart_scanners.dart_files_under`, `deferred_entries`, `code_audit.column_no_write_path`, `code_audit.redundant_test_fit`, `code_audit.source_text_assertions` and `code_audit._todo_markers` use it (or `_iter_py_files`) whatever root they receive. **Behaviour change (fewer findings, only for a root that contains `.claude`):** a worktree copy is no longer read. `dart_files_under` lists in relative-path order and `snapshot_files` also leaves out `.claude`. `tests/test_no_unpruned_tree_walk.py` fails any new `rglob`, `glob("**")` or `os.walk` under `src/py_ci_shared` that is not in a pruning helper and carries no `# walk-ok: <reason>`.
-- `cuda_launch_geometry`: a call whose grid or block tuple holds a string or float constant (`itertools.product(("a", "b"), (3, 5), ...)`) is no longer taken for a kernel launch.
-- New gate `cuda_launch_geometry` (additive): a kernel launch `f((grid,), (block,), (args,))` whose block tuple holds an integer literal other than 1, a module constant bound to one, or a local name bound once to one (`cuda-literal-block-size`). The best block size depends on the card (SM count, registers and shared memory per SM) and on the kernel's own registers and shared memory, so a literal tuned on one card is wrong on the others; take it from the device (occupancy over `num_regs` / `shared_size_bytes`, e.g. `pyutilz.performance.gpu_hw_launch.block_size_for`). Marker `# launch-ok: <reason>` on the first or last line of the call for a geometry the kernel fixes (a warp per item, a shared array sized by the block); baseline supported.
+- **Behaviour change (reusable workflows `docs.yml`, `mypy-full.yml`, `lint-blocking.yml`):** `install-command` and `deptry-install-command` reach the step through the environment and run as `bash -eo pipefail -c "$VAR"` instead of being expanded into the script text. A multi-line command still runs line by line and stops at its first failure. What to do: nothing, unless the command relied on the caller's `${{ }}` expansion inside the string (it is now passed as written; move such a value into your own `env:`).
+- The four reusable workflows' `py-ci-shared-ref` default is the last PUBLISHED tag between releases; `release_guard.py prepare` moves all four (it listed three in prose, four in code). Additive. A caller on master no longer gets a ref that does not exist yet.
+- `release_guard.py`: `ci-green` refuses a SHA that is not 40 lowercase hex characters (exit 2), looks only at runs on master, and says how to start a fresh run when only cancelled runs exist; it prints failed jobs of a green run; `rollback --repo` requires a GitHub release for the target; `prepare --check` runs in the Release `verify` job, which now waits up to 100 minutes for self-ci. Additive.
+- `self-ci.yml`: push runs are grouped per commit (a newer push no longer cancels a queued run of the previous commit), `workflow_dispatch` is allowed, and a `preview-report` job lists failed `continue-on-error` legs. Additive.
+- `ci_health`: a scheduled workflow whose last three scheduled runs were all cancelled is red. New `configs/self_watch.toml` makes `ci-health.yml` read this repository's own schedules. **Behaviour change** for any consumer whose nightly workflow is cancelled every night: it now fails the report. What to do: fix the workflow's timeout, or accept the red.
+- `adoption_matrix --waivers FILE` and `configs/pin_waivers.toml`: dated per-consumer lag waivers, so accepted lag is reported as a note and an expired waiver fails again. Additive.
+- `registry.toml` `since` of eleven modules corrected to the first live tag that contains them (the README catalogue follows); v1.22.0 and v1.22.2 are dead tags. `tool_versions.MYPY_VERSION` added. Additive.
 
-- New command `py-ci-shared tool pytest_run OUTFILE <paths and pytest options>` (additive): pytest with the flags a developer machine needs (`PYTHONUNBUFFERED=1`, `-s`, `--durations=200`, `--no-cov` and `-n 0` when the plugins are installed, `-p no:cacheprovider`), the whole output in OUTFILE ending with `exit=<code>`, `-q` refused. README "Running pytest on a developer machine" and CLAUDE.md "Running tests" say why each flag is there.
 ### Interpreter-independent finding text 2026-11-07
 
 - **Behaviour change (baseline keys, Python 3.9 and 3.10 only):** a finding message that quotes a node is a baseline key, and `ast.unparse` wrote `lambda : 1`, `for (a, b) in c:`, `[x for (a, b) in c]` and `(a, b) = c` before 3.11 where 3.11+ writes `lambda: 1`, `for a, b in c:`, `[x for a, b in c]` and `a, b = c`. A baseline refreshed on 3.11 therefore looked stale on the 3.9 and 3.10 legs, and the same findings looked new. New `py_ci_shared._core.unparse.unparse_stable(node)` renders the 3.11+ shape on every interpreter, and all 53 modules that put a node in a message (alembic_concurrently, naive_utcnow, hash_key_determinism, atomic_write_staging and the rest) use it; `tests/test_unparse_stable.py` bans a bare `ast.unparse` (or `getattr(ast, "unparse", ...)`) in `src`. What to do: nothing on 3.11+. A baseline refreshed on 3.9 or 3.10 whose keys contain `lambda :` or a parenthesised tuple target fails once on those legs; refresh it on any interpreter.
 - **Behaviour change (Python 3.9 only):** `resource_leak_checks._imported_library` took `getattr(sys, "stdlib_module_names", frozenset())`, an attribute that exists from 3.10, so on 3.9 every lazily imported standard-library module counted as a library and exempted the test from the stream, `sys.path` and warning-filter leak checks. It now asks `_ci_install_parts.is_stdlib`, whose 3.9 path also recognises the compiled stdlib modules in `<prefix>\DLLs` (`_zoneinfo`, `_ssl`). `code_audit.undeclared_imports` and `phantom_code_references` use the same predicate instead of an empty fallback, and a meta test bans `getattr(sys, "stdlib_module_names", <empty>)` in `src`. What to do: on 3.9 a test that leaks a stream, a `sys.path` entry or a warning filter after a lazy stdlib import is now reported, as it already was on 3.10+.
 - **Behaviour change (duplicate function bodies):** `duplicate_function_body` and `near_duplicate_function_body` fingerprint a body with `drifted_duplicate_functions._canonical` instead of `ast.dump`. The token count of one function was 652 on 3.9 and 3.11 and 597 on 3.13 and 3.14, so a pair a hair under the 0.99 / 0.98 similarity threshold flipped between interpreters. What to do: a baseline of either gate may differ by a few borderline pairs; refresh it.
 - `self-ci.yml` gains a non-blocking `ubuntu-24.04` / Python 3.14 leg (`preview: true`). Promote it to blocking after one green run.
-
-### Interpreter-independent drift grouping 2026-11-07
-
-- **Behaviour change:** `drifted_duplicate_functions` similarity no longer depends on the interpreter. It was computed on `ast.dump`, which Python 3.11 writes with empty `args=[]`/`keywords=[]` fields that 3.14 omits, so the same bodies scored 0.93 on 3.14 and 0.44 on 3.11. The bodies are now rendered by a canonical serializer that skips empty, unset and implicit-`Load` fields. On 3.11 the glossum `key_of` (sppas_it/phonitalia_it), `_phones` (duden_de/raevskaya_fr) and `_digest` (batching/prompt_clarity_a3) groups are now reported, as they already were on 3.14. What to do: a 3.11 consumer that was green may go red on those copies; consolidate them or add the name to `allow` with a reason.
 
 ### Entry-point exit codes 2026-11-07 (audit 49)
 
@@ -36,10 +35,24 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `shared_mutable_placeholder`: new marker `# shared-mutable-placeholder-ok: <reason>` on the assignment or the `return` (or the comment line above), and a call of a class whose name ends in `Executor`, `Pool`, `Client`, `Session`, `Engine`, `Queue`, `Logger`, `ContextVar`, `Local` or `Manager` is no longer a placeholder. Findings only fall. `pickle_state_completeness`: new marker `# pickle-ok: <reason>` for a class that is never pickled. `drifted_duplicate_literals`: `# literal-set-ok:` now also exempts a `named-constant` and a `threshold` site, and integer type bounds (127, 32767, 65535, 2147483647) and significance levels (0.01, 0.025, 0.05, 0.1, 0.9, 0.975) join the ignored numbers. `no_source_text_tests`: a membership test whose right operand is a collection (set/list/tuple/dict display or comprehension, `.keys()`, a name ending in `s`, anything read from `.headers`) is not a probe. `hash_key_determinism`: a dict display with string-constant keys and `dataclasses.asdict(obj)` are fixed-order payloads. `secret_assertion_operands`: `key = "OMP_NUM_THREADS"` / `for name in ("A", "B")` followed by `os.environ.get(key)` is judged by the bound names. `env_flag_parsing`: a variable the same file also passes to `int()`, `float()`, `Path()`, `os.path.*`, `.split` or arithmetic is not a switch. `fail_open_handlers`: `silent_default_return` accepts `KeyError`, `IndexError`, `StopIteration`, `queue.Empty`, `ProcessLookupError`, `ZeroDivisionError` and `CancelledError` around a single statement. All of these only reduce findings; a baseline entry that no longer matches is reported stale, refresh it.
 - The `Gate false positives 2026-11-06` entry on single-value parse guards was wrong (audit 41-F3): the code and `tests/test_fail_open_handlers.py` flag them on purpose since commit 70f2152; the entry is corrected in place.
 
+## 1.23.9
+
+### Interpreter-independent drift grouping 2026-11-07
+
+- **Behaviour change:** `drifted_duplicate_functions` similarity no longer depends on the interpreter. It was computed on `ast.dump`, which Python 3.11 writes with empty `args=[]`/`keywords=[]` fields that 3.14 omits, so the same bodies scored 0.93 on 3.14 and 0.44 on 3.11. The bodies are now rendered by a canonical serializer that skips empty, unset and implicit-`Load` fields. On 3.11 the glossum `key_of` (sppas_it/phonitalia_it), `_phones` (duden_de/raevskaya_fr) and `_digest` (batching/prompt_clarity_a3) groups are now reported, as they already were on 3.14. What to do: a 3.11 consumer that was green may go red on those copies; consolidate them or add the name to `allow` with a reason.
+
 ### Gate false positives 2026-11-07
 
 - **Behaviour change:** `source_text_assertion` no longer treats a call's result as source text when the text argument is a parameter that the same file's function only hands to `ast.parse`/`ast.walk`/`iter_child_nodes` (`read |= orm_reads(src, table_of)` with `orm_reads` parsing `source`). A test asserting on the table names found that way is not a source-text claim. A text argument that is returned, sliced or read in the function still taints the result, and a real file read through such a helper is still reported. What to do: nothing, unless a claim you had accepted is now absent from the baseline, which the refresh shrinks.
 - Windows: `black_filtered_apply --check` passes Black an absolute stdin filename (a relative, missing path was dropped by Black on the Windows 3.9 leg, so `force-exclude` and `.pyi` mode silently did not apply), and the cached resolve anchors a relative path to the working directory before resolving it.
+
+## 1.23.8
+
+- New module `py_ci_shared.meta_test_utils` (additive): the meta-test building blocks (`consumer_corpus`, `public_top_level_symbols`, `capture_signature`, `capture_module_surface`, `findings_ratchet`, `unbacked_audit_dispositions`, `assert_fields_roundtrip`, `optional_scalar_fields`, `enumerate_test_files`, `scan_todo_markers`, `count_user_deferred_entries` and the rest of its `__all__`), moved here verbatim from `pyutilz.dev.meta_test_utils`, which no longer exists (no re-export in pyutilz). Registered as an internal module. It walks through `_core.corpus.iter_files_pruned` (no `walk-ok` marker, no baseline) and reads its ratchet baselines with stdlib `json`, so py-ci-shared still imports nothing from pyutilz. **A consumer must pin a py-ci-shared version that contains it** (autopsia `test`/`dev` extras and workflows, mlframe and glossum through `PY_CI_SHARED_DIR`). Its tests moved with it (`tests/test_meta_test_utils*.py`). See `audits/2026-11-05_meta_test_utils_move.md`.
+- Tree walks no longer enter `.claude` (Claude Code's agent worktrees, each a COMPLETE copy of the repository; one consumer audit test took 19 to 30 minutes with about 20 of them). New `_core.corpus.iter_files_pruned(root, suffixes, exclude_dirs)` is the pruned walk; `llm_output_caps.numeric_output_caps`, `destructive_tests_throwaway_only` (conftest guards), `_mutation_runner` and `_mutation_speed` (test discovery), `contract_ledger.snapshot_files`, `ci_install_covers_entry_imports` (pytest paths), `dart_scanners.dart_files_under`, `deferred_entries`, `code_audit.column_no_write_path`, `code_audit.redundant_test_fit`, `code_audit.source_text_assertions` and `code_audit._todo_markers` use it (or `_iter_py_files`) whatever root they receive. **Behaviour change (fewer findings, only for a root that contains `.claude`):** a worktree copy is no longer read. `dart_files_under` lists in relative-path order and `snapshot_files` also leaves out `.claude`. `tests/test_no_unpruned_tree_walk.py` fails any new `rglob`, `glob("**")` or `os.walk` under `src/py_ci_shared` that is not in a pruning helper and carries no `# walk-ok: <reason>`. What to do: nothing; refresh a baseline that listed a file under `.claude`.
+- `cuda_launch_geometry`: a call whose grid or block tuple holds a string or float constant (`itertools.product(("a", "b"), (3, 5), ...)`) is no longer taken for a kernel launch.
+- New gate `cuda_launch_geometry` (additive): a kernel launch `f((grid,), (block,), (args,))` whose block tuple holds an integer literal other than 1, a module constant bound to one, or a local name bound once to one (`cuda-literal-block-size`). The best block size depends on the card (SM count, registers and shared memory per SM) and on the kernel's own registers and shared memory, so a literal tuned on one card is wrong on the others; take it from the device (occupancy over `num_regs` / `shared_size_bytes`, e.g. `pyutilz.performance.gpu_hw_launch.block_size_for`). Marker `# launch-ok: <reason>` on the first or last line of the call for a geometry the kernel fixes (a warp per item, a shared array sized by the block); baseline supported.
+- New command `py-ci-shared tool pytest_run OUTFILE <paths and pytest options>` (additive): pytest with the flags a developer machine needs (`PYTHONUNBUFFERED=1`, `-s`, `--durations=200`, `--no-cov` and `-n 0` when the plugins are installed, `-p no:cacheprovider`), the whole output in OUTFILE ending with `exit=<code>`, `-q` refused. README "Running pytest on a developer machine" and CLAUDE.md "Running tests" say why each flag is there.
 
 ### Gate exemptions 2026-11-06
 
@@ -48,44 +61,35 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ### Gate false positives 2026-11-06
 
 - **Behaviour change:** `fail_open_handlers` `silent_default_return` no longer flags an `except` whose only body is a return, in a function whose name is a key, encode or freeze builder (`_key`, `_encode`, `_freeze_object`), when the handler catches no I/O error (a bare `except`, `OSError`, `subprocess`, `sqlite3.Error` or `Exception` still flags). Consumers whose baseline lists such a scope must refresh it (it only shrinks).
-
 - **Behaviour change:** `no_xfail_to_defer` `untracked-reason` no longer judges a `pytest.mark.skip`/`xfail` call bound to a name (`skip_fuzz = pytest.mark.skip(reason=...)`) in a scope that also has an `if` on a runtime condition (`config.getoption`, `os.environ`, `getenv`, xdist, fast mode): the marker is attached only while that condition holds. A marker with no such condition in its scope is still judged, and `xfail-not-strict` and `no-reason` still apply. Consumers: a baseline entry for such a marker no longer matches, so refresh the baseline (it only shrinks) to clear it.
-
 - **Behaviour change:** `drifted_duplicate_literals` `literal-set` no longer counts a literal set whose line (or the line above) carries `# literal-set-ok: <reason>`: a row-count sweep grid measured for one kernel is a separate measurement, not a copy. Only the marked site leaves the group. Consumers: a baseline group that loses its last unmarked copy no longer matches, so the gate reports it as stale; refresh the baseline (it only shrinks) to clear it.
-
 - **Behaviour change:** `fail_open_handlers` `admit_on_error` no longer flags a handler that logs at WARNING or above (a logger call or `log_throttle(..., logging.WARNING, ...)`) and stores a constant under the loop key (`out[i] = 0.0`): the failure is reported and a constant is recorded, not the element. A loud handler that keeps the element (`survivors.append(spec)`) stays flagged. Consumers: the baseline entries for such handlers no longer match, so the gate reports them as stale; refresh the baseline (it only shrinks) to clear them.
-
 - **Behaviour change:** `default_via_or` no longer flags `x / (total or 1)`: a zero denominator replaced by the unit default is a deliberate guard, so the ratio is zero rather than an error. Only a unit default directly on the right of a division is exempt; `n / (d or 5)` and `n * (d or 1)` stay findings. The non-direct guard (`tot = s or 1`, then `/ tot`) stays flagged because it needs data flow the scanner does not track.
-
 - **Behaviour change:** `fail_open_handlers` `silent_default_return` and `quiet_substitution` no longer flag four reasoned fallbacks: an `except ImportError`/`ModuleNotFoundError` handler (an optional dependency), an `except FileNotFoundError` handler (absence is a state), a handler whose returned value carries a message (`DatasetSummary(..., "not installed in this checkout")`, `f"unreadable:{...}"`), a handler in a function named for a cache, stamp, token, digest or signature (a miss the caller recomputes), and a handler that hands the caught exception to the caller (`error = e`). A handler catching `(ImportError, OSError)`, a bare `return None` on `OSError` in any other function, or a quiet fallback value stays flagged. On `autopsia` (the 62 files of audit `2026-11-05/gate_false_positives.md`) the findings fall from 95 to 50. Consumers: the shrink-only baseline now holds entries that no longer match, so the gate reports them as stale; refresh the baseline (it only shrinks) to clear them.
 - **Behaviour change:** `drifted_duplicate_literals` takes a role word (`floor`, `ceiling`, `cap`, `tol`, `tolerance`, `mean`, `seed`, `ttl`, `window`, `prior`, `timeout`, `weight`) as generic, as it already does for `max`, `min`, `limit` and the unit words: `_PROBE_FLOOR` and `_WEIGHT_FLOOR` say what kind of number they are, not what they are about, so they no longer form a `named-constant` group. A subject word (`STALE`, `CAVEAT`) still groups. A tuple of calendar years (1900-2100) is a date, not a threshold set, like the dates the rule already ignores, in code and in text. On `autopsia/` the groups fall from 39 to 18 (per-package scan of the same tree). Consumers: refresh the duplicate-literals baseline (it only shrinks) to clear the stale groups.
-
 - **Behaviour change:** `fail_open_handlers` `silent_default_return` no longer flags a reasoned fallback: a handler that catches only `sqlite3.OperationalError` around a read through `execute`/`fetchone`/`fetchall` (a local table or install that is not there). A broader `sqlite3.Error` and a try that makes no SQLite read stay flagged. (Correction 2026-11-07, audit 41-F3: this entry first also listed a single-value parse guard, `try: return int(x) except ValueError: return default`. Commit 70f2152 re-flagged those on purpose, as the 2026-11-04 per-key decision says, and `tests/test_fail_open_handlers.py::test_an_unparseable_value_that_returns_none_is_flagged` pins it: a parse guard is still reported.) On `autopsia` the sqlite exemption clears 8 baseline keys (scopes), not 13; the 5 value-parse keys stay. Consumers: those baseline entries no longer match and the gate reports them as stale; refresh the baseline (it only shrinks) to clear them.
 
 ### Gate false positives 2026-11-05
 
-- `default_via_or`: a `getattr(obj, name, False)` flag is a boolean operand; a fallback that re-reads another field of the same receiver (`row.get("parsed") or safe_json_load(row.get("response"))`) is an alternative read; a string-valued getattr default and a literal-prefixed string concatenation are text fallbacks. **Behaviour change:** the glossum findings at `example_validation.py:518`, `translation_validation_log.py:153`, `_task_scorers.py:59,177 (_validator.py)`, `db_retry.py:243`, `_consolidate.py:168` disappear.
-- `async_primitive_reinit_per_call`: a local bound to an entry of a module-level cache (`locks = _LOOP_LOCKS.setdefault(loop, {})`) is module-backed, so storing a freshly built lock into it persists the lock. **Behaviour change:** `glossum/core/loop_locks.py:36` disappears.
-- `possibly_dead_import`: a name spelled as a string anywhere in the corpus counts as consumed, so a facade export listed in a contract checked with hasattr() is not dead. **Behaviour change:** `glossum/storage/orm_models/__init__.py:32` (PG_UUID) disappears.
-- `broad_except_swallow`: a swallow inside a logging handler's `emit(self, record)` is the logging.Handler contract (emit must not raise), so it is not reported. **Behaviour change:** `glossum/llm/benchmark_mode.py:175` disappears.
-- `resource_handle_safety`: a handle assigned to a name that the module closes with `atexit.register(name.close)` is not reported, as the process owns it until exit. **Behaviour change:** `glossum/scripts/_full_phase1_all_rounds.py:123` disappears.
-- `resource_handle_safety`: an `async with aiofiles.open(...)` block counts as a context manager (`ast.AsyncWith`). **Behaviour change:** the 3 aiofiles findings in glossum (`frequency_importer.py:294,452`, `kaikki_importer/__init__.py:355`) disappear.
-
+- `default_via_or`: a `getattr(obj, name, False)` flag is a boolean operand; a fallback that re-reads another field of the same receiver (`row.get("parsed") or safe_json_load(row.get("response"))`) is an alternative read; a string-valued getattr default and a literal-prefixed string concatenation are text fallbacks. **Behaviour change:** the glossum findings at `example_validation.py:518`, `translation_validation_log.py:153`, `_task_scorers.py:59,177 (_validator.py)`, `db_retry.py:243`, `_consolidate.py:168` disappear. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
+- `async_primitive_reinit_per_call`: a local bound to an entry of a module-level cache (`locks = _LOOP_LOCKS.setdefault(loop, {})`) is module-backed, so storing a freshly built lock into it persists the lock. **Behaviour change:** `glossum/core/loop_locks.py:36` disappears. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
+- `possibly_dead_import`: a name spelled as a string anywhere in the corpus counts as consumed, so a facade export listed in a contract checked with hasattr() is not dead. **Behaviour change:** `glossum/storage/orm_models/__init__.py:32` (PG_UUID) disappears. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
+- `broad_except_swallow`: a swallow inside a logging handler's `emit(self, record)` is the logging.Handler contract (emit must not raise), so it is not reported. **Behaviour change:** `glossum/llm/benchmark_mode.py:175` disappears. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
+- `resource_handle_safety`: a handle assigned to a name that the module closes with `atexit.register(name.close)` is not reported, as the process owns it until exit. **Behaviour change:** `glossum/scripts/_full_phase1_all_rounds.py:123` disappears. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
+- `resource_handle_safety`: an `async with aiofiles.open(...)` block counts as a context manager (`ast.AsyncWith`). **Behaviour change:** the 3 aiofiles findings in glossum (`frequency_importer.py:294,452`, `kaikki_importer/__init__.py:355`) disappear. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
 - New gate `cuda_kernel_pointer_types` (additive): a `__global__` function with a `double*` parameter and no `{REAL}` placeholder among its parameters (hard, `cuda-bare-double-pointer`), the same for `float*` (advisory, `include_advisory`), and a `"float" if X.dtype == ... else "double"` kernel-type probe whose `X` is never a launch argument by name (hard, `cuda-type-probe-not-launched`). A float32 buffer bound to a `double*` is read past its end; the context is poisoned and a later thrust call aborts the interpreter. Marker `// dtype-ok: <reason>` in the kernel string (or `# dtype-ok:` on the probe line); baseline supported. Found in mlframe: the `row_argmax` kernel read its float32 operands as double.
-
 - Gate defects from audit 2026-11-04 step 8 (`audits/2026-11-04/37_step8_gate_defects.md`):
   **Behaviour change:** `assert_installed_matches_ci_pin` takes `pin_repo` instead of `repo`. The config layer filled any parameter named `repo` with the repo root, so the gate crashed (`'WindowsPath' object has no attribute 'rsplit'`). A `[tool.py_ci_shared.gates.ci_pin_version_skew] repo = ...` entry must be renamed to `pin_repo`.
   `env_flag_parsing` judges only boolean flags: a path, number, URL, host, credential or secret read is not reported, and a comparison counts only against a spelling of on/off.
   `secret_assertion_operands` treats `os.environ.get("NAME")` with a non-secret literal name as harmless, like the subscript and `getenv` forms.
   `validation_errors_echo_input` does not judge validators of a `BaseSettings` class (not a request path).
-  `assert_modules_resolve_to_checkout` puts the checkout's own package first on `sys.path` (a worktree under an editable install of the main checkout no longer fails).
+  `assert_modules_resolve_to_checkout` puts the checkout's own package first on `sys.path` (a worktree under an editable install of the main checkout no longer fails). What to do: rename a `repo = ...` key under `gates.ci_pin_version_skew` to `pin_repo`; for the gates named on the following lines, which report fewer findings, refresh their baselines.
 - Gate defects of audit 2026-11-04, round 37, group 3 (concurrency and SQL), 37-F15..F18 and 37-F33:
   **Behaviour change (fewer findings):** `ddl_lock_safety` reads a `--   ALTER ...` paste-ready command only in the file's leading comment header; a commented-out statement below the first SQL statement is comment text and is no longer a finding.
   **Behaviour change (fewer findings):** `lock_held_across_io` no longer counts a cross-process file lock (`FileLock`, `portalocker`, `fcntl`, `claim_lock`, `try_claim_lock`, `*_file_lock`) as a thread lock; I/O under it is not a stall of other threads.
   **Behaviour change (more findings):** `check_then_act_outside_lock` treats a `with self._guard():` as holding a lock when `_guard` is a module function that takes a lock, so a test and a write under it are judged as one lock.
   `hash_key_determinism` does not report a `json.dumps` whose text is sent on the wire (a send, write or request call, or a `data`/`content`/`body` keyword): its digest names the exact bytes archived.
-  `verified_then_reopened` does not treat a size or length check as verification, and accepts a reopen marked `# reopen-ok: <reason>`.
-
+  `verified_then_reopened` does not treat a size or length check as verification, and accepts a reopen marked `# reopen-ok: <reason>`. What to do: for the fewer-findings gates above refresh their baselines; for `check_then_act_outside_lock` (more findings) fix each new finding or baseline it.
 - Leftovers of audit 2026-11-04 (30, 33, 34, 35):
   `tests/test_mutation_speed.py` runs on a stand-in for pytest and the warm worker (17 tests, about 30 s instead of about 12 minutes); two real sweeps stay as `slow` tests that run on CI (`CI` is set) or with `PY_CI_RUN_SLOW=1`.
   `near_duplicate_function_body` generates candidate pairs from a prefix of each function's rarest shingles; the pairs, and so the findings, are identical (compared on py-ci-shared and pyutilz source).
@@ -93,9 +97,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
   **Behaviour change (fewer findings):** `unread_function_params` no longer reports a knob in a no-op override (`return self`/`return`/`return None` only) of a class that has a base class.
   `polars_null_equality` (advisory) also reports `pl.lit(None)` comparisons, `is_in([None, ...])` and `frame['a'] == frame['b']` on a visibly polars frame. Additive.
   New reusable workflow `gates.yml` (`py-ci-shared run-all` for the repo's enabled gates), off unless the caller passes `enabled: true`. Additive.
-  `Canary.tokens` for 25 more gates (multi-shape teeth) and eleven more test files banned from `assert any(substring)`. Test-only.
-
+  `Canary.tokens` for 25 more gates (multi-shape teeth) and eleven more test files banned from `assert any(substring)`. Test-only. What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
 - `find_surviving_mutants` pays less fixed cost per sweep (audit 2026-11-04, 30-F1..F9). Default: the unmutated primary tests run once, in the warm worker, instead of cold and then warm (and once per extra `jobs` partition); the wider net's baseline runs only when a survivor needs it (`single_baseline=False` restores the old order); the checkpoint stores each mutant's killer file and line, and a resumed or partitioned sweep leads with the killers already learned. Opt-in: `timeout_factor`, `confirm_in_worker` / `cold_confirm_every`, `coverage_prune` (line map from one coverage run; mutants on unexecuted statements skip the primary run), `copy_ignore_patterns`, `ignore_addopts`. Additive; verdicts are unchanged. `HARNESS_VERSION` moves to 33.
+
 ### New gates from audit 32, 2026-11-04
 
 - `njit_fastmath_nan` (opt-in gate): an `@njit`/`@jit`/`@vectorize` kernel compiled with NaN/inf-assuming `fastmath` (`True`, or a flag set with `nnan`/`ninf`/`fast`, literal or module constant) whose own body tests or produces NaN/inf. Marker `# fastmath-nan-ok: <reason>`. Additive.
@@ -112,67 +116,39 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - `target_leak_canary` (library): `assert_no_train_target_leak(make_transformer)` fails when a feature builder correlates with an independent noise target on its own training rows; `assert_oof_scores_at_chance` is the stacker variant (training-row AUC of out-of-fold scores on noise labels). Additive.
 - `cache_key_sensitivity` (library): `assert_key_sensitive(key_fn, base, sensitive, insensitive)` requires the key to move with every result-changing argument, stay put for the insensitive ones, be deterministic, and every parameter of the key function to be declared one way or the other. Additive.
 - `estimator_invariants` (library): `assert_column_order_invariant`, `assert_n_jobs_invariant` and `assert_frame_type_parity` fit estimators from a factory and compare outputs across column order, worker count and frame type. Additive.
-
 - `find_surviving_mutants(..., checkpoint_path=...)` records every judged mutant to a JSON-lines file as its verdict lands, keyed by the sweep's fingerprint. A sweep killed midway resumes from it: the mutants already judged are not run again, and their survivors, coverage gaps and budget are replayed onto the current objects. Additive: without `checkpoint_path` nothing changes. `HARNESS_VERSION` moves to 32.
 - `mutation_teeth` logs each surviving mutant at WARNING as its verdict lands, not only when the sweep ends, so a sweep that runs for hours can be read while it runs.
   Additive: verdicts, the returned `MutationRun` and the cache key are unchanged, and the sweep prints nothing new on a clean run. `HARNESS_VERSION` moves to 31, so a cached
   verdict computed by version 30 is recomputed once.
-- `contract_ledger` gained five helpers for contract ratchets: `assert_documents_identical` / `document_diff` / `canonical_json` (a committed JSON document, for example an OpenAPI fixture, must equal the live one in full; the failure lists each added, removed and changed path, so a new property on an existing schema is named instead of passing), `promise_message_ids` (catalogue messages containing a promise word as a whole word), `missing_test_references` (ledger rows that name a test that does not exist, resolved by parsing the file), and `value_mismatches` (a ledger's expected values against what the code emitted). Additive.
-
-- **Behaviour change (moved, no shim):** the code-audit CLI (`python -m py_ci_shared.code_audit`, module `py_ci_shared.code_audit.cli`) and the field/text agreement record checker (`py_ci_shared.code_audit.field_text_agreement`) moved here from pyutilz, which no longer re-exports them. Import them from their new paths. The CLI's `--format json` output now comes from the standard library `json` with 2-space indent, sorted keys and unescaped non-ASCII, so its bytes can differ from the former `pyutilz.core.jsonlib` output while carrying the same data.
-- **Behaviour change (fewer findings):** `source_text_claims` stopped flagging four shapes that are not claims about source text. (1) A name the assertion
-  itself uses as a mapping (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`): a string has none of those, so it holds parsed data. (2) A file whose path
-  literal ends in a data suffix, now including `.xml`, `.tsv`, `.xsd`, `.svg`, `.obo`, `.owl`, `.rdf`, `.ttl`, `.fasta`, `.pdf`, `.gz`, `.parquet`, `.pkl`, however the path
-  is built (`Path(__file__).parent / "fixtures" / "x.xml"`). (3) `loads` / `load` / `safe_load` from a module named for a data format, so a project's own
-  `from pkg import _json as json` counts as a deserialiser. (4) `f(...) == expected`, where `expected` is read text and the call neither reads nor takes it: a golden-file test
-  measures the function. Substring, regex and integer-index checks on source text, a reader on the call side and a text method of the value are flagged as before.
-  A consumer's `source_text_assertion` baseline may now list entries that no longer fire: refresh it (it only shrinks).
-- The `additive_epsilon_denominator` scanner honours `# audit-exempt: additive_epsilon_denominator -- <reason>` on the division's line, like the
-  other scanners. Before, the marker was silently ignored for this check, so a pad that cannot matter could only be hidden by rewriting the
-  expression. Additive: a line without the marker (and a reason) is flagged as before.
-- **Behaviour change:** the code-audit detectors and their registry now live in `py_ci_shared.code_audit`. The
-  `code_audit_meta` gate runs them from here, so a consumer's gate results follow the py-ci-shared pin instead of the
-  pyutilz pin. The rules are the same code (copied byte for byte, then modernised to `collections.abc` and built-in
-  generics). pyutilz keeps `pyutilz.dev.code_audit.*` as aliases, so existing imports still work. To keep the old
-  behaviour while you move, pin py-ci-shared to the release that carries this and rebuild the code-audit baselines once.
-
-- `stale_comment_age.assert_no_stale_todos` takes `allow_unparsed` (default `True`: an unreadable file is still scanned with a lossy decode,
-  as before; `False` reports it as a problem and checks nothing in it) and `min_files` (default `0`: a scan that read fewer files than the floor
-  reports it). `test_partition_reachability.assert_partitions_reachable` takes `allow_unparsed` (default `False`: an unreadable runner or spec
-  file fails with its name, as it always did; `True` skips it) and `min_files` (default `0`). Defaults keep every existing call's behaviour.
-- `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
-- `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
 
 ### Gate defects 2026-11-04
 
 Step 8 consumer reports (`audits/2026-11-04/37_step8_gate_defects.md`). Each entry is a false positive or a missing marker; the gate now honours the marker the consumer already wrote.
-
-- **Behaviour change:** the text corpora behind `skip_as_pass` and `comment_repo_paths` (and every gate built on `read_text_corpus`) skip a binary file (a NUL in its first 8000 bytes: an image, an archive, a profile) instead of reporting it as unreadable text. Undecodable text is still an unreadable finding. New helper `_core.read_text_if_not_binary`.
+- **Behaviour change:** the text corpora behind `skip_as_pass` and `comment_repo_paths` (and every gate built on `read_text_corpus`) skip a binary file (a NUL in its first 8000 bytes: an image, an archive, a profile) instead of reporting it as unreadable text. Undecodable text is still an unreadable finding. New helper `_core.read_text_if_not_binary`. What to do: nothing; refresh a baseline that listed a binary file as unreadable.
 - `skip_as_pass` flags a `SKIPPED` marker only when the printed message begins with that word; a warning that merely contains "skipped" and exits 0 is not a finding.
 - `machine_specific_paths` no longer reads a sed expression such as `s://.*::` as a `db-url`: the user part of a DSN excludes `*`, `\`, `^`, `$`, brackets and braces, and the password part excludes `*` and `\`. A real DSN with an inline password is still a finding.
 - `fail_open_handlers` `silent_default_return` does not fire when the handler returns the bound exception or a part of it (`return exc.sqlstate`): that hands back the failure's own data.
 - `sentinel_or_fallback` honours `# falsy-ok: <reason>` on a conditional expression (`x.seed if x.seed else DEFAULT`) as its docstring promises, not only on an `or` chain.
-- **Behaviour change:** `import_cycles` exempts a cycle when a member module's first line carries `# audit-exempt: import_cycle -- <reason>` (the reason is required, as for every `audit-exempt` marker).
+- **Behaviour change:** `import_cycles` exempts a cycle when a member module's first line carries `# audit-exempt: import_cycle -- <reason>` (the reason is required, as for every `audit-exempt` marker). What to do: refresh the gate's baseline with its refresh command so the entries that no longer fire are pruned (a stale entry fails by default); nothing else.
 
 ### Gate quality 2026-11-04
 
 Audit 33 (`audits/2026-11-04/33_existing_gate_quality.md`). Every change makes a gate stricter or removes a false positive; the entries that can turn a green consumer red are marked.
-
 - `ImportAliases.from_tree(tree, scoped=True)` is an opt-in scope-aware mode: an import binds only the scope it is written in, a parameter or non-import rebind shadows it (the name resolves to `None`), and `p = pickle` / `L = pickle.loads` resolve one hop. The default is unchanged for the other ~57 users. `unsafe_deserialization`, `naive_utcnow`, `stdlib_json_ban`, `hardcoded_seed_in_library`, `swallowed_exceptions` and `module_reload_safety` use it, and `naive_utcnow` exempts `arrow`/`pendulum` only when really imported.
-  **Behaviour change:** those six gates now report a use that a stray function-local or later import of the same short name used to hide; fix the site or add the gate's marker.
-- **Behaviour change:** the text-ratchet gates (`skip_as_pass`, `wallclock_test_waits`, `git_child_env`, `guard_without_fixture`) report a file that is not valid UTF-8 as `<rel>: unreadable` instead of skipping it, and number identical lines in one file (`key`, `key #2`, `key #3`) instead of collapsing them to one key. Refresh the baselines once so accepted duplicates are recorded.
-- `phantom_markdown_links`, `comment_repo_paths` and `docs_inventory_parity` compare path case exactly (`_core.exists_exact_case`): a wrong-case link that passed on Windows/macOS now fails everywhere. **Behaviour change** for Windows/macOS consumers only.
-- **Behaviour change:** `swallowed_exceptions` judges `with contextlib.suppress(Exception|OSError|...)` like the equivalent silent handler, and no longer exempts every handler in a `finally`, `close`, `__exit__` or `__aexit__` (only release-type calls, `__del__` and `emit` stay exempt).
-- **Behaviour change:** `unsafe_deserialization` requires the earlier hash/verify call to concern the loaded value (an unrelated `sha256` no longer counts), reports `pandas.read_pickle`, `pickle.Unpickler(fh).load()`, `marshal`, `shelve.open`, `jsonpickle.decode`, ruamel `typ='unsafe'`, keras `safe_mode=False`, a non-literal `torch.load(weights_only=...)`, and loads in class bodies and lambdas.
-- **Behaviour change:** `rollback_then_continue` treats only a constant / empty literal / no-argument constructor assignment as an accumulator reset (`msg = str(e)` and `n = n + 1` no longer exempt) and sees `*rollback*` helper calls. `ci_workflow_timeout_gate` rejects `timeout-minutes` of 0, a negative, a non-integer, 360 or more, or more than `max_minutes` (default 120).
-- **Behaviour change:** `fail_open_handlers` (`extend/add/insert/+=/setitem/yield` admissions, flag-then-return), `hardcoded_seed_in_library` (module constants, folded expressions, `rs`/`rng_seed` parameters, `**{"random_state": 7}`, lambdas; the fall-through after `if seed is not None: return` is the default), `wallclock_test_waits` (ast mode resolves imports, `asyncio`/`trio`/`anyio` sleeps, Dart without `const`), `machine_specific_paths` (DSNs of any scheme, folded concatenation, bytes, `.env`/`.json`/`.sh`/`.ps1` files), `latched_availability_flags` (`HAVE`/`USE`/`OK`/`GPU`-style names, cached falsy probes), `sentinel_or_fallback` and `hardcoded_token_ceilings` (assignments, once-bound constants, `2**12`, camelCase, `max_new_tokens`/`num_predict`), `discarded_model_copy` (dropped result, tuple targets, `dataclasses.replace`, module scope), `env_flag_parsing` (two-step reads, walrus, `bool()`, aliases), `predictable_tmp_path` (variables, f-strings, `/tmp` literals), `ddl_lock_safety` (`ADD PRIMARY KEY/UNIQUE`, `SET NOT NULL`, `SET LOCAL` ends at COMMIT), `skip_as_pass` (bare `exit`, `sys.exit()`, `SystemExit(0)`, `tools/`, `.github/`), `lock_held_across_io` (cursor round trips, `write_text`, `asyncio.sleep`, mutex names), `no_xfail_to_defer` (an unconditional skip needs a tracked reason), `epsilon_padded_denominators`, `hash_fed_by_array_copy` and `gpu_timing_sync` all report shapes they missed; refresh the affected baselines.
-- Fewer false positives: `naive_utcnow` (a parameter named `arrow`), `identity_comparisons` (a name rebound to a non-string), `workflow_runner_labels` (a label in `run:`/`name:` text), `env_flag_parsing` (backend selectors and `or "default"`), `gpu_timing_sync` (`.cpu()`/`.item()` end a timed region), `line_has_marker` (the opt-out must be in the real comment, not a string literal; **Behaviour change**: a line that relied on a `# marker` inside a string now reports).
+  **Behaviour change:** those six gates now report a use that a stray function-local or later import of the same short name used to hide; fix the site or add the gate's marker. What to do: fix the site or add the gate's marker, as stated.
+- **Behaviour change:** the text-ratchet gates (`skip_as_pass`, `wallclock_test_waits`, `git_child_env`, `guard_without_fixture`) report a file that is not valid UTF-8 as `<rel>: unreadable` instead of skipping it, and number identical lines in one file (`key`, `key #2`, `key #3`) instead of collapsing them to one key. Refresh the baselines once so accepted duplicates are recorded. What to do: refresh the four gates' baselines once.
+- `phantom_markdown_links`, `comment_repo_paths` and `docs_inventory_parity` compare path case exactly (`_core.exists_exact_case`): a wrong-case link that passed on Windows/macOS now fails everywhere. **Behaviour change** for Windows/macOS consumers only. What to do: rename a link or path whose case differs from the file on disk (Windows/macOS consumers only; everyone else already failed).
+- **Behaviour change:** `swallowed_exceptions` judges `with contextlib.suppress(Exception|OSError|...)` like the equivalent silent handler, and no longer exempts every handler in a `finally`, `close`, `__exit__` or `__aexit__` (only release-type calls, `__del__` and `emit` stay exempt). What to do: fix each new finding, or record it in the baseline with the gate's refresh command.
+- **Behaviour change:** `unsafe_deserialization` requires the earlier hash/verify call to concern the loaded value (an unrelated `sha256` no longer counts), reports `pandas.read_pickle`, `pickle.Unpickler(fh).load()`, `marshal`, `shelve.open`, `jsonpickle.decode`, ruamel `typ='unsafe'`, keras `safe_mode=False`, a non-literal `torch.load(weights_only=...)`, and loads in class bodies and lambdas. What to do: fix each new finding, or record it in the baseline with the gate's refresh command.
+- **Behaviour change:** `rollback_then_continue` treats only a constant / empty literal / no-argument constructor assignment as an accumulator reset (`msg = str(e)` and `n = n + 1` no longer exempt) and sees `*rollback*` helper calls. `ci_workflow_timeout_gate` rejects `timeout-minutes` of 0, a negative, a non-integer, 360 or more, or more than `max_minutes` (default 120). What to do: fix each new finding, or record it in the baseline with the gate's refresh command.
+- **Behaviour change:** `fail_open_handlers` (`extend/add/insert/+=/setitem/yield` admissions, flag-then-return), `hardcoded_seed_in_library` (module constants, folded expressions, `rs`/`rng_seed` parameters, `**{"random_state": 7}`, lambdas; the fall-through after `if seed is not None: return` is the default), `wallclock_test_waits` (ast mode resolves imports, `asyncio`/`trio`/`anyio` sleeps, Dart without `const`), `machine_specific_paths` (DSNs of any scheme, folded concatenation, bytes, `.env`/`.json`/`.sh`/`.ps1` files), `latched_availability_flags` (`HAVE`/`USE`/`OK`/`GPU`-style names, cached falsy probes), `sentinel_or_fallback` and `hardcoded_token_ceilings` (assignments, once-bound constants, `2**12`, camelCase, `max_new_tokens`/`num_predict`), `discarded_model_copy` (dropped result, tuple targets, `dataclasses.replace`, module scope), `env_flag_parsing` (two-step reads, walrus, `bool()`, aliases), `predictable_tmp_path` (variables, f-strings, `/tmp` literals), `ddl_lock_safety` (`ADD PRIMARY KEY/UNIQUE`, `SET NOT NULL`, `SET LOCAL` ends at COMMIT), `skip_as_pass` (bare `exit`, `sys.exit()`, `SystemExit(0)`, `tools/`, `.github/`), `lock_held_across_io` (cursor round trips, `write_text`, `asyncio.sleep`, mutex names), `no_xfail_to_defer` (an unconditional skip needs a tracked reason), `epsilon_padded_denominators`, `hash_fed_by_array_copy` and `gpu_timing_sync` all report shapes they missed; refresh the affected baselines. What to do: fix each new finding, or record it in the baseline with the gate's refresh command.
+- Fewer false positives: `naive_utcnow` (a parameter named `arrow`), `identity_comparisons` (a name rebound to a non-string), `workflow_runner_labels` (a label in `run:`/`name:` text), `env_flag_parsing` (backend selectors and `or "default"`), `gpu_timing_sync` (`.cpu()`/`.item()` end a timed region), `line_has_marker` (the opt-out must be in the real comment, not a string literal; **Behaviour change**: a line that relied on a `# marker` inside a string now reports). What to do: refresh the affected baselines; move a gate marker out of a string literal into a real comment.
 - `vacuous_loop_assertions` counts unittest `self.assert*`/`self.fail` as checks and floors. Canary teeth: `Canary(tokens=(...))` requires EVERY seeded shape to be named; `swallowed_exceptions` and `unsafe_deserialization` canaries now seed one site per shape.
 
 ### Speed and self meta-tests, 2026-11-04
 
 - Scan speed, output unchanged: the code-audit scanners walk through one memoised walk (`_core.node_index.walk` now caches any subtree, `code_audit._base.walk_nodes` / `child_nodes`) and one parse cache (`_safe_parse` is `_core.source.parse_file`); a pyutilz/src scan takes about 35 percent less wall time and found the same findings. `_core.source.read_bytes_cached` serves repeated reads of an unchanged file from memory (5.8x fewer opens in a gate-suite pattern). A shrink-only test keeps raw `ast.walk` out of `code_audit/`.
-- **Behaviour change (more files parsed):** the code-audit scanners now decode source as the interpreter does (BOM, PEP 263 cookie), so a BOM-prefixed file that they used to skip as unparsable is scanned. A consumer may see new findings in such files; fix them or baseline them.
+- **Behaviour change (more files parsed):** the code-audit scanners now decode source as the interpreter does (BOM, PEP 263 cookie), so a BOM-prefixed file that they used to skip as unparsable is scanned. A consumer may see new findings in such files; fix them or baseline them. What to do: fix or baseline the new findings.
 - `budget = "warn"` now also prints a BUDGET summary line, a GitHub warning annotation per gate over budget and a job-summary list; the exit code is unchanged.
 - `py-ci-shared tool <module>`: a `main` returning anything but `None` or an int exits 2 with a message instead of 0; a `KeyError` raised inside a gate keeps its traceback instead of exiting 2.
 - `config_drift_check` covers every consumer of `configs/consumers.toml` (private ones with `CONSUMER_READ_TOKEN`), and a consumer without `[tool.ruff]` / `[tool.mypy]` is no longer reported as diverging on it.
@@ -191,6 +167,49 @@ Audit 33 (`audits/2026-11-04/33_existing_gate_quality.md`). Every change makes a
 - `optional_collaborator_wired` (`assert_optional_collaborator_wired`): a `*_memo`/`*_cache`/`*_fn` parameter defaulting to `None` that every non-test call site omits or passes as literal `None` (positional and keyword binding, `self` skipped, ambiguous names and `*args` calls treated as wired).
 - `cli_flag_spelling` (`assert_cli_flag_spelling`): one flag stem registered as `--a-b` in some `add_argument` calls and `--a_b` in others; a call listing both spellings is the accepted alias.
 
+## 1.23.7
+
+- `release_guard` and `code_audit`: `find_surviving_mutants` / `assert_revert_fails_tests` refuse an absolute path; the `code_audit` gate honours in-place `audit-exempt` markers before the baseline comparison. No consumer action.
+
+## 1.23.6
+
+- Dash plugin entry points are read on Python 3.9; several audit scanners are faster with the same findings. No consumer action.
+
+## 1.23.5
+
+- Behaviour change: an `audit-exempt` marker needs a reason of at least 20 characters, and the source-text gate honours a justified per-line marker. What to do: lengthen any shorter reason, or nothing.
+
+## 1.23.4
+
+- `redundant_test_fit` reads a test file's text outside the loop; no finding changes. No consumer action.
+
+## 1.23.3
+
+### New gates from audit 32, 2026-11-04
+
+- `contract_ledger` gained five helpers for contract ratchets: `assert_documents_identical` / `document_diff` / `canonical_json` (a committed JSON document, for example an OpenAPI fixture, must equal the live one in full; the failure lists each added, removed and changed path, so a new property on an existing schema is named instead of passing), `promise_message_ids` (catalogue messages containing a promise word as a whole word), `missing_test_references` (ledger rows that name a test that does not exist, resolved by parsing the file), and `value_mismatches` (a ledger's expected values against what the code emitted). Additive.
+- **Behaviour change (moved, no shim):** the code-audit CLI (`python -m py_ci_shared.code_audit`, module `py_ci_shared.code_audit.cli`) and the field/text agreement record checker (`py_ci_shared.code_audit.field_text_agreement`) moved here from pyutilz, which no longer re-exports them. Import them from their new paths. The CLI's `--format json` output now comes from the standard library `json` with 2-space indent, sorted keys and unescaped non-ASCII, so its bytes can differ from the former `pyutilz.core.jsonlib` output while carrying the same data. What to do: import from the new paths; compare `--format json` output by its data, not its bytes.
+- **Behaviour change (fewer findings):** `source_text_claims` stopped flagging four shapes that are not claims about source text. (1) A name the assertion
+  itself uses as a mapping (`x["key"]`, `x.get(...)`, `.items()`, `.keys()`, `.values()`): a string has none of those, so it holds parsed data. (2) A file whose path
+  literal ends in a data suffix, now including `.xml`, `.tsv`, `.xsd`, `.svg`, `.obo`, `.owl`, `.rdf`, `.ttl`, `.fasta`, `.pdf`, `.gz`, `.parquet`, `.pkl`, however the path
+  is built (`Path(__file__).parent / "fixtures" / "x.xml"`). (3) `loads` / `load` / `safe_load` from a module named for a data format, so a project's own
+  `from pkg import _json as json` counts as a deserialiser. (4) `f(...) == expected`, where `expected` is read text and the call neither reads nor takes it: a golden-file test
+  measures the function. Substring, regex and integer-index checks on source text, a reader on the call side and a text method of the value are flagged as before.
+  A consumer's `source_text_assertion` baseline may now list entries that no longer fire: refresh it (it only shrinks). What to do: refresh the `source_text_assertion` baseline.
+- The `additive_epsilon_denominator` scanner honours `# audit-exempt: additive_epsilon_denominator -- <reason>` on the division's line, like the
+  other scanners. Before, the marker was silently ignored for this check, so a pad that cannot matter could only be hidden by rewriting the
+  expression. Additive: a line without the marker (and a reason) is flagged as before.
+- **Behaviour change:** the code-audit detectors and their registry now live in `py_ci_shared.code_audit`. The
+  `code_audit_meta` gate runs them from here, so a consumer's gate results follow the py-ci-shared pin instead of the
+  pyutilz pin. The rules are the same code (copied byte for byte, then modernised to `collections.abc` and built-in
+  generics). pyutilz keeps `pyutilz.dev.code_audit.*` as aliases, so existing imports still work. To keep the old
+  behaviour while you move, pin py-ci-shared to the release that carries this and rebuild the code-audit baselines once. What to do: after bumping the pin, rebuild the code-audit baselines once.
+- `stale_comment_age.assert_no_stale_todos` takes `allow_unparsed` (default `True`: an unreadable file is still scanned with a lossy decode,
+  as before; `False` reports it as a problem and checks nothing in it) and `min_files` (default `0`: a scan that read fewer files than the floor
+  reports it). `test_partition_reachability.assert_partitions_reachable` takes `allow_unparsed` (default `False`: an unreadable runner or spec
+  file fails with its name, as it always did; `True` skips it) and `min_files` (default `0`). Defaults keep every existing call's behaviour.
+- `repo_hygiene.assert_repo_hygiene` takes `min_files` (default `0`): a pass that read fewer text files than the floor reports it. Pass it to opt in.
+- `gate_contract.NEVER_PARSES` and `NO_CORPUS` name the corpus entries that cannot take `allow_unparsed` or a floor, each with its reason.
 
 ## 1.23.2
 
@@ -202,12 +221,12 @@ Audit 33 (`audits/2026-11-04/33_existing_gate_quality.md`). Every change makes a
 
 ## 1.23.1
 
-- Behaviour change: `.github/actions/install-pyutilz` without a `pyutilz-ref` input installs the pyutilz commit the calling repository's own `pyproject.toml` pins, not py-ci-shared's pin. A repository with no pin, or with two different pins, now fails with a message; set the input to the commit you mean.
-- Behaviour change: the eight lint tools `lint-blocking.yml` runs (actionlint-py, zizmor, codespell, yamllint, bandit, vulture, interrogate, deptry) now default to the exact versions in `tool_versions.py` when a consumer leaves its `*-version` input empty, instead of the newest PyPI release at run time. A consumer that wants a different version sets the input. Each version is at least two weeks old at the time it is chosen.
+- Behaviour change: `.github/actions/install-pyutilz` without a `pyutilz-ref` input installs the pyutilz commit the calling repository's own `pyproject.toml` pins, not py-ci-shared's pin. A repository with no pin, or with two different pins, now fails with a message; set the input to the commit you mean. What to do: set `pyutilz-ref` when the repository has no pin or two pins.
+- Behaviour change: the eight lint tools `lint-blocking.yml` runs (actionlint-py, zizmor, codespell, yamllint, bandit, vulture, interrogate, deptry) now default to the exact versions in `tool_versions.py` when a consumer leaves its `*-version` input empty, instead of the newest PyPI release at run time. A consumer that wants a different version sets the input. Each version is at least two weeks old at the time it is chosen. What to do: set the tool's `*-version` input when you need another version.
 - Behaviour change: `phantom_code_references` no longer reports nine classes of false positive (Python protocol names, standard vocabulary
   codes, errno constants, external data file names, one-character symbols, names the repo spells out as strings, bare `self.x` attributes,
   `table.column` pairs spelled in SQL). On the autopsia tree 901 findings become 494. A consumer baseline recorded against the old scanner
-  now has entries that no longer fire: rebuild it from the new scanner (`PYTHONPATH=. python tests/test_meta/<test>.py`), do not hand-edit it.
+  now has entries that no longer fire: rebuild it from the new scanner (`PYTHONPATH=. python tests/test_meta/<test>.py`), do not hand-edit it. What to do: rebuild the baseline with the new scanner, as stated.
 
 ## 1.23.0
 
@@ -226,7 +245,7 @@ Audit 33 (`audits/2026-11-04/33_existing_gate_quality.md`). Every change makes a
   - The gate cache moved from the shared temp directory to `~/.cache/py_ci_shared/gate_cache`; `api_floor` keeps vermin's output per file digest in
     `~/.cache/py_ci_shared/vermin` (a warm run on this repository: 0.8 s, was 17 s).
   - `env_write_restore` accepts `# env-write-ok: <reason>` on a deliberate write.
-  - Four regexes that backtracked on crafted input (the Dart empty-catch body was exponential) are linear.
+  - Four regexes that backtracked on crafted input (the Dart empty-catch body was exponential) are linear. What to do: move or drop an out-of-root corpus entry; fix a malformed `name` or `repo` in consumers.toml; expect `skipped` after the new timeouts; a repository-local plugin of ruff, black, bandit or vulture must be a regular install (they no longer see `PYTHONPATH`).
 - The test suite runs on the machine's spare cores by default: `tests/conftest.py` passes `worker_budget.available_workers()` to pytest-xdist when it is installed
   (`pytest-xdist` is now in the `dev` extra). `PY_CI_WORKERS=1` gives one worker. The CPU share (rounded half up) is then capped so each worker has 4 GiB of
   free memory, never below one: a worker that starts without it pages, and the next worker's DLL loads fail with an error that names no memory.
@@ -354,14 +373,11 @@ Behaviour change (opt-in gates only): both gates report fewer findings. An accep
 stale and does not fail; prune it with the gate's refresh command. What to do: nothing, unless you enabled one of these gates and want
 the stale entries removed.
 
-## Unreleased
-
 - **Behaviour change** `git_child_env` (Dart): the call body was read from the closing quote of `'git'`, not from the call's `(`, so it
   ended at the first nested call's `)` or, with none, held no arguments at all; a scrubbed `environment:` map literal was reported as "passes no
   environment:". The body is now the whole argument list. A scrubbed `environment:` now also needs `includeParentEnvironment: false`: Dart
   merges `environment:` into the parent's environment otherwise, so the hook's `GIT_DIR` reaches the child anyway. Over noema_app,
   polyvocab_app and flutter_app_core this adds no finding. What to do: pass `includeParentEnvironment: false` next to the scrubbed map.
-
 - **Behaviour change** `dart_scanners.scan_tappable_semantics` finds a spinner's labelling `Semantics(label:)`, a GestureDetector's
   announcing `Semantics(button: true / checked: / ...)` and a tappable's `MinTapTargetBox` by walking out through the widget's ENCLOSING calls
   (bracket nesting over string-masked source) instead of a fixed 400/600-character window. A label far above on the widget's own ancestor now
@@ -369,7 +385,6 @@ the stale entries removed.
   `scan_hardcoded_ui_strings` skips a `label:` literal whose innermost enclosing call is in `non_ui_label_calls` (default `("retryTransient",)`,
   a retry log label that is never rendered). Over noema_app, polyvocab_app and flutter_app_core this removes three false positives and adds
   none. What to do: regenerate the `tappable-semantics` and `hardcoded-ui-strings` baselines so the entries that no longer fire drop out.
-
 - `uncalled_functions` gains named exemption categories, declared once for every consumer: `CATEGORIES` (PUBLIC_API, FRAMEWORK_HOOK,
   PLUGIN_HOOK, SUPERSEDED, RETAINED_KERNEL, OPT_IN_SLOW, OFFLINE_HELPER, TEST_UTILITY, each with its meaning), an `Exemption(category, reason)`
   per name passed as `exempt=`, and `reexported_public_api(files, root)`, which lists what a package `__init__` re-exports (`from x import f` and
@@ -377,19 +392,7 @@ the stale entries removed.
   An exemption with an unknown category or an empty reason fails the gate. `ignore` keeps working for bare names. Additive: no consumer's
   green gate turns red.
 
-- New gate `emitted_vocabulary_literals` (`assert_emitted_vocabulary_literals`, `EmitSite`): every value a backend passes to a closed-vocabulary
-  field at its emit sites (a callee name plus the keyword and/or positional slots) is a member of the vocabulary it publishes, and every published
-  member is emitted somewhere (a class default of that field counts). Arguments resolve statically: literals, both arms of a conditional, module- and
-  class-level string constants (also imported, absolute or relative), locals and tuples unpacked from a same-module function's returns. An argument
-  it cannot resolve is a finding unless its source text is listed in `pass_through`. Generalized from Autopsia's `test_emitted_vocabulary_literals`
-  (a `rebased` kind reached a client's screen untranslated); over Autopsia's tree with that test's two configurations it reports nothing, and one
-  planted literal at a `ModeratorDisclosureOut(kind=...)` site is reported along with the published member it displaced.
-
-- `version_tag_currency.find_lock_pin_problems` / `assert_lock_agrees_with_pin`: a Flutter app's `pubspec.yaml` git pin of a package, its
-  `pubspec.lock` and the package's remote name one commit (the lock's `ref` is the pinned ref; its `resolved-ref` is what that ref names on the
-  remote today, via `git ls-remote`, with an annotated tag peeled). The build honours the lock, so a ref moved without `flutter pub get`, or a tag
-  re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
-  `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
+## 1.22.8
 
 - Five new **opt-in** ratchet gates, none in the default set: a repo enables each by name in `[tool.py_ci_shared] enable`, and
   only NEW violations fail; existing ones are recorded in the repo's `tool/meta/baselines/<gate>.json` with a note each.
@@ -398,29 +401,49 @@ the stale entries removed.
   spawn that does not scrub `GIT_*` from its environment) and `dup_baseline_percent_key` (a duplicate-body pair listed twice because only
   its similarity percentage moved). Enabling them in a consumer that already has violations needs its baseline first.
 
+## 1.22.7
+
+- New gate `emitted_vocabulary_literals` (`assert_emitted_vocabulary_literals`, `EmitSite`): every value a backend passes to a closed-vocabulary
+  field at its emit sites (a callee name plus the keyword and/or positional slots) is a member of the vocabulary it publishes, and every published
+  member is emitted somewhere (a class default of that field counts). Arguments resolve statically: literals, both arms of a conditional, module- and
+  class-level string constants (also imported, absolute or relative), locals and tuples unpacked from a same-module function's returns. An argument
+  it cannot resolve is a finding unless its source text is listed in `pass_through`. Generalized from Autopsia's `test_emitted_vocabulary_literals`
+  (a `rebased` kind reached a client's screen untranslated); over Autopsia's tree with that test's two configurations it reports nothing, and one
+  planted literal at a `ModeratorDisclosureOut(kind=...)` site is reported along with the published member it displaced.
+- `version_tag_currency.find_lock_pin_problems` / `assert_lock_agrees_with_pin`: a Flutter app's `pubspec.yaml` git pin of a package, its
+  `pubspec.lock` and the package's remote name one commit (the lock's `ref` is the pinned ref; its `resolved-ref` is what that ref names on the
+  remote today, via `git ls-remote`, with an annotated tag peeled). The build honours the lock, so a ref moved without `flutter pub get`, or a tag
+  re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
+  `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
+
+## 1.22.5
+
 - `corpus-drift.yml` installs the `sql` extra, so `statement_columns_exist_in_ddl` runs in the nightly corpus scan instead of raising ImportError for sqlglot.
+
+## 1.22.4
 
 - `lint-advisory.yml` gains `pip-audit-ignore-vulns`: advisory ids pip-audit skips (`--ignore-vuln` each), for risks a repo has accepted and written
   down. The list is the baseline, so a vulnerability that is not in it still appears in the report instead of being buried among the known ones.
-
-- `.github/scripts/release_guard.py prepare X.Y.Z [--write | --check]` brings every place that names a release (pyproject, `__version__`, the README install tag and gate catalogue, the reusable workflows' default ref, the `since` of modules not yet published) to one version before the tag is pushed; two tags (v1.22.0, v1.22.2) failed the Release run's `verify` job for want of it.
-
 - New gate `free_text_in_get_route` (`assert_free_text_in_get_route`): a FastAPI/Starlette `@x.get("/path")` route must not take free text in its path or its query string.
   A parameter counts as free text when it is a `str` named like one (`term`, `query`, `q`, `text`, `search`, `condition`, `complaint`, `chief_complaint`, `symptoms`,
   `description`, `note`, `comment`, `message`, `prompt`, `question`; configurable) or carries `Query`/`Path(max_length>=100)` unless its name says it is an identifier.
   A URL is written to every access log, proxy and browser history, so text a clinician or customer typed belongs in a POST body. Run over seven codebases it reported
   nothing in five and seven routes in one backend (three clinical lookups, three vocabulary typeaheads and a reviewer name); a route that must stay GET goes in the baseline.
 
+## 1.22.3
+
+- `.github/scripts/release_guard.py prepare X.Y.Z [--write | --check]` brings every place that names a release (pyproject, `__version__`, the README install tag and gate catalogue, the reusable workflows' default ref, the `since` of modules not yet published) to one version before the tag is pushed; two tags (v1.22.0, v1.22.2) failed the Release run's `verify` job for want of it.
+
+## 1.22.2
+
 - `lint-advisory.yml` gains `pip-audit-uv-lock` (and `pip-audit-skip-packages`): it exports the calling repo's `uv.lock` and audits the exact locked versions
   with `--no-deps --disable-pip`. Without it the job resolved the project itself and failed whenever a dependency was git-sourced (mlframe's `pyutilz`), so the
   scan ran on nothing; against mlframe's lock it audited 366 dependencies and reported 31 advisories in 10 packages.
-
 - **Behaviour change**: `module_reload_safety.find_unpaired_reloads` no longer counts a second `importlib.reload` as a restore, whether in an
   `addfinalizer` callable or in a `finally`. Reloading again mints a third set of class objects instead of putting the originals back, so a
   model pickled afterwards carries them by value (dill `_create_type`) and a restricted loader refuses it; mlframe's `lgb_shim` test did exactly
   this and failed two unrelated round-trip tests in a shared worker. What to do: take `saved = dict(module.__dict__)` before the reload and write
   it back with `module.__dict__.update(saved)` (clear first if names were added), or restore through a fixture that does.
-
 - Thirteen new gates from the mlframe audit of 2026-10-04, each with canaries and a suppression comment that needs a reason:
   `cancellation_prone_moments` (variance, skewness and kurtosis from raw power sums, which cancels on large-offset data),
   `unsafe_deserialization` (a `find_class` that allows whole modules or gadget modules, `torch.load` without `weights_only`, `np.load(allow_pickle=True)`,
@@ -433,12 +456,14 @@ the stale entries removed.
   (`long` in a CUDA kernel source, 32 bits under Windows NVRTC), `id_keyed_cache_validates_identity` (a cache keyed by `id(obj)` that never checks identity),
   `persisted_negative_probe` (a failed hardware probe written to disk as a negative verdict). New library module `pytest_known_gap` (`known_gap(reason,
   gap_closed)`: xfail while a gap is open, fail when it closes).
-
 - **Behaviour change**: `no_xfail_to_defer` follows `known_gap(...)` calls (from `py_ci_shared.pytest_known_gap` or the modules named in
   `known_gap_modules`, default `tests._known_gap`): the reason is judged like a `pytest.xfail` reason, and an unguarded call whose `gap_closed` is a falsy
   literal (a gap that can never close, so can never fail) is a finding. What to do: give each `known_gap` reason a tracked issue or an external component, and
   make `gap_closed` a measured condition.
 - New opt-in gate `env_write_restore` (`assert_env_write_restore(root, baseline_path=...)`): a test function that writes `os.environ` (assignment, `del`, `update`/`setdefault`/`pop`, `os.putenv`) and never restores it leaks the setting into every later test in the process, so the victim is a different innocent test each run and passes alone (mlframe: three `MLFRAME_*` strict-GPU flags set directly made a bit-identity test fail 4 runs in 5). The import-time half stays in `import_side_effects`. A write is accepted inside `patch.dict` / `monkeypatch.context`, in a function with a `try` whose `finally` writes the environment, in a yield-fixture that writes again after the yield, in a `setUp` whose class tears it down, with `addfinalizer`/`addCleanup`, or in a function named as a restorer. Findings are keyed `rule::path::function: statement` (no line numbers) and ride the ratchet `Baseline`; seed a first baseline with `grow=True`.
+
+## 1.22.0
+
 - **Behaviour change**: `sql_verifier_coverage` now recognises a statement written `(` + a `--` comment + the keyword (a parenthesised subquery constant with a leading comment); it was invisible to the gate, so a verifier list could omit it unnoticed. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason.
 - New opt-in gate `psycopg2_param_arity` (`assert_psycopg2_param_arity(root)`): a `cur.execute(sql, params)` whose statement resolves to text (a literal, a `+` chain, a module-level constant) and whose parameters are a literal tuple, list or dict must give one value per `%s` and a key for every `%(name)s`. `?`/`$1` statements (DuckDB, sqlite3) are skipped.
 - New opt-in gate `module_state_test_reset` (`assert_module_state_test_reset(root, tests_root)`): a module-level dict/list/set that a function mutates and that no test file mentions has no test-side reset, so one test's entries leak into the next.
@@ -457,26 +482,6 @@ the stale entries removed.
 - New opt-in gate `statement_real_engine_coverage`: every SQL statement constant a package defines (found by `sql_verifier_coverage.sql_constants`) must be referenced by name from
   a test of the real-engine tier, which the caller defines with `engine_test_dirs` and/or `engine_markers`; one level of `import ... as` alias is followed. A statement without
   one is a finding, ratcheted by a shrink-only baseline of `module.NAME -> reason`. `sql_constants` gained an optional `use_git`.
-
-- **Behaviour change** (audit 2026-10-03, SQL-26): `sql_verifier_coverage` reads more of what a package sends. A constant built with `+`
-  (`_CTE + "SELECT ..."`, resolving module-level names bound to strings; an operand the module does not bind leaves the statement seen by
-  its literal), one that starts `REFRESH`, and one led by a session setting (`SET LOCAL TimeZone = 'UTC'; INSERT ...`) are now SQL
-  constants, so a verifier whose `STATEMENTS` list omits them fails the "not checked" direction, and a list that names them no longer fails the
-  "constant that no longer exists" direction. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason, and make the
-  verifier PREPARE it (a `REFRESH` through a read of the view, a `SET` prefix stripped first). On the audit's two consumers this found
-  seven statements in `production_scrapers` and four in `realtime_applications` that no list had ever carried.
-- The pytest plugin accepts the `[tool.py_ci_shared.secret_shapes]` table that `tracked_secret_shapes` documents as its config; it used to reject it as
-  an unknown key and fail the collection of every test in a repo that followed the documentation.
-
-- `resource_leak_guard` no longer reports a connection the test already closed: a socket in FIN_WAIT1/2, TIME_WAIT, CLOSING or LAST_ACK stays
-  listed until the peer finishes the teardown (seconds, against a remote database), so every test that closed its connection properly failed at teardown.
-
-- New gate `schema_snapshot_parity`: a `schema.sql` that promises to provision a database from scratch is applied twice on a private
-  throwaway Postgres (`embedded_postgres`) and its catalogue compared with a committed, versioned production snapshot: tables and
-  columns missing, types (timezone-ness included), nullability, generated/identity, extras (allowances need a reason, stale ones are
-  findings), optionally index names. No server means NOT CHECKED, loudly, never a pass. `refresh` writes the snapshot through a
-  read-only DSN named by an environment variable.
-
 - New gate `ddl_lock_safety` (`assert_ddl_files_lock_safe`, `find_ddl_lock_findings`): hand-applied `.sql` files that change a live table must bound the lock wait (`SET [LOCAL] lock_timeout` before the first `ALTER TABLE`; `0` and `DEFAULT` do not count), add `CHECK`/`FOREIGN KEY` constraints `NOT VALID`, build indexes `CONCURRENTLY` (and never inside an explicit `BEGIN` block), and not rewrite the table (volatile `ADD COLUMN ... DEFAULT`, `serial`, `GENERATED ... STORED`, `ALTER COLUMN ... TYPE`) unless the file says `-- rewrite-ok: <reason>`. A paste-ready `--   command` comment header counts as a command. Small tables are allowed through a caller-supplied `tiny_tables` mapping with a reason each. Opt-in: nothing calls it until a consumer's test does, so it cannot turn a green consumer red; a baseline lets a repo adopt it over the files it already has.
 - New opt-in gate `statement_columns_exist_in_ddl` (`assert_statement_columns_exist_in_ddl`, `find_unknown_statement_columns`, `statement_column_report`;
   needs the `sql` extra): every column a module-level SQL constant names (`INSERT INTO t (cols)`, `ON CONFLICT (cols)` and `DO UPDATE SET`,
@@ -486,6 +491,22 @@ the stale entries removed.
   touches no table the DDL defines is NOT CHECKED and counted in the report, never clean; baseline-able and shrink-only because a project is
   legitimately ahead of its DDL for a window. `sql_verifier_coverage` gained `statement_constants` (the constants with their text); its own behaviour
   is unchanged.
+- **Behaviour change** (audit 2026-10-03, SQL-26): `sql_verifier_coverage` reads more of what a package sends. A constant built with `+`
+  (`_CTE + "SELECT ..."`, resolving module-level names bound to strings; an operand the module does not bind leaves the statement seen by
+  its literal), one that starts `REFRESH`, and one led by a session setting (`SET LOCAL TimeZone = 'UTC'; INSERT ...`) are now SQL
+  constants, so a verifier whose `STATEMENTS` list omits them fails the "not checked" direction, and a list that names them no longer fails the
+  "constant that no longer exists" direction. What to do: list each newly found name in `STATEMENTS`, or exclude it with a reason, and make the
+  verifier PREPARE it (a `REFRESH` through a read of the view, a `SET` prefix stripped first). On the audit's two consumers this found
+  seven statements in `production_scrapers` and four in `realtime_applications` that no list had ever carried.
+- The pytest plugin accepts the `[tool.py_ci_shared.secret_shapes]` table that `tracked_secret_shapes` documents as its config; it used to reject it as
+  an unknown key and fail the collection of every test in a repo that followed the documentation.
+- `resource_leak_guard` no longer reports a connection the test already closed: a socket in FIN_WAIT1/2, TIME_WAIT, CLOSING or LAST_ACK stays
+  listed until the peer finishes the teardown (seconds, against a remote database), so every test that closed its connection properly failed at teardown.
+- New gate `schema_snapshot_parity`: a `schema.sql` that promises to provision a database from scratch is applied twice on a private
+  throwaway Postgres (`embedded_postgres`) and its catalogue compared with a committed, versioned production snapshot: tables and
+  columns missing, types (timezone-ness included), nullability, generated/identity, extras (allowances need a reason, stale ones are
+  findings), optionally index names. No server means NOT CHECKED, loudly, never a pass. `refresh` writes the snapshot through a
+  read-only DSN named by an environment variable.
 
 ## 1.21.1
 

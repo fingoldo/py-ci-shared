@@ -58,19 +58,14 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
 
-      # Direct ${{ }} substitution: install-command is a multi-line shell SCRIPT, not a single
-      # token -- expanding it as an unquoted `${VAR}` would word-split it on every whitespace/
-      # newline and execute the result as ONE command's argv instead of running each line as its
-      # own statement. Only ever set by the calling workflow's own `with:` block (trusted,
-      # first-party config), so the injection risk the env-var pattern guards against elsewhere
-      # does not apply. See docs.yml for the same fix and the fuller rationale.
+      # install-command is a multi-line shell SCRIPT: it reaches the step through the environment and runs as `bash -eo pipefail -c "$VAR"` (the quoted
+      # variable keeps every line a statement, and nothing from the caller is expanded into the script text).
       - name: Install project
         shell: bash
-        # zizmor: ignore[template-injection] -- install-command is set only by the calling
-        # workflow's own first-party `with:` block, never by attacker-controllable GitHub
-        # context; quoting it as a shell var would break its multi-line-script semantics (see
-        # the comment above the equivalent step in docs.yml).
-        run: ${{ inputs.install-command }}
+        env:
+          INSTALL_COMMAND: ${{ inputs.install-command }}
+        # Through the environment, not expanded into the script; `-eo pipefail` keeps the stop-at-first-failure of a multi-line command.
+        run: bash -eo pipefail -c "$INSTALL_COMMAND"
 
       - name: Install mypy
         run: uv pip install --system "mypy==${INPUTS_MYPY_VERSION}"

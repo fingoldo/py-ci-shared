@@ -3,7 +3,7 @@
 ## Adding a gate
 
 - Start with `py-ci-shared new-gate <name> [--kind gate|library] --summary "..."`, or follow the layout it writes:
-  `src/py_ci_shared/<name>.py`, `tests/test_<name>.py`, `tests/canary/<name>/{violation,clean,bom,unparsable}/`,
+  `src/py_ci_shared/<name>.py`, `tests/test_<name>.py`, `tests/canary/<name>/{violation,clean,bom,unparsable}/` (a text-corpus gate declared `parses=False` in `tests/test_gate_teeth.py` has no syntax to break and may omit `unparsable/`; it needs an undecodable-bytes variant instead),
   a `CANARIES` entry in `tests/test_gate_teeth.py`, a `registry.toml` entry and the README catalogue row. The
   scaffolder never overwrites a file; its tests and canary fail until you write them.
 - Read and parse through `_core`: `scan_python`/`read_source`/`parse_file`, `Finding`, `Baseline`,
@@ -26,7 +26,7 @@
 
 ## Before pushing
 
-- Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@0.16.1 check src tests`.
+- Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@<RUFF_VERSION> check src tests` (`RUFF_VERSION` in `tool_versions.py`; a test fails when a literal `ruff@X` or `black==X` in this file differs from it).
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
 - Install the hooks once per clone: `python -m pre_commit install --hook-type pre-commit --hook-type pre-push` then `python -m py_ci_shared.install_safe_hook`. The pre-push hook runs mypy and the self-gate tests (about 4 minutes); the rest of `tests/` is left to CI.
@@ -44,8 +44,16 @@
   without its `v`. `tests/test_release_version.py` holds them equal, strictly ahead of every release tag (equal to
   one only on that tag's own commit), and every `registry.toml` `since` at or below it. Bump it in the first commit
   after a release.
-- BEFORE tagging run `python .github/scripts/release_guard.py prepare X.Y.Z --write`, commit, and wait for green CI: it brings pyproject, `__version__`, the README install tag and gate catalogue, the three reusable workflows' default
-  ref and the `since` of every module not yet in a published release to X.Y.Z (`--check` exits 1 while anything differs). v1.22.0 and v1.22.2 were tagged without it, failed `verify`, and are dead tags: a pushed tag is never moved, so each cost a version.
+- The four reusable workflows' `py-ci-shared-ref` default (`black-filtered`, `ruff-blocking`, `lint-advisory`, `gates`) is the LAST PUBLISHED tag
+  between releases, never the next one: a caller on master or a SHA gets that default, and a tag that does not exist fails the install with no
+  fallback. The bump commit after a release leaves them alone; only `prepare --write` moves all four to the release being tagged. The test holds
+  the four equal and equal to the newest tag or to `v<version>` (the prepared commit). Tag within minutes of the green prepared commit, because
+  that commit is the one window in which master names a not-yet-existing tag.
+- Every CHANGELOG heading is `## X.Y.Z` for a tag, plus one `## Unreleased (next: <version>)` on top; `tests/test_release_version.py` requires a
+  heading for every tag from v1.23.0, and on the tagged commit itself the top heading must already be `## <version>`. A **Behaviour change** entry from 1.23.0
+  on must contain `What to do:` or `Nothing to do` (`tests/test_changelog_actions.py`).
+- BEFORE tagging run `python .github/scripts/release_guard.py prepare X.Y.Z --write`, commit, and wait for green CI: it brings pyproject, `__version__`, the README install tag and gate catalogue, the four reusable workflows' default
+  ref and the `since` of every module not yet in a published release to X.Y.Z (`--check` exits 1 while anything differs; the Release run's `verify` job runs it too, so the tagged commit must be a fixed point). Rename the CHANGELOG's `Unreleased (next: X)` heading to `X` in the same commit. v1.22.0 and v1.22.2 were tagged without it, failed `verify`, and are dead tags: a pushed tag is never moved, so each cost a version.
 - A release is a pushed `vX.Y.Z` tag equal to that version, on master, and the highest `v1.*.*` tag. The `verify`
   job of `.github/workflows/release.yml` checks those, waits for self-ci of the tagged commit to have succeeded
   (all OSes and Pythons), and runs the whole suite; `publish` then moves `v1` and creates the GitHub release. Both

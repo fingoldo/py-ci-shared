@@ -13,7 +13,8 @@ Fields of :class:`GateSpec`:
   ``"cli"`` (a command-line tool, run with ``py-ci-shared tool <name>`` or ``python -m py_ci_shared.<name>``)
   or ``"library"`` (scanners and helpers a consumer wraps in its own test).
 - ``entries``: the ``assert_*`` functions, the first being the default the plugin and ``run`` call.
-- ``since``: the first release that shipped the module.
+- ``since``: the first LIVE release that shipped the module. v1.22.0 and v1.22.2 are dead tags (tagged without ``release_guard prepare``, never published), so a
+  module they carried says 1.22.3; ``tests/test_registry_since.py`` checks every value from 1.22.3 on against the tags.
 - ``budget_s``: runtime budget per call in seconds; the plugin and ``run-all`` warn past it and, in ``fail`` mode,
   fail past it.
 - ``cli``: the module has a ``main`` and a ``__main__`` guard.
