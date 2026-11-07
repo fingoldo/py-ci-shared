@@ -11,8 +11,10 @@ Rules here:
   untracked-but-not-ignored ones, so a new file is checked before its first commit and ignored output is never read.
   Output is bytes, decoded as UTF-8 with ``surrogateescape`` so an odd filename cannot crash the listing.
 * Outside git (or when *root* itself is git-ignored) a walk prunes excluded directories instead of descending.
-* Submodule content is never part of the corpus: git lists a submodule as one gitlink, and the walk prunes every
-  directory that holds a ``.git`` FILE.
+* Submodule and nested-clone content is never part of the corpus: git lists a submodule as one gitlink and an untracked nested clone as a
+  bare directory, and the walk prunes every directory that holds a ``.git`` FILE or DIRECTORY (audit 42-F11).
+* A work tree git refuses as "dubious ownership" raises :class:`CorpusError` naming ``safe.directory``; it is never the walk, which would
+  read ignored files and nested clones and make two machines disagree.
 * Inside a work tree a failed or timed-out ``git ls-files`` raises :class:`CorpusError`; it never silently becomes
   the walk (``PY_CI_SHARED_GIT_TIMEOUT_S`` raises the timeout, see :mod:`py_ci_shared._core.git`).
 * :data:`DEFAULT_EXCLUDE` is matched against path components RELATIVE to *root*, in both modes.
@@ -119,14 +121,27 @@ def _ls_files(root: Path, args: list[str]) -> bytes:
     )
 
 
+def _raise_on_dubious_ownership(root: Path, probe: "Optional[subprocess.CompletedProcess[bytes]]") -> None:
+    """Raise when git refused *root* because another user owns it (git says it IS a work tree, so the walk would be a wider corpus)."""
+    if probe is None or probe.returncode == 0:
+        return
+    stderr = git_text(probe.stderr)
+    if "dubious ownership" in stderr or "safe.directory" in stderr:
+        raise CorpusError(
+            f"git refuses {root} (dubious ownership); the corpus would silently become a walk that reads ignored files and nested clones. "
+            f"Run `git config --global --add safe.directory {root.resolve().as_posix()}`, or pass use_git=False to walk on purpose. "
+            f"git said: {stderr.strip()[:300]}"
+        )
+
+
 def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[str]]:
     """Root-relative POSIX paths git would commit under *root*, or ``None`` when *root* is not usable via git.
 
-    ``None`` covers: git missing, not a work tree, "dubious ownership", and *root* itself being ignored (then the
+    ``None`` covers: git missing, not a work tree, and *root* itself being ignored (then the
     listing would be empty for a reason that has nothing to do with the files). Once git has said *root* IS a work
     tree, a failed or timed-out ``ls-files`` raises :class:`CorpusError`: falling back to the walk would silently
     widen the corpus to ignored build output and submodules (audit 2026-10-03 K-4). Pass ``use_git=False`` to
-    :func:`iter_files` to walk on purpose.
+    :func:`iter_files` to walk on purpose. A work tree git refuses as "dubious ownership" also raises :class:`CorpusError`.
     """
     key = str(root.resolve())
     with _USABLE_LOCK:
@@ -134,6 +149,7 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
     if not known_usable:
         probe = _git(root, "rev-parse", "--is-inside-work-tree")
         if probe is None or probe.returncode != 0 or probe.stdout.strip() != b"true":
+            _raise_on_dubious_ownership(root, probe)
             return None
         ignored = _git(root, "check-ignore", "-q", ".")
         if ignored is not None and ignored.returncode == 0:
@@ -151,9 +167,9 @@ def git_listing(root: Path, *, include_untracked: bool = True) -> Optional[list[
 
 def _walk(root: Path, exclude: frozenset[str]) -> Iterator[str]:
     for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        # A directory holding a `.git` FILE is a submodule (or linked worktree) checkout: git mode never lists its
-        # content, so the walk does not either.
-        dirnames[:] = sorted(d for d in dirnames if d not in exclude and not os.path.isfile(os.path.join(dirpath, d, ".git")))
+        # A directory holding a `.git` FILE (submodule, linked worktree) or DIRECTORY (nested clone, vendored repository) is another
+        # repository: git mode never lists its content, so the walk does not either. Only children are judged, never *root* itself.
+        dirnames[:] = sorted(d for d in dirnames if d not in exclude and not os.path.exists(os.path.join(dirpath, d, ".git")))
         rel_dir = Path(dirpath).relative_to(root)
         for name in filenames:
             yield (rel_dir / name).as_posix()
@@ -254,8 +270,29 @@ def iter_files(
     return [p for _, p in sorted(out, key=lambda item: item[0])]
 
 
+def _prefix_relative(path: str, root: str) -> Optional[str]:
+    """*path* below *root* by plain string slicing, or None when only ``Path`` normalisation can decide.
+
+    The shortcut is taken for the common spelling (the path IS the root plus separators and plain names); a ``.``, ``..`` or empty segment, a root
+    ending in a separator, a drive-like ``c:`` segment, a different case or spelling of the root all return None, so ``Path.relative_to`` keeps judging them. A warm
+    ``scan_python`` spent 40 percent of its time in ``Path.relative_to`` for files whose relative spelling the listing had just produced (audit 48-F3).
+    """
+    if not root or not path.startswith(root) or root[-1] in ("/", "\\", ":") or path[len(root) : len(root) + 1] not in ("/", "\\"):
+        return None
+    if root[0] in "/\\" and (os.sep == "\\" or root[:2] in ("//", "/\\")):  # UNC and rooted-without-drive spellings: Path decides
+        return None
+    rest = path[len(root) + 1 :].replace("\\", "/")
+    if not rest or ":" in rest or any(seg in ("", ".", "..") for seg in rest.split("/")) or (os.sep == "/" and "\\" in path[len(root) :]):
+        return None
+    return rest
+
+
 def relative_posix(path: PathLike, root: Optional[PathLike]) -> str:
     """*path* relative to *root* as POSIX, or the absolute POSIX path when it is not under *root* (never raises)."""
+    if root is not None:
+        quick = _prefix_relative(os.fspath(path), os.fspath(root))
+        if isinstance(quick, str):
+            return quick
     p = Path(path)
     if root is not None:
         try:

@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from py_ci_shared._core import DEFAULT_EXCLUDE, CorpusError, iter_files, relative_posix
+from py_ci_shared._core.corpus import clear_listing_cache, iter_files_pruned
 from py_ci_shared._core.git import git_env
 
 needs_git = pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -268,3 +269,96 @@ class TestTrackedDirectoryNamedLikeBuildOutput:
         _touch(tmp_path, "src/ok.py", ".claude/w/x.py", "pkg/__pycache__/y.py")
         subprocess.run(["git", "add", "-Af"], cwd=tmp_path, check=True, capture_output=True, env=git_env())
         assert _rels(tmp_path, iter_files(tmp_path)) == ["src/ok.py"]
+
+
+def test_the_walk_leaves_nested_repository_checkouts_out_like_git_does(tmp_path):
+    """A nested clone (a ``.git`` DIRECTORY: a vendored repository) is listed by git as a bare directory and so never read;
+    the walk must prune it too, or the corpus differs between a git checkout and a plain copy (audit 42-F11)."""
+    _touch(tmp_path, "a.py", "vendor/clone/inner.py", "vendor/plain/kept.py")
+    (tmp_path / "vendor" / "clone" / ".git").mkdir()
+    assert _rels(tmp_path, iter_files(tmp_path, use_git=False)) == ["a.py", "vendor/plain/kept.py"]
+    assert not any("clone" in str(p) for p in iter_files_pruned(tmp_path, (".py",)))
+
+
+def test_the_root_itself_may_be_a_repository_checkout(tmp_path):
+    """Only components BELOW the root are judged: a root that holds its own ``.git`` directory is the normal case."""
+    _touch(tmp_path, "a.py")
+    (tmp_path / ".git").mkdir()
+    assert _rels(tmp_path, iter_files(tmp_path, use_git=False)) == ["a.py"]
+
+
+@needs_git
+class TestDubiousOwnership:
+    """git refuses a work tree owned by someone else; the corpus used to become the walk (ignored files and nested clones
+    included), so two machines read different files. It now raises, naming the fix (audit 42-F11)."""
+
+    def test_raises_instead_of_widening_to_the_walk(self, tmp_path, monkeypatch):
+        _git_init(tmp_path)
+        _touch(tmp_path, "a.py", "ignored.py")
+        (tmp_path / ".gitignore").write_text("ignored.py\n", encoding="utf-8")
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["a.py"]
+        monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+        clear_listing_cache()  # a root git called usable stays remembered; a new run starts empty
+        probe = subprocess.run(["git", "-C", str(tmp_path), "rev-parse"], capture_output=True, env=git_env(), check=False)
+        if b"dubious ownership" not in probe.stderr:
+            pytest.skip("this git does not honour GIT_TEST_ASSUME_DIFFERENT_OWNER")
+        with pytest.raises(CorpusError, match=r"dubious ownership.*safe\.directory"):
+            iter_files(tmp_path)
+
+    def test_the_walk_on_request_does_not_ask_git(self, tmp_path, monkeypatch):
+        _git_init(tmp_path)
+        _touch(tmp_path, "a.py")
+        monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+        assert _rels(tmp_path, iter_files(tmp_path, use_git=False)) == ["a.py"]
+
+    def test_a_plain_directory_is_still_walked(self, tmp_path, monkeypatch):
+        _touch(tmp_path, "a.py")
+        monkeypatch.setenv("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["a.py"]
+
+
+class TestRelativePosixShortcut:
+    """The string shortcut of ``relative_posix`` answers exactly what ``Path.relative_to`` answers (audit 48-F3)."""
+
+    CASES = (
+        ("C:/r", "C:/r/a/b.py"),
+        ("C:\r", "C:\r\a\b.py"),
+        ("C:/r", "C:\r\a\b.py"),
+        ("r", "r/a.py"),
+        (".", "./a.py"),
+        ("./r", "./r/a.py"),
+        ("/srv/r", "/srv/r/a/b.py"),
+        ("C:/r", "C:/r/./a.py"),
+        ("C:/r", "C:/r/../a.py"),
+        ("C:/r", "C:/r//a.py"),
+        ("C:/r/", "C:/r/a.py"),
+        ("C:/r", "C:/rx/a.py"),
+        ("C:/r", "c:/R/a.py"),
+        ("C:/r", "C:/r/D:/a.py"),
+        ("C:", "C:/a.py"),
+        ("//srv/share", "//srv/share/a.py"),
+        ("C:/r", "C:/r"),
+    )
+
+    @pytest.mark.parametrize(("root", "path"), CASES)
+    def test_agrees_with_path_relative_to(self, root, path):
+        from py_ci_shared._core.corpus import _prefix_relative
+
+        quick = _prefix_relative(path, root)
+        if quick is None:
+            return  # the slow path decides: nothing to compare
+        assert quick == Path(path).relative_to(Path(root)).as_posix()
+
+    def test_the_common_spelling_takes_the_shortcut_and_odd_ones_do_not(self):
+        from py_ci_shared._core.corpus import _prefix_relative
+
+        assert _prefix_relative("C:/r/a/b.py", "C:/r") == "a/b.py"
+        for root, path in [("C:/r", "C:/r/../a.py"), ("C:/r/", "C:/r/a.py"), ("C:/r", "C:/r/D:/a.py"), ("C:/r", "C:/rx/a.py"), ("C:/r", "C:/r/./a.py")]:
+            assert _prefix_relative(path, root) is None
+
+    def test_a_path_outside_the_root_and_a_pathlike_still_work(self, tmp_path):
+        from py_ci_shared._core.corpus import relative_posix
+
+        assert relative_posix(tmp_path / "a" / "b.py", tmp_path) == "a/b.py"
+        assert relative_posix(str(tmp_path / "a" / "b.py"), tmp_path) == "a/b.py"
+        assert relative_posix(tmp_path / "a.py", tmp_path / "sub") == (tmp_path / "a.py").as_posix()
