@@ -28,7 +28,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** A gate raising inside its own code on a consumer's odd file is reported as `ERROR foo (0.3s) KeyError: 'x'`; the maintainer must reproduce locally to learn where. A missing-kwargs TypeError reads like a package bug rather than a config omission.
 - **Proposed fix:** In run_gate, pre-bind kwargs with inspect.signature(func).bind_partial and raise ConfigError naming the table and missing parameters. For other exceptions append the innermost frame `file:line` (traceback.extract_tb(exc.__traceback__)[-1]) and honour `PY_CI_SHARED_TRACEBACK=1` for the full traceback.
 - **AST-checkable:** False; FP risk: low
-- **Disposition:** DEFERRED: needs a runner-wide change (signature bind_partial in _core/runner.py plus a traceback env switch); waits on its own pass with runner tests, not folded into the exit-code commit.
+- **Disposition:** RESOLVED 0cb41d8: run_gate checks required parameters first and raises a ConfigError naming [tool.py_ci_shared.gates.X] and the missing arguments (ERROR, exit 2 as before); other crashes append '(at file:line; PY_CI_SHARED_TRACEBACK=1 prints the traceback)' and the env switch prints the full traceback. tests/test_diagnostics_runner_outcomes.py::TestF3CrashDiagnostics.
 
 ## 49-F4 [P2] Wrong fix hint under the CLI: missing/stale baseline messages tell the user to pass a pytest flag
 
@@ -36,7 +36,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** A developer running `py-ci-shared run-all` in a pre-push hook types the suggested flag into the CLI, gets `unrecognized arguments`, and loses time.
 - **Proposed fix:** Have run_gate set an env marker (e.g. PY_CI_SHARED_CLI=1) that the Baseline refresh_command rendering uses to print `py-ci-shared refresh <gate>`; always append the PY_CI_SHARED_REFRESH=<gate> form, which works in both.
 - **AST-checkable:** False; FP risk: low
-- **Disposition:** DEFERRED: needs the CLI env marker read by Baseline refresh_command rendering across ~12 gates and their message-pinned tests; waits on a dedicated pass.
+- **Disposition:** RESOLVED 0cb41d8: run-all/run/refresh set PY_CI_SHARED_CLI=1; Baseline.refresh_text and _core.outcome.refresh_hint print `py-ci-shared refresh <gate>` (and the PY_CI_SHARED_REFRESH form) under the CLI and the pytest flag under pytest; applied in _core Baseline (covers every gate that passes a pytest-form refresh_command) and in function_length, function_complexity, complexity_ratchet, fail_open_handlers, import_side_effects, including the stale-entry messages. A custom refresh_command (baseline_ratchet) is left as given. Messages of gates with their own wording elsewhere (code_audit_meta, db_transaction prose) not individually changed.
 
 ## 49-F5 [P2] `refresh` reports a successful baseline rewrite as `SKIP` and says nothing about what changed
 
@@ -44,7 +44,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** A reviewer reads `1 skipped` as 'the gate did not run'; a refresh that dropped 30 entries or (with --grow) accepted 5 new ones looks like a no-op in the log, and the summary has no 'refreshed' count.
 - **Proposed fix:** Add a REFRESHED status to the runner (a dedicated outcome instead of pytest.skip), print `REFRESH foo: +2 -7 entries (path)` and count it separately in the summary line.
 - **AST-checkable:** False; FP risk: low
-- **Disposition:** DEFERRED: needs a REFRESHED outcome in the runner replacing pytest.skip in ~12 gates and the summary line; waits on a dedicated pass.
+- **Disposition:** RESOLVED 0cb41d8: new REFRESHED status (_core/outcome.refreshed_skip, still a pytest skip under pytest) in 15 gate/_core sites; the CLI prints `REFRESH <gate>: +N -M entries (file)` from tracked atomic_write_text writes and a `, N refreshed` summary count; exit code unchanged. A baseline written without atomic_write_text prints the gate's own message without counts.
 
 ## 49-F6 [P2] Floor/min-count failures name the symptom but not the config key that fixes it
 
@@ -60,7 +60,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** CHANGELOG heading renamed 'Unreleased' to 'Next'; the promise gate skips on every run-all and the pre-push stays green for months.
 - **Proposed fix:** Default require_section=True for CLI-enabled runs, or add a `skip = "fail"` option in [tool.py_ci_shared] (like budget); emit `::warning::` for SKIP rows under GITHUB_ACTIONS.
 - **AST-checkable:** True; FP risk: medium
-- **Disposition:** DEFERRED: needs an owner decision on the default (require_section=True vs a skip='fail' option); changes verdicts for green consumers.
+- **Disposition:** RESOLVED 0cb41d8: owner decision applied: opt-in `skip = "fail"` in [tool.py_ci_shared] (default "ok", green consumers unchanged) turns a skip into FAILED (exit 1); every skip prints `skipped: <reason>` and emits a ::warning:: under GITHUB_ACTIONS; the 'cannot judge its input' skips (changelog_promise_parity x2, import_side_effects x2, sibling_floor_skew, tracked_secret_shapes) use unevaluated_skip. require_section default not changed.
 
 ## 49-F8 [P3] Config error printed twice, with a 'substituted a fallback' log whose line number is stale in 10 of 13 sites
 
@@ -68,7 +68,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** Every CI log shows each configuration error twice, once with a false claim and a wrong line; people look at the wrong line in cli.py.
 - **Proposed fix:** Drop the logger.warning in handlers that already print a message and return a code; otherwise use logger.debug with `%(filename)s:%(lineno)d`. Add a meta-test that a literal 'X.py line N' matches its own line.
 - **AST-checkable:** True; FP risk: low
-- **Disposition:** DEFERRED: the logger.warning sites are shared with audit 40 gate modules and _core; waits on those finishing, then a meta-test for 'X.py line N'.
+- **Disposition:** RESOLVED 0cb41d8: the doubled cli.py logger.warning is now logger.debug (the handler prints its own message); the stale 'x.py line N' prefix is removed from all 13 sites; tests/test_diagnostics_runner_outcomes.py::TestF8StaleLineNumbers scans src for a literal 'x.py line N:'.
 
 ## 49-F9 [P3] `run-all` writes BUDGET to stderr and results to stdout; a cached PASS is counted as 'passed' with no cached tally
 
@@ -76,7 +76,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** Verdicts replayed from a cache keyed on (size, mtime) are summarised the same as fresh runs in the line CI greps.
 - **Proposed fix:** Print BUDGET to stdout under its row; add `(N cached)` to the summary line.
 - **AST-checkable:** False; FP risk: low
-- **Disposition:** DEFERRED: cli.py _report output change (BUDGET to stdout, cached count); waits on the CLI pass with F3-F5.
+- **Disposition:** RESOLVED 0cb41d8: BUDGET row printed to stdout under its gate; summary line appends ' (N cached)' (and ', N refreshed') only when non-zero so the greppable head is unchanged.
 
 ## 49-F10 [P3] `workflow_runner_labels` main says nothing on success or when zero workflow files were scanned
 
@@ -92,7 +92,7 @@ Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty
 - **Failure scenario:** A CI step with `-W ignore` reports PASS for a run that tested a sample of the mutants.
 - **Proposed fix:** Let a PASS carry a note so the CLI prints the summary for truncated/cached verdicts; default fail_on_truncation for CLI-enabled runs.
 - **AST-checkable:** False; FP risk: medium
-- **Disposition:** DEFERRED: source read confirms mutation_teeth.py warns only on truncated/cached results; fix needs a PASS-with-note channel in the runner (shared with F5) and was not run against the real harness; waits on that runner outcome type.
+- **Disposition:** RESOLVED 0cb41d8: PASS carries a note (_core.outcome.add_note, GateResult.note, printed as `note:` and as ::warning:: under Actions); mutation_teeth adds it for truncated/cached runs. WON'T FIX: defaulting fail_on_truncation for CLI-enabled runs (a deliberate limit is legitimate; the note makes it visible). Verified against a stubbed run, not the real mutation harness.
 
 ## 49-F12 [P3] teeth_sweep: unreadable --cases file is a traceback with exit 1, the 'toothless' exit code
 

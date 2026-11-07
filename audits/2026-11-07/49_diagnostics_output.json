@@ -30,7 +30,7 @@
     "proposed_fix": "In run_gate, pre-bind kwargs with inspect.signature(func).bind_partial and raise ConfigError naming the table and missing parameters. For other exceptions append the innermost frame `file:line` (traceback.extract_tb(exc.__traceback__)[-1]) and honour `PY_CI_SHARED_TRACEBACK=1` for the full traceback.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: needs a runner-wide change (signature bind_partial in _core/runner.py plus a traceback env switch); waits on its own pass with runner tests, not folded into the exit-code commit."
+    "disposition": "RESOLVED 0cb41d8: run_gate checks required parameters first and raises a ConfigError naming [tool.py_ci_shared.gates.X] and the missing arguments (ERROR, exit 2 as before); other crashes append '(at file:line; PY_CI_SHARED_TRACEBACK=1 prints the traceback)' and the env switch prints the full traceback. tests/test_diagnostics_runner_outcomes.py::TestF3CrashDiagnostics."
   },
   {
     "id": "49-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Have run_gate set an env marker (e.g. PY_CI_SHARED_CLI=1) that the Baseline refresh_command rendering uses to print `py-ci-shared refresh <gate>`; always append the PY_CI_SHARED_REFRESH=<gate> form, which works in both.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: needs the CLI env marker read by Baseline refresh_command rendering across ~12 gates and their message-pinned tests; waits on a dedicated pass."
+    "disposition": "RESOLVED 0cb41d8: run-all/run/refresh set PY_CI_SHARED_CLI=1; Baseline.refresh_text and _core.outcome.refresh_hint print `py-ci-shared refresh <gate>` (and the PY_CI_SHARED_REFRESH form) under the CLI and the pytest flag under pytest; applied in _core Baseline (covers every gate that passes a pytest-form refresh_command) and in function_length, function_complexity, complexity_ratchet, fail_open_handlers, import_side_effects, including the stale-entry messages. A custom refresh_command (baseline_ratchet) is left as given. Messages of gates with their own wording elsewhere (code_audit_meta, db_transaction prose) not individually changed."
   },
   {
     "id": "49-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "Add a REFRESHED status to the runner (a dedicated outcome instead of pytest.skip), print `REFRESH foo: +2 -7 entries (path)` and count it separately in the summary line.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: needs a REFRESHED outcome in the runner replacing pytest.skip in ~12 gates and the summary line; waits on a dedicated pass."
+    "disposition": "RESOLVED 0cb41d8: new REFRESHED status (_core/outcome.refreshed_skip, still a pytest skip under pytest) in 15 gate/_core sites; the CLI prints `REFRESH <gate>: +N -M entries (file)` from tracked atomic_write_text writes and a `, N refreshed` summary count; exit code unchanged. A baseline written without atomic_write_text prints the gate's own message without counts."
   },
   {
     "id": "49-F6",
@@ -74,7 +74,7 @@
     "proposed_fix": "Default require_section=True for CLI-enabled runs, or add a `skip = \"fail\"` option in [tool.py_ci_shared] (like budget); emit `::warning::` for SKIP rows under GITHUB_ACTIONS.",
     "ast_checkable": true,
     "fp_risk": "medium",
-    "disposition": "DEFERRED: needs an owner decision on the default (require_section=True vs a skip='fail' option); changes verdicts for green consumers."
+    "disposition": "RESOLVED 0cb41d8: owner decision applied: opt-in `skip = \"fail\"` in [tool.py_ci_shared] (default \"ok\", green consumers unchanged) turns a skip into FAILED (exit 1); every skip prints `skipped: <reason>` and emits a ::warning:: under GITHUB_ACTIONS; the 'cannot judge its input' skips (changelog_promise_parity x2, import_side_effects x2, sibling_floor_skew, tracked_secret_shapes) use unevaluated_skip. require_section default not changed."
   },
   {
     "id": "49-F8",
@@ -85,7 +85,7 @@
     "proposed_fix": "Drop the logger.warning in handlers that already print a message and return a code; otherwise use logger.debug with `%(filename)s:%(lineno)d`. Add a meta-test that a literal 'X.py line N' matches its own line.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "DEFERRED: the logger.warning sites are shared with audit 40 gate modules and _core; waits on those finishing, then a meta-test for 'X.py line N'."
+    "disposition": "RESOLVED 0cb41d8: the doubled cli.py logger.warning is now logger.debug (the handler prints its own message); the stale 'x.py line N' prefix is removed from all 13 sites; tests/test_diagnostics_runner_outcomes.py::TestF8StaleLineNumbers scans src for a literal 'x.py line N:'."
   },
   {
     "id": "49-F9",
@@ -96,7 +96,7 @@
     "proposed_fix": "Print BUDGET to stdout under its row; add `(N cached)` to the summary line.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: cli.py _report output change (BUDGET to stdout, cached count); waits on the CLI pass with F3-F5."
+    "disposition": "RESOLVED 0cb41d8: BUDGET row printed to stdout under its gate; summary line appends ' (N cached)' (and ', N refreshed') only when non-zero so the greppable head is unchanged."
   },
   {
     "id": "49-F10",
@@ -118,7 +118,7 @@
     "proposed_fix": "Let a PASS carry a note so the CLI prints the summary for truncated/cached verdicts; default fail_on_truncation for CLI-enabled runs.",
     "ast_checkable": false,
     "fp_risk": "medium",
-    "disposition": "DEFERRED: source read confirms mutation_teeth.py warns only on truncated/cached results; fix needs a PASS-with-note channel in the runner (shared with F5) and was not run against the real harness; waits on that runner outcome type."
+    "disposition": "RESOLVED 0cb41d8: PASS carries a note (_core.outcome.add_note, GateResult.note, printed as `note:` and as ::warning:: under Actions); mutation_teeth adds it for truncated/cached runs. WON'T FIX: defaulting fail_on_truncation for CLI-enabled runs (a deliberate limit is legitimate; the note makes it visible). Verified against a stubbed run, not the real mutation harness."
   },
   {
     "id": "49-F12",

@@ -83,7 +83,7 @@ Coverage: 12 gates (swallowed_exceptions, stdlib_json_ban, naive_utcnow, unsafe_
 - Proposed fix: In functions matching the gate name regex, report any broad handler that does not raise/fail, including sys.exit(0), skip, continue, pass; report a returncode that is never read.
 - AST-checkable: True
 - FP risk: medium
-- Disposition: DEFERRED: not implemented in this pass; needs a design for gate-named functions (exit 0, skip, continue, unread returncode) and a consumer-tree FP run.
+- Disposition: RESOLVED 0cb41d8 (partial): implemented as rule gate_swallows_error in fail_open_handlers: in a gate-named function an except for Exception/OSError/SyntaxError/ValueError/bare whose whole body is pass, continue, sys.exit(0), pytest.skip(...) or print(...) is reported; WARNING+ log, raise or '# best-effort:' honours it. Consumer-tree check (read-only): 0 findings on this repo src and tests, pyutilz (868 files) and llm_bench (132 files). WON'T FIX: unread subprocess returncode and 'return clean on empty input' (return 0 on empty is legitimate for most gates; an unread returncode needs dataflow and gives high false-positive risk); `except ...: return []` and `return 0` handlers are already silent_default_return/gate_returns_true. CHANGELOG Behaviour change entry.
 
 ## 40-F10 (P3) env_flag_parsing: bool(int(os.environ.get())), `'X' in os.environ`, f-string keys, default-argument reads are not boolean contexts
 
