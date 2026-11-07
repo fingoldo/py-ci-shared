@@ -1,0 +1,123 @@
+[
+  {
+    "id": "42-F1",
+    "sev": "P1",
+    "title": "DEFAULT_EXCLUDE drops any directory named build/dist/venv/site-packages anywhere in the tree, so a real package directory such as src/pkg/build is outside every gate's corpus in git mode",
+    "evidence": "corpus.py iter_files: skip.intersection(parts) over every component of the root-relative path. Repro (scratchpad audit42/t1.py): git init, files src/pkg/build/m.py and src/pkg/ok.py; [p.name for p in iter_files(g)] printed ['ok.py'].",
+    "failure_scenario": "A project with a legitimate subpackage named build, dist, venv or node_modules has all its code silently unscanned by nearly every gate, with no unparsed finding; min_files still passes because other files parse.",
+    "proposed_fix": "Apply the name list only to the first component below root, or in git mode only to untracked (--others) files, since a tracked file is corpus by definition.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F2",
+    "sev": "P1",
+    "title": "scan_roots_excluding matches the exclude fragments against the ABSOLUTE posix path (the ARCH-14 defect again): a checkout under a directory containing a fragment parses zero files",
+    "evidence": "scan.py scan_roots_excluding: any(fragment in p.as_posix() ...) with p = root/rel. Repro: root /tmp/x/my_tests_dir/proj/a.py with exclude ['tests'] -> scan_roots_excluding([r], ['tests']).parsed_count printed 0.",
+    "failure_scenario": "drifted_duplicate_functions, epsilon_padded_denominators, hash_fed_by_array_copy, latched_availability_flags and others scan nothing when the repo lives under a matching directory; the result is a pass unless the caller remembers check_floor (scan_python does not raise).",
+    "proposed_fix": "Match fragments against p.relative_to(root).as_posix(), and call result.assert_ok() inside the helper.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F3",
+    "sev": "P2",
+    "title": "line_has_marker treats text inside a multi-line string literal as a trailing comment, so a '# <gate>-ok: reason' line in a docstring or triple-quoted string suppresses a finding",
+    "evidence": "_gate_report.py:109-125 _comment_of sees one physical line, with no tokenizer state. Repro: source 'x = \"\"\"a\\n# foo-ok: y\\n\"\"\"' -> line_has_marker(lines, 2, 'foo-ok:') is True (a string-only line). Per-gate regexes such as atomic_write_staging.py:43 run on the raw line with the same weakness.",
+    "failure_scenario": "A finding on line N is suppressed by a docstring example or fixture string mentioning the marker on that physical line.",
+    "proposed_fix": "Resolve markers from tokenize COMMENT tokens (one shared comments_by_line(source) per file) and make line_has_marker and the per-gate regexes use it.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F4",
+    "sev": "P2",
+    "title": "baseline_ratchet.Baseline.enforce exits 0 on stale entries and is key-only: a fixed violation leaves a slot that a later regression of the same key takes for free",
+    "evidence": "baseline_ratchet.py:130,154-157: stale is only printed, then return 0. Repro (audit42/t2.py): accepted {a.py,b.py}, found {a.py} -> prints 'no longer violate ... prune' and returns 0; found {a.py,b.py} afterwards -> 'no new violations', 0. _text_ratchet.enforce_findings (line 84) uses this class.",
+    "failure_scenario": "b.py is cleaned, nobody runs the refresh because exit 0 hid it, months later b.py regresses under the same key and is accepted; the shrink-only rule is only as strong as the stale failure.",
+    "proposed_fix": "Return 1 on stale (like raise_for_pytest default), or at least when the key reappears.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F5",
+    "sev": "P2",
+    "title": "_core Baseline.enforce BaselineOutcome.ok ignores stale entries and surplus counts; callers that test only .ok accept up to the old count",
+    "evidence": "baseline.py:229-231 ok = not (new or unjustified or missing). Repro (t1.py): baseline count 3, one finding -> ok True, stale ['k','k']; then 3 findings -> ok True. Callers testing only .ok: unexecuted_function_bodies.py:493, mutation_teeth.py:913.",
+    "failure_scenario": "After a partial paydown the gate keeps free slots; new violations pass until someone refreshes.",
+    "proposed_fix": "Make ok include stale (or add ok_strict) and migrate the .ok-only callers.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F6",
+    "sev": "P3",
+    "title": "parse and bytes caches trust a stat signature (mtime_ns, size, ino) for files older than 3s: a same-size rewrite with a preserved mtime serves the old tree",
+    "evidence": "source.py:93-111, 206-215; the docstring promises an edited file is re-parsed however quickly it was rewritten. Repro: write 'x=11', utime to 100s ago, parse; rewrite 'x=22' (same size), os.utime back; parse_source returned 'x=11' while the disk held x=22.",
+    "failure_scenario": "A long-lived process (watcher, IDE integration, run after cp -p / rsync -t / tar restore) gates stale source and passes a broken file.",
+    "proposed_fix": "Add st_ctime_ns to the signature (utime cannot preserve it) and correct the docstring.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F7",
+    "sev": "P3",
+    "title": "List-form baseline entries are joined with '|', colliding with a plain string key containing '|'",
+    "evidence": "baseline.py:102. Repro: JSON [[\"a\",\"b\"],\"a|b\"] loads as Counter({'a|b': 2}).",
+    "failure_scenario": "Two distinct accepted entries merge into one count; a pair can accept a literal key.",
+    "proposed_fix": "Use an unambiguous separator or reject a string containing it.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F8",
+    "sev": "P3",
+    "title": "Duplicate JSON keys in a baseline resolve last-wins silently, so a bad merge can raise a count unnoticed",
+    "evidence": "baseline.py:88 json.loads without object_pairs_hook. Repro: {\"k\":{\"count\":1},\"k\":{\"count\":9}} loads as k=9.",
+    "failure_scenario": "A merge or hand edit leaving two entries raises the allowed count with no growth refusal.",
+    "proposed_fix": "Parse with an object_pairs_hook that raises BaselineError on a duplicate key.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F9",
+    "sev": "P3",
+    "title": "iter_files default pattern '*.py' is case-sensitive and ignores .pyi/.pyw although source.py decodes them as Python",
+    "evidence": "corpus.py _matches uses fnmatchcase; source.py _PYTHON_SUFFIXES = .py .pyi .pyw. Repro: dir with U.PY and s.pyi -> scan_python(..., use_git=False).parsed_count == 0.",
+    "failure_scenario": "A file named X.PY (imports fine on Windows and macOS) or a stub is never scanned and produces no finding.",
+    "proposed_fix": "Match the suffix case-insensitively; scan stubs where gates parse them.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F10",
+    "sev": "P3",
+    "title": "Finding.key omits the line, so replacing one violation by another with an identical message in the same file passes the count check",
+    "evidence": "findings.py:27 key = rule::path::message; the baseline is a multiset of keys. A gate whose message does not name the symbol cannot tell a swap from no change.",
+    "failure_scenario": "Fix violation A, add violation B elsewhere in the file: counts equal, gate green, the ratchet did not shrink.",
+    "proposed_fix": "Put the enclosing qualified name or normalized statement into the message; add a meta-test flagging messages without it.",
+    "ast_checkable": false,
+    "fp_risk": "high",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "42-F11",
+    "sev": "P3",
+    "title": "git_listing returns None (silent walk fallback) for dubious ownership, and the walk and git modes disagree on nested repositories",
+    "evidence": "corpus.py git_listing docstring and _walk: only a .git FILE prunes a directory; a nested clone with a .git directory is dropped by git mode (listed as a bare directory, not is_file) but descended by the walk.",
+    "failure_scenario": "On a runner with safe.directory unset the corpus widens to ignored files and nested clones; findings differ between machines.",
+    "proposed_fix": "Raise CorpusError on dubious ownership when .git exists at root; make _walk prune any directory containing .git.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  }
+]

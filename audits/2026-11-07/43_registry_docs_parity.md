@@ -1,0 +1,69 @@
+# 43_registry_docs_parity
+
+Round 2026-11-07. Every finding is OPEN until its Disposition line says otherwise.
+
+## 43-F1 (P1) CHANGELOG.md has no heading for any of the six releases v1.23.3 to v1.23.8; their entries sit under 'Unreleased (next: 1.23.3)' and a second bare 'Unreleased'
+
+- Evidence: Command: git tag | sort -V | tail -6 -> v1.23.3 v1.23.4 v1.23.5 v1.23.6 v1.23.7 v1.23.8. Command: grep -n '^## ' CHANGELOG.md -> 5:'## Unreleased (next: 1.23.3)', 174:'## 1.23.2', 336:'## Unreleased', 469:'## 1.21.1'. pyproject.toml:7 says version 1.23.9. Tags v1.22.1..v1.22.8 also have no heading (headings present: 1.22.9, 1.22.10, 1.22.12, 1.22.13). The block at line 5 holds dated sub-sections (2026-11-06, 2026-11-07) that span at least six releases.
+- Failure scenario: A consumer pinned to v1.23.2 who bumps to v1.23.8 reads the CHANGELOG to see what could turn their CI red. The top section says 'next: 1.23.3', a version long since tagged, and nothing says which of the six releases introduced a given Behaviour change, so the consumer cannot bisect or choose a smaller bump. CLAUDE.md promises that any change that can turn a green consumer red gets a CHANGELOG entry; the entry exists but is attached to no release.
+- Proposed fix: Split the Unreleased blocks into '## 1.23.N' sections by git log between tags, keep one '## Unreleased (next: 1.23.9)'. Add a test in tests/test_release_version.py that the top 'Unreleased (next: X)' equals the pyproject version and that every live v1.2x.y tag above v1.20.0 has a '## X.Y.Z' heading; make release_guard prepare refuse while an Unreleased block is non-empty.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F2 (P2) Behaviour change entries that name no action for the consumer (CLAUDE.md requires 'with what to do')
+
+- Evidence: Python scan of CHANGELOG.md (bullet from the 'Behaviour change' line to the next bullet) for 'what to do|refresh|re-record|run|add|set|nothing|prune|delete|remove|rename|pin' found no action at lines 37 (default_via_or `x / (total or 1)`), 47-51 (async_primitive_reinit_per_call, possibly_dead_import, broad_except_swallow, resource_handle_safety x2: each only says 'disappears'), 62-64, 72, 129 (text corpora skip binary files), 143 (case-exact path compare: 'Windows/macOS consumers only', no step), 144, 145 (unsafe_deserialization reports new APIs). grep -c 'What to do' CHANGELOG.md -> 14 against 67 'Behaviour change' lines.
+- Failure scenario: A consumer whose baseline holds a finding that now disappears gets a stale-entry failure or a never-shrinking baseline, and a wrong-case link newly fails on Windows (143), and the entry does not say 'rename the file / refresh the baseline'. The 'more findings' entries (64, 145) turn a green consumer red with no instruction.
+- Proposed fix: Add 'What to do:' to each entry (fewer findings: prune the stale baseline entry with the refresh command; more findings: fix or baseline). Extend changelog_promise_parity with a check that every bullet containing 'Behaviour change' also contains 'What to do' or 'Nothing to do'.
+- AST-checkable: False; FP risk: med
+- Disposition: OPEN.
+
+## 43-F3 (P2) Reusable workflow default refs disagree: black-filtered, lint-advisory and ruff-blocking default to the unpublished tag v1.23.9, gates.yml to v1.23.8; CLAUDE.md says 'the three reusable workflows'
+
+- Evidence: git show v1.23.8:.github/workflows/<f>.yml: all four default v1.23.8. HEAD: black-filtered.yml:17 default v1.23.9, lint-advisory.yml:20 v1.23.9, ruff-blocking.yml:24 v1.23.9, gates.yml:24 v1.23.8. git tag has no v1.23.9. .github/scripts/release_guard.py:120 lists four workflows (including gates.yml); CLAUDE.md 'Versions and releases' says 'the three reusable workflows' default ref'. Commit 213ce77 'Bump the next release to 1.23.9' touched three of them.
+- Failure scenario: A consumer that calls these workflows from master or a SHA after 213ce77 (not @v1) gets py-ci-shared-ref=v1.23.9, a ref that does not exist: the install retries three times and fails (no fallback to master any more). A consumer using gates.yml at the same SHA gets v1.23.8 gates while its ruff and black come from the unreleased tree, so one pipeline mixes two versions.
+- Proposed fix: Make the bump commit and release_guard agree on one list of four workflows; keep the default at the LAST RELEASED tag until prepare, and add a test that the four defaults are equal and name an existing tag unless HEAD is the release commit. Fix CLAUDE.md to say four.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F4 (P2) registry.toml `since` disagrees with the first tag that contains the module for 24 entries
+
+- Evidence: Script scratchpad/audit43/e.py (git ls-tree per v1.* tag, first tag holding src/py_ci_shared/<name>.py). Too LATE (module shipped earlier): dup_baseline_percent_key, git_child_env, guard_without_fixture, skip_as_pass, wallclock_test_waits since 1.22.12 but first in v1.22.8; patch_target_read_at_call 1.22.12 vs v1.22.9; contract_ledger 1.23.3 vs v1.23.2. Too EARLY (since names a release without the module): llm_output_caps 1.22.5 vs v1.22.6; loop_invariant_cast 1.22.4 vs v1.22.5; env_write_restore 1.22.1 vs v1.22.2; predictable_tmp_path 1.22.12 vs v1.22.13. Thirteen say 1.22.3 where the first tag is v1.22.2 (a dead tag per CLAUDE.md, so defensible only if documented): cancellation_prone_moments, ci_default_branch_never_cancelled, ci_install_covers_entry_imports, constant_fallback_cache_key, cuda_kernel_integer_width, hardcoded_seed_in_library, id_keyed_cache_validates_identity, optional_imports_guarded, persisted_negative_probe, pytest_known_gap, single_shot_timing_assertion, unread_function_params, unsafe_deserialization.
+- Failure scenario: The README catalogue 'since' column is rendered from these values and consumers use it to decide whether an older pin has a gate. A consumer on v1.22.9 reads 'skip_as_pass since 1.22.12' and believes it is absent, or pins 1.22.5 for llm_output_caps and gets ImportError.
+- Proposed fix: Correct the values to the first live tag and document dead tags v1.22.0/v1.22.2 in registry.py so 1.22.3 is the stated first live release. Add a test that for each since at or below the latest tag the module is absent from the preceding tag and present in v<since> (git ls-tree), skipped without full tag history.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F5 (P2) CLAUDE.md tells contributors to lint with `ruff@0.16.1` but the pin is 0.16.10
+
+- Evidence: CLAUDE.md:29 'uvx ruff@0.16.1 check src tests'. src/py_ci_shared/tool_versions.py: RUFF_VERSION = "0.16.10"; pyproject.toml:41 'ruff==0.16.10'; .pre-commit-config.yaml names 'ruff 0.16.10'. black 26.5.1 matches everywhere. self-ci.yml:145 pins mypy==2.1.0 with no constant in tool_versions.py.
+- Failure scenario: A contributor following CLAUDE.md lints with 0.16.1, passes locally, and CI (0.16.10) fails on a rule added in between; or fixes a finding 0.16.1 invents.
+- Proposed fix: Replace the literal in CLAUDE.md with a pointer to RUFF_VERSION in tool_versions.py. Extend pinned_tool_versions or doc_identifier_parity to scan CLAUDE.md for `ruff@X` and `black==X` and compare. Move mypy 2.1.0 into tool_versions.py.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F6 (P2) Consumers import underscore names from py_ci_shared, contradicting 'internal, may change in any release'
+
+- Evidence: Scan of from-imports in autopsia, mlframe, pyutilz, social, dash_app_core, llm_bench, polyvocab_app, noema_app (scratchpad/audit43/c2.out, 322 distinct import lines; f.py found no import of a missing name). Private ones: 'from py_ci_shared._toml_compat import tomllib' (2), 'from py_ci_shared.code_audit._base import is_test_file / is_locals_or_globals_call' (pyutilz/tests/conftest.py, pyutilz/tests/test_architecture_audit_20260903.py and others), 'from py_ci_shared.code_audit.registry import _physical_cpu_count, _MIN_SCANNERS_PER_WORKER' (2), 'from py_ci_shared.sql_verify import _LITERAL_PERCENT, ...' (2). src/py_ci_shared/__init__.py docstring: underscore modules 'are internal and may change in any release'; the compat promise bounds only public names.
+- Failure scenario: A refactor that moves _base or renames _LITERAL_PERCENT is allowed by every document and breaks pyutilz and the sql_verify consumers on the next @v1 move. consumer_import_census checks only that names resolve, and only in a library checkout, so nothing flags the private ones.
+- Proposed fix: Promote the used helpers to public names (is_test_file, physical_cpu_count, LITERAL_PERCENT, a public toml compat) keeping the underscore alias; run cross_package_private_names over the configs/consumers.toml repos so a private py_ci_shared import fails.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F7 (P3) Canary directories: 16 gates have no unparsable/ directory, and CLAUDE.md states four are required without naming the exception
+
+- Evidence: tests/canary/<name>/ lacks 'unparsable' for audit_disposition_parity, audit_wave_filenames, ci_pin_version_skew, ci_test_dir_reachability, ci_workflow_paths, committed_line_endings, doc_identifier_parity, dup_baseline_percent_key, gate_config_honesty, guard_without_fixture, hook_hygiene, phantom_markdown_links, skip_as_pass, sql_function_privileges, tracked_secret_shapes, wallclock_test_waits (script b.py). tests/test_gate_teeth.py has 20 parses=False entries. Every registered gate otherwise has a canary dir or an EXEMPT entry (58 EXEMPT, each with a reason; no overlap, no stale entry).
+- Failure scenario: A contributor following CLAUDE.md adds a meaningless unparsable dir to a text gate, or a reviewer rejects a text gate for lacking it; meanwhile text gates silently skipping non-UTF-8 files (33-F2) show a text-corpus undecodable variant is the one that matters.
+- Proposed fix: State in CLAUDE.md that text-corpus gates (parses=False) may omit unparsable/ but need an undecodable-bytes variant; assert in test_gate_teeth that the dirs without unparsable equal the parses=False set.
+- AST-checkable: True; FP risk: low
+- Disposition: OPEN.
+
+## 43-F8 (P3) Registry `summary` is not held to the module docstring: 166 of 242 differ, one is cut off mid code span
+
+- Evidence: scratchpad/audit43/a3.out: 166 'DOC' lines where the docstring first line differs from the summary. Examples: ci_workflow_gate summary 'Every ``continue-on-error' (cut at the colon) vs docstring 'Shared check: every ``continue-on-error: true`` in a CI workflow file is...'; caller_frame_mutation summary starts 'Advisory (warns by default)'; cache_key_sensitivity summary begins 'assert_key_sensitive:'. The README catalogue equals registry.render_catalogue() (checked), so the text goes straight into the README.
+- Failure scenario: The README row for ci_workflow_gate reads 'Every ``continue-on-error' with an unclosed code span, and a gate whose docstring was tightened keeps the old promise in the catalogue.
+- Proposed fix: Either derive summary from the docstring first sentence, or add a test that summaries have balanced backticks and share most tokens with the docstring first line.
+- AST-checkable: True; FP risk: med
+- Disposition: OPEN.
+
+Checked and clean: registry sorted (242), no unregistered or phantom module, every INTERNAL_MODULES reason non-empty, no `since` above pyproject, README catalogue equal to render_catalogue(), commands and flags in CLAUDE.md exist (new-gate, --resolve-in, --allow-behind, rollback-to, release_guard prepare), tool pins other than CLAUDE.md's ruff match, no consumer imports a missing name.

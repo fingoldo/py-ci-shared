@@ -1,0 +1,123 @@
+[
+  {
+    "id": "48-F1",
+    "sev": "P1",
+    "title": "gate_cache.tree_digest hashes the whole repo root including .claude/worktrees; a cache lookup costs 25.7 s to 65 s, 30 to 80 times a gate's own run",
+    "evidence": "_core/gate_cache.py:_SKIP_DIRS = {.git, __pycache__, .pytest_cache, .mypy_cache, .ruff_cache, .tox, .venv, venv, node_modules, .py_ci_cache}; it does not contain .claude, although _core/corpus.py:164 and DEFAULT_EXCLUDE (.claude, .benchmarks, build...) document that .claude holds agent worktrees that are COMPLETE copies of the repo. Measured on py-ci-shared (19 worktrees): _stat_signature = 31,137 entries of which 28,948 under .claude (183 MB), 3.8 s to 15.7 s per walk; tree_digest = 25.7 s (quiet), 62.3 s and 65.6 s (loaded), 29.8 s; the same digest with .claude added to _SKIP_DIRS = 0.79 s (32x). `py-ci-shared run comment_repo_paths` x3 back to back: 78.4 s, 63.8 s, 64.1 s for a gate that takes 3.6 s inside run-all. tests/test_self_gates.py: first gate test (repo_hygiene) 21.53 s vs 6.4 s inside run-all, the difference being the digest paid by the first test of each xdist worker. The digest also keys every gate on files no gate reads: while this audit round was running, 2 new files under audits/2026-11-07 changed the digest (sigA vs sigC diff), so a cache written before them can never hit.",
+    "failure_scenario": "A developer with Claude Code worktrees (every session in this setup) runs run-all or the pre-push hook twice. The 'cache' is slower than re-running the gate (25 to 65 s of hashing vs a median gate of 0.79 s, 27 of 57 gates over 1 s), and any edit in any sibling worktree or audit file invalidates all 57 keys, so the cache almost never hits and always costs. On a consumer with worktrees (pyutilz and mlframe have none right now, py-ci-shared has 19) the same cost applies. BUDGET warnings (repo_hygiene 50.3 s vs 30 s budget) are then produced by the cache, not by the gate.",
+    "proposed_fix": "Make the digest cover exactly what the corpus layer covers: take the file list from corpus.git_listing (tracked + untracked-not-ignored) or at minimum reuse corpus.DEFAULT_EXCLUDE as _SKIP_DIRS. Keep content hashing for those files only. Add a test with a fake .claude/worktrees/x/ tree asserting that the digest is unchanged when a file inside it changes and a timing-free assertion that _stat_signature never lists it.",
+    "ast_checkable": false,
+    "fp_risk": "low-medium: a gate that reads a file inside an excluded dir (e.g. build/ or .benchmarks) would become stale-cacheable; check no gate kwargs point under DEFAULT_EXCLUDE dirs, or hash gate-declared extra paths",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F2",
+    "sev": "P2",
+    "title": "tree_digest reads every file's bytes into the process-wide bytes cache: 199.6 MB resident for a 31k-file root, evicting nothing but doubling gate RSS",
+    "evidence": "After tree_digest(Path('.')) on py-ci-shared, source._BYTES_TOTAL = 199.64 MB and 199.79 MB on repeat runs (limit _BYTES_MAX_TOTAL = 400,000,000; the whole table is DROPPED when it passes the limit). The package's own .py corpus is 8.25 MB. A whole-run run-all RSS peaked at 699 MB (cProfile run). The digest ignores the stat signature it has just computed and re-reads and sha256s the content of every file (the comment says content is used because mtime+size can be fooled by a same-size rewrite in one tick).",
+    "failure_scenario": "On a repo with larger untracked data (datasets, build outputs not in _SKIP_DIRS), the digest pulls up to 400 MB into the cache, hits the drop-everything threshold and silently discards the 8 MB of source bytes the gates actually reuse, so every gate re-reads its files after the digest. Memory cost is paid by every concurrent session (many parallel python processes on this machine).",
+    "proposed_fix": "Hash with a streaming read that bypasses read_bytes_cached (hashlib.file_digest) for files not in the corpus, or use the (size, mtime_ns, inode) signature for files older than the racy window and read only the recent ones, the rule _FAST already uses. Bound the digest to the F1 file set.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F3",
+    "sev": "P2",
+    "title": "Large consumer corpora: 34x RSS amplification and 10 to 13 s per warm scan_python call (mlframe, 8,767 files)",
+    "evidence": "scan_t.py on C:/Users/Admin/Machine learning/mlframe (machine loaded, one measurement, 74.1 MB of source in 8,767 files): git listing 5.58 s, first byte read pass 462.55 s (disk/AV bound while loaded), cold parse 173.52 s, RSS +2,511 MB (34 bytes of RSS per source byte), warm second scan_python 9.95 s, third 13.26 s, node_index nodes_of(FunctionDef) cold 12.10 s and RSS +3,070 MB total. Same script on pyutilz (616 files, 6.4 MB): loaded cold parse 11.57 s / quiet 3.41 s, RSS +224 MB; warm 0.70 s loaded / 0.16-0.22 s quiet. py-ci-shared (835 files, 8.3 MB): cold parse 18.04 s loaded, RSS +306 MB, +371 MB after the node index. Trees, source strings and descendant lists are all kept for the process (source._CACHE, node_index._DESCENDANTS); only the bytes cache is bounded.",
+    "failure_scenario": "A consumer run-all with ~50 scanning gates on an mlframe-sized repo pays 50 x ~10 s of warm re-listing and re-statting (about 8 minutes of overhead before any gate logic) and holds 3 GB; two such runs plus a pytest session exhaust a 16 GB laptop or a 7 GB CI runner. The first-read stall (462 s) shows the cold phase is I/O-bound, so the only lever is doing less per gate.",
+    "proposed_fix": "(a) memoise the corpus listing and the per-file identity/relative path per (root, patterns, exclude) for a run, invalidated by the cheap stat signature, so warm scans are O(files) dict lookups; (b) drop the descendants list for trees no longer needed (weak keys already free them, but source._CACHE strongly holds every tree: use a bounded LRU on tree count or total node count); (c) record peak RSS and per-gate scan time in the GateResult so budgets can be set on memory.",
+    "ast_checkable": false,
+    "fp_risk": "low for (a), medium for (b): a gate that holds a ParsedFile list keeps its trees alive anyway",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F4",
+    "sev": "P2",
+    "title": "node_index.child_nodes is not memoised: 10.4 M calls and 126.9 M isinstance calls are 19 percent of a run-all profile",
+    "evidence": "cProfile of `py-ci-shared run-all` (NO_CACHE) on this repo, wall 419 s under profile + load: child_nodes 10,396,807 calls, tottime 47.95 s, cumtime 79.97 s; builtins.isinstance 126,885,616 calls 54.3 s; node_index._walk 3,025,724 calls 26.6 s cum; getattr 27.5 M calls 14.8 s. complexity_ratchet._walk alone recurses 1,055,194 times over the 833 files. walk() IS memoised per tree (_descendants, 'on the mlframe suite gates called walk 221 million times, almost all repeats'), but child_nodes, the recursion primitive, is called from 65 modules (grep -l child_nodes: 65 files) and recomputes the child list for every node every time. Unprofiled quiet run-all: 108.9 s wall, gate time sum 101.5 s.",
+    "failure_scenario": "Every new recursive gate (the recommended pattern is child_nodes) multiplies a 1 M-node walk by its own cost; the recursion gates are the top of the per-gate timing table (predictable_tmp_path 12.05 s, standard_stream_restore 9.26 s, wallclock_test_waits 7.80 s quiet). On mlframe (65k functions) the multiplier is 10 times.",
+    "proposed_fix": "Memoise children per tree: tree_memo(tree_of_node, 'children', ...) building {id(node): tuple(children)} once during the _descendants pass, and have child_nodes look up the list; or store the list on a weak dict keyed by node like _DESCENDANTS. Add a counter-based test (child_nodes field reads per node <= 1 across two gates over the same tree).",
+    "ast_checkable": true,
+    "fp_risk": "low: trees are documented read-only",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F5",
+    "sev": "P2",
+    "title": "corpus.iter_files resolves every path twice per scan: 62 percent of a warm scan_python is path arithmetic, 24k GetFinalPathNameByHandle calls per run-all",
+    "evidence": "Warm profile of scan_python on pyutilz (616 files, quiet): total 0.394 s of which iter_files 0.245 s (62 percent), relative_posix 616 calls 0.113 s, Path.relative_to 1,232 calls 0.190 s, git ls-files 0.072 s. In the run-all profile nt._getfinalpathname was called 24,424 times for 15.78 s tottime (3.8 percent) even though source.resolve_cached exists. _core/corpus.py:229 does p.resolve().relative_to(Path(root).resolve()) for each file, resolving the unchanging root once per file and the file once more.",
+    "failure_scenario": "Each of the 57 gates re-lists and re-resolves the same corpus; on mlframe a warm scan is 10 to 13 s (48-F3), most of it this arithmetic, because Windows resolve() costs a system call per path.",
+    "proposed_fix": "In relative_posix compute resolve_cached(root) once per call site (hoist out of the per-file lambda in iter_files) and use os.path.relpath on already-absolute listing results from git_listing, which are root-relative strings by construction (no resolve needed for git mode).",
+    "ast_checkable": false,
+    "fp_risk": "low-medium: symlinked checkouts (tests/test_core_corpus_symlinks.py) depend on the resolve semantics",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F6",
+    "sev": "P3",
+    "title": "Repeated parsing is mostly solved (86 percent hit rate) but 412 extra ast.parse calls remain from short-text parsing and non-cached entry points",
+    "evidence": "Instrumented run-all (NO_CACHE): parse_source requests 12,752 over 833 distinct files (up to 19 per file, e.g. test_partition_reachability.py 19, __init__.py 18) served from source._CACHE; ast.parse actually executed 1,727 times for 5.9 s total, 1,315 distinct (filename or length) keys, 48 keys parsed more than once = 412 extra calls (about 1.4 s). By caller: wallclock_test_waits._docstring_lines 447 calls 1.22 s, unresolved_imports._unresolved 446 calls 2.13 s, scan._parse_one 386 calls 2.49 s, reiterated_iterable_params._is_one_shot 438 calls 0.03 s. parse_text only caches texts of at least 1000 characters (_TEXT_MIN_CHARS), so each docstring-line or annotation snippet is parsed anew by each gate.",
+    "failure_scenario": "Cost is bounded (5.9 s of a 109 s run, 5 percent) but grows with gate count: each added text-handed gate adds its own full pass of small parses.",
+    "proposed_fix": "Lower priority than 48-F1/F4. Cache _docstring_lines results per tree via tree_memo (one docstring-line set per module) and let unresolved_imports use the ScanResult's already-parsed tree instead of parse_source per path again.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F7",
+    "sev": "P3",
+    "title": "git ls-files is spawned 41 times (plus 7 other git calls) per run-all with the listing deliberately uncached",
+    "evidence": "Instrumented run-all: corpus.run_git 41 calls, 12.3 s cumulative (loaded, profiled, about 0.3 s each); git.run_git 7 calls 3.9 s; iter_files 18 calls 7.5 s; scan_python only 2 direct calls (gates mostly use iter_files plus parse_source). Quiet single listing of pyutilz: 0.072 s; loaded 0.95 s to 1.67 s for 616 to 835 files; mlframe 5.58 s.",
+    "failure_scenario": "On mlframe 41 listings are about 4 minutes of subprocess time per run-all, and Windows process creation under an antivirus is the slow part.",
+    "proposed_fix": "Memoise git_listing per (root, flags) keyed on the mtime of .git/index plus the stat signature of untracked files, instead of never; or share one listing across the gates of a run_gate loop (cli._cmd_run) and clear it between runs, as _USABLE_ROOTS already does for the probes.",
+    "ast_checkable": false,
+    "fp_risk": "medium: the comment in corpus.py says a gate may write a file and list again (stale listing)",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F8",
+    "sev": "P3",
+    "title": "Pre-push hook: stale cost comment, self-gate duplication, and a half-of-hook cost concentrated in test_self_gates",
+    "evidence": "Hook entry (.pre-commit-config.yaml) runs six files with -n 2 and the comment says '~4 min ... 1075 tests'. Measured one file at a time with py-ci-shared tool pytest_run --durations (quiet-ish machine, pytest reported time): test_package_inventory 519 passed in 7.51 s; test_release_version 39 in 9.21 s (3.26 s + 2.13 s in two CLI tests); test_pytest_markers 15 in 6.29 s; test_complexity_ratchet 22 in 13.27 s (test_parity_with_ruff_on_this_package 9.47 s); test_gate_teeth 959 in 64.12 s (flat: top 20 tests 9.9 s, 200 tests 32.96 s, none over 1.05 s); test_self_gates 58 in 102.08 s (sum of test durations 98.1 s; repo_hygiene 21.53 s, standard_stream_restore 7.93 s, predictable_tmp_path 5.78 s). Serial sum 202 s and 1,612 tests, not 1,075. test_self_gates re-runs the 57 gates that self-ci.yml also runs as `py-ci-shared run-all (self)` (lines 121-122) right after pytest tests/ which includes test_self_gates (lines 110-112): about 100 s of identical gate work twice per CI leg. One test in the run failed (audit_rounds_format) only because another session's audits/2026-11-07/50_new_gate_mining.md was mid-write; this is environmental, but shows the self-gate test reads untracked sibling files.",
+    "failure_scenario": "The comment misleads anyone budgeting a push; an extra gate added to the dogfood set adds its cost to both the hook and the CI step; with the F1 digest the first self-gate test of each xdist worker pays 15 to 60 s extra.",
+    "proposed_fix": "Fix F1 (removes ~20 s from the first test per worker). Update the comment from a measured run, or drop the numbers. In self-ci.yml either deselect test_self_gates in the pytest step or drop the run-all step, and keep one of them. Put test_parity_with_ruff_on_this_package under a marker that runs once in CI.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F9",
+    "sev": "P3",
+    "title": "Gate budgets are wall-clock on shared machines and produce BUDGET warnings that measure load, not the gate",
+    "evidence": "Same repo, same gate set: run-all gate sum 168.3 s (loaded), 256.9 s (loaded, cache miss), 101.5 s (quieter); repo_hygiene 6.42 s, then 50.3 s (BUDGET repo_hygiene took 50.3s, over its 30s budget); comment_repo_paths 3.64 s vs 78.4 s as a single `run`; unresolved_imports 13.94 s / 38.4 s; machine at 100 percent CPU with 51 to 71 python processes during every measurement.",
+    "failure_scenario": "budget = fail on a loaded developer machine turns load into a red exit code; budget = warn trains the reader past real overruns (the banner that cries wolf, README 'The harness output is a finding surface').",
+    "proposed_fix": "Report process CPU time (time.process_time) next to wall time and compare the budget with CPU time, or normalise by a measured calibration loop; print both.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F10",
+    "sev": "P3",
+    "title": "Mutation harness: per-mutant cost is dominated by the serial pytest run; candidate generation is superlinear in file size",
+    "evidence": "Not run (out of scope); measured generation only, read-only, loaded machine: generate_mutants on version_consistency.py 91 mutants 0.06 s; _core/source.py 165 mutants 0.27 s (1.6 ms each); _core/baseline.py 276 mutants 0.89 s (3.2 ms); mutation_teeth.py 614 mutants 16.39 s (26.7 ms); statement_columns_exist_in_ddl.py 1,128 mutants 29.21 s (25.9 ms). So per-mutant generation cost is 8x higher on the 983-line files (each candidate is source[:a]+rep+source[b:] and a risky-candidate compile of the whole file). The harness runs ONE warm worker (_mutation_runner._WarmRunner docstring: 1.6 to 2.7 s per mutant warm, 15.8 s cold, 4 workers measured 39.3 s vs 19.2 s for one on Windows); projected serial run for 614 to 1,128 mutants is 16 to 51 minutes per module.",
+    "failure_scenario": "A whole-module sweep of a 1,000-mutant module is an hour; generation is 1 to 2 percent of that, so the cost is the serial test runs, which the checkpoint_path resume already mitigates.",
+    "proposed_fix": "No change to generation needed (1 to 2 percent). If runtime matters: partition mutants by test file and run several workers with separate sandbox copies of the target (the docstring rejects this for a measured 1.2 to 1.6x); more valuable is test selection by coverage so each mutant runs only tests that execute its line.",
+    "ast_checkable": false,
+    "fp_risk": "n/a",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "48-F11",
+    "sev": "P3",
+    "title": "Per-repo gate_cache store files are never pruned and the 500-key cap holds only about nine tree versions",
+    "evidence": "~/.cache/py_ci_shared/gate_cache holds 151 JSON files, 428 KB, from Oct 20 on, one per repo path including temp worktrees and tmp_path repositories (most are 80 bytes); the largest are 34,080 bytes = exactly 500 keys of 68 characters (_core/gate_cache.py record keeps passed[-500:]). One run-all records 57 keys, so the cap retains 8.8 tree versions per repo; combined with 48-F1 churn the useful entries are evicted quickly.",
+    "failure_scenario": "Disk growth is trivial, but the cap makes the cache forget a verdict after nine edits, and lookup() reads and parses the whole JSON per gate (57 reads of up to 34 KB per run).",
+    "proposed_fix": "Key the cap per (gate, tree) rather than a flat 500; remove store files whose repo path no longer exists; read the file once per process.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  }
+]

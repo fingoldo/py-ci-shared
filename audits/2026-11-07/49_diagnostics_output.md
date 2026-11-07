@@ -1,0 +1,103 @@
+# 49 diagnostics_output
+
+Round 2026-11-07, read-only. Method: ran `python -m py_ci_shared.cli run-all/run/refresh/tool` and module mains on temp trees in the scratchpad (t1..t5). Detector correctness is out of scope.
+
+Counts: P1 2, P2 5, P3 5 (total 12).
+
+Checked and fine (not findings): run-all exits 2 for ERROR and 1 for FAIL; empty `enable` exits 2; unknown gate exits 2 and lists the enabled ones; unparsed files are listed in full with file:line; no truncation banner fired when nothing was truncated; summary counts match the rows; teeth_sweep exits 1 on skipped/errored cases; `tool` rejects a main returning a non-int; the over-budget message names its fixes.
+
+## 49-F1 [P1] import_cycles run as a script prints findings and exits 0; a missing root is a bare traceback
+
+- **Evidence:** src/py_ci_shared/import_cycles.py:419-423 (`if __name__ == '__main__'` prints each finding and a count, never calls sys.exit). Demo on a 2-module cycle: `python -m py_ci_shared.import_cycles pkg pkg` printed `a.py:1: [import-cycle] 2-module import cycle: pkg.a -> pkg.b -> pkg.a` / `1 finding(s), 3 parsed, 0 unparsed` and EXIT 0. `python -m py_ci_shared.import_cycles nonexistent` gives a CorpusError traceback, EXIT 1 (the code a finding would deserve, so the two are indistinguishable). Unparsed files also exit 0. The finding path is `a.py`, not `pkg/a.py`, because rel is taken against the passed directory.
+- **Failure scenario:** A pre-commit/CI step `python -m py_ci_shared.import_cycles src pkg` is green on every cycle: a gate that cannot fail.
+- **Proposed fix:** Give the module a `main(argv) -> int` returning 1 on findings or unparsed files and 2 on usage/corpus errors, `raise SystemExit(main())`; render paths repo-relative.
+- **AST-checkable:** True; FP risk: low: AST check 'a __main__ block that prints Finding.render() and never reaches sys.exit/SystemExit'
+- **Disposition:** RESOLVED 5ce4d25: import_cycles.main returns 0/1/2, repo-relative paths, tests/test_diagnostics_exit_codes.py (failed before the fix).
+
+## 49-F2 [P1] Missing tool is reported as 'findings above are WARNINGS' by bandit_warn/advisory_warn/format_warn
+
+- **Evidence:** bandit_warn.py:96-109, advisory_warn.py:47-71, format_warn.py:91-107 run `python -I -m <tool>` via subprocess.run(check=False) and treat any non-zero returncode as `warned = True`. When the tool is not installed `python -m <tool>` exits 1 ('No module named ...'; rc 1 shown with `python -I -m nonexistent_mod_xyz`; bandit was installed here so the exact banner was not reproduced). The `except Exception: skipped` branch, commented 'bandit missing / any error', is dead for the missing-module case because subprocess.run does not raise for it. The banner then says 'The findings above are WARNINGS ONLY' while the only text above is a Python error line.
+- **Failure scenario:** A fresh clone or CI image without bandit/ruff/pip_audit gets a 'findings are warnings' banner on every commit, so the missing tool is read as a code finding and nobody installs it; the scan never runs.
+- **Proposed fix:** Probe `importlib.util.find_spec(<mod>)` first and print `[bandit-warn] skipped: bandit is not installed (pip install bandit)`; keep exit 0 (advisory) but distinguish rc 1 findings from rc>=2 or module missing.
+- **AST-checkable:** False; FP risk: medium
+- **Disposition:** RESOLVED 5ce4d25: _tool_installed (find_spec) probe in bandit_warn, advisory_warn, format_warn prints 'skipped: <tool> is not installed'; exit stays 0; real findings keep the WARNINGS ONLY banner.
+
+## 49-F3 [P2] Gate crash (ERROR) shows `Type: message` only: no traceback, no file:line, no fix hint
+
+- **Evidence:** _core/runner.py:130-132 returns `GateResult(..., f'{type(exc).__name__}: {exc}')`; logger.warning logs only the type. Demo (`run-all` with `enable=['identity_comparisons','function_length']` and no tables): `ERROR identity_comparisons` / `TypeError: assert_no_identity_comparisons() missing 1 required positional argument: 'files'`; function_length: `missing 2 required positional arguments: 'files' and 'baseline_path'`. The message never says 'add [tool.py_ci_shared.gates.X] with files = [...]', and a real crash inside a gate (KeyError, AttributeError) prints no location.
+- **Failure scenario:** A gate raising inside its own code on a consumer's odd file is reported as `ERROR foo (0.3s) KeyError: 'x'`; the maintainer must reproduce locally to learn where. A missing-kwargs TypeError reads like a package bug rather than a config omission.
+- **Proposed fix:** In run_gate, pre-bind kwargs with inspect.signature(func).bind_partial and raise ConfigError naming the table and missing parameters. For other exceptions append the innermost frame `file:line` (traceback.extract_tb(exc.__traceback__)[-1]) and honour `PY_CI_SHARED_TRACEBACK=1` for the full traceback.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** DEFERRED: needs a runner-wide change (signature bind_partial in _core/runner.py plus a traceback env switch); waits on its own pass with runner tests, not folded into the exit-code commit.
+
+## 49-F4 [P2] Wrong fix hint under the CLI: missing/stale baseline messages tell the user to pass a pytest flag
+
+- **Evidence:** Demo: `py-ci-shared run-all` with a missing baseline printed `function-length baseline ...fl.json does not exist; create it with --refresh-function-length-baseline (a clean repo commits {})`. That flag exists only under pytest; the CLI command is `py-ci-shared refresh function_length`. Stale-entry message: `src/a.py::f: in the baseline but gone -- remove the entry`, no command at all. Gates build `Baseline(..., refresh_command=f'pytest {REFRESH_FLAG}')` (alembic_concurrently.py:163, ci_install_covers_conftest.py:957) and _gate_run.py:63 uses `pytest {flag} (or PY_CI_SHARED_REFRESH={gate})`.
+- **Failure scenario:** A developer running `py-ci-shared run-all` in a pre-push hook types the suggested flag into the CLI, gets `unrecognized arguments`, and loses time.
+- **Proposed fix:** Have run_gate set an env marker (e.g. PY_CI_SHARED_CLI=1) that the Baseline refresh_command rendering uses to print `py-ci-shared refresh <gate>`; always append the PY_CI_SHARED_REFRESH=<gate> form, which works in both.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** DEFERRED: needs the CLI env marker read by Baseline refresh_command rendering across ~12 gates and their message-pinned tests; waits on a dedicated pass.
+
+## 49-F5 [P2] `refresh` reports a successful baseline rewrite as `SKIP` and says nothing about what changed
+
+- **Evidence:** Demo: `py-ci-shared refresh function_length --grow` printed `SKIP  function_length` / `function-length baseline written to <path>` / `0 passed, 0 failed, 1 skipped, 0 error`, EXIT 0. Same for a shrink refresh that emptied the file (`{}`). Cause: `pytest.skip(...)` used as the refresh signal in about a dozen gates (function_length.py:115, function_complexity.py:129, complexity_ratchet.py:207, fail_open_handlers.py:520, deferred_drift.py:76, content_hash_version_bump_gate.py:186, db_transaction_completeness.py:291, alembic_concurrently.py:166, ci_install_covers_conftest.py:961, code_audit_meta.py:227, _core/baseline.py:233-238). No added/removed/changed counts are printed.
+- **Failure scenario:** A reviewer reads `1 skipped` as 'the gate did not run'; a refresh that dropped 30 entries or (with --grow) accepted 5 new ones looks like a no-op in the log, and the summary has no 'refreshed' count.
+- **Proposed fix:** Add a REFRESHED status to the runner (a dedicated outcome instead of pytest.skip), print `REFRESH foo: +2 -7 entries (path)` and count it separately in the summary line.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** DEFERRED: needs a REFRESHED outcome in the runner replacing pytest.skip in ~12 gates and the summary line; waits on a dedicated pass.
+
+## 49-F6 [P2] Floor/min-count failures name the symptom but not the config key that fixes it
+
+- **Evidence:** Demo: `only 1 function(s) measured; expected at least 50 -- the file walk broke and this would check nothing` (function_length.py:106; no mention of `min_functions`, `files` or the gate table; a small legitimate repo hits it at once). `only 0 file(s) parsed under <tmp>; expected at least 1. The gate is not reaching the code (wrong root, over-broad exclude, or unparsable files).` (_core/scan.py:78-80) lists causes but not the `root=`/`min_files=` keys. Neither names the gate.
+- **Failure scenario:** A new consumer enabling a gate on a 20-function package is told its file walk broke, with no pointer to `min_functions = 1` in [tool.py_ci_shared.gates.function_length].
+- **Proposed fix:** Append `(lower min_functions in [tool.py_ci_shared.gates.<name>] if the repo is genuinely this small)`; in EmptyScanError name `root=`/`min_files=` and the gate.
+- **AST-checkable:** True; FP risk: low
+- **Disposition:** RESOLVED 5ce4d25: function_length floor message names min_functions in its gate table; EmptyScanError names root=/files=/min_files=. Other floor messages not individually changed.
+
+## 49-F7 [P2] Gates that cannot evaluate their input return SKIP (exit 0) with a one-line reason
+
+- **Evidence:** changelog_promise_parity.py:170 `pytest.skip('... has no section matching section_pattern; convention not yet applicable')` (require_section defaults to False, line 134) and :184 `pytest.skip('no ...-triggering bullets found in scope; convention can't drift')`. cli.py `_report` sets the exit code only for FAILED/ERROR, so SKIP is exit 0 (demonstrated for the refresh SKIP; same path).
+- **Failure scenario:** CHANGELOG heading renamed 'Unreleased' to 'Next'; the promise gate skips on every run-all and the pre-push stays green for months.
+- **Proposed fix:** Default require_section=True for CLI-enabled runs, or add a `skip = "fail"` option in [tool.py_ci_shared] (like budget); emit `::warning::` for SKIP rows under GITHUB_ACTIONS.
+- **AST-checkable:** True; FP risk: medium
+- **Disposition:** DEFERRED: needs an owner decision on the default (require_section=True vs a skip='fail' option); changes verdicts for green consumers.
+
+## 49-F8 [P3] Config error printed twice, with a 'substituted a fallback' log whose line number is stale in 10 of 13 sites
+
+- **Evidence:** Demo: every usage/config error prints `cli.py line 201: substituted a fallback after ConfigError: <msg>` (logging lastResort to stderr) and then `py-ci-shared: <msg>`. Nothing was substituted; exit is 2. Hard-coded line numbers are wrong: cli.py says 'line 142' at line 179 and 'line 201' at line 242; consumer_import_census.py 250 vs 242; dart_scanners.py 698 vs 654; epsilon_padded_denominators.py 150 vs 123. A script comparing the number in the string with the real line: 10 of 13 occurrences of 'substituted a fallback after' differ by more than 3.
+- **Failure scenario:** Every CI log shows each configuration error twice, once with a false claim and a wrong line; people look at the wrong line in cli.py.
+- **Proposed fix:** Drop the logger.warning in handlers that already print a message and return a code; otherwise use logger.debug with `%(filename)s:%(lineno)d`. Add a meta-test that a literal 'X.py line N' matches its own line.
+- **AST-checkable:** True; FP risk: low
+- **Disposition:** DEFERRED: the logger.warning sites are shared with audit 40 gate modules and _core; waits on those finishing, then a meta-test for 'X.py line N'.
+
+## 49-F9 [P3] `run-all` writes BUDGET to stderr and results to stdout; a cached PASS is counted as 'passed' with no cached tally
+
+- **Evidence:** cli.py `_report`: `_print(f"{'BUDGET':5} {over}", err=True)` goes to stderr while PASS/FAIL rows go to stdout, so under `2>&1` through a pipe the BUDGET line detaches from its gate row. Demo second run: `PASS naive_utcnow (0.03s)` / `cached: nothing in the repository changed since it last passed` / `1 passed, 0 failed, 0 skipped, 0 error`; the summary has no cached count.
+- **Failure scenario:** Verdicts replayed from a cache keyed on (size, mtime) are summarised the same as fresh runs in the line CI greps.
+- **Proposed fix:** Print BUDGET to stdout under its row; add `(N cached)` to the summary line.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** DEFERRED: cli.py _report output change (BUDGET to stdout, cached count); waits on the CLI pass with F3-F5.
+
+## 49-F10 [P3] `workflow_runner_labels` main says nothing on success or when zero workflow files were scanned
+
+- **Evidence:** workflow_runner_labels.py:203 calls find_workflow_runner_label_problems(args.repo, min_files=0); on a repo with no .github/workflows it printed nothing and exited 0 (demo). It also mis-logs 'workflow_runner_labels.py line 187' at line 205 (see 49-F7).
+- **Failure scenario:** Running it from the wrong directory (default repo '.') passes silently.
+- **Proposed fix:** Print `workflow_runner_labels: N workflow file(s) checked, M problem(s)`; exit 2 on zero files unless --allow-empty.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** RESOLVED 5ce4d25: summary line printed, exit 2 on zero workflow files unless --allow-empty (CHANGELOG Behaviour change).
+
+## 49-F11 [P3] mutation_teeth truncated/cached runs pass with a warnings.warn only
+
+- **Evidence:** mutation_teeth.py:900-906: `if outcome.truncated or outcome.from_cache: warnings.warn(...)` then returns normally. Under `py-ci-shared run-all` the row is `PASS` with an empty message; the warning's visibility depends on -W settings, pytest capture and PYTHONWARNINGS. Source reading only; no mutation run was made (out of scope this round).
+- **Failure scenario:** A CI step with `-W ignore` reports PASS for a run that tested a sample of the mutants.
+- **Proposed fix:** Let a PASS carry a note so the CLI prints the summary for truncated/cached verdicts; default fail_on_truncation for CLI-enabled runs.
+- **AST-checkable:** False; FP risk: medium
+- **Disposition:** DEFERRED: source read confirms mutation_teeth.py warns only on truncated/cached results; fix needs a PASS-with-note channel in the runner (shared with F5) and was not run against the real harness; waits on that runner outcome type.
+
+## 49-F12 [P3] teeth_sweep: unreadable --cases file is a traceback with exit 1, the 'toothless' exit code
+
+- **Evidence:** teeth_sweep.py:256 `json.loads(pathlib.Path(args.cases).read_text(...))` is outside any handler; a missing or malformed file raises (exit 1), the same code main() returns for 'NO TEETH' (line 281). An empty list `[]` runs the whole-suite baseline then reports `0 cases`, exit 0. Source reading; the baseline suite was not triggered.
+- **Failure scenario:** A typo in the cases path in a release script looks like a toothless-fix finding.
+- **Proposed fix:** Catch OSError/JSONDecodeError and return 2 with `teeth_sweep: cannot read --cases <path>: ...`; return 2 for zero cases.
+- **AST-checkable:** False; FP risk: low
+- **Disposition:** RESOLVED 5ce4d25: unreadable/malformed --cases and empty list return 2 before the baseline suite; unit tests with the suite stubbed.

@@ -1,0 +1,122 @@
+# 40_gate_false_negatives
+
+Round 2026-11-07, dimension 40. Every finding is OPEN until its Disposition line says otherwise.
+
+Coverage: 12 gates (swallowed_exceptions, stdlib_json_ban, naive_utcnow, unsafe_deserialization, hardcoded_seed_in_library, env_flag_parsing, check_then_act_outside_lock, fail_open_handlers, predictable_tmp_path, systemexit_in_library, module_reload_safety, rollback_then_continue), about 370 adversarial snippets run through the public find_* functions (scripts and raw output in the scratchpad audit40 folder: h.py, h2.py, h3.py, h5.py, out*.txt). stdlib_json_ban had no worth-reporting miss (only non-stdlib simplejson/pandas/sys.modules, out of its scope). A consumer-tree run (pyutilz, social, glossum_backend_scripts, mlframe) was started and stopped by me because it produced no output in 5 minutes on the loaded machine, so no consumer-tree finding is claimed. Many misses were also read against each docstring and dropped when the docstring declares them out of scope.
+
+## 40-F1 (P1) systemexit_in_library: entry_names is searched as a substring, so any function name containing main, cli, entry exempts itself (domain, client, remaining, decline)
+
+- Evidence: src/py_ci_shared/systemexit_in_library.py:38 DEFAULT_ENTRY_NAMES = r"main|cli|parse_args|_main|run_cli|entry" and :132 `entry.search(fn.name)` (unanchored). Ran audit40/h5.py through find_systemexit_in_library on `import sys; def NAME(): sys.exit(1)`: get_domain_dsn -> 0 findings, client_dsn -> 0, remaining_budget -> 0, decline_request -> 0, fetch_dsn -> 1 (control).
+- Failure scenario: The gate exists for a `_get_dsn` helper that sys.exit()s inside a background thread. A helper called get_domain_dsn, client_config, load_entry_settings or remaining_quota is silently exempt, so the same incident class passes the gate.
+- Proposed fix: Anchor the default: r"^(?:main|_main|cli|run_cli|parse_args)$|^(?:main|cli)_" and use fullmatch/search accordingly; keep the parameter for consumers.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 0c707a1: default entry_names anchored.
+
+## 40-F2 (P1) swallowed_exceptions: ConnectionError/TimeoutError (OSError subclasses), named exception-tuple constants and suppress(*errs) are out of scope
+
+- Evidence: Ran find_swallowed_exceptions on `try: p.write_text('x')\nexcept ConnectionError: pass` -> 0 findings; same for `except TimeoutError`, `except socket.error`, `except sqlite3.Error`, `except subprocess.CalledProcessError`, `except requests.RequestException`; `ERRS=(OSError, Exception)` then `except ERRS: pass` -> 0; `with contextlib.suppress(*errs)` and `suppress(ConnectionError, TimeoutError)` -> 0. Control `except OSError: pass` -> 1. Module docstring (swallowed_exceptions.py:7-9) lists only OSError/IOError/EnvironmentError/PermissionError/shutil.Error.
+- Failure scenario: A network write wrapped in `except ConnectionError: pass` (an OSError subclass, the commonest I/O swallow in client code) or `except ERRS: pass` with a module constant including Exception is invisible, though the rule's founding incident was an I/O swallow.
+- Proposed fix: Resolve builtin OSError subclasses (ConnectionError family, TimeoutError, BlockingIOError, InterruptedError, socket.error, os.error, select.error); resolve a Name bound at module level to a tuple of exception names; treat suppress(*x) as broad.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 0c707a1: OSError subclasses, socket/os/select aliases, module tuple constants and suppress(*errs) (unresolved starred = broad). WON'T FIX part: sqlite3.Error, requests.RequestException, CalledProcessError are not OSError subclasses and stay out of scope by the module's definition.
+
+## 40-F3 (P1) hardcoded_seed_in_library: only the keywords random_state/seed are seen; random_seed (CatBoost), rng=, locals, SeedSequence/PCG64/Generator.manual_seed, tf/keras seeds pass
+
+- Evidence: hardcoded_seed_in_library.py:48 _SEED_KEYWORDS = frozenset({'random_state','seed'}). Ran on `def fit(X, y, random_state=None): return CatBoostClassifier(random_seed=42).fit(X, y)` -> 0 findings (control random_seed=random_state -> 0 as expected). Also 0 for `s = 42; np.random.default_rng(s)`, `np.random.SeedSequence(7)`, `torch.Generator().manual_seed(7)`, `Generator(PCG64(1))`, `tf.random.set_seed(1)`, `keras.utils.set_random_seed(1)`, `M(rng=1)`, `M(random_seed=7)`; `default_rng(42)` and `M(seed=7)` are reported.
+- Failure scenario: A seeded function that drops the caller's seed into CatBoost via random_seed=42 (CatBoost's own name) makes every ensemble member identical and the variance estimate zero, exactly the incident the gate names.
+- Proposed fix: Widen _SEED_KEYWORDS to random_seed, rng, rand_state, seed_value; add SeedSequence, PCG64/MT19937/Philox, Generator.manual_seed, set_seed/set_random_seed/seed_everything; fold a one-step local constant (name assigned an int literal in the same function).
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 0c707a1: widened keywords, seeders, .manual_seed, local int constants.
+
+## 40-F4 (P2) swallowed_exceptions: any `return` in the try body exempts the whole handler, including a write that follows a conditional return
+
+- Evidence: Ran on `try:\n if a:\n  return 1\n p.write_text('x')\nexcept OSError: pass` -> 0 findings; control without the conditional return -> 1. Docstring line 'a fallback: the try body returns a value on success'. The write after the early return is swallowed and falls through.
+- Failure scenario: A cache writer that returns early on a hit and otherwise writes, with `except OSError: pass`, is the founding incident shape and passes.
+- Proposed fix: Exempt only when the LAST statement of the try body is the return (the success path), not any nested return.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: RESOLVED 3852401: fallback exemption now requires that no call follows the first return (the proposed 'last statement' rule flagged a real psutil fallback in this repo).
+
+## 40-F5 (P2) systemexit_in_library: `import sys as _sys` and cross-module use through `import mod; mod.fn()` are not seen
+
+- Evidence: systemexit_in_library.py:66 requires func.value.id in {'sys','os','builtins'} (no ImportAliases). Ran: `import sys as _sys; def helper(): _sys.exit(1)` -> 0 findings. _imported_names (line 52-60) records only ImportFrom: cli_tool.py (guarded, `def get_dsn(): sys.exit(1)`) used by worker.py via `import cli_tool; cli_tool.get_dsn()` -> 0 findings, while `from cli_tool import get_dsn` -> 1.
+- Failure scenario: The exact bug (CLI helper later called from a thread) goes unreported whenever the consumer writes `import cli_tool` or aliases sys.
+- Proposed fix: Use _core.ImportAliases for the exit calls; in _imported_names also record `Attribute(Name(module), fn)` where the Name resolves to an imported scanned module.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 3852401: ImportAliases for exits; `import mod; mod.fn()` counted as shared use.
+
+## 40-F6 (P2) rollback_then_continue: write detection keys on a receiver-name regex and literal SQL, so s.add(), helper writes and variable SQL pass
+
+- Evidence: rollback_then_continue.py:105-108 _SESSION_RECEIVER = re.compile(r'sess|db|conn|uow|tx|cursor|cur$'); execute counts only for a literal INSERT/UPDATE text. Ran: `for i in items: try: s.add(i) except Exception: s.rollback()` -> 0; `cur.execute(sql, (i,))` with a variable sql -> 0; `insert_row(conn, i)` helper -> 0; `rb = s.rollback ... rb()` -> 0. Reported: receiver named db/conn, or an f-string INSERT.
+- Failure scenario: Importer loops using a session named `s`, `repo` or `store`, or SQL held in a variable (the common ORM-less style), lose earlier items and report success.
+- Proposed fix: Treat the loop as writing when it contains any call on a receiver that also has .rollback()/.commit() called in the same function; count execute() of a non-literal as a write.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: RESOLVED 3852401 (partial): writes found through the rolled-back object and execute(var_sql, params). WON'T FIX: bare execute(var_sql) stays a probe (existing negative control); `rb = s.rollback` aliasing not followed.
+
+## 40-F7 (P2) check_then_act_outside_lock: class-level dicts, aliases, non-subscript acts (del, pop, update, setdefault, add, append), try/except KeyError and lazy singletons are out of scope
+
+- Evidence: Ran with a Lock in the module: `if k not in c: c.setdefault/update/pop/add/append(...)` -> 0; `if k in c: del c[k]` -> 0; `d = c; if k not in d: d[k]=1` -> 0; `cls._c` and `A._c` class dicts -> 0; `try: c[k] except KeyError: c[k]=1` -> 0; `global _inst; if _inst is None: _inst = build()` -> 0; `c.__setitem__` -> 0; `self.a.c` -> 0. Reported: plain, walrus, async, annotated, defaultdict, early-return shapes. Docstring (check_then_act_outside_lock.py:9-17) says deliberately narrow.
+- Failure scenario: The most common real race (lazy global singleton, class-level cache dict, check-then-del) is not caught in a module that does own a Lock.
+- Proposed fix: Add acts del/pop/setdefault/update/add/append on the same key, class-attribute dicts, and the `global X; if X is None: X = ...` pattern when the module owns a lock.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: RESOLVED 3852401 (partial) + follow-up (see git log, 'Stop check_then_act_outside_lock pairing'): del, pop/popitem/update and cls._x acts. Follow-up removed false pairings found on pyutilz (8 src findings, all false: lock-table refcount removal re-checked under its own lock block, idempotent pop(k, default), *_unlocked / 'caller holds' helpers); pyutilz src and tests now 0. WON'T FIX setdefault (atomic). DEFERRED: lazy `global X` singletons, try/except KeyError, class-name (A._c) dicts, alias dicts; they need a dataflow design.
+
+## 40-F8 (P2) unsafe_deserialization: Unpickler subclass without find_class, a verify call inside a conditional branch, np.load(allow_pickle=var), keras/tf load_model
+
+- Evidence: Ran find_unsafe_deserialization: `class U(pickle.Unpickler): pass; U(fh).load()` -> 0; `def f(b, strict): if strict: verify_sig(b); return pickle.loads(b)` -> 0 (while an unconditional verify_user(req) before the load is still reported, so the conditional case is exempted as a verification); `np.load(p, allow_pickle=a)` -> 0; `tf.keras.models.load_model(p)` -> 0; `sklearn.externals.joblib` alias -> 0.
+- Failure scenario: A load whose verification only runs in some modes, or a bare Unpickler subclass (which has the default find_class and the full gadget surface), reads as safe.
+- Proposed fix: Count a hash/verify call only when it dominates the load (top-level statement of the function, not nested in if/try); report Unpickler subclasses lacking find_class; report allow_pickle that is not the literal False.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: RESOLVED 3852401 (partial): dominating verify, Unpickler subclass without find_class, np.load(allow_pickle=var). WON'T FIX keras/tf load_model (safe_mode defaults True) and the sklearn.externals alias.
+
+## 40-F9 (P2) fail_open_handlers: gate-named functions that swallow with pass/continue/suppress, sys.exit(0), pytest.skip, ignore a returncode or return clean on empty input are not reported
+
+- Evidence: Ran find_fail_open_handlers on functions named check_gate/find_gate: `except Exception: return 0` and `except OSError: return []` are reported; `except Exception: sys.exit(0)`, `pytest.skip(...)` in the handler, `print(e)`, `except OSError: pass` then `return []`, `except SyntaxError: continue`, `contextlib.suppress(OSError)`, `subprocess.run([...]); return 0`, and `if not files: return 0` -> all 0 findings.
+- Failure scenario: A gate that turns a parse/IO failure into a pass by exit 0, a skip or a swallowed `continue` is silent, and swallowed_exceptions exempts the same shapes when the try body returns a value.
+- Proposed fix: In functions matching the gate name regex, report any broad handler that does not raise/fail, including sys.exit(0), skip, continue, pass; report a returncode that is never read.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: DEFERRED: not implemented in this pass; needs a design for gate-named functions (exit 0, skip, continue, unread returncode) and a consumer-tree FP run.
+
+## 40-F10 (P3) env_flag_parsing: bool(int(os.environ.get())), `'X' in os.environ`, f-string keys, default-argument reads are not boolean contexts
+
+- Evidence: Ran find_hand_parsed_env_flags(prefixes=['X_']): `bool(int(os.environ.get('X_FLAG','0')))`, `'X_FLAG' in os.environ`, `os.getenv(f'X_{n}')`, `def f(a=os.getenv('X_FLAG'))`, `dict(os.environ).get(...)` -> 0; == '1', lower()=='true', getenv truth test, `from os import environ`, alias env.get -> reported.
+- Failure scenario: Each of those has its own idea of 'on' (FLAG=0 turns it on for the `in os.environ` form), the exact bug class.
+- Proposed fix: Add `in os.environ`, bool()/int() wrappers and JoinedStr keys with a literal prefix.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 3852401 (partial): bool(int(env)), `'X' in os.environ`, f-string keys. WON'T FIX default-argument reads (not a boolean context) and dict(os.environ).
+
+## 40-F11 (P3) module_reload_safety.find_reloads_in_code: sys.modules.clear(), sys.modules[k]=None, exec_module of a spec, getattr(importlib,'reload')
+
+- Evidence: Ran find_reloads_in_code([d], d): those four -> 0; reload/imp.reload/del sys.modules/pop/alias/from-import forms -> reported.
+- Failure scenario: Production code can still re-execute a module body or empty the module table with no finding.
+- Proposed fix: Add modules.clear(), assignment to sys.modules[...] with None, spec.loader.exec_module on an already imported name.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 3852401 (partial): sys.modules.clear(), sys.modules[k]=None, getattr(importlib,'reload'). WON'T FIX exec_module (legitimate in importers; cannot tell re-execution from first load).
+
+## 40-F12 (P3) predictable_tmp_path: exemption is by mere mention of getuid/USERNAME, and tempfile.mktemp and .format() are not seen
+
+- Evidence: Ran find_predictable_tmp_path: `uid = os.getuid()` unused plus `os.path.join(tempfile.gettempdir(),'a.lock')` -> 0; `msg='USERNAME'` same -> 0; `'{}/a.lock'.format(tempfile.gettempdir())` -> 0; `tempfile.mktemp()` -> 0.
+- Failure scenario: A function that mentions the user id for another purpose hides a shared-temp lock path.
+- Proposed fix: Require the per-user value to flow into the joined path expression; flag mktemp.
+- AST-checkable: True
+- FP risk: medium
+- Disposition: RESOLVED 3852401: per-user value must flow into the path; .format() paths and mktemp reported.
+
+## 40-F13 (P3) naive_utcnow: getattr(datetime.datetime, 'utcnow') with a literal name is not seen
+
+- Evidence: Ran find_naive_utcnow on `getattr(datetime.datetime,'utcnow')()` -> 0; `f = datetime.datetime.utcnow` is reported. Naive now()/today()/fromtimestamp() are out of scope here by design (ruff DTZ via timezone_honest).
+- Failure scenario: Rare, deprecated API reached indirectly.
+- Proposed fix: Treat getattr(x, '<utcnow|utcfromtimestamp>') as a reference.
+- AST-checkable: True
+- FP risk: low
+- Disposition: RESOLVED 3852401: getattr(x, 'utcnow'/'utcfromtimestamp') with a literal name.

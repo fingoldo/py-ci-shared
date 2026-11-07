@@ -1,0 +1,75 @@
+# 52 self_hygiene: py_ci_shared run on itself
+
+Method: ruff F401/F841/F811, vulture (60/80/100), `py-ci-shared run` of complexity_ratchet, loc_budget, function_length, unread_function_params, tests/test_self_api_hygiene.py and test_gate_entry_contract.py (11 passed), and direct calls of find_drifted_duplicate_functions, find_uncalled_functions, find_systemexit_in_library, find_import_cycles on src.
+
+Clean (demonstrated): ruff F401/F841/F811 on src, tests, .github/scripts 0 hits; no TODO/FIXME debris outside gate code and fixtures; no src file over 1000 LOC; complexity_ratchet, function_length, loc_budget PASS with empty baselines; all 14 workflows have a timeout gate and every workflow_path, module and test path in pyproject exists; no orphan module in src/py_ci_shared; configs/ and src/py_ci_shared/configs identical and parity-tested; ruff ERA001 6 hits are prose comments, not code. Suppression markers (49 in src/tests/.github) all carry reasons.
+
+## 52-F1 [P2] 22 private functions in src are defined and never called or referenced
+- Evidence: vulture --min-confidence 60 src flagged them; `git grep -nw <name> -- src tests` returns exactly 1 hit (the def) for: _from_import_names_by_file (code_audit/dead_import.py:178), _function_receiver_ids (getattr_unknown_attribute.py:235), _root_of (tautological_guard.py:42), _inspects (effect_assertion_parity.py:641), _cached_imported_names (:669), _patches_a_real_driver_cached (:806), _fixture_names_backed_by_a_real_database (:451), _is_utcnow_call (naive_utcnow.py:58), _sentinel_names_for (inert_patch_targets.py:325), _paths_and_expression (marker_runner_coverage.py:303), _blame_ages (stale_comment_age.py:302), _referenced_names (uncalled_functions.py:232), _env_var_names_in_file (readme_env_var_parity.py:188), _after (persisted_negative_probe.py:177), _git_dir (install_safe_hook.py:56), _has_pathless_pytest_invocation (ci_test_dir_reachability.py:218), _find_cfg_get_calls_in_file (config_call_site_parity.py:225), _release_is_protected (resource_release_paths.py:99). _attribute_names_in_corpus, _dataclass_fields and _is_excluded appear only in a docstring. find_uncalled_functions(src files) listed 27 private names not called from src.
+- Failure scenario: Dead helpers keep stale behaviour that reads like live logic; a later reader fixes the dead copy while the live path stays wrong, and mutation sweeps spend budget on code no test can kill.
+- Proposed fix: Per owner rule (uncalled: wire into prod or classify): for each decide wire-in (several look like abandoned halves of a feature, e.g. _blame_ages, _referenced_names inside uncalled_functions itself) or delete. Then enable uncalled_functions restricted to names starting with an underscore on src (see F4).
+- ast_checkable: True; fp_risk: low (autouse fixtures such as _offline_suite_without_credentials and getattr dispatch such as statement_columns_exist_in_ddl._drop are real uses and were excluded)
+- Disposition: OPEN
+
+## 52-F2 [P2] An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself
+- Evidence: find_drifted_duplicate_functions([src]) returned 8 groups: _call_name 10 copies similarity 1.000 (_silent_skip_scan.py:33, audit_path_references.py:51, cancellation_prone_moments.py:87, code_audit/dead_endpoint_params.py:19, log_throttle.py:15, timing_literal_in_call.py:27, group_blind_split.py:55, nondiscriminating_shapes.py:191, numba_seed_range.py:76, oof_buffer_zero_init.py:51, optional_truthiness.py:365), register_refresh_option 6 copies 0.948, _target_name 3, _mentions 3, _rglob_test_files 2, _test_functions 2, dotted_name 2 (_core/node_index.py:274 vs code_audit/_base.py:178, although _core exists to be the one copy), scan_todo_markers 2. drifted_duplicate_functions is among the 158 gates not enabled on self (F3).
+- Failure scenario: A fix to call-name resolution (a new node shape, a new Python version) lands in one copy; the other nine keep the old false negative. This is exactly the drift class the package sells to consumers.
+- Proposed fix: Hoist _call_name, dotted_name, register_refresh_option, _rglob_test_files into _core (or code_audit/_base) and import them; enable drifted_duplicate_functions on src with an empty baseline.
+- ast_checkable: True; fp_risk: medium (same name with different return type, str vs Optional[str]; the gate groups by signature and still found them)
+- Disposition: OPEN
+
+## 52-F3 [P2] 158 of 201 gates are not enabled on the package itself, with a recorded reason for only one
+- Evidence: tomllib on pyproject.toml: 56 [tool.py_ci_shared.gates.*] sections; `py-ci-shared list` shows 201 kind=gate; 158 are not enabled, including drifted_duplicate_functions, function_complexity, import_side_effects, unexecuted_function_bodies, tracked_secret_shapes, repo_hygiene, ignore_ratchet, phantom_code_references, docs_inventory_parity, baseline_hygiene, stale_source_citations, systemexit_in_library, unresolved_module_attributes. Only uncalled_functions has a rationale (pyproject.toml:271). Direct dogfood calls: systemexit_in_library 0 findings and import_cycles 0 findings (cheap to enable), drifted_duplicate_functions 8, uncalled_functions 453 (public API).
+- Failure scenario: A gate tested only on fixtures can stay green while the real tree violates it; a gate that has never run on its author's own tree has not been shown to work on a real corpus.
+- Proposed fix: Add a meta-test: every kind=gate module is either enabled in pyproject or listed in an explicit NOT_APPLICABLE dict with a reason (consumer-only: sql_*, cuda_*, numba_*, plotly_*). Enable the applicable ones with empty baselines first (import_cycles, systemexit_in_library, drifted_duplicate_functions, function_complexity).
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN
+
+## 52-F4 [P3] uncalled_functions is disabled for the whole tree although a private-only scope has no public-API objection
+- Evidence: pyproject.toml:271-272 says it is off because every public assert_*/find_* is consumer-called. find_uncalled_functions(src files, root) returned 453 entries, 27 of them starting with an underscore (none can have consumer callers); 18 confirmed dead in F1.
+- Failure scenario: The stated reason covers public names only; private dead code is undetectable by construction.
+- Proposed fix: Add a private_only (or name_filter) option to uncalled_functions and enable it here.
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN
+
+## 52-F5 [P3] loc_budget covers src only; one test module exceeds the 1000-LOC budget with no baseline entry and another is at 953
+- Evidence: pyproject.toml:256 files = ["src/**/*.py"]. wc -l: tests/test_mutation_teeth.py 1233, tests/test_mutation_teeth_regressions.py 953. No src file is over 1000 and tests/baselines/loc_budget.json is {}. test_mutation_teeth.py is currently modified in the working tree by another session.
+- Failure scenario: The owner rule is to split above 1k LOC; the budget gate exempts the largest files in the repo, which are tests.
+- Proposed fix: Widen loc_budget files to include tests/**/*.py; baseline test_mutation_teeth.py at 1233 or split it by operator family.
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN
+
+## 52-F6 [P3] self_api_hygiene baseline carries 265 grandfathered offenders
+- Evidence: tests/baselines/self_api_hygiene.json: no_all 184 modules (of about 270), no_docstring 61 public functions, unannotated 20, library_print 14 print calls in 6 functions, import_time_calls 113 (registration, accepted). tests/test_self_api_hygiene.py and tests/test_gate_entry_contract.py pass (11 passed), so none of it is stale; the debt is real.
+- Failure scenario: Public functions without docstrings or annotations are the API consumers read; without __all__ every helper is importable API and only the underscore is a boundary (compare F1).
+- Proposed fix: Pay down per the baseline-debt rule: mechanical __all__ for the 184 modules, docstrings for 61, annotations for 20; baseline shrinks toward zero.
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN
+
+## 52-F7 [P3] Dead parameters: one keyword always None and one never read
+- Evidence: _mutation_sweep.py:222 `limit_name: None = None` is never read and its only caller passes limit_name=None (mutation_teeth.py:618). module_reload_safety.py:127 has_restore(..., in_finalizer: bool = False): in_finalizer is only set at :154 and :156 and never read in the body. vulture reports both at 100% confidence. unread_function_params did not catch them (it targets named knobs such as seed or timeout; run on src it returned 0 findings, and on a scratch file def g(x, y=1) it reports nothing).
+- Failure scenario: A parameter that looks like behaviour but does nothing misleads: the recursive call passes in_finalizer=True as if it changed the result.
+- Proposed fix: Remove both parameters and their call-site arguments; consider a general vulture-100 unread-parameter check in self-ci.
+- ast_checkable: True; fp_risk: low (pytest hook args nextitem/exitstatus/style and the @overload other_type are framework-fixed and must be excluded)
+- Disposition: OPEN
+
+## 52-F8 [P3] Stray tracked file f.txt and an untracked out.txt in the repo root
+- Evidence: git ls-files lists f.txt (content: 0), added in commit fd57934 (1.21.1). git status shows untracked out.txt holding a stale python error about h.py (belongs to another session; not touched). Neither is referenced anywhere.
+- Failure scenario: Scratch debris in the root of a package that ships a repo_hygiene gate (not enabled, F3); out.txt can be swept into a commit by git add -A.
+- Proposed fix: git rm f.txt; ignore or forbid scratch root files via .gitignore or repo_hygiene.
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN
+
+## 52-F9 [P3] unread_function_params is enabled on self with root=tests, takes 72.9s and trips its own 30s budget
+- Evidence: py-ci-shared run unread_function_params printed 'BUDGET unread_function_params took 72.9s, over its 30s budget' and PASS, then 'BUDGET 1 gate(s) over budget'. complexity_ratchet took 50.0s; loc_budget 1.05s; function_length 2.31s.
+- Failure scenario: A standing BUDGET line on a clean tree trains people to ignore it and hides a later real regression.
+- Proposed fix: Raise budget_s for these gates with a comment, or narrow the scan; the warning should vanish on a clean tree.
+- ast_checkable: False; fp_risk: n/a
+- Disposition: OPEN
+
+## 52-F10 [P3] Two suppression markers stacked on one line
+- Evidence: src/py_ci_shared/api_floor.py:199: `except (OSError, ValueError):  # swallow-ok: an unreadable entry is a miss; the file is analysed again  # best-effort: a miss only costs a re-analysis`.
+- Failure scenario: Ambiguous marker grammar: a regex change could drop the reason or read 'best-effort:' as a second marker.
+- Proposed fix: Merge into one reason sentence behind a single '#'.
+- ast_checkable: True; fp_risk: low
+- Disposition: OPEN

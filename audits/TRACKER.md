@@ -1012,3 +1012,142 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 35-F8 | P3 | No self meta-test on module-level call statements: 113 top-level Expr(Call) statements in library modules | RESOLVED. Same file, rule import_time_calls: module-body Expr(Call) other than append/add/update/setdefault/register/extend. The audit's 113 is not reproduced by this definition (module-body statements, the only ones that run a... |
 | 35-F9 | P3 | Canary exemptions: 35 of 179 gates have no tests/canary/<name>/ directory; staleness of EXEMPT entries is not asserted | RESOLVED. tests/test_gate_teeth.py::test_canary_exemptions_are_valid_and_still_needed: every EXEMPT key names a module, and an EXEMPT gate whose source now calls a corpus function (_core.gate_contract.scans_a_corpus) must carry... |
 | 35-F10 | P3 | Verified already satisfied (no action): bare except 0, registry sorted/unique, registry vs README 0 absent, registry vs tests 0 missing, cli=true without main 0, registry entries naming absent functions 0 | WON'T FIX (nothing to fix). Verified already satisfied; the optional E722 pin is redundant: ruff's default select already contains E722 (E4, E7, E9, F), and a bare except would fail the blocking ruff hook. |
+
+## Round 2026-11-07 — full agent audit of py_ci_shared (dimensions 40-52)
+
+132 findings. Reports in audits/2026-11-07/. Each disposition is the text written into the finding; OPEN means not yet worked.
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-------------|
+| 40-F1 | P1 | systemexit_in_library: entry_names is searched as a substring, so any function name containing main, cli, entry exempts itself (domain, client, remaining, decline) | RESOLVED 0c707a1: default entry_names anchored. |
+| 40-F2 | P1 | swallowed_exceptions: ConnectionError/TimeoutError (OSError subclasses), named exception-tuple constants and suppress(*errs) are out of scope | RESOLVED 0c707a1: OSError subclasses, socket/os/select aliases, module tuple constants and suppress(*errs) (unresolved starred = broad). WON'T FIX part: sqlite3.Error, requests.RequestException, CalledProcessError are... |
+| 40-F3 | P1 | hardcoded_seed_in_library: only the keywords random_state/seed are seen; random_seed (CatBoost), rng=, locals, SeedSequence/PCG64/Generator.manual_seed, tf/keras seeds pass | RESOLVED 0c707a1: widened keywords, seeders, .manual_seed, local int constants. |
+| 40-F4 | P2 | swallowed_exceptions: any `return` in the try body exempts the whole handler, including a write that follows a conditional return | RESOLVED 3852401: fallback exemption now requires that no call follows the first return (the proposed 'last statement' rule flagged a real psutil fallback in this repo). |
+| 40-F5 | P2 | systemexit_in_library: `import sys as _sys` and cross-module use through `import mod; mod.fn()` are not seen | RESOLVED 3852401: ImportAliases for exits; `import mod; mod.fn()` counted as shared use. |
+| 40-F6 | P2 | rollback_then_continue: write detection keys on a receiver-name regex and literal SQL, so s.add(), helper writes and variable SQL pass | RESOLVED 3852401 (partial): writes found through the rolled-back object and execute(var_sql, params). WON'T FIX: bare execute(var_sql) stays a probe (existing negative control); `rb = s.rollback` aliasing not followed. |
+| 40-F7 | P2 | check_then_act_outside_lock: class-level dicts, aliases, non-subscript acts (del, pop, update, setdefault, add, append), try/except KeyError and lazy singletons are out of scope | RESOLVED 3852401 (partial) + follow-up (see git log, 'Stop check_then_act_outside_lock pairing'): del, pop/popitem/update and cls._x acts. Follow-up removed false pairings found on pyutilz (8 src findings, all false: ... |
+| 40-F8 | P2 | unsafe_deserialization: Unpickler subclass without find_class, a verify call inside a conditional branch, np.load(allow_pickle=var), keras/tf load_model | RESOLVED 3852401 (partial): dominating verify, Unpickler subclass without find_class, np.load(allow_pickle=var). WON'T FIX keras/tf load_model (safe_mode defaults True) and the sklearn.externals alias. |
+| 40-F9 | P2 | fail_open_handlers: gate-named functions that swallow with pass/continue/suppress, sys.exit(0), pytest.skip, ignore a returncode or return clean on empty input are not reported | DEFERRED: not implemented in this pass; needs a design for gate-named functions (exit 0, skip, continue, unread returncode) and a consumer-tree FP run. |
+| 40-F10 | P3 | env_flag_parsing: bool(int(os.environ.get())), `'X' in os.environ`, f-string keys, default-argument reads are not boolean contexts | RESOLVED 3852401 (partial): bool(int(env)), `'X' in os.environ`, f-string keys. WON'T FIX default-argument reads (not a boolean context) and dict(os.environ). |
+| 40-F11 | P3 | module_reload_safety.find_reloads_in_code: sys.modules.clear(), sys.modules[k]=None, exec_module of a spec, getattr(importlib,'reload') | RESOLVED 3852401 (partial): sys.modules.clear(), sys.modules[k]=None, getattr(importlib,'reload'). WON'T FIX exec_module (legitimate in importers; cannot tell re-execution from first load). |
+| 40-F12 | P3 | predictable_tmp_path: exemption is by mere mention of getuid/USERNAME, and tempfile.mktemp and .format() are not seen | RESOLVED 3852401: per-user value must flow into the path; .format() paths and mktemp reported. |
+| 40-F13 | P3 | naive_utcnow: getattr(datetime.datetime, 'utcnow') with a literal name is not seen | RESOLVED 3852401: getattr(x, 'utcnow'/'utcfromtimestamp') with a literal name. |
+| 41-F1 | P1 | shared_mutable_placeholder flags every module-level singleton accessor (`_CLIENT = Client()`, a ThreadPoolExecutor, an Engine, a cache dict) and has no marker, allow list or baseline | OPEN |
+| 41-F2 | P2 | fail_open_handlers `silent_default_return` flags ordinary control-flow exceptions (StopIteration, KeyError, queue.Empty, ProcessLookupError, ZeroDivisionError, AttributeError, TimeoutError, CancelledError, UnicodeDecodeError, JSONDecodeError, CalledProcessError) in any function | OPEN |
+| 41-F3 | P2 | CHANGELOG 'Gate false positives 2026-11-06' says a single-value parse guard (`int(x)` / `except ValueError: return default`) is no longer flagged; the code and its tests still flag it | OPEN |
+| 41-F4 | P2 | `# literal-set-ok:` exempts only the `literal-set` rule; the `threshold` and `named-constant` rules of drifted_duplicate_literals have no marker, so numeric-zero floors and per-kernel constants can only be baselined | OPEN |
+| 41-F5 | P2 | no_source_text_tests reports any upper-case SQL keyword in a membership assert whatever the right operand is (HTTP Allow header, event list, dict keys, set of operations) | OPEN |
+| 41-F6 | P2 | env_flag_parsing reports numeric and path-like variables read by truthiness or compared with '0'/'1' whenever the variable name is not on its short word list | OPEN |
+| 41-F7 | P2 | fail_open_handlers still flags fail-closed verification and deny helpers (`return False` in `is_allowed`, `check_ready`, MAC and signature checks); only names containing 'signature' or 'token' escape by accident | OPEN |
+| 41-F8 | P2 | pickle_state_completeness `unpicklable-without-getstate` flags every class that assigns a Thread, lock or connection outside __init__, including classes that are never pickled; no marker | OPEN |
+| 41-F9 | P3 | drifted_duplicate_literals `literal-set` groups dtype bounds, significance levels and port pairs because they are not in DEFAULT_IGNORE | OPEN |
+| 41-F10 | P3 | hash_key_determinism flags `json.dumps` of a dict literal with a fixed key order and of `dataclasses.asdict(obj)` that is hashed without sort_keys | OPEN |
+| 41-F11 | P3 | secret_assertion_operands: 37-F22 closed the literal-name form only; `key = 'OMP_NUM_THREADS'; assert os.environ.get(key) == '1'` is still flagged | OPEN |
+| 41-F12 | P3 | skip_as_pass treats `echo "SKIPPED <optional step>"` followed by `exit 0` after the real checks ran as a skipped guard | OPEN |
+| 41-F13 | P3 | Tracker rows 37-F35 and 37-F40 carry stale or contradictory text, and 37-F19 stays 'NOT REPRODUCED' without a closing action | OPEN |
+| 41-F14 | P3 | Glossum's gate_false_positives GF-2 ('gate may have lost detection of ADD UNIQUE / SET NOT NULL') is not reproduced: the current ddl_lock_safety still reports both migrations, so the baseline entries glossum removed are live findings | OPEN |
+| 42-F1 | P1 | DEFAULT_EXCLUDE drops any directory named build/dist/venv/site-packages anywhere in the tree, so a real package directory such as src/pkg/build is outside every gate's corpus in git mode | OPEN |
+| 42-F2 | P1 | scan_roots_excluding matches the exclude fragments against the ABSOLUTE posix path (the ARCH-14 defect again): a checkout under a directory containing a fragment parses zero files | OPEN |
+| 42-F3 | P2 | line_has_marker treats text inside a multi-line string literal as a trailing comment, so a '# <gate>-ok: reason' line in a docstring or triple-quoted string suppresses a finding | OPEN |
+| 42-F4 | P2 | baseline_ratchet.Baseline.enforce exits 0 on stale entries and is key-only: a fixed violation leaves a slot that a later regression of the same key takes for free | OPEN |
+| 42-F5 | P2 | _core Baseline.enforce BaselineOutcome.ok ignores stale entries and surplus counts; callers that test only .ok accept up to the old count | OPEN |
+| 42-F6 | P3 | parse and bytes caches trust a stat signature (mtime_ns, size, ino) for files older than 3s: a same-size rewrite with a preserved mtime serves the old tree | OPEN |
+| 42-F7 | P3 | List-form baseline entries are joined with '/', colliding with a plain string key containing '/' | OPEN |
+| 42-F8 | P3 | Duplicate JSON keys in a baseline resolve last-wins silently, so a bad merge can raise a count unnoticed | OPEN |
+| 42-F9 | P3 | iter_files default pattern '*.py' is case-sensitive and ignores .pyi/.pyw although source.py decodes them as Python | OPEN |
+| 42-F10 | P3 | Finding.key omits the line, so replacing one violation by another with an identical message in the same file passes the count check | OPEN |
+| 42-F11 | P3 | git_listing returns None (silent walk fallback) for dubious ownership, and the walk and git modes disagree on nested repositories | OPEN |
+| 43-F1 | P1 | CHANGELOG.md has no heading for any of the six releases v1.23.3 to v1.23.8; their entries sit under 'Unreleased (next: 1.23.3)' and a second bare 'Unreleased' | OPEN |
+| 43-F2 | P2 | Behaviour change entries that name no action for the consumer (CLAUDE.md requires 'with what to do') | OPEN |
+| 43-F3 | P2 | Reusable workflow default refs disagree: black-filtered, lint-advisory and ruff-blocking default to the unpublished tag v1.23.9, gates.yml to v1.23.8; CLAUDE.md says 'the three reusable workflows' | OPEN |
+| 43-F4 | P2 | registry.toml `since` disagrees with the first tag that contains the module for 24 entries | OPEN |
+| 43-F5 | P2 | CLAUDE.md tells contributors to lint with `ruff@0.16.1` but the pin is 0.16.10 | OPEN |
+| 43-F6 | P2 | Consumers import underscore names from py_ci_shared, contradicting 'internal, may change in any release' | OPEN |
+| 43-F7 | P3 | Canary directories: 16 gates have no unparsable/ directory, and CLAUDE.md states four are required without naming the exception | OPEN |
+| 43-F8 | P3 | Registry `summary` is not held to the module docstring: 166 of 242 differ, one is cut off mid code span | OPEN |
+| 44-F1 | P2 | 137 of 164 canaries pin only the default token 'seed': a gate that loses a whole detection branch still passes tests/test_gate_teeth.py | PARTIAL: RESOLVED 648caff for the highest-value subset. skip_as_pass (shell and Python halves) and wallclock_test_waits (time.sleep and async) canaries now seed both branches and pin each by file name via tokens=; pro... |
+| 44-F2 | P2 | test_a_pattern_that_would_not_compile_is_not_emitted is vacuous: it loops over mutants and asserts nothing when no 'regex widened' mutant exists | RESOLVED 648caff (+d9ae01e): both loops now collect the mutants and assert non-empty before checking; proven: renaming the label to 'regex WIDE' fails the would_not_compile test. The star-signature test exposed that d... |
+| 44-F3 | P2 | wallclock_test_waits: the async-sleep regex (text mode) has no test; changing its zero-argument exemption survives | RESOLVED 648caff (+d9ae01e): text-mode parametrized cases for asyncio/trio/anyio sleeps and the zero/no-arg exemptions in an unparsable file; proven: the (?!\s*1?\s*\)) mutant fails 3 tests. |
+| 44-F4 | P2 | skip_as_pass: the 'same-indent return/raise ends the block' rule is untested; flipping == to != survives | RESOLVED 648caff (+d9ae01e): same-indent return and deeper-return cases; proven: == to != fails 2 tests. |
+| 44-F5 | P2 | advisory_warn: the 'findings are WARNINGS ONLY' banner and the warned flag are untested; inverting the ruff return-code test survives | RESOLVED 648caff (+d9ae01e): exits fixture with per-tool return codes, banner present when ruff or pip-audit exits non-zero, absent otherwise; proven: returncode == 0 mutant fails 2 tests. Line 61 (pip-audit) is cover... |
+| 44-F6 | P3 | Four tests assert only 'does not raise' for a registration function: test_double_registration_is_a_noop* never check the option is registered once | RESOLVED 648caff for the four double-registration tests (flag parses True and appears exactly once in the parser). The other flagged tests (test_audit_20261020_subprocess.py:65 and the two mutation_teeth ones via 44-F... |
+| 44-F7 | P3 | Several canaries use a weak token that appears in any message about the file or the gate: 'main', 'seed', 'OSError', 'alice', 'limit', 'WHERE', '221' | PARTIAL: RESOLVED 648caff as a ratchet: test_weak_canary_tokens_never_grow freezes the six weak gate:token pairs (main, alice, limit, WHERE, utcnow, OSError); no new one can be added. DEFERRED: replacing those six wit... |
+| 44-F8 | P3 | cli_flag_spelling: the long-option length boundary is unpinned | RESOLVED 648caff (+d9ae01e): the audit's example does not work (the gate splits only on - versus _, never on case, so --n/--N never reports). The boundary is pinned with --_ x2 against --- x1, the shortest splittable ... |
+| 44-F9 | P3 | tool_versions: a bump of a pinned constant is invisible to its own test file, and the two-week-age rule in its comment has no test (equivalent mutation, noted for scope) | WON'T FIX: the mutations are equivalent (a consistent bump is legitimate and is checked against the workflows by test_pinned_tool_versions.py). The two-week age rule is review-only; enforcing it needs a release-date s... |
+| 45-F1 | P0 | Finding messages built from ast.unparse are baseline keys, and ast.unparse output differs between Python 3.9 and 3.11+ (lambda with no args, parenthesised for-targets, star-subscripts) | RESOLVED in 10a487c |
+| 45-F2 | P0 | resource_leak_checks._imported_library uses sys.stdlib_module_names with an empty fallback, so on 3.9 every stdlib first-import counts as 'a library was imported' and suppresses real leak findings | RESOLVED in 10a487c |
+| 45-F3 | P1 | near_duplicate_function_body tokenises ast.dump output, so the SequenceMatcher ratio against fixed 0.99/0.98 thresholds depends on the interpreter | RESOLVED in 10a487c |
+| 45-F4 | P1 | self-ci matrix has no Python 3.14 leg anywhere and the Windows 3.9 / 3.13 legs are non-blocking; macOS and Windows run 3.11 only | RESOLVED in 10a487c |
+| 45-F5 | P2 | No cross-version equivalence test: nothing runs the same gate fixtures on two interpreters and compares keys, so every unparse/dump/stdlib-names divergence is found by accident | OPEN |
+| 45-F6 | P3 | atomic_write_text and install_safe_hook do os.replace with no retry on Windows PermissionError, while _mutation_runner.rmtree has a 3-attempt retry | OPEN |
+| 45-F7 | P3 | Stale 'supports 3.8' comments and dead ast.unparse/hasattr fallbacks contradict requires-python >= 3.9 | OPEN |
+| 45-F8 | P3 | Checked and found robust (recorded to prevent re-audit): CRLF text gates, bash on Windows, tomllib fallback, subprocess executable names, committed line endings | OPEN |
+| 46-F1 | P1 | release_guard ci-green with an abbreviated SHA reports "self-ci never ran" for a commit whose run succeeded or is queued | OPEN |
+| 46-F2 | P1 | A newer push cancels the queued self-ci of the previous commit; a release commit can be left with only a cancelled run, and ci-green then fails with no recovery short of a new commit | OPEN |
+| 46-F3 | P1 | A failing preview leg (continue-on-error job) leaves the run green: Windows 3.9 was red for days and every reader of the signal (ci-green, ci-health, run list) saw success | OPEN |
+| 46-F4 | P1 | py-ci-shared's own scheduled workflows are watched by nothing: corpus-drift succeeded 2 times in its last 51 runs, and ci-health ignores cancelled runs and this repo | OPEN |
+| 46-F5 | P2 | release.yml waits at most 1800 s for self-ci, but a self-ci run can take 2 hours of queue plus run, so a release fails 'still running' | OPEN |
+| 46-F6 | P2 | Between the 'Bump the next release' commit and the tag, master's reusable workflows default py-ci-shared-ref to a tag that does not exist; a consumer pinned to such a SHA fails at install, by design without fallback | OPEN |
+| 46-F7 | P2 | gates.yml's py-ci-shared-ref default is tied to the version by no test, and `prepare --check` is run by no CI job: HEAD has three workflows at 1.23.9 and gates.yml at 1.23.8 | OPEN |
+| 46-F8 | P2 | CONSUMER_READ_TOKEN is not set: consumer-pins has been red every day checking nothing, ci-health skips private repos with a warning, corpus-drift has no strict flag | OPEN |
+| 46-F9 | P2 | RELEASE_TOKEN is a repository secret, not a `release` environment secret, so the environment's branch/tag policy does not protect it | OPEN |
+| 46-F10 | P2 | A SHA pin with a `# vX.Y.Z` comment passes ci_pin_version_skew even when the SHA is not that release's commit; three different SHAs claim v1.23.8 | OPEN |
+| 46-F11 | P3 | ci_verdict accepts any success run for the SHA of any event and branch, including a pull_request run that tested the merge ref | OPEN |
+| 46-F12 | P3 | rollback accepts any existing vX.Y.Z tag, including one whose Release run failed and was never published | OPEN |
+| 46-F13 | P3 | install-command inputs are expanded into `run:` with ${{ }} in docs.yml, mypy-full.yml and lint-blocking.yml (zizmor template-injection, suppressed) | OPEN |
+| 46-F14 | P3 | No ruleset or branch protection on master and no SHA-pin enforcement: red pushes reach master and any action version can be introduced | OPEN |
+| 47-F1 | P1 | Three fixed-pin consumers are 9-12 releases behind and two more 3, against a tolerance of 2 | OPEN |
+| 47-F2 | P2 | Pin comments say `# v1.23.8` on SHAs that are not the v1.23.8 commit; four different SHAs carry that label | OPEN |
+| 47-F3 | P2 | 43 of 67 'Behaviour change' mentions carry no instruction to the consumer, and no test enforces the rule | OPEN |
+| 47-F4 | P2 | `more findings` behaviour changes ship in the patch/minor line the @v1 promise limits to additive and stricter-defect changes, with no consumer impact count | OPEN |
+| 47-F5 | P3 | consumers.toml marks only 3 of 13 consumers as corpus; adoption of the newest gates is unmeasured for the rest | OPEN |
+| 48-F1 | P1 | gate_cache.tree_digest hashes the whole repo root including .claude/worktrees; a cache lookup costs 25.7 s to 65 s, 30 to 80 times a gate's own run | OPEN |
+| 48-F2 | P2 | tree_digest reads every file's bytes into the process-wide bytes cache: 199.6 MB resident for a 31k-file root, evicting nothing but doubling gate RSS | OPEN |
+| 48-F3 | P2 | Large consumer corpora: 34x RSS amplification and 10 to 13 s per warm scan_python call (mlframe, 8,767 files) | OPEN |
+| 48-F4 | P2 | node_index.child_nodes is not memoised: 10.4 M calls and 126.9 M isinstance calls are 19 percent of a run-all profile | OPEN |
+| 48-F5 | P2 | corpus.iter_files resolves every path twice per scan: 62 percent of a warm scan_python is path arithmetic, 24k GetFinalPathNameByHandle calls per run-all | OPEN |
+| 48-F6 | P3 | Repeated parsing is mostly solved (86 percent hit rate) but 412 extra ast.parse calls remain from short-text parsing and non-cached entry points | OPEN |
+| 48-F7 | P3 | git ls-files is spawned 41 times (plus 7 other git calls) per run-all with the listing deliberately uncached | OPEN |
+| 48-F8 | P3 | Pre-push hook: stale cost comment, self-gate duplication, and a half-of-hook cost concentrated in test_self_gates | OPEN |
+| 48-F9 | P3 | Gate budgets are wall-clock on shared machines and produce BUDGET warnings that measure load, not the gate | OPEN |
+| 48-F10 | P3 | Mutation harness: per-mutant cost is dominated by the serial pytest run; candidate generation is superlinear in file size | OPEN |
+| 48-F11 | P3 | Per-repo gate_cache store files are never pruned and the 500-key cap holds only about nine tree versions | OPEN |
+| 49-F1 | P1 | import_cycles run as a script prints findings and exits 0; a missing root is a bare traceback | RESOLVED 5ce4d25: import_cycles.main returns 0/1/2, repo-relative paths, tests/test_diagnostics_exit_codes.py (failed before the fix). |
+| 49-F2 | P1 | Missing tool is reported as 'findings above are WARNINGS' by bandit_warn/advisory_warn/format_warn | RESOLVED 5ce4d25: _tool_installed (find_spec) probe in bandit_warn, advisory_warn, format_warn prints 'skipped: <tool> is not installed'; exit stays 0; real findings keep the WARNINGS ONLY banner. |
+| 49-F3 | P2 | Gate crash (ERROR) shows `Type: message` only: no traceback, no file:line, no fix hint | DEFERRED: needs a runner-wide change (signature bind_partial in _core/runner.py plus a traceback env switch); waits on its own pass with runner tests, not folded into the exit-code commit. |
+| 49-F4 | P2 | Wrong fix hint under the CLI: missing/stale baseline messages tell the user to pass a pytest flag | DEFERRED: needs the CLI env marker read by Baseline refresh_command rendering across ~12 gates and their message-pinned tests; waits on a dedicated pass. |
+| 49-F5 | P2 | `refresh` reports a successful baseline rewrite as `SKIP` and says nothing about what changed | DEFERRED: needs a REFRESHED outcome in the runner replacing pytest.skip in ~12 gates and the summary line; waits on a dedicated pass. |
+| 49-F6 | P2 | Floor/min-count failures name the symptom but not the config key that fixes it | RESOLVED 5ce4d25: function_length floor message names min_functions in its gate table; EmptyScanError names root=/files=/min_files=. Other floor messages not individually changed. |
+| 49-F7 | P2 | Gates that cannot evaluate their input return SKIP (exit 0) with a one-line reason | DEFERRED: needs an owner decision on the default (require_section=True vs a skip='fail' option); changes verdicts for green consumers. |
+| 49-F8 | P3 | Config error printed twice, with a 'substituted a fallback' log whose line number is stale in 10 of 13 sites | DEFERRED: the logger.warning sites are shared with audit 40 gate modules and _core; waits on those finishing, then a meta-test for 'X.py line N'. |
+| 49-F9 | P3 | `run-all` writes BUDGET to stderr and results to stdout; a cached PASS is counted as 'passed' with no cached tally | DEFERRED: cli.py _report output change (BUDGET to stdout, cached count); waits on the CLI pass with F3-F5. |
+| 49-F10 | P3 | `workflow_runner_labels` main says nothing on success or when zero workflow files were scanned | RESOLVED 5ce4d25: summary line printed, exit 2 on zero workflow files unless --allow-empty (CHANGELOG Behaviour change). |
+| 49-F11 | P3 | mutation_teeth truncated/cached runs pass with a warnings.warn only | DEFERRED: source read confirms mutation_teeth.py warns only on truncated/cached results; fix needs a PASS-with-note channel in the runner (shared with F5) and was not run against the real harness; waits on that runner... |
+| 49-F12 | P3 | teeth_sweep: unreadable --cases file is a traceback with exit 1, the 'toothless' exit code | RESOLVED 5ce4d25: unreadable/malformed --cases and empty list return 2 before the baseline suite; unit tests with the suite stubbed. |
+| 50-F1 | P1 | possibly_unbound_local: a local bound only inside one branch of an if/try and read after it (UnboundLocalError on the cached or second call) | OPEN |
+| 50-F2 | P2 | nested_numba_parallel_guard: promote mlframe's test_no_unguarded_nested_parallel (a parallel=True/prange kernel reachable from a thread pool must pass one process-wide lock) | OPEN |
+| 50-F3 | P2 | uv_lock_parity: uv.lock must agree with pyproject.toml (requires-dist names and specifiers) without network | OPEN |
+| 50-F4 | P3 | nan_admitted_by_reject_guard: `if loss >= worst: continue` used to keep a top-N admits NaN, because NaN fails the comparison | OPEN |
+| 50-F5 | P3 | instance_clear_leaves_module_cache: a clear/reset/release method touches only self state while sibling methods use a module-level cache container | OPEN |
+| 50-F6 | P3 | tool_config_env_vars_set_in_every_tool_job: a variable a tool config reads ($VAR in [tool.ruff] extend) must be defined in every CI job that runs the tool | OPEN |
+| 50-F7 | P3 | Runtime harness: launch-time kernel argument dtype audit promoted from mlframe, for templated kernels the static cuda_kernel_pointer_types gate cannot see | OPEN |
+| 50-F8 | P3 | Runtime harness: pure-Python fallback vs njit twin parity (same arithmetic order, bit-identical on the same input) | OPEN |
+| 51-F1 | P2 | config_drift_check._fetch_pyproject sends a Bearer token with urllib's default redirect handler | OPEN |
+| 51-F2 | P2 | lint-blocking tool pins fall back to unpinned uvx/pip when the PIN input is empty | OPEN |
+| 51-F3 | P3 | install-pyutilz passes the ref to git fetch/checkout without the shape guard the other workflows use | OPEN |
+| 51-F4 | P3 | pyutilz cloned from the default branch and not verified against a full SHA | OPEN |
+| 51-F5 | P3 | Direct ${{ inputs.* }} substitution into run: in docs.yml, mypy-full.yml, lint-blocking.yml | OPEN |
+| 51-F6 | P3 | github.action_path interpolated inside a run: script | OPEN |
+| 51-F7 | P3 | tarfile.extractall without a filter on Python < 3.12 | OPEN |
+| 51-F8 | P3 | release trust depends on repository settings the code cannot verify | OPEN |
+| 51-F9 | P3 | Verified clean record: no pull_request_target, actions SHA-pinned, least-privilege permissions, safe deserialization | WON'T FIX: verified-clean record, no defect |
+| 52-F1 | P2 | 22 private functions in src are defined and never called or referenced | OPEN |
+| 52-F2 | P2 | An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself | OPEN |
+| 52-F3 | P2 | 158 of 201 gates are not enabled on the package itself, with a recorded reason for only one | OPEN |
+| 52-F4 | P3 | uncalled_functions is disabled for the whole tree although a private-only scope has no public-API objection | OPEN |
+| 52-F5 | P3 | loc_budget covers src only; one test module exceeds the 1000-LOC budget with no baseline entry and another is at 953 | OPEN |
+| 52-F6 | P3 | self_api_hygiene baseline carries 265 grandfathered offenders | OPEN |
+| 52-F7 | P3 | Dead parameters: one keyword always None and one never read | OPEN |
+| 52-F8 | P3 | Stray tracked file f.txt and an untracked out.txt in the repo root | OPEN |
+| 52-F9 | P3 | unread_function_params is enabled on self with root=tests, takes 72.9s and trips its own 30s budget | OPEN |
+| 52-F10 | P3 | Two suppression markers stacked on one line | OPEN |

@@ -1,0 +1,156 @@
+[
+  {
+    "id": "41-F1",
+    "sev": "P1",
+    "title": "shared_mutable_placeholder flags every module-level singleton accessor (`_CLIENT = Client()`, a ThreadPoolExecutor, an Engine, a cache dict) and has no marker, allow list or baseline",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p3.py (find_shared_mutable_placeholders on 4 snippets): `_CLIENT = Client()\\ndef client(): return _CLIENT` -> 1 finding; `_EXEC = ThreadPoolExecutor(4)\\ndef executor(): return _EXEC` -> 1; `_ENGINE = Engine()\\ndef get_engine(): return _ENGINE` -> 1; `_CACHE = {}\\ndef cache(): return _CACHE` -> 1. Also `queue.Queue()` and `contextvars.ContextVar('v')` -> 1 each (C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/probe2.out). src/py_ci_shared/shared_mutable_placeholder.py:79-86 (`is_placeholder_value`: any call of a capitalised name that is not in the small `_IMMUTABLE_CONSTRUCTORS` / `_SYNC_PRIMITIVES` sets is a placeholder); :155-161 `assert_no_shared_mutable_placeholders(files, *, min_files, allow_unparsed, use_git)` has no `allow`, no baseline_path and no marker (grep 'ok:' in the module: no match). 37-F13 closed only Lock/RLock/Event/Condition/Semaphore/Barrier; the same reasoning applies to every other deliberately shared object.",
+    "failure_scenario": "A consumer with a lazy-singleton accessor (`def get_executor(): return _EXEC`, `def session(): return _SESSION`) is blocked on correct code. The only escape the API offers is passing a narrower file list, which turns the gate off for the whole file, including its real defects (a `_EMPTY = []` default handed to callers in the same file).",
+    "proposed_fix": "Add `allow: Mapping[str,str]` (relpath::function -> reason) and a `# shared-ok: <reason>` marker on the return line or the assignment, and a baseline_path like the other ratchets. Narrow the placeholder test: a capitalised call counts only for a short list of container-like classes (Rows-style) or when the module also mutates the name (`.append`, `[k] =`, `.update`) in a function that is not the returner; a never-mutated singleton is not a placeholder.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F2",
+    "sev": "P2",
+    "title": "fail_open_handlers `silent_default_return` flags ordinary control-flow exceptions (StopIteration, KeyError, queue.Empty, ProcessLookupError, ZeroDivisionError, AttributeError, TimeoutError, CancelledError, UnicodeDecodeError, JSONDecodeError, CalledProcessError) in any function",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/probe_foh.py (find_fail_open_handlers on one-handler functions): stopiter, keyerror, queue_empty, proclookup, timeout, zerodiv, attr, unicode, jsondec, notimpl, oserror_isdir, calledproc, valueerror_multi, cancel, keyerror_pop, lookup_error_check, getkey_gate_false all -> ['silent_default_return']. Example: `def lookup(d,k):\\n try: return d[k]\\n except KeyError: return None` (same meaning as `d.get(k)`) is reported. src/py_ci_shared/fail_open_handlers.py:325-336 (`_silent_default_return`) exempts only message-carrying returns, ImportError, FileNotFoundError, cache/stamp/token/digest/signature/key/encode/freeze names, sqlite OperationalError reads. The module docstring says 'Fail-open exception handlers in gate code', but this rule applies to every function.",
+    "failure_scenario": "A repo adopting the gate gets one finding per `except KeyError: return None` / `except queue.Empty: return None` / `os.kill` probe. The only escapes are the per-handler `# best-effort:` comment (which asserts the fallback 'cannot change a result', not true for a lookup miss that the caller branches on) or the baseline; autopsia already carries 39 such keys (audits/2026-11-04/37 per-key table).",
+    "proposed_fix": "Add a 'reasoned control-flow exception' set: a handler whose caught names are all in {StopIteration, StopAsyncIteration, KeyError, IndexError, queue.Empty, ProcessLookupError, ZeroDivisionError, asyncio.CancelledError, asyncio.TimeoutError} and whose try body is one expression/statement (a lookup, a next(), a wait_for, a kill) is not a silent default. Keep OSError, Exception and bare except flagged.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F3",
+    "sev": "P2",
+    "title": "CHANGELOG 'Gate false positives 2026-11-06' says a single-value parse guard (`int(x)` / `except ValueError: return default`) is no longer flagged; the code and its tests still flag it",
+    "evidence": "CHANGELOG.md 'Gate false positives 2026-11-06', bullet 'silent_default_return no longer flags two more reasoned fallbacks: a handler whose try body only parses one value (int, float, ...) and that catches only ValueError/TypeError'. Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p6.py: `def max_workers():\\n raw = os.environ.get('W')\\n try: return int(raw)\\n except ValueError: return 4` -> ['silent_default_return']; `float(os.getenv('X'))` / `except (TypeError, ValueError): return 1.0` -> flagged; `len(x)` / TypeError -> 0 flagged. tests/test_fail_open_handlers.py:610 `test_an_unparseable_value_that_returns_none_is_flagged` and :615 `test_a_parse_guard_around_a_lookup_is_still_flagged` pin the opposite of the CHANGELOG. src/py_ci_shared/fail_open_handlers.py:290-293 (`_reasoned_fallback` docstring: 'A parse that falls back to a default is NOT one of them'). audits/2026-11-04/37_step8_gate_defects.md per-key table: 70f2152 're-flagged the value-parse fallbacks', four autopsia keys 'kept flagged: value parse'.",
+    "failure_scenario": "A consumer reads the CHANGELOG, expects `_float_env` / `_age_years` baseline entries to go stale and shrink, and instead keeps seeing them (or removes them by hand and goes red). The 13-key shrink the CHANGELOG reports for autopsia (8 sqlite + 5 parse) is overstated by the parse half.",
+    "proposed_fix": "Decide the rule and make the three places agree. If a bad env value that keeps its default IS a fail-open (the 37 per-key decision), edit the CHANGELOG bullet to say so and drop the 5 value-parse keys from the '13' count. If it is not, delete the two tests and add the parse-guard exemption the CHANGELOG describes. Add a meta test that every 'no longer flags' CHANGELOG bullet in a 'Gate false positives' section names a test (changelog_promise_parity already exists for README claims; extend it).",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F4",
+    "sev": "P2",
+    "title": "`# literal-set-ok:` exempts only the `literal-set` rule; the `threshold` and `named-constant` rules of drifted_duplicate_literals have no marker, so numeric-zero floors and per-kernel constants can only be baselined",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p5.py: three modules each `return std < 1e-12  # literal-set-ok: float floor` (marker on the line and the line above) -> 1 [threshold] finding; two modules `# literal-set-ok: own crossover\\nSWEEP_ROWS = 7777` -> 1 [named-constant] finding. src/py_ci_shared/drifted_duplicate_literals.py:383-385 (`_separate_measurement`) and :407-411 apply the marker only to `a` (tuple/ladder/text sites), `constants += b` and `compares += c` are unfiltered. CHANGELOG 37-F37 text and docstring name the mechanism generically. Consumer evidence: mlframe tests/test_meta/_drifted_threshold_literals_baseline.json carries 9 entries, 7 of them 'Numerical-zero guard on a dispersion/denominator ... floating-point safety floor' (1e-9, 1e-12 and 1e-300 compared against std/var/norm/denom names across 20+ modules).",
+    "failure_scenario": "Every kernel module that guards a division with its own `std < 1e-12` joins one threshold group; a consumer that follows the 37-F37 advice and writes the marker still fails, and has no per-site escape: it must freeze the group in a baseline, which then silently covers a real drift of that value.",
+    "proposed_fix": "Apply `_separate_measurement` to `b` and `c` as well (same marker, or a second marker `# threshold-ok: <reason>`), and add 1e-6..1e-300 epsilon floors compared against a variance/std/norm/denominator name to the default ignore of the threshold rule (a float safety floor is not a tuned limit).",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F5",
+    "sev": "P2",
+    "title": "no_source_text_tests reports any upper-case SQL keyword in a membership assert whatever the right operand is (HTTP Allow header, event list, dict keys, set of operations)",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p8.py: `assert 'DELETE' in resp.headers['Allow']`, `assert 'UPDATE' in events`, `assert 'SELECT' in actions`, `assert 'FROM' in msg.keys()`, `assert 'ORDER BY' in row`, `assert 'INSERT' in {r.op for r in result}` -> 1 [source-text-test] finding each. src/py_ci_shared/no_source_text_tests.py:36-40 and SQL_PROBE at :40; the rule never looks at what the right side is. 37-F14 fixed prose containing 'FROM' only when the literal is a sentence.",
+    "failure_scenario": "A REST test that checks the allowed methods, a state-machine test over enum names `INSERT`/`UPDATE`, or an email-header test is flagged as a source-text probe. The only exits are a baseline or the whole-file exclusion.",
+    "proposed_fix": "Judge only when the right operand is a str-typed expression: a name containing sql/query/stmt/statement/text/body/rendered, a call returning str (`str(...)`, `.format`, `compile(...)`), or an f-string. Skip a right operand that is `.headers[...]`, `.keys()`, a set/list/dict display or comprehension, or a name ending in s (collection).",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F6",
+    "sev": "P2",
+    "title": "env_flag_parsing reports numeric and path-like variables read by truthiness or compared with '0'/'1' whenever the variable name is not on its short word list",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p8.py with prefix MYP_: `n = os.environ.get('MYP_JOBS')\\n if n: return int(n)` -> [MYP_JOBS (truthiness in a condition)]; `if os.environ.get('MYP_CACHE'): ...` -> flagged; `if os.environ.get('MYP_DEVICE')` -> flagged; `os.environ.get('MYP_RETRIES') == '0'` -> flagged (compared with '0'); `os.environ.get('MYP_VERBOSITY') == '1'` -> flagged. Not flagged: MYP_MODE=='fast', MYP_API_TOKEN, MYP_LOG_LEVEL or 'info'. 37-F8/F32 narrowed by NAME only (path, number, URL, host, credential words).",
+    "failure_scenario": "A repo with `MYPROJ_JOBS`, `MYPROJ_CACHE`, `MYPROJ_RETRIES`, `MYPROJ_VERBOSITY` is told to route them through a boolean env parser, which would turn `MYPROJ_RETRIES=3` into `True`. Following the gate's advice breaks the code.",
+    "proposed_fix": "Use the data flow in the same function: a read whose value (or the local it is bound to) reaches `int()`, `float()`, `Path()`, `os.path.*`, `.split`, `.isdigit` or an arithmetic operator is not a boolean flag. Compare with '0'/'1' counts only when no numeric use of the same value exists.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F7",
+    "sev": "P2",
+    "title": "fail_open_handlers still flags fail-closed verification and deny helpers (`return False` in `is_allowed`, `check_ready`, MAC and signature checks); only names containing 'signature' or 'token' escape by accident",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/probe_foh.py and C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p6.py: `def is_allowed(x): try: return policy(x) except Exception: return False` -> silent_default_return; `def check_ready(c): try: c.ping(); return True except ConnectionError: return False` -> silent_default_return; `def cuda_ok(): try: import cupy; return cupy.cuda.is_available() except Exception: return False` -> flagged; `def verify_signature(b): try: check(b) except Exception: return False` -> NOT flagged only because src/py_ci_shared/fail_open_handlers.py:252 `_CACHE_MISS_NAME_RE` matches 'signature'. audits/2026-11-04/37 per-key table lists 9 autopsia keys 'kept flagged: fail-closed' (`_is_trusted`, `load_verified`, `trailer_mac`, `signed_pickle`, `cupy_device_usable`, ...).",
+    "failure_scenario": "The exemption by function name is inconsistent: `trailer_mac` and `_is_trusted` stay flagged, `verify_signature` does not. A returned False/None from a verifier is the safe direction (denial), so the finding names a defect that is not there, and the name regex also hides a real fail-open in a function called `get_token` that returns a default credential.",
+    "proposed_fix": "Replace the name regex for fail-closed: a handler that returns a falsy literal (False, None, 0, '') in a function whose result is used as a boolean predicate (name starts with is_/has_/can_/verify/check/valid or ends with _ok/_trusted) and whose caller treats False as deny is exempt; remove 'token' and 'digest' from `_CACHE_MISS_NAME_RE` or require the try body to be a cache read.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F8",
+    "sev": "P2",
+    "title": "pickle_state_completeness `unpicklable-without-getstate` flags every class that assigns a Thread, lock or connection outside __init__, including classes that are never pickled; no marker",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p9.py and C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p10.py: `class Worker:\\n def start(self):\\n  self._thread = threading.Thread(target=print)\\n  self._thread.start()` -> 'Worker.start sets self._thread = threading.Thread(...) and Worker defines no __getstate__/__reduce__'. src/py_ci_shared/pickle_state_completeness.py:1-35 (rule description: any class with no __getstate__/__reduce__ that assigns a lock/thread/pool/file/socket/connection outside __init__). No 'is this class ever pickled' test and no suppression marker in the module docstring.",
+    "failure_scenario": "A service object that owns a worker thread, a lock created lazily or a DB connection is reported although nothing in the program pickles it. The consumer baselines one entry per such class, and the baseline no longer separates classes that travel through joblib/multiprocessing from classes that never leave the process; 37-F7 already showed this gate over-reports.",
+    "proposed_fix": "Report only classes that are plausibly pickled: referenced in a `pickle.dump(s)`, `joblib.dump`, `Pool.map`/`ProcessPoolExecutor.submit` argument position in the scanned corpus, subclass of an sklearn BaseEstimator, a dataclass, or named in a user-provided `pickled_classes` list. Add `# pickle-ok: <reason>` on the assignment.",
+    "ast_checkable": true,
+    "fp_risk": "med",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F9",
+    "sev": "P3",
+    "title": "drifted_duplicate_literals `literal-set` groups dtype bounds, significance levels and port pairs because they are not in DEFAULT_IGNORE",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p4.py: `(127, 32767)` in two modules, `(0.01, 0.05)`, `(0.025, 0.975)` and `(8000, 8080)` -> 1 [literal-set] finding each; `(255, 65535)`, `(429, 503)`, `(0.25, 0.75)`, `(1024, 2048)` -> 0 (in DEFAULT_IGNORE, src/py_ci_shared/drifted_duplicate_literals.py:73-77). Consumer evidence: mlframe _drifted_duplicate_literals_baseline.json has 24 literal-set groups; its own notes call the (127, 32767) group 'int8/int16 dtype bounds ... fixed by the numeric types' and several 'two unrelated defaults that happen to coincide'.",
+    "failure_scenario": "Standard constants (type limits, confidence levels) become findings the first time two modules write them, and the only per-site exit is the marker, which a reviewer has to remember for every new pair.",
+    "proposed_fix": "Ignore sets that are subsets of the integer-type bounds (127, 128, 255, 32767, 32768, 65535, 2147483647), the common significance/confidence levels (0.01, 0.05, 0.1, 0.025, 0.975, 0.9, 0.95, 0.99) and registered ports; or let the config extend DEFAULT_IGNORE with a documented `ignore_sets`.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F10",
+    "sev": "P3",
+    "title": "hash_key_determinism flags `json.dumps` of a dict literal with a fixed key order and of `dataclasses.asdict(obj)` that is hashed without sort_keys",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/probe2.out lines 'hash:dumps_dict_literal' and 'hash:dumps_asdict': `hashlib.sha256(json.dumps({'a': a, 'b': b}).encode())` -> [unsorted-json-key]; `json.dumps(dataclasses.asdict(o))` -> [unsorted-json-key]. Both orders are fixed by source text (literal keys; dataclass field order), so the digest is stable across runs and processes. Not flagged: list literal, str(...), list comprehension.",
+    "failure_scenario": "Digest keys built from a literal record are reported as non-deterministic. The fix the gate asks for (sort_keys=True) is harmless but changes every existing digest of an on-disk cache, so a consumer prefers to baseline it.",
+    "proposed_fix": "Treat a dict display whose keys are all string literals, `dataclasses.asdict`, `vars(self)` of a dataclass and `NamedTuple._asdict()` as ordered. Keep flagging a dict built by comprehension over a set or a dict from a parameter.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F11",
+    "sev": "P3",
+    "title": "secret_assertion_operands: 37-F22 closed the literal-name form only; `key = 'OMP_NUM_THREADS'; assert os.environ.get(key) == '1'` is still flagged",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p9.py: `key = 'OMP_NUM_THREADS'\\n assert os.environ.get(key) == '1'` -> 1 [secret-assertion-operand]; `assert os.getenv('TZ') == 'UTC'` and `assert os.getenv('CUDA_VISIBLE_DEVICES', '') == ''` -> 0. `assert 'HOME' in os.environ` and `assert len(os.environ) > 0` -> 1 each (correct: pytest prints repr(os.environ)). Test table: tests/test_secret_assertion_operands.py:48-50 covers literal names only.",
+    "failure_scenario": "A test that parametrizes the variable name (`for name in ('OMP_NUM_THREADS', 'MKL_NUM_THREADS')`) or binds it first is flagged even though every possible name is non-secret. mlframe GATE-5 (45 hits) was the family that motivated 37-F22.",
+    "proposed_fix": "Resolve a Name argument to its single literal binding in the function (or to a literal tuple iterated by a for/parametrize) and apply the same non-secret-name filter; keep flagging an unresolvable name.",
+    "ast_checkable": true,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F12",
+    "sev": "P3",
+    "title": "skip_as_pass treats `echo \"SKIPPED <optional step>\"` followed by `exit 0` after the real checks ran as a skipped guard",
+    "evidence": "Ran C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin/374112a1-797e-4d89-b4ed-a53928a70eeb/scratchpad/audit41/p7.py: tool/c.sh `echo \"SKIPPED stale cache\" \\nexit 0` -> 1 finding; .github step `echo SKIPPED\\n exit 0` -> 1. src/py_ci_shared/skip_as_pass.py module docstring 'Approximation: a block is recognised by its shape, not by a parser'. Not flagged: SKIPPED inside an `if ... fi` followed by an outer `exit 0`, `print('SKIPPED files:', 0)` + `return 0`, `passed=3 SKIPPED=0`.",
+    "failure_scenario": "A script that reports an optional sub-step as skipped and then finishes its real work is listed as skip-as-pass; the baseline needs a note per script. Low volume (opt-in gate, 1 consumer baseline) so the cost is a note, not a block.",
+    "proposed_fix": "Require that the SKIPPED line is the last statement before the exit in the same block (no command between) or that the exit is the script's only exit path; otherwise the line is a progress message.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F13",
+    "sev": "P3",
+    "title": "Tracker rows 37-F35 and 37-F40 carry stale or contradictory text, and 37-F19 stays 'NOT REPRODUCED' without a closing action",
+    "evidence": "audits/2026-11-04/37_step8_gate_defects.md: row 37-F35 says '37 keys still flagged' and 'PARTIALLY RESOLVED', while the per-key section under it recomputes 42 before and 39 after the key-builder narrowing and lists 16 'needs owner decision / needs autopsia edit' keys; row 37-F40 is 'RESOLVED d7f1cf4: class E. A DEBUG log_throttle substitution is now flagged' but the same cell ends 'not reproduced ... a missed case (false negative), not a false positive; not in scope here'; row 37-F38 is 'see 37-F37' with no test of its own; 37-F19 'Needs the consumer's failing repo and command' with no owner or date. README says every row is worked: RESOLVED or WON'T FIX.",
+    "failure_scenario": "A reader cannot tell from the tracker which of the 39 autopsia keys are still gate false positives and which need a consumer edit; the next round re-measures the same keys (feedback 'read TRACKER row first').",
+    "proposed_fix": "Rewrite 37-F35 as a table of the 16 open keys with a per-key owner (gate / autopsia / owner decision), split 37-F40 into a RESOLVED false-positive part and a separate row for the false-negative DEBUG log_throttle finding, and close 37-F19 as WON'T FIX (not reproducible) with the date. Extend tracker_summary_parity to reject a RESOLVED cell that contains 'not reproduced' or 'NOT REPRODUCED'.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  },
+  {
+    "id": "41-F14",
+    "sev": "P3",
+    "title": "Glossum's gate_false_positives GF-2 ('gate may have lost detection of ADD UNIQUE / SET NOT NULL') is not reproduced: the current ddl_lock_safety still reports both migrations, so the baseline entries glossum removed are live findings",
+    "evidence": "Ran find_ddl_lock_findings('.', sql_dirs=['migrations'], allow_unparsed=True) from glossum_backend_scripts with py-ci-shared HEAD: 78 findings (ddl-lock-timeout 58, ddl-constraint-not-valid 9, ddl-table-rewrite 7, ddl-index-concurrently 4), including migrations/2026_03_12_unique_generated_examples.sql:3 [ddl-constraint-not-valid] ADD UNIQUE on llm.generated_examples and migrations/2026_09_21_alembic_only_changes_for_schema_built_databases.sql:29 [ddl-constraint-not-valid] ALTER COLUMN language_id SET NOT NULL. glossum_backend_scripts/audits/2026-11-05_shared_gates/gate_false_positives.md GF-2 'Not verified in this round'. The 76 remaining baseline notes say 'the gate has no exemption for an applied file'; that exemption now exists (`applied_files`, CHANGELOG 'Gate exemptions 2026-11-06', src/py_ci_shared/ddl_lock_safety.py:22-23, :473).",
+    "failure_scenario": "Glossum either removed baseline entries that still match (then its next gate run is red) or already passes `applied_files`; either way its 76 notes now cite a gap that is closed, and GF-2 sends the next auditor looking for a lost detection that does not exist.",
+    "proposed_fix": "Tell glossum (disposition note in its audit file, not a py-ci-shared change): GF-1 resolved by `applied_files`, GF-2 not reproduced. Add to py-ci-shared's ddl_lock_safety tests a pin for ADD UNIQUE without NOT VALID alternative and SET NOT NULL so a later loss is caught here.",
+    "ast_checkable": false,
+    "fp_risk": "low",
+    "disposition": "OPEN"
+  }
+]
