@@ -1,11 +1,12 @@
 """Audit 2026-11-07 51-F2/F3/F4/F5/F6: workflow hygiene around pinned tools, refs and input interpolation."""
 
+import os
 import re
-import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
+from _working_bash import working_bash
 import yaml
 
 from py_ci_shared import tool_versions
@@ -72,10 +73,15 @@ def _pin_script():
     raise AssertionError("pin step missing")
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="needs bash")
 @pytest.mark.parametrize("ref", ["", "master", "--upload-pack=touch x", "abc123", "A" * 40, "a" * 39, "a" * 41])
 def test_install_pyutilz_refuses_anything_but_a_full_sha(ref, tmp_path):
-    proc = subprocess.run(["bash", "-c", _pin_script()], cwd=tmp_path, env={"INPUTS_PYUTILZ_REF": ref, "PATH": "/usr/bin:/bin"}, capture_output=True, text=True)
+    proc = subprocess.run(
+        [working_bash(), "-c", _pin_script()],
+        cwd=tmp_path,
+        env={"INPUTS_PYUTILZ_REF": ref, "PATH": "/usr/bin:/bin", **({"SYSTEMROOT": os.environ["SYSTEMROOT"]} if "SYSTEMROOT" in os.environ else {})},
+        capture_output=True,
+        text=True,
+    )
     assert proc.returncode == 1
     assert "40-hex commit SHA" in proc.stdout
     assert not (tmp_path / "x").exists()

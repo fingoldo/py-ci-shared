@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pytest
+from _working_bash import working_bash
 import yaml
 
 from py_ci_shared.ci_workflow_gate import assert_continue_on_error_is_reviewed, find_continue_on_error_steps
@@ -90,19 +91,7 @@ def test_py_ci_shared_is_fetched_only_at_the_pinned_ref_and_never_at_master():
 
 
 def _bash() -> str:
-    """A POSIX bash: the runners' own on Linux/macOS, Git's on Windows (never WSL's System32 launcher)."""
-    import shutil
-
-    found = shutil.which("bash")
-    if found and "system32" not in found.lower():
-        return found
-    git = shutil.which("git")
-    if git:
-        for candidate in (Path(git).parents[1] / "bin" / "bash.exe", Path(git).parents[1] / "usr" / "bin" / "bash.exe"):
-            if candidate.exists():
-                return str(candidate)
-    pytest.skip("no bash to run the workflow step with")
-    raise AssertionError  # unreachable, for type checkers
+    return working_bash()
 
 
 def _step(workflow: str, name: str) -> dict:
@@ -347,7 +336,13 @@ def test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_th
     assert job["defaults"]["run"]["working-directory"] == "${{ inputs.working-directory }}"
     steps = {s.get("name"): s for s in job["steps"]}
     at_root = {n for n, s in steps.items() if s.get("working-directory") == "."}
-    assert at_root == {"Actionlint (workflow files)", "Zizmor (workflow security scan)", "yamllint workflow files", "Report tools skipped by their inputs", "Require pinned tool versions"}
+    assert at_root == {
+        "Actionlint (workflow files)",
+        "Zizmor (workflow security scan)",
+        "yamllint workflow files",
+        "Report tools skipped by their inputs",
+        "Require pinned tool versions",
+    }
     assert '--toml "$CODESPELL_TOML"' in steps["Codespell"]["run"]
     assert '-c "$BANDIT_CONFIG"' in steps["Bandit security scan"]["run"] and '-x "$BANDIT_EXCLUDE"' in steps["Bandit security scan"]["run"]
 
