@@ -91,6 +91,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_mutation_runner": "private part of mutation_teeth",
     "_mutation_speed": "private part of mutation_teeth: the cost options of a sweep (baselines, timeout, line map, killer order)",
     "_mutation_sweep": "private part of mutation_teeth: the per-mutant verdict and the state a sweep carries between mutants",
+    "_shell_blocks": "private part of skip_as_pass: shell block parser (bodies, heredocs, quotes) and the run: script extractor of workflow files",
     "_silent_skip_scan": "private part of adoption_matrix: detects consumer tests that skip themselves when py_ci_shared is missing",
     "_scaffold": "the ``py-ci-shared new-gate`` scaffolder",
     "_text_ratchet": "shared file reader, line keying and baseline enforcement of the text-scanning ratchet gates",

@@ -23,7 +23,13 @@ Record the existing findings once, by hand, in ``tool/meta/baselines/skip_as_pas
 The key is ``<repo-relative path>: <normalized line text>``. Every entry needs a note. A ``*_dir`` keyword
 (``baseline_dir``) is resolved against the repo root.
 
-Approximation: a block is recognised by its shape, not by a parser. A ``SKIPPED`` printed by a helper that another file
+Shell is read by the block parser in :mod:`py_ci_shared._shell_blocks` (bodies of ``if``/``case``/loops/groups/functions, heredocs and
+quotes), and a workflow's ``run:`` steps are separate scripts, so a ``SKIPPED`` in one step is never paired with the ``exit 0`` of the next.
+A ``SKIPPED`` printed unconditionally at the top level of a script that already ran real commands is a progress message about an optional
+step, not a guard that checked nothing: ``pytest; echo "SKIPPED stale cache"; exit 0`` is not a finding, while ``echo SKIPPED; exit 0``
+as the first command, or a print inside an ``if``/``||`` guard, is (audit 41-F12).
+
+Approximation: a ``SKIPPED`` printed by a helper that another file
 exits from is not seen; a Python block whose exit sits at a shallower indent (after the ``if`` that holds the print) is
 not seen either, by design of "same block".
 """
@@ -35,6 +41,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.source import indent_width
+from ._shell_blocks import TOP_LEVEL, Statement, parse_shell, workflow_run_scripts
 from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, record_finding, text_scan
 
 __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
@@ -48,20 +55,46 @@ _PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Outp
 _EXIT_ZERO = re.compile(
     r"(?<![\w.])(?:exit\s+0(?![\w.])|exit(?=\s*(?:;|&|\||#|$))|(?:sys\.)?(?:exit|quit)\(\s*(?:0|None)?\s*\)|raise\s+SystemExit(?:\(\s*(?:0|None)?\s*\))?(?![\w.(]))"
 )
-# Shell: the block ends at its closing keyword or at the next function header; any return/exit reached first ends it too.
-_SH_BLOCK_END = re.compile(r"^\s*(?:fi|esac|done|else|elif|return|exit)\b|^\s*\}|^\s*(?:function\s+)?[A-Za-z_]\w*\s*\(\s*\)\s*\{?\s*$")
 _PY_BLOCK_END = re.compile(r"^\s*(?:return|raise|continue|break)\b")
+_SH_STOP = re.compile(r"^\s*(?:return|exit)\b")
+# Commands that prepare or probe and check nothing: a script that only ran these before printing SKIPPED has checked nothing.
+_PREAMBLE = frozenset(
+    "set export unset local readonly declare typeset cd pushd popd source . trap shopt umask echo printf print puts true false : test [ [[ "
+    "command which type hash exit return read shift getopts alias mkdir Write-Host Write-Output".split()
+)
 
 
-def _shell_block_exits_zero(lines: list[str], index: int) -> bool:
-    if _EXIT_ZERO.search(lines[index]):
+def _checks_ran_before(statements: "list[Statement]", index: int) -> bool:
+    """True when an earlier statement of the script that is not a function definition ran a real command (audit 41-F12)."""
+    return any(s.head not in _PREAMBLE and s.head != "" and not s.in_function for s in statements[:index])
+
+
+def _statement_exits_zero(statements: "list[Statement]", index: int) -> bool:
+    """The SKIPPED print at *index* is followed, in the same block, by an exit 0 before any return or other exit."""
+    me = statements[index]
+    if _EXIT_ZERO.search(me.text):
         return True
-    for line in lines[index + 1 :]:
-        if _EXIT_ZERO.search(line):
+    for later in statements[index + 1 :]:
+        if later.block != me.block:
+            continue
+        if _EXIT_ZERO.search(later.text):
             return True
-        if _SH_BLOCK_END.match(line):
+        if _SH_STOP.match(later.text):
             return False
     return False
+
+
+def _shell_skip_lines(statements: "list[Statement]") -> "list[Statement]":
+    """The statements that print SKIPPED and then exit 0 in their block. A print at the top level of a script that already ran real
+    commands is a progress message about an optional step, not a guard that checked nothing."""
+    hits = []
+    for index, st in enumerate(statements):
+        if not _PRINTS_SKIPPED.search(st.text) or not _statement_exits_zero(statements, index):
+            continue
+        if st.block == TOP_LEVEL and not st.conditional and _checks_ran_before(statements, index):
+            continue
+        hits.append(st)
+    return hits
 
 
 def _python_block_exits_zero(lines: list[str], index: int) -> bool:
@@ -80,15 +113,26 @@ def _python_block_exits_zero(lines: list[str], index: int) -> bool:
     return False
 
 
+def _scan_script(rel: str, lines: "list[str]", offset: int, python: bool, found: dict[str, str]) -> None:
+    if python:
+        for index, line in enumerate(lines):
+            if _PRINTS_SKIPPED.search(line) and _python_block_exits_zero(lines, index):
+                _record(rel, line, offset + index, found)
+        return
+    for st in _shell_skip_lines(parse_shell(lines)):
+        _record(rel, lines[st.line], offset + st.line, found)
+
+
+def _record(rel: str, line: str, index: int, found: dict[str, str]) -> None:
+    record_finding(found, f"{rel}: {normalize_line(line)}", f"line {index + 1} prints SKIPPED and its block exits 0, which reads as a pass")
+
+
 def _skip_lines(rel: str, text: str, found: dict[str, str]) -> None:
-    lines = text.splitlines()
-    python = rel.endswith(".py")
-    for index, line in enumerate(lines):
-        if not _PRINTS_SKIPPED.search(line):
-            continue
-        exits = _python_block_exits_zero(lines, index) if python else _shell_block_exits_zero(lines, index)
-        if exits:
-            record_finding(found, f"{rel}: {normalize_line(line)}", f"line {index + 1} prints SKIPPED and its block exits 0, which reads as a pass")
+    if rel.endswith((".yml", ".yaml")):
+        for script in workflow_run_scripts(text):
+            _scan_script(rel, script.lines, script.first_line, script.shell.startswith("python"), found)
+        return
+    _scan_script(rel, text.splitlines(), 0, rel.endswith(".py"), found)
 
 
 def find_skip_as_pass(root: Union[str, Path]) -> dict[str, str]:
