@@ -93,7 +93,7 @@ gates.yml:35 default: "v1.23.8". CLAUDE.md line 47 says 'the three reusable work
 - Proposed fix: Create the fine-grained token (actions:read, contents:read, metadata:read on the private repos) and store it. Make ci-health write a red row (not a warning) when a private repo is skipped for want of a token, and pass --fail-on-skipped-private in corpus-drift.
 - AST/offline checkable: partly
 - False-positive risk: low
-- Disposition: DEFERRED: the fine-grained CONSUMER_READ_TOKEN is an owner action (repository secret); the red row for skipped private repos in ci-health and --fail-on-skipped-private in corpus-drift wait on the token existing, otherwise both jobs go red daily.
+- Disposition: RESOLVED in code, owner action pending: Code commit: "Strict private consumers, public names for consumed internals, registry summary test". ci_health --fail-on-skipped-private writes a RED row (NOT CHECKED), an ::error:: annotation and exit 1 for a private repo skipped for want of CONSUMER_READ_TOKEN; ci-health.yml and corpus-drift.yml pass it like consumer-pins.yml, and a manual run can set allow-skipped-private. Public consumers are still checked out and scanned without the token. The fine-grained secret did not exist when this was written (gh secret list showed only CODECOV_TOKEN), so until the owner creates it the three scheduled jobs are red by design.
 
 ## 46-F9 (P2) RELEASE_TOKEN is a repository secret, not a `release` environment secret, so the environment's branch/tag policy does not protect it
 

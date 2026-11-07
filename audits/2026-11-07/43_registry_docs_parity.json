@@ -63,7 +63,7 @@
     "proposed_fix": "Promote the used helpers to public names (is_test_file, physical_cpu_count, LITERAL_PERCENT, a public toml compat) keeping the underscore alias; run cross_package_private_names over the configs/consumers.toml repos so a private py_ci_shared import fails.",
     "ast_checkable": true,
     "fp_risk": "low",
-    "disposition": "DEFERRED: promoting _base.is_test_file, registry._physical_cpu_count, sql_verify._LITERAL_PERCENT and a public toml compat touches code_audit and sql_verify (gate modules owned by other agents) and needs consumer changes; waits on those agents and on a cross_package_private_names run over configs/consumers.toml."
+    "disposition": "RESOLVED: Code commit: \"Strict private consumers, public names for consumed internals, registry summary test\". public code_audit.is_test_file / is_locals_or_globals_call, code_audit.registry.physical_cpu_count / MIN_SCANNERS_PER_WORKER, sql_verify.LITERAL_PERCENT and the module toml_compat, each old underscore name kept as an alias (registry.toml, INTERNAL_MODULES, tests/test_promoted_public_names.py). New consumer_import_census --private-imports report|fail (find_consumer_private_imports, rule consumer-private-import) reports an underscore module or name of py_ci_shared imported by a consumer; consumer-pins.yml runs it over configs/consumers.toml in report mode. Consumer repos were not edited; the CHANGELOG entry lists what each would change."
   },
   {
     "id": "43-F7",
@@ -85,6 +85,6 @@
     "proposed_fix": "Either derive summary from the docstring first sentence, or add a test that summaries have balanced backticks and share most tokens with the docstring first line.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "DEFERRED: 166 summaries differ from docstrings; needs a policy decision (derive summaries from docstrings vs a similarity test, FP risk med); the unclosed code span in the ci_workflow_gate summary waits on the same decision."
+    "disposition": "RESOLVED: Code commit: \"Strict private consumers, public names for consumed internals, registry summary test\". tests/test_registry_summaries.py holds every summary to balanced code spans, a capital first letter, no trailing period or dangling word, no entry-function prefix, and at least half of the stems of the docstring's first paragraph. Of the 166 that differed, 21 were real defects or too far from the docstring (ci_workflow_gate cut inside a code span, setup_env cut mid-quote, three starting with an entry-function name, five lowercase starts, paraphrases that shared too few words) and were rewritten from their docstrings by hand; the rest are legitimate shortenings or reorderings and pass the test. README catalogue regenerated from the registry."
   }
 ]
