@@ -26,6 +26,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.unparse import unparse_stable
 
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
 
@@ -101,7 +102,7 @@ def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
 
 
 def _has_user_marker(node: ast.AST) -> bool:
-    return any(marker in ast.unparse(node) for marker in _USER_MARKERS)
+    return any(marker in unparse_stable(node) for marker in _USER_MARKERS)
 
 
 def _user_names(tree: ast.Module) -> set[str]:
