@@ -47,8 +47,8 @@ import os
 import re
 import sys
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timezone
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
@@ -57,6 +57,8 @@ from ._core.git import GitError, git_text, run_git
 from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
 from .version_tag_currency import is_release_tag
+from ._adoption_pin_comments import COMMENT_TAG, comment_mismatches, with_comments
+from ._adoption_waivers import Waiver, load_waivers, waived_allowance
 from ._silent_skip_scan import _loudly_checked_flags, _skips_in_tree
 
 logger = logging.getLogger(__name__)
@@ -65,6 +67,7 @@ __all__ = [
     "MOVING_KINDS",
     "Pin",
     "RepoReport",
+    "Waiver",
     "RefResolver",
     "classify_ref",
     "find_module_usage",
@@ -74,6 +77,8 @@ __all__ = [
     "is_python_repo",
     "ranked_gaps",
     "known_modules",
+    "load_waivers",
+    "waived_allowance",
     "load_repo_list",
     "main",
     "render_markdown",
@@ -86,8 +91,6 @@ PathLike = Union[str, Path]
 MOVING_KINDS = frozenset({"branch", "moving-tag", "unpinned", "sibling"})
 SILENT_RULES = ("importorskip", "collect-ignore", "exit-0", "skip", "availability-flag", "swallowed")
 
-_COMMENT_TAG = re.compile(r"^(v\d+\.\d+\.\d+)(?![\w.-])")
-_TRAILING_COMMENT = re.compile(r"\s#\s*(\S.*?)\s*$")
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 _RELEASE = re.compile(r"^v?\d+\.\d+\.\d+([.-]?[0-9A-Za-z.]+)?$")
 _MOVING_TAG = re.compile(r"^v?\d+(\.\d+)?$")
@@ -124,7 +127,7 @@ class Pin:
     @property
     def comment_tag(self) -> Optional[str]:
         """The release tag a trailing comment starts with (``# v1.23.8`` or ``# v1.23.8 (note)``), else None."""
-        m = _COMMENT_TAG.match(self.comment or "")
+        m = COMMENT_TAG.match(self.comment or "")
         return m.group(1) if m else None
 
     @property
@@ -413,26 +416,7 @@ def find_pins(repo_root: PathLike) -> list[Pin]:
         pins.extend(_safe(_precommit_pins, path, root))
     for path in iter_files(root, (".github/*.yml", ".github/*.yaml"), include_untracked=False):
         pins.extend(_safe(_workflow_pins, path, root))
-    return sorted(set(_with_comments(pins, root)), key=lambda p: (p.path, p.line, p.target))
-
-
-def _with_comments(pins: list[Pin], root: Path) -> list[Pin]:
-    """Each pin with the trailing ``# ...`` comment of its source line (``uv.lock`` and line-less pins have none)."""
-    cache: dict[str, list[str]] = {}
-    out = []
-    for pin in pins:
-        if pin.line <= 0 or pin.location == "uv.lock":
-            out.append(pin)
-            continue
-        if pin.path not in cache:
-            try:
-                cache[pin.path] = read_source(root / pin.path).splitlines()
-            except CoreError:
-                cache[pin.path] = []
-        lines = cache[pin.path]
-        m = _TRAILING_COMMENT.search(lines[pin.line - 1]) if pin.line <= len(lines) else None
-        out.append(replace(pin, comment=m.group(1)) if m else pin)
-    return out
+    return sorted(set(with_comments(pins, root)), key=lambda p: (p.path, p.line, p.target))
 
 
 def known_modules(package_dir: Optional[Path] = None) -> list[str]:
@@ -665,17 +649,7 @@ class RepoReport:
     @property
     def comment_mismatches(self) -> list[tuple[Pin, str]]:
         """``(pin, why)`` for a fixed pin whose ``# vX.Y.Z`` comment names a tag whose commit is not the pinned commit."""
-        out = []
-        for p in self.pins:
-            tag, full = p.comment_tag, self.resolved.get(p.ref) if p.ref is not None else None
-            if tag is None or p.moving or not full or tag not in self.tag_commits:
-                continue
-            commit = self.tag_commits[tag]
-            if commit is None and self.known_tags:
-                out.append((p, f"its comment names {tag}, which is not a release tag here"))
-            elif commit is not None and commit != full:
-                out.append((p, f"its comment says {tag} (commit {commit[:7]}) but the pin is {full[:7]}: write `master {full[:7]}` or pin the tag commit"))
-        return out
+        return comment_mismatches(self.pins, self.resolved, self.tag_commits, self.known_tags)
 
     @property
     def failing(self) -> bool:
@@ -755,43 +729,6 @@ def scan_repo(
             report.known_tags = bool(resolver.releases())
             report.tag_commits = {t: resolver(t) for t in {p.comment_tag for p in report.pins if p.comment_tag}}
     return report
-
-
-@dataclass(frozen=True)
-class Waiver:
-    """An accepted lag for one consumer: it may pin as far back as ``oldest`` until the day ``until`` (inclusive)."""
-
-    name: str
-    oldest: str
-    until: date
-    reason: str
-
-
-def load_waivers(path: PathLike) -> dict[str, Waiver]:
-    """The ``[[waiver]]`` tables of ``path`` by consumer name; a missing key, a bad date or a non-release ``oldest`` is a ``CoreError``."""
-    data = tomllib.loads(Path(path).read_text(encoding="utf-8"))
-    out: dict[str, Waiver] = {}
-    for row in data.get("waiver", []):
-        try:
-            waiver = Waiver(str(row["name"]), str(row["oldest"]), date.fromisoformat(str(row["until"])), str(row["reason"]))
-        except (KeyError, ValueError) as exc:
-            raise CoreError(f"{path}: a [[waiver]] needs name, oldest (vX.Y.Z), until (YYYY-MM-DD) and reason: {exc!r}") from exc
-        if not is_release_tag(waiver.oldest) or not waiver.reason.strip():
-            raise CoreError(f"{path}: waiver {waiver.name!r}: oldest must be a vX.Y.Z tag and reason must be given")
-        out[waiver.name] = waiver
-    return out
-
-
-def waived_allowance(waiver: Optional[Waiver], releases: Sequence[str], base: int, today: date) -> tuple[int, str]:
-    """``(allow_behind, note)`` for one consumer: ``base``, widened to the releases after ``waiver.oldest`` while the waiver has not expired."""
-    if waiver is None:
-        return base, ""
-    if today > waiver.until:
-        return base, f"waiver for {waiver.name} expired on {waiver.until}: bump the pin or renew the waiver ({waiver.reason})"
-    if waiver.oldest not in releases:
-        return base, f"waiver for {waiver.name} names {waiver.oldest}, which is not a release tag here; it grants nothing"
-    after = len(releases) - 1 - list(releases).index(waiver.oldest)
-    return max(base, after), f"waived until {waiver.until} down to {waiver.oldest} ({waiver.reason})"
 
 
 def _cell(text: str) -> str:
