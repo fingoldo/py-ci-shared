@@ -695,7 +695,7 @@ def dart_files_under(repo_root: PathLike, root: str, *, generated_prefixes: Sequ
             head = read_source(full)[:400]
         except SourceError as exc:
             logger.warning(
-                "dart_scanners.py line 654: substituted a fallback after %s: %s", type(exc).__name__, exc
+                "substituted a fallback after %s: %s", type(exc).__name__, exc
             )  # audit-exempt: unthrottled_hot_loop_log -- one warning per unreadable file, and the loop runs over the files, so the count is bounded by the corpus
             head = ""
         if any(marker in head for marker in GENERATED_MARKERS):

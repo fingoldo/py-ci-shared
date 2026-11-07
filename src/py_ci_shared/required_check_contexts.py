@@ -101,7 +101,7 @@ def check_repo(consumer: Consumer, api: Api) -> RepoChecks:
     try:
         out.produced = _produced(api, consumer.repo, consumer.branch)
     except ApiError as exc:
-        logger.warning("required_check_contexts.py line 103: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         out.state, out.detail = "error", f"cannot read the newest commit's checks: {exc}"
         return out
     out.missing = [c for c in out.required if c not in out.produced]

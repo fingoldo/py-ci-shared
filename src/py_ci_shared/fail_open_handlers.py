@@ -1,7 +1,7 @@
 """Fail-open exception handlers in gate code: a failure inside a gate must not disable the gate.
 
 A selection gate that keeps a candidate whenever evaluating it raises is switched off for exactly the candidates that
-fail, and a substitution logged below WARNING hides that it happened. Four shapes, each seen shipping a candidate the gate
+fail, and a substitution logged below WARNING hides that it happened. Six shapes, each seen shipping a candidate the gate
 existed to stop:
 
 * ``admit_on_error``: an ``except`` handler inside a loop appends the loop's own element to a list, i.e. the element is
@@ -17,6 +17,10 @@ existed to stop:
   a call such as ``failed()``, or a bare ``return``) and that logs nothing, so the failure reaches the caller as an ordinary
   value. A ``# best-effort:`` marker on the ``except`` line (or the line above) honours a fallback that cannot change a result.
   A handler another rule already reports (``except: return True`` in a deciding function) is not reported a second time.
+
+* ``gate_swallows_error``: in a gate-named function an ``except`` for ``Exception``, ``OSError``, ``SyntaxError``, ``ValueError`` (or a bare one) whose whole
+  body is ``pass``, ``continue``, ``sys.exit(0)``, ``pytest.skip(...)`` or ``print(...)``: the failure ends as a pass. Logging at WARNING or above, raising, or a
+  ``# best-effort:`` marker honours the handler.
 
 Usage from a repository's meta tests::
 
@@ -37,6 +41,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 from ._core.node_index import walk as _fast_walk
 
@@ -344,6 +349,34 @@ def _silent_default_return(handler: ast.ExceptHandler, lines: list[str], fn_name
     return not (_logs_loudly(handler) or _logs_quietly(handler) or _marked_best_effort(lines, handler))
 
 
+#: What a gate-named function may catch and dispose of without a trace: anything broad, plus the I/O and parse failures a gate meets on a consumer's files.
+_SWALLOWABLE = frozenset({"Exception", "BaseException", "OSError", "IOError", "SyntaxError", "UnicodeDecodeError", "ValueError", "JSONDecodeError"})
+
+
+def _is_clean_exit_or_skip(stmt: ast.stmt) -> bool:
+    """``sys.exit(0)`` / ``exit(0)`` / ``pytest.skip(...)`` / ``print(...)`` as a whole statement: the failure ends as a clean exit, a skip or a printed line."""
+    if not (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)):
+        return False
+    call = stmt.value
+    name = _call_attr(call)
+    if name in {"exit", "_exit"}:
+        return not call.args or (isinstance(call.args[0], ast.Constant) and call.args[0].value in (0, None))
+    return name in {"skip", "print"}
+
+
+def _gate_swallows_error(handler: ast.ExceptHandler, lines: list[str]) -> bool:
+    """True for a handler in a gate-named function that disposes of a broad/I-O/parse failure with ``pass``, ``continue``, a clean exit, a skip or a print.
+
+    ``return`` handlers are ``silent_default_return``'s; anything that raises, logs at WARNING or above, appends, assigns or is marked best-effort is not this.
+    """
+    caught = _caught_names(handler)
+    if caught and not caught & _SWALLOWABLE:
+        return False
+    if _logs_loudly(handler) or _marked_best_effort(lines, handler):
+        return False
+    return all(isinstance(st, (ast.Pass, ast.Continue)) or _is_clean_exit_or_skip(st) for st in handler.body)
+
+
 def _returns_true(handler: ast.ExceptHandler) -> bool:
     """True when the handler contains ``return True``."""
     return any(isinstance(n, ast.Return) and isinstance(n.value, ast.Constant) and n.value.value is True for n in _fast_walk(handler))
@@ -399,6 +432,12 @@ def _handler_findings(
         and not _hands_off_exception(handler)
     ):
         found.append(FailOpenHandler(rel, name, handler.lineno, "quiet_substitution", "a fallback value is taken with only a DEBUG/INFO log"))
+    if is_gate and not found and _gate_swallows_error(handler, lines):
+        found.append(
+            FailOpenHandler(
+                rel, name, handler.lineno, "gate_swallows_error", "a gate-named function disposes of a failure with pass, continue, a clean exit or a skip"
+            )
+        )
     if not found and _silent_default_return(handler, lines, name.rsplit(".", 1)[-1], try_node):
         found.append(FailOpenHandler(rel, name, handler.lineno, "silent_default_return", "the handler returns a default and logs nothing"))
     return found
@@ -525,7 +564,7 @@ def _refresh_baseline(
         )
     except BaselineGrowthError as exc:
         pytest.fail(str(exc), pytrace=False)
-    pytest.skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
+    refreshed_skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
 
 
 def _baseline_problems(
@@ -542,7 +581,9 @@ def _baseline_problems(
     if scan.unparsed and not allow_unparsed:
         problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(u.render() for u in scan.unparsed))
     if not exists:
-        problems.append(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {REFRESH_FLAG} (an empty {{}} for a clean repo)")
+        problems.append(
+            f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_hint(REFRESH_FLAG, 'fail_open_handlers')} (an empty {{}} for a clean repo)"
+        )
     new = [h for scope, hs in sorted(by_scope.items()) for h in hs[allowed.get(scope, 0) :]]
     if new:
         lines = "\n  ".join(f"{h.path}:{h.lineno} [{h.rule}] in {h.function}: {h.detail}" for h in new)

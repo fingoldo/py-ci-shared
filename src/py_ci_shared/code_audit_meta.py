@@ -50,6 +50,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from ._core.outcome import refreshed_skip
 from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested, register_refresh_options, write_ratchet
 
 if TYPE_CHECKING:
@@ -224,7 +225,7 @@ def _refresh_code_audit_baseline(baseline_path: Path, current_keys: set[str], re
         )
     except BaselineGrowthError as exc:
         pytest.fail(str(exc), pytrace=False)
-    pytest.skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
+    refreshed_skip(f"code-audit baseline refreshed at {baseline_path.name} " f"({len(current_keys)} existing finding(s))")
 
 
 def assert_no_new_code_audit_findings(

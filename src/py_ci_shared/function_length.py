@@ -26,6 +26,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-function-length-baseline"
@@ -69,7 +70,10 @@ def length_problems(lengths: dict[str, int], baseline: dict[str, int], *, limit:
                 problems.append(f"{key}: {n} lines, under its ceiling of {baseline[key]} -- refresh the baseline to lock the gain in")
         elif n > limit:
             problems.append(f"{key}: {n} lines, over the {limit}-line limit -- split it, or it becomes the next one nobody can read")
-    problems += [f"{key}: in the baseline but gone -- remove the entry" for key in sorted(set(baseline) - set(lengths))]
+    problems += [
+        f"{key}: in the baseline but gone -- remove the entry (" + refresh_hint(REFRESH_FLAG, "function_length") + " drops it)"
+        for key in sorted(set(baseline) - set(lengths))
+    ]
     return problems
 
 
@@ -114,9 +118,11 @@ def assert_functions_do_not_grow(
             write_length_baseline(baseline_path, lengths, limit=limit, grow=grow, request=request)
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"function-length baseline written to {baseline_path}")
+        refreshed_skip(f"function-length baseline written to {baseline_path}")
     if not baseline_path.is_file():
-        pytest.fail(f"function-length baseline {baseline_path} does not exist; create it with {REFRESH_FLAG} (a clean repo commits {{}})")
+        pytest.fail(
+            f"function-length baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_length')} (a clean repo commits {{}})"
+        )
     baseline = load_json(baseline_path)
     problems += length_problems(lengths, baseline, limit=limit)
     if problems:

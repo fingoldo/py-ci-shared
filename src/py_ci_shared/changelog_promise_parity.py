@@ -29,6 +29,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import NamedTuple, Optional
 
+from ._core.outcome import unevaluated_skip
 from ._core import read_source
 
 # Matches this ecosystem's dominant CHANGELOG bullet convention: `- **Title** rest of line`,
@@ -167,7 +168,7 @@ def assert_changelog_bullets_satisfy_pattern(
                 pytest.fail(
                     f"{changelog_path.name} has no section matching {section_pattern.pattern!r}; the heading was renamed or removed, so nothing is checked"
                 )
-            pytest.skip(f"{changelog_path.name} has no section matching section_pattern; convention not yet applicable")
+            unevaluated_skip(f"{changelog_path.name} has no section matching section_pattern; convention not yet applicable")
 
     paths = list(other_resolution_paths)
     missing = [str(p) for p in paths if not p.exists()]
@@ -181,7 +182,7 @@ def assert_changelog_bullets_satisfy_pattern(
             "the trigger pattern or the bullet shape stopped matching"
         )
     if not triggered:
-        pytest.skip(f"no {label}-triggering bullets found in scope; convention can't drift")
+        unevaluated_skip(f"no {label}-triggering bullets found in scope; convention can't drift")
 
     satisfied_n = len(triggered) - len(unsatisfied)
     fraction = len(unsatisfied) / len(triggered)

@@ -161,7 +161,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     try:
         found = find_closed_round_edits(args.repo, args.base, head=args.head, closed_dir=args.closed_dir, trailer=args.trailer)
     except CoreError as exc:
-        logger.warning("closed_audit_rounds.py line 163: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"closed_audit_rounds: {exc}" + "\n")
         return 1
     for f in found:

@@ -209,7 +209,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 repo, rev_range, forbidden_trailers=forbidden, skip_authors=config.get("skip_authors", DEFAULT_SKIP_AUTHORS)
             )
     except (CoreError, tomllib.TOMLDecodeError, OSError) as exc:
-        logger.warning("commit_metadata.py line 211: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"commit_metadata: {exc}" + "\n")
         return 1
     for f in problems:

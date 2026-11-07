@@ -59,6 +59,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import refreshed_skip
 from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
 
 logger = logging.getLogger(__name__)
@@ -183,7 +184,7 @@ def assert_version_bumped_with_content(
 
     if refresh_requested(REFRESH_FLAG, request):
         _write(baseline_path, version, current_hash, history)
-        pytest.skip(f"content-hash/version-bump baseline refreshed at {baseline_path.name} (version={version!r})")
+        refreshed_skip(f"content-hash/version-bump baseline refreshed at {baseline_path.name} (version={version!r})")
 
     if not baseline_path.exists():
         pytest.fail(

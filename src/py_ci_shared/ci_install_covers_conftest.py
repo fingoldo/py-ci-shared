@@ -67,6 +67,7 @@ from typing import Any, Optional
 
 import yaml
 
+from ._core.outcome import refreshed_skip
 from ._ci_install_parts import (
     ConftestImport,
     Provided,
@@ -958,7 +959,7 @@ def assert_ci_install_covers_conftest(
             findings, refresh=refresh_requested(REFRESH_FLAG, request), guidance=guidance
         )
         if outcome.refreshed and not failures:
-            pytest.skip(outcome.message)
+            refreshed_skip(outcome.message)
         if not outcome.ok or outcome.stale:
             failures.append(outcome.message)
     if failures:

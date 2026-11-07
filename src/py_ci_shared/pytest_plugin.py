@@ -40,7 +40,7 @@ import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only
 
 from ._core.config import PLUGIN_KEYS, ConfigError, GateRun, RepoConfig, find_repo_root, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
-from ._core.runner import ERROR, FAILED, SKIPPED, budget_verdict, run_gate
+from ._core.runner import ERROR, FAILED, REFRESHED_STATUS, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
 
 logger = logging.getLogger(__name__)
@@ -198,7 +198,7 @@ class GateItem(pytest.Item):
         refresh = _gate_refresh(self.config, self.run)
         result = run_gate(self.repo_config, self.run, refresh=refresh)
         over = budget_verdict(result, self.repo_config.budget)
-        if result.status == SKIPPED:
+        if result.status in (SKIPPED, REFRESHED_STATUS):
             pytest.skip(result.message)
         if result.status in (FAILED, ERROR):
             prefix = "configuration error: " if result.status == ERROR else ""

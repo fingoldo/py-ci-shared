@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.outcome import unevaluated_skip
 from ._core import CorpusError, EmptyScanError, Finding
 from ._core.config import ConfigError
 import logging
@@ -277,10 +278,9 @@ def assert_no_tracked_secret_shapes(
     Skips with a reason when no shapes are configured (no pyproject.toml, or none with the shape table): the repo has no
     subject for this gate. A malformed config or an unreadable file still fails.
     """
-    import pytest
 
     if shapes is None and _no_shape_table(config_path or Path(repo_root) / "pyproject.toml"):
-        pytest.skip(f"no [{'.'.join(CONFIG_TABLE)}] table in {config_path or Path(repo_root) / 'pyproject.toml'}: no secret shapes configured")
+        unevaluated_skip(f"no [{'.'.join(CONFIG_TABLE)}] table in {config_path or Path(repo_root) / 'pyproject.toml'}: no secret shapes configured")
     report = scan_tracked_secret_shapes(
         repo_root,
         shapes=shapes,

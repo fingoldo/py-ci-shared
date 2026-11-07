@@ -951,3 +951,18 @@ class TestAbsolutePathIsRefused:
 
     def test_the_helper_passes_a_repo_relative_path_through(self):
         assert mutation_teeth._repo_relative("src/mod.py") == Path("src/mod.py")
+
+
+class TestTruncatedPassCarriesANote:
+    """49-F11: a warnings.warn alone vanishes under -W ignore; the runner needs the note on the PASS row."""
+
+    def test_truncated_and_cached_runs_add_a_note(self, tmp_path, monkeypatch):
+        from py_ci_shared._core.outcome import collect_notes
+
+        run = MutationRun(survivors=[], mutants_run=5, killed=5, truncated=True, candidates_total=9)
+        _seam(monkeypatch, "find_surviving_mutants", lambda *a, **k: run)
+        monkeypatch.delenv("PY_CI_SHARED_REFRESH", raising=False)
+        baseline = _RatchetBaseline(tmp_path / "b.json")
+        with collect_notes() as notes, pytest.warns(UserWarning):
+            mutation_teeth.assert_no_new_surviving_mutant("m.py", ["t.py"], tmp_path, baseline)
+        assert len(notes) == 1 and "TRUNCATED" in notes[0]

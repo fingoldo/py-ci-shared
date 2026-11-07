@@ -96,6 +96,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import add_note
 from ._core import Baseline as CoreBaseline
 from ._core import atomic_write_text, refresh_requested, register_refresh_options
 from ._mutation_fingerprint import _first_party_imports as _first_party_imports
@@ -350,7 +351,7 @@ def _try_lock(fd: int) -> bool:
             fcntl: Any = importlib.import_module("fcntl")
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
-        logger.warning("mutation_teeth.py line 301: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         logger.debug("could not lock cache file: %s", type(exc).__name__)
         return False
     return True
@@ -903,6 +904,7 @@ def assert_no_new_surviving_mutant(
         # replayed result was indistinguishable from a complete measured one. A warning lands in
         # pytest's summary without stopping anyone.
         warnings.warn(f"mutation teeth for {path}: {outcome.summary()}", stacklevel=2)
+        add_note(f"mutation teeth for {path}: {outcome.summary()}")
     guidance = (
         f"{outcome.summary()}\n"
         "A survivor means the tests do not notice that change. Either add an assertion that "

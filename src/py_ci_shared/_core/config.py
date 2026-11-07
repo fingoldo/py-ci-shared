@@ -5,6 +5,7 @@ Shape::
     [tool.py_ci_shared]
     enable = ["naive_utcnow", "identity_comparisons"]   # gates run with their defaults (plus path injection)
     budget = "warn"                                      # "warn" (default), "fail" or "off"
+    skip = "ok"                                          # "ok" (default) or "fail": a gate that skips (nothing to judge) fails the run
     resource_leak_guard = true                           # also load the py_ci_shared.resource_leak_guard pytest plugin
     stub_signature_guard = true                          # also load the py_ci_shared.stub_signature_guard pytest plugin
     secret_safe_test_output = true                       # also load py_ci_shared.secret_safe_test_output (redacted reports)
@@ -45,6 +46,7 @@ __all__ = [
 ]
 
 BUDGET_MODES = ("warn", "fail", "off")
+SKIP_MODES = ("ok", "fail")
 RESERVED_KEYS = frozenset({"module", "entry", "budget_s", "enabled"})
 #: Boolean keys of the table that load the opt-in pytest plugin of the same name (``py_ci_shared.<key>``).
 PLUGIN_KEYS = ("resource_leak_guard", "stub_signature_guard", "secret_safe_test_output", "offline_suite_without_credentials")
@@ -79,6 +81,7 @@ class RepoConfig:
     repo_root: Path
     gates: tuple[GateRun, ...]
     budget: str = "warn"
+    skip: str = "ok"
     resource_leak_guard: bool = False
     stub_signature_guard: bool = False
     secret_safe_test_output: bool = False
@@ -133,13 +136,16 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     budget = table.get("budget", "warn")
     if budget not in BUDGET_MODES:
         raise ConfigError(f"{pyproject}: [tool.py_ci_shared] budget = {budget!r}; expected one of {BUDGET_MODES}")
+    skip = table.get("skip", "ok")
+    if skip not in SKIP_MODES:
+        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] skip = {skip!r}; expected one of {SKIP_MODES}")
     # `secret_shapes` is the data table of the tracked_secret_shapes gate (name = regex), read by that gate, not by the plugin.
-    unknown = set(table) - {"enable", "budget", "gates", "secret_shapes", *PLUGIN_KEYS}
+    unknown = set(table) - {"enable", "budget", "skip", "gates", "secret_shapes", *PLUGIN_KEYS}
     if unknown:
         raise ConfigError(f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}")
     plugins = {key: _bool_key(pyproject, table, key) for key in PLUGIN_KEYS}
     runs = _gate_runs(pyproject, table)
-    return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, **plugins)
+    return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, skip=skip, **plugins)
 
 
 def _enable_list(pyproject: Path, table: dict[str, Any]) -> list[str]:

@@ -148,7 +148,7 @@ def _report(path: Path, node: ast.AST) -> Finding:
     try:
         rendered = unparse_stable(node)
     except Exception as exc:
-        logger.warning("epsilon_padded_denominators.py line 123: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         rendered = "<unrenderable>"
     return Finding(path, getattr(node, "lineno", 0), rendered[:160])
 

@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.outcome import refreshed_skip
 from ._core import Baseline, UnparsedFilesError, child_nodes, refresh_requested, register_refresh_options, relative_posix, scan_python
 from ._core import walk as shared_walk
 
@@ -381,7 +382,7 @@ def assert_no_new_uncalled_function(
     baseline = Baseline(baseline_path, gate="uncalled-functions", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=uncalled-functions)")
     outcome = baseline.enforce(sorted(current), refresh=do_refresh)
     if outcome.refreshed:
-        pytest.skip(f"uncalled-function baseline refreshed at {baseline_path.name} ({len(current)} entry/entries)")
+        refreshed_skip(f"uncalled-function baseline refreshed at {baseline_path.name} ({len(current)} entry/entries)")
     if outcome.missing:
         pytest.fail(outcome.message, pytrace=False)
     if outcome.new:

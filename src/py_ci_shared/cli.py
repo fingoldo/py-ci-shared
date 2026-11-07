@@ -25,13 +25,15 @@ import inspect
 import logging
 import os
 import sys
+import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional
 
 from . import __version__, registry
 from ._core.config import ConfigError, RepoConfig, find_repo_root, load_config
-from ._core.runner import ERROR, FAILED, PASSED, SKIPPED, GateResult, budget_verdict, run_gate
+from ._core.outcome import CLI_ENV_VAR
+from ._core.runner import ERROR, FAILED, PASSED, REFRESHED_STATUS, SKIPPED, GateResult, budget_verdict, run_gate
 
 logger = logging.getLogger(__name__)
 
@@ -91,26 +93,50 @@ def _announce_over_budget(overs: "list[str]", mode: str) -> None:
             _print(f"BUDGET could not write the job summary: {exc}", err=True)
 
 
+_MARKS = {PASSED: "PASS", FAILED: "FAIL", SKIPPED: "SKIP", ERROR: "ERROR", REFRESHED_STATUS: "REFRESH"}
+
+
+def _indent(text: str) -> str:
+    return textwrap.indent(text, "      ", lambda _line: True)
+
+
+def _print_result(result: GateResult) -> None:
+    _print(f"{_MARKS[result.status]:5} {result.name} ({result.seconds:.2f}s)")
+    if result.message:
+        _print(_indent(result.message))
+    if result.note:
+        _print(_indent("note: " + result.note))
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            _print(f"::warning title=py-ci-shared {result.name}::{result.note}")
+    if result.status == SKIPPED and os.environ.get("GITHUB_ACTIONS") == "true":
+        _print(f"::warning title=py-ci-shared gate skipped::{result.name} {result.message}")
+
+
+def _summary_line(results: Sequence[GateResult]) -> str:
+    """``N passed, N failed, N skipped, N error``; ``, N refreshed`` and ``(N cached)`` are added only when there are some, so the greppable head is unchanged."""
+    counts = {s: sum(r.status == s for r in results) for s in (PASSED, FAILED, SKIPPED, ERROR)}
+    line = ", ".join(f"{n} {s}" for s, n in counts.items())
+    refreshed = sum(r.status == REFRESHED_STATUS for r in results)
+    cached = sum(r.cached for r in results)
+    return line + (f", {refreshed} refreshed" if refreshed else "") + (f" ({cached} cached)" if cached else "")
+
+
 def _report(results: Sequence[GateResult], mode: str) -> int:
     code = 0
     overs: "list[str]" = []
     for result in results:
-        mark = {PASSED: "PASS", FAILED: "FAIL", SKIPPED: "SKIP", ERROR: "ERROR"}[result.status]
-        _print(f"{mark:5} {result.name} ({result.seconds:.2f}s)")
-        if result.message:
-            _print("      " + result.message.replace("\n", "\n      "))
+        _print_result(result)
         over = budget_verdict(result, mode)
         if over:
             overs.append(over)
-            _print(f"{'BUDGET':5} {over}", err=True)
+            _print(f"{'BUDGET':5} {over}")
             if mode == "fail":
                 code = max(code, 1)
         if result.status == FAILED:
             code = max(code, 1)
         elif result.status == ERROR:
             code = 2
-    counts = {s: sum(r.status == s for r in results) for s in (PASSED, FAILED, SKIPPED, ERROR)}
-    _print(", ".join(f"{n} {s}" for s, n in counts.items()))
+    _print(_summary_line(results))
     if overs:
         _announce_over_budget(overs, mode)
     return code
@@ -129,7 +155,16 @@ def _cmd_run(args: argparse.Namespace, *, everything: bool, refresh: bool = Fals
             runs = [config.gate(n) for n in names]
     if not runs:
         raise ConfigError("no gates enabled in [tool.py_ci_shared]")
-    return _report([run_gate(config, r, refresh=refresh, grow=grow) for r in runs], config.budget)
+    previous = os.environ.get(CLI_ENV_VAR)
+    os.environ[CLI_ENV_VAR] = "1"
+    try:
+        results = [run_gate(config, r, refresh=refresh, grow=grow) for r in runs]
+    finally:
+        if previous is None:
+            os.environ.pop(CLI_ENV_VAR, None)
+        else:
+            os.environ[CLI_ENV_VAR] = previous
+    return _report(results, config.budget)
 
 
 def _cmd_list(args: argparse.Namespace) -> int:
@@ -176,7 +211,7 @@ def _cmd_new_gate(args: argparse.Namespace) -> int:
         root = find_checkout(Path(args.repo) if args.repo else Path.cwd())
         done = new_gate(root, args.name, kind=args.kind, summary=args.summary or "")
     except ScaffoldError as exc:
-        logger.warning("cli.py line 142: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.debug("new-gate refused: %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared new-gate: {exc}", err=True)
         return 2
     for rel in done.created:
@@ -239,7 +274,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         _print(__version__)
         return 0
     except ConfigError as exc:
-        logger.warning("cli.py line 201: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.debug("usage or configuration error, exit 2: %s: %s", type(exc).__name__, exc)
         _print(f"py-ci-shared: {exc.args[0] if exc.args else exc}", err=True)
         return 2
 

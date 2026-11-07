@@ -63,6 +63,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import refreshed_skip
 from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, qualified_functions, refresh_requested, scan_python
 from ._core.node_index import walk as _fast_walk
 
@@ -263,7 +264,6 @@ def assert_no_new_incomplete_transaction(
     Also fails when fewer than *min_files* files parsed, when any file could not be parsed, and when the baseline
     is missing (create it with ``--refresh-db-transaction-baseline`` or ``PY_CI_SHARED_REFRESH=db-transaction``).
     """
-    import pytest
 
     scan = scan_python(list(files), root=repo_root, min_files=min_files)
     found = _find_in_scan(
@@ -288,6 +288,6 @@ def assert_no_new_incomplete_transaction(
         ),
     )
     if outcome.refreshed:
-        pytest.skip(outcome.message)
+        refreshed_skip(outcome.message)
     if not outcome.ok or outcome.stale:
         raise AssertionError(outcome.message)

@@ -42,6 +42,7 @@ from typing import Any, Callable, Optional, Union
 
 from .errors import BaselineError, BaselineGrowthError
 from .findings import Finding
+from .outcome import CLI_ENV_VAR, record_write, refreshed_skip
 from .refresh import grow_hint, grow_requested
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def is_unjustified(note: object) -> bool:
 def atomic_write_text(path: PathLike, text: str) -> None:
     """Write *text* to *path* atomically: temp file in the same directory, fsync, ``os.replace``. UTF-8, ``\\n``."""
     target = Path(path)
+    record_write(target, text)
     target.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=str(target.parent))
     try:
@@ -253,13 +255,21 @@ class BaselineOutcome:
         import pytest
 
         if self.refreshed:
-            pytest.skip(self.message)
+            refreshed_skip(self.message)
         if not self.ok or (fail_on_stale and self.stale):
             pytest.fail(self.message, pytrace=False)
 
 
 class Baseline:
     """A committed multiset of accepted finding keys for one gate."""
+
+    @property
+    def refresh_text(self) -> str:
+        """The refresh command to print: under ``py-ci-shared`` a pytest-flag command is replaced by ``py-ci-shared refresh <gate>`` (49-F4)."""
+        pytest_form = self.refresh_command.startswith(("pytest ", "PY_CI_SHARED_REFRESH=", "set PY_CI_SHARED_REFRESH="))
+        if os.environ.get(CLI_ENV_VAR) == "1" and self.gate and pytest_form:
+            return f"`py-ci-shared refresh {self.gate}` (or PY_CI_SHARED_REFRESH={self.gate})"
+        return self.refresh_command
 
     def __init__(self, path: PathLike, *, gate: str = "", refresh_command: str = "", new_note: str = "") -> None:
         self.path = Path(path)
@@ -273,7 +283,7 @@ class Baseline:
     def load(self) -> tuple["Counter[str]", dict[str, str]]:
         """``(counts, notes)``. Raises :class:`BaselineError` when the file is missing or malformed."""
         if not self.exists():
-            raise BaselineError(f"baseline {self.path} does not exist. Create it with: {self.refresh_command}")
+            raise BaselineError(f"baseline {self.path} does not exist. Create it with: {self.refresh_text}")
         data = load_json(self.path)
         try:
             return _parse_entries(data, self.path)
@@ -344,7 +354,7 @@ class Baseline:
         if not self.exists():
             return BaselineOutcome(
                 missing=True,
-                message=f"{self.gate}: baseline {self.path} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_command}",
+                message=f"{self.gate}: baseline {self.path} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_text}",
             )
         accepted, notes = self.load()
         current = self.count(found)
@@ -366,6 +376,6 @@ class Baseline:
                 "each is acceptable (a refresh records what was found, it does not decide it is fine):\n    " + "\n    ".join(outcome.unjustified)
             )
         if outcome.stale:
-            parts.append(f"{len(outcome.stale)} baseline entr(ies) no longer found; prune with: {self.refresh_command}\n    " + "\n    ".join(outcome.stale))
+            parts.append(f"{len(outcome.stale)} baseline entr(ies) no longer found; prune with: {self.refresh_text}\n    " + "\n    ".join(outcome.stale))
         outcome.message = f"{self.gate}:\n  " + "\n  ".join(parts) if parts else f"{self.gate}: clean ({sum(accepted.values())} accepted)"
         return outcome

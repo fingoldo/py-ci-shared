@@ -74,6 +74,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.outcome import refreshed_skip
 from ._core import Baseline, CoreError, Finding, child_nodes, scan_python
 from ._core import walk as shared_walk
 
@@ -537,9 +538,8 @@ def assert_unexecuted_function_bodies(
         check_report_matches_source=check_report_matches_source,
     )
     if status == "refreshed":
-        import pytest
 
-        pytest.skip(message)
+        refreshed_skip(message)
     if status == "fail":
         raise AssertionError(message)
 

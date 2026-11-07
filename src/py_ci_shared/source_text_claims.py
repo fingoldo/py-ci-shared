@@ -52,6 +52,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.outcome import refreshed_skip
 from ._core import Baseline, BaselineError, ImportAliases, SourceError, child_nodes, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 from ._core.call_names import call_name as _call_name
@@ -841,7 +842,7 @@ def _baseline_diff(baseline_path: Path, unallowed: dict[str, list[int]], request
             write_source_text_baseline(baseline_path, unallowed, request=request)
         except BaselineError as exc:
             pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
+        refreshed_skip(f"source-text baseline written: {sum(len(v) for v in unallowed.values())} claim(s) in {baseline_path.name}")
     if not baseline.exists():
         pytest.fail(f"source-text baseline {baseline_path} does not exist, so nothing is accepted. Create it with: {baseline.refresh_command}")
     accepted, _notes = baseline.load()

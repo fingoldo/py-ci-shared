@@ -179,7 +179,7 @@ class TestCommandLine:
     def test_budget_fail_mode_fails_a_passing_gate_that_ran_too_long(self, tmp_path, capsys):
         repo = _repo(tmp_path, '[tool.py_ci_shared]\nbudget = "fail"\n' + IDENTITY + "budget_s = 0.000001\n", {"pkg/m.py": CLEAN})
         assert cli.main(["run-all", "--repo", str(repo)]) == 1
-        assert "BUDGET" in capsys.readouterr().err
+        assert "BUDGET" in capsys.readouterr().out
 
     def test_list_and_the_markdown_catalogue(self, capsys):
         assert cli.main(["list"]) == 0

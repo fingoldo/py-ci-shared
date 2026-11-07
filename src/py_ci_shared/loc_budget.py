@@ -51,6 +51,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import refreshed_skip
 from ._core import (
     BaselineGrowthError,
     SourceReadError,
@@ -219,7 +220,7 @@ def assert_no_new_oversized_file(
             write_loc_baseline(baseline_path, current, grow=grow, request=request, slack=growth_slack)
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"LOC-budget baseline refreshed at {baseline_path.name} ({len(current)} grandfathered file(s))")
+        refreshed_skip(f"LOC-budget baseline refreshed at {baseline_path.name} ({len(current)} grandfathered file(s))")
     if not baseline_path.is_file():
         pytest.fail(f"LOC-budget baseline {baseline_path} does not exist, so nothing was compared. Create it with {REFRESH_FLAG}")
 

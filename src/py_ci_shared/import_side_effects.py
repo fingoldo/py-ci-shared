@@ -21,6 +21,7 @@ comment added above one does not re-report it; a baseline entry nothing reproduc
 from __future__ import annotations
 
 import ast
+from ._core.outcome import refresh_hint, refreshed_skip, unevaluated_skip
 from ._core.unparse import unparse_stable
 import json
 import logging
@@ -170,7 +171,7 @@ def assert_no_new_import_time_env_mutations(
 
     parsed, keys, unparsed = _scan_env(root, pattern)
     if parsed == 0 and not unparsed and min_files > 0:
-        pytest.skip(f"no file matching {pattern!r} under {root}: no test module can write os.environ at import time")
+        unevaluated_skip(f"no file matching {pattern!r} under {root}: no test module can write os.environ at import time")
     if parsed < min_files:
         pytest.fail(
             f"only {parsed} file(s) matching {pattern!r} parsed under {root}; expected at least {min_files} -- Check root, the scan has lost its subject"
@@ -190,9 +191,9 @@ def assert_no_new_import_time_env_mutations(
             )
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"{baseline_path.name} rewritten with {len(current)} entr(ies)")
+        refreshed_skip(f"{baseline_path.name} rewritten with {len(current)} entr(ies)")
     if baseline_path is not None and not baseline_path.is_file():
-        pytest.fail(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_flag}")
+        pytest.fail(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_hint(refresh_flag, 'import_side_effects')}")
     known: set[str] = set(load_json(baseline_path)) if baseline_path is not None else set()
     new = sorted(current - known)
     stale = sorted(known - current)
@@ -418,7 +419,7 @@ def assert_imports_have_no_side_effects(
 
     names = list(targets)
     if not names and min_targets > 0:
-        pytest.skip("no import targets given: no package to probe for import-time side effects")
+        unevaluated_skip("no import targets given: no package to probe for import-time side effects")
     if len(names) < min_targets:
         pytest.fail(f"only {len(names)} import target(s) given; expected at least {min_targets} -- Add the package and the subpackages worth probing")
     result = probe_import_side_effects(names, **probe_kw)

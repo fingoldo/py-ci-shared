@@ -729,3 +729,37 @@ def test_a_control_flow_exception_around_one_statement_is_not_a_silent_default(t
                 return None
     """
     assert (_rules(tmp_path, body) == ["silent_default_return"]) is flagged
+
+
+class TestGateSwallowsError:
+    """40-F9: a gate-named function that turns a failure into a pass by pass, continue, a clean exit or a skip."""
+
+    @pytest.mark.parametrize(
+        "handler",
+        [
+            "except Exception:\n        sys.exit(0)",
+            "except OSError:\n        pass",
+            "except SyntaxError:\n        continue",
+            "except Exception:\n        pytest.skip('cannot read')",
+            "except (OSError, ValueError):\n        print(e)",
+            "except:\n        pass",
+        ],
+    )
+    def test_the_swallowing_shapes_are_found_in_a_gate_named_function(self, tmp_path, handler):
+        indented = handler.replace(chr(10) + " " * 8, chr(10) + " " * 12)
+        body = f"import sys\n\n\ndef check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        {indented}\n    return 0\n"
+        assert _rules(tmp_path, body) == ["gate_swallows_error"]
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "def helper(files):\n    for f in files:\n        try:\n            run(f)\n        except OSError:\n            pass\n",  # not gate-named
+            "def check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        except ImportError:\n            pass\n",  # optional dependency
+            "def check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        except OSError:\n            logger.warning('x')\n            continue\n",
+            "def check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        except OSError:\n            raise\n",
+            "def check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        except OSError:  # best-effort: cache probe\n            pass\n",
+            "def check_gate(files):\n    for f in files:\n        try:\n            run(f)\n        except Exception:\n            sys.exit(2)\n",
+        ],
+    )
+    def test_negative_controls(self, tmp_path, text):
+        assert "gate_swallows_error" not in _rules(tmp_path, text)

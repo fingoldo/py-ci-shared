@@ -203,7 +203,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 sys.stdout.write(f"fixed {rel}" + "\n")
         found = find_workflow_runner_label_problems(args.repo, min_files=0 if args.allow_empty else 1)
     except (CoreError, ValueError) as exc:
-        logger.warning("workflow_runner_labels.py line 187: substituted a fallback after %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"workflow_runner_labels: {exc}" + "\n")
         return 2 if isinstance(exc, CoreError) else 1
     for f in found:

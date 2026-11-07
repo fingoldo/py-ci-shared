@@ -119,7 +119,7 @@ def _hash_fed_finding(path: Path, node: ast.Call, aliases: Optional[ImportAliase
             try:
                 rendered = unparse_stable(node)
             except Exception as exc:
-                logger.warning("hash_fed_by_array_copy.py line 116: substituted a fallback after %s: %s", type(exc).__name__, exc)
+                logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
                 rendered = "<unrenderable>"
             return Finding(path, node.lineno, rendered[:160])
     return None

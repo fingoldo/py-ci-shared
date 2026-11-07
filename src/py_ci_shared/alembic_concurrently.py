@@ -24,6 +24,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.outcome import refreshed_skip
 from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
@@ -164,7 +165,7 @@ def assert_concurrently_is_in_autocommit_blocks(
             findings, refresh=refresh_requested(REFRESH_FLAG, request), guidance=guidance
         )
         if outcome.refreshed and not problems:
-            pytest.skip(outcome.message)
+            refreshed_skip(outcome.message)
         if not outcome.ok or outcome.stale:
             problems.append(outcome.message)
     if problems:

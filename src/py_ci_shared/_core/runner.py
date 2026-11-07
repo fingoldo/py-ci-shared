@@ -7,6 +7,7 @@ import inspect
 import logging
 import os
 import time
+import traceback
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -14,13 +15,16 @@ from typing import Any, Callable, Optional
 
 from . import gate_cache
 from .config import ConfigError, GateRun, RepoConfig, resolve_kwargs
+from .outcome import REFRESHED, collect_notes, entry_delta, kind_of, track_writes
 from .refresh import ENV_VAR, GROW_ENV_VAR
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["GateResult", "budget_verdict", "resolve_gate", "run_gate"]
+__all__ = ["REFRESHED_STATUS", "GateResult", "budget_verdict", "resolve_gate", "run_gate"]
 
 PASSED, FAILED, SKIPPED, ERROR = "passed", "failed", "skipped", "error"
+REFRESHED_STATUS = "refreshed"
+TRACEBACK_ENV_VAR = "PY_CI_SHARED_TRACEBACK"
 
 
 @dataclass(frozen=True)
@@ -32,6 +36,8 @@ class GateResult:
     message: str
     seconds: float
     budget_s: float
+    note: str = ""
+    cached: bool = False
 
     @property
     def over_budget(self) -> bool:
@@ -88,6 +94,51 @@ def _cache_key(config: RepoConfig, run: GateRun, kwargs: dict, budget: Optional[
     return gate_cache.key_for(config.repo_root, run.module, run.entry, kwargs, budget, gate_cache.tree_digest(config.repo_root))
 
 
+def _check_required(func: Callable[..., Any], run: GateRun, kwargs: dict) -> None:
+    """Name the table and the parameters a gate needs but its config omits, instead of a bare TypeError (49-F3)."""
+    missing = [
+        n
+        for n, p in inspect.signature(func).parameters.items()
+        if p.default is p.empty and p.kind in (p.POSITIONAL_OR_KEYWORD, p.KEYWORD_ONLY) and n not in kwargs
+    ]
+    if missing:
+        raise ConfigError(
+            f"[tool.py_ci_shared.gates.{run.name}] is missing required argument(s) {missing} of {func.__module__}.{func.__name__}; "
+            f"add them to that table, e.g. [tool.py_ci_shared.gates.{run.name}] with {missing[0]} = ..."
+        )
+
+
+def _crash_message(exc: BaseException) -> str:
+    """``Type: message`` plus the innermost frame ``file:line``; the whole traceback with ``PY_CI_SHARED_TRACEBACK=1`` (49-F3)."""
+    text = f"{type(exc).__name__}: {exc}"
+    if os.environ.get(TRACEBACK_ENV_VAR) == "1":
+        return text + "\n" + "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    frames = traceback.extract_tb(exc.__traceback__)
+    if frames:
+        text += f" (at {frames[-1].filename}:{frames[-1].lineno}; {TRACEBACK_ENV_VAR}=1 prints the traceback)"
+    return text
+
+
+def _skip_result(run: GateRun, config: RepoConfig, exc: BaseException, seconds: float, budget: float, writes: "list[Any]") -> GateResult:
+    if kind_of(exc) == REFRESHED:
+        delta = entry_delta(writes)
+        return GateResult(run.name, REFRESHED_STATUS, f"{delta}: {exc}" if delta else str(exc), seconds, budget)
+    if config.skip == "fail":
+        return GateResult(run.name, FAILED, f'skipped, and [tool.py_ci_shared] skip = "fail": {exc}', seconds, budget)
+    return GateResult(run.name, SKIPPED, f"skipped: {exc}", seconds, budget)
+
+
+def _call(func: Callable[..., Any], config: RepoConfig, kwargs: dict, flags: "tuple[bool, bool]", writes: "list[Any]") -> "list[str]":
+    cwd = os.getcwd()
+    os.chdir(config.repo_root)
+    try:
+        with _refresh_env(*flags), collect_notes() as notes, track_writes(writes):
+            func(**kwargs)
+    finally:
+        os.chdir(cwd)
+    return notes
+
+
 def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
     """Call *run*'s entry with its resolved kwargs from the repo root, never raising for a gate's own failure.
 
@@ -95,28 +146,28 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
     ``grow`` (with ``refresh``) also sets ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1`` and passes ``grow=True`` when taken, so
     the refresh may add entries; without it a refresh only removes the ones that no longer fire.
     A config problem is an ERROR result, a gate's assertion a FAILED one; the returned message is the gate's text.
+    A gate that refreshed its baseline is REFRESHED (``+N -M entries``), a PASS may carry a ``note`` and ``cached``.
     """
     failed_types, skipped_types = _outcome_types()
     start = time.perf_counter()
     budget = 0.0
+    writes: "list[Any]" = []
     try:
         func, budget = resolve_gate(run)
         kwargs = resolve_kwargs(func, dict(run.kwargs), config.repo_root)
-        if refresh and "refresh" in inspect.signature(func).parameters:
+        params = inspect.signature(func).parameters
+        if refresh and "refresh" in params:
             kwargs["refresh"] = True
-        if refresh and grow and "grow" in inspect.signature(func).parameters:
+        if refresh and grow and "grow" in params:
             kwargs["grow"] = True
+        _check_required(func, run, kwargs)
         cache_key = None if refresh else _cache_key(config, run, kwargs, budget)
         if cache_key is not None and gate_cache.lookup(config.repo_root, cache_key):
             logger.debug("gate %s passed on this tree before, not re-run", run.name)
-            return GateResult(run.name, PASSED, "cached: nothing in the repository changed since it last passed", time.perf_counter() - start, budget)
-        cwd = os.getcwd()
-        os.chdir(config.repo_root)
-        try:
-            with _refresh_env(refresh, grow):
-                func(**kwargs)
-        finally:
-            os.chdir(cwd)
+            return GateResult(
+                run.name, PASSED, "cached: nothing in the repository changed since it last passed", time.perf_counter() - start, budget, cached=True
+            )
+        notes = _call(func, config, kwargs, (refresh, grow), writes)
         if cache_key is not None:
             gate_cache.record(config.repo_root, cache_key)
     except ConfigError as exc:
@@ -127,13 +178,13 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         return GateResult(run.name, FAILED, str(exc), time.perf_counter() - start, budget)
     except skipped_types as exc:
         logger.debug("gate skipped, reporting SKIPPED: %s", type(exc).__name__)
-        return GateResult(run.name, SKIPPED, str(exc), time.perf_counter() - start, budget)
+        return _skip_result(run, config, exc, time.perf_counter() - start, budget, writes)
     except (KeyboardInterrupt, SystemExit):
         raise
-    except Exception as exc:  # a crashing gate is reported as ERROR with its type, never swallowed
+    except Exception as exc:  # a crashing gate is reported as ERROR with its type and location, never swallowed
         logger.warning("gate raised, reporting ERROR: %s", type(exc).__name__)
-        return GateResult(run.name, ERROR, f"{type(exc).__name__}: {exc}", time.perf_counter() - start, budget)
-    return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget)
+        return GateResult(run.name, ERROR, _crash_message(exc), time.perf_counter() - start, budget)
+    return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget, "; ".join(notes))
 
 
 def budget_verdict(result: GateResult, mode: str) -> Optional[str]:

@@ -46,6 +46,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
 
+from ._core.outcome import unevaluated_skip
 from ._core import Baseline, CoreError, EmptyScanError, Finding, SourceError, UnparsedFilesError, read_source
 from ._core.git import GitError, run_git
 from ._toml_compat import tomllib
@@ -367,10 +368,9 @@ def assert_sibling_floor_skew(
 ) -> None:
     """Fail on any skewed or unresolvable install site, or with *baseline_path* on one the (shrink-only) baseline does
     not accept. Skips with a reason when *repo_root* has no ``pyproject.toml``: there are no floors to compare."""
-    import pytest
 
     if not (Path(repo_root) / "pyproject.toml").is_file():
-        pytest.skip(f"no pyproject.toml under {repo_root}: no sibling floors to compare the workflows against")
+        unevaluated_skip(f"no pyproject.toml under {repo_root}: no sibling floors to compare the workflows against")
     found = find_sibling_floor_skew(
         repo_root, siblings=siblings, owner=owner, resolve_in=resolve_in, network=network, resolver=resolver, allow_unparsed=allow_unparsed
     )

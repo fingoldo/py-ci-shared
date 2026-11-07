@@ -32,6 +32,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineError, ScanResult, child_nodes, dump_json, refresh_requested, scan_python, write_ratchet
 
 REFRESH_FLAG = "--refresh-complexity-baseline"
@@ -126,13 +127,18 @@ def complexity_problems(values: dict[str, int], baseline: dict[str, int], *, lim
             if n > baseline[key]:
                 problems.append(f"{key}: complexity {n}, over its recorded {baseline[key]} -- put the new branch in a helper")
             elif fail_on_shrink and n < baseline[key] and n <= limit:
-                problems.append(f"{key}: complexity {n}, now within the limit of {limit} -- remove the entry (a refresh drops it)")
+                problems.append(
+                    f"{key}: complexity {n}, now within the limit of {limit} -- remove the entry ({refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} drops it)"
+                )
             elif fail_on_shrink and n < baseline[key]:
                 problems.append(f"{key}: complexity {n}, under its recorded {baseline[key]} -- refresh the baseline to lock the gain in")
         elif n > limit:
             problems.append(f"{key}: complexity {n}, over the limit of {limit} -- split it into helpers before it joins the backlog")
     if fail_on_shrink:
-        problems += [f"{key}: in the baseline but gone -- remove the entry (a refresh drops it)" for key in sorted(set(baseline) - set(values))]
+        problems += [
+            f"{key}: in the baseline but gone -- remove the entry ({refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} drops it)"
+            for key in sorted(set(baseline) - set(values))
+        ]
     return problems
 
 
@@ -204,9 +210,11 @@ def assert_complexity_does_not_grow(
             write_complexity_baseline(baseline_path, values, limit=limit, grow=grow, request=request, unparsed=unparsed)
         except BaselineError as exc:
             pytest.fail(str(exc), pytrace=False)
-        pytest.skip(f"complexity baseline written to {baseline_path}")
+        refreshed_skip(f"complexity baseline written to {baseline_path}")
     if not Path(baseline_path).is_file():
-        pytest.fail(f"complexity baseline {baseline_path} does not exist; create it with {REFRESH_FLAG} (a clean repo commits {{}})")
+        pytest.fail(
+            f"complexity baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} (a clean repo commits {{}})"
+        )
     try:
         baseline = load_complexity_baseline(baseline_path)
     except BaselineError as exc:

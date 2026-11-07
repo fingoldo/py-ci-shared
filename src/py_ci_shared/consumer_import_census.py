@@ -250,7 +250,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             reference = _extract_ref(library, args.since_ref, Path(tmp)) if args.since_ref else None
             found = find_consumer_import_breaks(library, args.package, consumers, reference_root=reference, allow_unparsed=args.allow_unparsed)
         except (CoreError, AssertionError) as exc:
-            logger.warning("consumer_import_census.py line 242: substituted a fallback after %s: %s", type(exc).__name__, exc)
+            logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
             sys.stderr.write(f"consumer_import_census: {exc}" + "\n")
             return 1
     breaks = [f for f in found if f.rule == RULE]
