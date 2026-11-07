@@ -32,7 +32,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: b.py is cleaned, nobody runs the refresh because exit 0 hid it, months later b.py regresses under the same key and is accepted; the shrink-only rule is only as strong as the stale failure.
 - Proposed fix: Return 1 on stale (like raise_for_pytest default), or at least when the key reappears.
 - AST-checkable: False; FP risk: low
-- Disposition: DEFERRED: returning 1 on stale entries turns every consumer with a stale baseline red; needs an owner decision and a consumer-by-consumer refresh sweep first.
+- Disposition: RESOLVED by the commit "Stale baseline entries and surplus counts fail; include_stubs opt-in for runtime-hazard gates; fail-closed predicates exempt from silent_default_return; stale_baseline_sweep (audits 42-F4, 42-F5, 42-F9, 41-F7)": baseline_ratchet.Baseline.enforce returns 1 on a stale entry (prune message names the refresh command), so the slot a fixed violation leaves cannot be taken back by a regression; tests test_a_fixed_violation_cannot_be_taken_back_for_free and test_paid_debt_fails_until_the_baseline_is_refreshed failed before. CHANGELOG Behaviour change entry; stale_baseline_sweep measured 0 stale entries in the six consumers it could run (pyutilz, llm_bench, algopacksimple, dash_app_core, flutter_uptime_monitor, claude-usage-notifier); mlframe, glossum_backend_scripts, autopsia (timeout at 1500 s) and social (collection errors) not measured.
 
 ## 42-F5 (P2) _core Baseline.enforce BaselineOutcome.ok ignores stale entries and surplus counts; callers that test only .ok accept up to the old count
 
@@ -40,7 +40,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: After a partial paydown the gate keeps free slots; new violations pass until someone refreshes.
 - Proposed fix: Make ok include stale (or add ok_strict) and migrate the .ok-only callers.
 - AST-checkable: True; FP risk: low
-- Disposition: DEFERRED: same reason as 42-F4 (BaselineOutcome.ok including stale/surplus changes two callers and every consumer); needs the same sweep.
+- Disposition: RESOLVED by the commit "Stale baseline entries and surplus counts fail; include_stubs opt-in for runtime-hazard gates; fail-closed predicates exempt from silent_default_return; stale_baseline_sweep (audits 42-F4, 42-F5, 42-F9, 41-F7)": BaselineOutcome.ok includes stale entries and surplus counts, new BaselineOutcome.blocking keeps the old meaning; mutation_teeth is strict through the property with no edit, unexecuted_function_bodies uses blocking to avoid a duplicate message; tests in tests/test_baseline_stale_strict.py and TestMultiset::test_a_surplus_count_cannot_be_refilled_for_free failed before. Same sweep result as 42-F4.
 
 ## 42-F6 (P3) parse and bytes caches trust a stat signature (mtime_ns, size, ino) for files older than 3s: a same-size rewrite with a preserved mtime serves the old tree
 
@@ -72,7 +72,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: A file named X.PY (imports fine on Windows and macOS) or a stub is never scanned and produces no finding.
 - Proposed fix: Match the suffix case-insensitively; scan stubs where gates parse them.
 - AST-checkable: True; FP risk: low
-- Disposition: DEFERRED: matching .PY/.pyi/.pyw widens every gate's corpus (stubs, odd-case files on Linux) and can turn consumers red; needs a per-gate decision on stubs.
+- Disposition: RESOLVED by the commit "Stale baseline entries and surplus counts fail; include_stubs opt-in for runtime-hazard gates; fail-closed predicates exempt from silent_default_return; stale_baseline_sweep (audits 42-F4, 42-F5, 42-F9, 41-F7)": iter_files/scan_python take include_stubs=False (default unchanged; True matches .py/.pyi/.pyw case-insensitively). Opted in: unsafe_deserialization, predictable_tmp_path, systemexit_in_library, swallowed_exceptions, naive_utcnow (runtime-hazard gates). Deliberately NOT opted in: module-identity and graph gates (import_cycles, unresolved_imports, private_imports: x.py and x.pyi are one module), api_floor and signature/definition gates (a stub is not runtime code). No consumer checkout holds a .pyi/.pyw/.PY file, so the before/after delta on pcs and pyutilz and the other consumers is zero; tests/test_corpus_include_stubs.py shows each opted-in gate finding a violation in U.PY and w.pyw.
 
 ## 42-F10 (P3) Finding.key omits the line, so replacing one violation by another with an identical message in the same file passes the count check
 

@@ -74,7 +74,7 @@
     "proposed_fix": "Replace the name regex for fail-closed: a handler that returns a falsy literal (False, None, 0, '') in a function whose result is used as a boolean predicate (name starts with is_/has_/can_/verify/check/valid or ends with _ok/_trusted) and whose caller treats False as deny is exempt; remove 'token' and 'digest' from `_CACHE_MISS_NAME_RE` or require the try body to be a cache read.",
     "ast_checkable": true,
     "fp_risk": "med",
-    "disposition": "DEFERRED: replacing the name regex for fail-closed helpers needs the autopsia 9-key decision (needs owner decision); removing 'token'/'digest' would turn consumers red."
+    "disposition": "RESOLVED by the commit \"Stale baseline entries and surplus counts fail; include_stubs opt-in for runtime-hazard gates; fail-closed predicates exempt from silent_default_return; stale_baseline_sweep (audits 42-F4, 42-F5, 42-F9, 41-F7)\": silent_default_return exempts a falsy-literal handler (False/None/0/'' or bare return) in a predicate-named function, or any handler marked '# fail-closed: <reason>'; token/digest stay in the cache-miss regex. Negative controls: return True in is_allowed/check_ready/cuda_ok/verify_mac/_is_trusted and a non-predicate returning False are still flagged. Measured on autopsia_wt37 485f08b61 (read-only): clears _is_trusted, load_valid, load_verified, is_minted_case_id, cupy_device_usable; _secret, load_verified_bytes, trailer_mac, signed_pickle, load_record stay flagged (names are not predicates) and need the marker in autopsia; no new findings."
   },
   {
     "id": "41-F8",
