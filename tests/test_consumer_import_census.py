@@ -190,3 +190,37 @@ def test_cli_reads_a_repos_file_and_skips_the_library_itself(tmp_path: Path, cap
     assert main(["--library", str(lib), "--package", "lib", "--repos-file", str(repos)]) == 0
     assert "1 consumer(s) of lib, 0 import(s) unresolved" in capsys.readouterr().out
     assert main(["--library", str(lib), "--package", "lib"]) == 1
+
+
+def _tar_with_mode(mode: int) -> bytes:
+    import io
+    import tarfile
+
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w") as tar:
+        info = tarfile.TarInfo("a.py")
+        info.size = 1
+        info.mode = mode
+        tar.addfile(info, io.BytesIO(b"x"))
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("mode", [0o4755, 0o2755])
+def test_extract_ref_refuses_setuid_members(monkeypatch, tmp_path, mode):
+    """51-F7: setuid/setgid bits are stripped only by filter='data' (3.12+), so the manual guard refuses them on every version."""
+    from types import SimpleNamespace
+
+    from py_ci_shared import consumer_import_census as cic
+
+    monkeypatch.setattr(cic, "run_git", lambda *a, **k: SimpleNamespace(returncode=0, stdout=_tar_with_mode(mode), stderr=b""))
+    with pytest.raises(CoreError, match="setuid"):
+        cic._extract_ref(tmp_path, "HEAD", tmp_path / "out")
+
+
+def test_extract_ref_accepts_plain_members(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    from py_ci_shared import consumer_import_census as cic
+
+    monkeypatch.setattr(cic, "run_git", lambda *a, **k: SimpleNamespace(returncode=0, stdout=_tar_with_mode(0o644), stderr=b""))
+    assert (cic._extract_ref(tmp_path, "HEAD", tmp_path / "out") / "a.py").read_bytes() == b"x"

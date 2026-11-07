@@ -83,43 +83,37 @@ on:
           triage. Flip true only after confirming `uvx zizmor .` is clean in that repo.
         type: boolean
         default: false
-      # L1.1 (a calling repo's own CI review): "every CI lint tool runs unpinned via uvx" -- a tool
-      # pinned in the calling repo's OWN dev extra (and asserted by its own
-      # test_installed_tool_versions_match_their_exact_pins) can still drift here, because `uvx TOOL`
-      # with no version resolves whatever PyPI currently serves, independent of that pin. Every
-      # version input below defaults to "" (unpinned, today's exact behaviour) so an existing caller
-      # that has not triaged a pin for a given tool sees no change; a repo that HAS one passes it
-      # explicitly via `with:`.
+      # Every version input defaults to the pin in tool_versions.py (a test holds them equal); an empty value is refused, never "latest".
       actionlint-version:
-        description: 'Exact actionlint-py version to pin (e.g. "1.7.9"), or "" for unpinned latest.'
+        description: 'Exact actionlint-py version to pin (e.g. "1.7.9"), (must not be empty).'
         type: string
         default: "1.7.12.25"
       zizmor-version:
-        description: 'Exact zizmor version to pin, or "" for unpinned latest.'
+        description: 'Exact zizmor version to pin, (must not be empty).'
         type: string
         default: "1.30.1"
       codespell-version:
-        description: 'Exact codespell version to pin, or "" for unpinned latest.'
+        description: 'Exact codespell version to pin, (must not be empty).'
         type: string
         default: "2.4.3"
       yamllint-version:
-        description: 'Exact yamllint version to pin, or "" for unpinned latest.'
+        description: 'Exact yamllint version to pin, (must not be empty).'
         type: string
         default: "1.38.0"
       bandit-version:
-        description: 'Exact bandit version to pin, or "" for unpinned latest.'
+        description: 'Exact bandit version to pin, (must not be empty).'
         type: string
         default: "1.9.4"
       vulture-version:
-        description: 'Exact vulture version to pin, or "" for unpinned latest.'
+        description: 'Exact vulture version to pin, (must not be empty).'
         type: string
         default: "2.16"
       interrogate-version:
-        description: 'Exact interrogate version to pin, or "" for unpinned latest.'
+        description: 'Exact interrogate version to pin, (must not be empty).'
         type: string
         default: "1.7.0"
       deptry-version:
-        description: 'Exact deptry version to pin, or "" for unpinned latest.'
+        description: 'Exact deptry version to pin, (must not be empty).'
         type: string
         default: "0.25.1"
 
@@ -147,6 +141,19 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
         with:
           enable-cache: true
+
+      # An empty *-version input used to mean "newest on PyPI"; the defaults come from tool_versions.py (a test holds them equal), so an
+      # explicit empty value is refused instead of running an unreviewed release (audit 2026-11-07 51-F2).
+      - name: Require pinned tool versions
+        working-directory: .
+        env:
+          PINS: ${{ inputs.actionlint-version }} ${{ inputs.zizmor-version }} ${{ inputs.codespell-version }} ${{ inputs.yamllint-version }} ${{ inputs.bandit-version }} ${{ inputs.vulture-version }} ${{ inputs.interrogate-version }} ${{ inputs.deptry-version }}
+        run: |
+          read -r -a pins <<< "$PINS"
+          if [ "${#pins[@]}" -ne 8 ]; then
+            echo "::error::every lint tool *-version input must be a non-empty exact version (empty would mean unpinned latest)"
+            exit 1
+          fi
 
       # A caller that leaves interrogate-source-path or deptry-install-command empty, or run-zizmor false, counts as using this
       # workflow while those tools never run (audit 2026-11-04 34-F10). Say so in the log and the job summary; never fails.
@@ -179,7 +186,7 @@ jobs:
         working-directory: .
         run: |
           # shellcheck disable=SC2086
-          if [ -n "$PIN" ]; then uvx --from "actionlint-py==$PIN" actionlint; else uvx --from actionlint-py actionlint; fi
+          uvx --from "actionlint-py==$PIN" actionlint
         env:
           PIN: ${{ inputs.actionlint-version }}
 
@@ -192,7 +199,7 @@ jobs:
         if: inputs.run-zizmor
         working-directory: .
         run: |
-          if [ -n "$PIN" ]; then uvx "zizmor==$PIN" .; else uvx zizmor .; fi
+          uvx "zizmor==$PIN" .
         env:
           PIN: ${{ inputs.zizmor-version }}
 
@@ -202,7 +209,7 @@ jobs:
         # bug, so this stays unquoted unlike the single-path vars below.
         run: |
           # shellcheck disable=SC2086
-          if [ -n "$PIN" ]; then uvx "codespell==$PIN" --toml "$CODESPELL_TOML" ${INPUTS_CODESPELL_PATHS}; else uvx codespell --toml "$CODESPELL_TOML" ${INPUTS_CODESPELL_PATHS}; fi
+          uvx "codespell==$PIN" --toml "$CODESPELL_TOML" ${INPUTS_CODESPELL_PATHS}
         env:
           INPUTS_CODESPELL_PATHS: ${{ inputs.codespell-paths }}
           CODESPELL_TOML: ${{ inputs.codespell-toml }}
@@ -211,7 +218,7 @@ jobs:
       - name: yamllint workflow files
         working-directory: .
         run: |
-          if [ -n "$PIN" ]; then uvx "yamllint==$PIN" .github/workflows .pre-commit-config.yaml; else uvx yamllint .github/workflows .pre-commit-config.yaml; fi
+          uvx "yamllint==$PIN" .github/workflows .pre-commit-config.yaml
         env:
           PIN: ${{ inputs.yamllint-version }}
 
@@ -222,7 +229,7 @@ jobs:
           args=(-r "$INPUTS_SOURCE_PATH" -ll)
           if [ -n "$BANDIT_CONFIG" ]; then args+=(-c "$BANDIT_CONFIG"); fi
           if [ -n "$BANDIT_EXCLUDE" ]; then args+=(-x "$BANDIT_EXCLUDE"); fi
-          if [ -n "$PIN" ]; then uvx "bandit==$PIN" "${args[@]}"; else uvx bandit "${args[@]}"; fi
+          uvx "bandit==$PIN" "${args[@]}"
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
           BANDIT_CONFIG: ${{ inputs.bandit-config }}
@@ -235,7 +242,7 @@ jobs:
         # quoting it would instead pass vulture a literal empty-string path argument and error.
         run: |
           # shellcheck disable=SC2086
-          if [ -n "$PIN" ]; then uvx "vulture==$PIN" "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80; else uvx vulture "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80; fi
+          uvx "vulture==$PIN" "${INPUTS_SOURCE_PATH}" ${INPUTS_VULTURE_WHITELIST_PATH} --min-confidence 80
         env:
           INPUTS_SOURCE_PATH: ${{ inputs.source-path }}
           INPUTS_VULTURE_WHITELIST_PATH: ${{ inputs.vulture-whitelist-path }}
@@ -244,7 +251,7 @@ jobs:
       - name: Interrogate docstring coverage
         if: inputs.interrogate-source-path != ''
         run: |
-          if [ -n "$PIN" ]; then INTERROGATE="interrogate==$PIN"; else INTERROGATE="interrogate"; fi
+          INTERROGATE="interrogate==$PIN"
           if [ -n "$INTERROGATE_CONFIG" ]; then
             uvx "$INTERROGATE" -c "$INTERROGATE_CONFIG" -v "$INTERROGATE_SOURCE_PATH"
           else
@@ -277,5 +284,5 @@ jobs:
         env:
           PIN: ${{ inputs.deptry-version }}
         run: |
-          if [ -n "$PIN" ]; then uv pip install --system "deptry==$PIN"; else uv pip install --system deptry; fi
+          uv pip install --system "deptry==$PIN"
           python -m deptry .

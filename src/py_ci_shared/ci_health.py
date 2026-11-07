@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from ._consumers import TOKEN_ENV, Consumer, load_consumers
+from ._http_safety import SameHostRedirects
 
 logger = logging.getLogger(__name__)
 
@@ -370,18 +371,7 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
 # --- network -------------------------------------------------------------------------------------------------------
 
 
-class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
-    """Follow a redirect only to the host that was asked.
-
-    CPython copies the request headers, Authorization included, to the redirect target. A token must not leave
-    api.github.com because a proxy fault or an API change pointed the request somewhere else, so a redirect to another host is refused
-    (it surfaces as an HTTPError for the original request).
-    """
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        if urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
-            return None
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+_SameHostRedirects = SameHostRedirects
 
 
 def urllib_api(token: Optional[str], *, base: str = "https://api.github.com", timeout: float = DEFAULT_REQUEST_TIMEOUT) -> Api:

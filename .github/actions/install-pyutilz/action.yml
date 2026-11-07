@@ -15,8 +15,8 @@ inputs:
   pyutilz-ref:
     description: >-
       pyutilz commit to install. Empty (the default) reads the one commit the calling repository's pyproject.toml pins
-      for pyutilz, so each repository installs the commit it pins and nothing else. Set it to a SHA, or to "master" to
-      take the tip on purpose.
+      for pyutilz, so each repository installs the commit it pins and nothing else. Set it to a full 40-hex commit SHA (branch and
+      tag names are refused).
     required: false
     default: ""
 
@@ -27,8 +27,10 @@ runs:
       id: pin
       if: ${{ inputs.pyutilz-ref == '' }}
       shell: bash
+      env:
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        echo "ref=$(python "${{ github.action_path }}/resolve_pin.py" pyproject.toml)" >> "$GITHUB_OUTPUT"
+        echo "ref=$(python "$ACTION_PATH/resolve_pin.py" pyproject.toml)" >> "$GITHUB_OUTPUT"
 
     - name: Clone pyutilz
       shell: bash
@@ -38,11 +40,17 @@ runs:
       shell: bash
       env:
         INPUTS_PYUTILZ_REF: ${{ inputs.pyutilz-ref || steps.pin.outputs.ref }}
-      # The clone above is --depth 1 (tip only), so an older/different SHA isn't present yet --
-      # fetch just that one commit (still shallow, not a full-history clone) before checking it out.
+      # The clone above is --depth 1 (tip only), so another commit is not present yet: fetch just that one commit (still shallow).
+      # Only a full 40-hex commit SHA is accepted (51-F3/F4): a branch or tag would change the code installed into consumer CI without
+      # any consumer commit, and a ref starting with "-" would be parsed by git as an option.
       run: |
-        git -C pyutilz fetch --depth 1 origin "${INPUTS_PYUTILZ_REF}"
-        git -C pyutilz checkout "${INPUTS_PYUTILZ_REF}"
+        case "${INPUTS_PYUTILZ_REF}" in
+          *[!0-9a-f]*|"") echo "::error::pyutilz-ref must be a full 40-hex commit SHA"; exit 1 ;;
+        esac
+        if [ "${#INPUTS_PYUTILZ_REF}" -ne 40 ]; then echo "::error::pyutilz-ref must be a full 40-hex commit SHA"; exit 1; fi
+        git -C pyutilz fetch --depth 1 origin -- "${INPUTS_PYUTILZ_REF}"
+        git -C pyutilz checkout --detach "${INPUTS_PYUTILZ_REF}"
+        test "$(git -C pyutilz rev-parse HEAD)" = "${INPUTS_PYUTILZ_REF}"
 
     - name: Install pyutilz + project in one uv resolution
       shell: bash

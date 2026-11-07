@@ -1132,14 +1132,14 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 50-F6 | P3 | tool_config_env_vars_set_in_every_tool_job: a variable a tool config reads ($VAR in [tool.ruff] extend) must be defined in every CI job that runs the tool | OPEN |
 | 50-F7 | P3 | Runtime harness: launch-time kernel argument dtype audit promoted from mlframe, for templated kernels the static cuda_kernel_pointer_types gate cannot see | OPEN |
 | 50-F8 | P3 | Runtime harness: pure-Python fallback vs njit twin parity (same arithmetic order, bit-identical on the same input) | OPEN |
-| 51-F1 | P2 | config_drift_check._fetch_pyproject sends a Bearer token with urllib's default redirect handler | OPEN |
-| 51-F2 | P2 | lint-blocking tool pins fall back to unpinned uvx/pip when the PIN input is empty | OPEN |
-| 51-F3 | P3 | install-pyutilz passes the ref to git fetch/checkout without the shape guard the other workflows use | OPEN |
-| 51-F4 | P3 | pyutilz cloned from the default branch and not verified against a full SHA | OPEN |
-| 51-F5 | P3 | Direct ${{ inputs.* }} substitution into run: in docs.yml, mypy-full.yml, lint-blocking.yml | OPEN |
-| 51-F6 | P3 | github.action_path interpolated inside a run: script | OPEN |
-| 51-F7 | P3 | tarfile.extractall without a filter on Python < 3.12 | OPEN |
-| 51-F8 | P3 | release trust depends on repository settings the code cannot verify | OPEN |
+| 51-F1 | P2 | config_drift_check._fetch_pyproject sends a Bearer token with urllib's default redirect handler | RESOLVED |
+| 51-F2 | P2 | lint-blocking tool pins fall back to unpinned uvx/pip when the PIN input is empty | RESOLVED |
+| 51-F3 | P3 | install-pyutilz passes the ref to git fetch/checkout without the shape guard the other workflows use | RESOLVED |
+| 51-F4 | P3 | pyutilz cloned from the default branch and not verified against a full SHA | RESOLVED |
+| 51-F5 | P3 | Direct ${{ inputs.* }} substitution into run: in docs.yml, mypy-full.yml, lint-blocking.yml | RESOLVED |
+| 51-F6 | P3 | github.action_path interpolated inside a run: script | RESOLVED |
+| 51-F7 | P3 | tarfile.extractall without a filter on Python < 3.12 | RESOLVED |
+| 51-F8 | P3 | release trust depends on repository settings the code cannot verify | DEFERRED: owner sets release environment rules (see finding) |
 | 51-F9 | P3 | Verified clean record: no pull_request_target, actions SHA-pinned, least-privilege permissions, safe deserialization | WON'T FIX: verified-clean record, no defect |
 | 52-F1 | P2 | 22 private functions in src are defined and never called or referenced | OPEN |
 | 52-F2 | P2 | An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself | OPEN |

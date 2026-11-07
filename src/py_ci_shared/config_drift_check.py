@@ -24,6 +24,7 @@ from typing import Any, Optional
 
 from ._consumers import load_consumers
 from ._toml_compat import tomllib
+from ._http_safety import SameHostRedirects
 
 # The two repos this report began with; used only when configs/consumers.toml is not beside the package (an installed wheel).
 FALLBACK_CONSUMERS = {
@@ -59,12 +60,16 @@ RUFF_FIELDS_TO_COMPARE = ("extend", "target-version", "line-length")
 MYPY_FIELDS_TO_COMPARE = ("python_version", "disallow_untyped_defs", "warn_return_any")
 
 
+_API_PREFIX = "https://api.github.com/"
+
+
 def _fetch_pyproject(url: str) -> dict:
     headers = {}
     token = os.environ.get(TOKEN_ENV)
-    if token and url.startswith("https://api.github.com/"):
+    if token and url.startswith(_API_PREFIX):
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github.raw+json"}
-    with urllib.request.urlopen(
+    opener = urllib.request.build_opener(SameHostRedirects)  # the token must not follow a redirect to another host (51-F1)
+    with opener.open(
         urllib.request.Request(url, headers=headers), timeout=15
     ) as resp:  # nosec B310 -- fixed, first-party GitHub raw-content URLs, not user input
         doc: dict = tomllib.loads(resp.read().decode("utf-8"))

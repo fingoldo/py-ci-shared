@@ -347,7 +347,7 @@ def test_lint_blocking_lints_a_subproject_where_it_lives_and_the_workflows_at_th
     assert job["defaults"]["run"]["working-directory"] == "${{ inputs.working-directory }}"
     steps = {s.get("name"): s for s in job["steps"]}
     at_root = {n for n, s in steps.items() if s.get("working-directory") == "."}
-    assert at_root == {"Actionlint (workflow files)", "Zizmor (workflow security scan)", "yamllint workflow files", "Report tools skipped by their inputs"}
+    assert at_root == {"Actionlint (workflow files)", "Zizmor (workflow security scan)", "yamllint workflow files", "Report tools skipped by their inputs", "Require pinned tool versions"}
     assert '--toml "$CODESPELL_TOML"' in steps["Codespell"]["run"]
     assert '-c "$BANDIT_CONFIG"' in steps["Bandit security scan"]["run"] and '-x "$BANDIT_EXCLUDE"' in steps["Bandit security scan"]["run"]
 

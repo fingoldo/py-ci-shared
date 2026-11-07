@@ -77,6 +77,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",
     "_import_graph": "private part of optional_imports_guarded and ci_install_covers_entry_imports: module-level imports, first-party reach, declared extras",
     "_gate_run": "the shared assert_* tail of the AST gates",
+    "_http_safety": "urllib redirect handler that refuses cross-host redirects, shared by ci_health and config_drift_check",
     "_consumers": "the consumer repo list and the read-only checkout the scheduled consumer jobs run",
     "_core": "shared reader, corpus, scan, baseline, refresh, aliases and config every gate builds on",
     "code_audit": "the code-audit package: the scanner rules are public through py_ci_shared.code_audit (its base, CLI and record checker live inside it)",

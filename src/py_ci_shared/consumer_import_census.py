@@ -216,6 +216,9 @@ def _extract_ref(library_root: Path, ref: str, dest: Path) -> Path:
         escaping = [m.name for m in members if os.path.isabs(m.name) or ".." in Path(m.name).parts]
         if escaping:  # git archive refuses such names today; the check keeps this true if the archive source ever changes
             raise CoreError(f"git archive {ref} holds members that would leave the extraction directory: {escaping[:3]}")
+        privileged = [m.name for m in members if m.mode & 0o6000]  # setuid/setgid are only stripped by filter="data" (3.12+)
+        if privileged:
+            raise CoreError(f"git archive {ref} holds setuid/setgid members: {privileged[:3]}")
         if sys.version_info >= (3, 12):
             tar.extractall(dest, members=members, filter="data")  # nosec B202 - regular files only, names checked above
         else:

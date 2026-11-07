@@ -8,7 +8,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: A contents-API call answered with a 302 to another host (CDN, proxy fault, API change) delivers CONSUMER_READ_TOKEN (read access to every private consumer repo) to that host.
 - Proposed fix: Reuse ci_health's same-host opener (move _SameHostRedirects to a shared module) in config_drift_check; test with a local redirecting server asserting no Authorization header reaches the second host.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: SameHostRedirects moved to src/py_ci_shared/_http_safety.py (ci_health keeps the _SameHostRedirects alias) and config_drift_check._fetch_pyproject opens through it; tests/test_config_drift_redirect.py (local redirecting servers) failed before the fix. Commit: 'Harden supply chain: 51-F1..F8' on py-ci-shared master
 
 ## 51-F2 [P2] lint-blocking tool pins fall back to unpinned uvx/pip when the PIN input is empty
 
@@ -16,7 +16,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: A compromised or merely breaking new release of a lint tool runs in every consumer CI with the checkout (and, for deptry, the installed project) in scope; a red from an unreviewed release looks like a real finding.
 - Proposed fix: Drop the else branches: empty pin falls back to the declared default or fails with ::error::. Meta-test: every uvx / uv pip install in .github/workflows is == pinned on every executed path.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: the unpinned else branches are gone from lint-blocking.yml; a 'Require pinned tool versions' step refuses empty *-version inputs; the input defaults are held equal to tool_versions.py by tests/test_security_supply_chain_workflows.py. Same commit as 51-F1
 
 ## 51-F3 [P3] install-pyutilz passes the ref to git fetch/checkout without the shape guard the other workflows use
 
@@ -24,7 +24,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: A ref starting with '-' from the caller's pyproject pin is parsed by git as an option (--upload-pack=... runs a command). Needs a hostile pin in the caller's own repo, so low likelihood.
 - Proposed fix: Add the same case guard, use checkout --detach and '--' separators.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: install-pyutilz refuses any ref that is not 40 lowercase hex, uses 'fetch -- ref' and 'checkout --detach'; behavioural test runs the step script in bash. Same commit as 51-F1
 
 ## 51-F4 [P3] pyutilz cloned from the default branch and not verified against a full SHA
 
@@ -32,7 +32,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: If the pin is a tag or branch (allowed), the code installed into consumer CI changes without any consumer commit.
 - Proposed fix: Reject non-40-hex refs, or assert git rev-parse HEAD equals the pin after checkout.
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: only a full SHA is accepted (branch/tag refused) and HEAD is asserted equal to the pin after checkout. Same commit as 51-F1
 
 ## 51-F5 [P3] Direct ${{ inputs.* }} substitution into run: in docs.yml, mypy-full.yml, lint-blocking.yml
 
@@ -40,7 +40,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: Exploitable only if a consumer wires the input from untrusted context (PR title, head_ref); the reusable workflow offers no protection and the 'trusted' claim is unenforced.
 - Proposed fix: Switch to env + bash -c "$INSTALL_COMMAND" as gates.yml does (keeps multi-line script semantics), or document that the input must be a literal.
 - AST-checkable: True; FP risk: medium
-- Disposition: OPEN
+- Disposition: RESOLVED: docs.yml, mypy-full.yml and lint-blocking.yml pass the install command via env INSTALL_COMMAND and run bash -e -c; the zizmor ignores are removed; test_install_command_inputs_never_interpolated_into_run. Same commit as 51-F1
 
 ## 51-F6 [P3] github.action_path interpolated inside a run: script
 
@@ -48,7 +48,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: action_path is runner-controlled, so no practical injection; zizmor may flag it and a path with quotes would break the command.
 - Proposed fix: Pass via env ACTION_PATH and use "$ACTION_PATH".
 - AST-checkable: True; FP risk: low
-- Disposition: OPEN
+- Disposition: RESOLVED: ACTION_PATH env var in install-pyutilz; test_no_action_path_interpolated_into_run covers every workflow and the action. Same commit as 51-F1
 
 ## 51-F7 [P3] tarfile.extractall without a filter on Python < 3.12
 
@@ -56,7 +56,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: Mode bits (setuid) are not stripped on 3.9-3.11, the supported floor; practical risk near nil since the archive is the user's own repo, but the guard is hand-rolled.
 - Proposed fix: Reject members with setuid/setgid bits in the manual check, or extract per member via extractfile on all versions.
 - AST-checkable: True; FP risk: medium
-- Disposition: OPEN
+- Disposition: RESOLVED: _extract_ref rejects setuid/setgid members on every Python version before extraction; tests in tests/test_consumer_import_census.py. Same commit as 51-F1
 
 ## 51-F8 [P3] release trust depends on repository settings the code cannot verify
 
@@ -64,7 +64,7 @@ Read-only audit; evidence is file:line plus commands. No secret values were prin
 - Failure scenario: If RELEASE_TOKEN is still a repository secret and the environment has no v* tag rule, any workflow in this repo (including one added on a branch) can read it; compromise moves @v1 for all consumers.
 - Proposed fix: Owner action: confirm the token lives only in the release environment with a v* deployment rule and a required reviewer; add a ci-health style check of gh api repos/.../environments/release that fails when protection is absent.
 - AST-checkable: False; FP risk: low
-- Disposition: OPEN
+- Disposition: DEFERRED: needs repository settings only the owner can change. Owner steps: (1) Settings > Environments > release: add a required reviewer and a deployment branch/tag rule limiting to master and v* tags; (2) move RELEASE_TOKEN from repository secrets into that environment and delete the repository-level secret; (3) set 'environment: release' on the release.yml jobs that read the token (release.yml is owned by another agent). A ci-health check of gh api repos/fingoldo/py-ci-shared/environments/release waits on step 1 so it has a protected state to assert.
 
 ## 51-F9 [P3] Verified clean record: no pull_request_target, actions SHA-pinned, least-privilege permissions, safe deserialization
 
