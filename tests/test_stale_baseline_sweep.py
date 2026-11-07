@@ -66,3 +66,19 @@ def test_the_cli_exit_code_follows_fail_on_stale(stale, monkeypatch, tmp_path):
     monkeypatch.setattr(stale_baseline_sweep, "sweep_repo", lambda *a, **k: stale)
     assert main([str(tmp_path)]) == 0
     assert main([str(tmp_path), "--fail-on-stale"]) == 1
+
+
+def test_the_nested_run_does_not_inherit_the_parent_coverage_keys_or_addopts(monkeypatch, tmp_path):
+    """Inherited, they point the nested pytest at the parent's coverage data file: statement data next to branch data ends the parent INTERNALERROR."""
+    monkeypatch.setenv("COV_CORE_DATAFILE", "/parent/.coverage")
+    monkeypatch.setenv("COV_CORE_SOURCE", "py_ci_shared")
+    monkeypatch.setenv("COVERAGE_FILE", "/parent/.coverage")
+    monkeypatch.setenv("PYTEST_ADDOPTS", "--cov-fail-under=99")
+    monkeypatch.setenv("UNRELATED_KEY", "kept")
+
+    env = stale_baseline_sweep._pytest_env(tmp_path, tmp_path / "out.json")
+
+    assert not [k for k in env if k.startswith(("COV_CORE_", "COVERAGE_"))]
+    assert "PYTEST_ADDOPTS" not in env
+    assert env["UNRELATED_KEY"] == "kept"
+    assert env[stale_baseline_sweep.OUT_ENV] == str(tmp_path / "out.json")

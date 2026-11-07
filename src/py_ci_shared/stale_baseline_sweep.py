@@ -165,7 +165,11 @@ def _gate_test_files(tree: Path) -> list[str]:
 
 def _pytest_env(tree: Path, out_path: Path) -> dict[str, str]:
     parts = [str(SRC_ROOT), str(tree), str(tree / "src"), os.environ.get("PYTHONPATH", "")]
-    return dict(os.environ, PYTHONPATH=os.pathsep.join(p for p in parts if p), PYTHONDONTWRITEBYTECODE="1", **{OUT_ENV: str(out_path)})
+    # The coverage keys belong to the parent's pytest-cov. Inherited, COV_CORE_DATAFILE/COVERAGE_FILE point this nested run at the parent's data
+    # file, and a run measuring in another mode (statement against branch) makes coverage refuse to combine them: the parent session ends
+    # INTERNALERROR after every test passed (CI 3.11 leg). PYTEST_ADDOPTS of the parent would also bend the consumer's own run.
+    base = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS" and not k.startswith(("COV_CORE_", "COVERAGE_"))}
+    return dict(base, PYTHONPATH=os.pathsep.join(p for p in parts if p), PYTHONDONTWRITEBYTECODE="1", **{OUT_ENV: str(out_path)})
 
 
 def _run_pytest(tree: Path, files: Sequence[str], out_path: Path, *, python: str, timeout: float) -> tuple[str, str]:
