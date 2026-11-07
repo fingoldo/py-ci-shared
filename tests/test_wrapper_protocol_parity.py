@@ -31,9 +31,11 @@ def _one(tmp_path: Path, src: str, **kwargs) -> list:
 
 def test_reports_load_top_jobs_copying_cache_clear_but_not_refresh(tmp_path):
     found = find_wrapper_protocol_parity(_canary(tmp_path, "violation"), use_git=False)
-    assert [(f.path, f.line, f.rule) for f in found] == [("seed.py", 17, gate.RULE)]
+    # the first wrapper is the original seed; the other four are the inner-by-assignment, undecorated, background_cached and read-attribute shapes
+    assert [(f.path, f.rule) for f in found] == [("seed.py", gate.RULE)] * 5
+    assert found[0].line == 17
     assert found[0].message.startswith("load_top_jobs copies cache_clear from _load_top_jobs_cached but not refresh;")
-    with pytest.raises(AssertionError, match="1 wrapper-protocol-parity finding"):
+    with pytest.raises(AssertionError, match="5 wrapper-protocol-parity finding"):
         assert_wrapper_protocol_parity(tmp_path, use_git=False)
 
 
@@ -82,7 +84,7 @@ def test_an_unparsable_file_fails_by_name_unless_allowed(tmp_path):
     (root / "broken.py").write_bytes(b"def broken(:\n")
     with pytest.raises(UnparsedFilesError, match=r"broken.py"):
         find_wrapper_protocol_parity(root, use_git=False)
-    assert len(find_wrapper_protocol_parity(root, use_git=False, allow_unparsed=True)) == 1
+    assert len(find_wrapper_protocol_parity(root, use_git=False, allow_unparsed=True)) == 5
 
 
 def test_an_empty_corpus_fails_the_floor(tmp_path):
