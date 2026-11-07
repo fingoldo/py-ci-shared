@@ -16,6 +16,8 @@ Shared across projects via the py-ci-shared package.
 import subprocess
 import sys
 
+from .bandit_warn import _tool_installed
+
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 
 # ``--select E,W,N,UP,I`` re-enables every E/W/N/UP/I-prefixed code on the CLI regardless of what
@@ -91,10 +93,14 @@ def main() -> None:
     warned = False
     for chunk in _chunks(files):
         for cmd in _commands(chunk):
+            tool = cmd[3].split(".")[0]
+            if not _tool_installed(tool):
+                print(f"[format-warn] skipped {tool}: {tool} is not installed (pip install {tool}); nothing was checked.", file=sys.stderr)
+                continue
             try:
                 if subprocess.run(cmd, timeout=_TOOL_TIMEOUT_S).returncode != 0:
                     warned = True
-            except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
+            except Exception as e:  # one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
                 print(f"[format-warn] skipped {' '.join(cmd[3:5])}: {e}", file=sys.stderr)
 
     if warned:

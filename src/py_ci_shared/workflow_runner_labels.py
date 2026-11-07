@@ -192,6 +192,7 @@ def fix_workflow_runner_labels(repo_root: PathLike, *, labels: Optional[Mapping[
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.workflow_runner_labels", description=__doc__.split("\n", 1)[0])
     parser.add_argument("repo", nargs="?", default=".")
+    parser.add_argument("--allow-empty", action="store_true", help="pass when the repo has no workflow files (default: exit 2)")
     parser.add_argument("--fix", action="store_true", help="rewrite the labels and add the update channel")
     parser.add_argument("--label", action="append", default=[], help="override a pin, e.g. ubuntu=ubuntu-22.04")
     args = parser.parse_args(argv)
@@ -200,13 +201,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.fix:
             for rel in fix_workflow_runner_labels(args.repo, labels=labels):
                 sys.stdout.write(f"fixed {rel}" + "\n")
-        found = find_workflow_runner_label_problems(args.repo, min_files=0)
+        found = find_workflow_runner_label_problems(args.repo, min_files=0 if args.allow_empty else 1)
     except (CoreError, ValueError) as exc:
         logger.warning("workflow_runner_labels.py line 187: substituted a fallback after %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"workflow_runner_labels: {exc}" + "\n")
-        return 1
+        return 2 if isinstance(exc, CoreError) else 1
     for f in found:
         sys.stdout.write(f.render() + "\n")
+    sys.stdout.write(f"workflow_runner_labels: {len(found)} problem(s)\n")
     return 1 if found else 0
 
 

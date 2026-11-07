@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Finding, ScanResult, module_of, package_of, resolve_relative, scan_python
+from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ScanResult, module_of, package_of, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
 
@@ -416,8 +416,24 @@ def assert_no_import_cycles(
     )
 
 
-if __name__ == "__main__":  # pragma: no cover - manual corpus run
-    found, result = find_import_cycles(sys.argv[1], package=sys.argv[2] if len(sys.argv) > 2 else None)
+def main(argv: Optional[list[str]] = None) -> int:
+    """Manual corpus run: 0 clean, 1 cycles or unparsed files, 2 usage or an unreadable root."""
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args:
+        sys.stderr.write("import_cycles: usage: python -m py_ci_shared.import_cycles SRC_ROOT [PACKAGE]\n")
+        return 2
+    root = Path(args[0])
+    try:
+        found, result = find_import_cycles(root, package=args[1] if len(args) > 1 else None)
+    except CoreError as exc:
+        sys.stderr.write(f"import_cycles: {exc}\n")
+        return 2
     for item in found:
-        print(item.render())  # noqa: T201
-    print(f"{len(found)} finding(s), {result.parsed_count} parsed, {len(result.unparsed)} unparsed")  # noqa: T201
+        shown = Finding(path=(root / item.path).as_posix(), line=item.line, rule=item.rule, message=item.message)
+        sys.stdout.write(shown.render() + "\n")
+    sys.stdout.write(f"{len(found)} finding(s), {result.parsed_count} parsed, {len(result.unparsed)} unparsed\n")
+    return 1 if found or result.unparsed else 0
+
+
+if __name__ == "__main__":  # pragma: no cover - manual corpus run
+    sys.exit(main())

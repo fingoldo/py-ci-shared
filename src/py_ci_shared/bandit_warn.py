@@ -22,6 +22,7 @@ staged but none falls under the source path, a warning says so instead of silent
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -91,9 +92,20 @@ def resolve_src_files(argv: Sequence[str], tag: str) -> "Optional[list[str]]":
     return files or None
 
 
+def _tool_installed(module: str) -> bool:
+    """True when ``python -m <module>`` can be imported; a missing tool exits 1 like a finding, so probe first."""
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):  # best-effort: an unprobeable tool counts as not installed; main() prints the skip line
+        return False
+
+
 def main(argv: "Optional[Sequence[str]]" = None) -> int:
     files = resolve_src_files(sys.argv[1:] if argv is None else argv, "bandit-warn")
     if not files:
+        return 0
+    if not _tool_installed("bandit"):
+        print("[bandit-warn] skipped: bandit is not installed (pip install bandit); nothing was scanned.", file=sys.stderr)
         return 0
     cmd = [sys.executable, "-I", "-m", "bandit", "-ll", *files]
     try:

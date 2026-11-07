@@ -254,7 +254,14 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     repo = pathlib.Path(args.repo).resolve()
 
-    cases = json.loads(pathlib.Path(args.cases).read_text(encoding="utf-8"))
+    try:
+        cases = json.loads(pathlib.Path(args.cases).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:  # exit 1 means "toothless", so an unreadable file must not share it
+        print(f"teeth_sweep: cannot read --cases {args.cases}: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(cases, list) or not cases:
+        print(f"teeth_sweep: no cases in {args.cases} (expected a non-empty JSON list); nothing to sweep", file=sys.stderr)
+        return 2
     if args.only:
         wanted = set(args.only)
         cases = [c for c in cases if _case_id(c) in wanted]

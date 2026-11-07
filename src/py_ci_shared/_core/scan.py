@@ -78,7 +78,7 @@ class ScanResult:
             extra = f" ({len(self.unparsed)} more could not be parsed)" if self.unparsed else ""
             raise EmptyScanError(
                 f"only {self.parsed_count} file(s) parsed{where}{extra}; expected at least {self.min_files}. "
-                "The gate is not reaching the code (wrong root, over-broad exclude, or unparsable files)."
+                "The gate is not reaching the code (wrong root, over-broad exclude, or unparsable files; the gate's root=/files= and min_files= keys in [tool.py_ci_shared.gates.<name>] control this)."
             )
 
     def check_unparsed(self) -> None:

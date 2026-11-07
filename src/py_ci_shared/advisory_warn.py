@@ -22,7 +22,7 @@ import sys
 from collections.abc import Sequence
 from typing import Optional
 
-from .bandit_warn import resolve_src_files
+from .bandit_warn import _tool_installed, resolve_src_files
 
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 _PIP_AUDIT_TIMEOUT_S = 900  # pip-audit asks the network for every installed package
@@ -48,20 +48,26 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
         [sys.executable, "-I", "-m", "ruff", "check", *files],
         [sys.executable, "-I", "-m", "ruff", "check", "--select", "C90", "--statistics", *files],
     ):
+        if not _tool_installed("ruff"):
+            print("[advisory-warn] skipped ruff: ruff is not installed (pip install ruff); nothing was scanned.", file=sys.stderr)
+            continue
         try:
             if subprocess.run(cmd, env=env, check=False, timeout=_TOOL_TIMEOUT_S).returncode != 0:
                 warned = True
-        except Exception as e:  # noqa: PERF203 -- one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
+        except Exception as e:  # one bad command must not skip checking the rest; ruff missing / any error -> warn, never block
             print(f"[advisory-warn] skipped {' '.join(cmd[3:5])}: {e}", file=sys.stderr)
 
     # pip-audit scans the whole installed environment, not per-file, so it runs once regardless of
     # which files changed (unlike the complexity check above) -- same as lint-advisory.yml's own
     # single per-run step.
-    try:
-        if subprocess.run([sys.executable, "-I", "-m", "pip_audit", "--desc"], env=env, check=False, timeout=_PIP_AUDIT_TIMEOUT_S).returncode != 0:
-            warned = True
-    except Exception as e:  # pip-audit missing / any error -> warn, never block
-        print(f"[advisory-warn] skipped pip-audit: {e}", file=sys.stderr)
+    if not _tool_installed("pip_audit"):
+        print("[advisory-warn] skipped pip-audit: pip_audit is not installed (pip install pip-audit); nothing was scanned.", file=sys.stderr)
+    else:
+        try:
+            if subprocess.run([sys.executable, "-I", "-m", "pip_audit", "--desc"], env=env, check=False, timeout=_PIP_AUDIT_TIMEOUT_S).returncode != 0:
+                warned = True
+        except Exception as e:  # pip-audit failed to run / any error -> warn, never block
+            print(f"[advisory-warn] skipped pip-audit: {e}", file=sys.stderr)
 
     if warned:
         print(

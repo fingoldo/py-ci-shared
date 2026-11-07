@@ -103,7 +103,9 @@ def assert_functions_do_not_grow(
     scan = scan_python([Path(f) for f in files], root=Path(root))
     lengths = _lengths(scan)
     if len(lengths) < min_functions:
-        pytest.fail(f"only {len(lengths)} function(s) measured; expected at least {min_functions} -- the file walk broke and this would check nothing")
+        pytest.fail(
+            f"only {len(lengths)} function(s) measured; expected at least {min_functions} -- the file walk broke and this would check nothing (lower min_functions in [tool.py_ci_shared.gates.function_length] if the repo is genuinely this small)"
+        )
     problems: list[str] = [f"{u.rel}:{u.line}: {u.kind}, so its functions were not measured: {u.message}" for u in ([] if allow_unparsed else scan.unparsed)]
     if refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request):
         if problems:

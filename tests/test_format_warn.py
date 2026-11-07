@@ -31,6 +31,7 @@ def test_main_runs_every_tool_on_every_chunk_within_the_command_limit(monkeypatc
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(format_warn.subprocess, "run", record)
+    monkeypatch.setattr(format_warn, "_tool_installed", lambda name: True)
     monkeypatch.setattr(sys, "argv", ["format_warn", *files, "README.md"])
     format_warn.main()
     n_chunks = len(format_warn._chunks(files))
