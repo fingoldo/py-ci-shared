@@ -6,7 +6,6 @@ reset, call-expression whitelists in the deferred counter and the ``_config`` su
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 
@@ -19,20 +18,18 @@ class TestMetaAll:
         assert "safe_import" in m.__all__
 
 
-def test_f06_citation_with_call_parens_resolves_without_removesuffix(tmp_path: Path):
-    """`str.removesuffix` is Python 3.9+ (PEP 616) on a path the 3.8 CI leg runs.
+def test_f06_citation_with_call_parens_resolves(tmp_path: Path):
+    """A qualified-name citation written with call parens (`my_function()`) resolves to the symbol, and a missing one does not.
 
-    On 3.8 the call raised AttributeError on the FIRST bare qualified-name citation, turning
-    unbacked_audit_dispositions (public via __all__) red on that leg. Exercised here through the
-    same code path, plus a 3.8-shaped check that the call is gone.
+    The package floor is 3.9, where `str.removesuffix` exists, so the resolver may use it; what is pinned is the behaviour.
     """
     from py_ci_shared import meta_test_utils as mtu
 
-    tree = ast.parse(Path(mtu.__file__).read_text(encoding="utf-8"))
-    assert not hasattr(str, "removesuffix") or not any(isinstance(n, ast.Attribute) and n.attr == "removesuffix" for n in ast.walk(tree))
     (tmp_path / "m.py").write_text("def my_function():\n    return 1\n", encoding="utf-8")
     mtu.clear_repo_scan_caches()
     assert mtu._names_a_repo_symbol("my_function()", tmp_path) is True
+    assert mtu._names_a_repo_symbol("my_function", tmp_path) is True
+    assert mtu._names_a_repo_symbol("no_such_function()", tmp_path) is False
 
 
 def test_f58_bool_sentinel_is_the_non_default_value():
