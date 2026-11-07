@@ -13,7 +13,8 @@ the same key shares no lock-with block with it. A function is judged only when t
 Condition somewhere, or the function itself holds one: a module with no locks is single-threaded or unguarded by design, and
 ``module_cache_thread_safety`` owns that case.
 
-Not judged: a check and an act in the same lock-with block (both are then under one lock), a key that is not a dict in this
+Not judged: a helper documented as called with the lock held (``*_unlocked``/``*_locked``, or a docstring "caller holds ..."); an idempotent
+``d.pop(k, default)``; a removal that sits under an ``if`` inside a lock block whose earlier check was also under a lock (it re-decides under the lock); a check and an act in the same lock-with block (both are then under one lock), a key that is not a dict in this
 module (a parameter, a call result), and anything across a function call.
 
 Usage::
@@ -27,6 +28,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +57,7 @@ class _Access:
     key: _Key
     line: int
     locks: frozenset[int]  # ids of the lock-with blocks that enclose the access
+    guarded: bool = False  # a removal under a lock, itself inside an `if` of that block: it re-decides under the lock
 
 
 def _is_dict_value(value: ast.AST) -> bool:
@@ -89,7 +92,7 @@ def _render(key: _Key) -> str:
     return f"self.{key[1]}" if key[0] == "self" else key[1]
 
 
-def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access], acts: list[_Access]) -> None:
+def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], checks: list[_Access], acts: list[_Access], guarded: bool = False) -> None:
     """Sort one node into a check (a membership test or ``get`` on a key) or an act (a subscript write to a key)."""
     if isinstance(node, ast.Compare):
         for op, container in zip(node.ops, node.comparators):
@@ -102,11 +105,12 @@ def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], 
             checks.append(_Access(key, node.lineno, locks))
     elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _MUTATORS:
         key = _key_of(node.func.value, module_dicts)
-        if key is not None:
-            acts.append(_Access(key, node.lineno, locks))
+        idempotent = node.func.attr == "pop" and (len(node.args) >= 2 or bool(node.keywords))  # `d.pop(k, None)` cannot fail or double-act
+        if key is not None and not idempotent:
+            acts.append(_Access(key, node.lineno, locks, guarded and bool(locks)))
     elif isinstance(node, ast.Delete):
         keys = (_key_of(t.value, module_dicts) for t in node.targets if isinstance(t, ast.Subscript))
-        acts.extend(_Access(key, node.lineno, locks) for key in keys if key is not None)
+        acts.extend(_Access(key, node.lineno, locks, guarded and bool(locks)) for key in keys if key is not None)
     elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         for target in targets:
@@ -122,24 +126,39 @@ def _accesses(fn: ast.AST, module_dicts: frozenset[str], lock_names: frozenset[s
     acts: list[_Access] = []
     holds_lock = False
 
-    def visit(node: ast.AST, locks: frozenset[int]) -> None:
+    def visit(node: ast.AST, locks: frozenset[int], guarded: bool = False) -> None:
         nonlocal holds_lock
         for child in child_nodes(node):
             if isinstance(child, _SCOPES):
                 continue
             inner = locks
+            branch = guarded or (isinstance(node, ast.If) and child is not node.test and bool(locks))
             if isinstance(child, _WITH) and any(is_lock_like(item.context_expr, lock_names) for item in child.items):
                 inner = locks | {id(child)}
                 holds_lock = True
             if isinstance(child, _RELEVANT):
-                _record(child, inner, module_dicts, checks, acts)
-            visit(child, inner)
+                _record(child, inner, module_dicts, checks, acts, branch)
+            visit(child, inner, branch)
 
     visit(fn, frozenset())
     return checks, acts, holds_lock
 
 
+_CALLER_HOLDS = re.compile(r"caller\s+(?:must\s+)?(?:holds?|has|owns)|with\s+the\s+lock\s+held|lock\s+must\s+be\s+held", re.IGNORECASE)
+
+
+def _caller_holds_lock(fn: ast.AST) -> bool:
+    """A helper that documents (name ``*_unlocked``/``*_locked`` or docstring "caller holds the lock") that its caller owns the lock."""
+    name = getattr(fn, "name", "")
+    if name.endswith(("_unlocked", "_locked")):
+        return True
+    doc = ast.get_docstring(fn) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) else None  # type: ignore[arg-type]
+    return bool(doc and _CALLER_HOLDS.search(doc))
+
+
 def _findings_in_function(fn: ast.AST, rel: str, module_dicts: frozenset[str], lock_names: frozenset[str], module_has_lock: bool) -> list[Finding]:
+    if _caller_holds_lock(fn):
+        return []
     checks, acts, holds_lock = _accesses(fn, module_dicts, lock_names)
     if not (module_has_lock or holds_lock):
         return []
@@ -147,6 +166,8 @@ def _findings_in_function(fn: ast.AST, rel: str, module_dicts: frozenset[str], l
     name = getattr(fn, "name", "<function>")
     for act in acts:
         for check in checks:
+            if act.guarded and check.locks:
+                continue  # `with L: e = d.get(k)` ... `with L: if e.refcount == 0: del d[k]`: the removal re-decides under the lock
             if check.key == act.key and check.line <= act.line and not (check.locks & act.locks):
                 out.append(
                     Finding(

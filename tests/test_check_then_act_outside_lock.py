@@ -243,3 +243,76 @@ def test_setdefault_after_a_test_is_atomic_and_not_an_act(tmp_path):
                 return _C.setdefault(key, 1)
     """
     assert _lines(tmp_path, _module(body)) == []
+
+
+def test_lock_table_removal_that_rechecks_under_its_own_lock_block_is_clean(tmp_path):
+    body = """
+        _locks = {}
+
+        def release(key):
+            with _guard:
+                entry = _locks.get(key)
+            try:
+                work()
+            finally:
+                with _guard:
+                    entry.refcount -= 1
+                    if entry.refcount == 0:
+                        del _locks[key]
+    """
+    assert _lines(tmp_path, _module(body)) == []
+
+
+def test_idempotent_pop_with_a_default_is_not_an_act(tmp_path):
+    body = """
+        _C = {}
+
+        def f(key):
+            with _guard:
+                last = _C.get(key, 0)
+            with _guard:
+                _C.pop(key, None)
+    """
+    assert _lines(tmp_path, _module(body)) == []
+
+
+@pytest.mark.parametrize("name,doc", [("_is_banned_unlocked", "Check ban status."), ("_check", "Check it (caller holds the lock).")])
+def test_helper_documented_as_called_under_the_lock_is_not_judged(tmp_path, name, doc):
+    body = f"""
+        _C = {{}}
+
+        def {name}(key):
+            '''{doc}'''
+            e = _C.get(key)
+            if e is None:
+                return False
+            del _C[key]
+            return True
+    """
+    assert _lines(tmp_path, _module(body)) == []
+
+
+def test_unlocked_test_then_guarded_removal_is_still_a_race(tmp_path):
+    body = """
+        _locks = {}
+
+        def release(key):
+            if key in _locks:
+                with _guard:
+                    if _locks[key].refcount == 0:
+                        del _locks[key]
+    """
+    assert len(_lines(tmp_path, _module(body))) == 1
+
+
+def test_removal_after_a_test_in_a_different_lock_block_without_recheck_is_a_race(tmp_path):
+    body = """
+        _C = {}
+
+        def f(key):
+            with _guard:
+                present = key in _C
+            with _guard:
+                del _C[key]
+    """
+    assert len(_lines(tmp_path, _module(body))) == 1
