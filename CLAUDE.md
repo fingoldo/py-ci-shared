@@ -64,6 +64,8 @@
 - `publish` and `rollback` run in the `release` environment. Owner step (repository settings, not code): give the
   environment a deployment rule allowing only `v*` tags and the default branch, and move `RELEASE_TOKEN` from the
   repository secrets into it, so a tag pushed from an edited release.yml cannot read it.
+  The owner has chosen NOT to do this (decision 2026-11-07): `RELEASE_TOKEN` stays a repository secret, so any workflow in this repository,
+  including one on a branch, can read it. Accepted risk, documented only; audits/2026-11-07/51 (51-F8) lists the steps to close it.
 - Consumers track `@v1`, so keep README's "Compatibility promise for `@v1`": within v1 only additive changes and
   defect fixes that make a gate stricter. Any change that can turn a green consumer red, or that changes what a
   refresh writes, gets a CHANGELOG entry starting **Behaviour change** with what to do.

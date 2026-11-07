@@ -1139,7 +1139,7 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 51-F5 | P3 | Direct ${{ inputs.* }} substitution into run: in docs.yml, mypy-full.yml, lint-blocking.yml | RESOLVED |
 | 51-F6 | P3 | github.action_path interpolated inside a run: script | RESOLVED |
 | 51-F7 | P3 | tarfile.extractall without a filter on Python < 3.12 | RESOLVED |
-| 51-F8 | P3 | release trust depends on repository settings the code cannot verify | DEFERRED: owner sets release environment rules (see finding) |
+| 51-F8 | P3 | release trust depends on repository settings the code cannot verify | WON'T FIX (owner decision 2026-11-07): residual risk accepted and documented in CLAUDE.md; steps to close it later are in the finding |
 | 51-F9 | P3 | Verified clean record: no pull_request_target, actions SHA-pinned, least-privilege permissions, safe deserialization | WON'T FIX: verified-clean record, no defect |
 | 52-F1 | P2 | 22 private functions in src are defined and never called or referenced | OPEN |
 | 52-F2 | P2 | An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself | OPEN |

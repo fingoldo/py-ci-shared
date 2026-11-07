@@ -85,7 +85,7 @@
     "proposed_fix": "Owner action: confirm the token lives only in the release environment with a v* deployment rule and a required reviewer; add a ci-health style check of gh api repos/.../environments/release that fails when protection is absent.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: needs repository settings only the owner can change. Owner steps: (1) Settings > Environments > release: add a required reviewer and a deployment branch/tag rule limiting to master and v* tags; (2) move RELEASE_TOKEN from repository secrets into that environment and delete the repository-level secret; (3) set 'environment: release' on the release.yml jobs that read the token (release.yml is owned by another agent). A ci-health check of gh api repos/fingoldo/py-ci-shared/environments/release waits on step 1 so it has a protected state to assert."
+    "disposition": "WON'T FIX (owner decision 2026-11-07): the owner accepts the residual risk and does not configure the release environment. The risk is documented, not mitigated: while RELEASE_TOKEN stays a repository secret and the environment has no rule, any workflow in this repository (including one added on a branch) can read it, and a compromise could move @v1 for every consumer. Documented in CLAUDE.md 'Versions and releases'. To close it later: Settings > Environments > release (required reviewer, deployment rule limited to master and v* tags), move RELEASE_TOKEN into it, add 'environment: release' to the release.yml jobs that read it, and add a ci-health check of gh api repos/fingoldo/py-ci-shared/environments/release."
   },
   {
     "id": "51-F9",
