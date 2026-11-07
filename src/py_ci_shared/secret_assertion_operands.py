@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core.scopes import own_nodes
-from ._core import Finding, ScanResult, child_nodes, parse_text, scan_python
+from ._core import Finding, ScanResult, child_nodes, nodes_of, parse_text, scan_python
 from ._core.gate_contract import check_scan
 from ._core.call_names import func_name_or_none as _call_name
 
@@ -109,7 +109,7 @@ def _literal_bindings(nodes: "Iterable[ast.AST]") -> "dict[str, list[str]]":
             if isinstance(target, ast.Name) and values is not None:
                 held.setdefault(target.id, []).extend(values)
             else:
-                spoiled.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+                spoiled.update(n.id for n in nodes_of(target, ast.Name))
     return {name: vals for name, vals in held.items() if name not in spoiled}
 
 

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import (
+    parse_text,
     DEFAULT_EXCLUDE,
     Baseline,
     Finding,
@@ -122,7 +123,7 @@ def _string_interior_lines(text: str) -> frozenset[int]:
     """1-based lines that lie inside a multi-line string literal (its first line up to, not including, its last): a ``# x-ok:`` there is string
     text, not a comment. Empty when *text* is not Python (a YAML or shell file) or cannot be tokenized."""
     try:
-        ast.parse(text)
+        parse_text(text)
         tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
     except (SyntaxError, ValueError, tokenize.TokenError):  # best-effort: text that is not Python has no string literals, so the plain line rule applies
         return frozenset()

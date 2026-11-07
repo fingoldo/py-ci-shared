@@ -19,8 +19,8 @@ __all__ = ["unparse_stable"]
 if sys.version_info >= (3, 11):
 
     def unparse_stable(node: ast.AST) -> str:
-        """``ast.unparse(node)``; on 3.11+ that is already the canonical shape."""
-        return ast.unparse(node)
+        """``ast.unparse(node)``; on 3.11+ that is already the canonical shape. ``ast.dump`` when ``ast.unparse`` is absent."""
+        return ast.unparse(node) if hasattr(ast, "unparse") else ast.dump(node)
 
 else:
     _Unparser: Any = ast._Unparser  # type: ignore[attr-defined]
@@ -82,5 +82,7 @@ else:
                 self.write(type_comment)
 
     def unparse_stable(node: ast.AST) -> str:
-        """``ast.unparse(node)`` rendered the way 3.11+ does (see the module docstring)."""
+        """``ast.unparse(node)`` rendered the way 3.11+ does (see the module docstring); ``ast.dump`` when it is absent."""
+        if not hasattr(ast, "unparse"):
+            return ast.dump(node)
         return str(_StableUnparser().visit(node))

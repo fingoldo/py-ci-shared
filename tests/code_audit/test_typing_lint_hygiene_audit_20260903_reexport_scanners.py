@@ -18,8 +18,10 @@ def test_f02_only_one_of_the_pair_runs_by_default():
 
 
 def test_f02_dotted_helper_is_the_shared_one():
-    """The scanner's private `_dotted` copy of `_base.dotted_name` is gone (duplicate_function_body)."""
+    """The scanner's private `_dotted` copy is gone: it uses the one `dotted_name`, defined in `_core.node_index` (duplicate_function_body)."""
     from py_ci_shared.code_audit import patch_target_is_a_reexport
 
     assert not hasattr(patch_target_is_a_reexport, "_dotted")
-    assert patch_target_is_a_reexport.dotted_name.__module__.endswith("_base")
+    from py_ci_shared._core import node_index
+
+    assert patch_target_is_a_reexport.dotted_name is node_index.dotted_name

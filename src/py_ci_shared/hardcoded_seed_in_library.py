@@ -37,7 +37,7 @@ from collections.abc import Iterable, Iterator
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, nodes_of, scan_python
 
 __all__ = ["DEFAULT_EXCLUDE_FRAGMENTS", "RULE", "assert_hardcoded_seed_in_library", "find_hardcoded_seed_in_library"]
 
@@ -223,8 +223,8 @@ def _scan_local_bindings(func: ast.AST) -> "tuple[dict[str, int], dict[str, ast.
                     counts[t.id] = counts.get(t.id, 0) + 1
                     values[t.id] = node.value
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign, ast.NamedExpr, ast.For, ast.AsyncFor, ast.With)):
-            for sub in ast.walk(node.target if hasattr(node, "target") else node):
-                if isinstance(sub, ast.Name) and isinstance(sub.ctx, ast.Store):
+            for sub in nodes_of(node.target if hasattr(node, "target") else node, ast.Name):
+                if isinstance(sub.ctx, ast.Store):
                     counts[sub.id] = counts.get(sub.id, 0) + 2  # rebound by something we do not fold: never constant
         stack.extend(child_nodes(node))
     return counts, values
@@ -233,7 +233,7 @@ def _scan_local_bindings(func: ast.AST) -> "tuple[dict[str, int], dict[str, ast.
 def _local_int_constants(func: ast.AST, inherited: "Optional[dict[str, int]]") -> "dict[str, int]":
     """*inherited* plus the names *func* itself assigns exactly once, to an int (``s = 42`` then ``default_rng(s)``)."""
     counts, values = _scan_local_bindings(func)
-    params = {a.arg for a in ast.walk(func.args) if isinstance(a, ast.arg)} if isinstance(func, _FUNCTIONS) else set()
+    params = {a.arg for a in nodes_of(func.args, ast.arg)} if isinstance(func, _FUNCTIONS) else set()
     out = {k: v for k, v in (inherited or {}).items() if k not in counts and k not in params}
     for name, value in values.items():
         if counts[name] == 1 and name not in params:

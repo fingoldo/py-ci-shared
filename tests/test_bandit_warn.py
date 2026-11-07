@@ -29,6 +29,7 @@ class _Recorder:
 def recorder(monkeypatch):
     rec = _Recorder()
     monkeypatch.setattr(bandit_warn.subprocess, "run", rec)
+    monkeypatch.setattr(bandit_warn, "_tool_installed", lambda name: True)
     monkeypatch.delenv("PY_CI_SHARED_SRC_PATH", raising=False)
     return rec
 
@@ -75,5 +76,6 @@ def test_staged_files_outside_the_src_path_warn_that_nothing_was_scanned(recorde
 
 def test_findings_warn_but_never_block(monkeypatch, capsys):
     monkeypatch.setattr(bandit_warn.subprocess, "run", _Recorder(returncode=1))
+    monkeypatch.setattr(bandit_warn, "_tool_installed", lambda name: True)
     assert bandit_warn.main(["--src-path", "src", "src/a.py"]) == 0
     assert "WARNINGS ONLY" in capsys.readouterr().err

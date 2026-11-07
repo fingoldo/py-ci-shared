@@ -23,6 +23,7 @@ def calls(monkeypatch):
         return subprocess.CompletedProcess(cmd, 0)
 
     monkeypatch.setattr(advisory_warn.subprocess, "run", run)
+    monkeypatch.setattr(advisory_warn, "_tool_installed", lambda name: True)
     monkeypatch.delenv("PY_CI_SHARED_SRC_PATH", raising=False)
     return seen
 
