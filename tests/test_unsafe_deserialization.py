@@ -197,3 +197,20 @@ def test_pandas_read_pickle_of_sidecar_verified_bytes_is_not_reported(tmp_path):
     )
     found = _found(tmp_path, source)
     assert len(found) == 1 and "load_raw" in found[0], found
+
+
+def test_unpickler_subclass_without_find_class_is_reported(tmp_path):
+    found = _found(tmp_path, "import pickle\n\n\nclass U(pickle.Unpickler):\n    pass\n")
+    assert len(found) == 1 and "without find_class" in found[0]
+
+
+def test_verification_inside_a_branch_does_not_guard_the_load(tmp_path):
+    cond = "import pickle\n\n\ndef f(b, strict):\n    if strict:\n        verify_sig(b)\n    return pickle.loads(b)\n"
+    assert len(_found(tmp_path, cond)) == 1
+    top = "import pickle\n\n\ndef f(b):\n    verify_sig(b)\n    return pickle.loads(b)\n"
+    assert _found(tmp_path, top) == []
+
+
+def test_allow_pickle_variable_is_reported_but_literal_false_is_not(tmp_path):
+    assert len(_found(tmp_path, "import numpy as np\n\n\ndef f(p, a):\n    return np.load(p, allow_pickle=a)\n")) == 1
+    assert _found(tmp_path, "import numpy as np\n\n\ndef f(p):\n    return np.load(p, allow_pickle=False)\n") == []

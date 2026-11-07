@@ -141,3 +141,20 @@ def test_only_boolean_flags_are_judged(tmp_path):
 def test_a_boolean_flag_compared_with_a_spelling_of_on_is_still_judged(tmp_path):
     p = _write(tmp_path, "m.py", "import os\nif os.environ.get('P_VERBOSE') == 'yes':\n    pass\n")
     assert [(r.var, r.shape) for r in find_hand_parsed_env_flags([p], tmp_path, ("P_",))] == [("P_VERBOSE", "compared with 'yes'")]
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "x = bool(int(os.environ.get('MY_FLAG', '0')))\n",
+        "if 'MY_FLAG' in os.environ:\n    pass\n",
+        "if 'MY_FLAG' not in os.environ:\n    pass\n",
+        "if os.getenv(f'MY_{name}'):\n    pass\n",
+    ],
+)
+def test_more_hand_parse_shapes_are_reported(tmp_path, body):
+    assert len(_reads(tmp_path, "import os\nname = 'a'\n" + body)) == 1
+
+
+def test_membership_of_a_foreign_variable_is_not_reported(tmp_path):
+    assert _reads(tmp_path, "import os\nif 'HOME' in os.environ:\n    pass\nx = int(os.environ.get('MY_N', '1'))\n") == []

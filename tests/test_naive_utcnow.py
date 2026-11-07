@@ -207,3 +207,13 @@ class TestDefaultSkipDirsArePinned:
         found = find_naive_utcnow(tmp_path, use_git=False)
 
         assert [f.split(":")[0] for f in found] == ["real/code.py"]
+
+
+def test_getattr_with_a_literal_name_is_found(tmp_path):
+    _module(tmp_path, "import datetime\nx = getattr(datetime.datetime, 'utcnow')()\ny = getattr(datetime.datetime, 'now')()\n")
+    assert [line.split(":")[1] for line in find_naive_utcnow(tmp_path)] == ["2"]
+
+
+def test_getattr_on_an_aware_library_is_not_found(tmp_path):
+    _module(tmp_path, "import arrow\nx = getattr(arrow, 'utcnow')()\n")
+    assert find_naive_utcnow(tmp_path) == []

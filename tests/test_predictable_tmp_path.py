@@ -98,3 +98,18 @@ def test_other_spellings_of_the_shared_temp_directory_are_reported_once(tmp_path
 def test_a_getlogin_in_another_function_does_not_exempt_a_module_level_build(tmp_path):
     body = 'import os\nimport tempfile\n\nLOCK = os.path.join(tempfile.gettempdir(), "x.lock")\n\n\ndef user():\n    return os.getlogin()\n'
     assert _tmp_lines(tmp_path, body) == [4]
+
+
+def test_an_unused_user_mention_does_not_exempt_a_shared_path(tmp_path):
+    body = "import os, tempfile\ndef f():\n    uid = os.getuid()\n    return os.path.join(tempfile.gettempdir(), 'a.lock')\n"
+    assert _tmp_lines(tmp_path, body) == [4]
+
+
+def test_a_user_value_flowing_into_the_path_exempts_it(tmp_path):
+    body = "import os, tempfile\ndef f():\n    uid = os.getuid()\n    return os.path.join(tempfile.gettempdir(), f'app-{uid}', 'a.lock')\n"
+    assert _tmp_lines(tmp_path, body) == []
+
+
+def test_format_built_paths_and_mktemp_are_reported(tmp_path):
+    body = "import tempfile\ndef f():\n    a = '{}/a.lock'.format(tempfile.gettempdir())\n    return tempfile.mktemp()\n"
+    assert _tmp_lines(tmp_path, body) == [3, 4]

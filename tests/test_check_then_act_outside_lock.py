@@ -195,3 +195,51 @@ def test_a_test_and_write_under_a_guard_helper_that_takes_the_lock_is_not_a_find
         """)
     (tmp_path / "m.py").write_text(body, encoding="utf-8")
     assert find_check_then_act_outside_lock([tmp_path / "m.py"], use_git=False) == []
+
+
+@pytest.mark.parametrize("act", ["del _C[key]", "_C.pop(key)", "_C.update({key: 1})"])
+def test_non_subscript_acts_after_an_unlocked_test_are_found(tmp_path, act):
+    body = f"""
+        _C = {{}}
+
+        def f(key):
+            if key in _C:
+                {act}
+    """
+    assert len(_lines(tmp_path, _module(body))) == 1
+
+
+def test_class_level_dict_through_cls_is_found(tmp_path):
+    body = """
+        class A:
+            _c = {}
+
+            @classmethod
+            def put(cls, key):
+                if key not in cls._c:
+                    cls._c[key] = 1
+    """
+    assert len(_lines(tmp_path, _module(body))) == 1
+
+
+def test_non_subscript_act_under_one_lock_is_clean(tmp_path):
+    body = """
+        _C = {}
+
+        def f(key):
+            with _guard:
+                if key in _C:
+                    del _C[key]
+    """
+    assert _lines(tmp_path, _module(body)) == []
+
+
+def test_setdefault_after_a_test_is_atomic_and_not_an_act(tmp_path):
+    body = """
+        _C = {}
+
+        def f(key):
+            if key not in _C:
+                return _C.setdefault(key, 1)
+    """
+    assert _lines(tmp_path, _module(body)) == []

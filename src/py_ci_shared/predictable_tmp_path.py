@@ -4,9 +4,9 @@
 ``os.path.join(tempfile.gettempdir(), sha256(path).lock)``, has a predictable name that another local user can create or symlink
 first, so the owner's lock or cache can be hijacked. The fix is a per-user subdirectory, or ``mkdtemp``/``mkstemp``.
 
-Reported: a join, ``Path(...)`` or ``/`` expression with a ``gettempdir()`` operand, unless the enclosing function (or the
-module, for top-level code) mentions a per-user or unique-name source: ``getuid``, ``getlogin``, ``getpass``, ``USERNAME``,
-``mkdtemp``, ``mkstemp``. Nearest correct code, not reported: ``os.path.join(tempfile.gettempdir(), f"app-{os.getuid()}", name)``
+Reported: a join, ``Path(...)`` or ``/`` expression with a ``gettempdir()`` operand, unless a per-user value (``getuid``, ``getlogin``, ``getpass``, ``USERNAME``) flows into the path expression itself
+(directly or through a name assigned from one), or the enclosing function (module, for top-level code) calls ``mkdtemp``/``mkstemp``.
+A bare ``tempfile.mktemp()`` is always reported (a race by design). A merely unused ``uid = os.getuid()`` does not exempt. Nearest correct code, not reported: ``os.path.join(tempfile.gettempdir(), f"app-{os.getuid()}", name)``
 or a ``mkdtemp`` directory. A deliberate site is marked ``# tmp-path-ok: <reason>`` on the line.
 
 Usage in a consumer's meta test::
@@ -31,7 +31,8 @@ __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
 
 RULE = "predictable-tmp-path"
 SUPPRESSION = "# tmp-path-ok:"
-_PER_USER_MARKERS = ("getuid", "getlogin", "getpass", "USERNAME", "mkdtemp", "mkstemp")
+_USER_MARKERS = ("getuid", "getlogin", "getpass", "USERNAME")
+_UNIQUE_MARKERS = ("mkdtemp", "mkstemp")
 _BUILDER_NAMES = frozenset({"join", "Path", "PurePath"})
 
 
@@ -64,13 +65,17 @@ def _is_tmp_source(node: ast.AST, names: set[str]) -> bool:
         return node.id in names
     if isinstance(node, ast.Attribute):
         return node.attr == "tempdir" and getattr(node.value, "id", "") == "tempfile"
-    return isinstance(node, ast.Constant) and isinstance(node.value, str) and (node.value == "/tmp" or node.value.startswith("/tmp/"))  # tmp-path-ok: the detector's own literal
+    if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+        return False
+    return node.value == "/tmp" or node.value.startswith("/tmp/")  # tmp-path-ok: the detector's own literal
 
 
 def _builds_path(node: ast.AST) -> Optional[list[ast.AST]]:
     """The operands of a join/Path/``/``/``+``/f-string expression, or None when the node builds no path."""
     if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", "")) in _BUILDER_NAMES:
         return list(node.args)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format" and isinstance(node.func.value, ast.Constant):
+        return [*node.args, *(k.value for k in node.keywords)]  # "{}/a.lock".format(gettempdir())
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Div, ast.Add)):
         return [node.left, node.right]
     if isinstance(node, ast.JoinedStr):
@@ -95,16 +100,36 @@ def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
     return out
 
 
+def _has_user_marker(node: ast.AST) -> bool:
+    return any(marker in ast.unparse(node) for marker in _USER_MARKERS)
+
+
+def _user_names(tree: ast.Module) -> set[str]:
+    """Names assigned from an expression that holds a per-user value (``uid = os.getuid()``)."""
+    out: set[str] = set()
+    for node in shared_walk(tree):
+        if isinstance(node, ast.Assign) and _has_user_marker(node.value):
+            out.update(t.id for t in node.targets if isinstance(t, ast.Name))
+    return out
+
+
+def _is_mktemp(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) == "mktemp"
+
+
 def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     lines = source.splitlines()
     scope_text = _per_user_scope_text(tree, source)
     names = _tmp_names(tree)
+    user_names = _user_names(tree)
     candidates: list[ast.AST] = []
     for node in shared_walk(tree):
         operands = _builds_path(node)
         if operands is not None and any(_is_tmp_source(sub, names) for op in operands for sub in shared_walk(op)):
             candidates.append(node)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):  # tmp-path-ok: the detector's own literal
+            candidates.append(node)
+        elif _is_mktemp(node):
             candidates.append(node)
     inner = {id(sub) for c in candidates for sub in shared_walk(c) if sub is not c}
     out: list[Finding] = []
@@ -116,9 +141,25 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
         if SUPPRESSION in line:
             continue
         enclosing = scope_text.get(id(node), source)
-        if any(marker in enclosing for marker in _PER_USER_MARKERS):
+        if not _is_mktemp(node) and (
+            any(marker in enclosing for marker in _UNIQUE_MARKERS)
+            or _has_user_marker(node)
+            or any(isinstance(sub, ast.Name) and sub.id in user_names for sub in shared_walk(node))
+        ):
             continue
-        out.append(Finding(rel, line_no, RULE, "path built under the shared temp directory with no per-user component: " + line.strip()))
+        out.append(
+            Finding(
+                rel,
+                line_no,
+                RULE,
+                (
+                    "mktemp() is racy by design: use mkstemp/mkdtemp: "
+                    if _is_mktemp(node)
+                    else "path built under the shared temp directory with no per-user component: "
+                )
+                + line.strip(),
+            )
+        )
     return out
 
 

@@ -72,6 +72,24 @@ def reload_primitive(node: ast.AST, aliases: Optional[ImportAliases] = None) -> 
             return "importlib.reload"
         if isinstance(func, ast.Attribute) and func.attr == "pop" and _is_sys_modules(func.value, aliases):
             return "sys.modules.pop"
+        if isinstance(func, ast.Attribute) and func.attr == "clear" and not node.args and _is_sys_modules(func.value, aliases):
+            return "sys.modules.clear"
+        if (
+            isinstance(func, ast.Name)
+            and func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value == "reload"
+            and (aliases.qualified_name(node.args[0]) if aliases is not None else getattr(node.args[0], "id", None)) in {"importlib", "imp"}
+        ):
+            return "importlib.reload"  # getattr(importlib, "reload")
+    if (
+        isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.Constant)
+        and node.value.value is None
+        and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, aliases) for t in node.targets)
+    ):
+        return "sys.modules[...] = None"
     if isinstance(node, ast.Delete) and any(isinstance(t, ast.Subscript) and _is_sys_modules(t.value, aliases) for t in node.targets):
         return "del sys.modules"
     return None

@@ -142,6 +142,40 @@ def _writes(nodes: Sequence[ast.AST]) -> bool:
             return True
         if name == "execute" and n.args and _WRITE_SQL.search(_literal_text(n.args[0])):
             return True
+        if name == "execute" and len(n.args) >= 2 and not _literal_text(n.args[0]):
+            return True  # `cur.execute(sql, (row,))`: SQL in a variable bound to per-item parameters is an insert/update, a bare `execute(sql)` stays a probe
+    return False
+
+
+_READ_ONLY_NAME = re.compile(
+    r"^_*(?:get|fetch|select|read|load|find|query|count|is|has|scalar|first|one|all|list|refresh|close|commit|rollback)", re.IGNORECASE
+)
+
+
+def _rollback_receivers(handler_body: Sequence[ast.AST]) -> set[str]:
+    """Names ``x`` of ``x.rollback()`` (or ``_safe_rollback(x)``) in the handler: the transaction owners."""
+    out: set[str] = set()
+    for n in _walk_own(handler_body):
+        if not isinstance(n, ast.Call):
+            continue
+        if isinstance(n.func, ast.Attribute) and n.func.attr == "rollback":
+            out.add(_receiver_name(n.func.value))
+        elif "rollback" in (n.func.id.lower() if isinstance(n.func, ast.Name) else ""):
+            out.update(a.id for a in n.args if isinstance(a, ast.Name))
+    out.discard("")
+    return out
+
+
+def _writes_through(nodes: Sequence[ast.AST], receivers: set[str]) -> bool:
+    """Any non-read call on a rolled-back transaction owner (``s.add(i)``, ``repo.save(i)``) or a helper handed that owner (``insert_row(conn, i)``)."""
+    for n in _walk_own(nodes):
+        if not isinstance(n, ast.Call):
+            continue
+        if isinstance(n.func, ast.Attribute) and _receiver_name(n.func.value) in receivers and not _READ_ONLY_NAME.match(n.func.attr):
+            return True
+        name = n.func.attr if isinstance(n.func, ast.Attribute) else n.func.id if isinstance(n.func, ast.Name) else ""
+        if name and not _READ_ONLY_NAME.match(name) and any(isinstance(a, ast.Name) and a.id in receivers for a in n.args):
+            return True
     return False
 
 
@@ -196,10 +230,13 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
     functions = enclosing_functions(parsed.tree)
     out: list[Finding] = []
     for loop, node in _loop_trys(parsed.tree):
-        if _calls(node.body, "begin_nested") or _commits_per_item(node.body) or not _writes(loop.body):
+        if _calls(node.body, "begin_nested") or _commits_per_item(node.body):
             continue
+        looped_writes = _writes(loop.body)
         for handler in node.handlers:
             if not _rolls_back(handler.body) or line_has_marker(lines, handler.lineno, MARKER):
+                continue
+            if not (looped_writes or _writes_through(loop.body, _rollback_receivers(handler.body))):
                 continue
             if _resets_or_leaves(handler.body) or _resets_or_leaves(node.finalbody):
                 continue

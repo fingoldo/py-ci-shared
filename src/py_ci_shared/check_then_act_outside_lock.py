@@ -7,7 +7,8 @@ already used the first one. Taking the lock around only the write does not help:
 Scope, deliberately narrow. A key is ``self.X`` (an attribute of the method's receiver) or a module-level dict ``D`` (bound at
 module scope to a dict literal, ``dict()``, ``OrderedDict()``, ``defaultdict()`` or ``WeakValueDictionary()``). Within one
 function, a check is a membership test (``in`` / ``not in``) or a ``.get(...)`` call on the key, and an act is a subscript
-write to the same key (plain, augmented or annotated assignment). An act is a finding when an earlier-or-same-line check on
+write to the same key (plain, augmented or annotated assignment), a ``del key[k]``, or a ``update``/``pop``/``popitem`` call on it
+(``cls._x`` counts like ``self._x``). An act is a finding when an earlier-or-same-line check on
 the same key shares no lock-with block with it. A function is judged only when the module constructs a Lock, RLock or
 Condition somewhere, or the function itself holds one: a module with no locks is single-threaded or unguarded by design, and
 ``module_cache_thread_safety`` owns that case.
@@ -44,7 +45,9 @@ _Key = tuple[str, str]  # ("self", attr) or ("module", name)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
 _WITH = (ast.With, ast.AsyncWith)
 #: The node types :func:`_record` sorts; every other node is only a link in the walk, so it is not passed to it.
-_RELEVANT = (ast.Compare, ast.Call, ast.Assign, ast.AugAssign, ast.AnnAssign)
+_RELEVANT = (ast.Compare, ast.Call, ast.Assign, ast.AugAssign, ast.AnnAssign, ast.Delete)
+#: Dict methods that write after a membership test: ``if k in c: c.pop(k)``; ``setdefault`` is atomic and returns the winner, so it is not an act.
+_MUTATORS = frozenset({"update", "pop", "popitem"})
 
 
 @dataclass(frozen=True)
@@ -75,7 +78,7 @@ def _module_dicts(tree: ast.Module) -> frozenset[str]:
 
 
 def _key_of(node: ast.AST, module_dicts: frozenset[str]) -> Optional[_Key]:
-    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id == "self":
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in {"self", "cls"}:
         return ("self", node.attr)
     if isinstance(node, ast.Name) and node.id in module_dicts:
         return ("module", node.id)
@@ -97,6 +100,13 @@ def _record(node: ast.AST, locks: frozenset[int], module_dicts: frozenset[str], 
         key = _key_of(node.func.value, module_dicts)
         if key is not None:
             checks.append(_Access(key, node.lineno, locks))
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _MUTATORS:
+        key = _key_of(node.func.value, module_dicts)
+        if key is not None:
+            acts.append(_Access(key, node.lineno, locks))
+    elif isinstance(node, ast.Delete):
+        keys = (_key_of(t.value, module_dicts) for t in node.targets if isinstance(t, ast.Subscript))
+        acts.extend(_Access(key, node.lineno, locks) for key in keys if key is not None)
     elif isinstance(node, (ast.Assign, ast.AugAssign, ast.AnnAssign)):
         targets = node.targets if isinstance(node, ast.Assign) else [node.target]
         for target in targets:

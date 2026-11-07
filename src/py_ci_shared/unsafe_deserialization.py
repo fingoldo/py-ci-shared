@@ -297,6 +297,8 @@ def _check_unpicklers(tree: ast.Module, aliases: ImportAliases, consts: dict[str
         if not (isinstance(node, ast.ClassDef) and _is_unpickler_class(node, aliases)):
             continue
         safe_loader_functions.update(id(member) for member in shared_walk(node) if isinstance(member, _FUNCTIONS))
+        if not any(isinstance(item, ast.FunctionDef) and item.name == "find_class" for item in node.body):
+            sink.report(node, f"{node.name}: an Unpickler subclass without find_class keeps the default, unrestricted class lookup (full gadget surface)")
         for item in node.body:
             if isinstance(item, ast.FunctionDef) and item.name == "find_class":
                 for problem in _find_class_problems(item, {**consts, **_module_constants(node)}):
@@ -324,6 +326,8 @@ def _keyword_loader_message(node: ast.Call, aliases: ImportAliases) -> Optional[
         flag = _kw(node, "allow_pickle")
         if isinstance(flag, ast.Constant) and flag.value is True:
             return "np.load(allow_pickle=True) unpickles object arrays, which executes code"
+        if flag is not None and not isinstance(flag, ast.Constant):
+            return "np.load(allow_pickle=<variable>) may unpickle object arrays, which executes code; pass the literal False"
     elif qualified in _KERAS_LOADERS:
         flag = _kw(node, "safe_mode")
         if isinstance(flag, ast.Constant) and flag.value is False:
@@ -414,6 +418,39 @@ def _is_verifying_call(candidate: ast.Call, call: ast.Call) -> bool:
     )
 
 
+_BRANCHY = (ast.Try, ast.For, ast.AsyncFor, ast.ClassDef, *_FUNCTIONS, *(getattr(ast, n) for n in ("TryStar", "Match") if hasattr(ast, n)))
+
+
+def _dominating_call_ids(scope: ast.AST) -> set[int]:
+    """Ids of the calls that run on EVERY path to the end of *scope*'s first statements: top-level statements, the test of a top-level
+    ``if``/``while``, and the body of a top-level ``with``. A check inside a branch (``if strict: verify(b)``) does not guard a load after it."""
+    out: set[int] = set()
+
+    def add(node: ast.AST) -> None:
+        out.update(id(n) for n in shared_walk(node) if isinstance(n, ast.Call))
+
+    def block(stmts: list[ast.stmt]) -> None:
+        for stmt in stmts:
+            if isinstance(stmt, (ast.If, ast.While)):
+                add(stmt.test)
+            elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+                for item in stmt.items:
+                    add(item.context_expr)
+                block(stmt.body)
+            elif isinstance(stmt, _BRANCHY):
+                if isinstance(stmt, (ast.For, ast.AsyncFor)):
+                    add(stmt.iter)
+            else:
+                add(stmt)
+
+    body = getattr(scope, "body", None)
+    if isinstance(body, list):
+        block(body)
+    else:  # a lambda: its body is one expression
+        add(scope)
+    return out
+
+
 def _unverified_load(call: ast.Call, calls: list[ast.Call], scope: ast.AST, tree: ast.Module, aliases: ImportAliases) -> bool:
     """Is *call* a pickle-family load of non-literal bytes with no earlier verification in its function or an enclosing one?"""
     target = _load_target(call, aliases)
@@ -422,7 +459,8 @@ def _unverified_load(call: ast.Call, calls: list[ast.Call], scope: ast.AST, tree
     first = target.args[0] if target.args else None
     if isinstance(first, ast.Constant) and not isinstance(first.value, (str, bytes)):
         return False
-    verifiers = [c for c in calls if _is_verifying_call(c, call)]
+    dominating = _dominating_call_ids(scope)
+    verifiers = [c for c in calls if id(c) in dominating and _is_verifying_call(c, call)]
     seeds = _names_of(first, aliases) if first is not None else set()
     if verifiers and seeds:
         related = _related_names(scope, seeds, aliases)

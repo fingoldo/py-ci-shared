@@ -199,3 +199,22 @@ def test_a_capture_or_counter_assignment_is_not_an_accumulator_reset(handler):
 )
 def test_a_real_reset_still_exempts(handler):
     assert _handler_variants(handler) == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "def f(s, items):\n    for i in items:\n        try:\n            s.add(i)\n        except Exception:\n            s.rollback()\n",
+        "def f(repo, items):\n    for i in items:\n        try:\n            repo.save(i)\n        except Exception:\n            repo.rollback()\n",
+        "def f(conn, cur, sql, items):\n    for i in items:\n        try:\n            cur.execute(sql, (i,))\n        except Exception:\n            conn.rollback()\n",
+        "def f(conn, items):\n    for i in items:\n        try:\n            insert_row(conn, i)\n        except Exception:\n            conn.rollback()\n",
+    ],
+)
+def test_writes_found_through_the_rolled_back_owner_or_variable_sql(tmp_path: Path, body: str) -> None:
+    _write(tmp_path, "m.py", body)
+    assert len(_lines(tmp_path)) == 1
+
+
+def test_reads_on_the_rolled_back_owner_are_not_writes(tmp_path: Path) -> None:
+    _write(tmp_path, "m.py", "def f(s, ids):\n    for i in ids:\n        try:\n            s.get(i)\n        except Exception:\n            s.rollback()\n")
+    assert _lines(tmp_path) == []

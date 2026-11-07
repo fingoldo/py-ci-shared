@@ -83,6 +83,18 @@ def _offending_nodes(tree: ast.Module) -> list[ast.expr]:
             called[id(node.func)] = node
     out: list[ast.expr] = []
     for node in _fast_walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and isinstance(node.args[1], ast.Constant)
+            and node.args[1].value in NAIVE_UTC_METHODS
+        ):
+            owner = aliases.qualified_name(node.args[0]) or ""
+            if not (owner.split(".", 1)[0] in _AWARE_LIBRARIES and aliases.is_imported(_root_name(node.args[0]))):
+                out.append(node)  # getattr(datetime.datetime, "utcnow"): the same reference, spelled with a literal name
+            continue
         if not (isinstance(node, ast.Attribute) and node.attr in NAIVE_UTC_METHODS):
             continue
         qualified = aliases.qualified_name(node)

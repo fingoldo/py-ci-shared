@@ -118,3 +118,18 @@ def test_helper_names_merely_containing_an_entry_word_are_not_exempt(tmp_path, n
 @pytest.mark.parametrize("name", ["main", "_main", "cli", "run_cli", "parse_args", "main_loop", "cli_entry"])
 def test_real_entry_names_stay_exempt(tmp_path, name):
     assert _find(tmp_path, f"import sys\n\ndef {name}():\n    sys.exit(1)\n") == []
+
+
+def test_aliased_sys_is_seen(tmp_path):
+    found = _find(tmp_path, "import sys as _sys\n\ndef helper():\n    _sys.exit(1)\n")
+    assert [f.line for f in found] == [4]
+    assert [f.line for f in _find(tmp_path, "from sys import exit as bye\n\ndef helper():\n    bye(1)\n")] == [4]
+
+
+def test_module_attribute_use_of_a_guarded_cli_helper_is_shared(tmp_path):
+    cli = "import sys\n\ndef get_dsn():\n    sys.exit(1)\n\nif __name__ == '__main__':\n    get_dsn()\n"
+    found = _find(tmp_path, {"cli_tool.py": cli, "worker.py": "import cli_tool\n\ncli_tool.get_dsn()\n"})
+    assert [(f.path, f.line) for f in found] == [("cli_tool.py", 4)]
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    assert _find(alone, {"cli_tool.py": cli}) == []

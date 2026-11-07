@@ -80,3 +80,10 @@ def test_suppress_covers_family_and_starred(tmp_path, args):
 def test_suppress_of_narrow_constant_is_clean(tmp_path):
     src = "import contextlib\nERRS = (KeyError,)\ndef f(p):\n    with contextlib.suppress(*ERRS):\n        p.write_text('x')\n"
     assert _swallow(tmp_path, src) == []
+
+
+def test_an_early_return_before_a_write_is_not_a_fallback(tmp_path):
+    early = "def f(p, a):\n    try:\n        if a:\n            return 1\n        p.write_text('x')\n    except OSError:\n        pass\n"
+    assert len(_swallow(tmp_path, early)) == 1
+    final = "def f(p):\n    try:\n        with open(p) as fh:\n            return fh.read()\n    except OSError:\n        pass\n"
+    assert _swallow(tmp_path, final) == []

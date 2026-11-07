@@ -117,6 +117,8 @@ class _Ctx:
             return node.value
         if isinstance(node, ast.Name):
             return self.strings.get(node.id)
+        if isinstance(node, ast.JoinedStr) and node.values and isinstance(node.values[0], ast.Constant) and isinstance(node.values[0].value, str):
+            return node.values[0].value + "*"  # f"MY_{name}": the literal prefix decides whether it is ours
         return None
 
 
@@ -131,6 +133,11 @@ def _boolean_literals(node: ast.AST) -> bool:
 
 
 def _compare_shape(node: ast.Compare, ctx: _Ctx) -> list[tuple[str, str]]:
+    if isinstance(node.ops[0], (ast.In, ast.NotIn)) and _is_environ(node.comparators[0], ctx.environ_names):
+        key = ctx._key(node.left)
+        if key is not None and any(key.lower().startswith(p) for p in ctx.prefixes):
+            return [(key, "presence test (`X in os.environ`: FLAG=0 turns it on)")]
+        return []
     var = ctx.read(node.left)
     if var is None:
         return []
@@ -156,7 +163,10 @@ def _boolean_shapes(node: ast.AST, ctx: _Ctx) -> list[tuple[str, str]]:
         var = ctx.read(node.test)
         return [(var, "truthiness in a condition")] if var else []
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "bool" and len(node.args) == 1:
-        var = ctx.read(node.args[0])
+        inner = node.args[0]
+        while isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name) and inner.func.id == "int" and len(inner.args) == 1:
+            inner = inner.args[0]  # bool(int(read)): the ad-hoc "0/1" parse
+        var = ctx.read(inner)
         return [(var, "bool(<read>)")] if var else []
     if isinstance(node, ast.Compare) and node.comparators:
         return _compare_shape(node, ctx)

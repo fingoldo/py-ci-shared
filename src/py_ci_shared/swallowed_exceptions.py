@@ -14,7 +14,7 @@ Not reported:
 
 * a handler that raises, returns a value, assigns, or does anything else: that is a decision, not a swallow;
 * an optional-dependency probe: the ``try`` body only imports;
-* a fallback: the ``try`` body returns a value on success, so a failure falls through to the code after it (read a
+* a fallback: the ``try`` body returns a value and no call follows the first return (an early return before a write does not count), so a failure falls through to the code after it (read a
   cache, else rebuild);
 * a metadata probe or touch of a listed file (``stat``/``getmtime``/``scandir``/``utime``...): it can vanish in
   between, and skipping it is the answer;
@@ -232,7 +232,12 @@ def _is_best_effort(body: list[ast.stmt]) -> bool:
 
 def _is_fallback(body: list[ast.stmt]) -> bool:
     """The ``try`` body returns on success, so a failure falls through to the code after it (a cache read, then a rebuild)."""
-    return any(isinstance(n, ast.Return) and n.value is not None for stmt in body for n in _fast_walk(stmt))
+    returns = [n for stmt in body for n in _fast_walk(stmt) if isinstance(n, ast.Return) and n.value is not None]
+    if not returns:
+        return False
+    first_end = min(getattr(r, "end_lineno", None) or r.lineno for r in returns)
+    # A call that sits AFTER the first return (an early `if hit: return x`, then `p.write_text(...)`) is a write whose failure is swallowed.
+    return not any(isinstance(n, ast.Call) and n.lineno > first_end for stmt in body for n in _fast_walk(stmt))
 
 
 def _marked(lines: list[str], handler: ast.ExceptHandler) -> bool:

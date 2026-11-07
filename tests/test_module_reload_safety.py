@@ -332,3 +332,22 @@ def test_a_bare_del_sys_modules_with_no_snapshot_is_still_unpaired(tmp_path):
     (tests / "test_leak.py").write_text("import sys\n\ndef test_a():\n    del sys.modules['json']\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match="reload site"):
         assert_no_unpaired_reloads(tests, min_files=1)
+
+
+def test_clear_none_assignment_and_getattr_reload_are_production_sites(tmp_path):
+    root = _file(
+        tmp_path,
+        "pkg/mod.py",
+        """
+        import importlib, sys
+        def f(m):
+            sys.modules.clear()
+            sys.modules["x"] = None
+            getattr(importlib, "reload")(m)
+            sys.modules["y"] = object()
+        """,
+    )
+
+    sites = find_reloads_in_code([root / "pkg"], root)
+
+    assert sorted((s.line, s.primitive) for s in sites) == [(4, "sys.modules.clear"), (5, "sys.modules[...] = None"), (6, "importlib.reload")]

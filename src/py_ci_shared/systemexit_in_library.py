@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, child_nodes, scan_python, walk
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python, walk
 
 __all__ = ["RULE", "assert_no_systemexit_in_library", "find_systemexit_in_library"]
 
@@ -53,16 +53,29 @@ def _imported_names(trees: dict) -> dict:
     """``{name: {rel paths that import it by name}}`` over every scanned module."""
     out: dict = {}
     for rel, tree in trees.items():
+        modules: set = set()
         for node in walk(tree):
             if isinstance(node, ast.ImportFrom):
                 for alias in node.names:
                     out.setdefault(alias.name, set()).add(rel)
+            elif isinstance(node, ast.Import):
+                modules.update((a.asname or a.name).split(".")[0] for a in node.names)
+        for node in walk(tree):  # `import cli_tool; cli_tool.get_dsn()`
+            if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in modules:
+                out.setdefault(node.attr, set()).add(rel)
     return out
 
 
-def _exit_kind(node: ast.AST) -> Optional[str]:
+_QUALIFIED_EXITS = {"sys.exit": "sys.exit()", "os._exit": "os._exit()", "builtins.exit": "exit()", "builtins.quit": "quit()"}
+
+
+def _exit_kind(node: ast.AST, aliases: Optional[ImportAliases] = None) -> Optional[str]:
     if isinstance(node, ast.Call):
         func = node.func
+        if aliases is not None:
+            qualified = aliases.qualified_name(func)
+            if qualified in _QUALIFIED_EXITS:  # `import sys as _sys`, `from sys import exit as bye`
+                return _QUALIFIED_EXITS[qualified]
         if isinstance(func, ast.Attribute) and func.attr in _EXIT_CALLS and isinstance(func.value, ast.Name) and func.value.id in {"sys", "os", "builtins"}:
             return f"{func.value.id}.{func.attr}()"
         if isinstance(func, ast.Name) and func.id in _EXIT_CALLS:
@@ -74,14 +87,14 @@ def _exit_kind(node: ast.AST) -> Optional[str]:
     return None
 
 
-def _function_exits(fn: ast.AST) -> list:
+def _function_exits(fn: ast.AST, aliases: Optional[ImportAliases] = None) -> list:
     out: list = []
     stack = list(child_nodes(fn))
     while stack:
         node = stack.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
             continue
-        kind = _exit_kind(node)
+        kind = _exit_kind(node, aliases)
         if kind is not None:
             out.append((node, kind))
         stack.extend(child_nodes(node))
@@ -127,6 +140,7 @@ def find_systemexit_in_library(
         if not include_tests and _is_test_path(parsed.rel):
             continue
         guarded = _has_main_guard(parsed.tree)
+        aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
         lines = parsed.source.splitlines()
         for fn in walk(parsed.tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or entry.search(fn.name):
@@ -137,7 +151,7 @@ def find_systemexit_in_library(
             if guarded and not shared:
                 continue
             why = "imported by another module" if guarded else "the module has no __main__ guard"
-            for node, kind in _function_exits(fn):
+            for node, kind in _function_exits(fn, aliases):
                 if _marked(lines, node.lineno):
                     continue
                 out.append(
