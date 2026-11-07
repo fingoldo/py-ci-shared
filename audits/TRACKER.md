@@ -1009,7 +1009,7 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 35-F5 | P3 | near_duplicate_function_body._candidate_pairs is O(n^2) over functions | RESOLVED. `_candidate_pairs` was already an inverted shingle index; what stayed super-linear was counting EVERY posting of every shingle of every entry. It now visits each pair once from its smaller side and follows only a pref... |
 | 35-F6 | P3 | No self meta-test for public API quality: 20 of 1018 public module-level functions not fully annotated, 68 lack docstrings, 194 public modules lack __all__ | RESOLVED. tests/test_self_api_hygiene.py with shrink-only baselines in tests/baselines/self_api_hygiene.json: unannotated public functions 20, public functions without docstring 61, public modules without __all__ 184 (the audit... |
 | 35-F7 | P3 | print() in non-CLI library modules: 14 calls in arb_checks, baseline_ratchet, import_layering, sql_verify (not cli=true in registry) | RESOLVED. Same file, rule library_print: print() outside registry cli=true modules, outside main/_main/_cmd_*, without file= or a T201 noqa. Baseline 14 call sites in 6 functions (arb_checks.assert_arb_catalogues_are_sound 1, b... |
-| 35-F8 | P3 | No self meta-test on module-level call statements: 113 top-level Expr(Call) statements in library modules | RESOLVED. Same file, rule import_time_calls: module-body Expr(Call) other than append/add/update/setdefault/register/extend. The audit's 113 is not reproduced by this definition (module-body statements, the only ones that run a... |
+| 35-F8 | P3 | No self meta-test on module-level call statements: 113 top-level Expr(Call) statements in library modules | RESOLVED. Same file, rule import_time_calls: module-body Expr(Call) other than append/add/update/setdefault/register/extend. The audit's 113 counted a different set than this definition (module-body statements, the only ones that run a... |
 | 35-F9 | P3 | Canary exemptions: 35 of 179 gates have no tests/canary/<name>/ directory; staleness of EXEMPT entries is not asserted | RESOLVED. tests/test_gate_teeth.py::test_canary_exemptions_are_valid_and_still_needed: every EXEMPT key names a module, and an EXEMPT gate whose source now calls a corpus function (_core.gate_contract.scans_a_corpus) must carry... |
 | 35-F10 | P3 | Verified already satisfied (no action): bare except 0, registry sorted/unique, registry vs README 0 absent, registry vs tests 0 missing, cli=true without main 0, registry entries naming absent functions 0 | WON'T FIX (nothing to fix). Verified already satisfied; the optional E722 pin is redundant: ruff's default select already contains E722 (E4, E7, E9, F), and a bare except would fail the blocking ruff hook. |
 
@@ -1141,13 +1141,13 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 51-F7 | P3 | tarfile.extractall without a filter on Python < 3.12 | RESOLVED |
 | 51-F8 | P3 | release trust depends on repository settings the code cannot verify | WON'T FIX (owner decision 2026-11-07): verified with the API that RELEASE_TOKEN is an environment secret with a master/v* deployment policy; only a required reviewer is not configured, accepted and documented in CLAUDE.md |
 | 51-F9 | P3 | Verified clean record: no pull_request_target, actions SHA-pinned, least-privilege permissions, safe deserialization | WON'T FIX: verified-clean record, no defect |
-| 52-F1 | P2 | 22 private functions in src are defined and never called or referenced | OPEN |
-| 52-F2 | P2 | An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself | OPEN |
-| 52-F3 | P2 | 158 of 201 gates are not enabled on the package itself, with a recorded reason for only one | OPEN |
-| 52-F4 | P3 | uncalled_functions is disabled for the whole tree although a private-only scope has no public-API objection | OPEN |
-| 52-F5 | P3 | loc_budget covers src only; one test module exceeds the 1000-LOC budget with no baseline entry and another is at 953 | OPEN |
-| 52-F6 | P3 | self_api_hygiene baseline carries 265 grandfathered offenders | OPEN |
-| 52-F7 | P3 | Dead parameters: one keyword always None and one never read | OPEN |
-| 52-F8 | P3 | Stray tracked file f.txt and an untracked out.txt in the repo root | OPEN |
-| 52-F9 | P3 | unread_function_params is enabled on self with root=tests, takes 72.9s and trips its own 30s budget | OPEN |
-| 52-F10 | P3 | Two suppression markers stacked on one line | OPEN |
+| 52-F1 | P2 | 22 private functions in src are defined and never called or referenced | RESOLVED |
+| 52-F2 | P2 | An identical helper is copied 10 times and 7 more duplicate groups drift; the package's own drift gate is not enabled on itself | RESOLVED |
+| 52-F3 | P2 | 158 of 201 gates are not enabled on the package itself, with a recorded reason for only one | RESOLVED (the cheap gates; the rest DEFERRED in the finding) |
+| 52-F4 | P3 | uncalled_functions is disabled for the whole tree although a private-only scope has no public-API objection | DEFERRED |
+| 52-F5 | P3 | loc_budget covers src only; one test module exceeds the 1000-LOC budget with no baseline entry and another is at 953 | DEFERRED |
+| 52-F6 | P3 | self_api_hygiene baseline carries 265 grandfathered offenders | DEFERRED |
+| 52-F7 | P3 | Dead parameters: one keyword always None and one never read | RESOLVED |
+| 52-F8 | P3 | Stray tracked file f.txt and an untracked out.txt in the repo root | RESOLVED |
+| 52-F9 | P3 | unread_function_params is enabled on self with root=tests, takes 72.9s and trips its own 30s budget | RESOLVED |
+| 52-F10 | P3 | Two suppression markers stacked on one line | WON'T FIX |

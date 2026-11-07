@@ -64,7 +64,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A top-level statement doing I/O or env mutation would run in every consumer that imports a gate.
 - Proposed fix: AST meta-test over src/py_ci_shared: module-body Expr(Call) only from an allow-list (registration helpers); reviewed shrink-only baseline.
 - AST-checkable: True; FP risk: high
-- Disposition: RESOLVED. Same file, rule import_time_calls: module-body Expr(Call) other than append/add/update/setdefault/register/extend. The audit's 113 is not reproduced by this definition (module-body statements, the only ones that run at import). Baseline: 3 (code_audit/registry.py register_scanner x105 and register_check_alias x7 are the scanner registration table, _LineLoader.add_constructor in ci_install_covers_conftest). Anything else at module level fails.
+- Disposition: RESOLVED. Same file, rule import_time_calls: module-body Expr(Call) other than append/add/update/setdefault/register/extend. The audit's 113 counted a different set than this definition (module-body statements, the only ones that run at import). Baseline: 3 (code_audit/registry.py register_scanner x105 and register_check_alias x7 are the scanner registration table, _LineLoader.add_constructor in ci_install_covers_conftest). Anything else at module level fails.
 
 ## 35-F9 (P3) Canary exemptions: 35 of 179 gates have no tests/canary/<name>/ directory; staleness of EXEMPT entries is not asserted
 

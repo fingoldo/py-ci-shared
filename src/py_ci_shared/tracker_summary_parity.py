@@ -12,6 +12,9 @@ Two checks, both recomputed from the rows:
   for that file is the ``### `<file>` `` subsection. The row's ``Findings`` must equal the number of
   finding rows there, and each status column the number whose status cell opens with that word. A
   ``**total**`` row must equal the column sums.
+* **Finding states** (:func:`disposition_state_problems`). Every statement about one finding (a tracker row, a table row of a round file, the
+  ``Disposition:`` line under its heading) must open with the same state word, and a RESOLVED cell must not say the finding was not
+  reproduced.
 * **Heading status suffixes.** A finding heading that ENDS with a status (``### SQL-13 (P3) -- ... --
   DEFERRED``) must name the same base status as its tracker row.
 """
@@ -23,6 +26,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from py_ci_shared._core import read_source
+from py_ci_shared.audit_disposition_parity import parse_disposition
 from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, closing_word, round_files, table_cells, without_fenced_blocks
 
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
@@ -207,7 +211,7 @@ def heading_status_problems(
 
 
 def assert_tracker_summaries_agree(
-    audits_dir: Path, tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES, known: Iterable[str] = (), min_summaries: int = 1
+    audits_dir: Path, tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES, known: Iterable[str] = (), min_summaries: int = 1, check_states: bool = False
 ) -> None:
     known = list(known)  # consumed on more than one path below; a generator would be empty the second time
     import pytest
@@ -215,9 +219,93 @@ def assert_tracker_summaries_agree(
     if summary_table_count(tracker, statuses=statuses) < min_summaries:
         pytest.fail(f"fewer than {min_summaries} summary table(s) found in {tracker.name} -- the header format moved and this would check nothing")
     found = set(summary_problems(tracker, statuses=statuses) + heading_status_problems(audits_dir, tracker, statuses=statuses))
+    if check_states:  # opt-in: a consumer's tracker may carry old disagreements it has to fix first
+        found.update(disposition_state_problems(audits_dir))
     new, stale = sorted(found - set(known)), sorted(set(known) - found)
     if new or stale:
         pytest.fail(
             (f"{len(new)} place(s) where the tracker's summary disagrees with its rows:\n  " + "\n  ".join(new) if new else "")
             + (f"\n{len(stale)} accepted entr(ies) no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
         )
+
+
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+# one finding, one state, wherever it is written (audit 41-F13)
+# ---------------------------------------------------------------------------------------------------------------------------------------------
+
+_ID_CELL = re.compile(r"^`?([A-Za-z0-9]+-[A-Za-z]*\d+)`?$")
+_FINDING_HEADING = re.compile(r"^#{2,4}\s+`?([A-Za-z0-9]+-[A-Za-z]*\d+)`?(?=[\s(`:])")
+_NOT_REPRODUCED = re.compile(r"not[ -]reproduced", re.I)
+
+
+def _state_of(text: str) -> "str | None":
+    """The state word a disposition cell or line opens with (``PARTIALLY RESOLVED`` is ``PARTIAL``), else None."""
+    parsed = parse_disposition("Disposition: " + text.strip().lstrip("*`_ "))
+    return parsed[0] if parsed else None
+
+
+def _table_claims(lines: list[str], where: str) -> list[tuple[str, str, str, str]]:
+    """``(id, state, where, cell)`` for each table row whose first cell is a finding id; the state cell is the header's
+    Status/Disposition/State column, else the last cell."""
+    claims = []
+    column = -1
+    for index, line in enumerate(lines):
+        if not line.lstrip().startswith("|"):
+            continue
+        cells = table_cells(line)
+        following = lines[index + 1] if index + 1 < len(lines) else ""
+        if following.lstrip().startswith("|") and _is_separator(table_cells(following)):
+            lowered = [c.strip("* ").lower() for c in cells]
+            column = next((i for i, c in enumerate(lowered) if c in _STATUS_HEADERS), -1)
+            continue
+        m = _ID_CELL.match(cells[0]) if cells else None
+        if m and len(cells) > 1:
+            cell = cells[column] if 0 <= column < len(cells) else cells[-1]
+            state = _state_of(cell)
+            if state:
+                claims.append((m.group(1), state, f"{where}:{index + 1}", cell))
+    return claims
+
+
+def _heading_claims(lines: list[str], where: str) -> list[tuple[str, str, str, str]]:
+    claims = []
+    current: "str | None" = None
+    for index, line in enumerate(lines):
+        if line.startswith("#"):
+            m = _FINDING_HEADING.match(line)
+            current = m.group(1) if m else None
+        elif current:
+            parsed = parse_disposition(line)
+            if parsed:
+                claims.append((current, parsed[0], f"{where}:{index + 1}", line.strip()))
+                current = None
+    return claims
+
+
+def _claim_files(audits_dir: Path) -> list[Path]:
+    files = round_files(audits_dir)
+    for parent in (audits_dir, audits_dir / "implemented"):
+        if parent.is_dir():
+            files += sorted(p for p in parent.glob("**/TRACKER*.md") if p not in files)
+    return files
+
+
+def disposition_state_problems(audits_dir: Path) -> list[str]:
+    """Findings whose state is written differently in two places (tracker row, round-file table row, ``Disposition:`` line), and
+    RESOLVED cells that say the finding was not reproduced. The fix belongs in the tracker or finding text, never in an exemption."""
+    claims: list[tuple[str, str, str, str]] = []
+    for path in _claim_files(audits_dir):
+        lines = without_fenced_blocks(read_source(path)).splitlines()
+        where = path.relative_to(audits_dir).as_posix()
+        claims += _table_claims(lines, where) + _heading_claims(lines, where)
+    by_id: dict[str, list[tuple[str, str, str]]] = {}
+    problems: list[str] = []
+    for fid, state, where, cell in claims:
+        by_id.setdefault(fid, []).append((state, where, cell))
+        if state == "RESOLVED" and _NOT_REPRODUCED.search(cell):
+            problems.append(f"{where}: {fid} is RESOLVED but its cell says it was not reproduced")
+    for fid, entries in sorted(by_id.items()):
+        if len({state for state, _, _ in entries}) > 1:
+            said = "; ".join(f"{state} at {where}" for state, where, _ in entries)
+            problems.append(f"{fid} is written with different states: {said}")
+    return problems

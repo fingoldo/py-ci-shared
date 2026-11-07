@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from py_ci_shared.tracker_summary_parity import assert_tracker_summaries_agree, heading_status_problems, summary_problems, summary_table_count
+from py_ci_shared.tracker_summary_parity import (
+    assert_tracker_summaries_agree,
+    disposition_state_problems,
+    heading_status_problems,
+    summary_problems,
+    summary_table_count,
+)
 
 _TRACKER = """# Tracker
 
@@ -115,3 +121,67 @@ class TestAuditRegressions:
         wrong = text.replace("| `AA-3` | **DEFERRED** | three |", "| `AA-3` | **RESOLVED** | three |")
         (tmp_path / "wrong.md").write_text(wrong, encoding="utf-8")
         assert any("says 1 DEFERRED, its rows say 0" in p for p in summary_problems(tmp_path / "wrong.md"))
+
+
+class TestDispositionStates:
+    """One finding, one state, wherever it is written (audit 41-F13)."""
+
+    @staticmethod
+    def _round(tmp_path: Path, tracker_cell: str, finding_line: str, *, table_cell: "str | None" = None) -> Path:
+        audits = tmp_path / "audits"
+        (audits / "2026-11-01").mkdir(parents=True)
+        (audits / "TRACKER.md").write_text(f"| # | Sev | Finding | Disposition |\n|---|---|---|---|\n| 9-F1 | P2 | x | {tracker_cell} |\n", encoding="utf-8")
+        body = f"## 9-F1 (P2) x\n\n- {finding_line}\n"
+        if table_cell is not None:
+            body += f"\n| # | Gate | Disposition |\n|---|---|---|\n| 9-F1 | g | {table_cell} |\n"
+        (audits / "2026-11-01" / "09_x.md").write_text(body, encoding="utf-8")
+        return audits
+
+    def test_agreeing_states_pass_whatever_follows_the_state_word(self, tmp_path):
+        audits = self._round(tmp_path, "RESOLVED", "Disposition: RESOLVED abc1234: did it", table_cell="**RESOLVED** abc1234")
+        assert disposition_state_problems(audits) == []
+
+    @pytest.mark.parametrize(
+        ("tracker_cell", "finding_line", "table_cell", "fragment"),
+        [
+            (
+                "OPEN",
+                "Disposition: RESOLVED abc1234: did it",
+                None,
+                "9-F1 is written with different states: RESOLVED at 2026-11-01/09_x.md:3; OPEN at TRACKER.md:3",
+            ),
+            ("RESOLVED", "Disposition: DEFERRED: later", None, "different states"),
+            ("RESOLVED", "Disposition: RESOLVED x", "WON'T FIX: no", "WON'T FIX at 2026-11-01/09_x.md:"),
+            ("PARTIALLY RESOLVED (rest open)", "Disposition: RESOLVED x", None, "PARTIAL at TRACKER.md:3"),
+            (
+                "RESOLVED: the report is not reproduced here",
+                "Disposition: RESOLVED x",
+                None,
+                "TRACKER.md:3: 9-F1 is RESOLVED but its cell says it was not reproduced",
+            ),
+        ],
+    )
+    def test_negative_controls_a_disagreement_is_reported(self, tmp_path, tracker_cell, finding_line, table_cell, fragment):
+        audits = self._round(tmp_path, tracker_cell, finding_line, table_cell=table_cell)
+        assert any(fragment in p for p in disposition_state_problems(audits)), disposition_state_problems(audits)
+
+    def test_not_reproduced_is_fine_in_a_cell_that_is_not_resolved(self, tmp_path):
+        audits = self._round(tmp_path, "WON'T FIX (cannot be reproduced)", "Disposition: WON'T FIX: not reproduced on abc")
+        assert disposition_state_problems(audits) == []
+
+    def test_a_fenced_example_is_not_a_claim(self, tmp_path):
+        audits = self._round(tmp_path, "RESOLVED", "Disposition: RESOLVED x")
+        with (audits / "2026-11-01" / "09_x.md").open("a", encoding="utf-8") as f:
+            f.write("\n```\n| 9-F1 | g | OPEN |\n```\n")
+        assert disposition_state_problems(audits) == []
+
+    def test_this_repositorys_own_audits_agree(self):
+        assert disposition_state_problems(Path(__file__).resolve().parents[1] / "audits") == []
+
+    def test_assert_adds_the_state_check_only_on_request(self, tmp_path):
+        audits = self._round(tmp_path, "OPEN", "Disposition: RESOLVED x")
+        tracker = audits / "TRACKER.md"
+        tracker.write_text(tracker.read_text(encoding="utf-8") + "\n| File | Findings | RESOLVED |\n|---|---|---|\n| `09_x.md` | 0 | 0 |\n\n### `09_x.md`\n", encoding="utf-8")
+        assert_tracker_summaries_agree(audits, tracker)
+        with pytest.raises(pytest.fail.Exception, match="different states"):
+            assert_tracker_summaries_agree(audits, tracker, check_states=True)
