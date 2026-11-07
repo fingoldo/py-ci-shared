@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import types
@@ -174,7 +175,9 @@ def test_importing_and_checking_never_imports_cupy_or_numpy():
         "m.assert_launch_dtypes('__global__ void k(const float* a) {}', 'k', (A(),))\n"
         "assert 'numpy' not in sys.modules, 'numpy imported'\n"
     )
-    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    # The probe child must not write into the parent's coverage data (statement data next to the parent's branch data breaks the combine).
+    env = {k: v for k, v in os.environ.items() if not k.startswith(("COV_CORE_", "COVERAGE_"))}
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8", timeout=60, env=env)
     assert done.returncode == 0, done.stderr
 
 
