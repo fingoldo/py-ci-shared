@@ -30,6 +30,10 @@ A pin that lags further than ``--allow-behind`` can be accepted for a while with
 ``pin-waiver`` note and does not fail; from the day after, the repo fails as a ``stale-pin`` again and the finding says the waiver expired.
 That separates accepted lag from neglect, so one standing red job does not hide a real moving or unresolvable pin.
 
+A fixed pin followed by a ``# vX.Y.Z`` comment (``pip install ...@<sha>  # v1.23.8``) is also compared with that tag: with ``--resolve-in`` the
+tag's commit must be the pinned commit, otherwise the pin is a ``ci-pin-comment-not-release`` finding (a comment that lies about the release;
+write ``master <sha7>`` instead). It is report-only unless ``--strict-pin-comments`` is given. Without a checkout the comments are not checked.
+
 A repos file holds ``repos = ["../mlframe", ...]`` (relative to the file) or ``[[repo]]`` tables with ``path`` and an
 optional ``name``.
 """
@@ -43,7 +47,7 @@ import os
 import re
 import sys
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional, Union
@@ -82,6 +86,8 @@ PathLike = Union[str, Path]
 MOVING_KINDS = frozenset({"branch", "moving-tag", "unpinned", "sibling"})
 SILENT_RULES = ("importorskip", "collect-ignore", "exit-0", "skip", "availability-flag", "swallowed")
 
+_COMMENT_TAG = re.compile(r"^(v\d+\.\d+\.\d+)(?![\w.-])")
+_TRAILING_COMMENT = re.compile(r"\s#\s*(\S.*?)\s*$")
 _SHA = re.compile(r"^[0-9a-f]{7,40}$")
 _RELEASE = re.compile(r"^v?\d+\.\d+\.\d+([.-]?[0-9A-Za-z.]+)?$")
 _MOVING_TAG = re.compile(r"^v?\d+(\.\d+)?$")
@@ -113,6 +119,13 @@ class Pin:
     target: str  # package, workflow:<file>, action:<name>, pre-commit, config-clone, checkout, ref-input, ruff-extend
     ref: Optional[str]
     kind: str
+    comment: Optional[str] = None  # the trailing ``# ...`` text on the pin's line, e.g. ``v1.23.8``
+
+    @property
+    def comment_tag(self) -> Optional[str]:
+        """The release tag a trailing comment starts with (``# v1.23.8`` or ``# v1.23.8 (note)``), else None."""
+        m = _COMMENT_TAG.match(self.comment or "")
+        return m.group(1) if m else None
 
     @property
     def moving(self) -> bool:
@@ -262,7 +275,7 @@ def _pyproject_pins(path: Path, root: Path) -> list[Pin]:
 
 
 def _with_line(pin: Pin, line: int) -> Pin:
-    return Pin(pin.path, line, pin.location, pin.target, pin.ref, pin.kind)
+    return Pin(pin.path, line, pin.location, pin.target, pin.ref, pin.kind, pin.comment)
 
 
 def _source_table_pin(spec: Any, rel: str) -> Pin:
@@ -400,7 +413,26 @@ def find_pins(repo_root: PathLike) -> list[Pin]:
         pins.extend(_safe(_precommit_pins, path, root))
     for path in iter_files(root, (".github/*.yml", ".github/*.yaml"), include_untracked=False):
         pins.extend(_safe(_workflow_pins, path, root))
-    return sorted(set(pins), key=lambda p: (p.path, p.line, p.target))
+    return sorted(set(_with_comments(pins, root)), key=lambda p: (p.path, p.line, p.target))
+
+
+def _with_comments(pins: list[Pin], root: Path) -> list[Pin]:
+    """Each pin with the trailing ``# ...`` comment of its source line (``uv.lock`` and line-less pins have none)."""
+    cache: dict[str, list[str]] = {}
+    out = []
+    for pin in pins:
+        if pin.line <= 0 or pin.location == "uv.lock":
+            out.append(pin)
+            continue
+        if pin.path not in cache:
+            try:
+                cache[pin.path] = read_source(root / pin.path).splitlines()
+            except CoreError:
+                cache[pin.path] = []
+        lines = cache[pin.path]
+        m = _TRAILING_COMMENT.search(lines[pin.line - 1]) if pin.line <= len(lines) else None
+        out.append(replace(pin, comment=m.group(1)) if m else pin)
+    return out
 
 
 def known_modules(package_dir: Optional[Path] = None) -> list[str]:
@@ -595,6 +627,9 @@ class RepoReport:
     behind: dict[str, tuple[int, str]] = field(default_factory=dict)  # pin ref -> (releases behind, latest release)
     allow_behind: int = 0
     waiver_note: str = ""
+    tag_commits: dict[str, Optional[str]] = field(default_factory=dict)  # tag named in a pin comment -> its commit (None: no such tag)
+    known_tags: bool = False  # the resolver saw release tags, so a tag it cannot resolve really does not exist
+    enforce_comments: bool = False
 
     def pin_key(self, pin: Pin) -> str:
         """The identity two pins must share to agree: resolved SHA, else the SHA's 7-char prefix, else the label."""
@@ -628,8 +663,30 @@ class RepoReport:
         return [p for p in self.pins if p.ref is not None and not p.moving and p.ref in self.resolved and self.resolved[p.ref] is None]
 
     @property
+    def comment_mismatches(self) -> list[tuple[Pin, str]]:
+        """``(pin, why)`` for a fixed pin whose ``# vX.Y.Z`` comment names a tag whose commit is not the pinned commit."""
+        out = []
+        for p in self.pins:
+            tag, full = p.comment_tag, self.resolved.get(p.ref) if p.ref is not None else None
+            if tag is None or p.moving or not full or tag not in self.tag_commits:
+                continue
+            commit = self.tag_commits[tag]
+            if commit is None and self.known_tags:
+                out.append((p, f"its comment names {tag}, which is not a release tag here"))
+            elif commit is not None and commit != full:
+                out.append((p, f"its comment says {tag} (commit {commit[:7]}) but the pin is {full[:7]}: write `master {full[:7]}` or pin the tag commit"))
+        return out
+
+    @property
     def failing(self) -> bool:
-        return not self.pins_agree or bool(self.moving_pins) or bool(self.silent_skips) or bool(self.stale_pins) or bool(self.unresolvable_pins)
+        return (
+            (self.enforce_comments and bool(self.comment_mismatches))
+            or not self.pins_agree
+            or bool(self.moving_pins)
+            or bool(self.silent_skips)
+            or bool(self.stale_pins)
+            or bool(self.unresolvable_pins)
+        )
 
     def findings(self) -> list[Finding]:
         out: list[Finding] = []
@@ -652,6 +709,7 @@ class RepoReport:
             Finding(p.path, p.line, "unresolvable-pin", f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails")
             for p in self.unresolvable_pins
         )
+        out.extend(Finding(p.path, p.line, "ci-pin-comment-not-release", f"{p.target} pinned to {p.label()}: {why}") for p, why in self.comment_mismatches)
         out.extend(self.silent_skips)
         if self.waiver_note and self.pins:
             out.append(Finding(self.pins[0].path, self.pins[0].line, "pin-waiver", self.waiver_note))
@@ -666,6 +724,7 @@ def scan_repo(
     resolver: Optional[Callable[[str], Optional[str]]] = None,
     local_copies: bool = True,
     allow_behind: int = 0,
+    enforce_comments: bool = False,
 ) -> RepoReport:
     """Read one consumer repo. *resolver* maps a ref to a full SHA; a :class:`RefResolver` also dates each pin."""
     root = Path(repo_root)
@@ -681,6 +740,7 @@ def scan_repo(
         silent_skips=find_silent_skips(root),
         local_copies=_local_copies(root) if local_copies else [],
         allow_behind=allow_behind,
+        enforce_comments=enforce_comments,
     )
     if resolver is not None and not (isinstance(resolver, RefResolver) and resolver.repo is None):
         report.resolved = {p.ref: resolver(p.ref) for p in report.pins if p.ref is not None}
@@ -691,6 +751,9 @@ def scan_repo(
                 lag = resolver.releases_behind(full)
                 if lag is not None:
                     report.behind[p.ref] = lag
+        if resolver.repo is not None:
+            report.known_tags = bool(resolver.releases())
+            report.tag_commits = {t: resolver(t) for t in {p.comment_tag for p in report.pins if p.comment_tag}}
     return report
 
 
@@ -946,6 +1009,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--advisory", action="store_true", help="report only; exit 0 even when a repo fails")
     parser.add_argument("--no-local-copies", action="store_true", help="skip the local-copy scan")
     parser.add_argument("--waivers", help="TOML file of dated per-consumer lag waivers (see the module docstring)")
+    parser.add_argument(
+        "--strict-pin-comments",
+        action="store_true",
+        help="fail (not just report) a pin whose `# vX.Y.Z` comment names a tag whose commit is not the pinned commit (needs --resolve-in)",
+    )
     parser.add_argument("--allow-behind", type=int, default=0, help="releases a fixed pin may lag the latest tag (default 0; needs --resolve-in)")
     args = parser.parse_args(argv)
     roots: list[tuple[str, Path]] = [(Path(r).resolve().name, Path(r).resolve()) for r in args.repos]
@@ -964,9 +1032,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     reports = []
     for name, root in _unique_names(roots):
         allow, note = waived_allowance(waivers.get(name), releases, args.allow_behind, datetime.now(timezone.utc).date())
-        report = scan_repo(root, name=name, modules=modules, resolver=resolver, local_copies=not args.no_local_copies, allow_behind=allow)
+        report = scan_repo(
+            root,
+            name=name,
+            modules=modules,
+            resolver=resolver,
+            local_copies=not args.no_local_copies,
+            allow_behind=allow,
+            enforce_comments=args.strict_pin_comments,
+        )
         report.waiver_note = note
         reports.append(report)
+    if resolver is None and any(p.comment_tag for r in reports for p in r.pins):
+        sys.stderr.write(
+            "adoption_matrix: pin comments (# vX.Y.Z) were not checked against the release tags: give --resolve-in a py-ci-shared checkout with tags\n"
+        )
     text = render_markdown(reports, modules=[m for m in modules if not m.startswith("_")])
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
