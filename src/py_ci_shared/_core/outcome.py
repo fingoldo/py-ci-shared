@@ -103,7 +103,7 @@ def record_write(path: Path, text: str) -> None:
         return
     try:
         previous: Optional[str] = path.read_text(encoding="utf-8") if path.is_file() else None
-    except (OSError, UnicodeDecodeError) as exc:
+    except (OSError, UnicodeDecodeError) as exc:  # best-effort: only the +N -M display counts from empty
         logger.debug("previous baseline text unreadable, counting from empty: %s", type(exc).__name__)
         previous = None
     _writes[-1].append((path, previous, text))
