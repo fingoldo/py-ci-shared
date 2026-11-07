@@ -211,7 +211,7 @@ class _Walker:
         return state
 
     def stmt(self, stmt: ast.stmt, state: _State) -> _State:
-        handler = _dispatch().get(type(stmt), _Walker._simple)
+        handler = _DISPATCH.get(type(stmt), _Walker._simple)
         return handler(self, stmt, state)
 
     def _simple(self, stmt: ast.stmt, state: _State) -> _State:
@@ -310,32 +310,23 @@ class _Walker:
         return _merge(arms, RULE_MATCH)
 
 
-_TABLE: "dict[type, Callable[..., _State]]" = {}
-
-
-def _dispatch() -> "dict[type, Callable[..., _State]]":
-    """Statement type to its walker method, built once."""
-    if not _TABLE:
-        _TABLE.update(
-            {
-                ast.If: _Walker._if,
-                ast.For: _Walker._loop,
-                ast.AsyncFor: _Walker._loop,
-                ast.While: _Walker._loop,
-                ast.Try: _Walker._try,
-                ast.With: _Walker._with,
-                ast.AsyncWith: _Walker._with,
-                ast.Return: _Walker._dead,
-                ast.Raise: _Walker._dead,
-                ast.Break: _Walker._dead,
-                ast.Continue: _Walker._dead,
-                ast.AugAssign: _Walker._augassign,
-            }
-        )
-        for extra, method in ((_MATCH, _Walker._match), (getattr(ast, "TryStar", None), _Walker._try)):
-            if extra is not None:
-                _TABLE[extra] = method
-    return _TABLE
+_DISPATCH: "dict[type, Callable[..., _State]]" = {
+    ast.If: _Walker._if,
+    ast.For: _Walker._loop,
+    ast.AsyncFor: _Walker._loop,
+    ast.While: _Walker._loop,
+    ast.Try: _Walker._try,
+    ast.With: _Walker._with,
+    ast.AsyncWith: _Walker._with,
+    ast.Return: _Walker._dead,
+    ast.Raise: _Walker._dead,
+    ast.Break: _Walker._dead,
+    ast.Continue: _Walker._dead,
+    ast.AugAssign: _Walker._augassign,
+}
+for _extra, _method in ((_MATCH, _Walker._match), (getattr(ast, "TryStar", None), _Walker._try)):
+    if _extra is not None:
+        _DISPATCH[_extra] = _method
 
 
 def _nested_statements(stmts: "list[ast.stmt]") -> "Iterator[ast.stmt]":

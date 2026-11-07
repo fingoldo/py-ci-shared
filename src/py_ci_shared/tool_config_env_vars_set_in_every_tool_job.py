@@ -9,7 +9,7 @@ skipped). For each job of ``.github/workflows/*.yml``:
 * ``tool-env-var-unset-in-job``: a ``run:`` step invokes ``<name>`` (``ruff check``, ``python -m ruff``, ``uvx ruff``, ``pre-commit run ruff``; install lines are not invocations) and the variable is not
   defined by the workflow ``env``, the job ``env``, that step's ``env``, an inline ``VAR=...`` / ``export VAR`` in the step, or an earlier step of the job writing ``VAR=`` to ``$GITHUB_ENV``.
 * ``tool-env-var-unset-in-test-job``: the job runs ``pytest`` over a tree in which a test file shells out to the tool (a ``subprocess``/``run_git``-style call with ``"<name>"`` or ``-m <name>``), and the
-  variable is not defined there. The pytest command's path arguments narrow the tree (``pytest tests/meta`` only sees ``tests/meta``).
+  variable is not defined there. The pytest command's path arguments narrow the tree (naming one test subdirectory only sees that subdirectory).
 
 Suppression: list the job in ``allow_jobs`` as ``"<workflow file>::<job>"`` (a job whose tool run is known to use a different config). Workflows are parsed with PyYAML (``use_git`` is accepted for signature parity; the workflow folder is read directly); one that does not parse is an
 unparsed file.

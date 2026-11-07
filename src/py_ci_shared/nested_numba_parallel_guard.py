@@ -2,7 +2,7 @@
 
 numba's default threading layer (``workqueue``) is not safe to enter from several Python threads at once. Linux mostly tolerates it; macOS aborts the process with ``Fatal Python error: Aborted`` and
 no Python traceback. mlframe's first three-OS CI run crashed 92 xdist workers that way (several pool threads stopped at one ``parallel=True`` call site), and 29 unguarded paths had to be taken to
-0 by hand. The check lived only in mlframe's own ``tests/test_meta``; this is its shared form.
+0 by hand. The check lived only in mlframe's own meta tests; this is its shared form.
 
 The scan is a name-based call graph over the corpus: a function that starts a pool is followed up to ``max_depth`` call hops (default 6: the crash that motivated the check was four hops from the pool,
 and CI then found a fifth-hop path, so a depth fitted to the last known bug finds only that bug) through plain calls, functions handed to a call (``pool.map(work, xs)``, ``Thread(target=work)``, ``delayed(work)``) and the members of a module-level
