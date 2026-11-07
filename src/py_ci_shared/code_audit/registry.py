@@ -1,4 +1,5 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import inspect
@@ -295,66 +296,68 @@ register_check_alias("field_written_never_read", "record_field_flow")
 # that belong to somebody else's schema), and the rest report accumulated design debt rather than a
 # fresh mistake, which is a decision a project takes deliberately rather than inherits. Name them in
 # ``checks=`` to run them.
-OPT_IN_ONLY: frozenset[str] = frozenset({
-    # Opt-in because its hits are real instances of the class and there are a lot of them: 10 in
-    # pyutilz, 13 in the scrapers, 80 in mlframe, 0 in llm_bench. Each one is a test whose every
-    # assertion sits inside a loop over something a call produced, with nothing pinning the count
-    # -- `for chunk in chunks(lst, n): assert ...`. Whether that matters depends on how plausible
-    # an empty result is for that particular producer, which is a judgement the rule cannot make.
-    # Ninety-nine baseline entries would teach every consumer to refresh without reading, so this
-    # is for pointing at a suite you already doubt, not for a ratchet.
-    "vacuous_loop_assertion",
-    # Opt-in: 225 hits in one package, and most are legitimate -- coverage annotations in
-    # tests ("lines 54-90"), and prose citing a line in a file it is discussing. The rule
-    # cannot tell those from a rotted pointer, and the rotted ones are better caught by
-    # citing symbols instead, which comment_names_missing_symbol then validates.
-    "comment_cites_absolute_line",
-    # Opt-in because consumers hold many real hits, measured 2026-09-12: 561 in mlframe, 4 in autopsia, 0 in
-    # glossum (after it repointed its 13), llm_bench and noema_app. Each is a comment citing a file:line whose
-    # file is gone or whose line is past the end -- exact, not heuristic -- but on by default it would fail
-    # mlframe's and autopsia's baselines the moment they upgrade. A project opts in once its citations are clean.
-    "stale_source_citation",
-    # Opt-in because a consumer holds real instances of the class, measured 2026-09-12: 3 in autopsia (two
-    # UMLS loaders and the local vocabulary install, each reporting the rows it was given after an insert that
-    # skips duplicates), 0 in glossum after it fixed its OEWN importer, and 0 in mlframe, pyutilz, py-ci-shared,
-    # llm_bench and noema_app. On by default it would fail autopsia's baseline the moment it upgrades.
-    "write_counted_from_input",
-    # Opt-in because two consumers hold live hits, measured 2026-09-12: 2 in glossum (the LLM client's json_mode
-    # gate, and a constructor timeout gate in a script) and 2 in mlframe (a scikit-learn KBinsDiscretizer keyword
-    # and a test helper), with 0 in pyutilz, py-ci-shared, autopsia, noema_app and llm_bench. Each is the real
-    # shape, but on by default it would fail two committed baselines on upgrade.
-    "signature_gated_kwarg_drop",
-    # Opt-in because its precision is not good enough to run unattended, and that was measured rather than
-    # guessed. Against four repos it produced three hits, ALL false: two docstrings naming a threshold that
-    # belongs to a DIFFERENT function, and one reading "12-permutation" as a tunable because "per-call"
-    # earlier in the line matched the keyword list. Its one true positive is a real defect that has since
-    # been fixed, so it can only be demonstrated on a reconstruction. Useful pointed at a file you already
-    # suspect; not useful in a ratchet, where three false alarms would teach everyone to refresh the
-    # baseline without reading it.
-    "docstring_numbers_moved_to_config",
-    "dead_public_callable",
-    "vacuous_empty_pattern_match",
-    "tautological_guard",
-    "table_header_row_drift",
-    "record_field_flow",
-    "unenforced_docstring_invariant",
-    "partial_guard_across_siblings",
-    "inconsistent_filter",
-    "regex_integer_parse_truncation",
-    "threshold_below_documented_result",
-    "domain_vocabulary_leak",
-    # Warn-only by design, each for its own reason rather than as a blanket posture:
-    # per_call_state_on_shared_instance detects a lock lexically, so a lock taken by the CALLER
-    # reads as absent; uncached_constant_cost_probe cannot tell a probe that must be re-taken
-    # (a liveness check) from one that must not. Both feed a triage list, not a commit gate.
-    "per_call_state_on_shared_instance",
-    "uncached_constant_cost_probe",
-    # reexport_patch_target is the older, narrower half of the rename that produced
-    # patch_target_is_a_reexport (registered and on by default). Keeping it registered means the
-    # id it emits is re-runnable and the module is not silently dead; keeping it opt-in means a
-    # project upgrading pyutilz does not suddenly get both halves reporting the same site.
-    "reexport_patch_target",
-})
+OPT_IN_ONLY: frozenset[str] = frozenset(
+    {
+        # Opt-in because its hits are real instances of the class and there are a lot of them: 10 in
+        # pyutilz, 13 in the scrapers, 80 in mlframe, 0 in llm_bench. Each one is a test whose every
+        # assertion sits inside a loop over something a call produced, with nothing pinning the count
+        # -- `for chunk in chunks(lst, n): assert ...`. Whether that matters depends on how plausible
+        # an empty result is for that particular producer, which is a judgement the rule cannot make.
+        # Ninety-nine baseline entries would teach every consumer to refresh without reading, so this
+        # is for pointing at a suite you already doubt, not for a ratchet.
+        "vacuous_loop_assertion",
+        # Opt-in: 225 hits in one package, and most are legitimate -- coverage annotations in
+        # tests ("lines 54-90"), and prose citing a line in a file it is discussing. The rule
+        # cannot tell those from a rotted pointer, and the rotted ones are better caught by
+        # citing symbols instead, which comment_names_missing_symbol then validates.
+        "comment_cites_absolute_line",
+        # Opt-in because consumers hold many real hits, measured 2026-09-12: 561 in mlframe, 4 in autopsia, 0 in
+        # glossum (after it repointed its 13), llm_bench and noema_app. Each is a comment citing a file:line whose
+        # file is gone or whose line is past the end -- exact, not heuristic -- but on by default it would fail
+        # mlframe's and autopsia's baselines the moment they upgrade. A project opts in once its citations are clean.
+        "stale_source_citation",
+        # Opt-in because a consumer holds real instances of the class, measured 2026-09-12: 3 in autopsia (two
+        # UMLS loaders and the local vocabulary install, each reporting the rows it was given after an insert that
+        # skips duplicates), 0 in glossum after it fixed its OEWN importer, and 0 in mlframe, pyutilz, py-ci-shared,
+        # llm_bench and noema_app. On by default it would fail autopsia's baseline the moment it upgrades.
+        "write_counted_from_input",
+        # Opt-in because two consumers hold live hits, measured 2026-09-12: 2 in glossum (the LLM client's json_mode
+        # gate, and a constructor timeout gate in a script) and 2 in mlframe (a scikit-learn KBinsDiscretizer keyword
+        # and a test helper), with 0 in pyutilz, py-ci-shared, autopsia, noema_app and llm_bench. Each is the real
+        # shape, but on by default it would fail two committed baselines on upgrade.
+        "signature_gated_kwarg_drop",
+        # Opt-in because its precision is not good enough to run unattended, and that was measured rather than
+        # guessed. Against four repos it produced three hits, ALL false: two docstrings naming a threshold that
+        # belongs to a DIFFERENT function, and one reading "12-permutation" as a tunable because "per-call"
+        # earlier in the line matched the keyword list. Its one true positive is a real defect that has since
+        # been fixed, so it can only be demonstrated on a reconstruction. Useful pointed at a file you already
+        # suspect; not useful in a ratchet, where three false alarms would teach everyone to refresh the
+        # baseline without reading it.
+        "docstring_numbers_moved_to_config",
+        "dead_public_callable",
+        "vacuous_empty_pattern_match",
+        "tautological_guard",
+        "table_header_row_drift",
+        "record_field_flow",
+        "unenforced_docstring_invariant",
+        "partial_guard_across_siblings",
+        "inconsistent_filter",
+        "regex_integer_parse_truncation",
+        "threshold_below_documented_result",
+        "domain_vocabulary_leak",
+        # Warn-only by design, each for its own reason rather than as a blanket posture:
+        # per_call_state_on_shared_instance detects a lock lexically, so a lock taken by the CALLER
+        # reads as absent; uncached_constant_cost_probe cannot tell a probe that must be re-taken
+        # (a liveness check) from one that must not. Both feed a triage list, not a commit gate.
+        "per_call_state_on_shared_instance",
+        "uncached_constant_cost_probe",
+        # reexport_patch_target is the older, narrower half of the rename that produced
+        # patch_target_is_a_reexport (registered and on by default). Keeping it registered means the
+        # id it emits is re-runnable and the module is not silently dead; keeping it opt-in means a
+        # project upgrading pyutilz does not suddenly get both halves reporting the same site.
+        "reexport_patch_target",
+    }
+)
 
 
 # Each scanner that has a py-ci-shared gate for the same bug class, mapped to that gate's module. Both are kept:
@@ -472,10 +475,11 @@ _MIN_SCANNERS_FOR_PARALLEL = 4
 #     w=4 22.9s | w=6 15.8s | w=8 12.0s | w=10 11.7s | w=12 12.2s | w=16 14.4s | w=22 13.4s
 # Giving each worker a batch of at least this many scanners keeps it on the flat part of that
 # curve instead of spawning one interpreter per scanner.
-_MIN_SCANNERS_PER_WORKER = 5
+MIN_SCANNERS_PER_WORKER = 5
+_MIN_SCANNERS_PER_WORKER = MIN_SCANNERS_PER_WORKER  # old private name, kept for consumers that import it
 
 
-def _physical_cpu_count() -> int:
+def physical_cpu_count() -> int:
     """Physical cores, falling back to ``os.cpu_count()``.
 
     ``os.cpu_count()`` reports LOGICAL CPUs (22 on the machine measured above, vs 16 physical).
@@ -496,6 +500,9 @@ def _physical_cpu_count() -> int:
     return os.cpu_count() or 1
 
 
+_physical_cpu_count = physical_cpu_count  # old private name, kept for consumers that import it
+
+
 # The registrations made by importing this module, i.e. exactly what a fresh worker process
 # rebuilds for itself. Captured after the register_scanner() calls above run.
 _BUILTIN_SCANNERS: dict[str, Callable[..., list[Finding]]] = dict(_SCANNERS)
@@ -513,7 +520,12 @@ def _is_picklable(fn: Callable[..., list[Finding]]) -> bool:
     picklable = True
     try:
         pickle.dumps(fn)
-    except (pickle.PicklingError, AttributeError, TypeError, ValueError) as exc:  # audit-exempt: non_neutral_except_fallback -- _is_picklable predicate: False is the answer and the caller runs the scanner in-process
+    except (
+        pickle.PicklingError,
+        AttributeError,
+        TypeError,
+        ValueError,
+    ) as exc:  # audit-exempt: non_neutral_except_fallback -- _is_picklable predicate: False is the answer and the caller runs the scanner in-process
         # A lambda, a closure, or a bound method of an unpicklable object: it cannot cross to a
         # worker, so run_all keeps it in this process rather than failing the run.
         logger.warning("scanner %r cannot be sent to a worker process (%s); running it in-process", getattr(fn, "__name__", fn), exc)
@@ -580,7 +592,7 @@ def _run_scanners_parallel(
     # See _MIN_SCANNERS_PER_WORKER: cap by physical cores AND by "enough scanners per
     # worker to amortize its fixed spawn+import+re-parse cost", never by the raw
     # scanner count (which used to spawn one interpreter per scanner on a big machine).
-    max_workers = max(2, min(_physical_cpu_count(), len(selected) // _MIN_SCANNERS_PER_WORKER))
+    max_workers = max(2, min(physical_cpu_count(), len(selected) // MIN_SCANNERS_PER_WORKER))
     # A worker resolves a built-in from its own re-imported registry (nothing to pickle); a
     # scanner registered at runtime by the parent exists only here, so its callable is sent.
     # An unpicklable one (a closure, a bound method) can't cross at all - it runs in-process.

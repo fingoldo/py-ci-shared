@@ -254,7 +254,8 @@ DEFAULT_EXTRA_ALIASES: frozenset[str] = frozenset({"excluded", "new", "old"})
 
 _PYFORMAT_PARAM = re.compile(r"%\((\w+)\)s|%s")
 #: A doubled ``%%`` is a literal percent sign. It is set aside BEFORE placeholders are read: ``ILIKE '%%suspended%%'`` contains the characters ``%s`` (the second percent and the ``s``).
-_LITERAL_PERCENT = "@@literal-percent@@"
+LITERAL_PERCENT = "@@literal-percent@@"
+_LITERAL_PERCENT = LITERAL_PERCENT  # old private name, kept for consumers that import it
 _SESSION_PREFIX = re.compile(r"^\s*SET\s+(?:LOCAL\s+|SESSION\s+)?[^;]*;\s*", re.I)
 _DOTTED_REF = re.compile(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)+$")
 _PLACEHOLDER = re.compile(r"\{[A-Za-z_]\w*\}")
@@ -338,7 +339,7 @@ def matrix_statements(matrix: FragmentMatrix) -> list[tuple[str, Optional[str]]]
 def _parse_ready(sql: str, paramstyle: str) -> str:
     """The statement as the server would see it, each driver placeholder replaced by ``NULL``."""
     if paramstyle == "pyformat":
-        return _PYFORMAT_PARAM.sub("NULL", sql.replace("%%", _LITERAL_PERCENT)).replace(_LITERAL_PERCENT, "%")
+        return _PYFORMAT_PARAM.sub("NULL", sql.replace("%%", LITERAL_PERCENT)).replace(LITERAL_PERCENT, "%")
     return sql
 
 
@@ -353,7 +354,7 @@ def _prepare_ready(sql: str, paramstyle: str) -> str:
         numbers.setdefault(name, len(numbers) + 1)
         return f"${numbers[name]}"
 
-    return _PYFORMAT_PARAM.sub(_number, sql.replace("%%", _LITERAL_PERCENT)).replace(_LITERAL_PERCENT, "%")
+    return _PYFORMAT_PARAM.sub(_number, sql.replace("%%", LITERAL_PERCENT)).replace(LITERAL_PERCENT, "%")
 
 
 def without_session_prefix(sql: str) -> str:
@@ -368,7 +369,7 @@ def without_session_prefix(sql: str) -> str:
 def to_positional(sql: str) -> str:
     """psycopg2 placeholders -> PostgreSQL positional parameters (``$n``), order preserved; a named placeholder repeated gets one number.
 
-    A doubled ``%%`` is a literal percent sign and is set aside first (see ``_LITERAL_PERCENT``).
+    A doubled ``%%`` is a literal percent sign and is set aside first (see ``LITERAL_PERCENT``).
     """
     return _prepare_ready(sql, "pyformat")
 

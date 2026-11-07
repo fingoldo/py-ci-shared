@@ -16,12 +16,12 @@ separately and never fails the report. Everything else red for more than ``--max
 Usage::
 
     python -m py_ci_shared.ci_health configs/consumers.toml [--max-red-days 2] [--output ci-health.md]
-        [--only NAME ...] [--jobs 8] [--deadline 600] [--request-timeout 60]
+        [--only NAME ...] [--fail-on-skipped-private] [--jobs 8] [--deadline 600] [--request-timeout 60]
 
 Network: the GitHub REST API through ``urllib`` with the first token found in ``CONSUMER_READ_TOKEN``, ``GH_TOKEN``,
 ``GITHUB_TOKEN``; with none set, the ``gh`` CLI (its own login) when it is on PATH, else anonymous ``urllib``. Private
 repos are read only with ``CONSUMER_READ_TOKEN`` (or through ``gh``); otherwise each is skipped with a GitHub
-``::warning::``. The report goes to stdout and is appended to ``$GITHUB_STEP_SUMMARY`` when set. Exit 1 when a
+``::warning::``, or, with ``--fail-on-skipped-private``, reported as a RED row and an ``::error::`` (exit 1). The report goes to stdout and is appended to ``$GITHUB_STEP_SUMMARY`` when set. Exit 1 when a
 non-billing workflow is red past the threshold or a repo that should be readable could not be read, else 0; exit 2
 when ``--only`` names a consumer that is not in the file, or no consumer is left (a typo must not check nothing and pass).
 
@@ -302,9 +302,12 @@ def over_threshold(repo: RepoHealth, max_red_days: float) -> list[WorkflowHealth
     return [w for w in repo.workflows if w.status == "red" and w.days_red > max_red_days]
 
 
-def exit_code(repos: Sequence[RepoHealth], max_red_days: float) -> int:
-    """1 when a non-billing workflow is red past the threshold or a readable repo errored, else 0."""
-    return 1 if any(r.error or over_threshold(r, max_red_days) for r in repos) else 0
+def exit_code(repos: Sequence[RepoHealth], max_red_days: float, *, fail_on_skipped_private: bool = False) -> int:
+    """1 when a non-billing workflow is red past the threshold or a readable repo errored, else 0.
+
+    With ``fail_on_skipped_private`` a private repo skipped for want of a token is red too: "green" must not mean "public repos only".
+    """
+    return 1 if any(r.error or over_threshold(r, max_red_days) or (fail_on_skipped_private and r.skipped) for r in repos) else 0
 
 
 def _day(value: Optional[datetime]) -> str:
@@ -329,8 +332,15 @@ def _cell(text: str) -> str:
 _ORDER = {"red": 0, "billing": 1, "green": 2}
 
 
-def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: float) -> str:
-    """The report: one table row per workflow (worst first), then the repos that were skipped, errored or had no runs."""
+def _skipped_row(r: RepoHealth) -> tuple[tuple, str]:
+    return (-1, 0.0, r.name, ""), f"| {r.name} | (every workflow) | RED | NOT CHECKED, {_cell(r.skipped)} | - | - | - |"
+
+
+def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: float, *, fail_on_skipped_private: bool = False) -> str:
+    """The report: one table row per workflow (worst first), then the repos that were skipped, errored or had no runs.
+
+    With ``fail_on_skipped_private`` a skipped private repo is a RED row at the top of the table, not only a note below it.
+    """
     lines = [
         f"## Consumer CI health ({now.strftime('%Y-%m-%d %H:%M')} UTC, red threshold {max_red_days:g} days)",
         "",
@@ -344,6 +354,8 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
             link = f"[run]({w.latest_url})" if w.latest_url else "-"
             row = f"| {r.name} | {_cell(w.workflow)} | {flag} | {_red_for(w)} | {_day(w.red_since)} | {_day(w.last_success)} | {link} |"
             rows.append(((_ORDER[w.status], -w.days_red, r.name, w.workflow), row))
+    if fail_on_skipped_private:
+        rows += [_skipped_row(r) for r in repos if r.skipped]
     lines += [row for _, row in sorted(rows, key=lambda x: x[0])]
     notes = []
     for r in repos:
@@ -356,6 +368,7 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
     if notes:
         lines += ["", *notes]
     flagged = [(r, w) for r in repos for w in over_threshold(r, max_red_days)]
+    unchecked = [r.name for r in repos if r.skipped] if fail_on_skipped_private else []
     billing = [(r, w) for r in repos for w in r.workflows if w.status == "billing"]
     lines.append("")
     lines.append(
@@ -365,6 +378,8 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
         + (": " + ", ".join(f"{r.name}/{w.workflow}" for r, w in billing) if billing else "")
         + "."
     )
+    if unchecked:
+        lines.append(f"{len(unchecked)} private repo(s) NOT CHECKED for want of {TOKEN_ENV}: {', '.join(unchecked)}.")
     return "\n".join(lines) + "\n"
 
 
@@ -501,11 +516,12 @@ def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bo
     return assess_repo(consumer, workflows, runs_by, now, billing_run_ids=billing_ids)
 
 
-def _annotations(repos: Sequence[RepoHealth], max_red_days: float) -> list[str]:
+def _annotations(repos: Sequence[RepoHealth], max_red_days: float, *, fail_on_skipped_private: bool = False) -> list[str]:
     out: list[str] = []
     for r in repos:
         if r.skipped:
-            out.append(f"::warning title=consumer skipped::{r.repo} is private and {TOKEN_ENV} is not set; its CI health was NOT checked")
+            level = "error" if fail_on_skipped_private else "warning"
+            out.append(f"::{level} title=consumer skipped::{r.repo} is private and {TOKEN_ENV} is not set; its CI health was NOT checked")
         if r.error:
             out.append(f"::error title=ci_health::{r.repo}: {r.error}")
         out += [
@@ -525,6 +541,11 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.ci_health", description=__doc__.split("\n", 1)[0])
     parser.add_argument("config", nargs="?", default="configs/consumers.toml", help="consumers.toml (default: configs/consumers.toml)")
     parser.add_argument("--max-red-days", type=float, default=DEFAULT_MAX_RED_DAYS, help="days a workflow may stay red (default 2)")
+    parser.add_argument(
+        "--fail-on-skipped-private",
+        action="store_true",
+        help=f"a private consumer skipped for want of {TOKEN_ENV} is a RED row and exit 1, not a warning (the scheduled workflow passes it)",
+    )
     parser.add_argument("--output", help="also write the markdown report to this file")
     parser.add_argument("--only", action="append", default=[], help="check only this consumer name (repeatable)")
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help=f"consumers read at once (default {DEFAULT_JOBS})")
@@ -561,9 +582,10 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
 
     with ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
         repos = list(pool.map(one, consumers))
-    text = render_markdown(repos, at, args.max_red_days)
+    strict = args.fail_on_skipped_private
+    text = render_markdown(repos, at, args.max_red_days, fail_on_skipped_private=strict)
     sys.stdout.write(text)
-    for line in _annotations(repos, args.max_red_days):
+    for line in _annotations(repos, args.max_red_days, fail_on_skipped_private=strict):
         sys.stdout.write(line + "\n")
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
@@ -571,7 +593,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
     if summary:
         with open(summary, "a", encoding="utf-8") as fh:
             fh.write(text)
-    code = exit_code(repos, args.max_red_days)
+    code = exit_code(repos, args.max_red_days, fail_on_skipped_private=strict)
     if code == 0 and any(w.status == "billing" for r in repos for w in r.workflows):
         sys.stdout.write("ci_health: WARNING: some workflows are blocked by billing, not by the code; fix the account, not the repo\n")
     return code

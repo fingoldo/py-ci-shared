@@ -64,6 +64,12 @@ jobs:
           python -m py_ci_shared.adoption_matrix --repos-file "$RUNNER_TEMP/consumers/repos.toml" \
             --resolve-in . --allow-behind 2 --waivers configs/pin_waivers.toml --output adoption-matrix.md
 
+      # 43-F6: a consumer that imports an underscore module or name of py_ci_shared relies on something that "may change in any
+      # release". Reported, not failed, until the consumers move to the public names (see the CHANGELOG entry).
+      - name: Private py_ci_shared imports of the consumers
+        run: |
+          python -m py_ci_shared.consumer_import_census --library . --package py_ci_shared --only-private --private-imports report --allow-unparsed --repos-file "$RUNNER_TEMP/consumers/repos.toml"
+
       - name: Job summary
         if: always()
         run: |

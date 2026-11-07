@@ -539,6 +539,8 @@ from pathlib import Path  # noqa: F401 -- historic facade name
 from typing import Optional  # noqa: F401 -- historic facade name
 
 from ._base import Finding
+# Public names for consumers, which imported them from the private _base.
+from ._base import is_locals_or_globals_call, is_test_file
 from ._base import is_line_exempt  # noqa: F401 - the per-line audit-exempt rule, shared with the source-text gate
 from .mutable_defaults import scan_mutable_defaults, scan_parameter_aliasing_mutation
 from .closures import scan_late_binding_closures
@@ -645,6 +647,8 @@ from .registry import OPT_IN_ONLY, describe_scanners, render_check_catalogue, ru
 
 __all__ = [
     "Finding",
+    "is_locals_or_globals_call",
+    "is_test_file",
     "OPT_IN_ONLY",
     "run_all",
     "register_scanner",

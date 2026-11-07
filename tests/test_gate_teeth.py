@@ -716,6 +716,7 @@ EXEMPT: dict[str, str] = {
     "config_getattr_default_parity": "needs live pydantic schema classes as input, not a file corpus",
     "constant_relations": "resolves imported module attributes and model defaults; covered with teeth by test_constant_relations.py",
     "content_hash_version_bump_gate": "hashes files against a version baseline; no violation shape in code",
+    "toml_compat": "a parser import shim, nothing to scan; covered with a missing-tomllib simulation by test_toml_compat.py",
     "dart_scanners": "Dart/Flutter scanners take a file list and a reader, not paths, and emit a dict for the repo's own ratchet; covered by test_dart_scanners*.py",
     "deferred_drift": "counts DEFERRED list entries against a baseline; bookkeeping",
     "deferred_entries": "counts the DEFERRED list literals deferred_drift holds to a baseline; bookkeeping, covered by tests/test_deferred_entries.py",

@@ -98,7 +98,7 @@ def test_the_tomllib_ban_sees_every_import_spelling():
 @pytest.mark.parametrize("path", MODULES + TEST_FILES, ids=lambda p: p.relative_to(REPO).as_posix())
 def test_no_file_imports_tomllib_without_a_version_guard(path: Path):
     """``tomllib`` is stdlib from 3.11; package and test code reach it through ``py_ci_shared._toml_compat``."""
-    if path.name == "_toml_compat.py":
+    if path.name in ("toml_compat.py", "_toml_compat.py"):
         return
     offenders = unguarded_tomllib_imports(path.read_text(encoding="utf-8-sig"))
     assert not offenders, (

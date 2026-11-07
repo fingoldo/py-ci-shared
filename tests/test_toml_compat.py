@@ -17,7 +17,7 @@ import pytest
 
 def test_the_compat_module_exposes_a_working_parser():
     """Whichever parser is used, it has to parse."""
-    from py_ci_shared._toml_compat import tomllib
+    from py_ci_shared.toml_compat import tomllib
 
     assert tomllib.loads('[project]\nname = "x"\n')["project"]["name"] == "x"
 
@@ -38,12 +38,19 @@ def test_the_fallback_is_used_when_tomllib_is_absent(monkeypatch):
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", _no_tomllib)
-    monkeypatch.delitem(sys.modules, "py_ci_shared._toml_compat", raising=False)
+    monkeypatch.delitem(sys.modules, "py_ci_shared.toml_compat", raising=False)
     monkeypatch.delitem(sys.modules, "tomllib", raising=False)
 
-    module = importlib.import_module("py_ci_shared._toml_compat")
+    module = importlib.import_module("py_ci_shared.toml_compat")
     assert module.tomllib.__name__ == "tomli", "the fallback did not resolve to tomli"
     assert module.tomllib.loads("a = 1\n") == {"a": 1}
+
+
+def test_the_old_private_name_is_the_same_parser():
+    old = importlib.import_module("py_ci_shared._toml_compat")
+    new = importlib.import_module("py_ci_shared.toml_compat")  # by sys.modules: the fallback test above re-imports it
+
+    assert old.tomllib is new.tomllib
 
 
 @pytest.mark.parametrize(

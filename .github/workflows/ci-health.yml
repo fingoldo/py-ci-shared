@@ -4,12 +4,17 @@ name: Consumer CI health
 # long each workflow has been continuously red. Fails when a workflow is red for more than 2 days; a run GitHub never
 # started because of billing (failed payment, spending limit) is reported as `billing` and does not fail the job.
 # Public repos are read with this run's GITHUB_TOKEN; private ones need the CONSUMER_READ_TOKEN secret (a fine-grained
-# token with actions:read and metadata:read on them); without it they are skipped with a warning.
+# token with actions:read and metadata:read on them); without it they are a RED row and the job fails (--fail-on-skipped-private; a manual run can set allow-skipped-private).
 
 on:
   schedule:
     - cron: "41 5 * * *"
   workflow_dispatch:
+    inputs:
+      allow-skipped-private:
+        description: "Do not fail when the CONSUMER_READ_TOKEN secret is absent and private consumers are not checked"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,11 +43,14 @@ jobs:
         env:
           CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
+          ALLOW_SKIPPED_PRIVATE: ${{ inputs.allow-skipped-private }}
         run: |
           if [ -z "$CONSUMER_READ_TOKEN" ]; then
-            echo "::warning title=CONSUMER_READ_TOKEN not set::private consumer repos are skipped; only the public ones are checked"
+            echo "::warning title=CONSUMER_READ_TOKEN not set::private consumer repos are NOT checked"
           fi
-          python -m py_ci_shared.ci_health configs/consumers.toml --max-red-days 2 --output ci-health.md
+          strict="--fail-on-skipped-private"
+          if [ "$ALLOW_SKIPPED_PRIVATE" = "true" ]; then strict=""; fi
+          python -m py_ci_shared.ci_health configs/consumers.toml --max-red-days 2 $strict --output ci-health.md
 
       # This repository's own schedules: corpus-drift was cancelled every night for 10 days and nothing watched it.
       - name: Self-watch report

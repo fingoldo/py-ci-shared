@@ -2,9 +2,12 @@
 # `python -m py_ci_shared._consumers checkout`, and by ci-health.yml (`python -m py_ci_shared.ci_health`, which reads
 # their Actions runs on `branch`). consumer-pins.yml runs adoption_matrix with `--allow-behind 2`: a fixed pin may lag
 # the latest py-ci-shared release by up to 2 tags before it fails. Fields: name, repo (owner/name on GitHub), branch (the one CI runs
-# on), private (needs the CONSUMER_READ_TOKEN secret; without it the repo is skipped with a warning), corpus (true:
-# also scanned by the nightly corpus-drift job; keep that set small, every scanning gate runs over each).
+# on), private (needs the CONSUMER_READ_TOKEN secret; without it the repo is skipped with a warning, and consumer-pins, ci-health and
+# corpus-drift fail on the skip unless a manual run sets allow-skipped-private), corpus (true: also scanned by the nightly corpus-drift
+# job; keep that set small, every scanning gate runs over each). A consumer without `corpus = true` says why in the line above it.
+# Sizes are tracked files on 2026-11-07 (python files / python lines).
 
+# Not in the corpus: about 2400 python files, the largest consumer, more than glossum_backend_scripts or social; every scanning gate over it would dominate the nightly run.
 [[consumer]]
 name = "autopsia"
 repo = "fingoldo/autopsia"
@@ -25,12 +28,14 @@ branch = "master"
 private = false
 corpus = true
 
+# Not in the corpus: about 2200 python files / 490k lines, as large as glossum_backend_scripts; one big private repo is the nightly budget, add it only if the measured run time allows.
 [[consumer]]
 name = "social"
 repo = "fingoldo/social"
 branch = "master"
 private = true
 
+# Not in the corpus: 56 python files / 10k lines, a small library, little for a per-finder count to show.
 [[consumer]]
 name = "dash_app_core"
 repo = "fingoldo/dash_app_core"
@@ -49,25 +54,30 @@ name = "glossum_backend_scripts"
 repo = "fingoldo/glossum_backend_scripts"
 branch = "main"
 private = true
+corpus = true
 
+# Not in the corpus: a Flutter/Dart repo: 14 python files / 2k lines, all tool/ check scripts, so the python gates have almost nothing to scan.
 [[consumer]]
 name = "flutter_app_core"
 repo = "fingoldo/flutter_app_core"
 branch = "main"
 private = true
 
+# Not in the corpus: mostly Flutter/Dart and TypeScript: 34 python files / 5.5k lines (tool/ and scripts/ checks), too little python for the python gates.
 [[consumer]]
 name = "polyvocab_app"
 repo = "fingoldo/polyvocab_app"
 branch = "staging"
 private = true
 
+# Not in the corpus: mostly Flutter/Dart and TypeScript: 11 python files / 1.2k lines (tool/ check scripts), too little python for the python gates.
 [[consumer]]
 name = "noema_app"
 repo = "fingoldo/noema_app"
 branch = "master"
 private = true
 
+# Not in the corpus: a small mail monitor: 12 python files / 1.8k lines, a flat script directory.
 [[consumer]]
 name = "flutter_uptime_monitor"
 repo = "fingoldo/flutter_uptime_monitor"
@@ -79,7 +89,9 @@ name = "algopacksimple"
 repo = "fingoldo/algopacksimple"
 branch = "master"
 private = true
+corpus = true
 
+# Not in the corpus: 7 python files / 0.5k lines, too small to move a per-finder count.
 [[consumer]]
 name = "claude-usage-notifier"
 repo = "fingoldo/claude-usage-notifier"

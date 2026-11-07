@@ -93,7 +93,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_scaffold": "the ``py-ci-shared new-gate`` scaffolder",
     "_text_ratchet": "shared file reader, line keying and baseline enforcement of the text-scanning ratchet gates",
     "_mutation_worker": "subprocess worker of mutation_teeth; its stdout is the protocol",
-    "_toml_compat": "tomllib on 3.11+, tomli before",
+    "_toml_compat": "old private name of toml_compat, kept as an alias",
     "cli": "the ``py-ci-shared`` console script",
     "pytest_plugin": "the ``pytest11`` plugin behind ``[tool.py_ci_shared]``",
     "registry": "this module",

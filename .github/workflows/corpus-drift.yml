@@ -17,6 +17,10 @@ on:
       absolute:
         description: "Absolute growth that, together with pct, is a jump"
         default: "5"
+      allow-skipped-private:
+        description: "Do not fail when the CONSUMER_READ_TOKEN secret is absent and private corpus repos are skipped"
+        type: boolean
+        default: false
       accept:
         description: "Report the drift but pass, making tonight's counts the next baseline"
         type: boolean
@@ -60,8 +64,14 @@ jobs:
       - name: Check out the corpus repos
         env:
           CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
+          ALLOW_SKIPPED_PRIVATE: ${{ inputs.allow-skipped-private }}
         run: |
-          python -m py_ci_shared._consumers checkout configs/consumers.toml --corpus-only \
+          if [ -z "$CONSUMER_READ_TOKEN" ]; then
+            echo "::warning title=CONSUMER_READ_TOKEN not set::private corpus repos are NOT scanned"
+          fi
+          strict="--fail-on-skipped-private"
+          if [ "$ALLOW_SKIPPED_PRIVATE" = "true" ]; then strict=""; fi
+          python -m py_ci_shared._consumers checkout configs/consumers.toml --corpus-only $strict \
             --dest "$RUNNER_TEMP/corpus" --repos-file "$RUNNER_TEMP/corpus/repos.toml"
 
       # A step timeout below the job's 90 minutes: one slow finder used to consume the whole job, so the snapshot never finished and nothing was compared.

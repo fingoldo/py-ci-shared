@@ -27,6 +27,12 @@ CLI, for a library repo's CI or a scheduled job (``_consumers checkout`` writes 
     python -m py_ci_shared.consumer_import_census --library . --package pyutilz \\
         --repos-file "$RUNNER_TEMP/consumers/repos.toml" --since-ref "$(git describe --tags --abbrev=0)"
 
+Private names (``--private-imports report|fail``, :func:`find_consumer_private_imports`): the library's compatibility promise
+covers public names only, yet consumers imported ``py_ci_shared.code_audit._base.is_test_file`` and ``sql_verify._LITERAL_PERCENT``.
+An import whose module path has a component that starts with one underscore (``pkg._mod``), or whose imported name does
+(``from pkg.mod import _name``), is reported under the rule ``consumer-private-import``. ``report`` prints them and keeps
+the exit code; ``fail`` exits 1. Dunder names (``__version__``) are public.
+
 Exit 1 on any finding, on a consumer with no parsable file, and on an unparsable consumer file (``--allow-unparsed``
 reports those without failing).
 """
@@ -55,14 +61,18 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "RULE",
     "LibrarySurface",
+    "PRIVATE_RULE",
     "assert_consumer_imports_resolve",
+    "assert_no_consumer_private_imports",
     "find_consumer_import_breaks",
+    "find_consumer_private_imports",
     "library_alias_map",
     "main",
     "package_dir",
 ]
 
 RULE = "consumer-import-break"
+PRIVATE_RULE = "consumer-private-import"
 PathLike = Union[str, Path]
 
 
@@ -156,6 +166,74 @@ def _consumer_findings(
     return findings, scan
 
 
+def _is_private(identifier: str) -> bool:
+    return identifier.startswith("_") and not (identifier.startswith("__") and identifier.endswith("__"))
+
+
+def _private_part(module: str, name: Optional[str]) -> Optional[str]:
+    """The first underscore-private component of ``module`` (or *name*) that a consumer reaches, else None."""
+    for part in [*module.split("."), *([name] if name else [])]:
+        if _is_private(part):
+            return part
+    return None
+
+
+def _private_findings(name: str, root: Path, surface: LibrarySurface, use_git: Optional[bool]) -> "tuple[list[Finding], ScanResult]":
+    scan = scan_python(root, min_files=1, use_git=use_git)
+    findings: list[Finding] = []
+    for parsed in scan:
+        for line, module, imported in _imports(parsed, surface):
+            part = _private_part(module, imported)
+            if part is None:
+                continue
+            what = f"from {module} import {imported}" if imported else f"import {module}"
+            findings.append(
+                Finding(f"{name}/{parsed.rel}", line, PRIVATE_RULE, f"`{what}`: `{part}` is private to {surface.package} and may change in any release")
+            )
+    return findings, scan
+
+
+def find_consumer_private_imports(
+    library_root: PathLike,
+    package: str,
+    consumers: Sequence[tuple[str, PathLike]],
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+    use_git: Optional[bool] = None,
+) -> list[Finding]:
+    """Every import in *consumers* that reaches an underscore module or name of *package* (see the module doc).
+
+    Scanning errors behave as in :func:`find_consumer_import_breaks`.
+    """
+    surface = LibrarySurface(library_root, package)
+    out: list[Finding] = []
+    for name, root in consumers:
+        findings, scan = _private_findings(name, Path(root), surface, use_git)
+        scan.min_files = min_files
+        scan.assert_ok(allow_unparsed=allow_unparsed)
+        out += findings + [Finding(f"{name}/{f.path}", f.line, f.rule, f.message) for f in scan.unparsed_findings()]
+    return sorted(out, key=lambda f: (f.path, f.line, f.message))
+
+
+def assert_no_consumer_private_imports(
+    library_root: PathLike,
+    package: str,
+    consumers: Sequence[tuple[str, PathLike]],
+    *,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
+    use_git: Optional[bool] = None,
+) -> None:
+    """Fail when a consumer imports an underscore module or name of *package*."""
+    found = find_consumer_private_imports(library_root, package, consumers, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
+    if found:
+        raise AssertionError(
+            f"{len(found)} consumer import(s) reach private names of {package}; promote the name to a public one (keep the old as an alias) "
+            "and move the consumers to it:\n  " + "\n  ".join(f.render() for f in found)
+        )
+
+
 def find_consumer_import_breaks(
     library_root: PathLike,
     package: str,
@@ -236,7 +314,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--consumer", action="append", default=[], help="a consumer checkout (repeatable)")
     parser.add_argument("--since-ref", help="report only imports that resolved at this library ref (e.g. the last release tag)")
     parser.add_argument("--allow-unparsed", action="store_true", help="report unparsable consumer files without failing on them")
+    parser.add_argument(
+        "--private-imports",
+        choices=("report", "fail"),
+        help="also list imports of underscore modules and names of the package; 'fail' exits 1 on them, 'report' does not",
+    )
+    parser.add_argument("--only-private", action="store_true", help="skip the resolution check; needs --private-imports (a report of private imports alone)")
     args = parser.parse_args(argv)
+    if args.only_private and not args.private_imports:
+        parser.error("--only-private needs --private-imports report|fail")
     consumers: list[tuple[str, PathLike]] = [(Path(c).resolve().name, Path(c)) for c in args.consumer]
     if args.repos_file:
         consumers += list(load_repo_list(args.repos_file))
@@ -248,7 +334,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     with tempfile.TemporaryDirectory() as tmp:
         try:
             reference = _extract_ref(library, args.since_ref, Path(tmp)) if args.since_ref else None
-            found = find_consumer_import_breaks(library, args.package, consumers, reference_root=reference, allow_unparsed=args.allow_unparsed)
+            found = (
+                []
+                if args.only_private
+                else find_consumer_import_breaks(library, args.package, consumers, reference_root=reference, allow_unparsed=args.allow_unparsed)
+            )
+            private = find_consumer_private_imports(library, args.package, consumers, allow_unparsed=args.allow_unparsed) if args.private_imports else []
         except (CoreError, AssertionError) as exc:
             logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
             sys.stderr.write(f"consumer_import_census: {exc}" + "\n")
@@ -258,7 +349,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sys.stdout.write(f"consumer_import_census: {len(consumers)} consumer(s) of {args.package}, {len(breaks)} import(s) {scope}" + "\n")
     for f in found:
         sys.stdout.write("  " + f.render() + "\n")
-    return 1 if breaks else 0
+    for f in private:
+        sys.stdout.write("  " + f.render() + "\n")
+    if args.private_imports:
+        sys.stdout.write(f"consumer_import_census: {len(private)} import(s) of private names of {args.package}" + "\n")
+    return 1 if breaks or (private and args.private_imports == "fail") else 0
 
 
 if __name__ == "__main__":

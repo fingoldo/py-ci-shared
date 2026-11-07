@@ -112,7 +112,7 @@ name = "cache_key_sensitivity"
 kind = "gate"
 entries = ["assert_key_sensitive"]
 since = "1.23.8"
-summary = "assert_key_sensitive: every input that changes a memoised result must change its cache key"
+summary = "Every input that changes a memoised result must change its cache key, and nothing else may"
 
 [[gate]]
 name = "caller_frame_mutation"
@@ -162,7 +162,7 @@ name = "ci_default_branch_never_cancelled"
 kind = "gate"
 entries = ["assert_ci_default_branch_never_cancelled"]
 since = "1.22.3"
-summary = "a workflow that runs on push to the default branch must not set cancel-in-progress to something that can be true there"
+summary = "A workflow that runs on a push to the default branch must never let a newer push cancel it"
 
 [[gate]]
 name = "ci_health"
@@ -184,7 +184,7 @@ name = "ci_install_covers_entry_imports"
 kind = "gate"
 entries = ["assert_ci_install_covers_entry_imports", "assert_entry_imports_without_extras"]
 since = "1.22.3"
-summary = "the extras a CI job installs must cover the module-level third-party imports of the python -m / script entry it runs"
+summary = "The extras a CI job installs must cover the module-level third-party imports of the python -m or script entry it runs"
 
 [[gate]]
 name = "ci_pin_version_skew"
@@ -205,7 +205,7 @@ name = "ci_workflow_gate"
 kind = "gate"
 entries = ["assert_continue_on_error_is_reviewed"]
 since = "1.3.0"
-summary = "Every ``continue-on-error"
+summary = "Every ``continue-on-error: true`` in a CI workflow file is either genuinely advisory (explicitly allowlisted) or a gate-defeating accident"
 
 [[gate]]
 name = "ci_workflow_paths"
@@ -340,7 +340,7 @@ summary = "A declared relation between numeric constants and config defaults acr
 [[gate]]
 name = "consumer_import_census"
 kind = "gate"
-entries = ["assert_consumer_imports_resolve"]
+entries = ["assert_consumer_imports_resolve", "assert_no_consumer_private_imports"]
 since = "1.20.0"
 cli = true
 budget_s = 300
@@ -380,7 +380,7 @@ name = "cross_package_private_names"
 kind = "gate"
 entries = ["assert_cross_package_private_names"]
 since = "1.21.1"
-summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)."
+summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)"
 
 [[gate]]
 name = "cuda_kernel_integer_width"
@@ -546,7 +546,7 @@ name = "emitted_vocabulary_literals"
 kind = "gate"
 entries = ["assert_emitted_vocabulary_literals"]
 since = "1.22.7"
-summary = "Every literal passed to a named model's field at an emit site is in the published vocabulary, and every published member is emitted"
+summary = "Every value a backend can put in a closed-vocabulary field is in the vocabulary it publishes, and every published member is something the code can emit"
 
 [[gate]]
 name = "entry_points_resolvable"
@@ -630,7 +630,7 @@ name = "function_complexity"
 kind = "gate"
 entries = ["assert_complexity_does_not_grow"]
 since = "1.18.0"
-summary = "C901 complexity ratchet with the original function_complexity API (limit 25); measured by complexity_ratchet"
+summary = "Shared ratchet over McCabe complexity (limit 25), the original function_complexity API over complexity_ratchet: no new over-complex function, no baselined one getting worse"
 
 [[gate]]
 name = "function_length"
@@ -671,7 +671,7 @@ name = "git_child_env"
 kind = "gate"
 entries = ["assert_no_new_unscrubbed_git_spawns"]
 since = "1.22.8"
-summary = "A test that spawns git passes an environment with GIT_* removed, or it runs against the hook's repository (opt-in ratchet)"
+summary = "A test that runs ``git`` in a child process must not inherit the caller's ``GIT_*`` variables (opt-in ratchet over test files)"
 
 [[gate]]
 name = "git_dependency_pins"
@@ -916,7 +916,7 @@ name = "ml_api_contracts"
 kind = "gate"
 entries = ["assert_ml_api_contracts"]
 since = "1.23.8"
-summary = "Regression guards: best_iteration used as a count without +1, argmax compared to raw labels, estimator __init__ rewriting its own parameter"
+summary = "Three regression guards for ML API contract slips: best_iteration used as a tree count, argmax compared to raw labels, an estimator rewriting its own init parameter"
 
 [[gate]]
 name = "module_cache_thread_safety"
@@ -1009,7 +1009,7 @@ name = "no_xfail_to_defer"
 kind = "gate"
 entries = ["assert_no_xfail_to_defer"]
 since = "1.17.0"
-summary = "xfail and skip may mark a limit outside the repository, never park a bug inside it"
+summary = "An xfail or skip may mark a limit outside the repository, never park a bug inside it"
 
 [[gate]]
 name = "nondiscriminating_shapes"
@@ -1056,7 +1056,7 @@ name = "optional_imports_guarded"
 kind = "gate"
 entries = ["assert_optional_imports_guarded"]
 since = "1.22.3"
-summary = "a module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function"
+summary = "A module-level import of a package that is only an optional extra must sit in try/except ImportError, TYPE_CHECKING or a function"
 
 [[gate]]
 name = "optional_truthiness"
@@ -1070,7 +1070,7 @@ name = "order_losing_filters"
 kind = "gate"
 entries = ["assert_no_order_losing_filters"]
 since = "1.17.0"
-summary = "Row selections by an index-built mask whose positional twin returns the rows in index order"
+summary = "Row selections that silently lose the order of the index they were asked for (an index-built mask whose positional twin returns index order)"
 
 [[gate]]
 name = "ordinal_rank_scatter"
@@ -1134,7 +1134,7 @@ name = "plotly_annotation_loop"
 kind = "gate"
 entries = ["assert_no_plotly_annotation_loops"]
 since = "1.17.0"
-summary = "plotly ``fig.add_annotation``/``add_shape`` called once per item in a loop: O(n^2) in the number of items"
+summary = "Plotly ``fig.add_annotation`` or ``add_shape`` called once per item in a loop, which is quadratic in the number of items"
 
 [[gate]]
 name = "polars_null_equality"
@@ -1162,7 +1162,7 @@ name = "printed_advice"
 kind = "gate"
 entries = ["assert_printed_advice_registered"]
 since = "1.17.0"
-summary = "Log and error messages that advise an action, each mapped to a test that follows the advice"
+summary = "Log and error messages that tell the reader to do something: each needs a test that follows the advice and sees the promised effect"
 
 [[gate]]
 name = "private_imports"
@@ -1216,7 +1216,7 @@ summary = "A hook or CI step that names test paths, and runs none of them becaus
 name = "pytest_known_gap"
 kind = "library"
 since = "1.22.3"
-summary = "known_gap(reason, gap_closed): xfail while an external limit is open, fail once the measurement shows it closed"
+summary = "``known_gap(reason, gap_closed)`` records an open external limit as an expected failure that turns red the day the measurement shows it closed"
 
 [[gate]]
 name = "pytest_markers"
@@ -1354,7 +1354,7 @@ name = "setup_env"
 kind = "cli"
 since = "1.3.0"
 cli = true
-summary = "Persist ``PY_CI_SHARED_DIR`` at the OS/user level so ruff's ``extend = \"$PY_CI_SHARED_DIR/configs/ruff-base.toml\"`` (see README's \"Using the"
+summary = "Persist ``PY_CI_SHARED_DIR`` at the OS or user level so the shared ruff config resolves in a shell, in CI and in a GUI-launched editor"
 
 [[gate]]
 name = "shared_mutable_placeholder"
@@ -1522,14 +1522,14 @@ name = "systemexit_in_library"
 kind = "gate"
 entries = ["assert_no_systemexit_in_library"]
 since = "1.23.8"
-summary = "sys.exit()/raise SystemExit inside a library function that threads and importers reach"
+summary = "``sys.exit()`` or ``raise SystemExit`` inside a library function that background threads and importers can reach"
 
 [[gate]]
 name = "target_leak_canary"
 kind = "gate"
 entries = ["assert_no_train_target_leak", "assert_oof_scores_at_chance"]
 since = "1.23.8"
-summary = "assert_no_train_target_leak: a feature builder must not correlate with a pure-noise target on its own training rows"
+summary = "A feature builder that fits on the training rows must not return features that correlate with a pure-noise target on those same rows"
 
 [[gate]]
 name = "teeth_sweep"
@@ -1552,6 +1552,12 @@ kind = "gate"
 entries = ["assert_timezone_honest"]
 since = "1.4.1"
 summary = "Non-test code states its time frame in the expression, and the scan cannot miss a directory"
+
+[[gate]]
+name = "toml_compat"
+kind = "library"
+since = "1.23.10"
+summary = "``tomllib`` on the interpreters that have it, ``tomli`` (the same parser) on 3.9 and 3.10 that do not"
 
 [[gate]]
 name = "tool_config_env_vars_set_in_every_tool_job"
@@ -1585,7 +1591,7 @@ name = "truncating_discretisation"
 kind = "gate"
 entries = ["assert_truncating_discretisation"]
 since = "1.23.8"
-summary = "Flags integer casts guarded only by a distinct-value count, which collapse a fractional target to one class"
+summary = "An ``astype(int)`` guarded only by a distinct-value count, which turns a fractional target into a handful of integer classes"
 
 [[gate]]
 name = "uncalled_functions"
@@ -1648,7 +1654,7 @@ name = "uv_lock_parity"
 kind = "gate"
 entries = ["assert_uv_lock_parity"]
 since = "1.23.10"
-summary = "uv.lock agrees with pyproject.toml: every declared requirement is locked with the same specifier, and no locked extra is undeclared"
+summary = "``uv.lock`` agrees with ``pyproject.toml``: every declared requirement is locked with the same specifier, and no locked extra is undeclared"
 
 [[gate]]
 name = "vacuous_loop_assertions"
@@ -1711,7 +1717,7 @@ name = "wallclock_test_waits"
 kind = "gate"
 entries = ["assert_no_new_wallclock_test_waits"]
 since = "1.22.8"
-summary = "A test does not sleep on the wall clock (Future.delayed of a Duration, time.sleep) (opt-in ratchet)"
+summary = "A test that waits on the wall clock is slow and flaky, so it must not sleep on it (Future.delayed of a Duration, time.sleep); opt-in ratchet over test files"
 
 [[gate]]
 name = "worker_budget"
