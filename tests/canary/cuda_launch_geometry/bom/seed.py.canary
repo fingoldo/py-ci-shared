@@ -1,6 +1,6 @@
 ﻿import cupy as cp
 
-THREADS = 256
+THREADS = 192
 
 
 def run(kernel, x, out, n):
@@ -8,3 +8,8 @@ def run(kernel, x, out, n):
     kernel((n // THREADS + 1,), (THREADS,), (x, out, n))
     width = 128
     kernel((n // width + 1,), (width,), (x, out, n))
+    kernel((n // 16 + 1, n // 16 + 1), (16, 16), (x, out, n))
+
+
+async def run_async(kernel, x, out, n):
+    kernel((n // 512 + 1,), (512,), (x, out, n))

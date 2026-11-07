@@ -1,4 +1,5 @@
 ﻿import json
+import pickle
 from pathlib import Path
 
 import cupy
@@ -14,3 +15,57 @@ def seed_fingerprint():
         gpu = {"name": "no-gpu"}
         SEED_CACHE.write_text(json.dumps({"gpu": gpu}))
     return gpu
+
+
+def seed_dump():
+    try:
+        count = cupy.cuda.runtime.getDeviceCount()
+        info = {"devices": count}
+    except Exception:
+        info = {"gpu": "no-gpu"}
+        with open("fp.json", "w") as fh:
+            json.dump(info, fh)
+    return info
+
+
+def seed_open_write():
+    try:
+        count = cupy.cuda.runtime.getDeviceCount()
+    except Exception:
+        with open("fp.txt", "w") as fh:
+            fh.write("no-gpu")
+        count = 0
+    return count
+
+
+def seed_bytes():
+    try:
+        count = cupy.cuda.runtime.getDeviceCount()
+    except Exception:
+        SEED_CACHE.write_bytes(b"no-gpu")
+        count = 0
+    return count
+
+
+SEED_STORE_CACHE = {}
+
+
+def seed_cache_set():
+    try:
+        count = cupy.cuda.runtime.getDeviceCount()
+    except Exception:
+        SEED_STORE_CACHE.set("gpu", None)
+        count = 0
+    return count
+
+
+def seed_later_persist():
+    try:
+        count = cupy.cuda.runtime.getDeviceCount()
+        flag = count > 0
+    except Exception:
+        seed_verdict_flag = False
+        flag = seed_verdict_flag
+    with open("fp.pkl", "wb") as fh:
+        pickle.dump(seed_verdict_flag, fh)
+    return flag

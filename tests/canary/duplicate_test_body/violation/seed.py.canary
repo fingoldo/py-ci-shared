@@ -8,3 +8,41 @@ def test_seed_zero_copy():
     result = seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=True)
     assert result is True
     assert seed_f({'x': 5}, {'x': 0}, threshold=0.5, strict=False) is True
+
+
+class TestSeedGroup:
+    def test_seed_method(self):
+        result = seed_f({'x': 7}, {'x': 1}, threshold=0.25, strict=True)
+        assert result is True
+        assert seed_f({'x': 7}, {'x': 1}, threshold=0.25, strict=False) is True
+
+    def test_seed_method_copy(self):
+        result = seed_f({'x': 7}, {'x': 1}, threshold=0.25, strict=True)
+        assert result is True
+        assert seed_f({'x': 7}, {'x': 1}, threshold=0.25, strict=False) is True
+
+
+async def test_seed_async():
+    result = await seed_g({'x': 9}, {'x': 2}, threshold=0.75, strict=True)
+    assert result is True
+    assert await seed_g({'x': 9}, {'x': 2}, threshold=0.75, strict=False) is True
+
+
+async def test_seed_async_copy():
+    result = await seed_g({'x': 9}, {'x': 2}, threshold=0.75, strict=True)
+    assert result is True
+    assert await seed_g({'x': 9}, {'x': 2}, threshold=0.75, strict=False) is True
+
+
+def test_seed_doc():
+    """First docstring."""
+    result = seed_f({'x': 3}, {'x': 4}, threshold=0.1, strict=True)
+    assert result is True
+    assert seed_f({'x': 3}, {'x': 4}, threshold=0.1, strict=False) is True
+
+
+def test_seed_doc_copy():
+    """A different docstring does not make it a different test."""
+    result = seed_f({'x': 3}, {'x': 4}, threshold=0.1, strict=True)
+    assert result is True
+    assert seed_f({'x': 3}, {'x': 4}, threshold=0.1, strict=False) is True

@@ -12,3 +12,16 @@ def rank_all(baselines, y):
     """``y`` never changes across baselines but is re-sorted every iteration."""
     for name in baselines:
         print(name, np.argsort(y))
+
+
+def asarray_all(baselines, z):
+    """``z`` never changes but is re-wrapped through a numpy function every iteration."""
+    for name in baselines:
+        z_arr = np.asarray(z)
+        print(name, z_arr)
+
+
+def rank_method_all(baselines, w):
+    """The method spelling of the heavy call."""
+    for name in baselines:
+        print(name, w.argsort())

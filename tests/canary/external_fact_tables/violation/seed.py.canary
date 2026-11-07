@@ -3,3 +3,27 @@ SEED_PRICING = {
     "seed-model": (1.00, 4.00),
     "seed-model-mini": (0.10, 0.40),
 }
+
+
+# Pricing, checked by hand (verified 2026-09-26).
+SEED_DATE_ONLY = {
+    "seed-model": (1.00, 4.00),
+}
+
+
+# Source: https://example.com/limits
+SEED_URL_ONLY = {
+    "seed-model": (1.00, 4.00),
+}
+
+
+# Source: https://example.com/rates (verified 2026-12-01).
+SEED_FUTURE_DATED = {
+    "seed-model": (1.00, 4.00),
+}
+
+
+# Source: https://example.com/cards (verified 2026-01-01).
+SEED_STALE = {
+    "seed-model": (1.00, 4.00),
+}

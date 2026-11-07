@@ -15,3 +15,54 @@ def load_top_jobs(*, limit=25):
 
 
 load_top_jobs.cache_clear = _load_top_jobs_cached.cache_clear
+
+
+def _raw_b(*, limit):
+    return limit
+
+
+loader_b = ttl_cached("b_ttl_sec", 10.0)(_raw_b)
+
+
+def wrap_b(*, limit=1):
+    return loader_b(limit=limit)
+
+
+wrap_b.cache_clear = loader_b.cache_clear
+
+
+@mystery_decorator
+def _inner_c(*, limit):
+    return limit
+
+
+def wrap_c(*, limit=1):
+    return _inner_c(limit=limit)
+
+
+wrap_c.refresh = _inner_c.refresh
+
+
+@background_cached("d_bg")
+def _inner_d(*, limit):
+    return limit
+
+
+def wrap_d(*, limit=1):
+    return _inner_d(limit=limit)
+
+
+wrap_d.cache_clear = _inner_d.cache_clear
+
+
+@lru_cache(maxsize=None)
+def _inner_e(*, limit):
+    return limit
+
+
+def wrap_e(*, limit=1):
+    return _inner_e(limit=limit)
+
+
+wrap_e.cache_clear = _inner_e.cache_clear
+wrap_e_ready = _inner_e.has_value

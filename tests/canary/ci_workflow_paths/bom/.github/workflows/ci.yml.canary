@@ -4,3 +4,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: python tools/seed_gone.py
+      - run: make check
+        working-directory: seed_nodir
+      - uses: someorg/seed-action@v1
+      - uses: docker://alpine:3.19

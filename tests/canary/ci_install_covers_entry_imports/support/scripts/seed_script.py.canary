@@ -1,0 +1,9 @@
+import pywt
+
+
+def main():
+    return pywt.wavelist()
+
+
+if __name__ == "__main__":
+    main()

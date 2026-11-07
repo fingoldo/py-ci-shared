@@ -1,3 +1,8 @@
 ﻿def probe(conn):
     cur = conn.cursor()
     return cur.fetchone()
+
+
+class SeedBox:
+    def method(self, conn):
+        return conn.close()

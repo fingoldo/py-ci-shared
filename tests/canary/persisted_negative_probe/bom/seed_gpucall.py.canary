@@ -1,0 +1,13 @@
+﻿import json
+from pathlib import Path
+
+SEED_CACHE = Path("hw_fingerprint.json")
+
+
+def seed_probe_by_name():
+    try:
+        info = detect_gpu()
+    except Exception:
+        info = {"name": "no-gpu"}
+        SEED_CACHE.write_text(json.dumps(info))
+    return info

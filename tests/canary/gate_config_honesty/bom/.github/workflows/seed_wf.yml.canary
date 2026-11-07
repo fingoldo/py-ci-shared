@@ -1,0 +1,14 @@
+﻿name: seed-wf
+on: push
+jobs:
+  seed_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Seed lint
+        run: ruff check src || true
+      - name: Seed relaxed
+        run: |
+          set +e
+          pytest tests
+      - name: Seed security
+        run: bandit -r src

@@ -5,3 +5,8 @@
         name: seed bandit
         entry: bandit -r src
         language: system
+      - id: seed-flake
+        name: seed flake
+        entry: flake8 src
+        args: ["--exit-zero"]
+        language: system

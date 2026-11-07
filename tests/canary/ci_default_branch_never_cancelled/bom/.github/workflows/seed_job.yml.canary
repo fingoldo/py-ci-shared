@@ -1,0 +1,13 @@
+﻿name: seed-job-level
+on:
+  push:
+    branches: [master]
+jobs:
+  seed_deploy:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: seed-deploy
+      cancel-in-progress: ${{ inputs.cancel_previous }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pytest

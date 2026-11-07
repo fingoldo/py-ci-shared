@@ -4,3 +4,5 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: python -m pytest tests/test_seed_db.py
+      - run: python -m pytest tests/test_seed_db.py -m "not integration"
+      - run: python -m pytest tests/test_seed_db.py -k "nothing_matches"

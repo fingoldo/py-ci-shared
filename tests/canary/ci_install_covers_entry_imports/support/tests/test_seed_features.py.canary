@@ -1,0 +1,5 @@
+from seedpkg import features
+
+
+def test_seed_features():
+    assert features.seed_transform([1, 2, 3, 4])

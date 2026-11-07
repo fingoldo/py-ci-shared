@@ -378,7 +378,16 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary(
             "external_fact_tables",
-            lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(d, {"seed.py:SEED_PRICING": 45}, today=_FACT_DAY),
+            lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(
+                d, {"seed.py:SEED_PRICING": 45, "seed.py:SEED_DATE_ONLY": 45, "seed.py:SEED_URL_ONLY": 45, "seed.py:SEED_FUTURE_DATED": 45, "seed.py:SEED_STALE": 45}, today=_FACT_DAY
+            ),
+            tokens=(  # one table per _judge verdict; the undeclared-fact-table rule is a different entry point the runner does not call
+                "SEED_PRICING: cites no source and no check date",
+                "SEED_DATE_ONLY: cites no source URL next to its check date",
+                "SEED_URL_ONLY: cites https://example.com/limits with no check date",
+                "SEED_FUTURE_DATED: check date 2026-12-01 is in the future",
+                "SEED_STALE: last checked 2026-01-01",
+            ),
         ),
         Canary("vendored_internal_imports", lambda d: _gate("vendored_internal_imports").assert_no_vendored_internal_imports(d, use_git=False)),
         Canary(
@@ -387,7 +396,17 @@ CANARIES: dict[str, Canary] = {
             # one rule id for every stub form, so each is named by its rendered stub
             tokens=("stub _submit(", "stub lambda(*_a)", "stub lambda(job_uid, fl_cid)"),
         ),
-        Canary("wrapper_protocol_parity", lambda d: _gate("wrapper_protocol_parity").assert_wrapper_protocol_parity(d, use_git=False)),
+        Canary(
+            "wrapper_protocol_parity",
+            lambda d: _gate("wrapper_protocol_parity").assert_wrapper_protocol_parity(d, use_git=False),
+            tokens=(  # inner by decorator, by assignment, undecorated (whole protocol), background_cached, and attributes only read off the inner
+                "load_top_jobs copies cache_clear from _load_top_jobs_cached but not refresh",
+                "wrap_b copies cache_clear from loader_b but not refresh",
+                "wrap_c copies refresh from _inner_c but not cache_clear, has_value",
+                "wrap_d copies cache_clear from _inner_d but not has_value",
+                "wrap_e copies cache_clear from _inner_e but not has_value",
+            ),
+        ),
         Canary(
             "destructive_tests_throwaway_only",
             lambda d: _gate("destructive_tests_throwaway_only").assert_destructive_tests_are_throwaway_only(
@@ -417,6 +436,13 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "unexecuted_function_bodies",
             lambda d: _gate("unexecuted_function_bodies").assert_unexecuted_function_bodies(d / "coverage.json", [d], base=d, use_git=False),
+            tokens=(  # a never-run body, a method, and a module the report omits; stale-exempt/exempt-without-reason need an exempt= the runner cannot pass
+                "probe: body never executed",
+                "SeedBox.method: body never executed",
+                "(no body statement ran)",
+                "absent_helper: body never executed",
+                "(its module is absent from the coverage report)",
+            ),
         ),
         Canary(
             "single_shot_timing_assertion",
@@ -440,15 +466,29 @@ CANARIES: dict[str, Canary] = {
             tokens=("seed_split", "seed_rng", "seed_global"),
         ),
         Canary("constant_fallback_cache_key", lambda d: _gate("constant_fallback_cache_key").assert_constant_fallback_cache_key(d, use_git=False)),
-        Canary("ci_default_branch_never_cancelled", lambda d: _gate("ci_default_branch_never_cancelled").assert_ci_default_branch_never_cancelled(d)),
-        Canary("ci_install_covers_entry_imports", lambda d: _gate("ci_install_covers_entry_imports").assert_ci_install_covers_entry_imports(d)),
+        Canary(
+            "ci_default_branch_never_cancelled",
+            lambda d: _gate("ci_default_branch_never_cancelled").assert_ci_default_branch_never_cancelled(d),
+            tokens=("workflow .github/workflows/seed.yml sets", "job \x27seed_deploy\x27", "cannot be proven false", "seed_quoted.yml", "which is true"),
+        ),
+        Canary(
+            "ci_install_covers_entry_imports",
+            lambda d: _gate("ci_install_covers_entry_imports").assert_ci_install_covers_entry_imports(d),
+            # one job per entry shape (python -m, a script, pytest, coverage run, uv run); the rule id is the same for all of them
+            tokens=("runs `python -m seedpkg.nightly", "runs `python scripts/seed_script.py", "runs `python -m pytest", "runs `coverage run -m", "runs `uv run python -m"),
+        ),
         Canary("optional_imports_guarded", lambda d: _gate("optional_imports_guarded").assert_optional_imports_guarded(d, use_git=False)),
         Canary(
             "id_keyed_cache_validates_identity",
             lambda d: _gate("id_keyed_cache_validates_identity").assert_id_keyed_cache_validates_identity(d, use_git=False),
             tokens=("_SEED_REGISTRY", "_SEED_BY_ID"),
         ),
-        Canary("persisted_negative_probe", lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False)),
+        Canary(
+            "persisted_negative_probe",
+            lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False),
+            # one persisting shape each, then a later persist, then a probe found by call name, by import and a bare handler (one file each)
+            tokens=("via .write_text", "via json.dump", "via open(..., 'w').write", "via .write_bytes", "via .set", "seed_verdict_flag = False", "seed_gpucall.py", "seed_import.py", "seed_bare.py"),
+        ),
         Canary(
             "cuda_kernel_integer_width",
             lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False),
@@ -505,7 +545,11 @@ CANARIES: dict[str, Canary] = {
                 "'phrase' accepts up to 300",
             ),
         ),
-        Canary("loop_invariant_cast", lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False, heavy=True)),
+        Canary(
+            "loop_invariant_cast",
+            lambda d: _gate("loop_invariant_cast").assert_loop_invariant_cast(d, use_git=False, heavy=True),
+            tokens=("recast on every loop iteration", "y.astype(", "np.asarray(z)", "O(N log N) work repeats", "np.argsort(y)", "w.argsort()"),
+        ),
         Canary(
             "llm_output_caps",
             lambda d: _gate("llm_output_caps").assert_no_new_output_caps(
@@ -571,18 +615,30 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("import_time_global_side_effects").assert_import_time_global_side_effects(d, use_git=False),
             token="unimorph",
         ),
-        Canary("duplicate_test_body", lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False)),
+        Canary(
+            "duplicate_test_body",
+            lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False),
+            tokens=("test_seed_zero_copy", "test_seed_method_copy", "test_seed_async_copy", "test_seed_doc_copy"),  # module, class, async, docstring-stripped twins
+        ),
         Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
         Canary("verified_then_reopened", lambda d: _gate("verified_then_reopened").assert_verified_then_reopened(d, use_git=False)),
         Canary("state_before_work", lambda d: _gate("state_before_work").assert_state_before_work(d, use_git=False)),
         Canary("systemexit_in_library", lambda d: _gate("systemexit_in_library").assert_no_systemexit_in_library(d, use_git=False)),
         Canary("optional_collaborator_wired", lambda d: _gate("optional_collaborator_wired").assert_optional_collaborator_wired(d, use_git=False)),
-        Canary("cli_flag_spelling", lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False)),
+        Canary(
+            "cli_flag_spelling",
+            lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False),
+            tokens=("--dry_run is spelled differently from --dry-run", "--out_dir is spelled differently from --out-dir",),
+        ),
         Canary("njit_fastmath_nan", lambda d: _gate("njit_fastmath_nan").assert_njit_fastmath_nan(d, use_git=False)),
         Canary("ordinal_rank_scatter", lambda d: _gate("ordinal_rank_scatter").assert_ordinal_rank_scatter(d, use_git=False)),
         Canary("group_blind_split", lambda d: _gate("group_blind_split").assert_group_blind_split(d, use_git=False)),
         Canary("oof_buffer_zero_init", lambda d: _gate("oof_buffer_zero_init").assert_oof_buffer_zero_init(d, use_git=False)),
-        Canary("ml_api_contracts", lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False)),
+        Canary(
+            "ml_api_contracts",
+            lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False),
+            tokens=("[best-iteration-count]", "[argmax-vs-raw-label]", "[init-rewrites-param]", "\x27num_rounds\x27 takes best_iteration", "labels \x27y_test\x27"),
+        ),
         Canary("njit_unsupported_calls", lambda d: _gate("njit_unsupported_calls").assert_njit_unsupported_calls(d, use_git=False)),
         Canary("truncating_discretisation", lambda d: _gate("truncating_discretisation").assert_truncating_discretisation(d, use_git=False)),
         Canary("unseeded_rng_fallback", lambda d: _gate("unseeded_rng_fallback").assert_unseeded_rng_fallback(d, use_git=False)),
@@ -593,7 +649,11 @@ CANARIES: dict[str, Canary] = {
             # cuda-bare-float-pointer is only reported with include_float, which the canary runner does not pass
             tokens=("[cuda-bare-double-pointer]", "[cuda-type-probe-not-launched]"),
         ),
-        Canary("cuda_launch_geometry", lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False)),
+        Canary(
+            "cuda_launch_geometry",
+            lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False),
+            tokens=("block size (256,)", "block size (192,)", "block size (128,)", "block size (16, 16)", "block size (512,)"),
+        ),
         Canary(
             "possibly_unbound_local",
             lambda d: _gate("possibly_unbound_local").assert_possibly_unbound_local(d, use_git=False),
@@ -736,7 +796,14 @@ CANARIES.update(
         for c in [
             Canary(
                 "ci_workflow_paths",
-                lambda d: _gate("ci_workflow_paths").assert_workflow_paths_exist(d / ".github" / "workflows", d, require_permissions=True),
+                lambda d: _gate("ci_workflow_paths").assert_workflow_paths_exist(d / ".github" / "workflows", d, require_permissions=True, require_sha_pins=True),
+                tokens=(  # a missing script, a missing working-directory, a mutable action tag, a mutable docker tag, and a workflow with no permissions
+                    "runs `tools/seed_gone.py`, which does not exist",
+                    "working-directory `seed_nodir` does not exist",
+                    "`uses: someorg/seed-action@v1` follows a mutable tag",
+                    "`uses: docker://alpine:3.19` names a docker image by a mutable tag",
+                    "seed_noperm.yml: no top-level `permissions:` block",
+                ),
                 parses=False,
             ),
             Canary(
@@ -744,11 +811,22 @@ CANARIES.update(
                 lambda d: _gate("ci_test_dir_reachability").assert_every_test_subdir_reachable(d, d / ".github" / "workflows"),
                 parses=False,
             ),
-            Canary("coverage_config_parity", lambda d: _gate("coverage_config_parity").assert_coverage_config_parity(d)),
+            Canary(
+                "coverage_config_parity",
+                lambda d: _gate("coverage_config_parity").assert_coverage_config_parity(d),
+                tokens=("[narrow-run-inherits-fail-under]", "[numba-blind-coverage]"),
+            ),
             Canary(
                 "gate_config_honesty",
                 lambda d: _gate("gate_config_honesty").assert_gates_honest(
                     d / ".pre-commit-config.yaml", sorted((d / ".github" / "workflows").glob("*.yml")), d / "pyproject.toml"
+                ),
+                tokens=(  # a tool run without its config (hook and workflow), and each way of always exiting 0
+                    "seed-bandit: runs bandit without -c/--configfile",
+                    "seed_wf.yml::seed_job::Seed security: runs bandit without",
+                    "always exits 0 (--exit-zero)",
+                    "always exits 0 (|| true)",
+                    "always exits 0 (set +e)",
                 ),
                 parses=False,
             ),
@@ -756,6 +834,11 @@ CANARIES.update(
                 "pytest_addopts_path_runs",
                 lambda d: _gate("pytest_addopts_path_runs").assert_path_runs_select_tests(
                     d, repo_root=d, workflows=sorted((d / ".github" / "workflows").glob("*.yml"))
+                ),
+                tokens=(  # a bare path run, one that repeats the deselecting -m, one that adds a -k
+                    "test_seed_db.py: `tests/test_seed_db.py` reaches",
+                    'test_seed_db.py -m "not integration": `tests/test_seed_db.py` reaches',
+                    'test_seed_db.py -k "nothing_matches": `tests/test_seed_db.py` reaches',
                 ),
             ),
             Canary(
@@ -768,7 +851,11 @@ CANARIES.update(
                     addopts="-m 'not integration'",
                 ),
             ),
-            Canary("gate_integrity", lambda d: _gate("gate_integrity").assert_narrowings_declared(d / ".pre-commit-config.yaml", None, {})),
+            Canary(
+                "gate_integrity",
+                lambda d: _gate("gate_integrity").assert_narrowings_declared(d / ".pre-commit-config.yaml", None, {}),
+                tokens=("pre-commit::<top-level>::exclude=^vendor/", "pre-commit::seed-ruff::--ignore=C901", "pre-commit::seed-scoped::files=^src/", "pre-commit::seed-bandit::-s=B101", "pre-commit::seed-pytest::-k=fast", "pre-commit::seed-args::--select=E501"),
+            ),
         ]
     }
 )
@@ -984,7 +1071,7 @@ def test_canary_fixture_has_teeth(gate: str) -> None:
 
 # Audit 2026-11-07 44-F1: a canary that pins only the default token 'seed' proves one detection branch. The ceiling may only go down; give a canary
 # `tokens=` (one per seeded shape) and lower it. Plan for the rest: gates whose own unit tests already pin each branch go last.
-_DEFAULT_TOKEN_ONLY_CEILING = 71
+_DEFAULT_TOKEN_ONLY_CEILING = 55
 
 # Audit 2026-11-07 44-F7: tokens that any message about the gate or the file carries. Frozen; may only shrink.
 _GENERIC_TOKENS = frozenset({"seed", "main", "alice", "limit", "WHERE", "OSError"})

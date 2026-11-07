@@ -1,3 +1,4 @@
+exclude: ^vendor/
 repos:
   - repo: local
     hooks:
@@ -5,3 +6,17 @@ repos:
         entry: python -m ruff check --ignore C901
         language: system
         stages: [pre-commit]
+      - id: seed-scoped
+        entry: python -m mypy
+        language: system
+        files: ^src/
+      - id: seed-bandit
+        entry: uv run bandit -s B101 -r src
+        language: system
+      - id: seed-pytest
+        entry: python -m pytest -k fast
+        language: system
+      - id: seed-args
+        entry: python -m ruff check
+        args: ["--select", "E501"]
+        language: system

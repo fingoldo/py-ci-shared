@@ -6,3 +6,8 @@ class Est(BaseEstimator):
 def refit(model, y_true, proba):
     n_estimators = model.best_iteration
     return n_estimators, proba.argmax(axis=1) == y_true
+
+
+def tune(model, y_test, proba, fit):
+    fit(num_rounds=model.get_best_iteration())
+    return y_test != proba.argmax(axis=1)

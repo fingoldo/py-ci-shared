@@ -4,3 +4,5 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: python -m pytest tests/seed_unit --cov-fail-under=0 --cov=seedpkg
+        env:
+          NUMBA_DISABLE_JIT: "1"

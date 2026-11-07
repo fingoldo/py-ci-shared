@@ -6,11 +6,14 @@
  "files": {
   "pkg/seed.py": {
    "executed_lines": [
-    1
+    1,
+    6,
+    7
    ],
    "missing_lines": [
     2,
-    3
+    3,
+    8
    ],
    "excluded_lines": []
   }

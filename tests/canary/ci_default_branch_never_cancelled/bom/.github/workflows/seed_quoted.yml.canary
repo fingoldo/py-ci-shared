@@ -1,0 +1,11 @@
+﻿name: seed-quoted
+on: push
+concurrency:
+  group: seed-quoted
+  cancel-in-progress: "true"
+jobs:
+  seed_quoted_job:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pytest
