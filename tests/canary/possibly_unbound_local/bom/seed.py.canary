@@ -1,0 +1,12 @@
+﻿def dispatch_if(verdict):
+    if verdict is None:
+        device_name = "gpu"
+    return device_name
+
+
+def dispatch_try(path):
+    try:
+        handle = open(path)
+    except OSError:
+        pass
+    return handle

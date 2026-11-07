@@ -1,0 +1,16 @@
+name: ci
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "SEED_SHARED_DIR=/opt/shared" >> "$GITHUB_ENV"
+      - run: ruff check .
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      SEED_SHARED_DIR: /opt/shared
+    steps:
+      - uses: actions/checkout@v4
+      - run: pytest tests

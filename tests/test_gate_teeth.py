@@ -550,6 +550,43 @@ CANARIES: dict[str, Canary] = {
         Canary("caller_frame_mutation", lambda d: _gate("caller_frame_mutation").assert_caller_frame_mutation(d, use_git=False, advisory=False)),
         Canary("cuda_kernel_pointer_types", lambda d: _gate("cuda_kernel_pointer_types").assert_cuda_kernel_pointer_types(d, use_git=False)),
         Canary("cuda_launch_geometry", lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False)),
+        Canary(
+            "possibly_unbound_local",
+            lambda d: _gate("possibly_unbound_local").assert_possibly_unbound_local(d, use_git=False),
+            tokens=("possibly-unbound-after-if", "possibly-unbound-after-try"),
+        ),
+        Canary(
+            "uv_lock_parity",
+            lambda d: _gate("uv_lock_parity").assert_uv_lock_parity(d, use_git=False),
+            token="uv.lock",
+            tokens=(
+                "uv-lock-missing-requirement",
+                "uv-lock-specifier-differs",
+                "uv-lock-stale-requirement",
+                "uv-lock-requires-python-differs",
+                "uv-lock-no-root-package",
+            ),
+        ),
+        Canary(
+            "nested_numba_parallel_guard",
+            lambda d: _gate("nested_numba_parallel_guard").assert_nested_numba_parallel_guard(d, use_git=False),
+            tokens=("nested-parallel-via-executor", "nested-parallel-via-thread", "nested-parallel-via-joblib"),
+        ),
+        Canary(
+            "nan_admitted_by_reject_guard",
+            lambda d: _gate("nan_admitted_by_reject_guard").assert_nan_admitted_by_reject_guard(d, use_git=False),
+            tokens=("nan-admitted-by-loop-reject", "nan-admitted-by-return-reject"),
+        ),
+        Canary(
+            "instance_clear_leaves_module_cache",
+            lambda d: _gate("instance_clear_leaves_module_cache").assert_instance_clear_leaves_module_cache(d, use_git=False),
+            tokens=("instance-clear-leaves-module-cache", "instance-release-leaves-module-cache"),
+        ),
+        Canary(
+            "tool_config_env_vars_set_in_every_tool_job",
+            lambda d: _gate("tool_config_env_vars_set_in_every_tool_job").assert_tool_config_env_vars_set_in_every_tool_job(d, use_git=False),
+            tokens=("tool-env-var-unset-in-job", "tool-env-var-unset-in-test-job"),
+        ),
     ]
 }
 
@@ -862,7 +899,7 @@ def _parse_error(path: Path, data: bytes) -> Optional[str]:
     try:
         if name.endswith(".py"):
             ast.parse(text)
-        elif name.endswith(".toml"):
+        elif name.endswith((".toml", "uv.lock")):
             from py_ci_shared._toml_compat import tomllib
 
             tomllib.loads(text)

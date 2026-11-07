@@ -1,0 +1,17 @@
+version = 1
+requires-python = ">=3.9"
+
+[[package]]
+name = "seed"
+version = "0"
+source = { editable = "." }
+
+[package.metadata]
+requires-dist = [
+    { name = "numpy" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7" },
+    { name = "requests", specifier = "<3,>=2.0" },
+]
+
+[package.metadata.requires-dev]
+dev = [{ name = "black" }]

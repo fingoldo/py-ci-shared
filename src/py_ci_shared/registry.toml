@@ -821,6 +821,13 @@ cli = true
 summary = "Point the generated git hook(s) at ``safe_precommit`` instead of raw ``pre_commit``, so plain ``git commit`` / ``git merge`` transparently survive"
 
 [[gate]]
+name = "instance_clear_leaves_module_cache"
+kind = "gate"
+entries = ["assert_instance_clear_leaves_module_cache"]
+since = "1.23.10"
+summary = "A clear/reset/release method touches only self state while sibling methods use a module-level cache container"
+
+[[gate]]
 name = "kwarg_forwarding"
 kind = "library"
 since = "1.17.0"
@@ -954,6 +961,20 @@ kind = "gate"
 entries = ["assert_no_naive_utcnow"]
 since = "1.4.1"
 summary = "No production module builds a timestamp with `datetime.utcnow()`"
+
+[[gate]]
+name = "nan_admitted_by_reject_guard"
+kind = "gate"
+entries = ["assert_nan_admitted_by_reject_guard"]
+since = "1.23.10"
+summary = "A reject guard written as an ordered comparison (if loss >= worst: continue) admits NaN, which fails every comparison"
+
+[[gate]]
+name = "nested_numba_parallel_guard"
+kind = "gate"
+entries = ["assert_nested_numba_parallel_guard"]
+since = "1.23.10"
+summary = "A parallel=True / prange numba kernel reachable from a thread pool runs under one process-wide guard"
 
 [[gate]]
 name = "nginx_location_headers"
@@ -1121,6 +1142,13 @@ kind = "gate"
 entries = ["assert_polars_null_equality"]
 since = "1.17.0"
 summary = "Advisory: polars comparisons whose null handling silently changes the answer"
+
+[[gate]]
+name = "possibly_unbound_local"
+kind = "gate"
+entries = ["assert_possibly_unbound_local"]
+since = "1.23.10"
+summary = "A local bound only on some paths (one if/try/match arm) and read after the construct raises UnboundLocalError on the other path"
 
 [[gate]]
 name = "predictable_tmp_path"
@@ -1526,6 +1554,13 @@ since = "1.4.1"
 summary = "Non-test code states its time frame in the expression, and the scan cannot miss a directory"
 
 [[gate]]
+name = "tool_config_env_vars_set_in_every_tool_job"
+kind = "gate"
+entries = ["assert_tool_config_env_vars_set_in_every_tool_job"]
+since = "1.23.10"
+summary = "A variable a tool config reads ($VAR in pyproject) is defined in every CI job that runs the tool"
+
+[[gate]]
 name = "tool_versions"
 kind = "library"
 since = "1.4.1"
@@ -1607,6 +1642,13 @@ kind = "gate"
 entries = ["assert_unseeded_rng_fallback"]
 since = "1.23.8"
 summary = "Flags a function that turns a missing seed into an OS-entropy generator (default_rng()/RandomState()/random.Random() with no seed)"
+
+[[gate]]
+name = "uv_lock_parity"
+kind = "gate"
+entries = ["assert_uv_lock_parity"]
+since = "1.23.10"
+summary = "uv.lock agrees with pyproject.toml: every declared requirement is locked with the same specifier, and no locked extra is undeclared"
 
 [[gate]]
 name = "vacuous_loop_assertions"

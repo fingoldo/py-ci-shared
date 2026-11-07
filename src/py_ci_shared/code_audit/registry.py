@@ -680,7 +680,7 @@ def run_all_checked(
     # Unknown severities rank -1, i.e. ABOVE P0: a stray value is loud, never silently last.
     out.sort(key=lambda f: (severity_rank(f.severity), f.check, f.file, f.line))
     if cacheable:
-        _scan_cache.store(digest, signature, out, failed)
+        _scan_cache.store(digest, signature, out, failed)  # unbound-ok: bound under the same `cacheable` condition at line 662
     return out, failed
 
 

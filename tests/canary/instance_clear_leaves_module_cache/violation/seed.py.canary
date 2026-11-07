@@ -1,0 +1,18 @@
+_DMATRIX_CACHE = {}
+
+
+class Shim:
+    def __init__(self):
+        self.ptr = None
+
+    def fit(self, key, build):
+        if key not in _DMATRIX_CACHE:
+            _DMATRIX_CACHE[key] = build()
+        self.ptr = _DMATRIX_CACHE[key]
+        return self
+
+    def clear_cache(self):
+        self.ptr = None
+
+    def release(self):
+        self.ptr = None

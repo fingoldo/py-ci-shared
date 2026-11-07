@@ -1,0 +1,16 @@
+import math
+
+
+def insert_top(candidates, worst):
+    kept = []
+    for loss in candidates:
+        if loss >= worst:
+            continue
+        kept.append(float(loss))
+    return kept
+
+
+def early_exit(score, cutoff):
+    if score < cutoff:
+        return None
+    return float(score) + math.inf
