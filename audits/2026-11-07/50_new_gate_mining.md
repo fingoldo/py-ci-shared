@@ -26,7 +26,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: Add the `possibly-undefined` error code to the shared mypy gate (non-test source), or implement an AST definite-assignment pass: per function, names bound only under if/try/for/while/with arms and read at function level after the construct, excluding loop targets, global/nonlocal and arms ending in raise/return/continue/break. Shrink-only baseline.
 - AST checkable: True
 - FP risk: medium for the pure AST version (loop variable after loop, try-import fallbacks, `while True` with break); low if delegated to mypy possibly-undefined (the one measured hit is a real try-import binding).
-- Disposition: RESOLVED 608474c: new gate possibly_unbound_local (AST definite-assignment pass, rules possibly-unbound-after-if/-try/-match; the mlframe 169f17000 Muon dispatcher shape is the failing-first test). Measured: pyutilz/src 22, glossum_backend_scripts 44, algopacksimple 25, mlframe/src 281, llm_bench/src 0; 0 on this repo after one marker. Not delegated to mypy possibly-undefined: no mypy run, no third-party stubs, baseline-able.
+- Disposition: RESOLVED 0784204: new gate possibly_unbound_local (AST definite-assignment pass, rules possibly-unbound-after-if/-try/-match; the mlframe 169f17000 Muon dispatcher shape is the failing-first test). Measured: pyutilz/src 22, glossum_backend_scripts 44, algopacksimple 25, mlframe/src 281, llm_bench/src 0; 0 on this repo after one marker. Not delegated to mypy possibly-undefined: no mypy run, no third-party stubs, baseline-able.
 
 ## 50-F2 [P2] nested_numba_parallel_guard: promote mlframe's test_no_unguarded_nested_parallel (a parallel=True/prange kernel reachable from a thread pool must pass one process-wide lock)
 
@@ -35,7 +35,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: New gate nested_parallel_guard: collect @njit/@jit/@vectorize functions with parallel=True or prange; build the module-level call graph (reuse _import_graph); flag any function submitting to ThreadPoolExecutor/threading.Thread that transitively reaches such a kernel without the configured guard context manager on the path. Shrink-only baseline, guard name configurable (default parallel_kernel_entry), marker `# parallel-guarded: reason`.
 - AST checkable: True
 - FP risk: medium: transitive reachability over-approximates through dynamic dispatch; the per-repo guard name and the marker bound it.
-- Disposition: RESOLVED 608474c: new gate nested_numba_parallel_guard (name-based call graph, 6 hops, dispatch tables, rules nested-parallel-via-executor/-thread/-joblib, configurable guard_name, marker # parallel-guarded:). Measured: mlframe/src 8, pyutilz/src 0, glossum_backend_scripts 0, algopacksimple 0, llm_bench/src 0.
+- Disposition: RESOLVED 0784204: new gate nested_numba_parallel_guard (name-based call graph, 6 hops, dispatch tables, rules nested-parallel-via-executor/-thread/-joblib, configurable guard_name, marker # parallel-guarded:). Measured: mlframe/src 8, pyutilz/src 0, glossum_backend_scripts 0, algopacksimple 0, llm_bench/src 0.
 
 ## 50-F3 [P2] uv_lock_parity: uv.lock must agree with pyproject.toml (requires-dist names and specifiers) without network
 
@@ -44,7 +44,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: New gate uv_lock_parity: tomllib-parse pyproject and uv.lock; fail on a declared requirement missing from or differing in requires-dist/requires-dev (normalised names, specifier equality), a locked extra no longer declared, a requires-python mismatch; optionally run `uv lock --check --offline` when uv is on PATH.
 - AST checkable: False
 - FP risk: low: pure TOML comparison; risk is uv.lock format changes (gate on `version`/`revision`).
-- Disposition: RESOLVED 608474c: new gate uv_lock_parity (offline TOML comparison of the root package's requires-dist/requires-dev and requires-python; 5 rules). Measured: mlframe 0, glossum_backend_scripts 0; pyutilz, llm_bench, algopacksimple have no uv.lock. The optional `uv lock --check --offline` subprocess was not added: it needs uv on PATH and the network-free mode is not reliable across uv versions; CI keeps running it.
+- Disposition: RESOLVED 0784204: new gate uv_lock_parity (offline TOML comparison of the root package's requires-dist/requires-dev and requires-python; 5 rules). Measured: mlframe 0, glossum_backend_scripts 0; pyutilz, llm_bench, algopacksimple have no uv.lock. The optional `uv lock --check --offline` subprocess was not added: it needs uv on PATH and the network-free mode is not reliable across uv versions; CI keeps running it.
 
 ## 50-F4 [P3] nan_admitted_by_reject_guard: `if loss >= worst: continue` used to keep a top-N admits NaN, because NaN fails the comparison
 
@@ -53,7 +53,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: AST: an if whose test is one ordered comparison of a float-valued local against a name like worst/cutoff/best/thresh and whose body is continue/return/break must be written as the negated accepting comparison or be preceded by an isnan/isfinite test on the same name.
 - AST checkable: True
 - FP risk: high on names alone (ints, counters); needs float evidence (np.nan nearby, float annotation, sibling isnan); keep advisory.
-- Disposition: RESOLVED 608474c: new gate nan_admitted_by_reject_guard (rules nan-admitted-by-loop-reject/-return-reject; float evidence in the function and an earlier isnan/isfinite on the name keep it quiet). Measured: mlframe/src 1 (of the 4 regex hits only one is in a function with float evidence), pyutilz/src 0, glossum_backend_scripts 0, algopacksimple 0, llm_bench/src 0.
+- Disposition: RESOLVED 0784204: new gate nan_admitted_by_reject_guard (rules nan-admitted-by-loop-reject/-return-reject; float evidence in the function and an earlier isnan/isfinite on the name keep it quiet). Measured: mlframe/src 1 (of the 4 regex hits only one is in a function with float evidence), pyutilz/src 0, glossum_backend_scripts 0, algopacksimple 0, llm_bench/src 0.
 
 ## 50-F5 [P3] instance_clear_leaves_module_cache: a clear/reset/release method touches only self state while sibling methods use a module-level cache container
 
@@ -62,7 +62,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: AST: per class, module-level mutable containers (dict/list/set/OrderedDict/deque) referenced by non-clear methods; a method named clear*/reset*/release*/free*/invalidate* that references self but none of those containers is flagged; marker `# cache-scope-ok: reason`.
 - AST checkable: True
 - FP risk: medium: warn-once sets and registries are intentionally process-wide; the one measured hit is of that kind.
-- Disposition: RESOLVED 608474c: new gate instance_clear_leaves_module_cache (rules instance-clear-/instance-release-leaves-module-cache; only cache-named module containers count, so the pyutilz warn-once set is not matched). Measured: 0 in pyutilz, mlframe, glossum_backend_scripts, algopacksimple, llm_bench.
+- Disposition: RESOLVED 0784204: new gate instance_clear_leaves_module_cache (rules instance-clear-/instance-release-leaves-module-cache; only cache-named module containers count, so the pyutilz warn-once set is not matched). Measured: 0 in pyutilz, mlframe, glossum_backend_scripts, algopacksimple, llm_bench.
 
 ## 50-F6 [P3] tool_config_env_vars_set_in_every_tool_job: a variable a tool config reads ($VAR in [tool.ruff] extend) must be defined in every CI job that runs the tool
 
@@ -71,7 +71,7 @@ Caveat: hit counts come from quick scans (scratchpad scripts and mypy runs); the
 - Proposed fix / AST sketch: Parse pyproject tool tables for ${VAR}/$VAR references, then require every workflow job with a step invoking the tool (or pytest over a tree with a test that runs it) to define VAR in env or write it to GITHUB_ENV earlier in the job.
 - AST checkable: False
 - FP risk: low for the direct form; the indirect pytest form needs an allowlist.
-- Disposition: RESOLVED 608474c: new gate tool_config_env_vars_set_in_every_tool_job (direct form tool-env-var-unset-in-job and the indirect pytest-over-a-shelling-out-test form tool-env-var-unset-in-test-job, with the pytest path arguments narrowing the tree). Measured: glossum_backend_scripts 2 (ci.yml test, nightly-thorough.yml property-tests), pyutilz 2, algopacksimple 0, llm_bench 0; mlframe was not measured to completion (its tests tree is very large; the run was still going when this was written).
+- Disposition: RESOLVED 0784204: new gate tool_config_env_vars_set_in_every_tool_job (direct form tool-env-var-unset-in-job and the indirect pytest-over-a-shelling-out-test form tool-env-var-unset-in-test-job, with the pytest path arguments narrowing the tree). Measured: glossum_backend_scripts 2 (ci.yml test, nightly-thorough.yml property-tests), pyutilz 2, algopacksimple 0, llm_bench 0; mlframe was not measured to completion (its tests tree is very large; the run was still going when this was written).
 
 ## 50-F7 [P3] Runtime harness: launch-time kernel argument dtype audit promoted from mlframe, for templated kernels the static cuda_kernel_pointer_types gate cannot see
 
