@@ -28,11 +28,12 @@ Usage::
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+
+from ._core.baseline import replace_file
 
 _TARGET = "-mpre_commit"
 _REPLACEMENT = "-m py_ci_shared.safe_precommit"
@@ -89,7 +90,7 @@ def _patch_one(hook_path: Path) -> int:
     staged = hook_path.with_name(hook_path.name + ".py-ci-shared.tmp")
     staged.write_bytes(data.replace(_TARGET.encode("utf-8"), _REPLACEMENT.encode("utf-8")))
     shutil.copymode(hook_path, staged)
-    os.replace(staged, hook_path)  # git runs this file on every commit: it is never left half-written
+    replace_file(staged, hook_path)  # git runs this file on every commit: it is never left half-written
     print(f"Patched {hook_path}: `python {_TARGET}` -> `python {_REPLACEMENT}`.")
     return 0
 

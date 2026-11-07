@@ -132,3 +132,13 @@ def test_self_ci_runs_a_python_314_leg() -> None:
     legs = [leg for leg in matrix["include"] if leg["python"] == "3.14"]
     assert legs, "no Python 3.14 leg in the self-ci matrix"
     assert all(leg.get("preview") is True for leg in legs)
+
+
+def test_no_stale_python_38_floor_claims_in_the_fallbacks() -> None:
+    """requires-python is >=3.9 (audit 45-F7): the comments claiming a 3.8 floor above removed fallbacks stay gone."""
+    stale = {
+        "meta_test_utils.py": "this package supports 3.8",
+        "code_audit/default_via_or.py": "supported 3.8 floor",
+    }
+    for rel, phrase in stale.items():
+        assert phrase not in (_SRC / rel).read_text(encoding="utf-8"), f"{rel} still says {phrase!r}"

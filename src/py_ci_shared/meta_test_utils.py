@@ -730,9 +730,7 @@ def _names_a_repo_symbol(citation: str, repo_root: Path) -> bool:
     text = citation.strip()
     if not _QUALIFIED_NAME_RE.fullmatch(text):
         return False
-    # Not str.removesuffix: that is Python 3.9+ (PEP 616) and this package supports 3.8, where the
-    # call raises AttributeError on the first bare qualified-name citation.
-    name = text[:-2] if text.endswith("()") else text
+    name = text.removesuffix("()")
     symbols = _repo_symbols(repo_root)
     return name in symbols or name.rsplit(".", 1)[-1] in symbols
 

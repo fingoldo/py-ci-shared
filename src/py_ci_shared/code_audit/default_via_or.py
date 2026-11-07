@@ -203,9 +203,7 @@ def _site(lhs: ast.AST, rhs: ast.AST, symbol: str = "") -> str:
         # Deliberately NOT wrapped in a try/except returning a placeholder. A swallowed failure here would
         # hand back the same stand-in for every site it could not render, which is precisely the collapsed
         # key this function exists to prevent - the check would go quiet in exactly the case it is for.
-        # `ast.unparse` is stdlib from 3.9 and handles every expression node a BoolOp operand can be;
-        # on the supported 3.8 floor `ast.dump` is the fallback -- more verbose, but still distinct per
-        # site, which is the only property this key needs.
+        # `unparse_stable` handles every expression node a BoolOp operand can be and renders the same text on every interpreter.
         text = " ".join(unparse_stable(node).split())
         return text if len(text) <= limit else text[: limit - 3] + "..."
 
@@ -215,10 +213,7 @@ def _site(lhs: ast.AST, rhs: ast.AST, symbol: str = "") -> str:
 
 def _expr_repr(node: ast.AST) -> "str | None":
     """A version-stable textual key for one expression, used to decide whether two operands are the
-    SAME expression. ``ast.unparse`` is stdlib only from 3.9; on the supported 3.8 floor ``ast.dump``
-    is the fallback. Both sides of every comparison are rendered by the same renderer within one
-    interpreter, so the pair is always comparable -- what matters is that a 3.8 run reaches the same
-    verdict as a 3.9+ one, NOT that the two renderers agree on the text. Returning ``None`` on an
+    SAME expression, rendered by ``unparse_stable`` so every interpreter reaches the same verdict. Returning ``None`` on an
     unrenderable node (the caller then declines to claim equality) keeps that failure explicit
     instead of silently reading as "different".
     """

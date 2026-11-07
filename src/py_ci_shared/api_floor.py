@@ -44,7 +44,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, CorpusError, Finding, ParsedFile, nodes_of, read_source, scan_python
+from ._core import Baseline, CorpusError, Finding, ParsedFile, nodes_of, read_source, replace_file, scan_python
 from ._core import walk as shared_walk
 from ._toml_compat import tomllib
 
@@ -209,7 +209,7 @@ def _store_result(key: str, lines: list[str]) -> None:
         staged = target.with_suffix(".tmp")
         with open(staged, "w", encoding="utf-8") as handle:
             json.dump(tails, handle)
-        os.replace(staged, target)
+        replace_file(staged, target)
     except OSError as exc:
         logger.warning("vermin result cache not written (%s); the next run analyses these files again", exc)
 

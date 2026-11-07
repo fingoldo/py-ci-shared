@@ -33,7 +33,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sys
 import tempfile
+import time
 from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -57,6 +59,26 @@ def is_unjustified(note: object) -> bool:
     return isinstance(note, str) and note.lstrip().startswith(UNJUSTIFIED_MARKER)
 
 
+_REPLACE_ATTEMPTS = 3
+
+
+def replace_file(source: PathLike, target: PathLike) -> None:
+    """``os.replace`` that retries a Windows ``PermissionError`` (an editor, indexer or scanner holding the target open).
+
+    Three tries with 0.05 s / 0.1 s backoff; elsewhere, and on the last try, the error is raised as before.
+    """
+    attempt = 0
+    while True:
+        try:
+            os.replace(source, target)
+            return
+        except PermissionError:
+            attempt += 1
+            if sys.platform != "win32" or attempt >= _REPLACE_ATTEMPTS:
+                raise
+        time.sleep(0.05 * attempt)
+
+
 def atomic_write_text(path: PathLike, text: str) -> None:
     """Write *text* to *path* atomically: temp file in the same directory, fsync, ``os.replace``. UTF-8, ``\\n``."""
     target = Path(path)
@@ -68,7 +90,7 @@ def atomic_write_text(path: PathLike, text: str) -> None:
             handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp, target)
+        replace_file(tmp, target)
     except BaseException:
         try:
             os.unlink(tmp)

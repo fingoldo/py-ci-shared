@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 from collections.abc import Iterable
 
+from .._core.baseline import replace_file
 from ._base import Finding
 
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ def store(digest: str, signature: tuple, findings: list[Finding], failed: dict[s
         tmp = target.with_suffix(".tmp")
         with open(tmp, "w", encoding="utf-8") as handle:
             json.dump(document, handle)
-        os.replace(tmp, target)
+        replace_file(tmp, target)
     except OSError as exc:
         logger.warning("code-audit scan cache not written (%s); the next run scans again", exc)
 
