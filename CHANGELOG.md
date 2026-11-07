@@ -4,6 +4,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.10)
 
+- `local_copy_report`: the content signature of `nondiscriminating_shapes` now names the shapes that gate checks (wide literal range, envelope assert, median round-trip, late skip, non-empty-only) instead of a helper called `_*tautolog*`, which matched glossum's tautology scanner (a different rule) and kept `adoption_matrix` red (fewer findings).
 - `adoption_matrix` no longer reports a dunder attribute of the package (`py_ci_shared.__file__`, `__version__`) as an `unknown-module` (fewer findings; pyutilz's pin-coverage test reads `py_ci_shared.__file__`).
 
 ### Strict private consumers, public names, registry summaries (audits 46-F8, 47-F5, 43-F6, 43-F8)

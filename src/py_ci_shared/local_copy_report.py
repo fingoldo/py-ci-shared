@@ -88,7 +88,7 @@ CONTENT_SIGNATURES: dict[str, tuple[str, ...]] = {
     "module_reload_safety": (r"ast\.walk\(", r"[\"']reload[\"']"),
     "source_text_claims": (r"ast\.walk\(", r"[\"']getsource[\"']"),
     "import_cycles": (r"strongly[_ ]connected|\bstrongconnect\b|\btarjan\b|partially[ -]initiali[sz]ed", r"ast\.(ImportFrom|Import)\b"),
-    "nondiscriminating_shapes": (r"ast\.walk\(", r"def _\w*tautolog\w*\("),
+    "nondiscriminating_shapes": (r"ast\.walk\(", r"wide[-_ ]literal[-_ ]range|envelope[-_ ]assert|median[-_ ]roundtrip|late[-_ ]skip|nonempty[-_ ]only"),
     "code_audit_meta:mutable_defaults": (r"ast\.(List|Dict|Set)\b", r"mutable[_ ]default"),
     "code_audit_meta:console_unicode": (r"ast\.walk\(", r"[\"']print[\"']", r"UnicodeEncodeError|non-ASCII|ord\(\w+\)\s*>\s*127"),
 }

@@ -175,3 +175,17 @@ class TestConftest:
     def test_a_nested_conftest_outside_meta_dirs_is_judged_too(self, tmp_path):
         root = _repo(tmp_path, {"tests/unit/deep/conftest.py": _STREAM_GUARD, "tests/test_meta/test_ok.py": "x = 1\n"})
         assert _found(root) == [("tests/unit/deep/conftest.py", "resource_leak_checks:streams")]
+
+
+class TestNondiscriminatingShapesSignature:
+    """The signature names the shapes the central gate checks, not tautologies (a tautology scanner is a different rule: ``assert x == x``)."""
+
+    def test_a_tautology_scanner_is_not_a_copy_of_the_shape_gate(self, tmp_path):
+        body = "import ast\n\ndef _is_tautological_assert(n):\n    return False\n\ndef test_t():\n    for n in ast.walk(ast.parse('')):\n        assert not _is_tautological_assert(n)\n"
+        root = _repo(tmp_path, {"tests/test_meta/test_no_tautological_tests.py": body})
+        assert _found(root) == []
+
+    def test_a_scanner_of_the_central_shapes_is_a_copy(self, tmp_path):
+        body = "import ast\n\ndef test_t():\n    for n in ast.walk(ast.parse('')):\n        assert 'envelope-assert' not in str(n)\n"
+        root = _repo(tmp_path, {"tests/test_meta/test_assert_quality_scan.py": body})
+        assert _found(root) == [("tests/test_meta/test_assert_quality_scan.py", "nondiscriminating_shapes")]
