@@ -1059,11 +1059,11 @@ class TestSkippingTheSyntaxCheckIsSafe:
         """The concrete shape that motivated keeping `operator:` in the checked set: `*` in a
         parameter list is structure, not arithmetic, and swapping it produces `def f(/args)`."""
         src = tmp_path / "m.py"
-        open(src, "w", encoding="utf-8", newline="").write("def f(*args):\n    return args\n")
+        open(src, "w", encoding="utf-8", newline="").write("def f(a, *args):\n    return a * len(args)\n")
 
         mutants = mutation_teeth.generate_mutants(src)[0]
 
-        assert mutants, "`def f(*args): return args` must yield mutants, or the parse check below is vacuous"
+        assert mutants, "a function with a `*` parameter and a `*` operator must yield mutants, or the parse check below is vacuous"
         for mutant in mutants:
             ast.parse(mutant.mutated_file_text)
 
