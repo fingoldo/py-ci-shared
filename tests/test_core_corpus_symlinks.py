@@ -35,3 +35,14 @@ def test_regular_files_are_still_found(tmp_path):
     (tmp_path / "b.py").write_text("B = 1\n", encoding="utf-8")
 
     assert [p.name for p in iter_files(tmp_path, ["*.py"], use_git=False)] == ["a.py", "b.py"]
+
+
+def test_listing_is_sorted_by_posix_relative_path_and_skips_directories_and_missing_files(tmp_path):
+    (tmp_path / "z.py").write_text("Z = 1\n", encoding="utf-8")
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "pkg" / "m.py").write_text("M = 1\n", encoding="utf-8")
+    (tmp_path / "dir.py").mkdir()
+
+    found = [p.relative_to(tmp_path).as_posix() for p in iter_files(tmp_path, ["*.py"], use_git=False)]
+
+    assert found == ["pkg/m.py", "z.py"]

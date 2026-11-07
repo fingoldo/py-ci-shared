@@ -25,6 +25,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import stat
 import subprocess
 import threading
 from collections.abc import Iterable, Iterator, Sequence
@@ -198,6 +199,14 @@ class _TrackedNames:
         return rel in self._tracked
 
 
+def _is_regular_file(path: Path) -> bool:
+    """A regular file that is not a symlink: one ``lstat`` instead of ``is_file`` plus ``is_symlink`` (two stats per listed file)."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError:  # best-effort: a path that vanished or cannot be read is not part of the corpus, as is_file() treated it
+        return False
+
+
 def iter_files(
     root: PathLike,
     patterns: Sequence[str] = ("*.py",),
@@ -227,7 +236,7 @@ def iter_files(
             raise CorpusError(f"use_git=True but {base} is not a usable git work tree")
     if rels is None:
         rels = _walk(base, skip)
-    out: list[Path] = []
+    out: list[tuple[str, Path]] = []
     tracked = _TrackedNames(base, rels is not None and use_git is not False)
     for rel in rels:
         parts = rel.split("/")
@@ -239,9 +248,10 @@ def iter_files(
         p = base.joinpath(*parts)
         # A tracked file deleted from the work tree is not part of the corpus. A symlink is not either: git lists it, is_file() follows it,
         # and a link to a file outside the checkout would put that file's text into a gate's findings and make the run machine-dependent.
-        if p.is_file() and not p.is_symlink():
-            out.append(p)
-    return sorted(out, key=lambda p: p.relative_to(base).as_posix())
+        if _is_regular_file(p):
+            out.append(("/".join(parts), p))
+    # sorted on the listing's own POSIX spelling: ``Path.relative_to`` per file was 62 percent of a warm scan (audit 48-F5)
+    return [p for _, p in sorted(out, key=lambda item: item[0])]
 
 
 def relative_posix(path: PathLike, root: Optional[PathLike]) -> str:
