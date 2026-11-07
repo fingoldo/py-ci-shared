@@ -8,7 +8,7 @@
     "proposed_fix": "In main() validate --sha with re.fullmatch('[0-9a-f]{40}') and exit 2 with 'pass the full 40-character SHA' otherwise, or resolve it through GET repos/R/commits/SHA first. Distinguish 'no runs for a valid SHA' (red, never ran) from 'bad SHA'. Add a test with a 7-character SHA.",
     "ast_checkable": "yes (argparse type check in release_guard.py)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: --sha must be 40 lowercase hex (exit 2 with the reason); the test with a 7-character SHA failed before the fix and passes after."
   },
   {
     "id": "46-F2",
@@ -19,7 +19,7 @@
     "proposed_fix": "Group push runs per commit: group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }} (cancel-in-progress stays false for push), so no push run is ever replaced. Add workflow_dispatch to self-ci so a SHA with only a cancelled run can get a fresh one, and have ci-green's cancelled-only message say so.",
     "ast_checkable": "yes (yaml: self-ci concurrency group contains github.sha for push)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: self-ci push runs grouped per commit (github.sha), workflow_dispatch added, ci-green names the recovery command when only cancelled runs exist; tested in test_release_version.py."
   },
   {
     "id": "46-F3",
@@ -30,7 +30,7 @@
     "proposed_fix": "Add a final job preview-report (needs: test, if: always()) that lists failed preview legs of this run via the jobs API (actions: read), writes them to GITHUB_STEP_SUMMARY and emits ::warning::/::error::, and make ci-green print failed jobs of a green run as warnings. Record a promotion rule (preview leg green for N consecutive master runs becomes blocking).",
     "ast_checkable": "partly (yaml: every continue-on-error matrix leg has a reporter job)",
     "fp_risk": "medium",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: preview-report job (needs test, if always) lists failed legs in the step summary and as warnings; ci-green prints failed jobs of a green run; a test requires a reporter for the continue-on-error matrix. DEFERRED: the promotion rule (10 consecutive green master runs) is written in the workflow comment but not automated."
   },
   {
     "id": "46-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Put a timeout-minutes on the snapshot step and log the slowest finders; treat N consecutive cancelled scheduled runs as red in ci_health; add fingoldo/py-ci-shared to consumers.toml (or a self-watch step) so its own scheduled workflows are checked; in ci_health a schedule workflow with no success in its last K runs is red regardless of cancellations.",
     "ast_checkable": "partly (ci_health unit; consumers.toml lists its own repo)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: ci_health treats 3 consecutive cancelled scheduled runs as red; configs/self_watch.toml plus a self-watch step in ci-health.yml watches this repo; the corpus-drift snapshot step has timeout-minutes 75. DEFERRED: logging the slowest finders in corpus_drift, waits on a profile of the 90-minute snapshot."
   },
   {
     "id": "46-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "Raise --wait to cover the observed worst case (e.g. 7200) and verify timeout-minutes accordingly, or exit with a distinct message/code for 'pending, re-run later'. Reduce the fan-out (run the 11 integration jobs on push to master only, or merge them into fewer jobs) to cut demand on the single runner label.",
     "ast_checkable": "yes (yaml: --wait value versus documented queue bound)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: release verify waits 6000 s with a 120-minute job timeout (tested). DEFERRED: reducing the 11 integration job fan-out and a distinct pending exit code."
   },
   {
     "id": "46-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Tag within minutes of the bump (bump and tag as one operation, prepare --write then tag), or default py-ci-shared-ref to something that always resolves. Minimum: ci_pin_version_skew / consumer-pins warn on a pin whose workflow default names a tag absent from known_releases.",
     "ast_checkable": "yes (default ref is among git tags, offline)",
     "fp_risk": "medium",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: same fix as 43-F3 (defaults stay at the last published tag until prepare; only the prepared commit names the unpublished tag, a window CLAUDE.md tells the maintainer to close within minutes)."
   },
   {
     "id": "46-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Parametrize the test over release_guard.PREP_FILES[4:] and add `release_guard.py prepare $VERSION --check` to release.yml verify (the tagged commit must be a fixed point of prepare). Fix 'three' in CLAUDE.md and the guard docstring.",
     "ast_checkable": "yes",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: test parametrised over all four workflows, prepare --check added to the release.yml verify job, three fixed to four in CLAUDE.md and the guard docstring."
   },
   {
     "id": "46-F8",
@@ -85,7 +85,7 @@
     "proposed_fix": "Create the fine-grained token (actions:read, contents:read, metadata:read on the private repos) and store it. Make ci-health write a red row (not a warning) when a private repo is skipped for want of a token, and pass --fail-on-skipped-private in corpus-drift.",
     "ast_checkable": "partly",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: the fine-grained CONSUMER_READ_TOKEN is an owner action (repository secret); the red row for skipped private repos in ci-health and --fail-on-skipped-private in corpus-drift wait on the token existing, otherwise both jobs go red daily."
   },
   {
     "id": "46-F9",
@@ -96,7 +96,7 @@
     "proposed_fix": "Move RELEASE_TOKEN into the release environment's secrets and delete the repository-level copy; add a test that release.yml is the only workflow naming secrets.RELEASE_TOKEN.",
     "ast_checkable": "yes (only release.yml references RELEASE_TOKEN)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "PARTLY RESOLVED 9e32bc2: test that release.yml is the only workflow naming secrets.RELEASE_TOKEN. DEFERRED: moving the secret into the release environment is an owner repository setting."
   },
   {
     "id": "46-F10",
@@ -107,7 +107,7 @@
     "proposed_fix": "In consumer-pins (online, --resolve-in) add a rule: a pin comment vX.Y.Z must resolve (git rev-parse vX.Y.Z^{commit}) to the pinned SHA; otherwise the comment must use the accepted 'master <sha7>' form. Expose it as ci-pin-comment-not-release.",
     "ast_checkable": "yes (adoption_matrix with a tag resolver)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "DEFERRED: needs Pin to carry the trailing vX.Y.Z comment through the pin readers in adoption_matrix plus a tag resolver rule (ci-pin-comment-not-release); waits on that refactor. Same work as 47-F2."
   },
   {
     "id": "46-F11",
@@ -118,7 +118,7 @@
     "proposed_fix": "Request &event=push&branch=master (the docstring already says 'tag a commit that was pushed to master') and report which events were seen when none match.",
     "ast_checkable": "yes",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: ci-green queries branch=master (the event filter is left open so a workflow_dispatch run on master counts)."
   },
   {
     "id": "46-F12",
@@ -129,7 +129,7 @@
     "proposed_fix": "Require `gh release view TAG` (or a successful Release run for the tag) and warn when the target is more than N releases behind; list the newest published releases in the error message.",
     "ast_checkable": "yes",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: rollback --repo requires a GitHub release for the target and lists the newest published ones (release.yml passes the repo). The age warning was not added."
   },
   {
     "id": "46-F13",
@@ -140,7 +140,7 @@
     "proposed_fix": "Pass the command through env (INSTALL_COMMAND) and run `bash -c \"$INSTALL_COMMAND\"` as gates.yml:88-92 already does (bash -c keeps multi-line semantics); the suppressions can then go.",
     "ast_checkable": "yes (grep run: lines containing inputs.)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "RESOLVED 9e32bc2: docs.yml, mypy-full.yml and lint-blocking.yml pass the commands through env and run bash -eo pipefail -c; suppressions removed; tests/test_workflow_install_commands.py."
   },
   {
     "id": "46-F14",
@@ -151,6 +151,6 @@
     "proposed_fix": "Enable 'require actions to be pinned to a full SHA' and a ruleset requiring the self-ci aggregate (not the preview legs) on master, with the owner as bypass actor so the one-person workflow stays unblocked.",
     "ast_checkable": "no (repository settings)",
     "fp_risk": "low",
-    "disposition": "OPEN"
+    "disposition": "WON'T FIX in code: repository settings (ruleset, SHA pinning enforcement) are an owner action; waits on the owner."
   }
 ]

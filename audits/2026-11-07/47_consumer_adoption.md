@@ -7,33 +7,33 @@ Read-only. Excluded (audit 43): CHANGELOG headings 1.23.3-1.23.8, since-field mi
 - Evidence: pins: flutter_app_core/.github/workflows/ci.yml:34 @c269c9a (v1.22.8); polyvocab_app/.github/workflows/ci.yml:324 @c7988d7 (v1.22.10); noema_app/tool/requirements.txt:3 @531a0e5 (v1.22.12); flutter_uptime_monitor/pyproject.toml:17 and claude-usage-notifier/pyproject.toml:16 @905de1a (git describe --contains: v1.23.5^0). `git tag | sort -V` lists 22.8,22.9,22.10,22.12,22.13,23.0,23.2..23.8: 12/10/9/3/3 releases behind v1.23.8. autopsia_master/pyproject.toml:122 @0f2ac5c is v1.23.3~9 (6 behind). consumer-pins.yml:65 runs `--allow-behind 2` and adoption_matrix.py:643 emits stale-pin for n>2. Full local matrix run timed out (100s, rc=124), so counts are computed from tags by hand.
 - Failure scenario: consumer-pins.yml is red for 6 of 13 consumers; a standing red job stops being read, so a real moving-pin or unresolvable-pin finding hides in it. Consumers on v1.22.x also lack every fix since 10-15.
 - Proposed fix: Bump the six pins (separate work in the consumer repos), or record per consumer an explicit `pin_floor`/waiver in consumers.toml with a date so the job distinguishes accepted lag from neglect.
-- ast_checkable: False; fp_risk: low; disposition: OPEN
+- ast_checkable: False; fp_risk: low; Disposition: PARTLY RESOLVED 9e32bc2: adoption_matrix --waivers with configs/pin_waivers.toml (dated, per consumer, oldest tag allowed; an expired waiver fails again), wired into consumer-pins.yml; tests in test_adoption_waivers.py. DEFERRED consumer pin bumps: flutter_app_core (waits on its CI work), polyvocab_app (CI work), noema_app (fixture re-record after the schema bump), flutter_uptime_monitor and claude-usage-notifier (bump to a current release), autopsia (bump); waivers run to 2026-12-07.
 
 ## 47-F2 [P2] Pin comments say `# v1.23.8` on SHAs that are not the v1.23.8 commit; four different SHAs carry that label
 
 - Evidence: v1.23.8 tag commit is 630d5b7 (`git rev-parse v1.23.8^{commit}`). Pins labelled v1.23.8: e13229e (dash_app_core/pyproject.toml:71, llm_bench/pyproject.toml:64 and ci.yml:121, algopacksimple/pyproject.toml:7 and workflows) = v1.23.8~56; adba0d7 (mlframe/requirements-dev.txt:65) = v1.23.8~8; 64e63f5 (pyutilz/requirements-dev.txt:15) = v1.23.8~23 (`git describe --tags --contains`). glossum_backend_scripts/pyproject.toml:212 @92d20e7 is ~14 before and labelled with a commit subject instead. social/requirements-dev.txt:1 says '(master, not tagged yet)'.
 - Failure scenario: A reader or a bump script trusting the comment believes the repo carries 1.23.8 fixes (e.g. the 1.23.9 line items) when it runs 8-56 commits older code; adoption_matrix compares the SHA (label() at adoption_matrix.py:115 is the ref, not the comment), so the matrix is right and the comments are not.
 - Proposed fix: Add a check in adoption_matrix: when a `# vX.Y.Z` comment follows a pin, resolve the tag and report `pin-comment-mismatch` if it differs from the pinned commit. Correct the 8 comments.
-- ast_checkable: True; fp_risk: low; disposition: OPEN
+- ast_checkable: True; fp_risk: low; Disposition: DEFERRED: same work as 46-F10 (pin comment vs tag commit in adoption_matrix); the 8 wrong comments live in consumer repos (dash_app_core, llm_bench, algopacksimple, mlframe, pyutilz, glossum_backend_scripts, social).
 
 ## 47-F3 [P2] 43 of 67 'Behaviour change' mentions carry no instruction to the consumer, and no test enforces the rule
 
 - Evidence: CLAUDE.md:59-61 requires such an entry to say 'with what to do'. `grep -c 'Behaviour change' CHANGELOG.md` = 67; a heuristic scan for action words (re-baseline/refresh/remove/rename/set/pass/run/update/must...) finds none in 43, e.g. CHANGELOG.md:62-64 (ddl_lock_safety, lock_held_across_io, check_then_act_outside_lock), :101-102, :46-51. `grep 'Behaviour change' tests/*.py src/py_ci_shared/*.py` finds no enforcing check (changelog_promise_parity does not look at it).
 - Failure scenario: A 'fewer findings' change leaves stale baseline entries, which fail by default (_core/baseline.py:233-239 `fail_on_stale=True`), so the consumer goes red after bumping and the entry never says 'refresh the baseline'. A 'more findings' change (line 64) needs a fix or a new baseline entry; also unsaid.
 - Proposed fix: Require each Behaviour change entry to end with an `Action:` clause (refresh baseline / none / edit X) and enforce it with a registry/CHANGELOG parity test; backfill the 43 entries.
-- ast_checkable: True; fp_risk: medium; disposition: OPEN
+- ast_checkable: True; fp_risk: medium; Disposition: RESOLVED 9e32bc2: same fix as 43-F2 (test plus backfill); the clause is spelled What to do:.
 
 ## 47-F4 [P2] `more findings` behaviour changes ship in the patch/minor line the @v1 promise limits to additive and stricter-defect changes, with no consumer impact count
 
 - Evidence: CHANGELOG.md:64 `Behaviour change (more findings): check_then_act_outside_lock ...` and 'Gate false positives' sections add such rows; CLAUDE.md:59-61 promises only additive changes or defect fixes that make a gate stricter on @v1. No entry records how many findings it adds in each consumer (the 11-05 entries cite glossum file:line only).
 - Failure scenario: A consumer on a SHA that bumps gets new red findings with no advance knowledge; consumers still on the floating major get them at release time.
 - Proposed fix: For every 'more findings' entry, require the per-consumer hit count from corpus-drift (mlframe, pyutilz, llm_bench) in the entry; fail release if the count is missing.
-- ast_checkable: False; fp_risk: medium; disposition: OPEN
+- ast_checkable: False; fp_risk: medium; Disposition: WON'T FIX: requiring per-consumer hit counts from corpus-drift in every more-findings entry cannot be checked offline, and corpus-drift has been dead (46-F4); revisit once corpus-drift is green again.
 
 ## 47-F5 [P3] consumers.toml marks only 3 of 13 consumers as corpus; adoption of the newest gates is unmeasured for the rest
 
 - Evidence: configs/consumers.toml: `corpus = true` on mlframe, pyutilz, llm_bench only. Repos in the workspace that reference py-ci-shared: algopacksimple, claude-usage-notifier, dash_app_core, flutter_*, glossum_backend_scripts, polyvocab_app, social (grep of pyproject/requirements/workflows). A duplicate checkout `claude_notifier` shares claude-usage-notifier's origin (`git remote -v`) and uses a sibling-path ruff extend (pyproject.toml:18).
 - Failure scenario: Breakage by a release in glossum or social (the repos with the most gates) is first seen on their next CI, not in corpus-drift.
 - Proposed fix: Weigh adding glossum_backend_scripts to corpus (cost is every scanning gate over it) or document why not in consumers.toml.
-- ast_checkable: False; fp_risk: low; disposition: OPEN
+- ast_checkable: False; fp_risk: low; Disposition: DEFERRED: adding glossum_backend_scripts to the corpus (or documenting why not) is an owner decision about nightly cost; waits on the owner and a green corpus-drift.
 
