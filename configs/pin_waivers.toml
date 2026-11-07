@@ -2,38 +2,4 @@
 # (inclusive); after that day it fails as a stale-pin again. Each row is work in the consumer repo, not here: renew only with a reason, bump the pin otherwise.
 # The tolerance for everyone else stays `--allow-behind 2`.
 
-[[waiver]]
-name = "flutter_app_core"
-oldest = "v1.22.8"
-until = "2026-12-07"
-reason = "pin bump waits on the consumer repo's own CI work"
-
-[[waiver]]
-name = "polyvocab_app"
-oldest = "v1.22.10"
-until = "2026-12-07"
-reason = "pin bump waits on the consumer repo's own CI work"
-
-[[waiver]]
-name = "noema_app"
-oldest = "v1.22.12"
-until = "2026-12-07"
-reason = "pin bump waits on re-recording the Noema fixture after a backend schema bump"
-
-[[waiver]]
-name = "flutter_uptime_monitor"
-oldest = "v1.23.5"
-until = "2026-12-07"
-reason = "pin bump waits on the consumer repo"
-
-[[waiver]]
-name = "claude-usage-notifier"
-oldest = "v1.23.5"
-until = "2026-12-07"
-reason = "pin bump waits on the consumer repo"
-
-[[waiver]]
-name = "autopsia"
-oldest = "v1.23.3"
-until = "2026-12-07"
-reason = "pin bump waits on the consumer repo"
+# No consumer needs a waiver today: every pin is within the tolerance. Add a [[waiver]] row (name, oldest, until, reason) only for work in the consumer repo.

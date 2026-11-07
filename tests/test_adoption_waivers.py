@@ -58,5 +58,6 @@ def test_a_malformed_waiver_is_refused(tmp_path: Path, body: str):
 def test_the_committed_waivers_load_and_consumer_pins_passes_them():
     waivers = load_waivers(REPO / "configs" / "pin_waivers.toml")
     consumers = (REPO / "configs" / "consumers.toml").read_text(encoding="utf-8")
-    assert waivers and all(f'name = "{n}"' in consumers for n in waivers), "a waiver names a consumer that is not in consumers.toml"
+    # An empty file is the goal state (every consumer within the tolerance); the file must still load and the workflow must still pass it.
+    assert all(f'name = "{n}"' in consumers for n in waivers), "a waiver names a consumer that is not in consumers.toml"
     assert "--waivers configs/pin_waivers.toml" in (REPO / ".github" / "workflows" / "consumer-pins.yml").read_text(encoding="utf-8")
