@@ -41,17 +41,17 @@ Serial sum 202 s, 1,612 tests; the hook comment says about 4 minutes and 1,075 t
   Three back-to-back single-gate runs took 78.4, 63.8, 64.1 s for a gate that takes 3.6 s.
   Disposition: RESOLVED in the commit carrying this change (SHA in the hand-off report; a commit cannot name itself): _SKIP_DIRS gains '.claude'. Measured on the main checkout (28,948 of 31,155 stat entries under .claude): tree_digest 44.97 s before, 2.53 s after (2,207 entries, 0 under .claude), loaded machine, same session. Test test_the_tree_digest_ignores_agent_worktrees_under_dot_claude failed first (the fake .claude/worktrees tree was listed), passes now. Gate results unchanged by construction: the digest only forms the cache key and no gate reads it. The proposal to derive the file set from corpus.git_listing / DEFAULT_EXCLUDE was not taken because build/ and .benchmarks might hold files a gate reads; only .claude is skipped.
 - 48-F2 P2: the digest reads every file into the bytes cache (199.6 MB).
-  Disposition: DEFERRED: waits on a decision about the racy-window stat signature (a correctness trade-off for the cache key). After F1 the digest reads 2,207 files in 2.5 s, and the bytes it caches are reused by the gates that read the same files, so the remaining saving is small.
+  Disposition: WON'T FIX: Resolved by 48-F1: tree_digest of this repo now leaves 11.8 MB in the bytes cache (was 199.6 MB), 0.8 s warm over 3 runs. The racy-window stat signature would trade cache-key correctness for a saving that no longer exists.
 - 48-F3 P2: mlframe scale, 34x RSS per source byte, 10 to 13 s per warm scan, node index +0.56 GB.
-  Disposition: DEFERRED: mlframe-scale memory and listing memoisation is a design change in _core/corpus and the source caches; needs its own measured round on a quiet machine (the audit numbers are one loaded sample).
+  Disposition: DEFERRED: Needs a quiet mlframe-scale round (one loaded sample 462 s cold). (a) listing memoisation has no safe invalidation key, see 48-F7; (b) a tree LRU forces re-parsing (173 s cold on mlframe) and a gate holding ParsedFiles keeps trees alive anyway; (c) RSS in GateResult is a feature, not a perf fix. The path part of the warm scan is cut by the F5 commit (corpus.iter_files: one lstat per listed file and sort on the POSIX spelling instead of Path.relative_to (audit 48-F5)).
 - 48-F4 P2: `child_nodes` unmemoised, 10.4 M calls, 80 s cumulative of 419 s in the profile; `isinstance` 126.9 M calls.
-  Disposition: DEFERRED: child_nodes memoisation touches _core/node_index used by every gate and by the detection modules other audits changed this round; waits on those landing, then needs a before/after of run-all finding lists.
+  Disposition: WON'T FIX: Measured upper bound: a per-node children cache makes a full recursion over this repo's 396 trees (680,554 nodes) 0.75 s -> 0.30 s warm but 0.97 s cold (+30 percent first pass). 10.4 M profiled calls are about 15 passes, so the saving is about 6.8 s of 72 to 83 s (8 to 9 percent) for +42 MB (about 5 bytes of RSS per source byte, about +375 MB on mlframe) that no existing bound covers, and a cached list goes stale if a gate mutates a tree. Below the 10 percent bar and against 48-F3.
 - 48-F5 P2: `iter_files` re-resolves paths, 62 percent of a warm scan, 24,424 `_getfinalpathname` calls.
-  Disposition: DEFERRED: iter_files path re-resolution lives in _core/corpus, shared with audit 40/41/42 changes in flight; waits on them.
+  Disposition: RESOLVED: Code commit: "corpus.iter_files: one lstat per listed file and sort on the POSIX spelling instead of Path.relative_to (audit 48-F5)". On Python 3.14 the profile showed isfile+islink (two stats per file) and Path.relative_to, not resolve(); both removed. iter_files median 0.154 s -> 0.133 s (-14 percent, 25 runs x3, pyutilz 618 files), identical listing. Gate output of all 59 gates byte-identical before/after on pyutilz, noema_app, polyvocab_app, flutter_app_core and this repo. The whole-run effect is about 1 to 2 percent (git ls-files dominates).
 - 48-F6 P3: parse cache works (12,752 requests, 1,727 real `ast.parse`, 5.9 s); 412 repeat parses remain, mostly text under 1000 chars.
-  Disposition: DEFERRED: P3, below F4 by the audit's own ranking; waits on F4.
+  Disposition: WON'T FIX: 412 repeat parses cost about 1.4 s of 72 to 109 s (1.3 percent), under the 10 percent bar.
 - 48-F7 P3: 41 `git ls-files` spawns per run-all.
-  Disposition: DEFERRED: git_listing memoisation needs an invalidation key on .git/index plus untracked files; waits on the F3 corpus work.
+  Disposition: WON'T FIX: Measured git ls-files 0.07 s quiet, 0.26 s loaded (x41 = 3 to 11 s, 4 to 14 percent loaded). The untracked part (--others) has no cheap validity key: .git/index mtime does not change when a gate writes a file, and a directory-mtime scan costs about what the listing does. Caching it risks the stale listing the corpus comment warns about; changing no gate result outweighs a loaded-only saving.
 - 48-F8 P3: stale hook comment; self gates run twice in CI (pytest step and `run-all (self)` step).
   Disposition: RESOLVED in the commit carrying this change (SHA in the hand-off report) for the stale hook comment: .pre-commit-config.yaml now quotes the 2026-11-07 measurement (1,612 tests, 202 s serial); the first-test digest cost is removed by F1. DEFERRED for the self gates running twice in CI (pytest step and run-all (self) step): that is the CI workflow, owned by the audit 43/46/47 agent.
 - 48-F9 P3: wall-clock budgets measure load (repo_hygiene 6.4 s then 50.3 s).
@@ -59,7 +59,7 @@ Serial sum 202 s, 1,612 tests; the hook comment says about 4 minutes and 1,075 t
 - 48-F10 P3: mutation harness; generation 1.6 to 26.7 ms per mutant, serial test runs dominate (not run, out of scope).
   Disposition: WON'T FIX: the audit itself finds generation is 1 to 2 percent of a mutation run and recommends no change; coverage-based test selection is a separate feature.
 - 48-F11 P3: 151 gate-cache files never pruned; 500-key cap holds about nine tree versions.
-  Disposition: DEFERRED: a per-(gate, tree) cap and pruning of dead repo entries need a store-format decision; after F1 the tree digest changes far less often, so the 500-key cap holds many more versions.
+  Disposition: WON'T FIX: Measured: reading the largest store file (34,080 bytes) takes 0.3 ms, 57 reads = 17 ms per run-all; disk use is 428 KB. After 48-F1 the tree digest changes far less often, so 500 keys hold many more versions. A store-format change for no measurable gain.
 
 ## Caveats
 

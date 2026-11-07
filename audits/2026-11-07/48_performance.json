@@ -19,7 +19,7 @@
     "proposed_fix": "Hash with a streaming read that bypasses read_bytes_cached (hashlib.file_digest) for files not in the corpus, or use the (size, mtime_ns, inode) signature for files older than the racy window and read only the recent ones, the rule _FAST already uses. Bound the digest to the F1 file set.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: waits on a decision about the racy-window stat signature (a correctness trade-off for the cache key). After F1 the digest reads 2,207 files in 2.5 s, and the bytes it caches are reused by the gates that read the same files, so the remaining saving is small."
+    "disposition": "WON'T FIX: Resolved by 48-F1: tree_digest of this repo now leaves 11.8 MB in the bytes cache (was 199.6 MB), 0.8 s warm over 3 runs. The racy-window stat signature would trade cache-key correctness for a saving that no longer exists."
   },
   {
     "id": "48-F3",
@@ -30,7 +30,7 @@
     "proposed_fix": "(a) memoise the corpus listing and the per-file identity/relative path per (root, patterns, exclude) for a run, invalidated by the cheap stat signature, so warm scans are O(files) dict lookups; (b) drop the descendants list for trees no longer needed (weak keys already free them, but source._CACHE strongly holds every tree: use a bounded LRU on tree count or total node count); (c) record peak RSS and per-gate scan time in the GateResult so budgets can be set on memory.",
     "ast_checkable": false,
     "fp_risk": "low for (a), medium for (b): a gate that holds a ParsedFile list keeps its trees alive anyway",
-    "disposition": "DEFERRED: mlframe-scale memory and listing memoisation is a design change in _core/corpus and the source caches; needs its own measured round on a quiet machine (the audit numbers are one loaded sample)."
+    "disposition": "DEFERRED: Needs a quiet mlframe-scale round (one loaded sample 462 s cold). (a) listing memoisation has no safe invalidation key, see 48-F7; (b) a tree LRU forces re-parsing (173 s cold on mlframe) and a gate holding ParsedFiles keeps trees alive anyway; (c) RSS in GateResult is a feature, not a perf fix. The path part of the warm scan is cut by the F5 commit (corpus.iter_files: one lstat per listed file and sort on the POSIX spelling instead of Path.relative_to (audit 48-F5))."
   },
   {
     "id": "48-F4",
@@ -41,7 +41,7 @@
     "proposed_fix": "Memoise children per tree: tree_memo(tree_of_node, 'children', ...) building {id(node): tuple(children)} once during the _descendants pass, and have child_nodes look up the list; or store the list on a weak dict keyed by node like _DESCENDANTS. Add a counter-based test (child_nodes field reads per node <= 1 across two gates over the same tree).",
     "ast_checkable": true,
     "fp_risk": "low: trees are documented read-only",
-    "disposition": "DEFERRED: child_nodes memoisation touches _core/node_index used by every gate and by the detection modules other audits changed this round; waits on those landing, then needs a before/after of run-all finding lists."
+    "disposition": "WON'T FIX: Measured upper bound: a per-node children cache makes a full recursion over this repo's 396 trees (680,554 nodes) 0.75 s -> 0.30 s warm but 0.97 s cold (+30 percent first pass). 10.4 M profiled calls are about 15 passes, so the saving is about 6.8 s of 72 to 83 s (8 to 9 percent) for +42 MB (about 5 bytes of RSS per source byte, about +375 MB on mlframe) that no existing bound covers, and a cached list goes stale if a gate mutates a tree. Below the 10 percent bar and against 48-F3."
   },
   {
     "id": "48-F5",
@@ -52,7 +52,7 @@
     "proposed_fix": "In relative_posix compute resolve_cached(root) once per call site (hoist out of the per-file lambda in iter_files) and use os.path.relpath on already-absolute listing results from git_listing, which are root-relative strings by construction (no resolve needed for git mode).",
     "ast_checkable": false,
     "fp_risk": "low-medium: symlinked checkouts (tests/test_core_corpus_symlinks.py) depend on the resolve semantics",
-    "disposition": "DEFERRED: iter_files path re-resolution lives in _core/corpus, shared with audit 40/41/42 changes in flight; waits on them."
+    "disposition": "RESOLVED: Code commit: \"corpus.iter_files: one lstat per listed file and sort on the POSIX spelling instead of Path.relative_to (audit 48-F5)\". On Python 3.14 the profile showed isfile+islink (two stats per file) and Path.relative_to, not resolve(); both removed. iter_files median 0.154 s -> 0.133 s (-14 percent, 25 runs x3, pyutilz 618 files), identical listing. Gate output of all 59 gates byte-identical before/after on pyutilz, noema_app, polyvocab_app, flutter_app_core and this repo. The whole-run effect is about 1 to 2 percent (git ls-files dominates)."
   },
   {
     "id": "48-F6",
@@ -63,7 +63,7 @@
     "proposed_fix": "Lower priority than 48-F1/F4. Cache _docstring_lines results per tree via tree_memo (one docstring-line set per module) and let unresolved_imports use the ScanResult's already-parsed tree instead of parse_source per path again.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: P3, below F4 by the audit's own ranking; waits on F4."
+    "disposition": "WON'T FIX: 412 repeat parses cost about 1.4 s of 72 to 109 s (1.3 percent), under the 10 percent bar."
   },
   {
     "id": "48-F7",
@@ -74,7 +74,7 @@
     "proposed_fix": "Memoise git_listing per (root, flags) keyed on the mtime of .git/index plus the stat signature of untracked files, instead of never; or share one listing across the gates of a run_gate loop (cli._cmd_run) and clear it between runs, as _USABLE_ROOTS already does for the probes.",
     "ast_checkable": false,
     "fp_risk": "medium: the comment in corpus.py says a gate may write a file and list again (stale listing)",
-    "disposition": "DEFERRED: git_listing memoisation needs an invalidation key on .git/index plus untracked files; waits on the F3 corpus work."
+    "disposition": "WON'T FIX: Measured git ls-files 0.07 s quiet, 0.26 s loaded (x41 = 3 to 11 s, 4 to 14 percent loaded). The untracked part (--others) has no cheap validity key: .git/index mtime does not change when a gate writes a file, and a directory-mtime scan costs about what the listing does. Caching it risks the stale listing the corpus comment warns about; changing no gate result outweighs a loaded-only saving."
   },
   {
     "id": "48-F8",
@@ -118,6 +118,6 @@
     "proposed_fix": "Key the cap per (gate, tree) rather than a flat 500; remove store files whose repo path no longer exists; read the file once per process.",
     "ast_checkable": false,
     "fp_risk": "low",
-    "disposition": "DEFERRED: a per-(gate, tree) cap and pruning of dead repo entries need a store-format decision; after F1 the tree digest changes far less often, so the 500-key cap holds many more versions."
+    "disposition": "WON'T FIX: Measured: reading the largest store file (34,080 bytes) takes 0.3 ms, 57 reads = 17 ms per run-all; disk use is 428 KB. After 48-F1 the tree digest changes far less often, so 500 keys hold many more versions. A store-format change for no measurable gain."
   }
 ]

@@ -1102,16 +1102,16 @@ Reports: `audits/2026-11-04/30..35_*.md`; plan: `PLAN.md`.
 | 47-F4 | P2 | `more findings` behaviour changes ship in the patch/minor line the @v1 promise limits to additive and stricter-defect changes, with no consumer impact count | WON'T FIX: requiring per-consumer hit counts from corpus-drift in every more-findings entry cannot be checked offline, and corpus-drift has been dead (46-F4); revisit ... |
 | 47-F5 | P3 | consumers.toml marks only 3 of 13 consumers as corpus; adoption of the newest gates is unmeasured for the rest | DEFERRED: adding glossum_backend_scripts to the corpus (or documenting why not) is an owner decision about nightly cost; waits on the owner and a green corpus-drift. |
 | 48-F1 | P1 | gate_cache.tree_digest hashes the whole repo root including .claude/worktrees; a cache lookup costs 25.7 s to 65 s, 30 to 80 times a gate's own run | OPEN |
-| 48-F2 | P2 | tree_digest reads every file's bytes into the process-wide bytes cache: 199.6 MB resident for a 31k-file root, evicting nothing but doubling gate RSS | OPEN |
-| 48-F3 | P2 | Large consumer corpora: 34x RSS amplification and 10 to 13 s per warm scan_python call (mlframe, 8,767 files) | OPEN |
-| 48-F4 | P2 | node_index.child_nodes is not memoised: 10.4 M calls and 126.9 M isinstance calls are 19 percent of a run-all profile | OPEN |
-| 48-F5 | P2 | corpus.iter_files resolves every path twice per scan: 62 percent of a warm scan_python is path arithmetic, 24k GetFinalPathNameByHandle calls per run-all | OPEN |
-| 48-F6 | P3 | Repeated parsing is mostly solved (86 percent hit rate) but 412 extra ast.parse calls remain from short-text parsing and non-cached entry points | OPEN |
-| 48-F7 | P3 | git ls-files is spawned 41 times (plus 7 other git calls) per run-all with the listing deliberately uncached | OPEN |
+| 48-F2 | P2 | tree_digest reads every file's bytes into the process-wide bytes cache: 199.6 MB resident for a 31k-file root, evicting nothing but doubling gate RSS | WON'T FIX |
+| 48-F3 | P2 | Large consumer corpora: 34x RSS amplification and 10 to 13 s per warm scan_python call (mlframe, 8,767 files) | DEFERRED |
+| 48-F4 | P2 | node_index.child_nodes is not memoised: 10.4 M calls and 126.9 M isinstance calls are 19 percent of a run-all profile | WON'T FIX |
+| 48-F5 | P2 | corpus.iter_files resolves every path twice per scan: 62 percent of a warm scan_python is path arithmetic, 24k GetFinalPathNameByHandle calls per run-all | RESOLVED |
+| 48-F6 | P3 | Repeated parsing is mostly solved (86 percent hit rate) but 412 extra ast.parse calls remain from short-text parsing and non-cached entry points | WON'T FIX |
+| 48-F7 | P3 | git ls-files is spawned 41 times (plus 7 other git calls) per run-all with the listing deliberately uncached | WON'T FIX |
 | 48-F8 | P3 | Pre-push hook: stale cost comment, self-gate duplication, and a half-of-hook cost concentrated in test_self_gates | OPEN |
 | 48-F9 | P3 | Gate budgets are wall-clock on shared machines and produce BUDGET warnings that measure load, not the gate | OPEN |
 | 48-F10 | P3 | Mutation harness: per-mutant cost is dominated by the serial pytest run; candidate generation is superlinear in file size | OPEN |
-| 48-F11 | P3 | Per-repo gate_cache store files are never pruned and the 500-key cap holds only about nine tree versions | OPEN |
+| 48-F11 | P3 | Per-repo gate_cache store files are never pruned and the 500-key cap holds only about nine tree versions | WON'T FIX |
 | 49-F1 | P1 | import_cycles run as a script prints findings and exits 0; a missing root is a bare traceback | RESOLVED 5ce4d25: import_cycles.main returns 0/1/2, repo-relative paths, tests/test_diagnostics_exit_codes.py (failed before the fix). |
 | 49-F2 | P1 | Missing tool is reported as 'findings above are WARNINGS' by bandit_warn/advisory_warn/format_warn | RESOLVED 5ce4d25: _tool_installed (find_spec) probe in bandit_warn, advisory_warn, format_warn prints 'skipped: <tool> is not installed'; exit stays 0; real findings keep the WARNINGS ONLY banner. |
 | 49-F3 | P2 | Gate crash (ERROR) shows `Type: message` only: no traceback, no file:line, no fix hint | RESOLVED 0cb41d8: run_gate checks required parameters first and raises a ConfigError naming [tool.py_ci_shared.gates.X] and the missing arguments (ERROR, exit 2 as before); other crashes append '(at file:line; PY_CI_SHARED_TRACEBACK=1 prints the traceback)' and the env switch prints the full traceback. tests/test_diagnostics_runner_outcomes.py::TestF3CrashDiagnostics. |
