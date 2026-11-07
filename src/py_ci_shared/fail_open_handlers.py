@@ -250,6 +250,12 @@ _CACHE_MISS_NAME_RE = re.compile(r"cache|stamp|token|digest|signature", re.IGNOR
 #: A function whose name says it builds a key, an encoding or a frozen snapshot: a fallback there swaps one deterministic
 #: representation for another (``json.dumps`` for ``deepcopy``). Accepted only while the handler swallows no I/O error.
 _KEY_BUILDER_NAME_RE = re.compile(r"(?:^|_)(?:key|encode|freeze)(?:_|$)", re.IGNORECASE)
+#: Exceptions that are ordinary control flow of a single lookup, ``next()`` or kill probe: the exception IS the answer "nothing there", so
+#: ``try: return d[k] except KeyError: return None`` is ``d.get(k)``. Accepted only when the try body is one statement; I/O errors, timeouts and
+#: ``Exception`` are never control flow here.
+_CONTROL_FLOW_ERRORS = frozenset(
+    {"StopIteration", "StopAsyncIteration", "KeyError", "IndexError", "Empty", "ProcessLookupError", "ZeroDivisionError", "CancelledError"}
+)
 #: Exception names whose swallowing can hide a failed read (a file, a subprocess, a database); a bare ``except`` is one too.
 _IO_ERROR_NAMES = frozenset(
     {
@@ -295,6 +301,8 @@ def _reasoned_fallback(handler: ast.ExceptHandler, fn_name: str, try_node: Optio
     if caught and (caught <= _OPTIONAL_IMPORT_ERRORS or caught <= _ABSENT_ERRORS):
         return True
     if _local_db_fallback(handler, try_node):
+        return True
+    if caught and caught <= _CONTROL_FLOW_ERRORS and try_node is not None and len(try_node.body) == 1:
         return True
     if _KEY_BUILDER_NAME_RE.search(fn_name) and not _swallows_io_error(handler):
         return True

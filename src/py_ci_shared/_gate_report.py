@@ -8,7 +8,10 @@ must exist, is a multiset, and is rewritten only on an explicit refresh.
 from __future__ import annotations
 
 import ast
+import functools
+import io
 import os
+import tokenize
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -111,7 +114,23 @@ def line_has_marker(source_lines: Sequence[str], line: int, marker: str) -> bool
     if not marker or not 0 < line <= len(source_lines):
         return False
     comment = _comment_of(source_lines[line - 1])
-    return comment is not None and marker in comment
+    return comment is not None and marker in comment and line not in _string_interior_lines(chr(10).join(source_lines))
+
+
+@functools.lru_cache(maxsize=16)
+def _string_interior_lines(text: str) -> frozenset[int]:
+    """1-based lines that lie inside a multi-line string literal (its first line up to, not including, its last): a ``# x-ok:`` there is string
+    text, not a comment. Empty when *text* is not Python (a YAML or shell file) or cannot be tokenized."""
+    try:
+        ast.parse(text)
+        tokens = list(tokenize.generate_tokens(io.StringIO(text).readline))
+    except (SyntaxError, ValueError, tokenize.TokenError):
+        return frozenset()
+    inside: set[int] = set()
+    for tok in tokens:
+        if tok.type == tokenize.STRING and tok.end[0] > tok.start[0]:
+            inside.update(range(tok.start[0], tok.end[0]))
+    return frozenset(inside)
 
 
 def _comment_of(text: str) -> Optional[str]:

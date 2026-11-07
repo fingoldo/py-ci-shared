@@ -19,6 +19,7 @@ Three rules, each quiet on ordinary code:
   larger, so ``"22.7% vs 26.0%"`` matches a caveat that also quotes ``1,652``. A literal passed straight to a call
   (``figsize=(12, 8)``, ``np.zeros((3, 4))``) is a shape, not a threshold, and is not a site; neither are docstrings,
   version tuples, dates, times and dotted versions inside strings.
+  The same marker on a named constant or a threshold comparison keeps that site out of the ``named-constant`` and ``threshold`` groups.
   A set carrying ``# literal-set-ok: <reason>`` on its line (or the line above) is a separate measurement, not a copy.
 * ``named-constant``: one value bound to ALL_CAPS module constants with similar names in two modules
   (``_STALE_AFTER_H = 48`` and ``STALENESS_LIMIT_H = 48``): names share a word, or a stem of at least four letters.
@@ -73,6 +74,8 @@ GATE = "drifted-duplicate-literals"
 #: Numbers too common to mean anything when two modules share them: counters, quantiles, powers of two, clock and calendar units.
 DEFAULT_IGNORE: frozenset[float] = frozenset(
     {-1, 0, 0.25, 0.5, 0.75, 0.95, 0.99, 1, 2, 3, 4, 5, 6, 8, 10, 12, 16, 24, 30, 32, 50, 60, 64, 100, 128, 255, 256, 365, 512, 1000, 1024, 3600, 86400}
+    # integer type bounds and the usual significance and confidence levels: fixed by the numeric types and by statistics, they cannot drift.
+    | {127, 32767, 65535, 2147483647, 0.01, 0.025, 0.05, 0.1, 0.9, 0.975}
     # HTTP statuses: every client of one API compares against the same ones, and they cannot drift.
     | {200, 201, 202, 204, 301, 302, 304, 400, 401, 403, 404, 405, 409, 410, 413, 422, 429, 500, 502, 503, 504}
 )
@@ -406,8 +409,8 @@ def _collect(
         a, b, c = _file_sites(parsed, ignored)
         lines = parsed.source.splitlines()
         sets += [site for site in a if not _separate_measurement(lines, site.line)]
-        constants += b
-        compares += c
+        constants += [site for site in b if not _separate_measurement(lines, site.line)]
+        compares += [site for site in c if not _separate_measurement(lines, site.line)]
     findings: list[Finding] = []
     if RULE_SET in wanted:
         findings += [_finding(RULE_SET, _fmt(key), listed) for key, listed in _set_groups(sets)]

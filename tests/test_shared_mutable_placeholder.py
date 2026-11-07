@@ -105,3 +105,43 @@ def test_assert_raises_on_a_shared_placeholder_and_passes_when_clean(tmp_path):
 @pytest.mark.parametrize("value", ["threading.RLock()", "RLock()", "threading.Lock()"])
 def test_a_lock_returned_by_reference_is_not_a_mutable_placeholder(tmp_path, value):
     assert _lines(tmp_path, f"import threading\nfrom threading import RLock\n_LOCK = {value}\n\n\ndef guard():\n    return _LOCK\n") == []
+
+
+@pytest.mark.parametrize(
+    "assign",
+    [
+        "_CLIENT = Client()",
+        "_EXEC = ThreadPoolExecutor(4)",
+        "_ENGINE = create.Engine()",
+        "_Q = queue.Queue()",
+        "_V = contextvars.ContextVar('v')",
+    ],
+)
+def test_a_singleton_class_is_not_a_placeholder(tmp_path, assign):
+    """Audit 41-F1: a deliberately shared pool, client, engine, queue or context variable is not a shared-mutable default."""
+    name = assign.split(" =")[0]
+    assert _lines(tmp_path, f"{assign}\n\ndef get():\n    return {name}\n") == []
+
+
+def test_a_rows_style_class_is_still_a_placeholder(tmp_path):
+    assert len(_lines(tmp_path, "_EMPTY = Rows()\n\ndef get():\n    return _EMPTY\n")) == 1
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "_CACHE = {}  # shared-mutable-placeholder-ok: process-wide cache\n\ndef cache():\n    return _CACHE\n",
+        "# shared-mutable-placeholder-ok: process-wide cache\n_CACHE = {}\n\ndef cache():\n    return _CACHE\n",
+        "_CACHE = {}\n\ndef cache():\n    return _CACHE  # shared-mutable-placeholder-ok: process-wide cache\n",
+        "_CACHE = {}\n\ndef cache():\n    # shared-mutable-placeholder-ok: process-wide cache\n    return _CACHE\n",
+    ],
+)
+def test_the_marker_with_a_reason_silences_a_deliberate_singleton(tmp_path, body):
+    assert _lines(tmp_path, body) == []
+
+
+def test_a_marker_without_a_reason_or_on_another_name_does_not_silence(tmp_path):
+    bare = "_CACHE = {}  # shared-mutable-placeholder-ok:\n\ndef cache():\n    return _CACHE\n"
+    other = "_A = {}  # shared-mutable-placeholder-ok: x\n_B = {}\n\ndef f():\n    return _B\n"
+    assert len(_lines(tmp_path, bare)) == 1
+    assert len(_lines(tmp_path, other)) == 1

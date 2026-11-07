@@ -16,7 +16,8 @@ hash in the same function:
   ``key``/``fingerprint``/``digest``/``hash``. (``x in container`` is not judged: ``json.dumps(s) in script`` is a
   substring test as often as a set lookup.)
 
-Not reported: payloads whose order is the value (a list/tuple display, a comprehension, ``sorted(...)``, a string or
+Not reported: a dict display with string-constant keys and ``dataclasses.asdict(obj)`` (their key order is fixed by the source);
+payloads whose order is the value (a list/tuple display, a comprehension, ``sorted(...)``, a string or
 number), as long as no dict literal is inside; a call whose line carries ``# unsorted-ok: <reason>``; and an exact-bytes payload:
 the dump is the text sent on the wire (it reaches a send, write or request call, directly or through a local name, or is passed
 as a ``data``/``content``/``body`` keyword). That text must stay byte-identical to what the peer received, so its digest names the
@@ -70,7 +71,25 @@ def _sorts_keys(call: ast.Call, name: str) -> bool:
     return False
 
 
+def _fixed_key_order(payload: ast.expr) -> bool:
+    """A dict display whose keys are all string constants (nested displays likewise), or ``dataclasses.asdict(obj)``: the order is fixed by
+    the source text or the field declaration order, so the text is the same in every process."""
+    if isinstance(payload, ast.Call):
+        func = payload.func
+        return (isinstance(func, ast.Attribute) and func.attr == "asdict" and isinstance(func.value, ast.Name) and func.value.id == "dataclasses") or (
+            isinstance(func, ast.Name) and func.id == "asdict"
+        )
+    if not isinstance(payload, ast.Dict):
+        return False
+    if not all(isinstance(k, ast.Constant) and isinstance(k.value, str) for k in payload.keys):
+        return False  # a ``None`` key is a ``**`` unpacking
+    nested = [v for v in payload.values if isinstance(v, (ast.Dict, ast.DictComp))]
+    return all(isinstance(v, ast.Dict) and _fixed_key_order(v) for v in nested)
+
+
 def _order_is_the_value(payload: ast.expr) -> bool:
+    if _fixed_key_order(payload):
+        return True
     if any(isinstance(n, (ast.Dict, ast.DictComp)) for n in _fast_walk(payload)):
         return False
     if isinstance(payload, (ast.List, ast.Tuple, ast.ListComp, ast.GeneratorExp, ast.Constant, ast.JoinedStr)):

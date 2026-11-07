@@ -92,7 +92,35 @@ def _secret_name(name: str) -> bool:
     return bool(SECRET_NAME.search(name) or _URL_NAME.search(name))
 
 
-def _harmless_env_read(node: ast.AST) -> bool:
+def _binding_strings(node: ast.AST) -> "list[tuple[ast.AST, Optional[list[str]]]]":
+    """``(target, strings)`` for each name binding of *node*: a plain ``x = "A"`` holds ["A"], ``for x in ("A", "B")`` holds both,
+    any other binding holds None (unknown)."""
+    if isinstance(node, ast.Assign):
+        const = isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+        return [(t, [node.value.value] if const else None) for t in node.targets]  # type: ignore[attr-defined]
+    if isinstance(node, (ast.For, ast.AsyncFor)):
+        it = node.iter
+        ok = isinstance(it, (ast.Tuple, ast.List)) and bool(it.elts) and all(isinstance(e, ast.Constant) and isinstance(e.value, str) for e in it.elts)
+        return [(node.target, [e.value for e in it.elts] if ok else None)]  # type: ignore[attr-defined]
+    if isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+        return [(node.target, None)]
+    return []
+
+
+def _literal_bindings(nodes: "Iterable[ast.AST]") -> "dict[str, list[str]]":
+    """Names whose every binding in the scope is a str constant or a loop over str constants, with all the strings they can hold."""
+    held: "dict[str, list[str]]" = {}
+    spoiled: "set[str]" = set()
+    for node in nodes:
+        for target, values in _binding_strings(node):
+            if isinstance(target, ast.Name) and values is not None:
+                held.setdefault(target.id, []).extend(values)
+            else:
+                spoiled.update(n.id for n in ast.walk(target) if isinstance(n, ast.Name))
+    return {name: vals for name, vals in held.items() if name not in spoiled}
+
+
+def _harmless_env_read(node: ast.AST, literals: "Optional[dict[str, list[str]]]" = None) -> bool:
     """``os.environ["HOME"]``, ``os.getenv("HOME")`` or ``os.environ.get("HOME")``: one variable, named by a literal that does not look secret.
 
     pytest prints only the value of such a read (checked on pytest 8: the operand is the VALUE, never the environment), so
@@ -105,18 +133,21 @@ def _harmless_env_read(node: ast.AST) -> bool:
         key = node.args[0]
     else:
         return False
+    if isinstance(key, ast.Name) and literals and key.id in literals:
+        return not any(_secret_name(v) for v in literals[key.id])
     return isinstance(key, ast.Constant) and isinstance(key.value, str) and not _secret_name(key.value)
 
 
 class _Taint:
-    def __init__(self, names: "set[str]", resolvers: "frozenset[str]") -> None:
+    def __init__(self, names: "set[str]", resolvers: "frozenset[str]", literals: "Optional[dict[str, list[str]]]" = None) -> None:
         self.names = names
         self.resolvers = resolvers
+        self.literals = literals or {}
 
     def is_tainted(self, node: ast.AST) -> bool:
         if _is_environ(node):
             return True
-        if _harmless_env_read(node):
+        if _harmless_env_read(node, self.literals):
             return False
         if isinstance(node, ast.Name):
             return node.id in self.names
@@ -164,7 +195,7 @@ class _Taint:
             sub = queue.pop(0)
             if self.is_tainted(sub):
                 return sub
-            if not _harmless_env_read(sub):  # its ``os.environ`` operand is evaluated, never printed
+            if not _harmless_env_read(sub, self.literals):  # its ``os.environ`` operand is evaluated, never printed
                 queue.extend(child_nodes(sub))
         return None
 
@@ -228,8 +259,9 @@ def offenders_in_source(source: str, path: str = "<string>", *, resolvers: Itera
 
     def visit(scope: ast.AST, qual: str, inherited: "set[str]") -> None:
         names = _scope_taint(scope, inherited, resolver_set)
-        taint = _Taint(names, resolver_set)
-        for node in own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        own = list(own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)))
+        taint = _Taint(names, resolver_set, _literal_bindings(own))
+        for node in own:
             for expr in _printed_operands(node):
                 hit = taint.first_tainted(expr)
                 if hit is not None:

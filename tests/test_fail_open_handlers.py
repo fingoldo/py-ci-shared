@@ -703,3 +703,29 @@ def test_a_warning_log_throttle_handler_that_substitutes_a_value_is_accepted(tmp
             return result
     """
     assert _rules(tmp_path, body) == []
+
+
+@pytest.mark.parametrize(
+    "exc, stmt, flagged",
+    [
+        ("KeyError", "return d[k]", False),
+        ("StopIteration", "return next(it)", False),
+        ("queue.Empty", "return q.get_nowait()", False),
+        ("ProcessLookupError", "return os.kill(pid, 0)", False),
+        ("ZeroDivisionError", "return a / b", False),
+        ("OSError", "return d[k]", True),
+        ("Exception", "return d[k]", True),
+        ("TimeoutError", "return d[k]", True),
+        ("KeyError", "x = prepare(d); return d[k]", True),
+    ],
+)
+def test_a_control_flow_exception_around_one_statement_is_not_a_silent_default(tmp_path, exc, stmt, flagged):
+    """Audit 41-F2: ``try: return d[k] except KeyError: return None`` is ``d.get(k)``."""
+    body = f"""
+        def lookup(d, k, it, q, pid, a, b):
+            try:
+                {stmt}
+            except {exc}:
+                return None
+    """
+    assert (_rules(tmp_path, body) == ["silent_default_return"]) is flagged

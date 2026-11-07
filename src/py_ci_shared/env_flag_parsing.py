@@ -173,12 +173,47 @@ def _boolean_shapes(node: ast.AST, ctx: _Ctx) -> list[tuple[str, str]]:
     return []
 
 
+_NUMERIC_CONVERTERS = frozenset({"int", "float", "Path", "PurePath", "Decimal"})
+_VALUE_METHODS = frozenset({"split", "rsplit", "isdigit", "isnumeric", "isdecimal", "partition", "rpartition"})
+_ARITHMETIC = (ast.Mult, ast.Sub, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow)
+_ORDERING = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
+
+
+def _consumed_values(node: ast.AST) -> list[ast.AST]:
+    """The expressions *node* consumes as a number, a path or a list (``int(x)``, ``Path(x)``, ``os.path.join(x)``, ``x.split()``, ``x * 2``, ``x > 3``)."""
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Name) and func.id in _NUMERIC_CONVERTERS:
+            return list(node.args[:1])
+        if isinstance(func, ast.Attribute) and func.attr in _VALUE_METHODS:
+            return [func.value]
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Attribute) and func.value.attr == "path":
+            return list(node.args)
+    elif isinstance(node, ast.BinOp) and isinstance(node.op, _ARITHMETIC):
+        return [node.left, node.right]
+    elif isinstance(node, ast.Compare) and any(isinstance(o, _ORDERING) for o in node.ops):
+        return [node.left, *node.comparators]
+    return []
+
+
+def _numeric_vars(tree: ast.Module, ctx: _Ctx) -> frozenset[str]:
+    """Variables whose value this file also uses as a number, a path or a list: not a boolean switch, whatever its name."""
+    out: set[str] = set()
+    for node in _fast_walk(tree):
+        for value in _consumed_values(node):
+            var = ctx.read(value)
+            if var is not None:
+                out.add(var)
+    return frozenset(out)
+
+
 def _boolean_contexts(tree: ast.Module, prefixes: Sequence[str]):
     """Yield ``(node, var, shape)`` for each env read that is used as a boolean."""
     ctx = _Ctx(tree, prefixes)
+    numeric = _numeric_vars(tree, ctx)
     for node in _fast_walk(tree):
         for var, shape in _boolean_shapes(node, ctx):
-            if not _NOT_A_FLAG.search(var):
+            if var not in numeric and not _NOT_A_FLAG.search(var):
                 yield node, var, shape
 
 

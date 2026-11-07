@@ -11,6 +11,11 @@ collection constructor (``list()``, ``dict()``, ``set()``, ``deque()``, ``defaul
 (``Path``, ``Decimal``, ``frozenset``, ...) and the synchronisation primitives (``threading.RLock()``), which are shared on purpose. A ``return NAME`` is a finding when ``NAME`` is a placeholder of an enclosing
 scope (module, or a function a nested function sits in), and the returning function does not rebind the name itself.
 
+Also shared on purpose, and so not placeholders: a call of a class whose name ends in ``Executor``, ``Pool``, ``Client``, ``Session``,
+``Engine``, ``Queue``, ``Logger``, ``ContextVar``, ``Local`` or ``Manager`` (``_EXEC = ThreadPoolExecutor(4)``, ``_CLIENT = Client()``).
+A singleton the gate cannot tell, such as a module cache dict handed out by an accessor, is marked
+``# shared-mutable-placeholder-ok: <reason>`` on the assignment (or the line above it) or on the ``return`` line (or the line above it).
+
 Not judged: a function that rebinds the name (a parameter, a local assignment, a ``global`` declaration does count as the
 module's name and is judged), a return of anything other than the bare name, and a placeholder whose value is a factory call
 with a lowercase name (``make_rows()``), since the gate cannot tell that it is shared.
@@ -26,17 +31,23 @@ Usage::
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Finding, ParsedFile, scan_python
+from ._gate_report import line_has_marker
 from ._core.node_index import nodes_of
 from ._core.scopes import iter_scopes
 
 __all__ = ["RULE", "assert_no_shared_mutable_placeholders", "find_shared_mutable_placeholders"]
 
 RULE = "shared-mutable-placeholder"
+MARKER = "shared-mutable-placeholder-ok:"
+_REASONED = re.compile(r"#\s*shared-mutable-placeholder-ok:\s*\S")
+#: Class-name suffixes of objects that are one shared instance by design (a pool, a client, an engine, a queue, a context variable).
+_SINGLETON_SUFFIXES = ("Executor", "Pool", "Client", "Session", "Engine", "Queue", "Logger", "ContextVar", "Local", "Manager")
 _BUILTIN_COLLECTIONS = frozenset({"list", "dict", "set", "deque", "defaultdict", "OrderedDict", "Counter", "bytearray"})
 #: Synchronisation primitives are handed out to be shared: a lock returned by reference is the intended object.
 _SYNC_PRIMITIVES = frozenset({"Lock", "RLock", "Condition", "Semaphore", "BoundedSemaphore", "Event", "Barrier"})
@@ -64,16 +75,30 @@ def is_placeholder_value(value: ast.AST) -> bool:
         return True
     if name in _SYNC_PRIMITIVES:
         return False
-    return bool(name) and name[0].isupper() and name not in _IMMUTABLE_CONSTRUCTORS
+    return bool(name) and name[0].isupper() and name not in _IMMUTABLE_CONSTRUCTORS and not name.endswith(_SINGLETON_SUFFIXES)
 
 
-def _placeholders_in(direct: list[ast.AST]) -> frozenset[str]:
+def _marked(lines: list[str], first: int, last: int) -> bool:
+    """True when the marker sits on the line above *first* or on any line from *first* to *last*."""
+    for n in range(first - 1, last + 1):
+        if n == first - 1 and not (0 < n <= len(lines) and lines[n - 1].lstrip().startswith("#")):
+            continue  # the line above counts only as a comment line of its own, not as another statement's trailing comment
+        if line_has_marker(lines, n, MARKER) and _REASONED.search(lines[n - 1]):
+            return True
+    return False
+
+
+def _placeholders_in(direct: list[ast.AST], lines: list[str]) -> frozenset[str]:
     names: set[str] = set()
     for node in direct:
         if isinstance(node, ast.Assign) and is_placeholder_value(node.value):
-            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            found = [t.id for t in node.targets if isinstance(t, ast.Name)]
         elif isinstance(node, ast.AnnAssign) and node.value is not None and is_placeholder_value(node.value) and isinstance(node.target, ast.Name):
-            names.add(node.target.id)
+            found = [node.target.id]
+        else:
+            continue
+        if not _marked(lines, node.lineno, getattr(node, "end_lineno", None) or node.lineno):
+            names.update(found)
     return frozenset(names)
 
 
@@ -94,7 +119,7 @@ def _bound_in(fn: _Scope, direct: list[ast.AST]) -> frozenset[str]:
     return frozenset(bound - declared_global)
 
 
-def _returns_in(fn: _Scope, direct: list[ast.AST], rel: str, visible: frozenset[str], scope_name: str) -> list[Finding]:
+def _returns_in(fn: _Scope, direct: list[ast.AST], rel: str, visible: frozenset[str], scope_name: str, lines: list[str]) -> list[Finding]:
     return [
         Finding(
             rel,
@@ -104,7 +129,7 @@ def _returns_in(fn: _Scope, direct: list[ast.AST], rel: str, visible: frozenset[
             f"{getattr(fn, 'name', '<function>')}: every caller shares one object; build the value inside the function or return a copy",
         )
         for node in direct
-        if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and node.value.id in visible
+        if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and node.value.id in visible and not _marked(lines, node.lineno, node.lineno)
     ]
 
 
@@ -113,11 +138,12 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     if not any(isinstance(r.value, ast.Name) for r in nodes_of(parsed.tree, ast.Return)):
         return []  # a finding is a ``return NAME``; a module with none has nothing to judge
     out: list[Finding] = []
+    lines = parsed.source.splitlines()
     # per scope: names an inner function can see, and the name findings in its functions are reported against
     context: dict[int, tuple[frozenset[str], str]] = {}
     for scope in iter_scopes(parsed.tree):
         if scope.parent is None:
-            enclosing, scope_name = _placeholders_in(scope.nodes), "the module"
+            enclosing, scope_name = _placeholders_in(scope.nodes, lines), "the module"
         else:
             parent_enclosing, parent_name = context[id(scope.parent)]
             node = scope.node
@@ -126,8 +152,8 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
                 enclosing, scope_name = parent_enclosing, parent_name
             else:
                 visible = parent_enclosing - _bound_in(node, scope.nodes)
-                out.extend(_returns_in(node, scope.nodes, parsed.rel, visible, parent_name))
-                enclosing, scope_name = visible | _placeholders_in(scope.nodes), node.name
+                out.extend(_returns_in(node, scope.nodes, parsed.rel, visible, parent_name, lines))
+                enclosing, scope_name = visible | _placeholders_in(scope.nodes, lines), node.name
         context[id(scope)] = (enclosing, scope_name)
     return out
 

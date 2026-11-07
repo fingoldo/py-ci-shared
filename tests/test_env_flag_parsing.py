@@ -158,3 +158,20 @@ def test_more_hand_parse_shapes_are_reported(tmp_path, body):
 
 def test_membership_of_a_foreign_variable_is_not_reported(tmp_path):
     assert _reads(tmp_path, "import os\nif 'HOME' in os.environ:\n    pass\nx = int(os.environ.get('MY_N', '1'))\n") == []
+
+
+@pytest.mark.parametrize(
+    "source, flagged",
+    [
+        ("import os\nn = os.environ.get('P_JOBS')\nif n:\n    jobs = int(n)\n", False),
+        ("import os\nif os.environ.get('P_RETRIES') == '0':\n    pass\nr = int(os.environ.get('P_RETRIES', '3'))\n", False),
+        ("import os\nfrom pathlib import Path\nif os.environ.get('P_CACHE'):\n    p = Path(os.environ['P_CACHE'])\n", False),
+        ("import os\nif os.environ.get('P_DEVICE'):\n    d = os.environ['P_DEVICE'].split(',')\n", False),
+        ("import os\nif os.environ.get('P_VERB'):\n    pass\nlevel = int(os.environ.get('P_OTHER', '1'))\n", True),
+        ("import os\nif os.environ.get('P_FLAG'):\n    pass\n", True),
+    ],
+)
+def test_a_variable_the_file_also_uses_as_a_number_or_path_is_not_a_switch(tmp_path, source, flagged):
+    """Audit 41-F6: routing P_RETRIES=3 through a boolean parser would turn it into True."""
+    p = _write(tmp_path, "m.py", source)
+    assert bool(find_hand_parsed_env_flags([p], tmp_path, ["P_"])) is flagged

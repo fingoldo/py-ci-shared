@@ -80,12 +80,22 @@ def dump_json(data: Any) -> str:
     return json.dumps(data, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
 
 
+def _reject_duplicate_keys(pairs: "list[tuple[str, Any]]") -> "dict[str, Any]":
+    """``object_pairs_hook``: a key written twice (a bad merge, a hand edit) used to be last-wins, silently raising or lowering a count."""
+    out: "dict[str, Any]" = {}
+    for key, value in pairs:
+        if key in out:
+            raise ValueError(f"duplicate key {key!r}")
+        out[key] = value
+    return out
+
+
 def load_json(path: PathLike) -> Any:
     """Parse the JSON file at *path* (UTF-8, a BOM tolerated). Raises :class:`BaselineError` naming the file when it
     cannot be read or is not JSON; a missing file is the caller's to check first."""
     p = Path(path)
     try:
-        return json.loads(p.read_text(encoding="utf-8-sig"))
+        return json.loads(p.read_text(encoding="utf-8-sig"), object_pairs_hook=_reject_duplicate_keys)
     except (OSError, ValueError) as exc:
         raise BaselineError(f"baseline {p} is unreadable ({type(exc).__name__}: {exc}); fix or delete it") from exc
 
@@ -95,13 +105,21 @@ _META_KEYS = frozenset({"_comment", "_meta", "_schema", "_note"})
 
 def _parse_list(data: list, path: Path) -> "Counter[str]":
     counts: Counter[str] = Counter()
+    plain: set[str] = set()
+    joined: set[str] = set()
     for item in data:
         if isinstance(item, str):
             counts[item] += 1
+            plain.add(item)
         elif isinstance(item, (list, tuple)) and item and all(isinstance(x, str) for x in item):
-            counts["|".join(item)] += 1  # e.g. private_imports-style (path, module) pairs
+            key = "|".join(item)  # e.g. private_imports-style (path, module) pairs
+            counts[key] += 1
+            joined.add(key)
         else:
             raise BaselineError(f"{path}: unsupported list entry {item!r}")
+    clash = sorted(plain & joined)
+    if clash:
+        raise BaselineError(f"{path}: entry {clash[0]!r} is both a plain string and a pair that joins to it; the two would merge into one count")
     return counts
 
 

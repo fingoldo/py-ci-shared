@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import ast
 import os
+import sys
+import time
 from pathlib import Path
 
 import pytest
 
 from py_ci_shared._core import SourceParseError, SourceReadError, clear_parse_cache, parse_file, parse_source, read_source
-from py_ci_shared._core.source import parse_cache_size
+from py_ci_shared._core.source import parse_cache_size, read_bytes_cached
 
 
 @pytest.fixture(autouse=True)
@@ -168,3 +170,16 @@ def test_subtree_walk_is_memoised_and_keeps_ast_walk_order():
     assert list(walk(tree)) == list(ast.walk(tree))
     first = [n for n in walk(inner)]
     assert all(a is b for a, b in zip(first, walk(inner)))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows st_ctime_ns is the creation time, which a rewrite does not change")
+def test_a_same_size_rewrite_with_a_restored_mtime_is_not_served_stale(tmp_path):
+    """Audit 42-F6: os.utime restores mtime but not ctime, so the cache signature must include ctime."""
+    p = tmp_path / "m.py"
+    p.write_text("x=11\n", encoding="utf-8")
+    old = time.time() - 100
+    os.utime(p, (old, old))
+    assert read_bytes_cached(p) == b"x=11\n"
+    p.write_text("x=22\n", encoding="utf-8")
+    os.utime(p, (old, old))
+    assert read_bytes_cached(p) == b"x=22\n"

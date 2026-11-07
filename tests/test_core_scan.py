@@ -109,3 +109,12 @@ def test_one_file_reached_by_two_spellings_is_scanned_once(tmp_path, monkeypatch
     assert [f.rel for f in result.files] == ["m.py"]  # the first spelling is kept
     two = _files(tmp_path / "e6", {"a.py": "x = 1\n", "b.py": "y = 2\n"})
     assert scan_python([two / "a.py", two / "b.py"], use_git=False).parsed_count == 2  # control: distinct files stay
+
+
+def test_scan_roots_excluding_matches_fragments_against_the_root_relative_path(tmp_path):
+    """Audit 42-F2: a checkout under a directory whose name contains a fragment must still be scanned."""
+    from py_ci_shared._core.scan import scan_roots_excluding
+
+    root = _files(tmp_path / "my_tests_dir" / "proj", {"a.py": "x = 1\n", "tests/t.py": "y = 2\n"})
+    result = scan_roots_excluding([root], ["tests"])
+    assert [Path(f.rel).name for f in result.files] == ["a.py"]

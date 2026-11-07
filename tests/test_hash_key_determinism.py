@@ -133,7 +133,7 @@ class TestNotReported:
 class TestCorpusAndBaseline:
     def test_module_level_bom_unparsable_and_empty(self, tmp_path):
         (tmp_path / "a").mkdir()
-        (tmp_path / "a" / "m.py").write_bytes(b"\xef\xbb\xbfimport hashlib, json\nKEY = hashlib.sha1(json.dumps({'a': 1}).encode())\n")
+        (tmp_path / "a" / "m.py").write_bytes(b"\xef\xbb\xbfimport hashlib, json\nKEY = hashlib.sha1(json.dumps({k: 1 for k in 'ab'}).encode())\n")
         assert [f.line for f in find_unsorted_hash_keys(tmp_path / "a", use_git=False)[0]] == [2]
         (tmp_path / "a" / "bad.py").write_text("def (:\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match=r"bad\.py"):
@@ -170,3 +170,27 @@ def test_a_digest_of_a_normalised_dump_that_is_never_sent_is_still_flagged(tmp_p
     (tmp_path / "m.py").write_text(normalised, encoding="utf-8")
     findings, _scan = find_unsorted_hash_keys(tmp_path, use_git=False)
     assert [f.line for f in findings] == [5]
+
+
+@pytest.mark.parametrize(
+    "payload, flagged",
+    [
+        ("{'a': a, 'b': b}", False),
+        ("{'a': {'x': 1}, 'b': b}", False),
+        ("dataclasses.asdict(obj)", False),
+        ("{k: v for k, v in items}", True),
+        ("{k: 1}", True),
+        ("{'a': {k: 1}}", True),
+        ("{**base, 'a': 1}", True),
+        ("params", True),
+    ],
+)
+def test_a_fixed_key_order_payload_is_not_reported(tmp_path, payload, flagged):
+    """Audit 41-F10: a dict display with string-constant keys and dataclasses.asdict have a source-fixed key order."""
+    body = f"""
+        import dataclasses, hashlib, json
+
+        def digest(a, b, obj, k, items, base, params):
+            return hashlib.sha256(json.dumps({payload}).encode()).hexdigest()
+    """
+    assert bool(_lines(tmp_path, body)) is flagged

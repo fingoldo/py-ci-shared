@@ -320,7 +320,12 @@ def test_set_and_alter_on_one_line_are_ordered_by_column(tmp_path):
 
 @pytest.mark.parametrize(
     "stmt",
-    ["ALTER TABLE t ADD PRIMARY KEY (a);", "ALTER TABLE t ADD CONSTRAINT c UNIQUE (a);", "ALTER TABLE t ALTER COLUMN a SET NOT NULL;"],
+    [
+        "ALTER TABLE t ADD PRIMARY KEY (a);",
+        "ALTER TABLE t ADD CONSTRAINT c UNIQUE (a);",
+        "ALTER TABLE t ADD UNIQUE (a);",
+        "ALTER TABLE t ALTER COLUMN a SET NOT NULL;",
+    ],
 )
 def test_blocking_key_and_not_null_statements_are_reported(tmp_path, stmt):
     root = _sql(tmp_path, m=f"SET lock_timeout = '1s';\n{stmt}\n")

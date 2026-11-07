@@ -244,3 +244,27 @@ class TestTransientListingFailures:
         with pytest.raises(CorpusError, match=r"exit code 128, stderr: fatal: index file corrupt"):
             iter_files(repo)
         assert len(seen) == 1
+
+
+@needs_git
+class TestTrackedDirectoryNamedLikeBuildOutput:
+    """Audit 42-F1: a tracked package directory named build/dist/venv is corpus; an untracked one still is not."""
+
+    def test_a_tracked_package_named_build_is_listed(self, tmp_path):
+        _git_init(tmp_path)
+        _touch(tmp_path, "src/pkg/build/m.py", "src/pkg/ok.py")
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True, env=git_env())
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["src/pkg/build/m.py", "src/pkg/ok.py"]
+
+    def test_an_untracked_build_directory_is_still_skipped(self, tmp_path):
+        _git_init(tmp_path)
+        _touch(tmp_path, "src/pkg/ok.py")
+        subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True, env=git_env())
+        _touch(tmp_path, "src/pkg/build/m.py", "dist/n.py")
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["src/pkg/ok.py"]
+
+    def test_a_tracked_dot_directory_stays_excluded(self, tmp_path):
+        _git_init(tmp_path)
+        _touch(tmp_path, "src/ok.py", ".claude/w/x.py", "pkg/__pycache__/y.py")
+        subprocess.run(["git", "add", "-Af"], cwd=tmp_path, check=True, capture_output=True, env=git_env())
+        assert _rels(tmp_path, iter_files(tmp_path)) == ["src/ok.py"]

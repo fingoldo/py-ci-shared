@@ -67,3 +67,21 @@ def test_assert_raises_on_a_probe_and_passes_on_row_checks(tmp_path):
 @pytest.mark.parametrize("assertion", ['assert "copied FROM the cache" in text', 'assert "Pick a value FROM the list" in out'])
 def test_prose_containing_from_is_not_sql_text(tmp_path, assertion):
     assert _lines(tmp_path, f"def test_msg():\n    {assertion}\n") == []
+
+
+@pytest.mark.parametrize(
+    "assertion, flagged",
+    [
+        ("assert 'DELETE' in resp.headers['Allow']", False),
+        ("assert 'UPDATE' in events", False),
+        ("assert 'FROM' in msg.keys()", False),
+        ("assert 'INSERT' in {r.op for r in result}", False),
+        ("assert 'SELECT' in ('SELECT', 'JOIN')", False),
+        ("assert 'WHERE' in sql", True),
+        ("assert 'ORDER BY' in str(stmt)", True),
+        ("assert 'WHERE' in query.compile()", True),
+    ],
+)
+def test_membership_in_a_collection_is_not_a_probe_of_statement_text(tmp_path, assertion, flagged):
+    """Audit 41-F5."""
+    assert bool(_lines(tmp_path, f"def test_a(resp, events, msg, result, sql, stmt, query):\n    {assertion}\n")) is flagged

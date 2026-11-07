@@ -47,8 +47,23 @@ SAFE = {
     "assert_raises": 'import os\nclass T:\n    def test_a(self):\n        self.assertRaises(KeyError, os.environ.__getitem__, "K")\n',
     "non_secret_get": 'import os\ndef test_a():\n    assert os.environ.get("OMP_NUM_THREADS") == "4"\n',
     "non_secret_get_path": 'import os\ndef test_a():\n    assert os.environ.get("CUDA_PATH") is not None\n',
+    "bound_literal_name": 'import os\ndef test_a():\n    key = "OMP_NUM_THREADS"\n    assert os.environ.get(key) == "1"\n',
+    "loop_over_literal_names": 'import os\ndef test_a():\n    for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS"):\n        assert os.environ.get(name) == "1"\n',
     "non_secret_hashseed": 'import os\ndef test_a():\n    assert os.environ.get("PYTHONHASHSEED", "0") == "0"\n',
 }
+
+
+STILL_LEAKING = {
+    "bound_secret_name": 'import os\ndef test_a():\n    key = "API_TOKEN"\n    assert os.environ.get(key) == "1"\n',
+    "loop_with_one_secret": 'import os\ndef test_a():\n    for name in ("OMP_NUM_THREADS", "API_TOKEN"):\n        assert os.environ.get(name) == "1"\n',
+    "name_rebound_to_unknown": 'import os\ndef test_a(other):\n    key = "OMP_NUM_THREADS"\n    key = other\n    assert os.environ.get(key) == "1"\n',
+    "name_from_parameter": 'import os\ndef test_a(key):\n    assert os.environ.get(key) == "1"\n',
+}
+
+
+@pytest.mark.parametrize("name", sorted(STILL_LEAKING))
+def test_a_name_that_may_hold_a_secret_name_is_still_reported(name):
+    assert len(gate.offenders_in_source(STILL_LEAKING[name])) == 1
 
 
 @pytest.mark.parametrize("name", sorted(OFFENDERS))

@@ -41,7 +41,7 @@ _LOCK = threading.Lock()
 # a gate suite asks for each of a few thousand files tens of times. The signature is trusted only when the file's mtime is older than the moment it was read by more than
 # ``_RACY_NS`` (the rule git applies to its index): a file rewritten inside the timestamp granularity of the read would otherwise keep its old signature, and falls to the
 # digest comparison below instead.
-_FAST: dict[str, tuple[tuple[int, int, int], int, str, bytes]] = {}
+_FAST: dict[str, tuple[tuple[int, int, int, int], int, str, bytes]] = {}
 _RACY_NS = 3_000_000_000
 _RESOLVED: dict[str, Path] = {}
 
@@ -65,14 +65,14 @@ def resolve_cached(path: PathLike) -> Path:
 # path as given -> (stat signature, time it was read, bytes). One process-wide copy of a file's bytes for every reader (parse, text gates, content hashing): a gate suite used to open each file ~14 times,
 # and an open is the slow part on NTFS with a virus scanner (audit 2026-11-04 35-F3). Trusted under the same racy-timestamp rule as ``_FAST``; files over ``_BYTES_MAX_FILE`` are never kept and
 # the whole table is dropped when it passes ``_BYTES_MAX_TOTAL``, so memory is bounded whatever the corpus.
-_BYTES: dict[str, tuple[tuple[int, int, int], int, bytes]] = {}
+_BYTES: dict[str, tuple[tuple[int, int, int, int], int, bytes]] = {}
 _BYTES_TOTAL = 0
 _BYTES_MAX_FILE = 4_000_000
 _BYTES_MAX_TOTAL = 400_000_000
 
 
 def read_bytes_cached(path: PathLike) -> bytes:
-    """``Path(path).read_bytes()`` served from a process-wide cache while the file's stat signature (mtime, size, inode) is unchanged and old enough to trust.
+    """``Path(path).read_bytes()`` served from a process-wide cache while the file's stat signature (mtime, size, inode, ctime) is unchanged and old enough to trust.
 
     Raises ``OSError`` exactly as ``read_bytes`` does. A file modified in the last few seconds is read from disk every time, so an edit-then-rescan never sees stale bytes.
     """
@@ -81,7 +81,7 @@ def read_bytes_cached(path: PathLike) -> bytes:
         st = os.stat(spath)
     except OSError:  # best-effort: the retry below re-raises the real OSError, nothing is swallowed
         return Path(spath).read_bytes()
-    sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    sig = _stat_sig(st)
     cached = _cached_bytes(spath, sig, st.st_mtime_ns)
     if cached is not None:
         return cached
@@ -92,7 +92,13 @@ def read_bytes_cached(path: PathLike) -> bytes:
     return raw
 
 
-def _cached_bytes(spath: str, sig: tuple[int, int, int], mtime_ns: int) -> Optional[bytes]:
+def _stat_sig(st: os.stat_result) -> "tuple[int, int, int, int]":
+    """mtime, size, inode and ctime: ``os.utime`` can restore an mtime but not the inode-change time (POSIX), so a same-size rewrite
+    with a preserved mtime is still noticed there. On Windows ``st_ctime_ns`` is the creation time, which a rewrite does not change."""
+    return (st.st_mtime_ns, st.st_size, st.st_ino, st.st_ctime_ns)
+
+
+def _cached_bytes(spath: str, sig: tuple[int, int, int, int], mtime_ns: int) -> Optional[bytes]:
     with _LOCK:
         hit = _BYTES.get(spath)
         if hit is not None and hit[0] == sig and hit[1] - mtime_ns > _RACY_NS:
@@ -100,7 +106,7 @@ def _cached_bytes(spath: str, sig: tuple[int, int, int], mtime_ns: int) -> Optio
     return None
 
 
-def _store_bytes(spath: str, sig: tuple[int, int, int], read_ns: int, raw: bytes) -> None:
+def _store_bytes(spath: str, sig: tuple[int, int, int, int], read_ns: int, raw: bytes) -> None:
     global _BYTES_TOTAL
     with _LOCK:
         old = _BYTES.pop(spath, None)
@@ -176,7 +182,7 @@ def _parse_text(path: Path, text: str) -> ast.Module:
         raise SourceParseError(path, str(exc)) from exc
 
 
-def _fast_lookup(spath: str, sig: "Optional[tuple[int, int, int]]", mtime_ns: int) -> "Optional[tuple[str, ast.Module]]":
+def _fast_lookup(spath: str, sig: "Optional[tuple[int, int, int, int]]", mtime_ns: int) -> "Optional[tuple[str, ast.Module]]":
     """The cached ``(source, tree)`` of a file whose stat signature is unchanged and old enough to trust (see ``_RACY_NS``), else ``None``."""
     if sig is None:
         return None
@@ -190,7 +196,7 @@ def _fast_lookup(spath: str, sig: "Optional[tuple[int, int, int]]", mtime_ns: in
     return None
 
 
-def _fast_store(spath: str, sig: "Optional[tuple[int, int, int]]", read_ns: int, key: str, digest: bytes) -> None:
+def _fast_store(spath: str, sig: "Optional[tuple[int, int, int, int]]", read_ns: int, key: str, digest: bytes) -> None:
     """Remember the stat signature a file was read under."""
     if sig is not None:
         with _LOCK:
@@ -210,7 +216,7 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
         st = os.stat(spath)
     except OSError:
         st = None
-    sig = (st.st_mtime_ns, st.st_size, st.st_ino) if st is not None else None
+    sig = _stat_sig(st) if st is not None else None
     stable = _fast_lookup(spath, sig, st.st_mtime_ns if st is not None else 0)
     if stable is not None:
         return stable

@@ -22,6 +22,9 @@ Static (:func:`find_pickle_state_gaps`), two rules, each only where a class has 
   ``self.<name>`` a lock, thread, pool, executor, open file, socket or DB connection OUTSIDE ``__init__``. (Inside
   ``__init__`` this is pyutilz's ``unpicklable_resource_state`` scanner; the lazily created one is what it misses.)
 
+A class that is never pickled (a service object that owns a worker thread or a connection) carries ``# pickle-ok: <reason>`` on the assigning
+line or the line above it; the marker silences both rules for that assignment.
+
 Existing findings are ratcheted by the baseline.
 """
 
@@ -35,6 +38,7 @@ from typing import Any, Callable, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._gate_report import line_has_marker
 from ._gate_run import enforce_findings
 
 __all__ = [
@@ -49,6 +53,7 @@ __all__ = [
 REFRESH_FLAG = "--refresh-pickle-state-baseline"
 GATE = "pickle-state"
 RULE_NOT_EXCLUDED = "state-not-excluded"
+MARKER = "pickle-ok:"
 RULE_NO_GETSTATE = "unpicklable-without-getstate"
 _DEFAULT_EXCLUDE = frozenset({"tests", "test", "testing", "benchmarks", "bench", "examples", "scripts"})
 #: The noun a runtime-state attribute ends in (``_adjacency_cache``, ``_cache_lock``, ``session``); a name that only uses one
@@ -266,6 +271,12 @@ def _class_findings(rel: str, cls: ast.ClassDef, aliases: ImportAliases, module_
     return out
 
 
+def _marked(lines: list[str], line: int) -> bool:
+    """``# pickle-ok:`` on *line*, or alone on the comment line above it."""
+    above = lines[line - 2].lstrip().startswith("#") if 2 <= line <= len(lines) + 1 else False
+    return line_has_marker(lines, line, MARKER) or (above and line_has_marker(lines, line - 1, MARKER))
+
+
 def find_pickle_state_gaps(
     root: Union[str, Path, Iterable[Union[str, Path]]],
     *,
@@ -278,9 +289,10 @@ def find_pickle_state_gaps(
     for f in scan:
         aliases = ImportAliases.from_tree(f.tree)
         module_collections = _string_collections(f.tree.body)
+        lines = f.source.splitlines()
         for node in _fast_walk(f.tree):
             if isinstance(node, ast.ClassDef):
-                findings.extend(_class_findings(f.rel, node, aliases, module_collections))
+                findings.extend(x for x in _class_findings(f.rel, node, aliases, module_collections) if not _marked(lines, x.line))
     findings.sort(key=lambda x: (x.path, x.line))
     return findings, scan
 

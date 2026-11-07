@@ -177,6 +177,27 @@ def _matches(rel: str, patterns: Sequence[str]) -> bool:
     return any(fnmatch.fnmatchcase(rel if "/" in pat else name, pat) for pat in patterns)
 
 
+#: Excluded names that are junk only when untracked. A tracked ``src/pkg/build/m.py`` is a real package, and git says so; dot-directories
+#: and ``__pycache__`` stay excluded whatever git tracks.
+_SOFT_EXCLUDE = frozenset({"build", "dist", "node_modules", "site-packages", "venv"})
+
+
+class _TrackedNames:
+    """In git mode, which excluded-looking paths are tracked (one extra ``git ls-files --cached``, made only when some path needs it)."""
+
+    def __init__(self, base: Path, git_mode: bool) -> None:
+        self._base = base
+        self._git_mode = git_mode
+        self._tracked: Optional[frozenset[str]] = None
+
+    def exempts(self, rel: str, hit: "frozenset[str]") -> bool:
+        if not self._git_mode or not hit <= _SOFT_EXCLUDE:
+            return False
+        if self._tracked is None:
+            self._tracked = frozenset(git_listing(self._base, include_untracked=False) or ())
+        return rel in self._tracked
+
+
 def iter_files(
     root: PathLike,
     patterns: Sequence[str] = ("*.py",),
@@ -189,7 +210,8 @@ def iter_files(
 
     *patterns* are ``fnmatch`` patterns against the file NAME, or against the root-relative POSIX path when the
     pattern contains ``/``. *exclude* is a set of directory/file names matched against root-relative components
-    only. ``use_git=None`` picks git when *root* is inside a work tree; ``False`` forces the walk; ``True``
+    only; in git mode a TRACKED file under a directory named ``build``, ``dist``, ``venv``, ``node_modules`` or ``site-packages`` is kept
+    (it is a real package), dot-directories and ``__pycache__`` are skipped whatever git tracks. ``use_git=None`` picks git when *root* is inside a work tree; ``False`` forces the walk; ``True``
     requires git and raises when it is not available.
     """
     base = Path(root)
@@ -206,9 +228,13 @@ def iter_files(
     if rels is None:
         rels = _walk(base, skip)
     out: list[Path] = []
+    tracked = _TrackedNames(base, rels is not None and use_git is not False)
     for rel in rels:
         parts = rel.split("/")
-        if skip.intersection(parts) or not _matches(rel, patterns):
+        if not _matches(rel, patterns):
+            continue
+        hit = skip.intersection(parts)
+        if hit and not tracked.exempts(rel, hit):
             continue
         p = base.joinpath(*parts)
         # A tracked file deleted from the work tree is not part of the corpus. A symlink is not either: git lists it, is_file() follows it,

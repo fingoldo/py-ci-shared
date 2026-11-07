@@ -9,7 +9,7 @@ predicate at all.
 Flagged: an ``assert`` in a test file whose test is a membership test with a string literal on the left and a value on the
 right (``"SELECT" in x``, ``"OR 1=1" not in x``), when the literal contains an upper-case SQL keyword or probe: SELECT, INSERT,
 UPDATE, DELETE, FROM, WHERE, JOIN, GROUP BY, ORDER BY, OR TRUE, OR 1=1. Keywords are matched whole and in upper case, so an
-English word in a message is not a finding.
+English word in a message is not a finding. A right operand that is a collection (a set, list, tuple or dict display or comprehension, `.keys()`, a name ending in `s`, anything read from `.headers`) is a membership test, not a probe.
 
 Not judged here, because ``source_text_ban`` already bans them: ``inspect.getsource`` and reads of a Python file's text in a
 test. Use the two gates together. A test that compares the rows a query returns, or the parsed AST of the statement, is the
@@ -47,12 +47,29 @@ def _is_sql_text(literal: str) -> bool:
     return SQL_PROBE.fullmatch(stripped) is not None or SQL_SHAPE.search(stripped) is not None
 
 
+_COLLECTION_DISPLAYS = (ast.Set, ast.List, ast.Tuple, ast.Dict, ast.SetComp, ast.ListComp, ast.DictComp, ast.GeneratorExp)
+
+
+def _is_collection(operand: ast.expr) -> bool:
+    """True for a right operand that is a collection or a header mapping, where ``"DELETE" in x`` is a membership test of an element
+    (an HTTP ``Allow`` header, an event list, ``.keys()``) and not a probe of statement text."""
+    if isinstance(operand, _COLLECTION_DISPLAYS):
+        return True
+    if isinstance(operand, ast.Call) and isinstance(operand.func, ast.Attribute):
+        return operand.func.attr in ("keys", "values", "items")
+    if isinstance(operand, ast.Name):
+        return operand.id.endswith("s") and not operand.id.endswith("ss")
+    return any(isinstance(n, ast.Attribute) and n.attr.lower().endswith("headers") for n in shared_walk(operand))
+
+
 def _text_literals(node: ast.Assert) -> Iterator[str]:
-    """The string literal on the left of each membership test inside an assert (``"SELECT" in x``)."""
+    """The string literal on the left of each membership test inside an assert (``"SELECT" in x``), unless the right operand is a collection."""
     for sub in shared_walk(node.test):
         if isinstance(sub, ast.Compare) and isinstance(sub.left, ast.Constant) and isinstance(sub.left.value, str):
-            if any(isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
-                yield sub.left.value
+            for op, right in zip(sub.ops, sub.comparators):
+                if isinstance(op, (ast.In, ast.NotIn)) and not _is_collection(right):
+                    yield sub.left.value
+                    break
 
 
 def _findings_in(parsed: ParsedFile) -> list[Finding]:

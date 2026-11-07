@@ -255,3 +255,29 @@ def test_a_dict_cache_set_on_use_under_a_copy_getstate_is_still_reported(tmp_pat
                 return x
     """
     assert _static(tmp_path, body) == [(RULE_NOT_EXCLUDED, 6)]
+
+
+class TestPickleOkMarker:
+    """Audit 41-F8: a class that is never pickled opts out with ``# pickle-ok: <reason>``."""
+
+    BODY = """
+        import threading
+
+        class Worker:
+            def start(self):
+                {above}
+                self._thread = threading.Thread(target=print){trail}
+    """
+
+    def _lines(self, tmp_path, above="", trail=""):
+        return _static(tmp_path, self.BODY.format(above=above or "pass", trail=trail))
+
+    def test_unmarked_is_reported(self, tmp_path):
+        assert len(self._lines(tmp_path)) == 1
+
+    def test_marker_on_the_line_or_the_line_above_silences(self, tmp_path):
+        assert self._lines(tmp_path, trail="  # pickle-ok: service object, never pickled") == []
+        assert self._lines(tmp_path, above="# pickle-ok: service object, never pickled") == []
+
+    def test_a_marker_on_another_assignment_does_not(self, tmp_path):
+        assert len(self._lines(tmp_path, above="x = 1  # pickle-ok: other")) == 1

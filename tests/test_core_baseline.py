@@ -302,3 +302,24 @@ def test_sibling_ratchets_name_a_corrupt_baseline_instead_of_a_json_traceback(tm
     with pytest.raises(BaselineError, match=r"b\.json is unreadable \(JSONDecodeError: .*\); fix or delete it"):
         refresh(path)
     assert path.read_text(encoding="utf-8") == "{not json"
+
+
+def test_a_duplicate_json_key_is_refused(tmp_path):
+    """Audit 42-F8: last-wins on a duplicated key silently raised an allowed count."""
+    from py_ci_shared._core.baseline import BaselineError, load_json
+
+    p = tmp_path / "b.json"
+    p.write_text('{"k": {"count": 1}, "k": {"count": 9}}', encoding="utf-8")
+    with pytest.raises(BaselineError, match="duplicate key"):
+        load_json(p)
+
+
+@pytest.mark.parametrize("data", [[["a", "b"], "a|b"], ["a|b", ["a", "b"]]])
+def test_a_pair_and_a_string_that_join_alike_are_refused(tmp_path, data):
+    """Audit 42-F7: a ['a','b'] pair and the plain string 'a|b' merged into one count of 2."""
+    import json
+
+    from py_ci_shared._core.baseline import BaselineError, _parse_list
+
+    with pytest.raises(BaselineError, match="merge into one count"):
+        _parse_list(json.loads(json.dumps(data)), tmp_path / "b.json")

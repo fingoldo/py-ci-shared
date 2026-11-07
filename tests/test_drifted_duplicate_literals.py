@@ -305,3 +305,30 @@ def test_an_unmarked_restated_grid_is_still_drift(tmp_path: Path):
     _write(tmp_path, "a.py", ["GRID = (5000, 10000)  # sweep"])
     _write(tmp_path, "b.py", ["GRID = (5000, 10000)"])
     assert [f.rule for f in _find(tmp_path) if f.rule == RULE_SET] == [RULE_SET]
+
+
+def test_the_marker_also_exempts_a_named_constant(tmp_path: Path):
+    """Audit 41-F4: the marker used to cover only the literal-set rule."""
+    _write(tmp_path, "a.py", ["# literal-set-ok: own crossover", "SWEEP_ROWS = 7777"])
+    _write(tmp_path, "b.py", ["SWEEP_ROWS = 7777"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_CONSTANT] == []
+    _write(tmp_path, "a.py", ["SWEEP_ROWS = 7777"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_CONSTANT] == [RULE_CONSTANT]
+
+
+def test_the_marker_also_exempts_a_threshold_comparison(tmp_path: Path):
+    for name in "abc":
+        _write(tmp_path, f"{name}.py", ["def f(std):", "    return std < 4321  # literal-set-ok: float floor"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_THRESHOLD] == []
+    _write(tmp_path, "a.py", ["def f(std):", "    return std < 4321"])
+    _write(tmp_path, "b.py", ["def f(std):", "    return std < 4321"])
+    _write(tmp_path, "c.py", ["def f(std):", "    return std < 4321"])
+    assert [f.rule for f in _find(tmp_path) if f.rule == RULE_THRESHOLD] == [RULE_THRESHOLD]
+
+
+@pytest.mark.parametrize("pair", ["(127, 32767)", "(0.01, 0.05)", "(0.025, 0.975)"])
+def test_type_bounds_and_significance_levels_are_not_a_duplicated_set(tmp_path: Path, pair):
+    """Audit 41-F9."""
+    _write(tmp_path, "a.py", [f"X = {pair}"])
+    _write(tmp_path, "b.py", [f"Y = {pair}"])
+    assert _find(tmp_path) == []
