@@ -147,22 +147,26 @@ def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
 
-def _best_pair_ratio(dumps: Sequence[str]) -> float:
-    """The largest ``SequenceMatcher.ratio()`` over every pair of *dumps*, computed exactly.
+def _best_pair_ratio(dumps: Sequence[str], similarity: float) -> float:
+    """The largest ``SequenceMatcher.ratio()`` over the pairs of *dumps* when it reaches *similarity*; below it otherwise.
 
-    The exact ratio is quadratic in the body length and a name shared by hundreds of modules makes tens of thousands of
-    pairs (one mlframe name took over 30 minutes). A pair whose cheap upper bounds (``real_quick_ratio``, then
-    ``quick_ratio``) do not beat the best so far cannot change the maximum, so it is skipped; the value is the same.
+    A group is reported only when its best pair reaches *similarity*, so the exact ratio is needed only for pairs that can
+    still reach it: a pair whose cheap upper bounds (``real_quick_ratio``, then ``quick_ratio``) fall below the floor is skipped
+    without the quadratic ``ratio()``. The floor is *similarity* until a pair reaches it, then the best so far, so the value
+    returned when it reaches *similarity* is exactly the brute-force maximum.
     """
-    best = 0.0
+    best = -1.0
     matcher = difflib.SequenceMatcher(None)
     for i in range(len(dumps)):
         matcher.set_seq1(dumps[i])
         for j in range(i + 1, len(dumps)):
             matcher.set_seq2(dumps[j])
-            if matcher.real_quick_ratio() <= best or matcher.quick_ratio() <= best:
+            floor = max(similarity, best)
+            if matcher.real_quick_ratio() < floor or matcher.quick_ratio() < floor:
                 continue
-            best = max(best, matcher.ratio())
+            ratio = matcher.ratio()
+            if ratio > best:
+                best = ratio
     return best
 
 
@@ -179,7 +183,7 @@ def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
         dumps = [dump for _, _, dump in members]
         if len(set(dumps)) == 1:
             continue
-        best = _best_pair_ratio(dumps)
+        best = _best_pair_ratio(dumps, similarity)
         if best >= similarity:
             found.append(DriftGroup(name, [(p, line) for p, line, _ in members], best, len(set(dumps))))
     return sorted(found, key=lambda g: (-g.similarity, g.name))
