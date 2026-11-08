@@ -28,7 +28,7 @@ def _copy_files(root: Path, rels: tuple[str, ...]) -> None:
 def layout(tmp_path: Path) -> Path:
     """The files the scaffolder reads and edits, copied byte for byte: registry, pyproject, README, the teeth test."""
     root = tmp_path / "pcs"
-    _copy_files(root, ("src/py_ci_shared/registry.toml", "tests/test_gate_teeth.py", "README.md", "pyproject.toml"))
+    _copy_files(root, ("src/py_ci_shared/registry.toml", "tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "README.md", "pyproject.toml"))
     (root / "tests" / "canary").mkdir()
     return root
 
@@ -40,7 +40,7 @@ def full_layout(tmp_path: Path) -> Path:
     shutil.copytree(REPO / "src" / "py_ci_shared", root / "src" / "py_ci_shared", ignore=IGNORE)
     shutil.copytree(REPO / "tests" / "canary", root / "tests" / "canary")
     _copy_files(
-        root, ("tests/test_gate_teeth.py", "tests/test_package_inventory.py", "tests/conftest.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
+        root, ("tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "tests/test_package_inventory.py", "tests/conftest.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
     )
     return root
 
@@ -67,7 +67,7 @@ def test_a_gate_lands_in_every_place_with_since_from_pyproject(layout):
     assert entry == {"name": "seeded_widgets", "kind": "gate", "entries": ["assert_seeded_widgets"], "since": version, "summary": "Widgets are seeded"}
     readme = (layout / "README.md").read_text(encoding="utf-8")
     assert f"| [`seeded_widgets`](src/py_ci_shared/seeded_widgets.py) | gate | {version} | `assert_seeded_widgets` | Widgets are seeded |" in readme
-    teeth = (layout / "tests" / "test_gate_teeth.py").read_text(encoding="utf-8")
+    teeth = (layout / "tests" / "_gate_teeth_canaries.py").read_text(encoding="utf-8")
     assert 'Canary("seeded_widgets", lambda d: _gate("seeded_widgets").assert_seeded_widgets(d, use_git=False)),' in teeth
     module = (layout / "src" / "py_ci_shared" / "seeded_widgets.py").read_text(encoding="utf-8")
     for needle in ("from ._core import Baseline, Finding, ImportAliases, scan_python", "min_files", "allow_unparsed", "def find_seeded_widgets"):
@@ -95,7 +95,7 @@ def test_a_library_has_a_finder_and_no_assert(layout):
     assert [g["name"] for g in _registry(layout)][-1] == "zzz_last_library"
     module = (layout / "src" / "py_ci_shared" / "zzz_last_library.py").read_text(encoding="utf-8")
     assert "def find_zzz_last_library" in module and "def assert_" not in module and "Baseline" not in module
-    teeth = (layout / "tests" / "test_gate_teeth.py").read_text(encoding="utf-8")
+    teeth = (layout / "tests" / "_gate_teeth_canaries.py").read_text(encoding="utf-8")
     assert '_assert_empty(_gate("zzz_last_library").find_zzz_last_library(d, use_git=False))' in teeth
 
 

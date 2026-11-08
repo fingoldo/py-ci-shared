@@ -3,7 +3,7 @@
 It writes ``src/py_ci_shared/<name>.py`` (built on ``_core``: ``scan_python``, ``Finding``, ``Baseline``,
 ``ImportAliases``, a ``find_*``/``assert_*`` pair with a ``min_files`` floor and ``allow_unparsed``),
 ``tests/test_<name>.py`` (seeded violation, negative control, BOM, unparsable and empty-corpus tests),
-``tests/canary/<name>/{violation,clean,bom,unparsable}/`` with a ``CANARIES`` entry in ``tests/test_gate_teeth.py``,
+``tests/canary/<name>/{violation,clean,bom,unparsable}/`` with a ``CANARIES`` entry in ``tests/_gate_teeth_canaries.py``,
 the ``registry.toml`` entry (``since`` = the version in ``pyproject.toml``) and the README catalogue. Every generated
 test fails until it is written for real, and so does the canary, so an unfinished gate cannot pass CI. Nothing that
 exists is overwritten: the command checks every target first and changes nothing when one exists.
@@ -243,8 +243,8 @@ def _check(root: Path, name: str, kind: str, summary: str) -> None:
     existing = [p for p in _targets(root, name) if p.exists()] + [p for p in [root / "tests" / "canary" / name] if p.exists()]
     if existing:
         raise ScaffoldError("refusing to overwrite: " + ", ".join(p.relative_to(root).as_posix() for p in existing))
-    if _CANARIES_END not in _read(root / "tests" / "test_gate_teeth.py"):
-        raise ScaffoldError("tests/test_gate_teeth.py has no CANARIES list end to add the entry before")
+    if _CANARIES_END not in _read(root / "tests" / "_gate_teeth_canaries.py"):
+        raise ScaffoldError("tests/_gate_teeth_canaries.py has no CANARIES list end to add the entry before")
 
 
 def _render_readme(root: Path, registry_path: Path) -> str:
@@ -276,9 +276,9 @@ def new_gate(root: Path, name: str, *, kind: str = "gate", summary: str = "") ->
     registry_path = root / "src" / "py_ci_shared" / "registry.toml"
     block = _registry_block(name, kind, _version(root), summary)
     _write(registry_path, _insert_registry(_read(registry_path), block, name), crlf=_crlf(registry_path))
-    teeth = root / "tests" / "test_gate_teeth.py"
+    teeth = root / "tests" / "_gate_teeth_canaries.py"
     _write(teeth, _read(teeth).replace(_CANARIES_END, _canary_line(name, kind) + _CANARIES_END, 1), crlf=_crlf(teeth))
     readme = root / "README.md"
     _write(readme, _render_readme(root, registry_path), crlf=_crlf(readme))
     rel = [p.relative_to(root).as_posix() for p in (module, tests, violation, clean, bom, broken)]
-    return Scaffold(created=tuple(rel), updated=("src/py_ci_shared/registry.toml", "tests/test_gate_teeth.py", "README.md"))
+    return Scaffold(created=tuple(rel), updated=("src/py_ci_shared/registry.toml", "tests/_gate_teeth_canaries.py", "README.md"))

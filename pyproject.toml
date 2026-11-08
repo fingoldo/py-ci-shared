@@ -256,7 +256,7 @@ entry = "assert_rounds_countable"
 audits_dir = "audits"
 
 [tool.py_ci_shared.gates.loc_budget]
-files = ["src/**/*.py"]
+files = ["src/**/*.py", "tests/**/*.py"]
 root = "."
 baseline_path = "tests/baselines/loc_budget.json"
 
