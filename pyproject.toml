@@ -271,8 +271,20 @@ files = ["src/**/*.py", "tests/**/*.py"]
 root = "."
 baseline_path = "tests/baselines/complexity_ratchet.json"
 
-# uncalled_functions is not enabled: every public assert_*/find_* here is called by consumers, never by this package, so
-# it would list the public API itself.
+# Private functions only: every public assert_*/find_* here is called by consumers, never by this package, so the whole-tree gate would list the
+# public API itself. A private function has no consumer callers.
+[tool.py_ci_shared.gates.uncalled_functions]
+files = ["src/**/*.py"]
+root = "."
+baseline_path = "tests/baselines/uncalled_functions.json"
+private_only = true
+# Test-only or framework-dispatched private names, one reason each (no production caller; a blanket skip would hide new dead code):
+ignore = [
+    "_first_failing_file",  # _mutation_runner helper pinned by tests/test_mutation_output_bounded.py and test_mutation_teeth.py; no production caller
+    "_killed_by_crash",  # _mutation_runner helper pinned by the same tests; no production caller
+    "_candidate_pairs_all_postings",  # reference implementation kept for the parity test against _candidate_pairs (SUPERSEDED)
+    "_offline_suite_without_credentials",  # autouse pytest fixture, invoked by pytest by name (FRAMEWORK_HOOK)
+]
 
 [tool.py_ci_shared.gates.vacuous_loop_assertions]
 files = ["tests/**/test_*.py"]

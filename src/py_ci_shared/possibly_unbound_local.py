@@ -127,10 +127,6 @@ def _stores(node: ast.AST) -> "set[str]":
     return {name for name, n in _names(node) if isinstance(n.ctx, ast.Store)}
 
 
-def _deletes(node: ast.AST) -> "set[str]":
-    return {name for name, n in _names(node) if isinstance(n.ctx, ast.Del)}
-
-
 def _aliases_bound(stmt: ast.stmt) -> "set[str]":
     if isinstance(stmt, (ast.Import, ast.ImportFrom)):
         return {(a.asname or a.name).split(".")[0] for a in stmt.names if a.name != "*"}

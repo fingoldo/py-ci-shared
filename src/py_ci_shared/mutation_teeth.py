@@ -120,7 +120,6 @@ from ._mutation_operators import _NAME_SWAP as _NAME_SWAP
 from ._mutation_operators import _OP_SWAP as _OP_SWAP
 from ._mutation_operators import _SYNTAX_RISKY_PREFIXES as _SYNTAX_RISKY_PREFIXES
 from ._mutation_operators import _argument_transpositions as _argument_transpositions
-from ._mutation_operators import _container_members as _container_members
 from ._mutation_operators import _container_rows as _container_rows
 from ._mutation_operators import _excluded_ranges as _excluded_ranges
 from ._mutation_operators import _normalise_lines, _scope_of, generate_mutants

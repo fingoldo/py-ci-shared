@@ -269,7 +269,12 @@ def _string_items(value: ast.expr) -> Iterator[str]:
                 yield elt.value
 
 
-def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed: bool = False) -> dict[str, str]:
+def _is_private(name: str) -> bool:
+    """A single-underscore name (``_helper``, ``_Cls``); a dunder (``__getattr__``) is called by the interpreter, not private."""
+    return name.startswith("_") and not (name.startswith("__") and name.endswith("__"))
+
+
+def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed: bool = False, private_only: bool = False) -> dict[str, str]:
     """Return ``{"rel/path.py::name": name}`` for module-level functions nothing in *files* loads.
 
     *files* is the PRODUCTION set: the caller decides what that means, and must exclude tests. A
@@ -280,6 +285,10 @@ def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed
     its own file is correctly seen as live. A file that cannot be read or parsed raises
     :class:`py_ci_shared._core.UnparsedFilesError`: its call sites are unknown, so every function it calls would be
     reported dead. ``allow_unparsed=True`` restores the old skip for callers that report problems themselves.
+
+    ``private_only=True`` reports only functions whose own name starts with an underscore (not a dunder). A private function has no
+    caller outside *files*, so a library whose public functions are called only by consumers can still look for dead private code.
+    References are still collected from every function and file, so the findings are exactly the private subset of the default ones.
     """
     scan = scan_python([Path(p) for p in files], min_files=0, root=root)
     if scan.unparsed and not allow_unparsed:
@@ -288,7 +297,8 @@ def find_uncalled_functions(files: Iterable[Path], root: Path, *, allow_unparsed
     definitions: dict[str, str] = {}
     for parsed in scan:
         for name, key in _definitions(parsed.tree, parsed.path, root).items():
-            definitions.setdefault(key, name)
+            if not private_only or _is_private(name):
+                definitions.setdefault(key, name)
 
     referenced: set[str] = set()
     alias_edges: set[tuple[str, str]] = set()
@@ -335,6 +345,7 @@ def assert_no_new_uncalled_function(
     public_api_from_exports: bool = False,
     min_files: int = 1,
     allow_unparsed: bool = False,
+    private_only: bool = False,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
 ) -> None:
@@ -348,7 +359,8 @@ def assert_no_new_uncalled_function(
     The baseline is a committed multiset (``_core.Baseline``). A MISSING baseline fails and names the refresh
     command; it is written only when a refresh is requested (``refresh=True``, ``--refresh-uncalled-functions-baseline``
     via the pytest *request* or command line, or env ``PY_CI_SHARED_REFRESH=uncalled-functions``), then the run is
-    skipped. A walk that parsed fewer than *min_files* files, or hit an unparsable one, fails and never writes.
+    skipped. ``private_only=True`` judges only underscore-named functions (see :func:`find_uncalled_functions`); a baseline written
+    without it holds public names, which then read as stale, so give a private-only gate its own baseline. A walk that parsed fewer than *min_files* files, or hit an unparsable one, fails and never writes.
 
     ``ignore`` takes bare function NAMES for the cases this check cannot judge and should not guess
     at: a library's public API, a framework callback invoked by name from outside the repo, a
@@ -377,7 +389,7 @@ def assert_no_new_uncalled_function(
     if bad:
         pytest.fail("invalid uncalled-function exemption(s):\n  " + "\n  ".join(bad), pytrace=False)
     ignored = set(ignore) | set(exemptions)
-    current = {k: v for k, v in find_uncalled_functions(paths, root).items() if v not in ignored}
+    current = {k: v for k, v in find_uncalled_functions(paths, root, private_only=private_only).items() if v not in ignored}
     do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
     baseline = Baseline(baseline_path, gate="uncalled-functions", refresh_command=f"pytest {REFRESH_FLAG} (or PY_CI_SHARED_REFRESH=uncalled-functions)")
     outcome = baseline.enforce(sorted(current), refresh=do_refresh)

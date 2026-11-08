@@ -4,6 +4,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.10)
 
+- `uncalled_functions` takes `private_only=True` (additive, default off; also a `[tool.py_ci_shared.gates.uncalled_functions]` key): only functions whose own name starts with an underscore (not a dunder) are judged, so a library whose public functions are called only by consumers can still find dead private code. The findings are exactly the private subset of the default ones. This repo enables it over `src` (audit 52-F4): it found 6 private functions with no production caller; 2 were deleted (`possibly_unbound_local._deletes`, `_mutation_operators._container_members` with its unused re-export in `mutation_teeth`) and 4 are allowed by name with a reason in `pyproject.toml`.
 - `local_copy_report`: the content signature of `nondiscriminating_shapes` now names the shapes that gate checks (wide literal range, envelope assert, median round-trip, late skip, non-empty-only) instead of a helper called `_*tautolog*`, which matched glossum's tautology scanner (a different rule) and kept `adoption_matrix` red (fewer findings).
 - `adoption_matrix` no longer reports a dunder attribute of the package (`py_ci_shared.__file__`, `__version__`) as an `unknown-module` (fewer findings; pyutilz's pin-coverage test reads `py_ci_shared.__file__`).
 

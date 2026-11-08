@@ -128,6 +128,66 @@ class TestAliasedImportsResolve:
         assert "a.py::original" in find_uncalled_functions([a, b], tmp_path)
 
 
+class TestPrivateOnly:
+    SRC = """def public_dead():
+    return 1
+
+
+def _private_dead():
+    return 2
+
+
+def __dunder_like__():
+    return 3
+
+
+def _private_live():
+    return 4
+
+
+_private_live()
+"""
+
+    def test_default_reports_public_and_private_dead_functions(self, tmp_path):
+        f = _write(tmp_path, "m.py", self.SRC)
+        assert set(find_uncalled_functions([f], tmp_path).values()) == {"public_dead", "_private_dead", "__dunder_like__"}
+
+    def test_private_only_reports_the_underscore_subset_and_not_dunders(self, tmp_path):
+        f = _write(tmp_path, "m.py", self.SRC)
+        assert find_uncalled_functions([f], tmp_path, private_only=True) == {"m.py::_private_dead": "_private_dead"}
+
+    def test_private_only_is_exactly_the_private_subset_of_the_default_findings(self, tmp_path):
+        """References are still collected from public functions: a private helper called only by a public one stays live."""
+        f = _write(tmp_path, "m.py", """def public():
+    return _helper()
+
+
+def _helper():
+    return 1
+
+
+def _orphan():
+    return 2
+""")
+        default = find_uncalled_functions([f], tmp_path)
+        private = find_uncalled_functions([f], tmp_path, private_only=True)
+        assert private == {k: v for k, v in default.items() if v.startswith("_")}
+        assert private == {"m.py::_orphan": "_orphan"}
+
+    def test_assert_entry_passes_for_a_dead_public_function_and_fails_for_a_dead_private_one(self, tmp_path):
+        baseline = tmp_path / "b.json"
+        baseline.write_text("{}", encoding="utf-8")
+        public = _write(tmp_path, "p.py", """def public_dead():
+    return 1
+""")
+        assert_no_new_uncalled_function([public], tmp_path, baseline, private_only=True, refresh=False)
+        private = _write(tmp_path, "q.py", """def _private_dead():
+    return 1
+""")
+        with pytest.raises(BaseException, match="_private_dead"):
+            assert_no_new_uncalled_function([private], tmp_path, baseline, private_only=True, refresh=False)
+
+
 class TestScope:
     def test_methods_are_out_of_scope(self, tmp_path):
         """A method is reached through an instance and its name is often shared across unrelated

@@ -217,11 +217,6 @@ def _assigns_dunder_all(node: ast.Assign) -> bool:
     return any(isinstance(target, ast.Name) and target.id == "__all__" for target in node.targets)
 
 
-def _container_members(source: str, tree: Optional[ast.AST] = None) -> list[tuple[int, int, str]]:
-    """``(start, end, container name)`` for each SUPPRESSED row of a large module-level table."""
-    return _container_rows(source, tree)[0]
-
-
 def _container_rows(source: str, tree: Optional[ast.AST] = None) -> tuple[list[tuple[int, int, str]], dict[str, tuple[int, int]]]:
     """Suppressed rows of every large data table, and ``name -> (rows kept, rows in the table)``.
 
