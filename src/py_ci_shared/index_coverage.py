@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -264,7 +265,7 @@ def find_cover(expected: Index, live: list[Index]) -> Index | None:
     return min(candidates, key=lambda i: (len(i.columns), i.name))
 
 
-def statements(sql_text: str):
+def statements(sql_text: str) -> Iterator[str]:
     """Yield each statement of a .sql file with `--` and `/* */` comments removed.
 
     Comment stripping is not cosmetic. `sql/audit_wave3_migrations.sql` carries a fully

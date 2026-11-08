@@ -772,7 +772,7 @@ def find_surviving_mutants(
     return outcome
 
 
-def register_refresh_option(parser) -> None:
+def register_refresh_option(parser: Any) -> None:
     """Add ``--refresh-mutation-survivors-baseline`` (and the shared ``--py-ci-refresh``) to a repo's pytest options."""
     register_refresh_options(parser, flags=(REFRESH_FLAG,), help_suffix="accepted mutation survivors")
 
@@ -783,7 +783,7 @@ def sweep_files(
     *,
     lines_by_source: "dict[str, Iterable[range]] | None" = None,
     fallback_by_source: "dict[str, Sequence[PathArg]] | None" = None,
-    **common,
+    **common: Any,
 ) -> "dict[str, MutationRun]":
     """Sweep several files, paying the fixed per-sweep costs once.
 
@@ -845,11 +845,11 @@ def assert_no_new_surviving_mutant(
     path: PathArg,
     test_paths: Sequence[PathArg],
     repo_root: PathArg,
-    baseline,
-    request=None,
+    baseline: Any,
+    request: Any = None,
     *,
     fail_on_truncation: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """The ratchet half: fail on a survivor that is not already accepted.
 

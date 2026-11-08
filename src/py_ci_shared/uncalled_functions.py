@@ -85,7 +85,7 @@ class Exemption:
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 
-def register_refresh_option(parser) -> None:  # type: ignore[no-untyped-def]
+def register_refresh_option(parser: Any) -> None:
     """Register ``--refresh-uncalled-functions-baseline`` (and the generic ``--py-ci-refresh``) on pytest's parser.
 
     Same rationale as ``code_audit_meta.register_refresh_option``: pytest rejects unrecognized CLI

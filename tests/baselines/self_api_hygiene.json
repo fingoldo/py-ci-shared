@@ -198,26 +198,5 @@
   "worktree_hygiene.py": 1
  },
  "no_docstring": {},
- "unannotated": {
-  "black_filtered_apply.py::discover_py_files": 1,
-  "black_filtered_apply.py::files_black_would_change": 1,
-  "black_filtered_apply.py::is_all_blank": 1,
-  "black_filtered_apply.py::looks_like_import_or_call_list": 1,
-  "black_filtered_apply.py::main": 1,
-  "black_filtered_apply.py::process_one": 1,
-  "black_filtered_apply.py::run_black_stdin": 1,
-  "code_audit_meta.py::assert_no_new_code_audit_findings": 1,
-  "code_audit_meta.py::register_refresh_option": 1,
-  "content_hash_version_bump_gate.py::register_refresh_option": 1,
-  "import_side_effects.py::assert_imports_have_no_side_effects": 1,
-  "index_coverage.py::statements": 1,
-  "loc_budget.py::register_refresh_option": 1,
-  "mutation_teeth.py::assert_no_new_surviving_mutant": 1,
-  "mutation_teeth.py::register_refresh_option": 1,
-  "mutation_teeth.py::sweep_files": 1,
-  "readme_env_var_parity.py::register_refresh_option": 1,
-  "sql_verify.py::check": 1,
-  "sql_verify.py::check_loader": 1,
-  "uncalled_functions.py::register_refresh_option": 1
- }
+ "unannotated": {}
 }

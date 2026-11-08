@@ -69,7 +69,7 @@ REFRESH_FLAG = "--refresh-content-hash-version-baseline"
 HASH_FORMAT = 2
 
 
-def register_refresh_option(parser) -> None:
+def register_refresh_option(parser: Any) -> None:
     """Register ``--refresh-content-hash-version-baseline`` (and the shared ``--py-ci-refresh``) as flags.
 
     Same rationale as ``code_audit_meta.register_refresh_option``: pytest

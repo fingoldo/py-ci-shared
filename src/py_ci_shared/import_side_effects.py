@@ -403,7 +403,7 @@ def assert_imports_have_no_side_effects(
     tolerate_unimportable: bool = False,
     allow_unparsed: bool = False,
     min_targets: int = 1,
-    **probe_kw,
+    **probe_kw: Any,
 ) -> None:
     """Fail on a recorded side effect, a crashed probe, or (unless tolerated) a target that could not be imported.
 

@@ -36,6 +36,8 @@ Reports which files still have non-excluded-class Black findings, and exits 1
 if any do (0 if the tree/file-set is fully filtered-Black-clean).
 """
 
+from __future__ import annotations
+
 import concurrent.futures
 import difflib
 import io
@@ -47,6 +49,8 @@ import shlex
 import subprocess
 import sys
 import tokenize
+from collections.abc import Iterable, Sequence
+from typing import Optional
 
 from py_ci_shared._core import CorpusError, iter_files
 
@@ -86,7 +90,7 @@ def _relative_parts(p: pathlib.Path):
     return p.parts
 
 
-def discover_py_files(roots):
+def discover_py_files(roots: Iterable[str | os.PathLike[str]]) -> list[str]:
     """Accepts a mix of directory roots (recursively walked) and individual .py file paths
     (included as-is) -- the latter is what pre-commit passes (a list of changed files, not
     directories), so --check must handle both, not just the directory-walk case the CLI was
@@ -112,7 +116,7 @@ def discover_py_files(roots):
     return sorted(files)
 
 
-def run_black_stdin(src: str, config_path: str, filename=None) -> str:
+def run_black_stdin(src: str, config_path: str, filename: Optional[str] = None) -> str:
     """Black's output for *src*. With *filename*, Black sees the path (``--stdin-filename``): its force-exclude
     and .pyi mode apply, and an excluded file comes back unchanged."""
     cmd = [*_BLACK_CMD, "-q", "--config", config_path]
@@ -201,7 +205,7 @@ def norm(s: str) -> str:
     return "".join(out)
 
 
-def is_all_blank(lines):
+def is_all_blank(lines: Sequence[str]) -> bool:
     """True when ``lines`` is non-empty and every line is empty or whitespace."""
     return all(line.strip() == "" for line in lines) and len(lines) > 0
 
@@ -271,7 +275,7 @@ def _touches_multiline_string(lines, state_before_block, state_after_block=None)
     return (text.count('"""') + text.count("'''")) % 2 == 1
 
 
-def looks_like_import_or_call_list(old_block, new_block):
+def looks_like_import_or_call_list(old_block: Sequence[str], new_block: Sequence[str]) -> Optional[str]:
     """True if old_block and new_block are the SAME tokens (ignoring whitespace/
     commas/parens) but spread over a DIFFERENT number of lines -- the arg/import
     explosion (or collapse) pattern. Returns 'explode' / 'collapse' / None.
@@ -351,7 +355,7 @@ def filtered_apply(orig: str, formatted: str) -> str:
 _PREFILTER_BATCH = 200
 
 
-def files_black_would_change(files, config_path):
+def files_black_would_change(files: list[str], config_path: str) -> list[str]:
     """Subset of *files* for which one batched ``black --check`` says "would reformat" or fails to format.
 
     Spawning Black once per file costs a Python start-up each (~0.4 s), which on a few thousand files outran a 15-minute job. Black run
@@ -381,7 +385,7 @@ def files_black_would_change(files, config_path):
     return flagged
 
 
-def process_one(path, config_path):
+def process_one(path: str, config_path: str) -> tuple[bool, str, str]:
     """Returns (changed: bool, orig: str, result: str)."""
     with open(path, "r", encoding="utf-8", newline="") as f:
         orig = f.read()
@@ -467,7 +471,7 @@ def _run_format(files, write, config_path):
             sys.stdout.writelines(diff)
 
 
-def main(argv=None):
+def main(argv: Optional[Sequence[str]] = None) -> None:
     """Command line entry point: format the given files with black, keeping only the changes on lines that differ (``--check`` only reports)."""
     args = list(sys.argv[1:] if argv is None else argv)
     write = "--write" in args

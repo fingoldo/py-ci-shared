@@ -48,7 +48,7 @@ import logging
 import warnings
 from collections.abc import Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ._core.outcome import refreshed_skip
 from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested, register_refresh_options, write_ratchet
@@ -77,7 +77,7 @@ DEFAULT_EXCLUDE_DIRS: frozenset[str] = frozenset(
 )
 
 
-def register_refresh_option(parser) -> None:
+def register_refresh_option(parser: Any) -> None:
     """Register ``--refresh-code-audit-baseline`` (and the shared ``--py-ci-refresh``) as boolean flags.
 
     pytest rejects unrecognized CLI options before test code runs
@@ -233,7 +233,7 @@ def assert_no_new_code_audit_findings(
     baseline_path: Path,
     exclude_dirs: frozenset[str] = frozenset(),
     checks: list[str] | None = None,
-    request=None,
+    request: Any = None,
     fail_on_drained: bool = True,
     consumer_roots: Iterable[Path] | None = None,
 ) -> None:

@@ -70,7 +70,7 @@ DEFAULT_LOC_LIMIT = 1000
 DEFAULT_GROWTH_SLACK = 50
 
 
-def register_refresh_option(parser) -> None:
+def register_refresh_option(parser: Any) -> None:
     """Register ``--refresh-loc-budget-baseline`` as a no-op boolean flag.
 
     Same rationale as ``code_audit_meta.register_refresh_option``: pytest

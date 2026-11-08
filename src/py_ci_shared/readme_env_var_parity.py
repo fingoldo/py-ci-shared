@@ -377,7 +377,7 @@ def assert_no_new_undocumented_env_vars(
     outcome.raise_for_pytest()
 
 
-def register_refresh_option(parser) -> None:
+def register_refresh_option(parser: Any) -> None:
     """Register ``--refresh-readme-env-var-baseline`` (and the generic ``--py-ci-refresh``) as boolean
     flags. Call from a consuming repo's own ``pytest_addoption``."""
     register_refresh_options(parser, [REFRESH_FLAG], help_suffix="README env-var baseline JSON")

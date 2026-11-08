@@ -107,7 +107,7 @@ def dsn_from_env(env_names: Sequence[str] = DEFAULT_ENV_NAMES) -> str | None:
     return None
 
 
-def check(conn, label: str, sql: str, params=None) -> bool:
+def check(conn: Any, label: str, sql: str, params: Any = None) -> bool:
     """Execute one statement, print a labelled OK/FAIL line, and never raise.
 
     Every failure is reported rather than the first one aborting the run: the value of a sweep is
@@ -148,7 +148,7 @@ def _is_unreachable(exc: BaseException, psycopg2: object) -> bool:
     return not any(marker in text for marker in _CONFIG_ERROR_MARKERS)
 
 
-def check_loader(conn, label: str, call: Callable[[], object]) -> bool:
+def check_loader(conn: Any, label: str, call: Callable[[], object]) -> bool:
     """Run a LOADER against the live server instead of a copy of the SQL it issues.
 
     A `check()` entry holds a duplicate of a statement that lives in the application, and duplicates
