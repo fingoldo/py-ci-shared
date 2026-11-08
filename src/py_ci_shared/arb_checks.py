@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
@@ -295,7 +296,7 @@ def assert_arb_catalogues_are_sound(
     allowed_dead_keys: Iterable[str] = (),
     register_advisory: bool = True,
 ) -> None:
-    """Fail on key parity, plural or dead-key problems; print register findings as advisories."""
+    """Fail on key parity, plural or dead-key problems; write register findings to stderr as advisories."""
     import pytest
 
     problems: list[str] = []
@@ -309,6 +310,6 @@ def assert_arb_catalogues_are_sound(
             )
     if register_advisory:
         for line in find_register_problems(catalogues):
-            print(f"ADVISORY register: {line}")
+            print(f"ADVISORY register: {line}", file=sys.stderr)
     if problems:
         pytest.fail(f"{len(problems)} ARB problem(s):\n  " + "\n  ".join(problems))

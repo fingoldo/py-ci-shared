@@ -107,6 +107,11 @@ def dsn_from_env(env_names: Sequence[str] = DEFAULT_ENV_NAMES) -> str | None:
     return None
 
 
+def _emit(line: str) -> None:
+    """Write one line of the verifier's report to stdout; the report is the output of a script run, so it stays on stdout."""
+    sys.stdout.write(line + "\n")
+
+
 def check(conn: Any, label: str, sql: str, params: Any = None) -> bool:
     """Execute one statement, print a labelled OK/FAIL line, and never raise.
 
@@ -131,10 +136,10 @@ def check(conn: Any, label: str, sql: str, params: Any = None) -> bool:
         finally:
             conn.rollback()
         head = tuple(str(v)[:40] for v in rows[0]) if rows else None
-        print(f"OK   {label}: {len(rows)} row(s), first={head}")
+        _emit(f"OK   {label}: {len(rows)} row(s), first={head}")
         return True
     except Exception as exc:
-        print(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
+        _emit(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
         return False
 
 
@@ -164,10 +169,10 @@ def check_loader(conn: Any, label: str, call: Callable[[], object]) -> bool:
     try:
         rows = call()
     except Exception as exc:
-        print(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
+        _emit(f"FAIL {label}: {type(exc).__name__}: {str(exc).strip()[:300]}")
         return False
     if getattr(rows, "failed", False):
-        print(f"FAIL {label}: the loader returned a flagged-failed result -- see the log above")
+        _emit(f"FAIL {label}: the loader returned a flagged-failed result -- see the log above")
         return False
     # A loader's return type is `object` by contract -- it may hand back a list of tuples, of dicts,
     # or a result object carrying `failed`. Narrowed here rather than promised in the signature: a
@@ -178,7 +183,7 @@ def check_loader(conn: Any, label: str, call: Callable[[], object]) -> bool:
         row = items[0]
         values = list(row.values()) if isinstance(row, dict) else list(row)
         first = tuple(str(v)[:40] for v in values)
-    print(f"OK   {label}: {len(items)} row(s), first={first}")
+    _emit(f"OK   {label}: {len(items)} row(s), first={first}")
     return True
 
 
@@ -207,7 +212,7 @@ def run_checks(
     if dsn is None:
         dsn = dsn_from_env(env_names)
     if dsn is None:
-        print(f"SKIPPED: none of {', '.join(env_names)} is set -- nothing to verify the SQL against.")
+        _emit(f"SKIPPED: none of {', '.join(env_names)} is set -- nothing to verify the SQL against.")
         return 0 if lenient else SKIPPED
     dsn = _DRIVER_SUFFIX.sub(r"\1://", dsn)
 
@@ -219,9 +224,9 @@ def run_checks(
     except Exception as exc:
         detail = f"{type(exc).__name__} (SQLSTATE {getattr(exc, 'pgcode', None) or 'none'})"
         if not _is_unreachable(exc, psycopg2):
-            print(f"FAIL: the database refused the connection ({detail}); fix the configuration.")
+            _emit(f"FAIL: the database refused the connection ({detail}); fix the configuration.")
             return 1
-        print(f"SKIPPED: database unreachable ({detail}).")
+        _emit(f"SKIPPED: database unreachable ({detail}).")
         return 0 if lenient else SKIPPED
 
     runners = [checks] if callable(checks) else list(checks)
@@ -236,7 +241,7 @@ def run_checks(
         finally:
             conn.rollback()
 
-    print("\nALL OK" if ok else "\nSOMETHING FAILED")
+    _emit("\nALL OK" if ok else "\nSOMETHING FAILED")
     return 0 if ok else 1
 
 

@@ -39,6 +39,7 @@ import ast
 import fnmatch
 import logging
 import re
+import sys
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -279,13 +280,13 @@ def assert_layering(
     min_files: int = 1,
     allow_unparsed: bool = False,
 ) -> None:
-    """Fail on any non-advisory layering violation; print advisory ones."""
+    """Fail on any non-advisory layering violation; write advisory ones to stderr."""
     import pytest
 
     problems = find_layering_violations(repo_root, rules, package_roots=package_roots, min_files=min_files, allow_unparsed=allow_unparsed)
     blocking = [p for p in problems if not p.startswith("ADVISORY ")]
     for p in problems:
         if p.startswith("ADVISORY "):
-            print(p)
+            print(p, file=sys.stderr)
     if blocking:
         pytest.fail(f"{len(blocking)} layering violation(s):\n  " + "\n  ".join(blocking))

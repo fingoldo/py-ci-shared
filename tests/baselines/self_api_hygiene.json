@@ -4,13 +4,7 @@
   "code_audit/registry.py::register_check_alias": 7,
   "code_audit/registry.py::register_scanner": 105
  },
- "library_print": {
-  "arb_checks.py::assert_arb_catalogues_are_sound": 1,
-  "import_layering.py::assert_layering": 1,
-  "sql_verify.py::check": 2,
-  "sql_verify.py::check_loader": 3,
-  "sql_verify.py::run_checks": 4
- },
+ "library_print": {},
  "no_all": {
   "advisory_warn.py": 1,
   "alembic_concurrently.py": 1,
