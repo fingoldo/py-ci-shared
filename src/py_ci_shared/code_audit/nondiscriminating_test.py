@@ -12,6 +12,8 @@ from collections.abc import Iterator
 
 from ._base import walk_tree, Finding, is_line_exempt, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["DEFAULT_ASSERTING_CALLS", "DEFAULT_TEST_PREFIX", "scan_nondiscriminating_test_functions"]
+
 # --- test functions that cannot fail -------------------------------------
 #
 # Twenty-seven findings in the 2026-09-01 mlframe audit, every one a test that passed for a reason unrelated to

@@ -11,6 +11,8 @@ from pathlib import Path
 
 from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
+__all__ = ["scan_vacuous_loop_assertion"]
+
 # --- a test whose every assertion is inside a loop that may not run ----------------------------
 #
 # `for row in rows: assert row.uid` proves nothing when `rows` is empty, and the test passes. It is

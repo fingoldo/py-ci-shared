@@ -35,6 +35,8 @@ from ._core.config import ConfigError, RepoConfig, find_repo_root, load_config
 from ._core.outcome import CLI_ENV_VAR
 from ._core.runner import ERROR, FAILED, PASSED, REFRESHED_STATUS, SKIPPED, GateResult, budget_verdict, run_gate
 
+__all__ = ["CONFIG_NAMES", "build_parser", "config_path", "main"]
+
 logger = logging.getLogger(__name__)
 
 CONFIG_NAMES = {"ruff-base": "ruff-base.toml", "ruff-tests": "ruff-tests.toml"}

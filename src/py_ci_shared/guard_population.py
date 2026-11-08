@@ -38,6 +38,8 @@ from pathlib import Path
 
 from ._core import SourceReadError, read_source
 
+__all__ = ["assert_guards_examine_something", "find_guards_with_empty_population"]
+
 # The first file-SELECTING command in a guard: `grep -rl PATTERN DIR` (list the files to
 # examine), `find DIR -name ...`, `ls DIR/*.dart`. Captured whole so it can be re-run verbatim.
 #

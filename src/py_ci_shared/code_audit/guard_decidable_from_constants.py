@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
 
+__all__ = ["scan_guard_decidable_from_constants"]
+
 # --- a runtime guard whose answer is already fixed at import time ------------------------------
 #
 # `if MAX_RETRIES > 0:` reads like a runtime decision, and reviewers treat it as one. When

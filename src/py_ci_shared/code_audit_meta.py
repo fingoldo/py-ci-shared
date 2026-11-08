@@ -56,6 +56,8 @@ from ._core import BaselineGrowthError, dump_json, load_json, refresh_requested,
 if TYPE_CHECKING:
     from .code_audit import Finding
 
+__all__ = ["DEFAULT_EXCLUDE_DIRS", "REFRESH_FLAG", "assert_no_new_code_audit_findings", "register_refresh_option", "repo_consumer_roots"]
+
 log = logging.getLogger(__name__)
 
 REFRESH_FLAG = "--refresh-code-audit-baseline"

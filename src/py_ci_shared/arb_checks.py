@@ -47,6 +47,17 @@ from pathlib import Path
 
 from ._core import read_source
 
+__all__ = [
+    "FINITE_CATEGORY_VALUES",
+    "PLURAL_CATEGORIES",
+    "TemplateLocaleError",
+    "assert_arb_catalogues_are_sound",
+    "find_dead_keys",
+    "find_key_parity_problems",
+    "find_plural_problems",
+    "find_register_problems",
+]
+
 # CLDR plural categories that a locale must cover for a count to render correctly. Only the locales
 # a caller is likely to ship are listed; an unlisted locale falls back to {"other"}, which every
 # language needs.

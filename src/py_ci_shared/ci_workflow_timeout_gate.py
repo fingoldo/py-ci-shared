@@ -45,6 +45,8 @@ from typing import Optional
 
 from ._core import read_source
 
+__all__ = ["DEFAULT_MAX_MINUTES", "JobTimeout", "assert_all_jobs_have_timeout", "collect_jobs", "find_jobs_missing_timeout"]
+
 _JOBS_HEADER_RE = re.compile(r"^jobs:\s*(?:#.*)?$")
 # A job id key at the first indentation level under `jobs:` (e.g. `  build:`), NOT a nested key
 # (those sit at a deeper indent). Captures the indent width so job-block boundaries can be

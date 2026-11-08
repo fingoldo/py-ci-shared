@@ -25,6 +25,8 @@ from ._base import (
     child_nodes,
 )
 
+__all__ = ["scan_default_via_or_trap"]
+
 # --- default-via-or trap (wave 14) --------------------------------------
 
 

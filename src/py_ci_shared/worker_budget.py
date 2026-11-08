@@ -15,6 +15,8 @@ import logging
 import os
 import sys
 
+__all__ = ["ENV_OVERRIDE", "RAM_PER_WORKER_BYTES", "available_workers", "main", "worker_count_by_memory", "worker_count_from"]
+
 logger = logging.getLogger(__name__)
 
 ENV_OVERRIDE = "PY_CI_WORKERS"

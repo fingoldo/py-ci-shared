@@ -14,6 +14,20 @@ To bump: change the value here, release, then set each consumer's pin to match. 
 until it does, which is the point.
 """
 
+__all__ = [
+    "ACTIONLINT_PY_VERSION",
+    "BANDIT_VERSION",
+    "BLACK_VERSION",
+    "CODESPELL_VERSION",
+    "DEPTRY_VERSION",
+    "INTERROGATE_VERSION",
+    "MYPY_VERSION",
+    "RUFF_VERSION",
+    "VULTURE_VERSION",
+    "YAMLLINT_VERSION",
+    "ZIZMOR_VERSION",
+]
+
 RUFF_VERSION = "0.16.10"
 
 #: The black the shared ``black-filtered.yml`` workflow runs (its ``BLACK_CMD``); a consumer pins its own ``black==`` to

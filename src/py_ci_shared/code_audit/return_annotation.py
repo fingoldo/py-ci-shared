@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_return_annotation_mismatch"]
+
 # --- return-annotation / actual-return-shape mismatch -----------------------
 #
 # CLAUDE.md's own mypy-discipline rule calls this out as a real, recurring category: "return-type

@@ -46,6 +46,16 @@ from typing import Any, Optional
 
 from ._core import SourceError, SourceParseError, read_source
 
+__all__ = [
+    "assert_blocking_gates_assert_completion",
+    "assert_coverage_gate_parity",
+    "assert_narrowings_declared",
+    "find_coverage_gate_mismatches",
+    "find_gates_without_completion_assertion",
+    "find_narrowings",
+    "find_undeclared_narrowings",
+]
+
 logger = logging.getLogger(__name__)
 
 # Flags that NARROW what a gate inspects or lower the bar it enforces. Both the

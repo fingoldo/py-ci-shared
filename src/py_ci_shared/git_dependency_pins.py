@@ -38,6 +38,16 @@ from typing import Any, Optional
 
 from ._core import SourceParseError, SourceReadError, read_source, relative_posix
 
+__all__ = [
+    "PyprojectParseError",
+    "assert_all_git_dependencies_pinned",
+    "assert_installed_includes_pin",
+    "assert_pins_agree",
+    "find_unpinned_git_dependencies",
+    "installed_pin_problem",
+    "pinned_shas",
+]
+
 logger = logging.getLogger(__name__)
 
 # A git URL dependency, PEP 508 direct-reference form: `name @ git+URL[@ref]`. Captures the

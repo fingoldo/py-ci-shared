@@ -11,6 +11,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, dotted_name, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
+__all__ = ["scan_unpicklable_resource_state"]
+
 # --- unpicklable live-resource state without __getstate__ ----------------
 
 # Constructor calls that produce a live, process-bound, unpicklable object when assigned to

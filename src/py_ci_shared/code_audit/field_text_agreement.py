@@ -20,6 +20,22 @@ if TYPE_CHECKING:  # import-time-free: importing code_audit here would be circul
     # re-exports this module's names, so the package __init__ runs before this module finishes.
     from ._base import Finding
 
+__all__ = [
+    "AGREE",
+    "CONTRADICT",
+    "FieldTextReport",
+    "FieldTextRule",
+    "FieldTextVerdict",
+    "KIND_OPPOSED",
+    "KIND_UNFILLED",
+    "UNCHECKABLE",
+    "check_all",
+    "check_record",
+    "check_records",
+    "cues_in_text",
+    "normalise_text",
+]
+
 # --- a structured field that duplicates information also present in free text ------------------------
 #
 # The defect shape: a record carries an enum field AND the prose the field was derived from, and nothing

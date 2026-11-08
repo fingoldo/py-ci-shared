@@ -40,6 +40,8 @@ from pathlib import Path
 
 from ._core import read_source
 
+__all__ = ["DEFAULT_PLACEHOLDER", "assert_env_example_loads", "documented_values", "env_names", "unloadable_values"]
+
 logger = logging.getLogger(__name__)
 
 #: ``NAME=VALUE``, ``# NAME=VALUE``, ``export NAME=VALUE`` and ``NAME = VALUE`` (dotenv accepts all four); NAME in the

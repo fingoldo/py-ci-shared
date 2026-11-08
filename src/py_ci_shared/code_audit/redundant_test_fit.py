@@ -9,6 +9,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_cached, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_redundant_test_fit_calls"]
+
 # --- redundant test computation (expensive fit re-run across test functions) -----
 #
 # A common test-suite authoring pattern: a module-level helper builds a

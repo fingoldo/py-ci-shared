@@ -25,6 +25,8 @@ from typing import Any
 
 from ._core import read_source
 
+__all__ = ["DEFAULT_TOOLS", "assert_gates_honest", "find_gates_that_cannot_fail", "find_tools_run_without_their_config", "gate_commands"]
+
 #: tool -> (pyproject table that holds its config, flags that pass it). Only tools that do NOT find
 #: pyproject.toml by themselves belong here; ruff and mypy do.
 DEFAULT_TOOLS: Mapping[str, tuple[str, tuple[str, ...]]] = {"bandit": ("bandit", ("-c", "--configfile"))}

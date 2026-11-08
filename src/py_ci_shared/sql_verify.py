@@ -64,6 +64,25 @@ import sys
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Callable, Optional
 
+__all__ = [
+    "DEFAULT_ENV_NAMES",
+    "DEFAULT_EXTRA_ALIASES",
+    "FragmentMatrix",
+    "LITERAL_PERCENT",
+    "SKIPPED",
+    "alias_scope_problems",
+    "assert_fragment_matrix",
+    "check",
+    "check_loader",
+    "dsn_from_env",
+    "find_fragment_matrix_problems",
+    "matrix_statements",
+    "normalise_psycopg2_idioms",
+    "run_checks",
+    "to_positional",
+    "without_session_prefix",
+]
+
 logger = logging.getLogger(__name__)
 
 #: Distinct from 1 (a statement failed) so a CI job can tell "not verified" from "verified clean".

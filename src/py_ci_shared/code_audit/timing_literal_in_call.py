@@ -8,6 +8,8 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 from .._core.call_names import call_name_or_none as _call_name
 
+__all__ = ["scan_timing_literal_in_call"]
+
 # --- a bare numeric literal that sets a wait, timeout or backoff at its call site ---------------
 #
 # `_facade.sleep(10 * _facade.random())` tuned a retry backoff with a 10 nobody could find or change.

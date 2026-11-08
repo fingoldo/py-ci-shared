@@ -42,6 +42,15 @@ from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, SourceError, SourceParseError, iter_files, read_source
 
+__all__ = [
+    "assert_partitions_reachable",
+    "declared_tags",
+    "find_permanent_skips",
+    "find_unreachable_tags",
+    "find_unreferenced_scripts",
+    "find_unselected_projects",
+]
+
 # `name:` sits inside an object literal on the same line as the brace in most configs, so this
 # is deliberately not anchored to the line start.
 _PW_PROJECT_NAME_RE = re.compile(r"\bname:\s*['\"]([^'\"]+)['\"]")

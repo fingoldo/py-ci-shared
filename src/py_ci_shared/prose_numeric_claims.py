@@ -43,6 +43,8 @@ from typing import Optional
 
 from ._core import SourceError, read_source
 
+__all__ = ["NumericClaim", "assert_numeric_claims_match", "find_stale_claims", "find_undated_volatile_claims", "parse_stated_number"]
+
 # `as of 2026-09-02`, `(measured 2026-09-02)`, `on 2026-09-02` -- any ISO date near the claim.
 _DATE_QUALIFIER_RE = re.compile(r"\b20\d{2}-\d{2}-\d{2}\b")
 # The volatile shapes worth demanding a date for: a percentage, or a duration.

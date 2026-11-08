@@ -20,6 +20,8 @@ from ._base import (
     walk_nodes,
 )
 
+__all__ = ["scan_count_then_fetch_same_table"]
+
 # --- a COUNT round trip that the fetch beside it already answers -------------------------------
 #
 # `SELECT COUNT(*) FROM jobs WHERE ...` followed by `SELECT id, uid FROM jobs WHERE ...` in the

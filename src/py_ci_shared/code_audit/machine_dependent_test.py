@@ -24,6 +24,8 @@ from ._base import (
     child_nodes,
 )
 
+__all__ = ["scan_deleted_attribute_read_unconditionally", "scan_sleep_then_assert", "scan_wall_clock_assertion"]
+
 _FunctionDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 
 # --- tests whose PASS/FAIL depends on the machine rather than on the behaviour under test ----------

@@ -8,6 +8,8 @@ from typing import Optional
 
 from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse
 
+__all__ = ["scan_override_signature_drift"]
+
 # --- a base method left behind by the overrides that were all edited ---------------------------
 #
 # A parameter is added to a method on three of the five subclasses that override it, and not to the

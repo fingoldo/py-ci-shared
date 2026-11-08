@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_cached, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _own_nodes, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_uncached_constant_cost_probe"]
+
 # --- uncached constant-cost probe ----------------------------------------
 
 # Decorators that already memoize the whole call. Matched STRUCTURALLY on the decorator's own

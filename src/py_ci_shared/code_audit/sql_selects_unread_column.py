@@ -19,6 +19,8 @@ from ._base import (
     walk_nodes,
 )
 
+__all__ = ["scan_sql_selects_unread_column"]
+
 # --- a SELECT list wider than the rows anyone reads --------------------------------------------
 #
 # `SELECT id, uid, payload, updated_at FROM ...` unpacked as `for id_, uid, payload in cur:` is a

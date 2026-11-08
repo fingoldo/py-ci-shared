@@ -8,6 +8,8 @@ from pathlib import Path
 from .._core.corpus import iter_files_pruned
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines
 
+__all__ = ["scan_column_no_write_path"]
+
 # --- a column the schema declares that no statement anywhere can fill --------------------------
 #
 # A telemetry column is added to a table, the dashboard learns to read it, and no INSERT or UPDATE

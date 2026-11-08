@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _dotted_module_path, _iter_py_files, _line_text, _module_aliases, _read_src_lines, _safe_parse
 
+__all__ = ["scan_stale_test_spy_arity"]
+
 
 def _positional_arity(func_node: ast.FunctionDef | ast.AsyncFunctionDef) -> float:
     """Max number of positional args this function can accept (``inf`` if it has ``*args``)."""

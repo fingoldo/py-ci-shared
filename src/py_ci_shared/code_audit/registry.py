@@ -108,6 +108,22 @@ from .nondiscriminating_test import scan_nondiscriminating_test_functions
 from .assert_in_loop import scan_assert_in_loop_reports_only_the_first
 from .reexport_patch_target import scan_reexport_patch_target
 
+__all__ = [
+    "MIN_SCANNERS_PER_WORKER",
+    "OPT_IN_ONLY",
+    "SHARED_GATE_COUNTERPARTS",
+    "describe_scanners",
+    "get_check_aliases",
+    "get_scanners",
+    "physical_cpu_count",
+    "register_check_alias",
+    "register_scanner",
+    "render_check_catalogue",
+    "resolve_check",
+    "run_all",
+    "run_all_checked",
+]
+
 # --- registry -----------------------------------------------------------
 
 

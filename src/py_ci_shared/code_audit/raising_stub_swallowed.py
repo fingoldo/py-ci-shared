@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_raising_stub_swallowed"]
+
 # --- a test stub that raises, into production code that swallows -----------------------------
 #
 # A test expresses "this must never be called" by raising inside the patched callable. The code

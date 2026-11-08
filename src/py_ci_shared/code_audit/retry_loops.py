@@ -8,6 +8,8 @@ from collections.abc import Iterator
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
+__all__ = ["scan_retry_loops"]
+
 # --- unbounded or silently-exhausting retry loop --------------------------
 #
 # Class of bug found repeatedly in the 2026-07-21 audit: redislib.py's `while True:` retried

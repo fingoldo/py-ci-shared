@@ -8,6 +8,8 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index, walk_nodes
 from .._core.call_names import call_name as _call_name
 
+__all__ = ["scan_dead_endpoint_parameters"]
+
 # --- an HTTP endpoint parameter the handler never reads ------------------------------------------
 
 # Decorator attributes that register a FastAPI / Starlette-style route: `@router.get(...)`, `@app.post(...)`.

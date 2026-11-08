@@ -11,6 +11,8 @@ from typing import Optional
 from ._base import SEVERITIES, Finding, UNKNOWN_SEVERITY_RANK, _DEFAULT_EXCLUDE_DIRS, severity_rank
 from .registry import get_check_aliases, get_scanners, render_check_catalogue, run_all
 
+__all__ = ["main"]
+
 # --- CLI ----------------------------------------------------------------
 
 

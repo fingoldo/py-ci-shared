@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_tautological_guards"]
+
 # --- a threshold ANDed with a pin that makes it vacuous -------------------------------------------
 #
 # Confirmed instance (Autopsia, 2026-07-26, reason/enumerate.py):

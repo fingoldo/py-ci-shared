@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_tautological_is_not_none_only_tests", "scan_vacuous_assertions"]
+
 # --- vacuous / tautological test assertions -------------------------------
 #
 # Class of bug confirmed repeatedly in the 2026-07-21 test-suite-quality audit:

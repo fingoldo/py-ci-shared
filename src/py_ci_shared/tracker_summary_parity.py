@@ -29,6 +29,15 @@ from py_ci_shared._core import read_source
 from py_ci_shared.audit_disposition_parity import parse_disposition
 from py_ci_shared.audit_round_format import FINDING_ID_RE, TRACKER_ROW_RE, closing_word, round_files, table_cells, without_fenced_blocks
 
+__all__ = [
+    "DEFAULT_STATUSES",
+    "assert_tracker_summaries_agree",
+    "disposition_state_problems",
+    "heading_status_problems",
+    "summary_problems",
+    "summary_table_count",
+]
+
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 _SUBSECTION = re.compile(r"^###\s+`([^`]+)`\s*$")
 _FILE_CELL = re.compile(r"`([^`]+\.md)`|(?<![\w./-])([\w./-]+\.md)\b")

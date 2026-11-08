@@ -41,6 +41,19 @@ from typing import Any
 from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
 
+__all__ = [
+    "VersionCheckError",
+    "assert_lock_agrees_with_pin",
+    "assert_version_is_tagged",
+    "declared_version",
+    "find_lock_pin_problems",
+    "find_stale_pin",
+    "find_version_tag_problems",
+    "is_release_tag",
+    "pinned_ref",
+    "semver_tags",
+]
+
 logger = logging.getLogger(__name__)
 
 _SEMVER_TAG_RE = re.compile(r"^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:-([0-9A-Za-z.-]+))?$")

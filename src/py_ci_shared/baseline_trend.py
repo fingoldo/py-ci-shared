@@ -37,6 +37,8 @@ from typing import Optional
 from ._core.git import GitError as CoreGitError
 from ._core.git import git_text, run_git
 
+__all__ = ["DEFAULT_DIRECTORIES", "GitError", "baseline_files", "count_entries", "history", "main", "report"]
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DIRECTORIES = ("tool/meta/baselines", "test/meta/baselines")

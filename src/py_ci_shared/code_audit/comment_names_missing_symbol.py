@@ -18,6 +18,8 @@ from typing import Optional
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
+__all__ = ["scan_comment_cites_absolute_line", "scan_comment_names_missing_symbol"]
+
 # --- prose that points at a symbol which does not exist ----------------------------------------
 #
 # A comment names a function, and the function is renamed. The comment still reads as

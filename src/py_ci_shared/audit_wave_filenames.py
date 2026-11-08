@@ -30,6 +30,15 @@ from typing import Any, Optional
 
 from ._core import Baseline, iter_files, load_json, refresh_requested, write_ratchet
 
+__all__ = [
+    "DEFAULT_PATTERNS",
+    "REFRESH_FLAG",
+    "assert_no_new_audit_wave_filenames",
+    "find_audit_wave_test_files",
+    "scan_audit_wave_test_files",
+    "write_baseline",
+]
+
 REFRESH_FLAG = "--refresh-audit-wave-filenames-baseline"
 
 #: Stems that carry process metadata instead of a topic. Matched against the file stem, ignoring case.

@@ -31,6 +31,16 @@ from typing import Any, Optional
 
 from ._core import DEFAULT_EXCLUDE, SourceReadError, exists_exact_case, iter_files, read_source
 
+__all__ = [
+    "assert_no_inventory_drift",
+    "find_aggregate_group_drift",
+    "find_extras_documentation_drift",
+    "find_phantom_doc_paths",
+    "find_undeclared_markers",
+    "find_undocumented_modules",
+    "resolve_extras_group",
+]
+
 # Package names as they appear in a dependency spec, stripped of version/marker/extras.
 _REQUIREMENT_NAME_RE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)")
 # A self-referential extras spec: `mypkg[a,b]`.

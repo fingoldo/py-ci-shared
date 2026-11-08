@@ -21,6 +21,8 @@ from ._core.corpus import DEFAULT_EXCLUDE, iter_files_pruned
 from ._core.node_index import walk
 from ._core.source import parse_text
 
+__all__ = ["count_user_deferred_entries"]
+
 logger = logging.getLogger(__name__)
 
 _DEFERRED_PREFIXES = ("_USER_DEFERRED", "_GRANDFATHERED")

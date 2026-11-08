@@ -35,6 +35,8 @@ from pathlib import Path
 
 from ._core.baseline import replace_file
 
+__all__ = ["main"]
+
 _TARGET = "-mpre_commit"
 _REPLACEMENT = "-m py_ci_shared.safe_precommit"
 _HOOK_NAMES = ("pre-commit", "pre-merge-commit")

@@ -57,6 +57,8 @@ from typing import Optional
 
 from ._core import CorpusError, SourceReadError, iter_files, read_source
 
+__all__ = ["assert_definer_functions_are_locked_down", "find_unlocked_definer_functions"]
+
 logger = logging.getLogger(__name__)
 
 _IDENT = r'(?:"(?:[^"]|"")+"|[A-Za-z_][\w$]*)'

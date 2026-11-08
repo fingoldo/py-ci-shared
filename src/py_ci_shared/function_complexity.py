@@ -31,6 +31,8 @@ from ._core import ScanResult, child_nodes, dump_json, refresh_requested, scan_p
 from ._core.baseline import write_ratchet
 from ._core.errors import BaselineError
 
+__all__ = ["REFRESH_FLAG", "assert_complexity_does_not_grow", "complexity_problems", "function_complexities", "write_complexity_baseline"]
+
 REFRESH_FLAG = "--refresh-function-complexity-baseline"
 
 

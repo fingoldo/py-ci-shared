@@ -11,6 +11,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
+__all__ = ["DEFAULT_EPSILON_MAX", "scan_additive_epsilon_denominator"]
+
 # --- additive-epsilon denominators ---------------------------------------
 #
 # Class of bug confirmed eight times across four subsystems in the 2026-09-01 mlframe audit. `x / (d + 1e-12)`

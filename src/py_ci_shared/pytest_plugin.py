@@ -43,6 +43,8 @@ from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, r
 from ._core.runner import ERROR, FAILED, REFRESHED_STATUS, SKIPPED, budget_verdict, run_gate
 from .randomly_seed_guard import bound_randomly_reseeders
 
+__all__ = ["GateFile", "GateFindingsError", "GateItem", "LEAK_GUARD_PLUGIN", "pytest_addoption", "pytest_collection_modifyitems", "pytest_configure"]
+
 logger = logging.getLogger(__name__)
 
 _CONFIG_KEY = pytest.StashKey[Optional[RepoConfig]]()

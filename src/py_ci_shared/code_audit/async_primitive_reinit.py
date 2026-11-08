@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, module_level_names, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["DEFAULT_PRIMITIVE_NAMES", "scan_async_primitive_reinit_per_call"]
+
 # asyncio coordination primitives whose whole purpose is being SHARED across
 # concurrent callers -- one created fresh per call is a private, useless copy.
 DEFAULT_PRIMITIVE_NAMES: frozenset[str] = frozenset({"Lock", "Event", "Semaphore", "BoundedSemaphore", "Condition"})

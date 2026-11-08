@@ -26,6 +26,8 @@ from ._consumers import load_consumers
 from ._toml_compat import tomllib
 from ._http_safety import SameHostRedirects
 
+__all__ = ["CONSUMERS_FILE", "FALLBACK_CONSUMERS", "MYPY_FIELDS_TO_COMPARE", "RUFF_FIELDS_TO_COMPARE", "TOKEN_ENV", "consumer_urls", "main"]
+
 # The two repos this report began with; used only when configs/consumers.toml is not beside the package (an installed wheel).
 FALLBACK_CONSUMERS = {
     "mlframe": "https://raw.githubusercontent.com/fingoldo/mlframe/master/pyproject.toml",

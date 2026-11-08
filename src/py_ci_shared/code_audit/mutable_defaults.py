@@ -21,6 +21,8 @@ from ._base import (
     child_nodes,
 )
 
+__all__ = ["scan_mutable_defaults", "scan_parameter_aliasing_mutation"]
+
 # --- Class A: mutable defaults ------------------------------------------
 
 

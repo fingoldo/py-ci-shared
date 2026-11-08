@@ -38,6 +38,17 @@ from typing import Any, Optional
 from ._core import Baseline, ImportAliases, ScanResult, refresh_requested, register_refresh_options, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "DEFAULT_HEADING",
+    "REFRESH_FLAG",
+    "assert_no_new_undocumented_env_vars",
+    "assert_readme_documents_every_env_var",
+    "find_env_var_reads",
+    "find_env_vars_read",
+    "find_readme_documented_vars",
+    "register_refresh_option",
+]
+
 DEFAULT_HEADING = "## Environment variables"
 REFRESH_FLAG = "--refresh-readme-env-var-baseline"
 

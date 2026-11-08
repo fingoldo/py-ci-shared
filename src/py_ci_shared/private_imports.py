@@ -28,6 +28,15 @@ from typing import Optional
 from ._core import DEFAULT_EXCLUDE, ScanResult, SourceProblem, module_of, package_of, relative_posix, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "DEFAULT_EXEMPT_PARTS",
+    "DEFAULT_EXEMPT_PREFIXES",
+    "UNPARSED_MARKER",
+    "assert_no_private_cross_package_imports",
+    "find_private_cross_package_imports",
+    "owning_package",
+]
+
 #: Path components that mark test-adjacent code, exempt from the rule.
 DEFAULT_EXEMPT_PARTS: tuple[str, ...] = ("tests", "_benchmarks", "__pycache__")
 #: File-name prefixes that mark white-box instrumentation.

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_test_asserts_against_production_constant"]
+
 # --- a test that checks the code against the code -----------------------------------------------
 #
 # `assert compute_backoff(3) == BASE_DELAY * 2 ** 3` re-derives the expected value from the same

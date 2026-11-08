@@ -36,6 +36,8 @@ from urllib.parse import unquote
 
 from ._core import SourceError, exists_exact_case, read_source, relative_posix
 
+__all__ = ["assert_no_phantom_markdown_links", "find_phantom_markdown_links", "tracked_markdown_files"]
+
 # An inline link or image: [text](target) / ![alt](target), the target optionally in <...> and optionally followed
 # by a "title". Text may hold one level of nested brackets (a badge image inside a link).
 _MD_LINK_RE = re.compile(r"!?\[(?:[^\[\]]|\[[^\]]*\])*\]\(\s*(<[^>\n]*>|[^\s()]+(?:\([^\s()]*\)[^\s()]*)*)(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)")

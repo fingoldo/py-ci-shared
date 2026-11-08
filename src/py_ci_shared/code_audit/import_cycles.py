@@ -12,6 +12,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _read_src_lines, is_line_exempt
 
+__all__ = ["scan_import_cycles"]
+
 _CHECK = "import_cycle"
 
 

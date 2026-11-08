@@ -51,6 +51,8 @@ from typing import Optional
 
 from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified, write_ratchet
 
+__all__ = ["Baseline", "DEFAULT_DIRECTORY", "DEFAULT_REFRESH_COMMAND", "run_rules"]
+
 DEFAULT_DIRECTORY = os.path.join("tool", "meta", "baselines")
 DEFAULT_REFRESH_COMMAND = "python tool/meta/regen_baselines.py"
 

@@ -36,6 +36,8 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
+__all__ = ["assert_a_copy_imports_itself", "assert_modules_resolve_to_checkout", "module_resolution_problems", "resolved_in_a_copy"]
+
 logger = logging.getLogger(__name__)
 
 _COPY_IGNORE = ("__pycache__", ".git", ".pytest_cache", ".mypy_cache", ".ruff_cache", "*.egg-info", ".venv", "venv", "node_modules")

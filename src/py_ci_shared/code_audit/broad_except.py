@@ -13,6 +13,8 @@ from typing import Optional
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_broad_except_swallows"]
+
 # --- broad-except swallow (wave 16) -------------------------------------
 
 

@@ -33,6 +33,15 @@ from typing import Any, Optional
 from ._core import Baseline, Finding, ScanResult, child_nodes, refresh_requested, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "REFRESH_FLAG",
+    "RULE",
+    "assert_concurrently_is_in_autocommit_blocks",
+    "collect_unguarded_concurrently",
+    "find_unguarded_concurrently",
+    "unguarded_concurrently_lines",
+]
+
 RULE = "alembic-concurrently"
 REFRESH_FLAG = "--refresh-alembic-concurrently-baseline"
 

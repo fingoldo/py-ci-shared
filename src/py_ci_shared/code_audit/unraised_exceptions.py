@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_unraised_exceptions"]
+
 # --- custom exception class defined but never raised -----------------------
 #
 # Confirmed real dead-contract in the 2026-07-21 audit: `LLMTruncationError` in

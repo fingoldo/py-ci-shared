@@ -43,6 +43,8 @@ from typing import Optional
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["NAIVE_UTC_METHODS", "RULE", "assert_no_naive_utcnow", "collect_naive_utcnow", "find_naive_utcnow"]
+
 #: Kept for callers that imported it; the walk now uses the shared ``_core.DEFAULT_EXCLUDE`` (a superset).
 _DEFAULT_SKIP_DIRS = tuple(sorted(DEFAULT_EXCLUDE))
 

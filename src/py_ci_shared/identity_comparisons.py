@@ -27,6 +27,8 @@ from typing import Optional
 from ._core import ImportAliases, ParsedFile, ScanResult, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["assert_no_identity_comparisons", "find_identity_comparisons", "string_constant_names"]
+
 logger = logging.getLogger(__name__)
 
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())

@@ -34,6 +34,8 @@ from pathlib import Path
 
 from ._core.git import run_git
 
+__all__ = ["changed_lines", "lines_for"]
+
 #: ``@@ -old[,n] +new[,n] @@`` -- the ``,n`` groups are genuinely optional; see the module docstring.
 _HUNK_RE = re.compile(rb"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")
 

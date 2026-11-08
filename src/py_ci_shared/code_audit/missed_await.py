@@ -8,6 +8,8 @@ from collections.abc import Iterator
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["scan_missed_await", "scan_sync_blocking_in_async"]
+
 # --- discarded coroutine (missed await) ---------------------------------------
 #
 # ``do_save(item)`` as a bare statement, where ``do_save`` is an ``async def``

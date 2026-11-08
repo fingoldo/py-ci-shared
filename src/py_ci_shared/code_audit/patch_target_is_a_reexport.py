@@ -18,6 +18,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _dotted_module_path, _iter_py_files, _module_aliases, _line_text, _read_src_lines, _safe_parse, dotted_name
 
+__all__ = ["scan_patch_target_is_a_reexport"]
+
 # --- a patch aimed at a re-export, where the real call site never looks -------------------------
 #
 # `patch("facade.fetch")` rebinds the name in `facade`'s namespace. That works only if the code

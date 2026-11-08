@@ -76,6 +76,8 @@ from typing import Any
 from ._core.git import git_env
 from ._mutation_runner import OutputScan, _scan_of, run_with_deadline
 
+__all__ = ["main", "outcome_of", "read_pytest_outcome"]
+
 logger = logging.getLogger(__name__)
 
 #: pytest exit codes that are a verdict: 0 all passed, 1 some failed. Anything else (2 interrupted,

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["scan_per_call_state_on_shared_instance"]
+
 # --- per-call state on a shared instance ---------------------------------
 
 # A name mentioned in a `with` header that makes the block a critical section. Matched on `_`-separated

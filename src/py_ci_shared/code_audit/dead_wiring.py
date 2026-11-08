@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_dead_public_callables"]
+
 # --- dead wiring: built, measured, documented, never called ---------------------------------------
 #
 # Confirmed repeatedly in the 2026-07-26 Autopsia audits: a deterministic modality mapper measured at

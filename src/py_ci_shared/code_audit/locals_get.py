@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_locals_or_globals_call, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_locals_get_fragile_lookup"]
+
 
 def scan_locals_get_fragile_lookup(
     root: Path,

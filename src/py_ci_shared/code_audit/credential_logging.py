@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
+__all__ = ["scan_credential_shaped_log_args"]
+
 # --- credential-shaped value reaching a logger call ------------------------
 #
 # Class of bug found repeatedly in the 2026-07-21 security audit: web.py's report_params()

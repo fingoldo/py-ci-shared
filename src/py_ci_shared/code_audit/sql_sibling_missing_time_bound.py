@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, _sql_table_of, _sql_text
 
+__all__ = ["scan_sql_sibling_missing_time_bound"]
+
 # --- one query over a growing table with no time bound its siblings all have -------------------
 #
 # Four module-level statements read the same scan table, and three of them end `WHERE ts > now() -

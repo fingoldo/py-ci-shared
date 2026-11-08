@@ -7,6 +7,8 @@ from pathlib import Path
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, split_src_lines
 import logging
 
+__all__ = ["scan_sql_migration_idempotency"]
+
 logger = logging.getLogger(__name__)
 
 # --- non-idempotent SQL migrations ------------------------------------------

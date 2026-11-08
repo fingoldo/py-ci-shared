@@ -33,6 +33,32 @@ from typing import Optional
 from ._core import parse_text, read_source
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "BOLD_STATUS_RE",
+    "DEFAULT_CLOSING",
+    "DEFAULT_STATUSES",
+    "DEFAULT_STATUS_COLUMNS",
+    "DISPOSITION_RE",
+    "FINDING_ID_RE",
+    "TRACKER_ROW_RE",
+    "absence_comparisons",
+    "assert_no_whole_file_absence_claims",
+    "assert_rounds_countable",
+    "assert_rounds_filed",
+    "assert_tracker_statuses_countable",
+    "closing_word",
+    "defined_ids",
+    "finding_problems",
+    "is_whole_file_read",
+    "round_files",
+    "round_filing_problems",
+    "status_problems",
+    "table_cells",
+    "tracker_rows",
+    "tracker_status_cells",
+    "without_fenced_blocks",
+]
+
 DEFAULT_STATUSES: tuple[str, ...] = ("RESOLVED", "WON'T FIX", "DEFERRED", "NOT A DEFECT")
 #: A tracker row's status cell in the one spelling: ``| **WORD** |``, optionally followed by a qualifier.
 BOLD_STATUS_RE = re.compile(r"^\|\s*\*\*([A-Z'’ ]+)\*\*[^|]*\|")

@@ -38,6 +38,15 @@ from ._core import DEFAULT_EXCLUDE, ImportAliases, child_nodes, relative_posix, 
 from ._core.node_index import walk as _fast_walk
 from ._text_ratchet import is_test_path
 
+__all__ = [
+    "ReloadSite",
+    "assert_no_reloads_in_code",
+    "assert_no_unpaired_reloads",
+    "find_reloads_in_code",
+    "find_unpaired_reloads",
+    "reload_primitive",
+]
+
 _RELOADERS = frozenset({"importlib.reload", "imp.reload"})
 _FuncDef = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 

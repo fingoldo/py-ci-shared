@@ -19,6 +19,8 @@ from ._base import (
     walk_nodes,
 )
 
+__all__ = ["scan_accumulator_helper_bypassed"]
+
 # --- a shared accumulator that some call sites write around ------------------------------------
 #
 # A module grows a helper -- `_inc_stat(name)`, `record(event)`, `_bump(counter)` -- that owns one

@@ -49,6 +49,8 @@ from typing import Optional
 from ._core.source import indent_width
 from ._core import read_source
 
+__all__ = ["assert_workflow_paths_exist", "find_missing_workflow_paths", "strip_yaml_comment", "workflow_files"]
+
 _WORKING_DIR_RE = re.compile(r"""^\s*(?:-\s*)?working-directory:\s*["']?([^"'#\n]+?)["']?\s*(?:#.*)?$""")
 # `run: python tool/x.py`, `run: sh tool/x.sh`, `- run: node e2e/x.js` -- the interpreter makes the
 # next token a path with no ambiguity, unlike a bare command name.

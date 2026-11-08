@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index, walk_nodes
 
+__all__ = ["scan_stats_key_coverage"]
+
 # --- a counter written but never initialised by the reset that owns its dict --------------------
 #
 # An object holds a per-cycle counter dict, a reset method re-initialises it between cycles, and

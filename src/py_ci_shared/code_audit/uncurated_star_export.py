@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_uncurated_star_exports"]
+
 # --- `from .submodule import *` with no curated __all__ anywhere ----------
 
 

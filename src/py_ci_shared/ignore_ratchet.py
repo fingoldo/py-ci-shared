@@ -38,6 +38,15 @@ from typing import Optional
 
 from ._core import dump_json, load_json, read_source, write_ratchet
 
+__all__ = [
+    "assert_ignore_list_only_shrinks",
+    "precommit_arg_codes",
+    "ratchet_problems",
+    "ruff_counts",
+    "workflow_input_codes",
+    "write_ignore_baseline",
+]
+
 #: A rule code (``F401``, ``PLR0913``). A syntax error comes back with no code (older ruff) or ``invalid-syntax``.
 _RULE_CODE = re.compile(r"^[A-Z]+[0-9]*$")
 

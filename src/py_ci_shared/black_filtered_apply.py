@@ -54,6 +54,20 @@ from typing import Optional
 
 from py_ci_shared._core import CorpusError, iter_files
 
+__all__ = [
+    "DiscoveryError",
+    "EXCLUDED_DIR_NAMES",
+    "discover_py_files",
+    "files_black_would_change",
+    "filtered_apply",
+    "is_all_blank",
+    "looks_like_import_or_call_list",
+    "main",
+    "norm",
+    "process_one",
+    "run_black_stdin",
+]
+
 _BLACK_TIMEOUT_S = 600  # a hung black must not hang the hook; subprocess.TimeoutExpired then propagates as the error it is
 
 logger = logging.getLogger(__name__)

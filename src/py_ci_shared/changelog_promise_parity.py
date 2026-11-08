@@ -32,6 +32,17 @@ from typing import NamedTuple, Optional
 from ._core.outcome import unevaluated_skip
 from ._core import read_source
 
+__all__ = [
+    "DEFAULT_BULLET_PATTERN",
+    "DEFAULT_PROMISE_PATTERN",
+    "DEFAULT_TITLE_PATTERN",
+    "UnsatisfiedBullet",
+    "assert_changelog_bullets_satisfy_pattern",
+    "extract_section",
+    "find_unsatisfied_bullets",
+    "normalize_title",
+]
+
 # Matches this ecosystem's dominant CHANGELOG bullet convention: `- **Title** rest of line`,
 # optionally followed by indented continuation lines (a multi-line bullet body). The title may itself
 # contain a `*` (`- **a*b title**`): it runs to the first closing `**`.

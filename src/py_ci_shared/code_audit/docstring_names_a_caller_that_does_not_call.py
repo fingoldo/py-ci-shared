@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
+__all__ = ["scan_docstring_names_a_caller_that_does_not_call"]
+
 # --- prose naming the caller, after the caller stopped calling ---------------------------------
 #
 # "Called from `_flush_rows()` on every batch boundary" is the kind of sentence a reader trusts  # audit-exempt: comment_names_missing_symbol -- prose names a caller defined outside this tree, as an example of what docstrings get wrong

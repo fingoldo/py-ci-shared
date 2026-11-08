@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
 
+__all__ = ["scan_unit_suffix_mismatch"]
+
 # --- a quantity stored under one unit and read from another ------------------------------------
 #
 # `work_s = totals["minutes"]` -- a value produced in one unit, consumed under a name declaring a

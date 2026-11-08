@@ -74,6 +74,20 @@ from pathlib import Path
 from ._core import DEFAULT_EXCLUDE, iter_files
 from ._core.source import read_bytes_cached
 
+__all__ = [
+    "AUDIT_FORBIDDEN_SUFFIXES",
+    "DEFAULT_TEXT_SUFFIXES",
+    "assert_repo_hygiene",
+    "find_missing_required_files",
+    "find_scripts_in_audit_folders",
+    "find_text_files_with_a_bom",
+    "find_text_files_with_nul_bytes",
+    "find_tracked_generated_files",
+    "find_unguarded_numeric_gates",
+    "matches_generated_pattern",
+    "tracked_files",
+]
+
 logger = logging.getLogger(__name__)
 
 #: Generated-artefact patterns, matched on path COMPONENTS, never as substrings (see :func:`matches_generated_pattern`).

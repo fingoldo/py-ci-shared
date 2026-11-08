@@ -40,6 +40,14 @@ from py_ci_shared.phantom_markdown_links import tracked_markdown_files
 
 from ._core import DEFAULT_EXCLUDE, SourceReadError, iter_files, read_source, relative_posix
 
+__all__ = [
+    "DEFAULT_CORPUS_SUFFIXES",
+    "DEFAULT_EXTERNAL_COMMANDS",
+    "assert_doc_identifiers_exist",
+    "default_corpus_files",
+    "find_absent_doc_identifiers",
+]
+
 _FLAG = re.compile(r"`(--[a-z][a-z0-9-]{2,})`")
 _IDENT = re.compile(r"`([a-z][a-z0-9]*(?:_[a-z0-9]+){2,})`")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)

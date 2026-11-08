@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_docstring_numbers_moved_to_config"]
+
 # --- a docstring still describing constants the code no longer has -----------------------------
 #
 # Making a hard-coded threshold configurable is a routine, welcome change. Updating the docstring

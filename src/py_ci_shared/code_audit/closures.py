@@ -8,6 +8,8 @@ from typing import Any, Optional
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["scan_late_binding_closures"]
+
 # --- Class B: late-binding closures over loop vars ----------------------
 
 

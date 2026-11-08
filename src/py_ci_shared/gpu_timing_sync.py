@@ -37,6 +37,8 @@ from typing import NamedTuple, Optional
 from ._core import ImportAliases, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["GpuTimingFinding", "SUPPRESSION_MARKER", "assert_no_unsynchronized_gpu_timings", "find_unsynchronized_gpu_timings"]
+
 # Suppression marker for a DELIBERATE launch-latency (async) measurement, placed as a comment
 # anywhere in the timed region. Such a measurement is legitimate but must say so: an unlabelled
 # unsynchronized timer is indistinguishable from the bug.

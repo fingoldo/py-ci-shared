@@ -37,6 +37,24 @@ from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from urllib.parse import unquote
 
+__all__ = [
+    "NotAThrowawayServerError",
+    "PGSERVER_VERSION",
+    "TZDATA_VERSION",
+    "cache_bin_dir",
+    "embedded_postgres",
+    "fetch",
+    "find_pg_bin",
+    "free_port",
+    "fresh_database",
+    "main",
+    "main_checkout_file",
+    "require_loopback_dsn",
+    "run",
+    "throwaway_dsn_from_env",
+    "wheel_platform",
+]
+
 _SERVER_COMMAND_TIMEOUT_S = 600  # initdb / pg_ctl: a hung server command must not hang the test session behind it
 _DOWNLOAD_TIMEOUT_S = 900  # pip download from the index: a stalled index must not hang the caller
 

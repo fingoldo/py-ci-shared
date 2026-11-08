@@ -14,6 +14,8 @@ from typing import Union
 from ..drifted_duplicate_functions import _canonical
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
+__all__ = ["scan_duplicate_function_body"]
+
 _MIN_BODY_NODES = 8  # skip trivial bodies (pass, ..., a bare `return None`/`return False`/`return self._x`)
 
 

@@ -47,6 +47,8 @@ from pathlib import Path
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["LayerRule", "assert_layering", "find_layering_violations"]
+
 logger = logging.getLogger(__name__)
 
 # Dart: `import '...'` / `export '...'`; TS/JS: `import {x} from '...'`, `export * from '...'`,

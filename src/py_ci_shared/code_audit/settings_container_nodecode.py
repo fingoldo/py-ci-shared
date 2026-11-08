@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
 
+__all__ = ["scan_settings_container_field_needs_nodecode"]
+
 # --- a settings container field whose before-validator never sees the environment ----------------
 
 # Annotations pydantic-settings treats as "complex": its env source JSON-decodes these before any validator.

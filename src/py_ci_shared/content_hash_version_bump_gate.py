@@ -62,6 +62,8 @@ from typing import Any, Optional
 from ._core.outcome import refreshed_skip
 from ._core import atomic_write_text, dump_json, load_json, refresh_requested, register_refresh_options
 
+__all__ = ["HASH_FORMAT", "REFRESH_FLAG", "assert_version_bumped_with_content", "content_hash", "register_refresh_option"]
+
 logger = logging.getLogger(__name__)
 
 REFRESH_FLAG = "--refresh-content-hash-version-baseline"

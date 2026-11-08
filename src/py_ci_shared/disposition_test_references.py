@@ -29,6 +29,8 @@ from pathlib import Path
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_file, read_source
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["assert_disposition_tests_exist", "disposition_paragraphs", "find_missing_test_references"]
+
 logger = logging.getLogger(__name__)
 
 # A paragraph opener, or a markdown table row with a `Disposition` cell (`| X-1 | Disposition: fixed, `test_y` |`).

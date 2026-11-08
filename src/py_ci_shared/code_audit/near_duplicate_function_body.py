@@ -18,6 +18,8 @@ from typing import Optional as _Optional
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 from .duplicate_function_body import _stripped_body, _node_count, _normalized_body
 
+__all__ = ["scan_near_duplicate_function_body"]
+
 # Fuzzy matching a trivial body (a short property getter, a one-line delegate) produces spurious
 # high-ratio hits between structurally-unrelated functions purely because there isn't enough text
 # for the ratio to discriminate on. Set well above scan_duplicate_function_body's exact-match floor

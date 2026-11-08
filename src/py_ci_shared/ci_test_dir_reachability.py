@@ -41,6 +41,8 @@ from typing import Optional
 
 from ._core import read_source
 
+__all__ = ["PytestInvocation", "assert_every_test_subdir_reachable", "find_unreachable_test_subdirs", "pytest_invocations"]
+
 _PYTEST_INVOKE_RE = re.compile(r"pytest\s+([^\s|&><;]+)")
 _PYTEST_IGNORE_RE = re.compile(r"--ignore(?:-glob)?=(\S+)")
 # A pytest invocation with NO positional path argument runs whatever `testpaths`/rootdir

@@ -8,6 +8,8 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines, walk_nodes
 from .broad_except import _has_log_call, _has_raise, _is_broad_except, _handler_has_documented_rationale
 
+__all__ = ["DEFAULT_ESCALATION_ATTRS", "scan_log_only_except"]
+
 # --- logged-but-not-escalated except ---------------------------------------
 
 # Common names for a caller-visible collection an except handler is expected

@@ -34,6 +34,8 @@ from pathlib import Path
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceError, iter_files, parse_source, parse_text, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["COLON_CAST_RE", "assert_no_colon_cast_binds", "colon_cast_binds", "find_colon_cast_binds", "python_colon_cast_binds"]
+
 #: ``:name::type`` -- a bind parameter immediately followed by a cast. ``a::b::c`` is a chain of casts, not a bind,
 #: and ``x:a::int`` (a word before the colon) is not a bind either. The type may be a quoted identifier.
 COLON_CAST_RE = re.compile(r"""(?<![:\w]):([A-Za-z_][A-Za-z_0-9]*)::((?:"[^"\n]+"|[A-Za-z_]+)(?:\[\])?)""")

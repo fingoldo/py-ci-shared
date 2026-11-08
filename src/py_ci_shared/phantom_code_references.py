@@ -62,6 +62,17 @@ from ._ci_install_parts import is_stdlib
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, load_json, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "assert_no_count_claim_mismatches",
+    "assert_no_phantom_code_references",
+    "assert_no_stale_absolute_line_citations",
+    "count_claim_mismatches",
+    "dart_declarations",
+    "find_phantom_code_references",
+    "find_stale_absolute_line_citations",
+    "python_declarations",
+]
+
 logger = logging.getLogger(__name__)
 
 

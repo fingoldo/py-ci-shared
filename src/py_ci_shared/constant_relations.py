@@ -54,6 +54,17 @@ from typing import Any, Callable, Optional, Union
 from ._toml_compat import tomllib
 from ._core.node_index import dotted_name
 
+__all__ = [
+    "Relation",
+    "RelationError",
+    "RelationSource",
+    "assert_constant_relations",
+    "evaluate",
+    "find_constant_relation_problems",
+    "load_relations",
+    "resolve_reference",
+]
+
 logger = logging.getLogger(__name__)
 
 _COMPARE: dict[type, tuple[str, Callable[[float, float], bool]]] = {

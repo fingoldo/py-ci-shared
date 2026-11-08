@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["DEFAULT_CREDENTIAL_KEYWORDS_RE", "scan_duplicate_credential_regex"]
+
 # Default canonical-module candidates: a project designates its own single
 # source of truth for credential-shaped regexes (e.g. "secrets_scrub.py") via
 # the ``canonical_module_rel_paths`` kwarg. No default file name is assumed

@@ -31,6 +31,8 @@ from typing import Callable, Optional
 from py_ci_shared._toml_compat import tomllib
 from py_ci_shared.tool_versions import RUFF_VERSION
 
+__all__ = ["TOOLS", "find_problems", "installed_version", "main", "pinned_version", "precommit_ruff_revs"]
+
 logger = logging.getLogger(__name__)
 
 #: tool -> (module run as ``python -m``, distribution name in the pin, version the shared workflows run)

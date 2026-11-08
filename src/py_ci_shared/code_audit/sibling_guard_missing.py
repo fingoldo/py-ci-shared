@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, _DEFAULT_EXCLUDE_DIRS, Finding, _iter_py_files, _line_text, _safe_parse, walk_nodes
 
+__all__ = ["scan_sibling_guard_missing"]
+
 # --- one sibling missing the guard all the others open with -----------------------------------
 #
 # Five methods on a class start `if self._closed: return`. The sixth does not, and it is the one

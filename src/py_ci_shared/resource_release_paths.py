@@ -46,6 +46,8 @@ from pathlib import Path
 from ._core import ImportAliases, parse_file, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["assert_released_on_every_path", "creates_resource", "find_unprotected_releases", "subjects"]
+
 
 def _callee_names(call: ast.Call, aliases: ImportAliases) -> set[str]:
     """The spelled name of *call*'s callee and the last segment of its import-resolved name

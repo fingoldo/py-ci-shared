@@ -8,6 +8,8 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 import logging
 
+__all__ = ["scan_dead_cli_flags"]
+
 logger = logging.getLogger(__name__)
 
 # --- dead argparse flags ---------------------------------------------------

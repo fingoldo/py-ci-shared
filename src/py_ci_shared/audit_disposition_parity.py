@@ -41,6 +41,8 @@ from pathlib import Path
 
 from ._core import SourceReadError, read_source
 
+__all__ = ["assert_dispositions_name_real_artefacts", "find_unsupported_dispositions", "parse_disposition"]
+
 # `- Disposition: RESOLVED - ...` / `Disposition: PARTIAL - ...`, the Markdown-bold forms ``**Disposition:** RESOLVED. text``
 # and ``**Disposition**: Resolved``, any list marker, any case.
 _DISPOSITION_RE = re.compile(

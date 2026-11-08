@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["DEFAULT_GUARDABLE_OP_SUFFIXES", "DEFAULT_GUARD_ATTR_NAMES", "DEFAULT_GUARD_CALL_NAMES", "scan_asymmetric_resource_guard"]
+
 # Context-manager call names that guard a multi-statement/server-side-cursor
 # operation (e.g. ``async with conn.transaction():``). Projects with their
 # own naming convention pass their own set via ``guard_call_names``.

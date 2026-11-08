@@ -9,6 +9,8 @@ from collections.abc import Iterable
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_possibly_dead_import"]
+
 
 def _alias_own_lineno(alias: ast.alias, node: "ast.Import | ast.ImportFrom", src_lines: list[str], claimed: set[int]) -> int:
     """The alias's own 1-based line number.

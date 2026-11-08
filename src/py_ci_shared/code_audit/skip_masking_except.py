@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_except_skip_masks_call_under_test"]
+
 # --- except-block that masks a real test failure as a skip ---------------
 
 

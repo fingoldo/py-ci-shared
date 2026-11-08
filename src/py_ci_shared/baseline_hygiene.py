@@ -41,6 +41,8 @@ from pathlib import Path
 
 from ._core import read_source
 
+__all__ = ["assert_baseline_is_honest", "body_asserts_only_absence_of_crash", "find_baseline_problems"]
+
 # A KEY is a repo-relative path or id: any leading `/`, `\\` (UNC) or drive letter makes it machine-specific.
 _ABSOLUTE_KEY_RE = re.compile(r"^\s*(?:/|\\\\|[A-Za-z]:[\\/])")
 # Inside prose (a note, or text after the key) only unmistakable machine paths count, so `read/write` or an

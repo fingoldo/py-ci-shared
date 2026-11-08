@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_duplicate_conditions"]
+
 # --- duplicate conditions (copy-paste bugs) ----------------------------------
 #
 # ``x.endswith('ssions') or x.endswith('ssions')`` -- the same operand twice

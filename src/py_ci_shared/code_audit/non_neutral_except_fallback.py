@@ -8,6 +8,8 @@ from collections.abc import Iterator
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 
+__all__ = ["DEFAULT_AUDIBLE_FUNCTIONS", "DEFAULT_AUDIBLE_LOG_METHODS", "scan_non_neutral_except_fallback"]
+
 # --- non-neutral literal substituted by a silent except handler ----------
 #
 # Sixteen findings, one shape, in the 2026-09-01 mlframe audit. A handler catches an exception, returns or

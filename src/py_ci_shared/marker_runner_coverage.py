@@ -44,6 +44,17 @@ from typing import Optional
 from ._core import DEFAULT_EXCLUDE, ImportAliases, UnparsedFilesError, parse_text, relative_posix, scan_python, tree_memo
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "MarkedTest",
+    "Runner",
+    "assert_every_marked_test_is_selected",
+    "expression_selects",
+    "find_unselected_marked_tests",
+    "keyword_selects",
+    "marked_tests",
+    "runners",
+]
+
 logger = logging.getLogger(__name__)
 
 _TOKEN = re.compile(r"\"[^\"]*\"|'[^']*'|[^\s|&;><]+")

@@ -29,6 +29,8 @@ from typing import Any, Optional
 from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 
+__all__ = ["REFRESH_FLAG", "assert_functions_do_not_grow", "function_lengths", "length_problems", "write_length_baseline"]
+
 REFRESH_FLAG = "--refresh-function-length-baseline"
 
 

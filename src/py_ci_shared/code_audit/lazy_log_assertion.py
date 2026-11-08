@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_lazy_log_assertion"]
+
 # --- asserting a FORMATTED string against a lazily-formatted log record ------------------------
 #
 # Production logs `log.warning("%s: reached only %d/%d", label, reached, total)`. A test replaces

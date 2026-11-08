@@ -35,6 +35,19 @@ from ._core import DEFAULT_EXCLUDE, SourceError, UnparsedFilesError, iter_files,
 from ._core.node_index import walk as _fast_walk
 from ._toml_compat import tomllib
 
+__all__ = [
+    "BUILTIN_MARKERS",
+    "assert_markers_registered",
+    "conftest_markers",
+    "conftest_registrations",
+    "find_unregistered_markers",
+    "ini_markers",
+    "pyproject_markers",
+    "registered_markers",
+    "toml_markers",
+    "used_markers",
+]
+
 #: Markers pytest and the plugins these repos use provide without registration.
 BUILTIN_MARKERS: frozenset[str] = frozenset(
     {

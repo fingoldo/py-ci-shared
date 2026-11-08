@@ -11,6 +11,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_getattr_literal_on_known_dataclass"]
+
 
 def _class_shapes(tree: ast.Module) -> tuple[dict[str, set[str]], dict[str, set[str]], set[str]]:
     """``(own members, base class names, @dataclass-decorated class names)`` for every class here.

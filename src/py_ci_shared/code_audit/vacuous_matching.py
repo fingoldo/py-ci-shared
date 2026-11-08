@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_vacuous_empty_pattern_match"]
+
 # --- vacuous truth in a matching predicate --------------------------------------------------------
 #
 # `all(stem in text for stem in stems)` is True when `stems` is empty, so a matcher handed nothing

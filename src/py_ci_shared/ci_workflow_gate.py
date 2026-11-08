@@ -43,6 +43,8 @@ from typing import Optional
 from .ci_workflow_paths import strip_yaml_comment
 from ._core import read_source
 
+__all__ = ["assert_continue_on_error_is_reviewed", "find_continue_on_error_steps"]
+
 # Matches both step-level (`  - name: "..."`) and job-level (`  name: ...`)
 # YAML name fields, with or without quotes. Kept for callers; the scan reads names by indentation.
 _NAME_RE = re.compile(r"^\s*(?:-\s*)?name:\s*[\"']?(.*?)[\"']?\s*$")

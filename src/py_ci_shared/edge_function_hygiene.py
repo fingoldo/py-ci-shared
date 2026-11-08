@@ -38,6 +38,8 @@ from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source, relative_posix
 
+__all__ = ["assert_edge_functions_are_sound", "find_edge_function_problems"]
+
 logger = logging.getLogger(__name__)
 
 _CATCH_BLOCK_RE = re.compile(r"\bcatch\s*\([^)]*\)\s*\{")

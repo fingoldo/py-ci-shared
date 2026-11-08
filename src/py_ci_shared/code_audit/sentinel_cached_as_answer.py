@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_sentinel_cached_as_answer"]
+
 # --- a failure stored in the cache as though it were the answer --------------------------------
 #
 # The lookup fails, the handler writes the failure value into the cache, and from then on every

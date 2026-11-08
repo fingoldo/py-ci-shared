@@ -62,6 +62,30 @@ from ._core import SourceError, read_source
 from ._core.corpus import iter_files_pruned
 from ._core.source import PathLike
 
+__all__ = [
+    "GENERATED_MARKERS",
+    "Reader",
+    "SCANNERS",
+    "dart_files_under",
+    "dart_reader",
+    "package_name",
+    "scan_double_error_reports",
+    "scan_empty_catch",
+    "scan_file_size",
+    "scan_hardcoded_ui_strings",
+    "scan_import_cycles",
+    "scan_non_directional_layout",
+    "scan_painter_animation",
+    "scan_parse_serialize_catch",
+    "scan_provider_state_hygiene",
+    "scan_repaint_isolation",
+    "scan_source_text_assertions",
+    "scan_tappable_semantics",
+    "scan_tests_without_assertions",
+    "scan_timed_dismissal",
+    "scan_unused_test_seams",
+]
+
 Reader = Callable[[str], str]
 
 from ._dart_source import (  # noqa: F401  # the scanners' shared helpers

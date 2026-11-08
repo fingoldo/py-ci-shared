@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["DEFAULT_RELEASE_CALL_NAMES", "scan_shielded_resource_release_race"]
+
 # Call names that release a pooled/held resource back for reuse. Projects with
 # their own release-function naming convention pass their own set via the
 # ``release_call_names`` kwarg.

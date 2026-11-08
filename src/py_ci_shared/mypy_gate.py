@@ -29,6 +29,8 @@ import re
 import subprocess
 import sys
 
+__all__ = ["FOUND_RE", "SUCCESS_RE", "check_mypy_output", "main"]
+
 _MYPY_TIMEOUT_S = 1800  # a whole-project run is slow on a cold cache; past this it is hung, and a hung gate must not pass silently
 
 SUCCESS_RE = re.compile(r"Success: no issues found in (\d+) source files?")

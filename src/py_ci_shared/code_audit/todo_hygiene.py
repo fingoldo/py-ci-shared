@@ -7,6 +7,8 @@ from ._base import Finding, _DEFAULT_EXCLUDE_DIRS
 
 from ._todo_markers import ATTRIBUTION_RE, scan_todo_markers
 
+__all__ = ["scan_todo_hygiene"]
+
 # --- un-attributed TODO/FIXME/XXX/HACK markers ------------------------------
 
 

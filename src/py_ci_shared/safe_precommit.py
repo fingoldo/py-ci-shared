@@ -50,6 +50,8 @@ import time
 from collections.abc import Callable, Generator
 from types import ModuleType
 
+__all__ = ["UNRESTORED_DIR", "main", "patch_stash_restore"]
+
 logger = logging.getLogger(__name__)
 
 #: Where an unrestorable patch is copied, relative to the repository's git dir.

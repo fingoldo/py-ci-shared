@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _arg_names, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_docstring_args_completeness"]
+
 # --- docstring Args: section missing a real parameter -----------------------
 #
 # Found in the wild (2026-07-21 audit, dev/benchmarking.py): a Google-style docstring's ``Args:``

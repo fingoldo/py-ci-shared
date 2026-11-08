@@ -12,6 +12,8 @@ from typing import Optional
 from .._ci_install_parts import is_stdlib
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_undeclared_imports"]
+
 # --- undeclared cross-domain imports -------------------------------------
 #
 # Class of bug found repeatedly in the 2026-07-21 audit (Critical: core/pythonlib.py

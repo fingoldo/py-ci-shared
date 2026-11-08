@@ -32,6 +32,15 @@ from ._core import ImportAliases, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._core.node_index import dotted_chain
 
+__all__ = [
+    "DEFAULT_EXCLUDED_PREFIXES",
+    "ROUTING_MARKER",
+    "STATEMENT_CONSTRUCTORS",
+    "assert_no_mocked_statement_constructors",
+    "compile_pg",
+    "find_mocked_statement_constructors",
+]
+
 # The names that BUILD a statement. Mocking one of these means no SQL is ever compiled; mocking `session`,
 # `engine` or `connection` does not, and is the normal way to keep a unit test off the database.
 STATEMENT_CONSTRUCTORS: frozenset[str] = frozenset({"insert", "pg_insert", "update", "delete", "select", "merge", "upsert"})

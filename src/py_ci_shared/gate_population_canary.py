@@ -52,6 +52,25 @@ from typing import Any
 from ._core import SourceError, parse_file
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "CANARY",
+    "CANDIDATE_CONSTANT",
+    "CANDIDATE_FUNCTION",
+    "EXPECTED_EMPTY",
+    "MIN_REASON_LENGTH",
+    "OFFENDING_FUNCTION",
+    "assert_canary_is_matched",
+    "assert_every_gate_declares_its_population",
+    "assert_population_is_not_empty",
+    "canary_problem",
+    "compiled_patterns",
+    "find_gates_without_population",
+    "gate_canaries",
+    "gate_modules",
+    "load_gate",
+    "population_problem",
+]
+
 CANDIDATE_FUNCTION = "_candidate_files"
 CANDIDATE_CONSTANT = "_CANDIDATE_FILES"
 CANARY = "_CANARY"

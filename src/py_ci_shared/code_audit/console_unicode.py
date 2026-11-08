@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_console_unicode"]
+
 logger = logging.getLogger(__name__)
 
 # One warning per unreadable file for the life of the process: the walk below revisits the same

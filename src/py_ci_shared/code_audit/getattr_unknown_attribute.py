@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["scan_getattr_unknown_attribute"]
+
 
 def _class_attribute_names(root: Path, exclude_dirs: frozenset[str]) -> set[str]:
     """Every name that is a class attribute ANYWHERE in the tree.

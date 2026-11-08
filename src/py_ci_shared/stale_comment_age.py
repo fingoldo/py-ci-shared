@@ -56,6 +56,17 @@ from typing import Optional
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, parse_text, read_source
 from ._core import walk as shared_walk
 
+__all__ = [
+    "BlameError",
+    "DEFAULT_SKIP_DIRS",
+    "StaleCommentAdvisory",
+    "assert_no_stale_todos",
+    "find_comments_going_stale",
+    "find_stale_comments",
+    "main",
+    "stale_warning_summary",
+]
+
 logger = logging.getLogger(__name__)
 
 

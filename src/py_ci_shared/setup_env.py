@@ -38,6 +38,8 @@ import sys
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml_escape
 
+__all__ = ["main"]
+
 _VAR = "PY_CI_SHARED_DIR"
 _TAG = "# added by py_ci_shared.setup_env"
 _EXPORT_RE = re.compile(rf"^\s*export\s+{_VAR}=")

@@ -56,6 +56,16 @@ from ._core.outcome import refreshed_skip
 from ._core import Baseline, UnparsedFilesError, child_nodes, refresh_requested, register_refresh_options, relative_posix, scan_python
 from ._core import walk as shared_walk
 
+__all__ = [
+    "CATEGORIES",
+    "Exemption",
+    "REFRESH_FLAG",
+    "assert_no_new_uncalled_function",
+    "find_uncalled_functions",
+    "reexported_public_api",
+    "register_refresh_option",
+]
+
 REFRESH_FLAG = "--refresh-uncalled-functions-baseline"
 
 #: Named exemption categories. Each names one reason a function can be uncalled by production code legitimately; a

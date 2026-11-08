@@ -8,6 +8,8 @@ from collections.abc import Iterator
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, child_nodes
 
+__all__ = ["scan_unreachable_import_fallback"]
+
 # --- a defensive import guard for a module already imported unconditionally --------------------
 #
 # `try: from X import Y / except ImportError: <fallback>` where `X` is imported at module scope

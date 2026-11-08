@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_assert_in_loop_reports_only_the_first"]
+
 
 def _is_data_sweep(node: ast.expr) -> bool:
     """Whether the loop iterates a DATA SOURCE rather than a hand-written list of cases.

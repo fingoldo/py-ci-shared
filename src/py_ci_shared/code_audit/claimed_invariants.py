@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_unenforced_docstring_invariants"]
+
 # --- an invariant asserted in prose and nowhere else -----------------------------------------------
 #
 # Confirmed instances (Autopsia, 2026-07-26): a model documented as "deliberately not one of the

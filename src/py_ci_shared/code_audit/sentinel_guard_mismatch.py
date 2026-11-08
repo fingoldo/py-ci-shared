@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
 
+__all__ = ["scan_sentinel_guard_mismatch"]
+
 # --- a falsy in-band sentinel meeting a caller guard that tests `is None` ----------------------
 #
 # A function signals "unknown" or "failed" by returning `0`, `""`, `[]` or `-1` from an except

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines
 
+__all__ = ["scan_inconsistent_filter", "scan_partial_guard_across_siblings"]
+
 # --- two shapes that only show up when you look ACROSS functions ----------------------------------
 #
 # Both were named by the Autopsia round-2 audits as the most frequently repeated defect shapes, and

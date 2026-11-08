@@ -41,6 +41,24 @@ from typing import TYPE_CHECKING, Any, NamedTuple, Optional, Union
 from ._core import SourceError, SourceProblem, UnparsedFilesError, child_nodes, parse_file, relative_posix, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
 
+__all__ = [
+    "CfgGetCall",
+    "ConstantResolver",
+    "DEFAULT_CFG_FUNCTION_NAMES",
+    "FrozenCliDefault",
+    "assert_call_site_defaults_match_schema_defaults",
+    "assert_every_cfg_get_call_resolves_to_a_schema_field",
+    "assert_every_schema_field_has_a_reader",
+    "assert_no_divergent_cfg_get_call_site_defaults",
+    "assert_no_module_scope_frozen_cli_defaults",
+    "find_cfg_get_calls",
+    "find_module_scope_frozen_cli_defaults",
+    "scan_cfg_get_calls",
+    "schema_section_field_defaults",
+    "schema_section_field_map",
+    "to_hashable",
+]
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:

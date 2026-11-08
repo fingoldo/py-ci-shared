@@ -35,6 +35,19 @@ from typing import Any, Optional
 from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineError, ScanResult, child_nodes, dump_json, refresh_requested, scan_python, write_ratchet
 
+__all__ = [
+    "DEFAULT_LIMIT",
+    "REFRESH_FLAG",
+    "assert_complexity_does_not_grow",
+    "complexities_by_line",
+    "complexity_problems",
+    "function_complexities",
+    "function_complexity",
+    "held_by_unparsed",
+    "load_complexity_baseline",
+    "write_complexity_baseline",
+]
+
 REFRESH_FLAG = "--refresh-complexity-baseline"
 DEFAULT_LIMIT = 10  # ruff's default max-complexity
 

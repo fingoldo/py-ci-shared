@@ -25,6 +25,8 @@ from ._base import (
 )
 import logging
 
+__all__ = ["scan_write_counted_from_input"]
+
 logger = logging.getLogger(__name__)
 
 # --- a written-rows counter taken from the rows given to an insert that can skip some -----------

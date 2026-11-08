@@ -29,6 +29,8 @@ import sys
 from collections.abc import Sequence
 from typing import Optional
 
+__all__ = ["main", "pop_option", "resolve_src_files", "select_src_files"]
+
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 
 

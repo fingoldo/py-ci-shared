@@ -18,6 +18,8 @@ import sys
 
 from .bandit_warn import _tool_installed
 
+__all__ = ["main"]
+
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 
 # ``--select E,W,N,UP,I`` re-enables every E/W/N/UP/I-prefixed code on the CLI regardless of what

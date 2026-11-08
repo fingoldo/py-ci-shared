@@ -24,6 +24,8 @@ from typing import Optional
 
 from .bandit_warn import _tool_installed, resolve_src_files
 
+__all__ = ["main"]
+
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 _PIP_AUDIT_TIMEOUT_S = 900  # pip-audit asks the network for every installed package
 

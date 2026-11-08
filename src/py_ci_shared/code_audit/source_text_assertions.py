@@ -13,6 +13,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _read_src_lines, is_line_exempt
 
+__all__ = ["scan_source_text_assertions"]
+
 _CHECK = "source_text_assertion"
 
 

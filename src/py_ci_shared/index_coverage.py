@@ -50,6 +50,8 @@ import re
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+__all__ = ["Index", "find_cover", "find_definition", "parse", "statements"]
+
 logger = logging.getLogger(__name__)
 
 _CREATE = re.compile(

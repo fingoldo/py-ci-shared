@@ -11,6 +11,8 @@ from collections.abc import Iterable, Sequence
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["BoundarySymbol", "scan_domain_vocabulary_leak"]
+
 # --- domain vocabulary inside code declared domain-neutral ----------------------------------------
 #
 # THE SHAPE. A codebase grows one product, then a second product is meant to reuse its machinery. The

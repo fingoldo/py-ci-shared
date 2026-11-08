@@ -20,6 +20,8 @@ from ._base import (
     walk_nodes,
 )
 
+__all__ = ["scan_sql_aggregate_before_cast", "scan_sql_limit_without_order_by", "scan_sql_offset_pagination"]
+
 # --- SQL-literal heuristics -----------------------------------------------
 
 # A string literal "looks like SQL" if it contains a standalone SELECT

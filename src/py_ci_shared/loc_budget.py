@@ -64,6 +64,17 @@ from ._core import (
     write_ratchet,
 )
 
+__all__ = [
+    "DEFAULT_GROWTH_SLACK",
+    "DEFAULT_LOC_LIMIT",
+    "REFRESH_FLAG",
+    "assert_no_new_oversized_file",
+    "oversized_files",
+    "ratchet_problems",
+    "register_refresh_option",
+    "write_loc_baseline",
+]
+
 REFRESH_FLAG = "--refresh-loc-budget-baseline"
 
 DEFAULT_LOC_LIMIT = 1000

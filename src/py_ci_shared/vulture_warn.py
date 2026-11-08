@@ -32,6 +32,8 @@ import subprocess
 import sys
 from typing import Optional
 
+__all__ = ["VULTURE_FOUND_DEAD_CODE", "in_scope", "main", "parse_args"]
+
 _TOOL_TIMEOUT_S = 600  # a hung tool must not hang the hook; this runner is warn-only, so an expiry is reported as "skipped"
 
 logger = logging.getLogger(__name__)

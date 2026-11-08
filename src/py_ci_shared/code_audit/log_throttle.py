@@ -8,6 +8,8 @@ from pathlib import Path
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes, child_nodes
 from .._core.call_names import func_name_or_none as _call_name
 
+__all__ = ["scan_unthrottled_hot_loop_log"]
+
 _LOG_METHODS = ("warning", "error", "exception", "critical")
 _THROTTLE_HINTS = ("throttle", "rate_limit", "ratelimit", "debounce")
 _BOUNDED_RETRY_HINTS = ("retr", "attempt")

@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_asymmetric_except_siblings"]
+
 # --- one sibling's except handler weaker than its twin's ----------------------------------------
 #
 # Two methods of one class catch the same exception around the same operation, and one of them

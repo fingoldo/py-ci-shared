@@ -41,6 +41,26 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+__all__ = [
+    "GitQueryError",
+    "ORPHAN_DIR",
+    "REMOVABLE",
+    "REVIEW",
+    "SKIP_PARTS",
+    "SKIP_SUFFIXES",
+    "WorktreeFinding",
+    "branches_without_unique_commits",
+    "main",
+    "orphan_directories",
+    "reachable_objects",
+    "registered_worktrees",
+    "report",
+    "unsaved_files_in_directory",
+    "unsaved_paths",
+    "verify_ref",
+    "worktree_findings",
+]
+
 logger = logging.getLogger(__name__)
 
 #: Directories whose contents are never authored work: caches, build output, vendored trees.

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_regex_integer_parse", "scan_thresholds_below_documented_result"]
+
 # --- numbers that claim more than the code behind them supports ------------------------------------
 #
 # INTEGER-ONLY PARSE OF FREE TEXT. `_count = re.search(r"\d+", text)` reads "4.10" as 4, "2,054" as 2

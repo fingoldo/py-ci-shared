@@ -52,6 +52,8 @@ from typing import Optional
 from ._core import ImportAliases, SourceError, child_nodes, parse_file, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
+__all__ = ["DEFAULT_MOCK_NAMES", "assert_doubles_are_spec_bound", "files_driving", "find_unbound_doubles", "is_bare_mock"]
+
 _LOG = logging.getLogger(__name__)
 
 DEFAULT_MOCK_NAMES = frozenset({"Mock", "MagicMock", "AsyncMock", "NonCallableMock"})

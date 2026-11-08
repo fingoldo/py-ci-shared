@@ -18,6 +18,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_reexport_patch_target"]
+
 # The three idioms that rebind a name on a module object for the duration of a test.
 _PATCH_CALLS = frozenset({"setattr", "patch", "object"})
 

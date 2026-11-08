@@ -6,6 +6,8 @@ from pathlib import Path
 
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_duplicate_module_docstring"]
+
 # --- duplicate module docstring (second literal is dead code) -------------
 #
 # Only the FIRST top-level string-literal statement in a module becomes `__doc__`; a second one

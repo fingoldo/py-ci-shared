@@ -28,6 +28,8 @@ from typing import Optional
 
 from ._toml_compat import tomllib
 
+__all__ = ["assert_versions_agree", "version_sources"]
+
 _VERSION_RE = re.compile(r"""^__version__\s*(?::\s*str\s*)?=\s*["']([^"']+)["']""", re.MULTILINE)
 
 

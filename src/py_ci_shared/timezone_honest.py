@@ -44,6 +44,8 @@ from pathlib import Path
 from ._core import iter_files
 from ._toml_compat import tomllib
 
+__all__ = ["assert_timezone_honest", "dtz_findings", "excluded_code_dirs", "timezone_problems"]
+
 #: Excluded names that are never source even when they contain `.py` files: build artefacts and
 #: environments. Anything starting with a dot is treated the same way (`.venv`, `.tox`, `.git`).
 _NEVER_CODE = frozenset({"build", "dist", "__pycache__", "node_modules", "site-packages"})

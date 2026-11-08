@@ -27,6 +27,8 @@ from pathlib import Path
 
 from ._core import read_source
 
+__all__ = ["assert_all_entry_points_resolvable", "find_unresolvable_entry_points"]
+
 #: ``module:attr [extra1, extra2]``: the extras a console script needs, which are not part of the object reference.
 _EXTRAS_RE = re.compile(r"\s*\[[^\]]*\]\s*$")
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*$")

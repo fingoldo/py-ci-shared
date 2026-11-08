@@ -7,6 +7,8 @@ from typing import cast
 
 from ._base import walk_tree, Finding, is_locals_or_globals_call, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_locals_globals_as_output"]
+
 # --- locals()/globals() passed as a mutable output parameter --------------
 #
 # Found independently TWICE in the 2026-07-21 audit, both with real operational impact:

@@ -47,6 +47,8 @@ from pathlib import Path
 
 from ._core import SourceReadError, read_source
 
+__all__ = ["assert_hooks_are_honest", "find_hook_hygiene_problems"]
+
 # `[ -f x ] && cmd`, `[ -x x ] && cmd`, `command -v x >/dev/null && cmd` on one line: the `&&` form
 # has no else branch at all, so a missing file is indistinguishable from a passing check.
 _INLINE_GUARD_RE = re.compile(r"^\s*(?:\[\s*-[fxe]\s+[^\]]+\]|command\s+-v\s+\S+[^&|]*)\s*&&\s*\S")

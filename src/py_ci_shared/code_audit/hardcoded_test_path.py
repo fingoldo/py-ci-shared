@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
+__all__ = ["scan_hardcoded_absolute_path_in_test"]
+
 # A Windows drive-letter path ("D:\Machine Learning\...", "C:/Users/...") or a
 # POSIX developer-home path ("/home/alice/...", "/Users/bob/...", "/root/...").
 # Deliberately does NOT match a bare "/" (too many false positives on URLs,

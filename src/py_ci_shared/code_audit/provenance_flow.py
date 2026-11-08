@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, _subscript_index
 
+__all__ = ["scan_record_field_flow"]
+
 # --- a record field with only one side of the contract --------------------------------------------
 #
 # Two mirrored defects, confirmed together (Autopsia, 2026-07-26):

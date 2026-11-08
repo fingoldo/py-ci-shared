@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_llm_call_missing_max_tokens_cap"]
+
 # LLMProvider methods whose ``max_tokens`` kwarg defaults to 0 ("provider max") --
 # see pyutilz.llm.base.LLMProvider.generate/generate_json.
 _CAPPED_METHOD_NAMES: frozenset[str] = frozenset({"generate", "generate_json", "generate_batch"})

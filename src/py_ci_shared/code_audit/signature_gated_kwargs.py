@@ -7,6 +7,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_signature_gated_kwarg_drops"]
+
 # --- a caller's argument dropped because a signature did not name it ----------------------------
 
 # What the negative branch has to do for the drop to be visible: say something, or refuse.

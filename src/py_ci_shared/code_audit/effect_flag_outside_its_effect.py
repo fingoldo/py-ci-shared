@@ -8,6 +8,8 @@ from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
+__all__ = ["scan_effect_flag_outside_its_effect"]
+
 _EXIT_STMTS = (ast.Continue, ast.Return, ast.Raise, ast.Break)
 
 # --- a success record set outside the conditional work it records ------------------------------
