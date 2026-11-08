@@ -107,7 +107,7 @@
     "proposed_fix": "Put the enclosing qualified name or normalized statement into the message; add a meta-test flagging messages without it.",
     "ast_checkable": false,
     "fp_risk": "high",
-    "disposition": "DEFERRED: needs enclosing-symbol text in many gates' messages (fp_risk high); belongs with a meta-test design, not a point fix."
+    "disposition": "WON'T FIX: Measured, then rejected on the merits. In the baseline files of six local consumers (pyutilz, mlframe, social, autopsia, llm_bench, algopacksimple; JSON files named *baseline* whose keys contain \"::\") 114 baseline keys were read and 42 of them carry a count of 2 or more, so a swap (fix violation A, add violation B with the same message in the same file) is possible. But a swap leaves the number of violations in that file unchanged, and the number is what the ratchet guarantees: debt never grows. Making the key carry the line or the enclosing symbol would re-key every consumer baseline (each refresh writes new keys), and a line in the key breaks on every edit above the finding, which is why findings.py leaves it out. The cost lands on every consumer for a swap that changes no total. Reopen a gate individually if a swap ever hides a violation of a different severity under one message: put the enclosing symbol into that gate's message then."
   },
   {
     "id": "42-F11",

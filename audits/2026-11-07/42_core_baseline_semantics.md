@@ -80,7 +80,7 @@ Round 2026-11-07, dimension 42. Every finding is OPEN until its Disposition line
 - Failure scenario: Fix violation A, add violation B elsewhere in the file: counts equal, gate green, the ratchet did not shrink.
 - Proposed fix: Put the enclosing qualified name or normalized statement into the message; add a meta-test flagging messages without it.
 - AST-checkable: False; FP risk: high
-- Disposition: DEFERRED: needs enclosing-symbol text in many gates' messages (fp_risk high); belongs with a meta-test design, not a point fix.
+- Disposition: WON'T FIX: Measured, then rejected on the merits. In the baseline files of six local consumers (pyutilz, mlframe, social, autopsia, llm_bench, algopacksimple; JSON files named *baseline* whose keys contain "::") 114 baseline keys were read and 42 of them carry a count of 2 or more, so a swap (fix violation A, add violation B with the same message in the same file) is possible. But a swap leaves the number of violations in that file unchanged, and the number is what the ratchet guarantees: debt never grows. Making the key carry the line or the enclosing symbol would re-key every consumer baseline (each refresh writes new keys), and a line in the key breaks on every edit above the finding, which is why findings.py leaves it out. The cost lands on every consumer for a swap that changes no total. Reopen a gate individually if a swap ever hides a violation of a different severity under one message: put the enclosing symbol into that gate's message then.
 
 ## 42-F11 (P3) git_listing returns None (silent walk fallback) for dubious ownership, and the walk and git modes disagree on nested repositories
 
