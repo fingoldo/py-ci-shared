@@ -59,6 +59,7 @@ def function_lengths(files: Iterable[Path], root: Path) -> dict[str, int]:
 
 
 def length_problems(lengths: dict[str, int], baseline: dict[str, int], *, limit: int) -> list[str]:
+    """Messages for functions whose line count rose over their baseline ceiling, now fit the limit, or are over ``limit`` with no baseline entry."""
     problems: list[str] = []
     for key, n in sorted(lengths.items()):
         if key in baseline:

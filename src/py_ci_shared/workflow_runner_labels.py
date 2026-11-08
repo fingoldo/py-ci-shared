@@ -146,6 +146,7 @@ def find_workflow_runner_label_problems(repo_root: PathLike, *, min_files: int =
 
 
 def assert_workflow_runner_labels_pinned(repo_root: PathLike, *, min_files: int = 1, allow_unparsed: bool = False) -> None:
+    """Fail the test when a workflow uses an unpinned runner label or lacks the update channel; the message names the ``--fix`` command."""
     found = find_workflow_runner_label_problems(repo_root, min_files=min_files, allow_unparsed=allow_unparsed)
     if found:
         raise AssertionError(
@@ -190,6 +191,7 @@ def fix_workflow_runner_labels(repo_root: PathLike, *, labels: Optional[Mapping[
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point: report unpinned workflow runner labels, or rewrite them with ``--fix``; exit 2 when the repo has no workflows."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.workflow_runner_labels", description=__doc__.split("\n", 1)[0])
     parser.add_argument("repo", nargs="?", default=".")
     parser.add_argument("--allow-empty", action="store_true", help="pass when the repo has no workflow files (default: exit 2)")

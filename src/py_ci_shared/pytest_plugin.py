@@ -50,6 +50,7 @@ LEAK_GUARD_PLUGIN = "py_ci_shared.resource_leak_guard"
 
 
 def pytest_addoption(parser: Any) -> None:
+    """Declare the ``--py-ci-gates`` option and the gate refresh options in the ``py-ci-shared`` option group."""
     group = parser.getgroup("py-ci-shared")
     register_refresh_options(group)
     group.addoption(
@@ -90,6 +91,7 @@ def _export_grow(config: Any) -> None:
 
 
 def pytest_configure(config: Any) -> None:
+    """Register the marker, export the refresh tokens, locate ``[tool.py_ci_shared]`` and load the sibling plugins its config enables."""
     config.addinivalue_line("markers", "py_ci_shared: a gate item generated from [tool.py_ci_shared]")
     bound_randomly_reseeders(config)  # pytest-randomly hands thinc an out-of-range seed; see randomly_seed_guard
     _export_grow(config)
@@ -224,6 +226,7 @@ def _gate_refresh(config: Any, run: GateRun) -> bool:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_collection_modifyitems(session: Any, config: Any, items: list[Any]) -> None:
+    """Add one test item per gate enabled in ``[tool.py_ci_shared]`` when the plugin is switched on for this run."""
     repo_config = config.stash.get(_CONFIG_KEY, None)
     if not _wanted(config, repo_config):
         return

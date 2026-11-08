@@ -125,6 +125,7 @@ def _sockets() -> Optional[set[str]]:
 
 
 def take_snapshot(checks: Iterable[str] = ALL_CHECKS) -> Snapshot:
+    """Capture the live processes, non-daemon threads, sockets, environment and logging state named by ``checks``, for a later comparison."""
     wanted = set(checks)
     snap = Snapshot()
     if "processes" in wanted:
@@ -271,6 +272,7 @@ def _restore(before: Snapshot) -> None:
 
 
 def pytest_addoption(parser: Any) -> None:
+    """Declare the ini options that list allowed leaks and choose which leak checks run."""
     parser.addini(
         "leak_guard_allow",
         "resource_leak_guard allowlist: kind:glob per line (thread/process/socket/env/logging/stream/cwd/sys_path/warnings)",
@@ -282,6 +284,7 @@ def pytest_addoption(parser: Any) -> None:
 
 
 def pytest_configure(config: Any) -> None:
+    """Register the leak guard markers and fail with a usage error when ``leak_guard_checks`` names an unknown check."""
     config.addinivalue_line("markers", "leak_guard_allow(*entries): allow these leaks (kind:glob) for this test")
     config.addinivalue_line("markers", "no_leak_guard: do not check this test for leaked resources")
     _psutil()  # imported now, not during the first test, where it would read as that test's import-time configuration
@@ -310,6 +313,7 @@ def _allow(item: Any) -> list[str]:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: Any) -> None:
+    """Snapshot the resources and process state before a test, unless it is marked ``no_leak_guard``."""
     if item.get_closest_marker("no_leak_guard") is None:
         item.stash[_BEFORE] = take_snapshot([c for c in _checks(item) if c in ("logging", "env")])
         item.stash[_STATE] = take_state([c for c in _checks(item) if c in STATE_CHECKS])

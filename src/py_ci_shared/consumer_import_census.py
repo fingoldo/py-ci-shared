@@ -305,6 +305,7 @@ def _extract_ref(library_root: Path, ref: str, dest: Path) -> Path:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point: count which names of a library package its consumer checkouts import, and report the unused ones."""
     from .adoption_matrix import load_repo_list
 
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.consumer_import_census", description=__doc__.split("\n", 1)[0])

@@ -223,6 +223,7 @@ def _cmd_new_gate(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """The argument parser of the ``py-ci-shared`` command with its list, run, run-all, refresh, config-path, tool, new-gate and version subcommands."""
     parser = argparse.ArgumentParser(prog="py-ci-shared", description="Run py-ci-shared gates and tools.")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("list", help="list every registered module")

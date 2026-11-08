@@ -50,6 +50,7 @@ _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 # ------------------------------------------------------------------ the tracker's status column
 def tracker_rows(tracker: Path) -> list[str]:
+    """The table rows (lines starting with ``|``) of an audit TRACKER file."""
     return [ln for ln in read_source(tracker).splitlines() if ln.startswith("|")]
 
 
@@ -80,6 +81,7 @@ def status_problems(tracker: Path, statuses: Iterable[str] = DEFAULT_STATUSES) -
 
 
 def assert_tracker_statuses_countable(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES, min_rows: int = 1) -> None:
+    """Fail the test when fewer than ``min_rows`` tracker status cells parse, or when any cell is one that a status count would miss."""
     import pytest
 
     problems, parsed = status_problems(tracker, statuses)

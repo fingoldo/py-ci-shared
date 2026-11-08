@@ -108,6 +108,7 @@ def _restore(snapshot: Mapping[str, str], keys: Iterable[str]) -> None:
 
 
 def pytest_addoption(parser: Any) -> None:
+    """Declare the ini options for restoring os.environ, the fixtures that load a .env, the leak mode and the secret name patterns."""
     parser.addini("secret_safe_restore_environ", "secret_safe_test_output: restore os.environ after collection", type="bool", default=True)
     parser.addini(
         "secret_safe_env_fixtures", "secret_safe_test_output: fixtures whose setup loads a .env; os.environ is restored after", type="linelist", default=[]
@@ -121,6 +122,7 @@ def pytest_addoption(parser: Any) -> None:
 
 
 def pytest_configure(config: Any) -> None:
+    """Validate the leak mode and the secret name patterns, and create the plugin state for this run."""
     mode = str(config.getini("secret_safe_env_leaks"))
     if mode not in _LEAK_MODES:
         raise pytest.UsageError(f"secret_safe_env_leaks = {mode!r}; expected one of {_LEAK_MODES}")
@@ -142,6 +144,7 @@ def _state(config: Any) -> Optional[_SessionState]:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_collection(session: Any) -> Any:
+    """Hook wrapper: remember the environment variables that collection added or changed, so their values can be redacted and restored."""
     before = dict(os.environ)
     yield
     state = _state(session.config)
@@ -156,6 +159,7 @@ def pytest_collection(session: Any) -> Any:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_fixture_setup(fixturedef: Any, request: Any) -> Any:
+    """Hook wrapper: record the environment variables a .env-loading fixture set, so they are redacted and not reported as leaks."""
     before = dict(os.environ)
     yield
     state = _state(request.config)
@@ -174,11 +178,13 @@ def pytest_fixture_setup(fixturedef: Any, request: Any) -> Any:
 
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: Any) -> None:
+    """Remember the environment as the test starts, to detect what the test changes."""
     item.stash[_TEST_ENV] = dict(os.environ)
 
 
 @pytest.hookimpl(trylast=True)
 def pytest_runtest_teardown(item: Any, nextitem: Any) -> None:
+    """Report or fail (by the leak mode) the environment variables a test left changed."""
     state = _state(item.config)
     before = item.stash.get(_TEST_ENV, None)
     mode = str(item.config.getini("secret_safe_env_leaks"))
@@ -207,6 +213,7 @@ def _redact_report(report: Any, state: _SessionState) -> None:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: Any, call: Any) -> Any:
+    """Hook wrapper: redact secret values from the test report."""
     outcome = yield
     state = _state(item.config)
     if state is not None:
@@ -215,6 +222,7 @@ def pytest_runtest_makereport(item: Any, call: Any) -> Any:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_make_collect_report(collector: Any) -> Any:
+    """Hook wrapper: redact secret values from the collection report."""
     outcome = yield
     state = _state(collector.config)
     if state is not None:
@@ -222,6 +230,7 @@ def pytest_make_collect_report(collector: Any) -> Any:
 
 
 def pytest_terminal_summary(terminalreporter: Any, exitstatus: Any, config: Any) -> None:
+    """Add the restored and leaked os.environ entries to the terminal summary."""
     state = _state(config)
     if state is None or not (state.restored or state.leaks):
         return

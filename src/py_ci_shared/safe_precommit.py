@@ -198,6 +198,7 @@ def patch_stash_restore() -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the pre-commit command line with its stash-restore step patched to be safe, and return its exit code."""
     patch_stash_restore()
     from pre_commit.main import main as pc_main
 

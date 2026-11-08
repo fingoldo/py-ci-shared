@@ -103,6 +103,7 @@ def _git(repo: str, *args: str) -> str:
 
 
 def baseline_files(repo: str, directories: Iterable[str]) -> list[str]:
+    """The git-tracked ``*.json`` baseline files under the given directories of a repository, sorted."""
     out: list[str] = []
     for directory in directories:
         listing = _git(repo, "ls-files", f"{directory}/*.json")
@@ -153,6 +154,7 @@ def report(
     since: str | None,
     stale_only: bool,
 ) -> list[str]:
+    """One line per tracked baseline file describing its trend since ``since``; with ``stale_only`` only the rules that have not moved."""
     lines: list[str] = []
     for path in baseline_files(repo, directories):
         points = history(repo, path, since)
@@ -172,6 +174,7 @@ def report(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Command line entry point: print how each tracked baseline file moved over the history of the repository."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=".", help="repository root (default: here)")
     parser.add_argument(

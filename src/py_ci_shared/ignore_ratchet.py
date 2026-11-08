@@ -120,6 +120,7 @@ def write_ignore_baseline(path: Path, counts: dict[str, int], *, grow: Optional[
 
 
 def assert_ignore_list_only_shrinks(codes: Iterable[str], counts: dict[str, int], baseline_path: Path) -> None:
+    """Fail the test when the linter ignore list is empty, grew, or when its per-code counts moved against the baseline file."""
     import pytest
 
     codes = list(codes)

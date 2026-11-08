@@ -201,6 +201,7 @@ def unbound_finders() -> list[str]:
 
 
 def runnable_finders() -> list[tuple[str, Callable[..., Any]]]:
+    """The ``find_*`` functions that are not listed as exempt and whose repository-root arguments all have a binding, as (key, function) pairs."""
     return [(key, fn) for key, fn in finders() if not _listed(key) and all(n in BINDINGS for n in _required(fn))]
 
 

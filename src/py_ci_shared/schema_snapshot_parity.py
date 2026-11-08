@@ -676,6 +676,7 @@ def _env_dsn(name: "Optional[str]") -> "Optional[str]":
 
 
 def main(argv: "Sequence[str] | None" = None) -> int:
+    """Command line entry point: ``check`` compares a schema SQL file provisioned on a private server with a snapshot, ``refresh`` writes the snapshot."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.schema_snapshot_parity")
     sub = parser.add_subparsers(dest="cmd", required=True)
     c = sub.add_parser("check", help="provision SQL_FILE on a private server and compare with SNAPSHOT")

@@ -545,6 +545,7 @@ def assert_unexecuted_function_bodies(
 
 
 def main(argv: "Optional[Sequence[str]]" = None) -> int:
+    """Command line entry point: report functions whose body never ran in the unit coverage run read from the coverage JSON."""
     parser = argparse.ArgumentParser(
         prog="python -m py_ci_shared.unexecuted_function_bodies", description="Report functions whose body never ran in the unit coverage run."
     )

@@ -88,6 +88,7 @@ def _produced_on(api: Api, repo: str, ref: str) -> set[str]:
 
 
 def check_repo(consumer: Consumer, api: Api) -> RepoChecks:
+    """Read the required status check contexts of a consumer's branch protection and compare them with those its newest commits produced."""
     out = RepoChecks(consumer.name, consumer.repo, consumer.branch)
     ref = urllib.parse.quote(consumer.branch, safe="")
     try:
@@ -110,6 +111,7 @@ def check_repo(consumer: Consumer, api: Api) -> RepoChecks:
 
 
 def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None) -> int:
+    """Command line entry point: check every consumer in the config for required check contexts no job produces; ``--strict`` also fails unreadable ones."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.required_check_contexts", description=__doc__.split("\n", 1)[0])
     parser.add_argument("config", help="consumers.toml")
     parser.add_argument("--strict", action="store_true", help="also fail when a repo's protection cannot be read")

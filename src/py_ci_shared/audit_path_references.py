@@ -29,6 +29,7 @@ _DATED = re.compile(r"^\d{4}-\d{2}-\d{2}")
 
 
 def open_round_names(audits_dirs: Iterable[Path], *, implemented: str = "implemented") -> set[str]:
+    """Names of the dated audit round folders under the given audits directories, leaving out the ``implemented`` archive."""
     names: set[str] = set()
     for audits in audits_dirs:
         if audits.is_dir():

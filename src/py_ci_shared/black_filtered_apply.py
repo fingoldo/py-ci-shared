@@ -202,6 +202,7 @@ def norm(s: str) -> str:
 
 
 def is_all_blank(lines):
+    """True when ``lines`` is non-empty and every line is empty or whitespace."""
     return all(line.strip() == "" for line in lines) and len(lines) > 0
 
 
@@ -325,6 +326,7 @@ def _replace_hunk(old_block, new_block, i1, j1, orig_string_state, fmt_string_st
 
 
 def filtered_apply(orig: str, formatted: str) -> str:
+    """The original text with only those black changes applied that touch its changed lines, keeping unrelated formatting as it was."""
     orig_lines = orig.splitlines(keepends=True)
     fmt_lines = formatted.splitlines(keepends=True)
     orig_string_state = _triple_quote_state_before_each_line(orig_lines)
@@ -466,6 +468,7 @@ def _run_format(files, write, config_path):
 
 
 def main(argv=None):
+    """Command line entry point: format the given files with black, keeping only the changes on lines that differ (``--check`` only reports)."""
     args = list(sys.argv[1:] if argv is None else argv)
     write = "--write" in args
     check = "--check" in args

@@ -86,6 +86,7 @@ def _commands(files: list[str]) -> list[list[str]]:
 
 
 def main() -> None:
+    """Run the formatter check on the staged Python files and print any difference as a warning; never fails the commit."""
     files = [a for a in sys.argv[1:] if a.endswith(".py")]
     if not files:
         return

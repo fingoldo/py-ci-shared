@@ -188,6 +188,7 @@ def _configured(repo: Path) -> dict[str, Any]:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point: check a commit message file or a revision range for forbidden trailers; returns 1 when any commit offends."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.commit_metadata", description=__doc__.split("\n", 1)[0])
     parser.add_argument("--repo", default=".", help="repository root (default: .)")
     what = parser.add_mutually_exclusive_group()

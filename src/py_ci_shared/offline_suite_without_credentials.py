@@ -173,10 +173,12 @@ def _settings(config: Any) -> OfflineSettings:
 
 
 def pytest_addhooks(pluginmanager: Any) -> None:
+    """Register the plugin's own hook specifications with the pytest plugin manager."""
     pluginmanager.add_hookspecs(_Hookspecs)
 
 
 def pytest_addoption(parser: Any) -> None:
+    """Declare the ini options that choose the exempting marker, the credential variables and patterns, and the .env loaders."""
     parser.addini("offline_credentials_marker", "offline_suite_without_credentials: the marker that exempts a test", default=DEFAULT_MARKER)
     parser.addini("offline_credential_vars", "offline_suite_without_credentials: variables blanked (replaces the default list)", type="linelist", default=[])
     parser.addini(
@@ -186,6 +188,7 @@ def pytest_addoption(parser: Any) -> None:
 
 
 def pytest_configure(config: Any) -> None:
+    """Register the marker that exempts a test from having its credentials blanked."""
     marker = str(config.getini("offline_credentials_marker")) or DEFAULT_MARKER
     config.addinivalue_line("markers", f"{marker}: the test needs real credentials; offline_suite_without_credentials leaves its environment alone")
 
@@ -248,6 +251,7 @@ def _explain(record: _Record, settings: OfflineSettings) -> Optional[str]:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item: Any, call: Any) -> Any:
+    """Hook wrapper: when a test fails, append an explanation of the blanked credentials that may have caused it to the report."""
     outcome = yield
     report = outcome.get_result()
     record = item.stash.get(_RECORD, None)

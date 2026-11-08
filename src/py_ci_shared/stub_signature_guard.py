@@ -114,10 +114,12 @@ def _checked_setattr(self: Any, target: Any, name: Any = _NOTSET, value: Any = _
 
 
 def pytest_addoption(parser: Any) -> None:
+    """Declare the ini option that lists dotted targets whose stubs are not checked against the real signature."""
     parser.addini("stub_signature_allow", "stub_signature_guard: dotted targets (globs) whose stubs are not checked", type="linelist", default=[])
 
 
 def pytest_configure(config: Any) -> None:
+    """Register the guard's markers and swap ``MonkeyPatch.setattr`` for the signature-checking version until pytest unconfigures."""
     config.addinivalue_line("markers", "stub_signature_allow(*globs): stub_signature_guard does not check stubs of these targets")
     config.addinivalue_line("markers", "no_stub_signature_check: stub_signature_guard skips this test")
     _CURRENT["config"] = config
@@ -132,6 +134,7 @@ def pytest_configure(config: Any) -> None:
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item: Any, nextitem: Any) -> Any:
+    """Hook wrapper: remember the running test item so the checked ``setattr`` can read its markers."""
     _CURRENT["item"] = item
     try:
         yield

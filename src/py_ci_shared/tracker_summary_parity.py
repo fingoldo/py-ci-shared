@@ -150,6 +150,7 @@ def summary_table_count(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STAT
 
 
 def summary_problems(tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES) -> list[str]:
+    """Messages for TRACKER summary tables whose counts differ from the status cells of the findings they summarise."""
     words = tuple(statuses)
     lines = without_fenced_blocks(read_source(tracker)).splitlines()
     sections = _finding_sections(lines)
@@ -191,6 +192,7 @@ def heading_status_problems(
     finding_id_re: "re.Pattern[str]" = FINDING_ID_RE,
     tracker_row_re: "re.Pattern[str]" = TRACKER_ROW_RE,
 ) -> list[str]:
+    """Messages for finding headings whose status differs from the status in the TRACKER row of the same finding id."""
     words = tuple(statuses)
     suffix = re.compile(r"(?:--|—|-)\s*(" + "|".join(re.escape(w) for w in sorted(words, key=len, reverse=True)) + r")\s*$")
     tracked: dict[str, str] = {}
@@ -213,6 +215,7 @@ def heading_status_problems(
 def assert_tracker_summaries_agree(
     audits_dir: Path, tracker: Path, *, statuses: Iterable[str] = DEFAULT_STATUSES, known: Iterable[str] = (), min_summaries: int = 1, check_states: bool = False
 ) -> None:
+    """Fail the test when the summary tables of an audit TRACKER disagree with its rows or with the finding files in ``audits_dir``."""
     known = list(known)  # consumed on more than one path below; a generator would be empty the second time
     import pytest
 

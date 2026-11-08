@@ -58,6 +58,7 @@ class StateSnapshot:
 
 
 def take_state(checks: Iterable[str] = STATE_CHECKS) -> StateSnapshot:
+    """Capture the process-wide state (modules, streams, working directory, sys.path and so on) for the named checks, for a later comparison."""
     wanted = set(checks)
     snap = StateSnapshot(modules=frozenset(sys.modules))
     if "streams" in wanted:

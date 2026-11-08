@@ -96,6 +96,7 @@ def _patch_one(hook_path: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Patch the git hooks of the current repository to run through the safe pre-commit wrapper; returns 1 outside a git repository."""
     try:
         hooks_dir = _hooks_dir()
     except subprocess.CalledProcessError:

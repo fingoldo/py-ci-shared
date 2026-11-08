@@ -68,6 +68,7 @@ def find_pg_bin(explicit: "str | None" = None) -> "Path | None":
 
 
 def free_port() -> int:
+    """A TCP port on 127.0.0.1 that was free when asked (bound to port 0 and released again)."""
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return int(s.getsockname()[1])
@@ -286,6 +287,7 @@ def main_checkout_file(relative: "str | Path", *, cwd: "Path | None" = None) -> 
 
 
 def run(argv: Sequence[str], *, env_var: str, bin_dir: "Path | None", missing_exit: int = 0) -> int:
+    """Run ``argv`` with a throwaway Postgres server's DSN in ``env_var``; without binaries print a loud skip notice and return ``missing_exit``."""
     if bin_dir is None:
         sys.stderr.write(
             "\n" + "!" * 78 + "\n"
@@ -429,6 +431,7 @@ def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Pat
 
 
 def main(args: "Sequence[str] | None" = None) -> int:
+    """Command line entry point of the embedded Postgres helper: ``fetch`` downloads the binaries, ``run`` runs a command against a throwaway server."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.embedded_postgres")
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("fetch", help=f"download the pgserver {PGSERVER_VERSION} binaries into {cache_bin_dir().parent}")

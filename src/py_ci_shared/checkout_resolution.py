@@ -82,6 +82,7 @@ def module_resolution_problems(repo_root: Path, module_names: Iterable[str]) -> 
 
 
 def assert_modules_resolve_to_checkout(repo_root: Path, module_names: Iterable[str]) -> None:
+    """Fail the test when any of the named modules imports from somewhere other than the repository checkout, or when no names are given."""
     import pytest
 
     names = list(module_names)

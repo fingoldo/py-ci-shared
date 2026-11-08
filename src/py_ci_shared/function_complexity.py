@@ -66,6 +66,7 @@ def function_complexities(files: Iterable[Path], root: Path, *, limit: int) -> t
 
 
 def complexity_problems(complexities: dict[str, int], all_keys: set[str], baseline: dict[str, int], *, limit: int) -> list[str]:
+    """Messages for functions whose complexity rose over their baseline ceiling, fell under it, or is over ``limit`` with no baseline entry."""
     problems: list[str] = []
     for key, n in sorted(complexities.items()):
         if key in baseline:

@@ -151,6 +151,7 @@ def assert_closed_audit_rounds_append_only(
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Command line entry point: check that every audit round closed in the commit range carries the closing trailer."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.closed_audit_rounds", description=__doc__.split("\n", 1)[0])
     parser.add_argument("--repo", default=".", help="repository root (default: .)")
     parser.add_argument("--base", required=True, help="the ref the range starts from (its merge base with --head)")

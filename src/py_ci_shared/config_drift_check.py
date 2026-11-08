@@ -102,6 +102,7 @@ def _diff_section(section_name: str, fields: tuple, parsed: dict) -> list[str]:
 
 
 def main(consumers: Optional[Mapping[str, str]] = None, fetch: Optional[Callable[[str], dict]] = None) -> int:
+    """Fetch the pyproject.toml of each consumer repository and report where their ruff and mypy settings diverge; skips private ones without a token."""
     parsed = {}
     fetch_one = fetch or _fetch_pyproject
     skipped: list[str] = []

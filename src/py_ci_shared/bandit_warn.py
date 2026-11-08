@@ -101,6 +101,7 @@ def _tool_installed(module: str) -> bool:
 
 
 def main(argv: "Optional[Sequence[str]]" = None) -> int:
+    """Run bandit at medium severity and above on the staged source files and print the findings as warnings; exits 0 even when it finds something."""
     files = resolve_src_files(sys.argv[1:] if argv is None else argv, "bandit-warn")
     if not files:
         return 0

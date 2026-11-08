@@ -159,6 +159,7 @@ def _append_to_shell_profile(value: str) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Persist ``PY_CI_SHARED_DIR`` for the user on this OS and print the value; returns 1 when the checkout is not found or the OS step fails."""
     try:
         value = str(_repo_root())
     except FileNotFoundError as exc:

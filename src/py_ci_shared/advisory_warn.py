@@ -29,6 +29,7 @@ _PIP_AUDIT_TIMEOUT_S = 900  # pip-audit asks the network for every installed pac
 
 
 def main(argv: "Optional[Sequence[str]]" = None) -> int:
+    """Run pip-audit on the staged source files and print what it finds as warnings; the hook never fails the commit."""
     files = resolve_src_files(sys.argv[1:] if argv is None else argv, "advisory-warn")
     # A commit that stages no source file (README only, tests only) runs nothing: pip-audit goes to the network
     # and its result does not depend on the commit, so there is no reason to pay for it here.
