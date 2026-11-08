@@ -475,7 +475,15 @@ def _run_is_billing(api: Api, repo: str, run: dict) -> bool:
     # A job GitHub refused to start has no steps; probe those first, then any failed job.
     probe = sorted((j for j in jobs if j.get("conclusion") not in GREEN_CONCLUSIONS), key=lambda j: bool(j.get("steps")))[:MAX_JOBS_PROBED]
     for job in probe:
-        annotations = api(f"repos/{repo}/check-runs/{job['id']}/annotations")
+        try:
+            annotations = api(f"repos/{repo}/check-runs/{job['id']}/annotations")
+        except ApiError as exc:
+            # A token without checks access gets 403 for a private repo's annotations. That is not an error of the
+            # whole consumer: this run simply cannot be classified as a billing refusal, so it stays a real failure.
+            if exc.status == 403:
+                logger.warning("%s: annotations of job %s are not readable with this token; treating the run as not billing-refused", repo, job["id"])
+                continue
+            raise
         if is_billing_annotation(str(a.get("message") or "") + " " + str(a.get("title") or "") for a in annotations):
             return True
     return False

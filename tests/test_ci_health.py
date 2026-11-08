@@ -7,6 +7,7 @@ timestamps and the code-failure annotations are copied from the consumer repos' 
 
 from __future__ import annotations
 
+import copy
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -417,6 +418,17 @@ def test_collect_probes_failures_until_the_first_code_failure():
     assert not repo.error and w.status == "red" and w.billing_runs == 1 and exit_code([repo], 2) == 1
     probed = [c.split("?")[0] for c in api.calls if c.split("?")[0].endswith("/jobs")]
     assert probed == ["repos/fingoldo/autopsia/actions/runs/404/jobs", "repos/fingoldo/autopsia/actions/runs/403/jobs"], "probing stops at a code failure"
+
+
+def test_unreadable_annotations_keep_the_run_a_real_failure_not_a_collection_error():
+    """A 403 on a private repo's check-run annotations is not a billing refusal and must not turn the consumer into an error."""
+
+    def api(path: str) -> Any:
+        if path.split("?")[0].endswith("/jobs"):
+            return copy.deepcopy(BILLING_JOBS)
+        raise ci_health.ApiError(f"GET {path}: HTTP 403 Forbidden", status=403)
+
+    assert ci_health._billing_refusals(api, "o/r", relevant_runs(MIXED_RUNS)) == []
 
 
 def test_billing_probes_are_capped(monkeypatch):

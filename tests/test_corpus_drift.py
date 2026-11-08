@@ -271,3 +271,16 @@ def test_the_nightly_workflow_installs_every_package_a_gate_module_imports():
     needed = _module_level_third_party_imports()
     assert "pytest" in needed, "the probe must see resource_leak_guard's import pytest, or it checks nothing"
     assert {top: module for top, module in needed.items() if top not in install} == {}
+
+
+def test_parallel_snapshot_gives_the_serial_counts_and_errors(tmp_path):
+    """Splitting the finders across processes must not change any count, error or key of the snapshot."""
+    from py_ci_shared import naive_utcnow
+
+    (tmp_path / "a.py").write_text("import datetime\nx = datetime.datetime.utcnow()\ny = datetime.datetime.utcnow()\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("y = 1\n", encoding="utf-8")
+    run = [("naive_utcnow.find_naive_utcnow", naive_utcnow.find_naive_utcnow), ("naive_utcnow.find_naive_utcnow_again", naive_utcnow.find_naive_utcnow)]
+    serial = snapshot([("r", tmp_path)], run=run, workers=1)["repos"]
+    parallel = snapshot([("r", tmp_path)], run=run, workers=2)["repos"]
+    assert parallel["r"]["counts"] == serial["r"]["counts"] and parallel["r"]["errors"] == serial["r"]["errors"]
+    assert sorted(parallel["r"]["seconds"]) == sorted(serial["r"]["seconds"]) and parallel["r"]["commit"] == serial["r"]["commit"]

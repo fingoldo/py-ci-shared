@@ -147,6 +147,25 @@ def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
 
+def _best_pair_ratio(dumps: Sequence[str]) -> float:
+    """The largest ``SequenceMatcher.ratio()`` over every pair of *dumps*, computed exactly.
+
+    The exact ratio is quadratic in the body length and a name shared by hundreds of modules makes tens of thousands of
+    pairs (one mlframe name took over 30 minutes). A pair whose cheap upper bounds (``real_quick_ratio``, then
+    ``quick_ratio``) do not beat the best so far cannot change the maximum, so it is skipped; the value is the same.
+    """
+    best = 0.0
+    matcher = difflib.SequenceMatcher(None)
+    for i in range(len(dumps)):
+        matcher.set_seq1(dumps[i])
+        for j in range(i + 1, len(dumps)):
+            matcher.set_seq2(dumps[j])
+            if matcher.real_quick_ratio() <= best or matcher.quick_ratio() <= best:
+                continue
+            best = max(best, matcher.ratio())
+    return best
+
+
 def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
     groups: dict[tuple[str, str], list[tuple[Path, int, str]]] = defaultdict(list)
     for parsed in scan:
@@ -160,7 +179,7 @@ def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
         dumps = [dump for _, _, dump in members]
         if len(set(dumps)) == 1:
             continue
-        best = max(difflib.SequenceMatcher(None, dumps[i], dumps[j]).ratio() for i in range(len(dumps)) for j in range(i + 1, len(dumps)))
+        best = _best_pair_ratio(dumps)
         if best >= similarity:
             found.append(DriftGroup(name, [(p, line) for p, line, _ in members], best, len(set(dumps))))
     return sorted(found, key=lambda g: (-g.similarity, g.name))
