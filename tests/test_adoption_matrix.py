@@ -429,6 +429,17 @@ def test_a_moving_pin_is_reported_as_moving_not_as_stale(tmp_path):
     assert [f.rule for f in rep.findings()] == ["moving-pin"] and rep.behind == {}
 
 
+def test_running_without_resolve_in_says_which_checks_are_off(tmp_path, capsys):
+    """47-F8: without --resolve-in the matrix exits 0 with no finding for stale pins; the run must say so, not only when a pin has a version comment."""
+    pcs, shas = _pcs_with_releases(tmp_path)
+    old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
+    assert main([str(old), "--no-local-copies"]) == 0
+    err = capsys.readouterr().err
+    assert "WITHOUT --resolve-in" in err and "stale-pin" in err and "waiver" in err
+    assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
+    assert "WITHOUT --resolve-in" not in capsys.readouterr().err
+
+
 def test_main_fails_a_stale_pin_unless_allowed(tmp_path, capsys):
     pcs, shas = _pcs_with_releases(tmp_path)
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
