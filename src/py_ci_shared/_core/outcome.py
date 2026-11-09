@@ -130,6 +130,9 @@ def entry_delta(writes: "list[Any]") -> Optional[str]:
     """``+A -R entries (file, ...)`` over the writes of one refresh (changed entries count as one removal and one addition); None for none."""
     if not writes:
         return None
+    if all(before is None for _, before, _ in writes):
+        # 49-F8: a missing baseline written for the first time has no "before"; "+0 -0" read as a no-op refresh.
+        return "created " + ", ".join(f"{Path(path).name} with {len(_entries(after))} entries" for path, _, after in writes)
     added = removed = 0
     names = []
     for path, before, after in writes:
