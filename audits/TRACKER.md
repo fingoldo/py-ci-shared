@@ -20,7 +20,7 @@ table exists so the state of a round is readable without opening five files.
 | 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | RESOLVED: `Baseline.load` uses the duplicate-key-rejecting hook of `_core.baseline`; `test_a_duplicate_key_in_the_baseline_is_an_error_not_a_silent_last_wins` pins it |
 | 43-F1 | P3 | Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool | OPEN |
 | 43-F2 | P3 | CHANGELOG has no heading for the tags v1.22.1 and v1.22.6 | OPEN |
-| 43-F3 | P3 | CLAUDE.md points at `audits/2026-11-07/51`, which is not a file | OPEN |
+| 43-F3 | P3 | CLAUDE.md points at `audits/2026-11-07/51`, which is not a file | RESOLVED: CLAUDE.md now names `audits/2026-11-07/51_security_supply_chain.md` |
 | 43-F4 | P3 | Two docstrings cite audit folders that exist only in other repositories | OPEN |
 | 44-F1 | P3 | env_flag_parsing: the NotIn membership shape and the case-insensitive comparison are untested; both mutations survive | OPEN |
 | 44-F2 | P3 | test_a_stable_old_file_is_served_without_reading_it_again asserts a property the fast path alone provides, and passes with the fast path disabled | OPEN |

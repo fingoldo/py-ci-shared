@@ -65,7 +65,7 @@
   the environment exists, `RELEASE_TOKEN` is an ENVIRONMENT secret (not a repository secret), and its deployment policy allows only the
   `master` branch and `v*` tags, so a tag pushed from an edited release.yml on another ref cannot read it. Not configured, by the owner's
   decision: a required reviewer (so a push to master that edits release.yml can still publish without a human approval). Accepted risk;
-  audits/2026-11-07/51 (51-F8) has the one-step way to add it.
+  audits/2026-11-07/51_security_supply_chain.md (51-F8) has the one-step way to add it.
 - Consumers track `@v1`, so keep README's "Compatibility promise for `@v1`": within v1 only additive changes and
   defect fixes that make a gate stricter. Any change that can turn a green consumer red, or that changes what a
   refresh writes, gets a CHANGELOG entry starting **Behaviour change** with what to do.
