@@ -12,6 +12,8 @@ Fields of :class:`GateSpec`:
 - ``kind``: ``"gate"`` (has ``assert_*`` entry functions a consumer calls or enables in ``[tool.py_ci_shared]``),
   ``"cli"`` (a command-line tool, run with ``py-ci-shared tool <name>`` or ``python -m py_ci_shared.<name>``)
   or ``"library"`` (scanners and helpers a consumer wraps in its own test).
+  A module with both ``assert_*`` entries and a ``main`` is a ``"gate"`` with ``cli = true``: ``kind`` says how a consumer uses it,
+  the ``cli`` flag that it also runs from the command line.
 - ``entries``: the ``assert_*`` functions, the first being the default the plugin and ``run`` call.
 - ``since``: the first LIVE release that shipped the module. v1.22.0 and v1.22.2 are dead tags (tagged without ``release_guard prepare``, never published), so a
   module they carried says 1.22.3; ``tests/test_registry_since.py`` checks every value from 1.22.3 on against the tags.

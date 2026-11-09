@@ -18,7 +18,7 @@ table exists so the state of a round is readable without opening five files.
 | 42-F12 | P2 | A baseline in list form, or with a non-object `accepted`, reads as empty in baseline_ratchet, so an empty scan passes | RESOLVED: non-object baseline or accepted raises ValueError; test_a_list_shaped_baseline_is_refused_not_read_as_empty |
 | 42-F13 | P2 | A refresh after a rename deletes the human note of the renamed entry before the growth refusal, and the re-added entry comes back with no note | OPEN |
 | 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | RESOLVED: `Baseline.load` uses the duplicate-key-rejecting hook of `_core.baseline`; `test_a_duplicate_key_in_the_baseline_is_an_error_not_a_silent_last_wins` pins it |
-| 43-F1 | P3 | Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool | OPEN |
+| 43-F1 | P3 | Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool | RESOLVED: the rule is written down in the registry docstring and the README (a module with `assert_*` entries and a `main` is a gate with `cli = true`); the five stay `gate` because they have entries a consumer calls |
 | 43-F2 | P3 | CHANGELOG has no heading for the tags v1.22.1 and v1.22.6 | OPEN |
 | 43-F3 | P3 | CLAUDE.md points at `audits/2026-11-07/51`, which is not a file | RESOLVED: CLAUDE.md now names `audits/2026-11-07/51_security_supply_chain.md` |
 | 43-F4 | P3 | Two docstrings cite audit folders that exist only in other repositories | OPEN |
