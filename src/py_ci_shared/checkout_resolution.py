@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -96,7 +97,7 @@ def assert_modules_resolve_to_checkout(repo_root: Path, module_names: Iterable[s
 
 
 def _run_probe_in_a_copy(
-    repo_root: Path, package: str, workdir: Path, *, timeout: int, pytest_args: Iterable[str]
+    repo_root: Path, package: str, workdir: Path, *, timeout: int, pytest_args: Iterable[str], plugin_autoload: bool = True
 ) -> "tuple[str, subprocess.CompletedProcess[str]]":
     copy = workdir / "copy"
     if copy.exists():
@@ -126,7 +127,10 @@ def _run_probe_in_a_copy(
         "no:cacheprovider",
         *pytest_args,
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(copy), timeout=timeout, check=False)
+    # Plugin autoload costs about 8 s per interpreter start in this environment; a probe that only checks what a copy
+    # contains (not what it imports at startup) can turn it off.
+    env = None if plugin_autoload else {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1"}
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=str(copy), timeout=timeout, check=False, env=env)
     resolved = next((line.partition(": ")[2].strip() for line in proc.stdout.splitlines() if line.startswith("RESOLVED:")), "")
     return resolved, proc
 
