@@ -127,6 +127,10 @@ def assert_functions_do_not_grow(
             f"function-length baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_length')} (a clean repo commits {{}})"
         )
     baseline = load_json(baseline_path)
+    if not isinstance(baseline, dict) or not all(isinstance(k, str) and isinstance(v, int) for k, v in baseline.items()):
+        pytest.fail(
+            f'{baseline_path.name} is not a {{"path::function": lines}} object (got {type(baseline).__name__}); fix the file by hand, a refresh would drop the malformed entries'
+        )
     problems += length_problems(lengths, baseline, limit=limit)
     if problems:
         pytest.fail(f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit}):\n  " + "\n  ".join(problems))

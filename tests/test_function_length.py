@@ -60,6 +60,15 @@ def test_baseline_round_trip_and_assert(tmp_path):
         assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1)
 
 
+def test_a_list_shaped_baseline_is_named_as_malformed_not_as_a_stale_entry(tmp_path):
+    p = _module(tmp_path, 12)
+    baseline = tmp_path / "b.json"
+    baseline.write_text('["x"]', encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"is not a .*object \(got list\)") as exc:
+        assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1)
+    assert "in the baseline but gone" not in str(exc.value)
+
+
 def test_assert_refuses_to_measure_nothing(tmp_path):
     with pytest.raises(pytest.fail.Exception, match="measured"):
         assert_functions_do_not_grow([], tmp_path, tmp_path / "b.json")

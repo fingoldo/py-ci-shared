@@ -41,7 +41,7 @@ table exists so the state of a round is readable without opening five files.
 | 47-F11 | P3 | Matrix failure messages do not say what the consumer should do, and the job summary omits two failure kinds | OPEN |
 | 47-F12 | P3 | The lag gate of `ci_pin_version_skew` is silently off unless a caller passes `known_releases`, and no consumer file in the workspace passes it | OPEN |
 | 49-F1 | P2 | The 49-F8 fix is incomplete: 14 sites still hard-code a `handler at line N` that points at the wrong line | OPEN |
-| 49-F2 | P2 | A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing | OPEN |
+| 49-F2 | P2 | A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing | RESOLVED: `assert_functions_do_not_grow` checks the baseline is a `{"path::function": int}` object and fails naming the shape; `test_a_list_shaped_baseline_is_named_as_malformed_not_as_a_stale_entry` pins it |
 | 49-F3 | P2 | Under GitHub Actions a FAIL or ERROR row emits no `::error` annotation; only budget, note and skip rows annotate | OPEN |
 | 49-F4 | P2 | The `budget` rounding says `over its 0s budget` for any `budget_s` under 0.5 | RESOLVED: budget printed with :g; test_a_sub_second_budget_is_not_printed_as_zero_seconds |
 | 49-F5 | P3 | `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them | OPEN |
