@@ -135,12 +135,14 @@ def _run_probe_in_a_copy(
     return resolved, proc
 
 
-def resolved_in_a_copy(repo_root: Path, package: str, workdir: Path, *, timeout: int = 300, pytest_args: Iterable[str] = ()) -> str:
+def resolved_in_a_copy(
+    repo_root: Path, package: str, workdir: Path, *, timeout: int = 300, pytest_args: Iterable[str] = (), plugin_autoload: bool = True
+) -> str:
     """Copy the repository to *workdir*, import *package* inside the copy's own test run, return its ``__file__``.
 
     A copy left in *workdir* by an earlier call is replaced, never merged into.
     """
-    return _run_probe_in_a_copy(repo_root, package, workdir, timeout=timeout, pytest_args=pytest_args)[0]
+    return _run_probe_in_a_copy(repo_root, package, workdir, timeout=timeout, pytest_args=pytest_args, plugin_autoload=plugin_autoload)[0]
 
 
 def _is_within(path: Path, root: Path) -> bool:

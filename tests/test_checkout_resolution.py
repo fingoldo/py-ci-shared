@@ -84,9 +84,9 @@ def _orig(tmp_path: Path, name: str, *, prepend_src: bool = True) -> Path:
 def test_a_second_call_with_the_same_workdir_takes_a_fresh_copy(tmp_path):
     root = _orig(tmp_path, "zz_copy_pkg2")
     work = tmp_path / "work"
-    first = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120)
+    first = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120, plugin_autoload=False)
     (work / "copy" / "stale_marker.txt").write_text("x", encoding="utf-8")
-    second = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120)
+    second = resolved_in_a_copy(root, "zz_copy_pkg2", work, timeout=120, plugin_autoload=False)
     assert first and first == second
     assert not (work / "copy" / "stale_marker.txt").exists()
 
