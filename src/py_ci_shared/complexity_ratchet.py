@@ -100,6 +100,9 @@ def function_complexity(node: ast.AST) -> int:
 
 def _walk(node: ast.AST, prefix: str, rel: str, out: dict[str, int], lines: dict[tuple[str, int], int]) -> None:
     for child in child_nodes(node):
+        if isinstance(child, ast.expr):
+            # def and class statements never sit inside an expression, so the expression subtrees (most of the tree) are skipped.
+            continue
         if isinstance(child, ast.ClassDef):
             _walk(child, f"{prefix}{child.name}.", rel, out, lines)
         elif isinstance(child, _FUNCS):
