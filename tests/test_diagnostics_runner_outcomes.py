@@ -190,3 +190,11 @@ class TestF8StaleLineNumbers:
 
     def test_handlers_that_already_print_their_error_do_not_also_warn(self):
         assert "substituted a fallback" not in (SRC / "cli.py").read_text(encoding="utf-8")
+
+
+def test_a_sub_second_budget_is_not_printed_as_zero_seconds():
+    """A 0.3 s budget must read as 0.3 s in the verdict, not as 0 s (49-F4)."""
+    from py_ci_shared._core.runner import GateResult, budget_verdict
+
+    verdict = budget_verdict(GateResult("fast_gate", "PASSED", "", seconds=0.6, budget_s=0.3), "warn")
+    assert verdict is not None and "over its 0.3s budget" in verdict

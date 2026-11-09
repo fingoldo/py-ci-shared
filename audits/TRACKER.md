@@ -3,6 +3,77 @@
 One row per finding, all rounds. The disposition and its reasoning live in the finding itself; this
 table exists so the state of a round is readable without opening five files.
 
+## Round 2026-11-10 - full agent audit of py_ci_shared (dimensions 40-52, dimensions 40-52 complete)
+
+57 findings from 13 reports in `2026-11-10/`. Every row is OPEN: the dispositions proposed in each report are not yet applied.
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-------------|
+| 40-F1 | P2 | The gate cache reads only the config's kwargs for the network flag, so a network gate's PASS is cached and replayed | OPEN |
+| 40-F2 | P2 | The cache key has no interpreter or installed-tool identity, so a verdict from one Python or tool version replays under another | OPEN |
+| 40-F3 | P3 | Several gates skip a file that cannot be parsed or decoded, so its findings are never produced | OPEN |
+| 40-F4 | P3 | stale_source_citations drops every extra-glob file it cannot read, so stale citations in that file pass | OPEN |
+| 41-F1 | P3 | printed_advice treats the noun "supply" as an instruction | OPEN |
+| 41-F2 | P3 | systemexit_in_library attributes `os._exit()` to SystemExit in its message | OPEN |
+| 42-F12 | P2 | A baseline in list form, or with a non-object `accepted`, reads as empty in baseline_ratchet, so an empty scan passes | RESOLVED: non-object baseline or accepted raises ValueError; test_a_list_shaped_baseline_is_refused_not_read_as_empty |
+| 42-F13 | P2 | A refresh after a rename deletes the human note of the renamed entry before the growth refusal, and the re-added entry comes back with no note | OPEN |
+| 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | OPEN |
+| 43-F1 | P3 | Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool | OPEN |
+| 43-F2 | P3 | CHANGELOG has no heading for the tags v1.22.1 and v1.22.6 | OPEN |
+| 43-F3 | P3 | CLAUDE.md points at `audits/2026-11-07/51`, which is not a file | OPEN |
+| 43-F4 | P3 | Two docstrings cite audit folders that exist only in other repositories | OPEN |
+| 44-F1 | P3 | env_flag_parsing: the NotIn membership shape and the case-insensitive comparison are untested; both mutations survive | OPEN |
+| 44-F2 | P3 | test_a_stable_old_file_is_served_without_reading_it_again asserts a property the fast path alone provides, and passes with the fast path disabled | OPEN |
+| 45-F9 | P2 | `_split_command` with `posix=False` keeps quote characters, so a quoted executable path in BLACK_CMD fails on Windows | RESOLVED: quote pair stripped per token on Windows; test_a_quoted_windows_executable_path_is_one_argument_without_its_quotes |
+| 45-F10 | P3 | `datetime.fromisoformat` rejects a trailing `Z` on Python 3.9 and 3.10, so the coverage staleness check is silently skipped there | RESOLVED: Z read as +00:00 before fromisoformat; test pins the expression only (gate path not exercised) - follow-up |
+| 46-F15 | P2 | ci-green and the release wait loop die on one transient GitHub API error instead of reporting pending | OPEN |
+| 46-F16 | P2 | rollback fails open: when the releases API is unreadable, the "must be a published release" check is skipped silently | OPEN |
+| 46-F17 | P3 | when the releases API is unreadable, prepare and the verify job fall back to local tags and blame the wrong version | OPEN |
+| 46-F18 | P3 | pinned tool versions have no automated update channel: dependabot covers only github-actions | OPEN |
+| 46-F19 | P3 | the mypy pin is written three times and only one copy is tested against tool_versions | OPEN |
+| 46-F20 | P3 | self-ci's black smoke run is unpinned, while black-filtered.yml pins the same invocation | OPEN |
+| 46-F21 | P3 | the Codecov composite action has no caller in this repository, and its CODECOV_TOKEN secret is referenced by no workflow | OPEN |
+| 47-F6 | P1 | The documented upgrade path (`@v1`) is reported as a failing `moving-pin` by the consumer-pins job | OPEN |
+| 47-F7 | P1 | The waiver file has no waiver rows, so the "PARTLY RESOLVED" disposition of 47-F1 is not true in the repo | OPEN |
+| 47-F8 | P2 | Running the matrix without `--resolve-in` turns the stale-pin, unresolvable-pin and waiver checks off silently, with exit 0 | OPEN |
+| 47-F9 | P2 | Private consumers skipped for want of a token are missing from the adoption matrix and its job summary | OPEN |
+| 47-F10 | P2 | A SHA-pinned `uses:` with no `py-ci-shared-ref` input is not reported, though README says it gets the previous release's configs | OPEN |
+| 47-F11 | P3 | Matrix failure messages do not say what the consumer should do, and the job summary omits two failure kinds | OPEN |
+| 47-F12 | P3 | The lag gate of `ci_pin_version_skew` is silently off unless a caller passes `known_releases`, and no consumer file in the workspace passes it | OPEN |
+| 49-F1 | P2 | The 49-F8 fix is incomplete: 14 sites still hard-code a `handler at line N` that points at the wrong line | OPEN |
+| 49-F2 | P2 | A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing | OPEN |
+| 49-F3 | P2 | Under GitHub Actions a FAIL or ERROR row emits no `::error` annotation; only budget, note and skip rows annotate | OPEN |
+| 49-F4 | P2 | The `budget` rounding says `over its 0s budget` for any `budget_s` under 0.5 | RESOLVED: budget printed with :g; test_a_sub_second_budget_is_not_printed_as_zero_seconds |
+| 49-F5 | P3 | `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them | OPEN |
+| 49-F6 | P3 | Absolute machine paths in ordinary messages: a developer's home path, or a CI runner's path | OPEN |
+| 49-F7 | P3 | Nested parentheses in the fix hints, and an unexplained `limit 150` | OPEN |
+| 49-F8 | P3 | `refresh` of a missing baseline reads `+0 -0 entries`, which is the same text as a no-op refresh | OPEN |
+| 49-F9 | P3 | `bandit_warn`, `advisory_warn` and `format_warn` run by hand with a directory argument exit 0 silently, and a positional path is ignored without a wor | OPEN |
+| 49-F10 | P3 | The `bandit_warn` banner asserts a CI step that a consumer may not have | OPEN |
+| 49-F11 | P3 | The `ERROR` row for a gate with a fix-hint `e.g. ... = ...` placeholder is correct; the `ERROR` for `bandit_warn` named as a gate is not explained | OPEN |
+| 50-F1 | P2 | Loop whose step can be zero or None never advances | OPEN |
+| 50-F2 | P2 | Counter or state advanced before the write that it counts | OPEN |
+| 50-F3 | P1 | Raw UPDATE/DELETE executed without a row-count check | OPEN |
+| 50-F4 | P3 | Per-item log line inside a network page loop with no throttle | OPEN |
+| 50-F5 | P3 | Test assertion depends on runner platform or pandas null representation | OPEN |
+| 50-F6 | P3 | Doctests and assertions that hold only on one pandas major | OPEN |
+| 51-F1 | P3 | sibling_floor_skew._github_version sends a token through urllib's default redirect handler | OPEN |
+| 51-F2 | P2 | The release gates come from the tagged commit, so a v* tag from any branch reaches RELEASE_TOKEN (overlaps accepted 51-F8) | OPEN |
+| 51-F3 | P3 | self-ci.yml runs an unpinned `uvx black`; the 51-F2 meta-test does not scan it | OPEN |
+| 51-F4 | P3 | release.yml puts the base64 release token in git's argv in two places | OPEN |
+| 51-F5 | P3 | Dev extras are floor-only and unconstrained on the release verify path and in self-ci | OPEN |
+| 52-F11 | P2 | Public `main(argv)` entry points accept `argv` and never read it | RESOLVED: stray arguments refused with exit 2; tests in test_install_safe_hook and test_setup_env |
+| 52-F12 | P3 | Unused-argument class is not enforced anywhere in the repo | OPEN |
+| 52-F13 | P3 | Test-suite lint tolerance hides a mutable default in a test helper | OPEN |
+| 52-F14 | P3 | Three src modules sit at or near the 1000-LOC budget | OPEN |
+
+| 48-F12 | P2 | `baseline_trend.history` spawns one `git show` per commit that touched the file. | OPEN |
+| 48-F13 | P2 | `hook_attestation._hash_at` spawns one `git show <sha>:<CONFIG>` per commit of the range. | OPEN |
+| 48-F14 | P2 | `test_python_floor_compatibility.py` re-reads and re-parses every module in separate parametrized tests. | OPEN |
+| 48-F15 | P2 | the git-backed test files build a fresh repository for every test. | OPEN |
+| 48-F16 | P3 | `closed_audit_rounds._declared_edit` runs a full `git log` for every changed closed-round file. | OPEN |
+| 48-F17 | P3 | `tests/conftest.py` samples the CPU for 0.5 s at the start of every xdist session. | OPEN |
+
 ## Round 2026-09-04 — the mutation harness, five dimensions
 
 69 findings. Every one dispositioned. The round was run knowing what the first implementation round

@@ -157,3 +157,17 @@ def test_an_empty_scan_that_opts_out_of_the_floor_still_fails_on_the_stale_entri
     assert "no longer violate the rule" in err and "stopped" not in err
     baseline.regenerate({})
     assert baseline.enforce({}, label="check", guidance="g", fail_on_empty_scan=False) == 0
+
+
+def test_a_list_shaped_baseline_is_refused_not_read_as_empty(tmp_path):
+    """A baseline that is a JSON list must fail loudly; read as empty, an empty scan would pass with zero entries (42-F12)."""
+    import pytest
+
+    from py_ci_shared.baseline_ratchet import Baseline
+
+    (tmp_path / "b.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        Baseline("b", directory=str(tmp_path)).load()
+    (tmp_path / "b.json").write_text('{"accepted": []}', encoding="utf-8")
+    with pytest.raises(ValueError, match="'accepted' must be a JSON object"):
+        Baseline("b", directory=str(tmp_path)).load()

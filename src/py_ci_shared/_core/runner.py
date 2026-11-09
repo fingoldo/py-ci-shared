@@ -195,6 +195,6 @@ def budget_verdict(result: GateResult, mode: str) -> Optional[str]:
     if mode == "off" or result.status == ERROR or not result.over_budget:
         return None
     return (
-        f"{result.name} took {result.seconds:.1f}s, over its {result.budget_s:.0f}s budget. Narrow its inputs, raise "
+        f"{result.name} took {result.seconds:.1f}s, over its {result.budget_s:g}s budget. Narrow its inputs, raise "
         f'budget_s in [tool.py_ci_shared.gates.{result.name}], or set budget = "off".'
     )

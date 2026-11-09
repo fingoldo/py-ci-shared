@@ -378,3 +378,11 @@ class TestStdinFilenameIsAbsolute:
         bfa.run_black_stdin("x = 1\n", "cfg.toml", filename="pkg/mod.py")
         flag = seen[0].index("--stdin-filename") + 1
         assert os.path.isabs(seen[0][flag]) and seen[0][flag] == os.path.join(str(tmp_path), "pkg", "mod.py")
+
+
+def test_a_quoted_windows_executable_path_is_one_argument_without_its_quotes():
+    """A quoted path with spaces must reach the subprocess as one argument, not with the quote characters attached (45-F9)."""
+    from py_ci_shared.black_filtered_apply import _split_command
+
+    assert _split_command(r'"C:\tools\black.exe" --check', windows=True) == [r"C:\tools\black.exe", "--check"]
+    assert _split_command(r'"C:\Program Files\black\black.exe"', windows=True) == [r"C:\Program Files\black\black.exe"]

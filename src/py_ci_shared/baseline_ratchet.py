@@ -84,10 +84,15 @@ class Baseline:
             return {}
         with open(self.path, encoding="utf-8-sig") as handle:
             data = json.load(handle)
-        if isinstance(data, dict) and "accepted" in data:
+        if not isinstance(data, dict):
+            # A list or a scalar is not a baseline: reading it as empty would let an empty scan pass (42-F12).
+            raise ValueError(f"{self.path}: a baseline must be a JSON object, got {type(data).__name__}")
+        if "accepted" in data:
             accepted = data["accepted"]
-            return dict(accepted) if isinstance(accepted, dict) else {}
-        return {k: v for k, v in data.items() if not k.startswith("_")} if isinstance(data, dict) else {}
+            if not isinstance(accepted, dict):
+                raise ValueError(f"{self.path}: 'accepted' must be a JSON object, got {type(accepted).__name__}")
+            return dict(accepted)
+        return {k: v for k, v in data.items() if not k.startswith("_")}
 
     def save(self, accepted: Mapping[str, str]) -> None:
         os.makedirs(self.directory, exist_ok=True)

@@ -178,7 +178,8 @@ def load_report(coverage_json: Union[str, Path], coverage_base: Path) -> _Report
     meta = data.get("meta")
     if isinstance(meta, dict) and isinstance(meta.get("timestamp"), str):
         try:
-            stamp = datetime.fromisoformat(meta["timestamp"])
+            # Before 3.11 fromisoformat rejects the trailing "Z" that coverage writes for UTC: read it as +00:00.
+            stamp = datetime.fromisoformat(str(meta["timestamp"]).replace("Z", "+00:00"))
         except ValueError:
             stamp = None
     return _Report(out, stamp, path)

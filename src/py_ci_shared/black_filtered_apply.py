@@ -83,7 +83,11 @@ if os.environ.get("EXTRA_EXCLUDED_DIRS"):
 # cache rather than a pip-installed environment. Defaults to `python -m black`.
 def _split_command(value: str, *, windows: bool = os.name == "nt") -> list[str]:
     """*value* as an argument list. POSIX mode is wrong on Windows: a backslash escapes there, so C:\tools\black.exe would become C:toolsblack.exe."""
-    return shlex.split(value, posix=not windows)
+    parts = shlex.split(value, posix=not windows)
+    if windows:
+        # posix=False keeps the quotes that protect a path with spaces; the executable must not start with them.
+        parts = [part[1:-1] if len(part) >= 2 and part[0] == part[-1] == '"' else part for part in parts]
+    return parts
 
 
 _BLACK_CMD = _split_command(os.environ["BLACK_CMD"]) if os.environ.get("BLACK_CMD") else [sys.executable, "-I", "-m", "black"]
