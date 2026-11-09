@@ -44,7 +44,7 @@ table exists so the state of a round is readable without opening five files.
 | 49-F2 | P2 | A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing | RESOLVED: `assert_functions_do_not_grow` checks the baseline is a `{"path::function": int}` object and fails naming the shape; `test_a_list_shaped_baseline_is_named_as_malformed_not_as_a_stale_entry` pins it |
 | 49-F3 | P2 | Under GitHub Actions a FAIL or ERROR row emits no `::error` annotation; only budget, note and skip rows annotate | RESOLVED: `_print_result` emits `::error title=py-ci-shared <gate> FAIL|ERROR::<first message line>` under Actions; `test_a_failed_or_errored_gate_gets_an_error_annotation_under_actions` pins it |
 | 49-F4 | P2 | The `budget` rounding says `over its 0s budget` for any `budget_s` under 0.5 | RESOLVED: budget printed with :g; test_a_sub_second_budget_is_not_printed_as_zero_seconds |
-| 49-F5 | P3 | `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them | OPEN |
+| 49-F5 | P3 | `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them | RESOLVED: both lines are debug now; the ERROR row carries the message; `test_a_misconfigured_gate_is_reported_in_its_row_not_as_a_gate_less_warning` pins a quiet log |
 | 49-F6 | P3 | Absolute machine paths in ordinary messages: a developer's home path, or a CI runner's path | OPEN |
 | 49-F7 | P3 | Nested parentheses in the fix hints, and an unexplained `limit 150` | OPEN |
 | 49-F8 | P3 | `refresh` of a missing baseline reads `+0 -0 entries`, which is the same text as a no-op refresh | OPEN |

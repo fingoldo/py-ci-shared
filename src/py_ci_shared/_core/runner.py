@@ -172,7 +172,7 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         if cache_key is not None:
             gate_cache.record(config.repo_root, cache_key)
     except ConfigError as exc:
-        logger.warning("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
+        logger.debug("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"configuration: {exc}", time.perf_counter() - start, budget)
     except failed_types as exc:
         logger.debug("gate failed, reporting FAILED: %s", type(exc).__name__)
@@ -183,7 +183,7 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as exc:  # a crashing gate is reported as ERROR with its type and location, never swallowed
-        logger.warning("gate raised, reporting ERROR: %s", type(exc).__name__)
+        logger.debug("gate raised, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, _crash_message(exc), time.perf_counter() - start, budget)
     return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget, "; ".join(notes))
 

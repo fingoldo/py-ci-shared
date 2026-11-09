@@ -208,3 +208,19 @@ def test_a_sub_second_budget_is_not_printed_as_zero_seconds():
 
     verdict = budget_verdict(GateResult("fast_gate", "PASSED", "", seconds=0.6, budget_s=0.3), "warn")
     assert verdict is not None and "over its 0.3s budget" in verdict
+
+
+def test_a_misconfigured_gate_is_reported_in_its_row_not_as_a_gate_less_warning(tmp_path, monkeypatch, caplog):
+    """49-F5: the warning named no gate and repeated the ERROR row; the row carries the message, so the log stays quiet."""
+    import logging
+
+    config = RepoConfig(repo_root=tmp_path, gates=(GateRun(name="g", module="x", entry=None, kwargs={}),))
+
+    def misconfigured(run):
+        raise ConfigError("missing kwarg 'root'")
+
+    monkeypatch.setattr(runner, "resolve_gate", misconfigured)
+    with caplog.at_level(logging.WARNING):
+        result = run_gate(config, config.gates[0])
+    assert result.status == ERROR and "missing kwarg 'root'" in result.message
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
