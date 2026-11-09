@@ -151,13 +151,13 @@ def embedded_postgres(bin_dir: Path, *, port: "int | None" = None, user: str = "
     pg_ctl = str(bin_dir / f"pg_ctl{_EXE}")
     try:
         _quiet(
-            [str(bin_dir / f"initdb{_EXE}"), "-D", str(data / "db"), "-U", user, "-A", "trust", "-E", "UTF8", "--no-locale"],
+            [str(bin_dir / f"initdb{_EXE}"), "-D", str(data / "db"), "-U", user, "-A", "trust", "-E", "UTF8", "--no-locale", "--no-sync"],
             check=True,
             log=data / "initdb.log",
         )
         # The packaged default socket directory (/var/run/postgresql) is not writable for an unprivileged user, so the
         # server would refuse to start; keep the socket inside the throwaway data directory. Windows has no such dir.
-        options = f"-p {port} -c listen_addresses=127.0.0.1"
+        options = f"-p {port} -c listen_addresses=127.0.0.1 -c fsync=off -c synchronous_commit=off -c full_page_writes=off"
         if os.name != "nt":
             options += f" -k {shlex.quote(str(data))}"
         _quiet(
