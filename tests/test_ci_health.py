@@ -609,3 +609,43 @@ def test_this_repository_watches_its_own_schedules():
     assert [c.repo for c in load_consumers(config)] == ["fingoldo/py-ci-shared"]
     workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci-health.yml").read_text(encoding="utf-8")
     assert "configs/self_watch.toml" in workflow
+
+
+def _contents(text: str) -> dict[str, Any]:
+    import base64
+
+    return {"content": base64.b64encode(text.encode("utf-8")).decode("ascii")}
+
+
+@pytest.mark.parametrize(
+    ("text", "live"),
+    [
+        ("on: workflow_dispatch\n", False),
+        ("on: [push, workflow_dispatch]\n", True),
+        ("on:\n  schedule:\n    - cron: '0 3 * * *'\n", True),
+        ("on:\n  pull_request:\n", True),
+        ("name: no trigger at all\n", False),
+    ],
+)
+def test_only_a_workflow_with_a_live_trigger_is_counted(text, live):
+    path = ".github/workflows/w.yml"
+    api = FakeApi({f"repos/fingoldo/x/contents/{path}": _contents(text)})
+    assert ci_health.has_live_trigger(api, "fingoldo/x", path, "main") is live
+
+
+def test_an_unreadable_workflow_file_stays_counted():
+    assert ci_health.has_live_trigger(FakeApi({}), "fingoldo/x", ".github/workflows/w.yml", "main") is True
+
+
+def test_a_private_consumer_is_left_out_of_the_public_report_unless_asked(tmp_path, capsys):
+    p = tmp_path / "consumers.toml"
+    p.write_text(
+        '[[consumer]]\nname = "pubrepo"\nrepo = "fingoldo/pubrepo"\nbranch = "main"\nprivate = false\n\n'
+        '[[consumer]]\nname = "privrepo"\nrepo = "fingoldo/privrepo"\nbranch = "main"\nprivate = true\n',
+        encoding="utf-8",
+    )
+    ci_health.main([str(p)], api=FakeApi({}), now=NOW)
+    out = capsys.readouterr().out
+    assert "pubrepo" in out and "privrepo" not in out
+    ci_health.main([str(p), "--include-private"], api=FakeApi({}), now=NOW)
+    assert "privrepo" in capsys.readouterr().out
