@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import functools
 import sys
 import textwrap
 from collections.abc import Iterator
@@ -48,12 +49,21 @@ def test_alembic_finding_key_is_the_311_shape_on_every_interpreter(tmp_path: Pat
     assert [f.key for f in findings] == ["alembic-concurrently::001_x.py::op.execute(lambda: 'CREATE INDEX CONCURRENTLY ix ON t (a)')"]
 
 
-def _src_nodes() -> Iterator[tuple[str, ast.AST]]:
+@functools.cache
+def _parsed_src() -> tuple[tuple[str, ast.AST], ...]:
+    """Every src module parsed once per session: the trees are read-only, and re-parsing ~400 files per test cost seconds each."""
+    out = []
     for path in sorted(_SRC.rglob("*.py")):
         if path.name == "unparse.py" and path.parent.name == "_core":
             continue
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            yield path.relative_to(_SRC).as_posix(), node
+        out.append((path.relative_to(_SRC).as_posix(), ast.parse(path.read_text(encoding="utf-8"))))
+    return tuple(out)
+
+
+def _src_nodes() -> Iterator[tuple[str, ast.AST]]:
+    for rel, tree in _parsed_src():
+        for node in ast.walk(tree):
+            yield rel, node
 
 
 def _names_unparse(node: ast.AST) -> bool:
