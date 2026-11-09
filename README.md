@@ -275,6 +275,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | [`module_cache_thread_safety`](src/py_ci_shared/module_cache_thread_safety.py) | gate | 1.17.0 | `assert_thread_safe_module_caches` | Module-level caches mutated with no lock, and lazy ``from X import`` inside joblib-dispatched workers |
 | [`module_reload_safety`](src/py_ci_shared/module_reload_safety.py) | gate | 1.7.0 | `assert_no_reloads_in_code` (+1) | No module is reloaded or dropped from ``sys.modules`` without a restore in the same scope |
 | [`module_state_test_reset`](src/py_ci_shared/module_state_test_reset.py) | gate | 1.22.0 | `assert_module_state_test_reset` | Module-level mutable state that production code writes and no test ever resets or replaces |
+| [`mutation_rerun`](src/py_ci_shared/mutation_rerun.py) | cli | 1.23.10 | `main` | Command line drivers for per-module mutation testing: re-run survivor lines against a notes file, or sweep a whole module with a checkpoint |
 | [`mutation_teeth`](src/py_ci_shared/mutation_teeth.py) | gate | 1.4.0 | `assert_no_new_surviving_mutant` (+1) | A test that claims to pin a defect must be able to FAIL |
 | [`mypy_gate`](src/py_ci_shared/mypy_gate.py) | cli | 1.3.6 | `main` | Run mypy as a gate that requires COMPLETION, not merely a zero exit code |
 | [`naive_utcnow`](src/py_ci_shared/naive_utcnow.py) | gate | 1.4.1 | `assert_no_naive_utcnow` | No production module builds a timestamp with `datetime.utcnow()` |
@@ -478,6 +479,33 @@ The older console scripts (`safe-precommit`, `py-ci-install-safe-hook`, `py-ci-s
 `python -m py_ci_shared.<module>` command still work. The pre-commit manifest (`.pre-commit-hooks.yaml`)
 publishes `py-ci-shared-run-all`, `pinned-tool-versions`, `worktree-hygiene` and `mypy-gate` hooks next to
 `mypy-full-manual`.
+
+## Per-module mutation testing (`mutation_rerun`)
+
+`python -m py_ci_shared.mutation_rerun` drives `mutation_teeth.find_surviving_mutants` on one module at a
+time, from any repository checkout. The module and test paths are relative to `--repo` (default: the
+current directory), and nothing is hard-coded to a machine.
+
+```bash
+# Sweep every line of a module. The checkpoint lets an interrupted run resume instead of starting over.
+python -m py_ci_shared.mutation_rerun --repo . sweep src/pkg/mod.py tests/test_mod.py .cache/mod.ckpt.json
+
+# Re-check only the survivor lines of an earlier log, against a test set.
+python -m py_ci_shared.mutation_rerun --repo . lines src/pkg/mod.py tests/test_mod.py run.log mod.notes.json 431 470
+```
+
+- `sweep` prints `RUN mutants=… killed=… survived=… truncated=… candidates=…`, then one `SURVIVOR` line per survivor.
+  Per-mutant timeout is 1800 s: a loaded machine takes that long for a cold baseline.
+- `lines` takes the survivors of `run.log` in the line range (both bounds inclusive; omit them for every line),
+  and re-runs only those. Its notes file maps `line:col` to a justification, for example
+  `{"481:15": "equivalent: the key is never read back"}`. A survivor with a note is written to
+  `tests/test_meta/mutation_survivors.json` (override with `--survivors`); a survivor without one is printed as
+  `UNCLASSIFIED` and not recorded, so an unexplained survivor cannot be silently accepted. The verdict cache
+  for a notes file is the same name with the `.ckpt.jsonl` suffix.
+- Both commands exit 0 after a completed run. A harness error (a path outside the repo, an unreadable test
+  file) raises instead of reporting survivors, so a broken setup never looks like a clean module.
+- Run in the background on a quiet machine, one module at a time: each mutant runs the test set again.
+  Use the notes file to decide the verdict, not the survivor count alone.
 
 ## Running pytest on a developer machine
 

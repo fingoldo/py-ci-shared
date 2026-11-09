@@ -948,6 +948,13 @@ since = "1.22.0"
 summary = "Module-level mutable state that production code writes and no test ever resets or replaces"
 
 [[gate]]
+name = "mutation_rerun"
+kind = "cli"
+since = "1.23.10"
+cli = true
+summary = "Command line drivers for per-module mutation testing: re-run survivor lines against a notes file, or sweep a whole module with a checkpoint"
+
+[[gate]]
 name = "mutation_teeth"
 kind = "gate"
 entries = ["assert_no_new_surviving_mutant", "assert_revert_fails_tests"]
