@@ -82,7 +82,7 @@ def complexity_problems(complexities: dict[str, int], all_keys: set[str], baseli
         if key in all_keys:
             problems.append(f"{key}: now within the limit of {limit} -- remove the entry (a refresh drops it)")
         else:
-            problems.append(f"{key}: in the baseline but gone -- remove the entry (" + refresh_hint(REFRESH_FLAG, "function_complexity") + " drops it)")
+            problems.append(f"{key}: in the baseline but gone -- remove the entry, or run " + refresh_hint(REFRESH_FLAG, "function_complexity") + " to drop it")
     return problems
 
 

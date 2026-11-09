@@ -74,7 +74,7 @@ def length_problems(lengths: dict[str, int], baseline: dict[str, int], *, limit:
         elif n > limit:
             problems.append(f"{key}: {n} lines, over the {limit}-line limit -- split it, or it becomes the next one nobody can read")
     problems += [
-        f"{key}: in the baseline but gone -- remove the entry (" + refresh_hint(REFRESH_FLAG, "function_length") + " drops it)"
+        f"{key}: in the baseline but gone -- remove the entry, or run " + refresh_hint(REFRESH_FLAG, "function_length") + " to drop it"
         for key in sorted(set(baseline) - set(lengths))
     ]
     return problems
@@ -133,4 +133,4 @@ def assert_functions_do_not_grow(
         )
     problems += length_problems(lengths, baseline, limit=limit)
     if problems:
-        pytest.fail(f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit}):\n  " + "\n  ".join(problems))
+        pytest.fail(f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit} lines per function, set by `limit` in [tool.py_ci_shared.gates.function_length]):\n  " + "\n  ".join(problems))

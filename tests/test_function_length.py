@@ -137,3 +137,11 @@ def test_the_refresh_message_names_the_baseline_not_its_absolute_path(tmp_path):
     with pytest.raises(pytest.skip.Exception) as exc:
         assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1, refresh=True)
     assert "b.json" in str(exc.value) and str(tmp_path) not in str(exc.value)
+
+
+def test_a_stale_entry_hint_has_no_nested_parentheses_and_the_limit_is_explained():
+    """49-F7: the hint sat inside a parenthesis of its own, and the limit printed without its source."""
+    from py_ci_shared.function_length import length_problems
+
+    (stale,) = length_problems({}, {"a.py::f": 3}, limit=150)
+    assert stale.count("(") == stale.count(")") == 1 and "remove the entry, or run" in stale

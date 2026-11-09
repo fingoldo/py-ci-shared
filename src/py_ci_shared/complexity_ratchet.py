@@ -144,7 +144,7 @@ def complexity_problems(values: dict[str, int], baseline: dict[str, int], *, lim
                 problems.append(f"{key}: complexity {n}, over its recorded {baseline[key]} -- put the new branch in a helper")
             elif fail_on_shrink and n < baseline[key] and n <= limit:
                 problems.append(
-                    f"{key}: complexity {n}, now within the limit of {limit} -- remove the entry ({refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} drops it)"
+                    f"{key}: complexity {n}, now within the limit of {limit} -- remove the entry, or run {refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} to drop it"
                 )
             elif fail_on_shrink and n < baseline[key]:
                 problems.append(f"{key}: complexity {n}, under its recorded {baseline[key]} -- refresh the baseline to lock the gain in")
@@ -152,7 +152,7 @@ def complexity_problems(values: dict[str, int], baseline: dict[str, int], *, lim
             problems.append(f"{key}: complexity {n}, over the limit of {limit} -- split it into helpers before it joins the backlog")
     if fail_on_shrink:
         problems += [
-            f"{key}: in the baseline but gone -- remove the entry ({refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} drops it)"
+            f"{key}: in the baseline but gone -- remove the entry, or run {refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} to drop it"
             for key in sorted(set(baseline) - set(values))
         ]
     return problems
