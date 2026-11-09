@@ -36,7 +36,7 @@ table exists so the state of a round is readable without opening five files.
 | 47-F6 | P1 | The documented upgrade path (`@v1`) is reported as a failing `moving-pin` by the consumer-pins job | OPEN |
 | 47-F7 | P1 | The waiver file has no waiver rows, so the "PARTLY RESOLVED" disposition of 47-F1 is not true in the repo | OPEN |
 | 47-F8 | P2 | Running the matrix without `--resolve-in` turns the stale-pin, unresolvable-pin and waiver checks off silently, with exit 0 | PARTIALLY RESOLVED: the run always names the checks that are off (`test_running_without_resolve_in_says_which_checks_are_off`); the exit code stays 0 because failing would turn green consumers red, a behaviour change that needs the owner's call |
-| 47-F9 | P2 | Private consumers skipped for want of a token are missing from the adoption matrix and its job summary | OPEN |
+| 47-F9 | P2 | Private consumers skipped for want of a token are missing from the adoption matrix and its job summary | RESOLVED: the repos file lists skipped consumers in `[[skipped]]` tables, and `_consumers not-checked` appends a "Not checked" table to the matrix report and job summary (`test_a_skipped_private_consumer_is_named_in_the_report_and_still_not_a_repo`) |
 | 47-F10 | P2 | A SHA-pinned `uses:` with no `py-ci-shared-ref` input is not reported, though README says it gets the previous release's configs | OPEN |
 | 47-F11 | P3 | Matrix failure messages do not say what the consumer should do, and the job summary omits two failure kinds | OPEN |
 | 47-F12 | P3 | The lag gate of `ci_pin_version_skew` is silently off unless a caller passes `known_releases`, and no consumer file in the workspace passes it | OPEN |

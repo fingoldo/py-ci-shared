@@ -63,6 +63,8 @@ jobs:
         run: |
           python -m py_ci_shared.adoption_matrix --repos-file "$RUNNER_TEMP/consumers/repos.toml" \
             --resolve-in . --allow-behind 2 --waivers configs/pin_waivers.toml --output adoption-matrix.md
+          # 47-F9: a consumer skipped for want of a token is named in the report and the artifact, not only in an annotation.
+          python -m py_ci_shared._consumers not-checked "$RUNNER_TEMP/consumers/repos.toml" >> adoption-matrix.md
 
       # 43-F6: a consumer that imports an underscore module or name of py_ci_shared relies on something that "may change in any
       # release". Reported, not failed, until the consumers move to the public names (see the CHANGELOG entry).

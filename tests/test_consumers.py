@@ -108,6 +108,26 @@ def test_the_written_repos_file_is_what_adoption_matrix_reads(tmp_path):
     assert load_repo_list(listing) == [("pub", root.resolve())]
 
 
+def test_a_skipped_private_consumer_is_named_in_the_report_and_still_not_a_repo(tmp_path):
+    """47-F9: a consumer skipped for want of a token was in no file the report reads; it is now listed as not checked."""
+    root = tmp_path / "d" / "pub"
+    root.mkdir(parents=True)
+    listing = tmp_path / "repos.toml"
+    write_repos_file(listing, [(PUB, root)], skipped=[PRIV])
+    assert load_repo_list(listing) == [("pub", root.resolve())]
+    table = _consumers.not_checked_markdown(listing)
+    assert "## Not checked" in table and "| priv | o/priv |" in table
+    assert "| pub |" not in table
+
+
+def test_no_skipped_consumer_means_no_not_checked_section(tmp_path):
+    root = tmp_path / "d" / "pub"
+    root.mkdir(parents=True)
+    listing = tmp_path / "repos.toml"
+    write_repos_file(listing, [(PUB, root)])
+    assert _consumers.not_checked_markdown(listing) == ""
+
+
 def test_main_warns_on_a_skip_and_fails_on_a_failed_clone(tmp_path, monkeypatch, capsys):
     config = _config(
         tmp_path,
