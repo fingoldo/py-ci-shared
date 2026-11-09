@@ -10,6 +10,13 @@ cli = true
 summary = "Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself"
 
 [[gate]]
+name = "adoption_sha_ref"
+kind = "cli"
+since = "1.23.10"
+cli = true
+summary = "Flags a consumer workflow that pins a between-release SHA of the reusable workflows without py-ci-shared-ref (report only)"
+
+[[gate]]
 name = "advisory_warn"
 kind = "cli"
 since = "1.0.0"

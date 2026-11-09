@@ -142,6 +142,7 @@ enable in `[tool.py_ci_shared]`), `cli` (run with `py-ci-shared tool <name>`) or
 | module | kind | since | entry | what it checks |
 |---|---|---|---|---|
 | [`adoption_matrix`](src/py_ci_shared/adoption_matrix.py) | cli | 1.17.0 | `main` | Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself |
+| [`adoption_sha_ref`](src/py_ci_shared/adoption_sha_ref.py) | cli | 1.23.10 | `main` | Flags a consumer workflow that pins a between-release SHA of the reusable workflows without py-ci-shared-ref (report only) |
 | [`advisory_warn`](src/py_ci_shared/advisory_warn.py) | cli | 1.0.0 | `main` | Warn-only advisory-taste check for the pre-commit hook |
 | [`alembic_concurrently`](src/py_ci_shared/alembic_concurrently.py) | gate | 1.8.0 | `assert_concurrently_is_in_autocommit_blocks` | An Alembic migration runs ``CONCURRENTLY`` only inside ``autocommit_block()`` |
 | [`api_floor`](src/py_ci_shared/api_floor.py) | gate | 1.20.0 | `assert_api_floor` | Standard-library API newer than the ``requires-python`` floor, outside a version guard (vermin, guard-aware) |
