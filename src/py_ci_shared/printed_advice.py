@@ -35,7 +35,7 @@ __all__ = ["ADVICE_RE", "PrintedAdvice", "assert_printed_advice_registered", "fi
 
 ADVICE_RE = re.compile(
     r"pass (?:it|them) via|\bset \w+\s*=|\b(?:increase|decrease|raise|lower|reduce|disable|enable) (?:`|')?\w+(?:`|')? (?:to|or|and|if|so|for|\()"
-    r"|\bsupply (?:a |an |more )?\w+|\bpass \w+=|\buse \w+=",
+    r"|\bsupply (?:a |an |more )\w+|\bpass \w+=|\buse \w+=",
     re.IGNORECASE,
 )
 _LOG_METHODS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "log"})
