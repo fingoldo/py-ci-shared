@@ -983,10 +983,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report.waiver_note = note
         reports.append(report)
     if resolver is None:
-        sys.stderr.write(
-            "adoption_matrix: WITHOUT --resolve-in the stale-pin, unresolvable-pin, pin-comment and waiver checks are OFF; "
-            "the exit code says nothing about them. Give --resolve-in a py-ci-shared checkout with tags (47-F8)\n"
-        )
+        sys.stderr.write("adoption_matrix: WITHOUT --resolve-in the stale-pin, unresolvable-pin, pin-comment and waiver checks are OFF; the exit code says nothing about them. Give --resolve-in a py-ci-shared checkout with tags\n")
     text = render_markdown(reports, modules=[m for m in modules if not m.startswith("_")])
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")

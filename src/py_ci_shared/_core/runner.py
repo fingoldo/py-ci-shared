@@ -161,7 +161,8 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         if refresh and grow and "grow" in params:
             kwargs["grow"] = True
         _check_required(func, run, kwargs)
-        cache_key = None if refresh else _cache_key(config, run, kwargs, budget)
+        defaults = {n: p.default for n, p in params.items() if p.default is not p.empty}
+        cache_key = None if refresh else _cache_key(config, run, {**defaults, **kwargs}, budget)
         if cache_key is not None and gate_cache.lookup(config.repo_root, cache_key):
             logger.debug("gate %s passed on this tree before, not re-run", run.name)
             return GateResult(

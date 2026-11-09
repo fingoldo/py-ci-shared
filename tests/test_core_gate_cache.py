@@ -100,6 +100,20 @@ def test_a_network_gate_is_never_cached(repo):
     assert calls == ["call", "call"]
 
 
+def test_a_network_gate_whose_network_flag_is_only_a_signature_default_is_never_cached(repo, monkeypatch):
+    """40-F1: a config table that omits ``network`` left the run cacheable, so a PASS that needed the network was replayed."""
+    config, _, calls, _ = repo
+
+    def network_by_default(repo_root, network: bool = True):
+        calls.append("call")
+
+    monkeypatch.setattr(runner, "resolve_gate", lambda run: (network_by_default, 0.0))
+    run = GateRun(name="fake", module="fake_module", entry=None, kwargs={})
+    runner.run_gate(config, run)
+    runner.run_gate(config, run)
+    assert calls == ["call", "call"]
+
+
 def test_an_unwritable_cache_costs_only_the_next_run(repo, monkeypatch):
     config, run, calls, _ = repo
 
