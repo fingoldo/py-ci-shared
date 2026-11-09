@@ -54,9 +54,9 @@ table exists so the state of a round is readable without opening five files.
 | 50-F1 | P2 | Loop whose step can be zero or None never advances | OPEN |
 | 50-F2 | P2 | Counter or state advanced before the write that it counts | OPEN |
 | 50-F3 | P1 | Raw UPDATE/DELETE executed without a row-count check | OPEN |
-| 50-F4 | P3 | Per-item log line inside a network page loop with no throttle | OPEN |
-| 50-F5 | P3 | Test assertion depends on runner platform or pandas null representation | OPEN |
-| 50-F6 | P3 | Doctests and assertions that hold only on one pandas major | OPEN |
+| 50-F4 | P3 | Per-item log line inside a network page loop with no throttle | DEFERRED: a new gate, which waits on the owner's decision on the 50-series new-gate programme (50-F3, see its decision row); building it now would pre-empt that decision. Evidence and the minimal reproduction are in audits/2026-11-10/50_new_gate_mining.md |
+| 50-F5 | P3 | Test assertion depends on runner platform or pandas null representation | DEFERRED: a new gate, which waits on the owner's decision on the 50-series new-gate programme (50-F3, see its decision row); building it now would pre-empt that decision. Evidence and the minimal reproduction are in audits/2026-11-10/50_new_gate_mining.md |
+| 50-F6 | P3 | Doctests and assertions that hold only on one pandas major | DEFERRED: a new gate, which waits on the owner's decision on the 50-series new-gate programme (50-F3, see its decision row); building it now would pre-empt that decision. Evidence and the minimal reproduction are in audits/2026-11-10/50_new_gate_mining.md |
 | 51-F1 | P3 | sibling_floor_skew._github_version sends a token through urllib's default redirect handler | OPEN |
 | 51-F2 | P2 | The release gates come from the tagged commit, so a v* tag from any branch reaches RELEASE_TOKEN (overlaps accepted 51-F8) | OPEN |
 | 51-F3 | P3 | self-ci.yml runs an unpinned `uvx black`; the 51-F2 meta-test does not scan it | OPEN |
