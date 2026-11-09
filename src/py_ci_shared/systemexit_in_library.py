@@ -69,6 +69,13 @@ def _imported_names(trees: dict) -> dict:
 _QUALIFIED_EXITS = {"sys.exit": "sys.exit()", "os._exit": "os._exit()", "builtins.exit": "exit()", "builtins.quit": "quit()"}
 
 
+def _mechanism(kind: str) -> str:
+    """Why the exit is a problem: ``os._exit`` ends the process at once (41-F2); the others raise SystemExit, which only ends the thread."""
+    if "_exit" in kind:
+        return "os._exit() ends the whole process at once, running no finally blocks or atexit handlers"
+    return "SystemExit passes `except Exception` and ends only the calling thread"
+
+
 def _exit_kind(node: ast.AST, aliases: Optional[ImportAliases] = None) -> Optional[str]:
     if isinstance(node, ast.Call):
         func = node.func
@@ -159,8 +166,7 @@ def find_systemexit_in_library(
                         parsed.rel,
                         node.lineno,
                         RULE,
-                        f"{fn.name}: {kind} in a library function ({why}); SystemExit passes `except Exception` and ends only the calling thread. "
-                        "Raise a normal exception and exit in main()",
+                        f"{fn.name}: {kind} in a library function ({why}); {_mechanism(kind)}. " "Raise a normal exception and exit in main()",
                     )
                 )
     return sorted(out, key=lambda f: (f.path, f.line))

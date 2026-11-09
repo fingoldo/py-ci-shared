@@ -31,6 +31,15 @@ def test_reports_the_seeded_violation(tmp_path):
     assert found[0].message.startswith("get_dsn: sys.exit() in a library function (the module has no __main__ guard)")
 
 
+def test_an_os_exit_finding_names_the_process_mechanism_not_systemexit(tmp_path):
+    """41-F2: os._exit() is not a SystemExit; the message must say what it does, and the SystemExit explanation stays for the others."""
+    exit_found = _find(tmp_path, "import os\ndef e():\n    os._exit(3)\n")
+    assert len(exit_found) == 1 and "os._exit() ends the whole process" in exit_found[0].message
+    assert "SystemExit passes" not in exit_found[0].message
+    raise_found = _find(tmp_path, "def a():\n    raise SystemExit(2)\n")
+    assert "SystemExit passes `except Exception`" in raise_found[0].message
+
+
 def test_raise_systemexit_exit_quit_and_os_exit_forms(tmp_path):
     src = (
         "import os\ndef a():\n    raise SystemExit(2)\ndef b():\n    raise SystemExit\ndef c():\n    exit(1)\ndef d():\n    quit()\ndef e():\n    os._exit(3)\n"

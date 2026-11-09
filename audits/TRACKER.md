@@ -14,7 +14,7 @@ table exists so the state of a round is readable without opening five files.
 | 40-F3 | P3 | Several gates skip a file that cannot be parsed or decoded, so its findings are never produced | OPEN |
 | 40-F4 | P3 | stale_source_citations drops every extra-glob file it cannot read, so stale citations in that file pass | OPEN |
 | 41-F1 | P3 | printed_advice treats the noun "supply" as an instruction | OPEN |
-| 41-F2 | P3 | systemexit_in_library attributes `os._exit()` to SystemExit in its message | OPEN |
+| 41-F2 | P3 | systemexit_in_library attributes `os._exit()` to SystemExit in its message | RESOLVED: `_mechanism` gives `os._exit()` its own explanation (the process ends at once, no finally or atexit); `test_an_os_exit_finding_names_the_process_mechanism_not_systemexit` pins it |
 | 42-F12 | P2 | A baseline in list form, or with a non-object `accepted`, reads as empty in baseline_ratchet, so an empty scan passes | RESOLVED: non-object baseline or accepted raises ValueError; test_a_list_shaped_baseline_is_refused_not_read_as_empty |
 | 42-F13 | P2 | A refresh after a rename deletes the human note of the renamed entry before the growth refusal, and the re-added entry comes back with no note | OPEN |
 | 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | OPEN |
