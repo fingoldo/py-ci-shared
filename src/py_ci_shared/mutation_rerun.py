@@ -18,7 +18,7 @@ Usage::
     python -m py_ci_shared.mutation_rerun sweep <module> <tests,comma,separated> <checkpoint.json>
 
 Paths are relative to ``--repo`` (default: the current directory). ``--survivors`` names the journal
-(default ``tests/test_meta/mutation_survivors.json``). The checkpoint for ``lines`` is the notes file
+(default ``DEFAULT_SURVIVORS``, a path inside the consumer repo). The checkpoint for ``lines`` is the notes file
 with the ``.ckpt.jsonl`` suffix, so each notes file gets its own verdict cache.
 """
 
