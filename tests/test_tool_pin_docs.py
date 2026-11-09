@@ -34,3 +34,9 @@ def test_the_reusable_mypy_workflows_default_to_the_pinned_mypy():
         triggers = workflow.get("on") or workflow[True]
         default = str(triggers["workflow_call"]["inputs"]["mypy-version"]["default"])
         assert default == MYPY_VERSION, f"{name} defaults mypy-version to {default}, tool_versions.MYPY_VERSION is {MYPY_VERSION}"
+
+
+def test_self_ci_never_runs_an_unpinned_black():
+    """46-F20: a bare ``uvx black`` resolves whatever black is newest on PyPI at run time; every black run pins BLACK_VERSION."""
+    text = (REPO / ".github" / "workflows" / "self-ci.yml").read_text(encoding="utf-8")
+    assert not re.search(r"uvx black(?!==)", text), "self-ci.yml runs an unpinned black; use BLACK_CMD=uvx black==$BLACK_VERSION"

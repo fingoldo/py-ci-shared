@@ -31,7 +31,7 @@ table exists so the state of a round is readable without opening five files.
 | 46-F17 | P3 | when the releases API is unreadable, prepare and the verify job fall back to local tags and blame the wrong version | OPEN |
 | 46-F18 | P3 | pinned tool versions have no automated update channel: dependabot covers only github-actions | OPEN |
 | 46-F19 | P3 | the mypy pin is written three times and only one copy is tested against tool_versions | RESOLVED: `test_the_reusable_mypy_workflows_default_to_the_pinned_mypy` holds the two reusable workflows' `mypy-version` defaults to `MYPY_VERSION` (the self-ci pin was already tested) |
-| 46-F20 | P3 | self-ci's black smoke run is unpinned, while black-filtered.yml pins the same invocation | OPEN |
+| 46-F20 | P3 | self-ci's black smoke run is unpinned, while black-filtered.yml pins the same invocation | RESOLVED: self-ci's smoke step pins `uvx black==$BLACK_VERSION`; `test_self_ci_never_runs_an_unpinned_black` guards it |
 | 46-F21 | P3 | the Codecov composite action has no caller in this repository, and its CODECOV_TOKEN secret is referenced by no workflow | OPEN |
 | 47-F6 | P1 | The documented upgrade path (`@v1`) is reported as a failing `moving-pin` by the consumer-pins job | OPEN |
 | 47-F7 | P1 | The waiver file has no waiver rows, so the "PARTLY RESOLVED" disposition of 47-F1 is not true in the repo | OPEN |
