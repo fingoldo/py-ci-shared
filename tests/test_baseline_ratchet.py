@@ -171,3 +171,10 @@ def test_a_list_shaped_baseline_is_refused_not_read_as_empty(tmp_path):
     (tmp_path / "b.json").write_text('{"accepted": []}', encoding="utf-8")
     with pytest.raises(ValueError, match="'accepted' must be a JSON object"):
         Baseline("b", directory=str(tmp_path)).load()
+
+
+def test_a_duplicate_key_in_the_baseline_is_an_error_not_a_silent_last_wins(tmp_path):
+    """42-F14: a key written twice (a bad merge) made Baseline.load keep the last value silently."""
+    (tmp_path / "b.json").write_text('{"accepted": {"m.py::f": "a", "m.py::f": "b"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate key"):
+        Baseline("b", directory=str(tmp_path)).load()

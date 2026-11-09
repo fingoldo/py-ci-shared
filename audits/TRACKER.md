@@ -17,7 +17,7 @@ table exists so the state of a round is readable without opening five files.
 | 41-F2 | P3 | systemexit_in_library attributes `os._exit()` to SystemExit in its message | RESOLVED: `_mechanism` gives `os._exit()` its own explanation (the process ends at once, no finally or atexit); `test_an_os_exit_finding_names_the_process_mechanism_not_systemexit` pins it |
 | 42-F12 | P2 | A baseline in list form, or with a non-object `accepted`, reads as empty in baseline_ratchet, so an empty scan passes | RESOLVED: non-object baseline or accepted raises ValueError; test_a_list_shaped_baseline_is_refused_not_read_as_empty |
 | 42-F13 | P2 | A refresh after a rename deletes the human note of the renamed entry before the growth refusal, and the re-added entry comes back with no note | OPEN |
-| 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | OPEN |
+| 42-F14 | P3 | baseline_ratchet.Baseline.load uses plain json.load, so a duplicate key is last-wins silently; 42-F8 fixed this only in _core | RESOLVED: `Baseline.load` uses the duplicate-key-rejecting hook of `_core.baseline`; `test_a_duplicate_key_in_the_baseline_is_an_error_not_a_silent_last_wins` pins it |
 | 43-F1 | P3 | Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool | OPEN |
 | 43-F2 | P3 | CHANGELOG has no heading for the tags v1.22.1 and v1.22.6 | OPEN |
 | 43-F3 | P3 | CLAUDE.md points at `audits/2026-11-07/51`, which is not a file | OPEN |

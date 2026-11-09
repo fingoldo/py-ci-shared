@@ -49,7 +49,7 @@ import sys
 from collections.abc import Mapping
 from typing import Optional
 
-from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified, write_ratchet
+from ._core.baseline import UNJUSTIFIED_MARKER, _reject_duplicate_keys, atomic_write_text, dump_json, is_unjustified, write_ratchet
 
 __all__ = ["Baseline", "DEFAULT_DIRECTORY", "DEFAULT_REFRESH_COMMAND", "run_rules"]
 
@@ -83,7 +83,8 @@ class Baseline:
         if not os.path.exists(self.path):
             return {}
         with open(self.path, encoding="utf-8-sig") as handle:
-            data = json.load(handle)
+            # A key written twice (a bad merge) is an error, not last-wins (42-F14), as in _core.baseline.load_json.
+            data = json.loads(handle.read(), object_pairs_hook=_reject_duplicate_keys)
         if not isinstance(data, dict):
             # A list or a scalar is not a baseline: reading it as empty would let an empty scan pass (42-F12).
             raise ValueError(f"{self.path}: a baseline must be a JSON object, got {type(data).__name__}")
