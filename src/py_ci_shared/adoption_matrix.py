@@ -674,15 +674,15 @@ class RepoReport:
                 f"{k}: " + ", ".join(f"{p.path}:{p.line}" for p in v[:4]) + (f" (+{len(v) - 4})" if len(v) > 4 else "") for k, v in sorted(by_key.items())
             )
             first = self.pins[0]
-            out.append(Finding(first.path, first.line, "pins-disagree", f"{len(by_key)} different py-ci-shared refs: {detail}"))
+            out.append(Finding(first.path, first.line, "pins-disagree", f"{len(by_key)} different py-ci-shared refs: {detail}. Pin every consumer to one release tag"))
         out.extend(
-            Finding(p.path, p.line, "moving-pin", f"{p.target} pinned to {p.label()} ({p.kind}): it changes without a commit here") for p in self.moving_pins
+            Finding(p.path, p.line, "moving-pin", f"{p.target} pinned to {p.label()} ({p.kind}): it changes without a commit here. Pin a release tag or a full SHA") for p in self.moving_pins
         )
         for p in self.stale_pins:
             n, latest = self.behind[p.ref or ""]
-            out.append(Finding(p.path, p.line, "stale-pin", f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}"))
+            out.append(Finding(p.path, p.line, "stale-pin", f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}. Bump the pin, or add a dated waiver to configs/pin_waivers.toml"))
         out.extend(
-            Finding(p.path, p.line, "unresolvable-pin", f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails")
+            Finding(p.path, p.line, "unresolvable-pin", f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails. Push the commit, fix the tag name, or pin a SHA that exists")
             for p in self.unresolvable_pins
         )
         out.extend(Finding(p.path, p.line, "ci-pin-comment-not-release", f"{p.target} pinned to {p.label()}: {why}") for p, why in self.comment_mismatches)
@@ -990,7 +990,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     sys.stdout.write(text)
     failing = [r.name for r in reports if r.failing]
     if failing:
-        sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing/moving/stale pins or silent skips: {', '.join(failing)}\n")
+        sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing, moving, stale or unresolvable pins, bad pin comments, or silent skips: {', '.join(failing)}\n")
     return 0 if args.advisory or not failing else 1
 
 

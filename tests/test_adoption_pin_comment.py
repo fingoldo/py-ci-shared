@@ -125,4 +125,4 @@ def test_main_without_checkout_says_the_comments_were_not_checked(tmp_path, shar
     _, shas = shared
     root = _consumer(tmp_path, f"py-ci-shared @ {URL}@{shas['early']}  # v1.2.3")
     main([str(root), "--no-local-copies", "--advisory"])
-    assert "not checked against the release tags" in capsys.readouterr().err
+    assert "pin-comment" in capsys.readouterr().err

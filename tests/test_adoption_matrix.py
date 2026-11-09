@@ -403,7 +403,7 @@ def test_a_pin_older_than_the_latest_release_fails_and_says_how_far_behind(tmp_p
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[0]}\n"}, "old")
     rep = scan_repo(old, local_copies=False, resolver=RefResolver(pcs))
     assert rep.pins_agree and not rep.moving_pins and rep.failing
-    assert [(f.rule, f.message) for f in rep.findings()] == [("stale-pin", f"package pinned to {shas[0]}: 2 releases behind v1.2.0")]
+    assert [(f.rule, f.message) for f in rep.findings()] == [("stale-pin", f"package pinned to {shas[0]}: 2 releases behind v1.2.0. Bump the pin, or add a dated waiver to configs/pin_waivers.toml")]
     assert "| old | 1 |" in render_markdown([rep]) and "| **2** |" in render_markdown([rep])
     tolerated = scan_repo(old, local_copies=False, resolver=RefResolver(pcs), allow_behind=2)
     assert not tolerated.failing and tolerated.behind[shas[0]] == (2, "v1.2.0")
@@ -418,7 +418,7 @@ def test_a_pin_at_the_latest_release_passes_and_one_release_behind_is_singular(t
     assert not rep.failing and rep.behind == {"v1.2.0": (0, "v1.2.0")}
     one = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@v1.1.0\n"}, "one")
     assert [f.message for f in scan_repo(one, local_copies=False, resolver=RefResolver(pcs)).findings()] == [
-        "package pinned to v1.1.0: 1 release behind v1.2.0"
+        "package pinned to v1.1.0: 1 release behind v1.2.0. Bump the pin, or add a dated waiver to configs/pin_waivers.toml"
     ]
 
 
@@ -458,7 +458,7 @@ def test_a_pin_to_a_tag_or_sha_that_does_not_exist_fails(tmp_path):
         rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
         assert rep.failing
         assert [(f.rule, f.message) for f in rep.findings()] == [
-            ("unresolvable-pin", f"package pinned to {ref}, which does not exist upstream: its install fails")
+            ("unresolvable-pin", f"package pinned to {ref}, which does not exist upstream: its install fails. Push the commit, fix the tag name, or pin a SHA that exists")
         ]
         assert not scan_repo(root, local_copies=False).failing, "without a resolver nothing can be said"
         assert not scan_repo(root, local_copies=False, resolver=RefResolver(None)).failing
