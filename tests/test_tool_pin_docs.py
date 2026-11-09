@@ -23,3 +23,14 @@ def test_claude_md_names_the_pinned_ruff_and_black():
 def test_self_ci_installs_the_pinned_mypy():
     text = (REPO / ".github" / "workflows" / "self-ci.yml").read_text(encoding="utf-8")
     assert set(re.findall(r"mypy==([\d.]+)", text)) == {MYPY_VERSION}
+
+
+def test_the_reusable_mypy_workflows_default_to_the_pinned_mypy():
+    """46-F19: the mypy pin is written in three places; the two reusable workflows' ``mypy-version`` defaults must match too."""
+    import yaml
+
+    for name in ("mypy-beachhead.yml", "mypy-full.yml"):
+        workflow = yaml.safe_load((REPO / ".github" / "workflows" / name).read_text(encoding="utf-8"))
+        triggers = workflow.get("on") or workflow[True]
+        default = str(triggers["workflow_call"]["inputs"]["mypy-version"]["default"])
+        assert default == MYPY_VERSION, f"{name} defaults mypy-version to {default}, tool_versions.MYPY_VERSION is {MYPY_VERSION}"
