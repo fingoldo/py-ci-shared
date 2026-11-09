@@ -145,3 +145,17 @@ def test_the_config_layer_kwargs_are_accepted_by_the_gate(tmp_path):
     root = _wf(tmp_path, {"a-ci.yml": f"- {USES % SHA}  # v1.20.0\n"})
     kwargs = resolve_kwargs(assert_installed_matches_ci_pin, {"installed_version": "1.20.0"}, root)
     assert_installed_matches_ci_pin(**kwargs)
+
+
+def test_without_known_releases_the_gate_records_that_the_lag_check_did_not_run(tmp_path, monkeypatch):
+    """47-F12: with no release tags passed, the lag gate returned nothing and a green run looked as if it had checked the lag."""
+    from py_ci_shared import ci_pin_version_skew as mod
+
+    notes: list[str] = []
+    monkeypatch.setattr(mod, "add_note", notes.append)
+    root = _wf(tmp_path, {"ci.yml": "jobs:\n  t:\n    steps:\n      - uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@v1.2.0\n"})
+    assert_installed_matches_ci_pin(root, installed_version="1.2.0")
+    assert len(notes) == 1 and "ci-pin-lags-release NOT checked" in notes[0]
+    notes.clear()
+    assert_installed_matches_ci_pin(root, installed_version="1.2.0", known_releases=iter(["v1.2.0"]))
+    assert notes == []
