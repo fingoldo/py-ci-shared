@@ -156,7 +156,9 @@ jobs:
           fi
           git tag -f "$major" "$target"
           auth=$(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$major"
+          # 51-F4: the header goes through the environment, not argv, so the token never appears in a process listing.
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git push -f origin "refs/tags/$major"
 
       - name: Publish the GitHub release
         env:
@@ -202,5 +204,7 @@ jobs:
           target=$(git rev-parse "$TARGET^{commit}")
           git tag -f "$major" "$target"
           auth=$(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)
-          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push -f origin "refs/tags/$major"
+          # 51-F4: the header goes through the environment, not argv, so the token never appears in a process listing.
+          GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $auth" \
+            git push -f origin "refs/tags/$major"
           echo "::warning title=rolled back::$major now points at $TARGET ($target). Fix forward with a new, higher release."

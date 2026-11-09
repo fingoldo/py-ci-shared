@@ -60,7 +60,7 @@ table exists so the state of a round is readable without opening five files.
 | 51-F1 | P3 | sibling_floor_skew._github_version sends a token through urllib's default redirect handler | RESOLVED: a redirect to another host is refused before the token is sent (`_SameHostRedirects`); `test_a_redirect_to_another_host_is_refused_so_the_token_stays_home` pins it |
 | 51-F2 | P2 | The release gates come from the tagged commit, so a v* tag from any branch reaches RELEASE_TOKEN (overlaps accepted 51-F8) | OPEN |
 | 51-F3 | P3 | self-ci.yml runs an unpinned `uvx black`; the 51-F2 meta-test does not scan it | OPEN |
-| 51-F4 | P3 | release.yml puts the base64 release token in git's argv in two places | OPEN |
+| 51-F4 | P3 | release.yml puts the base64 release token in git's argv in two places | RESOLVED: both pushes pass the header through `GIT_CONFIG_*` environment variables, as `_consumers` does; `test_the_release_push_passes_the_token_header_through_the_environment_not_argv` pins it |
 | 51-F5 | P3 | Dev extras are floor-only and unconstrained on the release verify path and in self-ci | OPEN |
 | 52-F11 | P2 | Public `main(argv)` entry points accept `argv` and never read it | RESOLVED: stray arguments refused with exit 2; tests in test_install_safe_hook and test_setup_env |
 | 52-F12 | P3 | Unused-argument class is not enforced anywhere in the repo | OPEN |

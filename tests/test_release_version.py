@@ -478,3 +478,10 @@ def test_the_changelog_top_heading_is_the_unreleased_next_version_or_the_release
     if tag in _tags() and _git("rev-parse", f"{tag}^{{commit}}") == _git("rev-parse", "HEAD"):
         assert first == VERSION, f"this is the commit tagged {tag}: rename '## {first}' to '## {VERSION}'"
     assert _changelog_headings().count("Unreleased") == 0, "a bare '## Unreleased' belongs to no release; use '## Unreleased (next: X.Y.Z)' once"
+
+
+def test_the_release_push_passes_the_token_header_through_the_environment_not_argv():
+    """51-F4: ``git -c <header-with-token>`` put the base64 token in argv, visible in a process listing; both pushes use GIT_CONFIG_* env."""
+    text = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "git -c" not in text or "extraheader" not in text.split("git -c", 1)[1].split("\n", 1)[0]
+    assert text.count("GIT_CONFIG_VALUE_0=") == 2
