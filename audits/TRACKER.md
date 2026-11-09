@@ -10,7 +10,7 @@ table exists so the state of a round is readable without opening five files.
 | # | Sev | Finding | Disposition |
 |---|-----|---------|-------------|
 | 40-F1 | P2 | The gate cache reads only the config's kwargs for the network flag, so a network gate's PASS is cached and replayed | RESOLVED: the runner merges the gate's signature defaults under the configured kwargs before the cache key is built; `test_a_network_gate_whose_network_flag_is_only_a_signature_default_is_never_cached` pins it |
-| 40-F2 | P2 | The cache key has no interpreter or installed-tool identity, so a verdict from one Python or tool version replays under another | OPEN |
+| 40-F2 | P2 | The cache key has no interpreter or installed-tool identity, so a verdict from one Python or tool version replays under another | PARTIALLY RESOLVED: the key now carries the interpreter implementation and full version (`_interpreter_identity`, pinned by `test_a_verdict_from_another_interpreter_is_not_replayed`); installed-tool versions (ruff, mypy, black) are still not in the key, OPEN for that half |
 | 40-F3 | P3 | Several gates skip a file that cannot be parsed or decoded, so its findings are never produced | OPEN |
 | 40-F4 | P3 | stale_source_citations drops every extra-glob file it cannot read, so stale citations in that file pass | OPEN |
 | 41-F1 | P3 | printed_advice treats the noun "supply" as an instruction | OPEN |

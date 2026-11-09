@@ -16,6 +16,8 @@ import hashlib
 import json
 import logging
 import os
+import platform
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -119,6 +121,11 @@ def _canonical(value: Any) -> Any:
     return str(value)
 
 
+def _interpreter_identity() -> str:
+    """A verdict from one Python build can differ from another's (40-F2): the key carries the implementation and full version."""
+    return f"{platform.python_implementation()} {'.'.join(str(part) for part in sys.version_info[:3])}"
+
+
 def key_for(repo_root: Path, module: str, entry: Optional[str], kwargs: dict[str, Any], budget: Optional[float], tree: str) -> Optional[str]:
     """The cache key, or None when this run must not be cached (network-dependent)."""
     if _kwargs_ask_for_network(kwargs):
@@ -132,6 +139,7 @@ def key_for(repo_root: Path, module: str, entry: Optional[str], kwargs: dict[str
             "kwargs": _canonical(kwargs),
             "budget": budget,
             "package": package_version,
+            "interpreter": _interpreter_identity(),
             "tree": tree,
             "root": repo_root.as_posix(),
         },

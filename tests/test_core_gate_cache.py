@@ -100,6 +100,16 @@ def test_a_network_gate_is_never_cached(repo):
     assert calls == ["call", "call"]
 
 
+def test_a_verdict_from_another_interpreter_is_not_replayed(tmp_path, monkeypatch):
+    """40-F2: the key had no interpreter identity, so a PASS from one Python build replayed under another."""
+    args = (tmp_path, "fake_module", None, {}, 0.0, "tree")
+    monkeypatch.setattr(gate_cache, "_interpreter_identity", lambda: "CPython 3.9.13")
+    old = gate_cache.key_for(*args)
+    monkeypatch.setattr(gate_cache, "_interpreter_identity", lambda: "CPython 3.14.0")
+    new = gate_cache.key_for(*args)
+    assert old is not None and new is not None and old != new
+
+
 def test_a_network_gate_whose_network_flag_is_only_a_signature_default_is_never_cached(repo, monkeypatch):
     """40-F1: a config table that omits ``network`` left the run cacheable, so a PASS that needed the network was replayed."""
     config, _, calls, _ = repo
