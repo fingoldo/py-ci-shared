@@ -128,3 +128,12 @@ class TestAuditRegressions:
         p = tmp_path / "bom.py"
         p.write_bytes(b"\xef\xbb\xbfdef f():\n    return 1\n")
         assert function_lengths([p], tmp_path) == {"bom.py::f": 2}
+
+
+def test_the_refresh_message_names_the_baseline_not_its_absolute_path(tmp_path):
+    """49-F6: the message printed the machine's full path, which differs on every developer's machine and on CI."""
+    p = _module(tmp_path, 12)
+    baseline = tmp_path / "b.json"
+    with pytest.raises(pytest.skip.Exception) as exc:
+        assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1, refresh=True)
+    assert "b.json" in str(exc.value) and str(tmp_path) not in str(exc.value)

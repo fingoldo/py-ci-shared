@@ -226,10 +226,10 @@ def assert_complexity_does_not_grow(
             write_complexity_baseline(baseline_path, values, limit=limit, grow=grow, request=request, unparsed=unparsed)
         except BaselineError as exc:
             pytest.fail(str(exc), pytrace=False)
-        refreshed_skip(f"complexity baseline written to {baseline_path}")
+        refreshed_skip(f"complexity baseline written to {baseline_path.name}")
     if not Path(baseline_path).is_file():
         pytest.fail(
-            f"complexity baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} (a clean repo commits {{}})"
+            f"complexity baseline {baseline_path.name} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'complexity_ratchet')} (a clean repo commits {{}})"
         )
     try:
         baseline = load_complexity_baseline(baseline_path)

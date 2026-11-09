@@ -121,10 +121,10 @@ def assert_functions_do_not_grow(
             write_length_baseline(baseline_path, lengths, limit=limit, grow=grow, request=request)
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        refreshed_skip(f"function-length baseline written to {baseline_path}")
+        refreshed_skip(f"function-length baseline written to {baseline_path.name}")
     if not baseline_path.is_file():
         pytest.fail(
-            f"function-length baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_length')} (a clean repo commits {{}})"
+            f"function-length baseline {baseline_path.name} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_length')} (a clean repo commits {{}})"
         )
     baseline = load_json(baseline_path)
     if not isinstance(baseline, dict) or not all(isinstance(k, str) and isinstance(v, int) for k, v in baseline.items()):

@@ -94,7 +94,7 @@ class RepoConfig:
             if _canonical(run.name) == wanted:
                 return run
         enabled = ", ".join(run.name for run in self.gates) or "none"
-        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of {self.repo_root / 'pyproject.toml'} (enabled: {enabled})")
+        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: {enabled})")
 
 
 def _canonical(name: str) -> str:

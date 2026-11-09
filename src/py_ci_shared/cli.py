@@ -69,7 +69,7 @@ def _load(repo: Optional[str]) -> RepoConfig:
     root = Path(repo).resolve() if repo else find_repo_root()
     config = load_config(root)
     if config is None:
-        raise ConfigError(f"{root / 'pyproject.toml'} has no [tool.py_ci_shared] table; see README 'Configuring gates'")
+        raise ConfigError(f"pyproject.toml has no [tool.py_ci_shared] table; see README 'Configuring gates'")
     return config
 
 
