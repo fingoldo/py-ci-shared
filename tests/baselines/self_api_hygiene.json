@@ -1,11 +1,7 @@
 {
- "import_time_calls": {
-  "ci_install_covers_conftest.py::_LineLoader.add_constructor": 1,
-  "code_audit/registry.py::register_check_alias": 7,
-  "code_audit/registry.py::register_scanner": 105
- },
- "library_print": {},
- "no_all": {},
- "no_docstring": {},
- "unannotated": {}
+  "import_time_calls": {},
+  "library_print": {},
+  "no_all": {},
+  "no_docstring": {},
+  "unannotated": {}
 }
