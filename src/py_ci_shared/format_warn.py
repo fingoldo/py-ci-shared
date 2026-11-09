@@ -14,6 +14,7 @@ Shared across projects via the py-ci-shared package.
 """
 
 import subprocess
+import os
 import sys
 
 from .bandit_warn import _tool_installed
@@ -90,6 +91,10 @@ def _commands(files: list[str]) -> list[list[str]]:
 def main() -> None:
     """Run the formatter check on the staged Python files and print any difference as a warning; never fails the commit."""
     files = [a for a in sys.argv[1:] if a.endswith(".py")]
+    dirs = [a for a in sys.argv[1:] if os.path.isdir(a)]
+    if dirs:
+        # 49-F9: a directory argument was ignored and the run exited 0 without a word; these hooks take file paths.
+        print(f"[format-warn] {dirs!r} is a directory, not a file: nothing was checked", file=sys.stderr)
     if not files:
         return
 

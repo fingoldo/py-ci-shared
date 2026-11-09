@@ -85,6 +85,10 @@ def resolve_src_files(argv: Sequence[str], tag: str) -> "Optional[list[str]]":
         return None
     files = select_src_files(rest, src_path)
     staged_py = [a for a in rest if a.endswith(".py")]
+    dirs = [a for a in rest if os.path.isdir(a)]
+    if dirs:
+        # 49-F9: a directory argument was ignored and the run exited 0 without a word; these hooks take file paths.
+        print(f"[{tag}] {dirs!r} is a directory, not a file: the hook scans staged .py files only, so nothing was scanned", file=sys.stderr)
     if staged_py and not files:
         print(
             f"[{tag}] {len(staged_py)} staged .py file(s), none under --src-path {src_path!r} -- nothing scanned. "
