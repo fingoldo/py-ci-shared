@@ -112,6 +112,9 @@ def _print_result(result: GateResult) -> None:
             _print(f"::warning title=py-ci-shared {result.name}::{result.note}")
     if result.status == SKIPPED and os.environ.get("GITHUB_ACTIONS") == "true":
         _print(f"::warning title=py-ci-shared gate skipped::{result.name} {result.message}")
+    if result.status in (FAILED, ERROR) and os.environ.get("GITHUB_ACTIONS") == "true":
+        first = (result.message or "").strip().splitlines()[:1]
+        _print(f"::error title=py-ci-shared {result.name} {_MARKS[result.status]}::{first[0] if first else result.name}")
 
 
 def _summary_line(results: Sequence[GateResult]) -> str:
