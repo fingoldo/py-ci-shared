@@ -38,6 +38,8 @@ def test_a_stable_old_file_is_served_without_reading_it_again(tmp_path, monkeypa
     monkeypatch.setattr(Path, "read_bytes", lambda self: reads.append(self) or real(self))
     again = parse_source(f)
     assert again[1] is first[1] and not reads
+    # 44-F2: the no-read answer must come from the stat fast path itself, not from the bytes or tree caches behind it.
+    assert os.fspath(f) in src._FAST
 
 
 def test_a_same_size_rewrite_inside_the_racy_window_is_reparsed(tmp_path):
