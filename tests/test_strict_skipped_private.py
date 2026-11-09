@@ -48,8 +48,8 @@ def test_cli_flag_end_to_end(tmp_path, monkeypatch, capsys):
     for key in ("CONSUMER_READ_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(ci_health, "default_api", lambda **kw: (lambda path: pytest.fail("no request"), False))
-    assert ci_health.main([str(config)]) == 0
-    assert ci_health.main([str(config), "--fail-on-skipped-private"]) == 1
+    assert ci_health.main([str(config), "--include-private"]) == 0
+    assert ci_health.main([str(config), "--include-private", "--fail-on-skipped-private"]) == 1
     assert "RED" in capsys.readouterr().out
 
 
