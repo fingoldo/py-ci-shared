@@ -271,7 +271,7 @@ def _call_label(node: ast.Call) -> str:
     except (
         Exception
     ) as exc:  # pragma: no cover - ast.unparse handles every parsed node  # best-effort: the rendering is a label for the message; the call is judged on its own nodes
-        logger.warning("unsafe_deserialization.py handler at line 260 substituted a fallback for %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("could not unparse call target: %s", type(exc).__name__)
         return "<call>"
 

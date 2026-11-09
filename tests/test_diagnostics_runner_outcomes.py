@@ -191,6 +191,16 @@ class TestF8StaleLineNumbers:
     def test_handlers_that_already_print_their_error_do_not_also_warn(self):
         assert "substituted a fallback" not in (SRC / "cli.py").read_text(encoding="utf-8")
 
+    def test_fallback_warnings_do_not_hard_code_a_line_number(self):
+        """A hard-coded ``handler at line N`` in a message drifts on the first edit above it (49-F1); the logger name already names the module."""
+        offenders = [
+            f"{path.name}:{i}"
+            for path in sorted(SRC.rglob("*.py"))
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if re.search(r"handler at line \d+", line)
+        ]
+        assert offenders == []
+
 
 def test_a_sub_second_budget_is_not_printed_as_zero_seconds():
     """A 0.3 s budget must read as 0.3 s in the verdict, not as 0 s (49-F4)."""
