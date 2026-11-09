@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Sequence
@@ -265,6 +266,30 @@ def _github(token: str) -> Callable[[str], Any]:
     return get
 
 
+class TransientApiError(Exception):
+    """A GitHub API call that failed for a reason a retry may cure: a 5xx answer or a network error."""
+
+
+_API_ATTEMPTS = 3
+_API_RETRY_SECONDS = 10.0
+
+
+def _api_with_retries(api: Callable[[str], Any], path: str, sleep: Callable[[float], None]) -> Any:
+    last: Optional[BaseException] = None
+    for attempt in range(_API_ATTEMPTS):
+        try:
+            return api(path)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise
+            last = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            last = exc
+        if attempt + 1 < _API_ATTEMPTS:
+            sleep(_API_RETRY_SECONDS)
+    raise TransientApiError(str(last)) from last
+
+
 def wait_for_ci(
     api: Callable[[str], Any],
     repo: str,
@@ -277,10 +302,17 @@ def wait_for_ci(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> tuple[str, str]:
-    """Poll ``workflow``'s runs for ``sha`` until green or red, or ``wait`` seconds pass (then the verdict is pending)."""
+    """Poll ``workflow``'s runs for ``sha`` until green or red, or ``wait`` seconds pass (then the verdict is pending).
+
+    A transient API failure (a 5xx or a network error) is retried, and a poll still failing after the retries returns
+    pending with the reason, so one 502 cannot abort a release verification (46-F15). A client error still raises."""
     end = clock() + wait
+    path = f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&branch={branch}&per_page=50"
     while True:
-        runs = api(f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&branch={branch}&per_page=50").get("workflow_runs", [])
+        try:
+            runs = _api_with_retries(api, path, sleep).get("workflow_runs", [])
+        except TransientApiError as exc:
+            return ("pending", f"GitHub API unreachable ({exc}): re-run this job")
         verdict = ci_verdict(runs)
         if verdict[0] != "pending" or clock() >= end:
             return verdict

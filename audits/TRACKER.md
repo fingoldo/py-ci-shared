@@ -26,7 +26,7 @@ table exists so the state of a round is readable without opening five files.
 | 44-F2 | P3 | test_a_stable_old_file_is_served_without_reading_it_again asserts a property the fast path alone provides, and passes with the fast path disabled | OPEN |
 | 45-F9 | P2 | `_split_command` with `posix=False` keeps quote characters, so a quoted executable path in BLACK_CMD fails on Windows | RESOLVED: quote pair stripped per token on Windows; test_a_quoted_windows_executable_path_is_one_argument_without_its_quotes |
 | 45-F10 | P3 | `datetime.fromisoformat` rejects a trailing `Z` on Python 3.9 and 3.10, so the coverage staleness check is silently skipped there | RESOLVED: Z read as +00:00 before fromisoformat; test pins the expression only (gate path not exercised) - follow-up |
-| 46-F15 | P2 | ci-green and the release wait loop die on one transient GitHub API error instead of reporting pending | OPEN |
+| 46-F15 | P2 | ci-green and the release wait loop die on one transient GitHub API error instead of reporting pending | RESOLVED: `wait_for_ci` retries a 5xx or network error three times, then returns pending with "GitHub API unreachable: re-run this job"; a 4xx still raises; `test_wait_for_ci_survives_a_transient_api_error_and_reports_pending_when_it_persists` and `test_wait_for_ci_still_raises_on_a_client_error` pin both |
 | 46-F16 | P2 | rollback fails open: when the releases API is unreadable, the "must be a published release" check is skipped silently | OPEN |
 | 46-F17 | P3 | when the releases API is unreadable, prepare and the verify job fall back to local tags and blame the wrong version | OPEN |
 | 46-F18 | P3 | pinned tool versions have no automated update channel: dependabot covers only github-actions | OPEN |

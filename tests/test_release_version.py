@@ -231,6 +231,36 @@ def test_wait_for_ci_polls_until_the_run_finishes():
     assert calls[0] == "repos/o/r/actions/workflows/self-ci.yml/runs?head_sha=abc&branch=master&per_page=50"
 
 
+def test_wait_for_ci_survives_a_transient_api_error_and_reports_pending_when_it_persists():
+    """46-F15: one 503 aborted the release verification with a traceback; now it is retried, and a persisting outage is pending."""
+    import urllib.error
+
+    def flaky_then_green(path: str) -> Any:
+        if flaky_then_green.failures:
+            flaky_then_green.failures -= 1
+            raise urllib.error.HTTPError(path, 503, "unavailable", None, None)
+        return {"workflow_runs": [{"status": "completed", "conclusion": "success"}]}
+
+    flaky_then_green.failures = 1
+    assert guard.wait_for_ci(flaky_then_green, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)[0] == "green"
+
+    def always_503(path: str) -> Any:
+        raise urllib.error.HTTPError(path, 503, "unavailable", None, None)
+
+    state, reason = guard.wait_for_ci(always_503, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)
+    assert state == "pending" and "re-run this job" in reason
+
+
+def test_wait_for_ci_still_raises_on_a_client_error(monkeypatch):
+    import urllib.error
+
+    def forbidden(path: str) -> Any:
+        raise urllib.error.HTTPError(path, 403, "forbidden", None, None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        guard.wait_for_ci(forbidden, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)
+
+
 def test_wait_for_ci_gives_up_as_pending_after_the_wait():
     ticks = iter([0.0, 10.0, 20.0, 30.0])
     state, why = guard.wait_for_ci(
