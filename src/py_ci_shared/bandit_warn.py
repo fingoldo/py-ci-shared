@@ -122,9 +122,8 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
         return 0
     if warned:
         print(
-            "\n[bandit-warn] The findings above are WARNINGS ONLY -- the commit is NOT "
-            "blocked. The same scan (bandit -ll) also runs in CI as a non-blocking "
-            "step whose full report is uploaded as an artifact.",
+            "\n[bandit-warn] The findings above are WARNINGS ONLY -- the commit is NOT blocked. "
+            "This hook does not say whether CI runs bandit; check your own workflow for that.",
             file=sys.stderr,
         )
     return 0

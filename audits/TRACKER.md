@@ -49,7 +49,7 @@ table exists so the state of a round is readable without opening five files.
 | 49-F7 | P3 | Nested parentheses in the fix hints, and an unexplained `limit 150` | RESOLVED: the hints no longer nest a parenthesis inside another; the length message says where the limit is set; `test_a_stale_entry_hint_has_no_nested_parentheses_and_the_limit_is_explained` pins both |
 | 49-F8 | P3 | `refresh` of a missing baseline reads `+0 -0 entries`, which is the same text as a no-op refresh | RESOLVED: a first-time write reads `created <file> with N entries`; `tests/test_entry_delta.py` pins it |
 | 49-F9 | P3 | `bandit_warn`, `advisory_warn` and `format_warn` run by hand with a directory argument exit 0 silently, and a positional path is ignored without a word | RESOLVED: a directory argument prints that it was not checked (`bandit_warn` covers `advisory_warn`, which imports its resolver); `tests/test_warn_hooks_directory_argument.py` pins it, and a README-only commit stays quiet |
-| 49-F10 | P3 | The `bandit_warn` banner asserts a CI step that a consumer may not have | OPEN |
+| 49-F10 | P3 | The `bandit_warn` banner asserts a CI step that a consumer may not have | RESOLVED: the banner no longer claims a CI step or an artifact; `test_the_banner_does_not_claim_a_ci_artifact_a_consumer_may_not_have` pins it |
 | 49-F11 | P3 | The `ERROR` row for a gate with a fix-hint `e.g. ... = ...` placeholder is correct; the `ERROR` for `bandit_warn` named as a gate is not explained | OPEN |
 | 50-F1 | P2 | Loop whose step can be zero or None never advances | OPEN |
 | 50-F2 | P2 | Counter or state advanced before the write that it counts | OPEN |

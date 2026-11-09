@@ -79,3 +79,15 @@ def test_findings_warn_but_never_block(monkeypatch, capsys):
     monkeypatch.setattr(bandit_warn, "_tool_installed", lambda name: True)
     assert bandit_warn.main(["--src-path", "src", "src/a.py"]) == 0
     assert "WARNINGS ONLY" in capsys.readouterr().err
+
+
+def test_the_banner_does_not_claim_a_ci_artifact_a_consumer_may_not_have(monkeypatch, capsys):
+    """49-F10: the banner was hard-coded to say CI runs bandit and uploads an artifact; a consumer without that step was told otherwise."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(bandit_warn, "resolve_src_files", lambda argv, tag: ["a.py"])
+    monkeypatch.setattr(bandit_warn, "_tool_installed", lambda module: True)
+    monkeypatch.setattr(bandit_warn.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1))
+    assert bandit_warn.main([]) == 0
+    err = capsys.readouterr().err
+    assert "WARNINGS ONLY" in err and "artifact" not in err
