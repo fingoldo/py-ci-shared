@@ -11,6 +11,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Internal self-gate change (this repository only): `loc_budget` now also covers `tests/**/*.py` (empty baseline). `tests/test_mutation_teeth.py` and `tests/test_gate_teeth.py` were split into parts; `py-ci-shared new-gate` now inserts the `CANARIES` entry into `tests/_gate_teeth_canaries.py` instead of `tests/test_gate_teeth.py` (a developer-facing change for contributors of this repo, not for consumers).
 - `local_copy_report`: the content signature of `nondiscriminating_shapes` now names the shapes that gate checks (wide literal range, envelope assert, median round-trip, late skip, non-empty-only) instead of a helper called `_*tautolog*`, which matched glossum's tautology scanner (a different rule) and kept `adoption_matrix` red (fewer findings).
 - `adoption_matrix` no longer reports a dunder attribute of the package (`py_ci_shared.__file__`, `__version__`) as an `unknown-module` (fewer findings; pyutilz's pin-coverage test reads `py_ci_shared.__file__`).
+- **Behaviour change** (`adoption_matrix`, audit 47-F8): a run without `--resolve-in` now exits 1 unless `--advisory` is given, because the stale-pin, unresolvable-pin, pin-comment and waiver checks did not run and an exit 0 claimed they had passed. What to do: give `--resolve-in <a py-ci-shared checkout with its release tags>`, or pass `--advisory` to keep reporting without failing.
 
 ### Strict private consumers, public names, registry summaries (audits 46-F8, 47-F5, 43-F6, 43-F8)
 
@@ -473,6 +474,10 @@ the stale entries removed.
   re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
   `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
 
+## 1.22.6
+
+No notes recorded for this release.
+
 ## 1.22.5
 
 - `corpus-drift.yml` installs the `sql` extra, so `statement_columns_exist_in_ddl` runs in the nightly corpus scan instead of raising ImportError for sqlglot.
@@ -518,6 +523,10 @@ the stale entries removed.
   literal (a gap that can never close, so can never fail) is a finding. What to do: give each `known_gap` reason a tracked issue or an external component, and
   make `gap_closed` a measured condition.
 - New opt-in gate `env_write_restore` (`assert_env_write_restore(root, baseline_path=...)`): a test function that writes `os.environ` (assignment, `del`, `update`/`setdefault`/`pop`, `os.putenv`) and never restores it leaks the setting into every later test in the process, so the victim is a different innocent test each run and passes alone (mlframe: three `MLFRAME_*` strict-GPU flags set directly made a bit-identity test fail 4 runs in 5). The import-time half stays in `import_side_effects`. A write is accepted inside `patch.dict` / `monkeypatch.context`, in a function with a `try` whose `finally` writes the environment, in a yield-fixture that writes again after the yield, in a `setUp` whose class tears it down, with `addfinalizer`/`addCleanup`, or in a function named as a restorer. Findings are keyed `rule::path::function: statement` (no line numbers) and ride the ratchet `Baseline`; seed a first baseline with `grow=True`.
+
+## 1.22.1
+
+No notes recorded for this release.
 
 ## 1.22.0
 

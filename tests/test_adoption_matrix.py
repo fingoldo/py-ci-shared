@@ -354,7 +354,8 @@ def test_markdown_shape_and_exit_codes(tmp_path, capsys):
     assert "- bad: `tests/test_y.py:2` importorskip:" in md
     assert "- bad: `requirements.txt:1` moving-pin:" in md
     out = tmp_path / "out.md"
-    assert main([str(good), "--no-local-copies"]) == 0
+    assert main([str(good), "--no-local-copies"]) == 1  # without --resolve-in the checks did not run: a failing exit (47-F8)
+    assert main([str(good), "--no-local-copies", "--advisory"]) == 0
     assert main([str(good), str(bad), "--no-local-copies", "--output", str(out)]) == 1
     assert main([str(good), str(bad), "--no-local-copies", "--advisory"]) == 0
     assert out.read_text(encoding="utf-8").startswith("# py-ci-shared adoption matrix")
@@ -433,7 +434,7 @@ def test_running_without_resolve_in_says_which_checks_are_off(tmp_path, capsys):
     """47-F8: without --resolve-in the matrix exits 0 with no finding for stale pins; the run must say so, not only when a pin has a version comment."""
     pcs, shas = _pcs_with_releases(tmp_path)
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
-    assert main([str(old), "--no-local-copies"]) == 0
+    assert main([str(old), "--no-local-copies"]) == 1
     err = capsys.readouterr().err
     assert "WITHOUT --resolve-in" in err and "stale-pin" in err and "waiver" in err
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
@@ -443,7 +444,7 @@ def test_running_without_resolve_in_says_which_checks_are_off(tmp_path, capsys):
 def test_main_fails_a_stale_pin_unless_allowed(tmp_path, capsys):
     pcs, shas = _pcs_with_releases(tmp_path)
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
-    assert main([str(old), "--no-local-copies"]) == 0
+    assert main([str(old), "--no-local-copies"]) == 1
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
     assert "stale-pin" in capsys.readouterr().out
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs), "--allow-behind", "1"]) == 0

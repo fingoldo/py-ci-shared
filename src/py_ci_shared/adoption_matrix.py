@@ -991,6 +991,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     failing = [r.name for r in reports if r.failing]
     if failing:
         sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing, moving, stale or unresolvable pins, bad pin comments, or silent skips: {', '.join(failing)}\n")
+    if resolver is None and not args.advisory:
+        # 47-F8: without --resolve-in the stale-pin, unresolvable-pin and waiver checks did not run, so exit 0 would claim they passed.
+        return 1
     return 0 if args.advisory or not failing else 1
 
 
