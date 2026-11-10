@@ -65,7 +65,7 @@ table exists so the state of a round is readable without opening five files.
 | 52-F11 | P2 | Public `main(argv)` entry points accept `argv` and never read it | RESOLVED: stray arguments refused with exit 2; tests in test_install_safe_hook and test_setup_env |
 | 52-F12 | P3 | Unused-argument class is not enforced anywhere in the repo | OPEN |
 | 52-F13 | P3 | Test-suite lint tolerance hides a mutable default in a test helper | RESOLVED for the F541 part (two placeholder-free f-strings made plain, output identical; ruff F541 clean on both files). WON'T FIX for the B006 part: `test_mutable_list_default_does_not_leak_repr` defines `f(x=[1, 2, 3])` on purpose to test that repr, and nothing mutates it, so no state can leak |
-| 52-F14 | P3 | Three src modules sit at or near the 1000-LOC budget | OPEN |
+| 52-F14 | P3 | Three src modules sit at or near the 1000-LOC budget | WON'T FIX now: all three are under the budget (adoption_matrix 998, statement_columns_exist_in_ddl 994, mutation_teeth 984) and no gate fails. The budget gate forces the split on the next addition that crosses 1000, so the split is not needed before then; adoption_matrix is the one to split first (its messages and summary live in it) |
 
 | 48-F12 | P2 | `baseline_trend.history` spawns one `git show` per commit that touched the file. | OPEN |
 | 48-F13 | P2 | `hook_attestation._hash_at` spawns one `git show <sha>:<CONFIG>` per commit of the range. | OPEN |
