@@ -9,7 +9,8 @@ tuning-cache sweep over those hardware-valid candidates, or a helper doing that.
   constant bound to such a literal, or a local name bound once to one. A block of 1 is a one-thread kernel (nothing to choose) and is not reported.
 
 Not reported: a block built from a call, an attribute or arithmetic over names (``(min(256, dev.max_threads),)``, ``(width,)`` from a helper), and any name bound more than once or to
-anything but an integer literal.
+anything but an integer literal. A name imported from ANOTHER module in the same corpus (``from ._kernel import BLOCK``) is followed to that module's own module-level binding, so a
+constant defined once and launched from a different file is still caught - cross-package and external imports (anything the corpus does not itself contain) are not followed.
 
 Suppression: ``# launch-ok: <reason>`` on the first or last line of the call. The reason is the review: why this geometry cannot move (a warp-per-item kernel, a shared array sized by
 the block at compile time, a tile shape that is the algorithm).
@@ -65,8 +66,15 @@ def _is_launch(call: ast.Call) -> bool:
     )
 
 
-def _fixed_sizes(call: ast.Call, scopes: "list[dict[str, Optional[int]]]") -> "list[int]":
-    """The block sizes (other than 1) of a launch call that are an integer literal or a name bound once to one in the innermost scope that binds it."""
+def _fixed_sizes(
+    call: ast.Call,
+    scopes: "list[dict[str, Optional[int]]]",
+    *,
+    aliases: "Optional[ImportAliases]" = None,
+    corpus_scopes: "Optional[dict[str, dict[str, Optional[int]]]]" = None,
+) -> "list[int]":
+    """The block sizes (other than 1) of a launch call: an integer literal, a name bound once to one in the innermost scope that binds it, or - when ``aliases`` and ``corpus_scopes`` are
+    given - a name imported from another module of the same corpus whose OWN module-level binding is one (one hop; a re-exported alias of an alias is not followed)."""
     sizes = []
     for element in call.args[1].elts:  # type: ignore[attr-defined]
         value = _int_literal(element)
@@ -75,6 +83,13 @@ def _fixed_sizes(call: ast.Call, scopes: "list[dict[str, Optional[int]]]") -> "l
                 if element.id in scope:
                     value = scope[element.id]
                     break
+            if value is None and aliases is not None and corpus_scopes is not None:
+                target = aliases.mapping.get(element.id)
+                if target and "." in target:
+                    module, _sep, attr = target.rpartition(".")
+                    module_scope = corpus_scopes.get(module)
+                    if module_scope is not None and attr in module_scope:
+                        value = module_scope[attr]
         if value is not None and value != 1:
             sizes.append(value)
     return sizes
@@ -89,7 +104,14 @@ def _marked(call: ast.Call, py_lines: "list[str]") -> bool:
     return False
 
 
-def _findings_in(tree: ast.Module, rel: str, py_lines: "list[str]") -> "list[Finding]":
+def _findings_in(
+    tree: ast.Module,
+    rel: str,
+    py_lines: "list[str]",
+    *,
+    aliases: "Optional[ImportAliases]" = None,
+    corpus_scopes: "Optional[dict[str, dict[str, Optional[int]]]] " = None,
+) -> "list[Finding]":
     module_scope = _bindings([n for n in tree.body if isinstance(n, ast.Assign)])
     out: "list[Finding]" = []
     reported: "set[int]" = set()
@@ -98,7 +120,7 @@ def _findings_in(tree: ast.Module, rel: str, py_lines: "list[str]") -> "list[Fin
         if id(call) in reported or not _is_launch(call):
             return
         reported.add(id(call))
-        sizes = _fixed_sizes(call, scopes)
+        sizes = _fixed_sizes(call, scopes, aliases=aliases, corpus_scopes=corpus_scopes)
         if sizes and not _marked(call, py_lines):
             out.append(
                 Finding(
@@ -132,10 +154,17 @@ def find_cuda_launch_geometry(
     """
     scan = scan_python(root, min_files=min_files, use_git=use_git)
     scan.assert_ok(allow_unparsed=allow_unparsed)
+    # ``corpus_scopes``: every parsed file's own module-level int-literal bindings, keyed by its dotted module path WITHOUT the package prefix a relative import target lacks too
+    # (``ImportAliases`` records a relative import's target with its leading dots, e.g. "._fe_accuracy_gate_kernel"; the key here is built the same way from the file's own relative path).
+    corpus_scopes: "dict[str, dict[str, Optional[int]]]" = {}
+    for parsed in scan:
+        dotted = "." + parsed.rel[:-3].replace("/", ".").rsplit(".", 1)[-1] if parsed.rel.endswith(".py") else None
+        if dotted:
+            corpus_scopes[dotted] = _bindings([n for n in parsed.tree.body if isinstance(n, ast.Assign)])
     out: "list[Finding]" = []
     for parsed in scan:
-        _ = ImportAliases.from_tree(parsed.tree)
-        out.extend(_findings_in(parsed.tree, parsed.rel, parsed.source.splitlines()))
+        aliases = ImportAliases.from_tree(parsed.tree)
+        out.extend(_findings_in(parsed.tree, parsed.rel, parsed.source.splitlines(), aliases=aliases, corpus_scopes=corpus_scopes))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

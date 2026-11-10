@@ -131,3 +131,50 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     (root / "n.py").write_bytes(_module("kernel((n,), (128,), (x, out))"))
     with pytest.raises(pytest.fail.Exception):
         _assert(root, baseline_path=baseline)
+
+
+def test_a_block_size_imported_from_another_module_is_followed_to_its_binding(tmp_path):
+    """``from .kernel import BLOCK`` and a launch using ``(BLOCK,)`` is caught even though ``BLOCK`` has no local binding in the launching file."""
+    kernel_mod = b"BLOCK = 128\n"
+    launcher = (
+        b"from .kernel import BLOCK\n\n\n"
+        b"def run(kernel, x, out, n, dev):\n"
+        b"    kernel((n,), (BLOCK,), (x, out))\n"
+    )
+    found = _find(_corpus(tmp_path, {"kernel.py": kernel_mod, "launcher.py": launcher}))
+    assert [f.line for f in found] == [5]
+
+
+def test_a_cross_module_block_size_is_suppressed_by_a_marker_on_the_launch(tmp_path):
+    """The same cross-module import, with ``# launch-ok:`` on the launch call, is not reported."""
+    kernel_mod = b"BLOCK = 128\n"
+    launcher = (
+        b"from .kernel import BLOCK\n\n\n"
+        b"def run(kernel, x, out, n, dev):\n"
+        b"    kernel((n,), (BLOCK,), (x, out))  # launch-ok: fixed by the kernel's own tree-fold\n"
+    )
+    found = _find(_corpus(tmp_path, {"kernel.py": kernel_mod, "launcher.py": launcher}))
+    assert found == []
+
+
+def test_a_block_size_imported_from_outside_the_corpus_is_not_followed(tmp_path):
+    """A name imported from a module the corpus does not itself contain (an absolute, external import) is not resolved - only same-corpus relative imports are followed."""
+    launcher = (
+        b"from somewhere.external import BLOCK\n\n\n"
+        b"def run(kernel, x, out, n, dev):\n"
+        b"    kernel((n,), (BLOCK,), (x, out))\n"
+    )
+    found = _find(_corpus(tmp_path, {"launcher.py": launcher}))
+    assert found == []
+
+
+def test_a_cross_module_name_bound_to_something_else_in_the_target_is_not_followed(tmp_path):
+    """The imported name resolves in the TARGET module's own scope; if that module never binds it to a literal (bound twice, or to a call), nothing is reported."""
+    kernel_mod = b"BLOCK = 128\nBLOCK = 256\n"  # bound twice: _bindings maps it to None
+    launcher = (
+        b"from .kernel import BLOCK\n\n\n"
+        b"def run(kernel, x, out, n, dev):\n"
+        b"    kernel((n,), (BLOCK,), (x, out))\n"
+    )
+    found = _find(_corpus(tmp_path, {"kernel.py": kernel_mod, "launcher.py": launcher}))
+    assert found == []
