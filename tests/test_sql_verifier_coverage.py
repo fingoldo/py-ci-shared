@@ -53,7 +53,7 @@ def test_bom_files_are_read_on_both_sides(tmp_path: Path):
 def test_an_unparsable_file_fails_instead_of_being_skipped(tmp_path: Path):
     _write(tmp_path, "m.py", 'Q = "SELECT 1"\n')
     _write(tmp_path, "broken.py", 'HIDDEN = "SELECT 2"\ndef (:\n')
-    verifier = _write(tmp_path, "scripts/verify.py", f'STATEMENTS = [("m", ("Q",))]\nEXCLUDED = {{}}\n')
+    verifier = _write(tmp_path, "scripts/verify.py", 'STATEMENTS = [("m", ("Q",))]\nEXCLUDED = {}\n')
     with pytest.raises(AssertionError, match=r"broken\.py"):
         sql_constants(tmp_path, exclude_top_dirs={"scripts"})
     assert sql_constants(tmp_path, exclude_top_dirs={"scripts"}, allow_unparsed=True) == {"m.Q"}
