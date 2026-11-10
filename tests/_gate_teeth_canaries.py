@@ -681,6 +681,7 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("njit_twin_untested").assert_njit_twin_untested(d, use_git=False),
             tokens=("njit-flag-fallback-untested", "njit-twin-name-untested", "njit-redefined-twin-untested", "njit-parity-marker-untested"),
         ),
+        Canary("raw_write_row_count", lambda d: _gate("raw_write_row_count").assert_raw_write_row_count(d, use_git=False)),
     ]
 }
 

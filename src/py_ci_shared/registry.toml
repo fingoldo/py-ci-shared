@@ -1275,6 +1275,13 @@ since = "1.17.0"
 summary = "Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it"
 
 [[gate]]
+name = "raw_write_row_count"
+kind = "gate"
+entries = ["assert_raw_write_row_count"]
+since = "1.23.10"
+summary = "Raw UPDATE or DELETE statements that run without a row-count check (report only; a shrink-only baseline)"
+
+[[gate]]
 name = "readme_env_var_parity"
 kind = "gate"
 entries = ["assert_readme_documents_every_env_var", "assert_no_new_undocumented_env_vars"]

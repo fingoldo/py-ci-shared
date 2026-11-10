@@ -323,6 +323,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`pytest_markers`](src/py_ci_shared/pytest_markers.py) | gate | 1.7.0 | `assert_markers_registered` | Every pytest marker a test suite uses is registered |
 | [`pytest_run`](src/py_ci_shared/pytest_run.py) | cli | 1.23.8 | `main` | Runs pytest with the mandatory developer flags (unbuffered, -s, --durations=200, no coverage, one process) and writes the whole output to a file |
 | [`randomly_seed_guard`](src/py_ci_shared/randomly_seed_guard.py) | library | 1.17.0 |  | Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it |
+| [`raw_write_row_count`](src/py_ci_shared/raw_write_row_count.py) | gate | 1.23.10 | `assert_raw_write_row_count` | Raw UPDATE or DELETE statements that run without a row-count check (report only; a shrink-only baseline) |
 | [`readme_env_var_parity`](src/py_ci_shared/readme_env_var_parity.py) | gate | 1.3.0 | `assert_readme_documents_every_env_var` (+1) | Every environment variable production code reads via ``os.environ.get(...)``/``os.getenv(...)``/``os.environ[...]`` is documented in the project's |
 | [`reiterated_iterable_params`](src/py_ci_shared/reiterated_iterable_params.py) | gate | 1.17.0 | `assert_no_reiterated_iterable_params` | A parameter typed ``Iterable`` (or ``Iterator``/``Generator``) consumed more than once |
 | [`repo_hygiene`](src/py_ci_shared/repo_hygiene.py) | gate | 1.3.6 | `assert_repo_hygiene` | The repository tracks nothing it generates, and carries the files its gates need |

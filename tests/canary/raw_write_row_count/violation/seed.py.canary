@@ -1,0 +1,2 @@
+def purge(conn):
+    conn.execute("DELETE FROM visits WHERE id = 1")
