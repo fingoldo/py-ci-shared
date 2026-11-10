@@ -324,10 +324,14 @@ def _swallows_io_error(handler: ast.ExceptHandler) -> bool:
     return not caught or bool(caught & _IO_ERROR_NAMES)
 
 
+#: A machine-readable reason code: three or more lowercase words joined by underscores (``modifier_refused_by_the_graph``).
+_REASON_CODE_RE = re.compile(r"^[a-z]+(?:_[a-z]+){2,}$")
+
+
 def _carries_reason(returned: ast.expr) -> bool:
-    """True when the returned value holds a human-readable message (a string with a space or a colon): the failure is reported in-band."""
+    """True when the returned value names the failure: a human-readable message (a space or a colon) or a reason code (``_REASON_CODE_RE``)."""
     for n in _fast_walk(returned):
-        if isinstance(n, ast.Constant) and isinstance(n.value, str) and (" " in n.value or ":" in n.value):
+        if isinstance(n, ast.Constant) and isinstance(n.value, str) and (" " in n.value or ":" in n.value or _REASON_CODE_RE.match(n.value)):
             return True
     return False
 
