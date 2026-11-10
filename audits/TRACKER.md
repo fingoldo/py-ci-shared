@@ -71,7 +71,7 @@ table exists so the state of a round is readable without opening five files.
 | 48-F13 | P2 | `hook_attestation._hash_at` spawns one `git show <sha>:<CONFIG>` per commit of the range. | OPEN |
 | 48-F14 | P2 | `test_python_floor_compatibility.py` re-reads and re-parses every module in separate parametrized tests. | OPEN |
 | 48-F15 | P2 | the git-backed test files build a fresh repository for every test. | OPEN |
-| 48-F16 | P3 | `closed_audit_rounds._declared_edit` runs a full `git log` for every changed closed-round file. | OPEN |
+| 48-F16 | P3 | `closed_audit_rounds._declared_edit` runs a full `git log` for every changed closed-round file. | DEFERRED: not measured (48 report says 'not measured; N-1 spawns'). Batching needs per-commit file lists, and the trailer rule is per file, so the change is not a drop-in; measure a real closed-round diff first (CLAUDE.md: measure before optimising) |
 | 48-F17 | P3 | `tests/conftest.py` samples the CPU for 0.5 s at the start of every xdist session. | OPEN |
 
 ## Round 2026-09-04 — the mutation harness, five dimensions
