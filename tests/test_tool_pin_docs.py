@@ -40,3 +40,14 @@ def test_self_ci_never_runs_an_unpinned_black():
     """46-F20: a bare ``uvx black`` resolves whatever black is newest on PyPI at run time; every black run pins BLACK_VERSION."""
     text = (REPO / ".github" / "workflows" / "self-ci.yml").read_text(encoding="utf-8")
     assert not re.search(r"uvx black(?!==)", text), "self-ci.yml runs an unpinned black; use BLACK_CMD=uvx black==$BLACK_VERSION"
+
+
+def test_the_dev_constraints_pin_the_verdict_tools_to_the_pinned_versions():
+    """51-F5: the verdict tools are exact in dev.txt, equal to tool_versions and to runtime.txt, and the two installs use the file."""
+    from py_ci_shared.tool_versions import BLACK_VERSION, MYPY_VERSION, RUFF_VERSION
+
+    dev = dict(line.split("==", 1) for line in (REPO / ".github" / "constraints" / "dev.txt").read_text(encoding="utf-8").splitlines() if "==" in line)
+    runtime = dict(line.split("==", 1) for line in (REPO / ".github" / "constraints" / "runtime.txt").read_text(encoding="utf-8").splitlines() if "==" in line and ";" not in line)
+    assert dev == {"pytest": runtime["pytest"], "black": BLACK_VERSION, "ruff": RUFF_VERSION, "mypy": MYPY_VERSION}
+    for name in ("self-ci.yml", "release.yml"):
+        assert ".github/constraints/dev.txt" in (REPO / ".github" / "workflows" / name).read_text(encoding="utf-8")

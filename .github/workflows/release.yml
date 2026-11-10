@@ -62,7 +62,7 @@ jobs:
       # The runtime dependencies are constrained to exact versions; the [dev] test tools resolve as in self-ci, whose
       # green run for this very commit is required below.
       - name: Install package
-        run: uv pip install --system -c .github/constraints/runtime.txt -e ".[dev]"
+        run: uv pip install --system -c .github/constraints/runtime.txt -c .github/constraints/dev.txt -e ".[dev]"
 
       - name: Tag equals the declared version and is on master
         env:

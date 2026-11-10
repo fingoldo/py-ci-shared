@@ -94,7 +94,7 @@ jobs:
       # No fallback to a bare install: without the dev extra the tests that need pydantic, pre-commit, numpy,
       # sqlalchemy or pyutilz would skip and the job would still go green.
       - name: Install package
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install --system -c .github/constraints/dev.txt -e ".[dev]"
 
       # The Postgres binaries are on the ubuntu runners but not on PATH; without PG_BIN the real-server tests skip.
       - name: Point PG_BIN at the runner's Postgres
