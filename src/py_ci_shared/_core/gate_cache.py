@@ -121,6 +121,24 @@ def _canonical(value: Any) -> Any:
     return str(value)
 
 
+#: The lint and type tools whose verdicts a gate can depend on; their installed versions are part of the key (40-F2).
+_TOOLS = ("ruff", "mypy", "black")
+
+
+def _installed_version(name: str) -> Optional[str]:
+    from importlib import metadata
+
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
+def _tool_identity() -> dict[str, Optional[str]]:
+    """The installed version of each tool in ``_TOOLS``, or None when it is not installed."""
+    return {name: _installed_version(name) for name in _TOOLS}
+
+
 def _interpreter_identity() -> str:
     """A verdict from one Python build can differ from another's (40-F2): the key carries the implementation and full version."""
     return f"{platform.python_implementation()} {'.'.join(str(part) for part in sys.version_info[:3])}"
@@ -140,6 +158,7 @@ def key_for(repo_root: Path, module: str, entry: Optional[str], kwargs: dict[str
             "budget": budget,
             "package": package_version,
             "interpreter": _interpreter_identity(),
+            "tools": _tool_identity(),
             "tree": tree,
             "root": repo_root.as_posix(),
         },

@@ -147,3 +147,13 @@ def test_the_tree_digest_ignores_agent_worktrees_under_dot_claude(tmp_path):
     copy.write_text("X = 2\n", encoding="utf-8")
     assert gate_cache.tree_digest(root) == before
     gate_cache.forget_tree_digests()
+
+
+def test_a_verdict_from_another_tool_version_is_not_replayed(tmp_path, monkeypatch):
+    """40-F2: the key carried no installed-tool version, so a verdict from one ruff or mypy replayed under another."""
+    args = (tmp_path, "fake_module", None, {}, 0.0, "tree")
+    monkeypatch.setattr(gate_cache, "_tool_identity", lambda: {"ruff": "0.16.10", "mypy": "2.1.0", "black": None})
+    old = gate_cache.key_for(*args)
+    monkeypatch.setattr(gate_cache, "_tool_identity", lambda: {"ruff": "0.17.0", "mypy": "2.1.0", "black": None})
+    new = gate_cache.key_for(*args)
+    assert old is not None and new is not None and old != new
