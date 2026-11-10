@@ -130,7 +130,7 @@ def _installed_version(name: str) -> Optional[str]:
 
     try:
         return metadata.version(name)
-    except metadata.PackageNotFoundError:
+    except metadata.PackageNotFoundError:  # best-effort: a tool that is not installed has no version to key on
         return None
 
 
