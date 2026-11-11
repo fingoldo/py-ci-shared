@@ -50,6 +50,7 @@ def scan_repos(roots: Iterable[tuple[str, Path]], is_release_sha: Callable[[str]
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Report consumer workflows that pin a between-release SHA without ``py-ci-shared-ref``; always 0 (report only, 47-F10)."""
     from .adoption_matrix import RefResolver, load_repo_list
 
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.adoption_sha_ref", description=__doc__.split("\n", 1)[0])

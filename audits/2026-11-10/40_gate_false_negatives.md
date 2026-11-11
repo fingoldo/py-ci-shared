@@ -6,21 +6,21 @@ Already known and not re-reported: every 40-F* row of `audits/2026-11-07/40_gate
 
 Four findings. Two are P2 and two are P3. Items 40-F3 and 40-F4 are documented best-effort choices, so they are false negatives by design, not by accident.
 
-## 40-F1 (P2) The gate cache reads only the config's kwargs for the network flag, so a network gate's PASS is cached and replayed
+## 40-R1 (P2) The gate cache reads only the config's kwargs for the network flag, so a network gate's PASS is cached and replayed
 
 - **File:line:** `src/py_ci_shared/_core/gate_cache.py:105-106` (`_kwargs_ask_for_network`) and `:124` (`key_for`); caller `_core/runner.py:` `_cache_key(config, run, kwargs, budget)`, which passes the pre-resolution config kwargs. The gate's default is at `src/py_ci_shared/sibling_floor_skew.py:363-364`: `network: bool = True`.
 - **Evidence:** `_kwargs_ask_for_network` looks only at keys present in the config table (`"network"`, `"online"`, `"fetch_remote"`). A parameter whose default is truthy is invisible to it. Reproduction: `key_for(Path('.'), 'py_ci_shared.sibling_floor_skew', 'assert_sibling_floor_skew', {'repo_root': '.'}, 0.0, 'T')` returns a non-None key (cacheable). The same call with `{'network': True}` returns None. `sibling_floor_skew.version_at` (line 278) fetches the sibling's pyproject from the network at a given `ref`.
 - **Failure scenario:** a consumer's gate table omits `network`, so the run is cacheable. The first run PASSes and is recorded. A sibling install ref is a branch, and the sibling's pyproject version on that branch drops below the consumer's floor. The tree is unchanged, so the key is unchanged, and the cached PASS is returned without a network call (`runner.py` cache lookup). The skew goes undetected until the local tree changes.
 - **Disposition: RESOLVED-by-fix.** In `runner.py`, compute the key from the signature-resolved kwargs (defaults included), or have `_kwargs_ask_for_network` consult `inspect.signature(func).parameters[name].default`. Add a regression test in `tests/test_core_gate_cache.py` that a network-defaulting gate with no config kwarg is not cached.
 
-## 40-F2 (P2) The cache key has no interpreter or installed-tool identity, so a verdict from one Python or tool version replays under another
+## 40-R2 (P2) The cache key has no interpreter or installed-tool identity, so a verdict from one Python or tool version replays under another
 
 - **File:line:** `src/py_ci_shared/_core/gate_cache.py:126-137` (the payload: `module`, `entry`, `kwargs`, `budget`, `package` version, `tree`, `root`). No `sys.version`, `sys.executable`, or tool version is in it.
 - **Evidence:** the docstring (lines 1-10) says a re-run on an unchanged tree gives the same verdict. Several gates do not satisfy that: `api_floor.py:65` runs vermin through the active interpreter, and `api_floor.py:237` reads its exit code. `45-F1` and `45-F3` (round 2026-11-07) already record that `ast.unparse` output and token-ratio thresholds depend on the interpreter, so a gate's verdict differs between 3.9 and 3.11+. The key is identical for both, so a PASS recorded under one replays under the other. I checked this by reading the payload and did not run it under a second interpreter.
 - **Failure scenario:** a developer runs the gates under Python 3.13 and records PASS. The same repository is then checked under Python 3.9 (a tox or matrix leg on the same machine, a persisted `~/.cache`), and the 3.9 verdict is never computed. The cache sits under `Path.home()/.cache/py_ci_shared/gate_cache` (`gate_cache.py:_store_dir`), which survives across legs and runs. A version-dependent failure on 3.9 passes silently.
 - **Disposition: RESOLVED-by-fix.** Add `sys.version_info[:3]`, `sys.implementation.name` and a digest of the interpreter path to the payload in `key_for`. For tool-backed gates (vermin, mypy, ruff), also add the tool's version, or mark those gates uncacheable. Add a test that two different interpreter identities produce different keys.
 
-## 40-F3 (P3) Several gates skip a file that cannot be parsed or decoded, so its findings are never produced
+## 40-R3 (P3) Several gates skip a file that cannot be parsed or decoded, so its findings are never produced
 
 - **File:line:**
   - `src/py_ci_shared/code_audit/source_text_assertions.py:51-52` (test file, `SourceError` then `continue`; the docstring at line 39 says so).
@@ -32,7 +32,7 @@ Four findings. Two are P2 and two are P3. Items 40-F3 and 40-F4 are documented b
 - **Failure scenario:** a test file with a syntax error is skipped by `source_text_assertions`. Pytest fails on that file at collection, so CI goes red regardless. The impact is real only where pytest does not import the file: a non-test `.py` under `tests/` is not collected, or `phantom_code_references` sees a symbol defined only in a broken file and reports the wrong thing. For `ci_install_covers_conftest`, a broken `pytest.ini` makes the gate evaluate a different install set than the one pytest will use.
 - **Disposition: RESOLVED-by-fix** for `ci_install_covers_conftest` and `tool_config_env_vars` (report the unreadable file as a finding, as `optional_truthiness` does). For `source_text_assertions`, `phantom_code_references` and `nginx_location_headers`, **WON'T FIX** on the grounds that the skip is a documented pyutilz convention and the file is already reported by a parse gate; this needs owner confirmation before it is closed.
 
-## 40-F4 (P3) stale_source_citations drops every extra-glob file it cannot read, so stale citations in that file pass
+## 40-R4 (P3) stale_source_citations drops every extra-glob file it cannot read, so stale citations in that file pass
 
 - **File:line:** `src/py_ci_shared/stale_source_citations.py:271-273` (`except SourceError: continue`), inside `_extra_findings`; the docstring at `:256-260` says "best-effort: a file that cannot be read is skipped rather than raised".
 - **Evidence:** I wrote a `.md` file containing the byte `\xff` (invalid UTF-8) and ran `read_source` on it. It raises `SourceReadError`, a subclass of `SourceError` (checked: `issubclass` is True). The handler at `:271` therefore drops the file. The file is never scanned for `line-past-end` or `symbol-not-at-line`.

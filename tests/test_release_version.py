@@ -311,6 +311,37 @@ def test_cli_refuses_to_move_v1_for_a_back_port_tag(tmp_path: Path):
     assert newest.returncode == 0, newest.stdout + newest.stderr
 
 
+def test_rollback_refuses_when_the_releases_cannot_be_read(tmp_path: Path, monkeypatch, capsys):
+    """An unreadable releases API used to skip the published-release check, so a tag with no release could become v1."""
+    guard = _load_guard()
+    repo = _scratch_repo(tmp_path, ["v1.18.0", "v1.19.0"])
+    argv = ["rollback", "v1.18.0", "--repo-dir", str(repo), "--repo", "owner/name"]
+    monkeypatch.setattr(guard, "_release_names", lambda args: None)
+    assert guard.main(argv) == 1
+    assert "cannot read the GitHub releases of owner/name" in capsys.readouterr().out
+    monkeypatch.setattr(guard, "_release_names", lambda args: ["v1.18.0"])
+    assert guard.main(argv) == 0
+    monkeypatch.setattr(guard, "_release_names", lambda args: ["v1.19.0"])
+    assert guard.main(argv) == 1
+    assert "has no GitHub release" in capsys.readouterr().out
+
+
+def test_prepare_refuses_when_the_releases_cannot_be_read(tmp_path: Path, monkeypatch, capsys):
+    """An unreadable releases API used to fall back to the newest local tag, so prepare could name a version nobody published."""
+    guard = _load_guard()
+    repo = _scratch_repo(tmp_path, ["v1.18.0", "v1.19.0"])
+    argv = ["prepare", "1.19.1", "--repo-dir", str(repo), "--repo", "owner/name"]
+
+    def unreachable(path):
+        raise OSError("api down")
+
+    monkeypatch.setattr(guard, "_github", lambda token: unreachable)
+    assert guard.main(argv) == 2
+    assert "cannot read the GitHub releases of owner/name" in capsys.readouterr().out
+    monkeypatch.setattr(guard, "_github", lambda token: (lambda path: [{"tag_name": "v1.18.0"}]))
+    assert guard._published_release("owner/name", "", ["v1.19.0"]) == "v1.18.0"
+
+
 def test_cli_rollback_accepts_an_earlier_release_and_refuses_an_unknown_one(tmp_path: Path):
     repo = _scratch_repo(tmp_path, ["v1.18.0", "v1.19.0"])
     assert _cli("rollback", "v1.18.0", "--repo-dir", str(repo)).returncode == 0

@@ -96,6 +96,20 @@ def scope_nodes(tree: ast.Module, opener: _Opener) -> "list[ast.AST]":
     raise ValueError("opener is not a scope of this tree")
 
 
+def function_param_names(func: ast.AST) -> set[str]:
+    """The parameter names a function binds, positional, keyword-only and ``*args``; ``**kwargs`` is not included, as the gates that
+    use this have always had it. Any other node (a module, a lambda's body) binds none."""
+    names: set[str] = set()
+    if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return names
+    args = func.args
+    for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
+        names.add(arg.arg)
+    if args.vararg:
+        names.add(args.vararg.arg)
+    return names
+
+
 def qualified_functions(tree: ast.Module, *, locals_marker: bool = True) -> "list[tuple[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]]":
     """``(qualified name, definition)`` of every function in *tree*, in source order: methods as ``Class.method``, nested functions as ``outer.<locals>.inner``.
 

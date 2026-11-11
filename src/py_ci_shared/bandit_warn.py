@@ -116,11 +116,14 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
         return 0
     cmd = [sys.executable, "-I", "-m", "bandit", "-ll", *files]
     try:
-        warned = subprocess.run(cmd, check=False, timeout=_TOOL_TIMEOUT_S).returncode != 0
+        code = subprocess.run(cmd, check=False, timeout=_TOOL_TIMEOUT_S).returncode
     except Exception as exc:  # bandit missing / any error -> warn, never block
         print(f"[bandit-warn] skipped: {exc}", file=sys.stderr)
         return 0
-    if warned:
+    if code not in (0, 1):  # bandit exits 1 for findings; anything else is bandit failing, which says nothing about the code (49-F12)
+        print(f"[bandit-warn] bandit itself failed (exit {code}); nothing was judged.", file=sys.stderr)
+        return 0
+    if code == 1:
         print(
             "\n[bandit-warn] The findings above are WARNINGS ONLY -- the commit is NOT blocked. "
             "This hook does not say whether CI runs bandit; check your own workflow for that.",

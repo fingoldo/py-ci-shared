@@ -8,7 +8,7 @@ Counts: P1 0, P2 4, P3 7 (total 11).
 
 Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gate (2), missing `[tool.py_ci_shared]` table (2), unknown `tool` module (2), `tool` on a module with no CLI (2), `config-path` bad name (argparse, 2), no subcommand (2). Stdout carries the verdict rows and stderr carries the logger lines, consistently. The `FAIL` row and the `file:line` finding list are complete and name the file and line. The stale-entry and unreadable-JSON messages name the baseline file. The `refresh` message names the gate and the file. The missing-required-argument ConfigError (49-F3 fix) names the table and the argument. `bandit_warn` with a staged file and a wrong `--src-path` names the path and says nothing was scanned. `_tool_installed` uses `find_spec` (49-F2 fix present). The budget row, its GitHub `::warning::` and the job summary agree.
 
-## 49-F1 [P2] The 49-F8 fix is incomplete: 14 sites still hard-code a `handler at line N` that points at the wrong line
+## 49-R1 [P2] The 49-F8 fix is incomplete: 14 sites still hard-code a `handler at line N` that points at the wrong line
 
 - **Evidence:** `grep -rn "handler at line" src/py_ci_shared --include=*.py` returns 14 sites, for example `adoption_matrix.py:551`:
   `logger.warning("adoption_matrix.py handler at line 472 substituted a fallback for %s: %s", ...)`. Line 472 of that file is a docstring. The same pattern was checked at 8 sites: `baseline_trend.py:209` claims 203 (line 203 is `args.repo,`), `corpus_drift.py:435` claims 387 (a `def` line), `epsilon_padded_denominators.py:124` claims 96 (a docstring), `sibling_floor_skew.py:414` claims 409 (`owner=args.owner,`), `resource_leak_checks.py:79` claims 75 (`def _cwd()`), `schema_snapshot_parity.py:719` claims 717 (`)`), `env_write_restore.py:114` claims 108 (`return False`). That is 8 of 8 sampled numbers wrong. The 49-F8 disposition says the stale prefix was removed from all 13 sites and a meta-test scans for the literal `X.py line N:`. That test does not match the `X.py handler at line N` wording, so it passes while the bug remains. The `substituted a fallback` wording is also false at sites that return `False` or raise and do not substitute.
@@ -16,9 +16,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A CI log shows `epsilon_padded_denominators.py handler at line 96 substituted a fallback ...`; the developer opens line 96, finds a docstring, and concludes the log is wrong. Nothing was substituted, so the message claims a fallback that did not happen.
 - **Proposed fix:** Drop the hard-coded number and the "substituted a fallback" phrasing from all 14 sites. Use `logger.debug` with `%(filename)s:%(lineno)d`, or put the exception type and message in the warning and let the call site's own message stand. Widen the 49-F8 meta-test to match `handler at line` and `substituted a fallback` as well as `X.py line N:`.
 - **AST-checkable:** True; FP risk: low (match the literal string `at line [0-9]+` inside a logger call).
-- **Disposition:** OPEN. Regression of 49-F8 (2026-11-07), which was recorded RESOLVED.
+- **Disposition:** RESOLVED. Regression of 49-F8 (2026-11-07), which was recorded RESOLVED.
 
-## 49-F2 [P2] A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing
+## 49-R2 [P2] A malformed function-length baseline is reported as a stale entry, so the developer deletes the wrong thing
 
 - **Evidence:** `fl.json` containing `["x"]` (a JSON list where a `{key: count}` object is required):
   ```
@@ -30,9 +30,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** After a bad merge or a hand edit writes a list, the developer is told to remove an entry `x` from the file. The entry is not a key, and the real fault is the file's shape. The refresh hint then rewrites the file, dropping the bad shape silently.
 - **Proposed fix:** Validate in `function_length` that the baseline is a dict of str to int before `length_problems`; on failure print `fl.json is not a {"path::function": lines} object (got list)`; exit as a usage error (2) or fail with that message only.
 - **AST-checkable:** True; FP risk: low (assert the baseline loader rejects non-dict JSON with a message naming the shape).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F3 [P2] Under GitHub Actions a FAIL or ERROR row emits no `::error` annotation; only budget, note and skip rows annotate
+## 49-R3 [P2] Under GitHub Actions a FAIL or ERROR row emits no `::error` annotation; only budget, note and skip rows annotate
 
 - **Evidence:** `GITHUB_ACTIONS=true GITHUB_STEP_SUMMARY=... py-ci-shared run-all` on a repo whose `naive_utcnow` gate fails and whose budget is exceeded printed:
   ```
@@ -47,9 +47,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** On a PR a gate fails. The checks page and the annotation list show no error on the changed file. The developer has to open the job log and scroll to the `FAIL` row. Only the warnings are annotated, so the failing gate looks like a soft warning.
 - **Proposed fix:** Under `GITHUB_ACTIONS=true`, print `::error title=py-ci-shared <gate>::<first line of message>` for FAILED and ERROR rows, and add a `### Failed gates` section to the job summary, mirroring the budget block. Add `file=`/`line=` when the message starts with `path:line:`.
 - **AST-checkable:** True; FP risk: low (a branch on FAILED/ERROR in `_print_result` that does not reach an `::error` print).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F4 [P2] The `budget` rounding says `over its 0s budget` for any `budget_s` under 0.5
+## 49-R4 [P2] The `budget` rounding says `over its 0s budget` for any `budget_s` under 0.5
 
 - **Evidence:** `budget_s = 0.0001` on `naive_utcnow`:
   ```
@@ -59,9 +59,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A developer who set `budget_s = 0.5` on a 0.7-second gate reads "over its 0s budget" and does not know what the limit is.
 - **Proposed fix:** Format with `:g` (or `.3g`) so `0.0001` and `0.5` print as written; keep the took-seconds at `.1f`.
 - **AST-checkable:** True; FP risk: low (a `budget_s` rendered with `.0f`).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F5 [P3] `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them
+## 49-R5 [P3] `run-all` writes `gate configuration invalid` and `gate raised` log lines to stderr with no gate name, duplicating the row below them
 
 - **Evidence:** with a gate table missing its required argument, stderr receives
   ```
@@ -73,9 +73,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** With several gates enabled, a CI log reads `gate raised, reporting ERROR: TypeError` in a stream where five other gates logged the same line. The developer cannot tell which gate it was without reading the row below.
 - **Proposed fix:** Change both lines to `logger.debug`. The `ERROR` row already carries the type and the message, and `PY_CI_SHARED_TRACEBACK=1` gives the full traceback.
 - **AST-checkable:** True; FP risk: low (a `logger.warning` in `run_gate`'s except clauses).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F6 [P3] Absolute machine paths in ordinary messages: a developer's home path, or a CI runner's path
+## 49-R6 [P3] Absolute machine paths in ordinary messages: a developer's home path, or a CI runner's path
 
 - **Evidence:** all of these print the full path of the scratch repo, in this run `C:\Users\Admin\AppData\Local\Temp\claude\...\scratchpad\t1`:
   - `py-ci-shared: gate 'nosuch' is not enabled in [tool.py_ci_shared] of C:\Users\...\t1\pyproject.toml (enabled: ...)`
@@ -86,9 +86,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A CI log or a pasted message carries the runner's workspace or a developer's account name. Each message also repeats the path that the caller passed in, so it is harder to read. The refresh line repeats the same path in two places.
 - **Proposed fix:** Print repo-relative paths (`pyproject.toml`, `fl.json`) when the path is under `config.repo_root`; keep absolute only for paths outside it. Drop the repeated path in the `REFRESH` line, since the `(fl.json)` already names it.
 - **AST-checkable:** False; FP risk: low (a render helper for a repo-root-relative path, checked by a test that the config error does not contain `Users`).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F7 [P3] Nested parentheses in the fix hints, and an unexplained `limit 150`
+## 49-R7 [P3] Nested parentheses in the fix hints, and an unexplained `limit 150`
 
 - **Evidence:** `function_length` stale and no-longer-over messages:
   ```
@@ -101,9 +101,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** The developer cannot tell whether `150` is configurable, and has to read the source. Two `(...)` groups in one clause are hard to parse.
 - **Proposed fix:** Put the command on its own line: `  fix: py-ci-shared refresh function_length (or PY_CI_SHARED_REFRESH=function_length)`; print `limit 150 (max_lines in [tool.py_ci_shared.gates.function_length])` when the limit is the default or the configured key.
 - **AST-checkable:** False; FP risk: low.
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F8 [P3] `refresh` of a missing baseline reads `+0 -0 entries`, which is the same text as a no-op refresh
+## 49-R8 [P3] `refresh` of a missing baseline reads `+0 -0 entries`, which is the same text as a no-op refresh
 
 - **Evidence:** `py-ci-shared refresh function_length` with no `fl.json` present:
   ```
@@ -115,17 +115,17 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A reviewer reading `+0 -0` after adding the baseline file cannot tell that a file was created, so they may not commit it.
 - **Proposed fix:** When the file did not exist before, print `created <file> (0 entries)` and keep `+N -M` for an existing file.
 - **AST-checkable:** False; FP risk: low.
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F9 [P3] `bandit_warn`, `advisory_warn` and `format_warn` run by hand with a directory argument exit 0 silently, and a positional path is ignored without a word
+## 49-R9 [P3] `bandit_warn`, `advisory_warn` and `format_warn` run by hand with a directory argument exit 0 silently, and a positional path is ignored without a word
 
 - **Evidence:** `py-ci-shared tool bandit_warn --src-path pkg` (no files) printed nothing and exited 0. `py-ci-shared tool bandit_warn pkg` printed `[bandit-warn] no --src-path given and PY_CI_SHARED_SRC_PATH env var not set -- skipping (nothing to scope the scan to)`, although the developer did pass `pkg`, positionally. The positional `pkg` is taken as a staged file name and filtered out. `format_warn --src-path pkg` also printed nothing.
 - **Failure scenario:** A developer runs the advisory tool on a package to check it and sees nothing. Silence reads as "clean", when no file was scanned. In a pre-commit hook that is correct (no staged `.py`), but run by hand it is the same as a clean scan.
 - **Proposed fix:** When `--src-path` is given and zero files resolve, print `[bandit-warn] 0 .py file(s) under --src-path pkg; nothing scanned` on stderr. Name the positional as ignored when no `.py` is among the args.
 - **AST-checkable:** True; FP risk: low (a return of `None` from `resolve_src_files` with no stderr line).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F10 [P3] The `bandit_warn` banner asserts a CI step that a consumer may not have
+## 49-R10 [P3] The `bandit_warn` banner asserts a CI step that a consumer may not have
 
 - **Evidence:** `bandit_warn.py:121`:
   `"[bandit-warn] The findings above are WARNINGS ONLY -- the commit is NOT blocked. The same scan (bandit -ll) also runs in CI as a non-blocking step whose full report is uploaded as an artifact."`
@@ -133,9 +133,9 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A developer is told the scan also runs in CI and that a full report is uploaded, and goes looking for an artifact that does not exist.
 - **Proposed fix:** Drop the CI sentence, or make it conditional on the consumer's config flag. Keep the "WARNINGS ONLY, commit not blocked" half, which is true.
 - **AST-checkable:** True; FP risk: low (a literal claim about CI in a banner that is not gated by a config key).
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
-## 49-F11 [P3] The `ERROR` row for a gate with a fix-hint `e.g. ... = ...` placeholder is correct; the `ERROR` for `bandit_warn` named as a gate is not explained
+## 49-R11 [P3] The `ERROR` row for a gate with a fix-hint `e.g. ... = ...` placeholder is correct; the `ERROR` for `bandit_warn` named as a gate is not explained
 
 - **Evidence:** `[tool.py_ci_shared.gates.bandit_warn]` in `run-all`:
   ```
@@ -146,7 +146,7 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 - **Failure scenario:** A developer who enabled the advisory tool as a gate is told it "cannot be enabled" and has no next command.
 - **Proposed fix:** Append `; run it with \`py-ci-shared tool bandit_warn\` or list gates with \`py-ci-shared list\``.
 - **AST-checkable:** False; FP risk: low.
-- **Disposition:** OPEN.
+- **Disposition:** RESOLVED.
 
 ## Observation, not a finding: a stale installed copy shadows the checkout
 
@@ -156,16 +156,16 @@ Checked and fine (not findings): exit codes for FAIL (1), ERROR (2), unknown gat
 
 | Id | Sev | Title | Disposition |
 |---|---|---|---|
-| 49-F1 | P2 | 49-F8 fix incomplete: 14 `handler at line N` sites, 8 of 8 sampled numbers wrong | OPEN (regression of a RESOLVED finding) |
-| 49-F2 | P2 | Malformed function-length baseline reported as a stale entry | OPEN |
-| 49-F3 | P2 | No `::error` annotation for FAIL or ERROR under GitHub Actions | OPEN |
-| 49-F4 | P2 | Budget message prints `0s` for a sub-second `budget_s` | OPEN |
-| 49-F5 | P3 | Nameless duplicate stderr lines for ConfigError and crashes | OPEN |
-| 49-F6 | P3 | Absolute machine paths in ordinary messages | OPEN |
-| 49-F7 | P3 | Nested parentheses in fix hints; unexplained `limit 150` | OPEN |
-| 49-F8 | P3 | `refresh` of a missing baseline reads `+0 -0` | OPEN |
-| 49-F9 | P3 | Advisory tools by hand with a directory exit 0 silently | OPEN |
-| 49-F10 | P3 | bandit banner asserts a CI step consumers may not have | OPEN |
-| 49-F11 | P3 | `bandit_warn` as a gate: no next command | OPEN |
+| 49-R1 | P2 | 49-F8 fix incomplete: 14 `handler at line N` sites, 8 of 8 sampled numbers wrong | RESOLVED (regression of a RESOLVED finding) |
+| 49-R2 | P2 | Malformed function-length baseline reported as a stale entry | RESOLVED |
+| 49-R3 | P2 | No `::error` annotation for FAIL or ERROR under GitHub Actions | RESOLVED |
+| 49-R4 | P2 | Budget message prints `0s` for a sub-second `budget_s` | RESOLVED |
+| 49-R5 | P3 | Nameless duplicate stderr lines for ConfigError and crashes | RESOLVED |
+| 49-R6 | P3 | Absolute machine paths in ordinary messages | RESOLVED |
+| 49-R7 | P3 | Nested parentheses in fix hints; unexplained `limit 150` | RESOLVED |
+| 49-R8 | P3 | `refresh` of a missing baseline reads `+0 -0` | RESOLVED |
+| 49-R9 | P3 | Advisory tools by hand with a directory exit 0 silently | RESOLVED |
+| 49-R10 | P3 | bandit banner asserts a CI step consumers may not have | RESOLVED |
+| 49-R11 | P3 | `bandit_warn` as a gate: no next command | RESOLVED |
 
 Counts: P1 0, P2 4, P3 7 (total 11). 49-F1 is the only one that reopens a finding recorded RESOLVED in the previous round. Nothing was edited in the repository; the scratch consumer repo is under the session scratchpad.

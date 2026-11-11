@@ -254,7 +254,7 @@ def _remote_commit(url: str, ref: str) -> "str | None":
     """The commit *ref* names on *url* today (an annotated tag's peeled commit first), or None when it names nothing.
     Raises :class:`VersionCheckError` when the remote cannot be reached."""
     try:
-        proc = run_git(None, "ls-remote", url, f"refs/tags/{ref}^{{}}", f"refs/tags/{ref}", f"refs/heads/{ref}", timeout=60)
+        proc = run_git(None, "ls-remote", "--", url, f"refs/tags/{ref}^{{}}", f"refs/tags/{ref}", f"refs/heads/{ref}", timeout=60)
     except GitError as exc:
         raise VersionCheckError(str(exc)) from exc
     if proc.returncode != 0:

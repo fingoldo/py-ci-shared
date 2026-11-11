@@ -8,16 +8,16 @@ Classes already gated and therefore dropped: stdlib API floor (api_floor), check
 
 | id | sev | title | disposition |
 |---|---|---|---|
-| 50-F1 | P2 | Loop whose step can be zero or None never advances | DEFERRED |
-| 50-F2 | P2 | Counter or state advanced before the write that it counts | DEFERRED |
-| 50-F3 | P1 | Raw UPDATE/DELETE executed without a row-count check | ADD as gate |
-| 50-F4 | P3 | Per-item log line inside a network page loop with no throttle | DEFERRED |
-| 50-F5 | P3 | Test assertion depends on runner platform or pandas null repr | DEFERRED |
-| 50-F6 | P3 | Doctests and assertions that hold only on one pandas major | WON'T FIX |
+| 50-R1 | P2 | Loop whose step can be zero or None never advances | DEFERRED |
+| 50-R2 | P2 | Counter or state advanced before the write that it counts | DEFERRED |
+| 50-R3 | P1 | Raw UPDATE/DELETE executed without a row-count check | PARTLY RESOLVED as gate |
+| 50-R4 | P3 | Per-item log line inside a network page loop with no throttle | DEFERRED |
+| 50-R5 | P3 | Test assertion depends on runner platform or pandas null repr | DEFERRED |
+| 50-R6 | P3 | Doctests and assertions that hold only on one pandas major | DEFERRED |
 
 Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 
-## 50-F1 [P2] Loop whose step can be zero or None never advances
+## 50-R1 [P2] Loop whose step can be zero or None never advances
 
 - Defect class: `while cond: x = x - step` (or a cap loop that shrinks a value by a step) where `step` comes from a parameter or config that may be 0 or None. The loop body makes no progress and the call hangs.
 - Evidence: algopacksimple 6b13..-era commit "Split compute_optimal_price into helpers; fix infinite loop when min step is 0/None" (6b81ce1 range, 2026-10 to 2026-11) and 41d72f7 "Fix compute_optimal_price cap loop stalling when min step is below rounding precision". Both fixed in consumer code; no py-ci-shared gate was checked for this shape.
@@ -32,7 +32,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - False-positive risk: medium. Most such loops are over literal steps or are bounded by a `for` over a precomputed range; the guard-recognition heuristic must accept `assert`, `raise`, and early `return`.
 - Proposed disposition: DEFERRED. Needs a measured hit count across mlframe and algopacksimple before the guard heuristic is chosen; the single known instance is already fixed.
 
-## 50-F2 [P2] Counter or state advanced before the write that it counts
+## 50-R2 [P2] Counter or state advanced before the write that it counts
 
 - Defect class: a function does `self.n += 1` (or `counts[k] += 1`, or appends to a "sent" list) and then performs the commit or external write inside a `try`. When the write raises and is caught, the counter reports a success that did not happen.
 - Evidence: glossum_backend_scripts 413d99b3 "Fix what the 1.23.8 py-ci-shared gates found: counters advanced before their commit, process-latched unavailability, unread ctor params, echoed values". The gates that found it were the ones named in the message; the counter-before-commit shape itself is not a gate in src (grep for a counter increment adjacent to commit/execute in src found none).
@@ -51,7 +51,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - False-positive risk: medium to high. Counters of attempts (not successes) are legitimate; the detector cannot tell attempt counters from success counters without a name hint.
 - Proposed disposition: DEFERRED. Adopt only with an allowlist naming the success counters, or as a warn-only gate first.
 
-## 50-F3 [P1] Raw UPDATE/DELETE executed without a row-count check
+## 50-R3 [P1] Raw UPDATE/DELETE executed without a row-count check
 
 - Defect class: a write statement runs through `execute` (or `cursor.execute`) and the result is not checked. A `WHERE` that matches zero rows, or a stale id, passes silently. Consumers then report success for a change that never happened.
 - Evidence: glossum_backend_scripts 3a72e8f0 "Route the proposed-lemma, existing-synset and quality-flag writes through execute_expecting_rows", 0d9cd241 "Route the validation relation UPDATEs through execute_expecting_rows", 577c92f4 "Route the validation delete statements through execute_expecting_rows", 49803872 "Route the wordfam verdict writes through execute_expecting_rows". Four separate write families were found silently accepting zero rows and were moved to a helper that asserts the row count. Grep of src for `rowcount`, `expecting_rows`, `affected` found hits only in plotly_annotation_loop, safe_precommit and spec_bound_doubles (none is a SQL write check); no gate enforces the helper.
@@ -65,7 +65,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - False-positive risk: medium. `INSERT ... ON CONFLICT DO NOTHING` and idempotent deletes legitimately affect zero rows; these need a marker (`# zero-rows-ok: <reason>`). Dynamic SQL built by concatenation is out of reach and is skipped, not flagged.
 - Proposed disposition: ADD as gate (`sql_write_rowcount_checked`), with the marker form above and a shrink-only baseline. Measure first on glossum_backend_scripts, where the helper already exists, so the gate's baseline shows the remaining unwrapped writes.
 
-## 50-F4 [P3] Per-item log line inside a network page loop with no throttle
+## 50-R4 [P3] Per-item log line inside a network page loop with no throttle
 
 - Defect class: a warning or info log inside a per-page or per-item loop over a remote source. On a partially failing source the log volume grows with the page count and drowns the run.
 - Evidence: social 82817970 "wayback: per-page failure logs throttled in the two hot loops; two baseline entries leave". Only the social repo shipped the fix; no gate in src covers log calls in loops (grep for `logging` in src gave gate modules that import logging, none that flags loop-body logs).
@@ -81,7 +81,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - False-positive risk: high. Many loops legitimately log per item at low volume; the iterable-name heuristic is weak.
 - Proposed disposition: DEFERRED. Better handled by a code-review check than a gate until a measured count exists.
 
-## 50-F5 [P3] Test assertion depends on runner platform or pandas null representation
+## 50-R5 [P3] Test assertion depends on runner platform or pandas null representation
 
 - Defect class: a test compares `str(x)` or a pandas frame's repr to a literal that differs between OS (path separators, line endings, `nan` versus `<NA>`, `None` versus `NaN` in object columns), so it passes on the author's machine and fails on the CI matrix.
 - Evidence: pyutilz d246599 "Make three test groups independent of runner platform and pandas null representation"; pyutilz 0901b3a "Make doctests and the normality precondition pins hold on pandas 3 and Python 3.8". Existing machine_specific_paths covers absolute paths, not repr of nulls or path separators in assertion literals.
@@ -94,7 +94,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - False-positive risk: medium. Literal repr checks are sometimes the point of the test; a marker should allow them.
 - Proposed disposition: DEFERRED. The class is real but the detector needs the same allowlist design as the existing machine_specific_paths gate; evaluate that extension before a new module.
 
-## 50-F6 [P3] Doctests and assertions that hold only on one pandas major
+## 50-R6 [P3] Doctests and assertions that hold only on one pandas major
 
 - Defect class: a doctest or pin written against one pandas major (object vs string dtype, copy-on-write semantics, changed default dtypes) fails when the matrix moves major version.
 - Evidence: pyutilz 0901b3a (see 50-F5). The failing dimension is a dependency version matrix, not source text.

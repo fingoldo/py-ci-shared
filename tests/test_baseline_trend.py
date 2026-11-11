@@ -39,8 +39,6 @@ def repo(tmp_path):
         subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, env=git_env())
 
     git("init", "-q")
-    git("config", "user.email", "t@example.com")
-    git("config", "user.name", "t")
     (tmp_path / "tool" / "meta" / "baselines").mkdir(parents=True)
     return tmp_path, git
 

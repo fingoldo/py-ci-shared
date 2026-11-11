@@ -54,7 +54,10 @@ def resolve_gate(run: GateRun) -> tuple[Callable[..., Any], float]:
         raise ConfigError(str(exc.args[0])) from None
     entry = run.entry or spec.default_entry
     if entry is None:
-        raise ConfigError(f"{spec.name} is a {spec.kind} module with no assert_* entry; it cannot be enabled as a gate")
+        raise ConfigError(
+            f"{spec.name} is a {spec.kind} module with no assert_* entry, so it cannot be enabled as a gate: it is a command-line tool. "
+            f"Run it as `python -m {spec.module}` (or from the hook that wraps it), or name a gate that has an assert_* entry (see the README gate catalogue)"
+        )
     if spec.entries and entry not in spec.entries:
         raise ConfigError(f"{spec.name} has no entry {entry!r}; choose one of {list(spec.entries)}")
     module = importlib.import_module(spec.module)

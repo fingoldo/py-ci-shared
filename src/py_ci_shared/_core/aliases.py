@@ -104,6 +104,7 @@ class ImportAliases:
         self._package = package
         self._parents: "Optional[dict[int, ast.AST]]" = None
         self._scope_bindings: "dict[int, dict[str, Optional[str]]]" = {}
+        self._chains: "dict[int, Optional[list[ast.AST]]]" = {}  # a chain depends only on the tree: computed once per node
 
     @classmethod
     def from_tree(cls, tree: ast.AST, *, package: Optional[str] = None, scoped: bool = False) -> "ImportAliases":
@@ -178,6 +179,12 @@ class ImportAliases:
         return self._parents
 
     def _enclosing_scopes(self, node: ast.AST) -> "Optional[list[ast.AST]]":
+        key = id(node)
+        if key not in self._chains:
+            self._chains[key] = self._enclosing_chain(node)
+        return self._chains[key]
+
+    def _enclosing_chain(self, node: ast.AST) -> "Optional[list[ast.AST]]":
         """Scopes whose body holds *node*, innermost first, ending with the module; ``None`` when *node* is not in the tree.
 
         A decorator, default or annotation belongs to the scope AROUND the function, a body statement to the function."""

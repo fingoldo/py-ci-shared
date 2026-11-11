@@ -214,7 +214,7 @@ def _insert_registry(text: str, block: str, name: str) -> str:
 
 
 def _version(root: Path) -> str:
-    data = tomllib.loads(_read(root / "pyproject.toml"))
+    data = tomllib.loads(_read(root / "pyproject.toml").lstrip("\ufeff"))  # a Windows editor may save a BOM; tomllib rejects it (45-F11)
     return str(data["project"]["version"])
 
 

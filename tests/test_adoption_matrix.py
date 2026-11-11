@@ -423,11 +423,20 @@ def test_a_pin_at_the_latest_release_passes_and_one_release_behind_is_singular(t
     ]
 
 
-def test_a_moving_pin_is_reported_as_moving_not_as_stale(tmp_path):
+def test_the_documented_major_tag_is_not_a_moving_pin(tmp_path):
+    """47-F6: README documents `@v1` as the consumer form; it must not fail the daily job as a moving-pin (the policy is the owner's to reverse)."""
     pcs, _ = _pcs_with_releases(tmp_path)
     root = _repo(tmp_path, {".github/workflows/a.yml": "    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@v1\n"})
     rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
-    assert [f.rule for f in rep.findings()] == ["moving-pin"] and rep.behind == {}
+    assert rep.moving_pins == [] and [f.rule for f in rep.findings()] == []
+
+
+def test_a_branch_pin_is_still_a_moving_pin(tmp_path):
+    """Negative control (47-F6): only the major tag was relaxed; a branch still changes without a commit here and must fail."""
+    pcs, _ = _pcs_with_releases(tmp_path)
+    root = _repo(tmp_path, {".github/workflows/a.yml": "    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@main\n"})
+    rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
+    assert [f.rule for f in rep.findings()] == ["moving-pin"]
 
 
 def test_running_without_resolve_in_says_which_checks_are_off(tmp_path, capsys):

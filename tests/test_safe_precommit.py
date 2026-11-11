@@ -32,8 +32,6 @@ def _init_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
     _git("init", "-q", cwd=repo)
-    _git("config", "user.email", "test@test.com", cwd=repo)
-    _git("config", "user.name", "test", cwd=repo)
     (repo / "tracked.py").write_text(_BASE)
     _git("add", "tracked.py", cwd=repo)
     _git("commit", "-q", "-m", "init", cwd=repo)

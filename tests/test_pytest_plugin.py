@@ -81,11 +81,11 @@ def test_refresh_writes_a_missing_baseline_and_reaches_every_test_through_the_en
 
 
 def test_a_gate_over_budget_warns_and_fails_in_fail_mode(tmp_path):
-    table = IDENTITY + "budget_s = 0.000001\n"
+    table = IDENTITY + "budget_s = 0.001\n"
     warned = _pytest(_repo(tmp_path / "warn", table))
-    assert warned.returncode == 0 and "over its 0s budget" in warned.stdout, warned.stdout
+    assert warned.returncode == 0 and "over its 0.001s budget" in warned.stdout, warned.stdout
     failing = _pytest(_repo(tmp_path / "fail", '[tool.py_ci_shared]\nbudget = "fail"\n' + table))
-    assert failing.returncode == 1 and "over its 0s budget" in failing.stdout, failing.stdout
+    assert failing.returncode == 1 and "over its 0.001s budget" in failing.stdout, failing.stdout
 
 
 def test_a_malformed_table_is_a_usage_error(tmp_path):

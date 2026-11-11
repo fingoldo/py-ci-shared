@@ -267,17 +267,26 @@ def _unsaved_in_directory(repo: Path, worktree: Path, directory: Path, object_fo
     return out
 
 
-def unsaved_paths(repo: Path, worktree: Path, ref: str = "origin/HEAD", *, reachable: frozenset[str] | None = None) -> list[str]:
+def unsaved_paths(
+    repo: Path,
+    worktree: Path,
+    ref: str = "origin/HEAD",
+    *,
+    reachable: frozenset[str] | None = None,
+    upstream: dict[str, str] | None = None,
+    object_format: str | None = None,
+) -> list[str]:
     """Changed paths in *worktree* whose content is neither in *ref* nor reachable from any ref of this repo.
 
     Judged: the working file of every modified, untracked or IGNORED path (an ignored ``.env`` or data file is
     lost with the worktree like any other), and the STAGED blob of every path with an index change, since the
     index dies with the worktree too. A deletion is not unsaved work: what it removes is still in the ref.
+    *upstream* and *object_format* are the repository-wide answers a caller holding many worktrees computes once.
     Raises :class:`GitQueryError` when git cannot answer.
     """
-    upstream = _upstream_blobs(repo, ref)
+    upstream = upstream if upstream is not None else _upstream_blobs(repo, ref)
     known = reachable if reachable is not None else reachable_objects(repo)
-    object_format = _object_format(repo)
+    object_format = object_format if object_format is not None else _object_format(repo)
     unsaved: list[str] = []
     staged: dict[str, str] | None = None
 
@@ -353,11 +362,14 @@ def _head_is_on_a_remote(repo: Path, worktree: Path) -> bool:
 def worktree_findings(repo: Path, ref: str = "origin/HEAD", container: str = ".claude/worktrees") -> list[WorktreeFinding]:
     """A verdict per linked worktree and per leftover directory, the main checkout excluded.
 
-    Raises :class:`GitQueryError` when *ref* does not resolve or the reachable-object listing fails: every
-    verdict is derived from those two answers.
+    Raises :class:`GitQueryError` when *ref* does not resolve, or when the reachable-object or upstream-tree listing
+    fails: every verdict is derived from those answers, so one failure fails the whole report rather than each worktree.
     """
     verify_ref(repo, ref)
     reachable = reachable_objects(repo)
+    # The upstream tree and object format are the same for every worktree of this repository: read once, not once per worktree (48-F18).
+    upstream = _upstream_blobs(repo, ref)
+    object_format = _object_format(repo)
     findings: list[WorktreeFinding] = []
     for worktree in registered_worktrees(repo)[1:]:
         if not worktree.is_dir():
@@ -366,7 +378,7 @@ def worktree_findings(repo: Path, ref: str = "origin/HEAD", container: str = ".c
             )
             continue
         try:
-            unsaved = unsaved_paths(repo, worktree, ref, reachable=reachable)
+            unsaved = unsaved_paths(repo, worktree, ref, reachable=reachable, upstream=upstream, object_format=object_format)
         except GitQueryError as exc:
             findings.append(WorktreeFinding(worktree, REVIEW, registered=True, head_on_remote=False, note=f"cannot inspect: {exc}"))
             continue

@@ -223,6 +223,8 @@ def _line_comment(line: str, markers: Sequence[str]) -> Optional[str]:
 def _python_comments(source: str) -> Optional[dict[int, str]]:
     """``{line: comment text}`` from the tokenizer (exact for Python), or ``None`` when it cannot tokenize."""
     out: dict[int, str] = {}
+    if "#" not in source:  # no '#' means no comment: skip the tokenizer (it is the gate's hot loop); same result as the line scan
+        return out
     try:
         for tok in tokenize.generate_tokens(io.StringIO(source).readline):
             if tok.type == tokenize.COMMENT:

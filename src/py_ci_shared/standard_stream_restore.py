@@ -45,14 +45,14 @@ across edits above the site, ``path::function`` (the qualified name, ``<module>`
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from ._core.scan import scan_roots_excluding
 from ._core.scopes import own_nodes
 from ._core import ScanResult, child_nodes, nodes_of
-from ._core.node_index import walk
+from ._core.node_index import parent_map, walk
 
 __all__ = [
     "Finding",
@@ -103,6 +103,20 @@ def _key(node: ast.AST) -> str:
     return ""
 
 
+def _scope_parent(tree: ast.Module, scope: ast.AST, parent_all: dict[int, Optional[ast.AST]]) -> Callable[[ast.AST], Optional[ast.AST]]:
+    """Parent lookup that stops at *scope*: the guard chain never climbs out of the function or module it is checking."""
+
+    def up(node: ast.AST) -> Optional[ast.AST]:
+        if node is scope:
+            return None
+        return parent_all.get(id(node)) or tree
+
+    return up
+
+
+_PAIR_NODES = (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.Call)  # the only nodes _pairs ever yields pairs for
+
+
 def _pairs(node: ast.AST, sys_names: frozenset[str]) -> list[tuple[ast.AST, ast.AST]]:
     """(target, value) pairs an assignment makes, element-wise for ``a, b = x, y``; ``setattr(sys, "stdout", v)``
     yields a synthetic ``sys.stdout`` target."""
@@ -150,6 +164,8 @@ def _guard_names(own: list[ast.AST], sys_names: frozenset[str]) -> frozenset[str
     """Names this function binds from an expression that compares by identity and mentions a standard stream."""
     names: set[str] = set()
     for node in own:
+        if not isinstance(node, _PAIR_NODES):
+            continue  # _pairs yields nothing for any other node: skip the call (it dominated the gate)
         for target, value in _pairs(node, sys_names):
             walked = list(walk(value))
             compares = any(isinstance(n, ast.Compare) and any(isinstance(op, (ast.Is, ast.IsNot)) for op in n.ops) for n in walked)
@@ -170,9 +186,9 @@ def _guards(test: ast.AST, stream: str, sys_names: frozenset[str], guard_names: 
     return False
 
 
-def _guarded(node: ast.AST, stream: str, parents: dict[int, ast.AST], sys_names: frozenset[str], guard_names: frozenset[str]) -> bool:
+def _guarded(node: ast.AST, stream: str, up: Callable[[ast.AST], Optional[ast.AST]], sys_names: frozenset[str], guard_names: frozenset[str]) -> bool:
     """Is *node* under an enclosing guard, or after an exiting guard ``if`` in an enclosing statement list?"""
-    child, cur = node, parents.get(id(node))
+    child, cur = node, up(node)
     while cur is not None:
         if isinstance(cur, (ast.If, ast.While, ast.IfExp)) and child is not cur.test and _guards(cur.test, stream, sys_names, guard_names):
             return True
@@ -187,7 +203,7 @@ def _guarded(node: ast.AST, stream: str, parents: dict[int, ast.AST], sys_names:
                         and _guards(earlier.test, stream, sys_names, guard_names)
                     ):
                         return True
-        child, cur = cur, parents.get(id(cur))
+        child, cur = cur, up(cur)
     return False
 
 
@@ -213,14 +229,17 @@ def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
     findings: list[Finding] = []
     sys_names = _sys_names(tree)
     saved = _saved_locations(tree, sys_names)
+    parent_all = parent_map(tree)  # shared per tree; the scope boundary is kept by _scope_parent
     for scope, qualname in _scopes(tree):
         own = list(own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)))
-        parents = {id(c): p for p in [scope, *own] for c in child_nodes(p)}
+        up = _scope_parent(tree, scope, parent_all)
         guard_names = _guard_names(own, sys_names)
         for node in own:
+            if not isinstance(node, _PAIR_NODES):
+                continue
             for target, value in _pairs(node, sys_names):
                 stream = _stream(target, sys_names)
-                if stream and _key(value) in saved and not _guarded(node, stream, parents, sys_names, guard_names):
+                if stream and _key(value) in saved and not _guarded(node, stream, up, sys_names, guard_names):
                     what = f"restores sys.{stream} from a saved value with no check that its own stream is still installed"
                     findings.append(Finding(path, getattr(node, "lineno", 0), what, qualname))
             if isinstance(node, ast.Call):

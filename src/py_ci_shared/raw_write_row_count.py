@@ -2,7 +2,7 @@
 
 A raw ``UPDATE``/``DELETE`` sent through ``execute`` (or ``exec_driver_sql``, or ``text(...)``) in a function that never reads
 ``rowcount``: the caller cannot tell whether any row changed, so a ``WHERE`` that matches nothing passes silently (50-F3).
-The nearest correct code is the same statement whose result the function reads ``rowcount`` from. Migrations and ``batch_*`` scripts are excluded:
+The nearest correct code is the same statement whose result the function reads ``rowcount`` from. Migrations, test code and ``batch_*`` scripts are excluded:
 their bulk statements are intended and run once.
 
 Usage in a consumer's meta test::
@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core.node_index import walk
 
 __all__ = ["RULE", "assert_raw_write_row_count", "find_raw_write_row_count"]
 
@@ -30,7 +31,8 @@ RULE = "raw-write-row-count"
 
 _RUNNERS = frozenset({"execute", "exec_driver_sql"})
 _WRITE = re.compile(r"^\s*(UPDATE|DELETE)\b", re.IGNORECASE)
-_EXCLUDED_PARTS = frozenset({"alembic", "migrations"})
+# Test code builds fixtures with raw writes on purpose, and its rowcount is not what a test asserts: the gate judges production code (50-F3).
+_EXCLUDED_PARTS = frozenset({"alembic", "migrations", "tests"})
 
 
 def _sql_text(node: ast.expr) -> Optional[str]:
@@ -52,11 +54,11 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases) -> list[Fin
         return []
     out: list[Finding] = []
     seen: set[tuple[int, int]] = set()
-    scopes: list[ast.AST] = [tree, *(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
+    scopes: list[ast.AST] = [tree, *(n for n in walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)))]
     for scope in scopes:
-        if any(isinstance(n, ast.Attribute) and n.attr == "rowcount" for n in ast.walk(scope)):
+        if any(isinstance(n, ast.Attribute) and n.attr == "rowcount" for n in walk(scope)):
             continue
-        for call in ast.walk(scope):
+        for call in walk(scope):
             if not isinstance(call, ast.Call) or not call.args:
                 continue
             callee = call.func.id if isinstance(call.func, ast.Name) else getattr(call.func, "attr", None)

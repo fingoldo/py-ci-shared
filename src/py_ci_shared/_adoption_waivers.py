@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -38,6 +38,8 @@ def load_waivers(path: PathLike) -> dict[str, Waiver]:
             raise CoreError(f"{path}: a [[waiver]] needs name, oldest (vX.Y.Z), until (YYYY-MM-DD) and reason: {exc!r}") from exc
         if not is_release_tag(waiver.oldest) or not waiver.reason.strip():
             raise CoreError(f"{path}: waiver {waiver.name!r}: oldest must be a vX.Y.Z tag and reason must be given")
+        if waiver.name in out:  # 47-F15: a second row with the same name would replace the first and silently drop its dates and reason
+            raise CoreError(f"{path}: waiver {waiver.name!r} is listed twice; keep one row per consumer")
         out[waiver.name] = waiver
     return out
 
@@ -52,3 +54,17 @@ def waived_allowance(waiver: Optional[Waiver], releases: Sequence[str], base: in
         return base, f"waiver for {waiver.name} names {waiver.oldest}, which is not a release tag here; it grants nothing"
     after = len(releases) - 1 - list(releases).index(waiver.oldest)
     return max(base, after), f"waived until {waiver.until} down to {waiver.oldest} ({waiver.reason})"
+
+
+def preflight_problem(has_resolver: bool, releases: Sequence[str], waivers: Mapping[str, Waiver], scanned: Sequence[str], advisory: bool) -> Optional[str]:
+    """Why the run must fail before any repo is read, or ``None``. A resolver without release tags cannot run the stale-pin check (47-F14);
+    a waiver for no scanned consumer applies to nothing (47-F15). ``advisory`` reports only, so it never returns a problem."""
+    if advisory:
+        return None
+    if has_resolver and not releases:
+        return ("--resolve-in has no vX.Y.Z release tags (a shallow clone, or the tags were not fetched), so the stale-pin check did not run: "
+                "run git fetch --tags there, or pass --advisory")
+    unused = sorted(set(waivers) - set(scanned))
+    if unused:
+        return f"waiver(s) for no scanned consumer, so they apply to nothing: {', '.join(unused)}"
+    return None

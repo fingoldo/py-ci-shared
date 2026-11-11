@@ -140,3 +140,26 @@ def run_git(
 def git_output(repo: Optional[PathLike], *args: str, timeout: Union[float, str, None] = "default") -> str:
     """stdout of a git command that must succeed, as text; raises :class:`GitError` otherwise."""
     return git_text(run_git(repo, *args, timeout=timeout, check=True).stdout)
+
+
+def read_blobs(repo: Optional[PathLike], specs: Sequence[str]) -> list[Optional[bytes]]:
+    """The content of each ``<rev>:<path>`` in *specs* (None where git has no such object), read by ONE ``git cat-file --batch``
+    process instead of one ``git show`` per spec. Raises :class:`GitError` when git cannot run or the batch fails."""
+    if not specs:
+        return []
+    proc = run_git(repo, "cat-file", "--batch", stdin="".join(spec + "\n" for spec in specs).encode("utf-8"))
+    if proc.returncode != 0:
+        raise GitError(f"git cat-file failed ({proc.returncode}): {git_text(proc.stderr).strip()}")
+    data, pos = proc.stdout, 0
+    out: list[Optional[bytes]] = []
+    for _spec in specs:
+        end = data.index(b"\n", pos)
+        header = data[pos:end].decode("utf-8", "replace")
+        pos = end + 1
+        if header.endswith(("missing", "ambiguous")):
+            out.append(None)
+            continue
+        size = int(header.rsplit(" ", 1)[1])
+        out.append(data[pos : pos + size])
+        pos += size + 1
+    return out

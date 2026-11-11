@@ -6,7 +6,7 @@ Probes that came back clean (no false positive, so no finding): `possibly_unboun
 
 ---
 
-## 41-F1 (P3) printed_advice treats the noun "supply" as an instruction
+## 41-R1 (P3) printed_advice treats the noun "supply" as an instruction
 
 - Location: `src/py_ci_shared/printed_advice.py:38`, the alternative `\bsupply (?:a |an |more )?\w+` inside `ADVICE_RE`. The optional article is optional, so any "supply <word>" matches.
 - Evidence: fixture `a41/r8/pkg/msgs.py:6` is `log.warning("No supply data for %s", ticker)`. Running `find_printed_advice` on it returns `pkg/msgs.py::report#1 6 'supply data'`. The message reports a missing data feed and gives the reader no action, yet it is registered as advice, so the meta test demands a table entry and a test that "performs the advice". The same rule also matches the descriptive phrases "supply chain", "supply voltage" and "supply side" in any repository whose domain uses these words.
@@ -15,7 +15,7 @@ Probes that came back clean (no false positive, so no finding): `possibly_unboun
 - Proposed disposition: RESOLVED-by-fix (proposed). Drop the bare `supply \w+` branch and keep `supply (?:a |an |more )\w+` with the article or "more" required, then add a `tests/` case that asserts "No supply data for %s" yields no PrintedAdvice and "supply more groups" still does. Not applied, because this auditor is read-only.
 - Severity note: P3. It produces a failing meta test on correct code, with a workaround that is cheap but misleading.
 
-## 41-F2 (P3) systemexit_in_library attributes `os._exit()` to SystemExit in its message
+## 41-R2 (P3) systemexit_in_library attributes `os._exit()` to SystemExit in its message
 
 - Location: `src/py_ci_shared/systemexit_in_library.py:69` (the `_QUALIFIED_EXITS` map that includes `os._exit`) and `:162` (the message template, which always says "SystemExit passes `except Exception` and ends only the calling thread").
 - Evidence: fixture `a41/r5/pkg/noret.py:15` is `os._exit(1)` inside an `except ValueError:` handler in a function `b`. The finder reports `pkg/noret.py:15: [systemexit-in-library] b: os._exit() in a library function (...); SystemExit passes `except Exception` and ends only the calling thread.` That statement is false for this call: `os._exit` raises no exception at all, it terminates the process immediately without running `finally` blocks, `atexit` handlers or buffered-stream flushes.

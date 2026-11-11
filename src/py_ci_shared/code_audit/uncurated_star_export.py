@@ -73,7 +73,7 @@ def scan_uncurated_star_exports(
 
     Severity: P2 -- a real API-hygiene gap, not a crash; confirmed as a recurring pattern in the
     downstream mlframe project's audit (8 packages: core, data, estimators, inference, models,
-    preprocessing, utils, training/composite/transforms -- audits/full_audit_2026-07-21/
+    preprocessing, utils, training/composite/transforms -- mlframe repository, audits/full_audit_2026-07-21/
     x_architecture_api_consistency.md F5).
     """
     findings: list[Finding] = []

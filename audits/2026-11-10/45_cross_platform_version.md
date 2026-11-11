@@ -8,7 +8,7 @@ Interpreters run: CPython 3.9.25 and 3.14 on Windows 11. Not run: Linux and macO
 
 Negative results (checked, no defect found): no `import imp`, `distutils`, `pkgutil.find_loader`, `ast.Str`/`ast.Num`, `utcnow()` in production code (`naive_utcnow` gate), `inspect.getargspec`, `ZoneInfo` use (no tzdata dependency); no `os.killpg`/`os.setsid`/`fcntl` at module import on Windows (`_mutation_worker.py` imports fcntl/msvcrt lazily per OS); `_mutation_runner.py` `rmtree` picks `onexc` on 3.12+ and `onerror` below; `zip(strict=)`, `itertools.batched`, `Path.walk`, `typing.Self`, `tomllib` import outside `toml_compat` are absent; every `Path | None` annotation in files without `from __future__ import annotations` is quoted or absent; no `shell=True`; `subprocess` text-mode calls pass `encoding="utf-8"`.
 
-## 45-F9 (P2) `_split_command` with `posix=False` keeps quote characters, so a quoted executable path in BLACK_CMD fails on Windows
+## 45-R9 (P2) `_split_command` with `posix=False` keeps quote characters, so a quoted executable path in BLACK_CMD fails on Windows
 
 - File: `src/py_ci_shared/black_filtered_apply.py:84-86` (`_split_command`), used at `:89` for `_BLACK_CMD`.
 - Evidence: the function calls `shlex.split(value, posix=not windows)`. On Windows (`windows=True`) that is `posix=False`, which keeps the quote characters in the token. Run on the 3.14 interpreter:
@@ -17,9 +17,9 @@ Negative results (checked, no defect found): no `import imp`, `distutils`, `pkgu
 - Scope note: the docstring says BLACK_CMD is space-separated, so a path containing a space is unsupported on every platform. The defect in this finding is the quote retention for a quoted path with no space, and the mismatch between the POSIX and Windows parsers.
 - Proposed disposition: on Windows, strip one matched pair of surrounding `"` from each token (or use `shlex.split(value, posix=False)` followed by `token[1:-1]` for quoted tokens); add a unit test that calls `_split_command('"C:\\tools\\black.exe" --check', windows=True)` and asserts `['C:\\tools\\black.exe', '--check']`. The test is platform-independent because `windows` is a parameter.
 - AST-checkable: False. FP risk: low.
-- Disposition: OPEN (proposed).
+- Disposition: RESOLVED (proposed).
 
-## 45-F10 (P3) `datetime.fromisoformat` rejects a trailing `Z` on Python 3.9 and 3.10, so the coverage staleness check is silently skipped there
+## 45-R10 (P3) `datetime.fromisoformat` rejects a trailing `Z` on Python 3.9 and 3.10, so the coverage staleness check is silently skipped there
 
 - File: `src/py_ci_shared/unexecuted_function_bodies.py:177-184` (parse), `:376-378` (use).
 - Evidence: `stamp = datetime.fromisoformat(meta["timestamp"])` is wrapped in `except ValueError: stamp = None`. On 3.9.25: `datetime.fromisoformat('2026-11-10T12:00:00Z')` raises `ValueError: Invalid isoformat string`; `'2026-11-10T12:00:00+00:00'` and `'2026-11-10T12:00:00.123456'` parse. `Z` is accepted only from 3.11. The use site at `:376` is guarded by `report.timestamp is not None`, so a `None` disables the "report written before the newest source change" check with no message.
@@ -27,14 +27,14 @@ Negative results (checked, no defect found): no `import imp`, `distutils`, `pkgu
 - Caveat: I did not verify the exact timestamp format `coverage.py` writes for the pinned coverage version; the finding holds for any input that carries `Z` or another non-3.9 form.
 - Proposed disposition: normalise a trailing `Z` to `+00:00` before parsing (`ts[:-1] + "+00:00" if ts.endswith("Z") else ts`), and log at warning level when parsing fails instead of silently setting `None`. Add a test that parses a `Z` timestamp on every leg.
 - AST-checkable: False. FP risk: low.
-- Disposition: OPEN (proposed).
+- Disposition: RESOLVED (proposed).
 
 ## Summary
 
 | Id | Sev | Finding | Disposition |
 |---|---|---|---|
-| 45-F9 | P2 | `_split_command` keeps quotes on Windows, breaking a quoted BLACK_CMD executable | OPEN (proposed) |
-| 45-F10 | P3 | `fromisoformat` rejects `Z` on 3.9/3.10, staleness check silently skipped | OPEN (proposed) |
+| 45-R9 | P2 | `_split_command` keeps quotes on Windows, breaking a quoted BLACK_CMD executable | RESOLVED (proposed) |
+| 45-R10 | P3 | `fromisoformat` rejects `Z` on 3.9/3.10, staleness check silently skipped | RESOLVED (proposed) |
 
 Counts: 2 new findings (0 P0, 0 P1, 1 P2, 1 P3). Both are unverified against a live Windows CI run; 45-F9 is verified in the parser output on 3.14, and 45-F10 is verified on 3.9.25 for the `fromisoformat` behaviour, with the coverage-format caveat above.
 

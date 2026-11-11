@@ -76,6 +76,7 @@ class GateSpec:
 INTERNAL_MODULES: dict[str, str] = {
     "_adoption_pin_comments": "private part of adoption_matrix: reads the trailing vX.Y.Z comment of a py-ci-shared pin line",
     "_adoption_waivers": "private part of adoption_matrix: dated lag waivers read from configs/pin_waivers.toml",
+    "_adoption_pins": "private part of adoption_matrix: the pin vocabulary (Pin, classify_ref) and per-file pin readers, split out for the 1000-LOC budget",
     "_ci_install_parts": "private part of ci_install_covers_conftest: markers, install arguments, conftest imports",
     "_dart_source": "source-text helpers of dart_scanners: comment stripping, string masking, bracket matching, finding keys",
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",

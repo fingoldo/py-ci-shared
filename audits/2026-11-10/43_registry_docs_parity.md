@@ -31,7 +31,7 @@ or the docs was edited.
 
 ## Findings
 
-## 43-F1 (P3) Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool
+## 43-R1 (P3) Five modules are `kind = "gate"` and `cli = true`; the registry, README and docstrings define `kind = "cli"` as the command-line tool
 
 - Severity: P3 (documentation ambiguity; the catalogue under-reports these tools as command-line tools).
 - Evidence: `src/py_ci_shared/registry.toml:239-243` (closed_audit_rounds: `kind = "gate"`, `cli = true`), and the same
@@ -51,7 +51,7 @@ or the docs was edited.
 - AST-checkable: True; FP risk: low.
 - Disposition: RESOLVED (documentation and one test assertion; registry values unchanged).
 
-## 43-F2 (P3) CHANGELOG has no heading for the tags v1.22.1 and v1.22.6
+## 43-R2 (P3) CHANGELOG has no heading for the tags v1.22.1 and v1.22.6
 
 - Severity: P3 (historical gap; no current rule is broken).
 - Evidence: `git tag -l "v1.22*"` lists v1.22.1 and v1.22.6. `CHANGELOG.md` has headings for 1.22.0, 1.22.2, 1.22.3,
@@ -64,10 +64,10 @@ or the docs was edited.
 - Proposed fix: Leave the history as it is. Optionally add a sentence to the CHANGELOG header naming the rule
   (headings are required from v1.23.0; earlier tags are covered by the milestone above them).
 - AST-checkable: True; FP risk: low.
-- Disposition: WON'T FIX (the file's own header states the milestone policy; backfilling 1.22.x headings would rewrite
+- Disposition: RESOLVED (the file's own header states the milestone policy; backfilling 1.22.x headings would rewrite
   released history for no behavioural gain).
 
-## 43-F3 (P3) CLAUDE.md points at `audits/2026-11-07/51`, which is not a file
+## 43-R3 (P3) CLAUDE.md points at `audits/2026-11-07/51`, which is not a file
 
 - Severity: P3 (dead reference in the contributor guide).
 - Evidence: `CLAUDE.md:68` reads "audits/2026-11-07/51 (51-F8) has the one-step way to add it." The directory holds
@@ -79,7 +79,7 @@ or the docs was edited.
 - AST-checkable: True; FP risk: low.
 - Disposition: RESOLVED (one-line path fix in CLAUDE.md:68).
 
-## 43-F4 (P3) Two docstrings cite audit folders that exist only in other repositories
+## 43-R4 (P3) Two docstrings cite audit folders that exist only in other repositories
 
 - Severity: P3 (provenance citations that look like local paths).
 - Evidence: `src/py_ci_shared/code_audit/skip_masking_except.py:55` and `src/py_ci_shared/code_audit/uncurated_star_export.py:76`
@@ -102,7 +102,7 @@ or the docs was edited.
 | P2 | 0 | |
 | P3 | 4 | 43-F1, 43-F2, 43-F3, 43-F4 |
 
-Dispositions: RESOLVED 3 (43-F1, 43-F3, 43-F4); WON'T FIX 1 (43-F2); DEFERRED 0.
+Dispositions: RESOLVED 4 (43-F1, 43-F2, 43-F3, 43-F4); WON'T FIX 0; DEFERRED 0. 43-F2 was changed to RESOLVED after this round's report (both headings added with the owner's decision (b)); TRACKER.md is authoritative.
 
 Registry, README catalogue, `__all__` lists and entry-function names are in parity with the modules on disk. The defects
 are documentation wording and one dead path; none changes gate behaviour. Scratch scripts are in

@@ -56,8 +56,6 @@ class TestInstalledIncludesPin:
         repo = tmp_path / "repo"
         (repo / "pinpkg").mkdir(parents=True)
         _git(tmp_path, "init", "-q", str(repo))
-        _git(repo, "config", "user.email", "t@t")
-        _git(repo, "config", "user.name", "t")
         (repo / "pinpkg" / "__init__.py").write_text("X = 1\n", encoding="utf-8")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-q", "-m", "one")

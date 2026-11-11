@@ -34,8 +34,7 @@ import sys
 from collections.abc import Iterable, Sequence
 from typing import Optional
 
-from ._core.git import GitError as CoreGitError
-from ._core.git import git_text, run_git
+from ._core.git import GitError as CoreGitError, git_text, read_blobs, run_git
 
 __all__ = ["DEFAULT_DIRECTORIES", "GitError", "baseline_files", "count_entries", "history", "main", "report"]
 
@@ -135,16 +134,27 @@ def _commits_with_paths(repo: str, path: str, since: "str | None") -> list[tuple
     return out
 
 
+def _blobs(repo: str, specs: list[str]) -> list[Optional[bytes]]:
+    """The content of each ``<rev>:<path>`` in *specs* (None when git has no such object), read by one ``git cat-file --batch``
+    (48-F12). Raises :class:`GitError` when git fails."""
+    try:
+        return read_blobs(repo, specs)
+    except CoreGitError as exc:
+        raise GitError(f"git cat-file: {exc}") from exc
+
+
 def history(repo: str, path: str, since: "str | None") -> list[tuple[str, str, int]]:
     """`(date, short sha, count)` per commit that touched [path], oldest first.
 
     Each commit is read at the path the file had IN that commit, so history before a rename is kept.
     """
+    commits = [c for c in reversed(_commits_with_paths(repo, path, since)) if c[2] is not None]
+    blobs = _blobs(repo, [f"{sha}:{at_path}" for sha, _date, at_path in commits])
     points: list[tuple[str, str, int]] = []
-    for sha, date, at_path in reversed(_commits_with_paths(repo, path, since)):
-        if at_path is None:
+    for (sha, date, _at_path), blob in zip(commits, blobs):
+        if blob is None:
             continue
-        count = count_entries(_git(repo, "show", f"{sha}:{at_path}"))
+        count = count_entries(git_text(blob))
         if count is not None:
             points.append((date, sha, count))
     return points

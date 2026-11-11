@@ -8,17 +8,17 @@ the 2026-11-07 round (51-F1..F9, all rows in audits/TRACKER.md). No secret value
 
 | ID | Severity | Status | One line |
 |----|----------|--------|----------|
-| 51-F1 | P3 | open | sibling_floor_skew._github_version sends a token through urllib's default redirect handler (the 51-F1 class, one call site not fixed) |
-| 51-F2 | P2 | open, overlaps accepted 51-F8 | the release gates live in the tagged commit's own release.yml, so a v* tag from any branch reaches RELEASE_TOKEN |
-| 51-F3 | P3 | open | self-ci.yml runs unpinned `uvx black`; the 51-F2 meta-test only scans lint-blocking.yml |
-| 51-F4 | P3 | open | release.yml puts the base64 release token in git's argv in two places, against the module's own design |
-| 51-F5 | P3 | open | dev extras are floor-only and unconstrained on the release verify path and in self-ci |
+| 51-R1 | P3 | RESOLVED | sibling_floor_skew._github_version sends a token through urllib's default redirect handler (the 51-F1 class, one call site not fixed) |
+| 51-R2 | P2 | ACCEPTED RISK, overlaps accepted 51-F8 | the release gates live in the tagged commit's own release.yml, so a v* tag from any branch reaches RELEASE_TOKEN |
+| 51-R3 | P3 | RESOLVED | self-ci.yml runs unpinned `uvx black`; the 51-F2 meta-test only scans lint-blocking.yml |
+| 51-R4 | P3 | RESOLVED | release.yml puts the base64 release token in git's argv in two places, against the module's own design |
+| 51-R5 | P3 | RESOLVED | dev extras are floor-only and unconstrained on the release verify path and in self-ci |
 
 Counts: 5 findings (P2: 1, P3: 4). Resolved in this round: 0. Verified-clean items recorded below: 7.
 
 ---
 
-## 51-F1 [P3] sibling_floor_skew._github_version sends a token through urllib's default redirect handler
+## 51-R1 [P3] sibling_floor_skew._github_version sends a token through urllib's default redirect handler
 
 - Evidence: src/py_ci_shared/sibling_floor_skew.py:262-270. Line 265 reads `GITHUB_TOKEN` or `CONSUMER_READ_TOKEN`; line 267
   adds `Authorization: token <value>`; line 269 calls `urllib.request.urlopen(request, timeout=20)` with no opener. The
@@ -36,7 +36,7 @@ Counts: 5 findings (P2: 1, P3: 4). Resolved in this round: 0. Verified-clean ite
   header must go through an opener that has `SameHostRedirects`.
 - AST-checkable: True; FP risk: low.
 
-## 51-F2 [P2] The release gates come from the tagged commit, so a v* tag from any branch reaches RELEASE_TOKEN (overlaps accepted 51-F8)
+## 51-R2 [P2] The release gates come from the tagged commit, so a v* tag from any branch reaches RELEASE_TOKEN (overlaps accepted 51-F8)
 
 - Evidence:
   - .github/workflows/release.yml:17 triggers on any tag matching `v[0-9]+.[0-9]+.[0-9]+`. GitHub reads the workflow file from the
@@ -61,7 +61,7 @@ Counts: 5 findings (P2: 1, P3: 4). Resolved in this round: 0. Verified-clean ite
   Recommendation: (a) now, and record in the 51-F8 row that the tag path is also covered by the accepted risk.
 - AST-checkable: False; FP risk: low.
 
-## 51-F3 [P3] self-ci.yml runs an unpinned `uvx black`; the 51-F2 meta-test does not scan it
+## 51-R3 [P3] self-ci.yml runs an unpinned `uvx black`; the 51-F2 meta-test does not scan it
 
 - Evidence: .github/workflows/self-ci.yml:108 `BLACK_CMD: "uvx black"`, used by the smoke step at self-ci.yml:110-111 that runs
   `python -m py_ci_shared.black_filtered_apply`. Consumers pin the same tool at black-filtered.yml:93-104 with a comment naming
@@ -74,7 +74,7 @@ Counts: 5 findings (P2: 1, P3: 4). Resolved in this round: 0. Verified-clean ite
   Widen the meta-test to every workflow in .github/workflows, so the next unpinned `uvx` fails the suite.
 - AST-checkable: True; FP risk: low.
 
-## 51-F4 [P3] release.yml puts the base64 release token in git's argv in two places
+## 51-R4 [P3] release.yml puts the base64 release token in git's argv in two places
 
 - Evidence: .github/workflows/release.yml:158-159 and :204-205:
   `auth=$(printf 'x-access-token:%s' "$RELEASE_TOKEN" | base64 -w0)` then
@@ -91,7 +91,7 @@ Counts: 5 findings (P2: 1, P3: 4). Resolved in this round: 0. Verified-clean ite
   that no `git -c` line in release.yml contains `$auth` or `$RELEASE_TOKEN`.
 - AST-checkable: True; FP risk: low.
 
-## 51-F5 [P3] Dev extras are floor-only and unconstrained on the release verify path and in self-ci
+## 51-R5 [P3] Dev extras are floor-only and unconstrained on the release verify path and in self-ci
 
 - Evidence: pyproject.toml:35-80 declares the `dev` extra with `>=` floors only (pytest, black, pytest-cov, numba, numpy and
   others; ruff is the single `==` pin at line 41). .github/workflows/release.yml:65 (verify job) runs

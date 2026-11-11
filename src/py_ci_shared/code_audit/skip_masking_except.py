@@ -52,7 +52,7 @@ def scan_except_skip_masks_call_under_test(
     masking an import failure as a skip is exactly the point of that pattern.
 
     Severity: P1 -- this is the same class of bug as a defensive test wrapper hiding a real
-    regression, confirmed in the wild (audits/full_audit_2026-07-21/x_test_suite_architecture.md
+    regression, confirmed in the wild (mlframe repository, audits/full_audit_2026-07-21/x_test_suite_architecture.md
     F1-F3 in the downstream mlframe project: three files where this exact shape silently skipped a
     genuine kwarg-contract break in a public training API instead of failing loudly).
     """

@@ -23,8 +23,8 @@ def scan_todo_hygiene(
     later surfaces as a P0 outage. An attribution is either an assignee in parens
     (``TODO(name): ...``), an ISO date (``TODO 2026-04-28: ...``), or an ``@mention``.
 
-    Thin wrapper over ``py_ci_shared.meta_test_utils.scan_todo_markers`` (the shared marker
-    scanner), producing baseline-drift-compatible ``Finding`` objects for the un-attributed subset.
+    Thin wrapper over ``py_ci_shared.code_audit._todo_markers.scan_todo_markers`` (this package's marker
+    scanner, a copy kept apart from ``meta_test_utils``), producing baseline-drift-compatible ``Finding`` objects for the un-attributed subset.
     """
     findings: list[Finding] = []
     for path, lineno, kw, line in scan_todo_markers(root, extra_excludes=tuple(exclude_dirs)):

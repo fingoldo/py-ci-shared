@@ -11,7 +11,8 @@ from collections.abc import Iterable
 import logging
 
 from . import _scan_cache
-from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, severity_rank
+from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, severity_rank
+from .._core.source import SourceParseError, SourceReadError, parse_file
 from .mutable_defaults import scan_mutable_defaults, scan_parameter_aliasing_mutation
 from .closures import scan_late_binding_closures
 from .default_via_or import scan_default_via_or_trap
@@ -661,6 +662,20 @@ def run_all(
     return findings
 
 
+def _unparsable_findings(root: Path, exclude_dirs: frozenset[str]) -> list[Finding]:
+    """One P2 finding per ``.py`` file that cannot be read or parsed. Each scanner skips such a file on its own (``_safe_parse``
+    returns None), so without this an unparsable file passes every check of the run silently; it is checked here, in the
+    parent process, because the scanners' parse results live in worker processes when the run is parallel."""
+    out: list[Finding] = []
+    for path in _iter_py_files(root, exclude_dirs):
+        try:
+            parse_file(path)
+        except (SourceReadError, SourceParseError) as exc:  # noqa: PERF203 - one unparsable file must not stop the scan of the others
+            rel = path.relative_to(root).as_posix()
+            out.append(Finding("unparsable", "P2", rel, 1, "", f"skipped by every check: {exc}"))
+    return out
+
+
 def run_all_checked(
     root: Path,
     checks: Optional[Iterable[str]] = None,
@@ -705,6 +720,7 @@ def run_all_checked(
             if error is not None:
                 failed[name] = error
 
+    out.extend(_unparsable_findings(root, exclude_dirs))
     # Unknown severities rank -1, i.e. ABOVE P0: a stray value is loud, never silently last.
     out.sort(key=lambda f: (severity_rank(f.severity), f.check, f.file, f.line))
     if cacheable:

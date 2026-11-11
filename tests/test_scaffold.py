@@ -40,7 +40,7 @@ def full_layout(tmp_path: Path) -> Path:
     shutil.copytree(REPO / "src" / "py_ci_shared", root / "src" / "py_ci_shared", ignore=IGNORE)
     shutil.copytree(REPO / "tests" / "canary", root / "tests" / "canary")
     _copy_files(
-        root, ("tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "tests/test_package_inventory.py", "tests/conftest.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
+        root, ("tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "tests/test_package_inventory.py", "tests/conftest.py", "tests/_git_repo_helper.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
     )
     return root
 

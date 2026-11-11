@@ -75,7 +75,7 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
     if warned:
         print(
             "\n[advisory-warn] The findings above are WARNINGS ONLY -- the commit is NOT blocked. "
-            "Mirrors lint-advisory.yml's own continue-on-error posture in CI.",
+            "This hook does not say whether CI runs these checks; check your own workflow for that (49-F13).",
             file=sys.stderr,
         )
     return 0

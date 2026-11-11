@@ -12,14 +12,14 @@ Checks with no defect found:
 - Naive-utcnow gate (tests/test_naive_utcnow.py): aware-library exclusion, getattr literal branch and the call-node-once rule each killed by a mutation (3 of 3).
 - Env-flag gate: the not-flag, bool(int()) unwrap, bool() and truthiness shapes each killed by a mutation (see 44-F1 for the two survivors).
 
-## 44-F1 (P3) env_flag_parsing: the NotIn membership shape and the case-insensitive comparison are untested; both mutations survive
+## 44-R1 (P3) env_flag_parsing: the NotIn membership shape and the case-insensitive comparison are untested; both mutations survive
 
 - Severity: P3 (gate false negative in a guard that is meant to keep hand-parsed boolean switches out of the repo).
 - Evidence: src/py_ci_shared/env_flag_parsing.py:146 `right.value.lower() in _BOOL_WORDS` -> `right.value in _BOOL_WORDS` (mutant M2): `pytest tests/test_env_flag_parsing.py` -> 24 passed. src/py_ci_shared/env_flag_parsing.py:148 `isinstance(op, (ast.In, ast.NotIn))` -> `isinstance(op, (ast.In,))` (mutant M4): 24 passed. tests/test_env_flag_parsing.py:14-30 (test_each_hand_parse_shape_is_reported) and :110-115 pin only `in ('1', 'true')` (In, lowercase) and `== '1'` / `== 'yes'` (lowercase). No test has `not in` over a boolean literal set, nor an uppercase value such as `== 'TRUE'`.
 - Scenario: A refactor that drops NotIn from the membership branch, or drops the lower() normalisation, lets `os.environ.get('P_X', '').lower() not in ('0', 'false')` and `os.environ.get('P_X') == 'TRUE'` pass the gate. Both are hand-parsed boolean switches that bypass the shared parser, the exact class the gate exists to reject.
 - Proposed disposition: OPEN. Add two cases to tests/test_env_flag_parsing.py: `if os.environ.get('P_A', '') not in ('0', 'false'):` is reported with shape "membership in a literal collection", and `if os.environ.get('P_B') == 'TRUE':` is reported with shape "compared with 'TRUE'". Each mutant above should then fail one test. Priority low; no false-positive risk.
 
-## 44-F2 (P3) test_a_stable_old_file_is_served_without_reading_it_again asserts a property the fast path alone provides, and passes with the fast path disabled
+## 44-R2 (P3) test_a_stable_old_file_is_served_without_reading_it_again asserts a property the fast path alone provides, and passes with the fast path disabled
 
 - Severity: P3 (a named performance property is untested; the test is green on the regression it names).
 - Evidence: tests/test_core_fast_paths.py:30-40. The test name and docstring promise that a repeat request "does not read or hash" the file. The assertions are `again[1] is first[1]` and `not reads`, where `reads` counts `Path.read_bytes` calls. Mutant M8 in src/py_ci_shared/_core/source.py (`stable = _fast_lookup(...)` replaced by `stable = None`, disabling the fast path in parse_source) -> `pytest tests/test_core_fast_paths.py` -> 7 passed. Reason: when the fast path is off, parse_source calls read_bytes_cached, which serves the file from its own process cache (src/py_ci_shared/_core/source.py:74-88) without calling Path.read_bytes, and the parse cache returns the same tree object. So the identity and read-count assertions both still hold, and the blake2b digest is still computed on the cached bytes, which the test does not observe.

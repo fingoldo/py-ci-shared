@@ -100,12 +100,12 @@ work was sampled by collection counts, per-file timings and call-level profiles.
 
 | Id | Sev | Area | Measured saving | Status |
 |---|---|---|---|---|
-| 48-F12 | P2 | `baseline_trend.history`: one `git show` per commit | 75 spawns, 22.4 s on a 74-commit file (loaded) | proposed |
-| 48-F13 | P2 | `hook_attestation`: one `git show` per commit in the range | 61 spawns, 8.7 s for 60 commits; about 100 s for full history | proposed |
-| 48-F14 | P2 | floor-compatibility test re-parses each module in each family | 21.8 s file; parse share estimated 6 to 9 s | proposed |
-| 48-F15 | P2 | per-test git repository setup across 31 test files | 0.6 s per test; 40 s of a 94 s file (loaded) | proposed |
-| 48-F16 | P3 | closed-round check spawns one log per changed file | not measured; N-1 spawns | proposed |
-| 48-F17 | P3 | xdist session CPU sample | 0.5 s per session | accepted, no change |
+| 48-R12 | P2 | `baseline_trend.history`: one `git show` per commit | 75 spawns, 22.4 s on a 74-commit file (loaded) | proposed |
+| 48-R13 | P2 | `hook_attestation`: one `git show` per commit in the range | 61 spawns, 8.7 s for 60 commits; about 100 s for full history | proposed |
+| 48-R14 | P2 | floor-compatibility test re-parses each module in each family | 21.8 s file; parse share estimated 6 to 9 s | proposed |
+| 48-R15 | P2 | per-test git repository setup across 31 test files | 0.6 s per test; 40 s of a 94 s file (loaded) | proposed |
+| 48-R16 | P3 | closed-round check spawns one log per changed file | not measured; N-1 spawns | proposed |
+| 48-R17 | P3 | xdist session CPU sample | 0.5 s per session | accepted, no change |
 
 Counts: 6 findings (4 P2, 2 P3). Four are proposed for change (48-F12, 48-F13, 48-F14, 48-F15, with 48-F16 a proposed cleanup
 of five), one accepted (48-F17). Expected combined saving on the affected paths: about 20 s on report and history commands,
