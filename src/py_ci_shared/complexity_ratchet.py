@@ -99,13 +99,13 @@ def function_complexity(node: ast.AST) -> int:
     return 1 + _body_complexity(getattr(node, "body", []))
 
 
-def _qualified_scopes(tree: ast.Module) -> list[tuple[str, ast.AST]]:
+def _qualified_scopes(tree: ast.Module) -> list[tuple[str, ast.stmt]]:
     """``(qualified name, def or class)`` for every function and class scope, in source order, from the shared scope index.
 
     A class body is ``Cls.``, a function body ``name.<locals>.``; the index yields parents before children, and sorting by
     position restores the source order the walk this replaces visited them in (it matters where two defs share a line)."""
     qual_of: dict[int, str] = {}
-    out: list[tuple[str, ast.AST]] = []
+    out: list[tuple[str, ast.stmt]] = []
     for scope in iter_scopes(tree):
         if scope.node is None:
             continue
