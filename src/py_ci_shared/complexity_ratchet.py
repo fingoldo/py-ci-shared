@@ -33,7 +33,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from ._core.outcome import refresh_hint, refreshed_skip
-from ._core import BaselineError, ScanResult, child_nodes, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineError, ScanResult, dump_json, refresh_requested, scan_python, write_ratchet
+from ._core.scopes import iter_scopes
 
 __all__ = [
     "DEFAULT_LIMIT",
@@ -98,29 +99,43 @@ def function_complexity(node: ast.AST) -> int:
     return 1 + _body_complexity(getattr(node, "body", []))
 
 
-def _walk(node: ast.AST, prefix: str, rel: str, out: dict[str, int], lines: dict[tuple[str, int], int]) -> None:
-    for child in child_nodes(node):
-        if isinstance(child, ast.expr):
-            # def and class statements never sit inside an expression, so the expression subtrees (most of the tree) are skipped.
+def _qualified_scopes(tree: ast.Module) -> list[tuple[str, ast.AST]]:
+    """``(qualified name, def or class)`` for every function and class scope, in source order, from the shared scope index.
+
+    A class body is ``Cls.``, a function body ``name.<locals>.``; the index yields parents before children, and sorting by
+    position restores the source order the walk this replaces visited them in (it matters where two defs share a line)."""
+    qual_of: dict[int, str] = {}
+    out: list[tuple[str, ast.AST]] = []
+    for scope in iter_scopes(tree):
+        if scope.node is None:
             continue
-        if isinstance(child, ast.ClassDef):
-            _walk(child, f"{prefix}{child.name}.", rel, out, lines)
-        elif isinstance(child, _FUNCS):
-            qual = f"{prefix}{child.name}"
-            key = f"{rel}::{qual}"
-            value = function_complexity(child)
-            out[key] = max(out.get(key, 0), value)
-            lines[(rel, child.lineno)] = value
-            _walk(child, f"{qual}.<locals>.", rel, out, lines)
+        parent = scope.parent
+        if parent is None or parent.node is None:
+            prefix = ""
+        elif isinstance(parent.node, ast.ClassDef):
+            prefix = f"{qual_of[id(parent)]}."
         else:
-            _walk(child, prefix, rel, out, lines)
+            prefix = f"{qual_of[id(parent)]}.<locals>."
+        qual_of[id(scope)] = f"{prefix}{scope.node.name}"
+        out.append((qual_of[id(scope)], scope.node))
+    return sorted(out, key=lambda item: (item[1].lineno, item[1].col_offset))
+
+
+def _measure_tree(tree: ast.Module, rel: str, out: dict[str, int], lines: dict[tuple[str, int], int]) -> None:
+    for qual, node in _qualified_scopes(tree):
+        if not isinstance(node, _FUNCS):
+            continue
+        key = f"{rel}::{qual}"
+        value = function_complexity(node)
+        out[key] = max(out.get(key, 0), value)
+        lines[(rel, node.lineno)] = value
 
 
 def _measure(scan: ScanResult) -> tuple[dict[str, int], dict[tuple[str, int], int]]:
     out: dict[str, int] = {}
     lines: dict[tuple[str, int], int] = {}
     for parsed in scan:
-        _walk(parsed.tree, "", parsed.rel, out, lines)
+        _measure_tree(parsed.tree, parsed.rel, out, lines)
     return out, lines
 
 

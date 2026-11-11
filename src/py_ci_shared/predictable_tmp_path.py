@@ -26,7 +26,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
-from ._core.node_index import child_nodes
+from ._core.scopes import Scope, iter_scopes
 from ._core.unparse import unparse_stable
 
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
@@ -85,18 +85,38 @@ def _builds_path(node: ast.AST) -> Optional[list[ast.AST]]:
     return None
 
 
+def _owner_map(tree: ast.Module) -> dict[int, Optional[ast.AST]]:
+    """``id(node) -> innermost enclosing function def, or None for module-level code``, read from the shared scope index.
+
+    A class body belongs to the function or module it is written in, and a lambda body to the scope around the lambda: the index
+    gives each scope its own nodes, so a class takes its parent's owner and the lambda bodies (which the index does not enter) are
+    filled in from the lambda itself."""
+
+    def owner(scope: "Scope") -> Optional[ast.AST]:
+        if scope.node is None:
+            return None
+        if isinstance(scope.node, ast.ClassDef):
+            return owner(scope.parent) if scope.parent is not None else None
+        return scope.node
+
+    out: dict[int, Optional[ast.AST]] = {}
+    for scope in iter_scopes(tree):
+        value = owner(scope)
+        for node in scope.nodes:
+            out[id(node)] = value
+        if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out[id(scope.node)] = scope.node
+    for lam in [node for node in shared_walk(tree) if isinstance(node, ast.Lambda)]:
+        for sub in shared_walk(lam):
+            out[id(sub)] = out.get(id(lam))
+    return out
+
+
 def _enclosing_text_of(tree: ast.Module, source: str) -> Callable[[ast.AST], str]:
     """A function ``node -> source of its innermost enclosing function``; module-level code gets the module-level statements only
     (a ``getlogin`` in one function does not make an unrelated module-level temp path per-user). One pass records each node's scope;
     a function's source is cut only when a candidate asks for it, so a file with many functions and few candidates costs no slicing."""
-    scope_of: dict[int, Optional[ast.AST]] = {}
-    todo: list[tuple[ast.AST, Optional[ast.AST]]] = [(stmt, None) for stmt in tree.body]
-    while todo:
-        node, scope = todo.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            scope = node
-        scope_of[id(node)] = scope
-        todo.extend((child, scope) for child in child_nodes(node))
+    scope_of = _owner_map(tree)
     module_stmts = [s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
     texts: dict[int, str] = {}
 

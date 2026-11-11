@@ -29,7 +29,8 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python, walk
+from ._core import Baseline, Finding, ImportAliases, scan_python, walk
+from ._core.scopes import SCOPE_TYPES, iter_scopes
 
 __all__ = ["RULE", "assert_no_systemexit_in_library", "find_systemexit_in_library"]
 
@@ -94,17 +95,15 @@ def _exit_kind(node: ast.AST, aliases: Optional[ImportAliases] = None) -> Option
     return None
 
 
-def _function_exits(fn: ast.AST, aliases: Optional[ImportAliases] = None) -> list:
+def _exits_in(nodes: list, aliases: Optional[ImportAliases]) -> list:
+    """The ``(node, kind)`` pairs for a function's own nodes (a nested scope is not entered), from the shared scope index."""
     out: list = []
-    stack = list(child_nodes(fn))
-    while stack:
-        node = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+    for node in nodes:
+        if isinstance(node, SCOPE_TYPES):
             continue
         kind = _exit_kind(node, aliases)
         if kind is not None:
             out.append((node, kind))
-        stack.extend(child_nodes(node))
     return out
 
 
@@ -149,6 +148,7 @@ def find_systemexit_in_library(
         guarded = _has_main_guard(parsed.tree)
         aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
         lines = parsed.source.splitlines()
+        own_of = {id(scope.node): scope.nodes for scope in iter_scopes(parsed.tree) if scope.node is not None}  # the shared per-tree index
         for fn in walk(parsed.tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or entry.search(fn.name):
                 continue
@@ -158,7 +158,7 @@ def find_systemexit_in_library(
             if guarded and not shared:
                 continue
             why = "imported by another module" if guarded else "the module has no __main__ guard"
-            for node, kind in _function_exits(fn, aliases):
+            for node, kind in _exits_in(own_of[id(fn)], aliases):
                 if _marked(lines, node.lineno):
                     continue
                 out.append(

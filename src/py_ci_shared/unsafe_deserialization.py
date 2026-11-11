@@ -45,6 +45,8 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, qualified_functions, scan_python
 from ._core import walk as shared_walk
+from ._core.node_index import tree_memo
+from ._core.scopes import iter_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -376,6 +378,21 @@ def _scope_calls(scope: ast.AST) -> list[ast.Call]:
     return calls
 
 
+def _calls_by_scope(tree: ast.Module) -> dict[int, list[ast.Call]]:
+    """``id(scope) -> its own calls`` for the module, every function and every class, from the shared scope index."""
+    out: dict[int, list[ast.Call]] = {}
+    for scope in iter_scopes(tree):
+        key = id(tree) if scope.node is None else id(scope.node)
+        out[key] = [node for node in scope.nodes if isinstance(node, ast.Call)]
+    return out
+
+
+def _scope_calls_of(tree: ast.Module, scope: ast.AST) -> list[ast.Call]:
+    """:func:`_scope_calls`, read from the per-tree index; a lambda (not an index scope) is walked as before."""
+    hit = tree_memo(tree, "unsafe_deserialization.calls_by_scope", lambda: _calls_by_scope(tree)).get(id(scope))
+    return hit if hit is not None else _scope_calls(scope)
+
+
 def _load_target(call: ast.Call, aliases: ImportAliases) -> Optional[ast.Call]:
     """The call whose first argument is the deserialised source: *call* itself for a ``pickle.loads``-family function, the
     ``Unpickler(fh)`` constructor for ``Unpickler(fh).load()``, else None."""
@@ -491,7 +508,7 @@ def _check_pickle_loads(tree: ast.Module, aliases: ImportAliases, safe_loader_fu
     for scope, qualname in [(tree, "<module>"), *[(f, q) for q, f in qualified_functions(tree)], *extra]:
         if id(scope) in safe_loader_functions:
             continue
-        calls = _scope_calls(scope)
+        calls = _scope_calls_of(tree, scope)
         for call in calls:
             if _unverified_load(call, calls, scope, tree, aliases):
                 sink.report(call, f"{_call_label(call)} in {qualname} with no earlier sha256/hmac/verify call: unpickling unverified bytes executes code")

@@ -48,6 +48,7 @@ from typing import Any, Optional, Union
 from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
 from ._core.node_index import walk as _fast_walk
+from ._core.scopes import iter_scopes
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
 
@@ -500,21 +501,26 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
 
 
 def _scopes(tree: ast.Module) -> Iterator[tuple[str, _Scope]]:
-    """The module body, then every function with its qualified name."""
+    """The module body, then every function with its qualified name, in source order (from the shared scope index)."""
     yield "<module>", tree
-
-    def walk(node: ast.AST, prefix: str) -> Iterator[tuple[str, _Scope]]:
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                yield qual, child
-                yield from walk(child, f"{qual}.<locals>.")
-            elif isinstance(child, ast.ClassDef):
-                yield from walk(child, f"{prefix}{child.name}.")
-            else:
-                yield from walk(child, prefix)
-
-    yield from walk(tree, "")
+    qual_of: dict[int, str] = {}
+    found: list[tuple[int, int, str, _Scope]] = []
+    for scope in iter_scopes(tree):
+        if scope.node is None:
+            continue
+        parent = scope.parent
+        if parent is None or parent.node is None:
+            prefix = ""
+        elif isinstance(parent.node, ast.ClassDef):
+            prefix = f"{qual_of[id(parent)]}."
+        else:
+            prefix = f"{qual_of[id(parent)]}.<locals>."
+        qual_of[id(scope)] = f"{prefix}{scope.node.name}"
+        if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append((scope.node.lineno, scope.node.col_offset, qual_of[id(scope)], scope.node))
+    # the index yields parents before children, not in source order; the walk this replaces yielded source order, and findings keep it
+    for _, _, qual, node in sorted(found, key=lambda item: (item[0], item[1])):
+        yield qual, node
 
 
 def _find_in_scan(scan: ScanResult, gate_re: re.Pattern) -> list[FailOpenHandler]:

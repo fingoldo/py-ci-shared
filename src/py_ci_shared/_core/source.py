@@ -16,6 +16,7 @@ the path and line. Whether an unparsable file fails the gate is then a decision 
 from __future__ import annotations
 
 import ast
+import functools
 import hashlib
 import io
 import os
@@ -69,6 +70,15 @@ _BYTES: dict[str, tuple[tuple[int, int, int, int], int, bytes]] = {}
 _BYTES_TOTAL = 0
 _BYTES_MAX_FILE = 4_000_000
 _BYTES_MAX_TOTAL = 400_000_000
+
+
+@functools.lru_cache(maxsize=512)
+def comment_tokens(source: str) -> tuple[tuple[int, str], ...]:
+    """``(line, text)`` of every COMMENT token of *source*, in token order (``text`` keeps its ``#``).
+
+    Several gates read the comments of the same file in one process, so the tokenizer runs once per source; a source that does not
+    tokenize raises the tokenizer's error, and that error is not cached, so every caller sees it."""
+    return tuple((tok.start[0], tok.string) for tok in tokenize.generate_tokens(io.StringIO(source).readline) if tok.type == tokenize.COMMENT)
 
 
 def read_bytes_cached(path: PathLike) -> bytes:

@@ -28,13 +28,12 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
-import io
 import re
-import tokenize
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.source import comment_tokens
 from ._core import (
     DEFAULT_EXCLUDE,
     Finding,
@@ -80,9 +79,8 @@ def _python_comments(source: str, tree: ast.Module) -> list[tuple[int, str]]:
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             for lineno in range(node.lineno, (node.end_lineno or node.lineno) + 1):
                 out[lineno] = lines[lineno - 1] if lineno - 1 < len(lines) else ""
-    for tok in tokenize.generate_tokens(io.StringIO(source).readline):
-        if tok.type == tokenize.COMMENT:
-            out.setdefault(tok.start[0], tok.string)
+    for line, text in comment_tokens(source):
+        out.setdefault(line, text)
     return sorted(out.items())
 
 

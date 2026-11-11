@@ -62,6 +62,7 @@ from typing import Union
 
 from ._core import child_nodes, load_json, nodes_of, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.scopes import iter_scopes
 
 logger = logging.getLogger(__name__)
 
@@ -359,9 +360,10 @@ def _floorless_loops(files: Iterable[Path], repo_root: Path, *, allow_unparsed: 
         tree = parsed.tree
         rel = relative_posix(parsed.path, Path(repo_root).resolve())
         per_file: list[tuple[str, int]] = []
+        own_of = {id(scope.node): scope.nodes for scope in iter_scopes(tree) if scope.node is not None}  # the shared per-tree index, not a walk per function
         for fn in nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef):
             # Most functions have no assert-only loop: find those first, and build the per-function maps only for the rest.
-            candidates = [node for node in _own_nodes(fn) if isinstance(node, (ast.For, ast.AsyncFor)) and _is_assert_only(node.body)]
+            candidates = [node for node in own_of[id(fn)] if isinstance(node, (ast.For, ast.AsyncFor)) and _is_assert_only(node.body)]
             if not candidates:
                 continue
             enclosing = _enclosing_loops(fn)

@@ -53,6 +53,7 @@ from ._core.scan import scan_roots_excluding
 from ._core.scopes import own_nodes
 from ._core import ScanResult, child_nodes, nodes_of
 from ._core.node_index import parent_map, walk
+from ._core.scopes import iter_scopes
 
 __all__ = [
     "Finding",
@@ -208,20 +209,22 @@ def _guarded(node: ast.AST, stream: str, up: Callable[[ast.AST], Optional[ast.AS
 
 
 def _scopes(tree: ast.Module) -> list[tuple[_Scope, str]]:
-    """The module and every function, with qualified names (``Cls.method``, ``outer.<locals>.inner``)."""
+    """The module and every function, with qualified names (``Cls.method``, ``outer.<locals>.inner``), from the shared scope index."""
     out: list[tuple[_Scope, str]] = [(tree, "<module>")]
-
-    def visit(node: ast.AST, prefix: str) -> None:
-        for child in child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.")
-            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                out.append((child, f"{prefix}{child.name}"))
-                visit(child, f"{prefix}{child.name}.<locals>.")
-            else:
-                visit(child, prefix)
-
-    visit(tree, "")
+    qual_of: dict[int, str] = {}
+    for scope in iter_scopes(tree):
+        if scope.node is None:
+            continue
+        parent = scope.parent
+        if parent is None or parent.node is None:
+            prefix = ""
+        elif isinstance(parent.node, ast.ClassDef):
+            prefix = f"{qual_of[id(parent)]}."
+        else:
+            prefix = f"{qual_of[id(parent)]}.<locals>."
+        qual_of[id(scope)] = f"{prefix}{scope.node.name}"
+        if not isinstance(scope.node, ast.ClassDef):
+            out.append((scope.node, qual_of[id(scope)]))
     return out
 
 

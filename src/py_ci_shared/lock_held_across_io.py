@@ -38,6 +38,7 @@ from typing import Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, child_nodes, scan_python
 from ._core import walk as shared_walk
+from ._core.node_index import tree_memo
 
 __all__ = ["RULE", "assert_no_lock_held_across_io", "find_lock_held_across_io", "is_lock_like", "module_lock_names"]
 
@@ -74,6 +75,11 @@ def _named_like_a_lock(segment: str) -> bool:
 
 
 def module_lock_names(tree: ast.Module) -> frozenset[str]:
+    """See :func:`_module_lock_names`; memoised on the tree, because lock_held_across_io and check_then_act_outside_lock both ask for it."""
+    return tree_memo(tree, "lock_held_across_io.module_lock_names", lambda: _module_lock_names(tree))
+
+
+def _module_lock_names(tree: ast.Module) -> frozenset[str]:
     """Attribute and variable names bound anywhere in the module to a Lock, RLock or Condition constructor, plus the
     names of guard helpers: a function whose body takes such a lock in a ``with``, so ``with self._guard():`` holds it."""
     names: set[str] = set()

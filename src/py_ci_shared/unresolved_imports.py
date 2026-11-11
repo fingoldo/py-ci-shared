@@ -24,7 +24,7 @@ from ._core.unparse import unparse_stable
 import functools
 from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
-from typing import cast
+from typing import Optional, cast
 
 from ._core import DEFAULT_EXCLUDE, SourceError, child_nodes, iter_files, nodes_of, parse_source, tree_memo
 from ._core.node_index import walk as _fast_walk
@@ -133,6 +133,7 @@ class ModuleIndex:
         self._star_sources: dict[str, list[str | None]] = {}
         self._literal_all: dict[str, set[str]] = {}
         self._package_roots = [Path(p) for p in (package_roots or roots)]
+        self._resolved_roots: Optional[list[Path]] = None  # resolved once, not once per file and root
         #: ``(path, "line: kind: message")`` for every file under the roots that could not be read or parsed. Its
         #: module is known to exist but its names are not, so imports from it are not judged.
         self.unparsed: list[tuple[Path, str]] = []
@@ -211,9 +212,14 @@ class ModuleIndex:
 
     def _dotted(self, path: Path) -> str | None:
         """The dotted module name for a file, relative to whichever package root contains it."""
-        for base in self._package_roots:
+        if self._resolved_roots is None:
+            self._resolved_roots = [Path(base).resolve() for base in self._package_roots]
+        resolved: Optional[Path] = None
+        for base in self._resolved_roots:
+            if resolved is None:
+                resolved = path.resolve()  # the file is resolved on first use, so a run with no roots makes no call
             try:
-                rel = path.resolve().relative_to(Path(base).resolve())
+                rel = resolved.relative_to(base)
             except ValueError:
                 continue
             parts = list(rel.parts)
