@@ -5,6 +5,9 @@ name: Corpus drift
 # a count jumps (more than PCT and more than ABSOLUTE), drops to zero from non-zero, or a finder starts to raise.
 # The baseline is the artifact of the last SUCCESSFUL run, so a failing night keeps failing until the change is fixed
 # or accepted: run it by hand with `accept: true` to make tonight's counts the new baseline.
+#
+# One shard per consumer repo: a single runner (4 cores) used to run past the 90-minute job limit, so each repo gets its own
+# runner and the shard snapshots are merged before the comparison. The merged snapshot has the single-run shape.
 
 on:
   schedule:
@@ -34,17 +37,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  drift:
-    # Pinned, not ubuntu-latest (which moves to 26.04 from 2026-10-19). Move to ubuntu-26.04 once self-ci's
-    # ubuntu-26.04 leg is green; see the comment on that leg for what to verify.
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      names: ${{ steps.names.outputs.names }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: python -m pip install -c .github/constraints/runtime.txt -e .
+
+      - name: The corpus consumers, one shard each
+        id: names
+        run: echo "names=$(python -m py_ci_shared._consumers corpus-names configs/consumers.toml)" >> "$GITHUB_OUTPUT"
+
+  snapshot:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJSON(needs.plan.outputs.names) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
       contents: read
-      actions: read  # list this workflow's runs and download the previous snapshot artifact
     env:
-      PCT: ${{ inputs.pct || '0.20' }}
-      ABSOLUTE: ${{ inputs.absolute || '5' }}
+      CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
+      ALLOW_SKIPPED_PRIVATE: ${{ inputs.allow-skipped-private }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -62,22 +90,61 @@ jobs:
         run: python -m pip install -c .github/constraints/runtime.txt -e ".[sql]" pytest
 
       - name: Check out the corpus repos
-        env:
-          CONSUMER_READ_TOKEN: ${{ secrets.CONSUMER_READ_TOKEN }}
-          ALLOW_SKIPPED_PRIVATE: ${{ inputs.allow-skipped-private }}
         run: |
-          if [ -z "$CONSUMER_READ_TOKEN" ]; then
-            echo "::warning title=CONSUMER_READ_TOKEN not set::private corpus repos are NOT scanned"
-          fi
           strict="--fail-on-skipped-private"
           if [ "$ALLOW_SKIPPED_PRIVATE" = "true" ]; then strict=""; fi
-          python -m py_ci_shared._consumers checkout configs/consumers.toml --corpus-only $strict \
+          python -m py_ci_shared._consumers checkout configs/consumers.toml --corpus-only --only "${{ matrix.name }}" $strict \
             --dest "$RUNNER_TEMP/corpus" --repos-file "$RUNNER_TEMP/corpus/repos.toml"
 
-      # A step timeout below the job's 90 minutes: one slow finder used to consume the whole job, so the snapshot never finished and nothing was compared.
-      - name: Snapshot tonight's counts
-        timeout-minutes: 75
-        run: python -m py_ci_shared.corpus_drift snapshot --repos-file "$RUNNER_TEMP/corpus/repos.toml" --output corpus-drift-snapshot.json
+      - name: Snapshot this repo's counts
+        timeout-minutes: 80
+        run: |
+          if ! grep -q '^\[\[repo\]\]' "$RUNNER_TEMP/corpus/repos.toml" 2>/dev/null; then
+            echo "::warning title=shard skipped::${{ matrix.name }} was not checked (private, no token): no snapshot for it tonight"
+            exit 0
+          fi
+          python -m py_ci_shared.corpus_drift snapshot --repos-file "$RUNNER_TEMP/corpus/repos.toml" --output "shard-${{ matrix.name }}.json"
+
+      - name: Upload the shard snapshot
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: shard-${{ matrix.name }}
+          path: shard-${{ matrix.name }}.json
+          if-no-files-found: ignore
+          retention-days: 7
+
+  merge:
+    needs: snapshot
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read  # list this workflow's runs and download the previous snapshot artifact
+    env:
+      PCT: ${{ inputs.pct || '0.20' }}
+      ABSOLUTE: ${{ inputs.absolute || '5' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: python -m pip install -c .github/constraints/runtime.txt -e ".[sql]" pytest
+
+      - name: Download the shard snapshots
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          pattern: shard-*
+          path: shards
+          merge-multiple: true
+
+      - name: Merge them into tonight's snapshot
+        run: python -m py_ci_shared.corpus_drift merge --output corpus-drift-snapshot.json shards/shard-*.json
 
       # On master only: a workflow_dispatch with accept: true from another branch must not become master's baseline.
       # The newest such run whose snapshot artifact has not expired (90 days): an expired one failed every night.

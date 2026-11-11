@@ -395,6 +395,32 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
     return 0
 
 
+def merge_snapshots(paths: Sequence[Path]) -> dict[str, Any]:
+    """One snapshot from the per-repo snapshots of a matrix: the ``repos`` of each, under the same schema.
+
+    Each repo is measured by exactly one shard, so a repo named twice is an error, not a choice between two counts.
+    """
+    repos: dict[str, dict[str, Any]] = {}
+    stamps: list[str] = []
+    for path in paths:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if data.get("schema") != SCHEMA:
+            raise ValueError(f"{path}: schema {data.get('schema')!r}, expected {SCHEMA!r}")
+        stamps.append(str(data.get("created", "")))
+        for name, repo in data["repos"].items():
+            if name in repos:
+                raise ValueError(f"{name} appears in more than one snapshot; each repo is measured by one shard")
+            repos[name] = repo
+    return {"schema": SCHEMA, "created": max(stamps) if stamps else "", "repos": repos}
+
+
+def _cmd_merge(args: argparse.Namespace) -> int:
+    data = merge_snapshots([Path(p) for p in args.inputs])
+    Path(args.output).write_bytes((json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+    sys.stdout.write(f"merged {len(args.inputs)} snapshot(s): {len(data['repos'])} repo(s)\n")
+    return 0
+
+
 def _cmd_compare(args: argparse.Namespace) -> int:
     previous = Path(args.previous)
     if not previous.is_file():
@@ -422,6 +448,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--repos-file", required=True, help="TOML repo list (`[[repo]]` with path and name)")
     p.add_argument("--output", required=True, help="the JSON snapshot to write")
     p.add_argument("--workers", type=int, default=4, help="processes the finders are split across (default 4, the CI runner's cores)")
+    p = sub.add_parser("merge", help="combine the per-repo snapshots of a matrix into one snapshot")
+    p.add_argument("--output", required=True, help="the merged JSON snapshot to write")
+    p.add_argument("inputs", nargs="+", help="the shard snapshots")
     p = sub.add_parser("compare", help="compare two snapshots")
     p.add_argument("previous", help="the last snapshot (a missing file means this is the first run)")
     p.add_argument("current", help="tonight's snapshot")
@@ -430,7 +459,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--output", help="also write the markdown table here")
     args = parser.parse_args(argv)
     try:
-        return _cmd_snapshot(args) if args.command == "snapshot" else _cmd_compare(args)
+        if args.command == "snapshot":
+            return _cmd_snapshot(args)
+        if args.command == "merge":
+            return _cmd_merge(args)
+        return _cmd_compare(args)
     except MissingDependencyError as exc:
         logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"corpus_drift: {exc}\n")

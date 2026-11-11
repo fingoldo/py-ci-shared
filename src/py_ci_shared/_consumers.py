@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import base64
 import logging
+import json
 import os
 import re
 import sys
@@ -180,6 +181,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--dest", required=True, help="directory the repos are cloned into")
     p.add_argument("--repos-file", required=True, help="write the [[repo]] list of the cloned repos here")
     p.add_argument("--corpus-only", action="store_true", help="only the consumers marked corpus = true")
+    p.add_argument(
+        "--only", action="append", default=[], metavar="NAME", help="only the consumer with this name (repeatable): one matrix shard clones one repo"
+    )
+    q_names = sub.add_parser("corpus-names", help="print the JSON list of the consumer names marked corpus = true (the matrix of the nightly drift job)")
+    q_names.add_argument("config", help="consumers.toml")
     q = sub.add_parser("not-checked", help="print the markdown table of the consumers a checkout skipped")
     q.add_argument("repos_file", help="the --repos-file a checkout wrote")
     p.add_argument(
@@ -192,8 +198,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         sys.stdout.write(not_checked_markdown(Path(args.repos_file)))
         return 0
     consumers = load_consumers(Path(args.config))
+    if args.command == "corpus-names":
+        sys.stdout.write(json.dumps([c.name for c in consumers if c.corpus]) + "\n")
+        return 0
     if args.corpus_only:
         consumers = [c for c in consumers if c.corpus]
+    if getattr(args, "only", None):
+        consumers = [c for c in consumers if c.name in args.only]
     token = os.environ.get(TOKEN_ENV, "").strip() or None
     result = checkout(consumers, Path(args.dest), token=token)
     for consumer in result.skipped:
