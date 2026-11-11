@@ -105,6 +105,8 @@ def _markers(path: Path, rel: str, source: str, roots: Sequence[str]) -> Optiona
 
 
 def _paths_in(text: str, pattern: "re.Pattern[str]") -> list[str]:
+    if "/" not in text:  # every match of the pattern contains a '/': a text without one has no path, so the two regexes are skipped
+        return []
     if _HISTORICAL.search(text):
         return []
     out: list[str] = []

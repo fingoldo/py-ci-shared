@@ -137,3 +137,29 @@ def qualified_functions(tree: ast.Module, *, locals_marker: bool = True) -> "lis
         return out
 
     return tree_memo(tree, ("py_ci_shared.qualified_functions", locals_marker), build)
+
+
+def scope_bodies(tree: ast.Module) -> "dict[int, list[ast.AST]]":
+    """``id(function def) or id(tree) -> the nodes that run in that scope``, class bodies included (a class does not open a scope for the
+    names it reads), stopping at each nested function and lambda (the def itself is kept). Built from :func:`iter_scopes`, once per tree.
+
+    The nodes of a def include its header (decorators, parameters, return annotation); callers that need the body alone leave them out.
+    The result is shared (memoised on the tree): do not mutate it.
+    """
+
+    def with_classes(nodes: "list[ast.AST]") -> "list[ast.AST]":
+        out = list(nodes)
+        for node in nodes:
+            if isinstance(node, ast.ClassDef):
+                out.extend(with_classes(scope_index[id(node)]))
+        return out
+
+    scopes = iter_scopes(tree)
+    scope_index = {id(s.node): s.nodes for s in scopes if s.node is not None}
+    out: dict[int, list[ast.AST]] = {}
+    for scope in scopes:
+        if isinstance(scope.node, ast.ClassDef):
+            continue
+        key = id(tree) if scope.node is None else id(scope.node)
+        out[key] = with_classes(scope.nodes)
+    return out

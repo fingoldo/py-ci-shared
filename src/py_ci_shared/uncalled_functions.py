@@ -56,7 +56,8 @@ from typing import Any, Optional, Union
 from ._core.outcome import refreshed_skip
 from ._core import Baseline, UnparsedFilesError, child_nodes, refresh_requested, register_refresh_options, relative_posix, scan_python
 from ._core import walk as shared_walk
-from ._core.scopes import iter_scopes
+from ._core.scopes import iter_scopes, scope_bodies
+from ._core.node_index import tree_memo
 
 __all__ = [
     "CATEGORIES",
@@ -223,8 +224,39 @@ def _references(tree: ast.Module) -> "tuple[set[str], dict[str, str]]":
     for scope in iter_scopes(tree):  # the shared per-tree index: each def's own nodes, read by _local_bindings
         if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             _OWN_NODES[scope.node] = scope.nodes
-    _visit_references(tree, frozenset(), frozenset(), loaded, aliases)
+    bodies = tree_memo(tree, "uncalled_functions.bodies", lambda: scope_bodies(tree))
+    _visit_context(bodies[id(tree)], bodies, frozenset(), frozenset(), loaded, aliases)
     return loaded, aliases
+
+
+def _visit_def_parts(
+    node: "Union[ast.FunctionDef, ast.AsyncFunctionDef]", shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]"
+) -> None:
+    """Decorators, defaults and annotations of a def: they run in the ENCLOSING scope, so they are read with its bindings."""
+    parts: list[ast.AST] = [*node.decorator_list, *node.args.defaults, *(d for d in node.args.kw_defaults if d is not None)]
+    parts += [param.annotation for param in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs] if param.annotation is not None]
+    for part in parts:
+        _visit_references(part, shadowed, own, loaded, aliases)
+
+
+_REFERENCE_KINDS = (ast.Name, ast.Attribute, ast.Import, ast.ImportFrom, ast.Call)
+
+
+def _visit_context(
+    nodes: "list[ast.AST]", bodies: "dict[int, list[ast.AST]]", shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]"
+) -> None:
+    """Visit the nodes of one scope (:func:`scope_bodies`) with its shadowing and own-name context. A def's body is that def's own
+    scope with its header and return annotation left out (the original recursion never read them); a lambda keeps the old path."""
+    for node in nodes:
+        if isinstance(node, _REFERENCE_KINDS):  # _record_reference records nothing for any other node type: skip the call
+            _record_reference(node, shadowed, own, loaded, aliases)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _visit_def_parts(node, shadowed, own, loaded, aliases)
+            header = _header_ids(node)
+            body = [child for child in bodies[id(node)] if id(child) not in header]
+            _visit_context(body, bodies, frozenset(shadowed | _local_bindings(node)), frozenset(own | {node.name}), loaded, aliases)
+        elif isinstance(node, ast.Lambda):
+            _visit_function_scope(node, shadowed, own, loaded, aliases)
 
 
 def _record_reference(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]") -> None:

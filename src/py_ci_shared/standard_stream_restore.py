@@ -50,9 +50,8 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.scan import scan_roots_excluding
-from ._core.scopes import own_nodes
-from ._core import ScanResult, child_nodes, nodes_of
-from ._core.node_index import parent_map, walk
+from ._core import ScanResult, nodes_of
+from ._core.node_index import parent_map, tree_memo, walk
 from ._core.scopes import iter_scopes
 
 __all__ = [
@@ -228,13 +227,42 @@ def _scopes(tree: ast.Module) -> list[tuple[_Scope, str]]:
     return out
 
 
+def _own_by_scope(tree: ast.Module) -> dict[int, list[ast.AST]]:
+    """``id(scope) -> the nodes of its body for this gate`` (the module keyed by the tree): the shared index's own nodes, where a class
+    body also counts as part of the scope it is written in, so a class's nodes (and those of classes in it) are added here."""
+
+    def class_body(cls: ast.AST) -> list[ast.AST]:
+        out = list(index_own[id(cls)])
+        for node in index_own[id(cls)]:
+            if isinstance(node, ast.ClassDef):
+                out.extend(class_body(node))
+        return out
+
+    out: dict[int, list[ast.AST]] = {}
+    index_own: dict[int, list[ast.AST]] = {}
+    scopes = iter_scopes(tree)
+    for scope in scopes:
+        index_own[id(tree) if scope.node is None else id(scope.node)] = scope.nodes
+    for scope in scopes:
+        if scope.node is not None and isinstance(scope.node, ast.ClassDef):
+            continue
+        key = id(tree) if scope.node is None else id(scope.node)
+        nodes = list(scope.nodes)
+        for node in scope.nodes:
+            if isinstance(node, ast.ClassDef):
+                nodes.extend(class_body(node))
+        out[key] = nodes
+    return out
+
+
 def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
     findings: list[Finding] = []
     sys_names = _sys_names(tree)
     saved = _saved_locations(tree, sys_names)
     parent_all = parent_map(tree)  # shared per tree; the scope boundary is kept by _scope_parent
+    own_of = tree_memo(tree, "standard_stream_restore.own_by_scope", lambda: _own_by_scope(tree))
     for scope, qualname in _scopes(tree):
-        own = list(own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)))
+        own = list(own_of[id(tree) if scope is tree else id(scope)])
         up = _scope_parent(tree, scope, parent_all)
         guard_names = _guard_names(own, sys_names)
         for node in own:

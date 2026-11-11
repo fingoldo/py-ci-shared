@@ -24,33 +24,43 @@ from __future__ import annotations
 import ast
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Union, Any, Optional
 
 from ._core.outcome import refresh_hint, refreshed_skip
-from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
+from ._core import BaselineGrowthError, ScanResult, dump_json, load_json, refresh_requested, scan_python, write_ratchet
+from ._core.scopes import iter_scopes
 
 __all__ = ["REFRESH_FLAG", "assert_functions_do_not_grow", "function_lengths", "length_problems", "write_length_baseline"]
 
 REFRESH_FLAG = "--refresh-function-length-baseline"
 
 
-def _walk(node: ast.AST, prefix: str, rel: str, out: dict[str, int]) -> None:
-    for child in child_nodes(node):
-        if isinstance(child, ast.ClassDef):
-            _walk(child, f"{prefix}{child.name}.", rel, out)
-        elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            qual = f"{prefix}{child.name}"
-            key = f"{rel}::{qual}"
-            out[key] = max(out.get(key, 0), (child.end_lineno or child.lineno) - child.lineno + 1)
-            _walk(child, f"{qual}.<locals>.", rel, out)
+def _measure_tree(tree: ast.Module, rel: str, out: dict[str, int]) -> None:
+    """Every function's qualified name and length, from the shared scope index, in source order (the order the walk this replaces used)."""
+    qual_of: dict[int, str] = {}
+    found: list[tuple[int, int, str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]] = []
+    for scope in iter_scopes(tree):
+        if scope.node is None:
+            continue
+        parent = scope.parent
+        if parent is None or parent.node is None:
+            prefix = ""
+        elif isinstance(parent.node, ast.ClassDef):
+            prefix = f"{qual_of[id(parent)]}."
         else:
-            _walk(child, prefix, rel, out)
+            prefix = f"{qual_of[id(parent)]}.<locals>."
+        qual_of[id(scope)] = f"{prefix}{scope.node.name}"
+        if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            found.append((scope.node.lineno, scope.node.col_offset, qual_of[id(scope)], scope.node))
+    for _, _, qual, node in sorted(found, key=lambda item: (item[0], item[1])):
+        key = f"{rel}::{qual}"
+        out[key] = max(out.get(key, 0), (node.end_lineno or node.lineno) - node.lineno + 1)
 
 
 def _lengths(scan: ScanResult) -> dict[str, int]:
     out: dict[str, int] = {}
     for parsed in scan:
-        _walk(parsed.tree, "", parsed.rel, out)
+        _measure_tree(parsed.tree, parsed.rel, out)
     return out
 
 
@@ -133,4 +143,7 @@ def assert_functions_do_not_grow(
         )
     problems += length_problems(lengths, baseline, limit=limit)
     if problems:
-        pytest.fail(f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit} lines per function, set by `limit` in [tool.py_ci_shared.gates.function_length]):\n  " + "\n  ".join(problems))
+        pytest.fail(
+            f"{len(problems)} function-length problem(s) ({baseline_path.name}, limit {limit} lines per function, set by `limit` in [tool.py_ci_shared.gates.function_length]):\n  "
+            + "\n  ".join(problems)
+        )

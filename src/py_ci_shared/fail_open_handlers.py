@@ -39,6 +39,8 @@ not turn it into a new finding; the list can only shrink.
 
 from __future__ import annotations
 
+from functools import partial
+
 import ast
 import re
 from collections.abc import Iterable, Iterator
@@ -47,7 +49,7 @@ from typing import Any, Optional, Union
 
 from ._core.outcome import refresh_hint, refreshed_skip
 from ._core import BaselineGrowthError, ScanResult, child_nodes, dump_json, load_json, refresh_requested, scan_python, write_ratchet
-from ._core.node_index import walk as _fast_walk
+from ._core.node_index import nodes_of, parent_map, tree_memo, walk as _fast_walk
 from ._core.scopes import iter_scopes
 
 __all__ = ["FailOpenHandler", "find_fail_open_handlers", "assert_no_new_fail_open_handlers", "DEFAULT_GATE_NAME_RE"]
@@ -476,7 +478,22 @@ def _handler_findings(
     return found
 
 
-def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, qualname: Optional[str] = None) -> list[FailOpenHandler]:
+def _relevant_ids(tree: ast.Module) -> frozenset[int]:
+    """Ids of the nodes that hold an ``except`` handler or an ``if`` (the only nodes a finding is made at), and of their ancestors.
+    A subtree outside this set reports nothing and changes no loop context that anything inside it would use, so the scan skips it."""
+    parents = parent_map(tree)
+    out: set[int] = set()
+    for node in nodes_of(tree, ast.ExceptHandler, ast.If):
+        cur: Optional[ast.AST] = node
+        while cur is not None and id(cur) not in out:
+            out.add(id(cur))
+            cur = parents.get(id(cur))
+    return frozenset(out)
+
+
+def _scan_function(
+    fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, qualname: Optional[str] = None, relevant: Optional[frozenset[int]] = None
+) -> list[FailOpenHandler]:
     """Findings inside one function or module body (nested functions and classes are scanned on their own)."""
     found: list[FailOpenHandler] = []
     name: str = qualname or str(getattr(fn, "name", "<module>"))
@@ -485,6 +502,8 @@ def _scan_function(fn: _Scope, rel: str, lines: list[str], gate_re: re.Pattern, 
 
     def visit(node: ast.AST, loop_vars: frozenset[str]) -> None:
         for child in child_nodes(node):
+            if relevant is not None and id(child) not in relevant:
+                continue  # nothing in this subtree is a handler or an if: the scan would report nothing in it
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)):
                 continue
             vars_here = loop_vars
@@ -527,8 +546,9 @@ def _find_in_scan(scan: ScanResult, gate_re: re.Pattern) -> list[FailOpenHandler
     out: list[FailOpenHandler] = []
     for parsed in scan:
         lines = parsed.source.splitlines()
+        relevant = tree_memo(parsed.tree, "fail_open_handlers.relevant", partial(_relevant_ids, parsed.tree))
         for qual, node in _scopes(parsed.tree):
-            out.extend(_scan_function(node, parsed.rel, lines, gate_re, qual))
+            out.extend(_scan_function(node, parsed.rel, lines, gate_re, qual, relevant))
     return out
 
 

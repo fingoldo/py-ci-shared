@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core.node_index import function_nodes, nodes_of, parent_map, tree_memo
+from ._core.node_index import nodes_of, parent_map, tree_memo
 from ._core import Finding, ParsedFile, child_nodes, scan_python
 from .lock_held_across_io import is_lock_like, module_lock_names
 
@@ -221,7 +221,7 @@ def _findings_in(parsed: ParsedFile) -> list[tuple[Finding, str]]:
     module_has_lock = bool(lock_names)
     out: list[tuple[Finding, str]] = []
     with_fns = tree_memo(parsed.tree, "check_then_act.functions_with_with", lambda: _functions_with_with(parsed.tree))
-    for fn in function_nodes(parsed.tree):
+    for fn in nodes_of(parsed.tree, ast.FunctionDef, ast.AsyncFunctionDef):  # the index query: same defs, same order as function_nodes
         if not module_has_lock and id(fn) not in with_fns:
             continue  # no lock anywhere in the module and no `with` in this function: no finding is possible
         name = getattr(fn, "name", "<function>")

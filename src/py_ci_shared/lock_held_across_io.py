@@ -38,7 +38,7 @@ from typing import Optional, Union
 
 from ._core import Finding, ImportAliases, ParsedFile, child_nodes, scan_python
 from ._core import walk as shared_walk
-from ._core.node_index import tree_memo
+from ._core.node_index import nodes_of, tree_memo
 
 __all__ = ["RULE", "assert_no_lock_held_across_io", "find_lock_held_across_io", "is_lock_like", "module_lock_names"]
 
@@ -51,7 +51,6 @@ _WRITE_MODE_CHARS = frozenset("wax+")
 _DB_METHODS = frozenset({"execute", "executemany", "commit", "fetchone", "fetchall", "fetchmany"})
 _DB_RECEIVER = re.compile(r"^_*(?:cur|cursor|conn|connection|session|db)$", re.IGNORECASE)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
-_WITH = (ast.With, ast.AsyncWith)
 
 
 def _last_segment(node: ast.AST) -> str:
@@ -183,9 +182,7 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
     lock_names = module_lock_names(parsed.tree)
     out: list[Finding] = []
     reported: set[int] = set()
-    for node in shared_walk(parsed.tree):
-        if not isinstance(node, _WITH):
-            continue
+    for node in nodes_of(parsed.tree, ast.With, ast.AsyncWith):  # the with-statements, in walk order (the index query, not a walk of every node)
         held = [unparse_stable(item.context_expr) for item in node.items if is_thread_lock(item.context_expr, aliases, lock_names)]
         if not held:
             continue

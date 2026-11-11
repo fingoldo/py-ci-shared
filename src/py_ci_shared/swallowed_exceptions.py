@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, Finding, ImportAliases, ParsedFile, ScanResult, TreeVisitor, child_nodes, scan_python
-from ._core.node_index import walk as _fast_walk
+from ._core.node_index import nodes_of, parent_map, tree_memo, walk as _fast_walk
 from ._gate_run import enforce_findings
 
 __all__ = ["REFRESH_FLAG", "assert_no_swallowed_exceptions", "find_swallowed_exceptions", "is_silent_handler"]
@@ -248,6 +248,22 @@ def _marked(lines: list[str], handler: ast.ExceptHandler) -> bool:
     return False
 
 
+_DISPATCHED = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Try, getattr(ast, "TryStar", ast.Try), ast.With, ast.AsyncWith)
+
+
+def _relevant_ids(tree: ast.Module) -> frozenset[int]:
+    """Ids of the nodes whose subtree holds a node the visitor dispatches on, and of those nodes themselves. A subtree outside this set
+    changes no scope and reports nothing, so the visitor skips it; the nodes it does visit are visited in the same order."""
+    parents = parent_map(tree)
+    out: set[int] = set()
+    for node in nodes_of(tree, *_DISPATCHED):
+        cur: Optional[ast.AST] = node
+        while cur is not None and id(cur) not in out:
+            out.add(id(cur))
+            cur = parents.get(id(cur))
+    return frozenset(out)
+
+
 class _Visitor(TreeVisitor):
     def __init__(self, f: ParsedFile, quiet_log_is_silent: bool) -> None:
         self.f = f
@@ -257,6 +273,12 @@ class _Visitor(TreeVisitor):
         self.lines = f.source.splitlines()
         self.scope: list[str] = []
         self.findings: list[Finding] = []
+        self._relevant = tree_memo(f.tree, "swallowed_exceptions.relevant", lambda: _relevant_ids(f.tree))
+
+    def generic_visit(self, node: ast.AST) -> None:
+        for child in child_nodes(node):
+            if id(child) in self._relevant:  # a subtree with nothing to dispatch on is skipped: the visitor would do nothing in it
+                self.visit(child)
 
     def _function(self, node: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> None:
         self.scope.append(node.name)
