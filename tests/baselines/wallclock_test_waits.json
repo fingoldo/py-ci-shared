@@ -1,3 +1,5 @@
 {
-  "accepted": {}
+  "accepted": {
+    "tests/test_corpus_drift_budget.py: time.sleep(30)": "the stand-in for a finder that never returns; FINDER_BUDGET_SECONDS (1 s here) cuts it off, so the sleep only runs if the budget is broken, and the test then fails on the missing error"
+  }
 }

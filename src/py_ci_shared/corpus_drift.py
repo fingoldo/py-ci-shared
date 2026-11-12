@@ -20,14 +20,17 @@ fails when a new finder is neither bindable nor listed there.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import datetime
 import importlib
 import inspect
 import json
 import logging
+import signal
 import sys
+import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -242,6 +245,34 @@ def _commit(repo: Path) -> Optional[str]:
     return git_text(proc.stdout).strip() or None if proc.returncode == 0 else None
 
 
+#: Seconds one finder may run on one repo before it is recorded as an error. The slowest finder over glossum takes about 70 s, so
+#: this only ever cuts a finder that has stopped making progress (a loop that never ends), which otherwise holds the whole shard.
+FINDER_BUDGET_SECONDS = 600
+
+
+class FinderTimeoutError(Exception):
+    """A finder ran past FINDER_BUDGET_SECONDS."""
+
+
+@contextlib.contextmanager
+def _finder_budget(seconds: float) -> Iterator[None]:
+    """Raise FinderTimeoutError in this thread after *seconds* (POSIX, main thread: the scan's worker processes); elsewhere no limit."""
+    if sys.platform == "win32" or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def _expired(_signum: int, _frame: Any) -> None:
+        raise FinderTimeoutError(f"finder ran past {seconds:g} s")
+
+    previous = signal.signal(signal.SIGALRM, _expired)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
 def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dict[str, Any]:
     counts: dict[str, int] = {}
     errors: dict[str, str] = {}
@@ -252,7 +283,8 @@ def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dic
             continue
         start = time.perf_counter()
         try:
-            counts[key] = count_of(fn(**kwargs))
+            with _finder_budget(FINDER_BUDGET_SECONDS):
+                counts[key] = count_of(fn(**kwargs))
         except Exception as exc:  # a finder that raises on real code is a result to record, not a crash of the night
             # The type name only: parser and linter messages quote the offending source line, and a consumer may be private while
             # the snapshot is an artifact and a step summary that anyone who can read this repository's runs can open.
