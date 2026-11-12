@@ -196,3 +196,25 @@ def test_negative_control_a_workflow_guard_step_is_found_with_its_file_line(tmp_
 def test_a_python_step_in_a_workflow_uses_the_python_block_rule(tmp_path: Path) -> None:
     text = "steps:\n  - shell: python\n    run: |\n      import sys\n      print('SKIPPED: no token')\n      sys.exit(0)\n"
     assert len(find_skip_as_pass(_tree(tmp_path, ".github/workflows/w.yml", text))) == 1
+
+
+@pytest.mark.parametrize(
+    "word",
+    ["SKIP\\\nPED", "ſKIPPED", "SKIPPED"],
+    ids=["split-by-continuation", "long-s", "plain"],
+)
+def test_the_word_skipped_is_found_however_the_lexer_or_case_spells_it(tmp_path: Path, word: str) -> None:
+    # the prefilter must not hide a print whose word is joined across a backslash line end or written with a case-folded letter
+    text = f'#!/bin/sh\necho "{word}: no docker"\nexit 0\n'
+    assert len(find_skip_as_pass(_tree(tmp_path, "tool/check_docker.sh", text))) == 1
+
+
+def test_a_script_without_the_word_is_never_handed_to_the_lexer(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # negative control: the prefilter is what keeps the slow lexer off files that cannot match; it must still answer correctly
+    import py_ci_shared.skip_as_pass as module
+
+    def lexer_must_not_run(lines):
+        raise AssertionError("the lexer ran on a script that does not contain the word SKIPPED")
+
+    monkeypatch.setattr(module, "parse_shell", lexer_must_not_run)
+    assert find_skip_as_pass(_tree(tmp_path, "tool/build.sh", "#!/bin/sh\necho building\nexit 0\n")) == {}
