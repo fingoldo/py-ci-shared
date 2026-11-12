@@ -2,7 +2,8 @@
 # constraints file (-c) by self-ci.yml and release.yml's verify job, next to runtime.txt, so the same commit gets the same
 # verdict on every run (51-F5). The other [dev] extras resolve per interpreter. tests/test_tool_pin_docs.py holds these
 # equal to tool_versions.py and to runtime.txt. Bump deliberately, with a test run.
-pytest==9.1.1
+pytest==9.1.1 ; python_version >= "3.10"
+pytest==8.4.2 ; python_version < "3.10"
 black==26.5.1
 ruff==0.16.10
 mypy==2.1.0
