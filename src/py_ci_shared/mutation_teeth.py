@@ -177,6 +177,8 @@ __all__ = [
 
 #: How long a cache writer waits for another process's write to finish before giving up on storing.
 _CACHE_LOCK_TIMEOUT = 60.0
+# A progress line to stderr at most this often, so a long sweep shows how far it has got.
+_PROGRESS_EVERY_SECONDS = 300.0
 
 
 def _repo_relative(path: PathArg) -> Path:
@@ -298,6 +300,7 @@ def _sweep_mutants(
             current = [source.text]
             if lazy is not None:
                 state.wider_resolver = resolve_wider
+            last_report = time.perf_counter()
             for mutant in mutants:
                 if checkpoint is not None and mutant.key in checkpoint.done:
                     replay(state, mutant, checkpoint.done[mutant.key])
@@ -324,6 +327,14 @@ def _sweep_mutants(
                 nearest.add(mutant.line, state.last_killer)
                 if checkpoint is not None:
                     checkpoint.record(mutant.key, *sweep_delta(state, before, budget_before), killer=state.last_killer, line=mutant.line)
+                if time.perf_counter() - last_report >= _PROGRESS_EVERY_SECONDS:
+                    last_report = time.perf_counter()
+                    logger.warning(
+                        "mutation progress: %d/%d mutants judged, %d survivors so far",
+                        int(state.budget["mutants"]),
+                        len(mutants),
+                        len(state.survivors),
+                    )
             _log_sweep_end(state)
     finally:
         if confirm_worker is not None:
