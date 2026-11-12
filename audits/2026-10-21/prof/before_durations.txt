@@ -1,0 +1,45 @@
+........................................................................ [ 41%]
+........................................................................ [ 83%]
+.............................                                            [100%]
+============================ slowest 40 durations =============================
+79.00s call     tests/test_mutation_teeth.py::TestConcurrencyChangesSpeedAndNothingElse::test_four_workers_reach_the_same_verdict_as_one
+31.48s call     tests/test_mutation_teeth.py::TestConcurrencyChangesSpeedAndNothingElse::test_survivors_come_back_in_source_order
+13.22s call     tests/test_mutation_teeth.py::TestAMutantThatStopsPytestStartingIsAKill::test_end_to_end_a_slots_mutation_is_killed_rather_than_refusing_the_file
+10.71s call     tests/test_mutation_teeth_regressions.py::TestTheImportMustComeFromTheSandbox::test_end_to_end_a_shadowing_copy_is_detected
+8.57s call     tests/test_mutation_teeth.py::TestTheWorkerProtocolSurvivesTestOutput::test_json_shaped_test_output_does_not_break_the_channel
+8.49s call     tests/test_mutation_worker.py::TestTheProtocolChannelIsPrivate::test_a_raw_fd_1_write_cannot_forge_a_reply
+7.54s call     tests/test_mutation_worker.py::TestProcessStateIsRestoredBetweenRuns::test_cwd_env_path_and_argv_do_not_leak_into_the_next_run
+7.29s call     tests/test_mutation_worker.py::TestCrashesAreToldApart::test_a_type_error_is_a_crash_and_an_assertion_is_not
+6.78s call     tests/test_mutation_worker.py::TestTheProtocolChannelIsPrivate::test_a_failing_run_still_reports_its_own_code
+6.10s call     tests/test_mutation_teeth_regressions.py::TestTimeoutsKillTheTree::test_a_grandchild_dies_with_its_parent
+1.31s call     tests/test_mutation_teeth_regressions.py::TestTheCache::test_concurrent_writers_keep_every_entry
+1.21s call     tests/test_mutation_teeth_regressions.py::TestTimeoutsKillTheTree::test_a_sandbox_that_cannot_be_removed_is_reported
+0.87s call     tests/test_mutation_teeth.py::TestFingerprintCoversTheImportClosure::test_changing_an_imported_module_changes_the_fingerprint
+0.60s call     tests/test_mutation_worker.py::TestNamespaceVerdictsAreCached::test_a_namespace_package_is_resolved_once
+0.31s call     tests/test_mutation_teeth_regressions.py::TestTheCache::test_the_lock_excludes_a_second_holder
+0.31s call     tests/test_mutation_teeth.py::TestAnUnmeasuredMutantIsNotReportedAsMeasured::test_the_warm_reader_gives_up_rather_than_blocking_forever
+0.20s call     tests/test_mutation_teeth_regressions.py::TestExtraSandboxes::test_sweep_files_with_jobs_cleans_up_and_handles_a_second_file
+0.15s call     tests/test_mutation_teeth_regressions.py::TestTheLineScope::test_a_generator_is_read_once_and_scopes_the_sweep
+0.13s call     tests/test_mutation_teeth_regressions.py::TestBomAndEncodings::test_no_file_handle_is_leaked
+0.12s call     tests/test_mutation_teeth_regressions.py::TestTimeoutsKillTheTree::test_a_finished_run_returns_its_output
+0.09s call     tests/test_mutation_teeth_regressions.py::TestTheLineScope::test_a_generator_run_is_cached_under_its_own_scope
+0.07s call     tests/test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_a_node_id_hashes_its_file
+0.07s call     tests/test_mutation_teeth.py::TestTheFingerprintSeesWhatTheAnswerDependsOn::test_a_directory_of_tests_is_expanded_not_swallowed
+0.07s call     tests/test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_conftests_outside_the_repo_are_never_walked
+0.07s call     tests/test_mutation_teeth_regressions.py::TestBomAndEncodings::test_a_bom_file_gets_the_same_mutants
+0.06s call     tests/test_mutation_teeth_regressions.py::TestTheRatchet::test_a_core_baseline_is_accepted_and_needs_justification
+0.06s call     tests/test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_a_package_init_is_in_the_closure
+0.05s call     tests/test_mutation_teeth.py::TestTheFingerprintSeesWhatTheAnswerDependsOn::test_a_from_dot_module_import_name_reaches_the_module
+0.05s call     tests/test_mutation_teeth.py::TestABaselineEntryNamesOnePlace::test_the_key_does_not_move_when_code_above_it_shifts
+0.05s call     tests/test_mutation_teeth_regressions.py::TestTheLineScope::test_an_empty_scope_and_the_whole_file_key_differently
+0.05s call     tests/test_mutation_teeth_regressions.py::TestZeroMutantsIsNotAPass::test_an_empty_scope_raises_unless_allowed
+0.05s call     tests/test_mutation_teeth.py::TestSkippingTheSyntaxCheckIsSafe::test_every_mutant_of_a_dense_fixture_still_parses
+0.05s call     tests/test_mutation_teeth_regressions.py::TestBomAndEncodings::test_a_mutant_is_written_back_with_its_bom
+0.04s call     tests/test_mutation_teeth_regressions.py::TestZeroMutantsIsNotAPass::test_a_scope_with_mutants_runs_normally
+0.04s call     tests/test_mutation_teeth.py::TestTheFingerprintSeesWhatTheAnswerDependsOn::test_editing_that_module_moves_the_fingerprint
+0.04s call     tests/test_mutation_teeth_regressions.py::TestTheImportMustComeFromTheSandbox::test_a_foreign_origin_is_refused
+0.04s call     tests/test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_a_configured_python_files_is_honoured
+0.04s call     tests/test_mutation_teeth.py::TestFingerprintCoversTheImportClosure::test_an_unrelated_file_does_not_change_the_fingerprint
+0.04s call     tests/test_mutation_teeth_regressions.py::TestTheFingerprintCoversWhatPytestRuns::test_the_default_python_files_include_suffix_style
+0.04s call     tests/test_mutation_teeth.py::TestTheOperatorSetReachesTheShapesThisCodeProduces::test_every_generated_mutant_still_compiles
+173 passed in 190.47s (0:03:10)
