@@ -31,8 +31,9 @@
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
 - Install the hooks once per clone: `python -m pre_commit install --hook-type pre-commit --hook-type pre-push` then `python -m py_ci_shared.install_safe_hook`. The pre-push hook runs mypy, the self-gate tests and `py-ci-shared run-all` (about 5 minutes); the rest of `tests/` runs in the
   release script (below).
-- GitHub Actions is permanently unavailable on this account (every job fails to start on billing): no workflow here runs, for
-  pushes, tags or schedules. The hooks and `.github/scripts/release_local.py` are the only checks that run.
+- GitHub Actions runs on this public repo: the workflows run on pushes, tags and schedules. Jobs can sit queued for hours when runners are
+  busy, so check `gh run list` before concluding that CI is down. When Actions is really down, the hooks and `.github/scripts/release_local.py`
+  are the checks that run.
 
 ## Consumers
 
