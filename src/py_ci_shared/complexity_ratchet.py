@@ -46,6 +46,7 @@ __all__ = [
     "function_complexity",
     "held_by_unparsed",
     "load_complexity_baseline",
+    "load_complexity_notes",
     "write_complexity_baseline",
 ]
 
@@ -173,16 +174,38 @@ def complexity_problems(values: dict[str, int], baseline: dict[str, int], *, lim
     return problems
 
 
-def load_complexity_baseline(path: Path) -> dict[str, int]:
-    """The ``{"path::Qual.name": ceiling}`` baseline at *path*; :class:`BaselineError` when it cannot be read or is
-    not that shape (a merge conflict left in it, say), so the message names the file instead of a ``JSONDecodeError``."""
+def _read_complexity_baseline(path: Path) -> dict[str, Any]:
+    """The raw JSON object at *path*, validated: each value is a ceiling integer or a ``{"count", "note"}`` record."""
     try:
         data = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise BaselineError(f"complexity baseline {path} is unreadable ({type(exc).__name__}: {exc}); fix or delete it") from exc
-    if not isinstance(data, dict) or not all(isinstance(k, str) and type(v) is int for k, v in data.items()):
-        raise BaselineError(f'complexity baseline {path} is not a {{"path::Qual.name": ceiling}} object; fix or delete it')
-    return data
+    shape_ok = isinstance(data, dict) and all(isinstance(k, str) for k in data)
+    if shape_ok:
+        for value in data.values():
+            if type(value) is int:
+                continue
+            if isinstance(value, dict) and type(value.get("count")) is int and isinstance(value.get("note"), str):
+                continue
+            shape_ok = False
+            break
+    if not shape_ok:
+        raise BaselineError(
+            f'complexity baseline {path} is not a {{"path::Qual.name": ceiling}} object, nor one whose values are '
+            '{"count": ceiling, "note": reason}; fix or delete it'
+        )
+    return dict(data)
+
+
+def load_complexity_baseline(path: Path) -> dict[str, int]:
+    """The ``{"path::Qual.name": ceiling}`` baseline at *path*, in either form (a bare ceiling, or a ``{"count", "note"}``
+    record whose note is the reason); :class:`BaselineError` when it cannot be read or is not one of those shapes."""
+    return {k: (v if type(v) is int else v["count"]) for k, v in _read_complexity_baseline(path).items()}
+
+
+def load_complexity_notes(path: Path) -> dict[str, str]:
+    """The reasons recorded next to baseline entries in the ``{"count", "note"}`` form; bare ceilings have none."""
+    return {k: v["note"] for k, v in _read_complexity_baseline(path).items() if isinstance(v, dict)}
 
 
 def held_by_unparsed(baseline: dict[str, int], unparsed: Iterable[str]) -> dict[str, int]:
@@ -205,9 +228,15 @@ def write_complexity_baseline(
     kept as they are. Raises :class:`BaselineError` when the existing baseline is unreadable."""
     over = {k: v for k, v in sorted(values.items()) if v > limit}
     previous = load_complexity_baseline(path) if Path(path).is_file() else None
+    notes = load_complexity_notes(path) if Path(path).is_file() else {}
     if previous is not None:
         over.update(held_by_unparsed(previous, unparsed))
     write_ratchet(path, dict(sorted(over.items())), gate="complexity", previous=previous, render=dump_json, grow=grow, request=request)
+    if notes and Path(path).is_file():
+        # The ratchet writes bare ceilings; put back the reason of every entry that is still in the baseline.
+        written = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+        merged = {k: ({"count": v, "note": notes[k]} if k in notes and type(v) is int else v) for k, v in written.items()}
+        Path(path).write_text(dump_json(merged), encoding="utf-8")
 
 
 def assert_complexity_does_not_grow(

@@ -184,3 +184,40 @@ def test_allow_unparsed_tolerates_the_file_and_keeps_its_entries_through_a_refre
     with pytest.raises(pytest.skip.Exception):
         _run(files, tmp_path, refresh=True, allow_unparsed=True)
     assert json.loads((tmp_path / "b.json").read_text(encoding="utf-8")) == {"m1.py::broken": 9}
+
+
+def test_a_bare_ceiling_and_a_noted_record_load_to_the_same_ceiling(tmp_path):
+    import json
+
+    from py_ci_shared.complexity_ratchet import load_complexity_baseline, load_complexity_notes
+
+    path = tmp_path / "baseline.json"
+    path.write_text(json.dumps({"m.py::bare": 24, "m.py::noted": {"count": 25, "note": "split the loop body"}}), encoding="utf-8")
+    assert load_complexity_baseline(path) == {"m.py::bare": 24, "m.py::noted": 25}
+    assert load_complexity_notes(path) == {"m.py::noted": "split the loop body"}
+
+
+def test_a_record_without_an_integer_count_or_a_string_note_is_refused(tmp_path):
+    import json
+
+    from py_ci_shared._core import BaselineError
+    from py_ci_shared.complexity_ratchet import load_complexity_baseline
+
+    for bad in ({"m.py::f": {"count": "24", "note": "why"}}, {"m.py::f": {"count": 24, "note": 3}}, {"m.py::f": {"count": 24}}):
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps(bad), encoding="utf-8")
+        with pytest.raises(BaselineError):
+            load_complexity_baseline(path)
+
+
+def test_a_refresh_keeps_the_reason_of_every_entry_it_keeps(tmp_path):
+    import json
+
+    from py_ci_shared.complexity_ratchet import load_complexity_notes, write_complexity_baseline
+
+    path = tmp_path / "baseline.json"
+    path.write_text(json.dumps({"m.py::kept": {"count": 30, "note": "split the loop body"}}), encoding="utf-8")
+    write_complexity_baseline(path, {"m.py::kept": 25}, limit=20)
+    written = json.loads(path.read_text(encoding="utf-8"))
+    assert written == {"m.py::kept": {"count": 25, "note": "split the loop body"}}
+    assert load_complexity_notes(path) == {"m.py::kept": "split the loop body"}
