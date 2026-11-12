@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from py_ci_shared import corpus_drift, registry
+from py_ci_shared._core.errors import EmptyScanError
 from py_ci_shared.corpus_drift import NON_CORPUS, Drift, bind, compare, count_of, finders, main, render_table, snapshot, unbound_finders
 
 
@@ -148,6 +149,20 @@ def test_bind_maps_names_and_counts_unparsed_files_rather_than_raising(tmp_path)
     assert bind(needs_tests, tmp_path) is None  # no tests/ here: not applicable, not an error
     (tmp_path / "tests").mkdir()
     assert bind(needs_tests, tmp_path) == {"tests_dir": tmp_path / "tests"}
+
+
+def test_a_repo_without_a_uv_lock_is_a_count_of_zero_for_uv_lock_parity(tmp_path):
+    from py_ci_shared import uv_lock_parity
+    from py_ci_shared.corpus_drift import count_of
+
+    # a repo with no uv.lock: the gate's own floor would raise EmptyScanError, which corpus drift must not record as an error
+    kwargs = bind(uv_lock_parity.find_uv_lock_parity, tmp_path)
+    assert kwargs is not None and kwargs["min_files"] == 0
+    assert count_of(uv_lock_parity.find_uv_lock_parity(**kwargs)) == 0
+    # negative control: the floor is kept for the gate itself, and other finders keep theirs
+    with pytest.raises(EmptyScanError):
+        uv_lock_parity.find_uv_lock_parity(tmp_path)
+    assert "min_files" not in bind(lambda repo_root: repo_root, tmp_path)
 
 
 def test_snapshot_errors_never_carry_the_exception_text(tmp_path):

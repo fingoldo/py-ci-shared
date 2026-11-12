@@ -59,6 +59,10 @@ __all__ = [
 SCHEMA = 1
 FAILING_KINDS = ("jump", "blind", "errored", "repo-gone")
 
+# Finders whose empty scan (a repo without the file they compare) is a legitimate count of 0. Their ``min_files`` floor is a
+# gate guard (do not enable the gate where nothing exists), so corpus drift lowers it for them; every other finder keeps its floor.
+EMPTY_IS_A_COUNT: frozenset[str] = frozenset({"find_uv_lock_parity"})
+
 # Finders (``module`` for all of its finders, or ``module.find_x``) a repo checkout cannot feed, with the reason.
 NON_CORPUS: dict[str, str] = {
     "alembic_concurrently": "takes an Alembic versions directory; the corpus repos have no fixed migrations path",
@@ -218,6 +222,8 @@ def bind(fn: Callable[..., Any], repo: Path) -> Optional[dict[str, Any]]:
         kwargs[name] = value
     if "allow_unparsed" in inspect.signature(fn).parameters:
         kwargs["allow_unparsed"] = True  # a real repo may hold one unparsable file; count what does parse
+    if fn.__name__ in EMPTY_IS_A_COUNT:
+        kwargs["min_files"] = 0  # a repo with nothing to compare is a count of 0, not an errored scan
     return kwargs
 
 
