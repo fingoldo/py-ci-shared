@@ -3,7 +3,7 @@
 Scope: `tests/test_mutation_teeth.py`, `tests/test_mutation_teeth_regressions.py`, `tests/test_mutation_worker.py`,
 `tests/test_mutation_fingerprint_python_files.py`, `tests/test_mutation_harness_version_is_bumped.py`.
 Baseline durations: `audits/2026-10-21/prof/before_durations.txt` (173 passed in 190.5 s, `-n 0 --no-cov`).
-Profiles: `audits/2026-10-21/prof/four_workers_before.prof`. Measurement script: `audits/2026-10-21/prof/exp_startup.py`.
+Profiles: the binary cProfile dump of the four_workers run was not kept (it was not committed; the figures below are from the run it recorded). Measurement script: `audits/2026-10-21/prof/exp_startup.py`.
 
 ### PROF-M1 (P2) -- Mutation sweep tests spend their time in cold pytest children, not in the harness
 
@@ -67,7 +67,7 @@ The trimmed-startup numbers above are the expected effect of proposal 1, not a m
 ## Files changed
 
 - `audits/2026-10-21/mutation_profile.md` (this report)
-- `audits/2026-10-21/prof/before_durations.txt`, `four_workers_before.prof`, `exp_startup.py` (measurement evidence)
+- `audits/2026-10-21/prof/before_durations.txt`, `exp_startup.py` (measurement evidence; the four_workers `.prof` dump was lost and is not in git)
 
 No file under `src/` or `tests/` was modified. No harness content-hash file was touched. Ruff, mypy and the test runs were
 not needed for a changed-file set, since none exists.
