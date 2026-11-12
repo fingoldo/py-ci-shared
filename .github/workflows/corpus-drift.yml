@@ -67,7 +67,7 @@ jobs:
       matrix:
         name: ${{ fromJSON(needs.plan.outputs.names) }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     permissions:
       contents: read
     env:
@@ -97,13 +97,17 @@ jobs:
             --dest "$RUNNER_TEMP/corpus" --repos-file "$RUNNER_TEMP/corpus/repos.toml"
 
       - name: Snapshot this repo's counts
-        timeout-minutes: 80
+        timeout-minutes: 110
         run: |
           if ! grep -q '^\[\[repo\]\]' "$RUNNER_TEMP/corpus/repos.toml" 2>/dev/null; then
             echo "::warning title=shard skipped::${{ matrix.name }} was not checked (private, no token): no snapshot for it tonight"
             exit 0
           fi
-          python -m py_ci_shared.corpus_drift snapshot --repos-file "$RUNNER_TEMP/corpus/repos.toml" --output "shard-${{ matrix.name }}.json"
+          # mlframe alone ran four finder processes that each parse the whole corpus, and the runner was shut down for memory: two there.
+          workers=4
+          if [ "${{ matrix.name }}" = "mlframe" ]; then workers=2; fi
+          python -m py_ci_shared.corpus_drift snapshot --repos-file "$RUNNER_TEMP/corpus/repos.toml" \
+            --workers "$workers" --output "shard-${{ matrix.name }}.json"
 
       - name: Upload the shard snapshot
         if: always()
