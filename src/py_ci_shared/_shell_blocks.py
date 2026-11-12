@@ -173,9 +173,8 @@ class _Lexer:
 _HEREDOC = re.compile(r"<<(-?)\s*(?:\"([^\"]+)\"|'([^']+)'|\\?([A-Za-z_]\w*))")
 
 
-def _quote_open(text: str) -> bool:
-    """True when *text* ends inside an unclosed ' or \" quote (backslash escapes outside single quotes)."""
-    quote = ""
+def _quote_state(text: str, quote: str = "") -> str:
+    """The unclosed quote (``'``, ``"`` or ``""``) at the end of *text*, scanning on from the quote state *quote*."""
     i = 0
     while i < len(text):
         c = text[i]
@@ -189,7 +188,12 @@ def _quote_open(text: str) -> bool:
         elif c in "'\"":
             quote = c
         i += 1
-    return bool(quote)
+    return quote
+
+
+def _quote_open(text: str) -> bool:
+    """True when *text* ends inside an unclosed ' or \" quote (backslash escapes outside single quotes)."""
+    return bool(_quote_state(text))
 
 
 def _heredoc_delimiters(text: str) -> "list[tuple[str, bool]]":
@@ -200,11 +204,27 @@ def logical_lines(lines: "list[str]") -> Iterator[tuple[int, str]]:
     """``(first physical index, text)`` per logical line: continuations and open quotes joined, heredoc bodies skipped."""
     i = 0
     while i < len(lines):
-        start, text = i, lines[i]
-        while (text.endswith("\\") or _quote_open(text)) and i + 1 < len(lines):
+        start = i
+        # pieces are collected and joined once: a quote left open over a long file joins every line after it, and joining
+        # by repeated concatenation copied the whole text per line (quadratic in the file size)
+        parts = [lines[i]]
+        quote = _quote_state(lines[i])
+        ends_backslash = lines[i].endswith("\\")
+        while (ends_backslash or quote) and i + 1 < len(lines):
             i += 1
-            text = (text[:-1] if text.endswith("\\") else text + "\n") + lines[i]
+            if ends_backslash:
+                # a continuation drops the backslash, which changes the scan, so the joined text is scanned afresh
+                joined = "".join(parts)[:-1] + lines[i]
+                parts = [joined]
+                quote = _quote_state(joined)
+                ends_backslash = joined.endswith("\\")
+            else:
+                # inside an open quote the next line continues the scan from where the last one stopped
+                parts.append("\n" + lines[i])
+                quote = _quote_state(lines[i], quote)
+                ends_backslash = lines[i].endswith("\\")
         i += 1
+        text = "".join(parts)
         yield start, text
         for delim, strip_tabs in _heredoc_delimiters(text):
             while i < len(lines) and (lines[i].lstrip("\t") if strip_tabs else lines[i]).rstrip() != delim:

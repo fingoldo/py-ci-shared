@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from py_ci_shared._shell_blocks import TOP_LEVEL, parse_shell, workflow_run_scripts
+from py_ci_shared._shell_blocks import TOP_LEVEL, logical_lines, parse_shell, workflow_run_scripts
 
 
 def _blocks(script: str) -> "dict[str, int]":
@@ -71,3 +71,16 @@ def test_a_last_case_clause_without_double_semicolon_does_not_swallow_the_rest()
     assert b["after"] == TOP_LEVEL and b["two"] != TOP_LEVEL
     b = _blocks('case "$v" in a) x ;; b) y ;; esac; z\n')
     assert b["z"] == TOP_LEVEL
+
+
+def test_a_quote_left_open_over_many_lines_joins_them_in_one_pass() -> None:
+    # quadratic before: every added line rescanned the whole joined text for the open quote
+    lines = ['echo "start'] + [f"line {k}" for k in range(5000)] + ['end"', "after"]
+    got = list(logical_lines(lines))
+    assert got[0][0] == 0 and got[0][1].endswith('end"') and got[1] == (len(lines) - 1, "after")
+
+
+def test_a_quote_closed_on_a_later_line_is_joined_and_an_escaped_quote_is_not_a_close() -> None:
+    assert list(logical_lines(['echo "a', 'b"', "x"])) == [(0, 'echo "a' + chr(10) + 'b"'), (2, "x")]
+    # an escaped quote inside double quotes does not close them, so the next line still joins
+    assert list(logical_lines(['echo "a ' + chr(92) + '"', "next"])) == [(0, 'echo "a ' + chr(92) + '"' + chr(10) + "next")]
