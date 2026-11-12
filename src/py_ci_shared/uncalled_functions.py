@@ -47,6 +47,7 @@ as a call.
 from __future__ import annotations
 
 import ast
+import weakref
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +56,8 @@ from typing import Any, Optional, Union
 from ._core.outcome import refreshed_skip
 from ._core import Baseline, UnparsedFilesError, child_nodes, refresh_requested, register_refresh_options, relative_posix, scan_python
 from ._core import walk as shared_walk
+from ._core.scopes import iter_scopes, scope_bodies
+from ._core.node_index import tree_memo
 
 __all__ = [
     "CATEGORIES",
@@ -140,6 +143,30 @@ def _definitions(tree: ast.Module, path: Path, root: Path) -> dict[str, str]:
     return out
 
 
+# function def -> the nodes of its own scope from the shared index (header included, see _local_bindings); filled by _references
+_OWN_NODES: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.WeakKeyDictionary()
+
+
+def _header_ids(fn: _FuncDef) -> set[int]:
+    """Ids of the nodes in a def's header (decorators, parameters with their defaults and annotations, return annotation).
+
+    The index lists a def's header with its body; a local name is bound by the body only, so the header is left out."""
+    parts: list[ast.AST] = [*fn.decorator_list, fn.args, *([fn.returns] if fn.returns is not None else [])]
+    return {id(sub) for part in parts for sub in shared_walk(part)}
+
+
+def _body_nodes_by_walk(fn: "Union[_FuncDef, ast.Lambda]") -> list[ast.AST]:
+    """The body's nodes outside nested scopes, by walking (a lambda, or a def the index does not hold)."""
+    out: list[ast.AST] = []
+    stack: list[ast.AST] = list(fn.body) if isinstance(fn.body, list) else [fn.body]
+    while stack:
+        node = stack.pop()
+        out.append(node)
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            stack.extend(child_nodes(node))
+    return out
+
+
 def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
     """Names *fn* binds in its own scope (parameters, assignments, loop/with/except targets, local imports and
     defs), minus those it declares ``global``/``nonlocal``."""
@@ -147,18 +174,18 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
     bound = {a.arg for a in [*args.posonlyargs, *args.args, *args.kwonlyargs, *(a for a in (args.vararg, args.kwarg) if a)]}
     declared_outer: set[str] = set()
     imported: set[str] = set()
-    stack: list[ast.AST] = list(fn.body) if isinstance(fn.body, list) else [fn.body]
-    while stack:
-        node = stack.pop()
+    if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn in _OWN_NODES:
+        header = _header_ids(fn)
+        nodes = [node for node in _OWN_NODES[fn] if id(node) not in header]
+    else:
+        nodes = _body_nodes_by_walk(fn)
+    for node in nodes:
         if isinstance(node, (ast.Global, ast.Nonlocal)):
             declared_outer.update(node.names)
         elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
             bound.add(node.id)
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            bound.add(node.name)
-            continue  # its body is its own scope
-        elif isinstance(node, ast.Lambda):
-            continue
+            bound.add(node.name)  # its body is its own scope
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             # Not a shadow: a local import binds the name to the imported object itself, so ``from ids import
             # make_id`` inside a function followed by ``make_id()`` IS a call of make_id. Counting it as a local
@@ -166,7 +193,6 @@ def _local_bindings(fn: "Union[_FuncDef, ast.Lambda]") -> set[str]:
             imported.update((a.asname or a.name).split(".")[0] for a in node.names)
         elif isinstance(node, ast.ExceptHandler) and node.name:
             bound.add(node.name)
-        stack.extend(child_nodes(node))
     # A name the function imports is the imported object on the path that imported it, even when a fallback also assigns
     # it (``try: from x import f`` / ``except ImportError: f = None``); treating it as a shadow reported f as dead.
     return bound - declared_outer - imported
@@ -195,8 +221,42 @@ def _references(tree: ast.Module) -> "tuple[set[str], dict[str, str]]":
     """
     loaded: set[str] = set()
     aliases: dict[str, str] = {}
-    _visit_references(tree, frozenset(), frozenset(), loaded, aliases)
+    for scope in iter_scopes(tree):  # the shared per-tree index: each def's own nodes, read by _local_bindings
+        if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _OWN_NODES[scope.node] = scope.nodes
+    bodies = tree_memo(tree, "uncalled_functions.bodies", lambda: scope_bodies(tree))
+    _visit_context(bodies[id(tree)], bodies, frozenset(), frozenset(), loaded, aliases)
     return loaded, aliases
+
+
+def _visit_def_parts(
+    node: "Union[ast.FunctionDef, ast.AsyncFunctionDef]", shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]"
+) -> None:
+    """Decorators, defaults and annotations of a def: they run in the ENCLOSING scope, so they are read with its bindings."""
+    parts: list[ast.AST] = [*node.decorator_list, *node.args.defaults, *(d for d in node.args.kw_defaults if d is not None)]
+    parts += [param.annotation for param in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs] if param.annotation is not None]
+    for part in parts:
+        _visit_references(part, shadowed, own, loaded, aliases)
+
+
+_REFERENCE_KINDS = (ast.Name, ast.Attribute, ast.Import, ast.ImportFrom, ast.Call)
+
+
+def _visit_context(
+    nodes: "list[ast.AST]", bodies: "dict[int, list[ast.AST]]", shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]"
+) -> None:
+    """Visit the nodes of one scope (:func:`scope_bodies`) with its shadowing and own-name context. A def's body is that def's own
+    scope with its header and return annotation left out (the original recursion never read them); a lambda keeps the old path."""
+    for node in nodes:
+        if isinstance(node, _REFERENCE_KINDS):  # _record_reference records nothing for any other node type: skip the call
+            _record_reference(node, shadowed, own, loaded, aliases)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            _visit_def_parts(node, shadowed, own, loaded, aliases)
+            header = _header_ids(node)
+            body = [child for child in bodies[id(node)] if id(child) not in header]
+            _visit_context(body, bodies, frozenset(shadowed | _local_bindings(node)), frozenset(own | {node.name}), loaded, aliases)
+        elif isinstance(node, ast.Lambda):
+            _visit_function_scope(node, shadowed, own, loaded, aliases)
 
 
 def _record_reference(node: ast.AST, shadowed: "frozenset[str]", own: "frozenset[str]", loaded: "set[str]", aliases: "dict[str, str]") -> None:

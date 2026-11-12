@@ -121,7 +121,7 @@ def _falls_off_geometrically(node: ast.AST) -> bool:
         try:
             return unparse_stable(node.left) == unparse_stable(node.right)
         except Exception as exc:  # best-effort: unparse of a diagnostic rendering; the finding is reported without it
-            logger.warning("epsilon_padded_denominators.py handler at line 96 substituted a fallback for %s: %s", type(exc).__name__, exc)
+            logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
             logger.debug("could not unparse expression pair: %s", type(exc).__name__)
             return False
     if isinstance(node, ast.Call):

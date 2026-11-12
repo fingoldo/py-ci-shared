@@ -43,7 +43,7 @@ Small, boring rules that each cost one line to satisfy and are invisible until t
 6. **No ``.py`` or ``.sql`` inside an ``audits/`` folder.** An audit folder holds findings; the
    runbook goes in ``sql/``, the probe in ``probes/``, the script in ``scripts/``, and the finding
    links to it. Found 2026-09-11 in social: a deliberate 09-04 ``DROP INDEX`` runbook sat in
-   ``audits/2026-09-01-full-audit/``, its conclusion never reached the finding, and a later
+   ``audits/2026-09-01-full-audit/`` in the social repository, its conclusion never reached the finding, and a later
    ``CREATE`` runbook in ``sql/`` had the operator rebuild the index it had dropped. Eight such
    files across three projects; the owner's rule since. Opt out with
    ``audit_dirs_hold_no_scripts=False`` only for a repo whose ``audits`` is a code package.

@@ -95,7 +95,8 @@ class TestF5Refreshed:
         repo = _repo(tmp_path, FL, {"pkg/m.py": LONG_FN})
         assert cli.main(["refresh", "function_length", "--grow", "--repo", str(repo)]) == 0
         out = capsys.readouterr().out
-        assert out.startswith("REFRESH function_length") and "+1 -0 entries (b.json)" in out
+        # 49-F8: a baseline written for the first time has no "before", so it is reported as created, never as "+0 -0".
+        assert out.startswith("REFRESH function_length") and "created b.json with 1 entries" in out and "+0 -0" not in out
         assert "0 skipped" in out and "1 refreshed" in out and "SKIP " not in out
         (repo / "pkg" / "m.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
         assert cli.main(["refresh", "function_length", "--repo", str(repo)]) == 0
@@ -190,3 +191,37 @@ class TestF8StaleLineNumbers:
 
     def test_handlers_that_already_print_their_error_do_not_also_warn(self):
         assert "substituted a fallback" not in (SRC / "cli.py").read_text(encoding="utf-8")
+
+    def test_fallback_warnings_do_not_hard_code_a_line_number(self):
+        """A hard-coded ``handler at line N`` in a message drifts on the first edit above it (49-F1); the logger name already names the module."""
+        offenders = [
+            f"{path.name}:{i}"
+            for path in sorted(SRC.rglob("*.py"))
+            for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if re.search(r"handler at line \d+", line)
+        ]
+        assert offenders == []
+
+
+def test_a_sub_second_budget_is_not_printed_as_zero_seconds():
+    """A 0.3 s budget must read as 0.3 s in the verdict, not as 0 s (49-F4)."""
+    from py_ci_shared._core.runner import GateResult, budget_verdict
+
+    verdict = budget_verdict(GateResult("fast_gate", "PASSED", "", seconds=0.6, budget_s=0.3), "warn")
+    assert verdict is not None and "over its 0.3s budget" in verdict
+
+
+def test_a_misconfigured_gate_is_reported_in_its_row_not_as_a_gate_less_warning(tmp_path, monkeypatch, caplog):
+    """49-F5: the warning named no gate and repeated the ERROR row; the row carries the message, so the log stays quiet."""
+    import logging
+
+    config = RepoConfig(repo_root=tmp_path, gates=(GateRun(name="g", module="x", entry=None, kwargs={}),))
+
+    def misconfigured(run):
+        raise ConfigError("missing kwarg 'root'")
+
+    monkeypatch.setattr(runner, "resolve_gate", misconfigured)
+    with caplog.at_level(logging.WARNING):
+        result = run_gate(config, config.gates[0])
+    assert result.status == ERROR and "missing kwarg 'root'" in result.message
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []

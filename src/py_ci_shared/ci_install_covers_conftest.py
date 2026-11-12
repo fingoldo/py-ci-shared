@@ -676,7 +676,8 @@ def _ini_testpaths(repo: Repo, rootdir: Path) -> list[str]:
         parser = configparser.ConfigParser()
         try:
             parser.read_string(read_source(rootdir / name) if (rootdir / name).is_file() else "")
-        except (configparser.Error, SourceError):
+        except (configparser.Error, SourceError) as exc:  # an unreadable config is a finding, not a silent "no testpaths" (40-F3)
+            repo.problems.append(Finding(repo.rel(rootdir / name), 1, RULE_UNPARSED, f"unparsable: {type(exc).__name__}: {exc}"))
             continue
         if parser.has_option(section, "testpaths"):
             return parser.get(section, "testpaths").split()

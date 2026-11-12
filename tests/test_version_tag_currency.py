@@ -25,8 +25,6 @@ from py_ci_shared._core.git import git_env
 def _repo(tmp_path: Path, version: str, tags: tuple[str, ...] = ()) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True, env=git_env())
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True, env=git_env())
-    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, env=git_env())
     (tmp_path / "pubspec.yaml").write_text(f"name: pkg\nversion: {version}\n", encoding="utf-8")
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
     subprocess.run(["git", "commit", "-q", "-m", "seed"], cwd=tmp_path, check=True, env=git_env())

@@ -40,7 +40,7 @@ def full_layout(tmp_path: Path) -> Path:
     shutil.copytree(REPO / "src" / "py_ci_shared", root / "src" / "py_ci_shared", ignore=IGNORE)
     shutil.copytree(REPO / "tests" / "canary", root / "tests" / "canary")
     _copy_files(
-        root, ("tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "tests/test_package_inventory.py", "tests/conftest.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
+        root, ("tests/test_gate_teeth.py", "tests/_gate_teeth_canaries.py", "tests/_gate_teeth_canaries_more.py", "tests/test_package_inventory.py", "tests/conftest.py", "tests/_git_repo_helper.py", "README.md", "pyproject.toml", ".pre-commit-hooks.yaml")
     )
     return root
 
@@ -157,7 +157,7 @@ def test_the_scaffold_passes_the_inventory_and_fails_until_filled_in(full_layout
     new_gate(full_layout, "unfinished_gate", summary="Not written yet")
     # A nested run is its own session: under xdist the outer worker's PYTEST_XDIST_* variables would make it believe it is a worker of the outer run.
     inherited = {k: v for k, v in os.environ.items() if not k.startswith("PYTEST_XDIST")}
-    env = dict(inherited, PYTHONPATH=str(full_layout / "src"), PYTHONUNBUFFERED="1")
+    env = dict(inherited, PYTHONPATH=str(full_layout / "src"), PYTHONUNBUFFERED="1", PYTEST_DISABLE_PLUGIN_AUTOLOAD="1")
 
     def pytest_run(*ids: str) -> subprocess.CompletedProcess:
         cmd = [sys.executable, "-m", "pytest", "-p", "no:randomly", "-p", "no:cacheprovider", "-rA", *ids]

@@ -96,6 +96,20 @@ def scope_nodes(tree: ast.Module, opener: _Opener) -> "list[ast.AST]":
     raise ValueError("opener is not a scope of this tree")
 
 
+def function_param_names(func: ast.AST) -> set[str]:
+    """The parameter names a function binds, positional, keyword-only and ``*args``; ``**kwargs`` is not included, as the gates that
+    use this have always had it. Any other node (a module, a lambda's body) binds none."""
+    names: set[str] = set()
+    if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return names
+    args = func.args
+    for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
+        names.add(arg.arg)
+    if args.vararg:
+        names.add(args.vararg.arg)
+    return names
+
+
 def qualified_functions(tree: ast.Module, *, locals_marker: bool = True) -> "list[tuple[str, Union[ast.FunctionDef, ast.AsyncFunctionDef]]]":
     """``(qualified name, definition)`` of every function in *tree*, in source order: methods as ``Class.method``, nested functions as ``outer.<locals>.inner``.
 
@@ -123,3 +137,29 @@ def qualified_functions(tree: ast.Module, *, locals_marker: bool = True) -> "lis
         return out
 
     return tree_memo(tree, ("py_ci_shared.qualified_functions", locals_marker), build)
+
+
+def scope_bodies(tree: ast.Module) -> "dict[int, list[ast.AST]]":
+    """``id(function def) or id(tree) -> the nodes that run in that scope``, class bodies included (a class does not open a scope for the
+    names it reads), stopping at each nested function and lambda (the def itself is kept). Built from :func:`iter_scopes`, once per tree.
+
+    The nodes of a def include its header (decorators, parameters, return annotation); callers that need the body alone leave them out.
+    The result is shared (memoised on the tree): do not mutate it.
+    """
+
+    def with_classes(nodes: "list[ast.AST]") -> "list[ast.AST]":
+        out = list(nodes)
+        for node in nodes:
+            if isinstance(node, ast.ClassDef):
+                out.extend(with_classes(scope_index[id(node)]))
+        return out
+
+    scopes = iter_scopes(tree)
+    scope_index = {id(s.node): s.nodes for s in scopes if s.node is not None}
+    out: dict[int, list[ast.AST]] = {}
+    for scope in scopes:
+        if isinstance(scope.node, ast.ClassDef):
+            continue
+        key = id(tree) if scope.node is None else id(scope.node)
+        out[key] = with_classes(scope.nodes)
+    return out

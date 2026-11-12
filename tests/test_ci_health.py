@@ -7,6 +7,7 @@ timestamps and the code-failure annotations are copied from the consumer repos' 
 
 from __future__ import annotations
 
+import copy
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -419,6 +420,17 @@ def test_collect_probes_failures_until_the_first_code_failure():
     assert probed == ["repos/fingoldo/autopsia/actions/runs/404/jobs", "repos/fingoldo/autopsia/actions/runs/403/jobs"], "probing stops at a code failure"
 
 
+def test_unreadable_annotations_keep_the_run_a_real_failure_not_a_collection_error():
+    """A 403 on a private repo's check-run annotations is not a billing refusal and must not turn the consumer into an error."""
+
+    def api(path: str) -> Any:
+        if path.split("?")[0].endswith("/jobs"):
+            return copy.deepcopy(BILLING_JOBS)
+        raise ci_health.ApiError(f"GET {path}: HTTP 403 Forbidden", status=403)
+
+    assert ci_health._billing_refusals(api, "o/r", relevant_runs(MIXED_RUNS)) == []
+
+
 def test_billing_probes_are_capped(monkeypatch):
     monkeypatch.setattr(ci_health, "MAX_BILLING_PROBES", 1)
     calls: list[str] = []
@@ -597,3 +609,43 @@ def test_this_repository_watches_its_own_schedules():
     assert [c.repo for c in load_consumers(config)] == ["fingoldo/py-ci-shared"]
     workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci-health.yml").read_text(encoding="utf-8")
     assert "configs/self_watch.toml" in workflow
+
+
+def _contents(text: str) -> dict[str, Any]:
+    import base64
+
+    return {"content": base64.b64encode(text.encode("utf-8")).decode("ascii")}
+
+
+@pytest.mark.parametrize(
+    ("text", "live"),
+    [
+        ("on: workflow_dispatch\n", False),
+        ("on: [push, workflow_dispatch]\n", True),
+        ("on:\n  schedule:\n    - cron: '0 3 * * *'\n", True),
+        ("on:\n  pull_request:\n", True),
+        ("name: no trigger at all\n", False),
+    ],
+)
+def test_only_a_workflow_with_a_live_trigger_is_counted(text, live):
+    path = ".github/workflows/w.yml"
+    api = FakeApi({f"repos/fingoldo/x/contents/{path}": _contents(text)})
+    assert ci_health.has_live_trigger(api, "fingoldo/x", path, "main") is live
+
+
+def test_an_unreadable_workflow_file_stays_counted():
+    assert ci_health.has_live_trigger(FakeApi({}), "fingoldo/x", ".github/workflows/w.yml", "main") is True
+
+
+def test_a_private_consumer_is_left_out_of_the_public_report_unless_asked(tmp_path, capsys):
+    p = tmp_path / "consumers.toml"
+    p.write_text(
+        '[[consumer]]\nname = "pubrepo"\nrepo = "fingoldo/pubrepo"\nbranch = "main"\nprivate = false\n\n'
+        '[[consumer]]\nname = "privrepo"\nrepo = "fingoldo/privrepo"\nbranch = "main"\nprivate = true\n',
+        encoding="utf-8",
+    )
+    ci_health.main([str(p)], api=FakeApi({}), now=NOW)
+    out = capsys.readouterr().out
+    assert "pubrepo" in out and "privrepo" not in out
+    ci_health.main([str(p), "--include-private"], api=FakeApi({}), now=NOW)
+    assert "privrepo" in capsys.readouterr().out

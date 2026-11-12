@@ -206,6 +206,7 @@ class _Ctx:
     required_in_exempt: dict[str, str] = field(default_factory=dict)
     seen_selectors: set[str] = field(default_factory=set)
     findings: list[Finding] = field(default_factory=list)
+    skipped_includes: list[SourceProblem] = field(default_factory=list)
 
 
 def _expand(directives: list[Directive], ctx: _Ctx, depth: int = 0) -> tuple[list[Directive], list[Directive]]:
@@ -225,7 +226,11 @@ def _expand(directives: list[Directive], ctx: _Ctx, depth: int = 0) -> tuple[lis
         for target in targets:
             try:
                 inner = parse_nginx(read_source(target))
-            except (SourceError, NginxParseError):
+            except SourceError as exc:  # an unreadable include is reported, its headers are not silently dropped (40-F3)
+                ctx.skipped_includes.append(SourceProblem(target, target.as_posix(), exc.line if exc.line is not None else 1, exc.kind, exc.message))
+                continue
+            except NginxParseError as exc:
+                ctx.skipped_includes.append(SourceProblem(target, target.as_posix(), exc.line, "unparsable", str(exc)))
                 continue
             nested, still = _expand(inner, ctx, depth + 1)
             out.extend(nested)
@@ -330,6 +335,7 @@ def _scan(
         ctx = _Ctx(rel, path, wanted, resolve_includes, exempt, in_exempt)
         _walk(Directive("main", [], 1, block=tree), {}, None, ctx)
         findings.extend(ctx.findings)
+        scan.unparsed.extend(ctx.skipped_includes)
         seen |= ctx.seen_selectors
     if exempt and scan.files:
         findings.extend(_exemption_findings(exempt, seen, "<exempt>"))

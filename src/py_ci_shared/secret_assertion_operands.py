@@ -81,8 +81,18 @@ def _is_environ(node: ast.AST) -> bool:
     return isinstance(node, ast.Name) and node.id in ("environ", "environb")
 
 
+#: Whole words of a secret variable name for the assertion gate. A substring match flagged ordinary settings (AUTHOR_NAME,
+#: MONKEY_MODE, KEYBOARD_LAYOUT). The redaction in secret_safe_test_output keeps the broad SECRET_NAME: over-matching there is the safe side.
+_SECRET_WORDS = frozenset(
+    {
+        "KEY", "KEYS", "TOKEN", "TOKENS", "SECRET", "SECRETS", "PASSWORD", "PASSWORDS", "PASSWD", "DSN", "DSNS",
+        "CREDENTIAL", "CREDENTIALS", "AUTH", "AUTHORIZATION", "AUTHENTICATION", "COOKIE", "COOKIES", "PRIVATE",
+    }
+)
+
+
 def _secret_name(name: str) -> bool:
-    return bool(SECRET_NAME.search(name) or _URL_NAME.search(name))
+    return any(word in _SECRET_WORDS for word in name.upper().split("_")) or bool(_URL_NAME.search(name))
 
 
 def _binding_strings(node: ast.AST) -> "list[tuple[ast.AST, Optional[list[str]]]]":

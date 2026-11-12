@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import base64
 import logging
+import json
 import os
 import re
 import sys
@@ -30,7 +31,7 @@ from ._toml_compat import tomllib
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["TOKEN_ENV", "CheckoutResult", "Consumer", "checkout", "load_consumers", "main", "write_repos_file"]
+__all__ = ["TOKEN_ENV", "CheckoutResult", "Consumer", "checkout", "load_consumers", "main", "not_checked_markdown", "write_repos_file"]
 
 TOKEN_ENV = "CONSUMER_READ_TOKEN"
 
@@ -149,13 +150,26 @@ def _toml_str(text: str) -> str:
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def write_repos_file(path: Path, cloned: Sequence[tuple[Consumer, Path]]) -> None:
-    """Write the ``[[repo]]`` list (absolute paths) that ``adoption_matrix --repos-file`` and ``corpus_drift`` read."""
+def write_repos_file(path: Path, cloned: Sequence[tuple[Consumer, Path]], skipped: Sequence[Consumer] = ()) -> None:
+    """Write the ``[[repo]]`` list (absolute paths) that ``adoption_matrix --repos-file`` and ``corpus_drift`` read.
+
+    The consumers skipped for want of a token go in ``[[skipped]]`` tables, which those readers ignore; ``not-checked`` renders them (47-F9)."""
     lines = []
     for consumer, root in cloned:
         lines += ["[[repo]]", f"name = {_toml_str(consumer.name)}", f"path = {_toml_str(root.resolve().as_posix())}", ""]
+    for consumer in skipped:
+        lines += ["[[skipped]]", f"name = {_toml_str(consumer.name)}", f"repo = {_toml_str(consumer.repo)}", ""]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes("\n".join(lines).encode("utf-8"))
+
+
+def not_checked_markdown(repos_file: Path) -> str:
+    """A markdown table of the consumers a checkout skipped, or an empty string when it skipped none."""
+    skipped = tomllib.loads(repos_file.read_text(encoding="utf-8")).get("skipped", [])
+    if not skipped:
+        return ""
+    rows = "\n".join(f"| {entry['name']} | {entry['repo']} | private, {TOKEN_ENV} not set |" for entry in skipped)
+    return f"\n## Not checked\n\n| consumer | repo | reason |\n|---|---|---|\n{rows}\n"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -168,21 +182,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--repos-file", required=True, help="write the [[repo]] list of the cloned repos here")
     p.add_argument("--corpus-only", action="store_true", help="only the consumers marked corpus = true")
     p.add_argument(
+        "--only", action="append", default=[], metavar="NAME", help="only the consumer with this name (repeatable): one matrix shard clones one repo"
+    )
+    q_names = sub.add_parser("corpus-names", help="print the JSON list of the consumer names marked corpus = true (the matrix of the nightly drift job)")
+    q_names.add_argument("config", help="consumers.toml")
+    q = sub.add_parser("not-checked", help="print the markdown table of the consumers a checkout skipped")
+    q.add_argument("repos_file", help="the --repos-file a checkout wrote")
+    p.add_argument(
         "--fail-on-skipped-private",
         action="store_true",
         help="exit 1 when a private consumer was skipped for want of a token (an expired token then turns the scheduled job red instead of silently checking only the public repos)",
     )
     args = parser.parse_args(argv)
+    if args.command == "not-checked":
+        sys.stdout.write(not_checked_markdown(Path(args.repos_file)))
+        return 0
     consumers = load_consumers(Path(args.config))
+    if args.command == "corpus-names":
+        sys.stdout.write(json.dumps([c.name for c in consumers if c.corpus]) + "\n")
+        return 0
     if args.corpus_only:
         consumers = [c for c in consumers if c.corpus]
+    if getattr(args, "only", None):
+        consumers = [c for c in consumers if c.name in args.only]
     token = os.environ.get(TOKEN_ENV, "").strip() or None
     result = checkout(consumers, Path(args.dest), token=token)
     for consumer in result.skipped:
         sys.stdout.write(f"::warning title=consumer skipped::{consumer.repo} is private and {TOKEN_ENV} is not set; it was NOT checked\n")
     for consumer, error in result.failed:
         sys.stdout.write(f"::error title=consumer checkout failed::{consumer.repo}@{consumer.branch}: {error.splitlines()[0] if error else ''}\n")
-    write_repos_file(Path(args.repos_file), result.cloned)
+    write_repos_file(Path(args.repos_file), result.cloned, result.skipped)
     sys.stdout.write(f"cloned {len(result.cloned)}, skipped {len(result.skipped)} (no token), failed {len(result.failed)}\n")
     if result.failed:
         return 1

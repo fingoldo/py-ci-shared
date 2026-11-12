@@ -45,14 +45,14 @@ across edits above the site, ``path::function`` (the qualified name, ``<module>`
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from ._core.scan import scan_roots_excluding
-from ._core.scopes import own_nodes
-from ._core import ScanResult, child_nodes, nodes_of
-from ._core.node_index import walk
+from ._core import ScanResult, nodes_of
+from ._core.node_index import parent_map, tree_memo, walk
+from ._core.scopes import iter_scopes
 
 __all__ = [
     "Finding",
@@ -103,6 +103,20 @@ def _key(node: ast.AST) -> str:
     return ""
 
 
+def _scope_parent(tree: ast.Module, scope: ast.AST, parent_all: dict[int, Optional[ast.AST]]) -> Callable[[ast.AST], Optional[ast.AST]]:
+    """Parent lookup that stops at *scope*: the guard chain never climbs out of the function or module it is checking."""
+
+    def up(node: ast.AST) -> Optional[ast.AST]:
+        if node is scope:
+            return None
+        return parent_all.get(id(node)) or tree
+
+    return up
+
+
+_PAIR_NODES = (ast.Assign, ast.AnnAssign, ast.NamedExpr, ast.Call)  # the only nodes _pairs ever yields pairs for
+
+
 def _pairs(node: ast.AST, sys_names: frozenset[str]) -> list[tuple[ast.AST, ast.AST]]:
     """(target, value) pairs an assignment makes, element-wise for ``a, b = x, y``; ``setattr(sys, "stdout", v)``
     yields a synthetic ``sys.stdout`` target."""
@@ -150,6 +164,8 @@ def _guard_names(own: list[ast.AST], sys_names: frozenset[str]) -> frozenset[str
     """Names this function binds from an expression that compares by identity and mentions a standard stream."""
     names: set[str] = set()
     for node in own:
+        if not isinstance(node, _PAIR_NODES):
+            continue  # _pairs yields nothing for any other node: skip the call (it dominated the gate)
         for target, value in _pairs(node, sys_names):
             walked = list(walk(value))
             compares = any(isinstance(n, ast.Compare) and any(isinstance(op, (ast.Is, ast.IsNot)) for op in n.ops) for n in walked)
@@ -170,9 +186,9 @@ def _guards(test: ast.AST, stream: str, sys_names: frozenset[str], guard_names: 
     return False
 
 
-def _guarded(node: ast.AST, stream: str, parents: dict[int, ast.AST], sys_names: frozenset[str], guard_names: frozenset[str]) -> bool:
+def _guarded(node: ast.AST, stream: str, up: Callable[[ast.AST], Optional[ast.AST]], sys_names: frozenset[str], guard_names: frozenset[str]) -> bool:
     """Is *node* under an enclosing guard, or after an exiting guard ``if`` in an enclosing statement list?"""
-    child, cur = node, parents.get(id(node))
+    child, cur = node, up(node)
     while cur is not None:
         if isinstance(cur, (ast.If, ast.While, ast.IfExp)) and child is not cur.test and _guards(cur.test, stream, sys_names, guard_names):
             return True
@@ -187,25 +203,55 @@ def _guarded(node: ast.AST, stream: str, parents: dict[int, ast.AST], sys_names:
                         and _guards(earlier.test, stream, sys_names, guard_names)
                     ):
                         return True
-        child, cur = cur, parents.get(id(cur))
+        child, cur = cur, up(cur)
     return False
 
 
 def _scopes(tree: ast.Module) -> list[tuple[_Scope, str]]:
-    """The module and every function, with qualified names (``Cls.method``, ``outer.<locals>.inner``)."""
+    """The module and every function, with qualified names (``Cls.method``, ``outer.<locals>.inner``), from the shared scope index."""
     out: list[tuple[_Scope, str]] = [(tree, "<module>")]
+    qual_of: dict[int, str] = {}
+    for scope in iter_scopes(tree):
+        if scope.node is None:
+            continue
+        parent = scope.parent
+        if parent is None or parent.node is None:
+            prefix = ""
+        elif isinstance(parent.node, ast.ClassDef):
+            prefix = f"{qual_of[id(parent)]}."
+        else:
+            prefix = f"{qual_of[id(parent)]}.<locals>."
+        qual_of[id(scope)] = f"{prefix}{scope.node.name}"
+        if not isinstance(scope.node, ast.ClassDef):
+            out.append((scope.node, qual_of[id(scope)]))
+    return out
 
-    def visit(node: ast.AST, prefix: str) -> None:
-        for child in child_nodes(node):
-            if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.")
-            elif isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                out.append((child, f"{prefix}{child.name}"))
-                visit(child, f"{prefix}{child.name}.<locals>.")
-            else:
-                visit(child, prefix)
 
-    visit(tree, "")
+def _own_by_scope(tree: ast.Module) -> dict[int, list[ast.AST]]:
+    """``id(scope) -> the nodes of its body for this gate`` (the module keyed by the tree): the shared index's own nodes, where a class
+    body also counts as part of the scope it is written in, so a class's nodes (and those of classes in it) are added here."""
+
+    def class_body(cls: ast.AST) -> list[ast.AST]:
+        out = list(index_own[id(cls)])
+        for node in index_own[id(cls)]:
+            if isinstance(node, ast.ClassDef):
+                out.extend(class_body(node))
+        return out
+
+    out: dict[int, list[ast.AST]] = {}
+    index_own: dict[int, list[ast.AST]] = {}
+    scopes = iter_scopes(tree)
+    for scope in scopes:
+        index_own[id(tree) if scope.node is None else id(scope.node)] = scope.nodes
+    for scope in scopes:
+        if scope.node is not None and isinstance(scope.node, ast.ClassDef):
+            continue
+        key = id(tree) if scope.node is None else id(scope.node)
+        nodes = list(scope.nodes)
+        for node in scope.nodes:
+            if isinstance(node, ast.ClassDef):
+                nodes.extend(class_body(node))
+        out[key] = nodes
     return out
 
 
@@ -213,14 +259,18 @@ def _module_findings(path: Path, tree: ast.Module) -> list[Finding]:
     findings: list[Finding] = []
     sys_names = _sys_names(tree)
     saved = _saved_locations(tree, sys_names)
+    parent_all = parent_map(tree)  # shared per tree; the scope boundary is kept by _scope_parent
+    own_of = tree_memo(tree, "standard_stream_restore.own_by_scope", lambda: _own_by_scope(tree))
     for scope, qualname in _scopes(tree):
-        own = list(own_nodes(child_nodes(scope), (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)))
-        parents = {id(c): p for p in [scope, *own] for c in child_nodes(p)}
+        own = list(own_of[id(tree) if scope is tree else id(scope)])
+        up = _scope_parent(tree, scope, parent_all)
         guard_names = _guard_names(own, sys_names)
         for node in own:
+            if not isinstance(node, _PAIR_NODES):
+                continue
             for target, value in _pairs(node, sys_names):
                 stream = _stream(target, sys_names)
-                if stream and _key(value) in saved and not _guarded(node, stream, parents, sys_names, guard_names):
+                if stream and _key(value) in saved and not _guarded(node, stream, up, sys_names, guard_names):
                     what = f"restores sys.{stream} from a saved value with no check that its own stream is still installed"
                     findings.append(Finding(path, getattr(node, "lineno", 0), what, qualname))
             if isinstance(node, ast.Call):

@@ -66,6 +66,7 @@ from typing import Any, Optional
 from ._core.outcome import refreshed_skip
 from ._core import DEFAULT_EXCLUDE, Baseline, ScanResult, iter_files, qualified_functions, refresh_requested, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.scopes import function_param_names as _param_names
 
 __all__ = [
     "DEFAULT_HANDLE_NAMES",
@@ -115,14 +116,6 @@ class IncompleteTransaction:
 
 def _iter_py_files(root: Path) -> Iterable[Path]:
     return iter_files(root, ("*.py",), exclude=DEFAULT_EXCLUDE)
-
-
-def _param_names(fn: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
-    args = fn.args
-    names = {a.arg for a in args.posonlyargs} | {a.arg for a in args.args} | {a.arg for a in args.kwonlyargs}
-    if args.vararg:
-        names.add(args.vararg.arg)
-    return names
 
 
 def _with_bound_names(fn: ast.FunctionDef | ast.AsyncFunctionDef, autocommitting: frozenset[str]) -> set[str]:

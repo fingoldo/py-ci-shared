@@ -149,6 +149,13 @@ def find_absent_doc_identifiers(
     return _absent(repo_root, doc_files=doc_files, corpus_files=corpus_files, exclude_docs=exclude_docs, ignore=ignore, external_commands=external_commands)[0]
 
 
+def _in_corpus(token: str, corpus: str, memo: dict[str, bool]) -> bool:
+    """``token in corpus``, each distinct token searched once per run: the corpus is a multi-megabyte substring search."""
+    if token not in memo:
+        memo[token] = token in corpus
+    return memo[token]
+
+
 def _absent(
     repo_root: Path,
     *,
@@ -169,6 +176,7 @@ def _absent(
     skipped = set(exclude_docs)
     ignored = set(ignore)
     problems: list[str] = []
+    in_corpus: dict[str, bool] = {}
     for doc in docs:
         rel = relative_posix(doc.resolve(), root)
         if rel in skipped or any(rel.startswith(s) for s in skipped if s.endswith("/")):
@@ -184,7 +192,7 @@ def _absent(
         foreign = _external_flags(lines, external_commands)
         for lineno, line in enumerate(lines, start=1):
             for token in _FLAG.findall(line) + _IDENT.findall(line):
-                if token in ignored or token in foreign or token in corpus:
+                if token in ignored or token in foreign or _in_corpus(token, corpus, in_corpus):
                     continue
                 problems.append(f"{rel}:{lineno}: `{token}` occurs nowhere in the source, config or tests")
     return problems, checked

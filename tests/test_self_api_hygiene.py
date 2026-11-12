@@ -23,7 +23,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "py_ci_shared"
 BASELINE = ROOT / "tests" / "baselines" / "self_api_hygiene.json"
 
-_REGISTRATION_METHODS = frozenset({"append", "add", "update", "setdefault", "register", "extend"})
+# The registry helpers that record a name at import on purpose: they are the registration the rule exempts, so their
+# module-body calls are not code run for its own sake.
+_REGISTRATION_METHODS = frozenset({"append", "add", "update", "setdefault", "register", "extend", "register_scanner", "register_check_alias", "add_constructor"})
 _ENTRYPOINT_NAMES = ("main", "_main")
 _ENTRYPOINT_PREFIX = "_cmd_"
 

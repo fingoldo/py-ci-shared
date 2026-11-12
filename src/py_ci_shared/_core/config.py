@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from .errors import CoreError
+from .source import resolve_cached
 
 __all__ = [
     "BUDGET_MODES",
@@ -94,7 +95,7 @@ class RepoConfig:
             if _canonical(run.name) == wanted:
                 return run
         enabled = ", ".join(run.name for run in self.gates) or "none"
-        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of {self.repo_root / 'pyproject.toml'} (enabled: {enabled})")
+        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: {enabled})")
 
 
 def _canonical(name: str) -> str:
@@ -278,7 +279,7 @@ def _inside_root(resolved_root: Path, path: Path, item: str) -> Path:
     ``../../other/**/*.py`` would make a gate read files outside the checkout: a silent, machine-dependent input.
     """
     try:
-        path.resolve().relative_to(resolved_root)
+        resolve_cached(path).relative_to(resolved_root)  # remembered per process: every glob match is resolved once, not once per config load
     except ValueError as exc:
         raise ConfigError(f"{item!r} resolves outside the repository root {resolved_root}; a corpus entry must stay inside it") from exc
     return path

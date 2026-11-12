@@ -116,18 +116,21 @@ def _line_of(text: str, job_name: str) -> int:
     return text.count(chr(10), 0, match.start()) + 1 if match else 1
 
 
-def _shells_out(tests_root: Path, tool: str) -> "list[Path]":
-    """Test files under *tests_root* that run *tool* as a subprocess (the tool name quoted or after ``-m``)."""
+def _shells_out(tests_root: Path, tool: str) -> "tuple[list[Path], list[Path]]":
+    """Test files under *tests_root* that run *tool* as a subprocess (the tool name quoted or after ``-m``), and the test files that
+    could not be read: their use of the tool is unknown, so the caller reports them as unparsed (40-F3)."""
     pattern = re.compile(rf"""['"]{re.escape(tool)}['"]|-m['",\s]+{re.escape(tool)}\b""")
     out: "list[Path]" = []
+    unreadable: "list[Path]" = []
     for path in iter_files(tests_root, ("*.py",), use_git=False) if tests_root.is_dir() else []:
         try:
             text = read_source(path)
         except SourceError:
+            unreadable.append(path)
             continue
         if "subprocess" in text and pattern.search(text):
             out.append(path)
-    return out
+    return out, unreadable
 
 
 def _pytest_paths(run: str) -> "list[str]":
@@ -138,13 +141,13 @@ def _pytest_paths(run: str) -> "list[str]":
     return paths
 
 
-def _test_job_exposes(root: Path, run_steps: "list[str]", tool: str, shell_cache: "dict[str, list[Path]]") -> bool:
+def _test_job_exposes(root: Path, run_steps: "list[str]", tool: str, shell_cache: "dict[str, tuple[list[Path], list[Path]]]") -> bool:
     if not any(_PYTEST.search(r) for r in run_steps):
         return False
     scoped = [p for r in run_steps for p in _pytest_paths(r)]
     if tool not in shell_cache:
         shell_cache[tool] = _shells_out(root, tool)
-    candidates = shell_cache[tool]
+    candidates = shell_cache[tool][0]
     if not scoped:
         return bool(candidates)
     prefixes = [root / p.rstrip("/") for p in scoped]
@@ -159,7 +162,7 @@ def _job_findings(
     job_name: str,
     job: "dict[str, Any]",
     config: "dict[str, set[str]]",
-    shell_cache: "dict[str, list[Path]]",
+    shell_cache: "dict[str, tuple[list[Path], list[Path]]]",
 ) -> "list[Finding]":
     steps = job.get("steps") or []
     runs = [str(s.get("run", "")) if isinstance(s, dict) else "" for s in steps]
@@ -215,7 +218,7 @@ def find_tool_config_env_vars_set_in_every_tool_job(
     unparsed: "list[str]" = []
     out: "list[Finding]" = []
     config: "dict[str, set[str]]" = {}
-    shell_cache: "dict[str, list[Path]]" = {}
+    shell_cache: "dict[str, tuple[list[Path], list[Path]]]" = {}
     pyproject = base / "pyproject.toml"
     try:
         config = _config_vars(tomllib.loads(read_source(pyproject))) if pyproject.is_file() else {}
@@ -232,6 +235,8 @@ def find_tool_config_env_vars_set_in_every_tool_job(
         for job_name, job in (workflow.get("jobs") or {}).items():
             if isinstance(job, dict) and f"{path.name}::{job_name}" not in allowed:
                 out.extend(_job_findings(rel, text, base, workflow, job_name, job, config, shell_cache))
+    for _candidates, unreadable in shell_cache.values():
+        unparsed.extend(f"{relative_posix(path, base)}: a test file that could not be read, so whether it runs the tool is unknown" for path in unreadable)
     if unparsed and not allow_unparsed:
         raise UnparsedFilesError(f"{len(unparsed)} file(s) could not be read or parsed:\n  " + "\n  ".join(unparsed))
     return sorted(out, key=lambda f: (f.path, f.line, f.rule, f.message))

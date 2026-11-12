@@ -523,7 +523,7 @@ def _importable(name: str) -> bool:
     try:
         return importlib.util.find_spec(name) is not None
     except (ImportError, ValueError) as exc:
-        logger.warning("phantom_code_references.py handler at line 407 substituted a fallback for %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("module spec lookup failed: %s", type(exc).__name__)
         return False
 
@@ -552,7 +552,7 @@ def _resolves_by_import(dotted: str) -> bool:
     except (
         Exception
     ) as exc:  # a property or a module __getattr__ may raise anything  # best-effort: a property or module __getattr__ may raise anything; the name is then unresolved by import, which the caller reports
-        logger.warning("phantom_code_references.py handler at line 433 substituted a fallback for %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         logger.debug("dotted name does not resolve by import: %s", type(exc).__name__)
         return False
     return True

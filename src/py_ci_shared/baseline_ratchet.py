@@ -49,7 +49,8 @@ import sys
 from collections.abc import Mapping
 from typing import Optional
 
-from ._core.baseline import UNJUSTIFIED_MARKER, atomic_write_text, dump_json, is_unjustified, write_ratchet
+from ._core.baseline import UNJUSTIFIED_MARKER, _reject_duplicate_keys, atomic_write_text, dump_json, is_unjustified, write_ratchet
+from ._core.errors import BaselineGrowthError
 
 __all__ = ["Baseline", "DEFAULT_DIRECTORY", "DEFAULT_REFRESH_COMMAND", "run_rules"]
 
@@ -83,11 +84,17 @@ class Baseline:
         if not os.path.exists(self.path):
             return {}
         with open(self.path, encoding="utf-8-sig") as handle:
-            data = json.load(handle)
-        if isinstance(data, dict) and "accepted" in data:
+            # A key written twice (a bad merge) is an error, not last-wins (42-F14), as in _core.baseline.load_json.
+            data = json.loads(handle.read(), object_pairs_hook=_reject_duplicate_keys)
+        if not isinstance(data, dict):
+            # A list or a scalar is not a baseline: reading it as empty would let an empty scan pass (42-F12).
+            raise ValueError(f"{self.path}: a baseline must be a JSON object, got {type(data).__name__}")
+        if "accepted" in data:
             accepted = data["accepted"]
-            return dict(accepted) if isinstance(accepted, dict) else {}
-        return {k: v for k, v in data.items() if not k.startswith("_")} if isinstance(data, dict) else {}
+            if not isinstance(accepted, dict):
+                raise ValueError(f"{self.path}: 'accepted' must be a JSON object, got {type(accepted).__name__}")
+            return dict(accepted)
+        return {k: v for k, v in data.items() if not k.startswith("_")}
 
     def save(self, accepted: Mapping[str, str]) -> None:
         os.makedirs(self.directory, exist_ok=True)
@@ -167,10 +174,23 @@ class Baseline:
         previous = self.load()
         before = dict.fromkeys(previous, 1) if os.path.exists(self.path) else None
 
-        def render(kept: dict[str, int]) -> str:
-            return self._render({key: previous.get(key, found[key]) for key in kept})
+        # A new entry gets the unjustified marker, not the scanner's sentence: the sentence would pass enforce as a human note (42-F16).
+        new_note = f"{UNJUSTIFIED_MARKER}: a refresh recorded this finding; replace this with the reason it is kept"
 
-        write_ratchet(self.path, dict.fromkeys(found, 1), gate=self.name, previous=before, render=render, grow=grow)
+        def render(kept: dict[str, int]) -> str:
+            return self._render({key: previous.get(key, new_note) for key in kept})
+
+        # The removals land before a refused addition is named, so a renamed key's note would be gone: name it in the refusal (42-F13).
+        removed = {key: note for key, note in previous.items() if key not in found and note and not is_unjustified(note)}
+        try:
+            write_ratchet(self.path, dict.fromkeys(found, 1), gate=self.name, previous=before, render=render, grow=grow)
+        except BaselineGrowthError as exc:
+            if not removed:
+                raise
+            carry = "; notes of the entries this refresh removed, to carry over to a renamed key: " + "; ".join(
+                f"{key}  note: {note}" for key, note in sorted(removed.items())
+            )
+            raise BaselineGrowthError(str(exc) + carry, exc.grown) from exc
 
 
 def run_rules(

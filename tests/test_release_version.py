@@ -231,6 +231,36 @@ def test_wait_for_ci_polls_until_the_run_finishes():
     assert calls[0] == "repos/o/r/actions/workflows/self-ci.yml/runs?head_sha=abc&branch=master&per_page=50"
 
 
+def test_wait_for_ci_survives_a_transient_api_error_and_reports_pending_when_it_persists():
+    """46-F15: one 503 aborted the release verification with a traceback; now it is retried, and a persisting outage is pending."""
+    import urllib.error
+
+    def flaky_then_green(path: str) -> Any:
+        if flaky_then_green.failures:
+            flaky_then_green.failures -= 1
+            raise urllib.error.HTTPError(path, 503, "unavailable", None, None)
+        return {"workflow_runs": [{"status": "completed", "conclusion": "success"}]}
+
+    flaky_then_green.failures = 1
+    assert guard.wait_for_ci(flaky_then_green, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)[0] == "green"
+
+    def always_503(path: str) -> Any:
+        raise urllib.error.HTTPError(path, 503, "unavailable", None, None)
+
+    state, reason = guard.wait_for_ci(always_503, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)
+    assert state == "pending" and "re-run this job" in reason
+
+
+def test_wait_for_ci_still_raises_on_a_client_error(monkeypatch):
+    import urllib.error
+
+    def forbidden(path: str) -> Any:
+        raise urllib.error.HTTPError(path, 403, "forbidden", None, None)
+
+    with pytest.raises(urllib.error.HTTPError):
+        guard.wait_for_ci(forbidden, "o/r", "abc", wait=0, sleep=lambda _s: None, clock=lambda: 0.0)
+
+
 def test_wait_for_ci_gives_up_as_pending_after_the_wait():
     ticks = iter([0.0, 10.0, 20.0, 30.0])
     state, why = guard.wait_for_ci(
@@ -279,6 +309,37 @@ def test_cli_refuses_to_move_v1_for_a_back_port_tag(tmp_path: Path):
     assert back_port.returncode == 1 and "::error::v1.18.1 is not the newest v1 release (v1.19.0 is)" in back_port.stdout
     newest = _cli("major-move", "v1.19.0", "--repo-dir", str(repo))
     assert newest.returncode == 0, newest.stdout + newest.stderr
+
+
+def test_rollback_refuses_when_the_releases_cannot_be_read(tmp_path: Path, monkeypatch, capsys):
+    """An unreadable releases API used to skip the published-release check, so a tag with no release could become v1."""
+    guard = _load_guard()
+    repo = _scratch_repo(tmp_path, ["v1.18.0", "v1.19.0"])
+    argv = ["rollback", "v1.18.0", "--repo-dir", str(repo), "--repo", "owner/name"]
+    monkeypatch.setattr(guard, "_release_names", lambda args: None)
+    assert guard.main(argv) == 1
+    assert "cannot read the GitHub releases of owner/name" in capsys.readouterr().out
+    monkeypatch.setattr(guard, "_release_names", lambda args: ["v1.18.0"])
+    assert guard.main(argv) == 0
+    monkeypatch.setattr(guard, "_release_names", lambda args: ["v1.19.0"])
+    assert guard.main(argv) == 1
+    assert "has no GitHub release" in capsys.readouterr().out
+
+
+def test_prepare_refuses_when_the_releases_cannot_be_read(tmp_path: Path, monkeypatch, capsys):
+    """An unreadable releases API used to fall back to the newest local tag, so prepare could name a version nobody published."""
+    guard = _load_guard()
+    repo = _scratch_repo(tmp_path, ["v1.18.0", "v1.19.0"])
+    argv = ["prepare", "1.19.1", "--repo-dir", str(repo), "--repo", "owner/name"]
+
+    def unreachable(path):
+        raise OSError("api down")
+
+    monkeypatch.setattr(guard, "_github", lambda token: unreachable)
+    assert guard.main(argv) == 2
+    assert "cannot read the GitHub releases of owner/name" in capsys.readouterr().out
+    monkeypatch.setattr(guard, "_github", lambda token: (lambda path: [{"tag_name": "v1.18.0"}]))
+    assert guard._published_release("owner/name", "", ["v1.19.0"]) == "v1.18.0"
 
 
 def test_cli_rollback_accepts_an_earlier_release_and_refuses_an_unknown_one(tmp_path: Path):
@@ -448,3 +509,10 @@ def test_the_changelog_top_heading_is_the_unreleased_next_version_or_the_release
     if tag in _tags() and _git("rev-parse", f"{tag}^{{commit}}") == _git("rev-parse", "HEAD"):
         assert first == VERSION, f"this is the commit tagged {tag}: rename '## {first}' to '## {VERSION}'"
     assert _changelog_headings().count("Unreleased") == 0, "a bare '## Unreleased' belongs to no release; use '## Unreleased (next: X.Y.Z)' once"
+
+
+def test_the_release_push_passes_the_token_header_through_the_environment_not_argv():
+    """51-F4: ``git -c <header-with-token>`` put the base64 token in argv, visible in a process listing; both pushes use GIT_CONFIG_* env."""
+    text = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "git -c" not in text or "extraheader" not in text.split("git -c", 1)[1].split("\n", 1)[0]
+    assert text.count("GIT_CONFIG_VALUE_0=") == 2

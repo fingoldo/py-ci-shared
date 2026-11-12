@@ -24,7 +24,7 @@ def test_a_repo_symlink_to_a_directory_outside_the_repo_is_not_copied_as_files(t
     workdir = tmp_path / "work"
     workdir.mkdir()
 
-    checkout_resolution._run_probe_in_a_copy(repo, "pkg", workdir, timeout=120, pytest_args=())
+    checkout_resolution._run_probe_in_a_copy(repo, "pkg", workdir, timeout=120, pytest_args=(), plugin_autoload=False)
 
     copied = Path(workdir / "copy" / "docs")
     assert copied.is_symlink(), "the link must be copied as a link, not as the target's files"

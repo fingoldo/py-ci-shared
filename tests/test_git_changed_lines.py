@@ -22,8 +22,6 @@ def _git(repo: Path, *args: str) -> None:
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
     _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.email", "t@example.com")
-    _git(tmp_path, "config", "user.name", "T")
     (tmp_path / "a.py").write_text("\n".join(f"line{i}" for i in range(1, 21)) + "\n", encoding="utf-8")
     _git(tmp_path, "add", "-A")
     _git(tmp_path, "commit", "-q", "-m", "base")

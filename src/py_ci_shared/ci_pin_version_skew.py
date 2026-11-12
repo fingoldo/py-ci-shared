@@ -43,6 +43,7 @@ from typing import Optional, Union
 
 from .ci_workflow_paths import workflow_files
 from ._core import EmptyScanError, Finding, SourceReadError, UnparsedFilesError, read_source, relative_posix
+from ._core.outcome import add_note
 
 __all__ = ["RULE", "assert_installed_matches_ci_pin", "find_pin_skew_findings", "installed_py_ci_shared_version"]
 
@@ -248,6 +249,10 @@ def assert_installed_matches_ci_pin(
     allow_unparsed: bool = False,
 ) -> None:
     """Fail when the installed py-ci-shared and the version the workflows pin disagree (see the module docstring)."""
+    known_releases = list(known_releases)
+    if not any(_vtuple(r) is not None for r in known_releases):
+        # 47-F12: without the release tags the lag gate cannot run, and a green run must not look as if it did.
+        add_note("ci-pin-lags-release NOT checked: no known_releases were passed; pass the library's release tags to judge pin lag")
     found = find_pin_skew_findings(
         root,
         workflows_dir=workflows_dir,

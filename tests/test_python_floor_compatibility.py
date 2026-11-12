@@ -14,6 +14,7 @@ is an argument being evaluated.
 from __future__ import annotations
 
 import ast
+import functools
 from pathlib import Path
 
 import pytest
@@ -25,6 +26,12 @@ SRC = REPO / "src" / "py_ci_shared"
 PYPROJECT = REPO / "pyproject.toml"
 MODULES = sorted(p for p in SRC.rglob("*.py") if "__pycache__" not in p.parts)
 TEST_FILES = sorted((REPO / "tests").glob("*.py"))
+
+
+@functools.cache
+def _tree(path: Path) -> ast.Module:
+    """The parsed file, read and parsed once for both checks below (48-F14)."""
+    return ast.parse(path.read_text(encoding="utf-8-sig"))
 
 
 def _python_floor() -> tuple[int, int]:
@@ -43,7 +50,7 @@ def test_the_floor_is_still_below_the_versions_these_rules_guard():
 @pytest.mark.parametrize("path", MODULES, ids=lambda p: p.relative_to(SRC).as_posix())
 def test_no_module_uses_a_runtime_union_between_classes(path: Path):
     """``A | B`` as a VALUE (isinstance, issubclass, a cast target) needs 3.10."""
-    tree = ast.parse(path.read_text(encoding="utf-8"))
+    tree = _tree(path)
     offenders = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Name):
@@ -66,6 +73,11 @@ def _guarded(chain: list[ast.AST]) -> bool:
 
 def unguarded_tomllib_imports(source: str) -> list[int]:
     """Line numbers of ``import tomllib`` / ``import tomllib as t`` / ``from tomllib import ...`` with no version guard."""
+    return unguarded_in_tree(ast.parse(source))
+
+
+def unguarded_in_tree(tree: ast.AST) -> list[int]:
+    """The same over a parsed module, so a caller holding the tree does not parse the file again."""
     lines: list[int] = []
 
     def visit(node: ast.AST, chain: list[ast.AST]) -> None:
@@ -77,7 +89,7 @@ def unguarded_tomllib_imports(source: str) -> list[int]:
         for child in ast.iter_child_nodes(node):
             visit(child, [*chain, node])
 
-    visit(ast.parse(source), [])
+    visit(tree, [])
     return lines
 
 
@@ -100,7 +112,7 @@ def test_no_file_imports_tomllib_without_a_version_guard(path: Path):
     """``tomllib`` is stdlib from 3.11; package and test code reach it through ``py_ci_shared._toml_compat``."""
     if path.name in ("toml_compat.py", "_toml_compat.py"):
         return
-    offenders = unguarded_tomllib_imports(path.read_text(encoding="utf-8-sig"))
+    offenders = unguarded_in_tree(_tree(path))
     assert not offenders, (
         f"{path.relative_to(REPO).as_posix()} imports tomllib at line(s) {offenders} with no version guard, which fails on "
         f"3.9/3.10; use ``from py_ci_shared._toml_compat import tomllib``"

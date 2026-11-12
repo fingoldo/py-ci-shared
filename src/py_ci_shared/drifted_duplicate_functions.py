@@ -147,6 +147,29 @@ def _module_level_functions(tree: ast.Module) -> Iterable[_FunctionNode]:
 _TRY_TYPES: tuple[type, ...] = (ast.Try,) + ((getattr(ast, "TryStar"),) if hasattr(ast, "TryStar") else ())
 
 
+def _best_pair_ratio(dumps: Sequence[str], similarity: float) -> float:
+    """The largest ``SequenceMatcher.ratio()`` over the pairs of *dumps* when it reaches *similarity*; below it otherwise.
+
+    A group is reported only when its best pair reaches *similarity*, so the exact ratio is needed only for pairs that can
+    still reach it: a pair whose cheap upper bounds (``real_quick_ratio``, then ``quick_ratio``) fall below the floor is skipped
+    without the quadratic ``ratio()``. The floor is *similarity* until a pair reaches it, then the best so far, so the value
+    returned when it reaches *similarity* is exactly the brute-force maximum.
+    """
+    best = -1.0
+    matcher = difflib.SequenceMatcher(None)
+    for i in range(len(dumps)):
+        matcher.set_seq1(dumps[i])
+        for j in range(i + 1, len(dumps)):
+            matcher.set_seq2(dumps[j])
+            floor = max(similarity, best)
+            if matcher.real_quick_ratio() < floor or matcher.quick_ratio() < floor:
+                continue
+            ratio = matcher.ratio()
+            if ratio > best:
+                best = ratio
+    return best
+
+
 def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
     groups: dict[tuple[str, str], list[tuple[Path, int, str]]] = defaultdict(list)
     for parsed in scan:
@@ -160,7 +183,7 @@ def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
         dumps = [dump for _, _, dump in members]
         if len(set(dumps)) == 1:
             continue
-        best = max(difflib.SequenceMatcher(None, dumps[i], dumps[j]).ratio() for i in range(len(dumps)) for j in range(i + 1, len(dumps)))
+        best = _best_pair_ratio(dumps, similarity)
         if best >= similarity:
             found.append(DriftGroup(name, [(p, line) for p, line, _ in members], best, len(set(dumps))))
     return sorted(found, key=lambda g: (-g.similarity, g.name))

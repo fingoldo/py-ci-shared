@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from py_ci_shared._core.baseline import is_unjustified
+from py_ci_shared._core.errors import BaselineGrowthError
 from py_ci_shared.baseline_ratchet import Baseline, run_rules
 
 
@@ -63,8 +65,27 @@ def test_regeneration_keeps_the_note_and_drops_what_is_fixed(tmp_path: Path) -> 
     baseline.regenerate({"lib/a.dart": "1528 lines", "lib/b.dart": "900 lines"})
     accepted = baseline.load()
     assert accepted["lib/a.dart"] == "deliberate: the reason someone wrote"
-    assert accepted["lib/b.dart"] == "900 lines"
+    assert is_unjustified(accepted["lib/b.dart"]), "a new entry must be marked for a human note, not carry the scanner's sentence (42-F16)"
     assert "lib/gone.dart" not in accepted
+
+
+def test_a_new_entry_from_a_grow_refresh_is_refused_until_a_human_writes_its_note(tmp_path: Path, capsys) -> None:
+    baseline = make(tmp_path)
+    baseline.save({"lib/a.dart": "deliberate: the reason someone wrote"})
+    baseline.regenerate({"lib/a.dart": "1528 lines", "lib/b.dart": "900 lines"})
+    assert baseline.enforce({"lib/a.dart": "1528 lines", "lib/b.dart": "900 lines"}, label="rule", guidance="fix it") == 1
+    assert "NEEDS-JUSTIFICATION" in capsys.readouterr().err
+
+
+def test_a_refused_refresh_names_the_notes_it_removed(tmp_path, monkeypatch) -> None:
+    """42-F13: a rename removes the old key's human note before the addition is refused; the refusal must carry that note."""
+    monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "0")
+    baseline = make(tmp_path)
+    baseline.save({"lib/a.dart": "deliberate: the reason someone wrote"})
+    with pytest.raises(BaselineGrowthError) as caught:
+        baseline.regenerate({"lib/renamed.dart": "1528 lines"}, grow=False)
+    assert "deliberate: the reason someone wrote" in str(caught.value)
+    assert "lib/a.dart" not in baseline.load()
 
 
 def test_the_file_is_sorted_and_carries_its_own_instructions(tmp_path: Path) -> None:
@@ -157,3 +178,24 @@ def test_an_empty_scan_that_opts_out_of_the_floor_still_fails_on_the_stale_entri
     assert "no longer violate the rule" in err and "stopped" not in err
     baseline.regenerate({})
     assert baseline.enforce({}, label="check", guidance="g", fail_on_empty_scan=False) == 0
+
+
+def test_a_list_shaped_baseline_is_refused_not_read_as_empty(tmp_path):
+    """A baseline that is a JSON list must fail loudly; read as empty, an empty scan would pass with zero entries (42-F12)."""
+    import pytest
+
+    from py_ci_shared.baseline_ratchet import Baseline
+
+    (tmp_path / "b.json").write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        Baseline("b", directory=str(tmp_path)).load()
+    (tmp_path / "b.json").write_text('{"accepted": []}', encoding="utf-8")
+    with pytest.raises(ValueError, match="'accepted' must be a JSON object"):
+        Baseline("b", directory=str(tmp_path)).load()
+
+
+def test_a_duplicate_key_in_the_baseline_is_an_error_not_a_silent_last_wins(tmp_path):
+    """42-F14: a key written twice (a bad merge) made Baseline.load keep the last value silently."""
+    (tmp_path / "b.json").write_text('{"accepted": {"m.py::f": "a", "m.py::f": "b"}}', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate key"):
+        Baseline("b", directory=str(tmp_path)).load()

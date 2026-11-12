@@ -20,12 +20,13 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.scopes import Scope, iter_scopes
 from ._core.unparse import unparse_stable
 
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
@@ -84,24 +85,72 @@ def _builds_path(node: ast.AST) -> Optional[list[ast.AST]]:
     return None
 
 
-def _per_user_scope_text(tree: ast.Module, source: str) -> dict[int, str]:
-    """``id(node) -> source of its innermost enclosing function``; module-level code maps to the module-level statements only
-    (a ``getlogin`` in one function does not make an unrelated module-level temp path per-user)."""
-    out: dict[int, str] = {}
-    module_stmts = [s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
-    module_text = "\n".join(ast.get_source_segment(source, s) or "" for s in module_stmts)
-    for stmt in module_stmts:
-        for sub in shared_walk(stmt):
-            out[id(sub)] = module_text
-    for scope in shared_walk(tree):
-        if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            text = ast.get_source_segment(source, scope) or ""
-            for sub in shared_walk(scope):
-                out[id(sub)] = text
+def _owner_map(tree: ast.Module) -> dict[int, Optional[ast.AST]]:
+    """``id(node) -> innermost enclosing function def, or None for module-level code``, read from the shared scope index.
+
+    A class body belongs to the function or module it is written in, and a lambda body to the scope around the lambda: the index
+    gives each scope its own nodes, so a class takes its parent's owner and the lambda bodies (which the index does not enter) are
+    filled in from the lambda itself."""
+
+    def owner(scope: "Scope") -> Optional[ast.AST]:
+        if scope.node is None:
+            return None
+        if isinstance(scope.node, ast.ClassDef):
+            return owner(scope.parent) if scope.parent is not None else None
+        return scope.node
+
+    out: dict[int, Optional[ast.AST]] = {}
+    for scope in iter_scopes(tree):
+        value = owner(scope)
+        for node in scope.nodes:
+            out[id(node)] = value
+        if isinstance(scope.node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out[id(scope.node)] = scope.node
+    for lam in [node for node in shared_walk(tree) if isinstance(node, ast.Lambda)]:
+        for sub in shared_walk(lam):
+            out[id(sub)] = out.get(id(lam))
     return out
 
 
+def _enclosing_text_of(tree: ast.Module, source: str) -> Callable[[ast.AST], str]:
+    """A function ``node -> source of its innermost enclosing function``; module-level code gets the module-level statements only
+    (a ``getlogin`` in one function does not make an unrelated module-level temp path per-user). One pass records each node's scope;
+    a function's source is cut only when a candidate asks for it, so a file with many functions and few candidates costs no slicing."""
+    scope_of = _owner_map(tree)
+    module_stmts = [s for s in tree.body if not isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    texts: dict[int, str] = {}
+
+    def text_of(node: ast.AST) -> str:
+        if id(node) not in scope_of:
+            return source
+        scope = scope_of[id(node)]
+        key = id(scope) if scope is not None else 0
+        if key not in texts:
+            if scope is not None:
+                texts[key] = ast.get_source_segment(source, scope) or ""
+            else:
+                texts[key] = "\n".join(ast.get_source_segment(source, s) or "" for s in module_stmts)
+        return texts[key]
+
+    return text_of
+
+
 def _has_user_marker(node: ast.AST) -> bool:
+    """True when a marker is in the node's source. Every marker is a name, an attribute, a keyword or a string literal, so the
+    cheap pass over those words runs first and the unparse only for a node that could hold one."""
+    words: list[str] = []
+    for sub in shared_walk(node):
+        if isinstance(sub, ast.Name):
+            words.append(sub.id)
+        elif isinstance(sub, ast.Attribute):
+            words.append(sub.attr)
+        elif isinstance(sub, (ast.keyword, ast.arg)) and sub.arg:
+            words.append(sub.arg)
+        elif isinstance(sub, ast.Constant) and isinstance(sub.value, (str, bytes)):
+            words.append(sub.value if isinstance(sub.value, str) else sub.value.decode("latin-1"))
+    blob = "\n".join(words)
+    if not any(marker in blob for marker in _USER_MARKERS):
+        return False
     return any(marker in unparse_stable(node) for marker in _USER_MARKERS)
 
 
@@ -120,7 +169,7 @@ def _is_mktemp(node: ast.AST) -> bool:
 
 def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     lines = source.splitlines()
-    scope_text = _per_user_scope_text(tree, source)
+    enclosing_text = _enclosing_text_of(tree, source)
     names = _tmp_names(tree)
     user_names = _user_names(tree)
     candidates: list[ast.AST] = []
@@ -141,7 +190,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
         line = lines[line_no - 1] if 0 < line_no <= len(lines) else ""
         if SUPPRESSION in line:
             continue
-        enclosing = scope_text.get(id(node), source)
+        enclosing = enclosing_text(node)
         if not _is_mktemp(node) and (
             any(marker in enclosing for marker in _UNIQUE_MARKERS)
             or _has_user_marker(node)

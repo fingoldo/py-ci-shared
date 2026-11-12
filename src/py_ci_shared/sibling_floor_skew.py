@@ -40,6 +40,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -259,6 +260,15 @@ def _git_show_version(clone: Path, ref: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
+    """Follow a redirect only to the same host: urllib keeps the Authorization header across a redirect, so a token would travel to any host the server names (51-F1)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+        if urllib.parse.urlsplit(newurl).netloc != urllib.parse.urlsplit(req.full_url).netloc:
+            raise urllib.error.HTTPError(newurl, code, "redirect to another host refused; the token is not sent there", headers, fp)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _github_version(sibling: str, owner: str, ref: str) -> Optional[str]:
     url = f"https://raw.githubusercontent.com/{owner}/{sibling}/{ref}/pyproject.toml"
     request = urllib.request.Request(url)
@@ -266,7 +276,7 @@ def _github_version(sibling: str, owner: str, ref: str) -> Optional[str]:
     if token:
         request.add_header("Authorization", f"token {token}")
     try:
-        with urllib.request.urlopen(request, timeout=20) as response:  # fixed https host
+        with urllib.request.build_opener(_SameHostRedirects).open(request, timeout=20) as response:  # fixed https host
             body = response.read().decode("utf-8", "replace")
     except (urllib.error.URLError, OSError, ValueError) as exc:
         logger.warning("could not fetch version from GitHub, floor skew not checked: %s", type(exc).__name__)
@@ -411,7 +421,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             network=not args.no_network,
         )
     except (CoreError, AssertionError) as exc:
-        logger.warning("sibling_floor_skew.py handler at line 409 substituted a fallback for %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"sibling_floor_skew: {exc}\n")
         return 2
     for finding in found:

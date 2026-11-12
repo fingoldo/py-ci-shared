@@ -151,8 +151,10 @@ def _findings_in(parsed: ParsedFile) -> list[Finding]:
             if isinstance(node, ast.ClassDef):
                 enclosing, scope_name = parent_enclosing, parent_name
             else:
-                visible = parent_enclosing - _bound_in(node, scope.nodes)
-                out.extend(_returns_in(node, scope.nodes, parsed.rel, visible, parent_name, lines))
+                # with no placeholder in an enclosing scope nothing is visible here: no binding walk and no return to report
+                visible = parent_enclosing - _bound_in(node, scope.nodes) if parent_enclosing else frozenset()
+                if visible:
+                    out.extend(_returns_in(node, scope.nodes, parsed.rel, visible, parent_name, lines))
                 enclosing, scope_name = visible | _placeholders_in(scope.nodes, lines), node.name
         context[id(scope)] = (enclosing, scope_name)
     return out

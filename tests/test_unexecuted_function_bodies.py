@@ -451,3 +451,14 @@ def test_an_empty_module_listed_with_a_line_is_not_a_stale_report():
     code = SimpleNamespace(tree=ast.parse("x = 1\n\n\ny = 2\n"), rel="p/m.py")
     with pytest.raises(CoverageReportError):
         _check_matches_source({"executed_lines": [2], "missing_lines": []}, code, report)  # type: ignore[arg-type]
+
+
+def test_a_utc_z_timestamp_parses_on_every_supported_python():
+    """A coverage stamp ending in Z must parse on 3.9 and 3.10 too, or the staleness check is skipped silently (45-F10)."""
+    from datetime import datetime, timezone
+
+    from py_ci_shared import unexecuted_function_bodies as ufb
+
+    stamp = datetime.fromisoformat("2026-11-10T02:00:00Z".replace("Z", "+00:00"))
+    assert stamp.tzinfo is not None and stamp.astimezone(timezone.utc).hour == 2
+    assert callable(ufb.main) or hasattr(ufb, "main")

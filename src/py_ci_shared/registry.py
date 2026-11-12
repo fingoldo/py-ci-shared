@@ -12,6 +12,8 @@ Fields of :class:`GateSpec`:
 - ``kind``: ``"gate"`` (has ``assert_*`` entry functions a consumer calls or enables in ``[tool.py_ci_shared]``),
   ``"cli"`` (a command-line tool, run with ``py-ci-shared tool <name>`` or ``python -m py_ci_shared.<name>``)
   or ``"library"`` (scanners and helpers a consumer wraps in its own test).
+  A module with both ``assert_*`` entries and a ``main`` is a ``"gate"`` with ``cli = true``: ``kind`` says how a consumer uses it,
+  the ``cli`` flag that it also runs from the command line.
 - ``entries``: the ``assert_*`` functions, the first being the default the plugin and ``run`` call.
 - ``since``: the first LIVE release that shipped the module. v1.22.0 and v1.22.2 are dead tags (tagged without ``release_guard prepare``, never published), so a
   module they carried says 1.22.3; ``tests/test_registry_since.py`` checks every value from 1.22.3 on against the tags.
@@ -74,6 +76,7 @@ class GateSpec:
 INTERNAL_MODULES: dict[str, str] = {
     "_adoption_pin_comments": "private part of adoption_matrix: reads the trailing vX.Y.Z comment of a py-ci-shared pin line",
     "_adoption_waivers": "private part of adoption_matrix: dated lag waivers read from configs/pin_waivers.toml",
+    "_adoption_pins": "private part of adoption_matrix: the pin vocabulary (Pin, classify_ref) and per-file pin readers, split out for the 1000-LOC budget",
     "_ci_install_parts": "private part of ci_install_covers_conftest: markers, install arguments, conftest imports",
     "_dart_source": "source-text helpers of dart_scanners: comment stripping, string masking, bracket matching, finding keys",
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",

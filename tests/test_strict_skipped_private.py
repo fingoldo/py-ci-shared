@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+
+from py_ci_shared._toml_compat import tomllib
 import yaml
 
 from py_ci_shared import _consumers, ci_health
@@ -48,8 +50,8 @@ def test_cli_flag_end_to_end(tmp_path, monkeypatch, capsys):
     for key in ("CONSUMER_READ_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(ci_health, "default_api", lambda **kw: (lambda path: pytest.fail("no request"), False))
-    assert ci_health.main([str(config)]) == 0
-    assert ci_health.main([str(config), "--fail-on-skipped-private"]) == 1
+    assert ci_health.main([str(config), "--include-private"]) == 0
+    assert ci_health.main([str(config), "--include-private", "--fail-on-skipped-private"]) == 1
     assert "RED" in capsys.readouterr().out
 
 
@@ -95,5 +97,8 @@ def test_corpus_checkout_without_token_keeps_the_public_repos_and_fails_strict_f
 
     assert run() == 0
     assert 'name = "pub"' in (tmp_path / "r.toml").read_text(encoding="utf-8")
-    assert 'name = "priv"' not in (tmp_path / "r.toml").read_text(encoding="utf-8")
+    # 47-F9: a skipped private consumer is named in [[skipped]], never in [[repo]] (a repo that was not cloned has no entry to check).
+    written = tomllib.loads((tmp_path / "r.toml").read_text(encoding="utf-8"))
+    assert "priv" not in [r["name"] for r in written.get("repo", [])]
+    assert "priv" in [r["name"] for r in written.get("skipped", [])]
     assert run("--fail-on-skipped-private") == 1

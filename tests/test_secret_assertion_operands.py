@@ -72,6 +72,24 @@ def test_each_leaking_shape_is_reported_once(name):
     assert len(found) == 1, f"{name}: expected one finding, got {found}"
 
 
+ORDINARY_SETTINGS = ["AUTHOR_NAME", "MONKEY_MODE", "KEYBOARD_LAYOUT", "AUTHORITY_MODE"]
+
+
+def _environ_assert(name: str) -> str:
+    return "import os\ndef test_a():\n    assert os.environ.get(" + repr(name) + ') == "v"\n'
+
+
+@pytest.mark.parametrize("name", ORDINARY_SETTINGS)
+def test_an_ordinary_setting_whose_name_contains_a_secret_word_is_not_reported(name):
+    """Audit 41-F15: a substring match on AUTH, KEY or DSN flagged these as secrets."""
+    assert gate.offenders_in_source(_environ_assert(name)) == []
+
+
+@pytest.mark.parametrize("name", ["MY_API_KEY", "AUTH_TOKEN", "DB_PASSWORD", "UPWORK_DB_DSN"])
+def test_a_secret_word_as_a_whole_name_part_is_reported(name):
+    assert len(gate.offenders_in_source(_environ_assert(name))) == 1
+
+
 @pytest.mark.parametrize("name", sorted(SAFE))
 def test_the_safe_shapes_are_not_reported(name):
     assert gate.offenders_in_source(SAFE[name]) == []

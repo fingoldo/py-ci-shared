@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, ParsedFile, ScanResult, relative_posix, scan_python
+from ._core.node_index import nodes_of
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["assert_no_identity_comparisons", "find_identity_comparisons", "string_constant_names"]
@@ -123,10 +124,10 @@ class _ModuleConstants:
         self.module = _bound_strings(tree.body)
         self.classes: dict[str, set[str]] = {}
         self.enum_classes: set[str] = set()
-        for node in _fast_walk(tree):
-            if isinstance(node, ast.ClassDef) and _is_enum_class(node):
+        for node in nodes_of(tree, ast.ClassDef):  # the index query: the classes, in the order the walk met them
+            if _is_enum_class(node):
                 self.enum_classes.add(node.name)
-            elif isinstance(node, ast.ClassDef):
+            else:
                 self.classes.setdefault(node.name, set()).update(_bound_strings(node.body))
 
     @property
@@ -224,8 +225,8 @@ def _find(scan: ScanResult, base: Optional[Path], names: "set[str] | None", root
     for parsed in scan:
         here = index.by_file[parsed.path]
         aliases = ImportAliases.from_tree(parsed.tree)
-        for node in _fast_walk(parsed.tree):
-            if not isinstance(node, ast.Compare) or not any(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops):
+        for node in nodes_of(parsed.tree, ast.Compare):  # the index query: the comparisons, in walk order
+            if not any(isinstance(op, (ast.Is, ast.IsNot)) for op in node.ops):
                 continue
             sides = (node.left, *node.comparators)
             if any(isinstance(side, ast.Constant) and (side.value is None or side.value is Ellipsis or isinstance(side.value, bool)) for side in sides):

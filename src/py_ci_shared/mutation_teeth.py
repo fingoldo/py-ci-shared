@@ -892,7 +892,7 @@ def assert_no_new_surviving_mutant(
         # run until a human replaces it with a real reason.
         _regenerate(baseline, found)
         raise AssertionError(
-            f"{len(found)} survivor(s) written to {baseline.path} WITHOUT justifications.\n"
+            f"{len(found)} survivor(s) written to {os.path.basename(str(baseline.path))} WITHOUT justifications.\n"
             f"Each is marked {_UNJUSTIFIED!r} and will keep failing until you replace that marker "
             "with the reason the mutant cannot be observed. A refresh records what was found; it "
             "does not decide that the finding is acceptable."

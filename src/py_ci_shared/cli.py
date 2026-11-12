@@ -69,7 +69,7 @@ def _load(repo: Optional[str]) -> RepoConfig:
     root = Path(repo).resolve() if repo else find_repo_root()
     config = load_config(root)
     if config is None:
-        raise ConfigError(f"{root / 'pyproject.toml'} has no [tool.py_ci_shared] table; see README 'Configuring gates'")
+        raise ConfigError(f"pyproject.toml has no [tool.py_ci_shared] table; see README 'Configuring gates'")
     return config
 
 
@@ -112,6 +112,9 @@ def _print_result(result: GateResult) -> None:
             _print(f"::warning title=py-ci-shared {result.name}::{result.note}")
     if result.status == SKIPPED and os.environ.get("GITHUB_ACTIONS") == "true":
         _print(f"::warning title=py-ci-shared gate skipped::{result.name} {result.message}")
+    if result.status in (FAILED, ERROR) and os.environ.get("GITHUB_ACTIONS") == "true":
+        first = (result.message or "").strip().splitlines()[:1]
+        _print(f"::error title=py-ci-shared {result.name} {_MARKS[result.status]}::{first[0] if first else result.name}")
 
 
 def _summary_line(results: Sequence[GateResult]) -> str:

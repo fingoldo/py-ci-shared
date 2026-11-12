@@ -37,16 +37,12 @@ def origin_and_clone(tmp_path):
     seed = tmp_path / "seed"
     seed.mkdir()
     _git(seed, "init", "-q", "-b", "master")
-    _git(seed, "config", "user.email", "t@example.com")
-    _git(seed, "config", "user.name", "T")
     (seed / "kept.txt").write_text("upstream content\n", encoding="utf-8")
     _git(seed, "add", "kept.txt")
     _git(seed, "commit", "-q", "-m", "seed")
     subprocess.run(["git", "clone", "-q", "--bare", str(seed), str(bare)], check=True, capture_output=True, env=git_env())
     clone = tmp_path / "clone"
     subprocess.run(["git", "clone", "-q", str(bare), str(clone)], check=True, capture_output=True, env=git_env())
-    _git(clone, "config", "user.email", "t@example.com")
-    _git(clone, "config", "user.name", "T")
     _git(clone, "remote", "set-head", "origin", "master")
     return clone
 

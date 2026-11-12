@@ -23,6 +23,7 @@ import re
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable, Sequence
@@ -210,12 +211,31 @@ def release_edits(version: str, texts: dict[str, str], published_tag: str) -> di
     return out
 
 
-def _published_release(repo: str, token: str, tags: Sequence[str]) -> str:
-    """The newest tag that has a GitHub release (a tag whose Release run failed is not one); the newest tag when the API cannot be read."""
+_RELEASE_PAGE_SIZE = 100
+_MAX_RELEASE_PAGES = 50
+
+
+def _release_tag_names(api: Callable[[str], Any], repo: str) -> list[str]:
+    """Tag names of every GitHub release of *repo*, all pages: a target older than the newest page must still be found (46-F22).
+
+    Raises OSError past the page cap, so a caller treats the listing as unreadable rather than as complete."""
+    names: list[str] = []
+    for page in range(1, _MAX_RELEASE_PAGES + 1):
+        batch = api(f"repos/{repo}/releases?per_page={_RELEASE_PAGE_SIZE}&page={page}")
+        names.extend(r.get("tag_name", "") for r in batch)
+        if len(batch) < _RELEASE_PAGE_SIZE:
+            return names
+    raise OSError(f"more than {_MAX_RELEASE_PAGES * _RELEASE_PAGE_SIZE} releases; the listing is not complete")
+
+
+def _published_release(repo: str, token: str, tags: Sequence[str]) -> Optional[str]:
+    """The newest tag that has a GitHub release (a tag whose Release run failed is not one), or ``None`` when the API cannot be read.
+
+    No fallback to local tags: a tag that was never published would be blamed as the newest release."""
     try:
-        names = [r.get("tag_name", "") for r in _github(token)(f"repos/{repo}/releases?per_page=100")]
+        names = _release_tag_names(_github(token), repo)
     except OSError:
-        names = []
+        return None
     return highest(names) or highest(tags) or "v0.0.0"
 
 
@@ -265,6 +285,30 @@ def _github(token: str) -> Callable[[str], Any]:
     return get
 
 
+class TransientApiError(Exception):
+    """A GitHub API call that failed for a reason a retry may cure: a 5xx answer or a network error."""
+
+
+_API_ATTEMPTS = 3
+_API_RETRY_SECONDS = 10.0
+
+
+def _api_with_retries(api: Callable[[str], Any], path: str, sleep: Callable[[float], None]) -> Any:
+    last: Optional[BaseException] = None
+    for attempt in range(_API_ATTEMPTS):
+        try:
+            return api(path)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500:
+                raise
+            last = exc
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as exc:
+            last = exc
+        if attempt + 1 < _API_ATTEMPTS:
+            sleep(_API_RETRY_SECONDS)
+    raise TransientApiError(str(last)) from last
+
+
 def wait_for_ci(
     api: Callable[[str], Any],
     repo: str,
@@ -277,10 +321,17 @@ def wait_for_ci(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> tuple[str, str]:
-    """Poll ``workflow``'s runs for ``sha`` until green or red, or ``wait`` seconds pass (then the verdict is pending)."""
+    """Poll ``workflow``'s runs for ``sha`` until green or red, or ``wait`` seconds pass (then the verdict is pending).
+
+    A transient API failure (a 5xx or a network error) is retried, and a poll still failing after the retries returns
+    pending with the reason, so one 502 cannot abort a release verification (46-F15). A client error still raises."""
     end = clock() + wait
+    path = f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&branch={branch}&per_page=50"
     while True:
-        runs = api(f"repos/{repo}/actions/workflows/{workflow}/runs?head_sha={sha}&branch={branch}&per_page=50").get("workflow_runs", [])
+        try:
+            runs = _api_with_retries(api, path, sleep).get("workflow_runs", [])
+        except TransientApiError as exc:
+            return ("pending", f"GitHub API unreachable ({exc}): re-run this job")
         verdict = ci_verdict(runs)
         if verdict[0] != "pending" or clock() >= end:
             return verdict
@@ -317,7 +368,7 @@ def _release_names(args: argparse.Namespace) -> Optional[list[str]]:
         return None
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     try:
-        return [r.get("tag_name", "") for r in _github(token)(f"repos/{args.repo}/releases?per_page=100")]
+        return _release_tag_names(_github(token), args.repo)
     except OSError:
         return None
 
@@ -338,6 +389,9 @@ def _main_prepare(args: argparse.Namespace) -> int:
     repo_dir = Path(args.repo_dir)
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     published = args.published or _published_release(args.repo, token, _git_tags(repo_dir))
+    if published is None:
+        _say(f"::error::cannot read the GitHub releases of {args.repo}, so the newest published release is unknown: re-run this job, or pass --published X.Y.Z")
+        return 2
     try:
         changed = run_prep(repo_dir, args.version, published, write=args.write)
     except ValueError as exc:
@@ -379,13 +433,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             _say(f"::error::{bad}")
             return 2
         token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-        state, why = wait_for_ci(_github(token), args.repo, args.sha, workflow=args.workflow, wait=args.wait, poll=args.poll)
+        try:
+            state, why = wait_for_ci(_github(token), args.repo, args.sha, workflow=args.workflow, wait=args.wait, poll=args.poll)
+        except urllib.error.HTTPError as exc:  # a client error (a wrong repository name, a token without access): a verdict line, not a traceback (46-F23)
+            _say(f"::error::GitHub API refused the request for {args.repo} ({exc.code}): check the repository name and GH_TOKEN")
+            return 1
         _say(why if state == "green" else f"::error::{why}")
         if state == "green":
             _warn_failed_legs(_github(token), args)
         return 0 if state == "green" else 1
     tags = _git_tags(Path(args.repo_dir))
-    problem = major_move_problem(args.tag, tags) if args.cmd == "major-move" else rollback_problem(args.tag, tags, _release_names(args))
+    if args.cmd == "major-move":
+        problem = major_move_problem(args.tag, tags)
+    else:
+        published = _release_names(args)
+        problem = rollback_problem(args.tag, tags, published)
+        if problem is None and getattr(args, "repo", None) and published is None:
+            problem = f"cannot read the GitHub releases of {args.repo}, so the rollback target cannot be checked against them: re-run this job"
     if problem:
         _say(f"::error::{problem}")
         return 1

@@ -45,6 +45,14 @@ def test_statements_without_advice_are_ignored(tmp_path):
     assert find_printed_advice([p], tmp_path) == []
 
 
+def test_supply_as_a_noun_is_not_advice_but_supply_with_a_parameter_is(tmp_path):
+    """41-F1: "No supply data" is a statement about a data feed; "supply more groups" tells the reader what to pass."""
+    p = _write(tmp_path, "def f():\n    log.warning('No supply data for %s', ticker)\n")
+    assert find_printed_advice([p], tmp_path) == []
+    p = _write(tmp_path, "def f():\n    log.warning('reduce cv_folds or supply more groups')\n", name="n.py")
+    assert len(find_printed_advice([p], tmp_path)) == 1
+
+
 def test_keys_survive_moving_the_message(tmp_path):
     """Inserting lines above a message changes its line number but not its key."""
     a = find_printed_advice([_write(tmp_path, "def f():\n    raise ValueError('Pass kfold=1 to use it')\n")], tmp_path)

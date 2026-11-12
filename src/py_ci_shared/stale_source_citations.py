@@ -53,6 +53,7 @@ GATE = "stale-source-citations"
 RULE_SELF = "self-citation"
 RULE_SYMBOL = "symbol-not-at-line"
 RULE_PAST_END = "line-past-end"
+RULE_UNREADABLE = "unreadable-citation-source"
 #: How far from the cited line the symbol may be (a citation of a def's decorator or docstring is still right).
 WINDOW = 3
 _PATH = r"(?P<path>[A-Za-z_][\w./\\-]*\.py):(?P<line>\d+)(?:-(?P<end>\d+))?"
@@ -256,8 +257,8 @@ def _extra_findings(
 ) -> list[Finding]:
     """Findings from non-Python files (``*.md``, ``*.sql``, ...) that cite a ``.py`` source in the same corpus.
 
-    Best-effort: a file that cannot be read is skipped rather than raised, unlike the Python corpus's strict
-    contract, since *extra_globs* is an opt-in extra rather than the gate's primary subject.
+    A file that cannot be read is not scanned, and that is reported as a finding naming it, not dropped silently (40-F4):
+    the Python corpus is strict; an extra glob is opt-in, but a citation in an unread file is still unchecked.
     """
     globs = tuple(extra_globs)
     if not globs:
@@ -266,11 +267,12 @@ def _extra_findings(
     exclude = DEFAULT_EXCLUDE | frozenset(exclude_parts)
     for base in _roots(root):
         for path in iter_files(base, globs, exclude=exclude):
+            rel = relative_posix(path, base)
             try:
                 source = read_source(path)
-            except SourceError:
+            except SourceError as exc:
+                out.append(Finding(rel, 1, RULE_UNREADABLE, f"not scanned for stale citations: {exc}"))
                 continue
-            rel = relative_posix(path, base)
             if RULE_PAST_END in wanted:
                 out.extend(_extra_past_end_findings(rel, source, index))
             if RULE_SYMBOL in wanted:

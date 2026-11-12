@@ -42,6 +42,7 @@ from __future__ import annotations
 import ast
 from ._core.unparse import unparse_stable
 import re
+import weakref
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
@@ -122,8 +123,19 @@ def _last_name(node: ast.AST) -> str:
     return ""
 
 
+_OWN_NODES: "weakref.WeakKeyDictionary[ast.AST, list[ast.AST]]" = weakref.WeakKeyDictionary()  # scope -> its own nodes; callers only read them
+
+
 def _own_nodes(scope: ast.AST) -> list[ast.AST]:
-    """Nodes of *scope* outside any nested function, lambda or class."""
+    """Nodes of *scope* outside any nested function, lambda or class (computed once per scope: a test is read four times)."""
+    hit = _OWN_NODES.get(scope)
+    if hit is None:
+        hit = _compute_own_nodes(scope)
+        _OWN_NODES[scope] = hit
+    return hit
+
+
+def _compute_own_nodes(scope: ast.AST) -> list[ast.AST]:
     out: list[ast.AST] = []
     stack = [c for c in child_nodes(scope) if not isinstance(c, _Scoped)]
     while stack:

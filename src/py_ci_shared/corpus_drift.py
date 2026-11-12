@@ -258,14 +258,57 @@ def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dic
             # the snapshot is an artifact and a step summary that anyone who can read this repository's runs can open.
             errors[key] = type(exc).__name__
         seconds[key] = round(time.perf_counter() - start, 3)
+        # Progress as it happens: a snapshot that is killed by its step timeout writes nothing, so the log must name the slow finder.
+        sys.stderr.write(f"corpus_drift: {repo.name}: {key} {seconds[key]:.1f} s\n")
+        sys.stderr.flush()
     return {"commit": _commit(repo), "counts": counts, "errors": errors, "seconds": seconds}
 
 
-def snapshot(repos: Sequence[tuple[str, Path]], *, run: Optional[Sequence[tuple[str, Callable[..., Any]]]] = None) -> dict[str, Any]:
-    """The counts of every runnable finder (or of *run*) over each ``(name, root)`` repo."""
+def _scan_chunk(repos: Sequence[tuple[str, Path]], chunk: Sequence[tuple[str, Callable[..., Any]]]) -> dict[str, dict[str, Any]]:
+    """One worker's share: the finders of *chunk* over every repo (each worker parses the corpus once, through its own cache)."""
+    return {name: _scan_repo(root, chunk) for name, root in repos}
+
+
+def _scan_parallel(repos: Sequence[tuple[str, Path]], todo: Sequence[tuple[str, Callable[..., Any]]], workers: int) -> dict[str, dict[str, Any]]:
+    """The finders split round-robin across *workers* processes; the per-repo results are merged back.
+
+    A nightly snapshot of the whole corpus is one pass per finder, and a single process ran past the job's step limit. Splitting the
+    finders keeps each finder's counts and errors exactly as a serial run would give them.
+    """
+    from concurrent.futures import ProcessPoolExecutor
+
+    chunks = [list(todo[i::workers]) for i in range(workers)]
+    merged: dict[str, dict[str, Any]] = {name: {"commit": None, "counts": {}, "errors": {}, "seconds": {}} for name, _root in repos}
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_scan_chunk, list(repos), chunk) for chunk in chunks if chunk]
+        for future in futures:
+            for name, part in future.result().items():
+                target = merged[name]
+                target["commit"] = target["commit"] or part["commit"]
+                target["counts"].update(part["counts"])
+                target["errors"].update(part["errors"])
+                target["seconds"].update(part["seconds"])
+    return merged
+
+
+def snapshot(
+    repos: Sequence[tuple[str, Path]],
+    *,
+    run: Optional[Sequence[tuple[str, Callable[..., Any]]]] = None,
+    workers: int = 1,
+) -> dict[str, Any]:
+    """The counts of every runnable finder (or of *run*) over each ``(name, root)`` repo.
+
+    ``workers > 1`` splits the finders across processes (the finders must be importable module-level functions, as the
+    registry's are); the result has the same shape and values as a serial run.
+    """
     todo = list(run) if run is not None else runnable_finders()
     stamp = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
-    return {"schema": SCHEMA, "created": stamp, "repos": {name: _scan_repo(root, todo) for name, root in repos}}
+    if workers <= 1 or len(todo) <= 1:
+        repo_results = {name: _scan_repo(root, todo) for name, root in repos}
+    else:
+        repo_results = _scan_parallel(repos, todo, min(workers, len(todo)))
+    return {"schema": SCHEMA, "created": stamp, "repos": repo_results}
 
 
 @dataclass(frozen=True)
@@ -345,10 +388,36 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
     if not repos:
         sys.stderr.write(f"corpus_drift: {args.repos_file} lists no repos\n")
         return 2
-    data = snapshot(repos)
+    data = snapshot(repos, workers=max(1, args.workers))
     Path(args.output).write_bytes((json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     for name, repo in data["repos"].items():
         sys.stdout.write(f"{name}: {len(repo['counts'])} finders counted, {len(repo['errors'])} errored, {sum(repo['counts'].values())} findings\n")
+    return 0
+
+
+def merge_snapshots(paths: Sequence[Path]) -> dict[str, Any]:
+    """One snapshot from the per-repo snapshots of a matrix: the ``repos`` of each, under the same schema.
+
+    Each repo is measured by exactly one shard, so a repo named twice is an error, not a choice between two counts.
+    """
+    repos: dict[str, dict[str, Any]] = {}
+    stamps: list[str] = []
+    for path in paths:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        if data.get("schema") != SCHEMA:
+            raise ValueError(f"{path}: schema {data.get('schema')!r}, expected {SCHEMA!r}")
+        stamps.append(str(data.get("created", "")))
+        for name, repo in data["repos"].items():
+            if name in repos:
+                raise ValueError(f"{name} appears in more than one snapshot; each repo is measured by one shard")
+            repos[name] = repo
+    return {"schema": SCHEMA, "created": max(stamps) if stamps else "", "repos": repos}
+
+
+def _cmd_merge(args: argparse.Namespace) -> int:
+    data = merge_snapshots([Path(p) for p in args.inputs])
+    Path(args.output).write_bytes((json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))
+    sys.stdout.write(f"merged {len(args.inputs)} snapshot(s): {len(data['repos'])} repo(s)\n")
     return 0
 
 
@@ -378,6 +447,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p = sub.add_parser("snapshot", help="count every runnable finder over the repos of a repos file")
     p.add_argument("--repos-file", required=True, help="TOML repo list (`[[repo]]` with path and name)")
     p.add_argument("--output", required=True, help="the JSON snapshot to write")
+    p.add_argument("--workers", type=int, default=4, help="processes the finders are split across (default 4, the CI runner's cores)")
+    p = sub.add_parser("merge", help="combine the per-repo snapshots of a matrix into one snapshot")
+    p.add_argument("--output", required=True, help="the merged JSON snapshot to write")
+    p.add_argument("inputs", nargs="+", help="the shard snapshots")
     p = sub.add_parser("compare", help="compare two snapshots")
     p.add_argument("previous", help="the last snapshot (a missing file means this is the first run)")
     p.add_argument("current", help="tonight's snapshot")
@@ -386,9 +459,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     p.add_argument("--output", help="also write the markdown table here")
     args = parser.parse_args(argv)
     try:
-        return _cmd_snapshot(args) if args.command == "snapshot" else _cmd_compare(args)
+        if args.command == "snapshot":
+            return _cmd_snapshot(args)
+        if args.command == "merge":
+            return _cmd_merge(args)
+        return _cmd_compare(args)
     except MissingDependencyError as exc:
-        logger.warning("corpus_drift.py handler at line 387 substituted a fallback for %s: %s", type(exc).__name__, exc)
+        logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
         sys.stderr.write(f"corpus_drift: {exc}\n")
         return 2
 

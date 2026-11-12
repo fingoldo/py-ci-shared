@@ -54,7 +54,10 @@ def resolve_gate(run: GateRun) -> tuple[Callable[..., Any], float]:
         raise ConfigError(str(exc.args[0])) from None
     entry = run.entry or spec.default_entry
     if entry is None:
-        raise ConfigError(f"{spec.name} is a {spec.kind} module with no assert_* entry; it cannot be enabled as a gate")
+        raise ConfigError(
+            f"{spec.name} is a {spec.kind} module with no assert_* entry, so it cannot be enabled as a gate: it is a command-line tool. "
+            f"Run it as `python -m {spec.module}` (or from the hook that wraps it), or name a gate that has an assert_* entry (see the README gate catalogue)"
+        )
     if spec.entries and entry not in spec.entries:
         raise ConfigError(f"{spec.name} has no entry {entry!r}; choose one of {list(spec.entries)}")
     module = importlib.import_module(spec.module)
@@ -161,7 +164,8 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         if refresh and grow and "grow" in params:
             kwargs["grow"] = True
         _check_required(func, run, kwargs)
-        cache_key = None if refresh else _cache_key(config, run, kwargs, budget)
+        defaults = {n: p.default for n, p in params.items() if p.default is not p.empty}
+        cache_key = None if refresh else _cache_key(config, run, {**defaults, **kwargs}, budget)
         if cache_key is not None and gate_cache.lookup(config.repo_root, cache_key):
             logger.debug("gate %s passed on this tree before, not re-run", run.name)
             return GateResult(
@@ -171,7 +175,7 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         if cache_key is not None:
             gate_cache.record(config.repo_root, cache_key)
     except ConfigError as exc:
-        logger.warning("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
+        logger.debug("gate configuration invalid, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, f"configuration: {exc}", time.perf_counter() - start, budget)
     except failed_types as exc:
         logger.debug("gate failed, reporting FAILED: %s", type(exc).__name__)
@@ -182,7 +186,7 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
     except (KeyboardInterrupt, SystemExit):
         raise
     except Exception as exc:  # a crashing gate is reported as ERROR with its type and location, never swallowed
-        logger.warning("gate raised, reporting ERROR: %s", type(exc).__name__)
+        logger.debug("gate raised, reporting ERROR: %s", type(exc).__name__)
         return GateResult(run.name, ERROR, _crash_message(exc), time.perf_counter() - start, budget)
     return GateResult(run.name, PASSED, "", time.perf_counter() - start, budget, "; ".join(notes))
 
@@ -195,6 +199,6 @@ def budget_verdict(result: GateResult, mode: str) -> Optional[str]:
     if mode == "off" or result.status == ERROR or not result.over_budget:
         return None
     return (
-        f"{result.name} took {result.seconds:.1f}s, over its {result.budget_s:.0f}s budget. Narrow its inputs, raise "
+        f"{result.name} took {result.seconds:.1f}s, over its {result.budget_s:g}s budget. Narrow its inputs, raise "
         f'budget_s in [tool.py_ci_shared.gates.{result.name}], or set budget = "off".'
     )

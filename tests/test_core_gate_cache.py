@@ -100,6 +100,30 @@ def test_a_network_gate_is_never_cached(repo):
     assert calls == ["call", "call"]
 
 
+def test_a_verdict_from_another_interpreter_is_not_replayed(tmp_path, monkeypatch):
+    """40-F2: the key had no interpreter identity, so a PASS from one Python build replayed under another."""
+    args = (tmp_path, "fake_module", None, {}, 0.0, "tree")
+    monkeypatch.setattr(gate_cache, "_interpreter_identity", lambda: "CPython 3.9.13")
+    old = gate_cache.key_for(*args)
+    monkeypatch.setattr(gate_cache, "_interpreter_identity", lambda: "CPython 3.14.0")
+    new = gate_cache.key_for(*args)
+    assert old is not None and new is not None and old != new
+
+
+def test_a_network_gate_whose_network_flag_is_only_a_signature_default_is_never_cached(repo, monkeypatch):
+    """40-F1: a config table that omits ``network`` left the run cacheable, so a PASS that needed the network was replayed."""
+    config, _, calls, _ = repo
+
+    def network_by_default(repo_root, network: bool = True):
+        calls.append("call")
+
+    monkeypatch.setattr(runner, "resolve_gate", lambda run: (network_by_default, 0.0))
+    run = GateRun(name="fake", module="fake_module", entry=None, kwargs={})
+    runner.run_gate(config, run)
+    runner.run_gate(config, run)
+    assert calls == ["call", "call"]
+
+
 def test_an_unwritable_cache_costs_only_the_next_run(repo, monkeypatch):
     config, run, calls, _ = repo
 
@@ -123,3 +147,13 @@ def test_the_tree_digest_ignores_agent_worktrees_under_dot_claude(tmp_path):
     copy.write_text("X = 2\n", encoding="utf-8")
     assert gate_cache.tree_digest(root) == before
     gate_cache.forget_tree_digests()
+
+
+def test_a_verdict_from_another_tool_version_is_not_replayed(tmp_path, monkeypatch):
+    """40-F2: the key carried no installed-tool version, so a verdict from one ruff or mypy replayed under another."""
+    args = (tmp_path, "fake_module", None, {}, 0.0, "tree")
+    monkeypatch.setattr(gate_cache, "_tool_identity", lambda: {"ruff": "0.16.10", "mypy": "2.1.0", "black": None})
+    old = gate_cache.key_for(*args)
+    monkeypatch.setattr(gate_cache, "_tool_identity", lambda: {"ruff": "0.17.0", "mypy": "2.1.0", "black": None})
+    new = gate_cache.key_for(*args)
+    assert old is not None and new is not None and old != new

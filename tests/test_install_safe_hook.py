@@ -126,3 +126,11 @@ def test_encoding_and_line_endings_are_preserved(tmp_path, monkeypatch):
     after = hook.read_bytes()
     assert after == original.replace(b"-mpre_commit", b"-m py_ci_shared.safe_precommit")
     assert b"\r\n" not in after
+
+
+def test_stray_arguments_are_refused_not_ignored(capsys):
+    """A caller that passes an argument must learn it had no effect, not be told the default action ran (52-F11)."""
+    from py_ci_shared import install_safe_hook
+
+    assert install_safe_hook.main(["--force"]) == 2
+    assert "takes no arguments" in capsys.readouterr().err

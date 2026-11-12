@@ -299,3 +299,17 @@ def test_over_budget_is_announced_under_warn_without_changing_the_exit_code(monk
     assert "slow_gate" in summary.read_text(encoding="utf-8") and "fast_gate" not in summary.read_text(encoding="utf-8")
     assert cli._report([slow], "fail") == 1  # control: fail mode still fails
     assert cli._report([fast], "warn") == 0
+
+
+def test_a_failed_or_errored_gate_gets_an_error_annotation_under_actions(monkeypatch, capsys):
+    """49-F3: a FAIL or ERROR row used to print no annotation under Actions, so the run page showed only the exit code."""
+    from py_ci_shared import cli
+    from py_ci_shared._core.runner import ERROR, FAILED
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    cli._report([GateResult("naive_utcnow", FAILED, "1 use of utcnow\nsecond line", seconds=0.3, budget_s=3.0)], "warn")
+    cli._report([GateResult("boom", ERROR, "KeyError: x", seconds=0.1, budget_s=3.0)], "warn")
+    out = capsys.readouterr().out
+    assert "::error title=py-ci-shared naive_utcnow FAIL::1 use of utcnow" in out
+    assert "second line" not in out.split("::error")[1].splitlines()[0]
+    assert "::error title=py-ci-shared boom ERROR::KeyError: x" in out

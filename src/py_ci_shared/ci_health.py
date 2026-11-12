@@ -39,6 +39,8 @@ talks to the network, through an injectable ``api`` callable.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import json
 import logging
 import os
@@ -56,6 +58,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+import yaml
 
 from ._consumers import TOKEN_ENV, Consumer, load_consumers
 from ._http_safety import SameHostRedirects
@@ -475,7 +479,15 @@ def _run_is_billing(api: Api, repo: str, run: dict) -> bool:
     # A job GitHub refused to start has no steps; probe those first, then any failed job.
     probe = sorted((j for j in jobs if j.get("conclusion") not in GREEN_CONCLUSIONS), key=lambda j: bool(j.get("steps")))[:MAX_JOBS_PROBED]
     for job in probe:
-        annotations = api(f"repos/{repo}/check-runs/{job['id']}/annotations")
+        try:
+            annotations = api(f"repos/{repo}/check-runs/{job['id']}/annotations")
+        except ApiError as exc:
+            # A token without checks access gets 403 for a private repo's annotations. That is not an error of the
+            # whole consumer: this run simply cannot be classified as a billing refusal, so it stays a real failure.
+            if exc.status == 403:
+                logger.warning("%s: annotations of job %s are not readable with this token; treating the run as not billing-refused", repo, job["id"])
+                continue
+            raise
         if is_billing_annotation(str(a.get("message") or "") + " " + str(a.get("title") or "") for a in annotations):
             return True
     return False
@@ -492,6 +504,40 @@ def _paged_runs(api: Api, base: str, **filters: str) -> list[dict]:
     return out
 
 
+#: Triggers that still start a run. A workflow with only ``workflow_dispatch`` is manual: a red last scheduled run it left
+#: behind is history, not a failing CI, so it does not count.
+LIVE_TRIGGERS = frozenset({"push", "pull_request", "pull_request_target", "schedule"})
+
+
+def has_live_trigger(api: Api, repo: str, path: str, branch: str) -> bool:
+    """Whether the workflow file at ``path`` on ``branch`` has a trigger in :data:`LIVE_TRIGGERS`.
+
+    A file that cannot be read or parsed keeps its workflow counted, as before, and says so in the log: a gate must not
+    drop a workflow silently because it failed to read it.
+    """
+    if not path:
+        return True
+    try:
+        doc = api(f"repos/{repo}/contents/{path}?{_q(ref=branch)}")
+        parsed = yaml.safe_load(base64.b64decode(doc["content"]).decode("utf-8"))
+    except (ApiError, KeyError, TypeError, ValueError, UnicodeDecodeError, binascii.Error, yaml.YAMLError) as exc:
+        logger.warning("ci_health: %s:%s could not be read for its triggers (%s); it stays counted", repo, path, type(exc).__name__)
+        return True
+    if not isinstance(parsed, dict):
+        return False
+    # PyYAML reads the bare key ``on`` as the boolean True.
+    on = parsed.get("on", parsed.get(True))
+    if isinstance(on, str):
+        triggers: Iterable[str] = (on,)
+    elif isinstance(on, list):
+        triggers = on
+    elif isinstance(on, dict):
+        triggers = on.keys()
+    else:
+        return False
+    return bool(LIVE_TRIGGERS.intersection(str(x) for x in triggers))
+
+
 def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bool) -> RepoHealth:
     """Read one consumer's workflows and runs through ``api`` and assess them. API failures become ``error``."""
     if consumer.private and not can_read_private:
@@ -499,7 +545,8 @@ def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bo
     try:
         meta = api(f"repos/{consumer.repo}")
         default_branch = str(meta.get("default_branch") or consumer.branch)
-        workflows = [w for w in api(f"repos/{consumer.repo}/actions/workflows?{_q(per_page=100)}").get("workflows", []) if w.get("state") == "active"]
+        listed = [w for w in api(f"repos/{consumer.repo}/actions/workflows?{_q(per_page=100)}").get("workflows", []) if w.get("state") == "active"]
+        workflows = [w for w in listed if has_live_trigger(api, consumer.repo, str(w.get("path") or ""), consumer.branch)]
         runs_by: dict[int, list[dict]] = {}
         billing_ids: list[int] = []
         for wf in workflows:
@@ -536,6 +583,11 @@ def _annotations(repos: Sequence[RepoHealth], max_red_days: float, *, fail_on_sk
     return out
 
 
+def _reported(consumers: Sequence[Consumer], *, include_private: bool) -> list[Consumer]:
+    """The consumers the report covers: the public ones, plus the private ones when ``include_private`` is set."""
+    return list(consumers) if include_private else [c for c in consumers if not c.private]
+
+
 def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now: Optional[datetime] = None) -> int:
     """Report every consumer's CI health; 1 when a non-billing workflow is red past ``--max-red-days``."""
     parser = argparse.ArgumentParser(prog="python -m py_ci_shared.ci_health", description=__doc__.split("\n", 1)[0])
@@ -547,6 +599,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
         help=f"a private consumer skipped for want of {TOKEN_ENV} is a RED row and exit 1, not a warning (the scheduled workflow passes it)",
     )
     parser.add_argument("--output", help="also write the markdown report to this file")
+    parser.add_argument("--include-private", action="store_true", help="also check private consumers (the public report leaves them out)")
     parser.add_argument("--only", action="append", default=[], help="check only this consumer name (repeatable)")
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help=f"consumers read at once (default {DEFAULT_JOBS})")
     parser.add_argument("--deadline", type=float, default=DEFAULT_DEADLINE, help=f"seconds after which no request is made (default {DEFAULT_DEADLINE:g})")
@@ -560,6 +613,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
             sys.stderr.write(f"ci_health: --only names no consumer in {args.config}: {', '.join(unknown)} (known: {', '.join(sorted(known))})\n")
             return 2
         consumers = [c for c in consumers if c.name in set(args.only)]
+    consumers = _reported(consumers, include_private=args.include_private)
     if not consumers:
         sys.stderr.write(f"ci_health: {args.config} lists no consumer; nothing would be checked\n")
         return 2

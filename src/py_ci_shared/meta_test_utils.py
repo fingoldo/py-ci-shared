@@ -613,6 +613,22 @@ def assert_fields_roundtrip(
 # ---------------------------------------------------------------------------
 
 
+def _baseline_entry_keys(data: object) -> set[str]:
+    """The entry keys of a baseline: unwrapped from ``accepted`` or ``entries`` when it has one of those, and without the
+    ``_``-prefixed metadata keys. A ``{"schema", "gate", "entries"}`` file gives its entries, not its header keys (42-F15)."""
+    if isinstance(data, list):  # a bare list of keys, as the ratchet has always read it
+        return {str(item) for item in data}
+    if not isinstance(data, dict):
+        return set()
+    for wrapper in ("accepted", "entries"):
+        if isinstance(data.get(wrapper), dict):
+            data = data[wrapper]
+            break
+    if not isinstance(data, dict):
+        return set()
+    return {key for key in data if not str(key).startswith("_")}
+
+
 def findings_ratchet(findings: Iterable[str], baseline_path: Path) -> tuple[list[str], list[str]]:
     """Diff ``findings`` against a committed JSON baseline, returning ``(new, drained)``.
 
@@ -626,7 +642,7 @@ def findings_ratchet(findings: Iterable[str], baseline_path: Path) -> tuple[list
     """
     known: set[str] = set()
     if baseline_path.exists():
-        known = set(json.loads(baseline_path.read_text(encoding="utf-8")))
+        known = _baseline_entry_keys(json.loads(baseline_path.read_text(encoding="utf-8")))
     current = set(findings)
     return sorted(current - known), sorted(known - current)
 

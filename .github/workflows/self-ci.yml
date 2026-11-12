@@ -94,7 +94,7 @@ jobs:
       # No fallback to a bare install: without the dev extra the tests that need pydantic, pre-commit, numpy,
       # sqlalchemy or pyutilz would skip and the job would still go green.
       - name: Install package
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install --system -c .github/constraints/dev.txt -e ".[dev]"
 
       # The Postgres binaries are on the ubuntu runners but not on PATH; without PG_BIN the real-server tests skip.
       - name: Point PG_BIN at the runner's Postgres
@@ -104,10 +104,11 @@ jobs:
           if [ -n "$bin" ]; then echo "PG_BIN=$bin" >> "$GITHUB_ENV"; fi
 
       - name: Smoke-import and run black_filtered_apply --help path
-        env:
-          BLACK_CMD: "uvx black"
         run: |
           python -c "import py_ci_shared; print('py_ci_shared', py_ci_shared.__version__)"
+          # 46-F20: the same pinned black as black-filtered.yml, not whatever uvx resolves today.
+          v=$(python -c "from py_ci_shared.tool_versions import BLACK_VERSION; print(BLACK_VERSION)")
+          export BLACK_CMD="uvx black==${v}"
           python -m py_ci_shared.black_filtered_apply --config pyproject.toml src/py_ci_shared/__init__.py
 
       # -ra lists every skip with its reason, so a skipped module is visible in the log rather than hidden in a count.

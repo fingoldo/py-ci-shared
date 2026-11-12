@@ -128,7 +128,7 @@ def test_dotted_references_resolve_by_import_and_placeholders_follow_the_driver(
     import uuid
 
     mod = f"frag_{uuid.uuid4().hex[:8]}"
-    (tmp_path / f"{mod}.py").write_text(f"_SQL = 'SELECT x.a FROM t x ORDER BY {{o}}'\n_ORD = {{'ok': 'x.a', 'bad': 'y.a'}}\n", encoding="utf-8")
+    (tmp_path / f"{mod}.py").write_text("_SQL = 'SELECT x.a FROM t x ORDER BY {o}'\n_ORD = {'ok': 'x.a', 'bad': 'y.a'}\n", encoding="utf-8")
     monkeypatch.syspath_prepend(str(tmp_path))
     matrix = sv.FragmentMatrix("ref", template=f"{mod}._SQL", slot="o", fragments=[f"{mod}._ORD"])
     (problem,) = sv.find_fragment_matrix_problems([matrix])

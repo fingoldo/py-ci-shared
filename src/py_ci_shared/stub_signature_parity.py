@@ -55,6 +55,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
+from ._core.node_index import parent_map
 
 logger = logging.getLogger(__name__)
 
@@ -337,13 +338,25 @@ def _lambda_bound(body: Iterable[ast.stmt], name: str) -> Optional[ast.Lambda]:
 
 
 def _calls_with_chain(tree: ast.Module) -> Iterable[tuple[ast.Call, list[ast.AST]]]:
-    stack: list[tuple[ast.AST, list[ast.AST]]] = [(tree, [])]
+    """Every call with the scopes around it, outermost first. The walk visits nodes in the order it always did; a call's scope chain is
+    read from the shared parent map (only calls need one), not copied down the walk."""
+    parents = parent_map(tree)
+    stack: list[ast.AST] = [tree]
     while stack:
-        node, chain = stack.pop()
+        node = stack.pop()
         if isinstance(node, ast.Call):
-            yield node, chain
-        inner = [*chain, node] if isinstance(node, _SCOPES) else chain
-        stack.extend((child, inner) for child in child_nodes(node))
+            yield node, _scope_chain(node, parents)
+        stack.extend(child_nodes(node))
+
+
+def _scope_chain(node: ast.AST, parents: dict[int, Optional[ast.AST]]) -> list[ast.AST]:
+    chain: list[ast.AST] = []
+    cur = parents.get(id(node))
+    while cur is not None:
+        if isinstance(cur, _SCOPES):
+            chain.append(cur)
+        cur = parents.get(id(cur))
+    return chain[::-1]
 
 
 def _findings_in(tree: ast.Module, rel: str, index: _Index, patchers: frozenset[str]) -> list[Finding]:

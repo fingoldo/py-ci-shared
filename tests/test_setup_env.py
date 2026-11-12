@@ -135,3 +135,11 @@ def test_the_console_script_entry_point_resolves_to_main():
 
 def test_repo_root_is_this_clone():
     assert (setup_env._repo_root() / "configs" / "ruff-base.toml").is_file()
+
+
+def test_stray_arguments_are_refused_not_ignored(capsys):
+    """Persisting environment state on a stray argument would surprise the caller (52-F11)."""
+    from py_ci_shared import setup_env
+
+    assert setup_env.main(["--force"]) == 2
+    assert "takes no arguments" in capsys.readouterr().err

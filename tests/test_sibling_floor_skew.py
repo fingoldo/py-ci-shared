@@ -174,3 +174,18 @@ def test_no_pyproject_is_a_skip_with_a_reason_for_the_gate(tmp_path):
     # audit 37-F6: with no pyproject.toml there are no floors, so the gate has no subject and skips
     with pytest.raises(pytest.skip.Exception, match="pyproject"):
         sfs.assert_sibling_floor_skew(tmp_path, network=False)
+
+
+def test_a_redirect_to_another_host_is_refused_so_the_token_stays_home():
+    """51-F1: urllib kept the Authorization header across a redirect; a token must not reach a host the server names."""
+    import urllib.error
+    import urllib.request
+
+    from py_ci_shared.sibling_floor_skew import _SameHostRedirects
+
+    req = urllib.request.Request("https://raw.githubusercontent.com/o/s/ref/pyproject.toml")
+    req.add_header("Authorization", "token secret")
+    with pytest.raises(urllib.error.HTTPError, match="the token is not sent there"):
+        _SameHostRedirects().redirect_request(req, None, 302, "Found", {}, "https://evil.example/pyproject.toml")
+    same = _SameHostRedirects().redirect_request(req, None, 302, "Found", {}, "https://raw.githubusercontent.com/o/s/new/pyproject.toml")
+    assert same is not None and same.full_url.endswith("/new/pyproject.toml")

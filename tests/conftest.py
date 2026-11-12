@@ -20,6 +20,8 @@ import pytest
 
 from py_ci_shared.randomly_seed_guard import bound_randomly_reseeders
 
+from _git_repo_helper import make_repo
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPO_ROOT / "src"
 if str(SRC) not in sys.path:
@@ -88,10 +90,13 @@ def _isolated_git_config() -> Iterator[None]:
                 os.environ[key] = value
 
 
-def run_git(repo: Path, *args: str) -> str:
-    """Run git in *repo* under the isolated config and return stdout; raises on a non-zero exit."""
-    env = {**os.environ, **GIT_ISOLATION}
-    return subprocess.run(["git", *args], cwd=repo, env=env, capture_output=True, text=True, check=True, timeout=60).stdout
+def run_git(repo: Path, *args: str, env: "dict[str, str] | None" = None) -> str:
+    """Run git in *repo* under the isolated config and return stdout; raises on a non-zero exit.
+
+    *env* adds variables for this call only (a commit date, say). The commit identity is already part of GIT_ISOLATION,
+    so no test has to spawn ``git config`` to make a repository (48-F15)."""
+    merged = {**os.environ, **GIT_ISOLATION, **(env or {})}
+    return subprocess.run(["git", *args], cwd=repo, env=merged, capture_output=True, text=True, check=True, timeout=60).stdout
 
 
 @pytest.fixture
@@ -114,20 +119,17 @@ def git_repo(tmp_path: Path) -> Callable[..., Path]:
     """
     counter = [0]
 
-    def _make(files: "dict[str, str] | None" = None, tags: tuple[str, ...] = (), name: str = "") -> Path:
+    def _make(
+        files: "dict[str, str] | None" = None,
+        tags: tuple[str, ...] = (),
+        name: str = "",
+        *,
+        commit_env: "dict[str, str] | None" = None,
+        init_args: tuple[str, ...] = (),
+    ) -> Path:
         counter[0] += 1
         repo = tmp_path / (name or f"repo{counter[0]}")
-        repo.mkdir(parents=True)
-        run_git(repo, "init", "-q")
-        for rel, text in (files or {"README.md": "x\n"}).items():
-            target = repo / rel
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(text.encode("utf-8"))
-        run_git(repo, "add", "-A")
-        run_git(repo, "commit", "-q", "-m", "initial")
-        for tag in tags:
-            run_git(repo, "tag", tag)
-        return repo
+        return make_repo(repo, files or {"README.md": "x\n"}, commit_env=commit_env, init_args=init_args, tags=tags)
 
     return _make
 

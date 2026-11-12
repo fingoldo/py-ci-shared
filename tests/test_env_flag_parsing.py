@@ -138,6 +138,18 @@ def test_only_boolean_flags_are_judged(tmp_path):
     assert find_hand_parsed_env_flags([p], tmp_path, ("P_",)) == []
 
 
+def test_a_negated_membership_in_boolean_words_is_judged_like_a_positive_one(tmp_path):
+    """44-F1: the NotIn branch of the membership shape had no test, so mutating it survived."""
+    body = "import os\nx = os.environ.get('MY_X', '') not in ('1', 'true')\n"
+    assert _reads(tmp_path, body) == [(2, "MY_X", "membership in a literal collection")]
+
+
+def test_an_upper_case_boolean_word_is_judged_case_insensitively(tmp_path):
+    """44-F1: the comparison is case-insensitive; removing the lower() call let 'TRUE' through unjudged."""
+    body = "import os\nif os.environ.get('MY_V') == 'TRUE':\n    pass\n"
+    assert _reads(tmp_path, body) == [(2, "MY_V", "compared with 'TRUE'")]
+
+
 def test_a_boolean_flag_compared_with_a_spelling_of_on_is_still_judged(tmp_path):
     p = _write(tmp_path, "m.py", "import os\nif os.environ.get('P_VERBOSE') == 'yes':\n    pass\n")
     assert [(r.var, r.shape) for r in find_hand_parsed_env_flags([p], tmp_path, ("P_",))] == [("P_VERBOSE", "compared with 'yes'")]

@@ -18,7 +18,7 @@ __all__ = ["scan_credential_shaped_log_args"]
 # `special_vars` were excluded from one log dict key but copied unredacted into another
 # ("relocation, not redaction" -- Medium).
 
-# Segment boundaries, not ``: `_` is a word character, so `password` never matched inside
+# Segment boundaries, not `\b`: `_` is a word character, so `\bpassword\b` never matched inside
 # `db_password` -- and snake_case compounds (`db_password`, `auth_token`, `user_api_key`,
 # `proxy_url`) are how credentials are actually named. `bypass` still does not match, because
 # the character before `pass` there is alphanumeric.

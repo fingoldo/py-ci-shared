@@ -34,8 +34,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core.node_index import function_nodes
-from ._core.node_index import walk
+from ._core.node_index import nodes_of, parent_map, tree_memo
 from ._core import Finding, ParsedFile, child_nodes, scan_python
 from .lock_held_across_io import is_lock_like, module_lock_names
 
@@ -202,13 +201,28 @@ def _findings_in_function(fn: ast.AST, rel: str, module_dicts: frozenset[str], l
     return out
 
 
+def _functions_with_with(tree: ast.Module) -> frozenset[int]:
+    """Ids of the functions that contain a ``with`` anywhere in their body, nested functions included: one pass over the ``with``
+    statements, climbing the shared parent map, instead of a walk of every function's subtree."""
+    parents = parent_map(tree)
+    out: set[int] = set()
+    for node in nodes_of(tree, ast.With, ast.AsyncWith):
+        cur = parents.get(id(node))
+        while cur is not None:
+            if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                out.add(id(cur))
+            cur = parents.get(id(cur))
+    return frozenset(out)
+
+
 def _findings_in(parsed: ParsedFile) -> list[tuple[Finding, str]]:
     module_dicts = _module_dicts(parsed.tree)
     lock_names = module_lock_names(parsed.tree)
     module_has_lock = bool(lock_names)
     out: list[tuple[Finding, str]] = []
-    for fn in function_nodes(parsed.tree):
-        if not module_has_lock and not any(isinstance(node, _WITH) for node in walk(fn)):
+    with_fns = tree_memo(parsed.tree, "check_then_act.functions_with_with", lambda: _functions_with_with(parsed.tree))
+    for fn in nodes_of(parsed.tree, ast.FunctionDef, ast.AsyncFunctionDef):  # the index query: same defs, same order as function_nodes
+        if not module_has_lock and id(fn) not in with_fns:
             continue  # no lock anywhere in the module and no `with` in this function: no finding is possible
         name = getattr(fn, "name", "<function>")
         out.extend((f, name) for f in _findings_in_function(fn, parsed.rel, module_dicts, lock_names, module_has_lock))

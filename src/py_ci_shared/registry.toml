@@ -10,6 +10,13 @@ cli = true
 summary = "Which consumer repos run which modules, whether their py-ci-shared pins agree or move, and where a gate skips itself"
 
 [[gate]]
+name = "adoption_sha_ref"
+kind = "cli"
+since = "1.23.10"
+cli = true
+summary = "Flags a consumer workflow that pins a between-release SHA of the reusable workflows without py-ci-shared-ref (report only)"
+
+[[gate]]
 name = "advisory_warn"
 kind = "cli"
 since = "1.0.0"
@@ -948,6 +955,13 @@ since = "1.22.0"
 summary = "Module-level mutable state that production code writes and no test ever resets or replaces"
 
 [[gate]]
+name = "mutation_rerun"
+kind = "cli"
+since = "1.23.10"
+cli = true
+summary = "Command line drivers for per-module mutation testing: re-run survivor lines against a notes file, or sweep a whole module with a checkpoint"
+
+[[gate]]
 name = "mutation_teeth"
 kind = "gate"
 entries = ["assert_no_new_surviving_mutant", "assert_revert_fails_tests"]
@@ -1259,6 +1273,13 @@ name = "randomly_seed_guard"
 kind = "library"
 since = "1.17.0"
 summary = "Runtime helper: bounds pytest-randomly's per-test seed to 32 bits before third-party reseeders see it"
+
+[[gate]]
+name = "raw_write_row_count"
+kind = "gate"
+entries = ["assert_raw_write_row_count"]
+since = "1.23.10"
+summary = "Raw UPDATE or DELETE statements that run without a row-count check (report only; a shrink-only baseline)"
 
 [[gate]]
 name = "readme_env_var_parity"

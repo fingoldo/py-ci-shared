@@ -354,7 +354,8 @@ def test_markdown_shape_and_exit_codes(tmp_path, capsys):
     assert "- bad: `tests/test_y.py:2` importorskip:" in md
     assert "- bad: `requirements.txt:1` moving-pin:" in md
     out = tmp_path / "out.md"
-    assert main([str(good), "--no-local-copies"]) == 0
+    assert main([str(good), "--no-local-copies"]) == 1  # without --resolve-in the checks did not run: a failing exit (47-F8)
+    assert main([str(good), "--no-local-copies", "--advisory"]) == 0
     assert main([str(good), str(bad), "--no-local-copies", "--output", str(out)]) == 1
     assert main([str(good), str(bad), "--no-local-copies", "--advisory"]) == 0
     assert out.read_text(encoding="utf-8").startswith("# py-ci-shared adoption matrix")
@@ -403,7 +404,7 @@ def test_a_pin_older_than_the_latest_release_fails_and_says_how_far_behind(tmp_p
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[0]}\n"}, "old")
     rep = scan_repo(old, local_copies=False, resolver=RefResolver(pcs))
     assert rep.pins_agree and not rep.moving_pins and rep.failing
-    assert [(f.rule, f.message) for f in rep.findings()] == [("stale-pin", f"package pinned to {shas[0]}: 2 releases behind v1.2.0")]
+    assert [(f.rule, f.message) for f in rep.findings()] == [("stale-pin", f"package pinned to {shas[0]}: 2 releases behind v1.2.0. Bump the pin, or add a dated waiver to configs/pin_waivers.toml")]
     assert "| old | 1 |" in render_markdown([rep]) and "| **2** |" in render_markdown([rep])
     tolerated = scan_repo(old, local_copies=False, resolver=RefResolver(pcs), allow_behind=2)
     assert not tolerated.failing and tolerated.behind[shas[0]] == (2, "v1.2.0")
@@ -418,21 +419,41 @@ def test_a_pin_at_the_latest_release_passes_and_one_release_behind_is_singular(t
     assert not rep.failing and rep.behind == {"v1.2.0": (0, "v1.2.0")}
     one = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@v1.1.0\n"}, "one")
     assert [f.message for f in scan_repo(one, local_copies=False, resolver=RefResolver(pcs)).findings()] == [
-        "package pinned to v1.1.0: 1 release behind v1.2.0"
+        "package pinned to v1.1.0: 1 release behind v1.2.0. Bump the pin, or add a dated waiver to configs/pin_waivers.toml"
     ]
 
 
-def test_a_moving_pin_is_reported_as_moving_not_as_stale(tmp_path):
+def test_the_documented_major_tag_is_not_a_moving_pin(tmp_path):
+    """47-F6: README documents `@v1` as the consumer form; it must not fail the daily job as a moving-pin (the policy is the owner's to reverse)."""
     pcs, _ = _pcs_with_releases(tmp_path)
     root = _repo(tmp_path, {".github/workflows/a.yml": "    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@v1\n"})
     rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
-    assert [f.rule for f in rep.findings()] == ["moving-pin"] and rep.behind == {}
+    assert rep.moving_pins == [] and [f.rule for f in rep.findings()] == []
+
+
+def test_a_branch_pin_is_still_a_moving_pin(tmp_path):
+    """Negative control (47-F6): only the major tag was relaxed; a branch still changes without a commit here and must fail."""
+    pcs, _ = _pcs_with_releases(tmp_path)
+    root = _repo(tmp_path, {".github/workflows/a.yml": "    uses: fingoldo/py-ci-shared/.github/workflows/ruff-blocking.yml@main\n"})
+    rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
+    assert [f.rule for f in rep.findings()] == ["moving-pin"]
+
+
+def test_running_without_resolve_in_says_which_checks_are_off(tmp_path, capsys):
+    """47-F8: without --resolve-in the matrix exits 0 with no finding for stale pins; the run must say so, not only when a pin has a version comment."""
+    pcs, shas = _pcs_with_releases(tmp_path)
+    old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
+    assert main([str(old), "--no-local-copies"]) == 1
+    err = capsys.readouterr().err
+    assert "WITHOUT --resolve-in" in err and "stale-pin" in err and "waiver" in err
+    assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
+    assert "WITHOUT --resolve-in" not in capsys.readouterr().err
 
 
 def test_main_fails_a_stale_pin_unless_allowed(tmp_path, capsys):
     pcs, shas = _pcs_with_releases(tmp_path)
     old = _repo(tmp_path, {"requirements.txt": f"py-ci-shared @ {URL}@{shas[1]}\n"}, "old")
-    assert main([str(old), "--no-local-copies"]) == 0
+    assert main([str(old), "--no-local-copies"]) == 1
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs)]) == 1
     assert "stale-pin" in capsys.readouterr().out
     assert main([str(old), "--no-local-copies", "--resolve-in", str(pcs), "--allow-behind", "1"]) == 0
@@ -447,7 +468,7 @@ def test_a_pin_to_a_tag_or_sha_that_does_not_exist_fails(tmp_path):
         rep = scan_repo(root, local_copies=False, resolver=RefResolver(pcs))
         assert rep.failing
         assert [(f.rule, f.message) for f in rep.findings()] == [
-            ("unresolvable-pin", f"package pinned to {ref}, which does not exist upstream: its install fails")
+            ("unresolvable-pin", f"package pinned to {ref}, which does not exist upstream: its install fails. Push the commit, fix the tag name, or pin a SHA that exists")
         ]
         assert not scan_repo(root, local_copies=False).failing, "without a resolver nothing can be said"
         assert not scan_repo(root, local_copies=False, resolver=RefResolver(None)).failing

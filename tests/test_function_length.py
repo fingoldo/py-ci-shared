@@ -60,6 +60,15 @@ def test_baseline_round_trip_and_assert(tmp_path):
         assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1)
 
 
+def test_a_list_shaped_baseline_is_named_as_malformed_not_as_a_stale_entry(tmp_path):
+    p = _module(tmp_path, 12)
+    baseline = tmp_path / "b.json"
+    baseline.write_text('["x"]', encoding="utf-8")
+    with pytest.raises(pytest.fail.Exception, match=r"is not a .*object \(got list\)") as exc:
+        assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1)
+    assert "in the baseline but gone" not in str(exc.value)
+
+
 def test_assert_refuses_to_measure_nothing(tmp_path):
     with pytest.raises(pytest.fail.Exception, match="measured"):
         assert_functions_do_not_grow([], tmp_path, tmp_path / "b.json")
@@ -119,3 +128,20 @@ class TestAuditRegressions:
         p = tmp_path / "bom.py"
         p.write_bytes(b"\xef\xbb\xbfdef f():\n    return 1\n")
         assert function_lengths([p], tmp_path) == {"bom.py::f": 2}
+
+
+def test_the_refresh_message_names_the_baseline_not_its_absolute_path(tmp_path):
+    """49-F6: the message printed the machine's full path, which differs on every developer's machine and on CI."""
+    p = _module(tmp_path, 12)
+    baseline = tmp_path / "b.json"
+    with pytest.raises(pytest.skip.Exception) as exc:
+        assert_functions_do_not_grow([p], tmp_path, baseline, limit=10, min_functions=1, refresh=True)
+    assert "b.json" in str(exc.value) and str(tmp_path) not in str(exc.value)
+
+
+def test_a_stale_entry_hint_has_no_nested_parentheses_and_the_limit_is_explained():
+    """49-F7: the hint sat inside a parenthesis of its own, and the limit printed without its source."""
+    from py_ci_shared.function_length import length_problems
+
+    (stale,) = length_problems({}, {"a.py::f": 3}, limit=150)
+    assert stale.count("(") == stale.count(")") == 1 and "remove the entry, or run" in stale

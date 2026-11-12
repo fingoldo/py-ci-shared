@@ -119,3 +119,13 @@ def test_a_key_named_reader_that_swallows_os_error_is_still_flagged(tmp_path):
                 return None
     """
     assert _rules(tmp_path, body) == ["silent_default_return"]
+
+
+def test_a_returned_reason_code_names_the_failure_and_a_bare_word_does_not(tmp_path):
+    """37-F35 item 3: a machine-readable reason code is an in-band report; a single word or a two-word token is not."""
+    from py_ci_shared.fail_open_handlers import _carries_reason
+    import ast
+
+    assert _carries_reason(ast.parse("'modifier_refused_by_the_graph'", mode="eval").body)
+    assert not _carries_reason(ast.parse("'default'", mode="eval").body)
+    assert not _carries_reason(ast.parse("'not_found'", mode="eval").body)

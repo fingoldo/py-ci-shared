@@ -40,7 +40,6 @@ Both accept ``now`` (epoch seconds) to freeze the clock.
 from __future__ import annotations
 
 import ast
-import io
 import logging
 import re
 import subprocess
@@ -53,6 +52,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from ._core.source import comment_tokens
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, parse_text, read_source
 from ._core import walk as shared_walk
 
@@ -223,10 +223,11 @@ def _line_comment(line: str, markers: Sequence[str]) -> Optional[str]:
 def _python_comments(source: str) -> Optional[dict[int, str]]:
     """``{line: comment text}`` from the tokenizer (exact for Python), or ``None`` when it cannot tokenize."""
     out: dict[int, str] = {}
+    if "#" not in source:  # no '#' means no comment: skip the tokenizer (it is the gate's hot loop); same result as the line scan
+        return out
     try:
-        for tok in tokenize.generate_tokens(io.StringIO(source).readline):
-            if tok.type == tokenize.COMMENT:
-                out[tok.start[0]] = tok.string[1:]
+        for line, text in comment_tokens(source):
+            out[line] = text[1:]
     except (tokenize.TokenError, IndentationError, SyntaxError) as exc:
         logger.debug("could not tokenize source for comments: %s", type(exc).__name__)
         return None

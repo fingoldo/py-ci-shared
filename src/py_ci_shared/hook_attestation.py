@@ -38,7 +38,7 @@ from pathlib import Path
 from typing import Callable, Optional, Union
 
 from ._core import CorpusError, Finding
-from ._core.git import GitError, git_text, run_git
+from ._core.git import GitError, git_text, read_blobs, run_git
 
 logger = logging.getLogger(__name__)
 
@@ -148,22 +148,23 @@ def commits_in(repo: PathLike, rev_range: str) -> list[Commit]:
     return out
 
 
-def _hash_at(repo: Path) -> Callable[[str], Optional[str]]:
-    def expected(sha: str) -> Optional[str]:
-        try:
-            proc = run_git(repo, "show", f"{sha}:{CONFIG}")
-        except GitError as exc:
-            logger.debug("could not read committed hook config: %s", type(exc).__name__)
-            return None
-        return config_hash(proc.stdout) if proc.returncode == 0 else None
-
-    return expected
+def _config_hashes(repo: Path, shas: Sequence[str]) -> dict[str, Optional[str]]:
+    """``config_hash`` of CONFIG at each sha of *shas*, read by one ``cat-file --batch`` (48-F13). None where the file is absent
+    or unreadable; a git failure logs and gives an empty mapping, as the per-commit reads did."""
+    try:
+        blobs = read_blobs(repo, [f"{sha}:{CONFIG}" for sha in shas])
+    except GitError as exc:
+        logger.debug("could not read committed hook config: %s", type(exc).__name__)
+        return {}
+    return {sha: (config_hash(blob) if blob is not None else None) for sha, blob in zip(shas, blobs)}
 
 
 def find_hook_attestation(repo_root: PathLike, rev_range: str, *, allow_authors: Iterable[str] = BOT_AUTHORS) -> list[Finding]:
     """Every commit of *rev_range* in the repo at *repo_root* that does not attest a clean run of its own hooks."""
     repo = Path(repo_root)
-    return attest(commits_in(repo, rev_range), _hash_at(repo), allow_authors=allow_authors)
+    commits = commits_in(repo, rev_range)
+    hashes = _config_hashes(repo, [commit.sha for commit in commits])
+    return attest(commits, hashes.get, allow_authors=allow_authors)
 
 
 def assert_hook_attestation(repo_root: PathLike, rev_range: str, *, allow_authors: Iterable[str] = BOT_AUTHORS) -> None:

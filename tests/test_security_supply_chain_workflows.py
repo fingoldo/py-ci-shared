@@ -40,15 +40,46 @@ def test_lint_blocking_defaults_equal_tool_versions():
     assert {k: inputs[k]["default"] for k in expected} == expected
 
 
+def _unpinned_install_lines(workflow: Path) -> list[str]:
+    """Install lines whose package is not pinned. A line may name a shell variable (``uvx "$INTERROGATE"``) only when that variable is
+    assigned a pinned package (``INTERROGATE="interrogate==$PIN"``): the variable is what gets installed, so the assignment is the pin (44-F1)."""
+    text = workflow.read_text(encoding="utf-8")
+    bad: list[str] = []
+    for step in _steps(_load(workflow)):
+        for line in step.get("run", "").splitlines():
+            stripped = line.strip()
+            if not re.search(r"\buvx\b|\bpip install\b|\buv pip install\b|\buv tool\b|\bpipx\b", stripped) or "==" in stripped:
+                continue
+            pinned = False
+            for var in re.findall(r"\$\{?([A-Z_]+)\}?", stripped):
+                assigned = re.search(rf'^\s*{var}="([^"]*)"', text, re.MULTILINE)
+                if assigned is not None and "==" in assigned.group(1):
+                    pinned = True
+            if not pinned:
+                bad.append(stripped)
+    return bad
+
+
 def test_lint_blocking_has_no_unpinned_install_path():
     text = (WF / "lint-blocking.yml").read_text(encoding="utf-8")
     assert not re.search(r'if \[ -n "\$PIN" \]', text)
-    for step in _steps(_load(WF / "lint-blocking.yml")):
-        for line in step.get("run", "").splitlines():
-            stripped = line.strip()
-            if re.search(r"uvx|uv pip install", stripped):
-                assert "==" in stripped or "$INTERROGATE" in stripped, stripped
+    assert _unpinned_install_lines(WF / "lint-blocking.yml") == []
     assert "Require pinned tool versions" in text
+
+
+def test_a_variable_assigned_an_unpinned_package_is_reported(tmp_path) -> None:
+    """Negative control (44-F1): the old exemption passed `uvx "$INTERROGATE"` whatever INTERROGATE held."""
+    bad = tmp_path / "wf.yml"
+    bad.write_text('jobs:\n  j:\n    steps:\n      - run: |\n          INTERROGATE="interrogate"\n          uvx "$INTERROGATE" -v src\n', encoding="utf-8")
+    assert _unpinned_install_lines(bad) == ['uvx "$INTERROGATE" -v src']
+
+
+@pytest.mark.parametrize("install", ["pip install ruff", "uv tool install ruff", "pipx install black", "uv pip install ruff"])
+def test_an_unpinned_install_in_any_shape_is_reported(tmp_path, install) -> None:
+    """Negative control (44-F2): the old pattern saw only uvx and uv pip install, so these never reached the pin check."""
+    bad = tmp_path / "wf.yml"
+    bad.write_text("jobs:\n  j:\n    steps:\n      - run: |\n          " + install + "\n", encoding="utf-8")
+    assert _unpinned_install_lines(bad) == [install]
 
 
 @pytest.mark.parametrize("name", ["docs.yml", "mypy-full.yml", "lint-blocking.yml"])

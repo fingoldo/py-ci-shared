@@ -36,6 +36,7 @@ from typing import NamedTuple, Optional
 
 from ._core import ImportAliases, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.scopes import function_param_names as _param_names
 
 __all__ = ["GpuTimingFinding", "SUPPRESSION_MARKER", "assert_no_unsynchronized_gpu_timings", "find_unsynchronized_gpu_timings"]
 
@@ -174,18 +175,6 @@ def _is_sync_call(node: ast.Call) -> bool:
     if isinstance(func, ast.Name):
         return _is_sync_name(func.id)
     return False
-
-
-def _param_names(func: ast.AST) -> set[str]:
-    names: set[str] = set()
-    if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        return names
-    args = func.args
-    for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs]:
-        names.add(arg.arg)
-    if args.vararg:
-        names.add(args.vararg.arg)
-    return names
 
 
 def _timed_regions(body: list[ast.stmt], aliases: Optional[ImportAliases] = None) -> list[tuple[int, list[ast.stmt]]]:

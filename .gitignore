@@ -8,3 +8,6 @@ build/
 dist/
 *.egg-info/
 site/
+
+# agent and scratch worktrees (local, never committed)
+.claude/worktrees/

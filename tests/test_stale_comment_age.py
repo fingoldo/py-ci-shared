@@ -13,6 +13,8 @@ from py_ci_shared import stale_comment_age as sca
 from py_ci_shared.stale_comment_age import assert_no_stale_todos, find_stale_comments
 from py_ci_shared._core.git import git_env
 
+from _git_repo_helper import make_repo
+
 _ENV_OLD = {
     "GIT_AUTHOR_DATE": "2020-01-01T00:00:00",
     "GIT_COMMITTER_DATE": "2020-01-01T00:00:00",
@@ -20,22 +22,8 @@ _ENV_OLD = {
 
 
 def _repo(tmp_path: Path, rel: str, body: str, *, old: bool = True, init_args: tuple = ()) -> Path:
-    tmp_path.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["git", "init", "-q", *init_args], cwd=tmp_path, check=True, env=git_env())
-    subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=tmp_path, check=True, env=git_env())
-    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, env=git_env())
-    p = tmp_path / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(body, encoding="utf-8")
-    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, env=git_env())
-    env = dict(_ENV_OLD) if old else {}
-    subprocess.run(
-        ["git", "commit", "-q", "-m", "seed"],
-        cwd=tmp_path,
-        check=True,
-        env=git_env(env),
-    )
-    return tmp_path
+    """A repo whose one commit holds *rel*; *old* backdates that commit (48-F15: built by the shared helper)."""
+    return make_repo(tmp_path, {rel: body}, commit_env=dict(_ENV_OLD) if old else None, init_args=init_args)
 
 
 class TestStaleComments:
@@ -321,7 +309,7 @@ _DAY = 86400
 
 def _repo_at_t0(tmp_path: Path, rel: str, body: str) -> Path:
     tmp_path.mkdir(parents=True, exist_ok=True)
-    for args in (["init", "-q"], ["config", "user.email", "t@example.com"], ["config", "user.name", "T"]):
+    for args in (["init", "-q"],):  # the identity comes from the session (GIT_ISOLATION), not from config spawns
         subprocess.run(["git", *args], cwd=tmp_path, check=True, env=git_env())
     p = tmp_path / rel
     p.parent.mkdir(parents=True, exist_ok=True)

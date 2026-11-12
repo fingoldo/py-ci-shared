@@ -82,7 +82,7 @@ def complexity_problems(complexities: dict[str, int], all_keys: set[str], baseli
         if key in all_keys:
             problems.append(f"{key}: now within the limit of {limit} -- remove the entry (a refresh drops it)")
         else:
-            problems.append(f"{key}: in the baseline but gone -- remove the entry (" + refresh_hint(REFRESH_FLAG, "function_complexity") + " drops it)")
+            problems.append(f"{key}: in the baseline but gone -- remove the entry, or run " + refresh_hint(REFRESH_FLAG, "function_complexity") + " to drop it")
     return problems
 
 
@@ -130,11 +130,11 @@ def assert_complexity_does_not_grow(
             write_complexity_baseline(baseline_path, complexities, grow=grow, request=request, unparsed=unparsed)
         except BaselineError as exc:
             pytest.fail(str(exc), pytrace=False)
-        refreshed_skip(f"function-complexity baseline written to {baseline_path}")
+        refreshed_skip(f"function-complexity baseline written to {baseline_path.name}")
     baseline_path = Path(baseline_path)
     if not baseline_path.is_file():
         pytest.fail(
-            f"function-complexity baseline {baseline_path} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_complexity')} (a clean repo commits {{}})"
+            f"function-complexity baseline {baseline_path.name} does not exist; create it with {refresh_hint(REFRESH_FLAG, 'function_complexity')} (a clean repo commits {{}})"
         )
     try:
         baseline = complexity_ratchet.load_complexity_baseline(baseline_path)

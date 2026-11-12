@@ -4,11 +4,18 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.10)
 
+- **New** `mutation_rerun` (CLI): the per-module mutation drivers that lived in a session scratchpad, now shared. `python -m py_ci_shared.mutation_rerun --repo . sweep <module> <tests> <checkpoint>` runs a whole module with a resumable checkpoint; `… lines <module> <tests> <survivor-log> <notes.json> [min max]` re-checks only the survivor lines and records a survivor in the journal only when the notes explain it. Paths are relative to `--repo`, the journal path is `--survivors` (default `tests/test_meta/mutation_survivors.json`). What to do: nothing for a consumer that does not run mutation sweeps; a consumer that did may delete its own copies of these scripts.
+- **Behaviour change** (`ci_health`): a workflow counts toward a consumer's red days only when its file has a live trigger (`push`, `pull_request`, `pull_request_target` or `schedule`); a `workflow_dispatch`-only workflow no longer keeps a red last scheduled run in the report. Private consumers are left out of the public report unless `--include-private` is passed. What to do: nothing for a public consumer whose workflows all run on push or schedule. A consumer that wants its private repos in the report runs `ci_health --include-private` (the scheduled workflow must pass it to keep them).
 - Self-hygiene (audit 52-F6, no behaviour change): every public module defines `__all__`, the 61 public functions without a docstring have one, the 20 unannotated ones are annotated, and library functions no longer call `print` (diagnostics go to stderr; the verifier report of `sql_verify` stays on stdout). `mutation_teeth.HARNESS_VERSION` is now 37 because the tracked sources changed: a consumer's mutation cache is recomputed once, verdicts are unchanged.
 - `uncalled_functions` takes `private_only=True` (additive, default off; also a `[tool.py_ci_shared.gates.uncalled_functions]` key): only functions whose own name starts with an underscore (not a dunder) are judged, so a library whose public functions are called only by consumers can still find dead private code. The findings are exactly the private subset of the default ones. This repo enables it over `src` (audit 52-F4): it found 6 private functions with no production caller; 2 were deleted (`possibly_unbound_local._deletes`, `_mutation_operators._container_members` with its unused re-export in `mutation_teeth`) and 4 are allowed by name with a reason in `pyproject.toml`.
 - Internal self-gate change (this repository only): `loc_budget` now also covers `tests/**/*.py` (empty baseline). `tests/test_mutation_teeth.py` and `tests/test_gate_teeth.py` were split into parts; `py-ci-shared new-gate` now inserts the `CANARIES` entry into `tests/_gate_teeth_canaries.py` instead of `tests/test_gate_teeth.py` (a developer-facing change for contributors of this repo, not for consumers).
 - `local_copy_report`: the content signature of `nondiscriminating_shapes` now names the shapes that gate checks (wide literal range, envelope assert, median round-trip, late skip, non-empty-only) instead of a helper called `_*tautolog*`, which matched glossum's tautology scanner (a different rule) and kept `adoption_matrix` red (fewer findings).
 - `adoption_matrix` no longer reports a dunder attribute of the package (`py_ci_shared.__file__`, `__version__`) as an `unknown-module` (fewer findings; pyutilz's pin-coverage test reads `py_ci_shared.__file__`).
+- **Behaviour change** (`adoption_matrix`, audit 47-F8): a run without `--resolve-in` now exits 1 unless `--advisory` is given, because the stale-pin, unresolvable-pin, pin-comment and waiver checks did not run and an exit 0 claimed they had passed. What to do: give `--resolve-in <a py-ci-shared checkout with its release tags>`, or pass `--advisory` to keep reporting without failing.
+- New `raw_write_row_count` (audit 50-F3, additive): a raw UPDATE or DELETE sent through `execute` in a function that never reads `rowcount` is a finding. Migrations and `batch_*` scripts are not judged. `assert_raw_write_row_count(root, report_only=True)` prints the findings and never fails: the first step before the gate blocks.
+- **Behaviour change** (`fail_open_handlers`, audit 37-F35 item 3): a handler that returns a reason code (three or more lowercase words joined by underscores, such as `modifier_refused_by_the_graph`) now counts as reporting the failure in-band, so it is no longer a silent default. What to do: nothing, unless your gate relied on that finding; the gate now finds fewer handlers.
+
+- New `adoption_sha_ref` (CLI, audit 47-F10 and 43-F9, additive, report only): flags a consumer workflow that pins a between-release SHA of the reusable workflows without `py-ci-shared-ref`, which runs an older configuration than its `# vX.Y.Z` comment suggests. It does not fail a consumer until the consumers pass the input. What to do: nothing to do; run `python -m py_ci_shared.adoption_sha_ref --repos-file repos.toml --resolve-in ../py-ci-shared` to see which consumers still need the input.
 
 ### Strict private consumers, public names, registry summaries (audits 46-F8, 47-F5, 43-F6, 43-F8)
 
@@ -471,6 +478,10 @@ the stale entries removed.
   re-pointed after it, ships the old code under a green check. An unreachable remote raises `VersionCheckError` rather than passing;
   `check_remote=False` checks the first half offline. Generalized from noema_app's `tool/check-core-pin-agrees.sh`.
 
+## 1.22.6
+
+No notes recorded for this release.
+
 ## 1.22.5
 
 - `corpus-drift.yml` installs the `sql` extra, so `statement_columns_exist_in_ddl` runs in the nightly corpus scan instead of raising ImportError for sqlglot.
@@ -516,6 +527,10 @@ the stale entries removed.
   literal (a gap that can never close, so can never fail) is a finding. What to do: give each `known_gap` reason a tracked issue or an external component, and
   make `gap_closed` a measured condition.
 - New opt-in gate `env_write_restore` (`assert_env_write_restore(root, baseline_path=...)`): a test function that writes `os.environ` (assignment, `del`, `update`/`setdefault`/`pop`, `os.putenv`) and never restores it leaks the setting into every later test in the process, so the victim is a different innocent test each run and passes alone (mlframe: three `MLFRAME_*` strict-GPU flags set directly made a bit-identity test fail 4 runs in 5). The import-time half stays in `import_side_effects`. A write is accepted inside `patch.dict` / `monkeypatch.context`, in a function with a `try` whose `finally` writes the environment, in a yield-fixture that writes again after the yield, in a `setUp` whose class tears it down, with `addfinalizer`/`addCleanup`, or in a function named as a restorer. Findings are keyed `rule::path::function: statement` (no line numbers) and ride the ratchet `Baseline`; seed a first baseline with `grow=True`.
+
+## 1.22.1
+
+No notes recorded for this release.
 
 ## 1.22.0
 
