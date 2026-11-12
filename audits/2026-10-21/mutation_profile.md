@@ -3,9 +3,9 @@
 Scope: `tests/test_mutation_teeth.py`, `tests/test_mutation_teeth_regressions.py`, `tests/test_mutation_worker.py`,
 `tests/test_mutation_fingerprint_python_files.py`, `tests/test_mutation_harness_version_is_bumped.py`.
 Baseline durations: `audits/2026-10-21/prof/before_durations.txt` (173 passed in 190.5 s, `-n 0 --no-cov`).
-Profiles: the binary cProfile dump of the four_workers run was not kept (it was not committed; the figures below are from the run it recorded). Measurement script: `audits/2026-10-21/prof/exp_startup.py`.
+Profiles: the binary cProfile dump of the four_workers run was not kept (it was not committed; the figures below are from the run it recorded). Measurement script: `scripts/exp_startup.py`.
 
-### PROF-M1 (P2) -- Mutation sweep tests spend their time in cold pytest children, not in the harness
+### S-12 (Low) -- Mutation sweep tests spend their time in cold pytest children, not in the harness
 
 **Disposition:** Diagnosed; no test or source change made. The lever is the child-process startup in `_mutation_runner.py`
 (`_pytest_env` / `_pytest_flags`), which this task may not edit, and no test-side change keeps every assertion and the
@@ -42,7 +42,7 @@ verdicts the tests prove. Proposed harness change below; parent to decide.
 
 **Measured effect of the proposed harness change (scratch experiment, not committed):** same fixture, child pytest run with
 `PYTEST_DISABLE_PLUGIN_AUTOLOAD=1` and flags `-q --no-header -p no:randomly -p no:cacheprovider` (no `-n 0`), applied by
-monkeypatch in `exp_startup.py`:
+monkeypatch in `scripts/exp_startup.py`:
 
 | Sweep on the four_workers fixture | Before | Trimmed child startup | Verdicts |
 | --- | --- | --- | --- |
@@ -67,7 +67,7 @@ The trimmed-startup numbers above are the expected effect of proposal 1, not a m
 ## Files changed
 
 - `audits/2026-10-21/mutation_profile.md` (this report)
-- `audits/2026-10-21/prof/before_durations.txt`, `exp_startup.py` (measurement evidence; the four_workers `.prof` dump was lost and is not in git)
+- `audits/2026-10-21/prof/before_durations.txt`, `scripts/exp_startup.py` (measurement evidence; the four_workers `.prof` dump was lost and is not in git)
 
 No file under `src/` or `tests/` was modified. No harness content-hash file was touched. Ruff, mypy and the test runs were
 not needed for a changed-file set, since none exists.

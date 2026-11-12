@@ -330,10 +330,7 @@ def _sweep_mutants(
                 if time.perf_counter() - last_report >= _PROGRESS_EVERY_SECONDS:
                     last_report = time.perf_counter()
                     logger.warning(
-                        "mutation progress: %d/%d mutants judged, %d survivors so far",
-                        int(state.budget["mutants"]),
-                        len(mutants),
-                        len(state.survivors),
+                        "mutation progress: %d/%d mutants judged, %d survivors so far", int(state.budget["mutants"]), len(mutants), len(state.survivors)
                     )
             _log_sweep_end(state)
     finally:
