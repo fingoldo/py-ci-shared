@@ -191,11 +191,6 @@ def _quote_state(text: str, quote: str = "") -> str:
     return quote
 
 
-def _quote_open(text: str) -> bool:
-    """True when *text* ends inside an unclosed ' or \" quote (backslash escapes outside single quotes)."""
-    return bool(_quote_state(text))
-
-
 def _heredoc_delimiters(text: str) -> "list[tuple[str, bool]]":
     return [(m.group(2) or m.group(3) or m.group(4), m.group(1) == "-") for m in _HEREDOC.finditer(text) if text[m.start() - 1 : m.start()] != "<"]
 
