@@ -169,3 +169,26 @@ LATE_READS = {
 def test_a_late_read_of_the_module_name_makes_the_patch_live(tmp_path, service):
     """getattr on a module object, a helper returning the module, and a function-local import all read the name at call time."""
     assert _found(tmp_path, _base(LATE_READS[service])) == []
+
+
+def _with_marker(marker: str) -> bytes:
+    """The standard violating test with ``marker`` appended to its monkeypatch line."""
+    return TEST_PATCHES.replace(b'monkeypatch.setattr(reexport, "LIMIT", 5)', b'monkeypatch.setattr(reexport, "LIMIT", 5)  ' + marker.encode())
+
+
+def test_a_reasoned_audit_exempt_marker_on_the_patch_line_suppresses_the_finding(tmp_path):
+    """The marker names this gate and gives a reason, so the patch is excused in place."""
+    test = _with_marker("# audit-exempt: patch_target_read_at_call -- the reader resolves LIMIT through an accessor the scan cannot follow")
+    assert _found(tmp_path, _base(VIOLATION_SERVICE, test)) == []
+
+
+def test_a_marker_without_a_reason_does_not_suppress(tmp_path):
+    """An exemption has to say why; a bare marker leaves the finding."""
+    found = _found(tmp_path, _base(VIOLATION_SERVICE, _with_marker("# audit-exempt: patch_target_read_at_call")))
+    assert [(f.line, f.rule) for f in found] == [(6, RULE)]
+
+
+def test_a_marker_for_another_check_does_not_suppress(tmp_path):
+    """The marker is per check: excusing a different check leaves this one."""
+    found = _found(tmp_path, _base(VIOLATION_SERVICE, _with_marker("# audit-exempt: resource_handle_safety -- unrelated")))
+    assert [(f.line, f.rule) for f in found] == [(6, RULE)]

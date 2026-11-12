@@ -29,6 +29,10 @@ the module does not bind at all, is not judged here.
 A route that must stay as it is (a re-export kept for a third party that reads it) is accepted through the baseline,
 which can only shrink: ``assert_patch_target_read_at_call(test_paths, package_roots, baseline_path=...)``.
 
+A patch whose reader resolves the name through an accessor this static scan cannot follow (a parent-module bridge such as
+``_get_live("NAME")``) is excused in place: put ``# audit-exempt: patch_target_read_at_call -- <reason>`` on the line of the
+``monkeypatch`` call (the reason must be at least 20 characters). A marker without one, or naming another check, does not suppress.
+
 Usage::
 
     from py_ci_shared.patch_target_read_at_call import assert_patch_target_read_at_call
@@ -51,6 +55,7 @@ from ._core import walk as shared_walk
 __all__ = ["RULE", "assert_patch_target_read_at_call", "find_inert_patches"]
 
 RULE = "patch-target-read-at-call"
+MARKER_CHECK = "patch_target_read_at_call"  # the id an ``audit-exempt`` marker names: that marker's check id allows letters, digits and underscores only
 
 _MOCK_PATCH = "unittest.mock.patch"
 _MOCK_PATCH_OBJECT = "unittest.mock.patch.object"
@@ -252,8 +257,11 @@ def _index(package_roots: Iterable[Union[str, Path]], *, allow_unparsed: bool, u
 
 
 def _findings_in(parsed: ParsedFile, modules: dict[str, _Module], facts: dict[str, _Facts]) -> list[Finding]:
+    from .code_audit import is_line_exempt
+
     out: list[Finding] = []
     aliases = ImportAliases.from_tree(parsed.tree)
+    src_lines = parsed.source.splitlines()
     for node in shared_walk(parsed.tree):
         if not isinstance(node, ast.Call):
             continue
@@ -263,6 +271,8 @@ def _findings_in(parsed: ParsedFile, modules: dict[str, _Module], facts: dict[st
         module_name, name = target
         owner = modules.get(module_name)
         if owner is None or not _is_inert(name, owner, facts[module_name], facts):
+            continue
+        if is_line_exempt(src_lines, node.lineno, MARKER_CHECK):  # a reasoned in-place exemption: the reader resolves the name through an accessor this static scan cannot follow
             continue
         out.append(
             Finding(
