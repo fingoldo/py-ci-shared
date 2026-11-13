@@ -39,7 +39,7 @@ REPO = Path(__file__).resolve().parents[2]
 GUARD = ".github/scripts/release_guard.py"
 VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 #: self-ci.yml's matrix (``python:``); 3.11 is the leg that measures coverage and runs ruff and mypy.
-PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13")
+PYTHONS = ("3.9", "3.10", "3.11", "3.12", "3.13", "3.15")
 COVERAGE_PYTHON = "3.11"
 MYPY_VERSION = "2.1.0"
 RUNTIME_CONSTRAINTS = ".github/constraints/runtime.txt"
