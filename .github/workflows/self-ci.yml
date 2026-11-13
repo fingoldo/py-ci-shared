@@ -43,17 +43,8 @@ jobs:
         os: [ubuntu-24.04]
         python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.15"]
         include:
-          # Free-threaded builds (no GIL): non-blocking (preview: true => continue-on-error) until each has run green once, so a
-          # failure shows in the run without holding up merges. A failure here is the signal that a shared-state assumption breaks without the GIL.
-          - os: ubuntu-24.04
-            python: "3.13t"
-            preview: true
-          - os: ubuntu-24.04
-            python: "3.14t"
-            preview: true
-          - os: ubuntu-24.04
-            python: "3.15t"
-            preview: true
+          # Free-threaded (3.13t+) legs are not in the matrix: the dev extra pulls in pyutilz, which needs orjson, and orjson
+          # publishes no free-threaded wheel on PyPI (checked 2026-11-13, every release through 3.13.0). Re-add them once it does.
           # 3.14 is the interpreter the owner develops on; it is non-blocking (preview: true => continue-on-error) until it has
           # run green once, because 3.14-only breaks (a changed ast.dump, a removed API) were found locally, never by this matrix
           # (audit 2026-11-07 45-F4).
