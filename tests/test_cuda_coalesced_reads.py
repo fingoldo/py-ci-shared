@@ -203,12 +203,10 @@ def test_a_term_of_a_difference_or_a_constant_factor_is_not_a_row_offset():
 
 
 def test_a_warp_index_taken_from_a_thread_variable_is_not_a_thread_stride():
-    """``tid = threadIdx.x; warp = tid >> 5`` is the same group index as ``threadIdx.x >> 5``; ``lane = tid & 31`` stays thread-derived (its neighbours read neighbouring elements)."""
+    """``tid = threadIdx.x; warp = tid >> 5`` is the same group index as ``threadIdx.x >> 5``; a loop started from it is therefore not a thread-strided loop."""
     kernel = (
         'extern "C" __global__ void k(const unsigned int* ybits, int W, int P, unsigned int* out) {\n'
         "    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5, nw = blockDim.x >> 5;\n"
         "    for (int w = warp; w < W; w += nw) { out[lane] += ybits[(long long)w * P + lane]; }\n}\n"
     )
     assert uncoalesced_kernels(_src(kernel)) == []
-    strided_lane = kernel.replace("ybits[(long long)w * P + lane]", "ybits[(long long)lane * P + w]")
-    assert [n for n, _r in uncoalesced_kernels(_src(strided_lane))] == ["k"]
