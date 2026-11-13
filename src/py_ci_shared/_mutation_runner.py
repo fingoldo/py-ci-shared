@@ -53,7 +53,8 @@ def forget_bytecode(sandbox: Union[Path, str], target: Union[Path, str]) -> None
     cache = pyc_cache_dir(sandbox)
     if not cache.is_dir():
         return
-    for stale in cache.rglob(f"{glob.escape(Path(target).stem)}.*.pyc"):
+    pattern = f"{glob.escape(Path(target).stem)}.*.pyc"
+    for stale in cache.rglob(pattern):  # walk-ok: private bytecode prefix, .pyc files only
         try:
             stale.unlink(missing_ok=True)
         except OSError as exc:  # noqa: PERF203 - each file is removed on its own, and the first failure stops the sweep
