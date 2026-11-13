@@ -72,7 +72,7 @@ def test_a_bom_prefixed_file_is_reported_like_the_plain_one(tmp_path):
 def test_an_unparsable_file_fails_by_name_unless_allowed(tmp_path):
     """A file with a syntax error raises ``UnparsedFilesError`` naming it; ``allow_unparsed=True`` skips it."""
     root = _corpus(tmp_path, {"good.py": b"x = 1\n", "broken.py": b"def kernel(cp, real:\n"})
-    with pytest.raises(UnparsedFilesError, match="broken.py"):
+    with pytest.raises(UnparsedFilesError, match=r"broken.py"):
         _find(root)
     assert _find(root, allow_unparsed=True) == []
 
