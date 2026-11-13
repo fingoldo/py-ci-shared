@@ -2,6 +2,10 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased (next: 1.23.12)
+
+- `tests/test_changelog_mentions_new_gates.py` returns early when no module is first shipped in the next release, instead of failing on every CI leg with "the registry names no module for the next release".
+
 ## 1.23.11
 
 - New `cuda_kernel_sources` (additive library): the AST extractor of the CUDA kernel source strings of a package that a consumer's offline NVRTC -> ptxas meta-test builds on, moved here from a consumer's `tests/`: `find_cuda_kernel_sources(root, exclude=, key_base=, min_files=)` returns `{"<path>::NAME": source}` for every assignment whose value holds a `__global__` string literal (plain, wrapped in `render(...)` / `.replace(...)`, concatenated, an f-string with `{__FSTRING__}` for each interpolation, a class attribute, or built inside a function; several kernel literals of one assignment get `NAME`, `NAME#2`, ...), raising `EmptyScanError` / `UnparsedFilesError` instead of reading an unparsable file as kernel-free; `module_str_constant(path, name)` reads one module-level string constant by AST. No import side effects, no GPU needed.
