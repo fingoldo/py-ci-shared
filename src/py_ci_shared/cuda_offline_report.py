@@ -163,7 +163,7 @@ def build_ptx_and_report(source: str, options: tuple, arch: int, ptxas: str, wor
     ptx = re.sub(rb"\.version \d+\.\d+", b".version 8.7", ptx)
     path = workdir / "k.ptx"
     path.write_bytes(ptx)
-    res = subprocess.run([ptxas, "-v", f"-arch=sm_{arch}", "-o", str(workdir / "k.cubin"), str(path)], capture_output=True, text=True)
+    res = subprocess.run([ptxas, "-v", f"-arch=sm_{arch}", "-o", str(workdir / "k.cubin"), str(path)], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if res.returncode != 0:
         raise RuntimeError(f"ptxas failed on sm_{arch}: {(res.stdout + res.stderr)[-500:]}")
     return ptx.decode("ascii", errors="replace"), "".join(f"nvrtc: {ln}\n" for ln in nvrtc_log.splitlines() if ln.strip()) + res.stdout + res.stderr
@@ -197,7 +197,7 @@ def local_device_limits() -> tuple | None:
         dev = cp.cuda.Device()
         arch = int(dev.compute_capability)
         return arch, int(dev.attributes["MaxThreadsPerMultiProcessor"]), int(dev.attributes["MaxBlocksPerMultiprocessor"])
-    except Exception:
+    except Exception:  # best-effort: no usable device (or no cupy) means the caller skips the hardware cross-check
         return None
 
 

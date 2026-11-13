@@ -17,7 +17,8 @@ REPO = Path(__file__).resolve().parents[1]
 
 def _unreleased_section() -> str:
     text = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-    start = text.index("## Unreleased")
+    heading = "## Unreleased" if "## Unreleased" in text else f"## {__version__}"  # prepare renames Unreleased to the version
+    start = text.index(heading)
     end = text.find("\n## ", start + 1)
     return text[start:] if end == -1 else text[start:end]
 
