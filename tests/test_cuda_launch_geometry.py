@@ -136,11 +136,7 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
 def test_a_block_size_imported_from_another_module_is_followed_to_its_binding(tmp_path):
     """``from .kernel import BLOCK`` and a launch using ``(BLOCK,)`` is caught even though ``BLOCK`` has no local binding in the launching file."""
     kernel_mod = b"BLOCK = 128\n"
-    launcher = (
-        b"from .kernel import BLOCK\n\n\n"
-        b"def run(kernel, x, out, n, dev):\n"
-        b"    kernel((n,), (BLOCK,), (x, out))\n"
-    )
+    launcher = b"from .kernel import BLOCK\n\n\n" b"def run(kernel, x, out, n, dev):\n" b"    kernel((n,), (BLOCK,), (x, out))\n"
     found = _find(_corpus(tmp_path, {"kernel.py": kernel_mod, "launcher.py": launcher}))
     assert [f.line for f in found] == [5]
 
@@ -159,11 +155,7 @@ def test_a_cross_module_block_size_is_suppressed_by_a_marker_on_the_launch(tmp_p
 
 def test_a_block_size_imported_from_outside_the_corpus_is_not_followed(tmp_path):
     """A name imported from a module the corpus does not itself contain (an absolute, external import) is not resolved - only same-corpus relative imports are followed."""
-    launcher = (
-        b"from somewhere.external import BLOCK\n\n\n"
-        b"def run(kernel, x, out, n, dev):\n"
-        b"    kernel((n,), (BLOCK,), (x, out))\n"
-    )
+    launcher = b"from somewhere.external import BLOCK\n\n\n" b"def run(kernel, x, out, n, dev):\n" b"    kernel((n,), (BLOCK,), (x, out))\n"
     found = _find(_corpus(tmp_path, {"launcher.py": launcher}))
     assert found == []
 
@@ -171,10 +163,51 @@ def test_a_block_size_imported_from_outside_the_corpus_is_not_followed(tmp_path)
 def test_a_cross_module_name_bound_to_something_else_in_the_target_is_not_followed(tmp_path):
     """The imported name resolves in the TARGET module's own scope; if that module never binds it to a literal (bound twice, or to a call), nothing is reported."""
     kernel_mod = b"BLOCK = 128\nBLOCK = 256\n"  # bound twice: _bindings maps it to None
-    launcher = (
-        b"from .kernel import BLOCK\n\n\n"
-        b"def run(kernel, x, out, n, dev):\n"
-        b"    kernel((n,), (BLOCK,), (x, out))\n"
-    )
+    launcher = b"from .kernel import BLOCK\n\n\n" b"def run(kernel, x, out, n, dev):\n" b"    kernel((n,), (BLOCK,), (x, out))\n"
     found = _find(_corpus(tmp_path, {"kernel.py": kernel_mod, "launcher.py": launcher}))
     assert found == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "kernel(grid, (256,), (x, out))",
+        "args = (x, out)\nkernel((n,), (256,), args)",
+        "kernel(grid, (256,), args)",
+        "kernel((n,), (2 * 128,), (x, out))",
+        "kernel((n,), (int(256),), (x, out))",
+        "kernel[blocks, 256](x, out)",
+        "kernel[blocks, (16, 32)](x, out)",
+        "make()(grid, (256,), (x, out))",
+        "kernels[3](grid, (512,), (x, out))",
+    ],
+)
+def test_loose_launch_shapes_with_a_literal_block_are_reported(tmp_path, body):
+    """The launches the strict shape missed (grid or arguments in a name, a block spelled as arithmetic or ``int(...)``, a numba launch, a launch through a subscript or a call) are reported."""
+    assert len(_found(tmp_path, body)) == 1, body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "kernel(grid, (width,), (x, out))",
+        "kernel(grid, (1,), (x, out))",
+        "kernel(grid, (16,), (x, out))",
+        "kernel[blocks, width](x, out)",
+        "kernel[blocks, 1](x, out)",
+        "np.zeros(n, (256,), dtype)",
+        "cp.empty(n, (256,), dtype)",
+        "ratio = list(itertools.product((0.5, 1.0), (256, 128), (x, out)))",
+        "pairs = list(itertools.product(rows, (256, 128), cols))",
+        "kernel(grid, (2 * width,), (x, out))",
+    ],
+)
+def test_loose_shapes_that_are_not_a_literal_block_are_not_reported(tmp_path, body):
+    """A block from a name or a call, a one-thread block, a loose tuple under a warp (a shape), a numpy or cupy constructor and an ``itertools`` product are not."""
+    assert _found(tmp_path, body) == [], body
+
+
+def test_a_loose_launch_with_a_reason_is_suppressed(tmp_path):
+    """The marker works on a loose launch too."""
+    assert _found(tmp_path, "kernel(grid, (256,), args)  # launch-ok: the kernel's shared tile is 256 wide") == []
+    assert len(_found(tmp_path, "kernel(grid, (256,), args)")) == 1

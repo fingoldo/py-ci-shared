@@ -8,6 +8,10 @@ tuning-cache sweep over those hardware-valid candidates, or a helper doing that.
 * ``cuda-literal-block-size`` (hard): a call shaped like a launch, ``f(grid_tuple, block_tuple, args_tuple_or_list)``, whose block tuple holds an integer literal other than 1, a module
   constant bound to such a literal, or a local name bound once to one. A block of 1 is a one-thread kernel (nothing to choose) and is not reported.
 
+* The same rule for the launches the strict shape misses (reported for a block of at least 32 threads, since a tuple in the second slot of a call is often a shape): the grid or the arguments in a name or any
+  expression (``kern(grid, (256,), (x,))``, ``kern((n,), (256,), args)``), a block spelled as arithmetic over literals (``(2 * 128,)``) or ``int(256)``, and the numba launch ``kern[blocks, 256](x)``. A call on a numpy
+  or cupy module is never a launch.
+
 Not reported: a block built from a call, an attribute or arithmetic over names (``(min(256, dev.max_threads),)``, ``(width,)`` from a helper), and any name bound more than once or to
 anything but an integer literal. A name imported from ANOTHER module in the same corpus (``from ._kernel import BLOCK``) is followed to that module's own module-level binding, so a
 constant defined once and launched from a different file is still caught - cross-package and external imports (anything the corpus does not itself contain) are not followed.
@@ -38,8 +42,22 @@ MARKER = "launch-ok:"
 
 
 def _int_literal(node: ast.AST) -> Optional[int]:
+    """The integer a node is made of alone: a literal, ``int(<literal expression>)`` or ``+ - * //`` over such literals (``(2 * 128,)`` is a literal block size spelled with arithmetic); ``None`` otherwise."""
     if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
         return node.value
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "int" and len(node.args) == 1 and not node.keywords:
+        return _int_literal(node.args[0])
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv)):
+        left, right = _int_literal(node.left), _int_literal(node.right)
+        if left is None or right is None:
+            return None
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        return left // right if right else None
     return None
 
 
@@ -66,6 +84,38 @@ def _is_launch(call: ast.Call) -> bool:
     )
 
 
+_ARRAY_MODULES = frozenset({"np", "cp", "numpy", "cupy", "jnp", "torch", "pd", "pandas", "itertools"})
+_MIN_LOOSE_BLOCK = (
+    32  # a loose launch (below) is reported only for a block of at least a warp: a tuple of 2 or 3 in the second slot of a call is usually a shape
+)
+
+
+def _launch_block(call: ast.Call) -> "Optional[tuple[list[ast.AST], bool]]":
+    """``(block elements, strict)`` when *call* is a launch, else ``None``.
+
+    Strict is the shape ``f((grid...), (block...), (args...))``. A loose launch is what the strict test missed, found in the repository this gate was written for: ``kern(grid, (256,), (x,))`` with the grid in a
+    variable, ``kern((n,), (256,), args)`` with the arguments built first, and a numba launch ``kern[blocks, 256](x)``. A loose launch is reported only for a block of at least 32 threads, and a call on a numpy or
+    cupy module (``np.zeros(n, (256,), dtype)``) is never one."""
+    func = call.func
+    if isinstance(func, ast.Subscript) and isinstance(func.slice, ast.Tuple) and len(func.slice.elts) >= 2:
+        block = func.slice.elts[1]
+        return (list(block.elts) if isinstance(block, ast.Tuple) else [block]), False
+    if _is_launch(call):
+        return list(call.args[1].elts), True  # type: ignore[attr-defined]
+    if (
+        len(call.args) >= 3
+        and isinstance(call.args[1], ast.Tuple)
+        and 1 <= len(call.args[1].elts) <= 3
+        and not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in _ARRAY_MODULES)
+        and not any(
+            isinstance(e, ast.Constant) and not isinstance(e.value, int)
+            for e in (*(call.args[0].elts if isinstance(call.args[0], ast.Tuple) else ()), *call.args[1].elts)
+        )
+    ):
+        return list(call.args[1].elts), False
+    return None
+
+
 def _fixed_sizes(
     call: ast.Call,
     scopes: "list[dict[str, Optional[int]]]",
@@ -74,9 +124,13 @@ def _fixed_sizes(
     corpus_scopes: "Optional[dict[str, dict[str, Optional[int]]]]" = None,
 ) -> "list[int]":
     """The block sizes (other than 1) of a launch call: an integer literal, a name bound once to one in the innermost scope that binds it, or - when ``aliases`` and ``corpus_scopes`` are
-    given - a name imported from another module of the same corpus whose OWN module-level binding is one (one hop; a re-exported alias of an alias is not followed)."""
+    given - a name imported from another module of the same corpus whose OWN module-level binding is one (one hop; a re-exported alias of an alias is not followed).
+    """
     sizes = []
-    for element in call.args[1].elts:  # type: ignore[attr-defined]
+    shape = _launch_block(call)
+    assert shape is not None
+    elements, strict = shape
+    for element in elements:
         value = _int_literal(element)
         if value is None and isinstance(element, ast.Name):
             for scope in scopes:
@@ -90,7 +144,7 @@ def _fixed_sizes(
                     module_scope = corpus_scopes.get(module)
                     if module_scope is not None and attr in module_scope:
                         value = module_scope[attr]
-        if value is not None and value != 1:
+        if value is not None and value != 1 and (strict or value >= _MIN_LOOSE_BLOCK):
             sizes.append(value)
     return sizes
 
@@ -117,7 +171,7 @@ def _findings_in(
     reported: "set[int]" = set()
 
     def check(call: ast.Call, scopes: "list[dict[str, Optional[int]]]") -> None:
-        if id(call) in reported or not _is_launch(call):
+        if id(call) in reported or _launch_block(call) is None:
             return
         reported.add(id(call))
         sizes = _fixed_sizes(call, scopes, aliases=aliases, corpus_scopes=corpus_scopes)
