@@ -27,7 +27,7 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import scan_python
+from ._core import nodes_of, parse_file, scan_python
 
 __all__ = ["find_cuda_kernel_sources", "module_str_constant"]
 
@@ -43,7 +43,7 @@ def _target_name(node: "ast.Assign | ast.AnnAssign") -> "Optional[str]":
 def _kernel_literals(value: ast.AST) -> "list[str]":
     """Every string literal in *value* that holds a kernel: constants as written, f-strings with each interpolation replaced by ``{__FSTRING__}``."""
     literals: "list[str]" = []
-    for sub in ast.walk(value):
+    for sub in nodes_of(value, ast.Constant, ast.JoinedStr):
         if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and _MARK in sub.value:
             literals.append(sub.value)
         elif isinstance(sub, ast.JoinedStr):
@@ -77,8 +77,8 @@ def find_cuda_kernel_sources(
         if _MARK not in parsed.source or any(part in parsed.rel.split("/") for part in skip):
             continue
         shown = (Path(root) / parsed.rel).resolve().relative_to(base.resolve()).as_posix()
-        for node in ast.walk(parsed.tree):
-            if not isinstance(node, (ast.Assign, ast.AnnAssign)) or node.value is None:
+        for node in nodes_of(parsed.tree, ast.Assign, ast.AnnAssign):
+            if node.value is None:
                 continue
             name = _target_name(node)
             literals = _kernel_literals(node.value)
@@ -94,7 +94,7 @@ def module_str_constant(path: Union[str, Path], name: str) -> str:
     Raises ``KeyError`` naming the file and the constant when it is not assigned a plain string at module level (an annotated assignment counts, a computed value does not).
     """
     file = Path(path)
-    for node in ast.parse(file.read_text(encoding="utf-8", errors="replace")).body:
+    for node in parse_file(file).body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             if any(isinstance(t, ast.Name) and t.id == name for t in node.targets):
                 return node.value.value
