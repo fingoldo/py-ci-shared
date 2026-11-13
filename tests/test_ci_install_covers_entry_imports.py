@@ -334,6 +334,24 @@ def test_an_entry_that_imports_a_blocked_extra_fails_to_start_and_names_it(tmp_p
     assert_entry_imports_without_extras(root, ["mypkg.features"], ["db"], name_map=mapping)
 
 
+def test_an_availability_probe_sees_a_blocked_extra_as_absent_while_its_import_fails(tmp_path):
+    """pyutilz-style ``find_spec(name) is not None`` must be False for a blocked package, as on a core-only install."""
+    probe = (
+        "import importlib.util\n"
+        "try:\n"
+        "    found = importlib.util.find_spec('fakewavelets') is not None\n"
+        "except ModuleNotFoundError:\n"
+        "    found = True\n"
+        "if found:\n"
+        "    raise SystemExit('probe reported present')\n"
+        "import fakewavelets\n"
+    )
+    root = _dynamic_repo(tmp_path, probe)
+    with pytest.raises(AssertionError, match=r"import mypkg.features exited 1[\s\S]*blocked by the test: fakewavelets") as excinfo:
+        assert_entry_imports_without_extras(root, ["mypkg.features"], ["signal"], name_map={"fakewavelets": "fake-wavelets"})
+    assert "probe reported present" not in str(excinfo.value)
+
+
 def test_a_guarded_import_starts_without_the_extra_and_arguments_reach_the_entry(tmp_path):
     root = _dynamic_repo(tmp_path, "try:\n    import fakewavelets\nexcept ImportError:\n    fakewavelets = None\n")
     assert_entry_imports_without_extras(root, ["mypkg", ["mypkg.cli", "--dry-run"]], ["signal"], name_map={"fakewavelets": "fake-wavelets"})

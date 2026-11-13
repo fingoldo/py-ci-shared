@@ -459,6 +459,21 @@ class Blocker(importlib.abc.MetaPathFinder):
 
 
 sys.meta_path.insert(0, Blocker())
+
+# Availability probes (``importlib.util.find_spec(name) is not None``) must report a blocked package as absent, as on a
+# core-only install. The finder above still makes the real import fail. Probes that read sys.modules directly are left alone.
+import importlib.util as _importlib_util
+
+_real_find_spec = _importlib_util.find_spec
+
+
+def _probe_find_spec(name, package=None):
+    if name.split(".")[0] in BLOCKED:
+        return None
+    return _real_find_spec(name, package)
+
+
+_importlib_util.find_spec = _probe_find_spec
 if KIND == "import":
     importlib.import_module(TARGET)
 else:
