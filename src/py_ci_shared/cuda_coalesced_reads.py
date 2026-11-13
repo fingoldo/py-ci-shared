@@ -44,7 +44,7 @@ _ASSIGN_RE = re.compile(rf"{_TYPES}+(\w+)\s*=\s*([^;]+);")
 _FOR_RE = re.compile(rf"for\s*\(\s*{_TYPES}*(\w+)\s*=\s*([^;]*);\s*\w+\s*<\s*([^;]*);")
 _COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
 _CAST = r"(?:\(\s*[A-Za-z_][\w ]*\)\s*)?"
-_GROUP_INDEX_RE = re.compile(r"threadIdx\.x\s*/\s*(?!1\b)[A-Za-z_]\w*")
+_GROUP_INDEX_RE = re.compile(r"threadIdx\.x\s*(?:/\s*(?!1\b)[A-Za-z_]\w*|/\s*\d+|>>\s*\d+)")
 _MARKER_RE = re.compile(rf"{re.escape(MARKER)}[ \t]*\S[^\n]{{11,}}")
 _MARKER_WINDOW = 400
 
@@ -100,6 +100,15 @@ def _assignments(body: str) -> "list[tuple[str, str]]":
     return out
 
 
+_GROUP_OF_VAR_RE = re.compile(r"(\w+)\s*(?:>>\s*\d+|/\s*\d+|/\s*(?!1\b)[A-Za-z_]\w*)")
+
+
+def _group_of_derived(expr: str, derived: "set[str]") -> bool:
+    """Whether *expr* is a group index of an already thread-derived variable (``tid >> 5``, ``tid / tile``): the neighbouring threads of the group share the value."""
+    m = _GROUP_OF_VAR_RE.fullmatch(expr.strip())
+    return bool(m and m.group(1) in derived)
+
+
 def _thread_vars(body: str) -> "set[str]":
     """Variables whose value depends on ``threadIdx.x``, closed over simple assignments."""
     derived: "set[str]" = set()
@@ -107,8 +116,8 @@ def _thread_vars(body: str) -> "set[str]":
     while changed:
         changed = False
         for name, expr in _assignments(body):
-            if _GROUP_INDEX_RE.fullmatch(expr.strip()):
-                continue  # ``threadIdx.x / tile``: the ``tile`` neighbouring threads share the value, so they read adjacent columns of one row
+            if _GROUP_INDEX_RE.fullmatch(expr.strip()) or _group_of_derived(expr, derived):
+                continue  # ``threadIdx.x / tile`` or ``threadIdx.x >> 5`` (a warp index): the ``tile`` or 32 neighbouring threads share the value, so they read adjacent columns of one row
             if name not in derived and ("threadIdx.x" in expr or any(re.search(rf"\b{re.escape(v)}\b", expr) for v in derived)):
                 derived.add(name)
                 changed = True
@@ -143,17 +152,25 @@ def _global_ids(body: str, derived: "set[str]") -> "set[str]":
     return ids
 
 
+def _opens_with_product(expr: str, var: str) -> bool:
+    """Whether *expr* is ``var * name ...`` or ``name * var ...`` (optionally cast or parenthesised) from its first token: a row offset, not a term in the middle of a difference."""
+    text = expr.strip().lstrip("(").strip()
+    text = re.sub(rf"^{_CAST}", "", text).strip().lstrip("(").strip()
+    v = re.escape(var)
+    return bool(re.match(rf"{v}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|[A-Za-z_]\w*\s*\*\s*{_CAST}{v}\b", text))
+
+
 def _strided(body: str, derived: "set[str]") -> bool:
     """Whether a global read is indexed by ``<thread var> * <non-constant>``, directly or through a hoisted offset."""
     loop_vars = [var for var, init, _bound in _FOR_RE.findall(body) if "threadIdx.x" in init or any(re.search(rf"\b{re.escape(v)}\b", init) for v in derived)]
     candidates = list(dict.fromkeys([*loop_vars, *_global_ids(body, derived)]))
     for var in candidates:
-        stride = re.compile(rf"\b{re.escape(var)}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|[A-Za-z_]\w*\s*\*\s*{_CAST}\b{re.escape(var)}\b")
+        stride = re.compile(rf"\b{re.escape(var)}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|(?<![\w.])[A-Za-z_]\w*\s*\*\s*{_CAST}\b{re.escape(var)}\b")
         if re.search(rf"\[[^\]\[]*?(?:{stride.pattern})[^\]\[]*?\](?!\s*=[^=])", body):
             return True
         # a hoisted offset: ``long long off = i * F;`` then ``X[off + c]``
         for name, expr in _assignments(body):
-            if name != var and stride.search(expr) and re.search(rf"\[[^\]\[]*\b{re.escape(name)}\b[^\]\[]*\](?!\s*=[^=])", body):
+            if name != var and _opens_with_product(expr, var) and re.search(rf"\[[^\]\[]*\b{re.escape(name)}\b[^\]\[]*\](?!\s*=[^=])", body):
                 return True
     return False
 

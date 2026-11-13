@@ -176,3 +176,39 @@ def test_the_assert_names_the_kernel_and_a_baseline_with_a_note_accepts_it(tmp_p
         '{"schema": 1, "gate": "cuda_coalesced_reads", "entries": {"k.py::k": {"count": 1, "note": "kept: small matrix that sits in cache"}}}', encoding="utf-8"
     )
     assert_cuda_coalesced_reads(root, baseline_path=baseline, use_git=False)
+
+
+def test_a_warp_uniform_loop_variable_is_not_a_thread_stride():
+    """``w`` runs over the words per warp (started from ``threadIdx.x >> 5``) and the lanes read consecutive ``p``: ``ybits[w * P + p]`` is one contiguous line per warp, not a stride."""
+    kernel = (
+        'extern "C" __global__ void k(const unsigned int* ybits, int W, int P, unsigned int* out) {\n'
+        "    const int warp = threadIdx.x >> 5; const int lane = threadIdx.x & 31;\n"
+        "    for (int w = warp; w < W; w += blockDim.x / 32) { const int p = lane; out[p] += ybits[(long long)w * P + p]; }\n}\n"
+    )
+    assert uncoalesced_kernels(_src(kernel)) == []
+
+
+def test_a_term_of_a_difference_or_a_constant_factor_is_not_a_row_offset():
+    """``j = idx - i * ny`` (the column inside a cell) and ``i = 2LL * tid`` (a constant stride of 2) are not hoisted row offsets."""
+    column = (
+        'extern "C" __global__ void a(const double* freqs, int n, int ny, double* out) {\n'
+        "    for (int idx = threadIdx.x; idx < n; idx += blockDim.x) { int i = idx / ny; int j = idx - i * ny; out[idx] = freqs[j]; }\n}\n"
+    )
+    constant = (
+        'extern "C" __global__ void b(const double* u, int n, double* out) {\n'
+        "    const int tid = threadIdx.x; const long long i = 2LL * tid; out[tid] = u[i];\n}\n"
+    )
+    assert uncoalesced_kernels(_src(column)) == []
+    assert uncoalesced_kernels(_src(constant)) == []
+
+
+def test_a_warp_index_taken_from_a_thread_variable_is_not_a_thread_stride():
+    """``tid = threadIdx.x; warp = tid >> 5`` is the same group index as ``threadIdx.x >> 5``; ``lane = tid & 31`` stays thread-derived (its neighbours read neighbouring elements)."""
+    kernel = (
+        'extern "C" __global__ void k(const unsigned int* ybits, int W, int P, unsigned int* out) {\n'
+        "    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5, nw = blockDim.x >> 5;\n"
+        "    for (int w = warp; w < W; w += nw) { out[lane] += ybits[(long long)w * P + lane]; }\n}\n"
+    )
+    assert uncoalesced_kernels(_src(kernel)) == []
+    strided_lane = kernel.replace("ybits[(long long)w * P + lane]", "ybits[(long long)lane * P + w]")
+    assert [n for n, _r in uncoalesced_kernels(_src(strided_lane))] == ["k"]
