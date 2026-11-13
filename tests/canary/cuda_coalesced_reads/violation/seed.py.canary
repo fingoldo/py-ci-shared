@@ -1,7 +1,7 @@
 SRC = r"""
 extern "C" __global__ void strided(const int* X, int n, int F, int* out) {
     for (long long i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
-        atomicAdd(\&out[X[i * (long long)F + 1]], 1);
+        atomicAdd(&out[X[i * (long long)F + 1]], 1);
     }
 }
 """
