@@ -2,6 +2,12 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased (next: 1.23.11)
+
+- Self-ci matrix: 3.15 is a blocking leg. The free-threaded legs (3.13t+) are gone until orjson publishes free-threaded wheels.
+- Three test failures on master fixed: an unpruned tree walk in the mutation harness, the nightly corpus install, and the baseline ratchet's kept note.
+- Mutation harness content version moves to 45 (no verdict changes).
+
 ## 1.23.10
 
 - New `cuda_coalesced_reads` (additive, `find_cuda_coalesced_reads` / `assert_cuda_coalesced_reads`): a CUDA kernel that reads global memory with a stride, moved here from a consumer's `tests/` and widened. Rule `cuda-strided-row-read`: `<thread var> * <non-constant>` in an index, now also through a hoisted offset (`off = i * F; X[off + c]`), in a kernel with no `for` loop (`i = blockIdx.x * blockDim.x + threadIdx.x; X[i * F + c]`) and with the factor on the left; a `threadIdx.x / tile` group index is not a stride. New rule `cuda-indirect-run-read`: `lo = starts[s]; hi = starts[s + 1]; for (r = lo; r < hi; ++r) ... X[r]` with a thread-derived `s` (the lanes read runs one run length apart; measured gld efficiency 6.7% on the kernel it was written for). `// coalescing-ok: <reason>` in or just above a kernel suppresses it; a baseline holds accepted findings with notes keyed `<path>::<kernel>`.
