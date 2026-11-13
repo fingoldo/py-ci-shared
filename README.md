@@ -628,6 +628,10 @@ newest `v1` release (a back-port tag never moves `v1` backwards), waits for self
 succeeded on every OS and Python, runs the whole test suite, then moves `v1` to the tag and creates the GitHub
 release. Both publish steps are idempotent, so "Re-run failed jobs" finishes a release that failed half-way.
 
+When Actions cannot run (no workflow starts on the account), `python .github/scripts/release_local.py X.Y.Z` on a clean
+checkout of `origin/master` runs the release.yml and self-ci checks locally, tags `vX.Y.Z`, and prints the pushes that
+release.yml would make (`--push` runs them after a typed confirmation). Only that script or release.yml moves `v1`.
+
 Rolling back a bad release: run the Release workflow by hand (`gh workflow run release.yml -f rollback-to=vX.Y.Z`)
 with the last good release; it points `v1` back at it. Then fix forward with a new, higher release. SHA-pinned
 consumers are unaffected either way. Details in CLAUDE.md, "Rolling back a release".

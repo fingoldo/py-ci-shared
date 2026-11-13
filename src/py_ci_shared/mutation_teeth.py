@@ -136,6 +136,7 @@ from ._mutation_runner import _kill_tree as _kill_tree
 from ._mutation_runner import _killed_by_crash as _killed_by_crash
 from ._mutation_runner import _lead_with as _lead_with
 from ._mutation_runner import _pytest_env as _pytest_env
+from ._mutation_runner import forget_bytecode as forget_bytecode
 from ._mutation_runner import _pytest_flags as _pytest_flags
 from ._mutation_runner import _remove_tree as _remove_tree
 from ._mutation_runner import _run_pytest as _run_pytest
@@ -176,6 +177,8 @@ __all__ = [
 
 #: How long a cache writer waits for another process's write to finish before giving up on storing.
 _CACHE_LOCK_TIMEOUT = 60.0
+# A progress line to stderr at most this often, so a long sweep shows how far it has got.
+_PROGRESS_EVERY_SECONDS = 300.0
 
 
 def _repo_relative(path: PathArg) -> Path:
@@ -237,6 +240,7 @@ def _sweep_partition(
         )
     finally:
         write_target(target, original, original.text)
+        forget_bytecode(sandbox, target)
 
 
 def _sweep_mutants(
@@ -260,6 +264,7 @@ def _sweep_mutants(
 
     def restore() -> None:
         write_target(target, source, source.text)
+        forget_bytecode(sandbox, target)
 
     opts = opts or SweepOptions(single_baseline=False)
     nearest = NearestKiller()
@@ -290,10 +295,12 @@ def _sweep_mutants(
                     return lazy.resolve(sandbox, timeout, opts.extra_flags)
                 finally:
                     write_target(target, source, current[0])
+                    forget_bytecode(sandbox, target)
 
             current = [source.text]
             if lazy is not None:
                 state.wider_resolver = resolve_wider
+            last_report = time.perf_counter()
             for mutant in mutants:
                 if checkpoint is not None and mutant.key in checkpoint.done:
                     replay(state, mutant, checkpoint.done[mutant.key])
@@ -306,6 +313,7 @@ def _sweep_mutants(
                 _prepare_mutant(state, mutant, nearest)
                 current[0] = mutant.mutated_file_text
                 write_target(target, source, mutant.mutated_file_text)
+                forget_bytecode(sandbox, target)
                 try:
                     _judge(mutant, warm, use_warm_worker, test_paths, sandbox, timeout, fallback_test_paths, relative, state, started)
                 finally:
@@ -319,6 +327,11 @@ def _sweep_mutants(
                 nearest.add(mutant.line, state.last_killer)
                 if checkpoint is not None:
                     checkpoint.record(mutant.key, *sweep_delta(state, before, budget_before), killer=state.last_killer, line=mutant.line)
+                if time.perf_counter() - last_report >= _PROGRESS_EVERY_SECONDS:
+                    last_report = time.perf_counter()
+                    logger.warning(
+                        "mutation progress: %d/%d mutants judged, %d survivors so far", int(state.budget["mutants"]), len(mutants), len(state.survivors)
+                    )
             _log_sweep_end(state)
     finally:
         if confirm_worker is not None:
@@ -969,6 +982,7 @@ def assert_revert_fails_tests(
             )
 
         write_target(target, source, mutated)
+        forget_bytecode(sandbox, target)
         result = _run_pytest(test_paths, sandbox, timeout)
         if result is None:
             raise MutationHarnessError(f"the mutated run did not finish within {timeout}s")

@@ -234,9 +234,10 @@ class TestShrinkOnlyRefresh:
 
         b = RatchetBaseline("rule", directory=str(tmp_path))
         b.regenerate({"a": "x", "b": "y"}, grow=True)
+        note_of_a = b.load()["a"]
         with pytest.raises(BaselineGrowthError, match=r"c  \(new: 1\)"):
             b.regenerate({"a": "x", "c": "z"})
-        assert b.load() == {"a": "x"}
+        assert b.load() == {"a": note_of_a}
 
     def test_write_ratchet_slack_keeps_the_lower_ceiling_without_failing(self, tmp_path):
         from py_ci_shared._core import dump_json, write_ratchet

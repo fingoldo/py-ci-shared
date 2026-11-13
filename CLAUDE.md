@@ -29,7 +29,11 @@
 - Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@<RUFF_VERSION> check src tests` (`RUFF_VERSION` in `tool_versions.py`; a test fails when a literal `ruff@X` or `black==X` in this file differs from it).
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.
-- Install the hooks once per clone: `python -m pre_commit install --hook-type pre-commit --hook-type pre-push` then `python -m py_ci_shared.install_safe_hook`. The pre-push hook runs mypy and the self-gate tests (about 4 minutes); the rest of `tests/` is left to CI.
+- Install the hooks once per clone: `python -m pre_commit install --hook-type pre-commit --hook-type pre-push` then `python -m py_ci_shared.install_safe_hook`. The pre-push hook runs mypy, the self-gate tests and `py-ci-shared run-all` (about 5 minutes); the rest of `tests/` runs in the
+  release script (below).
+- GitHub Actions runs on this public repo: the workflows run on pushes, tags and schedules. Jobs can sit queued for hours when runners are
+  busy, so check `gh run list` before concluding that CI is down. When Actions is really down, the hooks and `.github/scripts/release_local.py`
+  are the checks that run.
 
 ## Consumers
 
@@ -59,6 +63,10 @@
   (all OSes and Pythons), and runs the whole suite; `publish` then moves `v1` and creates the GitHub release. Both
   publish steps are idempotent: after a failure, "Re-run failed jobs". Nobody moves `v1` by hand. The rules live in
   `.github/scripts/release_guard.py`.
+- Without a working Actions run, `python .github/scripts/release_local.py X.Y.Z` on a clean checkout of `origin/master` does the
+  release.yml checks locally (`prepare --check`, every pre-commit hook over all files, the whole suite on Python 3.9 to 3.13, `run-all`,
+  ruff, mypy, black-filtered, the isolated mypy), then creates the annotated tag and prints the pushes. `--push` runs them after a typed
+  confirmation; `--rollback-to vX.Y.Z` replaces the rollback dispatch. Only the release script or release.yml moves `v1`.
 - A back-port tag below the newest release (v1.18.1 after v1.19.0) is refused: it would move `v1` backwards for
   every consumer.
 - `publish` and `rollback` run in the `release` environment (`environment: release` in release.yml). Verified 2026-11-07 with the GitHub API:
@@ -74,9 +82,9 @@
 
 ## Rolling back a release
 
-- When a release breaks `@v1` consumers and the fix is not minutes away: Actions, Release, "Run workflow" on
-  master with `rollback-to` = the last good `vX.Y.Z` (or `gh workflow run release.yml -f rollback-to=v1.19.0`).
-  It checks the target is an existing release and points `v1` at it. Consumers pinned to a SHA are unaffected.
-- Then fix forward: a new commit, the next version, a new tag. That tag is higher than the bad one, so release.yml
+- When a release breaks `@v1` consumers and the fix is not minutes away:
+  `python .github/scripts/release_local.py --rollback-to v1.19.0` (the last good `vX.Y.Z`; add `--push` to run it).
+  It checks the target is an existing release and prints the `v1` move. Consumers pinned to a SHA are unaffected.
+- Then fix forward: a new commit, the next version, a new tag. That tag is higher than the bad one, so the release script
   moves `v1` to it as usual. Never delete or re-point the bad `vX.Y.Z` tag itself.
 - A consumer with a local clone of this repo needs `git fetch --tags --force` to see the moved `v1`.

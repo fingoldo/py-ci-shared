@@ -113,12 +113,25 @@ def _python_block_exits_zero(lines: list[str], index: int) -> bool:
     return False
 
 
+# A backslash at a line end is joined onto the next line by the shell lexer, so a word split across it is one statement's text.
+_LINE_CONTINUATION = re.compile(r"\\(?:\r\n|\n|\r)")
+
+
+def _may_print_skipped(lines: "list[str]") -> bool:
+    """False only when no statement of *lines* can match :data:`_PRINTS_SKIPPED`: the lexer's statement text is the raw text with
+    line continuations removed, and the match is case-insensitive, so ``casefold`` (which also folds the long s and the Kelvin sign that
+    ``(?i)`` matches) is the exact test."""
+    return "skipped" in _LINE_CONTINUATION.sub("", "\n".join(lines)).casefold()
+
+
 def _scan_script(rel: str, lines: "list[str]", offset: int, python: bool, found: dict[str, str]) -> None:
     if python:
         for index, line in enumerate(lines):
             if _PRINTS_SKIPPED.search(line) and _python_block_exits_zero(lines, index):
                 _record(rel, line, offset + index, found)
         return
+    if not _may_print_skipped(lines):
+        return  # no statement can match _PRINTS_SKIPPED, so the (slow) lexer has nothing to find
     for st in _shell_skip_lines(parse_shell(lines)):
         _record(rel, lines[st.line], offset + st.line, found)
 

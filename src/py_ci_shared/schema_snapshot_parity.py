@@ -446,6 +446,8 @@ class _Provisioned:
 def _provision(dsn: str, statements: "Sequence[str]", extensions: "Sequence[str]", wanted: "Sequence[str]", indexes: bool, twice: bool) -> _Provisioned:
     """Apply *statements* in a fresh database of the server at *dsn* (once, or twice), read its catalogue after each pass, drop the database."""
     psycopg2 = _import_psycopg2()
+    from psycopg2.errors import LockNotAvailable
+
     name = f"schema_parity_{uuid.uuid4().hex[:12]}"
     admin = psycopg2.connect(dsn, keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3)
     admin.autocommit = True
@@ -466,7 +468,16 @@ def _provision(dsn: str, statements: "Sequence[str]", extensions: "Sequence[str]
         finally:
             conn.close()
             with admin.cursor() as cur:
-                cur.execute(f'DROP DATABASE IF EXISTS "{name}"')
+                # A session still attached to the throwaway database makes a plain DROP wait for it to disconnect, and
+                # the gate hung there under load. The database is ours alone, so end any such session first.
+                cur.execute("SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s AND pid <> pg_backend_pid()", (name,))
+                cur.execute("SET lock_timeout = '5s'")
+                try:
+                    cur.execute(f'DROP DATABASE IF EXISTS "{name}"')
+                except LockNotAvailable as exc:
+                    cur.execute("SELECT pid, datname, state, wait_event_type, wait_event, left(query, 200) FROM pg_stat_activity WHERE pid <> pg_backend_pid()")
+                    sessions = cur.fetchall()
+                    raise RuntimeError(f"DROP DATABASE {name} blocked: {exc}; sessions: {sessions}") from exc
     finally:
         admin.close()
 
