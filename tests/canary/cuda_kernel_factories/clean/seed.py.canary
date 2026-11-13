@@ -1,0 +1,5 @@
+import cupy as cp
+
+
+def kernel(x, y):
+    return x

@@ -682,6 +682,7 @@ CANARIES: dict[str, Canary] = {
             tokens=("njit-flag-fallback-untested", "njit-twin-name-untested", "njit-redefined-twin-untested", "njit-parity-marker-untested"),
         ),
         Canary("raw_write_row_count", lambda d: _gate("raw_write_row_count").assert_raw_write_row_count(d, use_git=False), tokens=("raw UPDATE", "raw DELETE")),
+        Canary("cuda_kernel_factories", lambda d: _gate("cuda_kernel_factories").assert_cuda_kernel_factories(d, use_git=False)),
     ]
 }
 
