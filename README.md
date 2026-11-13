@@ -9,7 +9,7 @@ Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and f
 Two things live here, each solving a different half of the duplication:
 
 1. **Reusable GitHub Actions workflows** (`.github/workflows/*.yml`, invoked via `workflow_call`) for the pieces of CI that are identical in *behavior* across repos: the blocking ruff gate, the filtered Black check, the mypy strict-mode-beachhead pattern, the mypy-full advisory pass, the blocking lint bundle (`lint-blocking.yml`: codespell, yamllint, bandit, actionlint, zizmor, vulture, interrogate, deptry), the advisory bundle (`lint-advisory.yml`: full ruff, mccabe complexity, pip-audit of the calling project, import-linter, pydoclint, semgrep), and the MkDocs docs build/deploy.
-2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.10"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
+2. **An installable package** (`py_ci_shared`, installed with `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.11"`) for the pieces that are identical in *code*: over a hundred gates (listed in the [Gate catalogue](#gate-catalogue)), the command-line tools such as `black_filtered_apply` and the warn-only pre-commit wrappers, a pytest plugin that runs the gates a repo enables in `[tool.py_ci_shared]`, and the `py-ci-shared` command.
 
 Plus `configs/ruff-base.toml`: the shared `[tool.ruff.lint] select`/`ignore` superset, pulled into each consuming repo's own `pyproject.toml` via ruff's native `extend` mechanism (a real config-merge, not copy-paste) — see below.
 
@@ -201,6 +201,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`cuda_kernel_integer_width`](src/py_ci_shared/cuda_kernel_integer_width.py) | gate | 1.22.3 | `assert_cuda_kernel_integer_width` | CUDA kernel source strings use 64-bit integer types: no platform-width long, no int-typed products of two sizes |
 | [`cuda_kernel_names`](src/py_ci_shared/cuda_kernel_names.py) | gate | 1.23.10 | `assert_cuda_kernel_names` | Every __global__ kernel name written in a source file appears in a kernel source the offline compile check built for that file, so a dropped kernel is a finding, not a pass |
 | [`cuda_kernel_pointer_types`](src/py_ci_shared/cuda_kernel_pointer_types.py) | gate | 1.23.8 | `assert_cuda_kernel_pointer_types` | CUDA kernel pointer parameters are type-templated, not a bare double* / float*: a float32 buffer bound to a double* is read past its end |
+| [`cuda_kernel_sources`](src/py_ci_shared/cuda_kernel_sources.py) | library | 1.23.11 |  | AST extraction of the CUDA kernel source strings of a package: every assignment whose value holds a __global__ string (plain, wrapped, concatenated or f-string) and a module-level string constant by name |
 | [`cuda_launch_geometry`](src/py_ci_shared/cuda_launch_geometry.py) | gate | 1.23.8 | `assert_cuda_launch_geometry` | A CUDA kernel launch takes its block size from the device (occupancy, registers, shared memory), not from a literal tuned on one card |
 | [`cuda_offline_report`](src/py_ci_shared/cuda_offline_report.py) | library | 1.23.10 |  | Offline NVRTC to ptxas build of a CUDA kernel source and its per-entry resource report (registers, spills, shared memory, launch bounds, occupancy) with a per-architecture failure table |
 | [`dart_scanners`](src/py_ci_shared/dart_scanners.py) | library | 1.3.6 |  | Shared structural scanners over Dart/Flutter source |
@@ -613,12 +614,12 @@ Workflows: `uses: fingoldo/py-ci-shared/.github/workflows/<name>.yml@v1`, or a f
 as a comment (`@<sha>  # v1.17.0`) when you need a frozen pipeline. Do not mix the two in one repo, and never
 write `# v1` next to a SHA: the comment then lies as soon as `v1` moves. `ruff-blocking.yml`,
 `lint-advisory.yml` and `black-filtered.yml` take this repo's configs, `RUFF_VERSION`/`BLACK_VERSION` and package
-from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.23.10` in the
+from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.23.11` in the
 file at that release). A caller on `@v1` or on a release tag therefore gets that release's configs. A caller pinned
 to a SHA between releases gets the previous release's configs unless it also passes `py-ci-shared-ref: <the same
 SHA>`. A ref that cannot be fetched fails the job after three attempts; there is no fallback to `master`.
 
-Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.10"`. The
+Package: `pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@v1.23.11"`. The
 version in `pyproject.toml` and `py_ci_shared.__version__` is the release it becomes when tagged.
 
 Releasing: bump `version` in `pyproject.toml` and `__version__` in `src/py_ci_shared/__init__.py`

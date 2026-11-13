@@ -244,6 +244,7 @@ def test_canary_exemptions_are_valid_and_still_needed() -> None:
 
 
 CORPUS_SCAN_EXEMPT_REASONS: dict[str, str] = {
+    "cuda_kernel_sources": "returns the kernel source texts of a package as a mapping, not a verdict: there is no violation to seed, and test_cuda_kernel_sources.py pins each source shape it reads and the ones it must not",
     "config_getattr_default_parity": "its input is live pydantic schema classes; the corpus helper only locates the source files that read them",
     "docs_inventory_parity": "compares precomputed problem lists from pyproject and docs; the corpus helper only lists files, there is no per-file verdict to seed",
     "edge_function_hygiene": "checks a Supabase edge-function directory layout (TypeScript), which a .canary Python fixture cannot model",

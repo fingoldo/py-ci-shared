@@ -736,6 +736,7 @@ CANARIES: dict[str, Canary] = {
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "cuda_kernel_sources": "an extractor that returns the kernel source texts of a package as a mapping, not findings; test_cuda_kernel_sources.py pins every source shape it reads and the ones it must not",
     "cuda_offline_report": "an engine that builds a caller's CUDA kernel source with NVRTC and ptxas and reads the report, no source corpus to scan; test_cuda_offline_report.py pins it with synthetic reports and, where the toolchain exists, real kernels",
     "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",
     "estimator_invariants": "runtime assertions over a caller's estimator factory, no source corpus to scan; test_estimator_invariants.py pins it with toy estimators",

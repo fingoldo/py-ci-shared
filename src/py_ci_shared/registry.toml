@@ -425,6 +425,12 @@ since = "1.23.8"
 summary = "CUDA kernel pointer parameters are type-templated, not a bare double* / float*: a float32 buffer bound to a double* is read past its end"
 
 [[gate]]
+name = "cuda_kernel_sources"
+kind = "library"
+since = "1.23.11"
+summary = "AST extraction of the CUDA kernel source strings of a package: every assignment whose value holds a __global__ string (plain, wrapped, concatenated or f-string) and a module-level string constant by name"
+
+[[gate]]
 name = "cuda_launch_geometry"
 kind = "gate"
 entries = ["assert_cuda_launch_geometry"]
