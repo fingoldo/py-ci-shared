@@ -86,6 +86,6 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
 def test_the_assert_names_every_unregistered_factory(tmp_path):
     """``assert_cuda_kernel_factories`` raises with the findings and passes once they are registered."""
     root = _corpus(tmp_path, {"pkg/lof.py": FACTORY})
-    with pytest.raises(AssertionError, match="unregistered kernel factory"):
+    with pytest.raises(AssertionError, match=r"unregistered kernel factory"):
         assert_cuda_kernel_factories(root, use_git=False)
     assert_cuda_kernel_factories(root, registered={("pkg.lof", "kernel")}, use_git=False)

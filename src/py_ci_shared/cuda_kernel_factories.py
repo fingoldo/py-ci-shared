@@ -21,8 +21,9 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional, Union
+from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
 
@@ -56,18 +57,16 @@ def _is_registered(dotted: str, name: str, registered: "set[tuple[str, str]]") -
 def _findings_in(tree: ast.Module, rel: str, registered: "set[tuple[str, str]]", aliases: ImportAliases) -> "list[Finding]":
     """The module-level factories of one parsed file that the registry does not list."""
     dotted = _dotted(rel)
-    out = []
-    for node in tree.body:
-        if isinstance(node, ast.FunctionDef) and _is_factory(node) and not _is_registered(dotted, node.name, registered):
-            out.append(
-                Finding(
-                    rel,
-                    node.lineno,
-                    RULE,
-                    f"the kernel factory {node.name}(cp, real, ...) is not in the register-pressure registry: its spills are never checked on a device; register it or rename it if it is not a kernel factory",
-                )
-            )
-    return out
+    return [
+        Finding(
+            rel,
+            node.lineno,
+            RULE,
+            f"the kernel factory {node.name}(cp, real, ...) is not in the register-pressure registry: its spills are never checked on a device; register it or rename it if it is not a kernel factory",
+        )
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and _is_factory(node) and not _is_registered(dotted, node.name, registered)
+    ]
 
 
 def find_cuda_kernel_factories(
