@@ -404,6 +404,13 @@ since = "1.22.3"
 summary = "CUDA kernel source strings use 64-bit integer types: no platform-width long, no int-typed products of two sizes"
 
 [[gate]]
+name = "cuda_kernel_names"
+kind = "gate"
+entries = ["assert_cuda_kernel_names"]
+since = "1.23.10"
+summary = "Every __global__ kernel name written in a source file appears in a kernel source the offline compile check built for that file, so a dropped kernel is a finding, not a pass"
+
+[[gate]]
 name = "cuda_kernel_pointer_types"
 kind = "gate"
 entries = ["assert_cuda_kernel_pointer_types"]

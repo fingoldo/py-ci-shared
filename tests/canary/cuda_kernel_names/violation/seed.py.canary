@@ -1,0 +1,3 @@
+SRC = r"""
+extern "C" __global__ void lost_kernel(float* x) {}
+"""
