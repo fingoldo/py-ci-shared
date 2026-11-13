@@ -45,7 +45,7 @@ def test_self_ci_never_runs_an_unpinned_black():
 def _pins(name: str) -> dict:
     """The exact ``name==version`` pins of a constraints file, for Python 3.10 and later (a ``python_version < "3.10"`` line is the older interpreter's pin)."""
     lines = (REPO / ".github" / "constraints" / name).read_text(encoding="utf-8").splitlines()
-    return dict(line.split(";")[0].split("==", 1) for line in lines if "==" in line and 'python_version < "3.10"' not in line)
+    return dict(line.split(";")[0].strip().split("==", 1) for line in lines if "==" in line and 'python_version < "3.10"' not in line)
 
 
 def test_the_dev_constraints_pin_the_verdict_tools_to_the_pinned_versions():

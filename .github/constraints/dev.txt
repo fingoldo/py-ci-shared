@@ -4,6 +4,7 @@
 # equal to tool_versions.py and to runtime.txt. Bump deliberately, with a test run.
 pytest==9.1.1 ; python_version >= "3.10"
 pytest==8.4.2 ; python_version < "3.10"
-black==26.5.1
+black==26.5.1 ; python_version >= "3.10"
+black==25.1.0 ; python_version < "3.10"
 ruff==0.16.10
 mypy==2.1.0
