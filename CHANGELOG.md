@@ -5,6 +5,9 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ## 1.23.11
 
 - New `cuda_kernel_sources` (additive library): the AST extractor of the CUDA kernel source strings of a package that a consumer's offline NVRTC -> ptxas meta-test builds on, moved here from a consumer's `tests/`: `find_cuda_kernel_sources(root, exclude=, key_base=, min_files=)` returns `{"<path>::NAME": source}` for every assignment whose value holds a `__global__` string literal (plain, wrapped in `render(...)` / `.replace(...)`, concatenated, an f-string with `{__FSTRING__}` for each interpolation, a class attribute, or built inside a function; several kernel literals of one assignment get `NAME`, `NAME#2`, ...), raising `EmptyScanError` / `UnparsedFilesError` instead of reading an unparsable file as kernel-free; `module_str_constant(path, name)` reads one module-level string constant by AST. No import side effects, no GPU needed.
+- Self-ci matrix: 3.15 is a blocking leg. The free-threaded legs (3.13t+) are gone until orjson publishes free-threaded wheels.
+- Three test failures on master fixed: an unpruned tree walk in the mutation harness, the nightly corpus install, and the baseline ratchet's kept note.
+- Mutation harness content version moves to 45 (no verdict changes).
 
 ## 1.23.10
 
