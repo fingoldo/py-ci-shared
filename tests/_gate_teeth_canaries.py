@@ -726,6 +726,11 @@ CANARIES: dict[str, Canary] = {
             tokens=("not in the register-pressure registry",),
         ),
         Canary("cuda_kernel_names", lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled={}, use_git=False), tokens=("lost_kernel",)),
+        Canary(
+            "cuda_coalesced_reads",
+            lambda d: _gate("cuda_coalesced_reads").assert_cuda_coalesced_reads(d, use_git=False),
+            tokens=("the kernel strided indexes",),
+        ),
     ]
 }
 

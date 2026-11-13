@@ -1,0 +1,7 @@
+SRC = r"""
+extern "C" __global__ void columns(const int* X, int n, int* out) {
+    for (long long i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+        atomicAdd(\&out[X[n + i]], 1);
+    }
+}
+"""

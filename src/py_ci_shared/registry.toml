@@ -390,6 +390,13 @@ since = "1.21.1"
 summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)"
 
 [[gate]]
+name = "cuda_coalesced_reads"
+kind = "gate"
+entries = ["assert_cuda_coalesced_reads"]
+since = "1.23.10"
+summary = "A CUDA kernel reads global memory coalesced: no thread-derived row times a stride, no thread-derived run of a run table, unless a coalescing-ok reason says why"
+
+[[gate]]
 name = "cuda_kernel_factories"
 kind = "gate"
 entries = ["assert_cuda_kernel_factories"]
