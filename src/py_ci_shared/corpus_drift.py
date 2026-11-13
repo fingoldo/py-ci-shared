@@ -77,6 +77,7 @@ NON_CORPUS: dict[str, str] = {
     "cross_package_private_names": "needs the repo's packages, their roots and bare-name resolution order",
     "constant_relations": "takes a relation registry and imports the modules it names",
     "consumer_import_census": "needs a library checkout, its package name and the consumer checkouts",
+    "cuda_kernel_names": "needs the kernel sources the caller's offline compile check built for each file (compiled)",
     "dataclass_case_completeness": "takes the dataclass files of one module family and a name pattern",
     "ddl_lock_safety": "takes the repo's SQL directories and its tiny-table allowlist",
     "destructive_tests_throwaway_only": "needs the test roots and the hook and workflow configs of the repo",

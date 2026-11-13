@@ -364,7 +364,15 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "external_fact_tables",
             lambda d: _gate("external_fact_tables").assert_external_fact_tables_current(
-                d, {"seed.py:SEED_PRICING": 45, "seed.py:SEED_DATE_ONLY": 45, "seed.py:SEED_URL_ONLY": 45, "seed.py:SEED_FUTURE_DATED": 45, "seed.py:SEED_STALE": 45}, today=_FACT_DAY
+                d,
+                {
+                    "seed.py:SEED_PRICING": 45,
+                    "seed.py:SEED_DATE_ONLY": 45,
+                    "seed.py:SEED_URL_ONLY": 45,
+                    "seed.py:SEED_FUTURE_DATED": 45,
+                    "seed.py:SEED_STALE": 45,
+                },
+                today=_FACT_DAY,
             ),
             tokens=(  # one table per _judge verdict; the undeclared-fact-table rule is a different entry point the runner does not call
                 "SEED_PRICING: cites no source and no check date",
@@ -460,7 +468,13 @@ CANARIES: dict[str, Canary] = {
             "ci_install_covers_entry_imports",
             lambda d: _gate("ci_install_covers_entry_imports").assert_ci_install_covers_entry_imports(d),
             # one job per entry shape (python -m, a script, pytest, coverage run, uv run); the rule id is the same for all of them
-            tokens=("runs `python -m seedpkg.nightly", "runs `python scripts/seed_script.py", "runs `python -m pytest", "runs `coverage run -m", "runs `uv run python -m"),
+            tokens=(
+                "runs `python -m seedpkg.nightly",
+                "runs `python scripts/seed_script.py",
+                "runs `python -m pytest",
+                "runs `coverage run -m",
+                "runs `uv run python -m",
+            ),
         ),
         Canary("optional_imports_guarded", lambda d: _gate("optional_imports_guarded").assert_optional_imports_guarded(d, use_git=False)),
         Canary(
@@ -472,7 +486,17 @@ CANARIES: dict[str, Canary] = {
             "persisted_negative_probe",
             lambda d: _gate("persisted_negative_probe").assert_persisted_negative_probe(d, use_git=False),
             # one persisting shape each, then a later persist, then a probe found by call name, by import and a bare handler (one file each)
-            tokens=("via .write_text", "via json.dump", "via open(..., 'w').write", "via .write_bytes", "via .set", "seed_verdict_flag = False", "seed_gpucall.py", "seed_import.py", "seed_bare.py"),
+            tokens=(
+                "via .write_text",
+                "via json.dump",
+                "via open(..., 'w').write",
+                "via .write_bytes",
+                "via .set",
+                "seed_verdict_flag = False",
+                "seed_gpucall.py",
+                "seed_import.py",
+                "seed_bare.py",
+            ),
         ),
         Canary(
             "cuda_kernel_integer_width",
@@ -603,7 +627,12 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "duplicate_test_body",
             lambda d: _gate("duplicate_test_body").assert_no_duplicate_test_bodies(d, use_git=False),
-            tokens=("test_seed_zero_copy", "test_seed_method_copy", "test_seed_async_copy", "test_seed_doc_copy"),  # module, class, async, docstring-stripped twins
+            tokens=(
+                "test_seed_zero_copy",
+                "test_seed_method_copy",
+                "test_seed_async_copy",
+                "test_seed_doc_copy",
+            ),  # module, class, async, docstring-stripped twins
         ),
         Canary("definition_after_entry_guard", lambda d: _gate("definition_after_entry_guard").assert_definition_after_entry_guard(d, use_git=False)),
         Canary("verified_then_reopened", lambda d: _gate("verified_then_reopened").assert_verified_then_reopened(d, use_git=False)),
@@ -613,7 +642,10 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "cli_flag_spelling",
             lambda d: _gate("cli_flag_spelling").assert_cli_flag_spelling(d, use_git=False),
-            tokens=("--dry_run is spelled differently from --dry-run", "--out_dir is spelled differently from --out-dir",),
+            tokens=(
+                "--dry_run is spelled differently from --dry-run",
+                "--out_dir is spelled differently from --out-dir",
+            ),
         ),
         Canary("njit_fastmath_nan", lambda d: _gate("njit_fastmath_nan").assert_njit_fastmath_nan(d, use_git=False)),
         Canary("ordinal_rank_scatter", lambda d: _gate("ordinal_rank_scatter").assert_ordinal_rank_scatter(d, use_git=False)),
@@ -622,7 +654,13 @@ CANARIES: dict[str, Canary] = {
         Canary(
             "ml_api_contracts",
             lambda d: _gate("ml_api_contracts").assert_ml_api_contracts(d, use_git=False),
-            tokens=("[best-iteration-count]", "[argmax-vs-raw-label]", "[init-rewrites-param]", "\x27num_rounds\x27 takes best_iteration", "labels \x27y_test\x27"),
+            tokens=(
+                "[best-iteration-count]",
+                "[argmax-vs-raw-label]",
+                "[init-rewrites-param]",
+                "\x27num_rounds\x27 takes best_iteration",
+                "labels \x27y_test\x27",
+            ),
         ),
         Canary("njit_unsupported_calls", lambda d: _gate("njit_unsupported_calls").assert_njit_unsupported_calls(d, use_git=False)),
         Canary("truncating_discretisation", lambda d: _gate("truncating_discretisation").assert_truncating_discretisation(d, use_git=False)),
@@ -682,13 +720,18 @@ CANARIES: dict[str, Canary] = {
             tokens=("njit-flag-fallback-untested", "njit-twin-name-untested", "njit-redefined-twin-untested", "njit-parity-marker-untested"),
         ),
         Canary("raw_write_row_count", lambda d: _gate("raw_write_row_count").assert_raw_write_row_count(d, use_git=False), tokens=("raw UPDATE", "raw DELETE")),
-        Canary("cuda_kernel_factories", lambda d: _gate("cuda_kernel_factories").assert_cuda_kernel_factories(d, use_git=False)),
-        Canary("cuda_kernel_names", lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled={}, use_git=False)),
+        Canary(
+            "cuda_kernel_factories",
+            lambda d: _gate("cuda_kernel_factories").assert_cuda_kernel_factories(d, use_git=False),
+            tokens=("not in the register-pressure registry",),
+        ),
+        Canary("cuda_kernel_names", lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled={}, use_git=False), tokens=("lost_kernel",)),
     ]
 }
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "cuda_offline_report": "an engine that builds a caller's CUDA kernel source with NVRTC and ptxas and reads the report, no source corpus to scan; test_cuda_offline_report.py pins it with synthetic reports and, where the toolchain exists, real kernels",
     "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",
     "estimator_invariants": "runtime assertions over a caller's estimator factory, no source corpus to scan; test_estimator_invariants.py pins it with toy estimators",
     "numeric_edge_matrix": "runtime adversarial-input matrix over a caller's function, no source corpus to scan; test_numeric_edge_matrix.py pins it with toy metrics",

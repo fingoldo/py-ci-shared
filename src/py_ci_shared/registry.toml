@@ -425,6 +425,12 @@ since = "1.23.8"
 summary = "A CUDA kernel launch takes its block size from the device (occupancy, registers, shared memory), not from a literal tuned on one card"
 
 [[gate]]
+name = "cuda_offline_report"
+kind = "library"
+since = "1.23.10"
+summary = "Offline NVRTC to ptxas build of a CUDA kernel source and its per-entry resource report (registers, spills, shared memory, launch bounds, occupancy) with a per-architecture failure table"
+
+[[gate]]
 name = "dart_scanners"
 kind = "library"
 since = "1.3.6"
