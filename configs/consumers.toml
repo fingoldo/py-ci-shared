@@ -15,13 +15,6 @@ branch = "master"
 private = true
 
 [[consumer]]
-name = "mlframe"
-repo = "fingoldo/mlframe"
-branch = "master"
-private = false
-corpus = true
-
-[[consumer]]
 name = "pyutilz"
 repo = "fingoldo/pyutilz"
 branch = "master"

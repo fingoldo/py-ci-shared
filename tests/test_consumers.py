@@ -29,7 +29,6 @@ def test_the_checked_in_list_names_every_consumer_with_owner_repo_and_branch():
     consumers = {c.name: c for c in load_consumers(CONFIG)}
     assert set(consumers) == {
         "autopsia",
-        "mlframe",
         "pyutilz",
         "social",
         "dash_app_core",
@@ -44,10 +43,10 @@ def test_the_checked_in_list_names_every_consumer_with_owner_repo_and_branch():
     }
     assert all(c.repo.startswith("fingoldo/") for c in consumers.values())
     assert consumers["polyvocab_app"].branch == "staging"
-    assert consumers["llm_bench"].branch == "main" and consumers["mlframe"].branch == "master"
+    assert consumers["llm_bench"].branch == "main"
     corpus = sorted(n for n, c in consumers.items() if c.corpus)
     # The nightly corpus is a decided set (every scanning gate runs over each member): growing it is a deliberate edit of this line.
-    assert corpus == ["algopacksimple", "glossum_backend_scripts", "llm_bench", "mlframe", "pyutilz"], corpus
+    assert corpus == ["algopacksimple", "glossum_backend_scripts", "llm_bench", "pyutilz"], corpus
 
 
 @pytest.mark.parametrize(
