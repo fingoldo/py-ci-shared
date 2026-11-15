@@ -1,0 +1,64 @@
+# 52 self_hygiene: round 2026-11-16 (T)
+
+Commit audited: `48e49b1` (working tree had 4 foreign uncommitted edits: ci-health.yml, CHANGELOG.md, ci_health.py, test_ci_health.py; untouched).
+Method: `git ls-files` sizes; AST scans written to scratch (`scratchpad/audit_T/52/a.py..f.py`) for LOC, identical function bodies (>=5 body lines, docstring stripped), top-level defs referenced nowhere in src/tests/scripts/README/pyproject/registry, `:func:/:mod:` roles in docstrings, backticked `name()` / `x.py` in module docstrings of the 60 largest modules, `__all__` names; registry.toml vs README table vs module vs entries vs test file vs `tests/canary`; `python -m mypy src/py_ci_shared`; `ruff check src --select F401,F811,F841`; `py-ci-shared run-all` once (background); pyproject vs code. Not covered: semantic docstring-versus-behaviour drift beyond ten modules read by hand (mutation_teeth, ci_install_covers_conftest, dart_scanners headers and constants; their module docstrings match code), behaviour of the 261 gates (other dimensions).
+
+Real results: mypy `Success: no issues found in 413 source files`. Ruff F401/F811/F841 on src: all checks passed. Every registry gate has a module, a README row (261 rows = 261 registry entries; kind, since and link agree) and a `tests/test_<gate>.py`. Version is 1.23.12 in pyproject and `__version__`.
+
+## LOC budget, largest first (src; budget 1000)
+998 mutation_teeth, 994 statement_columns_exist_in_ddl, 967 ci_install_covers_conftest, 954 dart_scanners, 924 code_audit/default_via_or, 917 source_text_claims, 914 config_call_site_parity, 909 phantom_code_references, 895 _mutation_operators, 886 effect_assertion_parity, 809 meta_test_utils, 801 _mutation_runner, 787 code_audit/__init__, 750 adoption_matrix, 748 code_audit/registry, 743 schema_snapshot_parity, 729 _ci_install_parts. Tests: 968 test_mutation_teeth_regressions, 938 test_effect_assertion_parity, 812 test_fail_open_handlers, 802 _gate_teeth_canaries. Nothing is over 1000; ten src modules are above 880. Natural seams: dart_scanners (one section per scanner family: painter/repaint, UI strings, tap semantics; `_dart_source.py` already exists), meta_test_utils (ratchet vs todo-marker vs file-walk helpers), statement_columns_exist_in_ddl (DDL parser vs checker), config_call_site_parity (five `assert_*` entries share a collector; split collector from entries), ci_install_covers_conftest (already has `_ci_install_parts.py`; move the remaining requirement parsing there). Not raised: 52-R14 WON'T FIX still holds.
+
+## 52-T1 (P2) The round-file heading format the brief mandates fails the package's own audit_rounds_format gate
+- **Evidence:** `PYTHONPATH=src python -m py_ci_shared.cli run audit_rounds_format` -> `FAIL`, e.g. `42_core_baseline_semantics.md: '### 42-T1 [P2] ...' sits at the finding level but is not a finding id; continuations go at '####'` (also 42-T2..T5, 51-T1..T5; 10 problems at the time, more as reports land). `src/py_ci_shared/audit_round_format.py:68` `FINDING_ID_RE = r"^([A-Z]+-\d+) \("` needs `ID (` with a letters-first id; the brief template is `### NN-Tk [Pn] title` (digits first, brackets). Prior rounds used `## 42-S15 (P3)`, which the gate does not scan (`_HEADING_RE` is `^### `, line 73).
+- **Impact:** committing this round as written turns `audit_rounds_format` red in the push hook and CI for every report of the round; the gate's purpose (rounds countable by machine) is not met for these files.
+- **Proposed fix:** either (a) change the brief template to the previous rounds' `## NN-Tk (Pn) title` (no code change), or (b) widen `FINDING_ID_RE` to accept `\d*[A-Z]+-\d+ [\[(]` (ADDITIVE: accepts more headings, makes none fail). Decide before the round is committed.
+- **Disposition:** OPEN
+
+## 52-T2 (P2) `py-ci-shared` on PATH is a stale non-editable 1.23.9 install, so the self-gate run on this repo gives false reds
+- **Evidence:** `py-ci-shared run-all` (once, from the repo root) ended `57 passed, 2 failed, 0 skipped, 1 error`: `FAIL version_consistency ... pyproject = '1.23.12', __init__ = '1.23.12', py_ci_shared.__version__ = '1.23.9'`; `ERROR uncalled_functions ... takes no argument(s) ['private_only']`. `py_ci_shared.__file__` is `...\site-packages\py_ci_shared\__init__.py`; `pip show` says 1.23.9, not editable. Re-run against the checkout (`PYTHONPATH=src python -m py_ci_shared.cli run version_consistency` and `... run uncalled_functions`) -> both PASS. The repo has `checkout_resolution` for this class but `run-all` does not guard it.
+- **Impact:** a developer running the documented command gets a wrong verdict (two false failures) and may "fix" healthy config.
+- **Proposed fix:** `run-all` prints a warning (or exits 2) when `py_ci_shared.__file__` is not under the `--repo` root and that repo's pyproject names `py-ci-shared` as its own project (ADDITIVE); CLAUDE.md says `pip install -e .` first.
+- **Disposition:** OPEN
+
+## 52-T3 (P3) `scripts/exp_startup.py` resolves the repo root four directories up, so it silently measures the installed package
+- **Evidence:** `scripts/exp_startup.py:9` `REPO = dirname(dirname(dirname(dirname(abspath(__file__)))))` evaluates to `C:\Users\Admin` (printed by a one-line python check). The file moved from `audits/2026-10-21/prof/` (four levels) to `scripts/` (two) in commit 7fb885d without adjusting. `C:\Users\Admin\src` does not exist, so the `sys.path.insert` is a no-op and `from py_ci_shared import _mutation_runner` imports the site-packages copy (see 52-T2) and monkeypatches that. Its docstring: "Measurement-only experiment ... Not used by the tests"; nothing references it.
+- **Impact:** the experiment's timings describe a different version than the checkout; tracked dead weight.
+- **Proposed fix:** `Path(__file__).resolve().parents[1]`, or classify it as a retired experiment and move it back under `audits/2026-10-21/`. ADDITIVE.
+- **Disposition:** OPEN
+
+## 52-T4 (P3) Identical helper bodies copied across scanners, after 52-F2 resolved the earlier ten
+- **Evidence** (AST dump equality, docstring stripped, body >= 5 lines): `_dart_source.py:106 _balanced_body` == `edge_function_hygiene.py:69 _balanced` (11 lines); `deletion_gates.py:89 _module_scope` == `identity_comparisons.py:62 _scope_statements` == `inert_patch_targets.py:132 _module_scope` (13 lines; three docstrings describe the same rule three ways); `id_keyed_cache_validates_identity.py:65` == `module_cache_thread_safety.py:55 _module_statements`; `cuda_kernel_integer_width.py:179` == `cuda_kernel_pointer_types.py:61 _marked`; `ci_install_covers_conftest.py:319` == `coverage_config_parity.py:93 _tokens`; `_final`/`_final_name` in connect_error_echo, state_before_work, verified_then_reopened, import_time_global_side_effects, validation_errors_echo_input; `code_audit/_base.py:142 decorator_name` == `free_text_in_get_route.py:77 _callee_name`; `_core/call_names.py:15 func_name_or_none` == `optional_collaborator_wired.py:45 _callee`; `plotly_annotation_loop._own` == `rollback_then_continue._walk_own`; `_key` in cancellation_prone_moments and standard_stream_restore. Six-line `find_*` wrappers that also compared equal are one-line delegations, not reported.
+- **Impact:** same failure mode 52-F2 recorded: a fix lands in one copy and the scanners disagree on the same code.
+- **Proposed fix:** move `balanced_body`, the module-scope statement walker and `final_name` into `_core/scopes.py` / `_core/call_names.py` (where `function_param_names` went under 52-S16) and import; one module per change with its gate's targeted test (same plan as open 52-S15). ADDITIVE (private helpers).
+- **Disposition:** OPEN
+
+## 52-T5 (P3) `repo_hygiene` and `uncalled_functions` exceed their own 30 s budget on this repo
+- **Evidence:** run-all: `BUDGET repo_hygiene took 54.0s, over its 30s budget`; standalone: `BUDGET uncalled_functions took 33.4s`. pyproject's `complexity_ratchet` comment says the default 30 s "printed a standing BUDGET line on a clean tree" and got `budget_s = 120`; these two did not.
+- **Impact:** standing noise on every clean run teaches readers to skip BUDGET lines.
+- **Proposed fix:** add measured `budget_s` to the two `[tool.py_ci_shared.gates.*]` tables, or narrow their inputs. ADDITIVE.
+- **Disposition:** OPEN
+
+## 52-T6 (P3) Stale untracked build output in the working tree holds 386 old .py files
+- **Evidence:** `build/lib/py_ci_shared` (ignored, `.gitignore:7`) has 386 `.py` files dated 2026-11-07, plus `src/py_ci_shared.egg-info`. Tools globbing `**/*.py` from the root (several gates are configured `root = "."`) can see an old copy of every module. NOT REPRODUCED as a wrong verdict: the configured `files` globs start at `src/` and `tests/`, so this is exposure, not a defect.
+- **Impact:** IDE search and ad-hoc greps return stale hits; low.
+- **Proposed fix:** document removing `build/` after `pip install .` in CLAUDE.md, or use `pip install -e .` (also fixes 52-T2). ADDITIVE.
+- **Disposition:** OPEN
+
+| id | sev | title |
+|----|-----|-------|
+| 52-T1 | P2 | Brief heading format fails the package's own audit_rounds_format gate |
+| 52-T2 | P2 | PATH `py-ci-shared` is stale 1.23.9; run-all gives false red on the checkout |
+| 52-T3 | P3 | scripts/exp_startup.py repo root is four levels up; measures the installed package |
+| 52-T4 | P3 | Identical helper bodies copied across ~12 scanner groups after 52-F2 |
+| 52-T5 | P3 | repo_hygiene (54 s) and uncalled_functions (33 s) exceed their 30 s budget |
+| 52-T6 | P3 | Stale ignored build/ and egg-info with 386 old .py files in the tree |
+
+## Considered and not raised
+- **mypy-clean claim:** true, 0 issues in 413 files. **Dead imports:** ruff F401/F811/F841 clean on src.
+- **Uncalled functions:** AST scan of every top-level def/class in src found 5 names referenced nowhere: `pytest_pyfunc_call`, `pytest_fixture_setup`, `pytest_make_collect_report`, `pytest_terminal_summary`, `pytest_runtest_protocol`. All are pytest hooks (framework-dispatched); no unclassified dead function. The package's own `uncalled_functions` gate passes against the checkout.
+- **Registry/README/module naming:** 261 = 261, kinds/since/links equal; every gate has `tests/test_<name>.py`. A first "ENTRYMISSING" for `import_cycles` and `stale_source_citations` was my regex missing a multi-line `def`; both exist (`import_cycles.py:382`, `stale_source_citations.py:312`). README "(+N)" entry cells are intentional truncation. 42 registry gates have no `tests/canary/<name>` directory: covered via `tests/_gate_teeth_canaries*.py` or are library/CLI kinds; not individually checked.
+- **Docstring roles:** every `:func:/:mod:/:class:` target resolves except external ones (`numbers.Number`, `tokenize`, `subprocess.CompletedProcess`). Unresolved `x.py` / `name()` mentions are illustrative examples (`test_foo.py`, `gql`, `sync_plan_grant`).
+- **Leftovers/large files:** no `.orig/.rej/.bak/f.txt/out.txt` tracked (52-F8 fixed). Largest non-doc tracked files: registry.toml 59 KB, test_effect_assertion_parity.py 53 KB; TRACKER.md 211 KB is markdown by design.
+- **.gitignore:** hides only caches, venvs, build output, `site/`, `.claude/worktrees/`; nothing that should be tracked. `src/py_ci_shared/configs/` has no `__init__.py` but ships via package-data.
+- **pyproject vs code:** version, entry points (`cli:main`, `safe_precommit:main`, `install_safe_hook:main`, `setup_env:main`) and package-data match; the `entry_points_resolvable` self-gate passes.
+- **run-all `audit_rounds_format` FAIL on 42_*/51_*:** is 52-T1. `uncalled_functions` ERROR and `version_consistency` FAIL: 52-T2.

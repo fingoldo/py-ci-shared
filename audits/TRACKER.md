@@ -3,7 +3,163 @@
 One row per finding, all rounds. The disposition and its reasoning live in the finding itself; this
 table exists so the state of a round is readable without opening five files.
 
-Finding ids of rounds 2026-11-10 (`NN-Rk`) and 2026-11-11 (`NN-Sk`) carry the round letter: those rounds reuse the dimension numbers 40-52 of round 2026-11-07, whose ids stay `NN-Fk`.
+Finding ids of rounds 2026-11-10 (`NN-Rk`), 2026-11-11 (`NN-Sk`) and 2026-11-16 (`NN-Tk`) carry the round letter: those rounds reuse the dimension numbers 40-52 of round 2026-11-07, whose ids stay `NN-Fk`. Round 2026-11-16 adds the CUDA dimensions 53, 54 and 55.
+
+## Round 2026-11-16 - full agent audit of py_ci_shared (dimensions 40-55, 53-55 are the CUDA dimensions; reports in audits/2026-11-16/)
+
+| # | Sev | Finding | Disposition |
+|---|-----|---------|-------------|
+| 40-T1 | P2 | code_audit scanners prune tracked `build`/`dist`/`env`/`venv` directories that the shared core keeps | OPEN |
+| 40-T2 | P2 | four text-ratchet gates have no file floor, so a wrong or empty root passes | OPEN |
+| 40-T3 | P2 | `repo_hygiene.assert_repo_hygiene`: a mistyped `workflows_dir` passes (floor defaults to 0) | OPEN |
+| 40-T4 | P2 | `credential_shaped_log_arg` sees only a bare name or attribute passed to a logger | OPEN |
+| 40-T5 | P2 | `missing_network_timeout` ignores sessions, import aliases and `timeout=None` | OPEN |
+| 40-T6 | P2 | `console_unicode`: any mention of `reconfigure(encoding` exempts the whole module | OPEN |
+| 40-T7 | P2 | `bare_except`/`broad_except_swallow`: a handler that re-raises on ONE path counts as re-raising; `except*` and tuples are not seen | OPEN |
+| 40-T8 | P3 | `mutable_default` visits only `def`, and recognises few mutable defaults | OPEN |
+| 40-T9 | P3 | `wallclock_test_waits` default text mode misses `from time import sleep` | OPEN |
+| 40-T10 | P3 | `skip_as_pass` recognises only a message that begins with the word "skipped" | OPEN |
+| 40-T11 | P3 | `unsafe_deserialization`: any `save`/`dump` call, or any call whose name contains `verif`, exempts a later `pickle.loads` | OPEN |
+| 40-T12 | P3 | `possibly_unbound_local`: walrus binding under a boolean chain, and `with` blocks that swallow | OPEN |
+| 40-T13 | P3 | `lock_held_across_io`: import aliases, subscripted locks, `os.system`, `aiohttp` | OPEN |
+| 40-T14 | P3 | `sentinel_or_fallback` default names omit common siblings | OPEN |
+| 40-T15 | P3 | `env_flag_parsing`: `from os import environ as E`, and `int(...)` compared with a number | OPEN |
+| 40-T16 | P3 | `fail_open_handlers.finite_guarded_reject` sees only a `continue` or a call named `reject*` | OPEN |
+| 40-T17 | P3 | `no_xfail_to_defer`: `skipif(True, reason="bug")` is an unconditional skip the gate does not judge | OPEN |
+| 40-T18 | P3 | extensionless Python scripts and an upper-case `.PY` are not scanned by code_audit | OPEN |
+| 40-T19 | P3 | `systemexit_in_library` does not see an import-time exit in a library module | OPEN |
+| 40-T20 | P3 | `hardcoded_seed_in_library`: unfolded constant shapes and unrecognised parameter names | OPEN |
+| 41-T1 | P2 | Twenty-three gates die with RecursionError on one long operator chain, instead of reporting a finding | OPEN |
+| 41-T2 | P3 | Three gates raise a raw exception on an unreadable or unparsable file with no allow_unparsed escape | OPEN |
+| 41-T3 | P3 | doc_identifier_parity crashes with PermissionError on a directory named like a source file | OPEN |
+| 41-T4 | P2 | lock_held_across_io treats an asyncio semaphore under async with as a thread lock | OPEN |
+| 41-T5 | P2 | default_via_or flags the `side_effect(...) or True` test-double idiom | OPEN |
+| 41-T6 | P3 | redundant_test_fit_call flags calls that build fresh per-test objects or take fixture arguments | OPEN |
+| 41-T7 | P3 | conceded_defect_pins and comment_cites_absolute_line misread innocent text | OPEN |
+| 41-T8 | P3 | unread_function_params and predictable_tmp_path flag test doubles and string literals | OPEN |
+| 41-T9 | P3 | possibly_unbound_local cannot correlate two branches on the same condition | OPEN |
+| 41-T10 | P2 | phantom_code_references reports every backticked external, stdlib or prose name as a phantom | OPEN |
+| 42-T1 | P2 | A growing refresh of a `_core` Baseline writes an EMPTY note, and `enforce` accepts it; only 3 modules pass `new_note` | OPEN |
+| 42-T2 | P3 | A real key starting with `_` is dropped as metadata by `baseline_ratchet` (bare form) and `meta_test_utils` (any form), but kept by `_core` | OPEN |
+| 42-T3 | P3 | `meta_test_utils.findings_ratchet` reads the baseline more loosely than every other reader | OPEN |
+| 42-T4 | P3 | `baseline_ratchet` does not see the marker or a blank note in the `{"count","note"}` entry shape | OPEN |
+| 42-T5 | P3 | The `gate` and `schema` headers of a `_core` baseline are written but never checked on load | OPEN |
+| 43-T1 | P2 | CHANGELOG has no entry for the core-only install blocker change in `ci_install_covers_entry_imports` (71aeae0) | OPEN |
+| 43-T2 | P3 | CLAUDE.md names the wrong file for `EXEMPT` and `parses=False` | OPEN |
+| 43-T3 | P3 | The `corpus-drift.yml` shard step still special-cases `mlframe`, which a905293 removed from `configs/consumers.toml` | OPEN |
+| 43-T4 | P3 | CHANGELOG does not record that the shipped consumer list lost `mlframe` (a905293), though CLAUDE.md and README name the monitors' effects | OPEN |
+| 43-T5 | P3 | `audits/TRACKER.md` still marks committed fixes "RESOLVED (uncommitted)": 30 rows (three of them verified against HEAD) | OPEN |
+| 43-T6 | P3 | The scaffolder and CLAUDE.md "Adding a gate" never mention the CHANGELOG entry that a new gate fails CI without | OPEN |
+| 44-T1 | P2 | The repo's mutation tooling cannot run on the repo's own modules from a checkout | OPEN |
+| 44-T2 | P3 | Workflow-security tests glob `*.yml` only | OPEN |
+| 44-T3 | P3 | `test_meta_test_utils_todo_hygiene.py` tests another repository's source | OPEN |
+| 44-T4 | P3 | `pytest.raises` without `match` on a broad exception where the message is the contract | OPEN |
+| 44-T5 | P3 | `test_format_warn_reports_a_missing_tool_not_findings` asserts its own `sys.exit(0)` | OPEN |
+| 44-T6 | P3 | pandas is required by a module-level `importorskip` but is not in the `dev` extra | OPEN |
+| 44-T7 | P2 | adoption_sha_ref: `main()` and the multi-pin loop are untested; 26 of 47 mutants survive | OPEN |
+| 45-T1 | P2 | Every `python -m py_ci_shared.<gate>` main (47 of 49) writes findings with a raw `sys.stdout.write`: a non-encodable character crashes the gate and loses the findings | OPEN |
+| 45-T2 | P2 | Nine-plus gates look for `ast.Try` only and so skip `try: ... except* X:` (PEP 654, 3.11+): a swallow in an `except*` handler is not found | OPEN |
+| 45-T3 | P2 | `test_cross_interpreter_keys` can only find other interpreters on this Windows host: on every CI leg it skips, and it also swallows real crashes | OPEN |
+| 45-T4 | P3 | `pyproject.toml` has no Python version classifiers and `requires-python` has no upper bound, while CI exercises 3.9-3.13, 3.14 (non-blocking) and 3.15 | OPEN |
+| 46-T1 | P1 | Consumer CI health fails every night because its self-watch step reads its own history; the fix is uncommitted | OPEN |
+| 46-T2 | P2 | Both recent releases left a red Release run although the release was published; the local publish and the tag workflow race | OPEN |
+| 46-T3 | P2 | Nothing stops two sessions preparing the same next version; the bump-after-tag step is a hand edit | OPEN |
+| 46-T4 | P2 | ci-health has no known-red baseline, so it is red every night on standing reds and a new regression cannot show | OPEN |
+| 46-T5 | P2 | release verify waits 100 min for self-ci, which queued up to 325 min in the observed window | OPEN |
+| 46-T6 | P2 | ci-health and self-watch read only `branch=master`, so failed Release (tag) runs are invisible to them | OPEN |
+| 46-T7 | P3 | A change to configs/consumers.toml reached master without its pinned test | OPEN |
+| 46-T8 | P3 | corpus-drift stays red until a manual `accept: true` after an intentional corpus change | OPEN |
+| 47-T1 | P2 | The 2-release window is counted in releases, not days: seven consumers sit exactly at the limit and the next release turns them all red | OPEN |
+| 47-T2 | P3 | `configs/pin_waivers.toml` says every pin is within tolerance; four consumers are not | OPEN |
+| 47-T3 | P2 | `install_safe_hook` reports success without checking that the hook's interpreter can run the wrapper; the next commit fails with a bare traceback and no remedy | OPEN |
+| 47-T4 | P3 | Nothing says whether a clone's hook is patched, and none of the eight real pre-commit clones is | OPEN |
+| 47-T5 | P2 | `adoption_sha_ref` tells three callers to add an input that the called workflow does not have | OPEN |
+| 47-T6 | P3 | `adoption_sha_ref` has a different command line from `adoption_matrix` and cannot be pointed at a repo | OPEN |
+| 47-T7 | P2 | A repo that runs py_ci_shared in its hooks but pins nothing, and is not in `consumers.toml`, is invisible and reads as healthy | OPEN |
+| 47-T8 | P2 | The upgrade is a manual edit of 14 to 28 lines in up to 9 files per repo, with no tool and no list of the places | OPEN |
+| 47-T9 | P3 | `ci-pin-comment-not-release` is still report-only and still fires on four consumers; `--strict-pin-comments` is not used by any workflow | OPEN |
+| 47-T10 | P3 | One root cause is reported once per pin line, so a single stale or wrong pin becomes 7 to 25 identical findings | OPEN |
+| 47-T11 | P3 | README gives adopters no starting path, and three of its adoption examples are stale | OPEN |
+| 47-T12 | P3 | A clean clone's first `py-ci-shared run-all` reports the consequence of an empty repo in a gate-specific way and does not say that `enable` and a gate table cannot both name a gate until it is read twice | OPEN |
+| 47-T13 | P3 | The interpreter's installed copy is a stale release, and its metadata disagrees with itself | OPEN |
+| 48-T1 | P2 | Five gates call `ast.get_source_segment` once per function: quadratic in the functions of a file (the `git_child_env` class, not fixed here) | OPEN |
+| 48-T2 | P2 | `console_unicode` re-resolves and re-reads the `__init__.py` chain for every file: 14x faster with a per-directory memo | OPEN |
+| 48-T3 | P3 | `comment_cites_absolute_line` tokenizes every file; its sibling skips files that cannot match | OPEN |
+| 48-T4 | P3 | `doc_identifier_parity._absent` searches a 7 MB corpus string once per distinct token (1.9x available without changing the answer) | OPEN |
+| 48-T5 | P3 | `source.comment_tokens` is an `lru_cache(maxsize=512)`: a corpus larger than 512 files gets no reuse between gates | OPEN |
+| 49-T1 | P2 | The `::error` annotation under GitHub Actions carries no file, no line, and for 13+ gates no information at all | OPEN |
+| 49-T2 | P2 | `import_cycles` and ~30 other standalone `main()`s crash with a traceback on a console that cannot encode a path; only `cli._print` is guarded | OPEN |
+| 49-T3 | P2 | Gates built on `_text_ratchet.enforce_findings` print each finding twice and the run-all row loses the fix guidance; a stale baseline is reported as "0 new violation(s)" | OPEN |
+| 49-T4 | P2 | The refresh command printed in a missing-baseline message is wrong in two ways: it names a label that `py-ci-shared refresh` rejects, and it omits the `--grow` a first seed needs | OPEN |
+| 49-T5 | P2 | A PASS never says what was checked, and a baseline-accepted finding is reported nowhere on a pass | OPEN |
+| 49-T6 | P2 | `git_dependency_pins` lists the offending refs without the dependency they belong to; `timezone_honest` prints a tuple repr with no line | OPEN |
+| 49-T7 | P3 | `repo_hygiene` and five more sites list only the first 10 to 50 offenders with no "and M more", and name no repair | OPEN |
+| 49-T8 | P3 | Under Actions `budget = "fail"` exits 1 on an all-PASS run with no annotation, and no finding ever reaches the job summary | OPEN |
+| 49-T9 | P3 | `run-all` has no final verdict word | OPEN |
+| 49-T10 | P3 | Not-enabled and cannot-run messages give no instruction; absolute paths and mixed separators remain | OPEN |
+| 49-T11 | P3 | Wording and small-output defects | OPEN |
+| 50-T1 | P2 | estimator_mixin_order: an sklearn mixin placed after `BaseEstimator` silently breaks `is_classifier` | OPEN |
+| 50-T2 | P2 | sql_where_mixed_and_or: a WHERE whose top level mixes AND and OR | OPEN |
+| 50-T3 | P2 | required_call_kwargs: a configured call must carry a configured keyword | OPEN |
+| 50-T4 | P2 | workflow_installs_pinned: a CI step that clones or pip-installs a first-party repo from git without a commit | OPEN |
+| 50-T5 | P2 | fit_at_test_module_import: a test module that trains a model while it is imported | OPEN |
+| 50-T6 | P2 | route_literal_after_catchall: a literal route registered after a same-prefix parameter route | OPEN |
+| 50-T7 | P2 | global_write_via_reexport_alias: `alias.CONST = value` where the module bound to `alias` only re-exports `CONST` | OPEN |
+| 50-T8 | P3 | thread_lifecycle: a non-daemon `threading.Thread` with no join, no `.daemon = True` and no context-manager owner | OPEN |
+| 50-T9 | P2 | tool_config_dead_entries: an ignore, omit or override entry in `pyproject.toml` that names nothing that exists | OPEN |
+| 50-T10 | P3 | deprecated_docstring_without_warn: a function documented as deprecated that never calls `warnings.warn` | OPEN |
+| 50-T11 | P3 | The 2026-11-11 claim "raise without `from` is COVERED by ruff B904" is wrong: `configs/ruff-base.toml` ignores B904 | OPEN |
+| 50-T12 | P1 | append_only_log_shrink: a commit that replaces an append-only data file with a shorter one | OPEN |
+| 50-T13 | P3 | sql_like_trailing_wildcard: `LIKE '<prefix>{param}%'` with no separator before the `%` | OPEN |
+| 50-T14 | P3 | audit_metadata_in_comments: finding IDs, wave markers and date stamps in code comments (opt-in ratchet) | OPEN |
+| 50-T15 | P3 | unpruned_tree_walk: a walk that enters `.claude/worktrees` | OPEN |
+| 50-T16 | P3 | logger_exception_outside_except: `logger.exception(...)` not lexically inside an `except` | OPEN |
+| 50-T17 | P3 | workflow_pull_request_only_gate: a workflow that runs pytest, mypy or ruff and triggers only on `pull_request`, in a repo that pushes straight to master | OPEN |
+| 51-T1 | P3 | `iter_files_pruned` lists symlinked files; `iter_files` skips them | OPEN |
+| 51-T2 | P3 | No size cap on files read by the scanning gates | OPEN |
+| 51-T3 | P3 | CONSUMER_READ_TOKEN is a job-level `env:` in corpus-drift's snapshot job | OPEN |
+| 51-T4 | P3 | Dependency pins carry no hashes; tools run through `uvx` resolve their transitive dependencies live | OPEN |
+| 51-T5 | P3 | Repository setting `sha_pinning_required` is false; the pin rule lives only in a test | OPEN |
+| 52-T1 | P2 | The round-file heading format the brief mandates fails the package's own audit_rounds_format gate | OPEN |
+| 52-T2 | P2 | `py-ci-shared` on PATH is a stale non-editable 1.23.9 install, so the self-gate run on this repo gives false reds | OPEN |
+| 52-T3 | P3 | `scripts/exp_startup.py` resolves the repo root four directories up, so it silently measures the installed package | OPEN |
+| 52-T4 | P3 | Identical helper bodies copied across scanners, after 52-F2 resolved the earlier ten | OPEN |
+| 52-T5 | P3 | `repo_hygiene` and `uncalled_functions` exceed their own 30 s budget on this repo | OPEN |
+| 52-T6 | P3 | Stale untracked build output in the working tree holds 386 old .py files | OPEN |
+| 53-T1 | P1 | cuda_kernel_pointer_types skips every kernel declared `__global__ __launch_bounds__(N) void name(...)` | OPEN |
+| 53-T2 | P1 | gpu_timing_sync is blind to a launch through a kernel object | OPEN |
+| 53-T3 | P2 | gpu_timing_sync: any `synchroni*` call name ends a region, and any `x[k](...)` is GPU work | OPEN |
+| 53-T4 | P2 | cuda_coalesced_reads misses common strided forms | OPEN |
+| 53-T5 | P2 | cuda_coalesced_reads reads raw .py text; comments count, the line and the baseline key are wrong | OPEN |
+| 53-T6 | P2 | cuda_kernel_sources misses inline sources and truncates multi-literal sources | OPEN |
+| 53-T7 | P2 | No gate covers the 21 numba.cuda kernels written in Python | OPEN |
+| 53-T8 | P2 | Canaries do not prove most rules | OPEN |
+| 53-T9 | P3 | Suppression markers accept an empty reason | OPEN |
+| 53-T10 | P3 | pointer_types and integer_width small gaps | OPEN |
+| 53-T11 | P3 | cuda_offline_report ARCH_LIMITS lacks sm_80 and sm_100 | OPEN |
+| 53-T12 | P3 | numba_seed_range entry contract differs from the other gates | OPEN |
+| 53-T13 | P3 | pointer_types advisory float rule is noise on mlframe | OPEN |
+| 54-T1 | P2 | Kernel bodies with bare `double` sit outside every gate and outside the FE contract | OPEN |
+| 54-T2 | P2 | Legacy `__shfl*` compiles on the Pascal host and fails on every sm_70+ target; no gate sees it | OPEN |
+| 54-T3 | P2 | NVRTC lacks more than `INFINITY`; CUDA.md names one macro and no gate checks any | OPEN |
+| 54-T4 | P2 | The residency contract of section 4 is declared by 1 of 72 `gpu_capable` registrations | OPEN |
+| 54-T5 | P2 | The profile-record contract is a mlframe-local regex over a hand-kept list; 48 of 91 kernel files have no record | OPEN |
+| 54-T6 | P3 | Ten kernels use floating-point `atomicAdd` with no determinism note, against the narrative of CUDA.md:48 | OPEN |
+| 54-T7 | P3 | `row_attention_stage4_fused` places three barriers after a thread-dependent `return` | OPEN |
+| 54-T8 | P3 | Silent device-fault fallbacks remain: two of five sampled handlers are real | OPEN |
+| 54-T9 | P3 | CUDA.md states two hardware facts that contradict the NVIDIA table | OPEN |
+| 54-T10 | P3 | Internal disagreements and stale counts inside CUDA.md | OPEN |
+| 54-T11 | P2 | GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident | OPEN |
+| 55-T1 | P2 | No tool runs the documented clang-tidy extraction pass; the pass exists only as scratch scripts | OPEN |
+| 55-T2 | P2 | `block_size_for` defaults to non-power-of-two widths and nothing flags a tree-reduction kernel launched with it | OPEN |
+| 55-T3 | P2 | Launch grid caps tuned on a 6-SM card are not gated | OPEN |
+| 55-T4 | P2 | The allocation-counting opt-out harness is local to mlframe | OPEN |
+| 55-T5 | P2 | The body of the offline per-arch test and the literal-minBlocks check are local although the engine is shared | OPEN |
+| 55-T6 | P2 | KTC sweep tolerance gate is a pure static check that lives only in mlframe | OPEN |
+| 55-T7 | P3 | No generic gate for the profile record the CUDA contract requires | OPEN |
+| 55-T8 | P3 | Wide-load alignment contract (CUDA.md 19.1) is not recorded on the kernel | OPEN |
+| 55-T9 | P3 | Doc staleness and disagreements inside CUDA.md (relay to mlframe, nothing to fix here) | OPEN |
+| 55-T10 | P3 | Cheap regression guards that need canaries because the corpus has zero hits | OPEN |
 
 ## Round 2026-11-11 - wave 40-52 (reports in audits/2026-11-11/)
 
