@@ -502,7 +502,11 @@ python -m py_ci_shared.mutation_rerun --repo . sweep src/pkg/mod.py tests/test_m
 python -m py_ci_shared.mutation_rerun --repo . lines src/pkg/mod.py tests/test_mod.py run.log mod.notes.json 431 470
 ```
 
-- `sweep` prints `RUN mutants=… killed=… survived=… truncated=… candidates=…`, then one `SURVIVOR` line per survivor.
+- `sweep` prints `RUN mutants=… killed=… survived=… truncated=… candidates=… fingerprint=…`, then one
+  `SURVIVOR <line:col> … [fingerprint=…]` line per survivor. The fingerprint is a 12-character sha256 over the
+  module and every test file that was run against it, so a survivor logged now can be told apart from one judged
+  against an older test set: the same fingerprint means the same code and the same tests. Keep the fingerprint
+  with a journal entry when it is written, and re-judge a survivor whose fingerprint no longer matches the tests.
   Per-mutant timeout is 1800 s: a loaded machine takes that long for a cold baseline.
 - `lines` takes the survivors of `run.log` in the line range (both bounds inclusive; omit them for every line),
   and re-runs only those. Its notes file maps `line:col` to a justification, for example

@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- `mutation_rerun sweep` stamps every survivor with a fingerprint: a 12-character sha256 over the module and the test files it ran against. The `RUN` line and each `SURVIVOR` line carry it, so survivors logged against different test sets can be told apart.
+
 - `tests/test_changelog_mentions_new_gates.py` returns early when no module is first shipped in the next release, instead of failing on every CI leg with "the registry names no module for the next release".
 
 - `git_child_env` (the unscrubbed-git-spawn gate) splits each source file once instead of once per assignment: `ast.get_source_segment` re-split the whole file on every call, so the scan was quadratic in a file's assignments (about 20x on a 180-assignment test file). Same findings, checked against `ast` on every node.

@@ -25,6 +25,7 @@ with the ``.ckpt.jsonl`` suffix, so each notes file gets its own verdict cache.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -50,6 +51,21 @@ def survivor_lines(log_text: str, module_name: str, lo: int = 1, hi: int = 10**9
     """Return the sorted distinct line numbers of ``module_name`` survivors in ``log_text`` within ``[lo, hi]``."""
     pattern = re.compile(rf"^(?:SURVIVOR|mutation survivor: ).*{re.escape(module_name)}:(\d+):", re.M)
     return sorted({int(m.group(1)) for m in pattern.finditer(log_text) if lo <= int(m.group(1)) <= hi})
+
+
+def tests_fingerprint(repo: Path, module: Path, tests: list[Path]) -> str:
+    """Short sha256 over the module and the test files that were run against it.
+
+    Printed with every survivor, so a survivor logged now can be told apart from one judged against an older
+    test set: two runs with the same fingerprint saw the same code and the same tests.
+    """
+    digest = hashlib.sha256()
+    for path in [module, *sorted(tests, key=str)]:
+        digest.update(str(path).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update((repo / path).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()[:12]
 
 
 def survivor_location(text: str) -> str:
@@ -109,9 +125,13 @@ def _run_sweep(args: argparse.Namespace) -> int:
         limit=600,
         checkpoint_path=Path(args.checkpoint),
     )
-    _say(f"RUN mutants={run.mutants_run} killed={run.killed} survived={len(run.survivors)} " f"truncated={run.truncated} candidates={run.candidates_total}")
+    fingerprint = tests_fingerprint(repo, module, tests)
+    _say(
+        f"RUN mutants={run.mutants_run} killed={run.killed} survived={len(run.survivors)} "
+        f"truncated={run.truncated} candidates={run.candidates_total} fingerprint={fingerprint}"
+    )
     for s in run.survivors:
-        _say(f"SURVIVOR {s}")
+        _say(f"SURVIVOR {s} [fingerprint={fingerprint}]")
     return 0
 
 

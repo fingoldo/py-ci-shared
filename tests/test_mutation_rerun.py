@@ -84,3 +84,29 @@ class TestArgumentParsing:
     def test_an_unknown_command_is_refused(self):
         with pytest.raises(SystemExit):
             mr._parser().parse_args(["bogus", "m.py"])
+
+
+def test_tests_fingerprint_changes_with_the_module_or_a_test_file(tmp_path):
+    """The survivor fingerprint is stable for unchanged inputs and moves when the module or a test file changes, so a
+    survivor can be matched to the exact code and tests it was judged against."""
+    from pathlib import Path
+
+    from py_ci_shared.mutation_rerun import tests_fingerprint
+
+    (tmp_path / "pkg").mkdir()
+    module = Path("pkg/mod.py")
+    test = Path("tests/test_mod.py")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / module).write_text("x = 1\n", encoding="utf-8")
+    (tmp_path / test).write_text("def test_x():\n    assert True\n", encoding="utf-8")
+
+    first = tests_fingerprint(tmp_path, module, [test])
+    assert len(first) == 12
+    assert tests_fingerprint(tmp_path, module, [test]) == first
+
+    (tmp_path / test).write_text("def test_x():\n    assert 1 == 1\n", encoding="utf-8")
+    after_test_edit = tests_fingerprint(tmp_path, module, [test])
+    assert after_test_edit != first
+
+    (tmp_path / module).write_text("x = 2\n", encoding="utf-8")
+    assert tests_fingerprint(tmp_path, module, [test]) not in (first, after_test_edit)
