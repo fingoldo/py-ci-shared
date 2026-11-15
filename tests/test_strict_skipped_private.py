@@ -75,7 +75,7 @@ def test_the_scheduled_workflows_are_strict_unless_allowed(name, step):
 def test_corpus_includes_the_two_private_repos_and_every_non_corpus_consumer_says_why():
     text = (REPO / "configs" / "consumers.toml").read_text(encoding="utf-8")
     consumers = _consumers.load_consumers(REPO / "configs" / "consumers.toml")
-    assert {c.name for c in consumers if c.corpus} == {"mlframe", "pyutilz", "llm_bench", "glossum_backend_scripts", "algopacksimple"}
+    assert {c.name for c in consumers if c.corpus} == {"pyutilz", "llm_bench", "glossum_backend_scripts", "algopacksimple"}
     for consumer in consumers:
         if not consumer.corpus:
             pattern = r"# Not in the corpus: [^\n]+\n\[\[consumer\]\]\nname = " + re.escape('"' + consumer.name + '"')
