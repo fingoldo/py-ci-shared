@@ -57,7 +57,9 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python -m py_ci_shared.ci_health configs/self_watch.toml --max-red-days 2 --output ci-health-self.md
+        # This workflow skips itself: its newest completed run is the previous night's run of this same check, so counting it
+        # made the check red because it had been red, with no way out once the consumers step turned green.
+        run: python -m py_ci_shared.ci_health configs/self_watch.toml --max-red-days 2 --skip-workflow "Consumer CI health" --output ci-health-self.md
 
       - name: Upload the report
         if: always()

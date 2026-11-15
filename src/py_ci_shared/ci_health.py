@@ -16,7 +16,11 @@ separately and never fails the report. Everything else red for more than ``--max
 Usage::
 
     python -m py_ci_shared.ci_health configs/consumers.toml [--max-red-days 2] [--output ci-health.md]
-        [--only NAME ...] [--fail-on-skipped-private] [--jobs 8] [--deadline 600] [--request-timeout 60]
+        [--only NAME ...] [--skip-workflow NAME ...] [--fail-on-skipped-private] [--jobs 8] [--deadline 600] [--request-timeout 60]
+
+``--skip-workflow`` leaves a workflow out by its name. A workflow that watches the repository it lives in must skip itself: its own
+newest completed run is the previous night's run of this very check, so counting it makes the check red because it was red, and nothing
+can end that streak. Any failure of the workflow is already a red run of the workflow.
 
 Network: the GitHub REST API through ``urllib`` with the first token found in ``CONSUMER_READ_TOKEN``, ``GH_TOKEN``,
 ``GITHUB_TOKEN``; with none set, the ``gh`` CLI (its own login) when it is on PATH, else anonymous ``urllib``. Private
@@ -52,7 +56,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -538,14 +542,20 @@ def has_live_trigger(api: Api, repo: str, path: str, branch: str) -> bool:
     return bool(LIVE_TRIGGERS.intersection(str(x) for x in triggers))
 
 
-def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bool) -> RepoHealth:
-    """Read one consumer's workflows and runs through ``api`` and assess them. API failures become ``error``."""
+def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bool, skip_workflows: Collection[str] = ()) -> RepoHealth:
+    """Read one consumer's workflows and runs through ``api`` and assess them. API failures become ``error``.
+
+    A workflow named in ``skip_workflows`` is not read at all (no run of it is requested, and it is not in the report)."""
     if consumer.private and not can_read_private:
         return RepoHealth(consumer.name, consumer.repo, consumer.branch, skipped=f"private and {TOKEN_ENV} is not set; it was NOT checked")
     try:
         meta = api(f"repos/{consumer.repo}")
         default_branch = str(meta.get("default_branch") or consumer.branch)
-        listed = [w for w in api(f"repos/{consumer.repo}/actions/workflows?{_q(per_page=100)}").get("workflows", []) if w.get("state") == "active"]
+        listed = [
+            w
+            for w in api(f"repos/{consumer.repo}/actions/workflows?{_q(per_page=100)}").get("workflows", [])
+            if w.get("state") == "active" and str(w.get("name")) not in skip_workflows
+        ]
         workflows = [w for w in listed if has_live_trigger(api, consumer.repo, str(w.get("path") or ""), consumer.branch)]
         runs_by: dict[int, list[dict]] = {}
         billing_ids: list[int] = []
@@ -601,6 +611,12 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
     parser.add_argument("--output", help="also write the markdown report to this file")
     parser.add_argument("--include-private", action="store_true", help="also check private consumers (the public report leaves them out)")
     parser.add_argument("--only", action="append", default=[], help="check only this consumer name (repeatable)")
+    parser.add_argument(
+        "--skip-workflow",
+        action="append",
+        default=[],
+        help="leave out the workflow with this name (repeatable); a workflow that watches its own repository skips itself",
+    )
     parser.add_argument("--jobs", type=int, default=DEFAULT_JOBS, help=f"consumers read at once (default {DEFAULT_JOBS})")
     parser.add_argument("--deadline", type=float, default=DEFAULT_DEADLINE, help=f"seconds after which no request is made (default {DEFAULT_DEADLINE:g})")
     parser.add_argument("--request-timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT, help=f"seconds per request (default {DEFAULT_REQUEST_TIMEOUT:g})")
@@ -625,9 +641,10 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
     at = now or datetime.now(timezone.utc)
     lock = threading.Lock()
     started = time.monotonic()
+    skipped_workflows = frozenset(args.skip_workflow)
 
     def one(consumer: Consumer) -> RepoHealth:
-        result = collect(consumer, bounded, at, can_read_private=can_read_private)
+        result = collect(consumer, bounded, at, can_read_private=can_read_private, skip_workflows=skipped_workflows)
         state = "skipped" if result.skipped else ("ERROR" if result.error else f"{len(result.workflows)} workflow(s)")
         with lock:
             sys.stderr.write(f"ci_health: {consumer.name}: {state} ({time.monotonic() - started:.0f} s)\n")

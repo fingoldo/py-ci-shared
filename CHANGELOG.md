@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- `ci_health` takes `--skip-workflow NAME` (repeatable) to leave a workflow out by name, and `ci-health.yml`'s self-watch step skips `Consumer CI health` itself. The workflow was red since 2026-10-03 for a reason that kept itself red: its own newest completed run was the previous night's run of the same check, so the self-watch step failed because the workflow had failed, and a green consumers step could not end the streak. Additive; nothing to do.
+
 - `mutation_rerun sweep` stamps every survivor with a fingerprint: a 12-character sha256 over the module and the test files it ran against. The `RUN` line and each `SURVIVOR` line carry it, so survivors logged against different test sets can be told apart.
 
 - `tests/test_changelog_mentions_new_gates.py` returns early when no module is first shipped in the next release, instead of failing on every CI leg with "the registry names no module for the next release".

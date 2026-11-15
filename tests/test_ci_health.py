@@ -611,6 +611,33 @@ def test_this_repository_watches_its_own_schedules():
     assert "configs/self_watch.toml" in workflow
 
 
+def test_a_skipped_workflow_is_not_read_and_not_reported():
+    routes = _routes("glossum_backend_scripts", [GREEN_WF, NIGHTLY_WF], {1: GREEN_RUNS, 2: NIGHTLY_RUNS})
+    api = FakeApi(routes)
+    repo = ci_health.collect(_consumer("glossum_backend_scripts"), api, NOW, can_read_private=True, skip_workflows={"Nightly thorough property tests"})
+    assert [w.workflow for w in repo.workflows] == ["CI"]
+    assert not any("/workflows/2/" in c for c in api.calls), "a skipped workflow's runs are not requested"
+    assert exit_code([repo], 2) == 0
+
+
+def test_main_skip_workflow_flag_drops_the_red_nightly_from_the_verdict(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    args = [str(_config(tmp_path)), "--skip-workflow", "Nightly thorough property tests"]
+    code = ci_health.main(args, api=FakeApi(_all_routes("failure")), now=NOW)
+    out = capsys.readouterr().out
+    assert code == 0, "the only red workflow was skipped"
+    assert "Nightly thorough property tests" not in out
+
+
+def test_the_self_watch_step_skips_the_workflow_it_runs_in():
+    """A workflow that watches its own repository judges its own previous run if it does not skip itself: red because it was red."""
+    workflow_path = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "ci-health.yml"
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+    (job,) = workflow["jobs"].values()
+    run = next(str(s["run"]) for s in job["steps"] if "configs/self_watch.toml" in str(s.get("run", "")))
+    assert f'--skip-workflow "{workflow["name"]}"' in run
+
+
 def _contents(text: str) -> dict[str, Any]:
     import base64
 
