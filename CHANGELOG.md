@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- `predictable_tmp_path` reports `mktemp` only when the call resolves to `tempfile.mktemp` (`import tempfile` / `import tempfile as tf` / `from tempfile import mktemp [as x]` / `from tempfile import *` / a `*.tempfile.mktemp` chain). It used to flag any call whose attribute was `mktemp`, including pytest's `tmp_path_factory.mktemp("x")` (a unique, race-free numbered directory), which gave a consumer 23 false positives. Only fewer findings; a consumer baseline entry for such a call is now stale and is pruned by the baseline refresh.
+
 - `ci_health` takes `--skip-workflow NAME` (repeatable) to leave a workflow out by name, and `ci-health.yml`'s self-watch step skips `Consumer CI health` itself. The workflow was red since 2026-10-03 for a reason that kept itself red: its own newest completed run was the previous night's run of the same check, so the self-watch step failed because the workflow had failed, and a green consumers step could not end the streak. Additive; nothing to do.
 
 - `mutation_rerun sweep` stamps every survivor with a fingerprint: a 12-character sha256 over the module and the test files it ran against. The `RUN` line and each `SURVIVOR` line carry it, so survivors logged against different test sets can be told apart.

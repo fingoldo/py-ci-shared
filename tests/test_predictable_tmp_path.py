@@ -113,3 +113,37 @@ def test_a_user_value_flowing_into_the_path_exempts_it(tmp_path):
 def test_format_built_paths_and_mktemp_are_reported(tmp_path):
     body = "import tempfile\ndef f():\n    a = '{}/a.lock'.format(tempfile.gettempdir())\n    return tempfile.mktemp()\n"
     assert _tmp_lines(tmp_path, body) == [3, 4]
+
+
+def test_tempfile_mktemp_is_reported_through_every_import_spelling(tmp_path):
+    body = (
+        "import tempfile\n"
+        "import tempfile as tf\n"
+        "from tempfile import mktemp\n"
+        "from tempfile import mktemp as mk\n"
+        "def f():\n"
+        "    return tempfile.mktemp(), tf.mktemp(), mktemp(), mk(), pkg.tempfile.mktemp()\n"
+    )
+    (tmp_path / "m.py").write_text(body, encoding="utf-8")
+    assert len(find_predictable_tmp_path(tmp_path, use_git=False)) == 5
+
+
+def test_a_star_import_of_tempfile_makes_a_bare_mktemp_reported(tmp_path):
+    assert _tmp_lines(tmp_path, "from tempfile import *\ndef f():\n    return mktemp()\n") == [3]
+
+
+def test_pytest_tmp_path_factory_mktemp_is_not_reported(tmp_path):
+    body = (
+        "import pytest\n"
+        "@pytest.fixture(scope='session')\n"
+        "def d(tmp_path_factory):\n"
+        "    return tmp_path_factory.mktemp('x')\n"
+        "def g(factory: pytest.TempPathFactory):\n"
+        "    return factory.mktemp('y')\n"
+    )
+    assert _tmp_lines(tmp_path, body) == []
+
+
+def test_a_mktemp_that_is_not_from_tempfile_is_not_reported(tmp_path):
+    body = "def mktemp():\n    return 1\ndef f(obj):\n    return mktemp(), obj.mktemp()\n"
+    assert _tmp_lines(tmp_path, body) == []

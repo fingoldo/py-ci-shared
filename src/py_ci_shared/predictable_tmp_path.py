@@ -163,8 +163,39 @@ def _user_names(tree: ast.Module) -> set[str]:
     return out
 
 
-def _is_mktemp(node: ast.AST) -> bool:
-    return isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) == "mktemp"
+def _mktemp_bindings(tree: ast.Module) -> tuple[set[str], set[str], bool]:
+    """``(names bound to the tempfile module, names bound to tempfile.mktemp, star-imported)`` from the file's imports.
+
+    ``tmp_path_factory.mktemp("x")`` is pytest's numbered-directory factory (unique, race-free); only a call that resolves to
+    ``tempfile.mktemp`` is the racy one, so a bare ``.mktemp`` attribute is not enough."""
+    modules: set[str] = set()
+    funcs: set[str] = set()
+    star = False
+    for node in shared_walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update((a.asname or a.name) for a in node.names if a.name == "tempfile")
+        elif isinstance(node, ast.ImportFrom) and node.module == "tempfile" and not node.level:
+            for a in node.names:
+                if a.name == "mktemp":
+                    funcs.add(a.asname or a.name)
+                elif a.name == "*":
+                    star = True
+    return modules, funcs, star
+
+
+def _is_mktemp_call(node: ast.AST, bindings: tuple[set[str], set[str], bool]) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    modules, funcs, star = bindings
+    func = node.func
+    if isinstance(func, ast.Name):
+        return func.id in funcs or (star and func.id == "mktemp")
+    if isinstance(func, ast.Attribute) and func.attr == "mktemp":
+        value = func.value
+        if isinstance(value, ast.Name):
+            return value.id in modules
+        return isinstance(value, ast.Attribute) and value.attr == "tempfile"  # `pkg.tempfile.mktemp`
+    return False
 
 
 def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
@@ -172,6 +203,11 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     enclosing_text = _enclosing_text_of(tree, source)
     names = _tmp_names(tree)
     user_names = _user_names(tree)
+    bindings = _mktemp_bindings(tree)
+
+    def is_mktemp(n: ast.AST) -> bool:
+        return _is_mktemp_call(n, bindings)
+
     candidates: list[ast.AST] = []
     for node in shared_walk(tree):
         operands = _builds_path(node)
@@ -179,7 +215,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
             candidates.append(node)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):  # tmp-path-ok: the detector's own literal
             candidates.append(node)
-        elif _is_mktemp(node):
+        elif is_mktemp(node):
             candidates.append(node)
     inner = {id(sub) for c in candidates for sub in shared_walk(c) if sub is not c}
     out: list[Finding] = []
@@ -191,7 +227,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
         if SUPPRESSION in line:
             continue
         enclosing = enclosing_text(node)
-        if not _is_mktemp(node) and (
+        if not is_mktemp(node) and (
             any(marker in enclosing for marker in _UNIQUE_MARKERS)
             or _has_user_marker(node)
             or any(isinstance(sub, ast.Name) and sub.id in user_names for sub in shared_walk(node))
@@ -204,7 +240,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
                 RULE,
                 (
                     "mktemp() is racy by design: use mkstemp/mkdtemp: "
-                    if _is_mktemp(node)
+                    if is_mktemp(node)
                     else "path built under the shared temp directory with no per-user component: "
                 )
                 + line.strip(),
