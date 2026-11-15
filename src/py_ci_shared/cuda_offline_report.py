@@ -49,8 +49,8 @@ ARCH_LIMITS = {
     86: (1536, 16, 65536, 100 * 1024),
     89: (1536, 24, 65536, 100 * 1024),
     90: (2048, 32, 65536, 228 * 1024),
-    100: (2048, 32, 65536, 228 * 1024),  # B200; from the CUDA 12.8 table as recalled, not re-verified against the guide
-    120: (1536, 24, 65536, 100 * 1024),
+    100: (2048, 32, 65536, 228 * 1024),  # B200; Blackwell Tuning Guide 13.5, section 1.4.1.1 (64 warps, 32 blocks) and 1.4.1.2 (228 KB per SM)
+    120: (1536, 32, 65536, 128 * 1024),  # RTX 50-series; Blackwell Tuning Guide 13.5, section 1.4.1.1 (48 warps, 32 blocks) and 1.4.1.2 (128 KB per SM)
 }
 _REG_ALLOC_UNIT = 256  # registers are allocated per warp in units of 256
 _BLOCK_SIZES = (128, 256, 512)
