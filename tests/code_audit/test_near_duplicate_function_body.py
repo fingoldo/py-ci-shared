@@ -149,3 +149,53 @@ def test_prefix_filtered_candidates_equal_the_all_postings_reference():
     entries.append((None, None, None, ()))
     assert m._candidate_pairs(entries) == m._candidate_pairs_all_postings(entries)
     assert len(m._candidate_pairs_all_postings(entries)) > 10, "the corpus must produce real candidates, or the equality is vacuous"
+
+
+def _splat_module(names: str, fn: str) -> str:
+    return f"def {fn}():\n    return [{', '.join('*' + n for n in names.split())}]\n"
+
+
+def test_data_splat_bodies_over_different_module_names_are_not_reported(tmp_path):
+    _write(tmp_path, "a.py", _splat_module("A1 A2 A3 A4 A5 A6 A7 A8", "build"))
+    _write(tmp_path, "b.py", _splat_module("A1 A2 A3 A4 A5 A6 A7 B8", "build"))
+    assert scan_near_duplicate_function_body(tmp_path, min_nodes=5) == []
+
+
+def test_negative_control_a_call_in_the_return_is_still_compared(tmp_path):
+    body = "def build():\n    return [*load(A1), *load(A2), *load(A3), *load(A4), *load(A5)]\n"
+    _write(tmp_path, "a.py", body)
+    _write(tmp_path, "b.py", body.replace("def build", "def build2"))
+    findings = scan_near_duplicate_function_body(tmp_path, min_nodes=5)
+    assert findings == []  # identical bodies are the exact-duplicate scanner's job; a near pair must differ
+    _write(tmp_path, "b.py", body.replace("def build", "def build2").replace("A5", "Z9"))
+    assert [f.check for f in scan_near_duplicate_function_body(tmp_path, min_nodes=5)] == ["near_duplicate_function_body"]
+
+
+N_STEPS = 6
+_SHORT_FRAGMENT_HOST = """
+def host(entries, cutoff):
+    results = []
+    for r in entries:
+        if r.get("score", 0) > cutoff:
+            value = r["score"] * 2
+            if value > 100:
+                value = 100
+            results.append({"id": r["id"], "value": value, "flag": True})
+        else:
+            results.append({"id": r["id"], "value": 0, "flag": False})
+""" + "".join(f"    step_{i} = sum(k * {i} for k in range(entries_count_{i})) + len(results) * {i}\n    results.append(step_{i})\n" for i in range(N_STEPS)) + "    return results\n"
+
+
+def test_a_short_fragment_of_a_long_function_is_not_a_subset_finding(tmp_path):
+    _write(tmp_path, "a.py", _NEAR_DUP_PAIR)
+    _write(tmp_path, "c.py", _SHORT_FRAGMENT_HOST)
+    assert [f for f in scan_near_duplicate_function_body(tmp_path, min_nodes=5) if f.check == "duplicate_function_body_subset"] == []
+
+
+def test_a_subset_finding_honours_the_audit_exempt_marker_on_the_container(tmp_path):
+    _write(tmp_path, "a.py", _NEAR_DUP_PAIR)
+    marker = "  # audit-exempt: duplicate_function_body_subset -- independent numerics, the module must stay a leaf"
+    _write(tmp_path, "c.py", _SUBSET_SUPERSET.replace("def process_entries(entries, cutoff):", "def process_entries(entries, cutoff):" + marker))
+    assert scan_near_duplicate_function_body(tmp_path, min_nodes=5) == []
+    _write(tmp_path, "c.py", _SUBSET_SUPERSET)
+    assert [f.check for f in scan_near_duplicate_function_body(tmp_path, min_nodes=5)] == ["duplicate_function_body_subset"]

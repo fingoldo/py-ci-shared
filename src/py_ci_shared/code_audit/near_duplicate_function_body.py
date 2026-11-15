@@ -29,6 +29,16 @@ _MIN_BODY_NODES = 20
 _DEFAULT_MIN_SIMILARITY = 0.99  # overall-similarity threshold: comparable length AND content
 _DEFAULT_MIN_CONTAINMENT = 0.98  # subset threshold: the SHORTER body appears ~wholly inside the longer one
 
+# A subset hit must also cover this FRACTION of the LONGER (container) body, by matched tokens. A short helper that matches a small slice of a much
+# longer function is a shared idiom (a bounded-call wrapper, a progress loop, a numba/CUDA twin with different numerics), not an inlined copy of
+# the helper. Chosen from the measured coverage (matched tokens / container tokens) of every subset hit at the 0.98 containment floor:
+#   py-ci-shared src, 13 hits: 0.08 0.12 0.17 0.18 0.27 | 0.38 0.59 0.64 0.66 0.74 0.94 0.94 0.95 (widest gap 0.27 -> 0.38)
+#   autopsia (2026-11-16), 62 hits: 25 hits at 0.04-0.28 (the build() splat functions 0.07-0.17, _assignment_log_weight / _hidden_p1_cuda
+#   0.22), then 0.33 0.33 0.33 0.35 0.37 0.37 0.39 0.43 0.47 ... (gap 0.28 -> 0.33).
+# 0.30 falls in the gap of both corpora. Hits below it were never inlined helpers in either sample; a real inlined helper is a material part of
+# the function that absorbed it.
+_MIN_SUBSET_COVERAGE = 0.30
+
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*|[^\sA-Za-z0-9_]")
 
 # Candidate-generation shingle size, in tokens of the structural AST dump (not source tokens).
@@ -197,6 +207,20 @@ def _shingles(tokens: tuple[str, ...], k: int = _SHINGLE_SIZE) -> set[int]:
     return {hash(window) for window in zip(*(tokens[i:] for i in range(k)))}
 
 
+_SPLAT_NODES = (ast.List, ast.Tuple, ast.Set, ast.Starred, ast.Name, ast.Attribute, ast.Constant, ast.Load, ast.BinOp, ast.Add, ast.BitOr)
+
+
+def _is_data_splat_body(body: list) -> bool:
+    """True when the body is one ``return``/expression that only assembles module-level data: starred or plain names, attributes and
+    literals joined in a list/tuple/set or by ``+``/``|``, with no call. ``return [*ROWS_A, *ROWS_B]`` is structurally identical to
+    ``return [*ROWS_C, *ROWS_D]`` while meaning different data, so token similarity says nothing about copy-paste there."""
+    if len(body) != 1 or not isinstance(body[0], (ast.Return, ast.Expr)) or body[0].value is None:
+        return False
+    value = body[0].value
+    nodes = list(walk_nodes(value))
+    return any(isinstance(n, ast.Name) for n in nodes) and all(isinstance(n, _SPLAT_NODES) for n in nodes)
+
+
 def _collect_entries(
     root: Path,
     exclude_dirs: frozenset[str],
@@ -215,7 +239,7 @@ def _collect_entries(
             if node.name.startswith("__") and node.name.endswith("__"):
                 continue
             body = _stripped_body(node)
-            if _node_count(body) < min_nodes:
+            if _node_count(body) < min_nodes or _is_data_splat_body(body):
                 continue
             normalized = _normalized_body(body)
             if not normalized:
@@ -338,8 +362,14 @@ def _subset_finding(
     len_i: int,
     len_j: int,
     containment: float,
+    coverage: float,
 ) -> _Optional[Finding]:
-    """Build the subset finding when the shorter body sits verbatim inside the longer one, or None for a suppressed pair."""
+    """Build the subset finding when the shorter body sits verbatim inside the longer one, or None for a suppressed pair.
+
+    ``coverage`` is the share of the longer body the match accounts for; below ``_MIN_SUBSET_COVERAGE`` the hit is a shared idiom. The
+    finding sits on the container's ``def`` line and honours ``# audit-exempt: duplicate_function_body_subset -- <reason>`` there."""
+    if coverage < _MIN_SUBSET_COVERAGE:
+        return None
     # Whichever body is SHORTER is the one (near-)wholly embedded in the longer one.
     if len_i <= len_j:
         sub_node, sub_rel = node_i, rel_i
@@ -348,6 +378,8 @@ def _subset_finding(
         sub_node, sub_rel = node_j, rel_j
         sup_node, sup_src, sup_rel = node_i, src_i, rel_i
 
+    if is_line_exempt(sup_src, sup_node.lineno, "duplicate_function_body_subset"):
+        return None
     if _delegates_to_shared_helper(sub_node, sup_node):
         return None  # both funnel through one already-shared helper -- see docstring
     if _is_deprecated_alias_boilerplate(sub_node) and _is_deprecated_alias_boilerplate(sup_node):
@@ -402,7 +434,7 @@ def _pair_finding(
     if ratio >= min_similarity:
         return _near_duplicate_finding(rel_i, rel_j, node_i, node_j, src_j, ratio)
     if containment >= min_containment:
-        return _subset_finding(rel_i, rel_j, node_i, node_j, src_i, src_j, len_i, len_j, containment)
+        return _subset_finding(rel_i, rel_j, node_i, node_j, src_i, src_j, len_i, len_j, containment, matched / max(len_i, len_j))
     return None
 
 
