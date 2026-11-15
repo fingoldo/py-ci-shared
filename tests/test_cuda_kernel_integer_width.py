@@ -203,3 +203,57 @@ def test_the_assert_honours_a_baseline(tmp_path, monkeypatch):
     (root / "n.py").write_bytes(_mod("    long b = 0;"))
     with pytest.raises(pytest.fail.Exception):
         _assert(root, baseline_path=baseline)
+
+
+# ---- round 2026-11-16 (finding ids 53-T9, 53-T10) ----
+
+
+@pytest.mark.parametrize("marker", ["// width-ok:", "// width-ok:   ", "// width-ok:\t"])
+def test_53_t9_a_marker_without_a_reason_does_not_suppress(tmp_path, marker):
+    assert [f.rule for f in _found(tmp_path, f"    long a = 0; {marker}")] == [RULE_LONG]
+    assert [f.rule for f in _found(tmp_path / "x", f"    {marker}\n    long a = 0;")] == [RULE_LONG]
+    assert _found(tmp_path / "y", f"    {marker} warp lane id\n    long a = 0;") == []
+
+
+def test_53_t9_an_empty_python_marker_does_not_suppress(tmp_path):
+    empty = b'K_SRC = """__global__ void k() { long a = 0; }"""  # width-ok:\n'
+    assert len(_find(_corpus(tmp_path, {"m.py": empty}))) == 1
+
+
+@pytest.mark.parametrize(
+    "decl",
+    ["size_t idx = n * m;", "long long off = rows * cols;", "unsigned long long base = n_rows * stride;", "size_t pos = blockIdx.x * n_cols;"],
+)
+def test_53_t10_a_wide_variable_initialised_by_a_product_of_two_ints_is_reported(tmp_path, decl):
+    """`size_t idx = n * m;` multiplies in 32 bits when both are `int`."""
+    body = "    int n = 1, m = 2, rows = 3, cols = 4, n_rows = 5, stride = 6, n_cols = 7;\n    " + decl
+    assert [f.rule for f in _found(tmp_path, body)] == [RULE_PRODUCT]
+
+
+@pytest.mark.parametrize(
+    "decl",
+    [
+        "size_t idx = (size_t)n * m;",
+        "size_t idx = n * 4;",
+        "size_t idx = blockIdx.x * blockDim.x + threadIdx.x;",
+        "size_t idx = big * m;",
+        "size_t total = n * m;",
+    ],
+)
+def test_53_t10_a_wide_product_with_a_cast_a_literal_a_wide_operand_or_a_size_name_is_not_reported(tmp_path, decl):
+    body = "    int n = 1, m = 2;\n    size_t big = 9;\n    " + decl
+    assert _found(tmp_path, body) == []
+
+
+def test_53_t10_a_wide_operand_declared_in_the_signature_is_not_an_int(tmp_path):
+    src = b'K_SRC = """__global__ void k(const size_t n, const int m) { size_t idx = n * m; }"""\n'
+    assert _find(_corpus(tmp_path, {"m.py": src})) == []
+    src2 = b'K_SRC = """__global__ void k(const int n, const int m) { size_t idx = n * m; }"""\n'
+    assert [f.rule for f in _find(_corpus(tmp_path / "b", {"m.py": src2}))] == [RULE_PRODUCT]
+
+
+def test_53_t10_a_long_inside_a_string_literal_is_not_a_type(tmp_path):
+    """`printf("a long way")` is text; a `long` next to it is still a finding."""
+    assert _found(tmp_path, '    printf("a long way %d", n);') == []
+    assert [f.line for f in _found(tmp_path / "b", '    printf("a long way"); long x = 0;')] == [3]
+    assert _found(tmp_path / "c", "    char c = 'x'; int tile = 1;") == []

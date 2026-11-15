@@ -7,3 +7,7 @@ from mylib import set_numba_random_seed
 def seed_restore():
     seed = struct.unpack("<Q", os.urandom(8))[0] & ((1 << 63) - 1)
     set_numba_random_seed(seed)
+
+
+def seed_reasoned_marker():
+    set_numba_random_seed(struct.unpack("<Q", os.urandom(8))[0])  # seed-range-ok: this build types the seed as uint64

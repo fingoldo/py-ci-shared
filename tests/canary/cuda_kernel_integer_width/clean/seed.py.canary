@@ -6,8 +6,20 @@ extern "C" __global__ void seed_gather(const float* X, float* out, int n_cols) {
     const float* row = X + (long long)i * n_cols;
     long double scale = 1.0;
     int tile = 4 * 8;
+    printf("a long way %d", i);
     out[i] = row[0];
 }
 """
 
 seed_kernel = cp.RawKernel(SEED_SRC, "seed_gather")
+
+REVIEWED_CODE = r"""
+extern "C" __global__ void seed_reviewed(const float* X, float* out, int n_rows, int n_cols, const size_t big) {
+    long lane = 0;  // width-ok: warp lane id, never above 31
+    int idx = (int)((long long)n_rows * n_cols);
+    size_t base = (size_t)n_rows * n_cols;
+    size_t wide = base * n_cols;
+    size_t off = big * n_cols;
+    out[lane] = X[idx] + X[base] + X[wide] + X[off];
+}
+"""

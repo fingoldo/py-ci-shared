@@ -1,8 +1,43 @@
 ﻿import time
 import cupy as cp
+from mykernels import imported_kern
 
 
 def seed_measure(a, b):
     t0 = time.perf_counter()
     cp.matmul(a, b)
+    return time.perf_counter() - t0
+
+
+KERNEL = cp.RawKernel("extern \"C\" __global__ void k(float* x) {}", "k")
+
+
+def seed_rawkernel_var(x, n, grid, args):
+    t0 = time.perf_counter()
+    KERNEL(grid, (256,), args)
+    return time.perf_counter() - t0
+
+
+def seed_imported_launch(x, n):
+    t0 = time.perf_counter()
+    imported_kern((n,), (256,), (x, n))
+    return time.perf_counter() - t0
+
+
+def seed_get_function_inline(module, grid, args):
+    t0 = time.perf_counter()
+    module.get_function("k")(grid, (256,), args)
+    return time.perf_counter() - t0
+
+
+def seed_bare_marker(a, b):
+    t0 = time.perf_counter()
+    cp.matmul(a, b)  # gpu-timing-async-intentional
+    return time.perf_counter() - t0
+
+
+def seed_misnamed_sync(a, b, log):
+    t0 = time.perf_counter()
+    cp.matmul(a, b)
+    log.synchronize_with_remote()
     return time.perf_counter() - t0

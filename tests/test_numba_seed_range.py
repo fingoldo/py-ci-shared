@@ -118,6 +118,7 @@ def test_non_numba_sinks_and_marker_are_not_flagged(tmp_path: Path, call: str) -
 
 def test_tests_skipped_by_default(tmp_path: Path) -> None:
     _write(tmp_path, "tests/h.py", "def f():\n    set_numba_random_seed(random.getrandbits(64))\n")
+    _write(tmp_path, "ok.py", "x = 1\n")  # find_ now has a min_files floor (53-T12): a corpus of only skipped tests parses zero files
     assert _found(tmp_path) == []
     assert len(_found(tmp_path, include_tests=True)) == 1
 
@@ -153,3 +154,29 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
     _write(src, "m.py", "def f():\n    set_numba_random_seed(random.getrandbits(64))\n    set_numba_random_seed(random.getrandbits(64))\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_numba_seeds_fit_int64(src, baseline_path=baseline, refresh=False, use_git=False)
+
+
+# --- round 2026-11-16 (audit 53-T9, 53-T12) -------------------------------------------------------------------------------------------------------
+
+
+def test_seed_marker_without_a_reason_does_not_suppress(tmp_path):
+    """53-T9: `# seed-range-ok` with nothing after it is not a review."""
+    _write(tmp_path, "m.py", 'set_numba_random_seed(struct.unpack("<Q", os.urandom(8))[0])  # seed-range-ok\n')
+    assert len(_found(tmp_path)) == 1
+    _write(tmp_path, "m.py", 'set_numba_random_seed(struct.unpack("<Q", os.urandom(8))[0])  # seed-range-ok:\n')
+    assert len(_found(tmp_path)) == 1
+
+
+def test_find_takes_min_files_and_allow_unparsed(tmp_path):
+    """53-T12: the entry contract every other gate has."""
+    from py_ci_shared._core import EmptyScanError
+
+    with pytest.raises(EmptyScanError):
+        find_wide_numba_seeds(tmp_path, use_git=False)
+    _write(tmp_path, "ok.py", "x = 1\n")
+    (tmp_path / "bad.py").write_text("def (:\n", encoding="utf-8")
+    assert [f.rule for f in find_wide_numba_seeds(tmp_path, use_git=False)] == ["unparsed-file"]
+    assert find_wide_numba_seeds(tmp_path, use_git=False, allow_unparsed=True) == []
+    assert_numba_seeds_fit_int64(tmp_path, use_git=False, allow_unparsed=True)
+    with pytest.raises(EmptyScanError):
+        find_wide_numba_seeds(tmp_path, use_git=False, min_files=5, allow_unparsed=True)

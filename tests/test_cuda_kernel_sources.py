@@ -132,3 +132,40 @@ def test_module_str_constant_names_the_file_and_constant_it_cannot_read(tmp_path
     file.write_text(_lines('HELPERS = "x"', 'USED = HELPERS + "y"'), encoding="utf-8")
     with pytest.raises(KeyError, match=name):
         module_str_constant(file, name)
+
+
+# --- round 2026-11-16 (audit 53-T6) ---------------------------------------------------------------------------------------------------------------
+
+
+def test_inline_rawkernel_argument_in_a_return_is_extracted(tmp_path):
+    """53-T6: a source written inline in the constructor call, with no assignment, is keyed by the enclosing function."""
+    body = 'import cupy as cp\n\ndef build():\n    return cp.RawKernel("""extern "C" __global__ void inl(float* x) { x[0] = 1; }""", "inl")\n'
+    found = _find(_corpus(tmp_path, {"m.py": body}))
+    assert list(found) == ["m.py::build"] and "void inl" in found["m.py::build"]
+
+
+def test_inline_sources_of_every_constructor_kind(tmp_path):
+    body = (
+        "import cupy as cp\n\n"
+        "def a():\n    return cp.RawModule(code='__global__ void ma(float* x) {}')\n\n"
+        "def b():\n    return cp.RawKernel(code='__global__ void mb(float* x) {}', name='mb')\n\n"
+        "def c():\n    helper(cp.RawKernel('__global__ void mc(float* x) {}', 'mc'))\n"
+    )
+    assert list(_find(_corpus(tmp_path, {"m.py": body}))) == ["m.py::a", "m.py::b", "m.py::c"]
+
+
+def test_an_assigned_inline_source_is_not_extracted_twice(tmp_path):
+    root = _corpus(tmp_path, {"m.py": 'import cupy as cp\nK = cp.RawKernel("__global__ void k(float* x) {}", "k")\n'})
+    assert list(_find(root)) == ["m.py::K"]
+
+
+def test_a_source_concatenated_from_module_constants_is_joined(tmp_path):
+    """53-T6: `SRC = HEAD + BODY` is one kernel, not the half in HEAD."""
+    body = "HEAD = '__global__ void parts(float* x) {'\nBODY = ' x[0] = 1; }'\nSRC = HEAD + BODY\n"
+    found = _find(_corpus(tmp_path, {"m.py": body}))
+    assert found["m.py::SRC"] == "__global__ void parts(float* x) { x[0] = 1; }"
+
+
+def test_a_concatenation_with_an_unresolvable_name_keeps_the_literals_it_has(tmp_path):
+    body = "SRC = '__global__ void parts(float* x) {' + other_module.TAIL\n"
+    assert _find(_corpus(tmp_path, {"m.py": body})) == {"m.py::SRC": "__global__ void parts(float* x) {"}

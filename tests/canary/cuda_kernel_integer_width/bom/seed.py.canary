@@ -18,3 +18,27 @@ extern "C" __global__ void seed_scatter(float* out, int n_cols) {
 """
 
 seed_scatter = cp.RawKernel(SEED_UNSIGNED_CODE, "seed_scatter")
+
+# the advisory product rule: an int index built from two sizes
+PRODUCT_CODE = r"""
+extern "C" __global__ void seed_product(const float* X, float* out, int n_rows, int n_cols) {
+    int idx = n_rows * n_cols;
+    out[0] = X[idx];
+}
+"""
+
+# 53-T10: a wide variable initialised by a product of two 32-bit ints
+WIDE_CODE = r"""
+extern "C" __global__ void seed_wide(const float* X, float* out, const int n_rows, const int n_cols) {
+    size_t base = n_rows * n_cols;
+    out[0] = X[base];
+}
+"""
+
+# 53-T9: a marker with no reason does not suppress
+EMPTY_CODE = r"""
+extern "C" __global__ void seed_empty(float* out) {
+    long lane = 0;  // width-ok:
+    out[lane] = 1.0f;
+}
+"""

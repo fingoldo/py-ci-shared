@@ -1,0 +1,21 @@
+import cupy as cp
+from pyutilz.performance.gpu_hw_launch import block_size_for
+
+_SRC = r"""
+extern "C" __global__ void rowsum(const double* x, double* out, int n) {
+    __shared__ double sh[256];
+    int tid = threadIdx.x, nt = blockDim.x;
+    double v = 0.0;
+    for (int i = tid; i < n; i += nt) v += x[i];
+    sh[tid] = v;
+    __syncthreads();
+    for (int s = nt >> 1; s > 0; s >>= 1) { if (tid < s) sh[tid] += sh[tid + s]; __syncthreads(); }
+    if (tid == 0) out[blockIdx.x] = sh[0];
+}
+"""
+
+
+def run(x, out, n):
+    kernel = cp.RawKernel(_SRC, "rowsum")
+    threads = block_size_for(kernel, work_items=n, pow2=True)
+    kernel((1,), (threads,), (x, out, n))

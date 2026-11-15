@@ -1,0 +1,22 @@
+from pyutilz.performance.kernel_tuning.registry import kernel_tuner
+
+_SPEC = kernel_tuner(
+    kernel_name="pair_mi",
+    variant_fns=(pair_mi_njit,),
+    tuner=_sweep,
+    axes={"n": [1000, 10000]},
+    fallback=_fallback,
+    gpu_capable=True,
+    residencies=(("host", "host"), ("device", "device")),
+)
+
+_RANK = kernel_tuner(
+    kernel_name="rank_bin",
+    variant_fns=(rank_bin_njit,),
+    tuner=_sweep,
+    axes={"n": [1000]},
+    fallback=_fallback,
+    gpu_capable=True,  # residency-ok: the only caller holds host codes and consumes host results, so host-in / host-out is the one boundary
+)
+
+_CPU = kernel_tuner(kernel_name="cpu_only", variant_fns=(f,), tuner=_sweep, axes={"n": [1]}, fallback=_fallback)

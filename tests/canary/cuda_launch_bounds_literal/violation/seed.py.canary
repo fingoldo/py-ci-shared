@@ -1,0 +1,6 @@
+SRC_A = """
+__global__ void __launch_bounds__(256, 8) seed_a(float* x) {}
+"""
+SRC_B = """
+__global__ void __launch_bounds__(MLF_T, 4) seed_b(float* x) {}
+"""

@@ -7,6 +7,28 @@ extern "C" __global__ void seed_argmax(const double* __restrict__ M, const long 
 }
 """
 
+# 53-T1: the register-tuned spelling used to be skipped silently
+BOUNDS_SRC = r"""
+extern "C" __global__ __launch_bounds__(256) void lb_gather(const double* x, const long long n, double* out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = x[i];
+}
+"""
+
+# 53-T10: a typedef alias, a double2 pointer and an array parameter
+ALIAS_SRC = r"""
+typedef double real;
+extern "C" __global__ void alias_k(const real* x, const long long n) { }
+extern "C" __global__ void vec_k(const double2* x, const long long n) { }
+extern "C" __global__ void array_k(const double x[], const long long n) { }
+"""
+
+# 53-T9: a marker with no reason is not a review
+EMPTY_SRC = r"""
+// dtype-ok:
+extern "C" __global__ void empty_reason_k(const double* x, const long long n) { }
+"""
+
 seed_kernel = cp.RawKernel(SEED_SRC, "seed_argmax")
 
 

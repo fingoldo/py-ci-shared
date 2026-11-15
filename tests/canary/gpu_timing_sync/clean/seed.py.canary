@@ -7,3 +7,25 @@ def seed_measure(a, b):
     cp.matmul(a, b)
     cp.cuda.runtime.deviceSynchronize()
     return time.perf_counter() - t0
+
+
+KERNEL = cp.RawKernel("extern \"C\" __global__ void k(float* x) {}", "k")
+
+
+def seed_dict_dispatch(table, key, x):
+    t0 = time.perf_counter()
+    table[key](x)
+    return time.perf_counter() - t0
+
+
+def seed_kernel_synced(x, n, ev):
+    t0 = time.perf_counter()
+    KERNEL((n,), (256,), (x, n))
+    ev.synchronize()
+    return time.perf_counter() - t0
+
+
+def seed_reasoned_marker(a, b):
+    t0 = time.perf_counter()
+    cp.matmul(a, b)  # gpu-timing-async-intentional: launch latency is the quantity under test
+    return time.perf_counter() - t0

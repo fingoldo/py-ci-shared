@@ -1,0 +1,13 @@
+import numpy as np
+
+
+def test_gpu_matches_cpu():
+    x = np.random.default_rng(0).normal(size=1000)
+    assert np.allclose(score_gpu(x), score_cpu(x))
+
+
+def test_cuda_equals_njit_for_every_size():
+    rng = np.random.default_rng(7)
+    for n in (1, 31, 33, 1025):
+        x = rng.normal(size=n)
+        assert np.allclose(mi_cuda(x), mi_njit(x))

@@ -1,0 +1,22 @@
+import cupy as cp
+
+# alias, nested-subscript, atomic and cast shapes that the gate must not report
+OK_SRC = r"""
+extern "C" __global__ void axpy(const float* __restrict__ x, float* __restrict__ y, int* h, const int* c, const int* col_off, int* counts,
+                                double* va, double* tr, double* out, const int n, const int is_val, const int p, const int rem) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) y[i] = 2.0f * x[i] + y[i];
+    atomicAdd(&h[c[i]], 1);
+    counts[(long long)p * n + col_off[c[i]] + rem] = 1;
+    const double* d = (is_val ? va : tr) + i;
+    out[i] = d[0];
+}
+"""
+
+NOTED_SRC = r"""
+// const-ok: the signature is shared with a variant that writes it
+extern "C" __global__ void shared_sig(int* a, int* o) { o[0] = a[0]; }
+"""
+
+k1 = cp.RawKernel(OK_SRC, "axpy")
+k2 = cp.RawKernel(NOTED_SRC, "shared_sig")

@@ -1,0 +1,9 @@
+_STAT_BLOCKS = 64  # grid-ok: the consumer reduces exactly this many partials
+
+
+def run(kernel, x, out, n, dev):
+    sms = dev.multiProcessorCount
+    kernel((min(8 * sms, (n + 255) // 256), 3), (256,), (x, out, n))
+    blocks = max(1, min(32, n // 256))  # grid-ok: one block per tile, 32 tiles is the layout
+    kernel((blocks,), (256,), (x, out, n))
+    kernel((_STAT_BLOCKS,), (256,), (x, out, n))

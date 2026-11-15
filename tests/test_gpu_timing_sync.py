@@ -372,3 +372,90 @@ def test_a_host_copy_method_ends_the_timed_region_like_a_sync(tmp_path: Path) ->
     assert _measure(tmp_path, "r = cp.matmul(a, b)", "r.cpu()") == []
     assert _measure(tmp_path, "r = cp.matmul(a, b)", "r.item()") == []
     assert [f.shape for f in _measure(tmp_path, "r = cp.matmul(a, b)", "r.shape")] == ["direct-gpu-call"]
+
+
+# --- round 2026-11-16 (audit 53-T2, 53-T3, 53-T9) -------------------------------------------------------------------------------------------------
+
+
+def _shapes(tmp_path: Path, body: str) -> list:
+    return [f.shape for f in find_unsynchronized_gpu_timings([_write(tmp_path, "m.py", body)])]
+
+
+_TIMED = """
+import time
+import cupy as cp
+{prelude}
+
+def measure(x, n):
+    t0 = time.perf_counter()
+{work}
+    return time.perf_counter() - t0
+"""
+
+
+def _timed(tmp_path: Path, prelude: str, work: str) -> list:
+    return _shapes(tmp_path, _TIMED.format(prelude=prelude, work="\n".join("    " + line for line in work.splitlines())))
+
+
+_RAW = 'K = cp.RawKernel("src", "k")'
+
+
+def test_launch_through_a_rawkernel_variable_is_flagged(tmp_path: Path) -> None:
+    """53-T2: `K = cp.RawKernel(...)`, then `K((n,), (256,), (x, n))` between two timer reads is device work."""
+    assert _timed(tmp_path, _RAW, "K((n,), (256,), (x, n))") == ["direct-gpu-call"]
+
+
+def test_launch_through_an_imported_kernel_is_flagged(tmp_path: Path) -> None:
+    """53-T2: the `(grid_tuple, block_tuple, args)` call shape is a launch whatever the callee is called."""
+    assert _timed(tmp_path, "from mykernels import kern", "kern((n,), (256,), (x, n))") == ["direct-gpu-call"]
+
+
+def test_loose_launch_with_grid_in_a_name_is_flagged_for_a_known_kernel(tmp_path: Path) -> None:
+    """53-T2: `K(grid, (256,), args)` where K is bound to a RawKernel."""
+    assert _timed(tmp_path, _RAW, "grid = (n,)\nK(grid, (256,), (x, n))") == ["direct-gpu-call"]
+
+
+def test_call_of_a_kernel_object_built_from_get_function_is_flagged(tmp_path: Path) -> None:
+    """53-T2: `f = module.get_function("k")` is a kernel object, and so are ElementwiseKernel/ReductionKernel values."""
+    prelude = 'mod = cp.RawModule(code="src")\nk1 = mod.get_function("k")\newise = cp.ElementwiseKernel("T x", "T y", "y = x", "e")'
+    assert _timed(tmp_path, prelude, "k1((n,), (256,), (x, n))") == ["direct-gpu-call"]
+    assert _timed(tmp_path, prelude, "ewise(x)") == ["direct-gpu-call"]
+
+
+def test_launch_through_get_function_called_inline_is_flagged(tmp_path: Path) -> None:
+    """53-T2: the form mlframe writes, `module.get_function("k")((g,), (b,), args)`."""
+    assert _timed(tmp_path, "mod = cp.RawModule(code='s')", 'mod.get_function("k")((n,), (256,), (x, n))') == ["direct-gpu-call"]
+
+
+def test_kernel_launch_followed_by_a_device_sync_is_clean(tmp_path: Path) -> None:
+    assert _timed(tmp_path, _RAW, "K((n,), (256,), (x, n))\ncp.cuda.Device().synchronize()") == []
+
+
+def test_an_ordinary_call_is_not_gpu_work(tmp_path: Path) -> None:
+    assert _timed(tmp_path, "", "helper(x, n)") == []
+
+
+def test_dict_dispatch_between_timer_reads_is_not_gpu_work(tmp_path: Path) -> None:
+    """53-T3: `d[k](x)` is a dict of callables, not a numba launch (that has `[blocks, threads]`)."""
+    assert _timed(tmp_path, "d = {}", "d[n](x)") == []
+
+
+def test_numba_launch_subscript_is_still_gpu_work(tmp_path: Path) -> None:
+    assert _timed(tmp_path, "", "kern[n, 256](x)") == ["direct-gpu-call"]
+
+
+def test_a_synchronize_with_a_non_device_receiver_does_not_end_the_region(tmp_path: Path) -> None:
+    """53-T3: `log.synchronize_with_remote()` is not a device barrier."""
+    assert _timed(tmp_path, "", "cp.matmul(x, x)\nlog.synchronize_with_remote()") == ["direct-gpu-call"]
+
+
+def test_device_flavoured_sync_names_still_end_the_region(tmp_path: Path) -> None:
+    for call in ("ev.synchronize()", "stream.synchronize()", "synchronize_gpu_if_available()", "self._gpu_synchronize()", "cp.cuda.runtime.deviceSynchronize()"):
+        assert _timed(tmp_path, "", f"cp.matmul(x, x)\n{call}") == [], call
+
+
+def test_marker_without_a_reason_does_not_suppress(tmp_path: Path) -> None:
+    """53-T9: the marker is the review; a bare marker is not."""
+    assert _timed(tmp_path, "", "cp.matmul(x, x)  # gpu-timing-async-intentional") == ["direct-gpu-call"]
+    assert _timed(tmp_path, "", "cp.matmul(x, x)  # gpu-timing-async-intentional:") == ["direct-gpu-call"]
+    assert _timed(tmp_path, "", "cp.matmul(x, x)  # gpu-timing-async-intentional: measuring launch latency") == []

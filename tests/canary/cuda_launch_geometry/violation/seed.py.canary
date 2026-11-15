@@ -13,3 +13,7 @@ def run(kernel, x, out, n):
 
 async def run_async(kernel, x, out, n):
     kernel((n // 512 + 1,), (512,), (x, out, n))
+
+
+def run_bare_marker(kernel, x, out, n):
+    kernel((n // 64 + 1,), (64,), (x, out, n))  # launch-ok:

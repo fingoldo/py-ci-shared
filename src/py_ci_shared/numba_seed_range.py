@@ -17,7 +17,7 @@ name assigned from, a value that can reach ``2**63``:
   ``np.iinfo(np.uint64).max``) or ``dtype=np.uint64``.
 
 A value masked to 63 bits (``& ((1 << 63) - 1)``, ``& _SEED_MASK``, ``% 2**63``, ``>> 1``) is safe; ``int(...)``
-around a wide value does not narrow it. A line carrying ``# seed-range-ok`` is an explicit opt-out.
+around a wide value does not narrow it. A line carrying ``# seed-range-ok: <reason>`` is an explicit opt-out; the marker without a reason does not suppress.
 
 Usage::
 
@@ -45,6 +45,7 @@ __all__ = ["RULE", "REFRESH_FLAG", "find_wide_numba_seeds", "assert_numba_seeds_
 RULE = "numba-seed-exceeds-int64"
 REFRESH_FLAG = "--refresh-numba-seed-range-baseline"
 MARKER = "seed-range-ok"
+_MARKER_WITH_REASON = re.compile(re.escape(MARKER) + r"(?![\w-])[\s:\u2013\u2014\-]*[^\s:#\u2013\u2014\-]")  # the reason is the review (audit 53-T9)
 INT64_LIMIT = 2**63
 _SINK_NAME = re.compile(r"(?i)seed")
 _NUMBA_NAME = re.compile(r"(?i)numba|njit|(?:^|_)nb(?:_|$)")
@@ -220,8 +221,14 @@ class _FileCheck:
         short = name.rsplit(".", 1)[-1]
         return short in self.njit_seeders or bool(_SINK_NAME.search(short) and _NUMBA_NAME.search(name))
 
+    def _suppressed(self, lineno: int) -> bool:
+        if not line_has_marker(self.lines, lineno, MARKER):
+            return False
+        line = self.lines[lineno - 1]
+        return bool(_MARKER_WITH_REASON.search(line[line.index(MARKER) :]))
+
     def _check(self, call: ast.Call, scopes: list[int]) -> None:
-        if not self._is_sink(call) or line_has_marker(self.lines, call.lineno, MARKER):
+        if not self._is_sink(call) or self._suppressed(call.lineno):
             return
         short = _call_name(call, self.aliases).rsplit(".", 1)[-1]
         for arg in [*call.args, *(k.value for k in call.keywords)]:
@@ -238,12 +245,22 @@ def _file_findings(parsed: ParsedFile) -> list[Finding]:
 
 
 def find_wide_numba_seeds(
-    root: Union[str, Path], *, skip_dir_names: Iterable[str] = (), include_tests: bool = False, use_git: Optional[bool] = None
+    root: Union[str, Path],
+    *,
+    skip_dir_names: Iterable[str] = (),
+    include_tests: bool = False,
+    use_git: Optional[bool] = None,
+    min_files: int = 1,
+    allow_unparsed: bool = False,
 ) -> list[Finding]:
     """Every numba seeding call that can receive a value ``>= 2**63`` under *root*, plus one ``unparsed-file``
-    finding per unparsable file."""
+    finding per unparsable file (none with *allow_unparsed*).
+
+    Raises ``EmptyScanError`` when fewer than *min_files* files parsed: a gate that does not reach the code must not pass it."""
     findings, scan = collect_findings(root, skip_dir_names=skip_dir_names, include_tests=include_tests, use_git=use_git, file_findings=_file_findings)
-    return findings + scan.unparsed_findings()
+    scan.min_files = min_files
+    scan.check_floor()
+    return findings if allow_unparsed else findings + scan.unparsed_findings()
 
 
 def assert_numba_seeds_fit_int64(
@@ -252,6 +269,7 @@ def assert_numba_seeds_fit_int64(
     skip_dir_names: Iterable[str] = (),
     include_tests: bool = False,
     min_files: int = 1,
+    allow_unparsed: bool = False,
     baseline_path: Optional[Union[str, Path]] = None,
     refresh: Optional[bool] = None,
     request: Optional[Any] = None,
@@ -272,4 +290,5 @@ def assert_numba_seeds_fit_int64(
         baseline_path=baseline_path,
         refresh=refresh,
         request=request,
+        allow_unparsed=allow_unparsed,
     )

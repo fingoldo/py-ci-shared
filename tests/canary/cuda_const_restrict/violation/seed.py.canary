@@ -1,0 +1,19 @@
+import cupy as cp
+
+INT_SRC = r"""
+extern "C" __global__ void mi_read(const int* c, int* joint_ro, double* tot, const int n) {
+    double t = 0.0;
+    for (int i = 0; i < n; ++i) t += joint_ro[i] * c[i];
+    tot[0] = t;
+}
+"""
+
+FLOAT_SRC = r"""
+extern "C" __global__ void axpy_read(float* __restrict__ x_ro, float* __restrict__ y, const int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) y[i] = 2.0f * x_ro[i] + y[i];
+}
+"""
+
+k1 = cp.RawKernel(INT_SRC, "mi_read")
+k2 = cp.RawKernel(FLOAT_SRC, "axpy_read")

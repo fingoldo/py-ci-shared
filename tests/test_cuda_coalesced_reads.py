@@ -210,3 +210,100 @@ def test_a_warp_index_taken_from_a_thread_variable_is_not_a_thread_stride():
         "    for (int w = warp; w < W; w += nw) { out[lane] += ybits[(long long)w * P + lane]; }\n}\n"
     )
     assert uncoalesced_kernels(_src(kernel)) == []
+
+
+# ---- round 2026-11-16 (finding ids 53-T4, 53-T5) ----
+
+_HEAD = 'extern "C" __global__ void k(const float* X, const int* idx, int n, int n_feat, float* out) {\n'
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "float v = X[threadIdx.x * n_feat];",
+        "float v = X[threadIdx.x * n_feat + 3];",
+        "float v = X[n_feat * threadIdx.x];",
+        "const float* row = X + i * n_feat; float v = row[3];",
+        "const float* row = X + (long long)i * n_feat; float v = row[3];",
+        "float v = X[idx[i] * n_feat];",
+        "float v = X[ROW(i) + 3];",
+    ],
+)
+def test_53_t4_the_strided_forms_the_gate_missed_are_reported(line):
+    define = "#define ROW(r) ((r) * n_feat)\n" if "ROW" in line else ""
+    kernel = define + _HEAD + "    int i = blockIdx.x * blockDim.x + threadIdx.x;\n    " + line + "\n    out[i] = v;\n}\n"
+    assert uncoalesced_kernels(_src(kernel)) == [("k", RULE_STRIDED)]
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "float v = X[blockIdx.x * n_feat + threadIdx.x];",
+        "float v = X[threadIdx.x * 4];",
+        "float v = X[threadIdx.y * n_feat + threadIdx.x];",
+        "const float* row = X + blockIdx.x * n_feat; float v = row[threadIdx.x];",
+        "float v = X[i + n_feat];",
+        "float v = X[idx[blockIdx.x] * n_feat + threadIdx.x];",
+    ],
+)
+def test_53_t4_the_nearest_coalesced_forms_stay_clean(line):
+    kernel = _HEAD + "    int i = blockIdx.x * blockDim.x + threadIdx.x;\n    " + line + "\n    out[i] = v;\n}\n"
+    assert uncoalesced_kernels(_src(kernel)) == []
+
+
+def test_53_t4_a_pointer_row_in_shared_memory_is_not_a_global_read():
+    kernel = (
+        _HEAD + "    extern __shared__ float sh[];\n    int i = blockIdx.x * blockDim.x + threadIdx.x;\n"
+        "    float* row = sh + threadIdx.x * n_feat; float v = row[3];\n    out[i] = v;\n}\n"
+    )
+    assert uncoalesced_kernels(_src(kernel)) == []
+
+
+_COMMENTED = '# extern "C" __global__ void fake(const float* X, int n) { int i = threadIdx.x; float v = X[i * n]; }\n'
+
+
+def test_53_t5_a_python_comment_holding_a_kernel_is_not_a_kernel(tmp_path):
+    root = _corpus(tmp_path, {"m.py": (_COMMENTED + "x = 1\n").encode()})
+    assert _find(root) == []
+
+
+def test_53_t5_the_line_is_the_kernels_own_not_the_first_occurrence_of_its_name(tmp_path):
+    text = "# k is the gather kernel\nNAME = 'k'\n\n" + _src(STRIDED_LOOP)
+    found = _find(_corpus(tmp_path, {"m.py": text.encode()}))
+    assert [(f.line, f.rule) for f in found] == [(5, RULE_STRIDED)]
+
+
+def test_53_t5_two_kernels_of_one_name_in_one_file_have_distinct_keys(tmp_path):
+    text = _src(STRIDED_LOOP) + _src(STRIDED_LOOP).replace("SRC", "SRC2")
+    found = _find(_corpus(tmp_path, {"m.py": text.encode()}))
+    assert [f.key for f in found] == ["m.py::k", "m.py::k#2"]
+    assert len({f.line for f in found}) == 2
+
+
+def test_53_t5_one_baseline_entry_no_longer_accepts_two_same_named_kernels(tmp_path):
+    text = _src(STRIDED_LOOP) + _src(STRIDED_LOOP).replace("SRC", "SRC2")
+    root = _corpus(tmp_path, {"m.py": text.encode()})
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        '{"schema": 1, "gate": "cuda_coalesced_reads", "entries": {"m.py::k": {"count": 1, "note": "kept: small matrix that sits in cache"}}}', encoding="utf-8"
+    )
+    with pytest.raises(BaseException, match=r"(?s)1 new finding.*m.py:10"):
+        assert_cuda_coalesced_reads(root, baseline_path=baseline, use_git=False)
+
+
+def test_53_t5_a_kernel_in_a_cupy_call_argument_is_scanned(tmp_path):
+    text = "import cupy as cp\n\n\ndef make():\n    return cp.RawKernel(" + repr(STRIDED_LOOP) + ", 'k')\n"
+    found = _find(_corpus(tmp_path, {"m.py": text.encode()}))
+    assert [f.rule for f in found] == [RULE_STRIDED]
+
+
+def test_53_t4_a_row_pointer_into_a_cast_shared_alias_is_not_a_global_read():
+    """``int* sh = (int*)smem; int* t = sh + tid * M; t[c]`` is shared memory (found by the mlframe corpus run: `mm_nek_tile`)."""
+    kernel = (
+        'extern "C" __global__ void k(const int* X, int M, int* out) {\n'
+        "    extern __shared__ char smem[];\n    int* sh = (int*)smem;\n    int tid = threadIdx.x;\n"
+        "    int* t = sh + tid * M;\n    out[tid] = t[3];\n}\n"
+    )
+    assert uncoalesced_kernels(_src(kernel)) == []
+    cast_paren = kernel.replace("int* sh = (int*)smem;", "float* sh = (float*)(smem + 4);")
+    assert uncoalesced_kernels(_src(cast_paren)) == []

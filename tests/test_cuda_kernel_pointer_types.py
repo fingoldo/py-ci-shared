@@ -156,3 +156,72 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     (root / "n.py").write_bytes(_kernel(_BARE).replace(b"void k(", b"void other("))
     with pytest.raises(pytest.fail.Exception):
         _assert(root, baseline_path=baseline)
+
+
+# ---- round 2026-11-16 (finding ids 53-T1, 53-T9, 53-T10, 53-T13) ----
+
+
+@pytest.mark.parametrize(
+    "decl",
+    [
+        'extern "C" __global__ __launch_bounds__(256) void k(const double* x, int n) {',
+        'extern "C" __global__ __launch_bounds__(256, 2) void k(const double* x, int n) {',
+        'extern "C" __global__ void __launch_bounds__(256) k(const double* x, int n) {',
+        'extern "C" __global__ __launch_bounds__(THREADS * 2) void k(const double* x, int n) {',
+        'extern "C" __global__ __maxnreg__(64) void k(const double* x, int n) {',
+        'extern "C" static __global__ __launch_bounds__(128) void k(const double* x, int n) {',
+    ],
+)
+def test_53_t1_a_launch_bounds_attribute_does_not_hide_the_kernel(tmp_path, decl):
+    """`__global__ __launch_bounds__(N) void k(const double*)` was skipped silently; the real kernel name is reported in every placement."""
+    found = _find(_corpus(tmp_path, {"m.py": f'K_SRC = r"""\n{decl}\n  out[0] = 1;\n}}\n"""\n'.encode()}))
+    assert [(f.rule, f.line) for f in found] == [(RULE_DOUBLE, 2)]
+    assert "kernel `k`" in found[0].message
+
+
+def test_53_t1_a_templated_launch_bounds_kernel_is_clean(tmp_path):
+    src = b'K_SRC = r"""\nextern "C" __global__ __launch_bounds__(256) void k(const {REAL}* x, int n) {\n}\n"""\n'
+    assert _find(_corpus(tmp_path, {"m.py": src})) == []
+
+
+@pytest.mark.parametrize("marker", ["// dtype-ok:", "// dtype-ok:   ", "// dtype-ok:\t"])
+def test_53_t9_a_marker_without_a_reason_does_not_suppress(tmp_path, marker):
+    assert len(_found(tmp_path, _BARE, lead=marker + "\n")) == 1
+    assert _found(tmp_path / "r", _BARE, lead=marker + " float64 on purpose, a timestamp\n") == []
+
+
+def test_53_t9_an_empty_python_marker_does_not_suppress(tmp_path):
+    empty = b'K_SRC = """__global__ void k(const double* x) { }"""  # dtype-ok:\n'
+    reasoned = b'K_SRC = """__global__ void k(const double* x) { }"""  # dtype-ok: timestamps need float64\n'
+    assert len(_find(_corpus(tmp_path / "a", {"m.py": empty}))) == 1
+    assert _find(_corpus(tmp_path / "b", {"m.py": reasoned})) == []
+
+
+@pytest.mark.parametrize("signature", ["const double2* __restrict__ x, int n", "const double4* x", "const double x[], int n", "double* const x"])
+def test_53_t10_vector_and_array_double_parameters_are_reported(tmp_path, signature):
+    assert [f.rule for f in _found(tmp_path, signature)] == [RULE_DOUBLE]
+
+
+@pytest.mark.parametrize("prelude", ["typedef double real;", "#define real double", "using real = double;"])
+def test_53_t10_a_double_alias_used_as_a_pointer_is_reported(tmp_path, prelude):
+    src = f'K_SRC = r"""\n{prelude}\nextern "C" __global__ void k(const real* x, int n) {{\n}}\n"""\n'.encode()
+    assert [f.rule for f in _find(_corpus(tmp_path, {"m.py": src}))] == [RULE_DOUBLE]
+
+
+def test_53_t10_an_alias_of_a_templated_type_and_an_unused_alias_are_clean(tmp_path):
+    src = b'K_SRC = r"""\ntypedef {REAL} real;\ntypedef double unused_t;\nextern "C" __global__ void k(const real* x, int n) {\n}\n"""\n'
+    assert _find(_corpus(tmp_path, {"m.py": src})) == []
+
+
+def test_53_t13_float32_named_kernels_are_not_advisory_noise(tmp_path):
+    """A kernel whose name says it is the float32 variant (f32 / float / fp32) is deliberately `float*`; an unmarked name still is reported."""
+    for name in ("radix_select_f32", "transpose_float", "gemm_fp32", "bin_codes_f32e_OUT"):
+        src = f'K_SRC = r"""\nextern "C" __global__ void {name}(const float* x, int n) {{\n}}\n"""\n'.encode()
+        assert _find(_corpus(tmp_path / name, {"m.py": src}), include_advisory=True) == []
+    src = b'K_SRC = r"""\nextern "C" __global__ void plain_sum(const float* x, int n) {\n}\n"""\n'
+    assert [f.rule for f in _find(_corpus(tmp_path / "p", {"m.py": src}), include_advisory=True)] == [RULE_FLOAT]
+
+
+def test_53_t13_a_double_pointer_in_an_f32_named_kernel_is_still_a_hard_finding(tmp_path):
+    src = b'K_SRC = r"""\nextern "C" __global__ void sum_f32(const double* x, int n) {\n}\n"""\n'
+    assert [f.rule for f in _find(_corpus(tmp_path, {"m.py": src}))] == [RULE_DOUBLE]

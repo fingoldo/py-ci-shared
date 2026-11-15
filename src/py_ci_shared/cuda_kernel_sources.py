@@ -10,6 +10,11 @@ without CUDA.
   ``NAME#2``, ``NAME#3``, so none is lost to the first.
 * :func:`module_str_constant` reads one module-level string constant by name (a ``__device__`` helper that production compiles in front of a kernel).
 
+* A source written INLINE in a ``RawKernel`` / ``RawModule`` / ``ElementwiseKernel`` / ``ReductionKernel`` call that is not itself the value of an assignment (``return cp.RawKernel(<triple-quoted text>, "k")``, an argument of
+  another call) is keyed by the enclosing function name (``<module>`` at module level), with ``#2``, ``#3`` for further ones in the same function (audit 53-T6).
+* A concatenation whose operands are string literals and module-level string constants (``SRC = HEAD + BODY``) is one source: the operands are joined, so the kernel is not truncated to the literal that holds
+  ``__global__``. A concatenation with an operand this reader cannot resolve (an attribute of another module, a call) keeps the literals it has.
+
 Not found: a kernel assembled from non-literal parts only, and a source in a file under an *exclude* path part (benchmarks, prototypes).
 
 Usage in a consumer's meta test::
@@ -40,17 +45,114 @@ def _target_name(node: "ast.Assign | ast.AnnAssign") -> "Optional[str]":
     return next((t.id for t in targets if isinstance(t, ast.Name)), None) or next((t.attr for t in targets if isinstance(t, ast.Attribute)), None)
 
 
-def _kernel_literals(value: ast.AST) -> "list[str]":
-    """Every string literal in *value* that holds a kernel: constants as written, f-strings with each interpolation replaced by ``{__FSTRING__}``."""
-    literals: "list[str]" = []
+def _literal_nodes(value: ast.AST) -> "list[tuple[ast.AST, str]]":
+    """``(node, text)`` of every string literal in *value* that holds a kernel: constants as written, f-strings with each interpolation replaced by ``{__FSTRING__}``."""
+    literals: "list[tuple[ast.AST, str]]" = []
     for sub in nodes_of(value, ast.Constant, ast.JoinedStr):
         if isinstance(sub, ast.Constant) and isinstance(sub.value, str) and _MARK in sub.value:
-            literals.append(sub.value)
+            literals.append((sub, sub.value))
         elif isinstance(sub, ast.JoinedStr):
             joined = "".join(str(p.value) if isinstance(p, ast.Constant) else "{__FSTRING__}" for p in sub.values)
             if _MARK in joined:
-                literals.append(joined)
+                literals.append((sub, joined))
     return literals
+
+
+def _kernel_literals(value: ast.AST) -> "list[str]":
+    return [text for _node, text in _literal_nodes(value)]
+
+
+_CONSTRUCTORS = frozenset({"RawKernel", "RawModule", "ElementwiseKernel", "ReductionKernel"})
+
+
+def _module_strings(tree: ast.Module) -> "dict[str, str]":
+    """``{NAME: text}`` for every module-level ``NAME = "literal"`` (a name bound more than once, or to anything else, is dropped: its value depends on the position)."""
+    values: "dict[str, list[Optional[str]]]" = {}
+    for node in tree.body:
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            literal = node.value.value if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str) else None
+            for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                if isinstance(target, ast.Name):
+                    values.setdefault(target.id, []).append(literal)
+    return {name: vs[0] for name, vs in values.items() if len(vs) == 1 and vs[0] is not None}
+
+
+def _concatenation(value: ast.AST, consts: "dict[str, str]") -> "Optional[str]":
+    """The joined text of ``a + b + c`` when it names at least one module constant and every operand is a string literal or such a constant; else ``None``."""
+    if not (isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add)):
+        return None
+    parts: "list[str]" = []
+    named = False
+
+    def walk(node: ast.AST) -> bool:
+        nonlocal named
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            return walk(node.left) and walk(node.right)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            parts.append(node.value)
+            return True
+        if isinstance(node, ast.Name) and node.id in consts:
+            parts.append(consts[node.id])
+            named = True
+            return True
+        return False
+
+    return "".join(parts) if walk(value) and named else None
+
+
+def _is_constructor_call(node: ast.Call) -> bool:
+    func = node.func
+    last = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+    return last in _CONSTRUCTORS
+
+
+def _assignment_sources(tree: ast.Module, shown: str, taken: "set[int]") -> "dict[str, str]":
+    """Kernel sources held by assignments (``NAME = ...``, ``self.NAME = ...``); the literal nodes read are added to *taken*."""
+    found: "dict[str, str]" = {}
+    consts = _module_strings(tree)
+    for node in nodes_of(tree, ast.Assign, ast.AnnAssign):
+        if node.value is None:
+            continue
+        name = _target_name(node)
+        literals = _kernel_literals(node.value)
+        taken.update(id(lit) for lit, _text in _literal_nodes(node.value))
+        joined = _concatenation(node.value, consts)
+        if joined is not None and _MARK in joined:
+            literals = [joined]
+        if name and literals:
+            for i, literal in enumerate(literals):
+                found.setdefault(f"{shown}::{name}" + (f"#{i + 1}" if i else ""), literal)
+    return found
+
+
+def _inline_sources(tree: ast.Module, shown: str, taken: "set[int]", found: "dict[str, str]") -> None:
+    """Add the kernel literals written inline in a kernel-constructor call (not already read from an assignment), keyed by the enclosing function."""
+    owner: "dict[int, str]" = {}
+    for fn in sorted(nodes_of(tree, ast.FunctionDef, ast.AsyncFunctionDef), key=lambda f: (f.lineno, f.col_offset)):
+        for sub in nodes_of(fn, ast.Call):
+            owner[id(sub)] = fn.name  # the innermost function wins: it starts later than the one around it
+    for call in nodes_of(tree, ast.Call):
+        if not _is_constructor_call(call):
+            continue
+        for arg in [*call.args, *(k.value for k in call.keywords)]:
+            for lit, literal in _literal_nodes(arg):
+                if id(lit) in taken:
+                    continue
+                taken.add(id(lit))
+                stem = f"{shown}::{owner.get(id(call), '<module>')}"
+                key, n = stem, 1
+                while key in found:
+                    n += 1
+                    key = f"{stem}#{n}"
+                found[key] = literal
+
+
+def _tree_sources(tree: ast.Module, shown: str) -> "dict[str, str]":
+    """The kernel sources of one parsed file, keyed ``<shown>::NAME``: assignments first, then the inline arguments of kernel constructors."""
+    taken: "set[int]" = set()
+    found = _assignment_sources(tree, shown, taken)
+    _inline_sources(tree, shown, taken, found)
+    return found
 
 
 def find_cuda_kernel_sources(
@@ -77,14 +179,8 @@ def find_cuda_kernel_sources(
         if _MARK not in parsed.source or any(part in parsed.rel.split("/") for part in skip):
             continue
         shown = (Path(root) / parsed.rel).resolve().relative_to(base.resolve()).as_posix()
-        for node in nodes_of(parsed.tree, ast.Assign, ast.AnnAssign):
-            if node.value is None:
-                continue
-            name = _target_name(node)
-            literals = _kernel_literals(node.value)
-            if name and literals:
-                for i, literal in enumerate(literals):
-                    found.setdefault(f"{shown}::{name}" + (f"#{i + 1}" if i else ""), literal)
+        for key, literal in _tree_sources(parsed.tree, shown).items():
+            found.setdefault(key, literal)
     return dict(sorted(found.items()))
 
 

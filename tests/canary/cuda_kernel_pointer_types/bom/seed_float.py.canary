@@ -1,0 +1,11 @@
+﻿import cupy as cp
+
+# 53-T13: the advisory float rule fires only where the module gives no sign of single-precision buffers
+PLAIN_SRC = r"""
+extern "C" __global__ void plain_k(const float* x, const long long n, float* out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = x[i];
+}
+"""
+
+plain = cp.RawKernel(PLAIN_SRC, "plain_k")

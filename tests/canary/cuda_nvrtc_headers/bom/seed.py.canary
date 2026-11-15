@@ -1,0 +1,14 @@
+﻿import cupy as cp
+
+SEED_SRC = r"""
+extern "C" __global__ void k(float* m, const int n) {
+    float best = -INFINITY;
+    for (int i = 0; i < n; ++i) best = fmaxf(best, m[i]);
+    m[0] = best;
+}
+extern "C" __global__ void k2(const float* v, int* out) {
+    out[threadIdx.x] = v[threadIdx.x] > FLT_MAX;
+}
+"""
+
+seed_kernel = cp.RawKernel(SEED_SRC, "k")

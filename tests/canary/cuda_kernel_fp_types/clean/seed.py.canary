@@ -1,0 +1,11 @@
+import cupy as cp
+
+SEED_SRC = r"""
+extern "C" __global__ void row_sum(const {REAL}* __restrict__ x, {ACC}* __restrict__ out, const int n) {
+    {ACC} acc = 0;
+    for (int i = threadIdx.x; i < n; i += blockDim.x) acc += ({ACC})x[i] * ({REAL})0.1;
+    out[blockIdx.x] = acc;
+}
+"""
+
+seed_kernel = cp.RawKernel(SEED_SRC, "k")

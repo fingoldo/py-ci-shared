@@ -123,3 +123,21 @@ def test_a_real_kernel_reports_its_registers_and_no_spill(tmp_path):
     ptx, report = build_ptx_and_report(src, (), 61, ptxas, tmp_path)
     rows = entry_reports("t[k]", 61, ptx, report)
     assert [r.entry for r in rows] == ["k"] and rows[0].registers > 0 and rows[0].spill == 0
+
+
+# --- round 2026-11-16 (audit 53-T11) --------------------------------------------------------------------------------------------------------------
+
+
+def test_every_architecture_required_arch_can_return_has_limits() -> None:
+    """53-T11: `blocks_per_sm(required_arch(src), ...)` must not raise KeyError for any intrinsic of the table."""
+    from py_ci_shared.cuda_offline_report import _INTRINSIC_MIN_ARCH, blocks_per_sm
+
+    for arch in set(_INTRINSIC_MIN_ARCH.values()):
+        assert arch in ARCH_LIMITS, arch
+        blocks, _factor = blocks_per_sm(arch, 32, 0, 256)
+        assert blocks >= 1
+
+
+def test_a100_and_blackwell_datacenter_limits() -> None:
+    assert ARCH_LIMITS[80] == (2048, 32, 65536, 164 * 1024)
+    assert ARCH_LIMITS[100] == (2048, 32, 65536, 228 * 1024)

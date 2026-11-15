@@ -3,18 +3,22 @@
 Kernel source kept in a Python string (``cupy.RawKernel``/``RawModule``/``ElementwiseKernel``/``ReductionKernel``, or a constant named ``*_SRC``/``*_KERNEL``/``*_CODE`` holding
 ``__global__``) declares its pointer types in C. When the host hands such a kernel a buffer of another element type, the kernel reads or writes the wrong number of bytes:
 
-* ``cuda-bare-double-pointer`` (hard): a ``__global__`` function with a ``double*`` parameter and no ``{REAL}`` placeholder among its parameters. A float32 array bound to
+* ``cuda-bare-double-pointer`` (hard): a ``__global__`` function with a ``double*`` parameter (also ``double2*``/``double4*``, a ``double x[]`` array parameter, and a
+  ``typedef``/``#define``/``using`` alias of ``double`` declared in the same string) and no ``{REAL}`` placeholder among its parameters. A ``__launch_bounds__(N)`` /
+  ``__maxnreg__(N)`` attribute before or after ``void`` does not hide the kernel (53-T1: such kernels were skipped silently). A float32 array bound to
   ``const double* x`` is read twice past its end: wrong values, and an illegal memory access when the array ends a mapped region, which poisons the CUDA context for the rest of the
   process (the next thrust call aborts the interpreter). Template the value type (``{REAL}`` for values, ``{ACC}`` for sums and statistics, one compiled module per type, the type chosen
   from the launched buffer dtype), or state why the kernel is float64 on purpose.
 * ``cuda-bare-float-pointer`` (advisory): the same for ``float*``. A float64 buffer bound to ``float*`` is read as half its data (wrong values, no out-of-bounds read), so it is reported
-  only with ``include_advisory``.
+  only with ``include_advisory``. Measured on mlframe (2026-11-16): 14 hits, all 14 deliberate float32 kernels (53-T13), so the rule is narrowed to the case with no float32 evidence:
+  a kernel whose name says it (``f32``, ``fp32``, ``float``) and every kernel of a module whose source mentions ``float32`` are left out. What remains is a ``float*`` kernel in a
+  module that never says ``float32``. The hard double rule is not narrowed.
 * ``cuda-type-probe-not-launched`` (hard): a function that picks the kernel type with ``"float" if X.dtype == ... else "double"`` where ``X`` is never a launch argument by name in the
   module. Probing the dtype of an array that is cast before the launch compiles a ``double`` kernel for float32 buffers, the same out-of-bounds read the template exists to prevent. The
   launch can sit in another method than the probe, so launch arguments are collected module-wide.
 
 Suppression: ``// dtype-ok: <reason>`` on the kernel signature line (or the one above) inside the kernel string, or ``# dtype-ok: <reason>`` on the first or last line of the Python statement
-holding the string or on the probe line. The reason is the review: why the buffer is always the declared type (a measured no-gain, a timestamp that needs float64, a dtype-specific
+holding the string or on the probe line. The reason must not be empty (53-T9: a bare ``// dtype-ok:`` does not suppress). The reason is the review: why the buffer is always the declared type (a measured no-gain, a timestamp that needs float64, a dtype-specific
 sibling of a float32 kernel selected by the launched buffer). C comments are not scanned for signatures.
 
 Usage in a consumer's meta test::
@@ -34,7 +38,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, nodes_of, scan_python
-from .cuda_kernel_integer_width import _Unit, _strip_comments, _units
+from .cuda_kernel_integer_width import _Unit, _strip_comments, _units, reasoned_marker
 
 __all__ = ["MARKER", "RULE_DOUBLE", "RULE_FLOAT", "RULE_PROBE", "assert_cuda_kernel_pointer_types", "find_cuda_kernel_pointer_types"]
 
@@ -42,10 +46,21 @@ RULE_DOUBLE = "cuda-bare-double-pointer"
 RULE_FLOAT = "cuda-bare-float-pointer"
 RULE_PROBE = "cuda-type-probe-not-launched"
 MARKER = "dtype-ok:"
-_KERNEL = re.compile(r"__global__\s+(?:\w+\s+)*?void\s+(\w+)\s*\((.*?)\)\s*\{", re.DOTALL)
-_DOUBLE_PTR = re.compile(r"\bdouble\s*\*")
-_FLOAT_PTR = re.compile(r"\bfloat\s*\*")
+_ATTR = r"(?:__launch_bounds__|__maxnreg__|__cluster_dims__)\s*\((?:[^()]|\([^()]*\))*\)"
+# ``__global__ [attrs] [qualifiers] void [attrs] name(params) {``: the bound sits before or after ``void`` (CUDA accepts both), and the real name follows it (53-T1)
+_KERNEL = re.compile(rf"__global__(?:\s+{_ATTR}|\s+\w+)*?\s+void(?:\s+{_ATTR})*\s+(\w+)\s*\((.*?)\)\s*\{{", re.DOTALL)
 _TEMPLATED = ("{REAL}",)
+_F32_NAME = re.compile(r"(?i)f32|fp32|float")
+_ALIAS = r"(?:typedef\s+{ctype}\s+(\w+)\s*;|#\s*define\s+(\w+)\s+{ctype}\s*(?:\n|$)|using\s+(\w+)\s*=\s*{ctype}\s*;)"
+
+
+def _pointer_pattern(code: str, ctype: str) -> "re.Pattern[str]":
+    """A parameter that is ``ctype*`` / ``ctypeN*`` / ``ctype name[]``, spelled with *ctype* itself or with a ``typedef`` / ``#define`` / ``using`` alias of it declared in *code* (53-T10)."""
+    spellings = [ctype + "[234]?"]
+    for found in re.finditer(_ALIAS.format(ctype=ctype), code):
+        spellings.extend(re.escape(name) for name in found.groups() if name)
+    word = "(?:" + "|".join(spellings) + ")"
+    return re.compile(rf"\b{word}\s*\*|\b{word}\s+(?:const\s+)?\w+\s*\[\s*\]")
 
 
 def _param_names(params: str, pattern: "re.Pattern[str]") -> list[str]:
@@ -61,17 +76,17 @@ def _param_names(params: str, pattern: "re.Pattern[str]") -> list[str]:
 def _marked(unit: _Unit, kernel_lines: list[str], offset: int, py_lines: list[str]) -> bool:
     """``// dtype-ok:`` on the signature line or the one above, in the kernel text; ``# dtype-ok:`` on the statement's ends."""
     for index in (offset, offset - 1):
-        if 0 <= index < len(kernel_lines) and "//" in kernel_lines[index] and MARKER in kernel_lines[index][kernel_lines[index].index("//") :]:
+        if 0 <= index < len(kernel_lines) and "//" in kernel_lines[index] and reasoned_marker(kernel_lines[index][kernel_lines[index].index("//") :], MARKER):
             return True
     for number in {unit.stmt_first, unit.stmt_last, unit.line}:
         if 0 < number <= len(py_lines):
             line = py_lines[number - 1]
-            if "#" in line and MARKER in line[line.index("#") :]:
+            if "#" in line and reasoned_marker(line[line.index("#") :], MARKER):
                 return True
     return False
 
 
-def _unit_findings(unit: _Unit, rel: str, py_lines: list[str], include_float: bool) -> list[Finding]:
+def _unit_findings(unit: _Unit, rel: str, py_lines: list[str], include_float: bool, float32_module: bool = False) -> list[Finding]:
     code = _strip_comments(unit.text)
     kernel_lines = unit.text.split("\n")
     out: list[Finding] = []
@@ -80,9 +95,10 @@ def _unit_findings(unit: _Unit, rel: str, py_lines: list[str], include_float: bo
         if any(token in params for token in _TEMPLATED):
             continue
         offset = code.count("\n", 0, match.start())
-        for rule, pattern, ctype in ((RULE_DOUBLE, _DOUBLE_PTR, "double"), (RULE_FLOAT, _FLOAT_PTR, "float")):
-            if rule == RULE_FLOAT and not include_float:
+        for rule, ctype in ((RULE_DOUBLE, "double"), (RULE_FLOAT, "float")):
+            if rule == RULE_FLOAT and (not include_float or _F32_NAME.search(name) or float32_module):
                 continue
+            pattern = _pointer_pattern(code, ctype)
             names = _param_names(params, pattern)
             if names and not _marked(unit, kernel_lines, offset, py_lines):
                 out.append(
@@ -155,8 +171,9 @@ def find_cuda_kernel_pointer_types(
     for parsed in scan:
         py_lines = parsed.source.splitlines()
         aliases = ImportAliases.from_tree(parsed.tree)
+        float32_module = "float32" in parsed.source  # the module says it deals in float32 buffers: its `float*` kernels are deliberate (53-T13)
         for unit in _units(parsed.tree, aliases):
-            out.extend(_unit_findings(unit, parsed.rel, py_lines, include_advisory))
+            out.extend(_unit_findings(unit, parsed.rel, py_lines, include_advisory, float32_module))
         out.extend(_probe_findings(parsed.tree, parsed.rel, py_lines))
     return sorted(out, key=lambda f: (f.path, f.line, f.rule))
 

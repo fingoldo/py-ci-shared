@@ -6,6 +6,8 @@ string that contains ``__global__``, finds the variables that depend on ``thread
 * ``cuda-strided-row-read``: an index ``<thread var> * <non-constant name>`` (a row-major matrix read by the thread-derived row ``X[i * n_features + col]``), also when the row offset is hoisted into a variable first
   (``long long off = i * F; ... X[off + c]``) and also in a kernel with no ``for`` loop (``i = blockIdx.x * blockDim.x + threadIdx.x; X[i * F + c]``). A group index ``threadIdx.x / tile`` next to a column
   ``threadIdx.x % tile`` is not a stride: the ``tile`` neighbouring threads share the row and read adjacent columns of it.
+  Also reported (53-T4): the bare thread index as a row (``X[threadIdx.x * n]``), a pointer to a thread's row (``const float* row = X + i * F; row[c]``), a gather row
+  (``X[idx[i] * F]``) and a one-argument function-like macro whose replacement multiplies (``#define ROW(i) ((i) * F)`` then ``X[ROW(i) + c]``).
 * ``cuda-indirect-run-read``: a thread-derived index into a run table, ``lo = starts[s]; hi = starts[s + 1]; for (r = lo; r < hi; ++r) ... X[r]``: the lanes read runs that start one run length apart (a stratum of 20 rows
   is 20 elements apart: measured gld efficiency 6.7% and 9.3 transactions per request on the kernel this rule was written for).
 
@@ -13,7 +15,9 @@ Shared-memory accesses are not global reads and are ignored (a pointer alias of 
 ``extern __shared__`` array is.
 
 Suppression: ``// coalescing-ok: <reason>`` in the comments of the kernel or in the 400 characters before its ``__global__``. The reason is the review: why this access pattern stays (a kept version with a measured win axis,
-a layout shared with a host consumer, a matrix small enough to sit in cache). A baseline (``baseline_path``) holds accepted findings with a note each, keyed ``<path>::<kernel>``.
+a layout shared with a host consumer, a matrix small enough to sit in cache). A baseline (``baseline_path``) holds accepted findings with a note each, keyed ``<path>::<kernel>`` (a second kernel of the same name in one file: ``<path>::<kernel>#2``).
+The kernel text is read from the Python AST (the string literals of ``cupy`` kernel classes and of constants holding ``__global__``), so a kernel inside a Python comment or a
+docstring is not scanned and the reported line is the line of the kernel's own ``__global__`` (53-T5). The marker needs a reason of at least 12 characters (53-T9 holds already).
 
 Usage in a consumer's meta test::
 
@@ -30,7 +34,8 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, scan_python
+from ._core import Baseline, Finding, ImportAliases, scan_python
+from .cuda_kernel_integer_width import _units
 
 __all__ = ["MARKER", "RULE_INDIRECT", "RULE_STRIDED", "assert_cuda_coalesced_reads", "find_cuda_coalesced_reads", "uncoalesced_kernels"]
 
@@ -127,7 +132,7 @@ def _thread_vars(body: str) -> "set[str]":
 _SHARED_DECL_RE = re.compile(r"__shared__[^;]*;")
 _STATIC_SHARED_DECL_RE = re.compile(r"(?<!extern )__shared__[^;]*;")
 _SHARED_NAME_RE = re.compile(r"(\w+)\s*\[")
-_ALIAS_RE = re.compile(r"\w+\s*\*\s*(\w+)\s*=\s*(\w+)\s*(?:\+[^;]*)?;")
+_ALIAS_RE = re.compile(r"[\w}]+\s*\*\s*(\w+)\s*=\s*(?:\([^()]*\*\s*\)\s*)?\(?\s*(\w+)\s*(?:\+[^;]*)?;")  # also ``int* t = (int*)smem;`` and ``{ACC}* se = ({ACC}*)(smem + o);``
 
 
 def _without_shared_subscripts(body: str) -> str:
@@ -160,14 +165,49 @@ def _opens_with_product(expr: str, var: str) -> bool:
     return bool(re.match(rf"{v}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|[A-Za-z_]\w*\s*\*\s*{_CAST}{v}\b", text))
 
 
+_POINTER_ASSIGN_RE = re.compile(r"[\w}]+\s*\*\s*(?:const\s+)?(?:__restrict__\s+)?(\w+)\s*=\s*([^;=][^;]*);")
+_MACRO_RE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)\([ \t]*(\w+)[ \t]*\)[ \t]+(.+?)[ \t]*$", re.M)
+
+
+def _pointer_rows(body: str) -> "list[tuple[str, str]]":
+    """``[(pointer name, initialiser)]`` of every pointer declaration with an initialiser (``const float* row = X + i * F;``)."""
+    return [(name, expr) for name, expr in _POINTER_ASSIGN_RE.findall(body)]
+
+
+def _expand_macros(text: str, body: str) -> str:
+    """*body* with every one-argument function-like ``#define`` of *text* whose replacement multiplies expanded (``#define ROW(i) ((i) * F)`` makes ``X[ROW(i)]`` a visible stride)."""
+    for name, arg, repl in _MACRO_RE.findall(_COMMENT_RE.sub(" ", text)):
+        if "*" not in repl:
+            continue
+        call = re.compile(rf"\b{re.escape(name)}\s*\(([^()]*(?:\([^()]*\)[^()]*)*)\)")
+
+        def expand(m: "re.Match[str]", arg: str = arg, repl: str = repl) -> str:
+            given = m.group(1).strip()
+            value = given if re.fullmatch(r"\w+", given) else "(" + given + ")"
+            return "(" + re.sub(rf"\b{re.escape(arg)}\b", lambda _m: value, repl) + ")"
+
+        body = call.sub(expand, body)
+    return body
+
+
 def _strided(body: str, derived: "set[str]") -> bool:
     """Whether a global read is indexed by ``<thread var> * <non-constant>``, directly or through a hoisted offset."""
     loop_vars = [var for var, init, _bound in _FOR_RE.findall(body) if "threadIdx.x" in init or any(re.search(rf"\b{re.escape(v)}\b", init) for v in derived)]
-    candidates = list(dict.fromkeys([*loop_vars, *_global_ids(body, derived)]))
+    candidates = list(dict.fromkeys([*loop_vars, *_global_ids(body, derived), "threadIdx.x"]))  # the bare thread index is a row too: ``X[threadIdx.x * n]`` (53-T4)
+    pointers = _pointer_rows(body)
     for var in candidates:
-        stride = re.compile(rf"\b{re.escape(var)}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|(?<![\w.])[A-Za-z_]\w*\s*\*\s*{_CAST}\b{re.escape(var)}\b")
+        v = re.escape(var)
+        stride = re.compile(rf"\b{v}\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|(?<![\w.])[A-Za-z_]\w*\s*\*\s*{_CAST}\b{v}\b")
         if re.search(rf"\[[^\]\[]*?(?:{stride.pattern})[^\]\[]*?\](?!\s*=[^=])", body):
             return True
+        # a gather row: ``X[idx[i] * F]``
+        gather = rf"\w+\s*\[\s*{v}\s*\]\s*\)?\s*\*\s*{_CAST}[A-Za-z_]\w*|(?<![\w.])[A-Za-z_]\w*\s*\*\s*{_CAST}\w+\s*\[\s*{v}\s*\]"
+        if re.search(rf"\[[^\]\[]*?(?:{gather})[^\]\[]*?\](?!\s*=[^=])", body):
+            return True
+        # a pointer to a thread's row: ``const float* row = X + i * F;`` then ``row[c]``
+        for name, expr in pointers:
+            if stride.search(expr) and re.search(rf"\b{re.escape(name)}\s*\[[^\]\[]*\](?!\s*=[^=])", body):
+                return True
         # a hoisted offset: ``long long off = i * F;`` then ``X[off + c]``
         for name, expr in _assignments(body):
             if name != var and _opens_with_product(expr, var) and re.search(rf"\[[^\]\[]*\b{re.escape(name)}\b[^\]\[]*\](?!\s*=[^=])", body):
@@ -203,22 +243,28 @@ def _has_marker(text: str, at: int, starts: "list[int]") -> bool:
     return bool(_MARKER_RE.search(text[above_from:at]) or _MARKER_RE.search(own))
 
 
-def uncoalesced_kernels(text: str) -> "list[tuple[str, str]]":
-    """``[(kernel name, rule)]`` of the kernels in *text* that read global memory with a stride, in source order; a kernel with a ``coalescing-ok:`` reason is left out."""
+def _scan_kernels(text: str) -> "list[tuple[str, str, int]]":
+    """``[(kernel name, rule, offset of its ``__global__`` in text)]`` for the uncoalesced kernels of *text*, in source order."""
     if "__global__" not in text:
         return []
-    out: "list[tuple[str, str]]" = []
+    out: "list[tuple[str, str, int]]" = []
     starts = [m.start() for m in _KERNEL_RE.finditer(text)]
-    for name, body, at in _kernel_bodies(text):
+    for name, raw_body, at in _kernel_bodies(text):
         if _has_marker(text, at, starts):
             continue
+        body = _expand_macros(text, raw_body)
         derived = _thread_vars(body)
         clean = _without_shared_subscripts(body)
         if _strided(clean, derived):
-            out.append((name, RULE_STRIDED))
+            out.append((name, RULE_STRIDED, at))
         elif _indirect(clean, derived):
-            out.append((name, RULE_INDIRECT))
+            out.append((name, RULE_INDIRECT, at))
     return out
+
+
+def uncoalesced_kernels(text: str) -> "list[tuple[str, str]]":
+    """``[(kernel name, rule)]`` of the kernels in *text* that read global memory with a stride, in source order; a kernel with a ``coalescing-ok:`` reason is left out."""
+    return [(name, rule) for name, rule, _at in _scan_kernels(text)]
 
 
 def find_cuda_coalesced_reads(
@@ -241,15 +287,22 @@ def find_cuda_coalesced_reads(
     for parsed in scan:
         if "__global__" not in parsed.source or any(part in parsed.rel.split("/") for part in skip):
             continue
-        for name, rule in uncoalesced_kernels(parsed.source):
-            at = parsed.source.find(name)
-            line = parsed.source.count("\n", 0, max(at, 0)) + 1
+        # the kernel strings of the AST, not the raw file text: a comment or a docstring holding a kernel is not a kernel, and the line is the string's own (53-T5)
+        hits = sorted(
+            (unit.line + unit.text.count("\n", 0, at), name, rule)
+            for unit in _units(parsed.tree, ImportAliases.from_tree(parsed.tree))
+            for name, rule, at in _scan_kernels(unit.text)
+        )
+        seen: "dict[str, int]" = {}
+        for line, name, rule in hits:
+            seen[name] = seen.get(name, 0) + 1
+            key = f"{parsed.rel}::{name}" if seen[name] == 1 else f"{parsed.rel}::{name}#{seen[name]}"  # a second kernel of the same name needs its own baseline entry
             why = (
                 "indexes a global array by a thread-derived row times a non-constant stride, so neighbouring threads read elements a row apart: read a column-major copy (or tile the columns)"
                 if rule == RULE_STRIDED
                 else "loops over a run [P[s], P[s + 1]) of a thread-derived s and reads global memory by the loop variable, so neighbouring lanes read runs one run length apart: stage the rows coalesced or give the block the rows"
             )
-            out.append(Finding(parsed.rel, line, rule, f"the kernel {name} {why}", key=f"{parsed.rel}::{name}"))
+            out.append(Finding(parsed.rel, line, rule, f"the kernel {name} {why}", key=key))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 

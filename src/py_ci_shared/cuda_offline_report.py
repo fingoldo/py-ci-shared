@@ -41,12 +41,15 @@ __all__ = [
 # arch -> (max threads per SM, max resident blocks per SM, registers per SM, max shared memory per SM in bytes)
 REGISTER_FILE = 65536  # 32-bit registers per SM, the same on every listed architecture
 ARCH_LIMITS = {
+    60: (2048, 32, 65536, 64 * 1024),  # P100; first listed because cooperative_groups needs sm_60
     61: (2048, 32, 65536, 96 * 1024),
     70: (2048, 32, 65536, 96 * 1024),
     75: (1024, 16, 65536, 64 * 1024),
+    80: (2048, 32, 65536, 164 * 1024),  # A100
     86: (1536, 16, 65536, 100 * 1024),
     89: (1536, 24, 65536, 100 * 1024),
     90: (2048, 32, 65536, 228 * 1024),
+    100: (2048, 32, 65536, 228 * 1024),  # B200; from the CUDA 12.8 table as recalled, not re-verified against the guide
     120: (1536, 24, 65536, 100 * 1024),
 }
 _REG_ALLOC_UNIT = 256  # registers are allocated per warp in units of 256

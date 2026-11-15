@@ -1,0 +1,9 @@
+import cupy as cp
+
+_SRC = r"""
+extern "C" __global__ void k(const float* x, float* y, int n) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) y[i] = x[i];
+}
+"""
+KERNEL = cp.RawKernel(_SRC, "k")

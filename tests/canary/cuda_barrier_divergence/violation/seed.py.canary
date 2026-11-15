@@ -1,0 +1,29 @@
+import cupy as cp
+
+SEED_RETURN_SRC = r"""
+extern "C" __global__ void seed_return(const float* x, float* y, const int K) {
+    extern __shared__ float sh[];
+    const int t = threadIdx.x;
+    if (t >= K) return;
+    sh[t] = x[t];
+    __syncthreads();
+    y[t] = sh[K - 1 - t];
+}
+"""
+
+SEED_BRANCH_SRC = r"""
+extern "C" __global__ void seed_branch(float* y) {
+    __shared__ float sh[64];
+    if (threadIdx.x < 32) { sh[threadIdx.x] = 1.0f; __syncthreads(); y[threadIdx.x] = sh[31 - threadIdx.x]; }
+}
+"""
+
+SEED_LOOP_SRC = r"""
+extern "C" __global__ void seed_loop(float* y, const int n) {
+    for (int r = threadIdx.x; r < n; r += blockDim.x) { y[r] = 1.0f; __syncthreads(); }
+}
+"""
+
+seed_return_kernel = cp.RawKernel(SEED_RETURN_SRC, "seed_return")
+seed_branch_kernel = cp.RawKernel(SEED_BRANCH_SRC, "seed_branch")
+seed_loop_kernel = cp.RawKernel(SEED_LOOP_SRC, "seed_loop")

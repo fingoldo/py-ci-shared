@@ -5,3 +5,24 @@ extern "C" __global__ void columns(const int* X, int n, int* out) {
     }
 }
 """
+
+# a strided kernel that is only a Python comment is not a kernel (53-T5):
+# extern "C" __global__ void fake(const float* X, int n) { int i = threadIdx.x; float v = X[i * n]; }
+
+# a strided kernel with a reasoned marker is reviewed
+REVIEWED_SRC = r"""
+// coalescing-ok: a 64-row matrix that sits in cache, measured 1.02x against the transposed copy
+extern "C" __global__ void reviewed(const int* X, int n, int F, int* out) {
+    for (long long i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+        atomicAdd(&out[X[i * (long long)F + 1]], 1);
+    }
+}
+"""
+
+# block-level rows and a pointer into a block's row are coalesced
+BLOCK_SRC = r"""
+extern "C" __global__ void block_rows(const float* X, const int* idx, int F, float* out) {
+    const float* row = X + blockIdx.x * F;
+    out[blockIdx.x * blockDim.x + threadIdx.x] = row[threadIdx.x] + X[idx[blockIdx.x] * F + threadIdx.x];
+}
+"""

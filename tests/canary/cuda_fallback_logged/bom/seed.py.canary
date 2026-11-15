@@ -1,0 +1,15 @@
+﻿import cupy as cp
+
+
+def score_oom(x):
+    try:
+        return _score_gpu(cp.asarray(x))
+    except cp.cuda.memory.OutOfMemoryError:
+        return _score_cpu(x)
+
+
+def score_broad(x, out):
+    try:
+        out[:] = cp.asnumpy(_kernel_gpu(x))
+    except Exception:
+        _fill_host(x, out)

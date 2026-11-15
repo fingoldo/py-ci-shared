@@ -160,7 +160,6 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("fail_open_handlers").assert_no_new_fail_open_handlers(_py(d), d, _baseline(d), refresh=False),
             tokens=("[gate_returns_true]", "[admit_on_error]", "[silent_default_return]", "[gate_swallows_error]", "[quiet_substitution]"),
         ),
-        Canary("gpu_timing_sync", lambda d: _gate("gpu_timing_sync").assert_no_unsynchronized_gpu_timings(_py(d), d), token="seed_measure"),
         Canary("hash_fed_by_array_copy", lambda d: _gate("hash_fed_by_array_copy").assert_no_hash_fed_by_array_copy([d])),
         Canary("identity_comparisons", lambda d: _gate("identity_comparisons").assert_no_identity_comparisons(_py(d), root=d), token="SEED_SQL"),
         Canary(
@@ -310,7 +309,6 @@ CANARIES: dict[str, Canary] = {
             token="seed_missing",
             parses=False,  # Markdown has no invalid syntax
         ),
-        Canary("numba_seed_range", lambda d: _gate("numba_seed_range").assert_numba_seeds_fit_int64(d, use_git=False)),
         Canary("plotly_annotation_loop", lambda d: _gate("plotly_annotation_loop").assert_no_plotly_annotation_loops(d, use_git=False)),
         Canary(
             "polars_null_equality",
@@ -499,11 +497,6 @@ CANARIES: dict[str, Canary] = {
             ),
         ),
         Canary(
-            "cuda_kernel_integer_width",
-            lambda d: _gate("cuda_kernel_integer_width").assert_cuda_kernel_integer_width(d, use_git=False),
-            tokens=("(long)i", "unsigned long off"),
-        ),
-        Canary(
             "psycopg2_param_arity",
             lambda d: _gate("psycopg2_param_arity").assert_psycopg2_param_arity(d, use_git=False),
             tokens=("seed.py:5:", "seed.py:9:", "seed.py:13:"),
@@ -667,17 +660,6 @@ CANARIES: dict[str, Canary] = {
         Canary("unseeded_rng_fallback", lambda d: _gate("unseeded_rng_fallback").assert_unseeded_rng_fallback(d, use_git=False)),
         Canary("caller_frame_mutation", lambda d: _gate("caller_frame_mutation").assert_caller_frame_mutation(d, use_git=False, advisory=False)),
         Canary(
-            "cuda_kernel_pointer_types",
-            lambda d: _gate("cuda_kernel_pointer_types").assert_cuda_kernel_pointer_types(d, use_git=False),
-            # cuda-bare-float-pointer is only reported with include_float, which the canary runner does not pass
-            tokens=("[cuda-bare-double-pointer]", "[cuda-type-probe-not-launched]"),
-        ),
-        Canary(
-            "cuda_launch_geometry",
-            lambda d: _gate("cuda_launch_geometry").assert_cuda_launch_geometry(d, use_git=False),
-            tokens=("block size (256,)", "block size (192,)", "block size (128,)", "block size (16, 16)", "block size (512,)"),
-        ),
-        Canary(
             "possibly_unbound_local",
             lambda d: _gate("possibly_unbound_local").assert_possibly_unbound_local(d, use_git=False),
             tokens=("possibly-unbound-after-if", "possibly-unbound-after-try"),
@@ -726,16 +708,13 @@ CANARIES: dict[str, Canary] = {
             tokens=("not in the register-pressure registry",),
         ),
         Canary("cuda_kernel_names", lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled={}, use_git=False), tokens=("lost_kernel",)),
-        Canary(
-            "cuda_coalesced_reads",
-            lambda d: _gate("cuda_coalesced_reads").assert_cuda_coalesced_reads(d, use_git=False),
-            tokens=("the kernel strided indexes",),
-        ),
     ]
 }
 
 # Registered gates and libraries that are not corpus scanners, or whose subject cannot be seeded as a file corpus.
 EXEMPT: dict[str, str] = {
+    "cuda_optout_allocations": "runtime allocation counter around a caller's GPU opt-out, no source corpus to scan; test_cuda_optout_allocations.py pins it with a fake cupy module",
+    "cuda_offline_arch": "glue of the offline per-architecture build check over a caller's kernel report, no source corpus to scan; test_cuda_offline_arch.py pins it with synthetic reports",
     "cuda_kernel_sources": "an extractor that returns the kernel source texts of a package as a mapping, not findings; test_cuda_kernel_sources.py pins every source shape it reads and the ones it must not",
     "cuda_offline_report": "an engine that builds a caller's CUDA kernel source with NVRTC and ptxas and reads the report, no source corpus to scan; test_cuda_offline_report.py pins it with synthetic reports and, where the toolchain exists, real kernels",
     "cache_key_sensitivity": "runtime assertion over a caller's key function, no source corpus to scan; test_cache_key_sensitivity.py pins it with toy keys",

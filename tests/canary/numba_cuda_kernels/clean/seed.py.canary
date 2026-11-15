@@ -1,0 +1,48 @@
+import numpy as np
+import numba.cuda as cuda
+
+
+@cuda.jit(cache=True)
+def guarded(x, out, n):
+    i = cuda.grid(1)
+    if i >= n:
+        return
+    out[i] = x[i] * 2.0
+
+
+@cuda.jit
+def uniform_barrier(x, out, n):
+    tid = cuda.threadIdx.x
+    sh = cuda.shared.array(128, dtype=np.float32)
+    if tid < n:
+        sh[tid] = x[tid]
+    cuda.syncthreads()
+    if tid < n:
+        out[tid] = sh[tid]
+
+
+@cuda.jit
+def atomic_total(x, total, n):
+    tid = cuda.threadIdx.x
+    if tid < n:
+        cuda.atomic.add(total, 0, x[tid])
+        if tid == 0:
+            total[1] += 1
+
+
+@cuda.jit
+def double_only(x, out, n):
+    i = cuda.grid(1)
+    if i < n:
+        out[i] = np.float64(x[i]) + np.float64(1.5)
+
+
+@cuda.jit(device=True)
+def helper(x, i):
+    return x[cuda.grid(1)] + i
+
+
+@cuda.jit
+def exact_launch(x, out):  # numba-cuda-ok: launched with exactly len(x) threads
+    i = cuda.grid(1)
+    out[i] = x[i]

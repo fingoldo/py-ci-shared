@@ -1,0 +1,22 @@
+﻿import cupy as cp
+
+GLOBAL_SRC = r"""
+extern "C" __global__ void sum_global(const double* __restrict__ x, double* __restrict__ out, const int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) atomicAdd(&out[0], x[i]);
+}
+"""
+
+SHARED_SRC = r"""
+extern "C" __global__ void sum_shared(const float* __restrict__ x, float* __restrict__ out, const int n) {
+    __shared__ float sh[1];
+    if (threadIdx.x == 0) sh[0] = 0.0f;
+    __syncthreads();
+    atomicAdd(&sh[0], x[blockIdx.x * blockDim.x + threadIdx.x]);
+    __syncthreads();
+    if (threadIdx.x == 0) out[blockIdx.x] = sh[0];
+}
+"""
+
+k1 = cp.RawKernel(GLOBAL_SRC, "sum_global")
+k2 = cp.RawKernel(SHARED_SRC, "sum_shared")

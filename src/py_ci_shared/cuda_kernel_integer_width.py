@@ -18,9 +18,14 @@ constant named ``*_SRC``/``*_KERNEL``/``*_CODE`` holding ``__global__``) is C, a
   count (``int joint_size = nbx * nby;`` is bounded by shared memory, not by the array length). Known false positive:
   an index-named variable whose factors are both small and bounded; suppress it.
 
+The same advisory rule covers a WIDE variable (``size_t idx = n * m;``, ``long long off = rows * cols;``) whose initialiser multiplies two operands that are
+both declared ``int``/``unsigned``/``int32_t`` in the kernel or are grid builtins (``size_t pos = blockIdx.x * n_cols;``): the product is formed in 32 bits and only
+then widened (finding 53-T10). A wide cast, a literal, a wide operand or a size-named variable keeps it quiet.
+
 Suppression: ``// width-ok: <reason>`` on the offending line (or the line above it) inside the kernel string, or
-``# width-ok: <reason>`` on the first or last line of the Python statement holding the string. C comments are not
-scanned, so a ``long`` in prose is not a finding.
+``# width-ok: <reason>`` on the first or last line of the Python statement holding the string. The reason must not be empty
+(finding 53-T9: a bare ``// width-ok:`` does not suppress). C comments and the content of string literals are not scanned, so a
+``long`` in prose or in ``printf("a long way")`` is not a finding (53-T10).
 
 Usage in a consumer's meta test::
 
@@ -49,12 +54,16 @@ MARKER = "width-ok:"
 _KERNEL_CLASSES = frozenset({"RawKernel", "RawModule", "ElementwiseKernel", "ReductionKernel"})
 _NAME_SUFFIXES = ("_SRC", "_KERNEL", "_CODE")
 _PLACEHOLDER = "__PLACEHOLDER__"
-_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
-_LINE_COMMENT = re.compile(r"//[^\n]*")
+# one left-to-right pass, so a ``//`` inside a string is text and a quote inside a comment is prose
+_TOKEN = re.compile(r"/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.[^'\n]*|[^'\\\n])'", re.DOTALL)
 _LONG_WORD = re.compile(r"\blong\b")
 _LONG_PAIR = re.compile(r"\blong\s+(?:long|double)\b")
 _INDEX_NAME = re.compile(r"(?i)idx|index|off|pos|row|col|ptr|addr|base|stride|start|gid|elem|slot")
 _INT_INIT = re.compile(r"\bint\s+(\w+)\s*=\s*([^;{}]*);")
+_WIDE_INIT = re.compile(r"\b((?:unsigned\s+)?(?:long\s+long|size_t|int64_t|uint64_t|ptrdiff_t|ssize_t))\s+(\w+)\s*=\s*([^;{}]*);")
+_INT_TYPE = r"(?:unsigned\s+)?(?:int|int32_t|uint32_t)"
+_INT_NAME = re.compile(rf"\b{_INT_TYPE}\s+(?:const\s+)?(?:__restrict__\s+)?(\w+)")
+_INT_LIST = re.compile(rf"\b{_INT_TYPE}\s+(\w+(?:\s*=[^,;(){{}}]*)?(?:\s*,\s*\w+(?:\s*=[^,;(){{}}]*)?)*)\s*;")
 _WIDE_CAST = re.compile(r"\(\s*(?:unsigned\s+)?(?:long\s+long|size_t|int64_t|uint64_t|ptrdiff_t|ssize_t|std::size_t)\s*\)")
 _GRID_BUILTINS = ("threadIdx", "blockIdx", "blockDim", "gridDim")
 _LEFT_OPERAND = re.compile(r"([\w.]+|\)|\])\s*$")
@@ -62,12 +71,21 @@ _RIGHT_OPERAND = re.compile(r"^\s*([\w.]+|\()")
 
 
 def _blank(match: "re.Match[str]") -> str:
-    """Replace a comment by as many newlines as it held, so line numbers inside the kernel stay exact."""
-    return "\n" * match.group(0).count("\n")
+    """A comment becomes as many newlines as it held (line numbers inside the kernel stay exact); a string literal becomes ``""`` and a character literal ``0``."""
+    text = match.group(0)
+    if text.startswith("/"):
+        return "\n" * text.count("\n")
+    return '""' if text[0] == '"' else "0"
 
 
 def _strip_comments(text: str) -> str:
-    return _LINE_COMMENT.sub("", _BLOCK_COMMENT.sub(_blank, text))
+    """*text* without C comments and without the content of string and character literals (``printf("a long way")`` is text, not a type)."""
+    return _TOKEN.sub(_blank, text)
+
+
+def reasoned_marker(tail: str, marker: str) -> bool:
+    """Whether *tail* holds *marker* followed by a non-empty reason: a bare ``// width-ok:`` is not a review and does not suppress."""
+    return re.search(re.escape(marker) + r"[ \t]*\S", tail) is not None
 
 
 def _static_text(node: ast.AST, constants: dict[str, ast.AST]) -> Optional[str]:
@@ -179,12 +197,12 @@ def _statement_of(tree: ast.Module, target: ast.AST) -> Optional[ast.AST]:
 def _marked(unit: _Unit, kernel_lines: list[str], offset: int, py_lines: list[str]) -> bool:
     """``// width-ok:`` on the line or the one above, in the kernel text; ``# width-ok:`` on the statement's ends."""
     for index in (offset, offset - 1):
-        if 0 <= index < len(kernel_lines) and "//" in kernel_lines[index] and MARKER in kernel_lines[index][kernel_lines[index].index("//") :]:
+        if 0 <= index < len(kernel_lines) and "//" in kernel_lines[index] and reasoned_marker(kernel_lines[index][kernel_lines[index].index("//") :], MARKER):
             return True
     for number in {unit.stmt_first, unit.stmt_last, unit.line}:
         if 0 < number <= len(py_lines):
             line = py_lines[number - 1]
-            if "#" in line and MARKER in line[line.index("#") :]:
+            if "#" in line and reasoned_marker(line[line.index("#") :], MARKER):
                 return True
     return False
 
@@ -264,6 +282,40 @@ def _declarator_product(expr: str) -> bool:
     return False
 
 
+def _int_names(code: str) -> set[str]:
+    """The names declared ``int`` / ``unsigned`` / ``int32_t`` / ``uint32_t`` in *code* (parameters, locals and comma lists)."""
+    names = set(_INT_NAME.findall(code))
+    for group in _INT_LIST.findall(code):
+        for part in group.split(","):
+            found = re.match(r"\s*(\w+)", part)
+            if found:
+                names.add(found.group(1))
+    return names
+
+
+def _int_product(expr: str, int_names: set[str]) -> bool:
+    """Does an initialiser of a WIDE variable multiply two operands that are both 32-bit (a declared ``int`` or a grid builtin), with no 64-bit cast?"""
+    if _WIDE_CAST.search(expr):
+        return False
+    for left, right in _split_products(_outside_brackets(expr)):
+        if _is_literal(left) or _is_literal(right) or (_builtin_only(left) and _builtin_only(right)):
+            continue
+        if all(operand in int_names or _builtin_only(operand) for operand in (left, right)):
+            return True
+    return False
+
+
+def _wide_product_hits(code: str) -> list[tuple[int, str]]:
+    """``(line offset, message)`` for each WIDE variable initialised by a product of two 32-bit ints (``size_t idx = n * m;``)."""
+    names, out = _int_names(code), []
+    for match in _WIDE_INIT.finditer(code):
+        for name, init in _declared(match.group(2), match.group(3)):
+            if _INDEX_NAME.search(name) and _int_product(init, names):
+                expr = " ".join(init.split())[:80]
+                out.append((code.count(chr(10), 0, match.start()), f"`{match.group(1)} {name} = {expr}` widens a product computed in 32 bits (both operands are `int`); cast one operand to `long long`"))
+    return out
+
+
 def _unit_findings(unit: _Unit, rel: str, py_lines: list[str]) -> list[Finding]:
     code = _strip_comments(unit.text)
     kernel_lines, code_lines = unit.text.split("\n"), code.split("\n")
@@ -286,6 +338,8 @@ def _unit_findings(unit: _Unit, rel: str, py_lines: list[str]) -> list[Finding]:
                 offset = code.count("\n", 0, match.start())
                 expr = " ".join(init.split())[:80]
                 add(RULE_PRODUCT, offset, f"`int {name} = {expr}` multiplies two sizes in 32 bits; cast one operand to `long long`")
+    for offset, message in _wide_product_hits(code):
+        add(RULE_PRODUCT, offset, message)
     return out
 
 

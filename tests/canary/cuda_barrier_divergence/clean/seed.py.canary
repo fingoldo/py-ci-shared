@@ -1,0 +1,35 @@
+import cupy as cp
+
+SEED_PRED_SRC = r"""
+extern "C" __global__ void seed_pred(const float* x, float* y, const int n) {
+    extern __shared__ float sh[];
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    sh[threadIdx.x] = (i < n) ? x[i] : 0.0f;
+    __syncthreads();
+    if (i < n) y[i] = sh[blockDim.x - 1 - threadIdx.x];
+}
+"""
+
+SEED_UNIFORM_SRC = r"""
+extern "C" __global__ void seed_uniform(const int* flags, float* y, const int K) {
+    __shared__ float sh[64];
+    int y2 = threadIdx.x;
+    if (blockIdx.y >= K) return;
+    if (flags[blockIdx.x]) { sh[threadIdx.x] = 1.0f; __syncthreads(); y[threadIdx.x] = sh[63 - threadIdx.x]; }
+    for (int j = 0; j < K; ++j) { __syncthreads(); }
+}
+"""
+
+SEED_REVIEWED_SRC = r"""
+extern "C" __global__ void seed_reviewed(const float* x, float* y, const int K) {
+    const int t = threadIdx.x;
+    // barrier-ok: the launch block equals K, so the guard is vacuous
+    if (t >= K) return;
+    y[t] = x[t];
+    __syncthreads();
+}
+"""
+
+seed_pred_kernel = cp.RawKernel(SEED_PRED_SRC, "seed_pred")
+seed_uniform_kernel = cp.RawKernel(SEED_UNIFORM_SRC, "seed_uniform")
+seed_reviewed_kernel = cp.RawKernel(SEED_REVIEWED_SRC, "seed_reviewed")

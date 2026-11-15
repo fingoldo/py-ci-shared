@@ -294,7 +294,6 @@ kind = "library"
 since = "1.17.0"
 summary = "Tests that say the behaviour is wrong and then pin it exactly"
 
-
 [[gate]]
 name = "config_call_site_parity"
 kind = "gate"
@@ -390,6 +389,27 @@ since = "1.21.1"
 summary = "A package does not import or reach underscore-private names of another package's modules (by bare module name, from-import or alias)"
 
 [[gate]]
+name = "cuda_atomic_determinism"
+kind = "gate"
+entries = ["assert_cuda_atomic_determinism"]
+since = "1.23.12"
+summary = "every CUDA kernel with a floating-point atomicAdd carries a written determinism note, because a float atomic sum is order-dependent while integer counts are exact"
+
+[[gate]]
+name = "cuda_barrier_divergence"
+kind = "gate"
+entries = ["assert_cuda_barrier_divergence"]
+since = "1.23.12"
+summary = "CUDA kernel strings place no __syncthreads() inside thread-dependent control flow (advisory: nor after a thread-dependent return)"
+
+[[gate]]
+name = "cuda_clang_tidy"
+kind = "cli"
+since = "1.23.12"
+cli = true
+summary = "Runs the CUDA.md 17 clang-tidy pass over the CUDA kernel strings of a package (placeholders resolved, unresolved ones reported, absence of clang-tidy a loud skip)"
+
+[[gate]]
 name = "cuda_coalesced_reads"
 kind = "gate"
 entries = ["assert_cuda_coalesced_reads"]
@@ -397,11 +417,39 @@ since = "1.23.10"
 summary = "A CUDA kernel reads global memory coalesced: no thread-derived row times a stride, no thread-derived run of a run table, unless a coalescing-ok reason says why"
 
 [[gate]]
+name = "cuda_const_restrict"
+kind = "gate"
+entries = ["assert_cuda_const_restrict"]
+since = "1.23.12"
+summary = "a CUDA kernel pointer parameter the kernel never writes through is declared const (and __restrict__ where it does not alias)"
+
+[[gate]]
+name = "cuda_fallback_logged"
+kind = "gate"
+entries = ["assert_cuda_fallback_logged"]
+since = "1.23.12"
+summary = "A Python handler that catches a device failure (out of memory, driver fault, cupy error, broad Exception) around GPU work and falls back without logging or re-raising is reported (advisory, baseline)"
+
+[[gate]]
+name = "cuda_grid_caps"
+kind = "gate"
+entries = ["assert_cuda_grid_caps"]
+since = "1.23.12"
+summary = "A CUDA launch grid is not capped by a literal tuned on one card (min(64, ...), a *_BLOCKS constant of 16..512 used in a grid) instead of following SM count x resident blocks x waves"
+
+[[gate]]
 name = "cuda_kernel_factories"
 kind = "gate"
 entries = ["assert_cuda_kernel_factories"]
 since = "1.23.10"
 summary = "A kernel factory kernel(cp, real) that the register-pressure registry does not list is a kernel whose spills nobody checks on a device"
+
+[[gate]]
+name = "cuda_kernel_fp_types"
+kind = "gate"
+entries = ["assert_cuda_kernel_fp_types"]
+since = "1.23.12"
+summary = "A type-generic CUDA kernel source ({REAL}/{ACC}) contains no bare double or float, and no unsuffixed FP64 literal on a REAL value (advisory)"
 
 [[gate]]
 name = "cuda_kernel_integer_width"
@@ -431,6 +479,20 @@ since = "1.23.11"
 summary = "AST extraction of the CUDA kernel source strings of a package: every assignment whose value holds a __global__ string (plain, wrapped, concatenated or f-string) and a module-level string constant by name"
 
 [[gate]]
+name = "cuda_ktc_residency"
+kind = "gate"
+entries = ["assert_cuda_ktc_residency"]
+since = "1.23.12"
+summary = "A GPU-capable kernel-tuning-cache registration (kernel_tuner with gpu_capable) declares its residency scenarios (residencies=, a module _SWEEP_RESIDENCIES) or states the single boundary with a reasoned marker"
+
+[[gate]]
+name = "cuda_launch_bounds_literal"
+kind = "gate"
+entries = ["assert_cuda_launch_bounds_literal"]
+since = "1.23.12"
+summary = "No CUDA kernel hard-codes the minBlocks of __launch_bounds__ above what the smallest SM can hold"
+
+[[gate]]
 name = "cuda_launch_geometry"
 kind = "gate"
 entries = ["assert_cuda_launch_geometry"]
@@ -438,10 +500,58 @@ since = "1.23.8"
 summary = "A CUDA kernel launch takes its block size from the device (occupancy, registers, shared memory), not from a literal tuned on one card"
 
 [[gate]]
+name = "cuda_nvrtc_headers"
+kind = "gate"
+entries = ["assert_cuda_nvrtc_headers"]
+since = "1.23.12"
+summary = "No CUDA kernel source uses a host-header macro (INFINITY, NAN, FLT_MAX, INT_MAX, ...) that NVRTC leaves undefined"
+
+[[gate]]
+name = "cuda_offline_arch"
+kind = "library"
+since = "1.23.12"
+summary = "Glue for an offline per-architecture kernel test: arch list from an env var, toolchain check, and ptxas resource assertions on one build"
+
+[[gate]]
 name = "cuda_offline_report"
 kind = "library"
 since = "1.23.10"
 summary = "Offline NVRTC to ptxas build of a CUDA kernel source and its per-entry resource report (registers, spills, shared memory, launch bounds, occupancy) with a per-architecture failure table"
+
+[[gate]]
+name = "cuda_optout_allocations"
+kind = "gate"
+entries = ["assert_no_device_allocations", "assert_optout_env_honoured"]
+since = "1.23.12"
+summary = "Allocation-counting harness for a GPU opt-out (cupy allocator and numba device arrays, frame-walk probe allowlist) plus a check that the opt-out variables are honoured"
+
+[[gate]]
+name = "cuda_parity_test_shape"
+kind = "gate"
+entries = ["assert_cuda_parity_test_shape"]
+since = "1.23.12"
+summary = "A GPU-versus-host parity test runs on two or more independent seeds or datasets"
+
+[[gate]]
+name = "cuda_profile_records"
+kind = "gate"
+entries = ["assert_cuda_profile_records"]
+since = "1.23.12"
+summary = "Every module that defines a CUDA kernel has a profile record with the contract's required fields, and the known-missing records may only shrink"
+
+[[gate]]
+name = "cuda_tree_reduction_block"
+kind = "gate"
+entries = ["assert_cuda_tree_reduction_block"]
+since = "1.23.12"
+summary = "A block_size_for call without pow2=True does not feed a halving tree-reduction kernel of the same module (224 ones sum to 128)"
+
+[[gate]]
+name = "cuda_warp_intrinsics"
+kind = "gate"
+entries = ["assert_cuda_warp_intrinsics"]
+since = "1.23.12"
+summary = "CUDA kernel strings use no legacy unmasked __shfl* (undefined on sm_70+) and never call a _sync intrinsic with the full warp mask inside a thread-dependent if"
 
 [[gate]]
 name = "dart_scanners"
@@ -868,6 +978,13 @@ since = "1.23.10"
 summary = "A clear/reset/release method touches only self state while sibling methods use a module-level cache container"
 
 [[gate]]
+name = "ktc_sweep_tolerances"
+kind = "gate"
+entries = ["assert_ktc_sweep_tolerances"]
+since = "1.23.12"
+summary = "No kernel-tuning sweep carries a literal equivalence tolerance above a cap, so a loose tolerance cannot crown a divergent backend"
+
+[[gate]]
 name = "kwarg_forwarding"
 kind = "library"
 since = "1.17.0"
@@ -1085,6 +1202,13 @@ name = "nondiscriminating_shapes"
 kind = "library"
 since = "1.17.0"
 summary = "Assertion shapes that pass whether or not the property under test holds"
+
+[[gate]]
+name = "numba_cuda_kernels"
+kind = "gate"
+entries = ["assert_numba_cuda_kernels"]
+since = "1.23.12"
+summary = "Python kernels written with numba.cuda are free of unguarded global-index subscripts, divergent syncthreads, unsynchronised read-modify-write of one shared cell and float64 spellings inside float32 kernels"
 
 [[gate]]
 name = "numba_seed_range"

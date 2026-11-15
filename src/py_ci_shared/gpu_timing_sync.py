@@ -13,14 +13,24 @@ Two shapes are flagged, both requiring the absence of a device synchronization A
 inside the timed region (a synchronize before the kernel waits for nothing being measured):
 
 1. A *direct* GPU call in the timed region -- a callee whose dotted name is rooted at ``cuda``,
-   ``cupy``, ``cp``, ``torch.cuda``, ``numba.cuda``, ``cudf``, ``cuml``, or a numba-cuda kernel
-   launch (``kern[blocks, threads](...)``, a call on a subscript).
+   ``cupy``, ``cp``, ``torch.cuda``, ``numba.cuda``, ``cudf``, ``cuml``, a numba-cuda kernel
+   launch (``kern[blocks, threads](...)``: a subscript whose index is a ``blocks, threads`` tuple), or a launch through a KERNEL OBJECT (audit 53-T2): a call whose shape is
+   ``f((grid...), (block...), (args...))`` (the cupy ``RawKernel`` launch, whatever ``f`` is called), a call of
+   a name bound to ``cupy.RawKernel`` / ``ElementwiseKernel`` / ``ReductionKernel`` / ``<module>.get_function(...)``
+   anywhere in the file, and ``module.get_function("k")(...)`` called inline.
 
 2. An *injected* callable in the timed region -- ``fn(*args)`` where ``fn`` is a parameter of an
    enclosing function -- inside a module that is demonstrably GPU-aware. This is the benchmark-
    harness shape: the harness cannot see what it times, so a rule keyed on the callee name never
    fires, yet a GPU-timing harness that never synchronizes mis-measures every GPU backend handed
    to it. Shape 1 alone misses exactly the case with the largest blast radius.
+
+A synchronization ends the region when it is a device barrier: a bare ``..._synchronize...`` function, a method named
+exactly ``synchronize``/``sync``, or a method whose name or receiver carries a device word (``gpu``, ``cuda``,
+``device``, ``stream``, ``event``...). ``log.synchronize_with_remote()`` is not one (audit 53-T3).
+
+The suppression marker ``gpu-timing-async-intentional`` is a comment and needs a reason after it
+(``# gpu-timing-async-intentional: measures launch latency``); a bare marker does not suppress (audit 53-T9).
 
 Entry points mirror this package's other checks: ``find_unsynchronized_gpu_timings`` returns
 findings, ``assert_no_unsynchronized_gpu_timings`` fails a pytest run on any that is not allowed.
@@ -37,6 +47,7 @@ from typing import NamedTuple, Optional
 from ._core import ImportAliases, ScanResult, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._core.scopes import function_param_names as _param_names
+from .cuda_launch_geometry import _is_launch
 
 __all__ = ["GpuTimingFinding", "SUPPRESSION_MARKER", "assert_no_unsynchronized_gpu_timings", "find_unsynchronized_gpu_timings"]
 
@@ -44,6 +55,12 @@ __all__ = ["GpuTimingFinding", "SUPPRESSION_MARKER", "assert_no_unsynchronized_g
 # anywhere in the timed region. Such a measurement is legitimate but must say so: an unlabelled
 # unsynchronized timer is indistinguishable from the bug.
 SUPPRESSION_MARKER = "gpu-timing-async-intentional"
+# The marker in a comment, followed by a non-empty reason (a bare marker, or one ending in a colon, is not a review).
+_PUNCT = r"\s:=,;.()\u2013\u2014\-"
+_MARKER_WITH_REASON_RE = re.compile(r"#[^\n]*" + re.escape(SUPPRESSION_MARKER) + r"(?![\w-])[" + _PUNCT + r"]*[^" + _PUNCT + r"#]")
+
+# Constructors whose value is a kernel object: calling the bound name runs device code.
+_KERNEL_CONSTRUCTORS = frozenset({"RawKernel", "ElementwiseKernel", "ReductionKernel", "get_function"})
 
 # Callee roots that are unambiguously device work when called.
 _GPU_ROOTS = frozenset({"cuda", "cupy", "cp", "cudf", "cuml"})
@@ -131,21 +148,67 @@ def _contains_timer_read(node: ast.AST, aliases: Optional[ImportAliases] = None)
     return any(_is_timer_read(sub, aliases) for sub in _fast_walk(node))
 
 
-def _gpu_call_name(node: ast.Call) -> Optional[str]:
+def _call_makes_kernel(call: ast.Call) -> bool:
+    func = call.func
+    last = func.attr if isinstance(func, ast.Attribute) else func.id if isinstance(func, ast.Name) else ""
+    return last in _KERNEL_CONSTRUCTORS
+
+
+def _kernel_object_names(tree: ast.AST) -> frozenset:
+    """Names (and attribute names) bound anywhere in the module to a kernel object: ``K = cp.RawKernel(...)``, ``f = mod.get_function("k")``,
+    ``self._k = cp.ElementwiseKernel(...)``."""
+    names: set = set()
+    for node in _fast_walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(node.value, ast.Call) and _call_makes_kernel(node.value):
+            for target in node.targets if isinstance(node, ast.Assign) else [node.target]:
+                if isinstance(target, ast.Name):
+                    names.add(target.id)
+                elif isinstance(target, ast.Attribute):
+                    names.add(target.attr)
+    return frozenset(names)
+
+
+def _gpu_call_name(node: ast.Call, kernels: frozenset = frozenset()) -> Optional[str]:
     """The callee's name when the call is device work, else None."""
     if isinstance(node.func, ast.Subscript):
-        # numba-cuda kernel launch: kern[blocks, threads](...)
+        # numba-cuda kernel launch: kern[blocks, threads](...). A subscript call whose index is not a launch configuration (``d[key](x)``,
+        # a dict of callables) is not one.
         inner = _dotted_name(node.func.value)
-        return f"{inner}[...]" if inner else "<kernel>[...]"
+        index = node.func.slice
+        if isinstance(index, ast.Tuple) and len(index.elts) >= 2:
+            return f"{inner}[...]" if inner else "<kernel>[...]"
+        return None
+    if isinstance(node.func, ast.Call) and _call_makes_kernel(node.func):
+        return "<kernel object>"  # module.get_function("k")(...) called inline
+    if _is_launch(node):
+        return f"{_dotted_name(node.func) or '<kernel>'}(grid, block, args)"
     name = _dotted_name(node.func)
     if not name:
         return None
+    if name.split(".")[-1] in kernels:
+        return name
     root = name.split(".")[0]
     if root in _GPU_ROOTS and "." in name:
         return name
     if name.startswith(_GPU_DOTTED_PREFIXES):
         return name
     return None
+
+
+_WORD_RE = re.compile(r"[A-Z]?[a-z0-9]+|[A-Z]+(?![a-z])")
+
+
+def _is_sync_method(func: ast.Attribute) -> bool:
+    """A method call that is a device barrier: named exactly like one, or with a device word in its name or receiver. ``log.synchronize_with_remote()`` is not."""
+    attr = func.attr
+    if not _is_sync_name(attr):
+        return False
+    words = [w.lower() for w in _WORD_RE.findall(attr)]
+    rest = [w for w in words if not (_SYNC_WORD_RE.match(w) or w == "sync")]
+    if not rest or _DEVICE_WORDS.intersection(rest):
+        return True
+    receiver = _dotted_name(func.value) or ""
+    return bool(_DEVICE_WORDS.intersection(w.lower() for w in _WORD_RE.findall(receiver)))
 
 
 def _is_sync_name(name: str) -> bool:
@@ -171,7 +234,7 @@ def _is_sync_call(node: ast.Call) -> bool:
             return True
         if func.attr in _IMPLICIT_SYNC_METHODS:
             return True
-        return _is_sync_name(func.attr)
+        return _is_sync_method(func)
     if isinstance(func, ast.Name):
         return _is_sync_name(func.id)
     return False
@@ -199,10 +262,12 @@ def _timed_regions(body: list[ast.stmt], aliases: Optional[ImportAliases] = None
 
 def _region_is_suppressed(region: list[ast.stmt], start_lineno: int, source_lines: list[str]) -> bool:
     end = max((getattr(s, "end_lineno", None) or s.lineno) for s in region) if region else start_lineno
-    return any(SUPPRESSION_MARKER in line for line in source_lines[start_lineno - 1 : end])
+    return any(_MARKER_WITH_REASON_RE.search(line) for line in source_lines[start_lineno - 1 : end])
 
 
-def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], path: Path, aliases: Optional[ImportAliases] = None) -> Iterator[GpuTimingFinding]:
+def _scan_functions(
+    tree: ast.AST, gpu_aware: bool, source_lines: list[str], path: Path, aliases: Optional[ImportAliases] = None, kernels: frozenset = frozenset()
+) -> Iterator[GpuTimingFinding]:
     """Walk the module body (as ``<module>``, a benchmark script's timed loop) and every function, carrying the
     parameter names of its lexically enclosing functions.
 
@@ -215,13 +280,13 @@ def _scan_functions(tree: ast.AST, gpu_aware: bool, source_lines: list[str], pat
         for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 params = visible_params | _param_names(child)
-                yield from _scan_one_function(child, params, gpu_aware, source_lines, path, aliases)
+                yield from _scan_one_function(child, params, gpu_aware, source_lines, path, aliases, kernels)
                 yield from visit(child, params, child.name)
             else:
                 yield from visit(child, visible_params, func_name)
 
     if isinstance(tree, ast.Module):
-        yield from _scan_one_function(tree, set(), gpu_aware, source_lines, path, aliases)
+        yield from _scan_one_function(tree, set(), gpu_aware, source_lines, path, aliases, kernels)
     yield from visit(tree, set(), None)
 
 
@@ -237,7 +302,13 @@ def _end(node: ast.AST) -> tuple[int, int]:
 
 
 def _scan_one_function(
-    func: ast.AST, visible_params: set[str], gpu_aware: bool, source_lines: list[str], path: Path, aliases: Optional[ImportAliases] = None
+    func: ast.AST,
+    visible_params: set[str],
+    gpu_aware: bool,
+    source_lines: list[str],
+    path: Path,
+    aliases: Optional[ImportAliases] = None,
+    kernels: frozenset = frozenset(),
 ) -> Iterator[GpuTimingFinding]:
     if not isinstance(func, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
         return
@@ -249,7 +320,7 @@ def _scan_one_function(
             calls = sorted((c for stmt in region for c in _fast_walk(stmt) if isinstance(c, ast.Call)), key=_position)
             if _region_is_suppressed(region, start_lineno, source_lines):
                 continue
-            gpu_calls = [c for c in calls if _gpu_call_name(c) and not _is_sync_call(c)]
+            gpu_calls = [c for c in calls if _gpu_call_name(c, kernels) and not _is_sync_call(c)]
             # The injected timer itself is excluded: an injectable ``timer`` parameter is how the
             # clock is read, not the work being clocked, so counting it would flag every
             # timer-overridable measurement in the file.
@@ -266,7 +337,7 @@ def _scan_one_function(
                 continue
             if gpu_calls:
                 yield GpuTimingFinding(
-                    path, start_lineno, name, "direct-gpu-call", f"times {_gpu_call_name(gpu_calls[0])}() with no device synchronize before the timer stop"
+                    path, start_lineno, name, "direct-gpu-call", f"times {_gpu_call_name(gpu_calls[0], kernels)}() with no device synchronize before the timer stop"
                 )
                 continue
             first = injected[0].func
@@ -309,7 +380,7 @@ def _scan(files: Iterable[Path], root: Optional[Path]) -> tuple[list[GpuTimingFi
             continue
         rel = Path(parsed.rel) if root is not None else parsed.path
         aliases = ImportAliases.from_tree(parsed.tree)
-        findings.extend(_scan_functions(parsed.tree, bool(_GPU_AWARE_RE.search(source)), source.splitlines(), rel, aliases))
+        findings.extend(_scan_functions(parsed.tree, bool(_GPU_AWARE_RE.search(source)), source.splitlines(), rel, aliases, _kernel_object_names(parsed.tree)))
     return sorted(set(findings), key=lambda f: (f.path.as_posix(), f.lineno)), scan
 
 

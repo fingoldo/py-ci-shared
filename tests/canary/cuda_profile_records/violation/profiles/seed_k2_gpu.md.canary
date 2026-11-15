@@ -1,0 +1,3 @@
+# profile
+
+cProfile top 20. nvprof run. 3 launches per call.

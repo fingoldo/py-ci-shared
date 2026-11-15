@@ -1,0 +1,8 @@
+_STAT_BLOCKS = 64
+
+
+def run(kernel, x, out, n):
+    kernel((min(64, (n + 255) // 256), 3), (256,), (x, out, n))
+    blocks = max(1, min(32, n // 256))
+    kernel((blocks,), (256,), (x, out, n))
+    kernel((_STAT_BLOCKS,), (256,), (x, out, n))

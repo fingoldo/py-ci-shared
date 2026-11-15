@@ -211,3 +211,13 @@ def test_a_loose_launch_with_a_reason_is_suppressed(tmp_path):
     """The marker works on a loose launch too."""
     assert _found(tmp_path, "kernel(grid, (256,), args)  # launch-ok: the kernel's shared tile is 256 wide") == []
     assert len(_found(tmp_path, "kernel(grid, (256,), args)")) == 1
+
+
+# --- round 2026-11-16 (audit 53-T9) ---------------------------------------------------------------------------------------------------------------
+
+
+def test_launch_marker_without_a_reason_does_not_suppress(tmp_path):
+    """53-T9: `# launch-ok:` with an empty reason is not a review."""
+    assert len(_found(tmp_path, "kernel((n,), (256,), (x, out))  # launch-ok:")) == 1
+    assert len(_found(tmp_path, "kernel((n,), (256,), (x, out))  # launch-ok:   ")) == 1
+    assert _found(tmp_path, "kernel((n,), (256,), (x, out))  # launch-ok: warp per item") == []

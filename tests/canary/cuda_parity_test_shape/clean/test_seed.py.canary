@@ -1,0 +1,46 @@
+import numpy as np
+import pytest
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_gpu_matches_cpu(seed):
+    x = np.random.default_rng(seed).normal(size=1000)
+    assert np.allclose(score_gpu(x), score_cpu(x))
+
+
+def test_gpu_matches_cpu_on_two_independent_datasets():
+    for seed in (11, 12):
+        x = np.random.default_rng(seed).normal(size=1000)
+        assert np.allclose(score_gpu(x), score_cpu(x))
+
+
+def test_gpu_matches_cpu_on_two_literal_seeds():
+    a = np.random.default_rng(3).normal(size=100)
+    b = np.random.default_rng(4).normal(size=100)
+    assert np.allclose(score_gpu(a), score_cpu(a))
+    assert np.allclose(score_gpu(b), score_cpu(b))
+
+
+def test_gpu_matches_cpu_on_the_adversarial_value():
+    assert np.allclose(score_gpu(np.array([1e308])), score_cpu(np.array([1e308])))
+
+
+def test_dispatch_falls_back_to_cpu():
+    x = np.random.default_rng(0).normal(size=10)
+    assert np.allclose(score_gpu(x), score_cpu(x))
+
+
+def test_gpu_matches_cpu_marked():  # parity-ok: a fixed published dataset has no seed to vary
+    x = np.random.default_rng(0).normal(size=10)
+    assert np.allclose(score_gpu(x), score_cpu(x))
+
+
+def test_gpu_only_has_no_host_twin():
+    x = np.random.default_rng(0).normal(size=10)
+    assert np.allclose(score_gpu(x), x)
+
+
+def test_gpu_and_cpu_both_called_never_compared():
+    x = np.random.default_rng(0).normal(size=10)
+    score_gpu(x)
+    score_cpu(x)

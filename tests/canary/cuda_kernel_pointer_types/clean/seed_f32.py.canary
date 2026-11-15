@@ -1,0 +1,8 @@
+import cupy as cp
+
+# a kernel whose name says float is deliberately float
+F32_SRC = r"""
+extern "C" __global__ void sum_f32(const float* x, const long long n, float* out) { }
+"""
+
+summer = cp.RawKernel(F32_SRC, "sum_f32")

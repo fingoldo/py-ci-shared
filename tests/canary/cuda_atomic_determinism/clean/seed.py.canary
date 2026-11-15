@@ -1,0 +1,19 @@
+import cupy as cp
+
+HIST_SRC = r"""
+extern "C" __global__ void hist_int(const int* __restrict__ c, int* __restrict__ h, const int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) atomicAdd(&h[c[i]], 1);
+}
+"""
+
+NOTED_SRC = r"""
+// atomic-fp-ok: the sum is order-dependent; the parity test compares at rtol 1e-9, not bit-for-bit
+extern "C" __global__ void sum_global(const double* __restrict__ x, double* __restrict__ out, const int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n) atomicAdd(&out[0], x[i]);
+}
+"""
+
+k1 = cp.RawKernel(HIST_SRC, "hist_int")
+k2 = cp.RawKernel(NOTED_SRC, "sum_global")

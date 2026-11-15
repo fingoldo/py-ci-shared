@@ -1,0 +1,12 @@
+import cupy as cp
+
+# a module that deals in float32 buffers: its float kernels are deliberate
+MOD_SRC = r"""
+extern "C" __global__ void plain_kernel(const float* x, const long long n, float* out) { }
+"""
+
+plain = cp.RawKernel(MOD_SRC, "plain_kernel")
+
+
+def upload(x):
+    return cp.asarray(x, dtype=cp.float32)

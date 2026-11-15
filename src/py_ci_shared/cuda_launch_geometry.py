@@ -16,7 +16,7 @@ Not reported: a block built from a call, an attribute or arithmetic over names (
 anything but an integer literal. A name imported from ANOTHER module in the same corpus (``from ._kernel import BLOCK``) is followed to that module's own module-level binding, so a
 constant defined once and launched from a different file is still caught - cross-package and external imports (anything the corpus does not itself contain) are not followed.
 
-Suppression: ``# launch-ok: <reason>`` on the first or last line of the call. The reason is the review: why this geometry cannot move (a warp-per-item kernel, a shared array sized by
+Suppression: ``# launch-ok: <reason>`` on the first or last line of the call; a marker with an empty reason does not suppress. The reason is the review: why this geometry cannot move (a warp-per-item kernel, a shared array sized by
 the block at compile time, a tile shape that is the algorithm).
 
 Usage in a consumer's meta test::
@@ -30,6 +30,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 from typing import Optional, Union
 
@@ -39,6 +40,7 @@ __all__ = ["MARKER", "RULE", "assert_cuda_launch_geometry", "find_cuda_launch_ge
 
 RULE = "cuda-literal-block-size"
 MARKER = "launch-ok:"
+_MARKER_WITH_REASON = re.compile(re.escape(MARKER) + r"\s*[^\s#]")  # a marker with nothing after it is not a review (audit 53-T9)
 
 
 def _int_literal(node: ast.AST) -> Optional[int]:
@@ -153,7 +155,7 @@ def _marked(call: ast.Call, py_lines: "list[str]") -> bool:
     for number in {call.lineno, getattr(call, "end_lineno", None) or call.lineno}:
         if 0 < number <= len(py_lines):
             line = py_lines[number - 1]
-            if "#" in line and MARKER in line[line.index("#") :]:
+            if "#" in line and _MARKER_WITH_REASON.search(line[line.index("#") :]):
                 return True
     return False
 

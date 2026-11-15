@@ -1,0 +1,20 @@
+import logging
+
+import cupy as cp
+
+logger = logging.getLogger(__name__)
+
+
+def score_oom(x):
+    try:
+        return _score_gpu(cp.asarray(x))
+    except cp.cuda.memory.OutOfMemoryError as exc:
+        logger.warning("device out of memory at n=%d (%s); scoring on the CPU kernel", len(x), exc)
+        return _score_cpu(x)
+
+
+def score_broad(x, out):
+    try:
+        out[:] = cp.asnumpy(_kernel_gpu(x))
+    except Exception:  # fallback-logged-ok: the caller logs the fallback with the timing
+        _fill_host(x, out)

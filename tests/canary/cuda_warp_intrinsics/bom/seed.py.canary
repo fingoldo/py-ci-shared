@@ -1,0 +1,35 @@
+﻿import cupy as cp
+
+SEED_LEGACY_SRC = r"""
+extern "C" __global__ void seed_legacy(float* x) {
+    float v = x[threadIdx.x];
+    for (int o = 16; o > 0; o >>= 1) v += __shfl_down(v, o);
+    if ((threadIdx.x & 31) == 0) x[blockIdx.x] = v;
+}
+"""
+
+SEED_VOTE_SRC = r"""
+extern "C" __global__ void seed_vote(const int* p, int* out) {
+    const unsigned b = __ballot(p[threadIdx.x] > 0);
+    if ((threadIdx.x & 31) == 0) out[0] = __popc(b);
+}
+"""
+
+SEED_MASK_SRC = r"""
+extern "C" __global__ void seed_mask(float* x, const int n) {
+    float v = x[threadIdx.x];
+    if (threadIdx.x < n) { v += __shfl_down_sync(0xffffffffu, v, 1); }
+    x[threadIdx.x] = v;
+}
+"""
+
+SEED_ACTIVE_SRC = r"""
+extern "C" __global__ void seed_active(float* x) {
+    x[threadIdx.x] = __shfl_sync(__activemask(), x[threadIdx.x], 0);
+}
+"""
+
+seed_legacy_kernel = cp.RawKernel(SEED_LEGACY_SRC, "seed_legacy")
+seed_vote_kernel = cp.RawKernel(SEED_VOTE_SRC, "seed_vote")
+seed_mask_kernel = cp.RawKernel(SEED_MASK_SRC, "seed_mask")
+seed_active_kernel = cp.RawKernel(SEED_ACTIVE_SRC, "seed_active")

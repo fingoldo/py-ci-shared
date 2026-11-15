@@ -1,0 +1,28 @@
+import cupy as cp
+
+SEED_FULL_SRC = r"""
+extern "C" __global__ void seed_full(float* x) {
+    float v = x[threadIdx.x];
+    for (int o = 16; o > 0; o >>= 1) v += __shfl_down_sync(0xffffffffu, v, o);
+    if ((threadIdx.x & 31) == 0) x[blockIdx.x] = v;
+}
+"""
+
+SEED_BALLOT_SRC = r"""
+extern "C" __global__ void seed_ballot(const int* p, int* out, const int n) {
+    const int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned b = __ballot_sync(0xffffffffu, i < n && p[i] > 0);
+    if ((threadIdx.x & 31) == 0) atomicAdd(&out[0], __popc(b));
+}
+"""
+
+SEED_REVIEWED_SRC = r"""
+extern "C" __global__ void seed_reviewed(float* x, const int n) {
+    // warp-ok: n is a multiple of 32 by construction
+    if (threadIdx.x < n) { x[0] = __shfl_sync(0xffffffffu, x[0], 0); }
+}
+"""
+
+seed_full_kernel = cp.RawKernel(SEED_FULL_SRC, "seed_full")
+seed_ballot_kernel = cp.RawKernel(SEED_BALLOT_SRC, "seed_ballot")
+seed_reviewed_kernel = cp.RawKernel(SEED_REVIEWED_SRC, "seed_reviewed")

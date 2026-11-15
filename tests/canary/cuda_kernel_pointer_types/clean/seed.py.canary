@@ -15,6 +15,24 @@ extern "C" __global__ void seed_residue(const double* __restrict__ T, const long
 }
 """
 
+BOUNDS_SRC = r"""
+extern "C" __global__ __launch_bounds__(256) void lb_gather(const {REAL}* x, const long long n, {ACC}* out) {
+    long long i = blockIdx.x * (long long)blockDim.x + threadIdx.x;
+    if (i < n) out[i] = x[i];
+}
+"""
+
+ALIAS_SRC = r"""
+typedef {REAL} real;
+typedef double unused_t;
+extern "C" __global__ void alias_k(const real* x, const long long n) { }
+"""
+
+# a partly templated signature is the documented design choice: the value type follows the buffer, the accumulator is double on purpose
+PARTIAL_SRC = r"""
+extern "C" __global__ void partial_k(const {REAL}* x, const long long n, double* acc) { }
+"""
+
 seed_kernel = cp.RawKernel(SEED_SRC.replace("{REAL}", "float").replace("{ACC}", "double"), "seed_argmax")
 residue = cp.RawKernel(REVIEWED_SRC, "seed_residue")
 

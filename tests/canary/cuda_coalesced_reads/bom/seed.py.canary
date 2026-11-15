@@ -5,3 +5,44 @@ extern "C" __global__ void strided(const int* X, int n, int F, int* out) {
     }
 }
 """
+
+# the run-table rule: lanes start one run length apart
+INDIRECT_SRC = r"""
+extern "C" __global__ void indirect_k(const unsigned char* xs, const int* starts, int S, int* out) {
+    const int s = blockIdx.x * blockDim.x + threadIdx.x;
+    if (s < S) {
+        const int lo = starts[s], hi = starts[s + 1];
+        for (int r = lo; r < hi; ++r) out[s] += xs[r];
+    }
+}
+"""
+
+# 53-T4: the bare thread index as a row, a pointer to a row, a gather row and a macro row
+FORMS_SRC = r"""
+#define ROW(r) ((r) * F)
+extern "C" __global__ void tx_k(const float* X, int F, float* out) {
+    out[0] = X[threadIdx.x * F];
+}
+extern "C" __global__ void ptr_row_k(const float* X, int F, float* out) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    const float* row = X + i * F;
+    out[i] = row[3];
+}
+extern "C" __global__ void gather_k(const float* X, const int* idx, int F, float* out) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    out[i] = X[idx[i] * F];
+}
+extern "C" __global__ void macro_k(const float* X, int F, float* out) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    out[i] = X[ROW(i) + 3];
+}
+"""
+
+# 53-T5: a second kernel of the same name keeps its own baseline key
+DUPLICATE_SRC = r"""
+extern "C" __global__ void strided(const int* X, int n, int F, int* out) {
+    for (long long i = blockIdx.x * blockDim.x + threadIdx.x; i < n; i += gridDim.x * blockDim.x) {
+        atomicAdd(&out[X[i * (long long)F + 1]], 1);
+    }
+}
+"""
