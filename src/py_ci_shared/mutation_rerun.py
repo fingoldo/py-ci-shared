@@ -93,11 +93,12 @@ def _run_lines(args: argparse.Namespace) -> int:
         limit=600,
         checkpoint_path=notes_path.with_suffix(".ckpt.jsonl"),
     )
-    _say(f"RUN mutants={run.mutants_run} killed={run.killed} survived={len(run.survivors)} truncated={run.truncated}")
+    fingerprint = tests_fingerprint(repo, module, [Path(t) for t in args.tests.split(",") if t])
+    _say(f"RUN mutants={run.mutants_run} killed={run.killed} survived={len(run.survivors)} truncated={run.truncated} fingerprint={fingerprint}")
     accepted: dict[str, str] = {}
     for m in run.survivors:
         text = str(m)
-        _say(f"SURVIVOR {text}")
+        _say(f"SURVIVOR {text} [fingerprint={fingerprint}]")
         loc = survivor_location(text)
         if loc in notes:
             accepted[m.key] = notes[loc]
