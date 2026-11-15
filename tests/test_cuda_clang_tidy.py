@@ -103,7 +103,7 @@ def test_real_clang_tidy_on_a_seeded_dead_store(tmp_path):
     exe, _ = find_clang_tidy()
     if not exe:
         pytest.skip("no real clang-tidy found")
-    body = 'SRC = """extern "C" __global__ void k(int* x) {\n  int j = x[1];\n  j = 5;\n  x[2] = j;\n}\n"""\n'
+    body = 'SRC = """#define __global__\nextern "C" __global__ void k(int* x) {\n  int j = x[1];\n  j = 5;\n  x[2] = j;\n}\n"""\n'
     rep = find_cuda_clang_tidy(_corpus(tmp_path, body), use_git=False)
     assert rep.checked == 1 and not rep.errors, rep.errors
     assert any("DeadStores" in f for f in rep.findings), rep.findings

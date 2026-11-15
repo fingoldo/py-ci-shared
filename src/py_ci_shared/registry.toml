@@ -393,7 +393,7 @@ name = "cuda_atomic_determinism"
 kind = "gate"
 entries = ["assert_cuda_atomic_determinism"]
 since = "1.23.12"
-summary = "every CUDA kernel with a floating-point atomicAdd carries a written determinism note, because a float atomic sum is order-dependent while integer counts are exact"
+summary = "Every CUDA kernel with a floating-point atomicAdd carries a written determinism note, because a float atomic sum is order-dependent while integer counts are exact"
 
 [[gate]]
 name = "cuda_barrier_divergence"
@@ -421,14 +421,14 @@ name = "cuda_const_restrict"
 kind = "gate"
 entries = ["assert_cuda_const_restrict"]
 since = "1.23.12"
-summary = "a CUDA kernel pointer parameter the kernel never writes through is declared const (and __restrict__ where it does not alias)"
+summary = "A CUDA kernel pointer parameter the kernel never writes through is declared const (and __restrict__ where it does not alias)"
 
 [[gate]]
 name = "cuda_fallback_logged"
 kind = "gate"
 entries = ["assert_cuda_fallback_logged"]
 since = "1.23.12"
-summary = "A Python handler that catches a device failure (out of memory, driver fault, cupy error, broad Exception) around GPU work and falls back without logging or re-raising is reported (advisory, baseline)"
+summary = "A CUDA handler that catches a device failure and silently finishes on the CPU hides a slowdown: say so with a log, a throttled warning, or re-raise"
 
 [[gate]]
 name = "cuda_grid_caps"
@@ -490,7 +490,7 @@ name = "cuda_launch_bounds_literal"
 kind = "gate"
 entries = ["assert_cuda_launch_bounds_literal"]
 since = "1.23.12"
-summary = "No CUDA kernel hard-codes the minBlocks of __launch_bounds__ above what the smallest SM can hold"
+summary = "A __launch_bounds__(threads, minBlocks) must not hard-code minBlocks as a number tuned on one card"
 
 [[gate]]
 name = "cuda_launch_geometry"
@@ -510,7 +510,7 @@ summary = "No CUDA kernel source uses a host-header macro (INFINITY, NAN, FLT_MA
 name = "cuda_offline_arch"
 kind = "library"
 since = "1.23.12"
-summary = "Glue for an offline per-architecture kernel test: arch list from an env var, toolchain check, and ptxas resource assertions on one build"
+summary = "The generic body of an offline per-architecture CUDA kernel test: which architectures, whether the toolchain is there, and what a ptxas result must satisfy"
 
 [[gate]]
 name = "cuda_offline_report"
@@ -544,7 +544,7 @@ name = "cuda_tree_reduction_block"
 kind = "gate"
 entries = ["assert_cuda_tree_reduction_block"]
 since = "1.23.12"
-summary = "A block_size_for call without pow2=True does not feed a halving tree-reduction kernel of the same module (224 ones sum to 128)"
+summary = "A block-size helper whose result feeds a CUDA tree-reduction kernel must return a power of two"
 
 [[gate]]
 name = "cuda_warp_intrinsics"
@@ -982,7 +982,7 @@ name = "ktc_sweep_tolerances"
 kind = "gate"
 entries = ["assert_ktc_sweep_tolerances"]
 since = "1.23.12"
-summary = "No kernel-tuning sweep carries a literal equivalence tolerance above a cap, so a loose tolerance cannot crown a divergent backend"
+summary = "A kernel-tuning equivalence sweep must not carry a tolerance far looser than its own claim"
 
 [[gate]]
 name = "kwarg_forwarding"
@@ -1208,7 +1208,7 @@ name = "numba_cuda_kernels"
 kind = "gate"
 entries = ["assert_numba_cuda_kernels"]
 since = "1.23.12"
-summary = "Python kernels written with numba.cuda are free of unguarded global-index subscripts, divergent syncthreads, unsynchronised read-modify-write of one shared cell and float64 spellings inside float32 kernels"
+summary = "Kernels written in Python with numba.cuda are checked for the four mistakes that corrupt results silently, which C++-string CUDA gates cannot see"
 
 [[gate]]
 name = "numba_seed_range"

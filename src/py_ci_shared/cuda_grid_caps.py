@@ -33,7 +33,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, nodes_of, scan_python
+from ._core import Baseline, Finding, nodes_of, scan_python, walk
 from .cuda_launch_geometry import _bindings, _int_literal, _launch_block
 
 __all__ = ["MARKER", "RULE", "assert_cuda_grid_caps", "find_cuda_grid_caps"]
@@ -47,13 +47,13 @@ _HOPS = 2
 
 
 def _names_in(node: ast.AST) -> "set[str]":
-    return {n.id for n in ast.walk(node) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(node) if isinstance(n, ast.Attribute)}
+    return {n.id for n in walk(node) if isinstance(n, ast.Name)} | {n.attr for n in walk(node) if isinstance(n, ast.Attribute)}
 
 
 def _is_sm_aware(node: ast.AST) -> bool:
     if any(_SM_NAME.search(name) for name in _names_in(node)):
         return True
-    return any(isinstance(n, ast.Constant) and isinstance(n.value, str) and _SM_NAME.search(n.value) for n in ast.walk(node))
+    return any(isinstance(n, ast.Constant) and isinstance(n.value, str) and _SM_NAME.search(n.value) for n in walk(node))
 
 
 def _grid_elements(call: ast.Call) -> "list[ast.AST]":
@@ -81,7 +81,7 @@ def _literal(node: ast.AST, scopes: "list[dict[str, Optional[int]]]") -> Optiona
 
 def _min_caps(expr: ast.AST, scopes: "list[dict[str, Optional[int]]]") -> "list[tuple[int, ast.Call]]":
     out = []
-    for node in ast.walk(expr):
+    for node in walk(expr):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "min" and len(node.args) >= 2:
             for arg in node.args:
                 value = _literal(arg, scopes)
@@ -120,7 +120,7 @@ class _Function:
         for _ in range(_HOPS):
             nxt: "list[tuple[ast.AST, ast.AST]]" = []
             for sub, _owner in frontier:
-                for name in {n.id for n in ast.walk(sub) if isinstance(n, ast.Name)} - seen - skip:
+                for name in {n.id for n in walk(sub) if isinstance(n, ast.Name)} - seen - skip:
                     seen.add(name)
                     for value, stmt in self.assigns.get(name, []):
                         nxt.append((value, stmt))
@@ -133,13 +133,13 @@ def _block_and_range_names(call: ast.Call, fn_node: "Optional[ast.AST]") -> "set
     names: "set[str]" = set()
     func = call.func
     if isinstance(func, ast.Subscript) and isinstance(func.slice, ast.Tuple) and len(func.slice.elts) >= 2:
-        names |= {n.id for n in ast.walk(func.slice.elts[1]) if isinstance(n, ast.Name)}
+        names |= {n.id for n in walk(func.slice.elts[1]) if isinstance(n, ast.Name)}
     elif len(call.args) > 1:
-        names |= {n.id for n in ast.walk(call.args[1]) if isinstance(n, ast.Name)}
+        names |= {n.id for n in walk(call.args[1]) if isinstance(n, ast.Name)}
     if fn_node is not None:
         for node in nodes_of(fn_node, ast.Call):
             if isinstance(node.func, ast.Name) and node.func.id == "range":
-                names |= {n.id for arg in node.args for n in ast.walk(arg) if isinstance(n, ast.Name)}
+                names |= {n.id for arg in node.args for n in walk(arg) if isinstance(n, ast.Name)}
     return names
 
 
@@ -156,7 +156,7 @@ def _cap_findings(
         # a name that is also a block width or a range() step is a thread count or a chunk, not a grid cap
         skip = _block_and_range_names(call, fn_node)
         expanded = fn.expand(grid, call, skip) if fn is not None else [(grid, call)]
-        referenced.update(n.id for sub, _ in expanded for n in ast.walk(sub) if isinstance(n, ast.Name))
+        referenced.update(n.id for sub, _ in expanded for n in walk(sub) if isinstance(n, ast.Name))
         if any(_is_sm_aware(sub) for sub, _ in expanded):
             continue
         for index, (sub, owner) in enumerate(expanded):

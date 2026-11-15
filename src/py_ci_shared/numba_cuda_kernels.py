@@ -63,7 +63,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python, walk
 
 __all__ = [
     "MARKER",
@@ -106,7 +106,7 @@ def _own_nodes(fn: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> "list[ast.AS
         out.append(node)
         if isinstance(node, _SCOPES):
             continue
-        stack.extend(reversed(list(ast.iter_child_nodes(node))))
+        stack.extend(reversed(list(child_nodes(node))))
     return out
 
 
@@ -119,7 +119,7 @@ def _walk_expr(node: ast.AST) -> "list[ast.AST]":
         out.append(cur)
         if isinstance(cur, ast.Lambda):
             continue
-        stack.extend(ast.iter_child_nodes(cur))
+        stack.extend(child_nodes(cur))
     return out
 
 
@@ -151,7 +151,7 @@ def _decorator_kind(dec: ast.expr, aliases: ImportAliases) -> "Optional[tuple[bo
 def kernel_functions(tree: ast.Module, aliases: ImportAliases) -> "list[_Kernel]":
     """Every ``numba.cuda.jit`` function of the module (kernels and device helpers), nested ones included, in source order."""
     out = []
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for dec in node.decorator_list:
                 kind = _decorator_kind(dec, aliases)
@@ -241,7 +241,7 @@ def _has_return(stmt: ast.AST) -> bool:
             return True
         if isinstance(n, _SCOPES):
             continue
-        stack.extend(ast.iter_child_nodes(n))
+        stack.extend(child_nodes(n))
     return False
 
 

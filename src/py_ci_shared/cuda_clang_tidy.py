@@ -184,7 +184,7 @@ def find_cuda_clang_tidy(
             cmd = [exe, str(out_dir / name), f"--checks={CHECKS}", "--header-filter=^$", "--", f"--cuda-gpu-arch={arch}", "-x", "cuda", "-w"]
             if cuda:
                 cmd.append(f"--cuda-path={cuda}")
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+            proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, check=False)
             report.checked += 1
             found = _parse_output(proc.stdout, key, name, text.splitlines())
             report.findings.extend(found)

@@ -34,7 +34,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core import Finding, nodes_of, scan_python
+from ._core import Finding, nodes_of, scan_python, walk
 
 __all__ = ["MARKER", "RULE", "assert_cuda_tree_reduction_block", "find_cuda_tree_reduction_block"]
 
@@ -73,7 +73,7 @@ def _tree_kernels(tree: ast.Module) -> "set[str]":
 
 
 def _strings(node: ast.AST) -> "set[str]":
-    return {n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    return {n.value for n in walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
 
 
 def _marked(lines: "list[str]", node: Any) -> bool:
@@ -130,7 +130,7 @@ def _bound_kernels(values: "list[ast.AST]", functions: "dict[str, ast.AST]", tre
     names: "set[str]" = set()
     for value in values:
         names |= _strings(value)
-        for node in ast.walk(value):
+        for node in walk(value):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in functions:
                 names |= _strings(functions[node.func.id])
     return names & trees

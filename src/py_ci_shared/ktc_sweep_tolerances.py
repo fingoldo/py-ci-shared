@@ -29,7 +29,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import DEFAULT_EXCLUDE, Baseline, Finding, nodes_of, scan_python
+from ._core import DEFAULT_EXCLUDE, Baseline, Finding, child_nodes, nodes_of, scan_python
 
 __all__ = ["MARKER", "RULE", "assert_ktc_sweep_tolerances", "find_ktc_sweep_tolerances"]
 
@@ -56,7 +56,7 @@ def _enclosing(tree: ast.Module) -> "dict[int, str]":
     owner: "dict[int, str]" = {}
 
     def visit(node: ast.AST, name: str) -> None:
-        for child in ast.iter_child_nodes(node):
+        for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 visit(child, child.name)
                 continue

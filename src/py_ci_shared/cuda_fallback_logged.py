@@ -26,11 +26,11 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, nodes_of, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, nodes_of, scan_python, walk
 
 __all__ = ["MARKER", "RULE", "assert_cuda_fallback_logged", "find_cuda_fallback_logged"]
 
@@ -65,7 +65,7 @@ def _caught(handler: ast.ExceptHandler) -> "Optional[list[str]]":
 
 def _is_gpu_work(body: "list[ast.stmt]", aliases: ImportAliases, gpu_modules: "tuple[str, ...]") -> bool:
     for stmt in body:
-        for node in ast.walk(stmt):
+        for node in walk(stmt):
             if isinstance(node, ast.Name):
                 target = aliases.mapping.get(node.id, node.id)
                 if any(target == m or target.startswith(m + ".") for m in gpu_modules):
@@ -85,7 +85,7 @@ def _is_log_call(node: ast.AST, log_roots: "tuple[str, ...]") -> bool:
 
 
 def _logs_or_raises(stmts: "Iterable[ast.AST]", log_roots: "tuple[str, ...]") -> bool:
-    return any(isinstance(n, ast.Raise) or _is_log_call(n, log_roots) for stmt in stmts for n in ast.walk(stmt))
+    return any(isinstance(n, ast.Raise) or _is_log_call(n, log_roots) for stmt in stmts for n in walk(stmt))
 
 
 def _marked(handler: ast.ExceptHandler, py_lines: "list[str]") -> bool:
@@ -102,7 +102,7 @@ def _marked(handler: ast.ExceptHandler, py_lines: "list[str]") -> bool:
 
 
 def _parent_map(tree: ast.AST) -> "dict[int, ast.AST]":
-    return {id(child): node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+    return {id(child): node for node in walk(tree) for child in child_nodes(node)}
 
 
 def _outer_logs(try_node: ast.Try, parents: "dict[int, ast.AST]", log_roots: "tuple[str, ...]") -> bool:
@@ -121,7 +121,7 @@ def _function_logs_before(try_node: ast.Try, parents: "dict[int, ast.AST]", log_
         node = parents.get(id(node))
     if node is None:
         return False
-    return any(_is_log_call(sub, log_roots) and sub.lineno < try_node.lineno for sub in ast.walk(node))  # type: ignore[attr-defined]
+    return any(_is_log_call(sub, log_roots) and sub.lineno < try_node.lineno for sub in walk(node))  # type: ignore[attr-defined]
 
 
 def _findings_in(

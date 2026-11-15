@@ -31,7 +31,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, nodes_of, scan_python
+from ._core import Baseline, Finding, ImportAliases, child_nodes, nodes_of, scan_python
 
 __all__ = ["MARKER", "RULE", "assert_cuda_ktc_residency", "find_cuda_ktc_residency"]
 
@@ -48,7 +48,7 @@ DEFAULT_MODULE_DECLARATIONS = ("_SWEEP_RESIDENCIES",)
 def _bound_once(scope: ast.AST) -> "dict[str, Optional[ast.expr]]":
     """``{name: value}`` for the plain assignments directly in *scope* (not in nested defs); a name bound twice maps to ``None``."""
     out: "dict[str, Optional[ast.expr]]" = {}
-    todo = list(ast.iter_child_nodes(scope))
+    todo = list(child_nodes(scope))
     while todo:
         node = todo.pop()
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
@@ -59,7 +59,7 @@ def _bound_once(scope: ast.AST) -> "dict[str, Optional[ast.expr]]":
                     out[target.id] = None if target.id in out else node.value
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
             out[node.target.id] = None if node.target.id in out else node.value
-        todo.extend(ast.iter_child_nodes(node))
+        todo.extend(child_nodes(node))
     return out
 
 

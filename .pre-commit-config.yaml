@@ -77,7 +77,7 @@ repos:
         stages: [pre-push]
       - id: self-gates-blocking
         name: "self-gate tests, ~4 min (pre-push; the rest of tests/ runs in release_local.py, ~20 min)"
-        entry: python -m pytest -p no:randomly -n 2 -o addopts="-ra --strict-markers" tests/test_package_inventory.py tests/test_gate_teeth.py tests/test_release_version.py tests/test_self_gates.py tests/test_complexity_ratchet.py tests/test_pytest_markers.py tests/test_release_local.py
+        entry: python -m pytest -p no:randomly -n 2 -o addopts="-ra --strict-markers" tests/test_package_inventory.py tests/test_gate_teeth.py tests/test_release_version.py tests/test_self_gates.py tests/test_gates_use_shared_traversal.py tests/test_complexity_ratchet.py tests/test_pytest_markers.py tests/test_release_local.py
         language: system
         pass_filenames: false
         files: '^(src/|tests/|configs/|pyproject\.toml$|README\.md$|CHANGELOG\.md$|\.github/)'
