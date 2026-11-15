@@ -239,57 +239,57 @@ Each file: 5.2 to 13.9 s wall, **total 80.1 s for 10 files (mean 8.0 s)**; the f
 - **Evidence:** CUDA.md 17 ("kept in the session scratchpad"); `where clang-tidy` returns nothing, yet the host has LLVM 20.1.8 under Visual Studio BuildTools and CUDA 12.9; `tidy_proto.py` ran 10 kernels in 80 s, 1 failed on an unresolved placeholder (`const 1* cols`), 24 of 29 warnings were the documented `blockIdx` noise. Section 17 attributes two real latent bugs (uninitialised read in `lof_scores`, dead stores) to this pass.
 - **Impact:** the most productive static check the doc records cannot be repeated by anyone but the session that wrote it; it is also silently stale (clang-tidy 18 -> 20).
 - **Proposed fix:** new `cuda_clang_tidy` module and `py-ci-shared tool` entry as designed above; consumes `find_cuda_kernel_sources` or the consumer's concrete variants; exit 3 when unavailable. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new `cuda_clang_tidy` runner (skips loudly without clang-tidy, `--require` makes absence a failure, unresolved placeholders are reported).
 
 ## 55-T2 (P2) `block_size_for` defaults to non-power-of-two widths and nothing flags a tree-reduction kernel launched with it
 - **Evidence:** `pyutilz/performance/gpu_hw_launch.py:265` `pow2: bool = False`; `cand.py` returns 96, 224, 384 for realistic register/shared-memory pairs (output in section "Rule family B"); `tree_real.py`: the `s = nt >> 1; s > 0; s >>= 1` loop sums 224 ones to 128 and 768 ones to 512. Corpus: 18 tree kernels in 13 files, 0 declare a width contract; mlframe avoids the bug today through `_tree_block` / `pow2=True` (9 files), so no live defect was found.
 - **Impact:** a future edit that swaps `_tree_block` for `block_size_for` gives wrong sums on cards where the occupancy rule picks a non-pow2 width, with passing tests on the dev card. CUDA.md 14.3 lists this as a manual declaration "the helper cannot know".
 - **Proposed fix:** `cuda_tree_reduction` (kernel half ADVISORY from day one, launch half HARD only with binding resolution; file-level matching gave 9/9 false positives and must not ship). Canaries as above. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new narrow gate `cuda_tree_reduction_block` (a kernel bound by name inside one module); the file-level form was not shipped because it gave 9 of 9 false positives.
 
 ## 55-T3 (P2) Launch grid caps tuned on a 6-SM card are not gated
 - **Evidence:** `proto3.py`: `_quantile_codes_gpu.py:135,142,149 min(64, ...)`, `_group_distance_gpu.py:169 min(grid_x, 64)`, `_ksg_cd_gpu.py:33 _BLOCKS_PER_COLUMN = 64`, `hermite_fe/_als_fused_gpu.py:25 _STAT_BLOCKS = 64`; only 5 of 360 GPU files reference an SM count; `cuda_launch_geometry` covers the block, not the grid.
 - **Impact:** on a 100-SM card those launches use 64 blocks (under 1 wave); CUDA.md 14 and 18.c/19.3 measured 3.4x (`tail_counts`) for the same class.
 - **Proposed fix:** `cuda_grid_cap` ADVISORY with a baseline (CUDA.md 14.4: a cap change reorders float sums, so no blind hard gate). Threshold 512 gives 6 true, 0 false in the corpus. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new gate `cuda_grid_caps`; 12 true hits on mlframe.
 
 ## 55-T4 (P2) The allocation-counting opt-out harness is local to mlframe
 - **Evidence:** `tests/test_meta/test_gpu_optout_makes_no_device_allocations.py:1-60`: a hook on `cupy.cuda.set_allocator` and numba device arrays plus a frame-walk probe allowlist; the file's own comment records a multi-hour hang from `traceback.extract_stack`. The incident (37 percent of a 300k fit in cupy argsort under an opt-out) is generic to every GPU consumer.
 - **Impact:** autopsia, pyutilz, llm_bench would each re-derive the hook and the hang.
 - **Proposed fix:** `gpu_optout.assert_no_device_allocations(fn, probe_frames=...)` / a context manager; skip loud without cupy. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new `cuda_optout_allocations` (allocation counter and opt-out environment check).
 
 ## 55-T5 (P2) The body of the offline per-arch test and the literal-minBlocks check are local although the engine is shared
 - **Evidence:** `test_cuda_kernels_offline_per_arch.py` (290 lines) re-implements ptxas lookup (`CUDA_PATH`, PATH), the REQUIRE-env skip/fail, `_check_variant`, and `test_no_kernel_hardcodes_the_min_blocks_of_launch_bounds`, while `cuda_offline_report` holds only the engine. Corpus: 12 kernels with `__launch_bounds__`, 0 literal minBlocks (the check has no corpus failures; it needs the canary).
 - **Impact:** a second consumer with ptxas must copy 150 lines; `cuda_kernel_names` already needs the same variants mapping.
 - **Proposed fix:** `cuda_offline_report.assert_variant_assembles(...)` and `assert_no_literal_min_blocks(sources)`; both ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new `cuda_offline_arch` (the offline per-arch glue) and `cuda_launch_bounds_literal`; agrees with the mlframe original (0 hits).
 
 ## 55-T6 (P2) KTC sweep tolerance gate is a pure static check that lives only in mlframe
 - **Evidence:** `test_ktc_sweep_tolerances.py`: AST scan of `sweep_backend_grid(... equiv_rtol=, equiv_atol=)` above 1e-6; reimplements the parse cache and the enclosing-function walk.
 - **Impact:** a loose tolerance can crown a divergent backend per host (the pair-residual incident named in `test_ktc_dispatch_selects_more_than_one_path`).
 - **Proposed fix:** `assert_sweep_tolerance_cap(root, call_names, kwarg_names, max_value, allow)` via `scan_python` and `Baseline`. ADDITIVE; effort S.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new gate `ktc_sweep_tolerances` (literal tolerances only; a computed tolerance cannot be judged statically); flags the same two sweeps as the mlframe original.
 
 ## 55-T7 (P3) No generic gate for the profile record the CUDA contract requires
 - **Evidence:** CUDA.md 2.5 and 9 ("record GPU model, architecture, ncu version, clock next to every figure") versus `fe_gpu_coverage_inventory.contract_violations` (mlframe-only regexes, five fields) and `audits/2026-10-22/profiles/` (148 records: GPU model in 86, clock in 27, registers in 26; 48 of 91 kernel-bearing stems without an own record). 
 - **Impact:** provenance fields are the doc's own rule for comparing machines and 82 percent of existing records do not state a clock.
 - **Proposed fix:** `gpu_profile_records` with a mandatory `family_map` and provenance fields ADVISORY. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): covered by `cuda_profile_records`.
 
 ## 55-T8 (P3) Wide-load alignment contract (CUDA.md 19.1) is not recorded on the kernel
 - **Evidence:** 11 kernels cast to wider element types, 3 declare a stride parameter; the doc states a misaligned 4-byte load faults. Precision of the prototype is low (>= 3 of the first 5 flags are bit-word arrays or already padded under another name).
 - **Proposed fix:** `cuda_wide_load_alignment` ADVISORY restricted to byte-pointer casts and a name list `stride|pitch|ld|pad`. ADDITIVE; build after T1-T6.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: precision measured below the bar (3 or more of the first 5 flags wrong); retry when the kernel records the alignment contract.
 
 ## 55-T9 (P3) Doc staleness and disagreements inside CUDA.md (relay to mlframe, nothing to fix here)
 - **Evidence:** (a) section 14 "Recommendations 2" says three `gpu_capability_summary(0)` calls remain; the corpus has `launch_device_id()` at all three. (b) section 14 names `filters/_gpu_hw_launch.py`; the helper is `pyutilz/performance/gpu_hw_launch.py` (imported in 155 call sites). (c) sections 10.9 and 13.8 say NVRTC lacks `INFINITY`; `nvrtc_inf.py` shows `NAN` and `HUGE_VAL` fail too (cupy 14.1.1, CUDA 12.9), only the bit-pattern builds. (d) the brief and the doc count ~85 kernels; `find_cuda_kernel_sources` counts 155 sources in 91 files (103 files contain the text `__global__`, including benchmarks). (e) section 17 says clang-tidy 18.1.8 verified; the host has 20.1.8. (f) section 18 says CUDA 12.8 `nvprof`; Windows toolkits 12.x ship `nvprof`? not verified, not claimed.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: the staleness is in mlframe's CUDA.md; relayed to the owner of that file.
 
 ## 55-T10 (P3) Cheap regression guards that need canaries because the corpus has zero hits
 - **Evidence:** `cuda-literal-device-id` (0 hits), `cuda-cupy-small-power` (0 hits), `cuda-direct-device-sort` (1 axis=0 hit, a size false positive), four-load byte pattern (0 hits in 155).
 - **Proposed fix:** fold `cuda-literal-device-id` into `cuda_launch_geometry`; `cuda-direct-device-sort` and `cuda-cupy-small-power` as one advisory module `cuda_device_idioms` with two rule ids; all advisory, canaries as in the snippets above.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: every candidate rule has zero corpus hits or a known false positive; none shipped.
 
 ## Ranked list of the ten best additions
 

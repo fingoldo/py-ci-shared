@@ -61,7 +61,7 @@ Finding ids of rounds 2026-11-10 (`NN-Rk`), 2026-11-11 (`NN-Sk`) and 2026-11-16 
 | 45-T2 | P2 | Nine-plus gates look for `ast.Try` only and so skip `try: ... except* X:` (PEP 654, 3.11+): a swallow in an `except*` handler is not found | OPEN |
 | 45-T3 | P2 | `test_cross_interpreter_keys` can only find other interpreters on this Windows host: on every CI leg it skips, and it also swallows real crashes | OPEN |
 | 45-T4 | P3 | `pyproject.toml` has no Python version classifiers and `requires-python` has no upper bound, while CI exercises 3.9-3.13, 3.14 (non-blocking) and 3.15 | OPEN |
-| 46-T1 | P1 | Consumer CI health fails every night because its self-watch step reads its own history; the fix is uncommitted | OPEN |
+| 46-T1 | P1 | Consumer CI health fails every night because its self-watch step reads its own history; the fix is uncommitted | RESOLVED (05fa71f): `ci_health --skip-workflow`; ci-health.yml's self-watch step skips `Consumer CI health`. Both monitors were run by hand afterwards and passed. |
 | 46-T2 | P2 | Both recent releases left a red Release run although the release was published; the local publish and the tag workflow race | OPEN |
 | 46-T3 | P2 | Nothing stops two sessions preparing the same next version; the bump-after-tag step is a hand edit | OPEN |
 | 46-T4 | P2 | ci-health has no known-red baseline, so it is red every night on standing reds and a new regression cannot show | OPEN |
@@ -126,40 +126,40 @@ Finding ids of rounds 2026-11-10 (`NN-Rk`), 2026-11-11 (`NN-Sk`) and 2026-11-16 
 | 52-T4 | P3 | Identical helper bodies copied across scanners, after 52-F2 resolved the earlier ten | OPEN |
 | 52-T5 | P3 | `repo_hygiene` and `uncalled_functions` exceed their own 30 s budget on this repo | OPEN |
 | 52-T6 | P3 | Stale untracked build output in the working tree holds 386 old .py files | OPEN |
-| 53-T1 | P1 | cuda_kernel_pointer_types skips every kernel declared `__global__ __launch_bounds__(N) void name(...)` | OPEN |
-| 53-T2 | P1 | gpu_timing_sync is blind to a launch through a kernel object | OPEN |
-| 53-T3 | P2 | gpu_timing_sync: any `synchroni*` call name ends a region, and any `x[k](...)` is GPU work | OPEN |
-| 53-T4 | P2 | cuda_coalesced_reads misses common strided forms | OPEN |
-| 53-T5 | P2 | cuda_coalesced_reads reads raw .py text; comments count, the line and the baseline key are wrong | OPEN |
-| 53-T6 | P2 | cuda_kernel_sources misses inline sources and truncates multi-literal sources | OPEN |
-| 53-T7 | P2 | No gate covers the 21 numba.cuda kernels written in Python | OPEN |
-| 53-T8 | P2 | Canaries do not prove most rules | OPEN |
-| 53-T9 | P3 | Suppression markers accept an empty reason | OPEN |
-| 53-T10 | P3 | pointer_types and integer_width small gaps | OPEN |
-| 53-T11 | P3 | cuda_offline_report ARCH_LIMITS lacks sm_80 and sm_100 | OPEN |
-| 53-T12 | P3 | numba_seed_range entry contract differs from the other gates | OPEN |
-| 53-T13 | P3 | pointer_types advisory float rule is noise on mlframe | OPEN |
-| 54-T1 | P2 | Kernel bodies with bare `double` sit outside every gate and outside the FE contract | OPEN |
-| 54-T2 | P2 | Legacy `__shfl*` compiles on the Pascal host and fails on every sm_70+ target; no gate sees it | OPEN |
-| 54-T3 | P2 | NVRTC lacks more than `INFINITY`; CUDA.md names one macro and no gate checks any | OPEN |
-| 54-T4 | P2 | The residency contract of section 4 is declared by 1 of 72 `gpu_capable` registrations | OPEN |
-| 54-T5 | P2 | The profile-record contract is a mlframe-local regex over a hand-kept list; 48 of 91 kernel files have no record | OPEN |
-| 54-T6 | P3 | Ten kernels use floating-point `atomicAdd` with no determinism note, against the narrative of CUDA.md:48 | OPEN |
-| 54-T7 | P3 | `row_attention_stage4_fused` places three barriers after a thread-dependent `return` | OPEN |
-| 54-T8 | P3 | Silent device-fault fallbacks remain: two of five sampled handlers are real | OPEN |
-| 54-T9 | P3 | CUDA.md states two hardware facts that contradict the NVIDIA table | OPEN |
-| 54-T10 | P3 | Internal disagreements and stale counts inside CUDA.md | OPEN |
-| 54-T11 | P2 | GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident | OPEN |
-| 55-T1 | P2 | No tool runs the documented clang-tidy extraction pass; the pass exists only as scratch scripts | OPEN |
-| 55-T2 | P2 | `block_size_for` defaults to non-power-of-two widths and nothing flags a tree-reduction kernel launched with it | OPEN |
-| 55-T3 | P2 | Launch grid caps tuned on a 6-SM card are not gated | OPEN |
-| 55-T4 | P2 | The allocation-counting opt-out harness is local to mlframe | OPEN |
-| 55-T5 | P2 | The body of the offline per-arch test and the literal-minBlocks check are local although the engine is shared | OPEN |
-| 55-T6 | P2 | KTC sweep tolerance gate is a pure static check that lives only in mlframe | OPEN |
-| 55-T7 | P3 | No generic gate for the profile record the CUDA contract requires | OPEN |
-| 55-T8 | P3 | Wide-load alignment contract (CUDA.md 19.1) is not recorded on the kernel | OPEN |
-| 55-T9 | P3 | Doc staleness and disagreements inside CUDA.md (relay to mlframe, nothing to fix here) | OPEN |
-| 55-T10 | P3 | Cheap regression guards that need canaries because the corpus has zero hits | OPEN |
+| 53-T1 | P1 | cuda_kernel_pointer_types skips every kernel declared `__global__ __launch_bounds__(N) void name(...)` | RESOLVED (62f3f61): `cuda_kernel_pointer_types` finds `__launch_bounds__` / `__maxnreg__` kernels under their real name; 38 new tests failed on the old code first. |
+| 53-T2 | P1 | gpu_timing_sync is blind to a launch through a kernel object | RESOLVED (62f3f61): `gpu_timing_sync` counts a launch through a kernel object as device work. Finding the gate blind was NOT confirmed on mlframe: 1479 timed regions, 24 with device work, all 24 synchronized, 0 findings before and after. |
+| 53-T3 | P2 | gpu_timing_sync: any `synchroni*` call name ends a region, and any `x[k](...)` is GPU work | RESOLVED (62f3f61): only a device barrier ends a timed region, and `d[k](x)` is no longer a launch. |
+| 53-T4 | P2 | cuda_coalesced_reads misses common strided forms | RESOLVED (62f3f61): `cuda_coalesced_reads` reports the pointer-row stride forms; 1 to 15 findings on mlframe (Behaviour change). |
+| 53-T5 | P2 | cuda_coalesced_reads reads raw .py text; comments count, the line and the baseline key are wrong | RESOLVED (62f3f61): `cuda_coalesced_reads` reads comment-stripped kernel text, so comments and docstrings no longer count and the line number is right. |
+| 53-T6 | P2 | cuda_kernel_sources misses inline sources and truncates multi-literal sources | RESOLVED (62f3f61): `cuda_kernel_sources` extracts inline `RawKernel` arguments and joins `SRC = HEAD + BODY`. |
+| 53-T7 | P2 | No gate covers the 21 numba.cuda kernels written in Python | RESOLVED (62f3f61): new gate `numba_cuda_kernels` with four rules (unguarded grid index, divergent syncthreads, unsynchronised read-modify-write, float64 in a float32 kernel); 0 findings on mlframe's 25 kernels. |
+| 53-T8 | P2 | Canaries do not prove most rules | DEFERRED: for the six repaired gates the authors removed each rule in turn and the canaries notice it (pointer_types, integer_width, coalesced_reads: 24 mutations caught by canaries and 2 more by unit tests; each new rule of gpu_timing_sync, numba_seed_range and cuda_launch_geometry caught); `cuda_kernel_names` and `cuda_kernel_factories` have had no mutation pass yet. |
+| 53-T9 | P3 | Suppression markers accept an empty reason | RESOLVED (62f3f61): a suppression marker with an empty reason no longer suppresses, in every gate that has one (pointer_types, integer_width, coalesced_reads, gpu_timing_sync, cuda_launch_geometry, numba_seed_range). Behaviour change. |
+| 53-T10 | P3 | pointer_types and integer_width small gaps | RESOLVED (62f3f61): `double2*`/`double4*`, `double x[]` and typedef/define/using aliases are reported by `cuda_kernel_pointer_types`. |
+| 53-T11 | P3 | cuda_offline_report ARCH_LIMITS lacks sm_80 and sm_100 | RESOLVED (62f3f61): sm_60, sm_80 and sm_100 added to `cuda_offline_report.ARCH_LIMITS`. The sm_100 limits were written from memory and still need a check against the NVIDIA table. |
+| 53-T12 | P3 | numba_seed_range entry contract differs from the other gates | RESOLVED (62f3f61): `find_wide_numba_seeds` takes `min_files` and `allow_unparsed` like the other gates. |
+| 53-T13 | P3 | pointer_types advisory float rule is noise on mlframe | RESOLVED (62f3f61): the advisory float rule skips float32-named kernels and modules that say float32; 14 findings on mlframe became 0. |
+| 54-T1 | P2 | Kernel bodies with bare `double` sit outside every gate and outside the FE contract | RESOLVED (62f3f61): new gate `cuda_kernel_fp_types`; 5 sources in 4 mlframe files reported. |
+| 54-T2 | P2 | Legacy `__shfl*` compiles on the Pascal host and fails on every sm_70+ target; no gate sees it | RESOLVED (62f3f61): new gate `cuda_warp_intrinsics` (legacy unmasked warp intrinsics, sm_70+). |
+| 54-T3 | P2 | NVRTC lacks more than `INFINITY`; CUDA.md names one macro and no gate checks any | RESOLVED (62f3f61): new gate `cuda_nvrtc_headers`; NVRTC 12.9 leaves 17 macros undefined, all re-verified. |
+| 54-T4 | P2 | The residency contract of section 4 is declared by 1 of 72 `gpu_capable` registrations | RESOLVED (62f3f61): new gate `cuda_ktc_residency`; 76 registrations in mlframe would need a baseline. |
+| 54-T5 | P2 | The profile-record contract is a mlframe-local regex over a hand-kept list; 48 of 91 kernel files have no record | RESOLVED (62f3f61): new gate `cuda_profile_records` (library form of the mlframe-local contract, ratchet baseline). |
+| 54-T6 | P3 | Ten kernels use floating-point `atomicAdd` with no determinism note, against the narrative of CUDA.md:48 | RESOLVED (62f3f61): new advisory gate `cuda_atomic_determinism`; 12 kernels in 7 files on mlframe. |
+| 54-T7 | P3 | `row_attention_stage4_fused` places three barriers after a thread-dependent `return` | RESOLVED (62f3f61): new gate `cuda_barrier_divergence`; it reports exactly the three barriers of `row_attention_stage4_fused` on mlframe. |
+| 54-T8 | P3 | Silent device-fault fallbacks remain: two of five sampled handlers are real | RESOLVED (62f3f61): new advisory gate `cuda_fallback_logged`; 15 handlers on mlframe, about 2 of 5 real. |
+| 54-T9 | P3 | CUDA.md states two hardware facts that contradict the NVIDIA table | DEFERRED: the statements are in mlframe's CUDA.md, not in this repository; relayed to the owner of that file. |
+| 54-T10 | P3 | Internal disagreements and stale counts inside CUDA.md | DEFERRED: the disagreements are inside mlframe's CUDA.md; relayed to the owner of that file. |
+| 54-T11 | P2 | GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident | RESOLVED (62f3f61): new gate `cuda_parity_test_shape` (single-seed GPU-vs-host parity tests, ratchet baseline); 62 hits on mlframe. |
+| 55-T1 | P2 | No tool runs the documented clang-tidy extraction pass; the pass exists only as scratch scripts | RESOLVED (62f3f61): new `cuda_clang_tidy` runner (skips loudly without clang-tidy, `--require` makes absence a failure, unresolved placeholders are reported). |
+| 55-T2 | P2 | `block_size_for` defaults to non-power-of-two widths and nothing flags a tree-reduction kernel launched with it | RESOLVED (62f3f61): new narrow gate `cuda_tree_reduction_block` (a kernel bound by name inside one module); the file-level form was not shipped because it gave 9 of 9 false positives. |
+| 55-T3 | P2 | Launch grid caps tuned on a 6-SM card are not gated | RESOLVED (62f3f61): new gate `cuda_grid_caps`; 12 true hits on mlframe. |
+| 55-T4 | P2 | The allocation-counting opt-out harness is local to mlframe | RESOLVED (62f3f61): new `cuda_optout_allocations` (allocation counter and opt-out environment check). |
+| 55-T5 | P2 | The body of the offline per-arch test and the literal-minBlocks check are local although the engine is shared | RESOLVED (62f3f61): new `cuda_offline_arch` (the offline per-arch glue) and `cuda_launch_bounds_literal`; agrees with the mlframe original (0 hits). |
+| 55-T6 | P2 | KTC sweep tolerance gate is a pure static check that lives only in mlframe | RESOLVED (62f3f61): new gate `ktc_sweep_tolerances` (literal tolerances only; a computed tolerance cannot be judged statically); flags the same two sweeps as the mlframe original. |
+| 55-T7 | P3 | No generic gate for the profile record the CUDA contract requires | RESOLVED (62f3f61): covered by `cuda_profile_records`. |
+| 55-T8 | P3 | Wide-load alignment contract (CUDA.md 19.1) is not recorded on the kernel | DEFERRED: precision measured below the bar (3 or more of the first 5 flags wrong); retry when the kernel records the alignment contract. |
+| 55-T9 | P3 | Doc staleness and disagreements inside CUDA.md (relay to mlframe, nothing to fix here) | DEFERRED: the staleness is in mlframe's CUDA.md; relayed to the owner of that file. |
+| 55-T10 | P3 | Cheap regression guards that need canaries because the corpus has zero hits | DEFERRED: every candidate rule has zero corpus hits or a known false positive; none shipped. |
 
 ## Round 2026-11-11 - wave 40-52 (reports in audits/2026-11-11/)
 

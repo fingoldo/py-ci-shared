@@ -43,76 +43,76 @@ Python-written GPU kernels: 21 non-benchmark `@..cuda.jit` global kernels (plus 
 - **Evidence:** `_KERNEL` = `__global__\s+(?:\w+\s+)*?void\s+(\w+)\s*\((.*?)\)\s*\{`. Run (adv.py): `extern "C" __global__ __launch_bounds__(256) void k(const double* x, int n) { }` gives `pt: []`. The other placement `__global__ void __launch_bounds__(256) k(const double* x ...)` is found, but under the name `__launch_bounds__`. cuda_kernel_names and cuda_coalesced_reads accept the bound before `void`.
 - **Impact:** the hard rule (out-of-bounds read that poisons the context) silently passes for exactly the register-tuned kernels, which CUDA.md sections 10 and 14 recommend writing.
 - **Proposed fix:** accept an optional `__launch_bounds__(...)` / `__maxnreg__` before and after `void` in `_KERNEL`, report the real name, add the form to the canary violation. BEHAVIOUR CHANGE (stricter; `What to do:` fix or mark `// dtype-ok:`).
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `cuda_kernel_pointer_types` finds `__launch_bounds__` / `__maxnreg__` kernels under their real name; 38 new tests failed on the old code first.
 
 ## 53-T2 (P1) gpu_timing_sync is blind to a launch through a kernel object
 - **Evidence:** `_gpu_call_name` (gpu_timing_sync.py:134) accepts dotted names rooted at cuda/cupy/cp/cudf/cuml/torch.cuda/numba.cuda and `x[...](...)` subscripts. adv2.py: `K = cp.RawKernel(...)` then `t0=perf_counter(); K((n,),(256,),(x,n)); return perf_counter()-t0` gives `[]`; same with an imported `kern` gives `[]`; `x.cuda() @ x.cuda().T` gives `[]`; `a.sum()` on a cupy array gives `[]`. mlframe has 288 RawKernel mentions and the gate returns 0 findings over all its files, and cannot tell clean from blind.
 - **Impact:** CUDA.md section 6 rule 1 (recorded 16x phantom win) is enforced only for `cp.xxx(...)` calls, not for the kernels the project writes.
 - **Proposed fix:** collect names bound to `cupy.RawKernel/ElementwiseKernel/ReductionKernel/RawModule(...).get_function` and numba.cuda.jit functions via ImportAliases, and count a call to such a name, or any call of the `(grid_tuple, block_tuple, args)` shape (reuse `cuda_launch_geometry._launch_block`), as GPU work. BEHAVIOUR CHANGE (can turn a consumer red; `What to do:` add a sync or the marker).
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `gpu_timing_sync` counts a launch through a kernel object as device work. Finding the gate blind was NOT confirmed on mlframe: 1479 timed regions, 24 with device work, all 24 synchronized, 0 findings before and after.
 
 ## 53-T3 (P2) gpu_timing_sync: any `synchroni*` call name ends a region, and any `x[k](...)` is GPU work
 - **Evidence (adv2.py):** `log.synchronize_with_remote()` after `cp.matmul` gives `[]` (the word rule is deliberate, line ~70, but the receiver is not checked); `d[k](x)` (dict dispatch) between two perf_counter reads gives a `direct-gpu-call` finding (false positive; shape 1 does not require a GPU-aware module).
 - **Impact:** a silent pass for a misnamed barrier; a false red for dict dispatch.
 - **Proposed fix:** require the subscript-call base to be a known kernel (T2) or the file to import numba.cuda; restrict sync words to device-ish receivers or bare names. ADDITIVE for the FP fix, BEHAVIOUR CHANGE for the FN fix.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): only a device barrier ends a timed region, and `d[k](x)` is no longer a launch.
 
 ## 53-T4 (P2) cuda_coalesced_reads misses common strided forms
 - **Evidence (adv.py):** `X[threadIdx.x * n]` no hit (`_strided` considers only loop vars and ids assigned from threadIdx); `const float* row = X + i * n_feat; row[3]` no hit; `X[idx[i] * n_feat]` no hit; `#define ROW(i) ((i)*n_feat)` no hit. Handled: direct `i*n_feat`, loop-variable form, hoisted offset, escaped-newline strings, `blockIdx.x*n + t` (correctly clean), `threadIdx.y` rows (correctly clean).
 - **Impact:** the pointer-offset row base is a common spelling of the 6.7% gld-efficiency case the rule was written for.
 - **Proposed fix:** treat `threadIdx.x` itself as a candidate var in `_strided`; track `T* p = X + <thread var> * <name>` and then any `p[...]`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `cuda_coalesced_reads` reports the pointer-row stride forms; 1 to 15 findings on mlframe (Behaviour change).
 
 ## 53-T5 (P2) cuda_coalesced_reads reads raw .py text; comments count, the line and the baseline key are wrong
 - **Evidence:** `find_cuda_coalesced_reads` passes `parsed.source` to `uncoalesced_kernels`. A Python comment `# __global__ void fake(float* X, int n) { int i=threadIdx.x; float v = X[i*n]; }` gives `cuda-strided-row-read` (false positive). Line is `source.find(name)`: a kernel on line 6 whose name also appears on line 2 is reported at line 2. Two sources with the same kernel name in one file give two findings with the same key `m.py::same`, so one baseline entry accepts both.
 - **Impact:** false red from commented-out kernels; baseline cannot tell two kernels apart; wrong lines.
 - **Proposed fix:** iterate literals extracted by AST (as cuda_kernel_sources does), key `path::NAME#k` for duplicates, line from the literal. BEHAVIOUR CHANGE (keys change only for duplicate names).
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `cuda_coalesced_reads` reads comment-stripped kernel text, so comments and docstrings no longer count and the line number is right.
 
 ## 53-T6 (P2) cuda_kernel_sources misses inline sources and truncates multi-literal sources
 - **Evidence (adv2.py):** only `Assign`/`AnnAssign` values are read. `return cp.RawKernel("""extern "C" __global__ void inl(...)""", "inl")` is absent from the result. `HEAD = '...__global__ void parts(float* x) {'; BODY = ' x[0]=1; }'; SRC = HEAD + BODY` yields key `m.py::HEAD` with the first half only. Attribute, dict and class forms work (`mod`, `kernels`, `kernels#2`).
 - **Impact:** an offline NVRTC check built on it never compiles those kernels, or compiles a truncated one.
 - **Proposed fix:** also walk the arguments of RawKernel/RawModule/ElementwiseKernel/ReductionKernel calls (key by enclosing function), and resolve `Name` operands of a concatenation through module constants as cuda_kernel_integer_width does. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `cuda_kernel_sources` extracts inline `RawKernel` arguments and joins `SRC = HEAD + BODY`.
 
 ## 53-T7 (P2) No gate covers the 21 numba.cuda kernels written in Python
 - **Evidence:** AST count in mlframe (non-benchmark): 21 global and 5 device functions in 9 files. All C++ gates key on `__global__`.
 - **Impact:** 32-bit index products, strided reads and float64 buffers are unchecked in them.
 - **Proposed fix:** a sibling opt-in gate over the Python AST (`cuda.grid(1) * n` into int-typed names, strided subscripts on `cuda.threadIdx.x`). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): new gate `numba_cuda_kernels` with four rules (unguarded grid index, divergent syncthreads, unsynchronised read-modify-write, float64 in a float32 kernel); 0 findings on mlframe's 25 kernels.
 
 ## 53-T8 (P2) Canaries do not prove most rules
 - **Evidence (mut.py: a rule mutated out, violation and clean canary re-run):** CANARY BLIND (violation still fails, clean still passes) for: coalesced (indirect-run, hoisted offset, marker, shared blanking, group-index exemption: 5 of 5), integer_width (product rule, marker), pointer_types (probe rule, `{REAL}` exemption, float rule), launch_geometry (loose launch, numba launch, cross-module constants, int()/arithmetic literal), factories (registry lookup), names (coverage test, template-prefix match), gpu_timing_sync (injected callable, `.cpu()` sync, sync-before-work, marker, asnumpy, subscript launch: 6 of 6), nested (joblib rule), numba_seed_range (wide-binop). NOTICED for comment stripping, long-long exemption, dtype-ok marker, launch-ok marker, and two seed-range mutations. The harness asserts "fails" and for two gates one token; cuda_kernel_names runs with `compiled={}`, so a gate that reports everything passes.
 - **Impact:** a refactor that drops a rule keeps `test_gate_teeth` green (unit tests may still catch it; not checked).
 - **Proposed fix:** `tokens=` for every rule a violation seed targets, one violation seed per rule, clean seeds that hit each exemption (registered factory, compiled map hit, sync after injected callable). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: for the six repaired gates the authors removed each rule in turn and the canaries notice it (pointer_types, integer_width, coalesced_reads: 24 mutations caught by canaries and 2 more by unit tests; each new rule of gpu_timing_sync, numba_seed_range and cuda_launch_geometry caught); `cuda_kernel_names` and `cuda_kernel_factories` have had no mutation pass yet.
 
 ## 53-T9 (P3) Suppression markers accept an empty reason
 - **Evidence:** `// width-ok:` followed by a newline suppresses (adv.py: `iw: []`). `dtype-ok:`, `launch-ok:`, `gpu-timing-async-intentional`, `seed-range-ok` likewise. Only `coalescing-ok:` requires about 12 characters (`_MARKER_RE`).
 - **Impact:** "the reason is the review" is not enforced.
 - **Proposed fix:** require a non-empty reason after each marker. BEHAVIOUR CHANGE (rare).
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): a suppression marker with an empty reason no longer suppresses, in every gate that has one (pointer_types, integer_width, coalesced_reads, gpu_timing_sync, cuda_launch_geometry, numba_seed_range). Behaviour change.
 
 ## 53-T10 (P3) pointer_types and integer_width small gaps
 - **Evidence (adv.py):** `const double x[]` and `double2*` not flagged; `typedef double real;` or `#define T double` then `const T* x` not flagged; `{REAL}*` next to an untemplated `double* acc` skips the whole kernel (`any(token in params)`); `size_t idx = n * m;` not flagged by cuda-int-index-product (matches `int` only); `printf("a long way")` gives a cuda-platform-long false positive. Handled correctly: `unsigned long`, `long2`/`ulong`, `long` newline `long`, `long double`, `unsigned int idx = a*b`, `(int)blockIdx.x * n`, comments, multi-line signatures, `static __global__`, `double**`, `.format` placeholders, a pattern split across a concatenation.
 - **Proposed fix:** extend `_DOUBLE_PTR` to `double\d?\s*\*` and `double name[]`, resolve typedef/#define aliases inside the unit, strip string literals in `_strip_comments`. BEHAVIOUR CHANGE for the hard-rule extensions.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `double2*`/`double4*`, `double x[]` and typedef/define/using aliases are reported by `cuda_kernel_pointer_types`.
 
 ## 53-T11 (P3) cuda_offline_report ARCH_LIMITS lacks sm_80 and sm_100
 - **Evidence:** keys are 61, 70, 75, 86, 89, 90, 120; `required_arch` returns 80 for cp.async, bf16 and `__reduce_*_sync`; `blocks_per_sm(80, ...)` indexes `ARCH_LIMITS[80]` and raises `KeyError` (read from the code at the `ARCH_LIMITS[arch]` lookup; not run).
 - **Impact:** an A100 sweep crashes instead of reporting.
 - **Proposed fix:** add 80 `(2048, 32, 65536, 164*1024)` (and 100 if wanted). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): sm_60, sm_80 and sm_100 added to `cuda_offline_report.ARCH_LIMITS`. The sm_100 limits were written from memory and still need a check against the NVIDIA table.
 
 ## 53-T12 (P3) numba_seed_range entry contract differs from the other gates
 - **Evidence:** `find_wide_numba_seeds(root, *, skip_dir_names, include_tests, use_git)` has no `min_files` or `allow_unparsed` (CLAUDE.md requires both); calling it with `allow_unparsed=True` raised `TypeError`. An empty root passes silently.
 - **Proposed fix:** add both parameters. ADDITIVE (default `min_files=1` is a BEHAVIOUR CHANGE only for an empty root).
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): `find_wide_numba_seeds` takes `min_files` and `allow_unparsed` like the other gates.
 
 ## 53-T13 (P3) pointer_types advisory float rule is noise on mlframe
 - **Evidence:** 14 `cuda-bare-float-pointer` hits; 5 of 5 sampled are deliberate float32 kernels (names above): 100 percent sampled false positives, over the 30 percent bar.
 - **Proposed fix:** keep it advisory and skip kernels named `*f32*`/`*float*`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (62f3f61): the advisory float rule skips float32-named kernels and modules that say float32; 14 findings on mlframe became 0.
 
 ## CUDA.md rule coverage by the existing gates
 
