@@ -21,7 +21,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.cuda_parity_test_shape import assert_cuda_parity_test_shape
 
     def test_gpu_parity_tests_use_two_seeds():
-        assert_cuda_parity_test_shape("tests", baseline_path="tests/parity_seed_baseline.json", min_files=50)
+        assert_cuda_parity_test_shape("tests", baseline_path="the consumer's own baseline file", min_files=50)
 """
 
 from __future__ import annotations
@@ -80,7 +80,8 @@ def _seed_sources(fn: "ast.FunctionDef | ast.AsyncFunctionDef") -> int:
     """How many independent seed sources the test has: 2 or more is enough."""
     count = 2 * sum(1 for a in (*fn.args.args, *fn.args.kwonlyargs) if _SEED_NAME.search(a.arg) and a.arg not in ("self",))
     for loop in nodes_of(fn, ast.For, ast.AsyncFor, ast.comprehension):
-        assert isinstance(loop, (ast.For, ast.AsyncFor, ast.comprehension))
+        if not isinstance(loop, (ast.For, ast.AsyncFor, ast.comprehension)):
+            continue
         target_names = [n.id for n in nodes_of(loop.target, ast.Name)]
         body_nodes: "list[ast.AST]" = list(loop.body) if isinstance(loop, (ast.For, ast.AsyncFor)) else list(loop.ifs)
         draws = any(_leaf(c) in _RNG_CTORS and any(not isinstance(a, ast.Constant) for a in c.args) for stmt in body_nodes for c in nodes_of(stmt, ast.Call))

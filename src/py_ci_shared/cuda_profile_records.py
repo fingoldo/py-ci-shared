@@ -23,7 +23,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.cuda_profile_records import assert_cuda_profile_records
 
     def test_every_gpu_module_has_a_complete_profile_record():
-        assert_cuda_profile_records("src/pkg", profiles_dir="audits/2026-10-22/profiles", baseline_path="tests/known_missing_profiles.json", min_files=50)
+        assert_cuda_profile_records("src/pkg", profiles_dir="audits/2026-10-22/profiles", baseline_path="the consumer's own baseline file", min_files=50)
 """
 
 from __future__ import annotations

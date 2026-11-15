@@ -63,7 +63,7 @@ def _float32_exact(literal: str) -> bool:
     value = float(literal)
     try:
         return float(struct.unpack("f", struct.pack("f", value))[0]) == value
-    except OverflowError:
+    except OverflowError:  # best-effort: float32 cannot hold the value at all, so the literal is not exact; False is the answer, not a substitute for one
         return False
 
 

@@ -58,7 +58,7 @@ def _in_probe(probe_frames: "frozenset[str]") -> bool:
 def _hook_cupy(calls: "list[int]", probes: "frozenset[str]") -> "Optional[Callable[[], None]]":
     try:
         import cupy as cp
-    except Exception:
+    except Exception:  # best-effort: without cupy there is no cupy allocator to count; the numba hook and the frame-walk probe allowlist still run
         return None
     previous = cp.cuda.get_allocator()
 
@@ -83,7 +83,7 @@ def _wrap_numba(orig: "Callable[..., Any]", calls: "list[int]", probes: "frozens
 def _hook_numba(calls: "list[int]", probes: "frozenset[str]") -> "list[Callable[[], None]]":
     try:
         from numba import cuda as nbcuda
-    except Exception:
+    except Exception:  # best-effort: without numba.cuda there are no device-array constructors to wrap; the cupy hook still runs
         return []
     undo: "list[Callable[[], None]]" = []
     for name in _NUMBA_CONSTRUCTORS:
@@ -124,6 +124,12 @@ def assert_no_device_allocations(fn: "Callable[[], Any]", *, probe_frames: "Iter
     return result
 
 
+def _require(condition: bool, message: str) -> None:
+    """An explicit raise, so the check survives ``python -O`` (a bare ``assert`` is deleted there)."""
+    if not condition:
+        raise AssertionError(message)
+
+
 def assert_optout_env_honoured(is_disabled: "Callable[[], bool]", *, flag_var: str, flag_value: str = "1") -> None:
     """Check *is_disabled* against the opt-out conventions, restoring ``os.environ`` afterwards (*flag_var* is the project's explicit switch)."""
     saved = {k: os.environ.get(k) for k in (flag_var, "CUDA_VISIBLE_DEVICES")}
@@ -137,10 +143,10 @@ def assert_optout_env_honoured(is_disabled: "Callable[[], bool]", *, flag_var: s
         return bool(is_disabled())
 
     try:
-        assert state(flag_value, None), f"{flag_var}={flag_value} is not read as an opt-out"
-        assert state(None, ""), 'CUDA_VISIBLE_DEVICES="" alone must disable the GPU (the documented convention)'
-        assert not state(None, "0"), "a real device list must NOT be read as an opt-out"
-        assert not state(None, None), "an unset variable is 'no preference', not an opt-out"
+        _require(state(flag_value, None), f"{flag_var}={flag_value} is not read as an opt-out")
+        _require(state(None, ""), 'CUDA_VISIBLE_DEVICES="" alone must disable the GPU (the documented convention)')
+        _require(not state(None, "0"), "a real device list must NOT be read as an opt-out")
+        _require(not state(None, None), "an unset variable is 'no preference', not an opt-out")
     finally:
         for key, value in saved.items():
             if value is None:
