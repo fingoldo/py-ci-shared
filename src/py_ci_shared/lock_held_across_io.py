@@ -44,7 +44,7 @@ __all__ = ["RULE", "assert_no_lock_held_across_io", "find_lock_held_across_io", 
 
 RULE = "lock-held-across-io"
 LOCK_CONSTRUCTORS = frozenset({"Lock", "RLock", "Condition"})
-_IO_MODULES = frozenset({"requests", "httpx", "socket", "subprocess"})
+_IO_MODULES = frozenset({"requests", "httpx", "aiohttp", "socket", "subprocess"})
 _IO_NAMES = frozenset({"connect", "getconn", "urlopen"})
 _WRITE_MODE_CHARS = frozenset("wax+")
 #: DB-API calls that go to the server, on a receiver named like a cursor, connection or session.
@@ -61,16 +61,24 @@ def _last_segment(node: ast.AST) -> str:
         return node.attr
     if isinstance(node, ast.Name):
         return node.id
+    if isinstance(node, ast.Subscript):  # self._locks[key] names the lock family self._locks
+        return _last_segment(node.value)
     return ""
 
 
 def _named_like_a_lock(segment: str) -> bool:
     lowered = segment.lower().lstrip("_")
     return (
-        lowered in {"lock", "rlock", "condition", "mutex", "sem", "semaphore"}
-        or segment.lower().endswith(("_lock", "_rlock", "_condition", "_mutex", "_sem", "_semaphore"))
+        lowered in {"lock", "rlock", "condition", "mutex", "sem", "semaphore", "locks", "rlocks", "mutexes", "semaphores"}  # the plurals name a family indexed by a key
+        or segment.lower().endswith(("_lock", "_rlock", "_condition", "_mutex", "_sem", "_semaphore", "_locks", "_rlocks", "_mutexes", "_semaphores"))
         or segment.endswith(("Lock", "RLock", "Condition", "Mutex", "Semaphore"))
     )
+
+
+def _constructor_name(call: ast.Call, aliases: ImportAliases) -> str:
+    """The class a constructor call names, resolved through import aliases (``from threading import Lock as L2`` -> ``Lock``)."""
+    qualified = aliases.qualified_name(call.func)
+    return qualified.rsplit(".", 1)[-1] if qualified else _last_segment(call.func)
 
 
 def module_lock_names(tree: ast.Module) -> frozenset[str]:
@@ -82,8 +90,9 @@ def _module_lock_names(tree: ast.Module) -> frozenset[str]:
     """Attribute and variable names bound anywhere in the module to a Lock, RLock or Condition constructor, plus the
     names of guard helpers: a function whose body takes such a lock in a ``with``, so ``with self._guard():`` holds it."""
     names: set[str] = set()
+    aliases = ImportAliases.from_tree(tree)
     for node in shared_walk(tree):
-        if isinstance(node, ast.Assign) and _last_segment(node.value) in LOCK_CONSTRUCTORS and isinstance(node.value, ast.Call):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and _constructor_name(node.value, aliases) in LOCK_CONSTRUCTORS:
             names.update(_last_segment(t) for t in node.targets if _last_segment(t))
     for node in shared_walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and _takes_a_lock(node, names):
@@ -134,10 +143,10 @@ def _open_writes(call: ast.Call) -> bool:
 def io_label(call: ast.Call, aliases: ImportAliases) -> Optional[str]:
     """The call's dotted name when it is one of the blocking calls, else ``None``."""
     name = aliases.qualified_name(call.func) or _last_segment(call.func)
-    last = _last_segment(call.func)
+    last = name.rsplit(".", 1)[-1]  # an aliased callee (`from urllib.request import urlopen as uo`) is judged by its real name
     if last == "open":
         return f"{name}(write mode)" if _open_writes(call) else None
-    if name in ("time.sleep", "asyncio.sleep"):
+    if name in ("time.sleep", "asyncio.sleep", "os.system", "os.popen"):
         return name
     if last in ("write_text", "write_bytes"):
         return f"{name}(file write)"

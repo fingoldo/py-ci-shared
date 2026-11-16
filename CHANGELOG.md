@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T13, `lock_held_across_io`): the blocking call is judged by its real name through import aliases (`from urllib.request import urlopen as uo`), a lock built through an aliased constructor counts (`from threading import Lock as L2`), a subscripted lock family (`self._locks[k]`, and names ending `_locks`) counts, and `os.system`, `os.popen` and `aiohttp` are I/O. What to do: move the call out of the `with` block, or mark it `# lock-io-ok: <reason>`.
+
 - **Behaviour change** (40-T12, `possibly_unbound_local`): a walrus behind `and`/`or` or in a conditional expression binds its name only on the path that evaluates it, and a `with` block that swallows its exception (`contextlib.suppress`, `pytest.raises`, `assertRaises`) leaves its bindings maybe-bound afterwards. What to do: bind the name before the block (`name = None`), or mark the read `# unbound-ok: <reason>`.
 
 - **Behaviour change** (40-T11, `unsafe_deserialization`): a hash, verify or dump/save call before a pickle-family load exempts the load only when that call receives the loaded value (`req.body`, or a name assigned from it). An unrelated `store.save(req)`, `verify_user(req)`, `pickle.dumps(1)` or `sha256(b"x")` no longer exempts `pickle.loads(req.body)`. What to do: pass the loaded bytes to the verification, or add `# deserialize-ok: <reason>` to the load.
