@@ -3,9 +3,10 @@
 ## Adding a gate
 
 - Start with `py-ci-shared new-gate <name> [--kind gate|library] --summary "..."`, or follow the layout it writes:
-  `src/py_ci_shared/<name>.py`, `tests/test_<name>.py`, `tests/canary/<name>/{violation,clean,bom,unparsable}/` (a text-corpus gate declared `parses=False` in `tests/test_gate_teeth.py` has no syntax to break and may omit `unparsable/`; it needs an undecodable-bytes variant instead),
+  `src/py_ci_shared/<name>.py`, `tests/test_<name>.py`, `tests/canary/<name>/{violation,clean,bom,unparsable}/` (a text-corpus gate declared `parses=False` in `tests/_gate_teeth_canaries.py` has no syntax to break and may omit `unparsable/`; it needs an undecodable-bytes variant instead),
   a `CANARIES` entry in `tests/_gate_teeth_canaries.py` (`new-gate` writes it; `tests/_gate_teeth_canaries_more.py` holds the later `CANARIES.update` blocks and `tests/test_gate_teeth.py` the tests), a `registry.toml` entry and the README catalogue row. The
   scaffolder never overwrites a file; its tests and canary fail until you write them.
+- Add a `CHANGELOG.md` `## Unreleased` bullet naming the new module (`tests/test_changelog_mentions_new_gates.py` fails until it does).
 - Read and parse through `_core`: `scan_python`/`read_source`/`parse_file`, `Finding`, `Baseline`,
   `ImportAliases`. Never `ast.parse(path.read_text(...))` with `except SyntaxError: continue`: a file the gate
   cannot read is a finding (`UnparsedFilesError`), not a pass. Keep a `min_files` floor and an `allow_unparsed`
@@ -15,7 +16,7 @@
 - Register every public module in `src/py_ci_shared/registry.toml` (sorted by name; `since` = the version in
   `pyproject.toml`). Private helpers go in `registry.INTERNAL_MODULES` with a reason.
 - A corpus-scanning gate needs a canary in `tests/canary/<name>/` (fixture files end in `.canary`), or an `EXEMPT`
-  entry in `tests/test_gate_teeth.py` that says why its subject cannot be seeded as files.
+  entry in `tests/_gate_teeth_canaries.py` that says why its subject cannot be seeded as files.
 - A new `find_*` must bind from a repo root in `corpus_drift.BINDINGS` or be listed in `corpus_drift.NON_CORPUS`
   with a reason.
 
