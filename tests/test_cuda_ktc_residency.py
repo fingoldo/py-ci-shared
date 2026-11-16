@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,11 @@ def test_assert_message_and_baseline(tmp_path, monkeypatch):
     base = tmp_path / "base.json"
     with pytest.raises(pytest.skip.Exception):
         assert_cuda_ktc_residency(corpus, baseline_path=base, refresh=True, use_git=False)
+    # A refresh records the finding with the NEEDS-JUSTIFICATION note (42-T1); enforce accepts it only once a reason replaces the marker.
+    data = json.loads(base.read_text(encoding="utf-8"))
+    for entry in data["entries"].values():
+        entry["note"] = "accepted in this fixture: the undeclared registration is the case under test"
+    base.write_text(json.dumps(data), encoding="utf-8")
     assert_cuda_ktc_residency(corpus, baseline_path=base, use_git=False)
     (corpus / "n.py").write_text(IMP + 'A = kernel_tuner(kernel_name="z", gpu_capable=True)\n', encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):
