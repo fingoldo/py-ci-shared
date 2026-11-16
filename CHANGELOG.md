@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T4, `credential_shaped_log_arg`): the scanner now also reads credential-shaped names inside f-strings, `.format`/`%` operands, string keys read by subscript or `.get("...")`, and `extra={...}` dict keys; the vocabulary adds `pwd`, `jwt`, `private_key`, `authorization`, plurals and camelCase (`apiKey`). A comment or an unrelated word within three lines no longer counts as a redaction hint; only a redaction in the call's own arguments or in a code assignment just above it does. What to do: a log call this now reports either passes the value through a redaction call, or the value is genuinely logged and should be redacted or waived with an `audit-exempt` marker naming `credential_shaped_log_arg` plus a reason.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
