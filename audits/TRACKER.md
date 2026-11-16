@@ -45,7 +45,7 @@ Finding ids of rounds 2026-11-10 (`NN-Rk`), 2026-11-11 (`NN-Sk`) and 2026-11-16 
 | 42-T4 | P3 | `baseline_ratchet` does not see the marker or a blank note in the `{"count","note"}` entry shape | OPEN |
 | 42-T5 | P3 | The `gate` and `schema` headers of a `_core` baseline are written but never checked on load | OPEN |
 | 43-T1 | P2 | CHANGELOG has no entry for the core-only install blocker change in `ci_install_covers_entry_imports` (71aeae0) | OPEN |
-| 43-T2 | P3 | CLAUDE.md names the wrong file for `EXEMPT` and `parses=False` | OPEN |
+| 43-T2 | P3 | CLAUDE.md names the wrong file for `EXEMPT` and `parses=False` | RESOLVED (CLAUDE.md now names `tests/_gate_teeth_canaries.py` for both) |
 | 43-T3 | P3 | The `corpus-drift.yml` shard step still special-cases `mlframe`, which a905293 removed from `configs/consumers.toml` | OPEN |
 | 43-T4 | P3 | CHANGELOG does not record that the shipped consumer list lost `mlframe` (a905293), though CLAUDE.md and README name the monitors' effects | OPEN |
 | 43-T5 | P3 | `audits/TRACKER.md` still marks committed fixes "RESOLVED (uncommitted)": 30 rows (three of them verified against HEAD) | RESOLVED (committed 19fa442 for the 31 rows; 46-T1 was already committed as 05fa71f). Each row's fix was checked by its test file in the history and the tests pass at HEAD |
