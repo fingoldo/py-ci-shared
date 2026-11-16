@@ -184,3 +184,35 @@ def test_a_thread_lock_still_holds_its_io_finding(tmp_path):
     src = "import time\nimport threading\n\nclass C:\n    def __init__(self):\n        self._state_lock = threading.Lock()\n\n    def f(self):\n        with self._state_lock:\n            time.sleep(1)\n"
     (tmp_path / "m.py").write_text(src, encoding="utf-8")
     assert [f.line for f in find_lock_held_across_io([tmp_path / "m.py"], use_git=False)] == [10]
+
+
+def test_async_with_on_an_asyncio_semaphore_is_not_a_thread_lock(tmp_path):
+    """Audit 41-T4: `async with` yields to the event loop, so an await under an asyncio primitive stalls no thread."""
+    body = """
+        import asyncio
+
+        class Client:
+            def __init__(self):
+                self.semaphore = asyncio.Semaphore(4)
+
+            async def call(self):
+                async with self.semaphore:
+                    await asyncio.sleep(0)
+    """
+    assert _lines(tmp_path, body) == []
+
+
+def test_sync_with_on_a_thread_lock_still_flags_a_sleep(tmp_path):
+    """The T4 exemption is for `async with` only: a sync `with` on a threading lock still stalls the other threads."""
+    body = """
+        import threading, time
+
+        class Client:
+            def __init__(self):
+                self._lock = threading.Lock()
+
+            def call(self):
+                with self._lock:
+                    time.sleep(1)
+    """
+    assert len(_lines(tmp_path, body)) == 1

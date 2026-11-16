@@ -124,3 +124,10 @@ def test_a_repo_without_a_baseline_directory_fails_only_on_a_finding(tmp_path):
     (tests / "test_spawn.py").write_text("import subprocess\n\ndef test_a():\n    subprocess.run(['git', 'status'])\n", encoding="utf-8")
     with pytest.raises(AssertionError):
         gce.assert_no_new_unscrubbed_git_spawns(tmp_path)
+
+
+def test_a_test_file_that_does_not_parse_is_a_finding_not_a_traceback(tmp_path):
+    """Audit 41-T2: a syntax-error test file raised SourceParseError out of the gate; it must be reported like other unparsed files."""
+    _tree(tmp_path, "tests/test_broken.py", "def run(:\n")
+    found = find_unscrubbed_git_spawns(tmp_path)
+    assert any("test_broken.py" in key for key in found)

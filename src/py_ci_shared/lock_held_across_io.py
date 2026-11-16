@@ -176,14 +176,32 @@ def _reviewed_io(source_lines: list[str], lineno: int) -> bool:
     return marker >= 0 and bool(line[marker + len(_REVIEWED_MARKER) :].strip())
 
 
+def _asyncio_bound_names(tree: ast.Module, aliases: ImportAliases) -> frozenset[str]:
+    """Names (attributes or variables) bound in the module to an ``asyncio.*`` constructor, e.g. ``self.semaphore = asyncio.Semaphore(4)``."""
+    names: set[str] = set()
+    for node in shared_walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+            qualified = aliases.qualified_name(node.value.func) or ""
+            if qualified.split(".", 1)[0] == "asyncio":
+                names.update(_last_segment(t) for t in node.targets if _last_segment(t))
+    return frozenset(names)
+
+
 def _findings_in(parsed: ParsedFile) -> list[Finding]:
     aliases = ImportAliases.from_tree(parsed.tree)
     source_lines = parsed.source.splitlines()
     lock_names = module_lock_names(parsed.tree)
+    asyncio_names = _asyncio_bound_names(parsed.tree, aliases)
     out: list[Finding] = []
     reported: set[int] = set()
     for node in nodes_of(parsed.tree, ast.With, ast.AsyncWith):  # the with-statements, in walk order (the index query, not a walk of every node)
-        held = [unparse_stable(item.context_expr) for item in node.items if is_thread_lock(item.context_expr, aliases, lock_names)]
+        held = [
+            unparse_stable(item.context_expr)
+            for item in node.items
+            if is_thread_lock(item.context_expr, aliases, lock_names)
+            # `async with` on an asyncio primitive yields to the loop and blocks no thread (audit 41-T4).
+            and not (isinstance(node, ast.AsyncWith) and _last_segment(item.context_expr) in asyncio_names)
+        ]
         if not held:
             continue
         for call in _calls_under(node.body):

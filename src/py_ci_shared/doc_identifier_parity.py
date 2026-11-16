@@ -181,7 +181,8 @@ def _absent(
     docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
     if corpus_files is None:
         corpus_files = default_corpus_files(root)
-    corpus = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in corpus_files)
+    # A directory named like a source file (vendored trees can hold `*.py` directories) is not corpus text (audit 41-T3).
+    corpus = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in corpus_files if p.is_file())
     skipped = set(exclude_docs)
     ignored = set(ignore)
     problems: list[str] = []

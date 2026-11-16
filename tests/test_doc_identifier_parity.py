@@ -134,3 +134,12 @@ def test_a_bom_doc_is_read(tmp_path: Path):
     root, docs, corpus = _repo(tmp_path, "")
     docs[0].write_bytes(b"\xef\xbb\xbf`--absent-flag` on line one\n")
     assert [p.split(": ", 1)[0] for p in _find(root, docs, corpus)] == ["README.md:1"]
+
+
+def test_a_directory_named_like_a_source_file_is_skipped_not_a_crash(tmp_path: Path):
+    """Audit 41-T3: a vendored directory named `hostile_x.py` made the corpus read raise PermissionError."""
+    (tmp_path / "README.md").write_text("Pass `--grammar` to annotate.\n", encoding="utf-8")
+    (tmp_path / "run.py").write_text('parser.add_argument("--grammar")\n', encoding="utf-8")
+    (tmp_path / "hostile_x.py").mkdir()
+    corpus = [tmp_path / "run.py", tmp_path / "hostile_x.py"]
+    assert find_absent_doc_identifiers(tmp_path, doc_files=[tmp_path / "README.md"], corpus_files=corpus) == []
