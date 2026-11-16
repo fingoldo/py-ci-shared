@@ -7,7 +7,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
 
 __all__ = ["scan_console_unicode"]
 
@@ -98,13 +98,13 @@ def _live_reconfigured_streams(tree: ast.AST) -> frozenset[str]:
     so it does not count either. Calls at module level, under ``if __name__ == "__main__":``, or inside a
     called ``main()`` do count: they run before the print/log calls that follow them.
     """
-    referenced = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    referenced = {n.id for n in walk_nodes(tree) if isinstance(n, ast.Name)} | {n.attr for n in walk_nodes(tree) if isinstance(n, ast.Attribute)}
     dead: set[int] = set()
-    for node in ast.walk(tree):
+    for node in walk_nodes(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name not in referenced:
-            dead.update(id(inner) for inner in ast.walk(node))
+            dead.update(id(inner) for inner in walk_nodes(node))
     streams: set[str] = set()
-    for node in ast.walk(tree):
+    for node in walk_nodes(tree):
         if id(node) in dead or not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr != "reconfigure" or not any(kw.arg == "encoding" for kw in node.keywords):

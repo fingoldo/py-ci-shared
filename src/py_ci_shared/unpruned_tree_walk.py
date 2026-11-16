@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding
+from ._core import Finding, walk
 from ._core.gate_contract import check_scan
 from ._gate_report import line_has_marker, scan_tree, skip_set
 
@@ -58,7 +58,7 @@ def _walked_name(expr: ast.expr) -> Optional[str]:
 def _walks(fn: ast.FunctionDef | ast.AsyncFunctionDef, roots: set[str]) -> list[tuple[str, int]]:
     """``(root, line)`` for each walk of a documented root inside *fn*."""
     out: list[tuple[str, int]] = []
-    for node in ast.walk(fn):
+    for node in walk(fn):
         if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
             continue
         if node.func.attr not in _WALK_ATTRS:
@@ -95,7 +95,7 @@ def find_unpruned_tree_walk(
     out: list[Finding] = []
     for parsed in scan:
         lines = parsed.source.splitlines()
-        for fn in ast.walk(parsed.tree):
+        for fn in walk(parsed.tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             roots = _documented_roots(fn)

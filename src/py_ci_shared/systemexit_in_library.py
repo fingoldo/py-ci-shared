@@ -32,7 +32,7 @@ import re
 from pathlib import Path, PurePosixPath
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python, walk
+from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python, walk
 from ._core.scopes import SCOPE_TYPES, iter_scopes
 from ._core.shared_helpers import is_test_path as _is_test_path
 
@@ -129,7 +129,7 @@ def _import_time_exits(tree: ast.Module, aliases: ImportAliases) -> list:
         kind = _exit_kind(node, aliases)
         if kind is not None:
             out.append((node, kind))
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
     return out
 
 

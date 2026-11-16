@@ -6,7 +6,7 @@ import ast
 from pathlib import Path
 from typing import Optional
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, child_nodes
 from .._core.aliases import ImportAliases
 
 __all__ = ["scan_missing_network_timeout"]
@@ -122,7 +122,7 @@ def _top_level(tree: ast.Module) -> list[ast.AST]:
         node = stack.pop()
         out.append(node)
         if not isinstance(node, _SCOPE_NODES):
-            stack.extend(ast.iter_child_nodes(node))
+            stack.extend(child_nodes(node))
     return out
 
 

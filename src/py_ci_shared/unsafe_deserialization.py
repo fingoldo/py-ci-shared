@@ -437,7 +437,7 @@ def _names_of(node: ast.AST, aliases: ImportAliases) -> set[str]:
             for arg in [*n.args, *(k.value for k in n.keywords)]:
                 visit(arg)
             return
-        for child in ast.iter_child_nodes(n):
+        for child in child_nodes(n):
             visit(child)
 
     visit(node)

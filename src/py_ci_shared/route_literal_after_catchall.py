@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding
+from ._core import Finding, walk
 from ._core.gate_contract import check_scan
 from ._gate_report import line_has_marker, scan_tree, skip_set
 
@@ -94,7 +94,7 @@ def _marker_reason(lines: list[str], line: int) -> Optional[str]:
 
 def _routes(tree: ast.Module, router_names: frozenset[str]) -> list[_Route]:
     routes: list[_Route] = []
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             for dec in node.decorator_list:
                 route = _route_of(dec, router_names)

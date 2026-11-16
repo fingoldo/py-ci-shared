@@ -27,7 +27,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding
+from ._core import Finding, parse_text, walk
 from ._core.gate_contract import check_scan
 from ._gate_report import line_has_marker, scan_tree, skip_set
 
@@ -60,7 +60,7 @@ def _origin_of_reexport(module_path: Path, name: str, cache: dict[Path, Optional
     """Where *module_path* imports *name* from (e.g. ``.impl``) when it binds *name* only through an import, else None."""
     if module_path not in cache:
         try:
-            cache[module_path] = ast.parse(module_path.read_text(encoding="utf-8-sig"))
+            cache[module_path] = parse_text(module_path.read_text(encoding="utf-8-sig"), str(module_path))
         except (SyntaxError, UnicodeDecodeError):
             cache[module_path] = None
     tree = cache[module_path]
@@ -84,7 +84,7 @@ def _origin_of_reexport(module_path: Path, name: str, cache: dict[Path, Optional
 def _writes(tree: ast.Module) -> list[tuple[str, str, int]]:
     """Each ``<name>.<ATTR> = ...`` / ``+=`` / annotated assignment target as ``(name, ATTR, line)``."""
     out: list[tuple[str, str, int]] = []
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, ast.Assign):
             targets: list[ast.expr] = list(node.targets)
         elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):

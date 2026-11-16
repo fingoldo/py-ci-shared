@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding
+from ._core import Finding, walk
 from ._core.gate_contract import check_scan
 from ._gate_report import line_has_marker, scan_tree, skip_set
 
@@ -163,7 +163,7 @@ def _sql_text(node: ast.AST) -> Optional[str]:
 def _docstring_ids(tree: ast.Module) -> set[int]:
     """Ids of docstring constants, and of the literal parts of f-strings (the f-string itself is the unit checked)."""
     ids: set[int] = set()
-    for node in ast.walk(tree):
+    for node in walk(tree):
         if isinstance(node, ast.JoinedStr):
             ids.update(id(v) for v in node.values if isinstance(v, ast.Constant))
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
@@ -198,7 +198,7 @@ def find_sql_where_mixed_and_or(
     out: list[Finding] = []
     for parsed in scan:
         skip = _docstring_ids(parsed.tree)
-        for node in ast.walk(parsed.tree):
+        for node in walk(parsed.tree):
             if not isinstance(node, (ast.Constant, ast.JoinedStr)) or id(node) in skip:
                 continue
             text = _sql_text(node)

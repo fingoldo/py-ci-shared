@@ -6,15 +6,16 @@ The commit identity comes from the session's GIT_ISOLATION environment (tests/co
 
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 from collections.abc import Mapping, Sequence
 from typing import Optional
 
+from py_ci_shared._core.git import git_env
+
 
 def _git(repo: Path, *args: str, env: Optional[Mapping[str, str]] = None) -> None:
-    merged = {**os.environ, **(env or {})}
+    merged = git_env(env)  # drops GIT_DIR / GIT_INDEX_FILE etc., so a hook that exports them cannot retarget the fixture
     subprocess.run(["git", *args], cwd=repo, env=merged, capture_output=True, text=True, check=True, timeout=60)
 
 

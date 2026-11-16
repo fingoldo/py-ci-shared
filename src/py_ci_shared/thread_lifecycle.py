@@ -29,7 +29,7 @@ import ast
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Finding, ImportAliases
+from ._core import Finding, ImportAliases, child_nodes, walk
 from ._core.gate_contract import check_scan
 from ._gate_report import _is_test_file, line_has_marker, scan_tree, skip_set
 
@@ -40,7 +40,7 @@ MARKER = "thread-ok"
 
 
 def _parents(tree: ast.AST) -> dict[ast.AST, ast.AST]:
-    return {child: parent for parent in ast.walk(tree) for child in ast.iter_child_nodes(parent)}
+    return {child: parent for parent in walk(tree) for child in child_nodes(parent)}
 
 
 def _enclosing(node: ast.AST, parents: dict[ast.AST, ast.AST], kinds: tuple[type, ...]) -> Optional[ast.AST]:
@@ -67,7 +67,7 @@ def _join_or_daemon_for(scope: ast.AST, owner: ast.expr) -> bool:
     """True when *scope* calls ``<owner>.join(...)`` or assigns ``<owner>.daemon = True``, or joins each element of
     ``for v in <owner>:``. *owner* is a Name or self.attr."""
     key = _key(owner)
-    for node in ast.walk(scope):
+    for node in walk(scope):
         if isinstance(node, ast.For) and _key(node.iter) == key and isinstance(node.target, ast.Name):
             if _join_or_daemon_for(ast.Module(body=node.body, type_ignores=[]), node.target):
                 return True
@@ -142,7 +142,7 @@ def find_thread_lifecycle(
         parents = _parents(parsed.tree)
         lines = parsed.source.splitlines()
         test_file = _is_test_file(parsed.rel)
-        for node in ast.walk(parsed.tree):
+        for node in walk(parsed.tree):
             if not (isinstance(node, ast.Call) and aliases.qualified_name(node.func) == "threading.Thread"):
                 continue
             if _accepted(node, parsed.tree, parents, test_file):

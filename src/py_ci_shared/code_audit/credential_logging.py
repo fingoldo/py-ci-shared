@@ -7,7 +7,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, is_line_exempt
 
 __all__ = ["scan_credential_shaped_log_args"]
 
@@ -50,7 +50,7 @@ def _credential_names_in(arg: ast.AST) -> set[str]:
     string literal that is only a message is never inspected: ``"password reset sent"`` is prose.
     """
     out: set[str] = set()
-    for node in ast.walk(arg):
+    for node in walk_nodes(arg):
         keys: Sequence[ast.AST | None] = ()  # the key expressions this node contributes (string keys only)
         if isinstance(node, ast.Name) and _is_credential_name(node.id):
             out.add(node.id)
