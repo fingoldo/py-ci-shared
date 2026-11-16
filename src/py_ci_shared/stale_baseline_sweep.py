@@ -214,8 +214,8 @@ def _relative(row: StaleRow, tree: Path) -> StaleRow:
 
 def _count_mutation_baselines(tree: Path) -> int:
     return sum(
-        1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix()
-    )  # walk-ok: git-archive extraction of HEAD, no worktrees
+        1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix()  # walk-ok: git-archive extraction of HEAD, no worktrees
+    )
 
 
 def sweep_repo(repo: Path, *, python: str = sys.executable, timeout: float = 1800.0) -> RepoResult:

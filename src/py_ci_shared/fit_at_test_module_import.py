@@ -12,11 +12,13 @@ Scope: ``test_*.py``, ``*_test.py`` and ``conftest.py`` under the tests root. A 
 from __future__ import annotations
 
 import ast
+import fnmatch
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Union
 
 from ._core import Finding, child_nodes
+from ._core.corpus import iter_files_pruned
 from ._core.scan import scan_python
 from ._core.source import comment_tokens
 from ._core.unparse import unparse_stable
@@ -27,6 +29,11 @@ RULE = "fit-at-test-module-import"
 WAIVER = "import-fit-ok:"
 DEFAULT_HEAVY_CALLS: tuple[str, ...] = ("fit", "fit_transform", "fit_predict")
 _TEST_PATTERNS = ("test_*.py", "*_test.py", "conftest.py")
+
+
+def _test_modules(root: Path) -> list[Path]:
+    """The test modules under *root*, never entering ``.claude`` worktrees or other pruned trees (a full repo copy each)."""
+    return [p for p in iter_files_pruned(root, (".py",)) if any(fnmatch.fnmatch(p.name, pat) for pat in _TEST_PATTERNS)]
 
 PathLike = Union[str, Path]
 _FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
@@ -62,7 +69,7 @@ def find_fit_at_test_module_import(tests_root: PathLike, *, heavy_calls: Sequenc
 
     An unparsable test module is not reported here; :func:`assert_no_fit_at_test_module_import` fails on it."""
     root = Path(tests_root)
-    files = sorted({p for pat in _TEST_PATTERNS for p in root.rglob(pat) if p.is_file()})
+    files = _test_modules(root)
     scan = scan_python(files, root=root, min_files=0)
     heavy = frozenset(heavy_calls)
     out: list[Finding] = []
@@ -90,7 +97,7 @@ def assert_no_fit_at_test_module_import(
 ) -> None:
     """Fail on any import-time heavy call, on an unparsable test module, and on a tree with fewer than *min_files* test modules."""
     root = Path(tests_root)
-    files = sorted({p for pat in _TEST_PATTERNS for p in root.rglob(pat) if p.is_file()})
+    files = _test_modules(root)
     scan_python(files, root=root, min_files=min_files).assert_ok(allow_unparsed=allow_unparsed)
     found = find_fit_at_test_module_import(root, heavy_calls=heavy_calls)
     if found:
