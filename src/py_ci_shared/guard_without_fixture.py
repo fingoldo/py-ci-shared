@@ -23,7 +23,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
-from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, text_scan
+from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, require_text_floor, text_scan
 
 __all__ = ["GUARD_GLOBS", "find_guards_without_fixture", "assert_every_guard_named_by_a_test"]
 
@@ -36,10 +36,13 @@ def _is_direct_tool_guard(rel: str) -> bool:
     return len(parts) == 2 and parts[0] == "tool"
 
 
-def find_guards_without_fixture(root: Union[str, Path]) -> dict[str, str]:
-    """``{path: description}`` for each ``tool/check*`` guard that no test file, CI workflow or git hook names."""
+def find_guards_without_fixture(root: Union[str, Path], *, min_files: int = 1) -> dict[str, str]:
+    """``{path: description}`` for each ``tool/check*`` guard that no test file, CI workflow or git hook names.
+
+    Raises ``CorpusError`` when fewer than *min_files* guards are found (see :func:`require_text_floor`)."""
     guard_files, guard_bad = text_scan(root, GUARD_GLOBS, under=("tool",))
     guards = [f for f in guard_files if _is_direct_tool_guard(f.rel)]
+    require_text_floor("guard_without_fixture", len(guards), min_files=min_files, root=root)
     tests, bad = text_scan(root, ("*.py", "*.dart"), under=_TEST_ROOTS)
     for patterns, under in ((("*.yml", "*.yaml"), (".github",)), (("*",), (".githooks",))):
         more, more_bad = text_scan(root, patterns, under=under)
@@ -55,11 +58,11 @@ def find_guards_without_fixture(root: Union[str, Path]) -> dict[str, str]:
     return found
 
 
-def assert_every_guard_named_by_a_test(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None) -> None:
+def assert_every_guard_named_by_a_test(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, min_files: int = 1) -> None:
     """Fail on a ``tool/check*`` guard that no test names and the baseline does not accept (``tool/meta/baselines/guard_without_fixture.json``)."""
     enforce_findings(
         "guard_without_fixture",
-        find_guards_without_fixture(repo_root),
+        find_guards_without_fixture(repo_root, min_files=min_files),
         repo_root=repo_root,
         baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,
         label="guard_without_fixture",

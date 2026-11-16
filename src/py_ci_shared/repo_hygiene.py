@@ -293,6 +293,15 @@ def find_scripts_in_audit_folders(repo_root: Path, suffixes: Sequence[str] = AUD
     return [rel for rel in _tracked_files(repo_root) if "audits" in rel.replace("\\", "/").split("/")[:-1] and Path(rel).suffix.lower() in wanted]
 
 
+def find_workflows_dir_problems(workflows_dir: Path) -> list[str]:
+    """Problems with the workflows directory itself: missing (a mistyped path would switch every CI check off) or empty."""
+    if not workflows_dir.is_dir():
+        return [f"{workflows_dir} does not exist - a mistyped workflows_dir switches the CI checks off silently."]
+    if not list(workflows_dir.glob("*.y*ml")):
+        return [f"{workflows_dir} has no workflow files - this repo has no CI at all."]
+    return []
+
+
 def find_unguarded_numeric_gates(workflows_dir: Path) -> list[str]:
     """Return one problem string per workflow ``run:`` block that compares a shell variable
     numerically without first proving the variable is non-empty."""
@@ -380,8 +389,7 @@ def assert_repo_hygiene(
                 "sees what is pending or already decided:\n    " + "\n    ".join(in_audits[:20])
             )
     if workflows_dir is not None:
-        if workflows_dir.is_dir() and not list(workflows_dir.glob("*.y*ml")):
-            problems.append(f"{workflows_dir} has no workflow files - this repo has no CI at all.")
+        problems.extend(find_workflows_dir_problems(workflows_dir))
         problems.extend(find_unguarded_numeric_gates(workflows_dir))
     if problems:
         pytest.fail(f"{len(problems)} repo hygiene problem(s):\n  " + "\n  ".join(problems))

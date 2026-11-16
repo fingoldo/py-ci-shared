@@ -34,7 +34,8 @@ GATE = "sentinel-or-fallback"
 RULE = "sentinel-or-fallback"
 #: Settings whose falsy values are values: token budgets, timeouts, seeds, worker counts, limits, sampling knobs.
 DEFAULT_SENTINEL_NAMES = frozenset(
-    {"max_tokens", "max_completion_tokens", "max_output_tokens", "timeout", "seed", "random_state", "n_jobs", "limit"}
+    {"max_tokens", "max_completion_tokens", "max_output_tokens", "max_new_tokens", "timeout", "seed", "random_state", "n_jobs", "limit"}
+    | {"num_workers", "n_estimators", "max_depth", "learning_rate", "top_n", "min_samples"}
     | {"temperature", "top_k", "top_p", "max_retries", "retries", "max_rows", "n_samples", "offset"}
 )
 _DEFAULT_EXCLUDE = frozenset({"tests", "test", "testing"})

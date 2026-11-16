@@ -38,7 +38,7 @@ from typing import Optional, Union
 
 from ._core import walk as shared_walk
 from ._core.source import parse_source
-from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, is_test_path, normalize_line, record_finding, text_scan
+from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, is_test_path, normalize_line, record_finding, require_text_floor, text_scan
 
 __all__ = ["find_unscrubbed_git_spawns", "assert_no_new_unscrubbed_git_spawns"]
 
@@ -167,9 +167,12 @@ def _dart_spawns(rel: str, text: str, found: dict[str, str]) -> None:
         record_finding(found, f"{rel}: {normalize_line(line)}", f"line {number} spawns git and {why}")
 
 
-def find_unscrubbed_git_spawns(root: Union[str, Path]) -> dict[str, str]:
-    """``{key: description}`` for each git spawn in a test file under *root* that does not scrub ``GIT_*`` from its environment."""
+def find_unscrubbed_git_spawns(root: Union[str, Path], *, min_files: int = 1) -> dict[str, str]:
+    """``{key: description}`` for each git spawn in a test file under *root* that does not scrub ``GIT_*`` from its environment.
+
+    Raises ``CorpusError`` when fewer than *min_files* test files are found (see :func:`require_text_floor`)."""
     files, unreadable = text_scan(root, ("*.py", "*.dart"))
+    require_text_floor("git_child_env", sum(is_test_path(f.rel) for f in files), min_files=min_files, root=root)
     found = {k: v for k, v in unreadable.items() if is_test_path(k.rsplit(": ", 1)[0])}
     for file in files:
         if not is_test_path(file.rel):
@@ -181,11 +184,11 @@ def find_unscrubbed_git_spawns(root: Union[str, Path]) -> dict[str, str]:
     return found
 
 
-def assert_no_new_unscrubbed_git_spawns(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None) -> None:
+def assert_no_new_unscrubbed_git_spawns(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, min_files: int = 1) -> None:
     """Fail on a git spawn in a test that does not scrub ``GIT_*`` and the baseline does not accept (``tool/meta/baselines/git_child_env.json``)."""
     enforce_findings(
         "git_child_env",
-        find_unscrubbed_git_spawns(repo_root),
+        find_unscrubbed_git_spawns(repo_root, min_files=min_files),
         repo_root=repo_root,
         baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,
         label="git_child_env",

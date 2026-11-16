@@ -14,10 +14,21 @@ from pathlib import Path
 from typing import Union
 
 from ._core import DEFAULT_EXCLUDE
+from ._core.errors import CorpusError
 from ._gate_report import TextFile, read_text_corpus
 from .baseline_ratchet import Baseline
 
-__all__ = ["DEFAULT_BASELINE_DIR", "TEST_DIR_NAMES", "enforce_findings", "is_test_path", "normalize_line", "record_finding", "text_files", "text_scan"]
+__all__ = [
+    "DEFAULT_BASELINE_DIR",
+    "TEST_DIR_NAMES",
+    "enforce_findings",
+    "is_test_path",
+    "normalize_line",
+    "record_finding",
+    "require_text_floor",
+    "text_files",
+    "text_scan",
+]
 
 #: Where a consumer keeps its ratchet files; ``*_dir`` keyword arguments are resolved against the repo root.
 DEFAULT_BASELINE_DIR = "tool/meta/baselines"
@@ -56,6 +67,20 @@ def text_scan(root: Union[str, Path], patterns: Sequence[str], *, under: Iterabl
 def text_files(root: Union[str, Path], patterns: Sequence[str], *, under: Iterable[str] = ()) -> list[TextFile]:
     """Readable files only (see :func:`text_scan`, which also reports the unreadable ones as findings)."""
     return text_scan(root, patterns, under=under)[0]
+
+
+def require_text_floor(label: str, count: int, *, min_files: int, root: Union[str, Path]) -> None:
+    """Raise :class:`CorpusError` when fewer than *min_files* files of the gate's corpus were read.
+
+    A wrong root (``repo/src`` for ``repo``, a test file moved away) leaves a text ratchet with nothing to read, and an empty
+    corpus has no findings: the gate would pass forever. A repository that really has none of the scanned files sets
+    ``min_files=0``.
+    """
+    if count < min_files:
+        raise CorpusError(
+            f"{label}: {count} file(s) of its corpus under {root}; expected at least {min_files}. "
+            "The gate is not reaching the code (wrong root, or the scanned directories are absent). Pass min_files=0 if the repo has none."
+        )
 
 
 def record_finding(found: "dict[str, str]", key: str, description: str) -> None:

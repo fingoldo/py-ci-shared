@@ -48,7 +48,7 @@ def test_a_recorded_wait_passes_and_a_new_one_fails(tmp_path: Path) -> None:
 def test_a_test_named_file_outside_a_test_directory_is_not_scanned(tmp_path: Path) -> None:
     _tree(tmp_path, "scripts/test_probe.py", "import time\ntime.sleep(1)\n")
     _tree(tmp_path, "tools/poll_test.py", "import time\ntime.sleep(1)\n")
-    assert find_wallclock_test_waits(tmp_path) == {}
+    assert find_wallclock_test_waits(tmp_path, min_files=0) == {}
 
 
 def test_a_sleep_in_a_conftest_is_a_finding(tmp_path: Path) -> None:

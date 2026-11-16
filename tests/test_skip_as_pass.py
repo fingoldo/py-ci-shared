@@ -82,7 +82,7 @@ def test_python_skip_that_fails_or_exits_outside_its_block_is_not_found(tmp_path
 
 
 def test_only_guard_directories_are_scanned(tmp_path: Path) -> None:
-    assert find_skip_as_pass(_tree(tmp_path, "src/app.sh", BAD_SHELL)) == {}
+    assert find_skip_as_pass(_tree(tmp_path, "src/app.sh", BAD_SHELL), min_files=0) == {}
 
 
 def test_a_recorded_skip_passes_and_a_new_one_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

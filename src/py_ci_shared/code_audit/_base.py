@@ -252,7 +252,7 @@ def _iter_py_files(root: Path, exclude_dirs: frozenset[str]) -> Iterable[Path]:
     candidates: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-        candidates.extend(Path(dirpath) / name for name in filenames if name.endswith(_PY_EXTS))
+        candidates.extend(Path(dirpath) / name for name in filenames if name.lower().endswith(_PY_EXTS))
     candidates.sort(key=lambda p: p.as_posix())
     yield from candidates
 

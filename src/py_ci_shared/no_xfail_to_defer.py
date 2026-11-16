@@ -36,9 +36,11 @@ from __future__ import annotations
 
 import ast
 from ._core.ast_try import TRY_NODES
+import operator
 from ._core.unparse import unparse_stable
 import configparser
 import re
+from typing import Callable
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -115,8 +117,44 @@ def _mark_kind(node: ast.expr, aliases: ImportAliases) -> Optional[str]:
     target = node.func if isinstance(node, ast.Call) else node
     name = aliases.qualified_name(target) or ""
     if name.startswith("pytest.mark."):
-        return _MARK_NAMES.get(name.rsplit(".", 1)[-1])
+        leaf = name.rsplit(".", 1)[-1]
+        if leaf == "skipif":
+            # A condition that is constant true is an unconditional skip by another spelling; an environment test is not judged.
+            return "skip" if isinstance(node, ast.Call) and _constant_truth(node) else None
+        return _MARK_NAMES.get(leaf)
     return None
+
+
+_CONSTANT_OPS: dict[type, Callable[..., object]] = {
+    ast.Eq: operator.eq,
+    ast.NotEq: operator.ne,
+    ast.Lt: operator.lt,
+    ast.LtE: operator.le,
+    ast.Gt: operator.gt,
+    ast.GtE: operator.ge,
+    ast.Is: operator.is_,
+    ast.IsNot: operator.is_not,
+}
+
+
+def _constant_value(node: ast.expr) -> tuple[bool, object]:
+    """``(True, value)`` for a literal or a single comparison of two literals (``1 == 1``), else ``(False, None)``."""
+    if isinstance(node, ast.Constant):
+        return True, node.value
+    if isinstance(node, ast.Compare) and len(node.ops) == 1 and type(node.ops[0]) in _CONSTANT_OPS:
+        left_ok, left = _constant_value(node.left)
+        right_ok, right = _constant_value(node.comparators[0])
+        if left_ok and right_ok:
+            return True, _CONSTANT_OPS[type(node.ops[0])](left, right)
+    return False, None
+
+
+def _constant_truth(call: ast.Call) -> bool:
+    """True when the first positional argument (the skipif condition) is a constant that evaluates truthy."""
+    if not call.args:
+        return False
+    ok, value = _constant_value(call.args[0])
+    return ok and bool(value)
 
 
 def _reason_node(call: Optional[ast.Call], positional_reason: bool) -> Optional[ast.expr]:

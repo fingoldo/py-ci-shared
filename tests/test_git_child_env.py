@@ -56,7 +56,7 @@ def test_dart_git_spawn_without_environment_is_found_and_with_it_is_not(tmp_path
 
 
 def test_a_git_spawn_outside_a_test_file_is_not_found(tmp_path: Path) -> None:
-    assert find_unscrubbed_git_spawns(_tree(tmp_path, "src/release.py", BAD_PY)) == {}
+    assert find_unscrubbed_git_spawns(_tree(tmp_path, "src/release.py", BAD_PY), min_files=0) == {}
 
 
 def test_a_recorded_spawn_passes_and_a_new_one_fails(tmp_path: Path) -> None:
