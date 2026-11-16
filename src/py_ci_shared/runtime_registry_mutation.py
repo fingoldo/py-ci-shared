@@ -242,17 +242,18 @@ def _import_aliases_of(tree: ast.Module, registries: set[str]) -> dict[str, str]
 def _functions(tree: ast.Module) -> Iterator[tuple[_FunctionNode, bool, list[_FunctionNode]]]:
     """``(function, defined_in_a_class, enclosing functions outermost first)`` for every function in *tree*."""
 
-    def visit(node: ast.AST, in_class: bool, outer: list[_FunctionNode]) -> Iterator[tuple[_FunctionNode, bool, list[_FunctionNode]]]:
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                yield child, in_class, outer
-                yield from visit(child, False, [*outer, child])
-            elif isinstance(child, ast.ClassDef):
-                yield from visit(child, True, outer)
-            else:
-                yield from visit(child, in_class, outer)
-
-    yield from visit(tree, False, [])
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, bool, list[_FunctionNode]]] = [(child, False, []) for child in reversed(child_nodes(tree))]
+    while pending:
+        child, in_class, outer = pending.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield child, in_class, outer
+            inner_in_class, inner_outer = False, [*outer, child]
+        elif isinstance(child, ast.ClassDef):
+            inner_in_class, inner_outer = True, outer
+        else:
+            inner_in_class, inner_outer = in_class, outer
+        pending.extend((grandchild, inner_in_class, inner_outer) for grandchild in reversed(child_nodes(child)))
 
 
 def _called_names(func: _FunctionNode) -> set[str]:
