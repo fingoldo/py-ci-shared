@@ -85,7 +85,7 @@ def installed_metadata_version() -> Optional[str]:
 
     try:
         return metadata.version("py-ci-shared")
-    except metadata.PackageNotFoundError:
+    except metadata.PackageNotFoundError:  # best-effort: a checkout that is not installed has no metadata, and None is that answer
         return None
 
 
