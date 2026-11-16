@@ -217,3 +217,9 @@ def test_t7_except_star_broad_swallow_is_flagged(tmp_path: Path):
 
     _write(tmp_path, "m.py", "try:\n    g()\nexcept* Exception:\n    pass\n")
     assert scan_broad_except_swallows(tmp_path)
+def test_t18_extensionless_python_script_with_a_python_shebang_is_scanned(tmp_path: Path):
+    body = "try:\n    g()\nexcept:\n    pass\n"
+    _write(tmp_path, "deploy", "#!/usr/bin/env python3\n" + body)
+    _write(tmp_path, "run", "#!/bin/sh\n" + body)  # a shell script is not Python source
+    _write(tmp_path, "NOTES", body)  # no shebang: not a script
+    assert [f.file for f in scan_bare_except(tmp_path)] == ["deploy"]

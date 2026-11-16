@@ -202,6 +202,23 @@ def test_async_with_on_an_asyncio_semaphore_is_not_a_thread_lock(tmp_path):
     assert _lines(tmp_path, body) == []
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        # 40-T13: an import alias of the blocking callable and of the lock constructor
+        "from urllib.request import urlopen as uo\nimport threading\nlk = threading.Lock()\n\n\ndef f(url):\n    with lk:\n        uo(url)\n",
+        "from threading import Lock as L2\nimport time\nlk = L2()\n\n\ndef f():\n    with lk:\n        time.sleep(1)\n",
+        # a subscripted lock is a lock
+        "import time\n\n\nclass C:\n    def f(self, k):\n        with self._locks[k]:\n            time.sleep(1)\n",
+        # os.system and aiohttp are I/O
+        "import os\n\n\nclass C:\n    def f(self):\n        with self._lock:\n            os.system('ls')\n",
+        "import aiohttp\n\n\nasync def f(self, url):\n    async with self._lock:\n        await aiohttp.ClientSession().get(url)\n",
+    ],
+)
+def test_aliased_subscripted_and_shell_or_aiohttp_io_under_a_lock_is_found(tmp_path, body):
+    assert len(_lines(tmp_path, body)) == 1
+
+
 def test_sync_with_on_a_thread_lock_still_flags_a_sleep(tmp_path):
     """The T4 exemption is for `async with` only: a sync `with` on a threading lock still stalls the other threads."""
     body = """

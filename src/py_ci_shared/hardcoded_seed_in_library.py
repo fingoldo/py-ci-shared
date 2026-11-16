@@ -46,7 +46,7 @@ RULE = "hardcoded-seed-in-library"
 SUPPRESSION = "# seed-ok:"
 DEFAULT_EXCLUDE_FRAGMENTS = ("tests/", "_benchmarks/")
 
-_SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|rng|rs)s?(?:$|_)")
+_SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|random_generator|generator|rng|rs)s?(?:$|_)")
 _SEED_KEYWORDS = frozenset({"random_state", "seed", "random_seed", "rng", "rand_state", "seed_value"})
 _SEEDERS = frozenset(
     {
@@ -79,20 +79,19 @@ _SEED_METHODS = frozenset({"manual_seed"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
-_ARITHMETIC = (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod)
-
-
 def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
-    """The int *node* evaluates to when it is a literal, a folded ``+ - * // %`` of literals, or a module constant bound once to one.
+    """The int *node* evaluates to when it is a literal, a folded ``+ - * // % ** <<`` of literals, a numpy integer scalar of one, or a module constant bound once to one.
 
     Folded bottom-up with an explicit stack: a left-nested ``1 + 1 + ...`` chain is as deep as it is long.
     """
 
     def children(current: ast.AST) -> "list[ast.AST]":
-        if isinstance(current, ast.BinOp) and isinstance(current.op, _ARITHMETIC):
+        if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
             return [current.left, current.right]
         if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
             return [current.operand]
+        if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
+            return [current.args[0]]
         return []
 
     def combine(current: ast.AST, values: "list[Optional[int]]") -> Optional[int]:
@@ -103,26 +102,45 @@ def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
         if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
             inner = values[0]
             return None if inner is None else (-inner if isinstance(current.op, ast.USub) else inner)
-        if isinstance(current, ast.BinOp) and isinstance(current.op, _ARITHMETIC):
+        if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
+            return values[0]  # np.int64(3) is the seed 3
+        if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
             left, right = values
-            return None if left is None or right is None else _apply_arithmetic(current.op, left, right)
+            return None if left is None or right is None else _fold(current.op, left, right)
         return None
 
     result: Optional[int] = postorder_fold(node, children, combine)
     return result
 
 
-def _apply_arithmetic(op: ast.operator, left: int, right: int) -> Optional[int]:
-    """``left <op> right`` for the operators :data:`_ARITHMETIC` names; None for a division or modulo by zero."""
+_FOLDED_OPS = frozenset({ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod, ast.Pow, ast.LShift})
+
+
+def _fold(op: ast.operator, left: int, right: int) -> Optional[int]:
+    """The value of ``left <op> right`` for the integer operators a seed is written with, or None when it is not a seed value."""
     if isinstance(op, ast.Add):
         return left + right
     if isinstance(op, ast.Sub):
         return left - right
     if isinstance(op, ast.Mult):
         return left * right
+    if isinstance(op, (ast.Pow, ast.LShift)):
+        # a negative or huge exponent is not an int seed (2 ** -1 is a float, 2 ** 10**9 is not a value to fold)
+        if not 0 <= right <= 64:
+            return None
+        return pow(left, right) if isinstance(op, ast.Pow) else left << right
     if right == 0:
         return None
     return left // right if isinstance(op, ast.FloorDiv) else left % right
+
+
+_NUMPY_INT_TYPES = frozenset({"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "intc", "intp", "int_", "uint"})
+
+
+def _numpy_integer_scalar(call: ast.Call) -> bool:
+    """``np.int64(...)`` / ``numpy.uint32(...)``: a numpy integer scalar wrapping its value."""
+    func = call.func
+    return isinstance(func, ast.Attribute) and func.attr in _NUMPY_INT_TYPES and isinstance(func.value, ast.Name) and func.value.id in {"np", "numpy"}
 
 
 def _module_int_constants(tree: ast.Module) -> "dict[str, int]":
@@ -229,6 +247,8 @@ def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[
     seeds_by_call = aliases.qualified_name(call) in _SEEDERS or (isinstance(call.func, ast.Attribute) and call.func.attr in _SEED_METHODS)
     if not what and seeds_by_call and call.args and _int_value(call.args[0], known) is not None:
         what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"
+    elif not what and seeds_by_call and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
+        what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"  # random.Random("abc"): a string seed is a fixed seed
     return what
 
 
@@ -304,21 +324,17 @@ def _visit_seed_scopes(
 ) -> list[Finding]:
     """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
     out: list[Finding] = []
-    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
-    pending: list[tuple[ast.AST, str, frozenset[str]]] = [(child, prefix, inherited) for child in reversed(child_nodes(node))]
-    while pending:
-        child, child_prefix, child_inherited = pending.pop()
+    for child in child_nodes(node):
         if isinstance(child, ast.ClassDef):
-            inner_prefix, inner_inherited = f"{child_prefix}{child.name}.", frozenset[str]()
+            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines, consts))
         elif isinstance(child, _FUNCTIONS):
-            params = frozenset(_own_params(child)) | child_inherited
-            qualname = f"{child_prefix}{child.name}"
+            params = frozenset(_own_params(child)) | inherited
+            qualname = f"{prefix}{child.name}"
             if params:
                 out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines, consts))
-            inner_prefix, inner_inherited = f"{qualname}.<locals>.", params
+            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines, consts))
         else:
-            inner_prefix, inner_inherited = child_prefix, child_inherited
-        pending.extend((grandchild, inner_prefix, inner_inherited) for grandchild in reversed(child_nodes(child)))
+            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines, consts))
     return out
 
 

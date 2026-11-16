@@ -25,6 +25,26 @@ def _find(tmp_path: Path, files, **kw):
     return find_systemexit_in_library(tmp_path, use_git=False, **kw)
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        # 40-T19: an import-time exit in a library module (no __main__ guard) runs as soon as the module is imported
+        "import sys\n\nif not sys.argv:\n    sys.exit(1)\n",
+        "import sys\n\n\nclass A:\n    sys.exit(1)\n",
+        "import sys\n\nf = lambda: sys.exit(1)\n",
+        "import os\n\nos.abort()\n",
+    ],
+)
+def test_an_import_time_exit_in_a_library_module_is_reported(tmp_path, source):
+    found = _find(tmp_path, source)
+    assert len(found) == 1 and found[0].rule == "systemexit-in-library", found
+
+
+def test_an_import_time_exit_under_a_main_guard_or_in_a_main_module_is_not_reported(tmp_path):
+    guarded = 'import sys\n\nif __name__ == "__main__":\n    sys.exit(main())\n'
+    assert _find(tmp_path, {"g.py": guarded, "__main__.py": "import sys\n\nsys.exit(1)\n"}) == []
+
+
 def test_reports_the_seeded_violation(tmp_path):
     found = _find(tmp_path, LIB)
     assert [(f.path, f.line, f.rule) for f in found] == [("m.py", 5, "systemexit-in-library")]

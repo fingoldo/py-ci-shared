@@ -8,6 +8,9 @@ Reported, for a ``sys.exit``/``exit``/``quit``/``os._exit`` call or a ``raise Sy
 ``if __name__ == "__main__":`` guard (it is a library) OR the function's name is imported by name from another scanned module (a CLI helper
 that became shared).
 
+A library module (no ``__main__`` guard, not a ``__main__.py``) is also judged at import time: an exit at module or class level, or in a
+lambda, is a finding whatever its name, since importing the module runs it (``os.abort`` included). ``__main__`` guarded modules are scripts.
+
 Test files (``tests/`` directories, ``test_*.py``, ``conftest.py``) are skipped unless *include_tests*.
 
 Not reported: functions named like an entry (*entry_names* regex, default anchored: exactly ``main``/``cli``/``run_cli``/``parse_args``/``entry`` (leading underscores allowed) or a ``main_``/``cli_`` prefix, so ``get_domain_dsn`` and ``client_config`` are not exempt); a function with a
@@ -26,7 +29,7 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python, walk
@@ -68,12 +71,18 @@ def _imported_names(trees: dict) -> dict:
     return out
 
 
-_QUALIFIED_EXITS = {"sys.exit": "sys.exit()", "os._exit": "os._exit()", "builtins.exit": "exit()", "builtins.quit": "quit()"}
+_QUALIFIED_EXITS = {
+    "sys.exit": "sys.exit()",
+    "os._exit": "os._exit()",
+    "os.abort": "os.abort()",
+    "builtins.exit": "exit()",
+    "builtins.quit": "quit()",
+}
 
 
 def _mechanism(kind: str) -> str:
     """Why the exit is a problem: ``os._exit`` ends the process at once (41-F2); the others raise SystemExit, which only ends the thread."""
-    if "_exit" in kind:
+    if "_exit" in kind or "abort" in kind:
         return "os._exit() ends the whole process at once, running no finally blocks or atexit handlers"
     return "SystemExit passes `except Exception` and ends only the calling thread"
 
@@ -106,6 +115,37 @@ def _exits_in(nodes: list, aliases: Optional[ImportAliases]) -> list:
         if kind is not None:
             out.append((node, kind))
     return out
+
+
+def _import_time_exits(tree: ast.Module, aliases: ImportAliases) -> list:
+    """``(node, kind)`` for each exit that runs when the module is imported: module and class bodies, and lambdas. A function body
+    runs only when called, so it is not entered (the function rule covers it)."""
+    out: list = []
+    stack: list = [tree]
+    while stack:
+        node = stack.pop()
+        if node is not tree and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        kind = _exit_kind(node, aliases)
+        if kind is not None:
+            out.append((node, kind))
+        stack.extend(ast.iter_child_nodes(node))
+    return out
+
+
+def _import_time_findings(rel: str, tree: ast.Module, aliases: ImportAliases, lines: list) -> list[Finding]:
+    """An exit that runs at import time in a library module ends the importer, so it is a finding whatever its name."""
+    return [
+        Finding(
+            rel,
+            node.lineno,
+            RULE,
+            f"{kind} runs at import time in a library module (no __main__ guard): {_mechanism(kind)}; importing this module ends the importer. "
+            "Move the exit into main()",
+        )
+        for node, kind in _import_time_exits(tree, aliases)
+        if not _marked(lines, node.lineno)
+    ]
 
 
 def _marked(lines: list, line: int) -> bool:
@@ -144,6 +184,8 @@ def find_systemexit_in_library(
         guarded = _has_main_guard(parsed.tree)
         aliases = ImportAliases.from_tree(parsed.tree, scoped=True)
         lines = parsed.source.splitlines()
+        if not guarded and PurePosixPath(parsed.rel).name != "__main__.py":
+            out.extend(_import_time_findings(parsed.rel, parsed.tree, aliases, lines))
         own_of = {id(scope.node): scope.nodes for scope in iter_scopes(parsed.tree) if scope.node is not None}  # the shared per-tree index
         for fn in walk(parsed.tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or entry.search(fn.name):
@@ -162,7 +204,7 @@ def find_systemexit_in_library(
                         parsed.rel,
                         node.lineno,
                         RULE,
-                        f"{fn.name}: {kind} in a library function ({why}); {_mechanism(kind)}. " "Raise a normal exception and exit in main()",
+                        f"{fn.name}: {kind} in a library function ({why}); {_mechanism(kind)}. Raise a normal exception and exit in main()",
                     )
                 )
     return sorted(out, key=lambda f: (f.path, f.line))

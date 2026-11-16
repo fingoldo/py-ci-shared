@@ -21,6 +21,27 @@ from py_ci_shared.possibly_unbound_local import (
 BOM = b"\xef\xbb\xbf"
 
 
+@pytest.mark.parametrize(
+    "src",
+    [
+        # 40-T12: a walrus behind a boolean operator binds only when the operator reaches it
+        "def f(c, g):\n    if c and (y := g()):\n        pass\n    return y\n",
+        "def f(c, g):\n    x = c and (y := g())\n    return y\n",
+        "def f(c, g):\n    if c or (y := g()):\n        pass\n    return y\n",
+        # 40-T12: contextlib.suppress and pytest.raises swallow the exception that skips the rest of the block
+        "import contextlib\n\n\ndef f(g):\n    with contextlib.suppress(Exception):\n        y = g()\n    return y\n",
+        "import pytest\n\n\ndef f(g):\n    with pytest.raises(ValueError):\n        y = g()\n    return y\n",
+    ],
+)
+def test_a_walrus_behind_a_boolean_operator_or_a_swallowing_with_is_maybe_bound(tmp_path, src):
+    assert len(_rules(tmp_path, src)) == 1
+
+
+def test_a_walrus_under_the_first_operand_or_inside_its_branch_is_bound(tmp_path):
+    assert _rules(tmp_path / "a", "def f(c, g):\n    if (y := g()) and c:\n        pass\n    return y\n") == []
+    assert _rules(tmp_path / "b", "def f(c, g):\n    if c and (y := g()):\n        return y\n    return 0\n") == []
+
+
 def _find(root, **kw):
     return find_possibly_unbound_local(root, use_git=False, **kw)
 
