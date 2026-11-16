@@ -223,7 +223,9 @@ def _cmd_new_gate(args: argparse.Namespace) -> int:
         _print(f"created {rel}")
     for rel in done.updated:
         _print(f"updated {rel}")
-    _print("Every generated test and the canary fail until written; fill them in, then run tests/test_package_inventory.py and tests/test_gate_teeth.py.")
+    _print(
+        "Every generated test and the canary fail until written; fill them in, add a CHANGELOG Unreleased bullet naming the module, then run tests/test_package_inventory.py and tests/test_gate_teeth.py."
+    )
     return 0
 
 
