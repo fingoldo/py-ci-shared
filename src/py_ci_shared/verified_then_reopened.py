@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, child_nodes, scan_python, walk
+from ._core.shared_helpers import final_name as _final
 
 __all__ = ["DEFAULT_SINK_NAMES", "DEFAULT_VERIFY_REGEX", "RULE", "assert_verified_then_reopened", "find_reopened_after_verify"]
 
@@ -42,14 +43,6 @@ DEFAULT_SINK_NAMES: frozenset = frozenset({"open", "load", "read_bytes", "read_t
 _METHOD_SINKS = frozenset({"read_bytes", "read_text", "open"})
 _SIZE_CHECK = re.compile(r"size|length", re.IGNORECASE)
 _REOPEN_OK = re.compile(r"#\s*reopen-ok:\s*\S")
-
-
-def _final(func: ast.AST) -> Optional[str]:
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    if isinstance(func, ast.Name):
-        return func.id
-    return None
 
 
 def _expr_key(node: ast.AST) -> Optional[str]:

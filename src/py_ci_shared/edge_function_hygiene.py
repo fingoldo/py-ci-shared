@@ -37,6 +37,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from ._core import DEFAULT_EXCLUDE, CorpusError, SourceReadError, iter_files, read_source, relative_posix
+from ._core.shared_helpers import line_of_index as _line_of
 
 __all__ = ["assert_edge_functions_are_sound", "find_edge_function_problems"]
 
@@ -84,10 +85,6 @@ def _balanced(source: str, open_index: int, opener: str = "{", closer: str = "}"
 _EMPTY_RIGHT_RE = re.compile(r"""\s*\(*\s*(?:""|''|``|null|undefined)(?![\w$])""")
 _EMPTY_LEFT_RE = re.compile(r"""(?<![\w$])(?:""|''|``|null|undefined)\s*(?:\)\s*)*$""")
 _EQUALITY_OP_RE = re.compile(r"===|!==|==|!=")
-
-
-def _line_of(source: str, index: int) -> int:
-    return source.count("\n", 0, index) + 1
 
 
 def _skip_quoted(src: str, i: int) -> int:

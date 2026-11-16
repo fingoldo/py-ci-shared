@@ -29,17 +29,13 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, scan_python, walk
+from ._core.shared_helpers import is_test_path as _is_test_path
 
 __all__ = ["RULE", "assert_optional_collaborator_wired", "find_unwired_optional_collaborators"]
 
 RULE = "optional-collaborator-unwired"
 MARKER = "unwired-ok"
 DEFAULT_PARAM_REGEX = r"(_memo|_cache|_fn)$"
-
-
-def _is_test_path(rel: str) -> bool:
-    parts = rel.split("/")
-    return "tests" in parts[:-1] or parts[-1].startswith("test_") or parts[-1] == "conftest.py"
 
 
 def _callee(func: ast.AST) -> Optional[str]:

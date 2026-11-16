@@ -59,7 +59,6 @@ from __future__ import annotations
 
 import logging
 import re
-import shlex
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -84,6 +83,7 @@ from ._ci_install_parts import (
 )
 from .ci_workflow_paths import workflow_files
 from ._core import Baseline, Finding, SourceError, read_source, refresh_requested, scan_python
+from ._core.shared_helpers import shell_tokens as _tokens
 
 logger = logging.getLogger(__name__)
 
@@ -314,14 +314,6 @@ class _Context:
 
     def child(self, env: Mapping[str, Optional[str]], inputs: Optional[Mapping[str, Optional[str]]] = None) -> _Context:
         return _Context(self.root, {**self.env, **env}, self.matrix, dict(inputs) if inputs is not None else self.inputs)
-
-
-def _tokens(command: str) -> list[str]:
-    try:
-        return shlex.split(command, posix=True)
-    except ValueError as exc:
-        logger.debug("could not shell-split command, falling back to whitespace split: %s", type(exc).__name__)
-        return command.split()
 
 
 def _strip_wrappers(argv: list[str]) -> list[str]:

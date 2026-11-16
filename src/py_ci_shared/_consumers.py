@@ -28,6 +28,7 @@ from typing import Callable, Optional
 from ._core import CoreError, read_source
 from ._core.git import GitError, git_text, run_git
 from ._toml_compat import tomllib
+from ._core.shared_helpers import toml_quoted as _toml_str
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,8 @@ class Consumer:
     branch: str
     private: bool = True
     corpus: bool = False
+    #: Workflows (by name) whose tag-push runs ci_health also reads, report only (46-T6). Empty for every consumer but this repo.
+    tag_workflows: tuple[str, ...] = ()
 
     @property
     def url(self) -> str:
@@ -80,6 +83,9 @@ def load_consumers(path: Path) -> list[Consumer]:
             raise CoreError(f"{path}: consumer #{i + 1}: name must be letters, digits, dot, dash or underscore and start with a letter or digit")
         if not _REPO.fullmatch(str(table["repo"])) or {".", ".."} & set(str(table["repo"]).split("/")):
             raise CoreError(f"{path}: consumer {table['name']!r}: repo must be owner/name with letters, digits, dot, dash or underscore only")
+        tag_workflows = table.get("tag_workflows", []) or []
+        if not isinstance(tag_workflows, list) or not all(isinstance(x, str) for x in tag_workflows):
+            raise CoreError(f"{path}: consumer {table['name']!r}: tag_workflows must be a list of workflow names")
         out.append(
             Consumer(
                 name=str(table["name"]),
@@ -87,6 +93,7 @@ def load_consumers(path: Path) -> list[Consumer]:
                 branch=str(table["branch"]),
                 private=bool(table.get("private", True)),
                 corpus=bool(table.get("corpus", False)),
+                tag_workflows=tuple(tag_workflows),
             )
         )
     names = [c.name for c in out]
@@ -144,10 +151,6 @@ def checkout(
         else:
             result.failed.append((consumer, error))
     return result
-
-
-def _toml_str(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def write_repos_file(path: Path, cloned: Sequence[tuple[Consumer, Path]], skipped: Sequence[Consumer] = ()) -> None:

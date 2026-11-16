@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
 
@@ -39,6 +39,7 @@ from ._core.scopes import own_nodes
 from ._core import Finding, ImportAliases, ParsedFile, ScanResult, child_nodes
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker, report, scan_tree, skip_set
+from ._core.shared_helpers import module_statements as _module_statements
 
 __all__ = ["RULE_CACHE", "RULE_IMPORT", "REFRESH_FLAG", "find_thread_unsafe_module_state", "assert_thread_safe_module_caches"]
 
@@ -50,18 +51,6 @@ DEFAULT_CACHE_NAME = r"cache|memo"
 _DICT_FACTORIES = frozenset({"dict", "OrderedDict", "defaultdict", "Counter", "WeakValueDictionary", "WeakKeyDictionary", "LRUCache", "TTLCache"})
 _MUTATORS = frozenset({"setdefault", "update", "pop", "popitem", "clear", "__setitem__", "__delitem__", "move_to_end"})
 _LOCKS = frozenset({"Lock", "RLock", "Semaphore", "BoundedSemaphore", "Condition"})
-
-
-def _module_statements(body: Iterable[ast.stmt]) -> Iterator[ast.stmt]:
-    """Module-scope statements, descending into ``if``/``try``/``with`` blocks but never into a def or class."""
-    for node in body:
-        yield node
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        for name in ("body", "orelse", "finalbody"):
-            yield from _module_statements(getattr(node, name, None) or [])
-        for handler in getattr(node, "handlers", None) or []:
-            yield from _module_statements(handler.body)
 
 
 def _is_dict_value(value: ast.expr, aliases: ImportAliases) -> bool:

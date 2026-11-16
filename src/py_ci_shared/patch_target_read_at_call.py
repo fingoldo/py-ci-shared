@@ -51,6 +51,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, ParsedFile, child_nodes, scan_python
 from ._core import walk as shared_walk
+from ._core.shared_helpers import head_name as _head
 
 __all__ = ["RULE", "assert_patch_target_read_at_call", "find_inert_patches"]
 
@@ -186,12 +187,6 @@ def _is_inert(name: str, owner: _Module, facts: _Facts, all_facts: dict[str, _Fa
         return False
     dotted = f"{owner.name}.{name}"
     return not any(dotted in other.function_qualified for other in all_facts.values())
-
-
-def _head(node: ast.AST) -> Optional[str]:
-    while isinstance(node, ast.Attribute):
-        node = node.value
-    return node.id if isinstance(node, ast.Name) else None
 
 
 def _is_monkeypatch(node: ast.AST) -> bool:

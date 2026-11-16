@@ -51,6 +51,7 @@ from ._core.outcome import unevaluated_skip
 from ._core import Baseline, CoreError, EmptyScanError, Finding, SourceError, UnparsedFilesError, read_source
 from ._core.git import GitError, run_git
 from ._toml_compat import tomllib
+from ._core.shared_helpers import normalize_distribution_name as _norm
 
 logger = logging.getLogger(__name__)
 
@@ -96,10 +97,6 @@ _FLOOR = re.compile(r"(>=|~=|==)\s*([0-9][0-9A-Za-z.+!-]*)")
 _REQ_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(\[[^\]]*\])?\s*(.*)$", re.DOTALL)
 _REF = r"([^\s'\"#;,)\]]+)"
 _REF_KEY = re.compile(r"^\s*-?\s*ref:\s*['\"]?" + _REF)
-
-
-def _norm(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _name_pattern(sibling: str) -> str:

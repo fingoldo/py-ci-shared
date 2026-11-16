@@ -33,6 +33,7 @@ from typing import Any, Optional, Union
 from ._core import Baseline, Finding, SourceError, UnparsedFilesError, iter_files, read_source, relative_posix
 from ._core.errors import EmptyScanError
 from ._toml_compat import tomllib
+from ._core.shared_helpers import normalize_distribution_name as _norm
 
 __all__ = [
     "RULE_MISSING",
@@ -53,10 +54,6 @@ RULE_NO_ROOT = "uv-lock-no-root-package"
 _REQ = re.compile(r"^\s*(?P<name>[A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[(?P<extras>[^\]]*)\])?\s*(?P<rest>.*)$")
 _EXTRA_MARKER = re.compile(r"""extra\s*==\s*['"]([^'"]+)['"]""")
 _DIRECT_KEYS = ("url", "git", "path", "directory", "editable", "virtual")
-
-
-def _norm(name: str) -> str:
-    return re.sub(r"[-_.]+", "-", name).lower()
 
 
 def _specifier(text: str) -> str:

@@ -9,10 +9,6 @@ import re
 from collections.abc import Iterator
 
 
-def _line_of(source: str, index: int) -> int:
-    return source.count("\n", 0, index) + 1
-
-
 def _key(found: dict, rel: str) -> str:
     """A provisional, unique key while a scanner collects; :func:`_rekey` turns it into the stable one."""
     return f"{rel}#{len(found)}"

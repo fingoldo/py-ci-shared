@@ -34,7 +34,6 @@ from __future__ import annotations
 import configparser
 import logging
 import re
-import shlex
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -42,6 +41,7 @@ from typing import Any, Optional, Union
 
 from ._core import Finding, SourceError, SourceProblem, iter_files, read_source, relative_posix
 from ._gate_report import report, skip_set
+from ._core.shared_helpers import shell_tokens as _tokens
 
 logger = logging.getLogger(__name__)
 
@@ -88,14 +88,6 @@ def _testpaths(repo_root: Path) -> set[str]:
         raw = options.get("testpaths", [])
         paths = {str(p).strip("/") for p in ([raw] if isinstance(raw, str) else raw)}
     return paths or {"tests", "test"}
-
-
-def _tokens(command: str) -> list[str]:
-    try:
-        return shlex.split(command, posix=True)
-    except ValueError as exc:
-        logger.debug("could not shell-split command, falling back to whitespace split: %s", type(exc).__name__)
-        return command.split()
 
 
 def _commands(run: str) -> Iterator[tuple[str, bool]]:

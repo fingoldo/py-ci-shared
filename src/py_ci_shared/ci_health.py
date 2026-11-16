@@ -48,6 +48,7 @@ import binascii
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -144,6 +145,20 @@ class WorkflowHealth:
     billing_runs: int = 0
 
 
+#: The tag a release workflow runs on (``v1.2.3``); a tag push's run carries it as ``head_branch``.
+TAG_RELEASE = re.compile(r"v\d+\.\d+\.\d+")
+
+
+@dataclass(frozen=True)
+class TagRun:
+    """The newest tag-push run of a workflow named in ``tag_workflows``. Report only: it never sets the exit code."""
+
+    workflow: str
+    tag: str
+    conclusion: str
+    url: str
+
+
 @dataclass
 class RepoHealth:
     """One repo: its workflows, or why it has none to show (``skipped`` for want of a token, ``error``, no runs)."""
@@ -154,6 +169,7 @@ class RepoHealth:
     workflows: list[WorkflowHealth] = field(default_factory=list)
     skipped: str = ""
     error: str = ""
+    tag_runs: list[TagRun] = field(default_factory=list)
 
 
 def _ts(value: Optional[str]) -> Optional[datetime]:
@@ -344,6 +360,15 @@ def _skipped_row(r: RepoHealth) -> tuple[tuple, str]:
     return (-1, 0.0, r.name, ""), f"| {r.name} | (every workflow) | RED | NOT CHECKED, {_cell(r.skipped)} | - | - | - |"
 
 
+def _tag_section(repos: Sequence[RepoHealth]) -> list[str]:
+    """The report-only section of tag-push runs that were read; empty when there are none."""
+    runs = [(r, t) for r in repos for t in r.tag_runs]
+    if not runs:
+        return []
+    header = ["", "Tag-push runs (report only, they never fail this check):"]
+    return header + [f"- {r.name} `{t.workflow}` {t.tag}: {t.conclusion or 'unknown'}" + (f" ([run]({t.url}))" if t.url else "") for r, t in runs]
+
+
 def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: float, *, fail_on_skipped_private: bool = False) -> str:
     """The report: one table row per workflow (worst first), then the repos that were skipped, errored or had no runs.
 
@@ -386,6 +411,7 @@ def render_markdown(repos: Sequence[RepoHealth], now: datetime, max_red_days: fl
         + (": " + ", ".join(f"{r.name}/{w.workflow}" for r, w in billing) if billing else "")
         + "."
     )
+    lines += _tag_section(repos)
     if unchecked:
         lines.append(f"{len(unchecked)} private repo(s) NOT CHECKED for want of {TOKEN_ENV}: {', '.join(unchecked)}.")
     return "\n".join(lines) + "\n"
@@ -542,6 +568,20 @@ def has_live_trigger(api: Api, repo: str, path: str, branch: str) -> bool:
     return bool(LIVE_TRIGGERS.intersection(str(x) for x in triggers))
 
 
+def _tag_run(api: Api, repo: str, wf: dict) -> Optional[TagRun]:
+    """The newest tag-push run of ``wf`` whose tag is a release tag, or ``None``. A failed read is ``None``: report only."""
+    try:
+        runs = api(f"repos/{repo}/actions/workflows/{wf['id']}/runs?{_q(event='push', status='completed', per_page=RUNS_PER_PAGE)}").get("workflow_runs", [])
+    except ApiError as exc:
+        logger.warning("ci_health: %s: tag runs of %s could not be read (%s); not reported", repo, wf.get("name"), type(exc).__name__)
+        return None
+    for run in runs:
+        tag = str(run.get("head_branch") or "")
+        if TAG_RELEASE.fullmatch(tag):
+            return TagRun(str(wf.get("name")), tag, str(run.get("conclusion") or ""), str(run.get("html_url") or ""))
+    return None
+
+
 def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bool, skip_workflows: Collection[str] = ()) -> RepoHealth:
     """Read one consumer's workflows and runs through ``api`` and assess them. API failures become ``error``.
 
@@ -570,7 +610,13 @@ def collect(consumer: Consumer, api: Api, now: datetime, *, can_read_private: bo
     except ApiError as exc:
         logger.debug("GitHub API call failed, consumer reported with an error: %s", type(exc).__name__)
         return RepoHealth(consumer.name, consumer.repo, consumer.branch, error=str(exc))
-    return assess_repo(consumer, workflows, runs_by, now, billing_run_ids=billing_ids)
+    out = assess_repo(consumer, workflows, runs_by, now, billing_run_ids=billing_ids)
+    for wf in workflows:
+        if str(wf.get("name")) in consumer.tag_workflows:
+            tag = _tag_run(api, consumer.repo, wf)
+            if tag is not None:
+                out.tag_runs.append(tag)
+    return out
 
 
 def _annotations(repos: Sequence[RepoHealth], max_red_days: float, *, fail_on_skipped_private: bool = False) -> list[str]:
@@ -581,6 +627,7 @@ def _annotations(repos: Sequence[RepoHealth], max_red_days: float, *, fail_on_sk
             out.append(f"::{level} title=consumer skipped::{r.repo} is private and {TOKEN_ENV} is not set; its CI health was NOT checked")
         if r.error:
             out.append(f"::error title=ci_health::{r.repo}: {r.error}")
+        out += [f"::warning title=release tag run {t.conclusion or 'unknown'}::{r.repo} {t.workflow} {t.tag}" for t in r.tag_runs if t.conclusion != "success"]
         out += [
             f"::error title=CI red for {w.days_red:.1f} days::{r.repo} {w.workflow} ({w.path}) has been red since {_day(w.red_since)}"
             for w in over_threshold(r, max_red_days)

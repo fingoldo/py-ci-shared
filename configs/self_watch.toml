@@ -7,3 +7,5 @@ name = "py-ci-shared"
 repo = "fingoldo/py-ci-shared"
 branch = "master"
 private = false
+# Release runs on a tag push, never on master: ci_health reads them too, report only (a red tag run is a note, not a failure).
+tag_workflows = ["Release"]

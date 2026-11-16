@@ -31,6 +31,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python, walk
 from ._core.scopes import SCOPE_TYPES, iter_scopes
+from ._core.shared_helpers import is_test_path as _is_test_path
 
 __all__ = ["RULE", "assert_no_systemexit_in_library", "find_systemexit_in_library"]
 
@@ -109,11 +110,6 @@ def _exits_in(nodes: list, aliases: Optional[ImportAliases]) -> list:
 
 def _marked(lines: list, line: int) -> bool:
     return any(0 < n <= len(lines) and "#" in lines[n - 1] and MARKER in lines[n - 1].split("#", 1)[1] for n in (line, line - 1))
-
-
-def _is_test_path(rel: str) -> bool:
-    parts = rel.split("/")
-    return "tests" in parts[:-1] or parts[-1].startswith("test_") or parts[-1] == "conftest.py"
 
 
 def _params(fn: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> list:
