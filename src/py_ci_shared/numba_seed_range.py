@@ -163,19 +163,19 @@ def _assigned(tree: ast.Module) -> dict[int, dict[str, list[ast.expr]]]:
     """``{id(scope): {name: [values]}}`` for module scope and each function."""
     out: dict[int, dict[str, list[ast.expr]]] = {}
 
-    def visit(node: ast.AST, scope: int) -> None:
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                visit(child, id(child))
-                continue
-            if isinstance(child, (ast.Assign, ast.AnnAssign)) and child.value is not None:
-                targets = child.targets if isinstance(child, ast.Assign) else [child.target]
-                for t in targets:
-                    if isinstance(t, ast.Name):
-                        out.setdefault(scope, {}).setdefault(t.id, []).append(child.value)
-            visit(child, scope)
-
-    visit(tree, id(tree))
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, int]] = [(child, id(tree)) for child in reversed(child_nodes(tree))]
+    while pending:
+        child, scope = pending.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            pending.extend((grandchild, id(child)) for grandchild in reversed(child_nodes(child)))
+            continue
+        if isinstance(child, (ast.Assign, ast.AnnAssign)) and child.value is not None:
+            targets = child.targets if isinstance(child, ast.Assign) else [child.target]
+            for t in targets:
+                if isinstance(t, ast.Name):
+                    out.setdefault(scope, {}).setdefault(t.id, []).append(child.value)
+        pending.extend((grandchild, scope) for grandchild in reversed(child_nodes(child)))
     return out
 
 
@@ -196,11 +196,14 @@ class _FileCheck:
         return self.out
 
     def _scan(self, node: ast.AST, scopes: list[int]) -> None:
-        for child in child_nodes(node):
-            inner = [id(child), *scopes] if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else scopes
+        # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+        pending: list[tuple[ast.AST, list[int]]] = [(child, scopes) for child in reversed(child_nodes(node))]
+        while pending:
+            child, current = pending.pop()
             if isinstance(child, ast.Call):
-                self._check(child, scopes)
-            self._scan(child, inner)
+                self._check(child, current)
+            inner = [id(child), *current] if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else current
+            pending.extend((grandchild, inner) for grandchild in reversed(child_nodes(child)))
 
     def _source_of(self, arg: ast.expr, scopes: list[int]) -> Optional[str]:
         direct = _wide_source(arg, self.aliases)
