@@ -38,6 +38,13 @@ since = "1.20.0"
 summary = "Standard-library API newer than the ``requires-python`` floor, outside a version guard (vermin, guard-aware)"
 
 [[gate]]
+name = "append_only_log_shrink"
+kind = "gate"
+entries = ["assert_append_only_log_shrink"]
+since = "1.23.12"
+summary = "A first-parent commit may not leave an append-only data file (JSONL, gzipped JSONL) with fewer rows than its parent; waived by an Append-Only-Shrink: trailer"
+
+[[gate]]
 name = "arb_checks"
 kind = "gate"
 entries = ["assert_arb_catalogues_are_sound"]
@@ -424,6 +431,13 @@ since = "1.23.12"
 summary = "A CUDA kernel pointer parameter the kernel never writes through is declared const (and __restrict__ where it does not alias)"
 
 [[gate]]
+name = "cuda_device_idioms"
+kind = "gate"
+entries = ["assert_cuda_device_idioms"]
+since = "1.23.12"
+summary = "CUDA device-idiom hard gate: literal device ids, cupy small-integer power, and direct device sorts along axis 0 are reported unless waived"
+
+[[gate]]
 name = "cuda_fallback_logged"
 kind = "gate"
 entries = ["assert_cuda_fallback_logged"]
@@ -554,6 +568,13 @@ since = "1.23.12"
 summary = "CUDA kernel strings use no legacy unmasked __shfl* (undefined on sm_70+) and never call a _sync intrinsic with the full warp mask inside a thread-dependent if"
 
 [[gate]]
+name = "cuda_wide_load_alignment"
+kind = "gate"
+entries = ["assert_cuda_wide_load_alignment"]
+since = "1.23.12"
+summary = "A CUDA kernel that casts a byte pointer to a wider type must declare a stride, pitch, pad or ld parameter for the alignment"
+
+[[gate]]
 name = "dart_scanners"
 kind = "library"
 since = "1.3.6"
@@ -605,6 +626,13 @@ name = "deletion_gates"
 kind = "library"
 since = "1.4.0"
 summary = "Assert that something an audit deliberately REMOVED has not come back"
+
+[[gate]]
+name = "deprecated_docstring_without_warn"
+kind = "gate"
+entries = ["assert_deprecated_docstrings_warn"]
+since = "1.23.12"
+summary = "A public function whose docstring says it is deprecated must call warnings.warn or carry a deprecated decorator"
 
 [[gate]]
 name = "destructive_tests_throwaway_only"
@@ -741,6 +769,13 @@ since = "1.23.8"
 summary = "Column-order, n_jobs and frame-type invariance assertions for estimators"
 
 [[gate]]
+name = "estimator_mixin_order"
+kind = "gate"
+entries = ["assert_estimator_mixin_order"]
+since = "1.23.12"
+summary = "An sklearn mixin listed after BaseEstimator in a class statement silently breaks is_classifier/is_regressor"
+
+[[gate]]
 name = "external_fact_tables"
 kind = "gate"
 entries = ["assert_external_fact_tables_current"]
@@ -760,6 +795,13 @@ kind = "gate"
 entries = ["assert_no_new_fail_open_handlers"]
 since = "1.17.0"
 summary = "Fail-open exception handlers in gate code"
+
+[[gate]]
+name = "fit_at_test_module_import"
+kind = "gate"
+entries = ["assert_no_fit_at_test_module_import"]
+since = "1.23.12"
+summary = "A test module must not call .fit, .fit_transform or .fit_predict at import time (module level, class body, decorators, defaults)"
 
 [[gate]]
 name = "format_warn"
@@ -1458,6 +1500,13 @@ kind = "gate"
 entries = ["assert_repo_hygiene"]
 since = "1.3.6"
 summary = "The repository tracks nothing it generates, and carries the files its gates need"
+
+[[gate]]
+name = "required_call_kwargs"
+kind = "gate"
+entries = ["assert_required_call_kwargs"]
+since = "1.23.12"
+summary = "A configured call (asyncpg.create_pool, asyncpg.connect by default) must pass one of its configured keywords"
 
 [[gate]]
 name = "required_check_contexts"

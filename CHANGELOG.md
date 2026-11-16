@@ -4,6 +4,20 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
+
+- New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
+
+- New gate `cuda_wide_load_alignment` (audit 55-T8): flags a byte-pointer cast to a wider type in a CUDA kernel whose signature has no stride, pitch, pad or ld parameter; waive with `// align-ok: <reason>`. Nothing to do for existing consumers until they enable it.
+
+- New gate `deprecated_docstring_without_warn`: a public function documented as deprecated in its docstring's first paragraph must call `warnings.warn` or carry a `deprecated` decorator. Suppress with `# deprecated-ok: <reason>`. Consumers with such a function turn red; add the warning or the waiver.
+
+- New gate `estimator_mixin_order`: flags a scikit-learn mixin (ClassifierMixin, RegressorMixin, ...) listed after `BaseEstimator` in a class statement, which silently makes `is_classifier`/`is_regressor` return False under scikit-learn >= 1.6. Waive with `# mixin-order-ok: <reason>`. Consumers that have such a class turn red; fix by moving the mixin before `BaseEstimator`.
+
+- New gate `fit_at_test_module_import` (audit 50-T5): flags a test module that trains a model while it is imported (module or class-level `.fit`-style calls); waive with `# import-fit-ok: <reason>`. No behaviour change for consumers until it is registered.
+
+- New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
+
 - **Behaviour change** (`ci_install_covers_entry_imports`): the generated core-only blocker now makes `importlib.util.find_spec` return `None` for every package it blocks, so an entry that probes with `find_spec(name) is not None` sees a blocked extra as absent instead of crashing the import. An entry whose probe now takes its fallback path runs that path, so it can turn red on a real core-only defect it used to hide. What to do: nothing for an entry that never probes; an entry whose probe now takes its fallback path must be checked for real: fix the fallback or add the extra to the install.
 
 - Internal: `mlframe` is no longer in `configs/consumers.toml` (13 to 12 consumers, 5 to 4 corpus). `consumer-pins` no longer checks its pin, `ci-health` no longer reports it, and `corpus-drift` reports REPO-GONE for it until its baseline is reset: run `corpus-drift` with `accept: true` once. Nothing to do for consumers. `corpus-drift.yml` drops its dead `mlframe` worker special case.
