@@ -33,6 +33,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -91,6 +92,16 @@ def _extract_ref(git_url: str) -> str | None:
     return after_host.rsplit("@", 1)[1]
 
 
+@dataclass(frozen=True)
+class _Violation:
+    """One unpinned git dependency: *legacy* is the string :func:`find_unpinned_git_dependencies` has always returned."""
+
+    legacy: str
+    name: str  # the dependency's name ("" when the line names none)
+    how: str  # its ref, or "<no ref>", or "branch=..." for a source table
+    needle: str  # text that locates the line in the file (49-T6)
+
+
 def find_unpinned_git_dependencies(
     pyproject_path: Path,
     *,
@@ -129,6 +140,11 @@ def find_unpinned_git_dependencies(
     Raises:
         PyprojectParseError: the file is not valid TOML, so no dependency in it could be checked.
     """
+    return [v.legacy for v in _find_violations(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)]
+
+
+def _find_violations(pyproject_path: Path, *, allow_unpinned_url_prefixes: Sequence[str] = ()) -> list[_Violation]:
+    """Every unpinned git dependency, with the name and text that locate it (see :func:`find_unpinned_git_dependencies`)."""
     path = Path(pyproject_path)
     data: dict[str, Any] = {}
     if _is_requirements_file(path):
@@ -136,7 +152,7 @@ def find_unpinned_git_dependencies(
     else:
         data = _load_toml(path)
         requirements = _strings(data)
-    violations = []
+    violations: list[_Violation] = []
     for requirement in requirements:
         m = _GIT_DEP_RE.match(requirement)
         if m is None:
@@ -145,10 +161,12 @@ def find_unpinned_git_dependencies(
         if any(git_url.startswith(prefix) for prefix in allow_unpinned_url_prefixes):
             continue
         ref = _extract_ref(git_url)
+        name_match = re.match(r"""^\s*["']?([\w.-]+)""", requirement)
+        name = name_match.group(1) if name_match else ""
         if ref is None:
-            violations.append("<no ref>")
+            violations.append(_Violation("<no ref>", name, "<no ref>", git_url))
         elif not _FULL_SHA_RE.match(ref):
-            violations.append(ref)
+            violations.append(_Violation(ref, name, ref, git_url))
     violations.extend(_source_table_violations(data, allow_unpinned_url_prefixes))
     return violations
 
@@ -231,7 +249,7 @@ def _strings(node: object) -> list[str]:
     return []
 
 
-def _source_table_violations(data: dict[str, Any], allow_unpinned_url_prefixes: Sequence[str]) -> list[str]:
+def _source_table_violations(data: dict[str, Any], allow_unpinned_url_prefixes: Sequence[str]) -> list[_Violation]:
     """Git sources declared as tables: ``[tool.uv.sources] foo = { git = "...", rev = "..." }`` and poetry's
     ``foo = { git = "...", branch/tag/rev = "..." }`` in ``[tool.poetry.*dependencies]`` / group dependencies. Only a
     full-SHA ``rev`` pins; ``branch``/``tag`` or nothing is reported as ``name: branch=main``."""
@@ -240,7 +258,7 @@ def _source_table_violations(data: dict[str, Any], allow_unpinned_url_prefixes: 
     poetry = tool.get("poetry", {})
     tables += [poetry.get("dependencies", {}), poetry.get("dev-dependencies", {})]
     tables += [group.get("dependencies", {}) for group in (poetry.get("group", {}) or {}).values() if isinstance(group, dict)]
-    out: list[str] = []
+    out: list[_Violation] = []
     for table in tables:
         if not isinstance(table, dict):
             continue
@@ -255,7 +273,7 @@ def _source_table_violations(data: dict[str, Any], allow_unpinned_url_prefixes: 
                 if isinstance(rev, str) and _FULL_SHA_RE.match(rev):
                     continue
                 how = next((f"{key}={entry[key]}" for key in ("rev", "branch", "tag") if key in entry), "<no ref>")
-                out.append(f"{name}: {how}")
+                out.append(_Violation(f"{name}: {how}", str(name), how, url))
     return out
 
 
@@ -281,15 +299,29 @@ def assert_all_git_dependencies_pinned(
     import pytest
 
     try:
-        violations = find_unpinned_git_dependencies(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)
+        found = _find_violations(pyproject_path, allow_unpinned_url_prefixes=allow_unpinned_url_prefixes)
     except (PyprojectParseError, SourceReadError) as exc:
         pytest.fail(f"{exc}\nNo git dependency in it could be checked; Fix the file.")
-    if violations:
+    if found:
+        text = read_source(pyproject_path)
+        shown = []
+        for v in found:
+            line = _line_of(text, v.needle)
+            where = f"{pyproject_path.name}:{line}" if line else pyproject_path.name
+            shown.append(f"{v.name}: {v.how} ({where})" if v.name else f"{v.legacy} ({where})")
         pytest.fail(
-            f"{len(violations)} git-URL dependenc{'y is' if len(violations) == 1 else 'ies are'} "
-            f"not pinned to a full commit SHA in {pyproject_path} -- a fresh install can silently "
-            f"resolve to a different commit than the one actually developed/tested against:\n  " + "\n  ".join(violations)
+            f"{len(found)} git-URL dependenc{'y is' if len(found) == 1 else 'ies are'} "
+            f"not pinned to a full commit SHA in {pyproject_path.name} -- a fresh install can silently "
+            f"resolve to a different commit than the one actually developed/tested against:\n  " + "\n  ".join(shown)
         )
+
+
+def _line_of(text: str, needle: str) -> int:
+    """1-based line of the first line of *text* containing *needle*; 0 when none does."""
+    for number, line in enumerate(text.splitlines(), 1):
+        if needle and needle in line:
+            return number
+    return 0
 
 
 # ---------------------------------------------------------------------------------------------------------------------
