@@ -24,7 +24,9 @@ def test_matches_ast_get_source_segment_on_every_node() -> None:
         "class A:\n    def g(self):\n        return {'k': 'v'}  # trailing\n",
     ]
     for text in texts:
-        for node in _nodes_with_position(ast.parse(text)):
+        nodes = list(_nodes_with_position(ast.parse(text)))
+        assert nodes, text
+        for node in nodes:
             assert source_segment(text, node) == ast.get_source_segment(text, node), (text, ast.dump(node))
 
 
