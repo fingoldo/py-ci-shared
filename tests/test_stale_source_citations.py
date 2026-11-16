@@ -129,6 +129,9 @@ class TestCorpusAndBaseline:
             assert_no_stale_source_citations(root, baseline_path=bl, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_no_stale_source_citations(root, baseline_path=bl, refresh=True, use_git=False)
+        _justify_entries(
+            bl, "tests/test_stale_source_citations.py::TestCorpusAndBaseline::test_bom_unparsable_empty_and_the_ratchet", "line-past-end citation ratchet"
+        )
         assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
         assert_no_stale_source_citations(root, baseline_path=bl, use_git=False)
         (root / "b.py").write_text("# a.py:77\nX = 1\n", encoding="utf-8")
@@ -140,3 +143,11 @@ class TestCorpusAndBaseline:
         (tmp_path / "e").mkdir()
         with pytest.raises(pytest.fail.Exception, match="parsed"):
             assert_no_stale_source_citations(tmp_path / "e", use_git=False)
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

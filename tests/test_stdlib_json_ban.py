@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -106,7 +107,16 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_no_stdlib_json(src, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_stdlib_json(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_entries(baseline, "tests/test_stdlib_json_ban.py::test_assert_raw_and_baseline", "stdlib-json import ban ratchet")
     assert_no_stdlib_json(src, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "n.py", "import json\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_no_stdlib_json(src, baseline_path=baseline, refresh=False, use_git=False)
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

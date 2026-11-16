@@ -76,6 +76,7 @@ def test_bom_unparsable_empty_and_the_ratchet(tmp_path):
         assert_no_sentinel_or_fallback(src, baseline_path=bl, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_sentinel_or_fallback(src, baseline_path=bl, refresh=True, use_git=False)
+    _justify_entries(bl, "tests/test_sentinel_or_fallback.py::test_bom_unparsable_empty_and_the_ratchet", "BOM-decoding sentinel-or-fallback ratchet")
     assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
     assert_no_sentinel_or_fallback(src, baseline_path=bl, use_git=False)
     (src / "n.py").write_text("def g(x, D):\n    return x.n_jobs or D\n", encoding="utf-8")
@@ -118,3 +119,11 @@ def test_a_test_module_at_the_root_is_excluded_like_one_under_tests(tmp_path):
 def test_falsy_ok_marker_on_a_conditional_expression_is_honoured(tmp_path):
     assert len(_found(tmp_path, "x.seed if x.seed else DEFAULT")) == 1
     assert _found(tmp_path, "x.seed if x.seed else DEFAULT  # falsy-ok: 0 is a real seed here") == []
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import textwrap
 import warnings
 from pathlib import Path
@@ -135,7 +136,16 @@ def test_strict_mode_baseline(tmp_path: Path) -> None:
         assert_polars_null_equality(src, advisory=False, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_polars_null_equality(src, advisory=False, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_entries(baseline, "tests/test_polars_null_equality.py::test_strict_mode_baseline", "strict-mode refresh and ratchet (advisory=False)")
     assert_polars_null_equality(src, advisory=False, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "m.py", "def f(df):\n    return df.filter(pl.col('a') == None), df.filter(pl.col('a') == None)\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_polars_null_equality(src, advisory=False, baseline_path=baseline, refresh=False, use_git=False)
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

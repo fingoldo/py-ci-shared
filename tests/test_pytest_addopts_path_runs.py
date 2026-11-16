@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -161,7 +162,16 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_path_runs_select_tests(root, commands=bad, baseline_path=baseline, refresh=False)
     with pytest.raises(pytest.skip.Exception):
         assert_path_runs_select_tests(root, commands=bad, baseline_path=baseline, refresh=True)
+    _justify_entries(baseline, "tests/test_pytest_addopts_path_runs.py::test_assert_raw_and_baseline", "selects-nothing path rule ratchet")
     assert_path_runs_select_tests(root, commands=bad, baseline_path=baseline, refresh=False)
     worse = {"pre-commit::hook": ("pytest tests/integration tests/test_only_live.py", "")}
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
         assert_path_runs_select_tests(root, commands=worse, baseline_path=baseline, refresh=False)
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import sys
 import types
 from pathlib import Path
@@ -183,6 +184,9 @@ def test_a_baseline_accepts_the_recorded_findings(tmp_path, monkeypatch):
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
     with pytest.raises(pytest.skip.Exception, match="3 entr"):
         assert_stub_signature_parity(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_entries(
+        baseline, "tests/test_stub_signature_parity.py::test_a_baseline_accepts_the_recorded_findings", "stub-signature parity ratchet on the canary violation"
+    )
     assert_stub_signature_parity(root, baseline_path=baseline, use_git=False)
 
 
@@ -217,3 +221,11 @@ def test_teeth_reverting_the_core_condition_loses_the_motivating_case(tmp_path, 
     assert sum(1 for f in find_stub_signature_parity(root, use_git=False) if f.message.endswith(lost)) == 1
     mutant = _mutant(old, new, monkeypatch)
     assert sum(1 for f in mutant.find_stub_signature_parity(root, use_git=False) if f.message.endswith(lost)) == 0, "the mutant still bites"
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
