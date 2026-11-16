@@ -45,7 +45,8 @@ def test_canary_clean_is_silent():
 
 
 def test_canary_bom_still_parses_and_fires():
-    assert [f.rule for f in _find(_canary("bom"))] == [RULE]
+    # The BOM canary is the violation canary with a BOM prefix: it must fire the same findings.
+    assert [f.rule for f in _find(_canary("bom"))] == [RULE, RULE]
 
 
 def test_canary_unparsable_is_a_finding_not_a_pass():
