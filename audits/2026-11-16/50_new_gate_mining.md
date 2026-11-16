@@ -327,7 +327,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
   The 2026-11-11 table (`audits/2026-11-11/50_new_gate_mining.md`, "Already covered or tracked") says consumers select the `B` family so B904 is on; they inherit the base config, which switches it off.
 - **Impact:** a statement in the audit record that is false; the rule it said was covered is not enforced anywhere. The ignore is a reasoned shared decision ("stylistic"), so this is not a request to flip it: whether a lost `__cause__` matters (it is shown in tracebacks as "During handling of the above exception, another exception occurred" instead of "The above exception was the direct cause") is the owner's call.
 - **Proposed fix:** (a) record the correction in TRACKER (documentation only), (b) offer the rule as an opt-in report-only count in `format_warn` or a `ruff-strict.toml` fragment instead of re-adding it to the blocking base. ADDITIVE if (b). Not a behaviour change.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (corrected): configs/ruff-base.toml line 72 disables B904; the gate it is covered by is none. The 2026-11-11 claim is withdrawn.
 
 ## 50-T12 (P1) append_only_log_shrink: a commit that replaces an append-only data file with a shorter one
 
