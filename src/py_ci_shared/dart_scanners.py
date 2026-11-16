@@ -88,12 +88,12 @@ __all__ = [
 
 Reader = Callable[[str], str]
 
+from ._core.shared_helpers import line_of_index as _line_of
 from ._dart_source import (  # noqa: F401  # the scanners' shared helpers
     _balanced_body,
     _enclosing_calls,
     _enclosing_semantics_args,
     _key,
-    _line_of,
     _mask_strings,
     _rekey,
     _strip_comments,
