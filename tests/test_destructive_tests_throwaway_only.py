@@ -555,6 +555,22 @@ def test_the_baseline_form_accepts_a_recorded_finding_and_fails_a_new_one(tmp_pa
     common = dict(hook_config_paths=[root / ".pre-commit-config.yaml"], repo_root=root, baseline_path=baseline, use_git=False)
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):  # a refresh run reports itself as a skip by design
         assert_destructive_tests_are_throwaway_only(root / "tests", refresh=True, **common)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "destructive-test-non-throwaway-runner::tests/test_ledger.py::writes SQL but `.pre-commit-config.yaml::l` runs it without `python -m py_ci_shared.embedded_postgres run`, so it can reach a real server": (
+            "The finding destructive-test-non-throwaway-runner::tests/test_ledger.py is seeded by "
+            "tests/test_destructive_tests_throwaway_only.py::test_the_baseline_form_accepts_a_recorded_finding_and_fails_a_new_one to exercise the "
+            "non-throwaway-runner branch of the gate, and it is not a defect in repo code."
+        ),
+        "destructive-test-production-dsn::tests/test_ledger.py::writes SQL and reads `DATABASE_URL` itself; a writing test reads its DSN only through throwaway_dsn": (
+            "The finding destructive-test-production-dsn::tests/test_ledger.py is seeded by "
+            "tests/test_destructive_tests_throwaway_only.py::test_the_baseline_form_accepts_a_recorded_finding_and_fails_a_new_one to exercise the "
+            "production-DSN branch of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_destructive_tests_are_throwaway_only(root / "tests", **common)
     (root / "tests" / "test_second.py").write_text(textwrap.dedent(DELETING_ON_PRODUCTION), encoding="utf-8")
     (root / ".pre-commit-config.yaml").write_text(_hook("l", "python -m pytest tests"), encoding="utf-8")

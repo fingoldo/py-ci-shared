@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -110,6 +111,9 @@ def test_the_assert_names_the_site_and_the_baseline_ratchets(tmp_path, monkeypat
         assert_single_shot_timing_assertion(root, use_git=False, baseline_path=baseline)
     with pytest.raises(pytest.skip.Exception):
         assert_single_shot_timing_assertion(root, use_git=False, baseline_path=baseline, refresh=True)
+    _justify_entries(
+        baseline, "tests/test_single_shot_timing_assertion.py::test_the_assert_names_the_site_and_the_baseline_ratchets", "single-shot timing ratchet"
+    )
     assert_single_shot_timing_assertion(root, use_git=False, baseline_path=baseline)
 
 
@@ -571,3 +575,11 @@ def test_only_test_files_are_read_by_default(tmp_path):
     root = _corpus(tmp_path, {"helpers.py": textwrap.dedent(SINGLE_SHOT).encode(), "test_a.py": b"x = 1\n"})
     assert find_single_shot_timing_assertion(root, use_git=False) == []
     assert len(find_single_shot_timing_assertion(root, use_git=False, patterns=["*.py"])) == 1
+
+
+def _justify_entries(path, seeded_by, branch):
+    """Give each refreshed entry its reason: its own key, the seeding test, and the gate branch it exercises."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {seeded_by} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

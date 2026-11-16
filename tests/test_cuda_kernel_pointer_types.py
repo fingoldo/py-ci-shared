@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,17 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):  # a refresh writes the baseline and skips the test that asked for it
         _assert(root, baseline_path=baseline, refresh=True)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-bare-double-pointer::m.py::kernel `k` takes `double*` parameter(s) x, out with no `{REAL}` template: a buffer of another element type is read past its end or as the wrong values; template the value type or mark `// dtype-ok: <reason>`": (
+            "The finding cuda-bare-double-pointer::m.py::kernel `k` takes `double*` parameter(s) x, out is seeded by "
+            "tests/test_cuda_kernel_pointer_types.py::test_a_baseline_accepts_known_findings_and_fails_new_ones to exercise the bare-double-pointer branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     _assert(root, baseline_path=baseline)
     (root / "n.py").write_bytes(_kernel(_BARE).replace(b"void k(", b"void other("))
     with pytest.raises(pytest.fail.Exception):

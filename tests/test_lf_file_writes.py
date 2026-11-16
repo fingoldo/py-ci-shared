@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -7,6 +8,17 @@ import pytest
 
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.lf_file_writes import RULE, assert_no_crlf_writes, find_crlf_writes
+
+
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 @pytest.fixture(autouse=True)
@@ -153,6 +165,11 @@ def test_baseline_missing_refresh_and_ratchet(tmp_path: Path) -> None:
         assert_no_crlf_writes(src, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_crlf_writes(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(
+        baseline,
+        "tests/test_lf_file_writes.py::test_baseline_missing_refresh_and_ratchet",
+        "baseline-refresh and ratchet branch for a file write without LF newlines",
+    )
     assert baseline.read_bytes().count(b"\r\n") == 0
     assert_no_crlf_writes(src, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "m.py", "def f(p, t):\n    (p / 'x.sh').write_text(t)\n    (p / 'y.sh').write_text(t)\n")

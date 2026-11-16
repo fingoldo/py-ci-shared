@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,17 @@ from py_ci_shared.loop_invariant_cast import (
 BOM = b"\xef\xbb\xbf"
 
 VIOLATION = "import numpy as np\n\n\ndef rank_all(names, y):\n    for name in names:\n        print(name, np.argsort(y))\n"
+
+
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _corpus(tmp_path: Path, files: dict[str, bytes]) -> Path:
@@ -232,6 +244,11 @@ def test_a_baseline_accepts_the_known_heavy_finding_and_rejects_a_new_one(tmp_pa
         assert_loop_invariant_cast(root, baseline_path=base, use_git=False, heavy=True)
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):
         assert_loop_invariant_cast(root, baseline_path=base, refresh=True, use_git=False, heavy=True)
+    _justify_seeded(
+        base,
+        "tests/test_loop_invariant_heavy_call.py::test_a_baseline_accepts_the_known_heavy_finding_and_rejects_a_new_one",
+        "heavy=True accept-known and reject-new branch for a loop-invariant heavy call",
+    )
     assert_loop_invariant_cast(root, baseline_path=base, use_git=False, heavy=True)
     (root / "n.py").write_bytes(VIOLATION.encode())
     with pytest.raises(pytest.fail.Exception):

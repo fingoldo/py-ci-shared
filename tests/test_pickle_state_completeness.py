@@ -109,6 +109,20 @@ class TestRuntime:
         assert calls == ["dumps", "loads"]
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _static(tmp_path: Path, body: str) -> list[tuple[str, int]]:
     (tmp_path / "m.py").write_text(textwrap.dedent(body), encoding="utf-8")
     findings, _ = find_pickle_state_gaps(tmp_path, use_git=False)
@@ -226,6 +240,9 @@ class TestCorpusAndBaseline:
         with pytest.raises(pytest.skip.Exception):
             assert_no_pickle_state_gaps(src, baseline_path=bl, refresh=True, use_git=False)
         assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
+        _justify_refreshed(
+            bl, "TestCorpusAndBaseline::test_the_baseline_ratchet", "unpicklable threading.Lock attribute branch (self._l = threading.Lock() inside a class)"
+        )
         assert_no_pickle_state_gaps(src, baseline_path=bl, use_git=False)
         (src / "n.py").write_text("import threading\nclass D:\n    def f(self):\n        self._l = threading.Event()\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match=r"threading.Event"):

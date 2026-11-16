@@ -269,6 +269,16 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
         find_connections_without_liveness_kwargs(tmp_path, use_git=False, min_files=2)
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_the_assert_entry_fails_with_the_findings_and_a_baseline_accepts_them(tmp_path):
     _write(tmp_path, "mod.py", ["import psycopg2", "x = psycopg2.connect(d)"])
     with pytest.raises(AssertionError, match=r"(?s)1 connection-liveness-kwargs finding\(s\).*mod.py:2"):
@@ -276,6 +286,11 @@ def test_the_assert_entry_fails_with_the_findings_and_a_baseline_accepts_them(tm
     base = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):  # a refresh run skips by design
         assert_every_connection_has_liveness_kwargs(tmp_path, baseline_path=base, refresh=True, grow=True, use_git=False)
+    _justify_entries(
+        base,
+        "tests/test_connection_liveness_kwargs.py::test_the_assert_entry_fails_with_the_findings_and_a_baseline_accepts_them",
+        "liveness-kwargs check on a direct psycopg2.connect call",
+    )
     assert_every_connection_has_liveness_kwargs(tmp_path, baseline_path=base, use_git=False)
 
 

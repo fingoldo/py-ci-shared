@@ -152,7 +152,7 @@ BINDINGS: dict[str, Callable[[Path], Any]] = {
     "test_files": lambda r: [p for p in _py_files(r) if "tests" in p.relative_to(r).parts] or None,
     "tests_root": _tests_dir,
     "tests_dir": _tests_dir,
-    "files_or_root": lambda r: r,
+    "files_or_root": _py_files,
     "workflows_dir": lambda r: (r / ".github" / "workflows") if (r / ".github" / "workflows").is_dir() else None,
 }
 

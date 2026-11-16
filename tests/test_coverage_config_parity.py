@@ -137,6 +137,16 @@ def test_no_workflows_fails_the_floor(tmp_path: Path) -> None:
         assert_coverage_config_parity(tmp_path)
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_assert_raw_and_baseline(tmp_path: Path) -> None:
     root = _repo(tmp_path, "pytest --cov=pkg")
     assert_coverage_config_parity(root, check_numba=False)
@@ -148,6 +158,11 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_coverage_config_parity(root, check_numba=False, baseline_path=baseline, refresh=False)
     with pytest.raises(pytest.skip.Exception):
         assert_coverage_config_parity(root, check_numba=False, baseline_path=baseline, refresh=True)
+    _justify_entries(
+        baseline,
+        "tests/test_coverage_config_parity.py::test_assert_raw_and_baseline",
+        "narrow-run fail_under inheritance check on a workflow that names tests/unit",
+    )
     assert_coverage_config_parity(root, check_numba=False, baseline_path=baseline, refresh=False)
     root = _repo(tmp_path, "pytest tests/unit --cov=pkg\npytest tests/other --cov=pkg")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):

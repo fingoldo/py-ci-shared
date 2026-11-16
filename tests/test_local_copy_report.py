@@ -19,6 +19,17 @@ def _refresh_may_grow(monkeypatch):
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
 
 
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _repo(tmp_path: Path, files: dict[str, str]) -> Path:
     for rel, body in files.items():
         p = tmp_path / rel
@@ -120,6 +131,11 @@ class TestAssert:
             assert_local_copies_do_not_grow(root, baseline_path=baseline, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_local_copies_do_not_grow(root, baseline_path=baseline, refresh=True, use_git=False)
+        _justify_seeded(
+            baseline,
+            "tests/test_local_copy_report.py::TestAssert::test_the_ratchet_fails_a_new_copy_and_a_migrated_one",
+            "ratchet branch that fails a new local copy and a migrated one",
+        )
         assert len(json.loads(baseline.read_text(encoding="utf-8"))["entries"]) == 1
         assert_local_copies_do_not_grow(root, baseline_path=baseline, use_git=False)
         (root / "tests" / "test_meta" / "test_no_bare_except.py").write_text(_WALKER, encoding="utf-8")

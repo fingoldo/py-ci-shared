@@ -31,6 +31,14 @@ def upgrade():
 """
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _versions(tmp_path: Path, **files: str) -> Path:
     d = tmp_path / "versions"
     d.mkdir()
@@ -85,6 +93,7 @@ def test_a_missing_baseline_fails_and_a_refresh_writes_it(tmp_path, monkeypatch)
     monkeypatch.setenv("PY_CI_SHARED_REFRESH", "alembic-concurrently")
     with pytest.raises(pytest.skip.Exception):
         assert_concurrently_is_in_autocommit_blocks(versions, baseline=baseline)
+    _justify_entries(baseline, "tests/test_alembic_concurrently.py::test_a_missing_baseline_fails_and_a_refresh_writes_it", "missing-baseline refresh path")
     monkeypatch.delenv("PY_CI_SHARED_REFRESH")
     assert_concurrently_is_in_autocommit_blocks(versions, baseline=baseline)
 

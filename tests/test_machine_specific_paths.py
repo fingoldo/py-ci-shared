@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.machine_specific_paths import assert_no_machine_specific_paths, find_machine_specific_paths
+
+
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -134,6 +146,7 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(baseline, "tests/test_machine_specific_paths.py::test_assert_raw_and_baseline", "refresh-then-accept branch for a drive-letter path")
     assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "m.py", 'X = "D:/Temp/a"\nY = "D:/Temp/a"\n')
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):
@@ -150,6 +163,11 @@ def test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygie
     baseline = tmp_path / "b.json"
     with pytest.raises(pytest.skip.Exception):
         assert_no_machine_specific_paths(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(
+        baseline,
+        "tests/test_machine_specific_paths.py::test_a_refreshed_baseline_carries_no_absolute_path_and_passes_baseline_hygiene",
+        "absolute-path hygiene branch for user-home paths in a refreshed baseline",
+    )
     text = baseline.read_text(encoding="utf-8")
     assert "alice" not in text and "bob" not in text and "m.py" in text
     assert [p for p in find_baseline_problems(baseline, require_notes=False) if "absolute path" in p] == []

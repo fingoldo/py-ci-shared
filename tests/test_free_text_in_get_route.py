@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -252,6 +253,27 @@ def test_a_baseline_accepts_known_findings_and_fails_a_new_one(tmp_path):
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_free_text_in_get_route(root, baseline_path=baseline, refresh=True, grow=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "free-text-in-get-route::routes.py::GET /lookup/{term}: parameter 'term' is named like free text and travels in the path; text a person typed belongs in a POST body, out of URLs, access logs and proxies": (
+            "The finding free-text-in-get-route::routes.py::GET /lookup/{term} is seeded by "
+            "tests/test_free_text_in_get_route.py::test_a_baseline_accepts_known_findings_and_fails_a_new_one to exercise the path-parameter free-text branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+        "free-text-in-get-route::routes.py::GET /rates: parameter 'chief_complaint' is named like free text and travels in the query string; text a person typed belongs in a POST body, out of URLs, access logs and proxies": (
+            "The finding free-text-in-get-route::routes.py::GET /rates is seeded by "
+            "tests/test_free_text_in_get_route.py::test_a_baseline_accepts_known_findings_and_fails_a_new_one to exercise the free-text-name query-string branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+        "free-text-in-get-route::routes.py::GET /search: parameter 'phrase' accepts up to 300 characters and travels in the query string; text a person typed belongs in a POST body, out of URLs, access logs and proxies": (
+            "The finding free-text-in-get-route::routes.py::GET /search is seeded by "
+            "tests/test_free_text_in_get_route.py::test_a_baseline_accepts_known_findings_and_fails_a_new_one to exercise the length-bounded text query-string branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_free_text_in_get_route(root, baseline_path=baseline, use_git=False)
     (root / "more.py").write_bytes(b'from fastapi import FastAPI\napp = FastAPI()\n\n\n@app.get("/z/{text}")\ndef z(text: str):\n    return {}\n')
     with pytest.raises(pytest.fail.Exception, match=r"more\.py"):

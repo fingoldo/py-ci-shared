@@ -23,6 +23,16 @@ VIOLATION = (
 )
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _corpus(tmp_path: Path, files: dict[str, bytes]) -> Path:
     for rel, data in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -135,6 +145,11 @@ def test_a_baseline_accepts_the_known_finding_and_rejects_a_new_one(tmp_path, mo
         assert_cancellation_prone_moments(root, baseline_path=baseline, use_git=False)
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):
         assert_cancellation_prone_moments(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_entries(
+        baseline,
+        "tests/test_cancellation_prone_moments.py::test_a_baseline_accepts_the_known_finding_and_rejects_a_new_one",
+        "baseline accept branch for the cancellation-prone variance pattern",
+    )
     assert_cancellation_prone_moments(root, baseline_path=baseline, use_git=False)
     (root / "n.py").write_bytes(VIOLATION.encode())
     with pytest.raises(pytest.fail.Exception):

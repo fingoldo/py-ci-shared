@@ -6,6 +6,7 @@ package's other tests.
 
 from __future__ import annotations
 
+import json
 import sys
 import types
 from pathlib import Path
@@ -214,7 +215,7 @@ class TestAssertReadmeDocumentsEveryEnvVar:
 
 
 def _baselined(path: Path) -> list[str]:
-    counts, _ = Baseline(path).load()
+    counts, _ = Baseline(path, gate="readme-env-var").load()
     return sorted(counts)
 
 
@@ -224,6 +225,11 @@ class TestAssertNoNewUndocumentedEnvVars:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_undocumented_env_vars(files, readme, baseline)
         monkeypatch.delenv("PY_CI_SHARED_REFRESH")
+        # A refresh records what was found but does not justify it (42-T1): the reviewer's reason replaces the marker.
+        data = json.loads(baseline.read_text(encoding="utf-8"))
+        for entry in data["entries"].values():
+            entry["note"] = "legacy variable read before the README table existed"
+        baseline.write_text(json.dumps(data), encoding="utf-8")
 
     def test_a_missing_baseline_fails_instead_of_seeding(self, tmp_path):
         f = _write(tmp_path, "a.py", 'import os\nos.environ.get("LEGACY_VAR")\n')

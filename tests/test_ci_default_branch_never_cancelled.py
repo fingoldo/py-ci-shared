@@ -206,6 +206,16 @@ def test_yaml_extension_and_two_findings_are_sorted_by_path_and_line(tmp_path):
     assert [f.path for f in find_ci_default_branch_never_cancelled(tmp_path)] == [".github/workflows/a.yml", ".github/workflows/b.yaml"]
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_the_assert_names_the_workflow_and_a_baseline_accepts_it(tmp_path):
     root = _wf(tmp_path, _concurrency("true"))
     with pytest.raises(AssertionError, match=r"ci\.yml:8"):
@@ -213,6 +223,11 @@ def test_the_assert_names_the_workflow_and_a_baseline_accepts_it(tmp_path):
     assert_ci_default_branch_never_cancelled(_wf(tmp_path / "ok", _concurrency("false")))
     baseline = tmp_path / "baseline.json"
     Baseline(baseline, gate="ci_default_branch_never_cancelled").enforce(find_ci_default_branch_never_cancelled(root), refresh=True, grow=True)
+    _justify_entries(
+        baseline,
+        "tests/test_ci_default_branch_never_cancelled.py::test_the_assert_names_the_workflow_and_a_baseline_accepts_it",
+        "default-branch concurrency cancellation check on a workflow that cancels in progress",
+    )
     assert_ci_default_branch_never_cancelled(root, baseline_path=baseline)
     _wf(root, _concurrency("true"), name="second.yml")
     with pytest.raises(pytest.fail.Exception, match=r"second\.yml"):

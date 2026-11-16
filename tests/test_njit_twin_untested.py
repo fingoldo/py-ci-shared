@@ -47,6 +47,20 @@ def _corpus(tmp_path: Path, files: "dict[str, bytes | str]") -> Path:
     return tmp_path
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _rules(root: Path, **kw) -> "list[tuple[str, str, int]]":
     return [(f.rule, f.path, f.line) for f in find_njit_twin_untested(root, use_git=False, **kw)]
 
@@ -169,6 +183,11 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_njit_twin_untested(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_refreshed(
+        baseline,
+        "test_a_baseline_accepts_known_findings_and_fails_new_ones",
+        "untested njit twin branch (an njit function in the FRAC_DIFF fixture has no test twin)",
+    )
     assert_njit_twin_untested(root, baseline_path=baseline, use_git=False)
     (root / "other.py").write_bytes(FRAC_DIFF.replace("inverse", "other_inverse").encode("utf-8"))
     with pytest.raises(pytest.fail.Exception):

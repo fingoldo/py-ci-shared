@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
 from py_ci_shared._core import clear_parse_cache
 from py_ci_shared.hardcoded_token_ceilings import RULE, assert_no_hardcoded_token_ceilings, find_hardcoded_token_ceilings
+
+
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 @pytest.fixture(autouse=True)
@@ -108,6 +120,9 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_no_hardcoded_token_ceilings(src, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_hardcoded_token_ceilings(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(
+        baseline, "tests/test_hardcoded_token_ceilings.py::test_assert_raw_and_baseline", "accept-known-finding ratchet branch for a literal max_tokens ceiling"
+    )
     assert_no_hardcoded_token_ceilings(src, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "m.py", "def f(c, p):\n    c.gen(max_tokens=4096)\n    c.gen(max_tokens=4096)\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):

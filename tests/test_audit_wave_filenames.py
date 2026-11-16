@@ -100,6 +100,14 @@ def test_patterns_ignore_case(tmp_path):
     assert find_audit_wave_test_files(tests) == ["test_AUDIT_2026_x.py", "test_Wave97_x.py"]
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_a_missing_baseline_file_fails_and_a_refresh_writes_it(tmp_path, monkeypatch):
     tests = _tests(tmp_path, "test_wave1_old.py")
     baseline = tmp_path / "baseline.json"
@@ -108,5 +116,10 @@ def test_a_missing_baseline_file_fails_and_a_refresh_writes_it(tmp_path, monkeyp
     monkeypatch.setenv("PY_CI_SHARED_REFRESH", "audit-wave-filenames")
     with pytest.raises(pytest.skip.Exception):
         assert_no_new_audit_wave_filenames(tests, baseline=baseline)
+    _justify_entries(
+        baseline,
+        "tests/test_audit_wave_filenames.py::test_a_missing_baseline_file_fails_and_a_refresh_writes_it",
+        "grandfathered audit-wave filename check on a wave-named test file",
+    )
     monkeypatch.delenv("PY_CI_SHARED_REFRESH")
     assert_no_new_audit_wave_filenames(tests, baseline=baseline)

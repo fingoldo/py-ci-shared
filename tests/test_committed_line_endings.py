@@ -115,7 +115,7 @@ def test_assert_and_baseline(tmp_path):
     with pytest.raises(AssertionError, match=r"seed\.txt"):
         cle.assert_committed_line_endings(repo)
     baseline = tmp_path / "baseline.json"
-    Baseline(baseline).save(Baseline.count(cle.find_committed_line_endings(repo)))
+    Baseline(baseline, gate="committed_line_endings").save(Baseline.count(cle.find_committed_line_endings(repo)))
     cle.assert_committed_line_endings(repo, baseline_path=baseline)
     (repo / "seed.txt").write_bytes(b"a\nb\n")
     _git(repo, "add", "-A")

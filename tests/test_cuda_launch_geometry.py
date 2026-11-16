@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -127,6 +128,17 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         _assert(root, baseline_path=baseline, refresh=True)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-literal-block-size::m.py::the block size (256,) of this kernel launch is a literal: derive it from the device (occupancy over the kernel's registers and shared memory and the card's limits) or mark `# launch-ok: <reason>`": (
+            "The finding cuda-literal-block-size::m.py::the block size (256,) of this kernel launch is a literal is seeded by "
+            "tests/test_cuda_launch_geometry.py::test_a_baseline_accepts_known_findings_and_fails_new_ones to exercise the literal-block-size branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     _assert(root, baseline_path=baseline)
     (root / "n.py").write_bytes(_module("kernel((n,), (128,), (x, out))"))
     with pytest.raises(pytest.fail.Exception):

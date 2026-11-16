@@ -154,10 +154,25 @@ class TestCorpusAndBaseline:
         with pytest.raises(pytest.skip.Exception):
             assert_no_xfail_to_defer(tests, baseline_path=bl, refresh=True, use_git=False)
         assert sum(e["count"] for e in json.loads(bl.read_text(encoding="utf-8"))["entries"].values()) == 1
+        _justify_refreshed(bl, "TestCorpusAndBaseline::test_the_count_ratchet", "untracked xfail reason branch (an xfail marker whose reason is not tracked)")
         assert_no_xfail_to_defer(tests, baseline_path=bl, use_git=False)
         (tests / "test_b.py").write_text('import pytest\n@pytest.mark.xfail(reason="also ours", strict=True)\ndef test_b():\n    pass\n', encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="untracked-reason"):
             assert_no_xfail_to_defer(tests, baseline_path=bl, use_git=False)
+
+
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
 
 def _skip_findings(tmp_path, body):

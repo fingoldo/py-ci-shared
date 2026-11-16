@@ -318,6 +318,13 @@ def test_the_baseline_accepts_known_findings_refuses_new_ones_and_only_shrinks(t
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
     with pytest.raises(pytest.skip.Exception):
         assert_validation_errors_echo_input(root, baseline_path=baseline, refresh=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = (
+            f"{key} is seeded by tests/test_validation_errors_echo_input.py::test_the_baseline_accepts_known_findings_refuses_new_ones_and_only_shrinks "
+            "to exercise the baseline accept and shrink branch of the gate, and is not a defect in repo code."
+        )
+    baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     monkeypatch.delenv("PY_CI_SHARED_REFRESH_ALLOW_GROW")
     assert list(json.loads(baseline.read_text(encoding="utf-8"))["entries"]) == [f"m.py::bounded::{SHAPE_RAISE}"]
     assert_validation_errors_echo_input(root, baseline_path=baseline, use_git=False)

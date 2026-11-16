@@ -153,7 +153,8 @@ def find_skip_as_pass(root: Union[str, Path], *, min_files: int = 1) -> dict[str
 
     Raises ``CorpusError`` when fewer than *min_files* files lie under those directories (see :func:`require_text_floor`)."""
     files, found = text_scan(root, ("*",), under=SKIP_DIRS)
-    require_text_floor("skip_as_pass", len(files), min_files=min_files, root=root)
+    # Unreadable files are in the corpus too (text_scan returns them as findings): they count toward the floor.
+    require_text_floor("skip_as_pass", len(files) + len(found), min_files=min_files, root=root)
     for file in files:
         _skip_lines(file.rel, file.text, found)
     return found
