@@ -32,6 +32,7 @@ __all__ = [
     "kind_of",
     "record_write",
     "refresh_hint",
+    "running_gate",
     "refreshed_skip",
     "track_writes",
     "unevaluated_skip",
@@ -149,8 +150,24 @@ def entry_delta(writes: "list[Any]") -> Optional[str]:
     return f"+{added} -{removed} entries ({', '.join(names)})"
 
 
+_running: "list[str]" = []
+
+
+@contextmanager
+def running_gate(name: str) -> Iterator[None]:
+    """Mark *name* (the registered gate name the CLI enabled) as the gate running, for :func:`refresh_hint` (49-T4(a))."""
+    _running.append(name)
+    try:
+        yield
+    finally:
+        _running.pop()
+
+
 def refresh_hint(flag: str, gate: str) -> str:
-    """How to refresh *gate*'s baseline: the CLI command under ``py-ci-shared``, else the pytest flag; the env form works in both."""
+    """How to refresh *gate*'s baseline: the CLI command under ``py-ci-shared``, else the pytest flag; the env form works in both.
+
+    *gate* is the baseline's internal label; under the CLI the command names the enabled gate (49-T4(a): the label is rejected)."""
     if os.environ.get(CLI_ENV_VAR) == "1":
-        return f"`py-ci-shared refresh {gate}` (or PY_CI_SHARED_REFRESH={gate})"
+        name = _running[-1] if _running else gate
+        return f"`py-ci-shared refresh {name}` (or PY_CI_SHARED_REFRESH={name})"
     return f"pytest {flag} (or PY_CI_SHARED_REFRESH={gate})"
