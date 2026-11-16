@@ -24,8 +24,8 @@ def _reconfigure(stream: object) -> None:
         return
     try:
         reconfigure(errors="backslashreplace")
-    except (ValueError, OSError):
-        return  # a closed or detached stream: nothing it could print anyway
+    except (ValueError, OSError):  # best-effort: a closed or detached stream has nothing it could print anyway
+        return
 
 
 def safe_stdio() -> None:
