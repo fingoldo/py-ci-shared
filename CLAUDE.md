@@ -27,6 +27,7 @@
 
 ## Before pushing
 
+- Install with `python -m pip install -e .` from the checkout. `py-ci-shared run-all` warns when the package it imports is not this checkout (52-T2). After a non-editable `pip install .`, delete `build/` and `src/py_ci_shared.egg-info`: they hold stale copies of every module (52-T6).
 - Format with `uvx black==26.5.1` (`BLACK_VERSION` in `tool_versions.py`, which `black-filtered.yml` runs); lint with `uvx ruff@<RUFF_VERSION> check src tests` (`RUFF_VERSION` in `tool_versions.py`; a test fails when a literal `ruff@X` or `black==X` in this file differs from it).
 - Run `tests/test_package_inventory.py` and `tests/test_gate_teeth.py`, plus the tests of what you changed.
 - Code must support Python 3.9 and pass `mypy src/py_ci_shared`.

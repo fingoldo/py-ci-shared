@@ -6,7 +6,7 @@ import sys
 import tempfile
 import time
 
-REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # scripts/ sits directly under the repo root
 sys.path.insert(0, os.path.join(REPO, "src"))
 from py_ci_shared import _mutation_runner as mr
 from py_ci_shared import mutation_teeth as mt

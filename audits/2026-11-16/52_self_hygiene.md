@@ -12,37 +12,37 @@ Real results: mypy `Success: no issues found in 413 source files`. Ruff F401/F81
 - **Evidence:** `PYTHONPATH=src python -m py_ci_shared.cli run audit_rounds_format` -> `FAIL`, e.g. `42_core_baseline_semantics.md: '### 42-T1 [P2] ...' sits at the finding level but is not a finding id; continuations go at '####'` (also 42-T2..T5, 51-T1..T5; 10 problems at the time, more as reports land). `src/py_ci_shared/audit_round_format.py:68` `FINDING_ID_RE = r"^([A-Z]+-\d+) \("` needs `ID (` with a letters-first id; the brief template is `### NN-Tk [Pn] title` (digits first, brackets). Prior rounds used `## 42-S15 (P3)`, which the gate does not scan (`_HEADING_RE` is `^### `, line 73).
 - **Impact:** committing this round as written turns `audit_rounds_format` red in the push hook and CI for every report of the round; the gate's purpose (rounds countable by machine) is not met for these files.
 - **Proposed fix:** either (a) change the brief template to the previous rounds' `## NN-Tk (Pn) title` (no code change), or (b) widen `FINDING_ID_RE` to accept `\d*[A-Z]+-\d+ [\[(]` (ADDITIVE: accepts more headings, makes none fail). Decide before the round is committed.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED. Evidence: `PYTHONPATH=src python -m py_ci_shared.cli run audit_rounds_format` -> `PASS` on the round's files (run 2026-11-16). Round headings use the `## NN-Tk (Pn)` form that `FINDING_ID_RE` accepts; no `### NN-Tk [Pn]` heading remains in `audits/2026-11-16/`.
 
 ## 52-T2 (P2) `py-ci-shared` on PATH is a stale non-editable 1.23.9 install, so the self-gate run on this repo gives false reds
 - **Evidence:** `py-ci-shared run-all` (once, from the repo root) ended `57 passed, 2 failed, 0 skipped, 1 error`: `FAIL version_consistency ... pyproject = '1.23.12', __init__ = '1.23.12', py_ci_shared.__version__ = '1.23.9'`; `ERROR uncalled_functions ... takes no argument(s) ['private_only']`. `py_ci_shared.__file__` is `...\site-packages\py_ci_shared\__init__.py`; `pip show` says 1.23.9, not editable. Re-run against the checkout (`PYTHONPATH=src python -m py_ci_shared.cli run version_consistency` and `... run uncalled_functions`) -> both PASS. The repo has `checkout_resolution` for this class but `run-all` does not guard it.
 - **Impact:** a developer running the documented command gets a wrong verdict (two false failures) and may "fix" healthy config.
 - **Proposed fix:** `run-all` prints a warning (or exits 2) when `py_ci_shared.__file__` is not under the `--repo` root and that repo's pyproject names `py-ci-shared` as its own project (ADDITIVE); CLAUDE.md says `pip install -e .` first.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `cli._install_mismatch` runs in `run-all` and prints a WARNING to stderr when the checkout's own `src/py_ci_shared` is not the imported package; exit code unchanged. Tests: `tests/test_cli_install_mismatch.py` (red before the fix, 3 failed; green after, with `tests/test_cli.py`: 42 passed). CLAUDE.md documents `pip install -e .`.
 
 ## 52-T3 (P3) `scripts/exp_startup.py` resolves the repo root four directories up, so it silently measures the installed package
 - **Evidence:** `scripts/exp_startup.py:9` `REPO = dirname(dirname(dirname(dirname(abspath(__file__)))))` evaluates to `C:\Users\Admin` (printed by a one-line python check). The file moved from `audits/2026-10-21/prof/` (four levels) to `scripts/` (two) in commit 7fb885d without adjusting. `C:\Users\Admin\src` does not exist, so the `sys.path.insert` is a no-op and `from py_ci_shared import _mutation_runner` imports the site-packages copy (see 52-T2) and monkeypatches that. Its docstring: "Measurement-only experiment ... Not used by the tests"; nothing references it.
 - **Impact:** the experiment's timings describe a different version than the checkout; tracked dead weight.
 - **Proposed fix:** `Path(__file__).resolve().parents[1]`, or classify it as a retired experiment and move it back under `audits/2026-10-21/`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `scripts/exp_startup.py` REPO now `dirname(dirname(abspath(__file__)))` (two levels), which is the repo root; verified by a one-line check. The script is a measurement experiment with no caller, kept in place (owner rule: classify, never delete).
 
 ## 52-T4 (P3) Identical helper bodies copied across scanners, after 52-F2 resolved the earlier ten
 - **Evidence** (AST dump equality, docstring stripped, body >= 5 lines): `_dart_source.py:106 _balanced_body` == `edge_function_hygiene.py:69 _balanced` (11 lines); `deletion_gates.py:89 _module_scope` == `identity_comparisons.py:62 _scope_statements` == `inert_patch_targets.py:132 _module_scope` (13 lines; three docstrings describe the same rule three ways); `id_keyed_cache_validates_identity.py:65` == `module_cache_thread_safety.py:55 _module_statements`; `cuda_kernel_integer_width.py:179` == `cuda_kernel_pointer_types.py:61 _marked`; `ci_install_covers_conftest.py:319` == `coverage_config_parity.py:93 _tokens`; `_final`/`_final_name` in connect_error_echo, state_before_work, verified_then_reopened, import_time_global_side_effects, validation_errors_echo_input; `code_audit/_base.py:142 decorator_name` == `free_text_in_get_route.py:77 _callee_name`; `_core/call_names.py:15 func_name_or_none` == `optional_collaborator_wired.py:45 _callee`; `plotly_annotation_loop._own` == `rollback_then_continue._walk_own`; `_key` in cancellation_prone_moments and standard_stream_restore. Six-line `find_*` wrappers that also compared equal are one-line delegations, not reported.
 - **Impact:** same failure mode 52-F2 recorded: a fix lands in one copy and the scanners disagree on the same code.
 - **Proposed fix:** move `balanced_body`, the module-scope statement walker and `final_name` into `_core/scopes.py` / `_core/call_names.py` (where `function_param_names` went under 52-S16) and import; one module per change with its gate's targeted test (same plan as open 52-S15). ADDITIVE (private helpers).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Reason: the fix moves about twelve duplicated helpers into `_core/` and changes the import of each scanner, and each move needs that gate's targeted test (red then green). That is the same work as open 52-S15, which is itself not done; doing it here would mix a refactor of about twelve gates into this hygiene round. Next step: take it with 52-S15 as one round.
 
 ## 52-T5 (P3) `repo_hygiene` and `uncalled_functions` exceed their own 30 s budget on this repo
 - **Evidence:** run-all: `BUDGET repo_hygiene took 54.0s, over its 30s budget`; standalone: `BUDGET uncalled_functions took 33.4s`. pyproject's `complexity_ratchet` comment says the default 30 s "printed a standing BUDGET line on a clean tree" and got `budget_s = 120`; these two did not.
 - **Impact:** standing noise on every clean run teaches readers to skip BUDGET lines.
 - **Proposed fix:** add measured `budget_s` to the two `[tool.py_ci_shared.gates.*]` tables, or narrow their inputs. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. Measured `budget_s` added: `audit_rounds_format` 90 (measured 59 s), `uncalled_functions` 60 (measured 33 s), and `repo_hygiene` 90 (measured 54 s; its table now carries the budget, and the duplicate `enable` entry was removed). Re-run: `repo_hygiene` 4.9 s and `uncalled_functions` 8.2 s, no BUDGET line.
 
 ## 52-T6 (P3) Stale untracked build output in the working tree holds 386 old .py files
 - **Evidence:** `build/lib/py_ci_shared` (ignored, `.gitignore:7`) has 386 `.py` files dated 2026-11-07, plus `src/py_ci_shared.egg-info`. Tools globbing `**/*.py` from the root (several gates are configured `root = "."`) can see an old copy of every module. NOT REPRODUCED as a wrong verdict: the configured `files` globs start at `src/` and `tests/`, so this is exposure, not a defect.
 - **Impact:** IDE search and ad-hoc greps return stale hits; low.
 - **Proposed fix:** document removing `build/` after `pip install .` in CLAUDE.md, or use `pip install -e .` (also fixes 52-T2). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (documentation, as proposed). CLAUDE.md 'Before pushing' says to install with `pip install -e .`, and to delete `build/` and `src/py_ci_shared.egg-info` after a non-editable install. No file deleted from the working tree.
 
 | id | sev | title |
 |----|-----|-------|

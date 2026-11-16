@@ -147,10 +147,30 @@ def _report(results: Sequence[GateResult], mode: str) -> int:
     return code
 
 
+def _install_mismatch(root: Path, package_file: str) -> Optional[str]:
+    """Message when run-all in a py-ci-shared checkout imports the package from somewhere else (52-T2).
+
+    A stale or non-editable install on PATH gives false reds on the checkout (old ``__version__``, a missing subcommand
+    argument). Only a checkout that carries its own ``src/py_ci_shared`` is checked, so consumers are never warned.
+    """
+    if not (root / "src" / "py_ci_shared" / "__init__.py").is_file():
+        return None
+    imported = Path(package_file).resolve()
+    if root.resolve() in imported.parents:
+        return None
+    return (
+        f"py_ci_shared is imported from {imported}, not from this checkout ({root}); results describe that copy. "
+        f"Run `python -m pip install -e .` from {root} first."
+    )
+
+
 def _cmd_run(args: argparse.Namespace, *, everything: bool, refresh: bool = False) -> int:
     grow = bool(getattr(args, "grow", False))
     config = _load(args.repo)
     if everything:
+        mismatch = _install_mismatch(config.repo_root, __file__)
+        if mismatch:
+            _print(f"WARNING {mismatch}", err=True)
         runs = list(config.gates)
     else:
         names = list(args.gates)

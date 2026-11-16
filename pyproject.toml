@@ -194,7 +194,6 @@ check_untyped_defs = true
 # The gates this repo runs on itself: `py-ci-shared run-all` in self-ci, and one pytest item each on a bare `pytest`.
 [tool.py_ci_shared]
 budget = "warn"
-enable = ["repo_hygiene"]
 
 [tool.py_ci_shared.gates.version_consistency]
 files = ["src/py_ci_shared/__init__.py"]
@@ -260,6 +259,7 @@ package_root = "src/py_ci_shared"
 scan_dirs = ["src", "tests", ".github"]
 
 [tool.py_ci_shared.gates.audit_rounds_format]
+budget_s = 90  # measured 59 s over audits/ (52-T5)
 module = "audit_round_format"
 entry = "assert_rounds_countable"
 audits_dir = "audits"
@@ -283,6 +283,7 @@ baseline_path = "tests/baselines/complexity_ratchet.json"
 # Private functions only: every public assert_*/find_* here is called by consumers, never by this package, so the whole-tree gate would list the
 # public API itself. A private function has no consumer callers.
 [tool.py_ci_shared.gates.uncalled_functions]
+budget_s = 60  # measured 33 s on the checkout (52-T5)
 files = ["src/**/*.py"]
 root = "."
 baseline_path = "tests/baselines/uncalled_functions.json"
@@ -445,3 +446,6 @@ package = "py_ci_shared"
 
 [tool.py_ci_shared.gates.systemexit_in_library]
 root = "src/py_ci_shared"
+
+[tool.py_ci_shared.gates.repo_hygiene]
+budget_s = 90  # measured 54 s on the checkout (52-T5)
