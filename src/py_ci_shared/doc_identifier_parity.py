@@ -149,10 +149,19 @@ def find_absent_doc_identifiers(
     return _absent(repo_root, doc_files=doc_files, corpus_files=corpus_files, exclude_docs=exclude_docs, ignore=ignore, external_commands=external_commands)[0]
 
 
-def _in_corpus(token: str, corpus: str, memo: dict[str, bool]) -> bool:
-    """``token in corpus``, each distinct token searched once per run: the corpus is a multi-megabyte substring search."""
+_CORPUS_WORD = re.compile(r"[\w-]+")
+
+
+def _words(corpus: str) -> frozenset[str]:
+    """Every ``[\\w-]+`` run of *corpus*. Each is a substring of it, so membership proves a token occurs there."""
+    return frozenset(_CORPUS_WORD.findall(corpus))
+
+
+def _in_corpus(token: str, corpus: str, words: frozenset[str], memo: dict[str, bool]) -> bool:
+    """``token in corpus``, each distinct token decided once per run. A whole word is answered from *words*; only the rest
+    pay for the multi-megabyte substring search (audit 2026-11-16 48-T4: 2.78 s -> 1.48 s on pyutilz, same answers)."""
     if token not in memo:
-        memo[token] = token in corpus
+        memo[token] = token in words or token in corpus
     return memo[token]
 
 
@@ -176,6 +185,7 @@ def _absent(
     skipped = set(exclude_docs)
     ignored = set(ignore)
     problems: list[str] = []
+    words = _words(corpus)
     in_corpus: dict[str, bool] = {}
     for doc in docs:
         rel = relative_posix(doc.resolve(), root)
@@ -192,7 +202,7 @@ def _absent(
         foreign = _external_flags(lines, external_commands)
         for lineno, line in enumerate(lines, start=1):
             for token in _FLAG.findall(line) + _IDENT.findall(line):
-                if token in ignored or token in foreign or _in_corpus(token, corpus, in_corpus):
+                if token in ignored or token in foreign or _in_corpus(token, corpus, words, in_corpus):
                     continue
                 problems.append(f"{rel}:{lineno}: `{token}` occurs nowhere in the source, config or tests")
     return problems, checked

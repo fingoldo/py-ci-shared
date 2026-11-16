@@ -36,6 +36,7 @@ from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE, ImportAliases, child_nodes, relative_posix, scan_python
 from ._core.node_index import walk as _fast_walk
+from ._core.source import source_segment
 from ._text_ratchet import is_test_path
 
 __all__ = [
@@ -392,7 +393,7 @@ def find_unpaired_reloads(
 
 
 def _statement_text(source: str, node: ast.AST) -> str:
-    return " ".join((ast.get_source_segment(source, node) or unparse_stable(node)).split())
+    return " ".join((source_segment(source, node) or unparse_stable(node)).split())
 
 
 def find_reloads_in_code(roots: Iterable[Path], repo_root: Path, *, allowed: Iterable["tuple[str, Union[int, str]]"] = ()) -> list[ReloadSite]:

@@ -216,6 +216,10 @@ def scan_comment_cites_absolute_line(
     for py in _iter_py_files(root, exclude_dirs):
         rel = py.relative_to(root).as_posix()
         src_lines = _read_src_lines(py)
+        # A comment is a substring of the source, so a file with no "line N" anywhere cannot produce a finding; skipping it
+        # skips the tokenize pass (audit 2026-11-16 48-T3: pyutilz 3.6 s -> 1.2 s, mlframe 75 s -> 21 s, same 60 findings).
+        if not _LINE_CITATION.search("\n".join(src_lines)):
+            continue
         for text, line in _comment_texts(py):
             # Every citation in the comment, not just the first: `# see line 42 and line 99` names
             # two rotting pointers and must report both.

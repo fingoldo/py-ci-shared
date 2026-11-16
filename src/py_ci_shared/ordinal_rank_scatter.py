@@ -32,6 +32,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.source import source_segment
 from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["RULE", "SUPPRESSION", "assert_ordinal_rank_scatter", "find_ordinal_rank_scatter"]
@@ -71,7 +72,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str, lines: list[str]) -> l
     out: list[Finding] = []
     seen: set[int] = set()
     for func in (n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS)):
-        segment = ast.get_source_segment(source, func) or ""
+        segment = source_segment(source, func) or ""
         if _TIE_WORDS.search(segment):
             continue
         orders = _order_names(func)

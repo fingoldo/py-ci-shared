@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import walk as shared_walk
-from ._core.source import parse_source
+from ._core.source import parse_source, segment, source_lines
 from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, is_test_path, normalize_line, record_finding, text_scan
 
 __all__ = ["find_unscrubbed_git_spawns", "assert_no_new_unscrubbed_git_spawns"]
@@ -59,31 +59,7 @@ def _is_git_argv(node: ast.expr) -> bool:
 _SOURCE_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
 
 
-def _split_source(source: str) -> list[str]:
-    """The source split the way ``ast`` positions count lines (``\\r\\n``, ``\\r`` and ``\\n`` each end one), keeping the endings.
-
-    Split once per file: ``ast.get_source_segment`` re-splits the whole source on every call, which made this scan quadratic
-    in the number of assignments of a file."""
-    return _SOURCE_LINE.findall(source)
-
-
-def _segment(lines: list[str], node: ast.AST) -> str:
-    """``ast.get_source_segment`` over pre-split lines (the same slicing, without re-splitting the source)."""
-    end_lineno: Optional[int] = getattr(node, "end_lineno", None)
-    end_col: Optional[int] = getattr(node, "end_col_offset", None)
-    if end_lineno is None or end_col is None:
-        return ""
-    first: int = getattr(node, "lineno", 1) - 1
-    last: int = end_lineno - 1
-    col: int = getattr(node, "col_offset", 0)
-    if first == last:
-        return lines[first].encode()[col:end_col].decode()
-    head = lines[first].encode()[col:].decode()
-    tail = lines[last].encode()[:end_col].decode()
-    return head + "".join(lines[first + 1 : last]) + tail
-
-
-def _assigned_sources(lines: list[str], tree: ast.Module) -> dict[str, list[str]]:
+def _assigned_sources(lines: tuple[str, ...], tree: ast.Module) -> dict[str, list[str]]:
     """``{name: [source of each value assigned to it]}``, so ``env=env`` is judged by what ``env`` was built from."""
     assigned: dict[str, list[str]] = {}
     for node in shared_walk(tree):
@@ -97,25 +73,25 @@ def _assigned_sources(lines: list[str], tree: ast.Module) -> dict[str, list[str]
         if value is None:
             continue
         for name in targets:
-            assigned.setdefault(name, []).append(_segment(lines, value) or "")
+            assigned.setdefault(name, []).append(segment(lines, value) or "")
     return assigned
 
 
-def _env_scrubs(env: ast.expr, lines: list[str], assigned: dict[str, list[str]], functions: dict[str, str]) -> bool:
+def _env_scrubs(env: ast.expr, lines: tuple[str, ...], assigned: dict[str, list[str]], functions: dict[str, str]) -> bool:
     if isinstance(env, ast.Name):
         return any(_SCRUBBER.search(text) for text in assigned.get(env.id, []))
     if isinstance(env, ast.Call) and isinstance(env.func, ast.Name) and env.func.id in functions:
         # a helper judged by the environment it builds: its body names GIT_* (audit 37-F27)
         return "GIT_" in functions[env.func.id] or bool(_SCRUBBER.search(functions[env.func.id]))
-    return bool(_SCRUBBER.search(_segment(lines, env) or ""))
+    return bool(_SCRUBBER.search(segment(lines, env) or ""))
 
 
 def _python_spawns(rel: str, path: Path, found: dict[str, str]) -> None:
     source, tree = parse_source(path)
     lines = source.splitlines()
-    segment_lines = _split_source(source)
+    segment_lines = source_lines(source)
     assigned = _assigned_sources(segment_lines, tree)
-    functions = {n.name: _segment(segment_lines, n) or "" for n in tree.body if isinstance(n, ast.FunctionDef)}
+    functions = {n.name: segment(segment_lines, n) or "" for n in tree.body if isinstance(n, ast.FunctionDef)}
     calls = sorted((n for n in shared_walk(tree) if isinstance(n, ast.Call)), key=lambda n: (n.lineno, n.col_offset))
     for node in calls:
         func = node.func
