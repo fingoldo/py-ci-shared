@@ -154,7 +154,12 @@ class TestCorpusAndBaseline:
             assert_atomic_write_staging(src, baseline_path=bl, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_atomic_write_staging(src, baseline_path=bl, refresh=True, use_git=False)
-        assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
+        data = json.loads(bl.read_text(encoding="utf-8"))
+        assert len(data["entries"]) == 1
+        # A refresh records the finding with the NEEDS-JUSTIFICATION note (42-T1); enforce accepts it only once a reason replaces the marker.
+        for entry in data["entries"].values():
+            entry["note"] = "accepted in this fixture: the in-place write is the case under test"
+        bl.write_text(json.dumps(data), encoding="utf-8")
         assert_atomic_write_staging(src, baseline_path=bl, use_git=False)
         (src / "n.py").write_text("def g(cache, d):\n    cache.write_bytes(d)\n", encoding="utf-8")
         with pytest.raises(pytest.fail.Exception, match="in-place-rewrite"):
