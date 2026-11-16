@@ -149,50 +149,52 @@ class Baseline:
         (a mutation run that kills every survivor) passes ``fail_on_empty_scan=False``: it still fails on the stale entries, with the
         prune message instead of the "scan stopped matching" diagnosis, and passes once the baseline is refreshed.
         """
+        code, text = self.check(found, label=label, guidance=guidance, min_found=min_found, fail_on_empty_scan=fail_on_empty_scan)
+        if code:
+            print(text, file=sys.stderr)
+        else:
+            write_text(text + "\n")
+        return code
+
+    def check(self, found: Mapping[str, str], *, label: str, guidance: str, min_found: int = 0, fail_on_empty_scan: bool = True) -> tuple[int, str]:
+        """``(exit code, report)``: the whole report on a failure (header, every finding, guidance, the real reason), else the PASS line.
+
+        Prints nothing (49-T3): :meth:`enforce` prints it, and a caller that raises or notes it uses the text as it is.
+        """
         accepted = self.load()
         if len(found) < min_found:
-            print(
-                f"{label}: the scan found {entries_word(len(found), count=True)}, fewer than its floor of {min_found} - it is not reaching the code.",
-                file=sys.stderr,
-            )
-            return 1
+            return 1, (f"{label}: the scan found {entries_word(len(found), count=True)}, fewer than its floor of {min_found} - it is not reaching the code.")
         if fail_on_empty_scan and not found and accepted:
-            message = (
-                f"{label}: the scan found nothing, yet {self.path} accepts {entries_word(len(accepted), count=True)}. Either the scan stopped"
-                f"matching, or the whole backlog was paid off - then run {self.refresh_command} to record that."
+            return 1, (
+                f"{label}: the scan found nothing, yet {self.path} accepts {entries_word(len(accepted), count=True)}. Either the scan stopped "
+                f"matching, or the whole backlog was paid off - then delete those entries from {self.path} (or run {self.refresh_command})."
             )
-            print(message, file=sys.stderr)
-            return 1
         new = {key: value for key, value in found.items() if key not in accepted}
         stale = [key for key in accepted if key not in found]
 
         if new:
-            print(f"{label}: {len(new)} new violation(s):", file=sys.stderr)
-            for key in sorted(new):
-                print(f"  {key} - {new[key]}", file=sys.stderr)
-            print("", file=sys.stderr)
-            print(guidance, file=sys.stderr)
-            print("", file=sys.stderr)
-            print(f"If this one is a considered exception, add it to {self.path} with a note saying why.", file=sys.stderr)
-            return 1
+            lines = [f"{label}: {len(new)} new violation(s):"]
+            lines += [f"  {key} - {new[key]}" for key in sorted(new)]
+            lines += ["", guidance, "", f"If this one is a considered exception, add it to {self.path} with a note saying why."]
+            return 1, "\n".join(lines)
 
         unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note) or not note.strip())
         if unjustified:
             # A refresh writes the marker as the note; an entry still carrying it, or with no note, was recorded, not accepted.
-            print(f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r} or with no note:", file=sys.stderr)
-            for key in unjustified:
-                print(f"  {key}", file=sys.stderr)
-            print("Replace each marker with the reason the entry is acceptable.", file=sys.stderr)
-            return 1
+            lines = [f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r} or with no note:"]
+            lines += [f"  {key}" for key in unjustified]
+            lines.append("Replace each marker with the reason the entry is acceptable.")
+            return 1, "\n".join(lines)
 
         if stale:
-            print(f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule - run {self.refresh_command} to prune:", file=sys.stderr)
-            for key in sorted(stale):
-                print(f"  {key}", file=sys.stderr)
-            return 1
+            lines = [
+                f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule; the baseline only shrinks by hand:",
+            ]
+            lines += [f"  {key}" for key in sorted(stale)]
+            lines.append(f"Delete those entries from {self.path} (a note is kept on the rest).")
+            return 1, "\n".join(lines)
 
-        write_text(f"{label}: no new violations ({len(accepted)} accepted, baselined)\n")
-        return 0
+        return 0, f"{label}: no new violations ({len(accepted)} accepted, baselined)"
 
     def regenerate(self, found: Mapping[str, str], *, grow: Optional[bool] = None) -> None:
         """Freeze the current findings, keeping the note already written for any entry that survives.

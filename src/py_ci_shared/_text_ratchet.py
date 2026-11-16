@@ -15,6 +15,7 @@ from typing import Union
 
 from ._core import DEFAULT_EXCLUDE
 from ._core.errors import CorpusError
+from ._core.outcome import add_note
 from ._gate_report import TextFile, read_text_corpus
 from .baseline_ratchet import Baseline
 
@@ -103,10 +104,10 @@ def enforce_findings(
     label: str,
     guidance: str,
 ) -> None:
-    """Fail (raise ``AssertionError``) on each finding the baseline ``<baseline_dir>/<name>.json`` does not accept."""
+    """Fail (raise ``AssertionError`` carrying the whole report) on each finding the baseline ``<baseline_dir>/<name>.json`` does not
+    accept, on a stale or unjustified entry, and on a scan that found nothing. A pass becomes a note on the gate's PASS row (49-T3)."""
     baseline = Baseline(name, directory=os.path.join(str(repo_root), baseline_dir))
-    accepted = baseline.load()
-    if baseline.enforce(found, label=label, guidance=guidance):
-        new = [f"{key} ({found[key]})" for key in sorted(found) if key not in accepted]
-        listed = "; ".join(new) if new else "the baseline needs a note or a refresh, see the report above"
-        raise AssertionError(f"{label}: {len(new)} new violation(s): {listed}. {baseline.path} accepts only the entries it holds")
+    code, text = baseline.check(found, label=label, guidance=guidance)
+    if code:
+        raise AssertionError(text)
+    add_note(text)
