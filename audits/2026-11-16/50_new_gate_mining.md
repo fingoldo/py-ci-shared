@@ -207,7 +207,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D11, tests only): mlframe tests (5501 files) 0, pyutilz tests (438) 0. Zero current hits because mlframe fixed it and guards it locally; 0 FP.
 - **Impact:** hours of dead CI on a shard matrix; caught only after the cap fires.
 - **Proposed fix:** new gate `fit_at_test_module_import.py`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (branch worktree-agent-af3f114ee9f596024, src/py_ci_shared/fit_at_test_module_import.py; 15 targeted tests green; 6 canary teeth green; measured 0 hits in mlframe, pyutilz, glossum_backend_scripts and llm_bench test trees; manifest audits/2026-11-16/manifests/fit_at_test_module_import.json)
 
 ## 50-T6 (P2) route_literal_after_catchall: a literal route registered after a same-prefix parameter route
 
@@ -340,7 +340,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured:** `shrink.py` over the first-parent history of the autopsia worktree (`23c730598`, read-only `git log`/`git show`): `bench/results/article_verdicts_checkpoint.jsonl.gz`, 68 commits touching it, 3 shrink commits: `a12306063` (2824 -> 1524 rows, a merge of origin/master), `4784f0ac2` (2837 -> 1527, a merge), `05a1209a4` (2889 -> 1586, "Track C batch 30"). All 3 are real row losses (about 1300 rows each), 0 FP; two are merge commits, which is the case `--verify` was built for, so a first-parent walk also catches merges that bypassed it. `bench/track_b_llm_cost_ledger.jsonl`, 400 commits, 0 shrinks. The documented `62721781` was not among them because the history walk was capped at 68 commits touching the file and that one may be outside the first-parent chain; I did not chase it. Noise on this evidence: 3 hits, 3 TP. Rank by the score table: I=3, N=3, E=2, total 8.
 - **Impact:** irreversible loss of paid data on a shared branch, silent at commit and merge time.
 - **Proposed fix:** new gate `append_only_log_shrink.py` (history scan, `find_*`/`assert_*` per `CLAUDE.md`, needs a `corpus_drift.BINDINGS` entry or `NON_CORPUS` reason). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** RESOLVED (branch worktree-agent-af3f114ee9f596024, src/py_ci_shared/append_only_log_shrink.py; 15 targeted tests green; 4 canary teeth green; measured read-only on autopsia_wt37 checkpoint path: 3 hits, 3 TP (2889 to 1586, 2837 to 1527, 2824 to 1524 rows); manifest audits/2026-11-16/manifests/append_only_log_shrink.json)
 
 ## Second-tier survivors (measured, not in the top ten)
 

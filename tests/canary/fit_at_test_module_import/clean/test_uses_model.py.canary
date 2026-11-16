@@ -1,0 +1,15 @@
+import pytest
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+
+
+@pytest.fixture(scope="module")
+def model():
+    return LogisticRegression().fit(np.zeros((10, 2)), np.arange(10) % 2)
+
+
+TINY = LogisticRegression().fit(np.zeros((2, 1)), [0, 1])  # import-fit-ok: two rows, a single millisecond
+
+
+def test_uses_model(model):
+    assert model is not None and TINY is not None
