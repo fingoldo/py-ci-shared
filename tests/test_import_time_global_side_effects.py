@@ -18,6 +18,17 @@ BOM = b"\xef\xbb\xbf"
 CANARY = Path(__file__).resolve().parent / "canary" / "import_time_global_side_effects"
 
 
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _corpus(tmp_path: Path, files: dict[str, str]) -> Path:
     for rel, text in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -217,6 +228,11 @@ def test_the_baseline_accepts_known_findings_refuses_new_ones_and_only_shrinks(t
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
     with pytest.raises(pytest.skip.Exception):
         assert_import_time_global_side_effects(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(
+        baseline,
+        "tests/test_import_time_global_side_effects.py::test_the_baseline_accepts_known_findings_refuses_new_ones_and_only_shrinks",
+        "accept-known-finding branch for an import-time os.chdir call",
+    )
     monkeypatch.delenv("PY_CI_SHARED_REFRESH_ALLOW_GROW")
     assert list(json.loads(baseline.read_text(encoding="utf-8"))["entries"]) == ["m.py::os-chdir"]
     assert_import_time_global_side_effects(root, baseline_path=baseline, use_git=False)

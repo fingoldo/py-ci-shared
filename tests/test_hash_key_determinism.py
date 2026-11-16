@@ -12,6 +12,17 @@ import pytest
 from py_ci_shared.hash_key_determinism import assert_hash_keys_are_deterministic, find_unsorted_hash_keys
 
 
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 @pytest.fixture(autouse=True)
 def _refresh_may_grow(monkeypatch):
     """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
@@ -151,6 +162,9 @@ class TestCorpusAndBaseline:
             assert_hash_keys_are_deterministic(src, baseline_path=bl, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_hash_keys_are_deterministic(src, baseline_path=bl, refresh=True, use_git=False)
+        _justify_seeded(
+            bl, "tests/test_hash_key_determinism.py::TestCorpusAndBaseline::test_the_baseline_ratchet", "ratchet branch for an unsorted json.dumps hash key"
+        )
         assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
         assert_hash_keys_are_deterministic(src, baseline_path=bl, use_git=False)
         (src / "n.py").write_text("import hashlib, json\ndef g(c):\n    return hashlib.md5(json.dumps(c).encode())\n", encoding="utf-8")

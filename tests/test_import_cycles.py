@@ -13,6 +13,17 @@ import pytest
 from py_ci_shared.import_cycles import RULE_CYCLE, RULE_ORDER, assert_no_import_cycles, find_import_cycles
 
 
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 @pytest.fixture(autouse=True)
 def _refresh_may_grow(monkeypatch):
     """These tests seed and rewrite baselines; the shrink-only default has its own tests (test_core_baseline.py::TestShrinkOnlyRefresh)."""
@@ -211,6 +222,11 @@ class TestCorpusAndBaseline:
             assert_no_import_cycles(root, baseline_path=baseline, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_no_import_cycles(root, baseline_path=baseline, refresh=True, use_git=False)
+        _justify_seeded(
+            baseline,
+            "tests/test_import_cycles.py::TestCorpusAndBaseline::test_the_baseline_is_required_written_on_refresh_and_then_ratchets",
+            "required-baseline-on-refresh and cycle ratchet branch for an import cycle",
+        )
         entries = json.loads(baseline.read_text(encoding="utf-8"))["entries"]
         assert sorted(k.split("::")[0] for k in entries) == [RULE_CYCLE, RULE_ORDER]
         assert_no_import_cycles(root, baseline_path=baseline, use_git=False)

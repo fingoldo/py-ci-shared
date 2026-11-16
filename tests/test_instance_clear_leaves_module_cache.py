@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import textwrap
 from pathlib import Path
 
@@ -34,6 +35,17 @@ class XgbShim:
     def clear_cache(self):
         self.ptr = None
 """
+
+
+def _justify_seeded(path: Path, where: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test seeds on purpose; each reason names its own key."""
+    from py_ci_shared._core.baseline import is_unjustified
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if is_unjustified(entry["note"]):
+            entry["note"] = f"{key} is seeded by {where} to exercise the {branch} of the gate, and is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _find(root, **kw):
@@ -127,6 +139,11 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_instance_clear_leaves_module_cache(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_seeded(
+        baseline,
+        "tests/test_instance_clear_leaves_module_cache.py::test_a_baseline_accepts_known_findings_and_fails_new_ones",
+        "accept-known-finding branch for a module cache that instance clear leaves behind",
+    )
     assert_instance_clear_leaves_module_cache(root, baseline_path=baseline, use_git=False)
     (root / "n.py").write_text(textwrap.dedent(XGB_SHIM), encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):
