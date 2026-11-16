@@ -12,7 +12,7 @@ maybe-bound but not definitely bound is reported under the rule of the construct
 * ``possibly-unbound-after-match``: bound in some ``case`` arms of a ``match`` with no irrefutable ``case``.
 
 Not reported: a path that ends in ``raise``/``return``/``continue``/``break``/``sys.exit`` does not contribute (``if x: y = 1 else: raise`` binds ``y``); a name bound in a ``for``/``while`` body or
-by a ``with`` is treated as bound afterwards (the loop is assumed to run; reporting every loop variable read after its loop is noise); a ``global``/``nonlocal`` name; a name read before any
+by a ``with`` is treated as bound afterwards unless the block swallows its exception (``suppress``, ``pytest.raises``, ``assertRaises``), and a walrus behind ``and``/``or`` or in a conditional expression is bound only on the path that evaluates it (the loop is assumed to run; reporting every loop variable read after its loop is noise); a ``global``/``nonlocal`` name; a name read before any
 binding at all (a loop-carried value); a nested ``def``/``lambda``/``class`` body (it runs later).
 
 Known limit: two conditions that always agree (``if flag: a = 1`` ... ``if flag: use(a)``) are reported, because the pass does not correlate tests. Suppress with
@@ -77,6 +77,13 @@ class _State:
         for name in names:
             self.why.pop(name, None)
 
+    def bind_maybe(self, names: "set[str]") -> None:
+        """Bind names on some paths only: a walrus the evaluation may skip."""
+        self.maybe |= names
+        for name in names:
+            if self.definite is None or name not in self.definite:
+                self.why.setdefault(name, RULE_IF)
+
     def unbind(self, names: "set[str]") -> None:
         if self.definite is not None:
             self.definite -= names
@@ -125,6 +132,47 @@ def _reads(node: ast.AST) -> "list[ast.Name]":
 
 def _stores(node: ast.AST) -> "set[str]":
     return {name for name, n in _names(node) if isinstance(n.ctx, ast.Store)}
+
+
+def _split_stores(node: ast.AST) -> "tuple[set[str], set[str]]":
+    """The names *node* binds on every evaluation, and those it binds only when a boolean operator or a conditional
+    expression reaches them (``c and (y := g())`` binds ``y`` only when ``c`` is true)."""
+    definite: "set[str]" = set()
+    conditional: "set[str]" = set()
+
+    def visit(current: ast.AST, cond: bool) -> None:
+        if isinstance(current, _SCOPES + _COMPREHENSIONS):
+            return
+        if isinstance(current, ast.Name):
+            if isinstance(current.ctx, ast.Store):
+                (conditional if cond else definite).add(current.id)
+            return
+        if isinstance(current, ast.BoolOp):
+            visit(current.values[0], cond)
+            for value in current.values[1:]:
+                visit(value, True)
+            return
+        if isinstance(current, ast.IfExp):
+            visit(current.test, cond)
+            visit(current.body, True)
+            visit(current.orelse, True)
+            return
+        for child in child_nodes(current):
+            visit(child, cond)
+
+    visit(node, False)
+    return definite, conditional - definite
+
+
+_SWALLOWING_CONTEXTS = frozenset({"suppress", "raises", "assertRaises", "assertRaisesRegex"})  # contextlib.suppress, pytest.raises, unittest
+
+
+def _swallows(context: ast.expr) -> bool:
+    """Does this ``with`` item catch the exception that skips the rest of its block?"""
+    if not isinstance(context, ast.Call):
+        return False
+    func = context.func
+    return (func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")) in _SWALLOWING_CONTEXTS
 
 
 def _aliases_bound(stmt: ast.stmt) -> "set[str]":
@@ -216,7 +264,9 @@ class _Walker:
             return state
         found = list(_names(stmt))
         self._check_names([n for _, n in found if isinstance(n.ctx, ast.Load)], state)
-        state.bind({name for name, n in found if isinstance(n.ctx, ast.Store)} | _aliases_bound(stmt))
+        definite, conditional = _split_stores(stmt)
+        state.bind(definite | _aliases_bound(stmt))
+        state.bind_maybe(conditional)
         state.unbind({name for name, n in found if isinstance(n.ctx, ast.Del)})
         if _is_exit_call(stmt):
             state.definite = None
@@ -237,9 +287,14 @@ class _Walker:
 
     def _if(self, stmt: ast.If, state: _State) -> _State:
         self.check(stmt.test, state)
-        state.bind(_stores(stmt.test))
-        body = self.block(stmt.body, state.fork())
-        orelse = self.block(stmt.orelse, state.fork())
+        definite, conditional = _split_stores(stmt.test)
+        state.bind(definite)
+        taken = state.fork()
+        taken.bind(conditional)  # the body runs only after the test has evaluated the walrus
+        skipped = state.fork()
+        skipped.bind_maybe(conditional)  # the else arm may skip the walrus
+        body = self.block(stmt.body, taken)
+        orelse = self.block(stmt.orelse, skipped)
         return _merge([body, orelse], RULE_IF)
 
     def _loop(self, stmt: ast.stmt, state: _State) -> _State:
@@ -264,7 +319,12 @@ class _Walker:
             self.check(item.context_expr, state)
             if item.optional_vars is not None:
                 state.bind(_stores(item.optional_vars))
-        return self.block(stmt.body, state)  # type: ignore[attr-defined]
+        if not any(_swallows(item.context_expr) for item in stmt.items):  # type: ignore[attr-defined]
+            return self.block(stmt.body, state)  # type: ignore[attr-defined]
+        # a swallowing block (suppress, pytest.raises) can leave at the first exception: its bindings are maybe-bound after it
+        skipped = state.fork()
+        end = self.block(stmt.body, state)  # type: ignore[attr-defined]
+        return _merge([end, skipped], RULE_TRY)
 
     def _try(self, stmt: ast.Try, state: _State) -> _State:
         every = _all_stores(stmt.body)
@@ -393,9 +453,21 @@ def _params(fn: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -> "set[str]":
     return {a.arg for a in every}
 
 
+def _conditional_binding_possible(body: "list[ast.stmt]") -> bool:
+    """Does the scope contain a construct that can bind a name on some path only: a branch, a swallowing ``with``, or a walrus."""
+    for stmt in _nested_statements(body):
+        if isinstance(stmt, _BRANCHING):
+            return True
+        if isinstance(stmt, (ast.With, ast.AsyncWith)) and any(_swallows(item.context_expr) for item in stmt.items):
+            return True
+        if any(isinstance(n, ast.NamedExpr) for child in child_nodes(stmt) if not isinstance(child, ast.stmt) for n in walk(child)):
+            return True
+    return False
+
+
 def _scope_findings(rel: str, lines: "list[str]", body: "list[ast.stmt]", params: "set[str]") -> "list[Finding]":
-    if not any(isinstance(s, _BRANCHING) for s in _nested_statements(body)):
-        return []  # no conditional binding without a branch construct
+    if not _conditional_binding_possible(body):
+        return []  # no conditional binding without a branch construct, a swallowing block or a walrus
     walker = _Walker(rel, lines, _scope_locals(body, params))
     walker.block(body, _State(set(params), set(params)))
     return walker.findings

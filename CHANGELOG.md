@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T12, `possibly_unbound_local`): a walrus behind `and`/`or` or in a conditional expression binds its name only on the path that evaluates it, and a `with` block that swallows its exception (`contextlib.suppress`, `pytest.raises`, `assertRaises`) leaves its bindings maybe-bound afterwards. What to do: bind the name before the block (`name = None`), or mark the read `# unbound-ok: <reason>`.
+
 - **Behaviour change** (40-T11, `unsafe_deserialization`): a hash, verify or dump/save call before a pickle-family load exempts the load only when that call receives the loaded value (`req.body`, or a name assigned from it). An unrelated `store.save(req)`, `verify_user(req)`, `pickle.dumps(1)` or `sha256(b"x")` no longer exempts `pickle.loads(req.body)`. What to do: pass the loaded bytes to the verification, or add `# deserialize-ok: <reason>` to the load.
 
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
