@@ -1,0 +1,19 @@
+{
+  "module": "tool_config_dead_entries",
+  "kind": "gate",
+  "entries": ["assert_tool_config_dead_entries", "find_tool_config_dead_entries", "glob_matches"],
+  "summary": "A pyproject ruff per-file-ignore or coverage omit glob matching no tracked file, a deptry DEP002 ignore for an undeclared distribution, or a first-party mypy override matching no module fails the build. Boilerplate patterns are skipped; the reasoned allow list (DEFAULT_EXEMPTIONS, cupy) is accepted.",
+  "summary_findings": {
+    "pyutilz (default, allow list on)": 1,
+    "mlframe (default, allow list on)": 3,
+    "pyutilz (allow list off)": 1,
+    "mlframe (allow list off)": 4
+  },
+  "changelog": "- New gate `tool_config_dead_entries` (hard, no advisory mode): a ruff per-file-ignore or coverage omit glob matching no tracked file, a deptry DEP002 ignore naming an undeclared distribution, or a first-party mypy override matching no module now fails. `**/` matches zero or more directories; a DEP002 entry for cupy is a reasoned exemption.",
+  "owner_actions": [
+    "Add a [[gate]] entry for tool_config_dead_entries to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "mlframe: `legacy/*` (no legacy/ directory) and `src/mlframe/**/benchmarks/**` (the directories are `_benchmarks`) are dead entries; the owner should delete or correct them. Both are true positives by the rule.",
+    "pyutilz and mlframe: the DEP002 ignore for `py-ci-shared` names a distribution that is not in [project] dependencies (it is installed from requirements-dev.txt). The gate reads only pyproject, so the owner must decide whether the ignore is needed; the gate does not see requirements-dev.txt.",
+    "The cupy DEP002 entry in mlframe is accepted by DEFAULT_EXEMPTIONS as an owner-pending reasoned exemption; the raw count with the allow list off includes it."
+  ]
+}

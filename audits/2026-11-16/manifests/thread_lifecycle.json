@@ -1,0 +1,15 @@
+{
+  "module": "thread_lifecycle",
+  "kind": "gate",
+  "entries": ["assert_thread_lifecycle", "find_thread_lifecycle"],
+  "summary": "A threading.Thread that is not daemonised, joined (function-local for source; module-wide for tests), or owned by a class with __enter__ and __exit__ fails the build. Source scope by default; suppress with a reasoned # thread-ok marker.",
+  "summary_findings": {
+    "pyutilz/src": 0,
+    "mlframe/src": 0
+  },
+  "changelog": "- New gate `thread_lifecycle` (hard, no advisory mode, source scope by default): a non-daemon `threading.Thread` must have `daemon=True`, a join or `.daemon = True` on its object (function-local in source, module-wide in tests), or a context-manager owner. List-built threads joined in a loop are accepted. Suppress with `# thread-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for thread_lifecycle to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "The measured corpora are the source trees only, as the default scope requires; the first measurement's four hits (three mlframe benchmark thread lists, one pyutilz benchmark thread list) were false positives of the list-then-join pattern, fixed in the gate and covered by a test."
+  ]
+}

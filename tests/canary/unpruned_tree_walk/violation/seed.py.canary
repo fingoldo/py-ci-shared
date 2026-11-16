@@ -1,0 +1,6 @@
+from pathlib import Path
+
+
+def find_sources(repo_root):
+    """repo_root: the repo root; every module under it."""
+    return list(Path(repo_root).rglob("*.py"))

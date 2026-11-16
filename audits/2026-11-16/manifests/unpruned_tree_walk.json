@@ -1,0 +1,15 @@
+{
+  "module": "unpruned_tree_walk",
+  "kind": "gate",
+  "entries": ["assert_unpruned_tree_walk", "find_unpruned_tree_walk"],
+  "summary": "A function whose docstring names a parameter as the repository root must prune .claude/worktrees (a worktrees filter or iter_files_pruned) before walking that parameter; suppress with a reasoned # tree-walk-ok marker. Source scope by default.",
+  "summary_findings": {
+    "pyutilz/src": 0,
+    "mlframe/src": 0
+  },
+  "changelog": "- New gate `unpruned_tree_walk` (hard, no advisory mode, source scope): a function documented as taking a repository root must not walk it (rglob, glob, walk, os.walk) without pruning `.claude/worktrees`. Suppress with `# tree-walk-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for unpruned_tree_walk to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "The round file's 3 mlframe hits came from a broader heuristic (any walked parameter). The gate now requires a docstring that names the parameter as the repository root, which is why the measured count is 0; the broader cases are not checked by this gate by design."
+  ]
+}

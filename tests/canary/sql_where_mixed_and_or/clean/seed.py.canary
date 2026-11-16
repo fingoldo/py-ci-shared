@@ -1,0 +1,6 @@
+UPDATE_SQL = """
+UPDATE verdicts SET status = :s
+WHERE lang = :l AND text = :t AND (sense IN (1, 2) OR sense IN (3, 4))
+"""
+SIMPLE = "SELECT 1 FROM t WHERE a = 1 AND b BETWEEN 2 AND 3"
+ONLY_OR = "SELECT 1 FROM t WHERE a IS NULL OR a = 1"

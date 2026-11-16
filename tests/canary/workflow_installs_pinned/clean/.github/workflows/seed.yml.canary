@@ -1,0 +1,5 @@
+steps:
+  - run: |
+      git clone https://github.com/example/shared-lib.git
+      git -C shared-lib checkout 6b512f2b6f7c9e353ee1831d0130b8b194c1706d
+  - run: pip install "shared-lib @ git+https://github.com/example/shared-lib.git@${SHARED_SHA}"

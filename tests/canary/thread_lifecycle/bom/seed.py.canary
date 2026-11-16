@@ -1,0 +1,6 @@
+﻿import threading
+
+
+def start_monitor(fn):
+    t = threading.Thread(target=fn)
+    t.start()

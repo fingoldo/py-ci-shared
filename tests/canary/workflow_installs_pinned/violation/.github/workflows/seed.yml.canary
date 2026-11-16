@@ -1,0 +1,5 @@
+steps:
+  - run: |
+      git clone https://github.com/example/shared-lib.git
+      pip install ./shared-lib
+  - run: pip install "shared-lib @ git+https://github.com/example/shared-lib.git"

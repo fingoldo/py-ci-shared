@@ -1,0 +1,5 @@
+from . import facade as _f
+
+
+def set_limit(v):
+    _f._LIMIT = v

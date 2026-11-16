@@ -1,0 +1,5 @@
+from . import impl as _i
+
+
+def set_limit(v):
+    _i._LIMIT = v

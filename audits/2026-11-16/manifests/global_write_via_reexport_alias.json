@@ -1,0 +1,15 @@
+{
+  "module": "global_write_via_reexport_alias",
+  "kind": "gate",
+  "entries": ["assert_global_write_via_reexport_alias", "find_global_write_via_reexport_alias"],
+  "summary": "An assignment to alias.NAME, where alias is a relative sibling module and NAME is ALL_CAPS and only imported (re-exported) by that module, rewrites the facade's copy and fails the build; suppress with a reasoned # reexport-write-ok marker.",
+  "summary_findings": {
+    "pyutilz/src": 0,
+    "mlframe/src": 0
+  },
+  "changelog": "- New gate `global_write_via_reexport_alias` (hard, no advisory mode): `alias.NAME = v` where `alias` is a relative sibling module that only re-exports NAME (via `from .impl import NAME`) fails; the write has no effect on the owning module. Relative imports resolve across files. Suppress with `# reexport-write-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for global_write_via_reexport_alias to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "mlframe's semgrep hook (.semgrep.yml) covers the same rule as an advisory manual hook; the hard gate supersedes it on the shard that runs this gate."
+  ]
+}

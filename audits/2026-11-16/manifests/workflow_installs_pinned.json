@@ -1,0 +1,15 @@
+{
+  "module": "workflow_installs_pinned",
+  "kind": "gate",
+  "entries": ["assert_workflow_installs_pinned", "find_workflow_installs_pinned"],
+  "summary": "A workflow step that runs git clone of a first-party repo, or pip-installs one from a git+ URL, without a 40-hex or ${VAR} pin fails the build; multi-line command blocks are read as one; suppress with a reasoned # unpinned-ok marker.",
+  "summary_findings": {
+    "pyutilz/.github/workflows": 0,
+    "mlframe/.github/workflows": 0
+  },
+  "changelog": "- New gate `workflow_installs_pinned` (hard, no advisory mode): a CI `git clone` with no `checkout` of a 40-hex SHA or ${VAR} in the same command block, or a `git+https://` install with no `@<40-hex>` or `@${VAR}`, fails. Block scalars (`run: |`, `install-command: |`) are read as one block. Suppress with `# unpinned-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for workflow_installs_pinned to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "Measured corpora are the two consumer workflow directories only; the social consumer (2 hits per the round file, unpinned `pyutilz @ git+` in production-scrapers-ci.yml) is not in the measured set and must be checked by the owner."
+  ]
+}

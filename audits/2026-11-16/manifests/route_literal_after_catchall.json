@@ -1,0 +1,15 @@
+{
+  "module": "route_literal_after_catchall",
+  "kind": "gate",
+  "entries": ["assert_route_literal_after_catchall", "find_route_literal_after_catchall"],
+  "summary": "A literal route registered after a same-shape parameter route on the same router and method is dead (Starlette matches in order). Opt-in per router variable name via router_names; suppress with a reasoned # route-order-ok marker.",
+  "summary_findings": {
+    "pyutilz/src (router_names router, app, api, r)": 0,
+    "mlframe/src (router_names router, app, api, r)": 0
+  },
+  "changelog": "- New gate `route_literal_after_catchall` (hard, no advisory mode, opt-in): a `@router.<method>(\"/a/{x}\")` declared before `@router.<method>(\"/a/literal\")` on the same router object is reported; `{x:path}` converters are not compared segment-wise. Requires `router_names=` (empty is a usage error). Suppress with `# route-order-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for route_literal_after_catchall to src/py_ci_shared/registry.toml and a README catalogue row (owner-owned files; not edited here).",
+    "Consumers that run FastAPI or Starlette routers (autopsia, noema, glossum api) must pass their router variable names; the measured corpora are the pyutilz and mlframe src trees, which hold no router calls matching the named list."
+  ]
+}
