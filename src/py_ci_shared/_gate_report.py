@@ -161,21 +161,22 @@ def enclosing_functions(tree: ast.Module) -> dict[int, str]:
     """``{id(node): qualified function name}`` for every node inside a function (innermost function wins)."""
     out: dict[int, str] = {}
 
-    def visit(node: ast.AST, name: str) -> None:
+    # An explicit stack, not recursion: a deep expression in a generated module must not reach the interpreter's recursion limit.
+    pending: list[tuple[ast.AST, str]] = [(tree, "")]
+    while pending:
+        node, name = pending.pop()
         for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 inner = f"{name}.{child.name}" if name else child.name
                 out[id(child)] = name or "<module>"
-                visit(child, inner)
+                pending.append((child, inner))
             elif isinstance(child, ast.ClassDef):
                 out[id(child)] = name or "<module>"
-                visit(child, f"{name}.{child.name}" if name else child.name)
+                pending.append((child, f"{name}.{child.name}" if name else child.name))
             else:
                 if name:
                     out[id(child)] = name
-                visit(child, name)
-
-    visit(tree, "")
+                pending.append((child, name))
     return out
 
 
