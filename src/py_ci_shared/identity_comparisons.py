@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core import ImportAliases, ParsedFile, ScanResult, relative_posix, scan_python
-from ._core.node_index import nodes_of
+from ._core.node_index import binop_operands, nodes_of
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["assert_no_identity_comparisons", "find_identity_comparisons", "string_constant_names"]
@@ -43,7 +43,8 @@ def _stringish(node: ast.AST, known: "set[str] | frozenset[str]" = frozenset()) 
     if isinstance(node, ast.Name):
         return node.id in known
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
-        return _stringish(node.left, known) or _stringish(node.right, known)
+        # ``a + b + ...`` is as deep as it is long: the operands are gathered with a loop, and any one of them being a string makes the chain one.
+        return any(_stringish(operand, known) for operand in binop_operands(node, (ast.Add, ast.Mod)))
     if isinstance(node, ast.Call):
         func = node.func
         if isinstance(func, ast.Name) and func.id == "str":
