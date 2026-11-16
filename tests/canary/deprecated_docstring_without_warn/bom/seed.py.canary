@@ -1,0 +1,10 @@
+﻿def old_name(x):
+    """Deprecated alias of :func:`new_name`."""
+    return new_name(x)
+
+
+class Model:
+    @property
+    def cv_score(self):
+        """Deprecated alias of selection_score."""
+        return 1

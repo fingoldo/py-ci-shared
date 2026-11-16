@@ -1,0 +1,9 @@
+import asyncpg as apg
+
+
+async def open_pool(dsn):
+    return await apg.create_pool(dsn, min_size=1, max_size=4, command_timeout=30)
+
+
+async def open_one(dsn, **kw):
+    return await apg.connect(dsn, **kw)
