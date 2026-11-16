@@ -91,7 +91,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D10): mlframe src 1, mlframe tests 58, pyutilz src 0, llm_bench src 0. First five: `mlframe/training/composite/_benchmarks/bench_missing_aware_predict_iter133.py:58 class FakeComp(BaseEstimator, RegressorMixin)`, and tests `test_evaluation_fixes.py:471`, `test_hetero_vote.py:86`, `test_predict_passthrough_replay.py:38`: 5 of 5 TP (the shape is an MRO fact, so it cannot be a false positive); the severity of a test fake is low. mlframe's own gate scans src only, which is why 58 test fakes remain.
 - **Impact:** every sklearn consumer (mlframe, autopsia, the ML repos); a silent wrong-CV or wrong-scorer, no error.
 - **Proposed fix:** new gate `src/py_ci_shared/estimator_mixin_order.py`, `assert_estimator_mixin_order(root, ...)`, `min_files`/`allow_unparsed` per `CLAUDE.md`; registry entry; canary dir; `CANARIES` entry. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED: gate `estimator_mixin_order` built (src/py_ci_shared/estimator_mixin_order.py, tests/test_estimator_mixin_order.py, canaries, fragment; red run recorded). Manifest: audits/2026-11-16/manifests/estimator_mixin_order.json.
 
 ## 50-T2 (P2) sql_where_mixed_and_or: a WHERE whose top level mixes AND and OR
 
@@ -118,7 +118,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured:** the crude first pass (`proto.py` D1) gave 5 glossum hits, all FP (SQL comments containing the word "or", a `""" + CONST + """` concatenation, an LLM prompt). The refined pass (`d1.py`, comments stripped, depth-aware) gave: mlframe src 2, pyutilz src 0, glossum package 0, glossum scripts 1, llm_bench 0. All 3 remaining are FP and each is fixed by a rule the spec now carries: `mlframe/data/datasets/ground_truth.py:168` and `estimator/_estimator.py:58` are class docstrings (skip docstrings), `scripts/create_vocab_functions.py:13` is a multi-statement plpgsql script (split on `;`, skip `$$` bodies). Expected true figure on today's trees: 0 hits, because glossum fixed N-9; the value is the canary and the next UPDATE.
 - **Impact:** wrong rows written by a plausible-looking statement; a data-integrity class that passes unit tests with mocks.
 - **Proposed fix:** a fourth scanner in `code_audit/sql_lint.py` (`scan_sql_where_mixed_and_or`) registered in `code_audit/registry.py`, or a standalone `sql_where_precedence` gate. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: needs a depth-aware WHERE tokenizer that skips docstrings, comments and $$ plpgsql bodies; the report's own pass needed two refinement rounds to clear false positives. Not built this round.
 
 ## 50-T3 (P2) required_call_kwargs: a configured call must carry a configured keyword
 
@@ -146,7 +146,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D9, D20; string-name matching only, so aliased imports would add hits): mlframe src 0, pyutilz src 0, llm_bench src 0 (already fixed), glossum package 0, glossum scripts 10 asyncpg + 9 Stanza. First five asyncpg: `batch_stanza_parse.py:502`, `push_content_snapshot.py:110` and `:119`, `ru_stress_check_report.py:142` and `:154`: 5 of 5 TP by the rule (ad hoc DB probe scripts; low severity there, high severity in a library pool). First four Stanza: `is_lang_grammar_covered.py:656`, `test_ka_corrector.py:106`, `add_de_sentences.py:175`, `generate_ka_additional.py:453`: 4 of 4 TP, and three of them are the scripts CLAUDE.md names.
 - **Impact:** a pool that starves with no self-recovery; a measurement made on the wrong model.
 - **Proposed fix:** new gate `required_call_kwargs.py` with a `RULES` constant and a `rules=` parameter (`[{"call": "...", "any_of": [...]}]`), preset `ASYNCPG`. ADDITIVE. The user's feedback memory ("fail closed", "no artificial caps") argues for shipping the asyncpg preset blocking and leaving Stanza as an example in the docstring, since `package=` is glossum policy.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: the asyncpg preset is buildable, but the Stanza row is glossum policy that needs owner sign-off on blocking vs advisory for scripts/, and aliased-import resolution is not yet specified against ImportAliases. Not built this round.
 
 ## 50-T4 (P2) workflow_installs_pinned: a CI step that clones or pip-installs a first-party repo from git without a commit
 
@@ -173,7 +173,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`wf2.py`, ten repos: mlframe, pyutilz, llm_bench, glossum, algopacksimple, noema_app, polyvocab_app, social, py-ci-shared, autopsia): 2 hits, both TP: `social/.github/workflows/production-scrapers-ci.yml:79` and `:150`, `pip install "pyutilz @ git+https://github.com/fingoldo/pyutilz.git"`. 0 FP. The first crude version flagged 20 clone lines as unpinned; all were followed by a `checkout <sha>` on the next line, which is why the spec requires the follow-up check.
 - **Impact:** a non-reproducible CI run on the consumer that has it (social); a future clone line added without a pin.
 - **Proposed fix:** as above. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: a line-scan gate over workflow YAML with a follow-up-line checkout rule needs multi-line run-block handling that was not reviewed this round. Not built this round.
 
 ## 50-T5 (P2) fit_at_test_module_import: a test module that trains a model while it is imported
 
@@ -207,7 +207,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D11, tests only): mlframe tests (5501 files) 0, pyutilz tests (438) 0. Zero current hits because mlframe fixed it and guards it locally; 0 FP.
 - **Impact:** hours of dead CI on a shard matrix; caught only after the cap fires.
 - **Proposed fix:** new gate `fit_at_test_module_import.py`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: a test-level AST gate with an extensible heavy-call list; the list and the shard-collection scope need owner confirmation. Not built this round.
 
 ## 50-T6 (P2) route_literal_after_catchall: a literal route registered after a same-prefix parameter route
 
@@ -230,7 +230,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D3): glossum package 0, glossum scripts 0, mlframe src 0, pyutilz src 0, llm_bench src 0. Zero today because glossum fixed it and keeps a runtime test; the AST variant adds protection to the other FastAPI consumers (autopsia, noema), which were not measured.
 - **Impact:** a silently dead endpoint.
 - **Proposed fix:** new gate `route_literal_after_catchall.py`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: segment-wise route-order comparison needs the --router-names opt-in design settled first. Not built this round.
 
 ## 50-T7 (P2) global_write_via_reexport_alias: `alias.CONST = value` where the module bound to `alias` only re-exports `CONST`
 
@@ -253,7 +253,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D12 + `resolve_alias_writes`): mlframe src 0, pyutilz src 0, glossum 0, llm_bench 0 (mlframe fixed its instance). 0 FP.
 - **Impact:** a setting that appears to apply and does not; silent.
 - **Proposed fix:** new gate `global_write_via_reexport_alias.py`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: needs cross-file resolution of relative imports to the sibling module (the report's resolve_alias_writes). Not built this round.
 
 ## 50-T8 (P3) thread_lifecycle: a non-daemon `threading.Thread` with no join, no `.daemon = True` and no context-manager owner
 
@@ -273,7 +273,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D4): mlframe src 0, pyutilz src 0, glossum 0, llm_bench 0 (all clean, matching pyutilz's own "verified zero false positives" note); mlframe tests 4, all FP-looking: `test_concurrency_state_fixes.py:60,63,264,267` start threads whose joins sit in a different helper (my join test is function-local), so the spec needs "joined anywhere in the module" for tests or a tests exclusion.
 - **Impact:** a hung process exit in CI or a worker.
 - **Proposed fix:** new gate `thread_lifecycle.py` (src only by default). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: test-file false positives need a module-wide join rule and the src-only scope is still open. Not built this round.
 
 ## 50-T9 (P2) tool_config_dead_entries: an ignore, omit or override entry in `pyproject.toml` that names nothing that exists
 
@@ -286,7 +286,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`glob_fix.py`, `proto2.py`; globs translated with `**/` as zero-or-more directories, tracked files only): mlframe 3 after removing boilerplate and `exclude` entries: `per-file-ignores "src/mlframe/**/benchmarks/**"` (the real directories are `_benchmarks`, the line before it already covers them), `coverage omit "legacy/*"` (no `legacy/` directory), and `DEP002 "cupy"` (the project declares `cupy-cuda12x`, so the ignore targets a distribution that is not declared). pyutilz 0, llm_bench 0, glossum 0 (213 entries), algopacksimple 0 outside `exclude`. The first pass had 9 hits in mlframe of which 6 were FP (my glob matching treated `**` as one or more directories and flagged `docs/**/*.ipynb`, and a third-party `numba.*` override), which is why the spec fixes the glob semantics and limits the mypy rule to patterns that look first-party. Judgement on the first three: 2 clearly TP (the benchmarks glob, `legacy/*`), 1 needs the owner (`cupy`: the ignore may be intended for the import name, which deptry's DEP002 does not use).
 - **Impact:** configuration that looks like it protects something and does not.
 - **Proposed fix:** as above. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: owner decision needed first on the `cupy` DEP002 entry (import name vs distribution name, per the report), plus glob semantics for `**`. Not built this round.
 
 ## 50-T10 (P3) deprecated_docstring_without_warn: a function documented as deprecated that never calls `warnings.warn`
 
@@ -312,7 +312,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D6, non-test files): mlframe src 1, pyutilz src 0, glossum package 2, llm_bench 0. mlframe `training/composite/hpo.py:205` `cv_score` ("Deprecated alias of selection_score", a property that only returns): TP. glossum `importers/ruwordnet_importer/__init__.py:74` ("DEPRECATED: ... This function is disabled"): plausible TP (the body may raise instead; the spec would accept a `raise`). glossum `refsuite/sources/learner_errors_en.py:147` ("span.deprecated" in prose): FP, removed by matching only a first sentence that starts with "Deprecated" or "DEPRECATED". 2 TP, 1 FP of 3.
 - **Impact:** removals that surprise callers.
 - **Proposed fix:** new gate `deprecated_docstring_without_warn.py`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: advisory-first rollout (warn, then hard after one cycle) needs an owner decision on the cycle length. Not built this round.
 
 ## 50-T11 (P3) The 2026-11-11 claim "raise without `from` is COVERED by ruff B904" is wrong: `configs/ruff-base.toml` ignores B904
 
@@ -327,7 +327,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
   The 2026-11-11 table (`audits/2026-11-11/50_new_gate_mining.md`, "Already covered or tracked") says consumers select the `B` family so B904 is on; they inherit the base config, which switches it off.
 - **Impact:** a statement in the audit record that is false; the rule it said was covered is not enforced anywhere. The ignore is a reasoned shared decision ("stylistic"), so this is not a request to flip it: whether a lost `__cause__` matters (it is shown in tracebacks as "During handling of the above exception, another exception occurred" instead of "The above exception was the direct cause") is the owner's call.
 - **Proposed fix:** (a) record the correction in TRACKER (documentation only), (b) offer the rule as an opt-in report-only count in `format_warn` or a `ruff-strict.toml` fragment instead of re-adding it to the blocking base. ADDITIVE if (b). Not a behaviour change.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: the requested correction belongs in audits/TRACKER.md, which this round must not touch; the opt-in ruff-strict fragment needs an owner decision on whether B904 becomes report-only.
 
 ## 50-T12 (P1) append_only_log_shrink: a commit that replaces an append-only data file with a shorter one
 
@@ -340,7 +340,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured:** `shrink.py` over the first-parent history of the autopsia worktree (`23c730598`, read-only `git log`/`git show`): `bench/results/article_verdicts_checkpoint.jsonl.gz`, 68 commits touching it, 3 shrink commits: `a12306063` (2824 -> 1524 rows, a merge of origin/master), `4784f0ac2` (2837 -> 1527, a merge), `05a1209a4` (2889 -> 1586, "Track C batch 30"). All 3 are real row losses (about 1300 rows each), 0 FP; two are merge commits, which is the case `--verify` was built for, so a first-parent walk also catches merges that bypassed it. `bench/track_b_llm_cost_ledger.jsonl`, 400 commits, 0 shrinks. The documented `62721781` was not among them because the history walk was capped at 68 commits touching the file and that one may be outside the first-parent chain; I did not chase it. Noise on this evidence: 3 hits, 3 TP. Rank by the score table: I=3, N=3, E=2, total 8.
 - **Impact:** irreversible loss of paid data on a shared branch, silent at commit and merge time.
 - **Proposed fix:** new gate `append_only_log_shrink.py` (history scan, `find_*`/`assert_*` per `CLAUDE.md`, needs a `corpus_drift.BINDINGS` entry or `NON_CORPUS` reason). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED (P1, first of the deferrals to build): a git first-parent history gate with an append-only path config and a corpus_drift binding; not built this round.
 
 ## Second-tier survivors (measured, not in the top ten)
 
@@ -353,7 +353,7 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 - Detection: regex over string constants and f-strings (`{}` for the placeholder): `LIKE\s+'[^']*[A-Za-z0-9_]\{\}%'` and the bind forms `:name%`, `%s%`. Advisory; `# like-ok`.
 - Canary: violation `f"SELECT 1 FROM t WHERE id LIKE 'gls-{lang}-{lemma}%'"`; clean `f"... LIKE 'gls-{lang}-{lemma}-%'"` and `"... LIKE 'gls-en-%'"`.
 - Measured (`proto.py` D2): 0 hits in mlframe, pyutilz, glossum, llm_bench. No FP, no TP: ranked low because nothing exists today and the match is a heuristic.
-- Disposition: OPEN
+- Disposition: DEFERRED: heuristic with 0 hits today; ranked low by the report; no consumer demand yet.
 
 ## 50-T14 (P3) audit_metadata_in_comments: finding IDs, wave markers and date stamps in code comments (opt-in ratchet)
 
@@ -361,27 +361,27 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 - Not covered: `stale_comment_age` is about TODO and commented-out calls; `phantom_code_references` is about comments naming missing symbols.
 - Detection: `tokenize` comments only, regexes `finding-id`, `audit-dir`, `Wave N`, `loop iter N`, `20YY-MM-DD`; a `bench-attempt-rejected|VERDICT|REJECTED` comment is a preserved measurement and is skipped. Baseline ratchet, opt-in per repo.
 - Measured (`d16.py`, mlframe's exact regexes, comments only): mlframe src 20 (18 finding-id, 2 date), pyutilz src 116 (all dates), glossum package 791 (789 dates, 2 waves), llm_bench 1. First five in pyutilz (`core/disk_cache.py:93,99` version-history table, `database/deltalakes.py:117`, `database/db/execution.py:216`, `dev/attempt_archive.py:507`): TP by the mlframe rule, but pyutilz and glossum do not state this rule in their CLAUDE.md and their house style dates audit comments, so a hard shared gate would be a style imposition. Therefore opt-in baseline only, and not before the owner says the rule is cross-repo.
-- Disposition: OPEN
+- Disposition: DEFERRED: opt-in ratchet only, and the report says not before the owner confirms the rule is cross-repo.
 
 ## 50-T15 (P3) unpruned_tree_walk: a walk that enters `.claude/worktrees`
 
 - Source: pyutilz `test_no_unpruned_tree_walk.py`: agent worktrees under `<repo>/.claude/worktrees` are full copies; one consumer audit test took 19 to 30 minutes with about 20 of them. The helper `iter_files_pruned` exists in pyutilz.
 - Not covered: `_core/corpus.py` prunes for py-ci-shared's own scans; a consumer's own meta-test walker is not checked.
 - Measured (`d5.py`, receiver is a function parameter, no prune evidence in the file): src: mlframe 3, pyutilz 0, glossum 1, llm_bench 0; tests: mlframe 26 (mostly `tmp_path.rglob`, FP), pyutilz 20 (`tmp_path`, FP), glossum 23, llm_bench 9. Judgement of the first five src hits: 1 plausible TP (`mlframe/_nested_parallel_scan.py:139`, scans the root it is handed), 2 FP (benchmark scripts on a narrow tree), `glossum refsuite/split.py:91` FP (a fixed prompts directory). The meta-test walkers in glossum and llm_bench receive a `src` subtree from the caller, not the repo root, so they cannot enter `.claude`. Precision about 1 in 5 after excluding `tmp_path`: advisory at best, and only for functions whose parameter is documented as a repository root.
-- Disposition: OPEN
+- Disposition: DEFERRED: advisory at about 1 in 5 precision; only valid for functions whose parameter is documented as a repo root.
 
 ## 50-T16 (P3) logger_exception_outside_except: `logger.exception(...)` not lexically inside an `except`
 
 - Source: pyutilz `test_exception_logging_preserves_traceback.py` (a heartbeat callback logged from another thread and printed "NoneType: None").
 - Measured (`proto.py` D8): mlframe 0, pyutilz 0, glossum 1 (`glossum/api/main.py:393`, FP: a Starlette exception handler that the framework calls inside the `except` of its middleware). The test file in pyutilz itself documents that its broader design produced 38 hits and was cut back. Not worth a shared gate; recorded so nobody re-mines it.
-- Disposition: OPEN
+- Disposition: DEFERRED: the report records this as not worth a shared gate (0 true positives, 1 framework false positive).
 
 ## 50-T17 (P3) workflow_pull_request_only_gate: a workflow that runs pytest, mypy or ruff and triggers only on `pull_request`, in a repo that pushes straight to master
 
 - Source: mlframe `test_blocking_workflows_run_on_push.py`: twelve whole-project mypy errors reached master between 2026-09-11 and 2026-09-22 because `mypy-full.yml` had no automatic trigger.
 - Not covered: `ci_default_branch_never_cancelled` (cancellation), `ci_workflow_gate` (`continue-on-error`), `test_partition_reachability` (declared partitions).
 - Measured (`wf.py`, workflows whose text names pytest/mypy/ruff/py-ci-shared, trigger set has `pull_request` and not `push`): mlframe 2 (`dep-floors.yml` +schedule, `dependabot-auto-merge.yml`), pyutilz 1 (`dep-floors.yml` +schedule), others 0. Both `dep-floors.yml` hits run on a schedule so they do run unattended; `dependabot-auto-merge.yml` is PR-only by design. Precision 0 of 3 as stated, so a gate needs a per-repo "pushes to default" flag and an allow list; leave for a later round.
-- Disposition: OPEN
+- Disposition: DEFERRED: 0 of 3 hits as stated; needs a per-repo default-branch-push flag and an allow list the report leaves for a later round.
 
 ## Rejected after measurement (do not re-mine)
 
