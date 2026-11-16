@@ -2,4 +2,4 @@
 # (inclusive); after that day it fails as a stale-pin again. Each row is work in the consumer repo, not here: renew only with a reason, bump the pin otherwise.
 # The tolerance for everyone else stays `--allow-behind 2`.
 
-# No consumer needs a waiver today: every pin is within the tolerance. Add a [[waiver]] row (name, oldest, until, reason) only for work in the consumer repo.
+# Add a [[waiver]] row (name, oldest, until, reason) only for work in the consumer repo. The lag itself is what consumer-pins reports.

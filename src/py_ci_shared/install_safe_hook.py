@@ -28,10 +28,12 @@ Usage::
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Optional
 
 from ._core.baseline import replace_file
 
@@ -40,6 +42,28 @@ __all__ = ["main"]
 _TARGET = "-mpre_commit"
 _REPLACEMENT = "-m py_ci_shared.safe_precommit"
 _HOOK_NAMES = ("pre-commit", "pre-merge-commit")
+_INSTALL_PYTHON = re.compile(r"^INSTALL_PYTHON=(['\"]?)(.+?)\1\s*$", re.M)
+_PROBE = "import py_ci_shared.safe_precommit, pre_commit"
+
+
+def _interpreter_problem(hook_text: str) -> Optional[str]:
+    """Why the interpreter the hook bakes in cannot run the safe wrapper (47-T3); None when it can or when there is none.
+
+    A hook whose ``INSTALL_PYTHON`` is not a file falls back to ``pre-commit`` on PATH in pre-commit's own template, so nothing is probed there.
+    """
+    match = _INSTALL_PYTHON.search(hook_text)
+    if match is None or not Path(match.group(2)).is_file():
+        return None
+    python = match.group(2)
+    proc = subprocess.run([python, "-c", _PROBE], capture_output=True, timeout=120, check=False)
+    if proc.returncode == 0:
+        return None
+    lines = proc.stderr.decode("utf-8", "replace").strip().splitlines()
+    detail = lines[-1] if lines else f"exit {proc.returncode}"
+    return (
+        f"the hook's interpreter {python} cannot run the safe wrapper ({detail}). Install py-ci-shared and pre-commit into it, "
+        "or re-run `pre-commit install -f` from the project environment, then re-run install_safe_hook"
+    )
 
 
 def _git_rev_parse(*args: str) -> str:
@@ -61,6 +85,20 @@ def _hooks_dir() -> Path:
     answers both, and a linked worktree's shared hooks too)."""
     path = Path(_git_rev_parse("--git-path", "hooks"))
     return path if path.is_absolute() else Path.cwd() / path
+
+
+def _check_one(hook_path: Path) -> int:
+    """0 when the hook is patched (or pre-merge-commit does not exist yet), 1 when it is not (47-T4)."""
+    if not hook_path.exists():
+        if hook_path.name == "pre-commit":
+            print(f"{hook_path} does not exist: run `pre-commit install` first.")
+            return 1
+        return 0
+    if _REPLACEMENT.encode("utf-8") in hook_path.read_bytes():
+        print(f"{hook_path} is patched.")
+        return 0
+    print(f"{hook_path} is NOT patched: run `python -m py_ci_shared.install_safe_hook` in this clone.")
+    return 1
 
 
 def _patch_one(hook_path: Path) -> int:
@@ -85,6 +123,10 @@ def _patch_one(hook_path: Path) -> int:
             file=sys.stderr,
         )
         return 1
+    problem = _interpreter_problem(data.decode("utf-8", "replace"))
+    if problem is not None:
+        print(f"Not patching {hook_path}: {problem}.", file=sys.stderr)
+        return 1
 
     if hook_path.is_symlink():  # write_bytes follows the link, so the patch would land on whatever the link points at
         print(f"{hook_path} is a symlink; leaving it untouched.", file=sys.stderr)
@@ -99,8 +141,9 @@ def _patch_one(hook_path: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Patch the git hooks of the current repository to run through the safe pre-commit wrapper; returns 1 outside a git repository."""
-    if argv:
-        print(f"install_safe_hook takes no arguments; got: {' '.join(argv)}", file=sys.stderr)
+    check = argv == ["--check"]
+    if argv and not check:
+        print(f"install_safe_hook takes no arguments but --check; got: {' '.join(argv)}", file=sys.stderr)
         return 2
     try:
         hooks_dir = _hooks_dir()
@@ -108,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
         print("Not inside a git repository.", file=sys.stderr)
         return 1
 
-    results = [_patch_one(hooks_dir / name) for name in _HOOK_NAMES]
+    action = _check_one if check else _patch_one
+    results = [action(hooks_dir / name) for name in _HOOK_NAMES]
     return 1 if any(r != 0 for r in results) else 0
 
 

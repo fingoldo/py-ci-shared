@@ -45,5 +45,5 @@ def comment_mismatches(pins: list[Any], resolved: dict[str, Optional[str]], tag_
         if commit is None and known_tags:
             out.append((p, f"its comment names {tag}, which is not a release tag here"))
         elif commit is not None and commit != full:
-            out.append((p, f"its comment says {tag} (commit {commit[:7]}) but the pin is {full[:7]}: write `master {full[:7]}` or pin the tag commit"))
+            out.append((p, f"its comment says {tag} (commit {commit[:7]}) but the pin is {full[:7]}, which is not that release: pin {tag}'s commit {commit[:7]}, or change the comment to the release the pin is in"))
     return out

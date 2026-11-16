@@ -11,7 +11,7 @@ from py_ci_shared._core.git import git_env
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 _TEMPLATE = """#!/bin/sh
-INSTALL_PYTHON='/usr/bin/python3'
+INSTALL_PYTHON='/nonexistent-py-ci-shared-test/python3'
 ARGS=(hook-impl --config=.pre-commit-config.yaml --hook-type=pre-commit)
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ARGS+=(--hook-dir "$HERE" -- "$@")

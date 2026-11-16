@@ -26,9 +26,20 @@ which matters because a sweep costs hours and the habits cost nothing.
 
 `pyutilz` is a runtime dependency (real library code other repos `import`). Bundling CI tooling into it would couple tooling-script releases to runtime-code releases, and `pyutilz`'s own meta-tests (import-cycle checks, docstring-coverage snapshots, etc.) are specific to *its own* codebase structure — not generic/reusable against arbitrary consumer repos. Keeping this concern separate keeps both repos' release history clean.
 
+## Adopting in a new repo
+
+In this order (every consumer today pins a release SHA, see [Pinning and releases](#pinning-and-releases)):
+
+1. Add py-ci-shared as a dev dependency pinned to a release commit, with the release in a trailing comment: `py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@<release-sha>  # vX.Y.Z`.
+2. Enable gates in `[tool.py_ci_shared]` (one gate to start; see [Configuring gates](#configuring-gates-tool-py_ci_shared)).
+3. Add the pre-commit hooks `py-ci-shared-run-all` and `pinned-tool-versions` from `.pre-commit-hooks.yaml`, pinned to the same release.
+4. Run `python -m py_ci_shared.install_safe_hook` once per clone after `pre-commit install`, and `python -m py_ci_shared.install_safe_hook --check` to confirm it stayed patched.
+5. Set up the ruff shared config with `setup_env` (see [Using the shared ruff config](#using-the-shared-ruff-config)).
+6. Wrap each reusable workflow you use, pinned to the same release SHA with its `# vX.Y.Z` comment. Every SHA a bump changes is listed under [Pinning and releases](#pinning-and-releases).
+
 ## Using the reusable workflows
 
-A consuming repo's own workflow file becomes a thin wrapper:
+A consuming repo's own workflow file becomes a thin wrapper, pinned to a release commit (`@v1` also works, see below):
 
 ```yaml
 # .github/workflows/black-filtered.yml
@@ -38,14 +49,14 @@ on:
   pull_request: {branches: [main, master]}
 jobs:
   black:
-    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@v1
+    uses: fingoldo/py-ci-shared/.github/workflows/black-filtered.yml@<release-sha>  # vX.Y.Z
     with:
       check-path: src/mlframe
 ```
 
 See each workflow file's header comment for its full input list. Available workflows: `ruff-blocking.yml`, `black-filtered.yml`, `mypy-beachhead.yml`, `mypy-full.yml`, `lint-blocking.yml`, `lint-advisory.yml`, `docs.yml`, `gates.yml` (runs `py-ci-shared run-all` for the gates the repo lists under `[tool.py_ci_shared]`; off unless the caller passes `enabled: true`).
 
-**Use the moving `@v1` tag (2026-08-22 policy change).** `v1` always points at the latest `v1.x`
+**The moving `@v1` tag is also allowed (2026-08-22 policy change), though no consumer uses it today.** `v1` always points at the latest `v1.x`
 release, so cutting a release here propagates to every consumer at once — no per-repo SHA bump.
 Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which moves `v1` to it (see
 [Pinning and releases](#pinning-and-releases)); nobody re-points it by hand.
@@ -85,8 +96,10 @@ never shows up in any job log.
 ## Using the installable package
 
 ```bash
-pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git"
+pip install "py-ci-shared @ git+https://github.com/fingoldo/py-ci-shared.git@<release-tag>"
 ```
+
+An unpinned install tracks master and changes without a commit in your repo: install a release tag.
 
 To hack on this repo itself, install a local clone in editable mode instead, so edits under `src/py_ci_shared` take effect without reinstalling. The `[dev]` extra pulls in everything the test suite imports (`pytest`, `black`, `ruff`, `pydantic`, `pyutilz`, `pre-commit`, `numpy`, `sqlalchemy`, `pytest-cov`, `pytest-timeout` ...), so no test skips for a missing package; drop it for a runtime-only install:
 

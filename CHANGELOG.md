@@ -10,6 +10,28 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - New gates: a CHANGELOG bullet is now part of adding a gate; `CLAUDE.md` and the `new-gate` closing message say so. Nothing to do for existing consumers.
 
+- **Behaviour change** (47-T1, `adoption_matrix --grace-days N`, new, default 0): a fixed pin past `--allow-behind` is stale only once the oldest release it lacks is at least N days old. With the default nothing changes. What to do: to give owners a window after a release burst, pass `--grace-days 7` in `consumer-pins.yml`; without it, the release-count rule applies as before.
+
+- **Behaviour change** (47-T3, `install_safe_hook`): refuses to patch a hook whose `INSTALL_PYTHON` cannot import `py_ci_shared.safe_precommit` and `pre_commit`, naming the interpreter and the fix; `safe_precommit` reports a missing `pre-commit` in one line instead of a traceback. Commits in a clone with a broken hook interpreter were already blocked; now the patch fails first. What to do: if `install_safe_hook` now exits 1, run `pre-commit install -f` from the project environment, then re-run it.
+
+- **Behaviour change** (47-T7, `adoption_matrix`): a repo that imports py_ci_shared modules but pins no py-ci-shared now fails as `unpinned-use`. Nothing in the 11 repos on disk is affected today. What to do: pin py-ci-shared to a release in the repo's dev dependencies. The two other 47-T7 parts (adding `finance` to `configs/consumers.toml`, and a census of sibling repos not listed there) need the owner's decision and are not in this release.
+
+- **Behaviour change** (47-T9, `adoption_matrix` pin-comment wording): the `ci-pin-comment-not-release` text no longer suggests `master <sha>`, which names a branch for a commit that may be several releases old. Enabling `--strict-pin-comments` in `consumer-pins.yml` is NOT part of this release. What to do: none; correct any `# vX.Y.Z` comment the message names.
+
+- **Behaviour change** (47-T5, `adoption_sha_ref`): a pin to a workflow that does not declare `py-ci-shared-ref` at that SHA is no longer reported (it was a false warning). Only fewer warnings. What to do: nothing.
+
+- `install_safe_hook --check` (47-T4, new) exits 1 when a clone's hook is not patched; `.pre-commit-hooks.yaml` has `py-ci-shared-hooks-patched` (stage `manual`) for it. Nothing to do for existing consumers.
+
+- `adoption_sha_ref` (47-T6) takes positional repo roots like `adoption_matrix`, and `--resolve-in` defaults to the checkout the package runs from. Additive. Nothing to do for existing consumers.
+
+- Consumer-pins report (47-T10): findings of one rule about one pinned ref are one line, listing every file that carries them. Only the text changes. Nothing to do for existing consumers.
+
+- `ci_pin_version_skew` reports `ci-pin-installed-metadata-mismatch` when the imported module and the installed distribution metadata disagree (47-T13). Additive. What to do for a flagged clone: reinstall py-ci-shared.
+
+- Unknown `[tool.py_ci_shared]` key errors list the valid keys and the `enable = [...]` form (47-T12). Message only. Nothing to do.
+
+- README: new "Adopting in a new repo" section; the examples that tracked `@v1` or unpinned master now show a release pin (47-T11); `configs/pin_waivers.toml` no longer claims every pin is within tolerance (47-T2). Docs only. Nothing to do.
+
 - `scan_near_duplicate_function_body` (code_audit) false positives removed: a body that is one `return`/expression assembling module-level data (`return [*ROWS_A, *ROWS_B]`, names, attributes, literals, `+`/`|`, no call) is no longer compared, since two of them are structurally identical while holding different data; a `duplicate_function_body_subset` hit must now cover at least 30% of the container body (`_MIN_SUBSET_COVERAGE`, picked from the gap in the measured coverage of every hit in py-ci-shared and autopsia, listed beside the constant), so a short helper matching a slice of a long function is no longer reported; and a subset finding honours `# audit-exempt: duplicate_function_body_subset -- <reason>` on the container's `def` line (it had no marker at all). Only fewer findings; a baseline entry for a dropped hit goes stale and is pruned by the baseline refresh. No canary directory: this is a code_audit scanner, not a corpus gate.
 
 - `predictable_tmp_path` reports `mktemp` only when the call resolves to `tempfile.mktemp` (`import tempfile` / `import tempfile as tf` / `from tempfile import mktemp [as x]` / `from tempfile import *` / a `*.tempfile.mktemp` chain). It used to flag any call whose attribute was `mktemp`, including pytest's `tmp_path_factory.mktemp("x")` (a unique, race-free numbered directory), which gave a consumer 23 false positives. Only fewer findings; a consumer baseline entry for such a call is now stale and is pruned by the baseline refresh.

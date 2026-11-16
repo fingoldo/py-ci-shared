@@ -98,7 +98,9 @@ def test_unusable_installed_version_is_a_finding_not_a_pass(tmp_path):
     assert _rules(find_pin_skew_findings(root, installed_version="unknown")) == ["ci-pin-installed-unknown"]
 
 
-def test_default_installed_version_is_the_imported_package(tmp_path):
+def test_default_installed_version_is_the_imported_package(tmp_path, monkeypatch):
+    # 47-T13: a stale installed distribution is a finding of its own; this test is about the version default only.
+    monkeypatch.setattr("py_ci_shared.ci_pin_version_skew.installed_metadata_version", lambda: py_ci_shared.__version__)
     assert installed_py_ci_shared_version() == py_ci_shared.__version__
     root = _wf(tmp_path, {"a-ci.yml": f"- {USES % SHA}  # v{py_ci_shared.__version__}\n"})
     assert find_pin_skew_findings(root) == []
