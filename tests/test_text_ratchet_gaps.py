@@ -20,6 +20,7 @@ def _put(root: Path, rel: str, data: bytes) -> None:
 
 
 def test_skip_as_pass_reports_an_undecodable_file(tmp_path):
+    _put(tmp_path, "tool/ok.sh", b"echo hi\n")  # a parsed file, so the corpus floor is met
     _put(tmp_path, "tool/a.sh", b"# caf\xe9\n" + SKIP_BLOCK)
     assert list(find_skip_as_pass(tmp_path)) == ["tool/a.sh: unreadable"]
 
@@ -27,10 +28,12 @@ def test_skip_as_pass_reports_an_undecodable_file(tmp_path):
 def test_wallclock_reports_an_undecodable_test_file_but_not_an_undecodable_non_test(tmp_path):
     _put(tmp_path, "tests/a.py", b"# caf\xe9\nimport time\ntime.sleep(1)\n")
     _put(tmp_path, "src/lib.py", b"# caf\xe9\n")
+    _put(tmp_path, "tests/ok.py", b"x = 1\n")  # a parsed file, so the corpus floor is met
     assert list(find_wallclock_test_waits(tmp_path)) == ["tests/a.py: unreadable"]
 
 
 def test_git_child_env_reports_an_undecodable_test_file(tmp_path):
+    _put(tmp_path, "tests/test_ok.py", b"x = 1\n")  # a parsed file, so the corpus floor is met
     _put(tmp_path, "tests/test_a.py", b"# caf\xe9\n")
     assert list(find_unscrubbed_git_spawns(tmp_path)) == ["tests/test_a.py: unreadable"]
 
