@@ -253,7 +253,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D12 + `resolve_alias_writes`): mlframe src 0, pyutilz src 0, glossum 0, llm_bench 0 (mlframe fixed its instance). 0 FP.
 - **Impact:** a setting that appears to apply and does not; silent.
 - **Proposed fix:** new gate `global_write_via_reexport_alias.py`. ADDITIVE.
-- **Disposition:** DEFERRED: needs cross-file resolution of relative imports to the sibling module (the report's resolve_alias_writes). Not built this round.
+- **Disposition:** BUILT, HARD: `src/py_ci_shared/global_write_via_reexport_alias.py` (AST; `from . import mod as alias` and `from .sub import mod` resolve to sibling files; the facade is a re-exporter only when NAME is bound by an import and never by a module-level assignment, def or class), tests `tests/test_global_write_via_reexport_alias.py`, canaries `tests/canary/global_write_via_reexport_alias/`, fragment `tests/_gate_teeth_canaries_global_write_via_reexport_alias.py`, manifest `audits/2026-11-16/manifests/global_write_via_reexport_alias.json`. Measured read-only: pyutilz/src 0, mlframe/src 0. Not registered in registry.toml or the README (owner-owned files).
 
 ## 50-T8 (P3) thread_lifecycle: a non-daemon `threading.Thread` with no join, no `.daemon = True` and no context-manager owner
 
