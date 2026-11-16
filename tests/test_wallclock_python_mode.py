@@ -1,5 +1,5 @@
-"""``python_mode`` on the wall-clock gate: the default keeps the text rule every baseline was recorded with, and ``"ast"``
-flags only a real ``time.sleep`` call, with an unparsable file still held to the text rule."""
+"""``python_mode`` on the wall-clock gate: the default is the ``"ast"`` rule (a real wait call only), ``"text"`` keeps the
+rule every pre-1.23.12 baseline was recorded with, and an unparsable file is held to the text rule in both."""
 
 from __future__ import annotations
 
@@ -21,8 +21,12 @@ def _tree(tmp_path: Path, text: str) -> Path:
     return tmp_path
 
 
-def test_the_default_still_flags_a_wait_written_inside_a_string_literal(tmp_path: Path) -> None:
-    assert find_wallclock_test_waits(_tree(tmp_path, LITERAL_ONLY))
+def test_the_text_mode_still_flags_a_wait_written_inside_a_string_literal(tmp_path: Path) -> None:
+    assert find_wallclock_test_waits(_tree(tmp_path, LITERAL_ONLY), python_mode="text")
+
+
+def test_the_default_does_not_flag_a_wait_written_inside_a_string_literal(tmp_path: Path) -> None:
+    assert find_wallclock_test_waits(_tree(tmp_path, LITERAL_ONLY)) == {}
 
 
 def test_ast_mode_does_not_flag_text_inside_a_string_literal(tmp_path: Path) -> None:

@@ -87,13 +87,15 @@ def _python_sleep_lines(text: str) -> Optional[set[int]]:
     return lines
 
 
-def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "text", min_files: int = 1) -> dict[str, str]:
+def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "ast", min_files: int = 1) -> dict[str, str]:
     """``{key: description}`` for each line of a test file under *root* that waits on the wall clock.
 
-    ``python_mode="text"`` (the default, and what every existing baseline was recorded with) flags a line that contains
-    ``time.sleep(`` anywhere, including inside a string literal such as a fixture or a script that a test writes out.
-    ``python_mode="ast"`` flags only a real ``time.sleep`` call in a Python file, and falls back to the text rule for a file
-    that does not parse, so an unparsable file never escapes the gate. Dart is always matched by its text.
+    ``python_mode="ast"`` (the default) flags only a real wait call in a Python file: ``time.sleep``, ``asyncio.sleep``,
+    ``trio.sleep`` or ``anyio.sleep`` however it was imported (``from time import sleep`` included). A wait written inside a
+    string literal is not a wait. A file that does not parse falls back to the text rule, so an unparsable file never escapes
+    the gate. Dart is always matched by its text.
+    ``python_mode="text"`` flags a line that contains ``time.sleep(`` anywhere, including inside a string literal. It is the
+    rule every baseline recorded before 1.23.12 was written with; a refresh under it re-adds those keys.
     """
     if python_mode not in ("text", "ast"):
         raise ValueError(f"python_mode must be 'text' or 'ast', not {python_mode!r}")
@@ -120,7 +122,7 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
 
 
 def assert_no_new_wallclock_test_waits(
-    repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, python_mode: str = "text", min_files: int = 1
+    repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, python_mode: str = "ast", min_files: int = 1
 ) -> None:
     """Fail on a wall-clock wait in a test that the baseline does not accept (``tool/meta/baselines/wallclock_test_waits.json``)."""
     enforce_findings(
