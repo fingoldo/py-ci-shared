@@ -10,6 +10,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - `conceded_defect_pins` (audit 41-T7): a test whose def line or the comment lines above it carry `# comment-cites-ok: <reason>` (non-empty) is not listed; the concession words stay in the vocabulary. Nothing to do for consumers: the marker is new and the listing is unchanged for tests without it.
 
+- Internal (46-T2): `release_guard prepare` accepts `--published` as `X.Y.Z` or `vX.Y.Z`; a verify re-run after the release is published compares against the release before it (wiring test added). Nothing to do for consumers.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
