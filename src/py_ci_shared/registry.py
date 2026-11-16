@@ -79,6 +79,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_adoption_pins": "private part of adoption_matrix: the pin vocabulary (Pin, classify_ref) and per-file pin readers, split out for the 1000-LOC budget",
     "_ci_install_parts": "private part of ci_install_covers_conftest: markers, install arguments, conftest imports",
     "_dart_source": "source-text helpers of dart_scanners: comment stripping, string masking, bracket matching, finding keys",
+    "_phantom_vocabulary": "private part of phantom_code_references: the stdlib, SQL and repo-local-prefix vocabulary a backticked name may come from",
     "_gate_report": "the shared scan-and-report plumbing of the single-rule gates",
     "_import_graph": "private part of optional_imports_guarded and ci_install_covers_entry_imports: module-level imports, first-party reach, declared extras",
     "_gate_run": "the shared assert_* tail of the AST gates",
