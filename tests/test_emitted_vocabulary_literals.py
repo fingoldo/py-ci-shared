@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -152,6 +153,17 @@ def test_a_baseline_accepts_recorded_findings(tmp_path):
     # A refresh rewrites the baseline and skips the test that ran it, saying so.
     with pytest.raises(pytest.skip.Exception, match="rewritten"):
         assert_emitted_vocabulary_literals(root, sites=SITES, published=PUBLISHED, baseline_path=baseline, refresh=True, grow=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "emitted-vocabulary-literals::emit.py::Disclosure(kind) emits 'rebased', which the published vocabulary does not hold": (
+            "The finding emitted-vocabulary-literals::emit.py::Disclosure(kind) emits 'rebased' is seeded by "
+            "tests/test_emitted_vocabulary_literals.py::test_a_baseline_accepts_recorded_findings to exercise the unpublished-literal branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_emitted_vocabulary_literals(root, sites=SITES, published=PUBLISHED, baseline_path=baseline, use_git=False)
     (root / "emit.py").write_bytes(VIOLATION + b'Disclosure(kind="another")\n')
     with pytest.raises(BaseException, match="another"):

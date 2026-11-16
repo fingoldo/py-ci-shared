@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -18,7 +19,9 @@ def _find(tmp_path: Path, body: str, **kw):
 
 
 def test_device_error_handler_that_falls_back_silently_is_reported(tmp_path):
-    found = _find(tmp_path, "def f(x):\n    try:\n        return _s_gpu(cp.asarray(x))\n    except cp.cuda.memory.OutOfMemoryError:\n        return _s_cpu(x)\n")
+    found = _find(
+        tmp_path, "def f(x):\n    try:\n        return _s_gpu(cp.asarray(x))\n    except cp.cuda.memory.OutOfMemoryError:\n        return _s_cpu(x)\n"
+    )
     assert [(f.path, f.line, f.rule) for f in found] == [("m.py", 9, RULE)]
     assert "OutOfMemoryError" in found[0].message
 
@@ -107,6 +110,17 @@ def test_baseline_accepts_known_and_rejects_new(tmp_path, monkeypatch):
     base = tmp_path / "base.json"
     with pytest.raises(pytest.skip.Exception):
         assert_cuda_fallback_logged(corpus, baseline_path=base, refresh=True, use_git=False)
+    data = json.loads(base.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-fallback-not-logged::m.py::the broad handler `Exception` around GPU work neither logs nor re-raises: log the fallback with numbers (log_throttle / logger.warning) or mark `# fallback-logged-ok: <where it is logged>`": (
+            "The finding cuda-fallback-not-logged::m.py::the broad handler `Exception` around GPU work neither logs nor re-raises is seeded by "
+            "tests/test_cuda_fallback_logged.py::test_baseline_accepts_known_and_rejects_new to exercise the broad-handler-without-logging branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    base.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_cuda_fallback_logged(corpus, baseline_path=base, use_git=False)
     (corpus / "n.py").write_text(HEAD + "def g(x):\n    try:\n        cp.asarray(x)\n    except Exception:\n        x = 2\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):

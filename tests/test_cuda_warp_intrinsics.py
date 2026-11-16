@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -158,6 +159,17 @@ def test_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypatc
     base = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_cuda_warp_intrinsics(tmp_path, baseline_path=base, refresh=True, use_git=False)
+    data = json.loads(base.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-legacy-shfl::m.py::legacy `__shfl_down` has no `_sync` form: it compiles for sm_61 and is undefined for sm_70 and later (NVRTC error); use `__shfl_down_sync(0xffffffffu, ...)` with the participating-lane mask": (
+            "The finding cuda-legacy-shfl::m.py::legacy `__shfl_down` has no `_sync` form is seeded by "
+            "tests/test_cuda_warp_intrinsics.py::test_baseline_accepts_known_findings_and_fails_new_ones to exercise the legacy-shuffle branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    base.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_cuda_warp_intrinsics(tmp_path, baseline_path=base, use_git=False)
     (tmp_path / "n.py").write_bytes(_src("    x[0] = __shfl_xor(x[0], 1);"))
     with pytest.raises(pytest.fail.Exception):

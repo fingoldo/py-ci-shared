@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -101,6 +102,17 @@ def test_assert_message_and_baseline(tmp_path, monkeypatch):
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_cuda_grid_caps(root, baseline_path=baseline, refresh=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-literal-grid-cap::m.py::this launch grid is capped by the literal 64 in min(...): derive the cap from the device (multiProcessorCount x resident blocks x waves) or mark `# grid-ok: <reason>`": (
+            "The finding cuda-literal-grid-cap::m.py::this launch grid is capped by the literal 64 in min(...) is seeded by "
+            "tests/test_cuda_grid_caps.py::test_assert_message_and_baseline to exercise the literal-grid-cap branch of the gate, "
+            "and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_cuda_grid_caps(root, baseline_path=baseline, use_git=False)
     (root / "n.py").write_bytes(b"def f(k, x):\n    k((min(32, 3),), (128,), (x,))\n")
     with pytest.raises(pytest.fail.Exception):

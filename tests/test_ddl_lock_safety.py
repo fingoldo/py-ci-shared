@@ -294,6 +294,17 @@ def test_a_baseline_admits_old_findings_and_fails_on_a_new_one(tmp_path, monkeyp
     with pytest.raises(pytest.skip.Exception):
         assert_ddl_files_lock_safe(root, sql_dirs=["sql"], baseline_path=baseline, refresh=True, use_git=False)
     assert json.loads(baseline.read_text(encoding="utf-8"))
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "ddl-index-concurrently::sql/a.sql::CREATE INDEX i on t without CONCURRENTLY blocks every write for the whole build. Write CREATE INDEX CONCURRENTLY (outside any BEGIN block), or list t in tiny_tables with a reason": (
+            "The finding ddl-index-concurrently::sql/a.sql is seeded by "
+            "tests/test_ddl_lock_safety.py::test_a_baseline_admits_old_findings_and_fails_on_a_new_one to exercise the non-concurrent CREATE INDEX branch "
+            "of the gate, and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     assert_ddl_files_lock_safe(root, sql_dirs=["sql"], baseline_path=baseline, use_git=False)
     (root / "sql" / "b.sql").write_text("CREATE INDEX k ON t (d);\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception, match=r"b.sql"):

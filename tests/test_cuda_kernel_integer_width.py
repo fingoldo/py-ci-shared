@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -199,6 +200,17 @@ def test_the_assert_honours_a_baseline(tmp_path, monkeypatch):
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):  # a refresh writes the baseline and skips the test that asked for it
         _assert(root, baseline_path=baseline, refresh=True)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    reasons = {
+        "cuda-platform-long::m.py::C type `long` is 32 bits under NVRTC on Windows; use `long long`/`size_t`/`int64_t`: `long a = 0;`": (
+            "The finding cuda-platform-long::m.py::C type `long` is 32 bits under NVRTC on Windows is seeded by "
+            "tests/test_cuda_kernel_integer_width.py::test_the_assert_honours_a_baseline to exercise the platform-long branch of the gate, "
+            "and it is not a defect in repo code."
+        ),
+    }
+    for key, entry in data["entries"].items():
+        entry["note"] = reasons[key]
+    baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
     _assert(root, baseline_path=baseline)
     (root / "n.py").write_bytes(_mod("    long b = 0;"))
     with pytest.raises(pytest.fail.Exception):

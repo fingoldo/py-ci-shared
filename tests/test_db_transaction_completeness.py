@@ -227,4 +227,15 @@ class TestCorpusIntegrity:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_incomplete_transaction(files=[path], repo_root=tmp_path, baseline_path=baseline, refresh=True)
         assert "bad.py::load_prev_hashes::db" in baseline.read_text(encoding="utf-8")
+        data = json.loads(baseline.read_text(encoding="utf-8"))
+        reasons = {
+            "bad.py::load_prev_hashes::db": (
+                "The finding bad.py::load_prev_hashes::db is seeded by tests/test_db_transaction_completeness.py::"
+                "TestCorpusIntegrity::test_a_missing_baseline_fails_and_refresh_creates_it to exercise the missing-commit branch of the gate, "
+                "and it is not a defect in repo code."
+            ),
+        }
+        for key, entry in data["entries"].items():
+            entry["note"] = reasons[key]
+        baseline.write_bytes(json.dumps(data, indent=2, sort_keys=True).encode("utf-8"))
         assert_no_new_incomplete_transaction(files=[path], repo_root=tmp_path, baseline_path=baseline)
