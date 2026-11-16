@@ -162,7 +162,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 ## 40-T16 (P3) `fail_open_handlers.finite_guarded_reject` sees only a `continue` or a call named `reject*`
 - **Evidence:** `fail_open_handlers.py:420-440` (`_is_finite_test`, `_is_finite_guarded_reject`: "whose body rejects (`continue`, or a call naming `reject`)"). `b8.py`: control (`for x in xs: if math.isfinite(x) and x > thr: continue`) is flagged; `if math.isfinite(x) and x > thr: return False`, and `... : raise ValueError("too big")` in a predicate both return 0, though NaN/inf skip the rejection identically.
 - **Proposed fix:** count `return False/None/0`, `raise`, `break` and `.remove/.discard` as rejects. BEHAVIOUR CHANGE.
-- **Disposition:** DEFERRED. Counting return, raise, break and remove as rejects in finite_guarded_reject is a BEHAVIOUR CHANGE; not done in this round.
+- **Disposition:** RESOLVED. finite_guarded_reject counts `return` of False/None/0 (or bare), `raise`, `break`, `continue`, `.remove`/`.discard` and `reject*` calls as rejects. Red tests: `tests/test_fail_open_handlers.py::test_a_finite_guarded_reject_counts_return_raise_break_and_remove` (6 cases, 6 failed before the fix). CHANGELOG: Behaviour change (40-T16). Commit: see git log (`40-T16`).
 
 ## 40-T17 (P3) `no_xfail_to_defer`: `skipif(True, reason="bug")` is an unconditional skip the gate does not judge
 - **Evidence:** docstring "`skipif` (a condition on the environment) ... not judged". `b7.py`: `@pytest.mark.skipif(True, reason="bug")` and `@pytest.mark.skipif(1 == 1, reason="bug in code")` -> 0 findings, while `@pytest.mark.skip(reason="TODO fix later")` and `pytest.skip("flaky bug")` are flagged. `skipif` with a constant-true condition is `skip` by another spelling.
