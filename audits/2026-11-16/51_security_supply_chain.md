@@ -24,14 +24,14 @@ Re-confirmed this round (no new evidence, not re-raised): release environment wi
   two gates over the same tree disagree about what the corpus is. Same-trust (repository content), hence P3.
 - **Proposed fix:** in `iter_files_pruned` drop entries where `_is_regular_file` is false (a FIFO in the tree would otherwise block a read
   on POSIX; not reproducible on this Windows host). BEHAVIOUR CHANGE (a gate that scanned a symlinked file stops seeing it; CHANGELOG "Behaviour change", What to do: replace the link by the file).
-- **Disposition:** FIXED (this round): `iter_files_pruned` drops symlinks as `iter_files` does; red then green in tests/test_core_corpus_symlinks.py. CHANGELOG Behaviour change.
+- **Disposition:** FIXED (this round): `iter_files_pruned` drops symlinks as `iter_files` does; red then green in tests/test_core_corpus_symlinks.py. changelog Behaviour change.
 
 ## 51-T2 (P3) No size cap on files read by the scanning gates
 - **Evidence:** `read_bytes_cached` (source.py:98) does `Path.read_bytes()` whole; `_BYTES_MAX_FILE` bounds only the cache (source.py:100).
   Demo, one 260 MiB `.py` of comment lines through `parse_source`: `size MiB 260`, `seconds 6.6 peak MiB 780` (tracemalloc), about 3x the file size, no refusal.
 - **Impact:** a huge tracked file (or several, read in parallel by corpus_drift with --workers 4) can exhaust a runner and read as a crash instead of a finding. Repo content, so same-trust; P3.
 - **Proposed fix:** a `MAX_SCANNED_BYTES` (for example 16 MiB, env-overridable) in `read_bytes_cached`/`read_text_if_not_binary` raising `SourceReadError("larger than N bytes, not scanned")` so the file is reported, never silently skipped. BEHAVIOUR CHANGE (a legitimately huge generated .py turns red; What to do: exclude it or raise the env cap).
-- **Disposition:** FIXED (this round): `MAX_SCANNED_BYTES` (16 MiB, env `PY_CI_SHARED_MAX_SCANNED_BYTES`) enforced by `read_source`, `read_text_if_not_binary` and `parse_source`; red then green in tests/test_core_source.py::TestSizeCap. CHANGELOG Behaviour change. Residual: `repo_hygiene` and `gate_cache` still read raw bytes through `read_bytes_cached` without this cap (`repo_hygiene` treats an unreadable file as no finding, `gate_cache` hashes it as unreadable).
+- **Disposition:** FIXED (this round): `MAX_SCANNED_BYTES` (16 MiB, env `PY_CI_SHARED_MAX_SCANNED_BYTES`) enforced by `read_source`, `read_text_if_not_binary` and `parse_source`; red then green in tests/test_core_source.py::TestSizeCap. changelog Behaviour change. Residual: `repo_hygiene` and `gate_cache` still read raw bytes through `read_bytes_cached` without this cap (`repo_hygiene` treats an unreadable file as no finding, `gate_cache` hashes it as unreadable).
 
 ## 51-T3 (P3) CONSUMER_READ_TOKEN is a job-level `env:` in corpus-drift's snapshot job
 - **Evidence:** corpus-drift.yml:73-75 sets `CONSUMER_READ_TOKEN` (and ALLOW_SKIPPED_PRIVATE) in the job `env:`, so it reaches every step: `pip install -e`

@@ -156,7 +156,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
 | 49-T2 | P2 | `import_cycles` and ~30 other module `main`s crash on cp1251/cp1252 consoles; only `cli._print` is guarded |
 | 49-T3 | P2 | `_text_ratchet` gates print findings twice, the run-all row loses the guidance, a stale baseline reads "0 new violation(s)", the fix command does not exist |
 | 49-T4 | P2 | The printed refresh command names a label `refresh` rejects (8 gates) and omits `--grow` on a first seed |
-| 49-T5 | P2 | A PASS never says files read or findings accepted; `allow_unparsed` and `min_files = 0` passes are invisible |
+| 49-T5 | P2 | a PASS never says files read or findings accepted; `allow_unparsed` and `min_files = 0` passes are invisible |
 | 49-T6 | P2 | `git_dependency_pins` and `timezone_honest` list findings without the dependency or the line |
 | 49-T7 | P3 | `repo_hygiene` and five more sites cap lists at 10 to 50 with no "and M more" |
 | 49-T8 | P3 | Under Actions `budget = "fail"` exits 1 with no annotation; findings never reach the job summary |

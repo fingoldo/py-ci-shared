@@ -40,7 +40,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The `e1.py` sweep reproduces it for an empty directory and one with no `.py` (`assert_no_new_skip_as_pass`, `assert_no_new_wallclock_test_waits`, `assert_no_new_unscrubbed_git_spawns`, `assert_every_guard_named_by_a_test`: `PASS(no raise)`). Every other corpus gate has `min_files` and the entry contract test enforces it (`CLAUDE.md`, "Adding a gate"); these four are text-corpus gates the contract does not cover.
 - **Impact:** `repo_root=Path(__file__).parent` after a test file is moved, or `REPO/"src"`, makes the gate green forever with no signal.
 - **Proposed fix:** add `min_files: int = 1` to the four `assert_*` and `find_*`, counted over the files that survive the `under`/test-path filter (a repo with no `scripts/` at all sets `min_files=0` explicitly). BEHAVIOUR CHANGE (a repo with none of the scanned directories turns red until it sets `min_files=0`); CHANGELOG entry with `What to do:`.
-- **Disposition:** FIXED in this commit. text_ratchet require_text_floor raises CorpusError below min_files (default 1) for the four text ratchets; min_files=0 opts out. Red run: tests/test_gate_fn_2026_11_16.py (ImportError, then the T2 cases). CHANGELOG Behaviour change (1).
+- **Disposition:** FIXED in this commit. text_ratchet require_text_floor raises CorpusError below min_files (default 1) for the four text ratchets; min_files=0 opts out. Red run: tests/test_gate_fn_2026_11_16.py (ImportError, then the T2 cases). changelog Behaviour change (1).
 
 ## 40-T3 (P2) `repo_hygiene.assert_repo_hygiene`: a mistyped `workflows_dir` passes (floor defaults to 0)
 - **Evidence:** `repo_hygiene.py:296-300` (`find_unguarded_numeric_gates` returns `[]` when `workflows_dir` is not a directory) and `repo_hygiene.py:335-344,376-379` (`min_files: int = 0`; the `workflows_dir` branch only reports "no workflow files" when the directory EXISTS). `b9.py`, in a git repo with a numeric-compare workflow at `.github/workflows/ci.yml`:
@@ -52,7 +52,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   ```
 - **Impact:** the unguarded-numeric-gate check, the one that exists because a gate "reports success exactly when its input broke", is switched off by a one-letter typo in a path argument.
 - **Proposed fix:** when `workflows_dir is not None` and it is not a directory, add a problem ("workflows_dir does not exist"). ADDITIVE for any caller whose path is right; BEHAVIOUR CHANGE only for a caller already passing a wrong path (which is the bug).
-- **Disposition:** FIXED in this commit. repo_hygiene.find_workflows_dir_problems reports a workflows_dir that does not exist; assert_repo_hygiene includes it. CHANGELOG Behaviour change (1).
+- **Disposition:** FIXED in this commit. repo_hygiene.find_workflows_dir_problems reports a workflows_dir that does not exist; assert_repo_hygiene includes it. changelog Behaviour change (1).
 
 ## 40-T4 (P2) `credential_shaped_log_arg` sees only a bare name or attribute passed to a logger
 - **Evidence:** `code_audit/credential_logging.py:20-33` (`_CREDENTIAL_NAME_RE`, `_looks_credential_shaped` accepts only `ast.Name`/`ast.Attribute`), `:50-58` (`_is_logger_receiver`: name must end in `log`/`logger`), `:84-87` (positional args and keyword values only), `:89-91` (a 3-line window containing `mask`/`redact`/`scrub` anywhere exempts). `b5.py`, all returned 0 findings:
@@ -106,7 +106,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The docstring (`bare_except.py:49-52`) promises only a handler that "immediately re-raises (bare `raise`)".
 - **Impact:** `except: if debug: raise` is a common shape and swallows `KeyboardInterrupt`/`SystemExit` in the default branch, and neither bare_except nor broad_except nor (per its own rule) swallowed_exceptions reports it.
 - **Proposed fix:** exempt only a handler whose LAST top-level statement is a bare `raise` or whose `raise` is not under a conditional/nested def (reuse the `no raise reachable` logic `swallowed_exceptions` has); visit `ast.TryStar` (the other 8 modules already use `getattr(ast, "TryStar", ...)`); treat a tuple containing `BaseException` or `builtins.BaseException` as bare. BEHAVIOUR CHANGE.
-- **Disposition:** DEFERRED. Requiring the re-raise to be the handler last top-level statement and visiting ast.TryStar changes bare_except and broad_except results across consumers; needs a per-hit review and CHANGELOG entry; not done in this round.
+- **Disposition:** DEFERRED. Requiring the re-raise to be the handler last top-level statement and visiting ast.TryStar changes bare_except and broad_except results across consumers; needs a per-hit review and changelog entry; not done in this round.
 
 ## 40-T8 (P3) `mutable_default` visits only `def`, and recognises few mutable defaults
 - **Evidence:** `code_audit/mutable_defaults.py:56-90` (`_MUTABLE_FACTORIES`: defaultdict, OrderedDict, Counter, ChainMap, deque, ndarray, DataFrame, Series) and `:440-470` (only `FunctionDef`/`AsyncFunctionDef`). `b5.py`, 0 findings: `f = lambda x=[]: x`; `def f(x=[0]*3)`; `def f(x=[]+[])`; `def f(x=[i for i in r])`, `{k: 1 for k in ..}`, `{k for k in ..}`; `def f(x=bytearray())`; `np.zeros(3)`, `np.array([1])`; `array.array('i')`; `io.StringIO()`; `([],)`; a user class instance `C()`. Control `[]`, `set()`, `defaultdict(list)`, `collections.deque()`, `pd.DataFrame()` are flagged.
@@ -124,7 +124,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 - **Evidence:** `skip_as_pass.py:53` (`_PRINTS_SKIPPED` ends with `(?i:skipped)\b`). `b4.py`: a script with `echo "SKIPPED: no X"` then `exit 0` is flagged; the same script with `echo "SKIP: no X"` or `echo "Skipping the check"` followed by `exit 0` is not (`scripts/check2.sh`, `check3.sh`: not in the findings).
 - **Impact:** "Skipping ..." is the commonest wording of the pattern the gate bans (a check that did nothing and exits 0).
 - **Proposed fix:** accept `skip(?:ped|ping|s)?\b` and `SKIP:`. BEHAVIOUR CHANGE.
-- **Disposition:** FIXED in this commit. _PRINTS_SKIPPED and the _may_print_skipped prefilter accept skip, skipping and skips. CHANGELOG Behaviour change (2).
+- **Disposition:** FIXED in this commit. _PRINTS_SKIPPED and the _may_print_skipped prefilter accept skip, skipping and skips. changelog Behaviour change (2).
 
 ## 40-T11 (P3) `unsafe_deserialization`: any `save`/`dump` call, or any call whose name contains `verif`, exempts a later `pickle.loads`
 - **Evidence:** `unsafe_deserialization.py:107-108` (`_PRODUCERS = {"dump","dumps","save","to_pickle"}`, `_VERIFY = sha256|hmac|verif|sidecar`), used by `_verified_by_enclosing`/`_is_verifying_call` (`:442`, `:526`). `b2.py`, 0 findings each, though the loaded bytes are the request body:
@@ -152,7 +152,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 ## 40-T14 (P3) `sentinel_or_fallback` default names omit common siblings
 - **Evidence:** `sentinel_or_fallback.py:36-39` (`DEFAULT_SENTINEL_NAMES`). `b5.py`: `x.max_new_tokens or 100` returns 0 findings (`max_tokens`, `max_output_tokens`, `timeout`, `seed`, `n_jobs`, `retries`, `temperature` or-forms are flagged). Other zero-is-a-value settings absent: `max_new_tokens`, `num_workers`, `n_estimators`, `max_depth`, `top_n`, `min_samples`, `learning_rate`.
 - **Proposed fix:** add the names; the `names=` argument stays. BEHAVIOUR CHANGE.
-- **Disposition:** FIXED in this commit. Seven names added to DEFAULT_SENTINEL_NAMES. CHANGELOG Behaviour change (2).
+- **Disposition:** FIXED in this commit. Seven names added to DEFAULT_SENTINEL_NAMES. changelog Behaviour change (2).
 
 ## 40-T15 (P3) `env_flag_parsing`: `from os import environ as E`, and `int(...)` compared with a number
 - **Evidence:** `env_flag_parsing.py:68` (`self.environ_names: set[str] = {"environ"}`: only the literal name and `env = os.environ` assignments are tracked, an import alias is not) and the 40-F10 `bool(int(...))` rule only. `b5.py`, 0 findings: `from os import environ as E; if E.get("APP_X") == "1"`; `int(os.getenv("APP_X","0")) > 0`; `int(os.getenv("APP_X","0")) == 1`; `{"1": True}.get(os.getenv("APP_X"), False)`. Flagged: plain `from os import environ`, `from os import getenv`, `import os as _os`, walrus, constant key, f-string key, `in os.environ`.
@@ -167,7 +167,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 ## 40-T17 (P3) `no_xfail_to_defer`: `skipif(True, reason="bug")` is an unconditional skip the gate does not judge
 - **Evidence:** docstring "`skipif` (a condition on the environment) ... not judged". `b7.py`: `@pytest.mark.skipif(True, reason="bug")` and `@pytest.mark.skipif(1 == 1, reason="bug in code")` -> 0 findings, while `@pytest.mark.skip(reason="TODO fix later")` and `pytest.skip("flaky bug")` are flagged. `skipif` with a constant-true condition is `skip` by another spelling.
 - **Proposed fix:** evaluate a literal/constant condition (`True`, `1`, `1 == 1`) and judge it as `skip`. BEHAVIOUR CHANGE.
-- **Disposition:** FIXED in this commit. no_xfail_to_defer judges pytest.mark.skipif with a constant-true condition (literal, or a comparison of two literals) as an unconditional skip; environment conditions stay unjudged. CHANGELOG Behaviour change (2).
+- **Disposition:** FIXED in this commit. no_xfail_to_defer judges pytest.mark.skipif with a constant-true condition (literal, or a comparison of two literals) as an unconditional skip; environment conditions stay unjudged. changelog Behaviour change (2).
 
 ## 40-T18 (P3) extensionless Python scripts and an upper-case `.PY` are not scanned by code_audit
 - **Evidence:** `code_audit/_base.py:107` (`_PY_EXTS = (".py",)`, `name.endswith`, case-sensitive) and `_core` `scan_python` pattern `("*.py",)`. `b6.py`, a tree with `bin/deploy` (`#!/usr/bin/env python3`, `datetime.utcnow()` and a bare `except:`) and `upper.PY` (same body):
@@ -179,7 +179,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The core finds `upper.PY` only for gates that pass `include_stubs=True`; `hardcoded_seed_in_library` and `possibly_unbound_local` do not.
 - **Impact:** CLI scripts without an extension (`bin/*`, `scripts/deploy`) are real shipped Python.
 - **Proposed fix:** case-fold the extension in code_audit; optionally treat an extensionless file with a `python` shebang as a source file in `iter_files`. BEHAVIOUR CHANGE.
-- **Disposition:** DEFERRED (partly fixed). The upper-case .PY half is FIXED in this commit (code_audit _base case-folds the extension; CHANGELOG Behaviour change (2)). The extensionless-script half is DEFERRED: it needs a shebang rule in the shared _core iter_files, which changes the file set of about 60 core gates and their baselines at once; owner-visible, separate change.
+- **Disposition:** DEFERRED (partly fixed). The upper-case .PY half is FIXED in this commit (code_audit _base case-folds the extension; changelog Behaviour change (2)). The extensionless-script half is DEFERRED: it needs a shebang rule in the shared _core iter_files, which changes the file set of about 60 core gates and their baselines at once; owner-visible, separate change.
 
 ## 40-T19 (P3) `systemexit_in_library` does not see an import-time exit in a library module
 - **Evidence:** `systemexit_in_library.py` docstring: "inside a function". `b2.py`, 0 findings: a module with no `__main__` guard containing `if not sys.argv: sys.exit(1)` at module level; `lambda: sys.exit(1)`; `os.abort()`; `class A: sys.exit(1)`. Importing such a module from a worker thread or a test runner kills the importer, the failure the gate's docstring describes (a helper reachable from a thread).
@@ -199,7 +199,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 
 | candidate | evidence that rejected it |
 |---|---|
-| `hardcoded_seed_in_library` ignores `default_rng(42)` in a function with no seed parameter | docstring: "A function without such a parameter may hard-code a seed (that is a decision)". My first run lacked the parameter; with `seed=None` it is flagged. |
+| `hardcoded_seed_in_library` ignores `default_rng(42)` in a function with no seed parameter | docstring: "a function without such a parameter may hard-code a seed (that is a decision)". My first run lacked the parameter; with `seed=None` it is flagged. |
 | `predictable_tmp_path` ignores literal `/tmp/x`, `/var/tmp`, `/dev/shm`, `C:/Temp` | the rule is "a path built under `gettempdir()`" (docstring lines 3-9); literals are `machine_specific_paths` territory. |
 | `rollback_then_continue` baseline `add`+`commit` loop passes | docstring exempts a try whose body commits its own item, and says "false negatives are accepted". The 2026-11-07 40-F6 row covers receiver names. |
 | `check_then_act_outside_lock` misses `set.add`/`list.append`/`setdefault` acts, lazy singletons, `try/except KeyError`, a module that starts threads but builds no Lock | already tracked 40-F7 (2026-11-07, RESOLVED partial); the no-Lock case belongs to `module_cache_thread_safety` by docstring. |

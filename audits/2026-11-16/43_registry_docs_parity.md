@@ -60,12 +60,12 @@ Scaffolder run, totals: `py-ci-shared tool pytest_run` over `test_package_invent
 
 | id | sev | title |
 |---|---|---|
-| 43-T1 | P2 | No CHANGELOG entry for the core-only blocker `find_spec` change in `ci_install_covers_entry_imports` (71aeae0) |
-| 43-T2 | P3 | CLAUDE.md names `tests/test_gate_teeth.py` for `EXEMPT` and `parses=False`; both live in `tests/_gate_teeth_canaries.py` |
+| 43-T1 | P2 | No changelog entry for the core-only blocker `find_spec` change in `ci_install_covers_entry_imports` (71aeae0) |
+| 43-T2 | P3 | claude.md names `tests/test_gate_teeth.py` for `EXEMPT` and `parses=False`; both live in `tests/_gate_teeth_canaries.py` |
 | 43-T3 | P3 | `corpus-drift.yml` still special-cases `mlframe`, removed from `configs/consumers.toml` |
-| 43-T4 | P3 | CHANGELOG silent on mlframe leaving the consumer list and the pending corpus-drift baseline reset |
-| 43-T5 | P3 | TRACKER marks 30 rows "RESOLVED (uncommitted)" whose fixes are in HEAD (3 verified) |
-| 43-T6 | P3 | Scaffolder and CLAUDE.md never mention the CHANGELOG bullet a new gate needs |
+| 43-T4 | P3 | changelog silent on mlframe leaving the consumer list and the pending corpus-drift baseline reset |
+| 43-T5 | P3 | tracker marks 30 rows "RESOLVED (uncommitted)" whose fixes are in HEAD (3 verified) |
+| 43-T6 | P3 | Scaffolder and claude.md never mention the changelog bullet a new gate needs |
 
 ## Considered and not raised
 - Tags v1.0.0 to v1.16.1 without a CHANGELOG heading (30 tags): the file header states milestones only; tests require headings from v1.23.0 and v1.22 (43-R2 RESOLVED). Not new.

@@ -33,7 +33,7 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
   Demonstration on 3.14.3 (`scratchpad/audit_T/45/ts/run.py`): `a/m.py` has `def f()` with `try/except Exception: pass` (line 4) and `def h()` with `try/except* Exception: pass` (line 10); `tests/test_m.py` has the same pair around `pytest.skip`. Output: `scan_broad_except_swallows -> [4]` and `scan_except_skip_masks_call_under_test -> [4]`. The `except*` twins (lines 10 and 11) are not reported.
 - **Impact:** a consumer on 3.11+ that uses exception groups (asyncio TaskGroup code does) gets none of these gates on that code. Low frequency, but the gates are documented as covering `except` handlers, and 24 sibling modules already treat TryStar, so the two groups disagree.
 - **Proposed fix:** one constant `TRY_NODES = (ast.Try,) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())` in `_core` (or `code_audit/_base.py`) and replace the 23 `isinstance(x, ast.Try)` sites; a meta-test (AST over `src/`) that fails on `isinstance(..., ast.Try)` outside that constant, plus fixture tests with `except*`. ADDITIVE for the finders, but it can turn a green consumer red by finding new defects: classify BEHAVIOUR CHANGE (CHANGELOG entry with `What to do:`).
-- **Disposition:** FIXED: _core/ast_try.py TRY_NODES replaces every isinstance(..., ast.Try) test in src (about 40 sites); tests/test_try_star_gates.py covers two gates with except* and a meta-test. BEHAVIOUR CHANGE entry in CHANGELOG.
+- **Disposition:** FIXED: _core/ast_try.py TRY_NODES replaces every isinstance(..., ast.Try) test in src (about 40 sites); tests/test_try_star_gates.py covers two gates with except* and a meta-test. BEHAVIOUR CHANGE entry in changelog.
 
 ## 45-T3 (P2) `test_cross_interpreter_keys` can only find other interpreters on this Windows host: on every CI leg it skips, and it also swallows real crashes
 
@@ -48,7 +48,7 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
 - **Evidence:** `pyproject.toml:13` `requires-python = ">=3.9"`; classifiers `:18-23` carry only `Programming Language :: Python :: 3`. `self-ci.yml:44-58` runs 3.9, 3.10, 3.11, 3.12, 3.13, 3.15 blocking, 3.14 preview (`preview: true`, "until it has run green once"), Windows 3.9/3.13 preview, macOS 3.11 only. The README states no Python range (`grep -n "3\.9" README.md` only hits catalogue rows). Nothing wrong is claimed, but nothing is claimed either, so PyPI/pip and tooling cannot tell a consumer which of these were tested. 3.14 being preview while the 3.15 pre-release/GA leg is blocking is inverted relative to the owner's own interpreter (3.14); locally 3.14.3 passes everything I ran (30 + the earlier gate tests), so the promotion rule (10 green master runs) is the only thing keeping it advisory.
 - **Impact:** documentation only. A consumer on 3.14 sees no statement of support; the one interpreter the owner develops on is the one whose CI failure cannot block a release.
 - **Proposed fix:** add classifiers `Programming Language :: Python :: 3.9` ... `3.13` for the blocking legs (and 3.14 once promoted), add a "Supported Python" line to the README that lists the blocking and the preview legs, and add a test that compares classifiers with the blocking entries of the `self-ci.yml` matrix. ADDITIVE.
-- **Disposition:** FIXED: classifiers 3.9-3.13 and 3.15 in pyproject.toml, a Supported Python line in README, tests/test_python_classifiers_match_ci.py.
+- **Disposition:** FIXED: classifiers 3.9-3.13 and 3.15 in pyproject.toml, a Supported Python line in readme, tests/test_python_classifiers_match_ci.py.
 
 ## Summary table
 
@@ -57,7 +57,7 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
 | 45-T1 | P2 | 47 of 49 `python -m` mains write findings raw; a non-encodable char crashes the gate and loses the findings |
 | 45-T2 | P2 | 23 gate modules match `ast.Try` only, so `except*` handlers are never examined (demonstrated on 2 gates) |
 | 45-T3 | P2 | `test_cross_interpreter_keys` skips on every CI leg and swallows real crashes of the other interpreters; corpus has no 3.12+ syntax |
-| 45-T4 | P3 | No version classifiers/README range; support statement and CI matrix are not tied together |
+| 45-T4 | P3 | No version classifiers/readme range; support statement and CI matrix are not tied together |
 
 Counts: 0 P0, 0 P1, 3 P2, 1 P3.
 

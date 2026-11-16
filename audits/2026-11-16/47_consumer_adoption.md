@@ -32,7 +32,7 @@ No consumer uses `gates.yml`; dash_app_core, llm_bench and algopacksimple run `p
 - **Evidence:** `matrix.txt` summary: pyutilz, glossum_backend_scripts, flutter_app_core, noema_app, algopacksimple, claude-usage-notifier (and flutter_uptime_monitor, `m_two.txt`) are "2 releases behind" with exit 0; llm_bench, dash_app_core, social, polyvocab_app are 4, 4, 9, 13 behind and fail. `git for-each-ref refs/tags`: v1.23.8 and v1.23.9 were both created 2026-11-07, v1.23.10 and v1.23.11 both 2026-11-13. `pyproject.toml:7` is already `1.23.12`. A consumer that bumped to v1.23.9 on 2026-11-07 had three days of tolerance and is now one release from red; one more tag (1.23.12) makes seven consumers fail `stale-pin` in the same 05:17 run.
 - **Impact:** the tolerance exists to give owners time to bump; two patch tags cut the same day spend all of it. A release train that cuts several tags per day makes "2 behind" a few days at most, so the daily job reports a wall of red on the day after any release burst, and the useful signal (a consumer that is genuinely abandoned: polyvocab_app, 13 behind) is buried among consumers that are merely one day late.
 - **Proposed fix:** count lag in releases AND age: fail only when the pin is more than `--allow-behind` releases behind AND the first release it lacks is older than a grace period (`--grace-days N`, default 0 so nothing changes unless the workflow passes it; consumer-pins.yml would pass 7). `releases_behind` (`adoption_matrix.py`, near `:181`) already has the tag list; creator dates come from `git for-each-ref`. ADDITIVE (new flag, default off); turning it on in consumer-pins.yml is a workflow decision for the owner.
-- **Disposition:** FIXED (behaviour change, `--grace-days`, default 0; CHANGELOG: What to do).
+- **Disposition:** FIXED (behaviour change, `--grace-days`, default 0; changelog: What to do).
 
 ## 47-T2 (P3) `configs/pin_waivers.toml` says every pin is within tolerance; four consumers are not
 
@@ -146,11 +146,11 @@ No consumer uses `gates.yml`; dash_app_core, llm_bench and algopacksimple run `p
 | 47-T4 | P3 | No way to check a clone's hook is patched; 0 of 8 real clones are |
 | 47-T5 | P2 | `adoption_sha_ref` advises an input that three called workflows do not declare |
 | 47-T6 | P3 | `adoption_sha_ref` command line differs from `adoption_matrix` and cannot take a repo |
-| 47-T7 | P2 | A repo using py_ci_shared hooks with zero pins and no consumers.toml row is green and invisible (`finance`) |
+| 47-T7 | P2 | a repo using py_ci_shared hooks with zero pins and no consumers.toml row is green and invisible (`finance`) |
 | 47-T8 | P2 | Upgrading a pin is a manual edit of 14 to 28 lines in up to 9 files; no tool, no list |
 | 47-T9 | P3 | `ci-pin-comment-not-release` report-only; fires on 4 consumers; suggested wording wrong |
 | 47-T10 | P3 | One root cause becomes 7 to 25 identical findings |
-| 47-T11 | P3 | README has no adoption path; three stale examples |
+| 47-T11 | P3 | readme has no adoption path; three stale examples |
 | 47-T12 | P3 | Config error for an unknown `[tool.py_ci_shared]` key does not list valid keys |
 | 47-T13 | P3 | Installed copy is a stale release whose metadata disagrees with the module |
 

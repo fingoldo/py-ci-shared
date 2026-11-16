@@ -4,3 +4,9 @@ extern "C" __global__ void cnt(const unsigned char* codes, const long long n, in
     out[blockIdx.x] = (int)c4[threadIdx.x];
 }
 """
+_SRC2 = r"""
+extern "C" __global__ void rows(const unsigned char* counts, const int M, int* out) {
+    const int4* c = reinterpret_cast<const int4*>(counts + (long long)blockIdx.x * M);
+    out[blockIdx.x] = c[0].x;
+}
+"""

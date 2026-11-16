@@ -37,8 +37,8 @@ Not covered: algopacksimple, noema_app, social (Python), autopsia `src` (only it
 | module-level cache mutated without a lock (mlframe `no_unlocked_module_cache`) | `module_cache_thread_safety`, `check_then_act_outside_lock` |
 | `rglob` on test, deptry install, LOC budgets, markers, ruff pin, mypy beachhead | `loc_budget`, `pytest_markers`, `pinned_tool_versions`, `hook_hygiene` |
 | `.parquet`/JSON sort_keys, cancellation-prone moments, polars null equality, epsilon denominators | `hash_key_determinism`, `cancellation_prone_moments`, `polars_null_equality`, `epsilon_padded_denominators` |
-| text `open()` without `encoding=` (pyutilz `encoding_consistency`) | 2026-11-11 50-S7, WON'T FIX (TRACKER row 37). Not re-proposed. |
-| `while True` with sleep, dict mutated while iterated | 2026-11-11 50-S8, 50-S9 (TRACKER rows 38, 39). Not re-proposed. |
+| text `open()` without `encoding=` (pyutilz `encoding_consistency`) | 2026-11-11 50-S7, WON'T FIX (tracker row 37). Not re-proposed. |
+| `while True` with sleep, dict mutated while iterated | 2026-11-11 50-S8, 50-S9 (tracker rows 38, 39). Not re-proposed. |
 | items 50-R1 to 50-R6 | DEFERRED rows 89 to 94. Not re-proposed. |
 
 One earlier "covered" claim is wrong and is raised as a new finding: raise-without-`from` is NOT covered by ruff B904 (see 50-T11).
@@ -389,8 +389,8 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 |---|---|---|---|---|
 | D7 module dict inserted but never popped (pyutilz `dict_cache_has_eviction`) | pyutilz test | mlframe src 82, glossum pkg 5, glossum scripts 29 | 0 of 5 TP (`_FACTS`, `_DEPENDENCY_FILES`, `_PACKAGES`, `_FILTER_CACHE`, `_ENCODE_MEMO`: all keyed by a bounded set) | noise ~100%; the pyutilz test needs a hand-curated whitelist for the same reason |
 | D18 `popitem(last=False)` without `# evict-ok` (mlframe `bounded_eviction_drops_no_pending_work`) | mlframe test | mlframe src 31, pyutilz src 3 | 0 of 5 TP (LRU caches) | the real defect (an evicted entry that was pending work) is semantic; a marker on every LRU is adoption burden with no signal |
-| D19 any `pl.Categorical` use (mlframe polars string-cache trap) | mlframe CLAUDE.md | mlframe src 44, pyutilz 1 | 0 of 5 TP (casts, dtype checks) | the trap is comparing two independently built frames, not using the dtype |
-| D15 `df.drop(x)` with one positional argument (mlframe 2026-08-02 axis=0 bug) | mlframe CLAUDE.md | mlframe src 5, tests 2 | 0 of 5 TP (polars `drop`, drop of a row label by design) | receiver type is unknowable statically |
+| D19 any `pl.Categorical` use (mlframe polars string-cache trap) | mlframe claude.md | mlframe src 44, pyutilz 1 | 0 of 5 TP (casts, dtype checks) | the trap is comparing two independently built frames, not using the dtype |
+| D15 `df.drop(x)` with one positional argument (mlframe 2026-08-02 axis=0 bug) | mlframe claude.md | mlframe src 5, tests 2 | 0 of 5 TP (polars `drop`, drop of a row label by design) | receiver type is unknowable statically |
 | D21 `x is <builtin type>` | META_TEST_PROPOSALS REPORTING_A-1 | mlframe src 11, pyutilz 3 | `type(x) is tuple` idiom, intentional | no |
 | D22 `A or B if C else D` without parentheses | REPORTING_B-3 | 0 | none | zero hits; ruff has no rule; revisit only if a hit appears |
 | D23 `pd.DataFrame(rows)` then `sort_values` without an empty guard | COMPETITION_EVALUATION-8 | mlframe src 8 (crude) | detector is too loose to judge | not built |

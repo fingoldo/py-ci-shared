@@ -29,7 +29,7 @@ gates themselves is dimension 53).
 
 | probe | compute_61 | compute_70 | consequence |
 |---|---|---|---|
-| `INFINITY`, `NAN`, `FLT_MAX`, `INT_MAX`, `HUGE_VALF` in a kernel | `identifier "..." is undefined` | same | CUDA.md:376 names only `INFINITY`; the set is wider (six identifiers tested, all undefined) |
+| `INFINITY`, `NAN`, `FLT_MAX`, `INT_MAX`, `HUGE_VALF` in a kernel | `identifier "..." is undefined` | same | cuda.md:376 names only `INFINITY`; the set is wider (six identifiers tested, all undefined) |
 | `__int_as_float(0x7f800000)` | compiles | compiles | the documented workaround is sound |
 | legacy `__shfl_down(v, 1)` | compiles | `identifier "__shfl_down" is undefined` | a kernel written and tested on the Pascal dev host compiles there and breaks on the sm_89 machine |
 | legacy `__ballot(p)` | compiles | compiles (deprecated, no error on 12.9) | only the `__shfl*` family is removed on 12.9 |
@@ -43,18 +43,18 @@ gates themselves is dimension 53).
 
 Claims relied on, with their provenance (a rule whose only support is third party is ADVISORY):
 
-| claim in CUDA.md | provenance | status |
+| claim in cuda.md | provenance | status |
 |---|---|---|
-| `__syncthreads()` in conditional code is only defined when the condition is identical across the block | NVIDIA programming guide (my knowledge) | authoritative; HARD for a barrier inside a thread-dependent branch. A barrier after a thread-dependent `return` is in the same documented category, but real hardware counts exited threads as arrived, so ADVISORY |
-| sync intrinsics need a mask naming exactly the participating lanes; `__activemask()` inside a divergent region sees only the current path | NVIDIA programming guide + the "Using CUDA Warp-Level Primitives" developer blog (my knowledge) | authoritative |
-| `__shfl*` without `_sync` removed for sm_70+ | verified by NVRTC 12.9 above (`__shfl_down` undefined for compute_70) | verified |
-| a floating-point `atomicAdd` sum depends on arrival order | follows from non-associative FP add; the guide leaves atomic order unspecified | authoritative, but mlframe CLAUDE.md says bit-identity is not a requirement, so a determinism NOTE is the right strength (ADVISORY) |
+| `__syncthreads()` in conditional code is only defined when the condition is identical across the block | NVIDIA programming guide (my knowledge) | authoritative; HARD for a barrier inside a thread-dependent branch. a barrier after a thread-dependent `return` is in the same documented category, but real hardware counts exited threads as arrived, so ADVISORY |
+| sync intrinsics need a mask naming exactly the participating lanes; `__activemask()` inside a divergent region sees only the current path | NVIDIA programming guide + the "Using cuda Warp-Level Primitives" developer blog (my knowledge) | authoritative |
+| `__shfl*` without `_sync` removed for sm_70+ | verified by nvrtc 12.9 above (`__shfl_down` undefined for compute_70) | verified |
+| a floating-point `atomicAdd` sum depends on arrival order | follows from non-associative FP add; the guide leaves atomic order unspecified | authoritative, but mlframe claude.md says bit-identity is not a requirement, so a determinism NOTE is the right strength (ADVISORY) |
 | more than 48 KB dynamic shared memory per block needs `cudaFuncSetAttribute(MaxDynamicSharedMemorySize)` | NVIDIA programming guide | authoritative |
 | `float4` loads need 16-byte alignment | NVIDIA programming guide | authoritative |
 | shared tile `[32][33]`, bank = `(byte address / 4) % 32` | NVIDIA best practices guide | authoritative; the quoted "2 to 3x" gain is technillogue's and third party |
 | `const T* __restrict__` enables the read-only path | NVIDIA programming guide / best practices | authoritative; the size of the gain is not claimed |
-| occupancy 50% target, 25% fine when compute-bound, "grid at least the SM count", "avoid block size 1024", "two-pass preferred for reproducibility", "zeroed buffer hides a bug" | tensormux / Hugging Face / atrex (CUDA.md:43, 253-257) | third party, "to check, not to trust": ADVISORY only |
-| "32 resident blocks on sm_86" (CUDA.md:59) and "32 resident blocks on SM70 and later" (CUDA.md:253) | tensormux | WRONG per the NVIDIA compute-capability table as I know it: max resident blocks per SM is 32 for cc 6.x, 7.0, 8.0, 9.0 but 16 for 7.5 and 8.6 (24 for 8.9). See 54-T9 |
+| occupancy 50% target, 25% fine when compute-bound, "grid at least the SM count", "avoid block size 1024", "two-pass preferred for reproducibility", "zeroed buffer hides a bug" | tensormux / Hugging Face / atrex (cuda.md:43, 253-257) | third party, "to check, not to trust": ADVISORY only |
+| "32 resident blocks on sm_86" (cuda.md:59) and "32 resident blocks on SM70 and later" (cuda.md:253) | tensormux | WRONG per the NVIDIA compute-capability table as I know it: max resident blocks per SM is 32 for cc 6.x, 7.0, 8.0, 9.0 but 16 for 7.5 and 8.6 (24 for 8.9). See 54-T9 |
 | "block 1024 gives two blocks per SM on a 2048-thread SM" | tensormux | true only for cc 7.0, 8.0, 9.0; cc 7.5 holds 1024 threads per SM, cc 8.6 / 8.9 hold 1536 (one 1024 block) |
 
 ## Rule inventory (every actionable statement)
@@ -65,8 +65,8 @@ Legend: (a) gated, (b) static gate, (c) test-structure or documentation gate, (d
 
 | statement | class | where |
 |---|---|---|
-| 1: per-host fingerprint, kernels kept per version so the dispatcher chooses per host; a kernel that wins here can lose elsewhere | (d) | needs a second GPU |
-| 2.1 CPU kernel and fused GPU kernel both kept | (c) | mlframe-local regexes in `fe_gpu_coverage_inventory.contract_violations` (`@njit` and `RawKernel` text). Twin tests: (a) `njit_twin_untested`, `njit_twin_parity`. Centralise as part of G12 |
+| 1: per-host fingerprint, kernels kept per version so the dispatcher chooses per host; a kernel that wins here can lose elsewhere | (d) | needs a second gpu |
+| 2.1 CPU kernel and fused gpu kernel both kept | (c) | mlframe-local regexes in `fe_gpu_coverage_inventory.contract_violations` (`@njit` and `RawKernel` text). Twin tests: (a) `njit_twin_untested`, `njit_twin_parity`. Centralise as part of G12 |
 | 2.2 column-block streaming with a RAM and a VRAM bound, OOM falls back to the CPU kernel | (c) + (b) | block streaming is a name regex locally (`block_cols|column block|...`); the OOM fallback must be logged: G10. The bound itself: (d) |
 | 2.3 no bare `double`/`float` in kernel source, `{REAL}` values, `{ACC}` sums | (a) partly + (b) | (a) `cuda_kernel_pointer_types` rule `cuda-bare-double-pointer` covers pointer PARAMETERS only (it flags `double*` with no `{REAL}` among the parameters). The body, locals, `__shared__` arrays, scalar parameters, casts and FP literals are not seen. Local: `BARE_FP_TYPE` regex for the 139 "compliant" modules only. Gate G1 |
 | 2.4 dispatch through the kernel-tuning cache with a measured fallback | (c) | local regex `kernel_tuner\(`; G13 formalises the sweep placements; the choice itself (d) |
@@ -119,7 +119,7 @@ Legend: (a) gated, (b) static gate, (c) test-structure or documentation gate, (d
 
 | statement | class | where |
 |---|---|---|
-| stride rows to the budget before anything is built; convert and score by column blocks; two blocks of int8 codes at once | (d) | design; the incident (n x p int64 temporaries) is a host-memory design rule, not a CUDA-gate topic |
+| stride rows to the budget before anything is built; convert and score by column blocks; two blocks of int8 codes at once | (d) | design; the incident (n x p int64 temporaries) is a host-memory design rule, not a cuda-gate topic |
 | size the block from free memory (`cp.cuda.runtime.memGetInfo()`) | (c) weak | a streaming module without `memGetInfo`/`mem_info`/`free_bytes`: not measured, name-based, not recommended |
 | a memory bound is a test (`tracemalloc` peak under a quarter of one n x p matrix) | (c) weak | "module with block streaming has a test that calls `tracemalloc`"; not measured, not recommended (naming) |
 | fall back instead of failing (OOM / driver fault finishes on the CPU kernel and logs a warning) | (b) | G10 |
@@ -129,11 +129,11 @@ Legend: (a) gated, (b) static gate, (c) test-structure or documentation gate, (d
 
 | statement | class | where |
 |---|---|---|
-| synchronize inside the timed region | (a) | `gpu_timing_sync` (docstring: direct cupy/cuda/torch.cuda/numba.cuda calls, kernel launches `kern[b,t](...)`, injected callables in a GPU-aware module; `.cpu()/.item()/.numpy()/.tolist()` end a region). Its depth is dimension 53 |
-| measure three points: host, GPU resident, GPU with upload | (d) | benchmark design |
-| warm up, then time; exclude numba and NVRTC compilation | (c) | candidate D-P5: per-function detection is not viable (0 of 6 hits true), see Considered. `single_shot_timing_assertion` (a) is the existing neighbour |
+| synchronize inside the timed region | (a) | `gpu_timing_sync` (docstring: direct cupy/cuda/torch.cuda/numba.cuda calls, kernel launches `kern[b,t](...)`, injected callables in a gpu-aware module; `.cpu()/.item()/.numpy()/.tolist()` end a region). Its depth is dimension 53 |
+| measure three points: host, gpu resident, gpu with upload | (d) | benchmark design |
+| warm up, then time; exclude numba and nvrtc compilation | (c) | candidate D-P5: per-function detection is not viable (0 of 6 hits true), see Considered. `single_shot_timing_assertion` (a) is the existing neighbour |
 | beware memoized wrappers (time the uncached function, novel seeds) | (d) | |
-| cProfile is blind to async GPU work; nvprof percentages are serialization-distorted; a microbenchmark can lie; benchmark real shapes; contention dominates variance | (d) | all need a run or a human reading |
+| cProfile is blind to async gpu work; nvprof percentages are serialization-distorted; a microbenchmark can lie; benchmark real shapes; contention dominates variance | (d) | all need a run or a human reading |
 | profiler availability table (nvprof, nsys, ncu on Pascal) | (d) | host facts |
 | Nsight Compute reference: workflow, metric names, atrex bottleneck thresholds, caveats | (d) | a runtime report parser could implement the classifier table (library, not a gate); out of scope |
 | nvprof metric equivalents | (d) | |
@@ -144,10 +144,10 @@ Legend: (a) gated, (b) static gate, (c) test-structure or documentation gate, (d
 |---|---|---|
 | timings, speedups, counters of the pair residual test | (d) | measured on one host |
 | the fused kernel agrees with the CPU kernel for both REAL types and covers every pair once at block boundaries | (c) | G11 (dtype and boundary sub-rules) |
-| KTC sweep tolerance `max(1e-9, 8*eps(REAL))`; "KTC chooses more than one path" | (a-local) | `test_ktc_sweep_tolerances.py`, `test_ktc_dispatch_selects_more_than_one_path.py` (runtime, needs a measured cache) |
+| ktc sweep tolerance `max(1e-9, 8*eps(REAL))`; "ktc chooses more than one path" | (a-local) | `test_ktc_sweep_tolerances.py`, `test_ktc_dispatch_selects_more_than_one_path.py` (runtime, needs a measured cache) |
 | candidate optimizations not done | (d) | |
 | section 8 surveyed repositories, their rules and thresholds | (d) | third party; every rule taken from it is ADVISORY (see provenance table) |
-| "What to take" 1-7: profile before editing, bottleneck thresholds, ncu honesty rules, AKO4ALL benchmark protocol (discard first trial, warmups, median, fresh inputs, mutation sentinel), tensormux test plan (size sweeps, fixed seed, adversarial inputs, sanitizers in CI) | (c) / (d) | fixed seed and size sweeps: G11 sub-rules; sanitizer in CI: a workflow-text check for `compute-sanitizer`, no GPU CI exists in mlframe, (d); the rest (d) |
+| "What to take" 1-7: profile before editing, bottleneck thresholds, ncu honesty rules, AKO4ALL benchmark protocol (discard first trial, warmups, median, fresh inputs, mutation sentinel), tensormux test plan (size sweeps, fixed seed, adversarial inputs, sanitizers in CI) | (c) / (d) | fixed seed and size sweeps: G11 sub-rules; sanitizer in CI: a workflow-text check for `compute-sanitizer`, no gpu CI exists in mlframe, (d); the rest (d) |
 
 #### Section 10 (new-module checklist) and 11 (open items)
 
@@ -157,19 +157,19 @@ Legend: (a) gated, (b) static gate, (c) test-structure or documentation gate, (d
 | 10.2 CPU kernel first as the reference | (a) | `njit_twin_untested`, `njit_twin_parity` |
 | 10.3 `{REAL}`/`{ACC}`, one compiled module per type | (b) | G1, G9 |
 | 10.4 stream by column blocks; OOM fallback | (b) | G10 |
-| 10.5 register with the KTC, fallback heuristic, sweep over own axes | (c) | G13 (residency); registration presence is the local regex |
-| 10.6 tests: versions equal, streamed equals unblocked for several block widths, GPU equals CPU for both REAL types, every pair covered once, memory-bound test, regression test; GPU-vs-host equality on 2 or more independent seeds/datasets; port every tolerance from the production routine | (c) | G11 (seeds, dtype); "port every tolerance from the routine actually called" is (d) |
-| 10.7 profile: cProfile + GPU profiler, record in `profiles/<module>.md`; register-pressure registry; a spill must be fixed or exempted | (c) + (a) | G12; the registry: (a) `cuda_kernel_factories` |
+| 10.5 register with the ktc, fallback heuristic, sweep over own axes | (c) | G13 (residency); registration presence is the local regex |
+| 10.6 tests: versions equal, streamed equals unblocked for several block widths, gpu equals CPU for both REAL types, every pair covered once, memory-bound test, regression test; gpu-vs-host equality on 2 or more independent seeds/datasets; port every tolerance from the production routine | (c) | G11 (seeds, dtype); "port every tolerance from the routine actually called" is (d) |
+| 10.7 profile: cProfile + gpu profiler, record in `profiles/<module>.md`; register-pressure registry; a spill must be fixed or exempted | (c) + (a) | G12; the registry: (a) `cuda_kernel_factories` |
 | 10.8 move the module from `pending` to `compliant` | (a) | ratchet |
 | 10.9 check the profiler install before claiming it missing | (d) | |
 | 10.9 time as warmed back-to-back loop and report the min; state the ramp-inclusive median separately | (d) / (c) weak | |
 | 10.9 read the limiter before tuning the launch | (d) | |
 | 10.9 a kernel with a fallback needs tests asserting what the fallback received, plus one deletion mutation | (c) | needs call-graph knowledge of "which test exercises the fallback"; `mutation_teeth` (a) is the generic neighbour. Not formalised |
 | 10.9 do not let a failing device call end a request: log it, answer on the CPU kernel, an explicit env override raises | (b) | G10 |
-| 10.9 NVRTC through cupy has no `INFINITY` | (b) | G4 (wider than the sentence) |
+| 10.9 nvrtc through cupy has no `INFINITY` | (b) | G4 (wider than the sentence) |
 | 10.9 check the dynamic shared-memory request against the device limit, fall back above a budget | (b)/(c) | candidate D-P6, precision too low (below) |
 | 10.9 prepare tables on the device too | (d) | |
-| 10.9 persist the crossover as one monotone threshold from a sweep | (d) | KTC library |
+| 10.9 persist the crossover as one monotone threshold from a sweep | (d) | ktc library |
 | 11 open items (warp-private histograms, walk 90 pending modules, write a skill, device-derived widths, re-measure CPU-only kernels, spot-check thresholds) | (d) | work items. Disagreement recorded in 54-T10: "90 pending" vs 113 in the JSON |
 
 ## Gate specifications
@@ -715,11 +715,11 @@ _SPEC = kernel_tuner(
 | id | module | rule | what I measured | verdict |
 |---|---|---|---|---|
 | D9 | `cuda_unguarded_index` | global index `blockIdx*blockDim+threadIdx` with no comparison on it or on a variable derived from it | naive guard regex: 11 hits, 11 false positives (a guard like `row >= (long long)kc * pbc` or a grid-stride loop `for (i = t; i < M; ...)`); refined: 0 of 103 kernels that compute a global id | the corpus guards universally; zero-hit; not worth a module. Violation: `x[blockIdx.x*blockDim.x+threadIdx.x] = 1.0f;`. Clean: the same with `if (i < n)` |
-| P1 | `cuda_device_id` | `Device(0)`, `select_device(0)`, `getDeviceProperties(0)`, `"cuda:0"` in library code | 1 `Device(0)` and 2 `getDeviceProperties(0)` in `_benchmarks` (printing the GPU name), 2 `'cuda:0'` in docstring examples of `providers.py`; library code 0 | zero true hits; benign in benchmarks |
-| P3 | `cuda_transfer_in_loop` | `.get()`/`asnumpy`/`asarray`/`item()` inside a loop | broad: 214 sites in 64 files, the first five all legitimate block streaming or benchmarks (0 of 5 true). Refined to non-block-stride loops, library only: `item()` 0; `.get()/asnumpy` 7 sites in 4 files; judged: `_gpu_metrics.py:617-618` (a per-column loop calling the GPU AUC and copying back each time) TRUE (2 sites), three `out.append(cp.asnumpy(mi))` in `_streamed*` column-block loops FALSE (block results), `_fourier...:360` and `_usability_greedy_clf_batched.py:114` FALSE (a one-shot generator and a `hasattr` fallback). 2 of 7 true: 29%, at the limit | ADVISORY at best, not recommended; the right owner is CUDA.md section 15 (dimension 55) |
-| P5 | `cuda_timing_warmup` | timed GPU region with no earlier call of the same callee | 6 hits, 0 true: three are production timings for log lines (`_step_pairmi.py`, `polynom_pair_fe.py`), three are timing helpers whose warm-up is in the caller (`pair_mi_shared_fused_ab.py` warms in module scope before `run`, `bench_mi_from_codes_tiled.py::_timed_ms`) | a per-function rule cannot see module-scope warm-ups; not viable as written. A viable variant would need the call graph of a benchmark script |
+| P1 | `cuda_device_id` | `Device(0)`, `select_device(0)`, `getDeviceProperties(0)`, `"cuda:0"` in library code | 1 `Device(0)` and 2 `getDeviceProperties(0)` in `_benchmarks` (printing the gpu name), 2 `'cuda:0'` in docstring examples of `providers.py`; library code 0 | zero true hits; benign in benchmarks |
+| P3 | `cuda_transfer_in_loop` | `.get()`/`asnumpy`/`asarray`/`item()` inside a loop | broad: 214 sites in 64 files, the first five all legitimate block streaming or benchmarks (0 of 5 true). Refined to non-block-stride loops, library only: `item()` 0; `.get()/asnumpy` 7 sites in 4 files; judged: `_gpu_metrics.py:617-618` (a per-column loop calling the gpu AUC and copying back each time) TRUE (2 sites), three `out.append(cp.asnumpy(mi))` in `_streamed*` column-block loops FALSE (block results), `_fourier...:360` and `_usability_greedy_clf_batched.py:114` FALSE (a one-shot generator and a `hasattr` fallback). 2 of 7 true: 29%, at the limit | ADVISORY at best, not recommended; the right owner is cuda.md section 15 (dimension 55) |
+| P5 | `cuda_timing_warmup` | timed gpu region with no earlier call of the same callee | 6 hits, 0 true: three are production timings for log lines (`_step_pairmi.py`, `polynom_pair_fe.py`), three are timing helpers whose warm-up is in the caller (`pair_mi_shared_fused_ab.py` warms in module scope before `run`, `bench_mi_from_codes_tiled.py::_timed_ms`) | a per-function rule cannot see module-scope warm-ups; not viable as written. a viable variant would need the call graph of a benchmark script |
 | P6 | `cuda_dynamic_smem_limit` | non-constant `shared_mem=` with no limit comparison | 88 launches with `shared_mem=`, 52 non-constant with no limit comparison found by name in 31 files; the first five judged: `_added_information_gpu.py:108` (the candidates are pre-filtered by `fits`), `_cat_pair_joint_gpu.py:113` (`_MAX_CELLS = 8192`, 32 KB, documented at line 23), `_bootstrap_rank_mi_tied_gpu.py:339` (`_launch_shared_bytes` helper) are FALSE; `_kernels_cupy.py:352` benign (`2*k*8` with k bounded by the block) | the limit is checked through differently named constants; name matching fails. Not recommended; the NVIDIA rule is real, but the check would need value ranges |
-| P8 | `cuda_tuned_constants` | size comparison against a literal/constant selecting a GPU branch in a module with no KTC marker | name-based constants: 73 hits (first six: `_PARALLEL_THRESHOLD ... # measurement-backed fallback, used when the KTC has not tuned this shape yet`, `REGRESSION_THRESHOLD = 1.0` in a benchmark, ... all not violations or unclear). AST variant (compare against a constant of at least 256 selecting a branch that calls a GPU callable, module without any KTC marker): 2 sites, `_kernels_cupy.py:320 topk_ids.shape[1] > _MAX_STAGE4_K` FALSE (a capability guard), `discretization/_discretization_cuda.py:137 n_cols >= 1000` UNCLEAR (the dispatch may be tuned in another module) | zero reliable hits; not recommended |
+| P8 | `cuda_tuned_constants` | size comparison against a literal/constant selecting a gpu branch in a module with no ktc marker | name-based constants: 73 hits (first six: `_PARALLEL_THRESHOLD ... # measurement-backed fallback, used when the ktc has not tuned this shape yet`, `REGRESSION_THRESHOLD = 1.0` in a benchmark, ... all not violations or unclear). AST variant (compare against a constant of at least 256 selecting a branch that calls a gpu callable, module without any ktc marker): 2 sites, `_kernels_cupy.py:320 topk_ids.shape[1] > _MAX_STAGE4_K` FALSE (a capability guard), `discretization/_discretization_cuda.py:137 n_cols >= 1000` UNCLEAR (the dispatch may be tuned in another module) | zero reliable hits; not recommended |
 | P9 | | module constants `_THREADS = 256` | 47 hits in 41 files | already (a) `cuda-literal-block-size` of `cuda_launch_geometry` (the corpus suppresses them with `# launch-ok: one block per candidate is the design`) |
 | D15 | `cuda_block_size_shape` | `__launch_bounds__(N)` or a `THREADS`/`BLOCK` constant not a multiple of 32 | 0 hits in 155 sources | not recommended |
 | D17 | extension of `cancellation_prone_moments` | `x/n - m*m` variance pattern in kernel text | 0 hits in 208 kernels | `cancellation_prone_moments` does not read string constants, so a future kernel with the pattern is invisible; the corpus is clean today |
@@ -761,7 +761,7 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
 - **Evidence:** `nvrtc_probe.py`: `INFINITY`, `NAN`, `FLT_MAX`, `INT_MAX`, `HUGE_VALF` each give `identifier ... is undefined` on both architectures; `__int_as_float(0x7f800000)` compiles. CUDA.md:376 states only `INFINITY`. 0 uses in the corpus.
 - **Impact:** a kernel using `FLT_MAX` (the natural choice for a min-reduction seed) fails at first compile, which CPU-only CI never reaches.
 - **Proposed fix:** G4 `cuda_nvrtc_headers`; also widen the CUDA.md sentence. ADDITIVE.
-- **Disposition:** RESOLVED (62f3f61): new gate `cuda_nvrtc_headers`; NVRTC 12.9 leaves 17 macros undefined, all re-verified. Status 2026-11-16: RESOLVED, gate on master (commits 62f3f61 and c807641; `cuda_nvrtc_headers` tests pass in the 219-test targeted run).
+- **Disposition:** RESOLVED (62f3f61): new gate `cuda_nvrtc_headers`; nvrtc 12.9 leaves 17 macros undefined, all re-verified. Status 2026-11-16: RESOLVED, gate on master (commits 62f3f61 and c807641; `cuda_nvrtc_headers` tests pass in the 219-test targeted run).
 
 ## 54-T4 (P2) The residency contract of section 4 is declared by 1 of 72 `gpu_capable` registrations
 - **Evidence:** `grep -rn "gpu_capable=True"` over mlframe `src` = 76 sites (4 in `_benchmarks`); `grep -rn "residencies="` = 2 matches, one of them a docstring in `_ktc_fallback.py:31`, the other the only real declaration (`_unary_elementwise_tuning.py:95`).
@@ -804,7 +804,7 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
   fetch the page here: this is from my knowledge of the table, to be spot-checked at the Programming Guide's "Technical Specifications per Compute Capability". Also CUDA.md:253 "avoid 1024 (two blocks per SM on a 2048-thread SM)" holds only for cc 7.0, 8.0, 9.0.
 - **Impact:** the occupancy arithmetic in the doc is used to pick geometry for the sm_89 machine (CUDA.md:15), where the block limit is lower than quoted.
 - **Proposed fix:** correct the sentences in mlframe (outside this repo). A py-ci-shared `external_fact_tables` entry could pin the table with a dated check (that gate exists: `external_fact_tables.py`). ADDITIVE.
-- **Disposition:** DEFERRED: the statements are in mlframe's CUDA.md, not in this repository; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
+- **Disposition:** DEFERRED: the statements are in mlframe's cuda.md, not in this repository; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
 
 ## 54-T10 (P3) Internal disagreements and stale counts inside CUDA.md
 - **Evidence (each pair quoted from the file):** (1) CUDA.md:383 "Walk the 90 pending FE modules" against `_fe_gpu_contract.json`: pending 113, `n_pending_at_creation` 226 (compliant 139, exempt 63). (2) CUDA.md:46 "a launch costs about 5 to 20 us" against CUDA.md:200 "The GPU has a fixed cost of about 0.5 ms per launch": the second is the
@@ -813,13 +813,13 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
   (6) CUDA.md:376 names one NVRTC macro (54-T3).
 - **Impact:** a reader who computes a launch-bound crossover or a tolerance from the wrong sentence gets a wrong answer; section 8 already warns that extractions were made by a small model (CUDA.md:208, 388).
 - **Proposed fix:** edit the doc in mlframe; `prose_numeric_claims` (py-ci-shared) can pin the module counts ("90 pending") to the JSON. ADDITIVE.
-- **Disposition:** DEFERRED: the disagreements are inside mlframe's CUDA.md; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
+- **Disposition:** DEFERRED: the disagreements are inside mlframe's cuda.md; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
 
 ## 54-T11 (P2) GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident
 - **Evidence:** `detect_parity3.py` over `mlframe/tests` (snapshot): 72 tests that call a GPU-named and a host-named callable, build random data and compare, 5 with two or more seed sources, 59 with one literal seed, 8 with none. CUDA.md:367: "must pass on 2 or more independent seeds/datasets, not one fixture ... (`_fe_accuracy_gate_kernel.py`, 2026-11-11: converged on the first seed tried, diverged on 4/100 combos of a second)".
 - **Impact:** the incident class (a kernel that mirrors an iterative routine diverging on a boundary input) is untested by construction in most parity tests; the rule exists only as prose.
 - **Proposed fix:** G11 `cuda_parity_test_shape` as ADVISORY with a ratchet baseline of the 67. ADDITIVE.
-- **Disposition:** DEFERRED for the baseline seeding (the owner's decision in mlframe); the gate itself is in place from 62f3f61: new gate `cuda_parity_test_shape` (single-seed GPU-vs-host parity tests, ratchet baseline); 62 hits on mlframe. Status 2026-11-16: the gate's ratchet baseline is the consumer's own file (`baseline_path`); seeding it in mlframe is the owner's decision. DEFERRED (owner of mlframe), not a py-ci-shared defect.
+- **Disposition:** DEFERRED for the baseline seeding (the owner's decision in mlframe); the gate itself is in place from 62f3f61: new gate `cuda_parity_test_shape` (single-seed gpu-vs-host parity tests, ratchet baseline); 62 hits on mlframe. Status 2026-11-16: the gate's ratchet baseline is the consumer's own file (`baseline_path`); seeding it in mlframe is the owner's decision. DEFERRED (owner of mlframe), not a py-ci-shared defect.
 
 ## Considered and not raised
 
@@ -847,26 +847,26 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
 | rank | module | evidence for the rank |
 |---|---|---|
 | 1 | `cuda_kernel_fp_types` (G1) | The only gate with a real, currently-live contract violation outside every existing check: 5 type-generic sources in 4 files with bare `double`, none in the FE contract list, invisible to `cuda_kernel_pointer_types`; verified FP64 promotion (PTX `.f64` 4 vs 0); precision 5 of 5 on the five; centralises a rule that exists today only as a mlframe-local regex over 139 modules. Spec is simple and the marker removes intentional cases. |
-| 2 | `cuda_ktc_residency` (G13) | The largest measured gap against a written rule: 71 of 72 `gpu_capable` registrations declare nothing, and CUDA.md:70 says every one must. Exact AST detection with no false-positive risk in the detector; cost is a 71-entry baseline. It is the formal form of the section 4/6 residency lesson (a kernel that wins resident and loses end to end). |
+| 2 | `cuda_ktc_residency` (G13) | The largest measured gap against a written rule: 71 of 72 `gpu_capable` registrations declare nothing, and cuda.md:70 says every one must. Exact AST detection with no false-positive risk in the detector; cost is a 71-entry baseline. It is the formal form of the section 4/6 residency lesson (a kernel that wins resident and loses end to end). |
 | 3 | `cuda_profile_records` (G12) | Contract point 5 exists only as a copy-only mlframe inventory (475 lines). Measured: up to 48 of 91 kernel files without a record and 31 of 43 records incomplete. Library form lets py-ci-shared consumers (autopsia, pyutilz) adopt the contract without copying code. |
 | 4 | `cuda_parity_test_shape` (G11) | Backed by a real incident (4 of 100 combos diverged on a second seed); 67 of 72 current parity tests use one seed or none; precision about 60% on the five checked (3 true, 2 unclear). Needs a ratchet baseline from day one, hence below the exact-detection gates. |
-| 5 | `cuda_warp_intrinsics` (G2) | Verified on this host: `__shfl_down` compiles for compute_61 and is undefined for compute_70 on NVRTC 12.9. Zero hits today, but CPU-only CI cannot see the failure and a sm_89 machine exists; HARD rule is documented and verified; cheap regex; four canaries pass. |
-| 6 | `cuda_nvrtc_headers` (G4) | Verified: five identifiers undefined on NVRTC 12.9 (CUDA.md names one). Zero hits today, same blind spot as rank 5 (CPU-only CI never compiles the source); trivial detector; HARD. |
-| 7 | `cuda_atomic_determinism` (G5) | Real and common: 10 kernels in 9 sources / 6 files use FP atomics with no note, 5 of 5 judged true. ADVISORY because mlframe does not require bit-identity; value is that the gap between CUDA.md:48 and the code becomes visible and each exception is justified in writing. |
+| 5 | `cuda_warp_intrinsics` (G2) | Verified on this host: `__shfl_down` compiles for compute_61 and is undefined for compute_70 on nvrtc 12.9. Zero hits today, but CPU-only CI cannot see the failure and a sm_89 machine exists; HARD rule is documented and verified; cheap regex; four canaries pass. |
+| 6 | `cuda_nvrtc_headers` (G4) | Verified: five identifiers undefined on nvrtc 12.9 (cuda.md names one). Zero hits today, same blind spot as rank 5 (CPU-only CI never compiles the source); trivial detector; HARD. |
+| 7 | `cuda_atomic_determinism` (G5) | Real and common: 10 kernels in 9 sources / 6 files use FP atomics with no note, 5 of 5 judged true. ADVISORY because mlframe does not require bit-identity; value is that the gap between cuda.md:48 and the code becomes visible and each exception is justified in writing. |
 | 8 | `cuda_barrier_divergence` (G3) | Authoritative NVIDIA rule; 1 latent true positive found (`row_attention_stage4_fused`, three barriers after a thread-dependent `return`); the prototype's first run showed how easily taint analysis goes wrong (the `blockIdx.y` bug), which the canaries now pin. HARD for the in-branch form, ADVISORY for the return form. |
-| 9 | `cuda_fallback_logged` (G10) | Directly enforces mlframe CLAUDE.md "Say so when a gate makes a run slower" and CUDA.md:84, 375; 23 sites, 2 of 5 judged real (40%), all false positives are "logged in an outer handler" and a marker states it. ADVISORY because of the 40%. |
+| 9 | `cuda_fallback_logged` (G10) | Directly enforces mlframe claude.md "Say so when a gate makes a run slower" and cuda.md:84, 375; 23 sites, 2 of 5 judged real (40%), all false positives are "logged in an outer handler" and a marker states it. ADVISORY because of the 40%. |
 | 10 | `cuda_const_restrict` (G7) | Cheap, NVIDIA-documented, and the corpus follows the convention (726 of 1032 pointer parameters are `const`), so the one real hit (`compute_mi_from_classes_cuda`) is a clean signal; the prototype history (15 -> 5 -> 1 hits) is a warning about alias and nested-subscript handling that the spec records. Lowest value of the ten, but the lowest risk. Next in line, not in the ten: `cuda_kernel_cache` (G9, 15 of 15 caches recognised, 0 violations), `cuda_smem_bank_padding` (G6, 2 negligible hits). |
 
 | id | sev | title |
 |---|---|---|
 | 54-T1 | P2 | Kernel bodies with bare `double` sit outside every gate and outside the FE contract |
 | 54-T2 | P2 | Legacy `__shfl*` compiles on the Pascal host and fails on every sm_70+ target; no gate sees it |
-| 54-T3 | P2 | NVRTC lacks more than `INFINITY`; CUDA.md names one macro and no gate checks any |
+| 54-T3 | P2 | nvrtc lacks more than `INFINITY`; cuda.md names one macro and no gate checks any |
 | 54-T4 | P2 | The residency contract of section 4 is declared by 1 of 72 `gpu_capable` registrations |
 | 54-T5 | P2 | The profile-record contract is a mlframe-local regex over a hand-kept list; 48 of 91 kernel files have no record |
-| 54-T6 | P3 | Ten kernels use floating-point `atomicAdd` with no determinism note, against the narrative of CUDA.md:48 |
+| 54-T6 | P3 | Ten kernels use floating-point `atomicAdd` with no determinism note, against the narrative of cuda.md:48 |
 | 54-T7 | P3 | `row_attention_stage4_fused` places three barriers after a thread-dependent `return` |
 | 54-T8 | P3 | Silent device-fault fallbacks remain: two of five sampled handlers are real |
-| 54-T9 | P3 | CUDA.md states two hardware facts that contradict the NVIDIA table |
-| 54-T10 | P3 | Internal disagreements and stale counts inside CUDA.md |
-| 54-T11 | P2 | GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident |
+| 54-T9 | P3 | cuda.md states two hardware facts that contradict the NVIDIA table |
+| 54-T10 | P3 | Internal disagreements and stale counts inside cuda.md |
+| 54-T11 | P2 | gpu-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident |
