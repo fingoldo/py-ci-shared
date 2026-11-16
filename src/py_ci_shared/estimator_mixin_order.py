@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Union
 from collections.abc import Iterable
 
+from ._core import nodes_of
 from ._core.aliases import ImportAliases
 from ._core.findings import Finding
 from ._core.scan import scan_python
@@ -56,9 +57,7 @@ def _find_in_tree(tree: ast.AST, source: str, rel: str) -> list[Finding]:
     aliases = ImportAliases.from_tree(tree)
     lines = source.splitlines()
     out: list[Finding] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.ClassDef):
-            continue
+    for node in nodes_of(tree, ast.ClassDef):
         names = [aliases.qualified_name(b) for b in node.bases]
         if BASE not in names:
             continue

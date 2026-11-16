@@ -16,7 +16,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Union
 
-from ._core import Finding
+from ._core import Finding, child_nodes
 from ._core.scan import scan_python
 from ._core.source import comment_tokens
 from ._core.unparse import unparse_stable
@@ -44,7 +44,7 @@ def _import_time_nodes(tree: ast.Module) -> Iterator[ast.AST]:
             stack.extend(d for d in node.args.kw_defaults if d is not None)
             continue
         yield node
-        stack.extend(ast.iter_child_nodes(node))
+        stack.extend(child_nodes(node))
 
 
 def _waived_lines(source: str) -> set[int]:
