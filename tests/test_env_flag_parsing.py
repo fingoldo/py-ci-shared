@@ -187,3 +187,18 @@ def test_a_variable_the_file_also_uses_as_a_number_or_path_is_not_a_switch(tmp_p
     """Audit 41-F6: routing P_RETRIES=3 through a boolean parser would turn it into True."""
     p = _write(tmp_path, "m.py", source)
     assert bool(find_hand_parsed_env_flags([p], tmp_path, ["P_"])) is flagged
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # 40-T15: an import alias of os.environ or os.getenv is the same read
+        "from os import environ as E\nif E.get('P_X') == '1':\n    pass\n",
+        "from os import getenv as ge\nif ge('P_X') == '1':\n    pass\n",
+        # an int(env) compared with a number is a flag read as well
+        "import os\nif int(os.getenv('P_X', '0')) > 0:\n    pass\n",
+        "import os\nok = int(os.getenv('P_X', '0')) == 1\n",
+    ],
+)
+def test_aliased_environ_and_int_of_a_flag_compared_with_a_number_are_reported(tmp_path, source):
+    assert [r.var for r in find_hand_parsed_env_flags([_write(tmp_path, "m.py", source)], tmp_path, ["P_"])] == ["P_X"]

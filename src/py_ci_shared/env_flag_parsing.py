@@ -25,7 +25,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
-from ._core import ScanResult, scan_python
+from ._core import ImportAliases, ScanResult, scan_python
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["EnvFlagRead", "find_hand_parsed_env_flags", "assert_env_flags_use_one_parser"]
@@ -66,6 +66,11 @@ class _Ctx:
         self.prefixes = tuple(p.lower() for p in prefixes)
         self.strings: dict[str, str] = {}
         self.environ_names: set[str] = {"environ"}
+        self.getenv_names: set[str] = {"getenv"}
+        # `from os import environ as E` and `from os import getenv as ge` read the same environment
+        aliases = ImportAliases.from_tree(tree)
+        self.environ_names |= {local for local, target in aliases.mapping.items() if target == "os.environ"}
+        self.getenv_names |= {local for local, target in aliases.mapping.items() if target == "os.getenv"}
         self.bound: dict[str, str] = {}
         counts: dict[str, int] = {}
         pending: list[tuple[str, ast.AST]] = []
@@ -103,6 +108,8 @@ class _Ctx:
         if isinstance(target, ast.Call):
             func = target.func
             attr = getattr(func, "attr", getattr(func, "id", None))
+            if isinstance(func, ast.Name) and func.id in self.getenv_names:
+                attr = "getenv"
             if attr in {"getenv", "get"} and target.args:
                 ok = attr == "getenv" or _is_environ(getattr(func, "value", None), self.environ_names)
                 name = self._key(target.args[0]) if ok else None
@@ -132,12 +139,25 @@ def _boolean_literals(node: ast.AST) -> bool:
     return bool(items) and all(isinstance(i, ast.Constant) and isinstance(i.value, str) and i.value.lower() in _BOOL_WORDS for i in items)
 
 
+def _int_argument(node: ast.AST) -> ast.expr | None:
+    """The argument of an ``int(x)`` call, or None for anything else."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "int" and len(node.args) == 1:
+        return node.args[0]
+    return None
+
+
 def _compare_shape(node: ast.Compare, ctx: _Ctx) -> list[tuple[str, str]]:
     if isinstance(node.ops[0], (ast.In, ast.NotIn)) and _is_environ(node.comparators[0], ctx.environ_names):
         key = ctx._key(node.left)
         if key is not None and any(key.lower().startswith(p) for p in ctx.prefixes):
             return [(key, "presence test (`X in os.environ`: FLAG=0 turns it on)")]
         return []
+    inner = _int_argument(node.left)
+    right = node.comparators[0]
+    if inner is not None and isinstance(right, ast.Constant) and isinstance(right.value, (int, float)):
+        # `int(os.getenv("FLAG", "0")) > 0`: the ad-hoc 0/1 parse, compared with a number
+        var = ctx.read(inner)
+        return [(var, f"int(<read>) compared with {right.value!r}")] if var else []
     var = ctx.read(node.left)
     if var is None:
         return []
@@ -202,8 +222,10 @@ def _numeric_vars(tree: ast.Module, ctx: _Ctx) -> frozenset[str]:
     nodes = list(_fast_walk(tree))
     # ``bool(int(read))`` is the hand-parsed switch itself, not a numeric use
     switch_parses = {id(n.args[0]) for n in nodes if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "bool" and len(n.args) == 1}
+    # ``int(read) > 0`` is the same ad-hoc switch parse: the int() operand of a comparison is not a numeric use either
+    compared_ints = {id(n.left) for n in nodes if isinstance(n, ast.Compare) and _int_argument(n.left) is not None}
     for node in nodes:
-        if id(node) in switch_parses:
+        if id(node) in switch_parses or id(node) in compared_ints:
             continue
         for value in _consumed_values(node):
             var = ctx.read(value)
