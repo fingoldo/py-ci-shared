@@ -33,7 +33,7 @@ class TestFinding:
 
 class TestMultiset:
     def test_a_duplicate_finding_is_not_absorbed_by_one_entry(self, tmp_path):
-        b = Baseline(tmp_path / "b.json")
+        b = Baseline(tmp_path / "b.json", new_note="reason")
         b.enforce([_f("x", 1)], refresh=True)
         outcome = b.enforce([_f("x", 1), _f("x", 2)])
         assert not outcome.ok and outcome.new == ["rule::a.py::x"]
@@ -41,7 +41,7 @@ class TestMultiset:
         assert b.enforce([_f("x", 1), _f("x", 2)]).ok  # control: both accepted
 
     def test_fewer_than_accepted_is_stale_and_fails(self, tmp_path):
-        b = Baseline(tmp_path / "b.json")
+        b = Baseline(tmp_path / "b.json", new_note="reason")
         b.enforce([_f("x"), _f("x")], refresh=True)
         outcome = b.enforce([_f("x")])
         assert not outcome.ok and not outcome.blocking and outcome.stale == ["rule::a.py::x"]
@@ -49,7 +49,7 @@ class TestMultiset:
         assert clean.stale == [] and clean.ok
 
     def test_a_surplus_count_cannot_be_refilled_for_free(self, tmp_path):
-        b = Baseline(tmp_path / "b.json")
+        b = Baseline(tmp_path / "b.json", new_note="reason")
         b.enforce([_f("x"), _f("x"), _f("x")], refresh=True)
         assert not b.enforce([_f("x")]).ok  # two slots are now free
         b.enforce([_f("x")], refresh=True)  # the refresh shrinks the count to 1
@@ -78,7 +78,8 @@ class TestMissingAndRefresh:
         assert outcome.refreshed and b.path.exists()
         with pytest.raises(pytest.skip.Exception):
             outcome.raise_for_pytest()
-        assert b.enforce([_f("x")]).ok
+        # 42-T1: a refresh records the finding with the marker, so the next normal run is red until a reason is written.
+        assert b.enforce([_f("x")]).unjustified == ["rule::a.py::x"]
 
     def test_refresh_keeps_notes_and_marks_new_entries_when_asked(self, tmp_path):
         p = tmp_path / "b.json"
@@ -138,7 +139,7 @@ class TestFormatsAndWrites:
     def test_every_committed_format_reads(self, tmp_path, payload, expected):
         p = tmp_path / "b.json"
         p.write_text(json.dumps(payload), encoding="utf-8")
-        assert dict(Baseline(p).load()[0]) == expected
+        assert dict(Baseline(p, gate="g").load()[0]) == expected
 
     def test_orjson_written_bytes_read(self, tmp_path):
         orjson = pytest.importorskip("orjson")

@@ -38,7 +38,6 @@ import ast
 import dataclasses
 import importlib
 import inspect
-import json
 import re
 import types
 import typing
@@ -48,6 +47,8 @@ from collections.abc import Iterable
 from typing import Any, Callable, Optional
 import logging
 
+from ._core.baseline import UNJUSTIFIED_MARKER, _parse_entries, is_unjustified, load_json
+from ._core.errors import BaselineError
 from ._core.git import GitError, run_git
 from ._core.node_index import nodes_of
 from ._core.source import parse_source
@@ -613,22 +614,6 @@ def assert_fields_roundtrip(
 # ---------------------------------------------------------------------------
 
 
-def _baseline_entry_keys(data: object) -> set[str]:
-    """The entry keys of a baseline: unwrapped from ``accepted`` or ``entries`` when it has one of those, and without the
-    ``_``-prefixed metadata keys. A ``{"schema", "gate", "entries"}`` file gives its entries, not its header keys (42-F15)."""
-    if isinstance(data, list):  # a bare list of keys, as the ratchet has always read it
-        return {str(item) for item in data}
-    if not isinstance(data, dict):
-        return set()
-    for wrapper in ("accepted", "entries"):
-        if isinstance(data.get(wrapper), dict):
-            data = data[wrapper]
-            break
-    if not isinstance(data, dict):
-        return set()
-    return {key for key in data if not str(key).startswith("_")}
-
-
 def findings_ratchet(findings: Iterable[str], baseline_path: Path) -> tuple[list[str], list[str]]:
     """Diff ``findings`` against a committed JSON baseline, returning ``(new, drained)``.
 
@@ -639,10 +624,17 @@ def findings_ratchet(findings: Iterable[str], baseline_path: Path) -> tuple[list
     test asserting the baseline is EMPTY, so the debt stays visible instead of being absorbed.
 
     A missing baseline file is treated as an empty baseline, so the first run reports everything.
+
+    The file is read as ``_core.baseline`` reads it (BOM tolerated, a duplicated key an error, metadata names only dropped), and
+    an entry still carrying the unjustified marker, or with no note, raises :class:`BaselineError` (42-T3, 42-T2).
     """
     known: set[str] = set()
     if baseline_path.exists():
-        known = _baseline_entry_keys(json.loads(baseline_path.read_text(encoding="utf-8")))
+        counts, notes = _parse_entries(load_json(baseline_path), baseline_path)
+        known = set(counts)
+        marked = sorted(k for k in known if is_unjustified(notes.get(k)))
+        if marked:
+            raise BaselineError(f"{baseline_path}: {len(marked)} entr(ies) still marked {UNJUSTIFIED_MARKER!r}: {marked[0]!r}")
     current = set(findings)
     return sorted(current - known), sorted(known - current)
 

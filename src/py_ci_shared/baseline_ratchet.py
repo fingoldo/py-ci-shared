@@ -49,13 +49,33 @@ import sys
 from collections.abc import Mapping
 from typing import Optional
 
-from ._core.baseline import UNJUSTIFIED_MARKER, _reject_duplicate_keys, atomic_write_text, dump_json, is_unjustified, write_ratchet
+from ._core.baseline import (
+    _META_KEYS,
+    DEFAULT_NEW_NOTE,
+    UNJUSTIFIED_MARKER,
+    _reject_duplicate_keys,
+    atomic_write_text,
+    dump_json,
+    is_unjustified,
+    write_ratchet,
+)
 from ._core.errors import BaselineGrowthError
 
 __all__ = ["Baseline", "DEFAULT_DIRECTORY", "DEFAULT_REFRESH_COMMAND", "run_rules"]
 
 DEFAULT_DIRECTORY = os.path.join("tool", "meta", "baselines")
 DEFAULT_REFRESH_COMMAND = "python tool/meta/regen_baselines.py"
+
+
+def _note_text(path: str, key: str, value: object) -> str:
+    """The note of one entry in either shape; a null note reads as blank. A non-text note is an error, not an accepted entry (42-T4)."""
+    if isinstance(value, dict):
+        value = value.get("note", "")
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise ValueError(f"{path}: entry {key!r} has a {type(value).__name__} note; expected text")
+    return value
 
 
 class Baseline:
@@ -93,8 +113,10 @@ class Baseline:
             accepted = data["accepted"]
             if not isinstance(accepted, dict):
                 raise ValueError(f"{self.path}: 'accepted' must be a JSON object, got {type(accepted).__name__}")
-            return dict(accepted)
-        return {k: v for k, v in data.items() if not k.startswith("_")}
+            data = accepted
+        # Only the metadata names are dropped; a real key starting with "_" is an entry (42-T2), as in _core.
+        # A {"count", "note"} entry (the _core shape) is read by its note, so the marker and blank checks see it (42-T4).
+        return {k: _note_text(self.path, k, v) for k, v in data.items() if k not in _META_KEYS}
 
     def save(self, accepted: Mapping[str, str]) -> None:
         os.makedirs(self.directory, exist_ok=True)
@@ -149,10 +171,10 @@ class Baseline:
             print(f"If this one is a considered exception, add it to {self.path} with a note saying why.", file=sys.stderr)
             return 1
 
-        unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note))
+        unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note) or not note.strip())
         if unjustified:
-            # A refresh writes the marker as the note; an entry still carrying it was recorded, not accepted.
-            print(f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r}:", file=sys.stderr)
+            # A refresh writes the marker as the note; an entry still carrying it, or with no note, was recorded, not accepted.
+            print(f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r} or with no note:", file=sys.stderr)
             for key in unjustified:
                 print(f"  {key}", file=sys.stderr)
             print("Replace each marker with the reason the entry is acceptable.", file=sys.stderr)
@@ -175,10 +197,8 @@ class Baseline:
         before = dict.fromkeys(previous, 1) if os.path.exists(self.path) else None
 
         # A new entry gets the unjustified marker, not the scanner's sentence: the sentence would pass enforce as a human note (42-F16).
-        new_note = f"{UNJUSTIFIED_MARKER}: a refresh recorded this finding; replace this with the reason it is kept"
-
         def render(kept: dict[str, int]) -> str:
-            return self._render({key: previous.get(key, new_note) for key in kept})
+            return self._render({key: previous.get(key) or DEFAULT_NEW_NOTE for key in kept})
 
         # The removals land before a refused addition is named, so a renamed key's note would be gone: name it in the refusal (42-F13).
         removed = {key: note for key, note in previous.items() if key not in found and note and not is_unjustified(note)}
