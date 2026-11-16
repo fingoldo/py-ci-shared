@@ -87,5 +87,5 @@ def test_scope_nodes_lookup_and_unknown_opener():
     assert scope_nodes(tree, f) is next(s for s in iter_scopes(tree) if s.node is f).nodes
     assert scope_nodes(tree, tree) is iter_scopes(tree)[0].nodes
     other = ast.parse("def h():\n    pass\n").body[0]
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="not a scope of this tree"):
         scope_nodes(tree, other)

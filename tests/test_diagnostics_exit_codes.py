@@ -8,7 +8,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
 
 from py_ci_shared import advisory_warn, bandit_warn, format_warn, import_cycles, teeth_sweep
 
@@ -108,10 +107,7 @@ def test_format_warn_reports_a_missing_tool_not_findings(monkeypatch, capsys):
     calls: list = []
     _stub_run(monkeypatch, format_warn, 1, calls)
     monkeypatch.setattr(sys, "argv", ["format_warn", "a.py"])
-    with pytest.raises(SystemExit) as exc:
-        format_warn.main()
-        sys.exit(0)
-    assert exc.value.code == 0
+    assert format_warn.main() is None
     err = capsys.readouterr().err
     assert "ruff is not installed" in err
     assert "WARNINGS ONLY" not in err

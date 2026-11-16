@@ -77,7 +77,8 @@ def test_a_real_server_starts_accepts_a_connection_and_is_gone_after():
         port = int(re.search(r"port=(\d+)", dsn).group(1))  # type: ignore[union-attr]
         with socket.create_connection(("127.0.0.1", port), timeout=5):
             pass
-    with pytest.raises(OSError):
+    # Refused on POSIX; on Windows a closed port can also time out (audit 44-T4: the OS message is not ours, so the class is the contract).
+    with pytest.raises((ConnectionRefusedError, TimeoutError)):
         socket.create_connection(("127.0.0.1", port), timeout=2)
 
 
@@ -103,7 +104,7 @@ def test_a_failing_setup_command_raises_with_its_output(tmp_path):
     log = tmp_path / "initdb.log"
     server = tmp_path / "server.log"
     server.write_text("FATAL: could not bind\n", encoding="utf-8")
-    with pytest.raises(RuntimeError) as info:
+    with pytest.raises(RuntimeError, match="failed with exit code 3") as info:
         _quiet([sys.executable, "-c", "print('initdb: invalid locale'); raise SystemExit(3)"], check=True, log=log, also=[server])
     message = str(info.value)
     assert "exit code 3" in message and "initdb: invalid locale" in message and "could not bind" in message

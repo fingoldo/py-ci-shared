@@ -29,7 +29,7 @@ class TestTheNumpyBehaviour:
         np = pytest.importorskip("numpy")
         np.save(str(tmp_path / "x.npy.123.partial"), np.zeros(1))
         assert sorted(p.name for p in tmp_path.iterdir()) == ["x.npy.123.partial.npy"]
-        with pytest.raises(OSError):
+        with pytest.raises(FileNotFoundError):
             os.replace(tmp_path / "x.npy.123.partial", tmp_path / "x.npy")
 
 

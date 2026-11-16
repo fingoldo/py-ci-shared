@@ -243,7 +243,7 @@ def build_coverage_map(
                 "-x",
             ],
             cwd=sandbox,
-            env=_pytest_env(),
+            env=_pytest_env(sandbox=sandbox),
             timeout=timeout,
         )
         if result is None or result.returncode != 0:

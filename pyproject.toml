@@ -43,6 +43,9 @@ dev = [
     # module itself is duck-typed, no pydantic import at runtime -- only the tests need a
     # concrete model class to exercise it against).
     "pydantic>=2.0",
+    # estimator_invariants' tests (tests/test_estimator_invariants.py) importorskip pandas at module level; without it that
+    # whole file is skipped in CI and the skip count printed by self-ci.yml is the only trace (audit 44-T6).
+    "pandas>=2.0",
     # env_example_round_trip.py's tests build real pydantic-settings classes, one with the NoDecode
     # annotation the fixed shape needs (added in 2.7). The module itself imports neither pydantic package.
     "pydantic-settings>=2.7",

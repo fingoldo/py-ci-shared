@@ -1,11 +1,11 @@
-"""PT-4 — TODO/FIXME/XXX/HACK hygiene meta-test.
+"""PT-4 — TODO/FIXME/XXX/HACK hygiene, applied to a seeded tree (audit 44-T3).
 
-Every marker in production code under ``src/pyutilz/`` must carry an
-attribution: assignee in parens (``TODO(name): ...``) or ISO date
+The scanner is covered by ``test_meta_test_utils.py``. This file used to scan the installed pyutilz package, which
+is a moving working tree locally and a pinned SHA in CI, so it turned red on another repository's edits. It now
+seeds its own tree under ``tmp_path`` and checks the rule on that.
+
+Every marker must carry an attribution: assignee in parens (``TODO(name): ...``) or ISO date
 (``TODO 2026-04-28: ...``) or ``@assignee`` mention.
-
-Uses the shared scanner / regex from ``py_ci_shared.meta_test_utils`` so
-the same logic is portable across projects.
 """
 
 from __future__ import annotations
@@ -13,65 +13,47 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import pytest
-
-import pyutilz
 from py_ci_shared.meta_test_utils import (
     ATTRIBUTION_RE,
     scan_todo_markers,
 )
 
-PYUTILZ_DIR = Path(pyutilz.__file__).resolve().parent
-
 _MARKERS = ("TODO", "FIXME", "XXX", "HACK")
 
-# Grandfathered un-attributed markers — drain over time. Each entry is
-# "rel/path.py:lineno".
-_GRANDFATHERED: set[str] = set()
+
+def _seed(root: Path, body: str) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "mod.py").write_text(body, encoding="utf-8")
+    return root
 
 
-def _scan_markers() -> list[tuple[Path, int, str, str]]:
-    return scan_todo_markers(PYUTILZ_DIR)
-
-
-def test_every_todo_marker_has_attribution():
-    bare: list[str] = []
-    for path, lineno, _kw, line in _scan_markers():
-        rel = path.relative_to(PYUTILZ_DIR).as_posix()
-        ident = f"{rel}:{lineno}"
-        if ident in _GRANDFATHERED:
-            continue
+def _bare_markers(root: Path) -> list[str]:
+    out: list[str] = []
+    for path, lineno, _kw, line in scan_todo_markers(root):
         if not ATTRIBUTION_RE.search(line):
-            bare.append(f"{ident}  {line[:100]}")
-
-    if bare:
-        pytest.fail(
-            f"{len(bare)} {'/'.join(_MARKERS)} comment(s) without "
-            f"attribution. Add an assignee in parens (``TODO(name): ...``) "
-            f"or an ISO date (``TODO 2026-04-28: ...``). To grandfather, "
-            f"list ``<path>:<lineno>`` in _GRANDFATHERED:\n  " + "\n  ".join(bare[:30]) + (f"\n  ... and {len(bare) - 30} more" if len(bare) > 30 else "")
-        )
+            out.append(f"{path.relative_to(root).as_posix()}:{lineno}")
+    return out
 
 
-def test_todo_marker_count_summary_warning():  # audit-exempt: nondiscriminating_test -- advisory marker-count summary; test_every_todo_marker_has_attribution is the gate
-    """Warning-only — print marker totals so the curation prompt stays
-    visible."""
-    counts: dict[str, int] = {kw: 0 for kw in _MARKERS}
-    by_file: dict[str, int] = {}
-    total = 0
-    for path, _, kw, _ in _scan_markers():
-        counts[kw] += 1
-        rel = path.relative_to(PYUTILZ_DIR).as_posix()
-        by_file[rel] = by_file.get(rel, 0) + 1
-        total += 1
-    if total == 0:
-        return
-    top = sorted(by_file.items(), key=lambda kv: -kv[1])[:5]
-    sys.stderr.write(
-        f"\n[test_todo_marker_count_summary_warning] {total} marker(s) "
-        f"across {len(by_file)} file(s); breakdown: "
-        + ", ".join(f"{k}={v}" for k, v in counts.items() if v)
-        + ". Top files: "
-        + ", ".join(f"{p} ({n})" for p, n in top)
-        + "\n"
+def test_a_bare_marker_in_the_seeded_tree_is_reported(tmp_path):
+    root = _seed(tmp_path / "pkg", "x = 1  # TODO: remove this\n")
+    assert _bare_markers(root) == ["mod.py:1"]
+
+
+def test_an_attributed_marker_in_the_seeded_tree_is_not_reported(tmp_path):
+    root = _seed(
+        tmp_path / "pkg",
+        "a = 1  # TODO(alice): remove\nb = 2  # FIXME 2026-04-28: check\nc = 3  # HACK @bob: temp\n",
     )
+    assert _bare_markers(root) == []
+
+
+def test_marker_count_summary_on_the_seeded_tree(tmp_path):  # audit-exempt: nondiscriminating_test -- advisory marker-count summary; the attribution tests above are the gate
+    root = _seed(tmp_path / "pkg", "a = 1  # TODO(alice): x\nb = 2  # XXX: y\n")
+    counts: dict[str, int] = {kw: 0 for kw in _MARKERS}
+    total = 0
+    for _, _, kw, _ in scan_todo_markers(root):
+        counts[kw] += 1
+        total += 1
+    assert total == 2
+    sys.stderr.write(f"\n[test_marker_count_summary_on_the_seeded_tree] {total} marker(s): " + ", ".join(f"{k}={v}" for k, v in counts.items() if v) + "\n")
