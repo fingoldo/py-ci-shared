@@ -96,7 +96,7 @@ class TestF5Refreshed:
         assert cli.main(["refresh", "function_length", "--grow", "--repo", str(repo)]) == 0
         out = capsys.readouterr().out
         # 49-F8: a baseline written for the first time has no "before", so it is reported as created, never as "+0 -0".
-        assert out.startswith("REFRESH function_length") and "created b.json with 1 entries" in out and "+0 -0" not in out
+        assert out.startswith("REFRESH function_length") and "created b.json with 1 entry" in out and "+0 -0" not in out
         assert "0 skipped" in out and "1 refreshed" in out and "SKIP " not in out
         (repo / "pkg" / "m.py").write_text("def f(x):\n    return x\n", encoding="utf-8")
         assert cli.main(["refresh", "function_length", "--repo", str(repo)]) == 0
