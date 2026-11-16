@@ -107,6 +107,8 @@ def enforce_findings(
     """Fail (raise ``AssertionError`` carrying the whole report) on each finding the baseline ``<baseline_dir>/<name>.json`` does not
     accept, on a stale or unjustified entry, and on a scan that found nothing. A pass becomes a note on the gate's PASS row (49-T3)."""
     baseline = Baseline(name, directory=os.path.join(str(repo_root), baseline_dir))
+    # Messages name the baseline repo-relative with posix separators, never the machine's absolute path (49-T10).
+    baseline.shown = Path(baseline_dir, f"{name}.json").as_posix()
     code, text = baseline.check(found, label=label, guidance=guidance)
     if code:
         raise AssertionError(text)

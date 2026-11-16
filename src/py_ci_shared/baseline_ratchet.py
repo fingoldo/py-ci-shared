@@ -94,6 +94,8 @@ class Baseline:
         self.directory = directory
         self.refresh_command = refresh_command
         self.path = os.path.join(directory, f"{name}.json")
+        # The path a message shows: repo-relative posix when a caller sets it (49-T10), else the storage path.
+        self.shown = self.path
 
     # ---- storage ----
 
@@ -166,8 +168,8 @@ class Baseline:
             return 1, (f"{label}: the scan found {entries_word(len(found), count=True)}, fewer than its floor of {min_found} - it is not reaching the code.")
         if fail_on_empty_scan and not found and accepted:
             return 1, (
-                f"{label}: the scan found nothing, yet {self.path} accepts {entries_word(len(accepted), count=True)}. Either the scan stopped "
-                f"matching, or the whole backlog was paid off - then delete those entries from {self.path} (or run {self.refresh_command})."
+                f"{label}: the scan found nothing, yet {self.shown} accepts {entries_word(len(accepted), count=True)}. Either the scan stopped "
+                f"matching, or the whole backlog was paid off - then delete those entries from {self.shown} (or run {self.refresh_command})."
             )
         new = {key: value for key, value in found.items() if key not in accepted}
         stale = [key for key in accepted if key not in found]
@@ -175,13 +177,13 @@ class Baseline:
         if new:
             lines = [f"{label}: {len(new)} new violation(s):"]
             lines += [f"  {key} - {new[key]}" for key in sorted(new)]
-            lines += ["", guidance, "", f"If this one is a considered exception, add it to {self.path} with a note saying why."]
+            lines += ["", guidance, "", f"If this one is a considered exception, add it to {self.shown} with a note saying why."]
             return 1, "\n".join(lines)
 
         unjustified = sorted(key for key, note in accepted.items() if is_unjustified(note) or not note.strip())
         if unjustified:
             # A refresh writes the marker as the note; an entry still carrying it, or with no note, was recorded, not accepted.
-            lines = [f"{label}: {len(unjustified)} baseline entry(ies) in {self.path} still marked {UNJUSTIFIED_MARKER!r} or with no note:"]
+            lines = [f"{label}: {len(unjustified)} baseline entry(ies) in {self.shown} still marked {UNJUSTIFIED_MARKER!r} or with no note:"]
             lines += [f"  {key}" for key in unjustified]
             lines.append("Replace each marker with the reason the entry is acceptable.")
             return 1, "\n".join(lines)
@@ -191,7 +193,7 @@ class Baseline:
                 f"{label}: {len(stale)} baseline entry(ies) no longer violate the rule; the baseline only shrinks by hand:",
             ]
             lines += [f"  {key}" for key in sorted(stale)]
-            lines.append(f"Delete those entries from {self.path} (a note is kept on the rest).")
+            lines.append(f"Delete those entries from {self.shown} (a note is kept on the rest).")
             return 1, "\n".join(lines)
 
         return 0, f"{label}: no new violations ({len(accepted)} accepted, baselined)"
