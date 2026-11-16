@@ -1,0 +1,5 @@
+SRC = r"""
+extern "C" __global__ __launch_bounds__(256) void lb_covered(float* x) {}
+extern "C" __global__ void covered_kernel(float* x) {}
+extern "C" __global__ void bin_codes_float(float* x) {}
+"""

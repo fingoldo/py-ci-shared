@@ -1,3 +1,7 @@
 ﻿SRC = r"""
 extern "C" __global__ void lost_kernel(float* x) {}
+extern "C" __global__ __launch_bounds__(256) void lb_lost(float* x) {}
+"""
+TEMPLATED = r"""
+extern "C" __global__ void ab_TYPENAME(float* x) {}
 """

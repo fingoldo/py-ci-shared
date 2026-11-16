@@ -1,0 +1,2 @@
+﻿def kernel_fp32(cp, real):
+    return None

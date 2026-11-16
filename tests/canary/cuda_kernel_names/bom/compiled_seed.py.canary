@@ -1,0 +1,4 @@
+﻿SRC = r"""
+extern "C" __global__ void ab_other(float* x) {}
+extern "C" __global__ void covered_kernel(float* x) {}
+"""

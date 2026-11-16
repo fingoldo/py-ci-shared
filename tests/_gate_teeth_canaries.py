@@ -23,6 +23,17 @@ def _gate(name: str):
     return importlib.import_module(f"py_ci_shared.{name}")
 
 
+def _compiled_sources(d: Path) -> dict:
+    """cuda_kernel_names canary: ``compiled_<f>.py`` holds the kernel sources built for ``<f>.py``; each such file also covers itself."""
+    out: dict = {}
+    for p in sorted(d.rglob("compiled_*.py")):
+        text = p.read_text(encoding="utf-8-sig")
+        rel = p.relative_to(d).as_posix()
+        out.setdefault(rel, []).append(text)
+        out.setdefault(p.with_name(p.name[len("compiled_") :]).relative_to(d).as_posix(), []).append(text)
+    return out
+
+
 _FACT_DAY = __import__("datetime").date(2026, 10, 3)  # external_fact_tables canary: its clean citation is dated 2026-09-26
 
 
@@ -702,12 +713,18 @@ CANARIES: dict[str, Canary] = {
             tokens=("njit-flag-fallback-untested", "njit-twin-name-untested", "njit-redefined-twin-untested", "njit-parity-marker-untested"),
         ),
         Canary("raw_write_row_count", lambda d: _gate("raw_write_row_count").assert_raw_write_row_count(d, use_git=False), tokens=("raw UPDATE", "raw DELETE")),
+        # 53-T8: one seed per rule. compiled_<f>.py holds the kernel sources built for <f>.py (each file also covers itself);
+        # excluded/ is out of scope; registered_mod is registered as pkg.registered_mod (tail match), so its kernel_fp32 is clean.
         Canary(
             "cuda_kernel_factories",
-            lambda d: _gate("cuda_kernel_factories").assert_cuda_kernel_factories(d, use_git=False),
-            tokens=("not in the register-pressure registry",),
+            lambda d: _gate("cuda_kernel_factories").assert_cuda_kernel_factories(d, registered=[("pkg.registered_mod", "kernel_fp32")], use_git=False),
+            tokens=("kernel factory kernel(cp", "kernel factory kernel_fp32(cp", "kernel factory kernel_other(cp"),
         ),
-        Canary("cuda_kernel_names", lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled={}, use_git=False), tokens=("lost_kernel",)),
+        Canary(
+            "cuda_kernel_names",
+            lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled=_compiled_sources(d), exclude=("excluded",), use_git=False),
+            tokens=("the kernel lost_kernel", "the kernel lb_lost", "the kernel ab_TYPENAME", "the kernel covered_kernel"),
+        ),
     ]
 }
 
