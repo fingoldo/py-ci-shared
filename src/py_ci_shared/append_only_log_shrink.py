@@ -37,7 +37,7 @@ def _rows(data: bytes, path: str) -> Optional[int]:
     if path.endswith(".gz"):
         try:
             data = gzip.decompress(data)
-        except (OSError, EOFError, ValueError):
+        except (OSError, EOFError, ValueError):  # best-effort: the caller reports an unreadable side as a finding, never as a pass
             return None
     return data.count(b"\n") + (1 if data and not data.endswith(b"\n") else 0)
 
@@ -95,6 +95,7 @@ def find_append_only_log_shrinks(
                 continue
             rows_old = _rows(old, name)
             if rows_old is None:
+                out.append(Finding(name, 1, RULE, f"{name} cannot be read (not gzip) in commit {commit[:12]}; its rows cannot be compared"))
                 continue
             rows_new = 0 if new is None else _rows(new, name)
             if rows_new is None:
