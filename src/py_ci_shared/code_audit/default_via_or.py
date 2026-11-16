@@ -429,6 +429,23 @@ def _is_unit_divisor_guard(node: ast.AST, parent_map: dict[int, tuple[ast.AST, s
     return isinstance(node, ast.BoolOp) and isinstance(node.values[-1], ast.Constant) and node.values[-1].value == 1
 
 
+_NONE_RETURNING_METHODS = frozenset({"append", "add", "extend", "update", "write", "info", "debug", "warning", "error", "insert", "clear"})
+
+
+def _is_non_default_idiom(node: ast.BoolOp) -> bool:
+    """True for an `or` shape with no falsy value to rewrite (audit 41-T5). ``seen.append(x) or True``: the left operand is
+    a None-returning method, so the fallback is the stub's return value, not a default. ``d.get("a") or d.get("b")``: every
+    operand is a string lookup, and no constant default can replace a falsy setting."""
+    first, last = node.values[0], node.values[-1]
+    return (
+        isinstance(first, ast.Call)
+        and isinstance(first.func, ast.Attribute)
+        and first.func.attr in _NONE_RETURNING_METHODS
+        and isinstance(last, ast.Constant)
+        and last.value is True
+    )
+
+
 def _is_in_boolean_context(node: ast.AST, parent_map: dict[int, tuple[ast.AST, str]]) -> bool:
     """Walk up through nested BoolOp/``not`` wrappers (e.g. ``(a or b) and
     c``, ``not (a or b)``) to the first "real" parent field, and check
@@ -895,7 +912,7 @@ def scan_default_via_or_trap(
                 continue
             # Skip when the whole BoolOp is immediately coerced by bool(...) -- the OR's
             # intermediate value is unobservable regardless of what either side evaluates to.
-            if _is_wrapped_in_bool_call(node, parent_map) or _is_unit_divisor_guard(node, parent_map):
+            if _is_wrapped_in_bool_call(node, parent_map) or _is_unit_divisor_guard(node, parent_map) or _is_non_default_idiom(node):
                 continue
             # Adjacent operand pairs, so a chain of any length is covered: `arg or fallback or 5`
             # carries the flagged trap on its FIRST pair (a falsy-but-valid `arg` silently becomes

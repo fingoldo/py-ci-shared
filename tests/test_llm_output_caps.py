@@ -99,3 +99,14 @@ def test_an_unparsable_file_is_an_error_not_a_skip(tmp_path: Path) -> None:
     _write(tmp_path, "def broken(:\n")
     with pytest.raises(Exception, match=r"m.py"):
         _found(tmp_path)
+
+
+def test_an_unparsable_file_is_unparsed_not_a_traceback(tmp_path):
+    """Audit 41-T2: a syntax error under the scanned root raised SourceParseError; without allow_unparsed it must raise UnparsedFilesError."""
+    from py_ci_shared._core.errors import UnparsedFilesError
+
+    clear_parse_cache()
+    (tmp_path / "broken.py").write_text("def f(:\n", encoding="utf-8")
+    with pytest.raises(UnparsedFilesError):
+        numeric_output_caps([tmp_path], repo_root=tmp_path, name_hints=("CAP",), default_hints=("max_tokens",))
+    assert numeric_output_caps([tmp_path], repo_root=tmp_path, name_hints=("CAP",), default_hints=("max_tokens",), allow_unparsed=True) == set()

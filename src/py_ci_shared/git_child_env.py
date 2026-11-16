@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import walk as shared_walk
+from ._core.errors import SourceParseError, SourceReadError
 from ._core.source import parse_source
 from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, is_test_path, normalize_line, record_finding, text_scan
 
@@ -111,7 +112,11 @@ def _env_scrubs(env: ast.expr, lines: list[str], assigned: dict[str, list[str]],
 
 
 def _python_spawns(rel: str, path: Path, found: dict[str, str]) -> None:
-    source, tree = parse_source(path)
+    try:
+        source, tree = parse_source(path)
+    except (SourceParseError, SourceReadError) as exc:  # a file the gate cannot read is a finding, not a traceback (audit 41-T2)
+        record_finding(found, f"{rel}: unparsable", f"cannot be parsed, so its git spawns cannot be checked: {exc}")
+        return
     lines = source.splitlines()
     segment_lines = _split_source(source)
     assigned = _assigned_sources(segment_lines, tree)

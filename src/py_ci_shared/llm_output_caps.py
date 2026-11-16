@@ -44,6 +44,7 @@ from typing import Optional, Union
 
 from ._core import walk as shared_walk
 from ._core.corpus import iter_files_pruned
+from ._core.errors import SourceParseError, SourceReadError, UnparsedFilesError
 from ._core.source import parse_file
 
 __all__ = [
@@ -111,6 +112,7 @@ def numeric_output_caps(
     repo_root: Union[str, Path],
     name_hints: Sequence[str],
     default_hints: Sequence[str],
+    allow_unparsed: bool = False,
 ) -> set[Cap]:
     """Every numeric output cap under *roots*, keyed by its path relative to *repo_root*.
 
@@ -119,11 +121,19 @@ def numeric_output_caps(
     """
     repo = Path(repo_root)
     found: set[Cap] = set()
+    unparsed: list[str] = []
     for root in roots:
         for path in iter_files_pruned(Path(root), (".py",)):
             rel = path.relative_to(repo).as_posix()
-            tree = parse_file(path)
+            try:
+                tree = parse_file(path)
+            except (SourceParseError, SourceReadError) as exc:  # unparsed files are listed, as every scanning gate does (audit 41-T2)
+                unparsed.append(f"{rel}: {exc}")
+                continue
             found.update(_caps_in(tree, rel, tuple(name_hints), tuple(default_hints)))
+    if unparsed and not allow_unparsed:
+        listing = "\n  ".join(unparsed)
+        raise UnparsedFilesError(f"{len(unparsed)} file(s) could not be parsed (pass allow_unparsed=True to skip them):\n  {listing}")
     return found
 
 
