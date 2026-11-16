@@ -1,0 +1,11 @@
+from pathlib import Path
+
+
+def find_sources(repo_root):
+    """repo_root: the repo root; every module under it."""
+    return [p for p in Path(repo_root).rglob("*.py") if "worktrees" not in p.parts]
+
+
+def scan_fixture_dir(directory):
+    """Every fixture file in the directory."""
+    return list(Path(directory).rglob("*.py"))
