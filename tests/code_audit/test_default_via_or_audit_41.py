@@ -26,3 +26,22 @@ def test_audit_41_t5_numeric_fallback_on_get_is_still_flagged(tmp_path: Path):
     """The `.get()` exemption covers string chains only: `kwargs.get("timeout") or 120` still rewrites a real 0."""
     _write(tmp_path, "numeric_get.py", 'def f(kwargs):\n    return kwargs.get("timeout") or 120\n')
     assert len(scan_default_via_or_trap(tmp_path)) == 1
+
+
+def test_audit_41_t5_get_chain_marker_suppresses_only_its_own_line(tmp_path: Path):
+    """`# get-chain-ok: <reason>` on a `.get()` chain clears that line; the other chain in the same file is still reported."""
+    _write(
+        tmp_path,
+        "chains.py",
+        "def f(spec):\n"
+        '    rev = spec.get("rev") or spec.get("tag")  # get-chain-ok: both values are version strings, never falsy numbers\n'
+        '    branch = spec.get("branch") or spec.get("ref")\n'
+        "    return rev, branch\n",
+    )
+    findings = scan_default_via_or_trap(tmp_path)
+    assert [f.line for f in findings] == [3]
+
+
+def test_audit_41_t5_get_chain_marker_needs_a_reason(tmp_path: Path):
+    _write(tmp_path, "empty_reason.py", 'def f(spec):\n    return spec.get("rev") or spec.get("tag")  # get-chain-ok:\n')
+    assert len(scan_default_via_or_trap(tmp_path)) == 1

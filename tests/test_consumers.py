@@ -40,7 +40,10 @@ def test_the_checked_in_list_names_every_consumer_with_owner_repo_and_branch():
         "flutter_uptime_monitor",
         "algopacksimple",
         "claude-usage-notifier",
+        "finance",
     }
+    # 47-T7: finance is a private repo that runs py-ci-shared in its hook with no pin; it is listed private and kept out of the nightly corpus.
+    assert (consumers["finance"].private, consumers["finance"].corpus) == (True, False)
     assert all(c.repo.startswith("fingoldo/") for c in consumers.values())
     assert consumers["polyvocab_app"].branch == "staging"
     assert consumers["llm_bench"].branch == "main"

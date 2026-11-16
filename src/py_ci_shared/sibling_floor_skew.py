@@ -177,7 +177,7 @@ def _uv_source_sites(text: str, data: Mapping[str, Any], wanted: Mapping[str, st
     for name, spec in sources.items():
         if _norm(name) not in wanted or not isinstance(spec, dict) or "git" not in spec:
             continue
-        ref = spec.get("rev") or spec.get("tag") or spec.get("branch")
+        ref = spec.get("rev") or spec.get("tag") or spec.get("branch")  # get-chain-ok: string ref values from a uv source table, never a falsy number
         if ref:
             m = re.search(r"github\.com[/:]([\w.-]+)/", str(spec["git"]))
             out.append(InstallSite(wanted[_norm(name)], str(ref), m.group(1) if m else owner, rel, _line_of(text, f"{name}"), "uv-source"))

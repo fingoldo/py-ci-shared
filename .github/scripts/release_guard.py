@@ -414,6 +414,8 @@ def _main_prepare(args: argparse.Namespace) -> int:
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
     tags = _git_tags(repo_dir)
     published = args.published or _published_release(args.repo, token, tags)
+    if published is not None and not published.startswith("v"):
+        published = f"v{published}"  # --published takes X.Y.Z as the error message says, or the tag
     if published is not None and release_key(published) == release_key(f"v{args.version}"):
         # verify re-runs after the release was published: check against the release before it (46-T2)
         published = previous_release(args.version, tags)

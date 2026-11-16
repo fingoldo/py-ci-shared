@@ -532,3 +532,24 @@ def test_a_rerun_of_prepare_after_publish_compares_against_the_release_before(ve
 
     The base is the release before it, so the check is the fixed point the tagged commit already has."""
     assert guard.previous_release(version, tags) == base
+
+
+def test_a_prepare_rerun_after_publish_hands_the_previous_release_to_run_prep(monkeypatch, tmp_path):
+    """46-T2 wiring: when the published release is the version itself, `prepare` must compare against the release before.
+
+    Red before the wiring existed (the re-run compared against v{version} and refused its own release); the helper test
+    above pins only the helper, this one pins the call site."""
+    import argparse
+
+    seen = {}
+    monkeypatch.setattr(guard, "_git_tags", lambda _d: ["v1.23.10", "v1.23.11"])
+    monkeypatch.setattr(guard, "_origin_tag_problem", lambda _d, _t: None)
+
+    def fake_prep(_d, version, published, *, write):
+        seen["published"] = published
+        return []
+
+    monkeypatch.setattr(guard, "run_prep", fake_prep)
+    args = argparse.Namespace(repo_dir=str(tmp_path), repo="x/y", published="1.23.11", version="1.23.11", write=False, check=True)
+    assert guard._main_prepare(args) == 0
+    assert seen["published"] == "v1.23.10"

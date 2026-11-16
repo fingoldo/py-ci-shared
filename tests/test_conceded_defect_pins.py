@@ -72,3 +72,37 @@ def test_a_bom_file_is_read_and_an_unparsable_one_fails(tmp_path):
     bad = _write(tmp_path, "def test_x(:\n", name="test_bad.py")
     with pytest.raises(AssertionError, match=r"test_bad\.py"):
         find_conceded_defect_pins([bom, bad], tmp_path)
+
+
+def test_a_comment_cites_ok_marker_on_the_def_line_clears_only_that_test(tmp_path):
+    """`# comment-cites-ok: <reason>` on a test's def line is a per-line reading: the word "no-op" there describes correct
+    behaviour. The other conceded pin in the same file is still listed."""
+    p = _write(
+        tmp_path,
+        "def test_noop_half_is_silent():  # comment-cites-ok: the no-op is the specified behaviour\n"
+        '    """The no-op half must be silent."""\n'
+        "    assert run() == []\n"
+        "def test_dropout_mean():\n"
+        '    """Dropout does not perfectly reconstruct y."""\n'
+        "    assert compute() == 3.7\n",
+    )
+    assert [c.function for c in find_conceded_defect_pins([p], tmp_path)] == ["test_dropout_mean"]
+
+
+def test_a_comment_cites_ok_marker_on_the_line_above_clears_the_test(tmp_path):
+    p = _write(
+        tmp_path,
+        "# comment-cites-ok: a degenerate input is a specified result here\n"
+        "def test_degenerate_is_empty():\n"
+        '    """Returns nothing."""\n'
+        "    assert run() == []\n",
+    )
+    assert find_conceded_defect_pins([p], tmp_path) == []
+
+
+def test_a_comment_cites_ok_marker_needs_a_reason(tmp_path):
+    p = _write(
+        tmp_path,
+        "def test_noop_marker_empty():  # comment-cites-ok:\n" '    """The no-op half is silent."""\n' "    assert run() == []\n",
+    )
+    assert [c.function for c in find_conceded_defect_pins([p], tmp_path)] == ["test_noop_marker_empty"]

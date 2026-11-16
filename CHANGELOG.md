@@ -28,6 +28,17 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - **Behaviour change** (40-T12, `possibly_unbound_local`): a walrus behind `and`/`or` or in a conditional expression binds its name only on the path that evaluates it, and a `with` block that swallows its exception (`contextlib.suppress`, `pytest.raises`, `assertRaises`) leaves its bindings maybe-bound afterwards. What to do: bind the name before the block (`name = None`), or mark the read `# unbound-ok: <reason>`.
 
 - **Behaviour change** (40-T11, `unsafe_deserialization`): a hash, verify or dump/save call before a pickle-family load exempts the load only when that call receives the loaded value (`req.body`, or a name assigned from it). An unrelated `store.save(req)`, `verify_user(req)`, `pickle.dumps(1)` or `sha256(b"x")` no longer exempts `pickle.loads(req.body)`. What to do: pass the loaded bytes to the verification, or add `# deserialize-ok: <reason>` to the load.
+- **Behaviour change** (41-T2, `timezone_honest`): when ruff itself fails (a NUL byte, undecodable bytes, a crash), the gate now reports one `ruff could not complete the timezone check` problem instead of raising a traceback. The gate was already red in that case. What to do: nothing for a green consumer; a red one must fix or exclude the unreadable file.
+
+- `default_via_or` (audit 41-T5): a `.get("a") or .get("b")` chain stays flagged, and a line carrying `# get-chain-ok: <reason>` (non-empty reason) clears only that line. The two string-ref chains in `_adoption_pins.py` and `sibling_floor_skew.py` carry the marker. Nothing to do for consumers: the flag is unchanged; the marker is new.
+
+- `conceded_defect_pins` (audit 41-T7): a test whose def line or the comment lines above it carry `# comment-cites-ok: <reason>` (non-empty) is not listed; the concession words stay in the vocabulary. Nothing to do for consumers: the marker is new and the listing is unchanged for tests without it.
+
+- Internal (46-T2): `release_guard prepare` accepts `--published` as `X.Y.Z` or `vX.Y.Z`; a verify re-run after the release is published compares against the release before it (wiring test added). Nothing to do for consumers.
+
+- **Behaviour change** (47-T7, `configs/consumers.toml`): `finance` (private, hook-only, no pin) is now listed, so `consumer-pins` and `ci-health` check it and `adoption_matrix` reports its `unpinned-use` finding. Without `CONSUMER_READ_TOKEN` the private repo is skipped and `consumer-pins` fails on the skip unless it runs with allow-skipped-private. What to do: give the repo a token (the same secret as the other private consumers) or pin py-ci-shared in finance's dev dependencies.
+
+- New tool `bump_pin` (audit 47-T8): `py-ci-shared tool bump_pin <ref> <checkout> [--write]` moves every py-ci-shared pin line of one consumer checkout (workflow `uses:`, `py-ci-shared-ref:` inputs, pre-commit `rev:`, requirements and pyproject URLs) to one ref. Dry run by default; it never writes outside the given checkout and does not follow symlinks. Nothing to do for consumers until they run it.
 
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 

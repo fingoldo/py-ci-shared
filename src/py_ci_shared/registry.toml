@@ -122,6 +122,13 @@ cli = true
 summary = "Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes"
 
 [[gate]]
+name = "bump_pin"
+kind = "cli"
+since = "1.23.12"
+cli = true
+summary = "Dry-run-by-default rewrite of one consumer checkout's py-ci-shared pin lines (workflow uses, ref inputs, pre-commit rev, requirements URLs) to a single ref"
+
+[[gate]]
 name = "cache_key_sensitivity"
 kind = "gate"
 entries = ["assert_key_sensitive"]

@@ -34,6 +34,9 @@ CONCESSION_RE = re.compile(
     re.IGNORECASE,
 )
 _KNOWN_DEFECT_PREFIX = "test_known_defect_"
+#: A reasoned per-test waiver (audit 41-T7): on the ``def`` line or the comment lines directly above it, the concession words
+#: describe correct behaviour. The reason must be non-empty. It clears that one test only.
+_CITES_OK_RE = re.compile(r"#\s*comment-cites-ok:\s*\S")
 
 
 class ConcededPin:
@@ -93,7 +96,10 @@ def find_conceded_defect_pins(files: Iterable[Path], repo_root: Path) -> list[Co
         for func in (n for n in _fast_walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))):
             if not func.name.startswith("test_") or func.name.startswith(_KNOWN_DEFECT_PREFIX):
                 continue
-            prose = (ast.get_docstring(func) or "") + "\n" + _comment_lines_above(lines, func.lineno)
+            above = _comment_lines_above(lines, func.lineno)
+            if _CITES_OK_RE.search(lines[func.lineno - 1] + "\n" + above):
+                continue
+            prose = (ast.get_docstring(func) or "") + "\n" + above
             match = CONCESSION_RE.search(prose)
             if match is None:
                 continue

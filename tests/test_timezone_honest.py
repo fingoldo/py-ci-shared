@@ -151,3 +151,15 @@ class TestAuditRegressions:
     def test_a_non_ascii_path_is_decoded_as_utf8(self, tmp_path):
         root = _tree(tmp_path, {"pkg/модуль.py": _NAIVE})
         assert dtz_findings(root) == {("pkg/модуль.py", "DTZ005")}
+
+
+class TestUnreadableInputIsAFinding:
+    """ruff's own failure modes (a NUL byte, undecodable bytes) must come back as a problem sentence, not a traceback."""
+
+    @pytest.mark.parametrize("payload", [b"x = 1\x00\n", b"s = '\xe9'\n"], ids=["nul-byte", "latin1"])
+    def test_ruff_failure_on_one_file_is_reported_as_a_problem(self, tmp_path, payload):
+        root = _tree(tmp_path, {"pkg/naive.py": _NAIVE})
+        (root / "pkg" / "broken.py").write_bytes(payload)
+        problems = timezone_problems(root)
+        assert len(problems) == 1
+        assert "ruff" in problems[0]
