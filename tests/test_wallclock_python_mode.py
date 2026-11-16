@@ -39,5 +39,5 @@ def test_ast_mode_holds_an_unparsable_file_to_the_text_rule(tmp_path: Path) -> N
 
 
 def test_an_unknown_mode_is_refused(tmp_path: Path) -> None:
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="python_mode must be"):
         find_wallclock_test_waits(_tree(tmp_path, REAL_CALL), python_mode="regex")

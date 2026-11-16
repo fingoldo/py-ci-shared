@@ -22,40 +22,40 @@ Base commit 48e49b1. Read-only. Scratch: `C:\Users\Admin\AppData\Local\Temp\clau
 - **Workaround used:** a driver imports the tool from a snapshot copy, removes that path from `sys.path`, sets `PYTHONPATH=src` (relative, resolved against the sandbox cwd).
 - **Impact:** the gates' own tests are the one code base the shipped mutation tool cannot check, so "proven by mutation" claims for py_ci_shared are manual.
 - **Proposed fix:** `_mutation_runner._pytest_env`: when the target is inside the package hosting the worker, put the sandbox `src` first in the child's `PYTHONPATH`; document it in the README section. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T2 (P3) Workflow-security tests glob `*.yml` only
 - **Evidence:** `tests/test_reusable_workflows.py:16`, `test_security_supply_chain_workflows.py:92`, `test_pinned_tool_versions.py:122`, `test_workflow_install_commands.py:14`, `test_release_version.py:481`, `test_self_gates.py:61` use `.glob("*.yml")`. GitHub also runs `*.yaml` workflows; no test fails when `.github/workflows/x.yaml` appears. Such a file escapes the SHA-pin, moving-label, install-command and `RELEASE_TOKEN` checks.
 - **Impact:** latent hole in checks that guard release and supply chain.
 - **Proposed fix:** a test asserting no `.github/workflows/*.yaml`, or glob `*.y*ml`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T3 (P3) `test_meta_test_utils_todo_hygiene.py` tests another repository's source
 - **Evidence:** lines 18-34: `PYUTILZ_DIR = Path(pyutilz.__file__).resolve().parent`; `test_every_todo_marker_has_attribution` fails whenever pyutilz gains a bare TODO. Locally pyutilz is an editable install of a moving working tree; in CI it is the pinned SHA. The scanner is covered by `test_meta_test_utils.py`. The second test (line 56) asserts nothing (audit-exempt).
 - **Impact:** false red from pyutilz edits; no signal about py_ci_shared.
 - **Proposed fix:** point it at a seeded tmp tree. ADDITIVE (test only).
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T4 (P3) `pytest.raises` without `match` on a broad exception where the message is the contract
 - **Evidence:** `test_release_listing_pages.py:50` (`OSError`; the `monkeypatch.setattr` before it is unused by the call), `test_marker_runner_coverage.py:267` (`ValueError` over five bad expressions), `test_release_local.py:202`, `test_git_changed_lines.py:113`, `test_core_scopes.py:90`, `test_wallclock_python_mode.py:42`, `code_audit/test_registry_invariants.py:62`, `test_atomic_write_staging.py:32`, `test_embedded_postgres.py:80,106`. Sources raise distinct messages (`.github/scripts/release_guard.py:228`, `marker_runner_coverage.py:401-442`).
 - **Proposed fix:** add `match=`. ADDITIVE (test only).
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T5 (P3) `test_format_warn_reports_a_missing_tool_not_findings` asserts its own `sys.exit(0)`
 - **Evidence:** `tests/test_diagnostics_exit_codes.py:111-115`: `main()` returns None, then the test calls `sys.exit(0)` inside `pytest.raises(SystemExit)` and asserts `code == 0`; the code under test never produces that 0. It still catches `main()` raising.
 - **Proposed fix:** call `main()` and assert it returns. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T6 (P3) pandas is required by a module-level `importorskip` but is not in the `dev` extra
 - **Evidence:** `tests/test_estimator_invariants.py:8`; the `dev` extra lists numpy, not pandas; it arrives only through pyutilz. `self-ci.yml:132` prints the skip count but does not fail on it.
 - **Proposed fix:** add `pandas` to the dev extra. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## 44-T7 (P2) adoption_sha_ref: `main()` and the multi-pin loop are untested; 26 of 47 mutants survive
 - **Evidence:** mutation sweep above. `tests/test_adoption_sha_ref.py` never calls `main` or runs the module. `.github/workflows/consumer-pins.yml:72` runs `python -m py_ci_shared.adoption_sha_ref --repos-file ... --resolve-in .`, and consumers read its `::warning title=uses-sha-without-ref-input::` annotations. Surviving: deleting both `sys.stdout.write` calls, emptying the annotation title, `required=True` -> `False`, swapping the arguments of `scan_repos`, `__main__` -> `""`. Line 37 `continue` -> `break` survives because no test has an exempt pin followed by a reportable pin in one file (the break would hide the second). `+` -> `*` in `_USES_SHA` survives because no test has an empty owner.
 - **Impact:** the gate could print nothing, or mislabel its annotation, or stop at the first release-tag pin and miss a later between-release pin, and the suite stays green. The gate is report-only, which limits the harm to missed warnings.
 - **Proposed fix:** tests: (a) `main([...])` over a tmp `repos.toml` and a tmp git checkout with a tag, asserting the annotation line and the count line and return 0; (b) a workflow with a release pin on line 3 and a between-release pin on line 6, expecting only line 6; (c) `uses: /py-ci-shared/...` expecting no report. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test and change in this round's commit; see CHANGELOG Unreleased)
 
 ## Slow tests
 Targeted run over 20 release/security/gate files (473 tests, all passed, 513 s on a loaded machine, `-p no:randomly`). Slowest: `test_hook_attestation.py::TestEndToEnd` tests 7-16 s each (real git repos), `test_reusable_workflows.py` fetch-retry tests 11-14 s (real retry delays), `test_release_version.py::test_cli_refuses_to_move_v1_for_a_back_port_tag` 13 s. No test is a pure sleep; the cost is real git/subprocess work. Not raised: no wrong-result risk, and CLAUDE.md already puts the rest of the suite in the release script.

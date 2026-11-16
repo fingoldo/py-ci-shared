@@ -264,7 +264,7 @@ class TestAuditRegressions:
         assert not expression_selects("(slow or gpu) and not flaky", ["gpu", "flaky"])
         assert expression_selects("not not integration", ["integration"])
         for bad in ("slow andd integration", "(slow", "slow)", "and slow", "__import__('os')"):
-            with pytest.raises(ValueError):
+            with pytest.raises(ValueError, match=r"empty expression|unexpected|unbalanced|ends early"):
                 expression_selects(bad, ["slow", "integration"])
 
 

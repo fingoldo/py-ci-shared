@@ -199,7 +199,7 @@ def test_release_notes_prefer_the_version_section() -> None:
     log = "# Changelog\n\n## Unreleased\n\n- next\n\n## 1.22.9\n\n- this one\n\n## 1.22.8\n\n- old\n"
     assert rl.release_notes(log, "1.22.9") == "- this one\n"
     assert rl.release_notes(log, "1.23.0") == "- next\n"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="has no non-empty"):
         rl.release_notes("# Changelog\n\n## 1.0.0\n\n- x\n", "1.1.0")
 
 

@@ -59,7 +59,7 @@ def test_finding_rejects_a_severity_outside_the_vocabulary():
     assert SEVERITIES, "the severity vocabulary is empty"
     for severity in SEVERITIES:
         assert Finding(check="c", severity=severity, file="f.py", line=1, snippet="", detail="d").severity == severity
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="severity must be one of"):
         Finding(check="c", severity="Medium", file="f.py", line=1, snippet="", detail="d")
 
 

@@ -47,5 +47,5 @@ def test_a_listing_past_the_page_cap_is_unreadable_not_partial(monkeypatch) -> N
     guard = _load_guard()
     full_page = [f"v0.{n}.0" for n in range(100)]
     monkeypatch.setattr(guard, "_github", lambda token: _paged_api([full_page] * (guard._MAX_RELEASE_PAGES + 1)))
-    with pytest.raises(OSError):
+    with pytest.raises(OSError, match="more than"):
         guard._release_tag_names(_paged_api([full_page] * (guard._MAX_RELEASE_PAGES + 1)), "owner/name")

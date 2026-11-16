@@ -63,8 +63,11 @@ def forget_bytecode(sandbox: Union[Path, str], target: Union[Path, str]) -> None
             ) from exc
 
 
-def _pytest_env(pycache: Optional[Path] = None) -> dict[str, str]:
+def _pytest_env(pycache: Optional[Path] = None, *, sandbox: Optional[Path] = None) -> dict[str, str]:
     """Environment for a nested pytest run; with *pycache* its bytecode is cached there, otherwise none is written.
+
+    With *sandbox*, the sandbox's ``src`` (when it has one) is put first on ``PYTHONPATH``, so a package that hosts the worker
+    (py_ci_shared mutating itself) is imported from the mutated copy, not from the parent's checkout (audit 44-T1).
 
     ``PYTEST_ADDOPTS`` is cleared because a consuming repo's ``--cov-fail-under`` would fail every
     mutant run for the wrong reason and make every mutant look killed -- the same exit-code
@@ -86,6 +89,8 @@ def _pytest_env(pycache: Optional[Path] = None) -> dict[str, str]:
     inherited = env.get("PYTHONPATH", "")
     entries = [p for p in sys.path if p and p not in inherited.split(os.pathsep)]
     env["PYTHONPATH"] = os.pathsep.join([*entries, inherited]) if inherited else os.pathsep.join(entries)
+    if sandbox is not None and (sandbox / "src").is_dir():
+        env["PYTHONPATH"] = os.pathsep.join(p for p in (str(sandbox / "src"), env["PYTHONPATH"]) if p)
     # Bytecode caching keys on the source's size and mtime-to-the-second, and an operator swap changes neither. Without a cache directory no bytecode is
     # written at all. With one (the sweep's sandboxes), the sweep calls forget_bytecode() after every write of the mutated file, and no other file changes.
     # Measured on a large package: a session without bytecode 162 s, with it 130 s.
@@ -556,7 +561,7 @@ class _WarmRunner:
             encoding="utf-8",
             errors="replace",
             cwd=str(self.sandbox),
-            env=_pytest_env(pyc_cache_dir(self.sandbox)),
+            env=_pytest_env(pyc_cache_dir(self.sandbox), sandbox=self.sandbox),
             bufsize=1,
             **_new_group_kwargs(),
         )

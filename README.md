@@ -535,6 +535,10 @@ python -m py_ci_shared.mutation_rerun --repo . sweep src/pkg/mod.py tests/test_m
 python -m py_ci_shared.mutation_rerun --repo . lines src/pkg/mod.py tests/test_mod.py run.log mod.notes.json 431 470
 ```
 
+Mutating py_ci_shared itself (its own gates and their tests) works from a checkout: the nested pytest run puts the
+sandbox's `src` first on `PYTHONPATH`, so the worker imports the mutated copy rather than the parent's package. A
+module of another package is unaffected.
+
 - `sweep` prints `RUN mutants=… killed=… survived=… truncated=… candidates=… fingerprint=…`, then one
   `SURVIVOR <line:col> … [fingerprint=…]` line per survivor. The fingerprint is a 12-character sha256 over the
   module and every test file that was run against it, so a survivor logged now can be told apart from one judged

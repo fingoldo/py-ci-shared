@@ -110,7 +110,7 @@ def test_a_clean_tree_reports_nothing(repo: Path):
 def test_a_bad_revision_raises_rather_than_returning_empty(repo: Path):
     """An empty result must mean "nothing changed", never "the command failed" -- otherwise a
     misconfigured hook silently checks zero lines and passes."""
-    with pytest.raises(RuntimeError):
+    with pytest.raises(RuntimeError, match="git diff failed"):
         changed_lines(repo, rev="no-such-revision")
 
 
