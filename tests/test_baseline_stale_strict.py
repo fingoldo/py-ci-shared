@@ -15,7 +15,7 @@ def _f(msg: str) -> Finding:
 
 
 def test_ok_is_false_for_a_stale_entry_but_blocking_stays_false(tmp_path):
-    b = Baseline(tmp_path / "b.json")
+    b = Baseline(tmp_path / "b.json", new_note="reason")
     b.enforce([_f("x"), _f("y")], refresh=True, grow=True)
     outcome = b.enforce([_f("x")])
     assert outcome.stale == ["r::a.py::y"]
@@ -23,14 +23,14 @@ def test_ok_is_false_for_a_stale_entry_but_blocking_stays_false(tmp_path):
 
 
 def test_a_new_finding_is_blocking(tmp_path):
-    b = Baseline(tmp_path / "b.json")
+    b = Baseline(tmp_path / "b.json", new_note="reason")
     b.enforce([_f("x")], refresh=True, grow=True)
     outcome = b.enforce([_f("x"), _f("z")])
     assert outcome.blocking and not outcome.ok
 
 
 def test_raise_for_pytest_can_still_tolerate_stale_while_migrating(tmp_path):
-    b = Baseline(tmp_path / "b.json")
+    b = Baseline(tmp_path / "b.json", new_note="reason")
     b.enforce([_f("x"), _f("y")], refresh=True, grow=True)
     outcome = b.enforce([_f("x")])
     outcome.raise_for_pytest(fail_on_stale=False)
@@ -44,7 +44,7 @@ def _fake_run(monkeypatch, survivors):
 
 
 def test_mutation_teeth_fails_on_a_stale_survivor_entry(tmp_path, monkeypatch):
-    b = Baseline(tmp_path / "b.json")
+    b = Baseline(tmp_path / "b.json", new_note="reason")
     b.enforce(["old-survivor"], refresh=True, grow=True)
     _fake_run(monkeypatch, [])
     with pytest.raises(AssertionError, match="old-survivor"):
@@ -52,7 +52,7 @@ def test_mutation_teeth_fails_on_a_stale_survivor_entry(tmp_path, monkeypatch):
 
 
 def test_mutation_teeth_passes_when_the_baseline_matches_exactly(tmp_path, monkeypatch):
-    b = Baseline(tmp_path / "b.json")
+    b = Baseline(tmp_path / "b.json", new_note="reason")
     b.enforce([], refresh=True, grow=True)
     _fake_run(monkeypatch, [])
     mutation_teeth.assert_no_new_surviving_mutant("m.py", [], tmp_path, b)

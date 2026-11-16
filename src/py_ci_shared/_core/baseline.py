@@ -53,6 +53,8 @@ PathLike = Union[str, "os.PathLike[str]"]
 
 UNJUSTIFIED_MARKER = "NEEDS-JUSTIFICATION"
 SCHEMA_VERSION = 1
+# The note a refresh gives an entry it records but does not justify (42-T1): a blank note would pass enforce.
+DEFAULT_NEW_NOTE = f"{UNJUSTIFIED_MARKER}: a refresh recorded this finding; replace this with the reason it is kept"
 
 
 def is_unjustified(note: object) -> bool:
@@ -299,7 +301,7 @@ class Baseline:
             return f"`py-ci-shared refresh {self.gate}` (or PY_CI_SHARED_REFRESH={self.gate})"
         return self.refresh_command
 
-    def __init__(self, path: PathLike, *, gate: str = "", refresh_command: str = "", new_note: str = "") -> None:
+    def __init__(self, path: PathLike, *, gate: str = "", refresh_command: str = "", new_note: str = DEFAULT_NEW_NOTE) -> None:
         self.path = Path(path)
         self.gate = gate or self.path.stem
         self.refresh_command = refresh_command or f"set PY_CI_SHARED_REFRESH={self.gate} (or pass its --refresh-* flag) and rerun"
@@ -313,6 +315,13 @@ class Baseline:
         if not self.exists():
             raise BaselineError(f"baseline {self.path} does not exist. Create it with: {self.refresh_text}")
         data = load_json(self.path)
+        if isinstance(data, dict):
+            # A header written by another gate (a copied file, a wrong baseline_path=) or a newer schema is not this gate's baseline (42-T5).
+            if data.get("gate", self.gate) != self.gate:
+                raise BaselineError(f"baseline {self.path} was written for gate {data.get('gate')!r}, not {self.gate!r}; fix the path or the header")
+            schema = data.get("schema", SCHEMA_VERSION)
+            if isinstance(schema, int) and not isinstance(schema, bool) and schema > SCHEMA_VERSION:
+                raise BaselineError(f"baseline {self.path} has schema {schema}; this py-ci-shared reads up to {SCHEMA_VERSION}")
         try:
             return _parse_entries(data, self.path)
         except BaselineError as exc:
