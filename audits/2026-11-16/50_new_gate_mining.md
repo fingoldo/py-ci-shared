@@ -173,7 +173,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`wf2.py`, ten repos: mlframe, pyutilz, llm_bench, glossum, algopacksimple, noema_app, polyvocab_app, social, py-ci-shared, autopsia): 2 hits, both TP: `social/.github/workflows/production-scrapers-ci.yml:79` and `:150`, `pip install "pyutilz @ git+https://github.com/fingoldo/pyutilz.git"`. 0 FP. The first crude version flagged 20 clone lines as unpinned; all were followed by a `checkout <sha>` on the next line, which is why the spec requires the follow-up check.
 - **Impact:** a non-reproducible CI run on the consumer that has it (social); a future clone line added without a pin.
 - **Proposed fix:** as above. ADDITIVE.
-- **Disposition:** DEFERRED: a line-scan gate over workflow YAML with a follow-up-line checkout rule needs multi-line run-block handling that was not reviewed this round. Not built this round.
+- **Disposition:** BUILT, HARD: `src/py_ci_shared/workflow_installs_pinned.py` (line and block scan; `run:` and any `key: |` block scalar are one block; comment lines skipped), tests `tests/test_workflow_installs_pinned.py`, canaries `tests/canary/workflow_installs_pinned/`, fragment `tests/_gate_teeth_canaries_workflow_installs_pinned.py`, manifest `audits/2026-11-16/manifests/workflow_installs_pinned.json`. Measured read-only: pyutilz/.github/workflows 0, mlframe/.github/workflows 0. The two first-pass mlframe hits were false positives (checkout in a `install-command: |` block), and the pyutilz hit was a YAML comment; both are fixed and tested. Not registered in registry.toml or the README (owner-owned files).
 
 ## 50-T5 (P2) fit_at_test_module_import: a test module that trains a model while it is imported
 
