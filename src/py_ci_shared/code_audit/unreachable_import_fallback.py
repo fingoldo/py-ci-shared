@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from collections.abc import Iterator
 
@@ -158,7 +159,7 @@ def scan_unreachable_import_fallback(
             for inner in walk_nodes(stmt)
         }
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try) or id(node) in type_only_tries:
+            if not isinstance(node, TRY_NODES) or id(node) in type_only_tries:
                 continue
             if not _catches_import_error(node):
                 continue

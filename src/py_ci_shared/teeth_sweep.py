@@ -327,4 +327,7 @@ def _print_sweep_report(total: int, toothless: list[str], skipped: list[str], er
 
 
 if __name__ == "__main__":
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     raise SystemExit(main())

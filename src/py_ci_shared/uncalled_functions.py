@@ -47,6 +47,7 @@ as a call.
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import weakref
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -119,7 +120,7 @@ def _module_level_defs(body: "list[ast.stmt]") -> Iterator[_FuncDef]:
             yield from _module_level_defs(node.orelse)
         elif isinstance(node, (ast.With, ast.AsyncWith)):
             yield from _module_level_defs(node.body)
-        elif isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
+        elif isinstance(node, TRY_NODES):
             yield from _module_level_defs(node.body)  # type: ignore[attr-defined]
             for handler in node.handlers:  # type: ignore[attr-defined]
                 yield from _module_level_defs(handler.body)

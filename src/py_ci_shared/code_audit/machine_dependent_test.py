@@ -7,6 +7,7 @@ of the same proposal, a real clock shifted by part of a day. The two report disj
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from typing import Optional, Union
 
@@ -269,7 +270,7 @@ def _guarded_lines(fn: ast.AST) -> set[int]:
     """Line numbers inside a ``try`` or an ``if``/``else`` within ``fn`` - i.e. conditionally executed."""
     guarded: set[int] = set()
     for node in walk_nodes(fn):
-        if not isinstance(node, (ast.Try, ast.If)):
+        if not isinstance(node, (*TRY_NODES, ast.If)):
             continue
         for inner in walk_nodes(node):
             lineno = getattr(inner, "lineno", None)

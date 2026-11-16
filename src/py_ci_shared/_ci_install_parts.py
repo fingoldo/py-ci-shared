@@ -7,6 +7,7 @@ arguments of ``pip install``/``uv pip install``, read statically from the repo.
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import functools
 import logging
@@ -659,7 +660,7 @@ class _ImportVisitor:
                 self.visit(node.body, guard, not isinstance(node, ast.ClassDef))
         elif isinstance(node, ast.If):
             self.branch(node, guard, in_hook)
-        elif isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
+        elif isinstance(node, TRY_NODES):
             try_node: ast.Try = node  # type: ignore[assignment]
             if not catches_import_error(try_node):
                 self.visit(try_node.body, guard, in_hook)

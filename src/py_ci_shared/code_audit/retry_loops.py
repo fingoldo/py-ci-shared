@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from collections.abc import Iterator
 
@@ -130,7 +131,7 @@ def scan_retry_loops(
         for node in walk_tree(tree):
             if not (isinstance(node, ast.While) and isinstance(node.test, ast.Constant) and node.test.value is True):
                 continue
-            try_nodes = [n for n in walk_nodes(node) if isinstance(n, ast.Try)]
+            try_nodes = [n for n in walk_nodes(node) if isinstance(n, TRY_NODES)]
             if not try_nodes:
                 continue
             has_retry_shape = any(_try_has_sleep_or_continue(t) for t in try_nodes)

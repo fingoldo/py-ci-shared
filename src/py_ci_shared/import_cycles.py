@@ -28,6 +28,7 @@ Usage from a repository's meta tests::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 import sys
 from collections.abc import Iterable, Mapping
@@ -91,7 +92,7 @@ def _load_time_statements(body: Iterable[ast.stmt]) -> Iterable[ast.stmt]:
             if not (_is_type_checking(stmt.test) or _is_main_guard(stmt.test)):
                 yield from _load_time_statements(stmt.body)
             yield from _load_time_statements(stmt.orelse)
-        elif isinstance(stmt, ast.Try) or type(stmt).__name__ == "TryStar":
+        elif isinstance(stmt, TRY_NODES):
             for block in (stmt.body, stmt.orelse, stmt.finalbody):  # type: ignore[attr-defined]
                 yield from _load_time_statements(block)
             for handler in stmt.handlers:  # type: ignore[attr-defined]
@@ -115,7 +116,7 @@ def _guarded_lines(tree: ast.Module) -> set[int]:
     """Lines of statements inside a ``try`` whose handler catches ImportError: a failed import there is survived."""
     out: set[int] = set()
     for node in _fast_walk(tree):
-        if isinstance(node, ast.Try) and any(_catches_import_error(h) for h in node.handlers):
+        if isinstance(node, TRY_NODES) and any(_catches_import_error(h) for h in node.handlers):
             for stmt in node.body:
                 out.update(getattr(n, "lineno", 0) for n in _fast_walk(stmt))
     return out
@@ -436,4 +437,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover - manual corpus run
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     sys.exit(main())

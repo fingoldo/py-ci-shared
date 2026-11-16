@@ -37,6 +37,7 @@ which is why the gate itself works from the declaration.
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import datetime as _dt
 import logging
 import re
@@ -110,7 +111,7 @@ def _module_bindings(tree: ast.Module) -> Iterator[tuple[str, ast.stmt]]:
                     yield target.id, node
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.value is not None:
             yield node.target.id, node
-        elif isinstance(node, (ast.If, ast.Try)):
+        elif isinstance(node, ast.If) or isinstance(node, TRY_NODES):
             stack.extend(node.body + node.orelse + getattr(node, "finalbody", []))
             for handler in getattr(node, "handlers", []):
                 stack.extend(handler.body)

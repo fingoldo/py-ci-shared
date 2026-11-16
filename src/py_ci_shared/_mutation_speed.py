@@ -7,6 +7,7 @@ either orders the test files, narrows them to files that execute the mutated lin
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import importlib.util
 import logging
 import sys
@@ -176,7 +177,7 @@ def statement_starts(source: str) -> "dict[int, int]":
         end = getattr(node, "end_lineno", None) or node.lineno
         body = getattr(node, "body", None)
         if isinstance(body, list) and body:
-            end = max(node.lineno, body[0].lineno - 1) if not isinstance(node, ast.Try) else node.lineno
+            end = max(node.lineno, body[0].lineno - 1) if not isinstance(node, TRY_NODES) else node.lineno
         for line in range(node.lineno, end + 1):
             # The innermost (latest-starting) statement wins, so a nested statement is not claimed by its parent's span.
             if line not in out or out[line] <= node.lineno:

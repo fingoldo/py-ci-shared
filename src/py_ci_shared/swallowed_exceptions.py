@@ -38,6 +38,7 @@ Existing sites are ratcheted by the baseline. Usage::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
@@ -215,7 +216,7 @@ def _calls(body: list[ast.stmt]) -> list[str]:
             out += _outer_calls(stmt.iter) + _calls(stmt.body) + _calls(stmt.orelse)
         elif isinstance(stmt, (ast.With, ast.AsyncWith)):
             out += [c for item in stmt.items for c in _outer_calls(item.context_expr)] + _calls(stmt.body)
-        elif isinstance(stmt, ast.Try):
+        elif isinstance(stmt, TRY_NODES):
             out += _calls(stmt.body) + _calls(stmt.orelse) + _calls(stmt.finalbody) + [c for h in stmt.handlers for c in _calls(h.body)]
         else:
             out += _outer_calls(stmt)

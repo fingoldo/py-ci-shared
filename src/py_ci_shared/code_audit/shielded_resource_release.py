@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
@@ -45,7 +46,7 @@ def _release_call_args_in_finally_blocks(func_node: ast.AST, exclude_subtree: as
     exclude_nodes = set(walk_nodes(exclude_subtree))
     found: set[str] = set()
     for node in walk_nodes(func_node):
-        if not isinstance(node, ast.Try) or node in exclude_nodes:
+        if not isinstance(node, TRY_NODES) or node in exclude_nodes:
             continue
         for stmt in node.finalbody:
             for call in walk_nodes(stmt):

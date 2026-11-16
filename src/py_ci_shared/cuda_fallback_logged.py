@@ -25,6 +25,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -109,7 +110,7 @@ def _outer_logs(try_node: ast.Try, parents: "dict[int, ast.AST]", log_roots: "tu
     child: ast.AST = try_node
     node: Optional[ast.AST] = parents.get(id(try_node))
     while node is not None and not isinstance(node, _FUNCS):
-        if isinstance(node, ast.Try) and child in node.body and any(_logs_or_raises(h.body, log_roots) for h in node.handlers):
+        if isinstance(node, TRY_NODES) and child in node.body and any(_logs_or_raises(h.body, log_roots) for h in node.handlers):
             return True
         child, node = node, parents.get(id(node))
     return False

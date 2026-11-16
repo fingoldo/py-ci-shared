@@ -35,6 +35,7 @@ both resolve to ``tests._known_gap``).
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import configparser
 import re
@@ -220,7 +221,7 @@ def _is_conditional(node: ast.AST, parents: dict[int, ast.AST]) -> bool:
     """An imperative ``pytest.skip()`` inside an ``if``/``except`` is a condition on the environment."""
     cur = parents.get(id(node))
     while cur is not None and not isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Module)):
-        if isinstance(cur, (ast.If, ast.ExceptHandler, ast.IfExp, ast.Try)):
+        if isinstance(cur, (ast.If, ast.ExceptHandler, ast.IfExp, *TRY_NODES)):
             return True
         cur = parents.get(id(cur))
     return False

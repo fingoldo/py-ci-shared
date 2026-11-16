@@ -232,4 +232,7 @@ def main(argv: "Optional[Sequence[str]]" = None) -> int:
 
 
 if __name__ == "__main__":
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     sys.exit(main())

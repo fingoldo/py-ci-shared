@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
@@ -114,7 +115,7 @@ def _swallowing_calls(tree: ast.AST) -> set[str]:
     """Names called inside a broad `except` that does not re-raise, in this production module."""
     swallowed: set[str] = set()
     for node in walk_tree(tree):
-        if not isinstance(node, ast.Try):
+        if not isinstance(node, TRY_NODES):
             continue
         if not any(_handler_is_broad(h) and not _reraises(h) for h in node.handlers):
             continue

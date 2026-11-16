@@ -53,6 +53,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Optional, Union
@@ -87,7 +88,7 @@ def _sub_bodies(stmt: ast.stmt, safe_warnings: bool) -> Optional[list[tuple[list
     if isinstance(stmt, ast.If):
         parts = [stmt.orelse] if _is_main_guard(stmt.test) else [stmt.body, stmt.orelse]
         return [(p, safe_warnings) for p in parts]
-    if isinstance(stmt, ast.Try) or type(stmt).__name__ == "TryStar":
+    if isinstance(stmt, TRY_NODES):
         parts = [stmt.body, stmt.orelse, stmt.finalbody, *(h.body for h in stmt.handlers)]  # type: ignore[attr-defined]
         return [(p, safe_warnings) for p in parts]
     if isinstance(stmt, (ast.With, ast.AsyncWith)):

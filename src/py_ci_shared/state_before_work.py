@@ -27,6 +27,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 from collections.abc import Iterable
 from pathlib import Path
@@ -81,7 +82,7 @@ def _calls(stmt: ast.stmt) -> list:
 def _restored(fn: ast.AST, name: str) -> bool:
     """*name* is assigned inside an ``except``/``finally`` of *fn*: the stamp is put back on failure."""
     for node in walk(fn):
-        if isinstance(node, ast.Try):
+        if isinstance(node, TRY_NODES):
             for part in [*node.handlers, *[ast.Module(body=node.finalbody, type_ignores=[])]]:
                 for sub in walk(part):
                     targets = sub.targets if isinstance(sub, ast.Assign) else [sub.target] if isinstance(sub, (ast.AugAssign, ast.AnnAssign)) else []

@@ -508,4 +508,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 
 if __name__ == "__main__":
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     main()

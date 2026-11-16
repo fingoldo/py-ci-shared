@@ -7,6 +7,7 @@ what the project declares (``[project.dependencies]`` and each extra) and which 
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import functools
 import re
@@ -54,7 +55,7 @@ def _is_flag_test(test: ast.expr, flags: frozenset[str]) -> bool:
 
 
 def _is_try(node: ast.AST) -> bool:
-    return isinstance(node, ast.Try) or type(node).__name__ == "TryStar"
+    return isinstance(node, TRY_NODES)
 
 
 def _import_flags(tree: ast.Module) -> frozenset[str]:

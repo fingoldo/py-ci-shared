@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from typing import Optional
 from collections.abc import Iterator
@@ -240,7 +241,7 @@ def _branch_paths(func: ast.AST) -> dict[int, tuple[tuple[int, int], ...]]:
         if isinstance(node, ast.If):
             visit(node.test, path)
             arms = [node.body, node.orelse]
-        elif isinstance(node, ast.Try):
+        elif isinstance(node, TRY_NODES):
             arms = [node.body, *[h.body for h in node.handlers], node.orelse, node.finalbody]
         if arms:
             for index, arm in enumerate(arms):

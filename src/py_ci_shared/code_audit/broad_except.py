@@ -8,6 +8,7 @@ log or re-raise, in every tree, so it stays.
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 from typing import Optional
 
@@ -237,7 +238,7 @@ def _logging_emit_try_ids(tree: ast.AST) -> set[int]:
     ids: set[int] = set()
     for fn in walk_tree(tree):
         if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name == "emit" and any(a.arg == "record" for a in fn.args.args):
-            ids.update(id(sub) for sub in walk_tree(fn) if isinstance(sub, ast.Try))
+            ids.update(id(sub) for sub in walk_tree(fn) if isinstance(sub, TRY_NODES))
     return ids
 
 
@@ -263,7 +264,7 @@ def scan_broad_except_swallows(
         rel = py.relative_to(root).as_posix()
         handler_tries = _logging_emit_try_ids(tree)
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try) or id(node) in handler_tries:
+            if not isinstance(node, TRY_NODES) or id(node) in handler_tries:
                 continue
             # Suppress whole Try if the body is one of the documented-safe
             # shapes (import guard / single best-effort op). The handler
