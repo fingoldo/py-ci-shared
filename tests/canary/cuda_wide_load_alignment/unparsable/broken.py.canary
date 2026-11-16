@@ -1,0 +1,6 @@
+import cupy as cp
+_SRC = r"""
+extern "C" __global__ void k(const unsigned char* c, int* o) { o[0] = 0; }
+"""
+def run(x:
+    return _SRC

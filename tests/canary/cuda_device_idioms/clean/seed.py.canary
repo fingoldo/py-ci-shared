@@ -1,0 +1,16 @@
+import cupy as cp
+from pyutilz.performance.gpu_hw_launch import gpu_capability_summary, launch_device_id
+
+
+def run(x, n, vec):
+    summary = gpu_capability_summary(launch_device_id())
+    cp.cuda.Device(0).use()  # device-ok: single-GPU bench script, the device is the test subject
+    y = cp.power(x, 0.5)
+    s = cp.sort(vec)
+    t = cp.sort(x, axis=1)
+    order = device_argsort(x, axis=0)  # sort-ok: the wrapper does the 80000-row split
+    return summary, y, s, t, order
+
+
+def device_argsort(a, axis):
+    return cp.argsort(a, axis=axis)

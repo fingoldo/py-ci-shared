@@ -1,0 +1,17 @@
+_SRC = r"""
+extern "C" __global__ void cnt(const unsigned char* codes, const long long stride, int* out) {
+    const unsigned int* c4 = (const unsigned int*)(codes + (long long)blockIdx.x * stride);
+    out[blockIdx.x] = (int)c4[threadIdx.x];
+}
+"""
+_SRC2 = r"""
+extern "C" __global__ void cnt2(const unsigned char* codes, const long long n, int* out) {
+    const unsigned int* c4 = (const unsigned int*)(codes + (long long)blockIdx.x * n); // align-ok: host pads rows to a multiple of 4 (n_pad)
+    out[blockIdx.x] = (int)c4[threadIdx.x];
+}
+"""
+_SRC3 = r"""
+extern "C" __global__ void words(const unsigned int* bits, int* out) {
+    out[blockIdx.x] = (int)bits[threadIdx.x];
+}
+"""
