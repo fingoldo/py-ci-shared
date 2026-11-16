@@ -14,6 +14,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - **Behaviour change** (47-T7, `configs/consumers.toml`): `finance` (private, hook-only, no pin) is now listed, so `consumer-pins` and `ci-health` check it and `adoption_matrix` reports its `unpinned-use` finding. Without `CONSUMER_READ_TOKEN` the private repo is skipped and `consumer-pins` fails on the skip unless it runs with allow-skipped-private. What to do: give the repo a token (the same secret as the other private consumers) or pin py-ci-shared in finance's dev dependencies.
 
+- New tool `bump_pin` (audit 47-T8): `py-ci-shared tool bump_pin <ref> <checkout> [--write]` moves every py-ci-shared pin line of one consumer checkout (workflow `uses:`, `py-ci-shared-ref:` inputs, pre-commit `rev:`, requirements and pyproject URLs) to one ref. Dry run by default; it never writes outside the given checkout and does not follow symlinks. Nothing to do for consumers until they run it.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.

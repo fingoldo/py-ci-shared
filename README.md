@@ -174,6 +174,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`baseline_ratchet`](src/py_ci_shared/baseline_ratchet.py) | library | 1.3.6 |  | Shared ratchet for structural checks with a pre-existing backlog |
 | [`baseline_trend`](src/py_ci_shared/baseline_trend.py) | cli | 1.3.6 | `main` | How each baselined rule's count has moved over time, read out of git history |
 | [`black_filtered_apply`](src/py_ci_shared/black_filtered_apply.py) | cli | 1.0.0 | `main` | Apply Black's reformatting to a file, EXCEPT for opcodes matching excluded classes |
+| [`bump_pin`](src/py_ci_shared/bump_pin.py) | cli | 1.23.12 | `main` | Dry-run-by-default rewrite of one consumer checkout's py-ci-shared pin lines (workflow uses, ref inputs, pre-commit rev, requirements URLs) to a single ref |
 | [`cache_key_sensitivity`](src/py_ci_shared/cache_key_sensitivity.py) | gate | 1.23.8 | `assert_key_sensitive` | Every input that changes a memoised result must change its cache key, and nothing else may |
 | [`caller_frame_mutation`](src/py_ci_shared/caller_frame_mutation.py) | gate | 1.23.8 | `assert_caller_frame_mutation` | Advisory (warns by default): a function that mutates a DataFrame parameter in place (X[col]=..., X.columns=..., inplace=True) without copying it |
 | [`cancellation_prone_moments`](src/py_ci_shared/cancellation_prone_moments.py) | gate | 1.22.3 | `assert_cancellation_prone_moments` | Variance, skewness and kurtosis built from raw power sums cancel catastrophically on large-offset data |
@@ -659,7 +660,9 @@ Other behaviour changes in 1.17.0:
 ## Pinning and releases
 
 Workflows: `uses: fingoldo/py-ci-shared/.github/workflows/<name>.yml@v1`, or a full SHA with the exact tag
-as a comment (`@<sha>  # v1.17.0`) when you need a frozen pipeline. Do not mix the two in one repo, and never
+as a comment (`@<sha>  # v1.17.0`) when you need a frozen pipeline. A bump moves every pin line together: the workflow
+`uses:` lines, each `py-ci-shared-ref:` input, the pre-commit `rev:` and the requirements or pyproject URLs. Run
+`py-ci-shared tool bump_pin <ref> <checkout>` to see the diff, and add `--write` to apply it to that one checkout. Do not mix the two in one repo, and never
 write `# v1` next to a SHA: the comment then lies as soon as `v1` moves. `ruff-blocking.yml`,
 `lint-advisory.yml` and `black-filtered.yml` take this repo's configs, `RUFF_VERSION`/`BLACK_VERSION` and package
 from the `py-ci-shared-ref` input, whose default is the release the workflow file belongs to (`v1.23.11` in the
