@@ -273,7 +273,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D4): mlframe src 0, pyutilz src 0, glossum 0, llm_bench 0 (all clean, matching pyutilz's own "verified zero false positives" note); mlframe tests 4, all FP-looking: `test_concurrency_state_fixes.py:60,63,264,267` start threads whose joins sit in a different helper (my join test is function-local), so the spec needs "joined anywhere in the module" for tests or a tests exclusion.
 - **Impact:** a hung process exit in CI or a worker.
 - **Proposed fix:** new gate `thread_lifecycle.py` (src only by default). ADDITIVE.
-- **Disposition:** DEFERRED: test-file false positives need a module-wide join rule and the src-only scope is still open. Not built this round.
+- **Disposition:** BUILT, HARD: `src/py_ci_shared/thread_lifecycle.py` (AST; src-only scope by default, a test file gets the module-wide join rule only with include_tests=True; a thread in a list and joined through `for t in list:` is accepted), tests `tests/test_thread_lifecycle.py` (12), canaries `tests/canary/thread_lifecycle/`, fragment `tests/_gate_teeth_canaries_thread_lifecycle.py`, manifest `audits/2026-11-16/manifests/thread_lifecycle.json`. Measured read-only on src: pyutilz/src 0, mlframe/src 0 (the first pass had 4 list-then-join false positives, now fixed). Not registered in registry.toml or the README (owner-owned files).
 
 ## 50-T9 (P2) tool_config_dead_entries: an ignore, omit or override entry in `pyproject.toml` that names nothing that exists
 

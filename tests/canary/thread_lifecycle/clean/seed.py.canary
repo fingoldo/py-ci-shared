@@ -1,0 +1,11 @@
+import threading
+
+
+def start_daemon(fn):
+    threading.Thread(target=fn, daemon=True).start()
+
+
+def run_and_wait(fn):
+    t = threading.Thread(target=fn)
+    t.start()
+    t.join()
