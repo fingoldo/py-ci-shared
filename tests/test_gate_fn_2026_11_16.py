@@ -171,6 +171,39 @@ def test_t7_conditional_reraise_in_broad_except_swallow_is_flagged(tmp_path: Pat
     assert scan_broad_except_swallows(tmp_path)
 
 
+# ---- 40-T8: mutable defaults beyond a def with a list/dict/set literal ----------------------
+
+
+@pytest.mark.parametrize(
+    "default",
+    [
+        "lambda x=[]: x",
+        "def f(x=[0] * 3):\n    return x\n",
+        "def f(x=[] + []):\n    return x\n",
+        "def f(x=[i for i in r]):\n    return x\n",
+        "def f(x={k: 1 for k in r}):\n    return x\n",
+        "def f(x={k for k in r}):\n    return x\n",
+        "def f(x=bytearray()):\n    return x\n",
+        "def f(x=np.zeros(3)):\n    return x\n",
+        "def f(x=np.array([1])):\n    return x\n",
+        "def f(x=numpy.ones(3)):\n    return x\n",
+    ],
+    ids=["lambda", "list-times-int", "list-plus-list", "list-comp", "dict-comp", "set-comp", "bytearray", "np-zeros", "np-array", "numpy-ones"],
+)
+def test_t8_mutable_default_forms_are_flagged(tmp_path: Path, default: str):
+    from py_ci_shared.code_audit.mutable_defaults import scan_mutable_defaults
+
+    (tmp_path / "m.py").write_text(default, encoding="utf-8")
+    assert scan_mutable_defaults(tmp_path), default
+
+
+def test_t8_immutable_defaults_are_not_flagged(tmp_path: Path):
+    from py_ci_shared.code_audit.mutable_defaults import scan_mutable_defaults
+
+    (tmp_path / "m.py").write_text("def f(x=(1, 2), y=None, z=1 + 2):\n    return x\nlam = lambda a=3: a\n", encoding="utf-8")
+    assert scan_mutable_defaults(tmp_path) == []
+
+
 def test_t7_except_star_broad_swallow_is_flagged(tmp_path: Path):
     from py_ci_shared.code_audit.broad_except import scan_broad_except_swallows
 

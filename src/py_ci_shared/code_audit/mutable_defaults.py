@@ -63,7 +63,10 @@ _MUTABLE_FACTORIES = {
     "ndarray": "ndarray",
     "DataFrame": "DataFrame",
     "Series": "Series",
+    "bytearray": "bytearray",
 }
+_NUMPY_MODULES = frozenset({"np", "numpy"})
+_NUMPY_CONSTRUCTORS = frozenset({"array", "zeros", "ones", "empty"})
 
 
 def _is_mutable_default(default: ast.AST) -> Optional[str]:
@@ -75,15 +78,29 @@ def _is_mutable_default(default: ast.AST) -> Optional[str]:
         return "dict"
     if isinstance(default, ast.Set):
         return "set"
+    if isinstance(default, (ast.ListComp, ast.DictComp, ast.SetComp)):
+        # A comprehension builds one fresh container at def time, exactly like its literal form.
+        return {ast.ListComp: "list", ast.DictComp: "dict", ast.SetComp: "set"}[type(default)]
+    if isinstance(default, ast.BinOp):
+        # ``[0] * 3`` and ``[] + []`` still produce a list at def time; a mutable operand decides the type.
+        return _is_mutable_default(default.left) or _is_mutable_default(default.right)
     if isinstance(default, ast.Call):
         # Arguments do NOT make the call safe: ``dict(a=1)`` builds a fresh mutable object once,
         # at def time, exactly like ``{}`` does.
-        name = default.func.id if isinstance(default.func, ast.Name) else (default.func.attr if isinstance(default.func, ast.Attribute) else None)
+        func = default.func
+        name = func.id if isinstance(func, ast.Name) else (func.attr if isinstance(func, ast.Attribute) else None)
         if name in _MUTABLE_CALLS:
             return name
         if name in _MUTABLE_FACTORIES:
             return _MUTABLE_FACTORIES[name]
+        if _is_numpy_constructor(func):
+            return "ndarray"
     return None
+
+
+def _is_numpy_constructor(func: ast.expr) -> bool:
+    """True for ``np.array``/``np.zeros``/``np.ones``/``np.empty`` (or the ``numpy.`` spelling): each builds one shared array at def time."""
+    return isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id in _NUMPY_MODULES and func.attr in _NUMPY_CONSTRUCTORS
 
 
 def _shadows_param(node: ast.AST, param_name: str) -> bool:
@@ -112,7 +129,7 @@ def _walk_skipping_shadowed_scopes(func: ast.AST, param_name: str) -> Iterator[a
         todo.extend(child_nodes(node))
 
 
-def _param_is_mutated(func: ast.FunctionDef | ast.AsyncFunctionDef, param_name: str) -> bool:
+def _param_is_mutated(func: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda, param_name: str) -> bool:
     """Heuristic: does the function body apply a mutating operation to
     the named parameter? Walks calls of shape ``param.append(...)``,
     subscript-assigns ``param[k] = v``, augmented assigns ``param += x``.
@@ -456,8 +473,9 @@ def scan_mutable_defaults(
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):
-            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
                 continue
+            fname = node.name if not isinstance(node, ast.Lambda) else "lambda"
             args = node.args
             # Pair every positional default with its corresponding name.
             pos_args = (*args.posonlyargs, *args.args)
@@ -473,7 +491,7 @@ def scan_mutable_defaults(
                     continue
                 mutated = _param_is_mutated(node, arg_node.arg)
                 sev = "P0" if mutated else "Low"
-                detail = f"def {node.name}(..., {arg_node.arg}={label}()): " + (
+                detail = f"def {fname}(..., {arg_node.arg}={label}()): " + (
                     "MUTATED in body -> shared state leaks across callers" if mutated else "default is mutable but never mutated in body (Low)"
                 )
                 findings.append(
