@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, nodes_of, scan_python
+from ._core.node_index import postorder_fold
 
 __all__ = ["DEFAULT_EXCLUDE_FRAGMENTS", "RULE", "assert_hardcoded_seed_in_library", "find_hardcoded_seed_in_library"]
 
@@ -78,27 +79,50 @@ _SEED_METHODS = frozenset({"manual_seed"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
+_ARITHMETIC = (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod)
+
+
 def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
-    """The int *node* evaluates to when it is a literal, a folded ``+ - * // %`` of literals, or a module constant bound once to one."""
-    if isinstance(node, ast.Constant):
-        return node.value if isinstance(node.value, int) and not isinstance(node.value, bool) else None
-    if isinstance(node, ast.Name):
-        return consts.get(node.id)
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
-        inner = _int_value(node.operand, consts)
-        return None if inner is None else (-inner if isinstance(node.op, ast.USub) else inner)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod)):
-        left, right = _int_value(node.left, consts), _int_value(node.right, consts)
-        if left is None or right is None:
-            return None
-        if isinstance(node.op, ast.Add):
-            return left + right
-        if isinstance(node.op, ast.Sub):
-            return left - right
-        if isinstance(node.op, ast.Mult):
-            return left * right
-        return None if right == 0 else (left // right if isinstance(node.op, ast.FloorDiv) else left % right)
-    return None
+    """The int *node* evaluates to when it is a literal, a folded ``+ - * // %`` of literals, or a module constant bound once to one.
+
+    Folded bottom-up with an explicit stack: a left-nested ``1 + 1 + ...`` chain is as deep as it is long.
+    """
+
+    def children(current: ast.AST) -> "list[ast.AST]":
+        if isinstance(current, ast.BinOp) and isinstance(current.op, _ARITHMETIC):
+            return [current.left, current.right]
+        if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
+            return [current.operand]
+        return []
+
+    def combine(current: ast.AST, values: "list[Optional[int]]") -> Optional[int]:
+        if isinstance(current, ast.Constant):
+            return current.value if isinstance(current.value, int) and not isinstance(current.value, bool) else None
+        if isinstance(current, ast.Name):
+            return consts.get(current.id)
+        if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
+            inner = values[0]
+            return None if inner is None else (-inner if isinstance(current.op, ast.USub) else inner)
+        if isinstance(current, ast.BinOp) and isinstance(current.op, _ARITHMETIC):
+            left, right = values
+            return None if left is None or right is None else _apply_arithmetic(current.op, left, right)
+        return None
+
+    result: Optional[int] = postorder_fold(node, children, combine)
+    return result
+
+
+def _apply_arithmetic(op: ast.operator, left: int, right: int) -> Optional[int]:
+    """``left <op> right`` for the operators :data:`_ARITHMETIC` names; None for a division or modulo by zero."""
+    if isinstance(op, ast.Add):
+        return left + right
+    if isinstance(op, ast.Sub):
+        return left - right
+    if isinstance(op, ast.Mult):
+        return left * right
+    if right == 0:
+        return None
+    return left // right if isinstance(op, ast.FloorDiv) else left % right
 
 
 def _module_int_constants(tree: ast.Module) -> "dict[str, int]":
@@ -280,17 +304,21 @@ def _visit_seed_scopes(
 ) -> list[Finding]:
     """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
     out: list[Finding] = []
-    for child in child_nodes(node):
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str, frozenset[str]]] = [(child, prefix, inherited) for child in reversed(child_nodes(node))]
+    while pending:
+        child, child_prefix, child_inherited = pending.pop()
         if isinstance(child, ast.ClassDef):
-            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = f"{child_prefix}{child.name}.", frozenset[str]()
         elif isinstance(child, _FUNCTIONS):
-            params = frozenset(_own_params(child)) | inherited
-            qualname = f"{prefix}{child.name}"
+            params = frozenset(_own_params(child)) | child_inherited
+            qualname = f"{child_prefix}{child.name}"
             if params:
                 out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines, consts))
-            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = f"{qualname}.<locals>.", params
         else:
-            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = child_prefix, child_inherited
+        pending.extend((grandchild, inner_prefix, inner_inherited) for grandchild in reversed(child_nodes(child)))
     return out
 
 
