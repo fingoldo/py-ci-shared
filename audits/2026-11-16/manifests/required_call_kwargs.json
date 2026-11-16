@@ -1,0 +1,15 @@
+{
+  "module": "required_call_kwargs",
+  "kind": "gate",
+  "entries": ["assert_required_call_kwargs", "find_required_call_kwargs"],
+  "summary": "A configured call (asyncpg.create_pool, asyncpg.connect by default) must pass one of its configured keywords; a call that passes none fails the build.",
+  "summary_findings": {
+    "pyutilz/src": 0,
+    "mlframe/src": 0
+  },
+  "changelog": "- New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present; aliases resolve through the module's imports. Suppress with `# call-kwarg-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for required_call_kwargs to src/py_ci_shared/registry.toml and a README catalogue row (tests/test_package_inventory.py fails until then).",
+    "Consumers that call asyncpg.create_pool or asyncpg.connect outside this gate's corpora must add the keyword before enabling it there; the measured corpora (pyutilz/src, mlframe/src) are already clean. glossum scripts (not measured here) hold 10 asyncpg hits per audits/2026-11-16/50_new_gate_mining.md."
+  ]
+}

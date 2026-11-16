@@ -1,0 +1,16 @@
+{
+  "module": "deprecated_docstring_without_warn",
+  "kind": "gate",
+  "entries": ["assert_deprecated_docstrings_warn", "find_deprecated_docstrings_without_warn"],
+  "summary": "A public function whose docstring's first paragraph says it is deprecated must call warnings.warn or carry a deprecated decorator; a docstring-only notice fails the build.",
+  "summary_findings": {
+    "pyutilz/src": 0,
+    "mlframe/src": 1
+  },
+  "changelog": "- New gate `deprecated_docstring_without_warn` (hard, no advisory mode): a public function documented as deprecated in its docstring's first paragraph must call `warnings.warn` or carry a `deprecated` decorator. Suppress with `# deprecated-ok: <reason>`.",
+  "owner_actions": [
+    "Add a [[gate]] entry for deprecated_docstring_without_warn to src/py_ci_shared/registry.toml and a README catalogue row (tests/test_package_inventory.py fails until then).",
+    "mlframe: src/mlframe/training/composite/hpo.py:205 `CompositeHPOResult.cv_score` is documented as a deprecated alias and only returns a value. Add warnings.warn(..., DeprecationWarning, stacklevel=2) to the property, or mark it `# deprecated-ok: <reason>`, before the gate goes live in mlframe. Fixing it is a consumer edit, so it is not made here.",
+    "pyutilz/src is clean after the module-alias fix (the legacy.py wrappers warn through `from ._common import warnings`)."
+  ]
+}

@@ -1,0 +1,12 @@
+import warnings
+
+
+def old_name(x):
+    """Deprecated alias of :func:`new_name`."""
+    warnings.warn("old_name is deprecated; use new_name", DeprecationWarning, stacklevel=2)
+    return new_name(x)
+
+
+def _legacy(x):
+    """Deprecated; kept for old pickles."""
+    return x

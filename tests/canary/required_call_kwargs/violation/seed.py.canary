@@ -1,0 +1,10 @@
+import asyncpg
+from asyncpg import connect as open_conn
+
+
+async def open_pool(dsn):
+    return await asyncpg.create_pool(dsn, min_size=1, max_size=4)
+
+
+async def open_one(dsn):
+    return await open_conn(dsn)
