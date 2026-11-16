@@ -29,6 +29,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from ._core import child_nodes, scan_python
+from ._core.node_index import binop_operands
 from ._core.node_index import walk as _fast_walk
 
 __all__ = ["ADVICE_RE", "PrintedAdvice", "assert_printed_advice_registered", "find_printed_advice"]
@@ -70,7 +71,7 @@ def _text_of(arg: ast.AST) -> str:
     if isinstance(arg, ast.JoinedStr):
         return "".join(v.value if isinstance(v, ast.Constant) and isinstance(v.value, str) else "{}" for v in arg.values)
     if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Add):
-        return _text_of(arg.left) + _text_of(arg.right)
+        return "".join(_text_of(operand) for operand in binop_operands(arg, (ast.Add,)))  # a loop: a long ``+`` chain is not a recursion
     return ""
 
 
@@ -78,16 +79,17 @@ def _scopes(tree: ast.Module) -> dict[int, str]:
     """``id(call node) -> qualified name of the innermost enclosing function or class`` (``<module>`` at top level)."""
     out: dict[int, str] = {}
 
-    def visit(node: ast.AST, scope: str) -> None:
+    # An explicit stack, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str]] = [(tree, "<module>")]
+    while pending:
+        node, scope = pending.pop()
         for child in child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                visit(child, child.name if scope == "<module>" else f"{scope}.{child.name}")
+                pending.append((child, child.name if scope == "<module>" else f"{scope}.{child.name}"))
             else:
                 if isinstance(child, ast.Call):
                     out[id(child)] = scope
-                visit(child, scope)
-
-    visit(tree, "<module>")
+                pending.append((child, scope))
     return out
 
 

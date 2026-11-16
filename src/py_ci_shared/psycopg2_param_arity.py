@@ -34,6 +34,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.node_index import binop_operands
 
 __all__ = ["DEFAULT_SQL_CALLS", "RULE", "assert_psycopg2_param_arity", "find_psycopg2_param_arity", "placeholders"]
 
@@ -60,8 +61,9 @@ def _text(node: ast.expr | None, names: Mapping[str, str]) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _text(node.left, names), _text(node.right, names)
-        return None if left is None or right is None else left + right
+        # The chain is joined with a loop: a long ``+`` expression must not reach the recursion limit. Any part not known statically makes it None.
+        parts = [_text(operand, names) for operand in binop_operands(node, (ast.Add,))]
+        return None if any(part is None for part in parts) else "".join(part or "" for part in parts)
     if isinstance(node, ast.Name):
         return names.get(node.id)
     return None

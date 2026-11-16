@@ -145,18 +145,19 @@ def _registers_finalizer(fn: ast.AST) -> bool:
 def _functions(tree: ast.AST) -> Iterator[tuple[str, ast.AST, Optional[ast.ClassDef]]]:
     """``(qualified name, function node, the class that directly owns it or None)`` for every function in the module."""
 
-    def walk(node: ast.AST, prefix: str, owner: Optional[ast.ClassDef]) -> Iterator[tuple[str, ast.AST, Optional[ast.ClassDef]]]:
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                qual = f"{prefix}{child.name}"
-                yield qual, child, owner
-                yield from walk(child, qual + ".", None)
-            elif isinstance(child, ast.ClassDef):
-                yield from walk(child, f"{prefix}{child.name}.", child)
-            else:
-                yield from walk(child, prefix, owner)
-
-    yield from walk(tree, "", None)
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str, Optional[ast.ClassDef]]] = [(child, "", None) for child in reversed(child_nodes(tree))]
+    while pending:
+        child, prefix, owner = pending.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            qual = f"{prefix}{child.name}"
+            yield qual, child, owner
+            inner_prefix, inner_owner = qual + ".", None
+        elif isinstance(child, ast.ClassDef):
+            inner_prefix, inner_owner = f"{prefix}{child.name}.", child
+        else:
+            inner_prefix, inner_owner = prefix, owner
+        pending.extend((grandchild, inner_prefix, inner_owner) for grandchild in reversed(child_nodes(child)))
 
 
 def _class_restores(cls: Optional[ast.ClassDef], aliases: ImportAliases) -> bool:

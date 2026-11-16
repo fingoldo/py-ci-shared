@@ -113,7 +113,10 @@ def _unguarded_calls(tree: ast.AST) -> list[ast.Call]:
     names = _string_bindings(tree)
     out: list[ast.Call] = []
 
-    def walk(node: ast.AST, stack: "list[Any]") -> None:
+    # An explicit stack, not recursion: a generated module with a very deep expression must not exhaust the recursion limit.
+    pending: "list[tuple[ast.AST, list[Any]]]" = [(tree, [])]
+    while pending:
+        node, stack = pending.pop()
         if isinstance(node, (ast.With, ast.AsyncWith)):
             stack = [*stack, node]
         elif isinstance(node, _Scope):
@@ -121,10 +124,7 @@ def _unguarded_calls(tree: ast.AST) -> list[ast.Call]:
             stack = []
         elif isinstance(node, ast.Call) and _uses_concurrently(node, names) and not _in_autocommit_block(stack):
             out.append(node)
-        for child in child_nodes(node):
-            walk(child, stack)
-
-    walk(tree, [])
+        pending.extend((child, stack) for child in reversed(child_nodes(node)))
     return out
 
 

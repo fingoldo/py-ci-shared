@@ -34,7 +34,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional, Union
 
-from ._core.node_index import docstring_ids
+from ._core.node_index import binop_operands, docstring_ids
 from ._core import Finding, ParsedFile, SourceProblem
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import TextFile, line_has_marker, read_text_corpus, report, scan_tree, skip_set
@@ -111,10 +111,30 @@ def _literal_text(node: ast.AST) -> Optional[str]:
             return node.value.decode("latin-1")
         return None
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _literal_text(node.left), _literal_text(node.right)
-        if left is not None and right is not None:
-            return left + right
+        # The chain is joined with a loop: a long ``+`` expression must not reach the recursion limit. Any operand that is not text makes the chain None.
+        parts = [_literal_text(operand) for operand in binop_operands(node, (ast.Add,))]
+        return None if any(part is None for part in parts) else "".join(part or "" for part in parts)
     return None
+
+
+def _literal_texts(tree: ast.AST) -> dict[int, str]:
+    """``{id(node): _literal_text(node)}`` for every node whose text is known, from one pass.
+
+    Children are read before their parent (the breadth-first walk reversed), so a ``+`` chain costs one step per operator; asking
+    :func:`_literal_text` of every node instead re-reads each subtree and is quadratic on a long chain.
+    """
+    out: dict[int, str] = {}
+    for node in reversed(list(_fast_walk(tree))):
+        if isinstance(node, ast.Constant):
+            if isinstance(node.value, str):
+                out[id(node)] = node.value
+            elif isinstance(node.value, bytes):
+                out[id(node)] = node.value.decode("latin-1")
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            left, right = out.get(id(node.left)), out.get(id(node.right))
+            if left is not None and right is not None:
+                out[id(node)] = left + right
+    return out
 
 
 def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> list[Finding]:
@@ -122,8 +142,9 @@ def _python_findings(parsed: ParsedFile, allow: Sequence[re.Pattern[str]]) -> li
     lines = parsed.source.splitlines()
     out: list[Finding] = []
     seen: set[tuple[int, str, str]] = set()
+    texts = _literal_texts(parsed.tree)
     for node in _fast_walk(parsed.tree):
-        text = _literal_text(node)
+        text = texts.get(id(node))
         if text is None or id(node) in docstrings or not isinstance(node, (ast.Constant, ast.BinOp)):
             continue
         for offset, rule, shown in _hits(text, allow):

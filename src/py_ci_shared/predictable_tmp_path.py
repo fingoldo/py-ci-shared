@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
+from ._core import child_nodes
 from ._core import walk as shared_walk
 from ._core.scopes import Scope, iter_scopes
 from ._core.source import source_segment
@@ -199,6 +200,16 @@ def _is_mktemp_call(node: ast.AST, bindings: tuple[set[str], set[str], bool]) ->
     return False
 
 
+def _tmp_bearing(tree: ast.Module, names: set[str]) -> set[int]:
+    """The ids of the nodes whose subtree holds a temp-directory source. Computed once, children before parents (the breadth-first walk reversed),
+    so a long ``+`` chain is one pass and not one subtree walk per operator."""
+    has_tmp: set[int] = set()
+    for node in reversed(list(shared_walk(tree))):
+        if _is_tmp_source(node, names) or any(id(child) in has_tmp for child in child_nodes(node)):
+            has_tmp.add(id(node))
+    return has_tmp
+
+
 def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     lines = source.splitlines()
     enclosing_text = _enclosing_text_of(tree, source)
@@ -209,10 +220,11 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     def is_mktemp(n: ast.AST) -> bool:
         return _is_mktemp_call(n, bindings)
 
+    has_tmp = _tmp_bearing(tree, names)
     candidates: list[ast.AST] = []
     for node in shared_walk(tree):
         operands = _builds_path(node)
-        if operands is not None and any(_is_tmp_source(sub, names) for op in operands for sub in shared_walk(op)):
+        if operands is not None and any(id(op) in has_tmp for op in operands):
             candidates.append(node)
         elif isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value.startswith("/tmp/"):  # tmp-path-ok: the detector's own literal
             candidates.append(node)

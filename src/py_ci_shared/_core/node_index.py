@@ -292,3 +292,40 @@ def dotted_chain(node: ast.AST) -> str:
     if isinstance(node, ast.Name):
         parts.append(node.id)
     return ".".join(reversed(parts))
+
+
+def binop_operands(node: ast.AST, ops: "tuple[type, ...]") -> "list[Any]":
+    """The operands of a chain of ``ops`` BinOps below *node*, left to right, without recursion.
+
+    ``1 + 2 + ... + n`` is a left-nested tree as deep as it is long; a recursive walker over it hits the interpreter's recursion limit. This returns the
+    leaves of the chain (the first node that is not one of ``ops``) in source order, so a caller folds them with a loop.
+    """
+    out: list[Any] = []
+    pending: list[Any] = [node]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, ast.BinOp) and isinstance(current.op, ops):
+            pending.append(current.right)
+            pending.append(current.left)
+        else:
+            out.append(current)
+    return out
+
+
+def postorder_fold(root: ast.AST, children: "Callable[[ast.AST], list[ast.AST]]", combine: "Callable[[ast.AST, list[Any]], Any]") -> Any:
+    """``combine(node, [value of each child])`` evaluated bottom-up over the tree of *root*, with an explicit stack.
+
+    *children* gives the nodes a node's value depends on (``[]`` for a leaf); *combine* is called once per node, after its children. A value is kept per
+    node identity for the whole fold, so a node is combined once even when it is reached again.
+    """
+    values: dict[int, Any] = {}
+    pending: list[tuple[ast.AST, bool]] = [(root, False)]
+    while pending:
+        node, expanded = pending.pop()
+        kids = children(node)
+        if expanded or not kids:
+            values[id(node)] = combine(node, [values[id(kid)] for kid in kids])
+        else:
+            pending.append((node, True))
+            pending.extend((kid, False) for kid in reversed(kids))
+    return values[id(root)]

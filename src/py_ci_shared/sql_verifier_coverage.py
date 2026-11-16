@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 from ._core import DEFAULT_EXCLUDE, ScanResult, parse_file, scan_python
+from ._core.node_index import binop_operands
 
 __all__ = [
     "DEFAULT_STATEMENT_STARTS",
@@ -48,8 +49,9 @@ def _string_value(value: ast.expr | None, names: dict[str, str] | None = None) -
     if isinstance(value, ast.JoinedStr):
         return "".join(part.value for part in value.values if isinstance(part, ast.Constant) and isinstance(part.value, str))
     if isinstance(value, ast.BinOp) and isinstance(value.op, ast.Add):
-        left, right = _string_value(value.left, names), _string_value(value.right, names)
-        return None if left is None and right is None else (left or "") + (right or "")
+        # The chain is folded with a loop: a long ``+`` expression must not reach the recursion limit. Every operand is None only when the whole chain is.
+        parts = [_string_value(operand, names) for operand in binop_operands(value, (ast.Add,))]
+        return None if all(part is None for part in parts) else "".join(part or "" for part in parts)
     if isinstance(value, ast.Name) and names is not None:
         return names.get(value.id)
     return None

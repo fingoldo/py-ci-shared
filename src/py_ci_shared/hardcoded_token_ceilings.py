@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Finding, ParsedFile, ScanResult
+from ._core.node_index import postorder_fold
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import enclosing_functions, line_has_marker, report, scan_tree, skip_set
 
@@ -63,8 +64,32 @@ def _canon(name: object) -> str:
 _Consts = dict[str, int]
 
 
+_CHAIN_OPS = (ast.Pow, ast.Mult, ast.Add)
+
+
 def _int_literal(node: Optional[ast.expr], consts: Optional[_Consts] = None) -> Optional[int]:
-    """The int *node* is: a literal, an int-valued float, ``a ** b`` / ``a * b`` / ``a + b`` of those, or a module constant bound once."""
+    """The int *node* is: a literal, an int-valued float, ``a ** b`` / ``a * b`` / ``a + b`` of those, or a module constant bound once.
+
+    Folded bottom-up with an explicit stack: a left-nested ``a + b + ...`` chain is as deep as it is long.
+    """
+    if node is None:
+        return None
+
+    def children(current: ast.AST) -> "list[ast.AST]":
+        return [current.left, current.right] if isinstance(current, ast.BinOp) and isinstance(current.op, _CHAIN_OPS) else []
+
+    def combine(current: ast.AST, values: "list[Optional[int]]") -> Optional[int]:
+        if isinstance(current, ast.BinOp) and isinstance(current.op, _CHAIN_OPS):
+            left, right = values
+            return None if left is None or right is None else _apply_chain_op(current.op, left, right)
+        return _int_leaf(current, consts)
+
+    result: Optional[int] = postorder_fold(node, children, combine)
+    return result
+
+
+def _int_leaf(node: ast.AST, consts: Optional[_Consts]) -> Optional[int]:
+    """The int a literal or a module-constant name is; None for anything else."""
     if isinstance(node, ast.Constant):
         value = node.value
         if isinstance(value, bool):
@@ -76,14 +101,14 @@ def _int_literal(node: Optional[ast.expr], consts: Optional[_Consts] = None) -> 
         return None
     if isinstance(node, ast.Name):
         return (consts or {}).get(node.id)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Pow, ast.Mult, ast.Add)):
-        left, right = _int_literal(node.left, consts), _int_literal(node.right, consts)
-        if left is None or right is None:
-            return None
-        if isinstance(node.op, ast.Pow):
-            return left**right if 0 <= right <= 64 and abs(left) <= 1 << 16 else None
-        return left * right if isinstance(node.op, ast.Mult) else left + right
     return None
+
+
+def _apply_chain_op(op: ast.operator, left: int, right: int) -> Optional[int]:
+    """``left <op> right`` for the operators :data:`_CHAIN_OPS` names; a power is folded only within a small bound."""
+    if isinstance(op, ast.Pow):
+        return left**right if 0 <= right <= 64 and abs(left) <= 1 << 16 else None
+    return left * right if isinstance(op, ast.Mult) else left + right
 
 
 def _module_consts(tree: ast.Module) -> _Consts:
