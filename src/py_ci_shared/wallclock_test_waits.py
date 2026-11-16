@@ -30,7 +30,7 @@ from typing import Optional, Union
 
 from ._core import ImportAliases, parse_text
 from ._core import walk as shared_walk
-from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, record_finding, text_scan
+from ._text_ratchet import DEFAULT_BASELINE_DIR, TEST_DIR_NAMES, enforce_findings, normalize_line, record_finding, require_text_floor, text_scan
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def _python_sleep_lines(text: str) -> Optional[set[int]]:
     return lines
 
 
-def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "text") -> dict[str, str]:
+def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "text", min_files: int = 1) -> dict[str, str]:
     """``{key: description}`` for each line of a test file under *root* that waits on the wall clock.
 
     ``python_mode="text"`` (the default, and what every existing baseline was recorded with) flags a line that contains
@@ -98,6 +98,7 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
     if python_mode not in ("text", "ast"):
         raise ValueError(f"python_mode must be 'text' or 'ast', not {python_mode!r}")
     files, unreadable = text_scan(root, ("*.py", "*.dart"))
+    require_text_floor("wallclock_test_waits", sum(is_wallclock_test_file(f.rel) for f in files), min_files=min_files, root=root)
     found = {k: v for k, v in unreadable.items() if is_wallclock_test_file(k.rsplit(": ", 1)[0])}
     for file in files:
         if not is_wallclock_test_file(file.rel):
@@ -116,11 +117,13 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
     return found
 
 
-def assert_no_new_wallclock_test_waits(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, python_mode: str = "text") -> None:
+def assert_no_new_wallclock_test_waits(
+    repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, python_mode: str = "text", min_files: int = 1
+) -> None:
     """Fail on a wall-clock wait in a test that the baseline does not accept (``tool/meta/baselines/wallclock_test_waits.json``)."""
     enforce_findings(
         "wallclock_test_waits",
-        find_wallclock_test_waits(repo_root, python_mode=python_mode),
+        find_wallclock_test_waits(repo_root, python_mode=python_mode, min_files=min_files),
         repo_root=repo_root,
         baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,
         label="wallclock_test_waits",

@@ -37,7 +37,7 @@ def test_a_longer_name_does_not_count_as_naming_the_guard(tmp_path: Path) -> Non
 def test_only_direct_tool_check_files_are_guards(tmp_path: Path) -> None:
     _tree(tmp_path, "tool/meta/check_deep.py", "print('ok')\n")
     _tree(tmp_path, "tool/helper.py", "print('ok')\n")
-    assert find_guards_without_fixture(tmp_path) == {}
+    assert find_guards_without_fixture(tmp_path, min_files=0) == {}
 
 
 def test_a_recorded_guard_passes_and_a_new_unnamed_one_fails(tmp_path: Path) -> None:

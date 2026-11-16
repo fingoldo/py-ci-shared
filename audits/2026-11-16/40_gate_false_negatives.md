@@ -24,7 +24,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   All 105 registered code_audit scanners share `_iter_py_files`, so every one of them skips a tracked `src/pkg/env/` (an RL `env` package, a config `env` package) or `src/pkg/build/` (a build-tool package).
 - **Impact:** 105 scanners are silent on a whole production subpackage whose name is `env`/`build`/`dist`/`venv`, while the 60-odd core gates read it: the two families disagree about what the corpus is. No consumer tracked such a directory when measured (`git ls-files` on pyutilz, mlframe, llm_bench: none), so this is latent.
 - **Proposed fix:** in `_iter_py_files`, in a git work tree keep a tracked file under a `_SOFT_EXCLUDE` name exactly as `_core.corpus.iter_files` does (reuse `iter_files`, which the code_audit walk was written to avoid for speed; or one `git ls-files --cached` for the pruned names only). Drop `env`/`.env` from the untracked-prune set only when tracked. BEHAVIOUR CHANGE (new findings on a repo that tracks such a directory).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Keeping tracked build, dist, env and venv packages changes the corpus of all 105 code_audit scanners at once and needs a cost decision, since the pruned walk exists for speed. Owner decision needed: should a tracked env package be scanned by every scanner.
 
 ## 40-T2 (P2) four text-ratchet gates have no file floor, so a wrong or empty root passes
 - **Evidence:** `skip_as_pass.py:151-165` (`find_skip_as_pass`, `assert_no_new_skip_as_pass(repo_root, baseline_dir)`), `wallclock_test_waits.py:93-124`, `git_child_env.py:170-189`, `guard_without_fixture.py:41-63`. None takes `min_files`; they call `text_scan(root, ..., under=...)`, which keeps only files whose FIRST path component is in `under` (`_text_ratchet.py:46-47`), and `enforce_findings` with no accepted violations returns "no new violations". `b4.py`, on a repo with `scripts/check.sh` (prints SKIPPED, exits 0), `tests/test_a.py` (a `sleep(5)` and an unscrubbed `git` spawn):
@@ -40,7 +40,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The `e1.py` sweep reproduces it for an empty directory and one with no `.py` (`assert_no_new_skip_as_pass`, `assert_no_new_wallclock_test_waits`, `assert_no_new_unscrubbed_git_spawns`, `assert_every_guard_named_by_a_test`: `PASS(no raise)`). Every other corpus gate has `min_files` and the entry contract test enforces it (`CLAUDE.md`, "Adding a gate"); these four are text-corpus gates the contract does not cover.
 - **Impact:** `repo_root=Path(__file__).parent` after a test file is moved, or `REPO/"src"`, makes the gate green forever with no signal.
 - **Proposed fix:** add `min_files: int = 1` to the four `assert_*` and `find_*`, counted over the files that survive the `under`/test-path filter (a repo with no `scripts/` at all sets `min_files=0` explicitly). BEHAVIOUR CHANGE (a repo with none of the scanned directories turns red until it sets `min_files=0`); CHANGELOG entry with `What to do:`.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in this commit. text_ratchet require_text_floor raises CorpusError below min_files (default 1) for the four text ratchets; min_files=0 opts out. Red run: tests/test_gate_fn_2026_11_16.py (ImportError, then the T2 cases). CHANGELOG Behaviour change (1).
 
 ## 40-T3 (P2) `repo_hygiene.assert_repo_hygiene`: a mistyped `workflows_dir` passes (floor defaults to 0)
 - **Evidence:** `repo_hygiene.py:296-300` (`find_unguarded_numeric_gates` returns `[]` when `workflows_dir` is not a directory) and `repo_hygiene.py:335-344,376-379` (`min_files: int = 0`; the `workflows_dir` branch only reports "no workflow files" when the directory EXISTS). `b9.py`, in a git repo with a numeric-compare workflow at `.github/workflows/ci.yml`:
@@ -52,7 +52,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   ```
 - **Impact:** the unguarded-numeric-gate check, the one that exists because a gate "reports success exactly when its input broke", is switched off by a one-letter typo in a path argument.
 - **Proposed fix:** when `workflows_dir is not None` and it is not a directory, add a problem ("workflows_dir does not exist"). ADDITIVE for any caller whose path is right; BEHAVIOUR CHANGE only for a caller already passing a wrong path (which is the bug).
-- **Disposition:** OPEN
+- **Disposition:** FIXED in this commit. repo_hygiene.find_workflows_dir_problems reports a workflows_dir that does not exist; assert_repo_hygiene includes it. CHANGELOG Behaviour change (1).
 
 ## 40-T4 (P2) `credential_shaped_log_arg` sees only a bare name or attribute passed to a logger
 - **Evidence:** `code_audit/credential_logging.py:20-33` (`_CREDENTIAL_NAME_RE`, `_looks_credential_shaped` accepts only `ast.Name`/`ast.Attribute`), `:50-58` (`_is_logger_receiver`: name must end in `log`/`logger`), `:84-87` (positional args and keyword values only), `:89-91` (a 3-line window containing `mask`/`redact`/`scrub` anywhere exempts). `b5.py`, all returned 0 findings:
@@ -65,7 +65,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   Control `log.info("t=%s", token)` is flagged.
 - **Impact:** this is the only gate for credentials reaching logs; the f-string spelling is the dominant one in modern code, so the P2 finding class it was written for passes whenever the author formats the message.
 - **Proposed fix:** walk the argument expressions (`ast.walk` over each arg, including `JoinedStr` values, `.format` args, `Subscript` constant keys, `.get("key")`, dict-literal keys in `extra=`); widen the vocabulary (`pwd`, `jwt`, `private_key`, `authorization`, plural, camelCase split via the `_CAMEL` helper `sentinel_or_fallback.py` already has); take the redaction hint from the call's own arguments or a name assigned from a redact call, not any text in a 3-line window. BEHAVIOUR CHANGE (new findings; baseline refresh).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Widening the credential-logging walk and vocabulary adds many new findings across consumers and needs a baseline refresh with a per-hit review, which did not fit this round.
 
 ## 40-T5 (P2) `missing_network_timeout` ignores sessions, import aliases and `timeout=None`
 - **Evidence:** `code_audit/network_timeout.py:23-30,83-98`. A call is judged only when its ROOT name is in `{"requests","grequests","httpx","urllib","urlopen"}` or a variable assigned from a call that itself carried `timeout=` (`_timeout_preconfigured_vars`: the logic is inverted for sessions, a session built WITHOUT a timeout is never flagged). `b5.py`, 0 findings for each:
@@ -79,7 +79,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   Also the preconfigured set is file-wide by variable name: `c = httpx.Client(timeout=5)` in `a()` exempts `c = requests.Session(); c.get(url)` in `b()`.
 - **Impact:** `requests.Session().get()` with no timeout hangs forever and is the usual production shape; the 2026-07-21 audit's "most High-finding-dense domain" is only half covered.
 - **Proposed fix:** resolve receivers through `ImportAliases` (`requests.Session()`, `httpx.Client()` assigned to a name or `self.x` WITHOUT `timeout=` make that name a flagged receiver), treat `timeout=None` as missing, scope the preconfigured set per function. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Resolving session receivers through ImportAliases and a per-function preconfigured set rewrites the receiver model and is a BEHAVIOUR CHANGE on every consumer HTTP call site; not done in this round.
 
 ## 40-T6 (P2) `console_unicode`: any mention of `reconfigure(encoding` exempts the whole module
 - **Evidence:** `code_audit/console_unicode.py:53-64`, a substring test on the raw source: `"reconfigure(encoding" in source and (".stdout.reconfigure(encoding" in source or ".stderr.reconfigure(encoding" in source)`. `b5.py`, each file below then has `print('→ done')` and returns 0 findings (the bare `print('→ done')` control is flagged):
@@ -92,7 +92,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The scanner also reads only string-literal and f-string positional args (`_str_arg_values`): `print('→ ' + x)`, `print('→ %s' % x)`, `print('→ {}'.format(x))`, `print(a, sep=' → ')`, `print(a, end='→')`, `sys.stdout.write('→')`, `click.echo('→')`, `Console().print('→')`, `raise ValueError('→ bad')` all return 0.
 - **Impact:** a Windows cp1251/cp1252 console `UnicodeEncodeError` (the failure the scanner names) reaches users through the unscanned spellings, and a commented-out reconfigure silences the module.
 - **Proposed fix:** make the reconfigure test an AST test (a real `<x>.stdout.reconfigure(encoding=...)` call, stdout for print/stdout.write, stderr for stderr output); extend `_str_arg_values` to `BinOp(Mod/Add)` and `.format` receivers and to `sep=`/`end=`; add `sys.stdout.write`/`click.echo`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Replacing the console_unicode substring test with an AST walk and extending the print argument forms is a rewrite with a BEHAVIOUR CHANGE on every module that prints; not done in this round.
 
 ## 40-T7 (P2) `bare_except`/`broad_except_swallow`: a handler that re-raises on ONE path counts as re-raising; `except*` and tuples are not seen
 - **Evidence:** `code_audit/bare_except.py:20-33` (`_is_bare_except`: any bare `raise` anywhere under the handler, including under an `if` or in a nested `def`, returns False; a tuple type returns False; only `ast.Name` `BaseException`), `:62` (`isinstance(node, ast.Try)`: `ast.TryStar` is skipped). `broad_except.py:34-40` (`_has_raise`) is the same any-raise walk. `b1.py`/`b2.py`:
@@ -106,25 +106,25 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The docstring (`bare_except.py:49-52`) promises only a handler that "immediately re-raises (bare `raise`)".
 - **Impact:** `except: if debug: raise` is a common shape and swallows `KeyboardInterrupt`/`SystemExit` in the default branch, and neither bare_except nor broad_except nor (per its own rule) swallowed_exceptions reports it.
 - **Proposed fix:** exempt only a handler whose LAST top-level statement is a bare `raise` or whose `raise` is not under a conditional/nested def (reuse the `no raise reachable` logic `swallowed_exceptions` has); visit `ast.TryStar` (the other 8 modules already use `getattr(ast, "TryStar", ...)`); treat a tuple containing `BaseException` or `builtins.BaseException` as bare. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Requiring the re-raise to be the handler last top-level statement and visiting ast.TryStar changes bare_except and broad_except results across consumers; needs a per-hit review and CHANGELOG entry; not done in this round.
 
 ## 40-T8 (P3) `mutable_default` visits only `def`, and recognises few mutable defaults
 - **Evidence:** `code_audit/mutable_defaults.py:56-90` (`_MUTABLE_FACTORIES`: defaultdict, OrderedDict, Counter, ChainMap, deque, ndarray, DataFrame, Series) and `:440-470` (only `FunctionDef`/`AsyncFunctionDef`). `b5.py`, 0 findings: `f = lambda x=[]: x`; `def f(x=[0]*3)`; `def f(x=[]+[])`; `def f(x=[i for i in r])`, `{k: 1 for k in ..}`, `{k for k in ..}`; `def f(x=bytearray())`; `np.zeros(3)`, `np.array([1])`; `array.array('i')`; `io.StringIO()`; `([],)`; a user class instance `C()`. Control `[]`, `set()`, `defaultdict(list)`, `collections.deque()`, `pd.DataFrame()` are flagged.
 - **Impact:** same shared-state-across-calls bug, different spelling.
 - **Proposed fix:** visit `ast.Lambda`; treat a `ListComp`/`DictComp`/`SetComp`, a `BinOp` with a list/dict/set operand, `bytearray`, `array.array`, `StringIO`/`BytesIO` and numpy constructors (`array`, `zeros`, `ones`, `empty`) as mutable. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Recognising lambdas, comprehension defaults and numpy or bytearray constructors is a BEHAVIOUR CHANGE that adds consumer findings; not done in this round.
 
 ## 40-T9 (P3) `wallclock_test_waits` default text mode misses `from time import sleep`
 - **Evidence:** `wallclock_test_waits.py:39-43` (`WAIT_PATTERNS` match the literal text `time.sleep(` / `asyncio.sleep(`); the docstring says the alias-proof rule exists only under `python_mode="ast"`. `b4.py`: `tests/test_a.py` with `from time import sleep` and `sleep(5)`: `find_wallclock_test_waits(d)` -> `[]`; `python_mode="ast"` -> `['tests/test_a.py: sleep(5)']`.
 - **Impact:** every consumer baseline was recorded in text mode, so the default (the one that is enabled) never sees the alias; the ast mode is opt-in and a baseline refresh under it would add keys.
 - **Proposed fix:** default to the AST rule for files that parse and keep the text rule only as the fallback for an unparsable file (the ast mode already falls back). BEHAVIOUR CHANGE (baseline keys can change).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Making the AST rule the default changes every wallclock_test_waits baseline key (text-mode keys are recorded in consumer baselines); needs a planned baseline migration.
 
 ## 40-T10 (P3) `skip_as_pass` recognises only a message that begins with the word "skipped"
 - **Evidence:** `skip_as_pass.py:53` (`_PRINTS_SKIPPED` ends with `(?i:skipped)\b`). `b4.py`: a script with `echo "SKIPPED: no X"` then `exit 0` is flagged; the same script with `echo "SKIP: no X"` or `echo "Skipping the check"` followed by `exit 0` is not (`scripts/check2.sh`, `check3.sh`: not in the findings).
 - **Impact:** "Skipping ..." is the commonest wording of the pattern the gate bans (a check that did nothing and exits 0).
 - **Proposed fix:** accept `skip(?:ped|ping|s)?\b` and `SKIP:`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in this commit. _PRINTS_SKIPPED and the _may_print_skipped prefilter accept skip, skipping and skips. CHANGELOG Behaviour change (2).
 
 ## 40-T11 (P3) `unsafe_deserialization`: any `save`/`dump` call, or any call whose name contains `verif`, exempts a later `pickle.loads`
 - **Evidence:** `unsafe_deserialization.py:107-108` (`_PRODUCERS = {"dump","dumps","save","to_pickle"}`, `_VERIFY = sha256|hmac|verif|sidecar`), used by `_verified_by_enclosing`/`_is_verifying_call` (`:442`, `:526`). `b2.py`, 0 findings each, though the loaded bytes are the request body:
@@ -136,38 +136,38 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   (`k = hashlib.sha256(b"x").hexdigest(); pickle.loads(req.body)` is also exempt.) The docstring calls the rule "advisory-grade by construction" for hashes computed elsewhere; these exemptions need no data flow at all.
 - **Impact:** the P-class "downloaded bytes are code" passes with an unrelated call in the same function.
 - **Proposed fix:** require the verify/produce call to receive the loaded variable (same name among its arguments), the way `_core` taint helpers in `provenance_flow` do. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Requiring the verify or produce call to receive the loaded variable needs a small taint walk and changes which consumer findings are exempt; not done in this round.
 
 ## 40-T12 (P3) `possibly_unbound_local`: walrus binding under a boolean chain, and `with` blocks that swallow
 - **Evidence:** `possibly_unbound_local.py` docstring: "a name bound ... by a `with` is treated as bound afterwards". `b3.py`, 0 findings: `if c and (y := g()): pass` then `return y`; `with contextlib.suppress(Exception): y = g()` then `return y`; `with pytest.raises(ValueError): y = g()` then `return y`. (`if/elif` without else, `try/except pass`, `match` without wildcard, async, class method are flagged.)
 - **Impact:** `suppress` and `pytest.raises` exist to swallow; the name is unbound exactly then.
 - **Proposed fix:** treat a `with` whose item is `suppress(...)`/`pytest.raises`/`pytest.warns`-free swallowing context as "maybe"; bind a walrus only on the path that evaluates it. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Walrus-under-boolean-chain and swallowing with-block handling change possibly_unbound_local results on consumers; not done in this round.
 
 ## 40-T13 (P3) `lock_held_across_io`: import aliases, subscripted locks, `os.system`, `aiohttp`
 - **Evidence:** `lock_held_across_io.py:105-150` (`is_thread_lock`, `io_label`). `b3.py`, 0 findings: `from urllib.request import urlopen as uo` then `with self._lock: uo(url)` (the docstring says urlopen is matched by name; an alias breaks it); `from threading import Lock as L2; lk = L2()` then `with lk: time.sleep(1)`; `with self._locks[k]: time.sleep(1)`; `with self._lock: os.system("ls")`; `async with self._lock:` around `aiohttp.ClientSession().get(...)`; `with self._guard:`. Flagged: `requests.get`, `urllib.request.urlopen`, `subprocess.run`, `time.sleep`, write-mode `open`, `asyncio.sleep` under an async lock.
 - **Proposed fix:** resolve the callee through `ImportAliases.qualified_name`; add `os.system`/`os.popen`, `aiohttp`; accept a `Subscript` whose base is lock-like. Explicit `acquire()`/`release()` stays out of scope (documented). BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Alias resolution, subscripted locks, os.system and aiohttp widen lock_held_across_io, a BEHAVIOUR CHANGE; not done in this round.
 
 ## 40-T14 (P3) `sentinel_or_fallback` default names omit common siblings
 - **Evidence:** `sentinel_or_fallback.py:36-39` (`DEFAULT_SENTINEL_NAMES`). `b5.py`: `x.max_new_tokens or 100` returns 0 findings (`max_tokens`, `max_output_tokens`, `timeout`, `seed`, `n_jobs`, `retries`, `temperature` or-forms are flagged). Other zero-is-a-value settings absent: `max_new_tokens`, `num_workers`, `n_estimators`, `max_depth`, `top_n`, `min_samples`, `learning_rate`.
 - **Proposed fix:** add the names; the `names=` argument stays. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in this commit. Seven names added to DEFAULT_SENTINEL_NAMES. CHANGELOG Behaviour change (2).
 
 ## 40-T15 (P3) `env_flag_parsing`: `from os import environ as E`, and `int(...)` compared with a number
 - **Evidence:** `env_flag_parsing.py:68` (`self.environ_names: set[str] = {"environ"}`: only the literal name and `env = os.environ` assignments are tracked, an import alias is not) and the 40-F10 `bool(int(...))` rule only. `b5.py`, 0 findings: `from os import environ as E; if E.get("APP_X") == "1"`; `int(os.getenv("APP_X","0")) > 0`; `int(os.getenv("APP_X","0")) == 1`; `{"1": True}.get(os.getenv("APP_X"), False)`. Flagged: plain `from os import environ`, `from os import getenv`, `import os as _os`, walrus, constant key, f-string key, `in os.environ`.
 - **Proposed fix:** seed `environ_names` from `ImportAliases` (any alias of `os.environ`); treat an `int(<env read>)` operand of a `Compare` as a flag read. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Seeding environ names from ImportAliases and the int(env) comparison rule are BEHAVIOUR CHANGES in env_flag_parsing; not done in this round.
 
 ## 40-T16 (P3) `fail_open_handlers.finite_guarded_reject` sees only a `continue` or a call named `reject*`
 - **Evidence:** `fail_open_handlers.py:420-440` (`_is_finite_test`, `_is_finite_guarded_reject`: "whose body rejects (`continue`, or a call naming `reject`)"). `b8.py`: control (`for x in xs: if math.isfinite(x) and x > thr: continue`) is flagged; `if math.isfinite(x) and x > thr: return False`, and `... : raise ValueError("too big")` in a predicate both return 0, though NaN/inf skip the rejection identically.
 - **Proposed fix:** count `return False/None/0`, `raise`, `break` and `.remove/.discard` as rejects. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Counting return, raise, break and remove as rejects in finite_guarded_reject is a BEHAVIOUR CHANGE; not done in this round.
 
 ## 40-T17 (P3) `no_xfail_to_defer`: `skipif(True, reason="bug")` is an unconditional skip the gate does not judge
 - **Evidence:** docstring "`skipif` (a condition on the environment) ... not judged". `b7.py`: `@pytest.mark.skipif(True, reason="bug")` and `@pytest.mark.skipif(1 == 1, reason="bug in code")` -> 0 findings, while `@pytest.mark.skip(reason="TODO fix later")` and `pytest.skip("flaky bug")` are flagged. `skipif` with a constant-true condition is `skip` by another spelling.
 - **Proposed fix:** evaluate a literal/constant condition (`True`, `1`, `1 == 1`) and judge it as `skip`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in this commit. no_xfail_to_defer judges pytest.mark.skipif with a constant-true condition (literal, or a comparison of two literals) as an unconditional skip; environment conditions stay unjudged. CHANGELOG Behaviour change (2).
 
 ## 40-T18 (P3) extensionless Python scripts and an upper-case `.PY` are not scanned by code_audit
 - **Evidence:** `code_audit/_base.py:107` (`_PY_EXTS = (".py",)`, `name.endswith`, case-sensitive) and `_core` `scan_python` pattern `("*.py",)`. `b6.py`, a tree with `bin/deploy` (`#!/usr/bin/env python3`, `datetime.utcnow()` and a bare `except:`) and `upper.PY` (same body):
@@ -179,17 +179,17 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   The core finds `upper.PY` only for gates that pass `include_stubs=True`; `hardcoded_seed_in_library` and `possibly_unbound_local` do not.
 - **Impact:** CLI scripts without an extension (`bin/*`, `scripts/deploy`) are real shipped Python.
 - **Proposed fix:** case-fold the extension in code_audit; optionally treat an extensionless file with a `python` shebang as a source file in `iter_files`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED (partly fixed). The upper-case .PY half is FIXED in this commit (code_audit _base case-folds the extension; CHANGELOG Behaviour change (2)). The extensionless-script half is DEFERRED: it needs a shebang rule in the shared _core iter_files, which changes the file set of about 60 core gates and their baselines at once; owner-visible, separate change.
 
 ## 40-T19 (P3) `systemexit_in_library` does not see an import-time exit in a library module
 - **Evidence:** `systemexit_in_library.py` docstring: "inside a function". `b2.py`, 0 findings: a module with no `__main__` guard containing `if not sys.argv: sys.exit(1)` at module level; `lambda: sys.exit(1)`; `os.abort()`; `class A: sys.exit(1)`. Importing such a module from a worker thread or a test runner kills the importer, the failure the gate's docstring describes (a helper reachable from a thread).
 - **Proposed fix:** for a module with no `__main__` guard report an exit at module or class-body level and in a lambda; add `os.abort`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Reporting import-time exits in library modules is a BEHAVIOUR CHANGE that can turn green consumer imports red; needs an owner decision on which modules count as libraries.
 
 ## 40-T20 (P3) `hardcoded_seed_in_library`: unfolded constant shapes and unrecognised parameter names
 - **Evidence:** `hardcoded_seed_in_library.py:81-110` (`_int_value` folds `+ - * // %`, not `**`) and `:49` (`_SEED_KEYWORDS`). `b2.py` (inside a function that has its own `seed=None`), 0 findings: `M(random_state=2**5)`, `M(random_state=np.int64(3))`, `random.Random("abc")`; and in a function whose seed parameter is `random_generator`, `rs`, `seeds` or arrives via `**kwargs`: `M(random_state=3)`. Flagged: `default_rng(42)`, `RandomState(42)`, aliased `dr(7)`, `np.random.seed(0)`, `R(random_state=0)`, `**{"random_state": 1}`, lambdas, nested defs, methods, async, a `random_state=hex` literal.
 - **Proposed fix:** fold `**` and `<<`, accept `np.int64/int32(<int>)`, a string seed, and extend the "own seed parameter" test to `random_generator`, `generator`, `rs`, `seeds`. BEHAVIOUR CHANGE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED. Folding ** and numpy-int seeds and widening the seed-parameter names are BEHAVIOUR CHANGES that add consumer findings; not done in this round.
 
 ## Pass-by-emptiness sweep (summary)
 

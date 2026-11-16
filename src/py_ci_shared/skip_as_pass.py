@@ -42,7 +42,7 @@ from typing import Optional, Union
 
 from ._core.source import indent_width
 from ._shell_blocks import TOP_LEVEL, Statement, parse_shell, workflow_run_scripts
-from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, record_finding, text_scan
+from ._text_ratchet import DEFAULT_BASELINE_DIR, enforce_findings, normalize_line, record_finding, require_text_floor, text_scan
 
 __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
 
@@ -50,7 +50,7 @@ __all__ = ["SKIP_DIRS", "find_skip_as_pass", "assert_no_new_skip_as_pass"]
 SKIP_DIRS = ("tool", "tools", "scripts", ".githooks", ".github")
 
 # The printed message begins with the status word: a warning that merely contains "skipped" is not a skip marker.
-_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b\s*\(?\s*(?:-[a-zA-Z]+\s+)?[\"']?(?i:skipped)\b")
+_PRINTS_SKIPPED = re.compile(r"\b(?:echo|printf|print|puts|Write-Host|Write-Output)\b\s*\(?\s*(?:-[a-zA-Z]+\s+)?[\"']?(?i:skip(?:ped|ping|s)?)\b")
 # Zero by status: an explicit 0, or none at all (a bare `exit` returns the last command's status, `sys.exit()` and `SystemExit(None)` are 0).
 _EXIT_ZERO = re.compile(
     r"(?<![\w.])(?:exit\s+0(?![\w.])|exit(?=\s*(?:;|&|\||#|$))|(?:sys\.)?(?:exit|quit)\(\s*(?:0|None)?\s*\)|raise\s+SystemExit(?:\(\s*(?:0|None)?\s*\))?(?![\w.(]))"
@@ -121,7 +121,7 @@ def _may_print_skipped(lines: "list[str]") -> bool:
     """False only when no statement of *lines* can match :data:`_PRINTS_SKIPPED`: the lexer's statement text is the raw text with
     line continuations removed, and the match is case-insensitive, so ``casefold`` (which also folds the long s and the Kelvin sign that
     ``(?i)`` matches) is the exact test."""
-    return "skipped" in _LINE_CONTINUATION.sub("", "\n".join(lines)).casefold()
+    return "skip" in _LINE_CONTINUATION.sub("", "\n".join(lines)).casefold()
 
 
 def _scan_script(rel: str, lines: "list[str]", offset: int, python: bool, found: dict[str, str]) -> None:
@@ -148,19 +148,22 @@ def _skip_lines(rel: str, text: str, found: dict[str, str]) -> None:
     _scan_script(rel, text.splitlines(), 0, rel.endswith(".py"), found)
 
 
-def find_skip_as_pass(root: Union[str, Path]) -> dict[str, str]:
-    """``{key: description}`` for every SKIPPED-then-exit-0 block under :data:`SKIP_DIRS` of *root*."""
+def find_skip_as_pass(root: Union[str, Path], *, min_files: int = 1) -> dict[str, str]:
+    """``{key: description}`` for every SKIPPED-then-exit-0 block under :data:`SKIP_DIRS` of *root*.
+
+    Raises ``CorpusError`` when fewer than *min_files* files lie under those directories (see :func:`require_text_floor`)."""
     files, found = text_scan(root, ("*",), under=SKIP_DIRS)
+    require_text_floor("skip_as_pass", len(files), min_files=min_files, root=root)
     for file in files:
         _skip_lines(file.rel, file.text, found)
     return found
 
 
-def assert_no_new_skip_as_pass(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None) -> None:
+def assert_no_new_skip_as_pass(repo_root: Union[str, Path], *, baseline_dir: Optional[str] = None, min_files: int = 1) -> None:
     """Fail on a SKIPPED-then-exit-0 block that the baseline does not accept (``tool/meta/baselines/skip_as_pass.json``)."""
     enforce_findings(
         "skip_as_pass",
-        find_skip_as_pass(repo_root),
+        find_skip_as_pass(repo_root, min_files=min_files),
         repo_root=repo_root,
         baseline_dir=baseline_dir or DEFAULT_BASELINE_DIR,
         label="skip_as_pass",
