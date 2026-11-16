@@ -100,6 +100,14 @@ def test_an_aliased_clock_is_resolved(tmp_path):
     assert _lines(tmp_path, body) == [3]
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_bom_unparsable_empty_and_the_ratchet(tmp_path):
     tests = tmp_path / "tests"
     tests.mkdir()
@@ -110,6 +118,7 @@ def test_bom_unparsable_empty_and_the_ratchet(tmp_path):
         assert_no_clock_day_boundary(tests, baseline_path=bl, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_no_clock_day_boundary(tests, baseline_path=bl, refresh=True, use_git=False)
+    _justify_entries(bl, "tests/test_clock_day_boundary.py::test_bom_unparsable_empty_and_the_ratchet", "clock-crosses-day check on a shifted real clock")
     assert len(json.loads(bl.read_text(encoding="utf-8"))["entries"]) == 1
     assert_no_clock_day_boundary(tests, baseline_path=bl, use_git=False)
     (tests / "test_b.py").write_text("import time\ndef test_b_day():\n    return time.time() + 7200\n", encoding="utf-8")

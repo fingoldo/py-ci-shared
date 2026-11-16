@@ -20,6 +20,16 @@ BOM = b"\xef\xbb\xbf"
 VIOLATION = 'class Selector:\n    def transform(self, X):\n        X["total"] = X["a"] + X["b"]\n        return X\n'
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _corpus(tmp_path: Path, files: dict[str, bytes]) -> Path:
     for rel, data in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -163,6 +173,11 @@ def test_non_advisory_baseline_accepts_known_findings_and_rejects_new_ones(tmp_p
         assert_caller_frame_mutation(root, use_git=False, advisory=False, baseline_path=base)
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):
         assert_caller_frame_mutation(root, use_git=False, advisory=False, baseline_path=base, refresh=True)
+    _justify_entries(
+        base,
+        "tests/test_caller_frame_mutation.py::test_non_advisory_baseline_accepts_known_findings_and_rejects_new_ones",
+        "non-advisory baseline accept branch",
+    )
     assert_caller_frame_mutation(root, use_git=False, advisory=False, baseline_path=base)
     (root / "n.py").write_bytes(VIOLATION.encode())
     with pytest.raises(pytest.fail.Exception):

@@ -15,6 +15,18 @@ from py_ci_shared.cuda_barrier_divergence import (
 )
 
 BOM = b"\xef\xbb\xbf"
+
+
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 PARAMS = "const float* x, float* y, const int K, const int n"
 Q = '"' * 3
 
@@ -216,6 +228,9 @@ def test_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypatc
     base = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_cuda_barrier_divergence(tmp_path, baseline_path=base, refresh=True, use_git=False)
+    _justify_entries(
+        base, "tests/test_cuda_barrier_divergence.py::test_baseline_accepts_known_findings_and_fails_new_ones", "branch-divergent __syncthreads taint rule"
+    )
     assert_cuda_barrier_divergence(tmp_path, baseline_path=base, use_git=False)
     (tmp_path / "n.py").write_bytes(_src("    if (threadIdx.x < 5) { __syncthreads(); }"))
     with pytest.raises(pytest.fail.Exception):

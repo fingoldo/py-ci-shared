@@ -202,6 +202,14 @@ def test_an_empty_corpus_fails_the_floor(tmp_path: Path):
         assert_no_connect_error_echo(tmp_path, use_git=False)
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_a_baselined_finding_passes_and_a_new_one_fails(tmp_path: Path, monkeypatch):
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")  # seeding a baseline is growth
     src = tmp_path / "src"
@@ -209,6 +217,9 @@ def test_a_baselined_finding_passes_and_a_new_one_fails(tmp_path: Path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_no_connect_error_echo(src, use_git=False, baseline_path=baseline, refresh=True, request=None)
+    _justify_entries(
+        baseline, "tests/test_connect_error_echo.py::test_a_baselined_finding_passes_and_a_new_one_fails", "connect-error echo branch that prints the exception"
+    )
     assert json.loads(baseline.read_text(encoding="utf-8"))["entries"]
     monkeypatch.delenv("PY_CI_SHARED_REFRESH_ALLOW_GROW")
     assert_no_connect_error_echo(src, use_git=False, baseline_path=baseline, refresh=False)

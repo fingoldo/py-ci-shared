@@ -276,6 +276,16 @@ def test_pytest_entries_follow_each_test_file_unless_switched_off_or_ignored(tmp
     assert find_ci_install_covers_entry_imports(no_paths) == []
 
 
+def _justify_entries(path: Path, where: str, branch: str) -> None:
+    """Replace each refreshed note with a reason that names its own key and the test that seeds it."""
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key}: the finding is seeded by {where} to exercise the {branch} of the gate, and it is not a defect in repo code."
+    path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def test_name_map_and_exclude_and_the_assert(tmp_path):
     files = {"mypkg/features.py": "import fancywavelets\n"}
     root = _repo(tmp_path, ['pip install -e ".[dev]"', "python -m mypkg.nightly"], files=files)
@@ -288,6 +298,11 @@ def test_name_map_and_exclude_and_the_assert(tmp_path):
     baseline = tmp_path / "baseline.json"
     Baseline(baseline, gate="ci_install_covers_entry_imports").enforce(
         find_ci_install_covers_entry_imports(root, name_map={"fancywavelets": "pywavelets"}), refresh=True, grow=True
+    )
+    _justify_entries(
+        baseline,
+        "tests/test_ci_install_covers_entry_imports.py::test_name_map_and_exclude_and_the_assert",
+        "missing-entry-import check for a name-mapped distribution",
     )
     assert_ci_install_covers_entry_imports(root, name_map={"fancywavelets": "pywavelets"}, baseline_path=baseline)
 
