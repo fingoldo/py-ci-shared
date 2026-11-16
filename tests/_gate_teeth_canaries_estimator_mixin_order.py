@@ -5,5 +5,6 @@ from _gate_teeth_canaries import Canary, _gate
 CANARY = Canary(
     "estimator_mixin_order",
     lambda d: _gate("estimator_mixin_order").assert_estimator_mixin_order(d),
-    tokens=("estimator_mixin_order", "after BaseEstimator"),
+    token="m.py",
+    tokens=("ClassifierMixin after BaseEstimator", "m.py:3"),
 )

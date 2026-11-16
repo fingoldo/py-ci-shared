@@ -171,13 +171,16 @@ CANARIES.update(
 )
 
 
-# CUDA gate fragments: one file per gate (tests/_gate_teeth_canaries_cuda_<gate>.py defines CANARY), so authors working in parallel never edit one table.
-def _load_cuda_fragments() -> None:
+# Gate fragments: one file per gate (tests/_gate_teeth_canaries_<gate>.py or _gate_teeth_canaries_cuda_<gate>.py defines CANARY),
+# so authors working in parallel never edit one table. This module is the only _gate_teeth_canaries_*.py that is not a fragment.
+def _load_gate_fragments() -> None:
     import importlib
 
-    for path in sorted(Path(__file__).parent.glob("_gate_teeth_canaries_cuda_*.py")):
+    for path in sorted(Path(__file__).parent.glob("_gate_teeth_canaries_*.py")):
+        if path.stem == "_gate_teeth_canaries_more":
+            continue
         canary = importlib.import_module(path.stem).CANARY
         CANARIES[canary.gate] = canary
 
 
-_load_cuda_fragments()
+_load_gate_fragments()
