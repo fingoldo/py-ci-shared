@@ -1,0 +1,4 @@
+﻿UPDATE_SQL = """
+UPDATE verdicts SET status = :s
+WHERE lang = :l AND text = :t AND sense IN (1, 2) OR sense IN (3, 4)
+"""
