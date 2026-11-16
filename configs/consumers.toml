@@ -90,3 +90,11 @@ name = "claude-usage-notifier"
 repo = "fingoldo/claude-usage-notifier"
 branch = "main"
 private = false
+
+# Not in the corpus: 19 python files, a private hook-only repo with no py-ci-shared pin (audit 47-T7: the unpinned-use check covers it).
+[[consumer]]
+name = "finance"
+repo = "fingoldo/finance"
+branch = "master"
+private = true
+corpus = false

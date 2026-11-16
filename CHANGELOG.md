@@ -12,6 +12,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - Internal (46-T2): `release_guard prepare` accepts `--published` as `X.Y.Z` or `vX.Y.Z`; a verify re-run after the release is published compares against the release before it (wiring test added). Nothing to do for consumers.
 
+- **Behaviour change** (47-T7, `configs/consumers.toml`): `finance` (private, hook-only, no pin) is now listed, so `consumer-pins` and `ci-health` check it and `adoption_matrix` reports its `unpinned-use` finding. Without `CONSUMER_READ_TOKEN` the private repo is skipped and `consumer-pins` fails on the skip unless it runs with allow-skipped-private. What to do: give the repo a token (the same secret as the other private consumers) or pin py-ci-shared in finance's dev dependencies.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
