@@ -23,6 +23,11 @@ class _FakeResolver:
     def __call__(self, tag: str):
         return RELEASE if tag == "v1.0.0" else None
 
+    def file_text(self, sha: str, path: str) -> str:
+        # The reusable workflow at a between-release SHA, as RefResolver reads it: it declares the py-ci-shared-ref input,
+        # so a pin to it without the input is the finding under test (a workflow without the input is skipped by design).
+        return "on:\n  workflow_call:\n    inputs:\n      py-ci-shared-ref:\n        type: string\n"
+
 
 def _run_main(monkeypatch, capsys, tmp_path, workflow: str) -> tuple[int, str]:
     wf_dir = tmp_path / ".github" / "workflows"
