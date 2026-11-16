@@ -20,6 +20,7 @@ with the skip recorded so a reader can tell "checked and clean" from "not checke
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import functools
 from collections.abc import Iterable, Iterator, Sequence
@@ -458,7 +459,7 @@ _GUARD_TYPES: "tuple[type, ...]" = (ast.Try, ast.With, ast.AsyncWith) + ((ast.Tr
 
 
 def _guard_bodies(node: ast.AST) -> "list[ast.stmt] | None":
-    if isinstance(node, ast.Try) or type(node).__name__ == "TryStar":
+    if isinstance(node, TRY_NODES):
         if any(_handler_expects_import_failure(h) for h in node.handlers):  # type: ignore[attr-defined]
             return node.body  # type: ignore[attr-defined, no-any-return]
     elif isinstance(node, (ast.With, ast.AsyncWith)) and _with_expects_import_failure(node):

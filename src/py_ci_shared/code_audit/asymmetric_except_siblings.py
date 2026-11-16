@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
@@ -70,7 +71,7 @@ def _recovery_calls(handler: ast.ExceptHandler, exceptions: frozenset[str]) -> d
     """{recovery function name: (is it wrapped in a compatible try, line of the call)}."""
     wrapped_ids: set[int] = set()
     for node in walk_nodes(handler):
-        if isinstance(node, ast.Try) and _guards_compatibly(node, exceptions):
+        if isinstance(node, TRY_NODES) and _guards_compatibly(node, exceptions):
             for stmt in node.body:
                 for sub in walk_nodes(stmt):
                     wrapped_ids.add(id(sub))
@@ -105,7 +106,7 @@ def _methods_of(cls: ast.ClassDef) -> list[ast.FunctionDef | ast.AsyncFunctionDe
                 out.append(stmt)
             elif isinstance(stmt, ast.ClassDef):
                 continue
-            elif isinstance(stmt, (ast.If, ast.Try, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+            elif isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)) or isinstance(stmt, TRY_NODES):
                 descend(list(stmt.body))
                 descend(list(getattr(stmt, "orelse", [])))
                 descend(list(getattr(stmt, "finalbody", [])))

@@ -58,6 +58,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -253,7 +254,7 @@ def _headers(stmt: ast.stmt) -> "list[ast.AST]":
         return [stmt.target, stmt.iter]
     if isinstance(stmt, ast.With):
         return [i for i in stmt.items]
-    if isinstance(stmt, ast.Try) or isinstance(stmt, _SCOPES):
+    if isinstance(stmt, TRY_NODES) or isinstance(stmt, _SCOPES):
         return []
     return [stmt]
 
@@ -279,7 +280,7 @@ def _walk_stmts(stmts: "list[ast.stmt]", ctx: _Ctx, visit) -> None:  # type: ign
             inner = _Ctx((*ctx.conds, ("for", stmt.iter)), exits)
             _walk_stmts(stmt.body, inner, visit)
             _walk_stmts(stmt.orelse, inner, visit)
-        elif isinstance(stmt, ast.Try):
+        elif isinstance(stmt, TRY_NODES):
             for block in (stmt.body, stmt.orelse, stmt.finalbody, *[h.body for h in stmt.handlers]):
                 _walk_stmts(block, here, visit)
         elif isinstance(stmt, ast.With):

@@ -25,7 +25,7 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
   Demonstration 2 (a hook entry): file `модуль.py` containing `x: int = 'a'`, `PYTHONIOENCODING=cp1252 python -m py_ci_shared.mypy_gate модуль.py` -> traceback `UnicodeEncodeError ... position 0-5` out of `mypy_gate.py:106` `sys.stdout.write(output)`, exit 1; mypy's error text and the gate's own FAIL line are never shown.
 - **Impact:** on a non-UTF-8 stdio (Windows pipe or legacy console, a locale-C CI box) any finding whose text holds a non-ASCII character (a non-ASCII path or identifier, which the corpus-wide gates echo back) turns into a traceback. Exit code stays 1 in the demonstrations, but a gate whose contract is another code (the K-1 incident: 2 for ERROR) gets 1, and the user sees no finding. Not silent-pass, it is a lost diagnostic.
 - **Proposed fix:** one helper, `_core.console.safe_stdio()`, that calls `sys.stdout.reconfigure(errors="backslashreplace")` and the same for stderr (guarded by `hasattr`), invoked at the top of every `main()` (or once in a shared `run_main(main)` wrapper); a meta-test that every module with `__name__ == "__main__"` references it. ADDITIVE (only changes what happens where the old code crashed).
-- **Disposition:** OPEN
+- **Disposition:** FIXED: _core/console.py safe_stdio() called first in all 43 __main__ entry modules; meta-test in tests/test_console_stdio_safe.py.
 
 ## 45-T2 (P2) Nine-plus gates look for `ast.Try` only and so skip `try: ... except* X:` (PEP 654, 3.11+): a swallow in an `except*` handler is not found
 
@@ -33,7 +33,7 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
   Demonstration on 3.14.3 (`scratchpad/audit_T/45/ts/run.py`): `a/m.py` has `def f()` with `try/except Exception: pass` (line 4) and `def h()` with `try/except* Exception: pass` (line 10); `tests/test_m.py` has the same pair around `pytest.skip`. Output: `scan_broad_except_swallows -> [4]` and `scan_except_skip_masks_call_under_test -> [4]`. The `except*` twins (lines 10 and 11) are not reported.
 - **Impact:** a consumer on 3.11+ that uses exception groups (asyncio TaskGroup code does) gets none of these gates on that code. Low frequency, but the gates are documented as covering `except` handlers, and 24 sibling modules already treat TryStar, so the two groups disagree.
 - **Proposed fix:** one constant `TRY_NODES = (ast.Try,) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())` in `_core` (or `code_audit/_base.py`) and replace the 23 `isinstance(x, ast.Try)` sites; a meta-test (AST over `src/`) that fails on `isinstance(..., ast.Try)` outside that constant, plus fixture tests with `except*`. ADDITIVE for the finders, but it can turn a green consumer red by finding new defects: classify BEHAVIOUR CHANGE (CHANGELOG entry with `What to do:`).
-- **Disposition:** OPEN
+- **Disposition:** FIXED: _core/ast_try.py TRY_NODES replaces every isinstance(..., ast.Try) test in src (about 40 sites); tests/test_try_star_gates.py covers two gates with except* and a meta-test. BEHAVIOUR CHANGE entry in CHANGELOG.
 
 ## 45-T3 (P2) `test_cross_interpreter_keys` can only find other interpreters on this Windows host: on every CI leg it skips, and it also swallows real crashes
 
@@ -41,14 +41,14 @@ Not covered: Linux and macOS execution (no host), Windows 3.8-or-older (not supp
   Second defect, same file `:78-82`: `_probe` returns `None` for ANY non-zero exit ("the interpreter lacks a requirement"), and the loop `continue`s on `None`. A real crash of the gate code on one interpreter (a 3.15-only break, say) is therefore dropped from the comparison instead of failing it. The corpus (`_CORPUS`, lines 24-40) has no 3.12+ construct, so the 3.12/3.14 ast shape changes the brief names are not exercised either.
 - **Impact:** the "same keys on every interpreter" promise is verified only when the owner runs the suite locally; a CI-only regression (e.g. 3.15 vs 3.9 ast difference) is caught only by a consumer's red shard, the very pattern 45-F5 was meant to end. Skip-as-pass in the package that ships a skip-as-pass gate.
 - **Proposed fix:** (a) in `self-ci.yml` give the ubuntu legs a second interpreter (`uv python install 3.9 3.13` and `PY_CI_SHARED_OTHER_PYTHONS` pointing to them, with `pyyaml` and `tomli` installed into them), or run the probe once per matrix leg and upload the JSON, comparing in the `preview-report` job; (b) in `_probe` distinguish `ModuleNotFoundError` in stderr (skip that interpreter) from any other failure (raise with stderr); (c) add a 3.12+ file (PEP 695 `type X[T]`, `except*`, nested f-string) to the corpus, probed only on interpreters that parse it. ADDITIVE (test and workflow only).
-- **Disposition:** OPEN
+- **Disposition:** FIXED (test side): _probe raises on a crash that is not a missing module, the 3.12+ fixture is probed only where it parses, and tests/test_cross_interpreter_keys.py covers both. NOT DONE: part (a), a second interpreter on the ubuntu CI legs in self-ci.yml, is not changed (needs a CI run to verify); see the owner note.
 
 ## 45-T4 (P3) `pyproject.toml` has no Python version classifiers and `requires-python` has no upper bound, while CI exercises 3.9-3.13, 3.14 (non-blocking) and 3.15
 
 - **Evidence:** `pyproject.toml:13` `requires-python = ">=3.9"`; classifiers `:18-23` carry only `Programming Language :: Python :: 3`. `self-ci.yml:44-58` runs 3.9, 3.10, 3.11, 3.12, 3.13, 3.15 blocking, 3.14 preview (`preview: true`, "until it has run green once"), Windows 3.9/3.13 preview, macOS 3.11 only. The README states no Python range (`grep -n "3\.9" README.md` only hits catalogue rows). Nothing wrong is claimed, but nothing is claimed either, so PyPI/pip and tooling cannot tell a consumer which of these were tested. 3.14 being preview while the 3.15 pre-release/GA leg is blocking is inverted relative to the owner's own interpreter (3.14); locally 3.14.3 passes everything I ran (30 + the earlier gate tests), so the promotion rule (10 green master runs) is the only thing keeping it advisory.
 - **Impact:** documentation only. A consumer on 3.14 sees no statement of support; the one interpreter the owner develops on is the one whose CI failure cannot block a release.
 - **Proposed fix:** add classifiers `Programming Language :: Python :: 3.9` ... `3.13` for the blocking legs (and 3.14 once promoted), add a "Supported Python" line to the README that lists the blocking and the preview legs, and add a test that compares classifiers with the blocking entries of the `self-ci.yml` matrix. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED: classifiers 3.9-3.13 and 3.15 in pyproject.toml, a Supported Python line in README, tests/test_python_classifiers_match_ci.py.
 
 ## Summary table
 

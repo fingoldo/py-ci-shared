@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines, walk_nodes
@@ -201,7 +202,7 @@ def scan_log_only_except(
         lines = split_src_lines(src_lines)
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try):
+            if not isinstance(node, TRY_NODES):
                 continue
             for handler in node.handlers:
                 if not _is_log_only_handler(handler, escalation_attrs, lines):

@@ -8,6 +8,7 @@ handler that does not re-raise, whatever its body, so it stays.
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
@@ -59,7 +60,7 @@ def scan_bare_except(
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try):
+            if not isinstance(node, TRY_NODES):
                 continue
             for handler in node.handlers:
                 if not _is_bare_except(handler) or is_line_exempt(src_lines, handler.lineno, "bare_except"):

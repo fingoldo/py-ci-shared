@@ -39,6 +39,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
@@ -159,7 +160,7 @@ def _check_key_function(func: _Func, qualname: str, constants: dict[str, ast.AST
     ctx = (constants, returned, _none_is_documented(func))
     out: list[Finding] = []
     for node in own:
-        if isinstance(node, ast.Try):
+        if isinstance(node, TRY_NODES):
             for handler in node.handlers:
                 out.extend(_handler_findings(func, handler, ctx, qualname, rel, lines))
     return out

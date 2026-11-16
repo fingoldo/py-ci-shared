@@ -34,6 +34,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -85,7 +86,7 @@ def _handler_fallbacks(tree: ast.Module) -> dict[int, set[str]]:
     """``{id(import node): standalone names imported by the enclosing try body}`` for imports inside an ImportError handler."""
     out: dict[int, set[str]] = {}
     for node in _fast_walk(tree):
-        if not isinstance(node, ast.Try):
+        if not isinstance(node, TRY_NODES):
             continue
         tried = _imported_modules(node.body)
         for handler in node.handlers:

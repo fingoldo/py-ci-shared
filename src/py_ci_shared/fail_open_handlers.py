@@ -42,6 +42,7 @@ from __future__ import annotations
 from functools import partial
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -497,7 +498,7 @@ def _scan_function(
     """Findings inside one function or module body (nested functions and classes are scanned on their own)."""
     found: list[FailOpenHandler] = []
     name: str = qualname or str(getattr(fn, "name", "<module>"))
-    try_of: dict[int, ast.Try] = {id(h): n for n in _fast_walk(fn) if isinstance(n, ast.Try) for h in n.handlers}
+    try_of: dict[int, ast.Try] = {id(h): n for n in _fast_walk(fn) if isinstance(n, TRY_NODES) for h in n.handlers}
     is_gate = not isinstance(fn, ast.Module) and bool(gate_re.search(fn.name))
 
     def visit(node: ast.AST, loop_vars: frozenset[str]) -> None:

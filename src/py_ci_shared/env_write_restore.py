@@ -32,6 +32,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import logging
 import re
@@ -126,7 +127,7 @@ def _protected_ranges(fn: ast.AST, aliases: ImportAliases, write_lines: list[int
     for node in _own_nodes(fn):
         if isinstance(node, (ast.With, ast.AsyncWith)) and any(_is_scoping_call(item.context_expr) for item in node.items):
             ranges.append((node.lineno, _end(node)))
-        elif isinstance(node, ast.Try) and node.finalbody and any(_env_write_text(n, aliases) for s in node.finalbody for n in shared_walk(s)):
+        elif isinstance(node, TRY_NODES) and node.finalbody and any(_env_write_text(n, aliases) for s in node.finalbody for n in shared_walk(s)):
             # From the top of the function: the usual shape sets the variable just BEFORE the try whose finally puts it back.
             ranges.append((getattr(fn, "lineno", node.lineno), _end(node)))
         elif isinstance(node, (ast.Yield, ast.YieldFrom)):

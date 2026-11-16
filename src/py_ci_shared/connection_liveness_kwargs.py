@@ -40,6 +40,7 @@ A package defines its own ``KEEPALIVES = {...}`` literal (or imports the one her
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable, Mapping
@@ -152,8 +153,8 @@ def _definitions(scan: ScanResult, names: frozenset[str]) -> _Definitions:
         stack: list[ast.stmt] = list(parsed.tree.body)
         while stack:
             stmt = stack.pop()
-            if isinstance(stmt, (ast.If, ast.Try)):
-                stack.extend(stmt.body + stmt.orelse + (stmt.finalbody if isinstance(stmt, ast.Try) else []))
+            if isinstance(stmt, ast.If) or isinstance(stmt, TRY_NODES):
+                stack.extend(stmt.body + stmt.orelse + (stmt.finalbody if isinstance(stmt, TRY_NODES) else []))
                 continue
             target: Optional[ast.AST] = None
             value: Optional[ast.AST] = None

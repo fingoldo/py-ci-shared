@@ -33,6 +33,7 @@ Usage in a consumer's meta test::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -113,7 +114,7 @@ def _module_defs(body: "list[ast.stmt]") -> "list[_Func]":
     for stmt in body:
         if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)):
             out.append(stmt)
-        elif isinstance(stmt, (ast.If, ast.With, ast.Try)):
+        elif isinstance(stmt, (ast.If, ast.With)) or isinstance(stmt, TRY_NODES):
             arms = [stmt.body, getattr(stmt, "orelse", [])] + [h.body for h in getattr(stmt, "handlers", [])] + [getattr(stmt, "finalbody", [])]
             for arm in arms:
                 out.extend(_module_defs(arm))

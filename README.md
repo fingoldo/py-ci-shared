@@ -4,6 +4,8 @@
 [![Config drift check](https://github.com/fingoldo/py-ci-shared/actions/workflows/config-drift-check.yml/badge.svg)](https://github.com/fingoldo/py-ci-shared/actions/workflows/config-drift-check.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+Supported Python: 3.9 to 3.13 and 3.15 (the blocking self-ci legs; the package's classifiers list the same versions). 3.14 runs in CI as a preview leg that cannot fail a release until it has run green once.
+
 Shared CI/lint tooling for fingoldo Python projects (`mlframe`, `pyutilz`, and future repos). Single source of truth for the CI/lint conventions that used to be independently duplicated (and drift) across each project's `.github/workflows/`, `scripts/`, and `pyproject.toml`.
 
 Two things live here, each solving a different half of the duplication:

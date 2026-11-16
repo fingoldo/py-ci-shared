@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
 from ._base import walk_tree, Finding, is_line_exempt, is_test_file, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes
@@ -66,7 +67,7 @@ def scan_except_skip_masks_call_under_test(
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Try):
+            if not isinstance(node, TRY_NODES):
                 continue
             if _body_is_imports_only(node.body):
                 continue

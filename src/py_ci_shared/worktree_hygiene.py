@@ -478,4 +478,7 @@ def _emit(args: argparse.Namespace) -> int:
 
 
 if __name__ == "__main__":
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     sys.exit(main())

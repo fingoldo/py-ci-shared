@@ -25,6 +25,7 @@ Usage::
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from ._core.unparse import unparse_stable
 import logging
 from collections.abc import Iterable, Sequence
@@ -154,7 +155,7 @@ class _Counter:
             c = sum(_expr_count(i.context_expr, self.name) for i in s.items)
             f, t = self.walk(s.body)
             return (c + f if f != _UNREACHABLE else _UNREACHABLE), (c + t if t != _UNREACHABLE else _UNREACHABLE)
-        if isinstance(s, ast.Try) or type(s).__name__ == "TryStar":
+        if isinstance(s, TRY_NODES):
             body_f, body_t = self.walk(getattr(s, "body"))
             handler_f, handler_t = self._branches(getattr(s, "orelse"), *[h.body for h in getattr(s, "handlers")])
             final_f, _ = self.walk(getattr(s, "finalbody"))

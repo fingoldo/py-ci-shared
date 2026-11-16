@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from ._core.ast_try import TRY_NODES
 from collections.abc import Sequence
 from typing import Optional, Union
 
@@ -200,7 +201,7 @@ def _skips_in_tree(tree: ast.AST, rel: str) -> list[Finding]:
     for node in _fast_walk(tree):
         if isinstance(node, ast.Call) and _call_name(node).split(".")[-1] == "importorskip" and node.args and _str_arg_is_shared(node.args[0]):
             out.append(_importorskip_finding(node, rel))
-        elif isinstance(node, ast.Try) and _imports_shared(node.body):
+        elif isinstance(node, TRY_NODES) and _imports_shared(node.body):
             out.extend(_try_findings(node, rel))
         elif isinstance(node, ast.If) and _is_find_spec_guard(node.test):
             out.extend(_find_spec_findings(node, rel))
