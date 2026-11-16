@@ -72,9 +72,7 @@ NON_CORPUS: dict[str, str] = {
     "audit_path_references": "needs the repo's own and foreign audit round directories",
     "baseline_hygiene": "reads one baseline file and its current violations",
     "changelog_promise_parity": "needs caller-supplied trigger patterns over a CHANGELOG text",
-    "ci_test_dir_reachability": "needs the workflows directory and an intentionally-unreached list",
     "ci_workflow_gate": "takes one workflow file",
-    "ci_workflow_paths": "needs the workflows directory",
     "ci_workflow_timeout_gate": "takes one workflow file",
     "closed_audit_rounds": "needs a base revision to diff the closed rounds against",
     "commit_metadata": "needs a revision range of commit messages",
@@ -116,7 +114,6 @@ NON_CORPUS: dict[str, str] = {
     "pydantic_field_bounds": "needs live pydantic model classes",
     "readme_env_var_parity.find_readme_documented_vars": "takes a README path, not a corpus",
     "repo_hygiene.find_missing_required_files": "needs the repo's list of required files",
-    "repo_hygiene.find_unguarded_numeric_gates": "takes a workflows directory",
     "resource_release_paths": "takes one file and a release method",
     "schema_snapshot_parity": "takes one schema.sql and one snapshot JSON and provisions a throwaway server; not a corpus scan",
     "script_entry_points": "needs the caller's list of flat script directories; repos differ in where their scripts live",
@@ -155,6 +152,8 @@ BINDINGS: dict[str, Callable[[Path], Any]] = {
     "test_files": lambda r: [p for p in _py_files(r) if "tests" in p.relative_to(r).parts] or None,
     "tests_root": _tests_dir,
     "tests_dir": _tests_dir,
+    "files_or_root": _py_files,
+    "workflows_dir": lambda r: (r / ".github" / "workflows") if (r / ".github" / "workflows").is_dir() else None,
 }
 
 
