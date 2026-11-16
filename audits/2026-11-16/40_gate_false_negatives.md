@@ -189,7 +189,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
 ## 40-T20 (P3) `hardcoded_seed_in_library`: unfolded constant shapes and unrecognised parameter names
 - **Evidence:** `hardcoded_seed_in_library.py:81-110` (`_int_value` folds `+ - * // %`, not `**`) and `:49` (`_SEED_KEYWORDS`). `b2.py` (inside a function that has its own `seed=None`), 0 findings: `M(random_state=2**5)`, `M(random_state=np.int64(3))`, `random.Random("abc")`; and in a function whose seed parameter is `random_generator`, `rs`, `seeds` or arrives via `**kwargs`: `M(random_state=3)`. Flagged: `default_rng(42)`, `RandomState(42)`, aliased `dr(7)`, `np.random.seed(0)`, `R(random_state=0)`, `**{"random_state": 1}`, lambdas, nested defs, methods, async, a `random_state=hex` literal.
 - **Proposed fix:** fold `**` and `<<`, accept `np.int64/int32(<int>)`, a string seed, and extend the "own seed parameter" test to `random_generator`, `generator`, `rs`, `seeds`. BEHAVIOUR CHANGE.
-- **Disposition:** DEFERRED. Folding ** and numpy-int seeds and widening the seed-parameter names are BEHAVIOUR CHANGES that add consumer findings; not done in this round.
+- **Disposition:** RESOLVED in the commit that adds the folded-seed tests. `**` and `<<` fold (exponent 0 to 64), `np.<int type>(<int>)` unwraps, a string-literal seed to a seeder is a finding, and `random_generator`/`generator` join the seed parameter names. Red run: 7 of 8 new cases gave 0 findings; `rs` was already recognised, so the audit's `rs` case was not a miss in the tree. `**kwargs` seeds are not added. Changelog Behaviour change (40-T20).
 
 ## Pass-by-emptiness sweep (summary)
 

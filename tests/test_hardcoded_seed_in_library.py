@@ -206,3 +206,22 @@ def test_local_int_constant_is_folded_and_rebinding_is_not(tmp_path):
 def test_forwarding_the_callers_seed_to_new_spellings_is_clean(tmp_path):
     src = "def fit(X, random_state=None):\n    return CatBoostClassifier(random_seed=random_state)\n"
     assert _found(tmp_path, src) == []
+
+
+@pytest.mark.parametrize(
+    "param, call",
+    [
+        # 40-T20: a folded ** or << seed, a numpy integer scalar, a string seed, and the seed-parameter spellings the gate missed
+        ("random_state", "M(random_state=2**5)"),
+        ("random_state", "M(random_state=1 << 4)"),
+        ("random_state", "M(random_state=np.int64(3))"),
+        ("random_state", "np.random.default_rng(np.int32(7))"),
+        ("random_state", "random.Random('abc')"),
+        ("random_generator", "M(random_state=3)"),
+        ("generator", "M(random_state=3)"),
+        ("rs", "M(random_state=3)"),
+    ],
+)
+def test_folded_numpy_string_and_widened_seed_names_are_reported(tmp_path, param, call):
+    src = f"import random\nimport numpy as np\n\n\ndef fit(X, {param}=None):\n    return {call}\n"
+    assert len(_found(tmp_path, src)) == 1, _found(tmp_path, src)

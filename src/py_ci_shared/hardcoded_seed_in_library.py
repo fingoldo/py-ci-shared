@@ -45,7 +45,7 @@ RULE = "hardcoded-seed-in-library"
 SUPPRESSION = "# seed-ok:"
 DEFAULT_EXCLUDE_FRAGMENTS = ("tests/", "_benchmarks/")
 
-_SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|rng|rs)s?(?:$|_)")
+_SEED_PARAM_RE = re.compile(r"(?:^|_)(?:seed|random_state|random_generator|generator|rng|rs)s?(?:$|_)")
 _SEED_KEYWORDS = frozenset({"random_state", "seed", "random_seed", "rng", "rand_state", "seed_value"})
 _SEEDERS = frozenset(
     {
@@ -87,18 +87,42 @@ def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
         inner = _int_value(node.operand, consts)
         return None if inner is None else (-inner if isinstance(node.op, ast.USub) else inner)
-    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod)):
+    if isinstance(node, ast.Call) and _numpy_integer_scalar(node) and len(node.args) == 1:
+        return _int_value(node.args[0], consts)  # np.int64(3) is the seed 3
+    if isinstance(node, ast.BinOp) and type(node.op) in _FOLDED_OPS:
         left, right = _int_value(node.left, consts), _int_value(node.right, consts)
-        if left is None or right is None:
-            return None
-        if isinstance(node.op, ast.Add):
-            return left + right
-        if isinstance(node.op, ast.Sub):
-            return left - right
-        if isinstance(node.op, ast.Mult):
-            return left * right
-        return None if right == 0 else (left // right if isinstance(node.op, ast.FloorDiv) else left % right)
+        return None if left is None or right is None else _fold(node.op, left, right)
     return None
+
+
+_FOLDED_OPS = frozenset({ast.Add, ast.Sub, ast.Mult, ast.FloorDiv, ast.Mod, ast.Pow, ast.LShift})
+
+
+def _fold(op: ast.operator, left: int, right: int) -> Optional[int]:
+    """The value of ``left <op> right`` for the integer operators a seed is written with, or None when it is not a seed value."""
+    if isinstance(op, ast.Add):
+        return left + right
+    if isinstance(op, ast.Sub):
+        return left - right
+    if isinstance(op, ast.Mult):
+        return left * right
+    if isinstance(op, (ast.Pow, ast.LShift)):
+        # a negative or huge exponent is not an int seed (2 ** -1 is a float, 2 ** 10**9 is not a value to fold)
+        if not 0 <= right <= 64:
+            return None
+        return pow(left, right) if isinstance(op, ast.Pow) else left << right
+    if right == 0:
+        return None
+    return left // right if isinstance(op, ast.FloorDiv) else left % right
+
+
+_NUMPY_INT_TYPES = frozenset({"int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "intc", "intp", "int_", "uint"})
+
+
+def _numpy_integer_scalar(call: ast.Call) -> bool:
+    """``np.int64(...)`` / ``numpy.uint32(...)``: a numpy integer scalar wrapping its value."""
+    func = call.func
+    return isinstance(func, ast.Attribute) and func.attr in _NUMPY_INT_TYPES and isinstance(func.value, ast.Name) and func.value.id in {"np", "numpy"}
 
 
 def _module_int_constants(tree: ast.Module) -> "dict[str, int]":
@@ -205,6 +229,8 @@ def _seed_description(call: ast.Call, aliases: ImportAliases, consts: "Optional[
     seeds_by_call = aliases.qualified_name(call) in _SEEDERS or (isinstance(call.func, ast.Attribute) and call.func.attr in _SEED_METHODS)
     if not what and seeds_by_call and call.args and _int_value(call.args[0], known) is not None:
         what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"
+    elif not what and seeds_by_call and call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
+        what = f"{unparse_stable(call.func)}({unparse_stable(call.args[0])})"  # random.Random("abc"): a string seed is a fixed seed
     return what
 
 

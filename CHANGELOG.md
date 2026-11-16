@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T20, `hardcoded_seed_in_library`): a seed written with `**` or `<<` (`random_state=2**5`), a numpy integer scalar (`np.int64(3)`), a string seed (`random.Random("abc")`) is judged as the literal seed it is, and the seed-parameter names `random_generator` and `generator` now make a function a seeded one (`rs` was already). What to do: pass the function's own seed on, or mark a deliberately fixed seed `# seed-ok: <reason>`.
+
 - **Behaviour change** (40-T19, `systemexit_in_library`): in a library module (no `__main__` guard, not a `__main__.py`), an exit that runs at import time (module level, class body, or a lambda) and `os.abort()` are findings, whatever the name. Library modules are the modules that are not scripts or entry points. What to do: move the exit into `main()` and raise a normal exception from the module, or mark the line `# exit-ok: <reason>`.
 
 - **Behaviour change** (40-T15, `env_flag_parsing`): an alias of `os.environ` or `os.getenv` (`from os import environ as E`) is read like the original, and `int(<env read>)` compared with a number (`int(os.getenv("FLAG", "0")) > 0`, `== 1`) is a hand-parsed flag. What to do: route the flag through the shared parser (`env_flag`), or list the variable in `allowed` with its reason.
