@@ -1,0 +1,13 @@
+import cupy as cp
+from pyutilz.performance.gpu_hw_launch import gpu_capability_summary
+
+
+def run(x, n):
+    summary = gpu_capability_summary(0)
+    with cp.cuda.Device(0):
+        pass
+    y = cp.power(x, 2)
+    z = xp.power(x, -3)
+    order = cp.argsort(x, axis=0)
+    table = cupy.sort(x, axis=0)
+    return summary, y, z, order, table

@@ -1,0 +1,5 @@
+import cupy as cp
+
+
+def run(x:
+    return cp.power(x, 2

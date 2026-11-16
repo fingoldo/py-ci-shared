@@ -1,0 +1,40 @@
+{
+  "module": "cuda_device_idioms",
+  "round": "2026-11-16 (55-T10)",
+  "gate_kind": "hard",
+  "rules": {
+    "cuda-literal-device-id": {
+      "flags": "gpu_capability_summary / Device / getDeviceProperties / setDevice / set_device / select_device with an integer literal as the first argument",
+      "marker": "# device-ok: <reason>",
+      "note": "lives in this module, not cuda_launch_geometry, so the existing launch-geometry manifest and its canaries stay untouched"
+    },
+    "cuda-cupy-small-power": {
+      "flags": "cp|cupy|xp .power(x, e) with e in {2, 3, -1, -2, -3} (positional or exponent=)",
+      "marker": "# power-ok: <reason>",
+      "source": "CUDA.md 19.7"
+    },
+    "cuda-direct-device-sort": {
+      "flags": "cp|cupy|xp .sort / .argsort with an explicit axis=0; bodies of device_argsort / device_sort are exempt",
+      "marker": "# sort-ok: <reason>",
+      "source": "CUDA.md 16",
+      "limit": "the 80000-row threshold is not known statically, so every explicit axis=0 device sort is reported"
+    }
+  },
+  "canaries": "tests/canary/cuda_device_idioms/{violation,clean,bom,unparsable}; fragment tests/_gate_teeth_canaries_cuda_cuda_device_idioms.py",
+  "tests": "tests/test_cuda_device_idioms.py (written first, recorded red as collection errors, then green)",
+  "corpus": {
+    "pyutilz/src": {"hits": 0},
+    "mlframe/src/mlframe": {
+      "hits": 6,
+      "judgments": [
+        {"path": "feature_selection/_benchmarks/bench_joint_hist_block_size_iter141.py:59", "rule": "cuda-literal-device-id", "verdict": "fine if single-GPU bench; owner to mark or move out of the gate scope"},
+        {"path": "feature_selection/_benchmarks/bench_mi_classif_crossover_iter140.py:48", "rule": "cuda-literal-device-id", "verdict": "fine if single-GPU bench; owner to mark or move out of the gate scope"},
+        {"path": "feature_selection/_benchmarks/bench_mrmr.py:72", "rule": "cuda-literal-device-id", "verdict": "fine if single-GPU bench; owner to mark or move out of the gate scope"},
+        {"path": "feature_selection/_benchmarks/kernel_tuning_cache/dispatch.py:65", "rule": "cuda-literal-device-id", "verdict": "unverified: a tuning-cache dispatch reading device 0 limits on a multi-GPU host would be a real defect; owner to decide"},
+        {"path": "feature_selection/_benchmarks/build_null_mi_table.py:60", "rule": "cuda-direct-device-sort", "verdict": "unverified: row count not checked; owner to bound it or route through device_argsort"},
+        {"path": "feature_selection/filters/_fe_batched_qbin.py:113", "rule": "cuda-direct-device-sort", "verdict": "FALSE POSITIVE by size: cp.sort(table[1:], axis=0) is a 21-row edge table per column; needs `# sort-ok: 21-row edge table`"}
+      ]
+    }
+  },
+  "owner_facing": "mlframe needs 6 markers or moves before adopting this gate: 5 benchmark scripts (literal device ids, one direct sort) and one size false positive in _fe_batched_qbin.py"
+}

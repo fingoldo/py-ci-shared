@@ -1,0 +1,27 @@
+{
+  "module": "cuda_wide_load_alignment",
+  "round": "2026-11-16 (55-T8)",
+  "rule": "cuda-wide-load-alignment",
+  "gate_kind": "hard",
+  "marker": "// align-ok: <reason>",
+  "scope": "byte-pointer (char, signed/unsigned char, int8_t, uint8_t) casts to a wider type, where the operand is a byte pointer plus an offset; the kernel signature must declare a stride|pitch|pad|ld parameter",
+  "narrowing": {
+    "first_round": "rule applied to any byte-named operand, measured on mlframe: 5 hits, first five judged",
+    "first_five": [
+      {"path": "feature_selection/filters/_feature_engineering_pairs/_pairs_analytic_gpu.py::_MINMAX_SRC (minmax_i8)", "verdict": "bare base cast (const int*)a, flat array, base alignment only", "false_for_rule": true},
+      {"path": "feature_selection/filters/_honest_null_device.py::_SOURCE_K2 (root_split_stats_k2)", "verdict": "bare base cast (const unsigned int*)ybits, indexed by word: stride is in words, always aligned when the base is", "false_for_rule": true},
+      {"path": "feature_selection/filters/_honest_null_k4.py::_SOURCE_K4 (root_split_stats_k4)", "verdict": "same bare base cast, word indexing", "false_for_rule": true},
+      {"path": "feature_selection/filters/_honest_null_k4.py::_SOURCE_K4F", "verdict": "same bare base cast, word indexing", "false_for_rule": true},
+      {"path": "feature_selection/filters/_honest_null_k4.py::_SOURCE_K5 (root_split_stats_k5)", "verdict": "same bare base cast, word indexing", "false_for_rule": true}
+    ],
+    "rule_for_narrowing": "4 of the first 5 were false (more than 1 is the bar), so the operand must be a byte pointer PLUS AN OFFSET (codes + row * n), where a misaligned address can occur. A bare base cast is no longer reported.",
+    "after_narrowing": "re-measured on mlframe: 0 hits; pyutilz: 0 hits"
+  },
+  "corpus": {
+    "pyutilz/src": {"hits": 0},
+    "mlframe/src/mlframe (exclude _benchmarks, kernel_prototypes)": {"hits": 0}
+  },
+  "residual_unverified": "the narrowed rule does not check the host side: a bare base pointer that is a row slice of a byte matrix (e.g. ybits[b0:b0+bc]) is aligned only if the row width is a multiple of 4. Not decided by the kernel text; owner to confirm the host pads the row width (mlframe _honest_null_accept_bits / _honest_null_device)",
+  "canaries": "tests/canary/cuda_wide_load_alignment/{violation,clean,bom,unparsable}; fragment tests/_gate_teeth_canaries_cuda_cuda_wide_load_alignment.py",
+  "tests": "tests/test_cuda_wide_load_alignment.py (written first, red as collection errors, then green)"
+}
