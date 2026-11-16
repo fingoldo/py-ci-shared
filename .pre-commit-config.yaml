@@ -91,3 +91,12 @@ repos:
         pass_filenames: false
         files: '^(src/|tests/|configs/|pyproject\.toml$|README\.md$|CHANGELOG\.md$|\.github/)'
         stages: [pre-push]
+      # 46-T7: a change to configs/consumers.toml reached master without the tests that pin it (a red master for 9 h). Only those run.
+      # Every clone must reinstall the hooks to get this one (owner step: python -m pre_commit install --hook-type pre-push).
+      - id: consumers-pinned-tests
+        name: "consumers.toml pinned tests (pre-push, only when configs/consumers.toml changes)"
+        entry: python -m pytest -p no:randomly -o addopts="-ra --strict-markers" tests/test_strict_skipped_private.py tests/test_consumers.py tests/test_consumers_validation.py
+        language: system
+        pass_filenames: false
+        files: '^configs/consumers\.toml$'
+        stages: [pre-push]

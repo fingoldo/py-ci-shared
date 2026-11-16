@@ -40,6 +40,7 @@ from typing import Any, Optional, Union
 from ._core import DEFAULT_EXCLUDE, CoreError, Finding, ScanResult, module_of, package_of, resolve_relative, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_run import enforce_findings
+from ._core.shared_helpers import is_type_checking_test as _is_type_checking
 
 __all__ = ["REFRESH_FLAG", "ImportEvent", "assert_no_import_cycles", "build_import_graph", "find_import_cycles"]
 
@@ -69,10 +70,6 @@ class _Module:
     events: list[ImportEvent] = field(default_factory=list)
     bindings: list[tuple[int, str]] = field(default_factory=list)
     has_getattr: bool = False
-
-
-def _is_type_checking(test: ast.expr) -> bool:
-    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
 
 
 def _is_main_guard(test: ast.expr) -> bool:

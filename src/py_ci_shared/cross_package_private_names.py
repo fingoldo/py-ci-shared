@@ -51,6 +51,7 @@ from typing import Optional, Union
 from ._core import DEFAULT_EXCLUDE, CorpusError, Finding, ImportAliases, ParsedFile, child_nodes, parse_file, scan_python
 from ._core.errors import SourceError
 from ._core.gate_contract import check_scan
+from ._core.shared_helpers import head_name as _head
 
 __all__ = ["AMBIGUOUS_RULE", "RULE", "assert_cross_package_private_names", "find_cross_package_private_names"]
 
@@ -190,12 +191,6 @@ def _public_alias(module_file: Path, private: str, cache: "_AliasCache") -> Opti
                 found = next((t.id for t in targets if isinstance(t, ast.Name) and not t.id.startswith("_")), found)
     cache[key] = found
     return found
-
-
-def _head(node: ast.expr) -> Optional[str]:
-    while isinstance(node, ast.Attribute):
-        node = node.value
-    return node.id if isinstance(node, ast.Name) else None
 
 
 _AliasCache = dict[tuple[Path, str], Optional[str]]

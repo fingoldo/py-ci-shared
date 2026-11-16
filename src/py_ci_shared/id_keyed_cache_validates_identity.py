@@ -50,6 +50,7 @@ from ._core.scopes import own_nodes
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python
 from ._core.node_index import walk as _fast_walk
 from ._gate_report import line_has_marker
+from ._core.shared_helpers import module_statements as _module_statements
 
 __all__ = ["RULE", "MARKER", "assert_id_keyed_cache_validates_identity", "find_id_keyed_cache_validates_identity"]
 
@@ -60,18 +61,6 @@ _WEAKREF_NAMES = frozenset({"ref", "finalize", "proxy", "WeakMethod"})
 _READ_METHODS = frozenset({"get", "pop", "setdefault", "__getitem__"})
 _FunctionNode = Union[ast.FunctionDef, ast.AsyncFunctionDef]
 _Scope = Union[ast.Module, _FunctionNode]
-
-
-def _module_statements(body: list[ast.stmt]) -> Iterator[ast.stmt]:
-    """Module-scope statements, descending into ``if``/``try``/``with`` blocks but never into a def or class."""
-    for node in body:
-        yield node
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            continue
-        for name in ("body", "orelse", "finalbody"):
-            yield from _module_statements(getattr(node, name, None) or [])
-        for handler in getattr(node, "handlers", None) or []:
-            yield from _module_statements(handler.body)
 
 
 def _is_dict_value(value: ast.expr, aliases: ImportAliases) -> bool:

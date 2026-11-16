@@ -676,3 +676,38 @@ def test_a_private_consumer_is_left_out_of_the_public_report_unless_asked(tmp_pa
     assert "pubrepo" in out and "privrepo" not in out
     ci_health.main([str(p), "--include-private"], api=FakeApi({}), now=NOW)
     assert "privrepo" in capsys.readouterr().out
+
+
+# --- tag-push runs (46-T6): read and reported, never a failing verdict -----------------------------------------------
+
+
+def test_self_watch_names_the_release_workflow_whose_tag_runs_are_read():
+    from py_ci_shared._consumers import load_consumers
+
+    config = Path(__file__).resolve().parents[1] / "configs" / "self_watch.toml"
+    (consumer,) = load_consumers(config)
+    assert consumer.tag_workflows == ("Release",)
+
+
+def test_a_failed_tag_push_run_is_reported_but_never_turns_the_check_red(tmp_path):
+    from py_ci_shared._consumers import load_consumers
+
+    config = tmp_path / "self_watch.toml"
+    config.write_text(
+        '[[consumer]]\nname = "py-ci-shared"\nrepo = "fingoldo/py-ci-shared"\nbranch = "master"\nprivate = false\ntag_workflows = ["Release"]\n',
+        encoding="utf-8",
+    )
+    (consumer,) = load_consumers(config)
+    release_wf = {"id": 7, "name": "Release", "path": ".github/workflows/release.yml", "state": "active"}
+    master_ok = _run(300, "2026-11-15T10:00:00Z", "success", name="Release")
+    master_ok["head_branch"] = "master"
+    tag_failed = _run(299, "2026-11-14T10:00:00Z", "failure", name="Release")
+    tag_failed["head_branch"] = "v1.23.11"
+    routes = _routes("py-ci-shared", [release_wf], {7: [master_ok, tag_failed]}, default_branch="master")
+    routes["repos/fingoldo/py-ci-shared/contents/.github/workflows/release.yml"] = _contents("on:\n  push:\n    tags: ['v*']\n")
+    repo = ci_health.collect(consumer, FakeApi(routes), NOW, can_read_private=True)
+    assert not repo.error
+    assert [(t.workflow, t.tag, t.conclusion) for t in repo.tag_runs] == [("Release", "v1.23.11", "failure")]
+    assert exit_code([repo], 2) == 0
+    text = render_markdown([repo], NOW, 2)
+    assert "Tag-push runs (report only" in text and "v1.23.11" in text and "failure" in text

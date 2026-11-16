@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ._toml_compat import tomllib
+from ._core.shared_helpers import toml_quoted as _toml_str
 
 __all__ = ["KINDS", "ScaffoldError", "Scaffold", "find_checkout", "new_gate"]
 
@@ -59,10 +60,6 @@ def _write(path: Path, text: str, *, crlf: bool = False) -> None:
 def _crlf(path: Path) -> bool:
     """Keep an edited file's line endings (a Windows checkout with autocrlf holds CRLF)."""
     return b"\r\n" in path.read_bytes()
-
-
-def _toml_str(text: str) -> str:
-    return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 _MODULE = '''"""{summary}

@@ -269,6 +269,20 @@ def _git_tags(cwd: Path) -> list[str]:
     return [line.strip() for line in out.stdout.splitlines() if line.strip()]
 
 
+def _origin_tag_problem(repo_dir: Path, tag: str) -> Optional[str]:
+    """Why ``tag`` may not be prepared in ``repo_dir``, or ``None``: a tag that origin already has was pushed by an earlier prepare,
+    and a second session must not write files for the same version (46-T3). Origin unreadable is a refusal, not a pass."""
+    try:
+        out = subprocess.run(
+            ["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"], cwd=repo_dir, capture_output=True, text=True, check=True, timeout=120
+        )
+    except (OSError, subprocess.SubprocessError):
+        return f"cannot read the tags of origin in {repo_dir}, so {tag} cannot be checked against it: re-run this job"
+    if out.stdout.strip():
+        return f"{tag} already exists on origin: another session prepared that version, so pick the next one"
+    return None
+
+
 class _SameHostRedirects(urllib.request.HTTPRedirectHandler):
     """Follow a redirect only to the host that was asked.
 
@@ -405,6 +419,10 @@ def _main_prepare(args: argparse.Namespace) -> int:
         published = previous_release(args.version, tags)
     if published is None:
         _say(f"::error::cannot read the GitHub releases of {args.repo}, so the newest published release is unknown: re-run this job, or pass --published X.Y.Z")
+        return 2
+    taken = _origin_tag_problem(repo_dir, f"v{args.version}")
+    if taken:
+        _say(f"::error::{taken}")
         return 2
     try:
         changed = run_prep(repo_dir, args.version, published, write=args.write)

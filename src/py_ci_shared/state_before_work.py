@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, child_nodes, scan_python, walk
+from ._core.shared_helpers import final_name as _final
 
 __all__ = ["RULE", "assert_state_before_work", "find_state_before_work"]
 
@@ -44,14 +45,6 @@ DEFAULT_COUNTER_REGEX = r"processed|written|inserted|saved|sent"
 DEFAULT_WORK_NAMES = frozenset({"write", "insert", "flush", "commit", "execute", "executemany", "save", "send", "put", "upsert"})
 _CLOCKS = frozenset({"time", "monotonic", "perf_counter", "time_ns", "monotonic_ns", "now", "utcnow", "today", "timestamp", "fromtimestamp"})
 _NOISE = frozenset({"print", "debug", "info", "warning", "warn", "error", "exception", "log", "isoformat", "strftime", "float", "int", "str", "round"})
-
-
-def _final(func: ast.AST) -> Optional[str]:
-    if isinstance(func, ast.Attribute):
-        return func.attr
-    if isinstance(func, ast.Name):
-        return func.id
-    return None
 
 
 def _target_name(node: ast.AST) -> Optional[str]:

@@ -77,6 +77,7 @@ from typing import Any, Optional, Union
 from ._core.outcome import refreshed_skip
 from ._core import Baseline, CoreError, Finding, child_nodes, scan_python
 from ._core import walk as shared_walk
+from ._core.shared_helpers import is_type_checking_test as _is_type_checking
 
 __all__ = [
     "DEFAULT_SKIP_DECORATORS",
@@ -202,10 +203,6 @@ def _is_protocol(node: ast.ClassDef) -> bool:
         if (isinstance(target, ast.Name) and target.id == "Protocol") or (isinstance(target, ast.Attribute) and target.attr == "Protocol"):
             return True
     return False
-
-
-def _is_type_checking(test: ast.expr) -> bool:
-    return (isinstance(test, ast.Name) and test.id == "TYPE_CHECKING") or (isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING")
 
 
 @dataclass(frozen=True)
