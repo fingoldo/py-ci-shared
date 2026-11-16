@@ -230,7 +230,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D3): glossum package 0, glossum scripts 0, mlframe src 0, pyutilz src 0, llm_bench src 0. Zero today because glossum fixed it and keeps a runtime test; the AST variant adds protection to the other FastAPI consumers (autopsia, noema), which were not measured.
 - **Impact:** a silently dead endpoint.
 - **Proposed fix:** new gate `route_literal_after_catchall.py`. ADDITIVE.
-- **Disposition:** DEFERRED: segment-wise route-order comparison needs the --router-names opt-in design settled first. Not built this round.
+- **Disposition:** BUILT, HARD, OPT-IN: `src/py_ci_shared/route_literal_after_catchall.py` with `router_names=` required (an empty tuple raises), tests `tests/test_route_literal_after_catchall.py`, canaries `tests/canary/route_literal_after_catchall/`, fragment `tests/_gate_teeth_canaries_route_literal_after_catchall.py`, manifest `audits/2026-11-16/manifests/route_literal_after_catchall.json`. Same router object and method only; `{x:path}` is never a shadow. Measured read-only with router names router, app, api, r: pyutilz/src 0, mlframe/src 0. Not registered in registry.toml or the README (owner-owned files).
 
 ## 50-T7 (P2) global_write_via_reexport_alias: `alias.CONST = value` where the module bound to `alias` only re-exports `CONST`
 

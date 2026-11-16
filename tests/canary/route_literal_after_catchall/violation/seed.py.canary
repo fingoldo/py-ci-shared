@@ -1,0 +1,11 @@
+from fastapi import APIRouter
+
+router = APIRouter()
+
+
+@router.get("/words/{sense_id}")
+async def one(sense_id: str): ...
+
+
+@router.get("/words/search")
+async def search(): ...
