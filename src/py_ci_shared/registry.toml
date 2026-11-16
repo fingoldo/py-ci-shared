@@ -435,7 +435,7 @@ name = "cuda_device_idioms"
 kind = "gate"
 entries = ["assert_cuda_device_idioms"]
 since = "1.23.12"
-summary = "CUDA device-idiom hard gate: literal device ids, cupy small-integer power, and direct device sorts along axis 0 are reported unless waived"
+summary = "Three CUDA device idioms, each one line with a documented replacement: literal device ids, cupy small-integer power and direct axis-0 device sorts are reported unless waived"
 
 [[gate]]
 name = "cuda_fallback_logged"
