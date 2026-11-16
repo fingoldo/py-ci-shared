@@ -25,12 +25,12 @@ when its count changed at any point (not only between the endpoints), and a git 
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import json
 import logging
 import subprocess
-import sys
 from collections.abc import Iterable, Sequence
 from typing import Optional
 
@@ -217,15 +217,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except GitError as exc:
         logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"baseline_trend: {exc}\n")
+        write_text(err=True, text=f"baseline_trend: {exc}\n")
         return 2
     if not lines:
-        sys.stdout.write("no baselines found\n")
+        write_text("no baselines found\n")
         return 0
-    sys.stdout.write("count  rule                               first .. last\n")
+    write_text("count  rule                               first .. last\n")
     for line in lines:
-        sys.stdout.write(f"{line}\n")
-    sys.stdout.write(
+        write_text(f"{line}\n")
+    write_text(
         "\n'~~' means the count moved and came back to where it started.\n"
         "A count that never moved is a rule to decide about: real unowned debt, a rule reporting\n"
         "something nobody can act on, or entries nobody has pruned.\n"

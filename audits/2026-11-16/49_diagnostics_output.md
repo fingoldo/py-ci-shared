@@ -28,7 +28,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   With 5000 findings (`repo2`) the same single annotation is produced; for `naive_utcnow` it is the generic deprecation sentence.
 - **Impact:** a PR author sees a red annotation reading `swallowed-exceptions:` and no file in the Files-changed view; the 49-R3 fix made the annotation exist but not useful. Nothing points to the offending line.
 - **Proposed fix:** in `_print_result`, parse the message for `path:line:` finding lines and emit one `::error file=<path>,line=<n>,title=py-ci-shared <gate>::<rule/message>` per finding (cap at 10, then one summary annotation, since GitHub shows at most 10 per step), keeping the current line as the fallback for a gate with no parseable finding. Escape `%`, `\r`, `\n` per the workflow-command rules. ADDITIVE (output only; exit codes unchanged).
-- **Disposition:** OPEN
+- **Disposition:** FIXED in ded2bac: `::error` per `path:line` finding with file and line, cap 10 then a summary (`cli._error_annotations`); test `tests/test_cli_annotations.py`.
 
 ## 49-T2 (P2) `import_cycles` and ~30 other standalone `main()`s crash with a traceback on a console that cannot encode a path; only `cli._print` is guarded
 - **Evidence:** `cli.py:_print` handles `UnicodeEncodeError` (audit 2026-10-03 K-1) but the per-module commands write `Finding.render()` straight to `sys.stdout` (`import_cycles.py:433`, `workflow_runner_labels.py:212`, `closed_audit_rounds.py:169`, `commit_metadata.py:217`, `sibling_floor_skew.py:428`, `consumer_import_census.py:352`, `hook_attestation.py:253`, `schema_snapshot_parity.py:737`, `tracked_secret_shapes.py:330`, ...). A grep for `reconfigure` and `backslashreplace` over `src/py_ci_shared` finds only `cli.py:65` as code. Demonstration:
@@ -44,7 +44,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   and `PYTHONIOENCODING=cp1252 python -m py_ci_shared.workflow_runner_labels .` over `.github/workflows/сборка.yml` (holding `ubuntu-latest`) ends in `UnicodeEncodeError` (exit 1). The same kind of finding through `py-ci-shared run-all` prints `src/\u0434\u0430\u043d\u043d\u044b\u0435 \u6570\u636e.py:4` and exits correctly.
 - **Impact:** on a Russian or Western-European Windows console (cp1251, cp1252: the default for a pre-commit hook) the finding, the remaining findings and the summary line are lost, and exit code 1 equals "findings", so a traceback is indistinguishable from a real result in a hook. This is the failure 2026-10-03 K-1 fixed for one entry point only.
 - **Proposed fix:** move `_print`'s guard into one helper (for example `_core/console.py: write_line(text, *, err=False)`) and make every module `main` write through it, or call `sys.stdout.reconfigure(errors="backslashreplace")` once at the top of each `main`; add a test that runs each `main` under `PYTHONIOENCODING=cp1251` against a Cyrillic or CJK-named file. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in ded2bac: every module `main` writes via `_core/console.write_text` (escapes unencodable characters); test `tests/test_console_encoding.py`.
 
 ## 49-T3 (P2) Gates built on `_text_ratchet.enforce_findings` print each finding twice and the run-all row loses the fix guidance; a stale baseline is reported as "0 new violation(s)"
 - **Evidence:** `baseline_ratchet.py:enforce` writes the full report (list, guidance, "add it with a note") to stderr and returns 1; `_text_ratchet.py:87` then raises `AssertionError(f"{label}: {len(new)} new violation(s): {listed}. {baseline.path} accepts only the entries it holds")`, and `run-all` prints that one-line string in the FAIL row. Eight modules go through it (`skip_as_pass`, `wallclock_test_waits`, `git_child_env`, `guard_without_fixture`, `dup_baseline_percent_key`, ...). Demonstration (`repo11`, canary violation, `GITHUB_ACTIONS=true`):
@@ -59,7 +59,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   - The clean run is also off-channel: `skip_as_pass: no new violations (0 accepted, baselined)` is written with `sys.stdout.write` during the gate, so in `run-all` it is the first line of output, above `PASS  skip_as_pass`, detached from every row (seen in `repo11`: it printed before both PASS rows).
 - **Impact:** the developer of a `run-all` failure gets the finding list but not the fix, and in the stale/unjustified/floor cases gets a self-contradictory message and a command that cannot work.
 - **Proposed fix:** make `enforce_findings` raise with the whole text (header, findings one per line, guidance, and the real reason when `new` is empty: stale / unjustified / floor) instead of printing to stderr and summarising; give these gates a refresh path reachable from `py-ci-shared refresh <gate>` or print the manual instruction (delete the named stale keys) instead of `regen_baselines.py`; route the "no new violations (N accepted)" line through `outcome.add_note` so it prints under its own row. Text only, no exit-code change: ADDITIVE (CHANGELOG `Nothing to do` if the owner treats a message change as a behaviour change).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: needs `enforce_findings` to raise the full text (header, findings, guidance, real reason for stale/unjustified) across 8 gates, and a refresh instruction that works; that changes the failure text contract of those gates and needs the owner to approve the new wording.
 
 ## 49-T4 (P2) The refresh command printed in a missing-baseline message is wrong in two ways: it names a label that `py-ci-shared refresh` rejects, and it omits the `--grow` a first seed needs
 - **Evidence:** (a) `repo15`, gate `value_bearing_asserts`:
@@ -79,7 +79,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   The first message sends the developer to a command that fails with a second message; only the second names `--grow`. The first names the baseline by basename (`function_length.json`), the second by absolute path.
 - **Impact:** first adoption of a ratchet in a repo with existing findings hits two dead ends before the working command.
 - **Proposed fix:** (a) under `PY_CI_SHARED_CLI=1` print the enabled gate name (the CLI knows it; pass the `GateRun` name through a context variable in `outcome`) instead of the baseline label; (b) when the baseline is missing and the scan has findings, append ` (add --grow: seeding accepts the N current findings)`. ADDITIVE (text only).
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: (b) missing-baseline `--grow` hint FIXED in ded2bac (`_core/baseline.py`, `tests/test_message_wording.py`). (a) the printed CLI label needs the enabled gate name threaded from `runner` into `refresh_hint` for eight modules; not done.
 
 ## 49-T5 (P2) A PASS never says what was checked, and a baseline-accepted finding is reported nowhere on a pass
 - **Evidence:** `_print_result` prints `PASS <gate> (<s>s)` and nothing else. `repo4`: `function_length` with `src/a.py::big` accepted at 202 lines prints `PASS  function_length (4.97s)`; functions measured, files read and entries accepted are not shown. Only the `_text_ratchet`/`baseline_ratchet` gates print `N accepted, baselined`, and they print it off-row (49-T3). Vacuous passes that are therefore invisible, all run:
@@ -88,7 +88,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   - `machine_specific_paths` over a tree holding only `README.md` and `pyproject.toml` passes because `pyproject.toml` itself matches `*.toml` in `config_patterns`: `PASS machine_specific_paths (1.71s)` with no count. The floor of 1 is met by the config file; the count is not shown, so the pass cannot be told from a real one. (Whether that floor should count the config file is dimension 40's question; here only the missing count is raised.)
 - **Impact:** the floors catch "a gate that checks nothing", but at the console the reader of a green `run-all` cannot tell 2000 files read from 1. Baseline growth silently accepted (a ceiling at 202 is "PASS") is invisible to a reviewer.
 - **Proposed fix:** each `report()`/`_gate_run` tail adds a note via `outcome.add_note`: `read N file(s); M finding(s) accepted by <baseline file>; K unparsed file(s) allowed` (printed as `note:` under the row; always when `allow_unparsed` dropped a file or M > 0; the files-read count can be always shown). ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: a PASS note (files read, findings accepted, unparsed files allowed) needs a note in each gate's report tail across many modules, and the owner has to decide which counts always print.
 
 ## 49-T6 (P2) `git_dependency_pins` lists the offending refs without the dependency they belong to; `timezone_honest` prints a tuple repr with no line
 - **Evidence:** canary violation, `[project].dependencies`/`optional-dependencies` shape:
@@ -102,29 +102,29 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
   Three of the four lines are only the ref (from `seedextra@release-branch`, `seednoref` with no ref, `seedshort@abc1234`). Only the `[tool.uv.sources]` shape names the package. `git_dependency_pins.py:149` appends the literal `"<no ref>"`. `timezone_honest` prints `naive-datetime finding(s) in non-test code. ...: [('app/seed_job.py', 'DTZ005')]` with no line although ruff supplies one.
 - **Impact:** with more than one such dependency `<no ref>` tells the developer nothing; they re-read the file to find which.
 - **Proposed fix:** report `name: ref (pyproject.toml:LINE)` for every shape; render timezone findings as `path:line: DTZ005 <message>`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: `dtz_findings` returns `(path, rule)` with no line and its allow-list keys depend on that shape; `git_dependency_pins` needs `pyproject.toml` line tracking. Both change gate output and keys, so they need their own change.
 
 ## 49-T7 (P3) `repo_hygiene` and five more sites list only the first 10 to 50 offenders with no "and M more", and name no repair
 - **Evidence:** `repo_hygiene.py:353,362,369,380` use `[:20]`. `repo3`, 25 tracked BOM files: header `25 text file(s) start with a UTF-8 BOM`, then `f00.md` ... `f19.md`, nothing after. Same pattern: `ignore_ratchet.py:102` (`unparsed[:20]`), `timezone_honest.py:136` (`unchecked[:50]`), `tracked_secret_shapes.py:253` (`[:20]`), `arb_checks.py:152,154` (`[:10]`). `code_audit_meta.py:324-345` does it correctly (`... and N more`). The BOM/NUL messages explain the harm but not the repair.
 - **Impact:** the reader counts 20 lines against a header of 25 and may think the terminal cut the output.
 - **Proposed fix:** one helper `_core` `capped(items, limit)` that appends `... and M more`; use it at those sites; add the repair command to the BOM and NUL messages. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: `repo_hygiene`, `timezone_honest`, `ignore_ratchet`, `arb_checks` now use `capped` (FIXED in ded2bac, `tests/test_message_wording.py`); `tracked_secret_shapes.py:253` still caps with an inline slice and is not yet converted.
 
 ## 49-T8 (P3) Under Actions `budget = "fail"` exits 1 on an all-PASS run with no annotation, and no finding ever reaches the job summary
 - **Evidence:** `_announce_over_budget` returns before the `::warning` loop and the `GITHUB_STEP_SUMMARY` block when `mode == "fail"` (`cli.py:84-86`). `repo13`, `budget = "fail"`, `budget_s = 0.1`, `GITHUB_ACTIONS=true`: output is `PASS naive_utcnow`, `BUDGET naive_utcnow took 5.4s ...`, `1 passed, 0 failed, 0 skipped, 0 error`, `BUDGET 1 gate(s) over budget (budget = "fail"); exit code 1.`, exit 1, no `::error::` line. `GITHUB_STEP_SUMMARY` is written for the budget list only, never for FAIL rows.
 - **Impact:** the run page shows a red job with a summary line saying "0 failed" and no annotation saying why.
 - **Proposed fix:** emit `::error title=py-ci-shared gate over budget::<over>` per gate when `mode == "fail"`, and append FAIL/ERROR rows to `GITHUB_STEP_SUMMARY`. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in ded2bac: budget `fail` gets a `::error` annotation and a job-summary block; the summary also lists failed gates (`cli._announce_over_budget`, `cli._report`); test `tests/test_cli_annotations.py`.
 
 ## 49-T9 (P3) `run-all` has no final verdict word
 - **Evidence:** the last line is `1 passed, 0 failed, 0 skipped, 0 error` in every outcome, including exit 1 (budget) and exit 0 with `allow_unparsed` drops. Exit 2 (ERROR) and 1 (FAIL) are not distinguished in text; the exit-code contract exists only in the module docstring and README.
 - **Proposed fix:** append `-> OK`, `-> FAILED (exit 1)` or `-> ERROR (exit 2: a gate could not run)` to `_summary_line`; keep the existing head unchanged for greppers. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED in ded2bac: the summary line ends with `-> OK`, `-> FAILED (exit 1)` or `-> ERROR (exit 2 ...)`; the head is unchanged; test `tests/test_cli_annotations.py`.
 
 ## 49-T10 (P3) Not-enabled and cannot-run messages give no instruction; absolute paths and mixed separators remain
 - **Evidence:** `py-ci-shared run loc_budget` (a real gate that is not enabled) and `run naive_utcnw` (a typo) print the same text: `gate 'X' is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: naive_utcnow)`, with no `add "loc_budget" to enable = [...]` and no "did you mean". `run bandit_warn` gets the same text although it can never be a gate (49-R11 fixed the `ERROR` path only). `repo_hygiene` in a non-git directory gives `RuntimeError: git ls-files failed in <abs>: git ls-files -z failed in <abs> (exit 128): fatal: not a git repository ...` (path twice, no hint that the gate needs a git work tree; exit 2). Sweep: 22 of 175 failure texts embed an absolute path and 10 print it with both separators (`C:\...\tool/meta/baselines\skip_as_pass.json`); `drifted_duplicate_functions` lists `<abs>/a.py:1`; `ci_workflow_gate` reports `seed step` with no workflow line. Config errors print the absolute `pyproject.toml` while other messages print `pyproject.toml`; 49-R6 did not settle one wording.
 - **Proposed fix:** add the `enable = [...]` instruction and a `difflib.get_close_matches` suggestion to the `_cmd_run` lookup; give `repo_hygiene` a ConfigError "needs a git work tree"; normalise baseline and root paths through one `rel(path, root)` in message builders. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: the not-enabled part is FIXED in ded2bac (enable hint and near-miss suggestion, `_core/config.py`). Still open: the absolute path and mixed separators in 22 texts, the `repo_hygiene` non-git ConfigError, and `bandit_warn` being accepted as a gate name.
 
 ## 49-T11 (P3) Wording and small-output defects
 - `refresh` prints `created function_length.json with 1 entries: function-length baseline written to function_length.json` (`repo4`): the file named twice, `1 entries`, basename only (two baselines with the same name in different directories are indistinguishable). `baseline_ratchet.py` uses `entr(ies)` in six messages.
@@ -132,7 +132,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
 - `1 file(s) could not be parsed, so they were not checked: src/broken.py:1: unparsable: invalid syntax` never names the switch (`allow_unparsed`) or the fix.
 - `dup_baseline_percent_key`, `git_child_env`, `guard_without_fixture`, `skip_as_pass`, `wallclock_test_waits` print findings as `key (description); key (description)` on one line; `db_transaction_completeness` names its baseline `baseline.json` (basename only).
 - **Proposed fix:** correct the strings. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** DEFERRED: `entries` pluralisation FIXED in ded2bac (`entries_word`, applied to `entry_delta` and the two `baseline_ratchet` messages, which were two, not six). Still open: `refresh naive_utcnow` with no baseline printing PASS, the unparsed-file message not naming `allow_unparsed`, the `key (description)` one-line lists in five gates, and the basename-only baseline name in `db_transaction_completeness`.
 
 ## Considered and not raised
 

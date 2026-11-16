@@ -10,6 +10,7 @@ checkout without ``psutil`` still gets a sensible value and never fewer than one
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import logging
 import os
@@ -100,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
     """Print the worker count for this machine, for use in shell commands and hook entries."""
     args = sys.argv[1:] if argv is None else argv
     share = float(args[0]) if args else 0.5
-    sys.stdout.write(str(available_workers(share)) + "\n")
+    write_text(str(available_workers(share)) + "\n")
     return 0
 
 

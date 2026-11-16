@@ -22,6 +22,7 @@ Exit codes: 0 only on a completed, clean run; 1 otherwise.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import os
@@ -100,13 +101,13 @@ def main(argv: list[str] | None = None) -> int:
             [sys.executable, "-m", "mypy", *args], capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, timeout=_MYPY_TIMEOUT_S
         )
     except subprocess.TimeoutExpired:
-        sys.stdout.write(f"\nmypy_gate: FAIL -- mypy did not finish within {_MYPY_TIMEOUT_S} seconds\n")
+        write_text(f"\nmypy_gate: FAIL -- mypy did not finish within {_MYPY_TIMEOUT_S} seconds\n")
         return 1
     output = (result.stdout or "") + (result.stderr or "")
-    sys.stdout.write(output)
+    write_text(output)
     problem = check_mypy_output(output, result.returncode, min_files=min_files)
     if problem is not None:
-        sys.stdout.write(f"\nmypy_gate: FAIL -- {problem}\n")
+        write_text(f"\nmypy_gate: FAIL -- {problem}\n")
         return 1
     return 0
 

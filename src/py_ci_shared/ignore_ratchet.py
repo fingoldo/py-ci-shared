@@ -36,6 +36,7 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Optional
 
+from ._core.console import capped
 from ._core import dump_json, load_json, read_source, write_ratchet
 
 __all__ = [
@@ -99,7 +100,7 @@ def ruff_counts(root: Path, codes: Iterable[str], *, target: str = ".", ruff: Se
     items = json.loads(out.stdout or "[]")
     unparsed = sorted({str(item.get("filename", "?")) for item in items if not _RULE_CODE.match(str(item.get("code") or ""))})
     if unparsed:
-        raise RuntimeError(f"ruff could not parse {len(unparsed)} file(s), so the ignored codes cannot be counted there -- Fix them: {unparsed[:20]}")
+        raise RuntimeError(f"ruff could not parse {len(unparsed)} file(s), so the ignored codes cannot be counted there -- Fix them: {capped(unparsed, 20)}")
     codes_found = [str(item["code"]) for item in items]
     return {code: sum(1 for found in codes_found if code == "ALL" or found.startswith(code)) for code in wanted}
 

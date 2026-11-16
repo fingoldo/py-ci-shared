@@ -71,6 +71,7 @@ import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from ._core.console import capped
 from ._core import DEFAULT_EXCLUDE, iter_files
 from ._core.source import read_bytes_cached
 
@@ -359,7 +360,8 @@ def assert_repo_hygiene(
     tracked = find_tracked_generated_files(repo_root, generated_patterns)
     if tracked:
         problems.append(
-            f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and conflict on every merge:\n    " + "\n    ".join(tracked[:20])
+            f"{len(tracked)} generated file(s) are tracked by git - they land in every diff and conflict on every merge:\n    "
+            + "\n    ".join(capped(tracked, 20))
         )
     blobs = _text_file_bytes(repo_root, text_suffixes, _DEFAULT_SKIP_DIRS)
     problems += _floor_problem(repo_root, blobs, min_files)
@@ -368,14 +370,14 @@ def assert_repo_hygiene(
         problems.append(
             f"{len(nul_files)} text file(s) contain a NUL byte. grep reports these as BINARY and "
             "prints no matches, so every text search silently skips them. If you meant the escape, "
-            "write the four characters:\n    " + "\n    ".join(nul_files[:20])
+            "write the four characters:\n    " + "\n    ".join(capped(nul_files, 20))
         )
     bom_files = _bom_problems(repo_root, blobs)
     if bom_files:
         problems.append(
             f"{len(bom_files)} text file(s) start with a UTF-8 BOM. `json.loads` and `tomllib.loads` "
             "REJECT it outright, and in Markdown the first line stops starting with what it looks "
-            "like it starts with:\n    " + "\n    ".join(bom_files[:20])
+            "like it starts with:\n    " + "\n    ".join(capped(bom_files, 20))
         )
     missing = find_missing_required_files(repo_root, required_files)
     if missing:
@@ -386,7 +388,7 @@ def assert_repo_hygiene(
             problems.append(
                 f"{len(in_audits)} script(s) are tracked inside an audits/ folder. Runbooks belong in sql/, probes in "
                 "probes/, scripts in scripts/, linked from the finding; beside the audit nobody looking in sql/ "
-                "sees what is pending or already decided:\n    " + "\n    ".join(in_audits[:20])
+                "sees what is pending or already decided:\n    " + "\n    ".join(capped(in_audits, 20))
             )
     if workflows_dir is not None:
         problems.extend(find_workflows_dir_problems(workflows_dir))

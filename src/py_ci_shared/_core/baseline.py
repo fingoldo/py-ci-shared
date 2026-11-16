@@ -389,9 +389,11 @@ class Baseline:
         if refresh:
             return self._refresh(found, grow=grow, request=request)
         if not self.exists():
+            # 49-T4(b): a first seed refuses to add findings without --grow; say so in the message that sends the developer there.
+            hint = f" (add --grow: seeding accepts the {len(found)} current finding(s))" if found and "--grow" not in self.refresh_text else ""
             return BaselineOutcome(
                 missing=True,
-                message=f"{self.gate}: baseline {self.path} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_text}",
+                message=f"{self.gate}: baseline {self.path} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_text}{hint}",
             )
         accepted, notes = self.load()
         current = self.count(found)

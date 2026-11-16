@@ -18,6 +18,7 @@ Usage (``ci-health.yml`` style; the API comes from :func:`py_ci_shared.ci_health
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import logging
@@ -120,14 +121,14 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None) -> 
     results = [check_repo(c, use_api) for c in load_consumers(Path(args.config))]
     for r in results:
         if r.state == "missing":
-            sys.stdout.write(f"{r.repo}@{r.branch}: required context(s) no check on the 5 newest commits produced: {', '.join(r.missing)}" + "\n")
+            write_text(f"{r.repo}@{r.branch}: required context(s) no check on the 5 newest commits produced: {', '.join(r.missing)}" + "\n")
         elif r.state in ("unreadable", "error"):
-            sys.stdout.write(f"::warning::{r.repo}@{r.branch}: branch protection {r.state}, required checks NOT verified ({r.detail})" + "\n")
+            write_text(f"::warning::{r.repo}@{r.branch}: branch protection {r.state}, required checks NOT verified ({r.detail})" + "\n")
         else:
-            sys.stdout.write(f"{r.repo}@{r.branch}: {r.state} ({len(r.required)} required)" + "\n")
+            write_text(f"{r.repo}@{r.branch}: {r.state} ({len(r.required)} required)" + "\n")
     bad = [r for r in results if r.state == "missing" or (r.state == "error") or (args.strict and r.state == "unreadable")]
     counts = {s: sum(r.state == s for r in results) for s in ("ok", "missing", "unprotected", "unreadable", "error")}
-    sys.stdout.write("required_check_contexts: " + ", ".join(f"{k} {v}" for k, v in counts.items()) + "\n")
+    write_text("required_check_contexts: " + ", ".join(f"{k} {v}" for k, v in counts.items()) + "\n")
     return 1 if bad else 0
 
 

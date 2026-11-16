@@ -24,6 +24,7 @@ import importlib
 import inspect
 import logging
 import os
+import re
 import sys
 import textwrap
 from collections.abc import Sequence
@@ -32,6 +33,7 @@ from typing import Optional
 
 from . import __version__, registry
 from ._core.config import ConfigError, RepoConfig, find_repo_root, load_config
+from ._core.console import write_text
 from ._core.outcome import CLI_ENV_VAR
 from ._core.runner import ERROR, FAILED, PASSED, REFRESHED_STATUS, SKIPPED, GateResult, budget_verdict, run_gate
 
@@ -56,13 +58,7 @@ def _print(text: str = "", *, err: bool = False) -> None:
     A finding about ``src/数据.py`` on a cp1251 console raised ``UnicodeEncodeError`` here: the finding, the remaining
     gates and the summary were lost, and the exit code was the traceback's 1, even for an ERROR gate whose contract is 2
     (audit 2026-10-03 K-1). Unencodable characters are written as backslash escapes instead."""
-    stream = sys.stderr if err else sys.stdout
-    line = text + "\n"
-    try:
-        stream.write(line)
-    except UnicodeEncodeError:
-        encoding = getattr(stream, "encoding", None) or "ascii"
-        stream.write(line.encode(encoding, "backslashreplace").decode(encoding, "replace"))
+    write_text(text + "\n", err=err)
 
 
 def _load(repo: Optional[str]) -> RepoConfig:
@@ -80,19 +76,56 @@ def _announce_over_budget(overs: "list[str]", mode: str) -> None:
     provides ``GITHUB_STEP_SUMMARY``, a block in the job summary. ``budget = "fail"`` already fails the run, so only the summary line is added there.
     """
     _print(f'BUDGET {len(overs)} gate(s) over budget (budget = "{mode}"); ' + ("exit code 1." if mode == "fail" else "exit code unchanged."))
-    if mode == "fail":
-        return
-    in_actions = os.environ.get("GITHUB_ACTIONS") == "true"
-    for over in overs:
-        if in_actions:
-            _print(f"::warning title=py-ci-shared gate over budget::{over}")
+    # 49-T8: ``fail`` gets the same annotation and job-summary block as ``warn`` (it is the one that turns the run red).
+    level = "error" if mode == "fail" else "warning"
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for over in overs:
+            _print(f"::{level} title=py-ci-shared gate over budget::{_escape_data(over)}")
+    _step_summary("### Gates over budget", [f"- {over}" for over in overs])
+
+
+def _step_summary(title: str, lines: "Sequence[str]") -> None:
+    """Append a block to the job summary when the runner provides ``GITHUB_STEP_SUMMARY``; a failed write never fails the run."""
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if summary:
-        try:
-            with open(summary, "a", encoding="utf-8") as handle:
-                handle.write("### Gates over budget\n\n" + "".join(f"- {over}\n" for over in overs))
-        except OSError as exc:  # a summary that cannot be written must not fail the run
-            _print(f"BUDGET could not write the job summary: {exc}", err=True)
+    if not summary or not lines:
+        return
+    try:
+        with open(summary, "a", encoding="utf-8") as handle:
+            handle.write(f"{title}\n\n" + "".join(f"{line}\n" for line in lines) + "\n")
+    except OSError as exc:  # a summary that cannot be written must not fail the run
+        _print(f"could not write the job summary: {exc}", err=True)
+
+
+def _escape_data(text: str) -> str:
+    """Escape the message part of a GitHub workflow command (``%``, CR, LF)."""
+    return text.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+
+
+def _escape_property(text: str) -> str:
+    """Escape a property value of a workflow command (``file=``, ``line=``, ``title=``)."""
+    return _escape_data(text).replace(":", "%3A").replace(",", "%2C")
+
+
+_MAX_ANNOTATIONS = 10  # GitHub shows at most 10 error annotations per step
+_FINDING_LINE = re.compile(r"^\s*(?P<path>.+?):(?P<line>\d+): (?P<msg>.+)$")
+
+
+def _first_line(message: str) -> str:
+    lines = (message or "").strip().splitlines()
+    return lines[0] if lines else ""
+
+
+def _error_annotations(result: GateResult) -> "list[str]":
+    """``::error`` commands for a failed gate (49-T1): one per ``path:line: message`` finding in its message (at most 10, then
+    one summary), else the first message line, which is all a gate whose output has no location can offer."""
+    title = f"title=py-ci-shared {result.name}"
+    found = [m for m in (_FINDING_LINE.match(line) for line in (result.message or "").splitlines()) if m]
+    if not found:
+        return [f"::error {title} {_MARKS[result.status]}::{_escape_data(_first_line(result.message) or result.name)}"]
+    commands = [f"::error file={_escape_property(m['path'])},line={m['line']},{title}::{_escape_data(m['msg'])}" for m in found[:_MAX_ANNOTATIONS]]
+    if len(found) > _MAX_ANNOTATIONS:
+        commands.append(f"::error {title} {_MARKS[result.status]}::{len(found) - _MAX_ANNOTATIONS} more finding(s) in the log")
+    return commands
 
 
 _MARKS = {PASSED: "PASS", FAILED: "FAIL", SKIPPED: "SKIP", ERROR: "ERROR", REFRESHED_STATUS: "REFRESH"}
@@ -113,8 +146,11 @@ def _print_result(result: GateResult) -> None:
     if result.status == SKIPPED and os.environ.get("GITHUB_ACTIONS") == "true":
         _print(f"::warning title=py-ci-shared gate skipped::{result.name} {result.message}")
     if result.status in (FAILED, ERROR) and os.environ.get("GITHUB_ACTIONS") == "true":
-        first = (result.message or "").strip().splitlines()[:1]
-        _print(f"::error title=py-ci-shared {result.name} {_MARKS[result.status]}::{first[0] if first else result.name}")
+        for command in _error_annotations(result):
+            _print(command)
+
+
+_VERDICTS = {0: "-> OK", 1: "-> FAILED (exit 1)", 2: "-> ERROR (exit 2: a gate could not run)"}
 
 
 def _summary_line(results: Sequence[GateResult]) -> str:
@@ -141,9 +177,12 @@ def _report(results: Sequence[GateResult], mode: str) -> int:
             code = max(code, 1)
         elif result.status == ERROR:
             code = 2
-    _print(_summary_line(results))
+    # 49-T9: the verdict is appended; the head of the line is unchanged for anyone who greps it.
+    _print(f"{_summary_line(results)} {_VERDICTS[code]}")
     if overs:
         _announce_over_budget(overs, mode)
+    # 49-T8: the job summary names the failing gates, not only the budget list.
+    _step_summary("### Failed gates", [f"- {_MARKS[r.status]} {r.name}: {_first_line(r.message)}" for r in results if r.status in (FAILED, ERROR)])
     return code
 
 

@@ -35,13 +35,13 @@ which is why the gate itself works from the declaration.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import ast
 from ._core.ast_try import TRY_NODES
 import datetime as _dt
 import logging
 import re
-import sys
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -276,7 +276,7 @@ def assert_external_fact_tables_current(
         min_tables = min_files
     problems = find_external_fact_table_problems(root, tables, today=today, min_tables=min_tables, allow_unparsed=allow_unparsed)
     for line in find_expiring_fact_tables(root, tables, warn_days=warn_days, today=today, min_tables=min_tables) if warn_days > 0 else []:
-        sys.stdout.write(f"external-fact-tables early warning: {line}" + "\n")
+        write_text(f"external-fact-tables early warning: {line}" + "\n")
     if problems:
         raise AssertionError(
             f"{len(problems)} external fact table(s) without a current, cited check; re-verify each against its source and "

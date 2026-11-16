@@ -57,12 +57,12 @@ prints the exception type and SQLSTATE only). The gate itself never runs it.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import logging
 import os
 import re
-import sys
 import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -403,10 +403,11 @@ def _import_psycopg2() -> Any:
 
 
 def _banner(reason: str, schema_sql: object) -> None:
-    sys.stderr.write(
-        "\n" + "!" * 78 + "\n"
+    write_text(
+        err=True,
+        text="\n" + "!" * 78 + "\n"
         f"!! NOT CHECKED: {reason}\n"
-        f"!! {schema_sql} was NOT provisioned and compared with the snapshot, so schema drift is unguarded here.\n" + "!" * 78 + "\n\n"
+        f"!! {schema_sql} was NOT provisioned and compared with the snapshot, so schema drift is unguarded here.\n" + "!" * 78 + "\n\n",
     )
 
 
@@ -712,7 +713,7 @@ def main(argv: "Sequence[str] | None" = None) -> int:
     try:
         if ns.cmd == "refresh":
             cat = refresh_snapshot(ns.out, dsn_env=ns.dsn_env, schemas=ns.schema, source=ns.source, with_indexes=not ns.no_indexes)
-            sys.stdout.write(f"wrote {ns.out}: {len(cat)} tables, {sum(len(t['columns']) for t in cat.values())} columns\n")
+            write_text(f"wrote {ns.out}: {len(cat)} tables, {sum(len(t['columns']) for t in cat.values())} columns\n")
             return 0
         result = find_schema_snapshot_problems(
             ns.schema_sql,
@@ -728,14 +729,14 @@ def main(argv: "Sequence[str] | None" = None) -> int:
         )
     except SchemaParityError as exc:
         logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"schema_snapshot_parity: {exc}\n")
+        write_text(err=True, text=f"schema_snapshot_parity: {exc}\n")
         return 2
     if not result.checked:
-        sys.stdout.write(f"NOT CHECKED: {result.reason}\n")
+        write_text(f"NOT CHECKED: {result.reason}\n")
         return int(ns.missing_exit)
     for f in result.findings:
-        sys.stdout.write(f.render() + "\n")
-    sys.stdout.write(f"{len(result.findings)} findings\n")
+        write_text(f.render() + "\n")
+    write_text(f"{len(result.findings)} findings\n")
     return 1 if result.findings else 0
 
 

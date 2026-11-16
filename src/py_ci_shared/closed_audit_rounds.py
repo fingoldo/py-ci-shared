@@ -22,11 +22,11 @@ CI step (push or pull request)::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import logging
 import re
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional, Union
@@ -163,11 +163,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         found = find_closed_round_edits(args.repo, args.base, head=args.head, closed_dir=args.closed_dir, trailer=args.trailer)
     except CoreError as exc:
         logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"closed_audit_rounds: {exc}" + "\n")
+        write_text(err=True, text=f"closed_audit_rounds: {exc}" + "\n")
         return 1
     for f in found:
-        sys.stdout.write(f.render() + "\n")
-    sys.stdout.write(f"closed_audit_rounds: {len(found)} edit(s) to files under {args.closed_dir}/ since {args.base}" + "\n")
+        write_text(f.render() + "\n")
+    write_text(f"closed_audit_rounds: {len(found)} edit(s) to files under {args.closed_dir}/ since {args.base}" + "\n")
     return 1 if found else 0
 
 

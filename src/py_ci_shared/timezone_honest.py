@@ -41,6 +41,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from ._core.console import capped
 from ._core import iter_files
 from ._toml_compat import tomllib
 
@@ -133,7 +134,7 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
 
     unchecked = sorted({line.strip() for line in result.stdout.splitlines() if _DIAGNOSTIC.match(line.strip()) and not _FINDING.match(line.strip())})
     if unchecked:
-        raise RuntimeError("ruff could not check file(s) it was given, so their DTZ result is unknown:\n  " + "\n  ".join(unchecked[:50]))
+        raise RuntimeError("ruff could not check file(s) it was given, so their DTZ result is unknown:\n  " + "\n  ".join(capped(unchecked, 50)))
 
     tests = set(test_dir_names)
     found = set()

@@ -23,6 +23,7 @@ with the ``.ckpt.jsonl`` suffix, so each notes file gets its own verdict cache.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import hashlib
@@ -43,7 +44,7 @@ _SWEEP_TIMEOUT_S = 1800
 
 
 def _say(text: str) -> None:
-    sys.stdout.write(text + "\n")
+    write_text(text + "\n")
     sys.stdout.flush()
 
 

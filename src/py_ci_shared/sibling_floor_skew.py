@@ -33,12 +33,12 @@ or from CI: ``python -m py_ci_shared.sibling_floor_skew . --resolve-in pyutilz=.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import logging
 import os
 import re
-import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -422,11 +422,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
     except (CoreError, AssertionError) as exc:
         logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"sibling_floor_skew: {exc}\n")
+        write_text(err=True, text=f"sibling_floor_skew: {exc}\n")
         return 2
     for finding in found:
-        sys.stdout.write(finding.render() + "\n")
-    sys.stdout.write(f"sibling_floor_skew: {len(found)} finding(s)\n")
+        write_text(finding.render() + "\n")
+    write_text(f"sibling_floor_skew: {len(found)} finding(s)\n")
     return 1 if found else 0
 
 

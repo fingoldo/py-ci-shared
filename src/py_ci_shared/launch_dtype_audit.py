@@ -31,6 +31,7 @@ Usage in a consumer's test::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import contextlib
@@ -323,7 +324,7 @@ def main(argv: "Optional[list[str]]" = None) -> int:
     lines = [f"ARG_DTYPE_MISMATCHES {len(found)}"]
     for (name, position, expected, got), stack in sorted(found.items()):
         lines.append(f"MISMATCH kernel={name} arg#{position}: expects {expected}, got {got}\n{stack}")
-    sys.stdout.write("\n".join(lines) + "\n")
+    write_text("\n".join(lines) + "\n")
     sys.stdout.flush()
     return 1 if found else 0
 

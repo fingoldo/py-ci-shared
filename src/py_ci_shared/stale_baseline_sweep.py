@@ -24,6 +24,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import json
@@ -212,7 +213,9 @@ def _relative(row: StaleRow, tree: Path) -> StaleRow:
 
 
 def _count_mutation_baselines(tree: Path) -> int:
-    return sum(1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix())  # walk-ok: git-archive extraction of HEAD, no worktrees
+    return sum(
+        1 for path in tree.rglob("*.json") if "mutation" in path.name and "baseline" in path.as_posix()
+    )  # walk-ok: git-archive extraction of HEAD, no worktrees
 
 
 def sweep_repo(repo: Path, *, python: str = sys.executable, timeout: float = 1800.0) -> RepoResult:
@@ -268,7 +271,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(list(sys.argv[1:] if argv is None else argv))
     results = [sweep_repo(repo, python=args.python, timeout=args.timeout) for repo in args.repos]
     text = render_markdown(results)
-    sys.stdout.write(text)
+    write_text(text)
     if args.output:
         args.output.write_bytes(text.encode("utf-8"))
     return 1 if args.fail_on_stale and any(r.rows for r in results) else 0

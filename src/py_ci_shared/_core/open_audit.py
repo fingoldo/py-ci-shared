@@ -7,6 +7,7 @@ the gates by opens, so the next hotspot is measured instead of guessed.
 """
 
 from __future__ import annotations
+from .console import write_text
 
 import builtins
 import contextlib
@@ -101,7 +102,7 @@ def main() -> int:
 
     with count_opens(os.getcwd()) as counts:
         rc = cli.main(["run-all"])
-    sys.stdout.write(counts.report() + "\n")
+    write_text(counts.report() + "\n")
     return rc
 
 

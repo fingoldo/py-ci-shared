@@ -18,6 +18,7 @@ fails when a new finder is neither bindable nor listed there.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import contextlib
@@ -298,7 +299,7 @@ def _scan_repo(repo: Path, run: Sequence[tuple[str, Callable[..., Any]]]) -> dic
             errors[key] = type(exc).__name__
         seconds[key] = round(time.perf_counter() - start, 3)
         # Progress as it happens: a snapshot that is killed by its step timeout writes nothing, so the log must name the slow finder.
-        sys.stderr.write(f"corpus_drift: {repo.name}: {key} {seconds[key]:.1f} s\n")
+        write_text(err=True, text=f"corpus_drift: {repo.name}: {key} {seconds[key]:.1f} s\n")
         sys.stderr.flush()
     return {"commit": _commit(repo), "counts": counts, "errors": errors, "seconds": seconds}
 
@@ -425,12 +426,12 @@ def _cmd_snapshot(args: argparse.Namespace) -> int:
 
     repos = load_repo_list(args.repos_file)
     if not repos:
-        sys.stderr.write(f"corpus_drift: {args.repos_file} lists no repos\n")
+        write_text(err=True, text=f"corpus_drift: {args.repos_file} lists no repos\n")
         return 2
     data = snapshot(repos, workers=max(1, args.workers))
     Path(args.output).write_bytes((json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))
     for name, repo in data["repos"].items():
-        sys.stdout.write(f"{name}: {len(repo['counts'])} finders counted, {len(repo['errors'])} errored, {sum(repo['counts'].values())} findings\n")
+        write_text(f"{name}: {len(repo['counts'])} finders counted, {len(repo['errors'])} errored, {sum(repo['counts'].values())} findings\n")
     return 0
 
 
@@ -456,7 +457,7 @@ def merge_snapshots(paths: Sequence[Path]) -> dict[str, Any]:
 def _cmd_merge(args: argparse.Namespace) -> int:
     data = merge_snapshots([Path(p) for p in args.inputs])
     Path(args.output).write_bytes((json.dumps(data, indent=1, sort_keys=True) + "\n").encode("utf-8"))
-    sys.stdout.write(f"merged {len(args.inputs)} snapshot(s): {len(data['repos'])} repo(s)\n")
+    write_text(f"merged {len(args.inputs)} snapshot(s): {len(data['repos'])} repo(s)\n")
     return 0
 
 
@@ -472,10 +473,10 @@ def _cmd_compare(args: argparse.Namespace) -> int:
         text = render_table(drifts, pct=args.pct, absolute=args.absolute)
     if args.output:
         Path(args.output).write_bytes(text.encode("utf-8"))
-    sys.stdout.write(text)
+    write_text(text)
     failing = [d for d in drifts if d.failing]
     if failing:
-        sys.stderr.write(f"corpus_drift: {len(failing)} finder(s) jumped, went blind or started to error\n")
+        write_text(err=True, text=f"corpus_drift: {len(failing)} finder(s) jumped, went blind or started to error\n")
     return 1 if failing else 0
 
 
@@ -505,7 +506,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return _cmd_compare(args)
     except MissingDependencyError as exc:
         logger.warning("substituted a fallback for %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"corpus_drift: {exc}\n")
+        write_text(err=True, text=f"corpus_drift: {exc}\n")
         return 2
 
 

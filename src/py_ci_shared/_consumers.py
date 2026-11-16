@@ -12,6 +12,7 @@ token is set) and fails is an error, exit 1. The written repos file is the ``[[r
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import base64
@@ -19,7 +20,6 @@ import logging
 import json
 import os
 import re
-import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -195,11 +195,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
     args = parser.parse_args(argv)
     if args.command == "not-checked":
-        sys.stdout.write(not_checked_markdown(Path(args.repos_file)))
+        write_text(not_checked_markdown(Path(args.repos_file)))
         return 0
     consumers = load_consumers(Path(args.config))
     if args.command == "corpus-names":
-        sys.stdout.write(json.dumps([c.name for c in consumers if c.corpus]) + "\n")
+        write_text(json.dumps([c.name for c in consumers if c.corpus]) + "\n")
         return 0
     if args.corpus_only:
         consumers = [c for c in consumers if c.corpus]
@@ -208,20 +208,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     token = os.environ.get(TOKEN_ENV, "").strip() or None
     result = checkout(consumers, Path(args.dest), token=token)
     for consumer in result.skipped:
-        sys.stdout.write(f"::warning title=consumer skipped::{consumer.repo} is private and {TOKEN_ENV} is not set; it was NOT checked\n")
+        write_text(f"::warning title=consumer skipped::{consumer.repo} is private and {TOKEN_ENV} is not set; it was NOT checked\n")
     for consumer, error in result.failed:
-        sys.stdout.write(f"::error title=consumer checkout failed::{consumer.repo}@{consumer.branch}: {error.splitlines()[0] if error else ''}\n")
+        write_text(f"::error title=consumer checkout failed::{consumer.repo}@{consumer.branch}: {error.splitlines()[0] if error else ''}\n")
     write_repos_file(Path(args.repos_file), result.cloned, result.skipped)
-    sys.stdout.write(f"cloned {len(result.cloned)}, skipped {len(result.skipped)} (no token), failed {len(result.failed)}\n")
+    write_text(f"cloned {len(result.cloned)}, skipped {len(result.skipped)} (no token), failed {len(result.failed)}\n")
     if result.failed:
         return 1
     if args.fail_on_skipped_private and result.skipped:
-        sys.stderr.write(
-            f"_consumers: {len(result.skipped)} private consumer(s) were not checked ({TOKEN_ENV} missing or empty): {', '.join(c.name for c in result.skipped)}\n"
+        write_text(
+            err=True,
+            text=f"_consumers: {len(result.skipped)} private consumer(s) were not checked ({TOKEN_ENV} missing or empty): {', '.join(c.name for c in result.skipped)}\n",
         )
         return 1
     if not result.cloned:
-        sys.stderr.write("_consumers: nothing was cloned, so nothing would be checked\n")
+        write_text(err=True, text="_consumers: nothing was cloned, so nothing would be checked\n")
         return 1
     return 0
 

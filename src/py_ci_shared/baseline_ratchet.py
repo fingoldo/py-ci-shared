@@ -42,6 +42,7 @@ and from its regeneration script::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import json
 import os
@@ -60,6 +61,7 @@ from ._core.baseline import (
     write_ratchet,
 )
 from ._core.errors import BaselineGrowthError
+from ._core.outcome import entries_word
 
 __all__ = ["Baseline", "DEFAULT_DIRECTORY", "DEFAULT_REFRESH_COMMAND", "run_rules"]
 
@@ -149,11 +151,14 @@ class Baseline:
         """
         accepted = self.load()
         if len(found) < min_found:
-            print(f"{label}: the scan found {len(found)} entr(ies), fewer than its floor of {min_found} - it is not reaching the code.", file=sys.stderr)
+            print(
+                f"{label}: the scan found {entries_word(len(found), count=True)}, fewer than its floor of {min_found} - it is not reaching the code.",
+                file=sys.stderr,
+            )
             return 1
         if fail_on_empty_scan and not found and accepted:
             message = (
-                f"{label}: the scan found nothing, yet {self.path} accepts {len(accepted)} entr(ies). Either the scan stopped "
+                f"{label}: the scan found nothing, yet {self.path} accepts {entries_word(len(accepted), count=True)}. Either the scan stopped"
                 f"matching, or the whole backlog was paid off - then run {self.refresh_command} to record that."
             )
             print(message, file=sys.stderr)
@@ -186,7 +191,7 @@ class Baseline:
                 print(f"  {key}", file=sys.stderr)
             return 1
 
-        sys.stdout.write(f"{label}: no new violations ({len(accepted)} accepted, baselined)\n")
+        write_text(f"{label}: no new violations ({len(accepted)} accepted, baselined)\n")
         return 0
 
     def regenerate(self, found: Mapping[str, str], *, grow: Optional[bool] = None) -> None:

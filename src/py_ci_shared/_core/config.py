@@ -27,6 +27,7 @@ Every other key is a keyword argument. Paths are relative to the repo root (see 
 
 from __future__ import annotations
 
+import difflib
 import glob as _glob
 import inspect
 from dataclasses import dataclass, field
@@ -94,8 +95,18 @@ class RepoConfig:
         for run in self.gates:
             if _canonical(run.name) == wanted:
                 return run
-        enabled = ", ".join(run.name for run in self.gates) or "none"
-        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: {enabled})")
+        from .. import registry
+
+        enabled_names = [run.name for run in self.gates]
+        enabled = ", ".join(enabled_names) or "none"
+        # 49-T10: say how to enable a real gate, and suggest the near-miss name of a typo.
+        try:
+            registry.by_name(wanted)
+            hint = f' Add "{wanted}" to enable = [...] under [tool.py_ci_shared] to run it.'
+        except KeyError:
+            close = difflib.get_close_matches(wanted, [_canonical(n) for n in enabled_names], n=1)
+            hint = f' Did you mean "{close[0]}"?' if close else ""
+        raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: {enabled}).{hint}")
 
 
 def _canonical(name: str) -> str:
