@@ -146,7 +146,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D9, D20; string-name matching only, so aliased imports would add hits): mlframe src 0, pyutilz src 0, llm_bench src 0 (already fixed), glossum package 0, glossum scripts 10 asyncpg + 9 Stanza. First five asyncpg: `batch_stanza_parse.py:502`, `push_content_snapshot.py:110` and `:119`, `ru_stress_check_report.py:142` and `:154`: 5 of 5 TP by the rule (ad hoc DB probe scripts; low severity there, high severity in a library pool). First four Stanza: `is_lang_grammar_covered.py:656`, `test_ka_corrector.py:106`, `add_de_sentences.py:175`, `generate_ka_additional.py:453`: 4 of 4 TP, and three of them are the scripts CLAUDE.md names.
 - **Impact:** a pool that starves with no self-recovery; a measurement made on the wrong model.
 - **Proposed fix:** new gate `required_call_kwargs.py` with a `RULES` constant and a `rules=` parameter (`[{"call": "...", "any_of": [...]}]`), preset `ASYNCPG`. ADDITIVE. The user's feedback memory ("fail closed", "no artificial caps") argues for shipping the asyncpg preset blocking and leaving Stanza as an example in the docstring, since `package=` is glossum policy.
-- **Disposition:** DEFERRED: the asyncpg preset is buildable, but the Stanza row is glossum policy that needs owner sign-off on blocking vs advisory for scripts/, and aliased-import resolution is not yet specified against ImportAliases. Not built this round.
+- **Disposition:** BUILT, HARD in pyutilz (commit 255a772, `pyproject.toml`): `required_call_kwargs` is a hard gate, enabled per the owner's 2026-11-16 decision. Still outside this disposition: the Stanza row (glossum policy for `scripts/`) and alias resolution against `ImportAliases`.
 
 ## 50-T4 (P2) workflow_installs_pinned: a CI step that clones or pip-installs a first-party repo from git without a commit
 
@@ -312,7 +312,7 @@ Score = incidents prevented (I, 1 to 3) + noise (N, 3 = no false positive seen) 
 - **Measured** (`proto.py` D6, non-test files): mlframe src 1, pyutilz src 0, glossum package 2, llm_bench 0. mlframe `training/composite/hpo.py:205` `cv_score` ("Deprecated alias of selection_score", a property that only returns): TP. glossum `importers/ruwordnet_importer/__init__.py:74` ("DEPRECATED: ... This function is disabled"): plausible TP (the body may raise instead; the spec would accept a `raise`). glossum `refsuite/sources/learner_errors_en.py:147` ("span.deprecated" in prose): FP, removed by matching only a first sentence that starts with "Deprecated" or "DEPRECATED". 2 TP, 1 FP of 3.
 - **Impact:** removals that surprise callers.
 - **Proposed fix:** new gate `deprecated_docstring_without_warn.py`. ADDITIVE.
-- **Disposition:** DEFERRED: advisory-first rollout (warn, then hard after one cycle) needs an owner decision on the cycle length. Not built this round.
+- **Disposition:** BUILT, HARD in pyutilz (commit 255a772, `pyproject.toml`): `deprecated_docstring_without_warn` is a hard gate from its first run, per the owner's decision (no advisory cycle).
 
 ## 50-T11 (P3) The 2026-11-11 claim "raise without `from` is COVERED by ruff B904" is wrong: `configs/ruff-base.toml` ignores B904
 

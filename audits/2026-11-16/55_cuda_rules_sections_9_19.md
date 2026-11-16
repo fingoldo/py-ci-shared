@@ -280,16 +280,16 @@ Each file: 5.2 to 13.9 s wall, **total 80.1 s for 10 files (mean 8.0 s)**; the f
 ## 55-T8 (P3) Wide-load alignment contract (CUDA.md 19.1) is not recorded on the kernel
 - **Evidence:** 11 kernels cast to wider element types, 3 declare a stride parameter; the doc states a misaligned 4-byte load faults. Precision of the prototype is low (>= 3 of the first 5 flags are bit-word arrays or already padded under another name).
 - **Proposed fix:** `cuda_wide_load_alignment` ADVISORY restricted to byte-pointer casts and a name list `stride|pitch|ld|pad`. ADDITIVE; build after T1-T6.
-- **Disposition:** DEFERRED: precision measured below the bar (3 or more of the first 5 flags wrong); retry when the kernel records the alignment contract.
+- **Disposition:** BUILT, HARD (commit adfd4ab): `cuda_wide_load_alignment`, narrowed to byte-array wide loads that must declare their padded pitch; built per the owner's decision.
 
 ## 55-T9 (P3) Doc staleness and disagreements inside CUDA.md (relay to mlframe, nothing to fix here)
 - **Evidence:** (a) section 14 "Recommendations 2" says three `gpu_capability_summary(0)` calls remain; the corpus has `launch_device_id()` at all three. (b) section 14 names `filters/_gpu_hw_launch.py`; the helper is `pyutilz/performance/gpu_hw_launch.py` (imported in 155 call sites). (c) sections 10.9 and 13.8 say NVRTC lacks `INFINITY`; `nvrtc_inf.py` shows `NAN` and `HUGE_VAL` fail too (cupy 14.1.1, CUDA 12.9), only the bit-pattern builds. (d) the brief and the doc count ~85 kernels; `find_cuda_kernel_sources` counts 155 sources in 91 files (103 files contain the text `__global__`, including benchmarks). (e) section 17 says clang-tidy 18.1.8 verified; the host has 20.1.8. (f) section 18 says CUDA 12.8 `nvprof`; Windows toolkits 12.x ship `nvprof`? not verified, not claimed.
-- **Disposition:** DEFERRED: the staleness is in mlframe's cuda.md; relayed to the owner of that file.
+- **Disposition:** RESOLVED in mlframe `CUDA.md` (commit ab09d37a4 and later): the three `gpu_capability_summary(0)` mentions and the `_gpu_hw_launch` path are corrected to `launch_device_id()` and `pyutilz/performance/gpu_hw_launch.py`, and the NVRTC macro statement is updated. Checked by grep.
 
 ## 55-T10 (P3) Cheap regression guards that need canaries because the corpus has zero hits
 - **Evidence:** `cuda-literal-device-id` (0 hits), `cuda-cupy-small-power` (0 hits), `cuda-direct-device-sort` (1 axis=0 hit, a size false positive), four-load byte pattern (0 hits in 155).
 - **Proposed fix:** fold `cuda-literal-device-id` into `cuda_launch_geometry`; `cuda-direct-device-sort` and `cuda-cupy-small-power` as one advisory module `cuda_device_idioms` with two rule ids; all advisory, canaries as in the snippets above.
-- **Disposition:** DEFERRED: every candidate rule has zero corpus hits or a known false positive; none shipped.
+- **Disposition:** BUILT, HARD (commit adfd4ab): `cuda_device_idioms` with the three rules (literal device id, cupy small-integer power, direct axis-0 device sort), canaries and tests; built per the owner's decision.
 
 ## Ranked list of the ten best additions
 

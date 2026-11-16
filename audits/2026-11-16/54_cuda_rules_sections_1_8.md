@@ -804,7 +804,7 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
   fetch the page here: this is from my knowledge of the table, to be spot-checked at the Programming Guide's "Technical Specifications per Compute Capability". Also CUDA.md:253 "avoid 1024 (two blocks per SM on a 2048-thread SM)" holds only for cc 7.0, 8.0, 9.0.
 - **Impact:** the occupancy arithmetic in the doc is used to pick geometry for the sm_89 machine (CUDA.md:15), where the block limit is lower than quoted.
 - **Proposed fix:** correct the sentences in mlframe (outside this repo). A py-ci-shared `external_fact_tables` entry could pin the table with a dated check (that gate exists: `external_fact_tables.py`). ADDITIVE.
-- **Disposition:** DEFERRED: the statements are in mlframe's cuda.md, not in this repository; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
+- **Disposition:** RESOLVED in mlframe `CUDA.md` (commit ab09d37a4 and later): the 32-blocks-on-sm_86 claim is corrected to the per-cc table, and the 1024-thread advice is limited to cc 7.0, 8.0 and 9.0. Checked by grep of the corrected sentences, not by a full re-read of the doc.
 
 ## 54-T10 (P3) Internal disagreements and stale counts inside CUDA.md
 - **Evidence (each pair quoted from the file):** (1) CUDA.md:383 "Walk the 90 pending FE modules" against `_fe_gpu_contract.json`: pending 113, `n_pending_at_creation` 226 (compliant 139, exempt 63). (2) CUDA.md:46 "a launch costs about 5 to 20 us" against CUDA.md:200 "The GPU has a fixed cost of about 0.5 ms per launch": the second is the
@@ -813,7 +813,7 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
   (6) CUDA.md:376 names one NVRTC macro (54-T3).
 - **Impact:** a reader who computes a launch-bound crossover or a tolerance from the wrong sentence gets a wrong answer; section 8 already warns that extractions were made by a small model (CUDA.md:208, 388).
 - **Proposed fix:** edit the doc in mlframe; `prose_numeric_claims` (py-ci-shared) can pin the module counts ("90 pending") to the JSON. ADDITIVE.
-- **Disposition:** DEFERRED: the disagreements are inside mlframe's cuda.md; relayed to the owner of that file. Status 2026-11-16: DEFERRED, unchanged.
+- **Disposition:** RESOLVED in mlframe `CUDA.md` (commit ab09d37a4 and later): the pending count is 113 with the JSON's own numbers, the 5-20 us hardware launch and the 0.5 ms end-to-end cupy call are stated as different things, the gridDim limit is inclusive, and the NVRTC macro list is corrected. Checked by grep of the corrected sentences, not by a full re-read.
 
 ## 54-T11 (P2) GPU-vs-host parity tests use one seed in 67 of 72 cases, against the rule written for the incident
 - **Evidence:** `detect_parity3.py` over `mlframe/tests` (snapshot): 72 tests that call a GPU-named and a host-named callable, build random data and compare, 5 with two or more seed sources, 59 with one literal seed, 8 with none. CUDA.md:367: "must pass on 2 or more independent seeds/datasets, not one fixture ... (`_fe_accuracy_gate_kernel.py`, 2026-11-11: converged on the first seed tried, diverged on 4/100 combos of a second)".
