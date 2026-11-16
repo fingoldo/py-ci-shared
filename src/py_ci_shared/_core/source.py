@@ -71,6 +71,10 @@ _BYTES_TOTAL = 0
 _BYTES_MAX_FILE = 4_000_000
 _BYTES_MAX_TOTAL = 400_000_000
 
+# A file larger than this is refused by the scanning readers (read_source, read_text_if_not_binary, parse_source) instead of being read whole: a 260 MiB
+# file took 780 MiB peak to parse (audit 51-T2). Override with PY_CI_SHARED_MAX_SCANNED_BYTES for a legitimately huge generated module.
+MAX_SCANNED_BYTES = int(os.environ.get("PY_CI_SHARED_MAX_SCANNED_BYTES") or 16 * 1024 * 1024)
+
 
 @functools.lru_cache(maxsize=512)
 def comment_tokens(source: str) -> tuple[tuple[int, str], ...]:
@@ -148,19 +152,29 @@ def _decode(path: Path, raw: bytes) -> str:
     return text[1:] if text.startswith("\ufeff") else text
 
 
+def _read_scanned(p: Path) -> bytes:
+    """The bytes of *p* for a scanning reader: a file over ``MAX_SCANNED_BYTES`` is a typed error, never read whole (audit 51-T2)."""
+    try:
+        size = os.stat(p).st_size
+    except OSError as exc:
+        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
+    if size > MAX_SCANNED_BYTES:
+        raise SourceReadError(p, f"larger than {MAX_SCANNED_BYTES} bytes, not scanned")
+    try:
+        return read_bytes_cached(p)
+    except OSError as exc:
+        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
+
+
 def read_source(path: PathLike) -> str:
     """The text of *path*, decoded the way Python would decode it, BOM stripped.
 
-    Raises :class:`SourceReadError` for a missing/unreadable file or undecodable bytes; never returns a lossy
+    Raises :class:`SourceReadError` for a missing/unreadable file, a file over ``MAX_SCANNED_BYTES``, or undecodable bytes; never returns a lossy
     decode (no ``errors="ignore"``/``"replace"``), because a gate reading mojibake reports on text that is not
     in the file.
     """
     p = Path(path)
-    try:
-        raw = read_bytes_cached(p)
-    except OSError as exc:
-        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
-    return _decode(p, raw)
+    return _decode(p, _read_scanned(p))
 
 
 #: Bytes probed for a NUL when deciding whether a file is binary; the same window git uses.
@@ -174,10 +188,7 @@ def read_text_if_not_binary(path: PathLike) -> Optional[str]:
     Undecodable text still raises :class:`SourceReadError`. Shares the bytes cache with :func:`read_source`: one open per file.
     """
     p = Path(path)
-    try:
-        raw = read_bytes_cached(p)
-    except OSError as exc:
-        raise SourceReadError(p, f"cannot read: {exc.strerror or exc}") from exc
+    raw = _read_scanned(p)
     if b"\x00" in raw[:_BINARY_PROBE_BYTES]:
         return None
     return _decode(p, raw)
@@ -230,8 +241,8 @@ def parse_source(path: PathLike) -> tuple[str, ast.Module]:
     stable = _fast_lookup(spath, sig, st.st_mtime_ns if st is not None else 0)
     if stable is not None:
         return stable
+    raw = _read_scanned(p)
     try:
-        raw = read_bytes_cached(spath)
         read_ns = time.time_ns()
         key = str(resolve_cached(spath))
     except OSError as exc:
