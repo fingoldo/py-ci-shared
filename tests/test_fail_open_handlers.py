@@ -182,6 +182,21 @@ def test_a_reject_that_treats_non_finite_as_a_failure_is_not_flagged(tmp_path):
     assert _rules(tmp_path, body) == []
 
 
+@pytest.mark.parametrize(
+    "reject",
+    ["return False", "return None", "return 0", 'raise ValueError("too big")', "break", "scores.remove(score)"],
+)
+def test_a_finite_guarded_reject_counts_return_raise_break_and_remove(tmp_path, reject):
+    body = f"""
+        import math
+        def predicate(score, thr, scores):
+            if math.isfinite(score) and score > thr:
+                {reject}
+            return True
+    """
+    assert _rules(tmp_path, body) == ["finite_guarded_reject"]
+
+
 def test_the_ratchet_accepts_baselined_scopes_and_reports_new_and_stale(tmp_path):
     body = """
         def fit(y):

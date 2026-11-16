@@ -426,7 +426,10 @@ def _is_finite_test(node: ast.AST) -> bool:
 
 
 def _is_finite_guarded_reject(node: ast.If) -> bool:
-    """``if isfinite(x) and x <cmp> thr:`` whose body rejects (``continue``, or a call naming ``reject``)."""
+    """``if isfinite(x) and x <cmp> thr:`` whose body rejects.
+
+    A reject is ``continue``, ``break``, ``raise``, ``return`` of False/None/0, ``.remove``/``.discard``, or a call naming ``reject``.
+    """
     test = node.test
     if not (isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And)):
         return False
@@ -435,11 +438,22 @@ def _is_finite_guarded_reject(node: ast.If) -> bool:
     if not (has_finite and has_cmp):
         return False
     for n in _fast_walk(ast.Module(body=node.body, type_ignores=[])):
-        if isinstance(n, ast.Continue):
+        if isinstance(n, (ast.Continue, ast.Break, ast.Raise)):
             return True
-        if isinstance(n, ast.Call) and "reject" in (_call_attr(n) or "").lower():
+        if isinstance(n, ast.Return) and _is_falsy_constant(n.value):
             return True
+        if isinstance(n, ast.Call):
+            attr = _call_attr(n) or ""
+            if "reject" in attr.lower() or attr in {"remove", "discard"}:
+                return True
     return False
+
+
+def _is_falsy_constant(node: ast.AST | None) -> bool:
+    """``return False`` / ``return None`` / ``return 0`` (a bare ``return`` too)."""
+    if node is None:
+        return True
+    return isinstance(node, ast.Constant) and node.value in (False, None, 0) and not isinstance(node.value, str)
 
 
 def _handler_findings(
