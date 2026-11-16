@@ -169,15 +169,19 @@ def _check_key_function(func: _Func, qualname: str, constants: dict[str, ast.AST
 def _visit_functions(node: ast.AST, prefix: str, constants: dict[str, ast.AST], rel: str, lines: list[str]) -> list[Finding]:
     """Walk classes and functions below *node*, checking each key function with its qualified name."""
     out: list[Finding] = []
-    for child in child_nodes(node):
+    # An explicit stack in source order, not recursion: a deep expression below a function must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str]] = [(child, prefix) for child in reversed(child_nodes(node))]
+    while pending:
+        child, child_prefix = pending.pop()
         if isinstance(child, ast.ClassDef):
-            out.extend(_visit_functions(child, f"{prefix}{child.name}.", constants, rel, lines))
+            inner = f"{child_prefix}{child.name}."
         elif isinstance(child, _FUNCTIONS):
             if _is_key_function(child):
-                out.extend(_check_key_function(child, f"{prefix}{child.name}", constants, rel, lines))
-            out.extend(_visit_functions(child, f"{prefix}{child.name}.<locals>.", constants, rel, lines))
+                out.extend(_check_key_function(child, f"{child_prefix}{child.name}", constants, rel, lines))
+            inner = f"{child_prefix}{child.name}.<locals>."
         else:
-            out.extend(_visit_functions(child, prefix, constants, rel, lines))
+            inner = child_prefix
+        pending.extend((grandchild, inner) for grandchild in reversed(child_nodes(child)))
     return out
 
 
