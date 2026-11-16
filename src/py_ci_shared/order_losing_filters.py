@@ -105,18 +105,19 @@ def _selections(func: ast.AST, masks: dict[str, set[str]]):
 def _functions(tree: ast.Module):
     """``(qualified name, node)`` for every function, with its enclosing classes and functions."""
 
-    def walk(node: ast.AST, prefix: str):
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                name = f"{prefix}{child.name}"
-                yield name, child
-                yield from walk(child, name + ".")
-            elif isinstance(child, ast.ClassDef):
-                yield from walk(child, f"{prefix}{child.name}.")
-            else:
-                yield from walk(child, prefix)
-
-    yield from walk(tree, "")
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str]] = [(child, "") for child in reversed(child_nodes(tree))]
+    while pending:
+        child, prefix = pending.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            name = f"{prefix}{child.name}"
+            yield name, child
+            inner_prefix = name + "."
+        elif isinstance(child, ast.ClassDef):
+            inner_prefix = f"{prefix}{child.name}."
+        else:
+            inner_prefix = prefix
+        pending.extend((grandchild, inner_prefix) for grandchild in reversed(child_nodes(child)))
 
 
 def find_order_losing_filters(files: Iterable[Path], repo_root: Path, *, min_files: int = 1, allow_unparsed: bool = False) -> list[OrderLosingFilter]:
