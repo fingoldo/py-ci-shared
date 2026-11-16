@@ -353,7 +353,7 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 - Detection: regex over string constants and f-strings (`{}` for the placeholder): `LIKE\s+'[^']*[A-Za-z0-9_]\{\}%'` and the bind forms `:name%`, `%s%`. Advisory; `# like-ok`.
 - Canary: violation `f"SELECT 1 FROM t WHERE id LIKE 'gls-{lang}-{lemma}%'"`; clean `f"... LIKE 'gls-{lang}-{lemma}-%'"` and `"... LIKE 'gls-en-%'"`.
 - Measured (`proto.py` D2): 0 hits in mlframe, pyutilz, glossum, llm_bench. No FP, no TP: ranked low because nothing exists today and the match is a heuristic.
-- Disposition: DEFERRED: heuristic with 0 hits today; ranked low by the report; no consumer demand yet.
+- Disposition: WON'T FIX: 0 hits in all four measured repos and no consumer demand; the report ranks it low and it is a heuristic, so it is not built.
 
 ## 50-T14 (P3) audit_metadata_in_comments: finding IDs, wave markers and date stamps in code comments (opt-in ratchet)
 
@@ -361,27 +361,27 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 - Not covered: `stale_comment_age` is about TODO and commented-out calls; `phantom_code_references` is about comments naming missing symbols.
 - Detection: `tokenize` comments only, regexes `finding-id`, `audit-dir`, `Wave N`, `loop iter N`, `20YY-MM-DD`; a `bench-attempt-rejected|VERDICT|REJECTED` comment is a preserved measurement and is skipped. Baseline ratchet, opt-in per repo.
 - Measured (`d16.py`, mlframe's exact regexes, comments only): mlframe src 20 (18 finding-id, 2 date), pyutilz src 116 (all dates), glossum package 791 (789 dates, 2 waves), llm_bench 1. First five in pyutilz (`core/disk_cache.py:93,99` version-history table, `database/deltalakes.py:117`, `database/db/execution.py:216`, `dev/attempt_archive.py:507`): TP by the mlframe rule, but pyutilz and glossum do not state this rule in their CLAUDE.md and their house style dates audit comments, so a hard shared gate would be a style imposition. Therefore opt-in baseline only, and not before the owner says the rule is cross-repo.
-- Disposition: DEFERRED: opt-in ratchet only, and the report says not before the owner confirms the rule is cross-repo.
+- Disposition: WON'T FIX (the rule is not proven cross-repo): mlframe's CLAUDE.md states the rule; pyutilz and glossum do not, and their house style dates audit comments, so a shared hard gate would impose a style. Not built; revisit only if the owner confirms the rule is cross-repo.
 
 ## 50-T15 (P3) unpruned_tree_walk: a walk that enters `.claude/worktrees`
 
 - Source: pyutilz `test_no_unpruned_tree_walk.py`: agent worktrees under `<repo>/.claude/worktrees` are full copies; one consumer audit test took 19 to 30 minutes with about 20 of them. The helper `iter_files_pruned` exists in pyutilz.
 - Not covered: `_core/corpus.py` prunes for py-ci-shared's own scans; a consumer's own meta-test walker is not checked.
 - Measured (`d5.py`, receiver is a function parameter, no prune evidence in the file): src: mlframe 3, pyutilz 0, glossum 1, llm_bench 0; tests: mlframe 26 (mostly `tmp_path.rglob`, FP), pyutilz 20 (`tmp_path`, FP), glossum 23, llm_bench 9. Judgement of the first five src hits: 1 plausible TP (`mlframe/_nested_parallel_scan.py:139`, scans the root it is handed), 2 FP (benchmark scripts on a narrow tree), `glossum refsuite/split.py:91` FP (a fixed prompts directory). The meta-test walkers in glossum and llm_bench receive a `src` subtree from the caller, not the repo root, so they cannot enter `.claude`. Precision about 1 in 5 after excluding `tmp_path`: advisory at best, and only for functions whose parameter is documented as a repository root.
-- Disposition: DEFERRED: advisory at about 1 in 5 precision; only valid for functions whose parameter is documented as a repo root.
+- Disposition: BUILT, HARD, NARROW (commit ec5c235): `unpruned_tree_walk` checks only functions whose docstring names a parameter as the repo root; measured 0 in pyutilz/src and mlframe/src. See the 50-T15 section for the full record.
 
 ## 50-T16 (P3) logger_exception_outside_except: `logger.exception(...)` not lexically inside an `except`
 
 - Source: pyutilz `test_exception_logging_preserves_traceback.py` (a heartbeat callback logged from another thread and printed "NoneType: None").
 - Measured (`proto.py` D8): mlframe 0, pyutilz 0, glossum 1 (`glossum/api/main.py:393`, FP: a Starlette exception handler that the framework calls inside the `except` of its middleware). The test file in pyutilz itself documents that its broader design produced 38 hits and was cut back. Not worth a shared gate; recorded so nobody re-mines it.
-- Disposition: DEFERRED: the report records this as not worth a shared gate (0 true positives, 1 framework false positive).
+- Disposition: WON'T FIX: 0 true positives and 1 framework false positive (glossum api/main.py:393, a Starlette exception handler the framework calls inside its except); the report records it as not worth a shared gate.
 
 ## 50-T17 (P3) workflow_pull_request_only_gate: a workflow that runs pytest, mypy or ruff and triggers only on `pull_request`, in a repo that pushes straight to master
 
 - Source: mlframe `test_blocking_workflows_run_on_push.py`: twelve whole-project mypy errors reached master between 2026-09-11 and 2026-09-22 because `mypy-full.yml` had no automatic trigger.
 - Not covered: `ci_default_branch_never_cancelled` (cancellation), `ci_workflow_gate` (`continue-on-error`), `test_partition_reachability` (declared partitions).
 - Measured (`wf.py`, workflows whose text names pytest/mypy/ruff/py-ci-shared, trigger set has `pull_request` and not `push`): mlframe 2 (`dep-floors.yml` +schedule, `dependabot-auto-merge.yml`), pyutilz 1 (`dep-floors.yml` +schedule), others 0. Both `dep-floors.yml` hits run on a schedule so they do run unattended; `dependabot-auto-merge.yml` is PR-only by design. Precision 0 of 3 as stated, so a gate needs a per-repo "pushes to default" flag and an allow list; leave for a later round.
-- Disposition: DEFERRED: 0 of 3 hits as stated; needs a per-repo default-branch-push flag and an allow list the report leaves for a later round.
+- Disposition: DEFERRED TO THE NEXT ROUND: 0 of 3 hits as stated (both mlframe hits run on a schedule; dependabot-auto-merge is PR-only by design). Needs a per-repo default-branch-push flag and an allow list, which the next round must design.
 
 ## Rejected after measurement (do not re-mine)
 
