@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core.scopes import own_nodes
+from ._core.node_index import binop_operands
 from ._core import Finding, ScanResult, child_nodes, nodes_of, parse_text, scan_python
 from ._core.gate_contract import check_scan
 from ._core.call_names import func_name_or_none as _call_name
@@ -158,6 +159,9 @@ class _Taint:
             return self.is_tainted(node.value)
         if isinstance(node, ast.Call):
             return self._call_tainted(node)
+        if isinstance(node, ast.BinOp):
+            # A chain of operators is flattened with a loop: a long ``+`` expression must not reach the recursion limit.
+            return any(self.is_tainted(part) for part in binop_operands(node, (ast.operator,)))
         return any(self.is_tainted(part) for part in self._carried_parts(node))
 
     def _carried_parts(self, node: ast.AST) -> list[ast.AST]:
