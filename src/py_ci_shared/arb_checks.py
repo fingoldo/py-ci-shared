@@ -45,6 +45,7 @@ import sys
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 
+from ._core.console import capped
 from ._core import read_source
 
 __all__ = [
@@ -149,9 +150,9 @@ def find_key_parity_problems(catalogues: Mapping[str, Path], template_locale: st
         missing = sorted(base - keys)
         extra = sorted(keys - base)
         if missing:
-            out.append(f"{path.name}: missing {len(missing)} key(s) present in {template_locale}: {missing[:10]}")
+            out.append(f"{path.name}: missing {len(missing)} key(s) present in {template_locale}: {capped(missing, 10)}")
         if extra:
-            out.append(f"{path.name}: has {len(extra)} key(s) absent from {template_locale}: {extra[:10]}")
+            out.append(f"{path.name}: has {len(extra)} key(s) absent from {template_locale}: {capped(extra, 10)}")
     return out
 
 
@@ -317,7 +318,7 @@ def assert_arb_catalogues_are_sound(
         dead = find_dead_keys(catalogues, template_locale, source_text, allowed=allowed_dead_keys)
         if dead:
             problems.append(
-                f"{len(dead)} key(s) defined and never rendered - a translation nobody sees, " f"kept current by every future translator: {dead[:15]}"
+                f"{len(dead)} key(s) defined and never rendered - a translation nobody sees, " f"kept current by every future translator: {capped(dead, 15)}"
             )
     if register_advisory:
         for line in find_register_problems(catalogues):

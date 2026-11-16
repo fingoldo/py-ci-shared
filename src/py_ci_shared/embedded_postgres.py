@@ -19,6 +19,7 @@ CLI::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import contextlib
@@ -307,10 +308,11 @@ def main_checkout_file(relative: "str | Path", *, cwd: "Path | None" = None) -> 
 def run(argv: Sequence[str], *, env_var: str, bin_dir: "Path | None", missing_exit: int = 0) -> int:
     """Run ``argv`` with a throwaway Postgres server's DSN in ``env_var``; without binaries print a loud skip notice and return ``missing_exit``."""
     if bin_dir is None:
-        sys.stderr.write(
-            "\n" + "!" * 78 + "\n"
+        write_text(
+            err=True,
+            text="\n" + "!" * 78 + "\n"
             f"!! SKIPPED: no Postgres binaries (set PG_BIN, or `pip install pgserver`). The command\n"
-            f"!! below did NOT run, so nothing it guards was checked:\n!!   {' '.join(argv)}\n" + "!" * 78 + "\n\n"
+            f"!! below did NOT run, so nothing it guards was checked:\n!!   {' '.join(argv)}\n" + "!" * 78 + "\n\n",
         )
         return missing_exit
     with embedded_postgres(bin_dir) as dsn:
@@ -393,7 +395,7 @@ def _install_timezone_database(target: Path) -> None:
                 zf.extractall(tmp, members)
             shutil.copytree(Path(tmp) / "tzdata" / "zoneinfo", tz_dir)
         except (subprocess.CalledProcessError, StopIteration, OSError, RuntimeError) as exc:
-            sys.stderr.write(f"!! no timezone database for the embedded Postgres ({type(exc).__name__}): tests that SET TimeZone cannot run on it\n")
+            write_text(err=True, text=f"!! no timezone database for the embedded Postgres ({type(exc).__name__}): tests that SET TimeZone cannot run on it\n")
 
 
 def fetch(dest: "Path | None" = None, *, version: str = PGSERVER_VERSION) -> Path:
@@ -460,7 +462,7 @@ def main(args: "Sequence[str] | None" = None) -> int:
     r.add_argument("command", nargs=argparse.REMAINDER)
     ns = parser.parse_args(args)
     if ns.cmd == "fetch":
-        sys.stdout.write(f"{fetch()}\n")
+        write_text(f"{fetch()}\n")
         return 0
     # Only the separator itself: a `--` further on belongs to the command (`pytest -- -x`, `git log -- path`).
     command = list(ns.command[1:] if ns.command[:1] == ["--"] else ns.command)

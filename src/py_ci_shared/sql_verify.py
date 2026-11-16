@@ -54,6 +54,7 @@ a dependency-free package and only a project that actually runs it needs the dri
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import contextlib
 import dataclasses
@@ -128,7 +129,7 @@ def dsn_from_env(env_names: Sequence[str] = DEFAULT_ENV_NAMES) -> str | None:
 
 def _emit(line: str) -> None:
     """Write one line of the verifier's report to stdout; the report is the output of a script run, so it stays on stdout."""
-    sys.stdout.write(line + "\n")
+    write_text(line + "\n")
 
 
 def check(conn: Any, label: str, sql: str, params: Any = None) -> bool:

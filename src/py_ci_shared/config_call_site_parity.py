@@ -30,6 +30,7 @@ functions, matching this package's other modules.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import ast
 from ._core.unparse import unparse_stable
@@ -662,10 +663,11 @@ def assert_every_schema_field_has_a_reader(
                 continue
             unread.append(f"[{section}] {key}")
     if tracked_gaps_hit:
-        import sys
-
-        sys.stderr.write(
-            "\n[assert_every_schema_field_has_a_reader] known tracked gap(s), not failing but not fixed either:\n  " + "\n  ".join(tracked_gaps_hit) + "\n"
+        write_text(
+            err=True,
+            text="\n[assert_every_schema_field_has_a_reader] known tracked gap(s), not failing but not fixed either:\n  "
+            + "\n  ".join(tracked_gaps_hit)
+            + "\n",
         )
     if unread:
         pytest.fail(

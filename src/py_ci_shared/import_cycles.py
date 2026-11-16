@@ -26,6 +26,7 @@ Usage from a repository's meta tests::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import ast
 import re
@@ -420,18 +421,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     """Manual corpus run: 0 clean, 1 cycles or unparsed files, 2 usage or an unreadable root."""
     args = list(sys.argv[1:] if argv is None else argv)
     if not args:
-        sys.stderr.write("import_cycles: usage: python -m py_ci_shared.import_cycles SRC_ROOT [PACKAGE]\n")
+        write_text(err=True, text="import_cycles: usage: python -m py_ci_shared.import_cycles SRC_ROOT [PACKAGE]\n")
         return 2
     root = Path(args[0])
     try:
         found, result = find_import_cycles(root, package=args[1] if len(args) > 1 else None)
     except CoreError as exc:
-        sys.stderr.write(f"import_cycles: {exc}\n")
+        write_text(err=True, text=f"import_cycles: {exc}\n")
         return 2
     for item in found:
         shown = Finding(path=(root / item.path).as_posix(), line=item.line, rule=item.rule, message=item.message)
-        sys.stdout.write(shown.render() + "\n")
-    sys.stdout.write(f"{len(found)} finding(s), {result.parsed_count} parsed, {len(result.unparsed)} unparsed\n")
+        write_text(shown.render() + "\n")
+    write_text(f"{len(found)} finding(s), {result.parsed_count} parsed, {len(result.unparsed)} unparsed\n")
     return 1 if found or result.unparsed else 0
 
 

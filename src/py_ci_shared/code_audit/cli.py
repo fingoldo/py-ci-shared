@@ -1,9 +1,9 @@
 """Command-line entry point for the code_audit scanners: ``python -m py_ci_shared.code_audit``."""
 
 from __future__ import annotations
+from .._core.console import write_text
 
 import json
-import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
@@ -79,7 +79,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=("scanner(s) to run; repeat for multiple. Default: run all. " "Available: " + ", ".join(selectable)),
     )
     parser.add_argument(
-        "--format", choices=("markdown", "json"), default="markdown",
+        "--format",
+        choices=("markdown", "json"),
+        default="markdown",
         help="output format (default markdown).",
     )
     parser.add_argument(
@@ -89,13 +91,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=("directory name to exclude (matched against any path part). " "Repeat. Adds to the default set of build/cache/venv dirs."),
     )
     parser.add_argument(
-        "--min-severity", choices=SEVERITIES, default="Low",
+        "--min-severity",
+        choices=SEVERITIES,
+        default="Low",
         help="filter out findings below this severity (default Low: show all).",
     )
     args = parser.parse_args(argv)
 
     if args.list_checks:
-        sys.stdout.write(render_check_catalogue())
+        write_text(render_check_catalogue())
         return 0
     if args.root is None:
         parser.error("root is required (or pass --list-checks)")
@@ -112,11 +116,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     # gates the exit code, rather than sorting last and being filtered out of every report unseen.
     unknown = sorted({f.severity for f in all_findings if severity_rank(f.severity) == UNKNOWN_SEVERITY_RANK})
     if unknown:
-        sys.stderr.write(f"warning: findings carry severities outside {list(SEVERITIES)}: {unknown}\n")
+        write_text(err=True, text=f"warning: findings carry severities outside {list(SEVERITIES)}: {unknown}\n")
     findings = [f for f in all_findings if severity_rank(f.severity) <= cutoff]
 
     out = _render_json(findings) if args.format == "json" else _render_markdown(findings)
-    sys.stdout.write(out)
+    write_text(out)
     # exit code computed from the UNFILTERED findings: --min-severity only controls what's
     # rendered, it must never weaken the CI gate.
     return 1 if any(severity_rank(f.severity) <= severity_rank("P1") for f in all_findings) else 0

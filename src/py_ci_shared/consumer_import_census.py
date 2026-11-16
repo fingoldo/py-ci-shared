@@ -38,6 +38,7 @@ reports those without failing).
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import ast
@@ -330,7 +331,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     library = Path(args.library).resolve()
     consumers = [(n, r) for n, r in consumers if Path(r).resolve() != library]
     if not consumers:
-        sys.stderr.write("consumer_import_census: no consumer checkout given (--consumer or --repos-file)" + "\n")
+        write_text(err=True, text="consumer_import_census: no consumer checkout given (--consumer or --repos-file)" + "\n")
         return 1
     with tempfile.TemporaryDirectory() as tmp:
         try:
@@ -343,17 +344,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             private = find_consumer_private_imports(library, args.package, consumers, allow_unparsed=args.allow_unparsed) if args.private_imports else []
         except (CoreError, AssertionError) as exc:
             logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
-            sys.stderr.write(f"consumer_import_census: {exc}" + "\n")
+            write_text(err=True, text=f"consumer_import_census: {exc}" + "\n")
             return 1
     breaks = [f for f in found if f.rule == RULE]
     scope = f"resolved at {args.since_ref} and not now" if args.since_ref else "unresolved"
-    sys.stdout.write(f"consumer_import_census: {len(consumers)} consumer(s) of {args.package}, {len(breaks)} import(s) {scope}" + "\n")
+    write_text(f"consumer_import_census: {len(consumers)} consumer(s) of {args.package}, {len(breaks)} import(s) {scope}" + "\n")
     for f in found:
-        sys.stdout.write("  " + f.render() + "\n")
+        write_text("  " + f.render() + "\n")
     for f in private:
-        sys.stdout.write("  " + f.render() + "\n")
+        write_text("  " + f.render() + "\n")
     if args.private_imports:
-        sys.stdout.write(f"consumer_import_census: {len(private)} import(s) of private names of {args.package}" + "\n")
+        write_text(f"consumer_import_census: {len(private)} import(s) of private names of {args.package}" + "\n")
     return 1 if breaks or (private and args.private_imports == "fail") else 0
 
 

@@ -14,10 +14,10 @@ Usage in a consumer's meta test::
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import ast
 import re
-import sys
 from pathlib import Path
 from typing import Optional, Union
 
@@ -108,7 +108,7 @@ def assert_raw_write_row_count(
     found = find_raw_write_row_count(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
     if report_only:
         for f in found:
-            sys.stderr.write(f.render() + "\n")
+            write_text(err=True, text=f.render() + "\n")
         return
     guidance = "read rowcount from the result, or check it, so a statement that matches nothing is seen"
     if baseline_path is not None:

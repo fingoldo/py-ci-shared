@@ -41,6 +41,7 @@ talks to the network, through an injectable ``api`` callable.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import base64
@@ -626,12 +627,12 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
         known = {c.name for c in consumers}
         unknown = sorted(set(args.only) - known)
         if unknown:
-            sys.stderr.write(f"ci_health: --only names no consumer in {args.config}: {', '.join(unknown)} (known: {', '.join(sorted(known))})\n")
+            write_text(err=True, text=f"ci_health: --only names no consumer in {args.config}: {', '.join(unknown)} (known: {', '.join(sorted(known))})\n")
             return 2
         consumers = [c for c in consumers if c.name in set(args.only)]
     consumers = _reported(consumers, include_private=args.include_private)
     if not consumers:
-        sys.stderr.write(f"ci_health: {args.config} lists no consumer; nothing would be checked\n")
+        write_text(err=True, text=f"ci_health: {args.config} lists no consumer; nothing would be checked\n")
         return 2
     if api is None:
         api, can_read_private = default_api(timeout=args.request_timeout)
@@ -647,7 +648,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
         result = collect(consumer, bounded, at, can_read_private=can_read_private, skip_workflows=skipped_workflows)
         state = "skipped" if result.skipped else ("ERROR" if result.error else f"{len(result.workflows)} workflow(s)")
         with lock:
-            sys.stderr.write(f"ci_health: {consumer.name}: {state} ({time.monotonic() - started:.0f} s)\n")
+            write_text(err=True, text=f"ci_health: {consumer.name}: {state} ({time.monotonic() - started:.0f} s)\n")
             sys.stderr.flush()
         return result
 
@@ -655,9 +656,9 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
         repos = list(pool.map(one, consumers))
     strict = args.fail_on_skipped_private
     text = render_markdown(repos, at, args.max_red_days, fail_on_skipped_private=strict)
-    sys.stdout.write(text)
+    write_text(text)
     for line in _annotations(repos, args.max_red_days, fail_on_skipped_private=strict):
-        sys.stdout.write(line + "\n")
+        write_text(line + "\n")
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -666,7 +667,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
             fh.write(text)
     code = exit_code(repos, args.max_red_days, fail_on_skipped_private=strict)
     if code == 0 and any(w.status == "billing" for r in repos for w in r.workflows):
-        sys.stdout.write("ci_health: WARNING: some workflows are blocked by billing, not by the code; fix the account, not the repo\n")
+        write_text("ci_health: WARNING: some workflows are blocked by billing, not by the code; fix the account, not the repo\n")
     return code
 
 

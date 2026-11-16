@@ -38,12 +38,12 @@ Both accept ``now`` (epoch seconds) to freeze the clock.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import ast
 import logging
 import re
 import subprocess
-import sys
 import time
 import tokenize
 import warnings
@@ -645,7 +645,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     lines, unchecked = stale_warning_summary(
         [Path(p) for p in args.stale_warning_summary], scan_dirs=args.scan_dir, max_age_days=args.max_age_days, warn_days=args.warn_days
     )
-    sys.stdout.write("".join(line + "\n" for line in lines))
+    write_text("".join(line + "\n" for line in lines))
     return 1 if unchecked else 0
 
 

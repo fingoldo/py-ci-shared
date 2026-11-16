@@ -25,11 +25,11 @@ Usable three ways:
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import fnmatch
 import logging
-import sys
 import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
@@ -211,10 +211,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             )
     except (CoreError, tomllib.TOMLDecodeError, OSError) as exc:
         logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"commit_metadata: {exc}" + "\n")
+        write_text(err=True, text=f"commit_metadata: {exc}" + "\n")
         return 1
     for f in problems:
-        sys.stdout.write(f.render() + "\n")
+        write_text(f.render() + "\n")
     return 1 if problems else 0
 
 

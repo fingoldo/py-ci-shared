@@ -39,13 +39,13 @@ optional ``name``.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import ast
 import logging
 import os
 import re
-import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -420,15 +420,32 @@ class RepoReport:
                 f"{k}: " + ", ".join(f"{p.path}:{p.line}" for p in v[:4]) + (f" (+{len(v) - 4})" if len(v) > 4 else "") for k, v in sorted(by_key.items())
             )
             first = self.pins[0]
-            out.append(Finding(first.path, first.line, "pins-disagree", f"{len(by_key)} different py-ci-shared refs: {detail}. Pin every consumer to one release tag"))
+            out.append(
+                Finding(first.path, first.line, "pins-disagree", f"{len(by_key)} different py-ci-shared refs: {detail}. Pin every consumer to one release tag")
+            )
         out.extend(
-            Finding(p.path, p.line, "moving-pin", f"{p.target} pinned to {p.label()} ({p.kind}): it changes without a commit here. Pin a release tag or a full SHA") for p in self.moving_pins
+            Finding(
+                p.path, p.line, "moving-pin", f"{p.target} pinned to {p.label()} ({p.kind}): it changes without a commit here. Pin a release tag or a full SHA"
+            )
+            for p in self.moving_pins
         )
         for p in self.stale_pins:
             n, latest = self.behind[p.ref or ""]
-            out.append(Finding(p.path, p.line, "stale-pin", f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}. Bump the pin, or add a dated waiver to configs/pin_waivers.toml"))
+            out.append(
+                Finding(
+                    p.path,
+                    p.line,
+                    "stale-pin",
+                    f"{p.target} pinned to {p.label()}: {n} release{'s' if n != 1 else ''} behind {latest}. Bump the pin, or add a dated waiver to configs/pin_waivers.toml",
+                )
+            )
         out.extend(
-            Finding(p.path, p.line, "unresolvable-pin", f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails. Push the commit, fix the tag name, or pin a SHA that exists")
+            Finding(
+                p.path,
+                p.line,
+                "unresolvable-pin",
+                f"{p.target} pinned to {p.label()}, which does not exist upstream: its install fails. Push the commit, fix the tag name, or pin a SHA that exists",
+            )
             for p in self.unresolvable_pins
         )
         out.extend(Finding(p.path, p.line, "ci-pin-comment-not-release", f"{p.target} pinned to {p.label()}: {why}") for p, why in self.comment_mismatches)
@@ -708,7 +725,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("give repo roots or --repos-file")
     missing = [str(r) for _, r in roots if not r.is_dir()]
     if missing:
-        sys.stderr.write(f"adoption_matrix: not a directory: {', '.join(missing)}\n")
+        write_text(err=True, text=f"adoption_matrix: not a directory: {', '.join(missing)}\n")
         return 2
     resolver = RefResolver(args.resolve_in) if args.resolve_in else None
     modules = known_modules()
@@ -716,7 +733,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     releases = resolver.releases() if resolver is not None else []
     problem = preflight_problem(resolver is not None, releases, waivers, [name for name, _root in _unique_names(roots)], args.advisory)
     if problem is not None:
-        sys.stderr.write(f"adoption_matrix: {problem}\n")
+        write_text(err=True, text=f"adoption_matrix: {problem}\n")
         return 1
     reports = []
     for name, root in _unique_names(roots):
@@ -733,14 +750,20 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         report.waiver_note = note
         reports.append(report)
     if resolver is None:
-        sys.stderr.write("adoption_matrix: WITHOUT --resolve-in the stale-pin, unresolvable-pin, pin-comment and waiver checks are OFF; the exit code says nothing about them. Give --resolve-in a py-ci-shared checkout with tags\n")
+        write_text(
+            err=True,
+            text="adoption_matrix: WITHOUT --resolve-in the stale-pin, unresolvable-pin, pin-comment and waiver checks are OFF; the exit code says nothing about them. Give --resolve-in a py-ci-shared checkout with tags\n",
+        )
     text = render_markdown(reports, modules=[m for m in modules if not m.startswith("_")])
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")
-    sys.stdout.write(text)
+    write_text(text)
     failing = [r.name for r in reports if r.failing]
     if failing:
-        sys.stderr.write(f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing, moving, stale or unresolvable pins, bad pin comments, or silent skips: {', '.join(failing)}\n")
+        write_text(
+            err=True,
+            text=f"\nadoption_matrix: {len(failing)} repo(s) with disagreeing, moving, stale or unresolvable pins, bad pin comments, or silent skips: {', '.join(failing)}\n",
+        )
     if resolver is None and not args.advisory:  # 47-F8: without --resolve-in those checks did not run; exit 0 would claim they passed
         return 1
     return 0 if args.advisory or not failing else 1

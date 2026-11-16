@@ -25,6 +25,7 @@ that rewrote the message. Adopt warn-only first and count the flags against the 
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import hashlib
@@ -239,19 +240,19 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.command == "install":
-            sys.stdout.write(f"installed {install(args.repo)}\n")
+            write_text(f"installed {install(args.repo)}\n")
             return 0
         if args.command == "commit-msg":
             stamp_message(args.message_file)
             return 0  # a commit-msg hook that fails would block the commit it is only meant to label
         found = find_hook_attestation(args.repo, args.rev_range, allow_authors=[*BOT_AUTHORS, *args.allow_author])
     except CorpusError as exc:
-        sys.stderr.write(f"hook_attestation: {exc}\n")
+        write_text(err=True, text=f"hook_attestation: {exc}\n")
         return 0 if getattr(args, "command", "") == "commit-msg" else 2
     for f in found:
         line = f.render()
-        sys.stdout.write((f"::warning title=hook attestation::{line}" if args.warn_only else line) + "\n")
-    sys.stdout.write(f"hook_attestation: {len(found)} commit(s) without a clean hook run in {args.rev_range}\n")
+        write_text((f"::warning title=hook attestation::{line}" if args.warn_only else line) + "\n")
+    write_text(f"hook_attestation: {len(found)} commit(s) without a clean hook run in {args.rev_range}\n")
     return 0 if args.warn_only or not found else 1
 
 

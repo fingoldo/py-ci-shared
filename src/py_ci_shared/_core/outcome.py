@@ -126,13 +126,19 @@ def _entries(text: Optional[str]) -> "set[str]":
     return set()
 
 
+def entries_word(n: int, *, count: bool = False) -> str:
+    """``entry``/``entries`` for *n* (49-T11: "1 entries" and "entr(ies)" read as a tool that did not check its own output)."""
+    word = "entry" if n == 1 else "entries"
+    return f"{n} {word}" if count else word
+
+
 def entry_delta(writes: "list[Any]") -> Optional[str]:
     """``+A -R entries (file, ...)`` over the writes of one refresh (changed entries count as one removal and one addition); None for none."""
     if not writes:
         return None
     if all(before is None for _, before, _ in writes):
         # 49-F8: a missing baseline written for the first time has no "before"; "+0 -0" read as a no-op refresh.
-        return "created " + ", ".join(f"{Path(path).name} with {len(_entries(after))} entries" for path, _, after in writes)
+        return "created " + ", ".join(f"{Path(path).name} with {entries_word(len(_entries(after)), count=True)}" for path, _, after in writes)
     added = removed = 0
     names = []
     for path, before, after in writes:

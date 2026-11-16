@@ -11,10 +11,10 @@ Release-tag commits are exempt: a release's own default ref is the release, so a
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import re
-import sys
 from collections.abc import Callable, Iterable, Sequence
 from pathlib import Path
 from typing import Optional
@@ -61,8 +61,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     release_shas = {sha for tag in resolver.releases() if (sha := resolver(tag))}
     findings = scan_repos(load_repo_list(Path(args.repos_file)), release_shas.__contains__)
     for finding in findings:
-        sys.stdout.write(f"::warning title=uses-sha-without-ref-input::{finding}\n")
-    sys.stdout.write(f"uses-sha-without-ref-input: {len(findings)} pin(s) to a between-release SHA without py-ci-shared-ref\n")
+        write_text(f"::warning title=uses-sha-without-ref-input::{finding}\n")
+    write_text(f"uses-sha-without-ref-input: {len(findings)} pin(s) to a between-release SHA without py-ci-shared-ref\n")
     return 0
 
 

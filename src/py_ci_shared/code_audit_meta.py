@@ -42,6 +42,7 @@ practice while keeping this package's own install graph unchanged.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import inspect
 import logging
@@ -306,13 +307,12 @@ def assert_no_new_code_audit_findings(
     # refreshes it, and the refresh writes the new format.
     legacy_known = {_legacy_key(f) for f, _ in keyed if _legacy_key(f) in baseline}
     if legacy_known:
-        import sys
-
-        sys.stderr.write(
-            f"\n[assert_no_new_code_audit_findings] {baseline_path.name} is in the legacy "
+        write_text(
+            err=True,
+            text=f"\n[assert_no_new_code_audit_findings] {baseline_path.name} is in the legacy "
             f"line-numbered key format ({len(legacy_known)} of {len(baseline)} entries matched "
             f"that way). It still gates correctly; refresh it with {REFRESH_FLAG} to move to "
-            f"the relocation-proof format.\n"
+            f"the relocation-proof format.\n",
         )
     new = sorted(k for f, k in keyed if k not in baseline and _legacy_key(f) not in baseline)
     matched_legacy = {_legacy_key(f) for f, k in keyed if k not in baseline and _legacy_key(f) in baseline}
@@ -324,13 +324,12 @@ def assert_no_new_code_audit_findings(
             f"{REFRESH_FLAG} so the fixed findings leave it:\n  " + "\n  ".join(fixed[:20]) + (f"\n  ... and {len(fixed) - 20} more" if len(fixed) > 20 else "")
         )
     if fixed:
-        import sys
-
-        sys.stderr.write(
-            f"\n[assert_no_new_code_audit_findings] {len(fixed)} finding(s) DRAINED:\n  "
+        write_text(
+            err=True,
+            text=f"\n[assert_no_new_code_audit_findings] {len(fixed)} finding(s) DRAINED:\n  "
             + "\n  ".join(fixed[:15])
             + (f"\n  ... and {len(fixed) - 15} more" if len(fixed) > 15 else "")
-            + f"\n  Refresh: pytest ... {REFRESH_FLAG}\n"
+            + f"\n  Refresh: pytest ... {REFRESH_FLAG}\n",
         )
 
     if new:

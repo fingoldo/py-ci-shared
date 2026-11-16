@@ -21,6 +21,7 @@ your own (``-n 3``, ``--durations=20``, ``-x``) replaces the matching default. `
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import importlib.util
 import os
@@ -117,15 +118,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     """``pytest_run OUTFILE [pytest args...]``: exit code 0 when the tests passed, pytest's code otherwise, 2 for a usage error."""
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in ("-h", "--help"):
-        sys.stdout.write((__doc__ or "").split("Usage::")[-1].split("The file gets")[0].strip() + "\n")
+        write_text((__doc__ or "").split("Usage::")[-1].split("The file gets")[0].strip() + "\n")
         return 0 if args else 2
     out_file, pytest_args = args[0], args[1:]
     try:
         code = run_pytest(out_file, pytest_args)
     except ValueError as exc:
-        sys.stderr.write(f"pytest_run: {exc}\n")
+        write_text(err=True, text=f"pytest_run: {exc}\n")
         return 2
-    sys.stdout.write(f"exit={code}\n{summary_line(out_file)}\noutput: {out_file}\n")
+    write_text(f"exit={code}\n{summary_line(out_file)}\noutput: {out_file}\n")
     return code
 
 

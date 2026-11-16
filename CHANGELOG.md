@@ -4,6 +4,14 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- Console and message fixes from audit 2026-11-16 round 49 (diagnostics output). Nothing to do for existing consumers: no gate became stricter, and exit codes are unchanged.
+  - Every module `main` writes through `_core.console.write_text`, so a finding whose path has a character the console codepage lacks (cp1251, cp1252) is written as escapes instead of a `UnicodeEncodeError` traceback (49-T2).
+  - Under GitHub Actions a failed gate emits one `::error` per `path:line` finding with `file=` and `line=` (at most 10, then one summary), instead of one annotation with the first message line (49-T1).
+  - A `budget = "fail"` overrun also gets a `::error` annotation and a job-summary block, and the job summary lists the failed gates (49-T8).
+  - The run's summary line ends with a verdict word: `-> OK`, `-> FAILED (exit 1)` or `-> ERROR (exit 2: a gate could not run)`. The head of the line is unchanged (49-T9).
+  - A missing baseline whose seed would accept findings says `(add --grow: ...)` (49-T4b). `not enabled` names the `enable = [...]` line for a real gate and suggests the near-miss name of a typo (49-T10, part).
+  - Lists cut at 10 to 50 items end with `... and N more` (`repo_hygiene`, `timezone_honest`, `ignore_ratchet`, `arb_checks`), and entry counts read `1 entry` (49-T7, 49-T11, part).
+
 - `scan_near_duplicate_function_body` (code_audit) false positives removed: a body that is one `return`/expression assembling module-level data (`return [*ROWS_A, *ROWS_B]`, names, attributes, literals, `+`/`|`, no call) is no longer compared, since two of them are structurally identical while holding different data; a `duplicate_function_body_subset` hit must now cover at least 30% of the container body (`_MIN_SUBSET_COVERAGE`, picked from the gap in the measured coverage of every hit in py-ci-shared and autopsia, listed beside the constant), so a short helper matching a slice of a long function is no longer reported; and a subset finding honours `# audit-exempt: duplicate_function_body_subset -- <reason>` on the container's `def` line (it had no marker at all). Only fewer findings; a baseline entry for a dropped hit goes stale and is pruned by the baseline refresh. No canary directory: this is a code_audit scanner, not a corpus gate.
 
 - `predictable_tmp_path` reports `mktemp` only when the call resolves to `tempfile.mktemp` (`import tempfile` / `import tempfile as tf` / `from tempfile import mktemp [as x]` / `from tempfile import *` / a `*.tempfile.mktemp` chain). It used to flag any call whose attribute was `mktemp`, including pytest's `tmp_path_factory.mktemp("x")` (a unique, race-free numbered directory), which gave a consumer 23 false positives. Only fewer findings; a consumer baseline entry for such a call is now stale and is pruned by the baseline refresh.

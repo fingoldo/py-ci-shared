@@ -21,11 +21,11 @@ a job that relied on what ``-latest`` happened to be may need its own label.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import argparse
 import logging
 import re
-import sys
 from collections.abc import Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Optional, Union
@@ -202,15 +202,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         labels = dict(item.split("=", 1) for item in args.label)
         if args.fix:
             for rel in fix_workflow_runner_labels(args.repo, labels=labels):
-                sys.stdout.write(f"fixed {rel}" + "\n")
+                write_text(f"fixed {rel}" + "\n")
         found = find_workflow_runner_label_problems(args.repo, min_files=0 if args.allow_empty else 1)
     except (CoreError, ValueError) as exc:
         logger.warning("substituted a fallback after %s: %s", type(exc).__name__, exc)
-        sys.stderr.write(f"workflow_runner_labels: {exc}" + "\n")
+        write_text(err=True, text=f"workflow_runner_labels: {exc}" + "\n")
         return 2 if isinstance(exc, CoreError) else 1
     for f in found:
-        sys.stdout.write(f.render() + "\n")
-    sys.stdout.write(f"workflow_runner_labels: {len(found)} problem(s)\n")
+        write_text(f.render() + "\n")
+    write_text(f"workflow_runner_labels: {len(found)} problem(s)\n")
     return 1 if found else 0
 
 

@@ -40,6 +40,7 @@ import time so drift is visible (a log warning), not silently wrong.
 """
 
 from __future__ import annotations
+from ._core.console import write_text
 
 import contextlib
 import logging
@@ -85,9 +86,10 @@ def _report_unrestored(sfo: ModuleType, patch_filename: str) -> None:
         copies,
     )
     banner = "=" * 78
-    sys.stderr.write(
-        f"\n{banner}\nsafe-precommit: UNSTAGED CHANGES WERE NOT RESTORED to the working tree.\n"
-        f'They are saved in: {copies}\nRestore with:      git apply --3way "{kept or patch_filename}"\n{banner}\n\n'
+    write_text(
+        err=True,
+        text=f"\n{banner}\nsafe-precommit: UNSTAGED CHANGES WERE NOT RESTORED to the working tree.\n"
+        f'They are saved in: {copies}\nRestore with:      git apply --3way "{kept or patch_filename}"\n{banner}\n\n',
     )
     sys.stderr.flush()
 
