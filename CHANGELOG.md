@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T19, `systemexit_in_library`): in a library module (no `__main__` guard, not a `__main__.py`), an exit that runs at import time (module level, class body, or a lambda) and `os.abort()` are findings, whatever the name. Library modules are the modules that are not scripts or entry points. What to do: move the exit into `main()` and raise a normal exception from the module, or mark the line `# exit-ok: <reason>`.
+
 - **Behaviour change** (40-T15, `env_flag_parsing`): an alias of `os.environ` or `os.getenv` (`from os import environ as E`) is read like the original, and `int(<env read>)` compared with a number (`int(os.getenv("FLAG", "0")) > 0`, `== 1`) is a hand-parsed flag. What to do: route the flag through the shared parser (`env_flag`), or list the variable in `allowed` with its reason.
 
 - **Behaviour change** (40-T13, `lock_held_across_io`): the blocking call is judged by its real name through import aliases (`from urllib.request import urlopen as uo`), a lock built through an aliased constructor counts (`from threading import Lock as L2`), a subscripted lock family (`self._locks[k]`, and names ending `_locks`) counts, and `os.system`, `os.popen` and `aiohttp` are I/O. What to do: move the call out of the `with` block, or mark it `# lock-io-ok: <reason>`.
