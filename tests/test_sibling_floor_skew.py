@@ -156,7 +156,7 @@ def test_assert_and_baseline(tmp_path):
         sfs.assert_sibling_floor_skew(root, resolver=old)
     sfs.assert_sibling_floor_skew(root, resolver=new)
     baseline = tmp_path / "baseline.json"
-    Baseline(baseline).save(Baseline.count(sfs.find_sibling_floor_skew(root, resolver=old)))
+    Baseline(baseline, gate="sibling_floor_skew").save(Baseline.count(sfs.find_sibling_floor_skew(root, resolver=old)))
     sfs.assert_sibling_floor_skew(root, resolver=old, baseline_path=baseline)  # accepted
     with pytest.raises(pytest.fail.Exception, match="no longer found"):
         sfs.assert_sibling_floor_skew(root, resolver=new, baseline_path=baseline)  # fixed: the entry is stale

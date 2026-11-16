@@ -164,7 +164,7 @@ class TestRealVermin:
         with pytest.raises(AssertionError, match="newer than requires-python"):
             api_floor.assert_api_floor(root, use_git=False)
         baseline = tmp_path / "baseline.json"
-        Baseline(baseline).save(Baseline.count(api_floor.find_api_floor(root, use_git=False)))
+        Baseline(baseline, gate="api_floor").save(Baseline.count(api_floor.find_api_floor(root, use_git=False)))
         api_floor.assert_api_floor(root, use_git=False, baseline_path=baseline)
 
     def test_many_files_are_batched(self, tmp_path, monkeypatch):

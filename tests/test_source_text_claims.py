@@ -200,7 +200,7 @@ class TestTheRatchet:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
         monkeypatch.delenv("PY_CI_SHARED_REFRESH")
-        assert sorted(Baseline(baseline).load()[0].items()) == [("tests/test_bad.py::test_x::getsource()", 1)]
+        assert sorted(Baseline(baseline, gate="source-text").load()[0].items()) == [("tests/test_bad.py::test_x::getsource()", 1)]
         assert_no_new_source_text_claims(files, tmp_path, baseline_path=baseline)
 
     def test_more_claims_of_the_same_key_are_new(self, tmp_path):
