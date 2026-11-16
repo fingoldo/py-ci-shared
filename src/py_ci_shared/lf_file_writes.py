@@ -91,17 +91,17 @@ def _assignments(tree: ast.Module) -> dict[int, dict[str, list[ast.expr]]]:
     """``{id(scope): {name: [assigned values]}}`` for the module and every function."""
     out: dict[int, dict[str, list[ast.expr]]] = {}
 
-    def visit(node: ast.AST, scope: ast.AST) -> None:
-        for child in child_nodes(node):
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                visit(child, child)
-                continue
-            for target, value in _bindings(child):
-                if isinstance(target, ast.Name):
-                    out.setdefault(id(scope), {}).setdefault(target.id, []).append(value)
-            visit(child, scope)
-
-    visit(tree, tree)
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, ast.AST]] = [(child, tree) for child in reversed(child_nodes(tree))]
+    while pending:
+        child, scope = pending.pop()
+        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            pending.extend((grandchild, child) for grandchild in reversed(child_nodes(child)))
+            continue
+        for target, value in _bindings(child):
+            if isinstance(target, ast.Name):
+                out.setdefault(id(scope), {}).setdefault(target.id, []).append(value)
+        pending.extend((grandchild, scope) for grandchild in reversed(child_nodes(child)))
     return out
 
 
@@ -149,15 +149,13 @@ def _scopes_by_node(tree: ast.Module) -> dict[int, list[int]]:
     """``{id(node): [innermost function id, ..., module id]}``."""
     out: dict[int, list[int]] = {}
 
-    def visit(node: ast.AST, chain: list[int]) -> None:
+    # An explicit stack, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, list[int]]] = [(tree, [id(tree)])]
+    while pending:
+        node, chain = pending.pop()
         for child in child_nodes(node):
             out[id(child)] = chain
-            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                visit(child, [id(child), *chain])
-            else:
-                visit(child, chain)
-
-    visit(tree, [id(tree)])
+            pending.append((child, [id(child), *chain] if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)) else chain))
     return out
 
 
