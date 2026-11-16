@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.console import capped
 from ._core.outcome import unevaluated_skip
 from ._core import CorpusError, EmptyScanError, Finding
 from ._core.config import ConfigError
@@ -250,7 +251,11 @@ def scan_tracked_secret_shapes(
                 data = None
             _check_blob(rel, data, compiled, report, allow_marker, max_bytes)
     if report.unreadable and not allow_unparsed:
-        raise CorpusError(f"{len(report.unreadable)} tracked file(s) could not be read, so they were not checked: {sorted(report.unreadable)[:20]}")
+        listed = ", ".join(capped(sorted(report.unreadable), 20))
+        raise CorpusError(
+            f"{len(report.unreadable)} tracked file(s) could not be read, so they were not checked: {listed}. "
+            "Fix or remove them, or pass allow_unparsed to skip them on purpose."
+        )
     if report.scanned < min_files:
         raise EmptyScanError(f"only {report.scanned} file(s) scanned under {root} ({report.summary()}); expected at least {min_files}")
     report.findings.sort(key=lambda f: (f.path, f.line, f.key))

@@ -86,7 +86,8 @@ class ScanResult:
         if self.unparsed:
             raise UnparsedFilesError(
                 f"{len(self.unparsed)} file(s) could not be read or parsed, so no gate can vouch for them. "
-                "Fix the file (or the interpreter version running the gate):\n  " + "\n  ".join(p.render() for p in self.unparsed)
+                "Fix the file (or the interpreter version running the gate), or set allow_unparsed = true for this gate to skip it on purpose:\n  "
+                + "\n  ".join(p.render() for p in self.unparsed)
             )
 
     def assert_ok(self, *, allow_unparsed: bool = False) -> None:

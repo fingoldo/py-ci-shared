@@ -15,7 +15,7 @@ from typing import Any, Callable, Optional
 
 from . import gate_cache
 from .config import ConfigError, GateRun, RepoConfig, resolve_kwargs
-from .outcome import REFRESHED, collect_notes, entry_delta, kind_of, track_writes
+from .outcome import REFRESHED, collect_notes, entry_delta, kind_of, running_gate, track_writes
 from .refresh import ENV_VAR, GROW_ENV_VAR
 
 logger = logging.getLogger(__name__)
@@ -143,7 +143,13 @@ def _call(func: Callable[..., Any], config: RepoConfig, kwargs: dict, flags: "tu
 
 
 def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
-    """Call *run*'s entry with its resolved kwargs from the repo root, never raising for a gate's own failure.
+    """Call *run*'s entry with its resolved kwargs from the repo root, never raising for a gate's own failure (see :func:`_run_gate`)."""
+    with running_gate(run.name):
+        return _run_gate(config, run, refresh=refresh, grow=grow)
+
+
+def _run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
+    """The body of :func:`run_gate`.
 
     ``refresh`` sets ``PY_CI_SHARED_REFRESH=all`` for the call and passes ``refresh=True`` when the entry takes it.
     ``grow`` (with ``refresh``) also sets ``PY_CI_SHARED_REFRESH_ALLOW_GROW=1`` and passes ``grow=True`` when taken, so

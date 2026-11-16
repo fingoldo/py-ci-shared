@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Optional, Union
 
 from ._core import Baseline, Finding, ScanResult, refresh_requested
+from ._core.outcome import add_note, pass_note
 
 __all__ = ["enforce_findings", "scan_problems"]
 
@@ -55,14 +56,19 @@ def enforce_findings(
     problems = list(extra_problems)
     for scan in scan_list:
         problems.extend(scan_problems(scan, min_files=min_files))
+    files_read = sum(len(scan.files) for scan in scan_list)
+    unparsed_allowed = sum(len(scan.unparsed) for scan in scan_list)
     if baseline_path is None:
         if findings:
             problems.append(guidance + ":\n    " + "\n    ".join(f.render() for f in findings))
         if problems:
             pytest.fail(f"{gate}:\n" + "\n".join(problems), pytrace=False)
+        add_note(pass_note(files_read=files_read, accepted=0, unparsed_allowed=unparsed_allowed))
         return
     if problems:  # never write a baseline from a broken walk
         pytest.fail(f"{gate}:\n" + "\n".join(problems), pytrace=False)
     do_refresh = refresh if refresh is not None else refresh_requested(flag, request)
     baseline = Baseline(baseline_path, gate=gate, refresh_command=f"pytest {flag} (or PY_CI_SHARED_REFRESH={gate})")
     baseline.enforce(findings, refresh=do_refresh, guidance=guidance, request=request).raise_for_pytest()
+    # On a pass every current finding is one the baseline accepts (49-T5).
+    add_note(pass_note(files_read=files_read, accepted=len(findings), baseline=Path(baseline_path).name, unparsed_allowed=unparsed_allowed))

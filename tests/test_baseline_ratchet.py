@@ -47,7 +47,7 @@ def test_paid_debt_fails_until_the_baseline_is_refreshed(tmp_path: Path, capsys)
     err = capsys.readouterr().err
     assert code == 1, "a fixed violation leaves a free slot for a later regression of the same key"
     assert "lib/gone.dart" in err
-    assert "regen_baselines.py to prune" in err
+    assert "no longer violate the rule" in err
 
 
 def test_a_fixed_violation_cannot_be_taken_back_for_free(tmp_path: Path) -> None:

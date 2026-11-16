@@ -87,9 +87,9 @@ def test_only_guard_directories_are_scanned(tmp_path: Path) -> None:
 
 def test_a_recorded_skip_passes_and_a_new_one_fails(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _tree(tmp_path, "tool/check_docker.sh", BAD_SHELL)
-    with pytest.raises(AssertionError):
-        assert_no_new_skip_as_pass(tmp_path)  # nothing recorded yet: the finding fails
-    assert "1 new violation" in capsys.readouterr().err
+    with pytest.raises(AssertionError) as info:
+        assert_no_new_skip_as_pass(tmp_path)  # nothing recorded yet: the finding fails, with its whole report (49-T3)
+    assert "1 new violation" in str(info.value)
     key = next(iter(find_skip_as_pass(tmp_path)))
     baseline = tmp_path / "tool" / "meta" / "baselines" / "skip_as_pass.json"
     baseline.parent.mkdir(parents=True)
