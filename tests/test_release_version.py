@@ -516,3 +516,19 @@ def test_the_release_push_passes_the_token_header_through_the_environment_not_ar
     text = (REPO / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
     assert "git -c" not in text or "extraheader" not in text.split("git -c", 1)[1].split("\n", 1)[0]
     assert text.count("GIT_CONFIG_VALUE_0=") == 2
+
+
+@pytest.mark.parametrize(
+    "version, tags, base",
+    [
+        ("1.23.11", ["v1.23.10", "v1.23.11", "v1.23.9"], "v1.23.10"),
+        ("1.23.11", ["v1.23.10", "v1.23.11"], "v1.23.10"),
+        ("1.19.0", ["v1.18.0", "v1.19.0"], "v1.18.0"),
+        ("1.0.0", ["v1.0.0"], "v0.0.0"),
+    ],
+)
+def test_a_rerun_of_prepare_after_publish_compares_against_the_release_before(version: str, tags: list, base: str):
+    """46-T2: after v{version} is published, a re-run of verify (prepare --check) must not refuse the release it is checking.
+
+    The base is the release before it, so the check is the fixed point the tagged commit already has."""
+    assert guard.previous_release(version, tags) == base
