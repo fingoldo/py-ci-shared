@@ -103,17 +103,22 @@ class _Keys:
 
 
 def _text_parts(node: ast.AST) -> Iterable[str]:
-    """Every string literal reachable through ``+``, ``%``, f-strings and a ``.format`` receiver."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        yield node.value
-    elif isinstance(node, ast.JoinedStr):
-        for value in node.values:
-            yield from _text_parts(value)
-    elif isinstance(node, ast.BinOp):
-        yield from _text_parts(node.left)
-        yield from _text_parts(node.right)
-    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
-        yield from _text_parts(node.func.value)
+    """Every string literal reachable through ``+``, ``%``, f-strings and a ``.format`` receiver, in source order.
+
+    An explicit stack, not recursion: a long ``+`` chain is as deep as it is long and must not reach the recursion limit.
+    """
+    pending: list[ast.AST] = [node]
+    while pending:
+        current = pending.pop()
+        if isinstance(current, ast.Constant) and isinstance(current.value, str):
+            yield current.value
+        elif isinstance(current, ast.JoinedStr):
+            pending.extend(reversed(current.values))
+        elif isinstance(current, ast.BinOp):
+            pending.append(current.right)
+            pending.append(current.left)
+        elif isinstance(current, ast.Call) and isinstance(current.func, ast.Attribute):
+            pending.append(current.func.value)
 
 
 def _module_strings(tree: ast.Module) -> dict[str, str]:
