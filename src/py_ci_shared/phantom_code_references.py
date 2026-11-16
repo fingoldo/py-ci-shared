@@ -61,6 +61,7 @@ from typing import Optional
 from ._ci_install_parts import is_stdlib
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, load_json, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
+from ._phantom_vocabulary import is_sql_token, local_package_prefixes, stdlib_names
 
 __all__ = [
     "assert_no_count_claim_mismatches",
@@ -82,6 +83,7 @@ class _KnownNames(set):  # type: ignore[type-arg]
 
     def __contains__(self, item: object) -> bool:
         return set.__contains__(self, item) or (isinstance(item, str) and "." not in item and is_stdlib(item))
+
 
 # A backticked token. Kept narrow on purpose: identifiers, dotted members, a trailing "(" and test-file
 # names; anything with spaces, operators or quotes is prose in code font, not a reference.
@@ -633,12 +635,13 @@ def _token_problem(
     spelled: "tuple[frozenset[str], dict[str, frozenset[int]], list[str]]",
     imported: frozenset[str],
     declared_heads: frozenset[str],
+    local_prefixes: tuple[str, ...] = (),
 ) -> "Optional[str]":
     """The violation text for one backticked *token* (without the ``rel:line:`` prefix), or None when it is fine."""
     tf = _TEST_FILE_RE.match(token)
     if tf:
         return _test_file_problem(token, tf.group(1), test_names, test_paths)
-    if _spelled_out_elsewhere(token, *spelled):
+    if _spelled_out_elsewhere(token, *spelled) or is_sql_token(token):
         return None
     im = _IDENT_RE.match(token)
     if not im:
@@ -657,15 +660,32 @@ def _token_problem(
         return None
     if head in known and repo_class:
         return f"`{token}` names a member `{head}` does not declare"
-    # A lowercase bare identifier in backticks is a parameter, a keyword argument or a local far more
-    # often than a claim about a declared function; only a call suffix or a dotted member makes it one.
-    if head[0].islower() and member is None and not im.group("call"):
+    if _not_judged_as_a_repo_name(im, imported, declared_heads, local_prefixes):
         return None
     return f"`{token}` names nothing declared in this repo"
 
 
+def _not_judged_as_a_repo_name(im: "re.Match[str]", imported: frozenset[str], declared_heads: frozenset[str], local_prefixes: tuple[str, ...]) -> bool:
+    """Whether an undeclared token is still no claim about this repo: a name the commented file binds with an import
+    (``from unittest.mock import AsyncMock`` then ``AsyncMock()``), a lowercase bare identifier (a parameter or a local far more
+    often than a declared function; only a call suffix or a dotted member makes it a claim), or, with the repo-local prefix rule
+    on, a head that is not under one of the repo's own package names."""
+    head, member = im.group("head"), im.group("member")
+    if head in imported and head not in declared_heads:
+        return True
+    if head[0].islower() and member is None and not im.group("call"):
+        return True
+    return bool(local_prefixes) and not any(head.startswith(prefix) for prefix in local_prefixes)
+
+
 def find_phantom_code_references(
-    files: Iterable[Path], repo_root: Path, declared: set[str], *, extra_known: Iterable[str] = (), allow_unparsed: bool = False
+    files: Iterable[Path],
+    repo_root: Path,
+    declared: set[str],
+    *,
+    extra_known: Iterable[str] = (),
+    allow_unparsed: bool = False,
+    local_prefixes: Optional[Iterable[str]] = None,
 ) -> list[str]:
     """``"<rel>:<line>: `<token>` names nothing in this repo"`` for every backticked reference in a comment
     or docstring that resolves to neither a test file under ``repo_root`` nor a declared name.
@@ -680,12 +700,12 @@ def find_phantom_code_references(
     A dotted token whose head this repo does not declare (a stdlib module, a builtin, an installed dependency such as
     ``pyutilz.llm.get_llm_provider``) is real when it resolves by import, attribute by attribute, so a misspelled
     ``os.path.joinn`` is reported and an external path a comment cites is not."""
-    import builtins
-
     files = list(files)
     # Python's own names resolve without a declaration: builtins (`ValueError`) and stdlib modules (`ftplib.FTP`).
     repo_known = set(declared) | set(extra_known) | _NEVER_REFERENCES
-    known = _KnownNames(repo_known | set(dir(builtins)))
+    known = _KnownNames(repo_known | stdlib_names())
+    # None asks for the repo's own package names (see ``local_package_prefixes``); an empty iterable turns the rule off.
+    prefixes = local_package_prefixes(repo_root) if local_prefixes is None else tuple(local_prefixes)
     # The heads of every dotted declaration, once: `_token_problem` asks per token whether a head has any member declared.
     declared_heads = frozenset(k.partition(".")[0] for k in declared if "." in k)
     test_names, test_paths = _test_file_index(repo_root)
@@ -710,6 +730,7 @@ def find_phantom_code_references(
                     (spelled_exact, spelled_words, spelled_constants),
                     imported,
                     declared_heads,
+                    prefixes,
                 )
                 if problem_text is not None:
                     violations.append(f"{rel}:{lineno}: {problem_text}")
@@ -839,6 +860,7 @@ def assert_no_phantom_code_references(
     extra_known: Iterable[str] = (),
     min_files: int = 1,
     allow_unparsed: bool = False,
+    local_prefixes: Optional[Iterable[str]] = None,
 ) -> None:
     """Fail on any phantom reference not in the committed baseline; also fail when a baseline entry is no
     longer reproduced (the debt was paid - prune it), so the baseline only ever shrinks. Fewer than *min_files*
@@ -851,7 +873,9 @@ def assert_no_phantom_code_references(
     files = list(files)
     if len(files) < min_files:
         pytest.fail(f"only {len(files)} file(s) given; expected at least {min_files} -- this would check nothing")
-    violations = set(find_phantom_code_references(files, repo_root, declared, extra_known=extra_known, allow_unparsed=allow_unparsed))
+    violations = set(
+        find_phantom_code_references(files, repo_root, declared, extra_known=extra_known, allow_unparsed=allow_unparsed, local_prefixes=local_prefixes)
+    )
     baseline: set[str] = set()
     if baseline_path is not None and baseline_path.exists():
         baseline = set(load_json(baseline_path)["phantom_references"])

@@ -4,6 +4,7 @@ quiet on the shapes that look similar but are not claims."""
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -413,4 +414,49 @@ def test_known_genuine_phantoms_stay_reported_next_to_longer_spelled_out_strings
         "pkg/doc.py:1: `LBD` names nothing declared in this repo",
         "pkg/doc.py:1: `_drop_age_excluded_candidates` names nothing declared in this repo",
         "pkg/doc.py:1: `CantMissCandidate.severity` names nothing declared in this repo",
+    ]
+
+
+# 41-T10: the declared vocabulary. Each source below is a red test first: the gate reported these as phantoms.
+
+
+def test_stdlib_source_names_the_standard_library_and_builtins(tmp_path: Path) -> None:
+    """Source 1: ``sys.stdlib_module_names`` and the builtins are declared vocabulary, not repo names."""
+    from py_ci_shared._phantom_vocabulary import stdlib_names
+
+    assert set(sys.stdlib_module_names) <= stdlib_names()
+    assert {"print", "ValueError"} <= stdlib_names()
+    doc = _write(tmp_path, "pkg/doc.py", "# `asyncio` and `print()` are used, `GhostFunctionX` is not\nx = 1\n")
+    assert find_phantom_code_references([doc], tmp_path, python_declarations([doc])) == ["pkg/doc.py:1: `GhostFunctionX` names nothing declared in this repo"]
+
+
+def test_a_name_bound_by_an_import_in_the_same_file_is_declared_bare_or_called(tmp_path: Path) -> None:
+    """Source 2: ``from unittest.mock import AsyncMock`` makes ``AsyncMock`` and ``AsyncMock()`` declared in that file."""
+    p = _write(
+        tmp_path,
+        "pkg/mod.py",
+        "from unittest.mock import AsyncMock\nfrom asyncio import sleep\n"
+        "# the double is `AsyncMock()` and the pause is `sleep()`, but `GhostCall()` is not\nx = 1\n",
+    )
+    assert find_phantom_code_references([p], tmp_path, python_declarations([p])) == ["pkg/mod.py:3: `GhostCall()` names nothing declared in this repo"]
+
+
+def test_sql_keywords_in_backticked_sql_are_declared_vocabulary(tmp_path: Path) -> None:
+    """Source 3: SQL keywords (``LIKE``) and the upsert alias ``EXCLUDED`` are SQL vocabulary, not repo names."""
+    from py_ci_shared._phantom_vocabulary import sql_keywords
+
+    assert {"LIKE", "EXCLUDED", "ON", "CONFLICT"} <= sql_keywords()
+    doc = _write(tmp_path, "pkg/doc.py", "# the filter is `LIKE` and the upsert takes `EXCLUDED.col`, `GhostSqlThing` is not\nx = 1\n")
+    assert find_phantom_code_references([doc], tmp_path, python_declarations([doc])) == ["pkg/doc.py:1: `GhostSqlThing` names nothing declared in this repo"]
+
+
+def test_repo_local_prefix_rule_only_judges_names_of_this_repo(tmp_path: Path) -> None:
+    """Source 4: with ``local_prefixes`` a bare external method name is not judged; a name under the repo's package prefix is."""
+    doc = _write(tmp_path, "pkg/doc.py", "# the vendor call is `to_plotly_json()`, the repo's is `mypkg_gone()`\nx = 1\n")
+    assert find_phantom_code_references([doc], tmp_path, python_declarations([doc]), local_prefixes=("mypkg",)) == [
+        "pkg/doc.py:1: `mypkg_gone()` names nothing declared in this repo"
+    ]
+    assert find_phantom_code_references([doc], tmp_path, python_declarations([doc]), local_prefixes=()) == [
+        "pkg/doc.py:1: `to_plotly_json()` names nothing declared in this repo",
+        "pkg/doc.py:1: `mypkg_gone()` names nothing declared in this repo",
     ]
