@@ -163,7 +163,7 @@ def _source_table_pin(spec: Any, rel: str) -> Pin:
     if isinstance(spec, dict):
         if "path" in spec:
             return _pin(rel, 0, "pyproject", "package", None, sibling=True)
-        ref = spec.get("rev") or spec.get("tag") or spec.get("branch")
+        ref = spec.get("rev") or spec.get("tag") or spec.get("branch")  # get-chain-ok: string ref values from a uv source table, never a falsy number
         if spec.get("branch") and not (spec.get("rev") or spec.get("tag")):
             return Pin(rel, 0, "pyproject", "package", str(ref), "branch")
         return _pin(rel, 0, "pyproject", "package", str(ref) if ref else None)

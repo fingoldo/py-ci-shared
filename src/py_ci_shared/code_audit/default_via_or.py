@@ -6,6 +6,7 @@ list of setting names (max_tokens, seed, timeout...). This scanner is the genera
 
 from __future__ import annotations
 import logging
+import re
 
 import ast
 from .._core.unparse import unparse_stable
@@ -432,10 +433,26 @@ def _is_unit_divisor_guard(node: ast.AST, parent_map: dict[int, tuple[ast.AST, s
 _NONE_RETURNING_METHODS = frozenset({"append", "add", "extend", "update", "write", "info", "debug", "warning", "error", "insert", "clear"})
 
 
+_GET_CHAIN_MARKER = re.compile(r"#\s*get-chain-ok:\s*\S")
+
+
+def _is_get_chain_pair(lhs: ast.AST, rhs: ast.AST) -> bool:
+    """``d.get("a") or d.get("b")``: two `.get()` lookups. Kept flagged (audit 41-T5): syntactically identical to a numeric
+    ``kwargs.get("timeout") or d.get("x")`` that rewrites a real 0, so only a reasoned line marker clears it."""
+    return _get_call_key(lhs) is not None and _get_call_key(rhs) is not None
+
+
+def _get_chain_cleared(lhs: ast.AST, rhs: ast.AST, src_lines: list[str], lineno: int) -> bool:
+    """True when the pair is a `.get()` chain and line *lineno* carries ``# get-chain-ok: <reason>`` with a non-empty reason.
+    Only that line is cleared."""
+    if not _is_get_chain_pair(lhs, rhs) or not 1 <= lineno <= len(src_lines):
+        return False
+    return _GET_CHAIN_MARKER.search(src_lines[lineno - 1]) is not None
+
+
 def _is_non_default_idiom(node: ast.BoolOp) -> bool:
     """True for an `or` shape with no falsy value to rewrite (audit 41-T5). ``seen.append(x) or True``: the left operand is
-    a None-returning method, so the fallback is the stub's return value, not a default. ``d.get("a") or d.get("b")``: every
-    operand is a string lookup, and no constant default can replace a falsy setting."""
+    a None-returning method, so the fallback is the stub's return value, not a default."""
     first, last = node.values[0], node.values[-1]
     return (
         isinstance(first, ast.Call)
@@ -920,7 +937,11 @@ def scan_default_via_or_trap(
             for position in range(len(node.values) - 1):
                 rhs = node.values[position + 1]
                 lhs = node.values[position]
-                if _pair_is_exempt(lhs, rhs, path_names) or is_line_exempt(src_lines, node.lineno, "default_via_or"):
+                if (
+                    _pair_is_exempt(lhs, rhs, path_names)
+                    or is_line_exempt(src_lines, node.lineno, "default_via_or")
+                    or _get_chain_cleared(lhs, rhs, src_lines, node.lineno)
+                ):
                     continue
                 # Also skip when the LHS is wrapped in a non-mutating expression
                 # whose first inner Call is documented-safe (e.g. `int(os.cpu_count() or 1)`,
