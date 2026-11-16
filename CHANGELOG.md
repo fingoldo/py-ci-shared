@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (audit 49-T3): the text-ratchet gates (`skip_as_pass`, `wallclock_test_waits`, `guard_without_fixture`, `git_child_env`, `dup_baseline_percent_key` and others built on `enforce_findings`) now fail with the whole report: header, one finding per line, guidance, and the real reason for a stale or unjustified entry (previously "0 new violation(s)"). A PASS prints its count as a note on its row. Exit codes are unchanged. What to do: nothing for a green consumer; for a red one, read the listed findings, and for a stale entry delete the named keys from the baseline file.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
