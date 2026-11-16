@@ -34,6 +34,20 @@ def _find(root, **kw):
     return find_nan_admitted_by_reject_guard(root, use_git=False, **kw)
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _corpus(tmp_path: Path, files: dict) -> Path:
     for rel, data in files.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
@@ -149,6 +163,9 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_nan_admitted_by_reject_guard(root, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_refreshed(
+        baseline, "test_a_baseline_accepts_known_findings_and_fails_new_ones", "NaN-admitting reject-guard branch that the INSERT_TOP fixture triggers"
+    )
     assert_nan_admitted_by_reject_guard(root, baseline_path=baseline, use_git=False)
     (root / "n.py").write_text(textwrap.dedent(INSERT_TOP), encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):

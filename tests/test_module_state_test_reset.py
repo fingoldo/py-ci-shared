@@ -14,6 +14,20 @@ FILLS = b"_CACHE = {}\n\n\ndef remember(key, value):\n    _CACHE[key] = value\n"
 IDLE_TEST = b"def test_something():\n    assert True\n"
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _corpus(tmp_path: Path, production: bytes, test: bytes = IDLE_TEST) -> tuple[Path, Path]:
     (tmp_path / "pkg").mkdir(parents=True, exist_ok=True)
     (tmp_path / "tests").mkdir(parents=True, exist_ok=True)
@@ -110,4 +124,9 @@ def test_assert_fails_with_the_finding_and_passes_through_a_baseline(tmp_path, m
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_module_state_test_reset(root, tests, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_refreshed(
+        baseline,
+        "test_assert_fails_with_the_finding_and_passes_through_a_baseline",
+        "module-state write-without-reset branch (_CACHE is written from a function and no test resets it)",
+    )
     assert_module_state_test_reset(root, tests, baseline_path=baseline, use_git=False)

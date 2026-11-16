@@ -18,6 +18,20 @@ def _refresh_may_grow(monkeypatch):
 HEADER = "import os, struct, random, secrets, hashlib\nimport numpy as np\nfrom mylib import set_numba_random_seed\n"
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _write(root: Path, rel: str, body: str, *, bom: bool = False) -> None:
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,6 +164,7 @@ def test_assert_raw_and_baseline(tmp_path: Path) -> None:
         assert_numba_seeds_fit_int64(src, baseline_path=baseline, refresh=False, use_git=False)
     with pytest.raises(pytest.skip.Exception):
         assert_numba_seeds_fit_int64(src, baseline_path=baseline, refresh=True, use_git=False)
+    _justify_refreshed(baseline, "test_assert_raw_and_baseline", "getrandbits(64) seed-overflow branch (a numba seed wider than int64)")
     assert_numba_seeds_fit_int64(src, baseline_path=baseline, refresh=False, use_git=False)
     _write(src, "m.py", "def f():\n    set_numba_random_seed(random.getrandbits(64))\n    set_numba_random_seed(random.getrandbits(64))\n")
     with pytest.raises(pytest.fail.Exception, match="1 new finding"):

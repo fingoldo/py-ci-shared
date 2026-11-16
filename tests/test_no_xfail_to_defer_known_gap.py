@@ -29,6 +29,20 @@ def _refresh_may_grow(monkeypatch):
     monkeypatch.setenv("PY_CI_SHARED_REFRESH_ALLOW_GROW", "1")
 
 
+def _justify_refreshed(baseline: Path, function: str, branch: str) -> None:
+    """Replace the refresh marker on each entry this test's refresh wrote with a reason that names its own key."""
+    import json
+
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        if entry.get("note", "").lstrip().startswith("NEEDS-JUSTIFICATION"):
+            entry["note"] = (
+                f"{key}: this finding is seeded by tests/{Path(__file__).name}::{function} to exercise the {branch} "
+                "of the gate, and it is not a defect in repo code."
+            )
+    baseline.write_bytes((json.dumps(data, indent=2, sort_keys=True) + "\n").encode("utf-8"))
+
+
 def _found(tmp_path: Path, body: str, **kw: object) -> list[tuple[str, int]]:
     tests = tmp_path / "tests"
     tests.mkdir(exist_ok=True)
@@ -182,4 +196,9 @@ class TestCorpusContract:
         with pytest.raises(pytest.skip.Exception):
             assert_no_xfail_to_defer(tests, baseline_path=bl, known_gap_modules=["helpers.gaps"], refresh=True, use_git=False)
         assert sum(e["count"] for e in json.loads(bl.read_text(encoding="utf-8"))["entries"].values()) == 1
+        _justify_refreshed(
+            bl,
+            "TestCorpusContract::test_the_assert_passes_known_gap_modules_through_and_the_ratchet_counts_the_rule",
+            "known-gap-never-closes branch (a known_gap call with gap_closed=False)",
+        )
         assert_no_xfail_to_defer(tests, baseline_path=bl, known_gap_modules=["helpers.gaps"], use_git=False)
