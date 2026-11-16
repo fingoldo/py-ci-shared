@@ -725,6 +725,11 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("cuda_kernel_names").assert_cuda_kernel_names(d, compiled=_compiled_sources(d), exclude=("excluded",), use_git=False),
             tokens=("the kernel lost_kernel", "the kernel lb_lost", "the kernel ab_TYPENAME", "the kernel covered_kernel"),
         ),
+        Canary(
+            "tracked_env_packages",
+            lambda d: _gate("tracked_env_packages").assert_tracked_env_packages(d, use_git=False),
+            parses=False,  # judges directory NAMES, never contents; a syntax error is not its subject
+        ),
     ]
 }
 

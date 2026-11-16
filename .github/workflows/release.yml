@@ -35,8 +35,8 @@ jobs:
     # Pinned, not ubuntu-latest (which moves to 26.04 from 2026-10-19). Move to ubuntu-26.04 once self-ci's
     # ubuntu-26.04 leg is green; see the comment on that leg for what to verify.
     runs-on: ubuntu-24.04
-    # Up to 100 minutes waiting for self-ci of the tagged commit (observed queue plus run: 2 h on the single ubuntu label), then the whole suite.
-    timeout-minutes: 120
+    # Up to 5h33m waiting for self-ci of the tagged commit (observed queue plus run: queues of 3.5 h and 5.4 h were seen on the single ubuntu and macos labels), then the whole suite.
+    timeout-minutes: 350
     permissions:
       contents: read
       actions: read  # self-ci's runs for the tagged commit
@@ -97,7 +97,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ github.sha }}
-        run: python .github/scripts/release_guard.py ci-green --repo "$GITHUB_REPOSITORY" --sha "$SHA" --wait 6000
+        run: python .github/scripts/release_guard.py ci-green --repo "$GITHUB_REPOSITORY" --sha "$SHA" --wait 20000
 
       # The Postgres binaries are on the runner but not on PATH; without PG_BIN the real-server tests skip.
       - name: Point PG_BIN at the runner's Postgres

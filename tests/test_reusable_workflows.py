@@ -51,7 +51,8 @@ def test_every_workflow_declares_least_privilege_permissions(path: Path):
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
 def test_every_job_has_a_timeout(path: Path):
-    assert_all_jobs_have_timeout(path)
+    # release.yml waits up to 5h33m for self-ci of the tagged commit, so its verify job is capped at 350 minutes (see pyproject).
+    assert_all_jobs_have_timeout(path, max_minutes=350 if path.name == "release.yml" else 120)
 
 
 @pytest.mark.parametrize("path", WORKFLOWS + ACTIONS, ids=lambda p: p.parent.name + "/" + p.name)

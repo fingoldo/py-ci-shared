@@ -54,7 +54,7 @@ Re-confirmed this round (no new evidence, not re-raised): release environment wi
   Other read-only API results: default workflow permissions `read`, `can_approve_pull_request_reviews:false`, fork-PR approval `first_time_contributors`, repo secrets are exactly CODECOV_TOKEN and CONSUMER_READ_TOKEN (RELEASE_TOKEN is the environment secret), environment `release` has a custom branch policy and no required reviewer (accepted).
 - **Impact:** the setting would refuse an unpinned `uses:` at run time even if the meta-test were bypassed; this is the settings half of 46-F14 (WON'T FIX in code).
 - **Proposed fix:** owner turns on "Require actions to be pinned to a full-length commit SHA" (no code change, no consumer effect), or re-confirms 46-F14.
-- **Disposition:** DEFERRED: the fix is the repository setting `sha_pinning_required`, which only the owner can change in GitHub settings; no code change exists and the agent did not alter repository settings. Owner decision: enable it, or re-confirm 46-F14 (WON'T FIX in code).
+- **Disposition:** RESOLVED: `sha_pinning_required` is true on fingoldo/py-ci-shared (set through the Actions permissions API, 2026-11-17). Checked first: every `uses:` in py-ci-shared's workflows is already a full SHA, so the setting changes no run here. Consumers set their own repo setting.
 
 ## Considered and not raised
 - Expression injection: no `run:` line contains `${{`; every `${{ inputs.* }}` is an `env:` value (lint-advisory.yml:175-266 and the others). `matrix.name` in corpus-drift run blocks comes from the `plan` output built from configs/consumers.toml (repo-controlled), not from an event field. No `github.event.*` or `head_ref` in `run:`.

@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
+
 - New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
 
 - New gate `global_write_via_reexport_alias` (`assert_global_write_via_reexport_alias`): the write to a global through a re-exporting facade; a write through a re-exporting facade changes only the facade's copy, not the global. Nothing to do for existing consumers until they enable it.

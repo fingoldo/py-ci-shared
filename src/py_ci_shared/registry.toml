@@ -1871,6 +1871,13 @@ since = "1.4.1"
 summary = "The linter versions every consuming repo runs, defined in one place"
 
 [[gate]]
+name = "tracked_env_packages"
+kind = "gate"
+entries = ["assert_tracked_env_packages"]
+since = "1.23.12"
+summary = "A tracked Python file under an env, venv, build or dist directory is invisible to code_audit"
+
+[[gate]]
 name = "tracked_secret_shapes"
 kind = "gate"
 entries = ["assert_no_tracked_secret_shapes"]
