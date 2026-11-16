@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, nodes_of, scan_python
+from ._core.unparse import unparse_stable
 
 __all__ = ["MARKER", "RULE", "assert_cuda_ktc_residency", "find_cuda_ktc_residency"]
 
@@ -140,7 +141,7 @@ def _registration_name(keywords: "dict[str, ast.expr]", name_keyword: str, scope
         reg = _lookup(scopes, reg.id) or reg
     if isinstance(reg, ast.Constant) and isinstance(reg.value, str):
         return reg.value
-    return ast.unparse(reg) if reg is not None else "<unnamed>"
+    return unparse_stable(reg) if reg is not None else "<unnamed>"
 
 
 def _findings_in(

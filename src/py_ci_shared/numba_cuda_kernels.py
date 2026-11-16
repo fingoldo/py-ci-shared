@@ -65,6 +65,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, child_nodes, scan_python, walk
+from ._core.unparse import unparse_stable
 
 __all__ = [
     "MARKER",
@@ -444,7 +445,7 @@ def _rmw_findings(info: _KernelInfo, stmt: ast.stmt, ctx: _Ctx) -> "list[Finding
     for t in targets:
         if not (isinstance(t, ast.Subscript) and isinstance(t.value, ast.Name) and (t.value.id in info.params or t.value.id in info.shared)):
             continue
-        if isinstance(stmt, ast.Assign) and ast.unparse(t) not in {ast.unparse(m) for m in _walk_expr(stmt.value) if isinstance(m, ast.Subscript)}:
+        if isinstance(stmt, ast.Assign) and unparse_stable(t) not in {unparse_stable(m) for m in _walk_expr(stmt.value) if isinstance(m, ast.Subscript)}:
             continue
         if not all(_is_uniform(e, info.uniform, info.params, info.aliases) for e in _index_elements(t)):
             continue
@@ -453,7 +454,7 @@ def _rmw_findings(info: _KernelInfo, stmt: ast.stmt, ctx: _Ctx) -> "list[Finding
                 info.rel,
                 stmt.lineno,
                 RULE_RMW,
-                f"`{info.fn.name}`: `{ast.unparse(t)}` is read and written with an index every thread of the block shares, so concurrent updates are lost; "
+                f"`{info.fn.name}`: `{unparse_stable(t)}` is read and written with an index every thread of the block shares, so concurrent updates are lost; "
                 "use `cuda.atomic.add`, reduce into a per-thread cell first, or restrict the update to one thread (`if tid == 0:`)",
             )
         )
@@ -490,7 +491,7 @@ def _kernel_findings(k: _Kernel, aliases: ImportAliases, rel: str) -> "list[Find
 
 
 def _short(node: ast.AST) -> str:
-    text = ast.unparse(node)
+    text = unparse_stable(node)
     return text if len(text) <= 60 else text[:57] + "..."
 
 
