@@ -695,7 +695,7 @@ def main(argv: Optional[Sequence[str]] = None, *, api: Optional[Api] = None, now
         result = collect(consumer, bounded, at, can_read_private=can_read_private, skip_workflows=skipped_workflows)
         state = "skipped" if result.skipped else ("ERROR" if result.error else f"{len(result.workflows)} workflow(s)")
         with lock:
-            write_text(err=True, text=f"ci_health: {consumer.name}: {state} ({time.monotonic() - started:.0f} s)\n")
+            write_text(err=True, text=f"ci_health: {consumer.name}: {state} ({time.monotonic() - started:.0f} s)\n")  # lock-io-ok: the lock keeps each progress line whole on stderr; the write is one short line
             sys.stderr.flush()
         return result
 
