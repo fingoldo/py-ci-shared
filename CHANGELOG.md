@@ -8,6 +8,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - `default_via_or` (audit 41-T5): a `.get("a") or .get("b")` chain stays flagged, and a line carrying `# get-chain-ok: <reason>` (non-empty reason) clears only that line. The two string-ref chains in `_adoption_pins.py` and `sibling_floor_skew.py` carry the marker. Nothing to do for consumers: the flag is unchanged; the marker is new.
 
+- `conceded_defect_pins` (audit 41-T7): a test whose def line or the comment lines above it carry `# comment-cites-ok: <reason>` (non-empty) is not listed; the concession words stay in the vocabulary. Nothing to do for consumers: the marker is new and the listing is unchanged for tests without it.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
