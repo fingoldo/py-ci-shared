@@ -214,3 +214,26 @@ def test_verification_inside_a_branch_does_not_guard_the_load(tmp_path):
 def test_allow_pickle_variable_is_reported_but_literal_false_is_not(tmp_path):
     assert len(_found(tmp_path, "import numpy as np\n\n\ndef f(p, a):\n    return np.load(p, allow_pickle=a)\n")) == 1
     assert _found(tmp_path, "import numpy as np\n\n\ndef f(p):\n    return np.load(p, allow_pickle=False)\n") == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # 40-T11: a verify or produce call must receive the loaded value, not any unrelated name
+        "import pickle\n\n\ndef f(req, store):\n    store.save(req)\n    return pickle.loads(req.body)\n",
+        "import pickle\n\n\ndef f(req):\n    verify_user(req)\n    return pickle.loads(req.body)\n",
+        "import pickle\n\n\ndef f(req):\n    log = pickle.dumps(1)\n    return pickle.loads(req.body)\n",
+        "import hashlib\nimport pickle\n\n\ndef f(req):\n    k = hashlib.sha256(b'x').hexdigest()\n    return pickle.loads(req.body)\n",
+    ],
+)
+def test_an_unrelated_verify_or_produce_call_does_not_exempt_the_load(tmp_path, source):
+    assert len(_found(tmp_path, source)) == 1
+
+
+def test_a_verify_or_produce_call_on_the_loaded_value_still_exempts_it(tmp_path):
+    verified = "import hashlib\nimport pickle\n\n\ndef f(req):\n    hashlib.sha256(req.body).hexdigest()\n    return pickle.loads(req.body)\n"
+    assert _found(tmp_path / "a", verified) == []
+    via_name = "import hashlib\nimport pickle\n\n\ndef f(req):\n    data = req.body\n    assert hashlib.sha256(data).hexdigest() == 'x'\n    return pickle.loads(data)\n"
+    assert _found(tmp_path / "b", via_name) == []
+    produced = "import pickle\n\n\ndef f(req):\n    blob = pickle.dumps(req)\n    return pickle.loads(blob)\n"
+    assert _found(tmp_path / "c", produced) == []

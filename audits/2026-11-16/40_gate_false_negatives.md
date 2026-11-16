@@ -136,7 +136,7 @@ Not covered: CUDA/GPU/njit gates (dimension 53), the dart/nginx/sql/workflow tex
   (`k = hashlib.sha256(b"x").hexdigest(); pickle.loads(req.body)` is also exempt.) The docstring calls the rule "advisory-grade by construction" for hashes computed elsewhere; these exemptions need no data flow at all.
 - **Impact:** the P-class "downloaded bytes are code" passes with an unrelated call in the same function.
 - **Proposed fix:** require the verify/produce call to receive the loaded variable (same name among its arguments), the way `_core` taint helpers in `provenance_flow` do. BEHAVIOUR CHANGE.
-- **Disposition:** DEFERRED. Requiring the verify or produce call to receive the loaded variable needs a small taint walk and changes which consumer findings are exempt; not done in this round.
+- **Disposition:** RESOLVED in the commit that adds the "unrelated verify or produce call" tests. `_names_of` now yields dotted chains and `_touches` requires the verifier's arguments to share one with the loaded value or with a name tied to it by assignment. Red run: 2 of the 4 unrelated cases exempted the load (`store.save(req)`, `verify_user(req)`); the other two were already flagged. Changelog Behaviour change (40-T11).
 
 ## 40-T12 (P3) `possibly_unbound_local`: walrus binding under a boolean chain, and `with` blocks that swallow
 - **Evidence:** `possibly_unbound_local.py` docstring: "a name bound ... by a `with` is treated as bound afterwards". `b3.py`, 0 findings: `if c and (y := g()): pass` then `return y`; `with contextlib.suppress(Exception): y = g()` then `return y`; `with pytest.raises(ValueError): y = g()` then `return y`. (`if/elif` without else, `try/except pass`, `match` without wildcard, async, class method are flagged.)

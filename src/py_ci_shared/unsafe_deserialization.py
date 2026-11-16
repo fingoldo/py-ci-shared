@@ -404,9 +404,52 @@ def _load_target(call: ast.Call, aliases: ImportAliases) -> Optional[ast.Call]:
     return None
 
 
+def _dotted(node: ast.AST) -> Optional[str]:
+    """``req.body`` for an attribute chain rooted at a name, else None."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted(node.value)
+        return None if base is None else f"{base}.{node.attr}"
+    return None
+
+
 def _names_of(node: ast.AST, aliases: ImportAliases) -> set[str]:
-    """Local names read in *node*; imported modules and functions name no data."""
-    return {n.id for n in shared_walk(node) if isinstance(n, ast.Name) and not aliases.is_imported(n.id)}
+    """The data expressions *node* reads, as dotted chains (``req.body``, ``data``). A method call contributes its receiver
+    and its arguments, not the method. Imported modules and functions name no data."""
+    out: set[str] = set()
+
+    def visit(n: ast.AST) -> None:
+        if isinstance(n, ast.Name):
+            if not aliases.is_imported(n.id):
+                out.add(n.id)
+            return
+        if isinstance(n, ast.Attribute):
+            dotted = _dotted(n)
+            if dotted is not None:
+                if not aliases.is_imported(dotted.split(".", 1)[0]):
+                    out.add(dotted)
+                return
+            visit(n.value)
+            return
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute):
+            visit(n.func.value)
+            for arg in [*n.args, *(k.value for k in n.keywords)]:
+                visit(arg)
+            return
+        for child in ast.iter_child_nodes(n):
+            visit(child)
+
+    visit(node)
+    return out
+
+
+def _arg_names(call: ast.Call, aliases: ImportAliases) -> set[str]:
+    """The data a call receives: its arguments' chains (the callee and its receiver are not data)."""
+    out: set[str] = set()
+    for arg in [*call.args, *(k.value for k in call.keywords)]:
+        out |= _names_of(arg, aliases)
+    return out
 
 
 def _related_names(scope: ast.AST, seeds: set[str], aliases: ImportAliases) -> set[str]:
@@ -433,7 +476,7 @@ def _related_names(scope: ast.AST, seeds: set[str], aliases: ImportAliases) -> s
 def _touches(candidate: ast.Call, related: set[str], aliases: ImportAliases) -> bool:
     """Does the verification or producer *candidate* deal with the loaded value? A call with no data at all
     (``self._check()``) cannot be judged and counts; ``hashlib.sha256(b"unrelated")`` has data and it is not the payload."""
-    names = _names_of(candidate, aliases)
+    names = _arg_names(candidate, aliases)
     if names & related:
         return True
     return not names and not any(isinstance(n, ast.Call) and (n.args or n.keywords) for n in shared_walk(candidate))
