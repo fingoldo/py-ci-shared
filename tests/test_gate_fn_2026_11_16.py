@@ -204,6 +204,14 @@ def test_t8_immutable_defaults_are_not_flagged(tmp_path: Path):
     assert scan_mutable_defaults(tmp_path) == []
 
 
+# ---- 40-T9: the alias-proof AST rule is the default -----------------------------------------
+
+
+def test_t9_default_flags_a_from_time_import_sleep(tmp_path: Path):
+    _write(tmp_path, "tests/test_a.py", "from time import sleep\n\n\ndef test_a():\n    sleep(5)\n")
+    assert find_wallclock_test_waits(tmp_path), "the default must be the AST rule, which sees the alias"
+
+
 def test_t7_except_star_broad_swallow_is_flagged(tmp_path: Path):
     from py_ci_shared.code_audit.broad_except import scan_broad_except_swallows
 
