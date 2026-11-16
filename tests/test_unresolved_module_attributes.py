@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Union
 
@@ -376,6 +377,13 @@ def test_a_baseline_accepts_known_findings_and_rejects_new_ones(tmp_path):
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):  # a refresh run skips by design after writing the file
         assert_no_unresolved_module_attributes(root, use_git=False, baseline_path=baseline, refresh=True, grow=True)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = (
+            f"{key} is seeded by tests/test_unresolved_module_attributes.py::test_a_baseline_accepts_known_findings_and_rejects_new_ones "
+            "to exercise the baseline accept branch of the gate, and is not a defect in repo code."
+        )
+    baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     assert_no_unresolved_module_attributes(root, use_git=False, baseline_path=baseline)
     (root / "user.py").write_text("import helpers\nhelpers.old\nhelpers.fresh\n", encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):

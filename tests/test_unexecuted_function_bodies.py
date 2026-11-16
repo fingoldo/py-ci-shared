@@ -350,6 +350,9 @@ def test_the_ratchet_accepts_the_baseline_fails_on_a_new_function_and_demands_re
     report, baseline = _ratchet_tree(tmp_path)
     with pytest.raises(pytest.skip.Exception):
         _assert(tmp_path, report, baseline, refresh=True, grow=True)
+    _seed_reasons(
+        baseline, "tests/test_unexecuted_function_bodies.py::test_the_ratchet_accepts_the_baseline_fails_on_a_new_function_and_demands_removal_of_a_covered_one"
+    )
     _assert(tmp_path, report, baseline)  # clean: both accepted
     # one function gains coverage: the baseline entry for it is now stale and must be removed
     covered = _write_report(tmp_path, {"pkg/seed.py": ([1, 2, 3, 6], [7])}, name="after.json")
@@ -365,6 +368,14 @@ def test_the_ratchet_accepts_the_baseline_fails_on_a_new_function_and_demands_re
         _assert(tmp_path, again, baseline)
     with pytest.raises(AssertionError, match="probe"):
         _assert(tmp_path, again, baseline, refresh=True)
+
+
+def _seed_reasons(baseline: Path, test: str) -> None:
+    """Give each refreshed entry its reason: the finding is a PROBE seeded by this test's fixture, not a repo defect."""
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = f"{key} is seeded by {test} to exercise the unexecuted-body ratchet branch of the gate, and is not a defect in repo code."
+    baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
 
 
 # ---- CLI ----
@@ -391,6 +402,7 @@ def test_cli_baseline_refresh_seeds_with_allow_grow_then_passes(tmp_path, capsys
     assert _cli(tmp_path, "--baseline", str(baseline), "--refresh-baseline") != 0  # seeding needs the growth opt-in
     capsys.readouterr()
     assert _cli(tmp_path, "--baseline", str(baseline), "--refresh-baseline", "--allow-grow") == 0
+    _seed_reasons(baseline, "tests/test_unexecuted_function_bodies.py::test_cli_baseline_refresh_seeds_with_allow_grow_then_passes")
     assert _cli(tmp_path, "--baseline", str(baseline)) == 0
 
 

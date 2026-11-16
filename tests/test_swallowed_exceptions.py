@@ -221,6 +221,13 @@ class TestCorpusAndBaseline:
             assert_no_swallowed_exceptions(src, baseline_path=bl, use_git=False)
         with pytest.raises(pytest.skip.Exception):
             assert_no_swallowed_exceptions(src, baseline_path=bl, refresh=True, use_git=False)
+        data = json.loads(bl.read_text(encoding="utf-8"))
+        for key, entry in data["entries"].items():
+            entry["note"] = (
+                f"{key} is seeded by tests/test_swallowed_exceptions.py::test_zero_tolerance_without_a_baseline_and_a_ratchet_with_one "
+                "to exercise the ratchet branch of the gate, and is not a defect in repo code."
+            )
+        bl.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         assert sum(e["count"] for e in json.loads(bl.read_text(encoding="utf-8"))["entries"].values()) == 1
         assert_no_swallowed_exceptions(src, baseline_path=bl, use_git=False)
         (src / "m.py").write_text("# moved\n" + (src / "m.py").read_text(encoding="utf-8"), encoding="utf-8")

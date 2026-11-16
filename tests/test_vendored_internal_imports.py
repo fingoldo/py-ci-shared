@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -132,6 +133,13 @@ def test_assert_fails_raw_and_ratchets_against_a_baseline(tmp_path: Path, monkey
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception, match="baseline rewritten"):
         assert_no_vendored_internal_imports(tmp_path, baseline_path=baseline, refresh=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = (
+            f"{key} is seeded by tests/test_vendored_internal_imports.py::test_assert_fails_raw_and_ratchets_against_a_baseline "
+            "to exercise the baseline accept branch of the gate, and is not a defect in repo code."
+        )
+    baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     assert_no_vendored_internal_imports(tmp_path, baseline_path=baseline, use_git=False)
     _write(tmp_path, "n.py", "import joblib.externals.loky\n")
     with pytest.raises(pytest.fail.Exception, match="loky"):

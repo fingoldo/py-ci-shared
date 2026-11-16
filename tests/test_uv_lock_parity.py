@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -169,6 +170,13 @@ def test_a_baseline_accepts_known_findings_and_fails_new_ones(tmp_path, monkeypa
     baseline = tmp_path / "baseline.json"
     with pytest.raises(pytest.skip.Exception):
         assert_uv_lock_parity(root, baseline_path=baseline, refresh=True, use_git=False)
+    data = json.loads(baseline.read_text(encoding="utf-8"))
+    for key, entry in data["entries"].items():
+        entry["note"] = (
+            f"{key} is seeded by tests/test_uv_lock_parity.py::test_a_baseline_accepts_known_findings_and_fails_new_ones "
+            "to exercise the baseline accept branch of the gate, and is not a defect in repo code."
+        )
+    baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
     assert_uv_lock_parity(root, baseline_path=baseline, use_git=False)
     (root / "uv.lock").write_text(bad.replace('{ name = "numpy" },\n', ""), encoding="utf-8")
     with pytest.raises(pytest.fail.Exception):

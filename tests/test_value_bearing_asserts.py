@@ -87,7 +87,15 @@ class TestTheRatchet:
         with pytest.raises(pytest.skip.Exception):
             assert_no_value_bearing_asserts(root, baseline_path=baseline, refresh=True)
         data = json.loads(baseline.read_text(encoding="utf-8"))
-        assert data["entries"] == {"a.py::x > 0": {"count": 1, "note": ""}}
+        # A refresh records the finding unjustified (42-T1): the entry must carry the marker until a reason replaces it.
+        assert data["entries"]["a.py::x > 0"]["count"] == 1
+        assert data["entries"]["a.py::x > 0"]["note"].startswith("NEEDS-JUSTIFICATION")
+        data["entries"]["a.py::x > 0"]["note"] = (
+            "seeded by tests/test_value_bearing_asserts.py::TestTheRatchet::"
+            "test_a_missing_baseline_fails_and_is_written_only_on_refresh to exercise the bare x > 0 value-assert branch; "
+            "the package it writes is a fixture, not a defect in repo code"
+        )
+        baseline.write_text(json.dumps(data), encoding="utf-8")
         assert_no_value_bearing_asserts(root, baseline_path=baseline)  # the written file now passes
 
     def test_refresh_via_env_var_as_under_xdist(self, tmp_path, monkeypatch):

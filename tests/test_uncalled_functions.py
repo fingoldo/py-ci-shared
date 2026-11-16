@@ -7,6 +7,7 @@ what most of these tests pin.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -158,7 +159,10 @@ _private_live()
 
     def test_private_only_is_exactly_the_private_subset_of_the_default_findings(self, tmp_path):
         """References are still collected from public functions: a private helper called only by a public one stays live."""
-        f = _write(tmp_path, "m.py", """def public():
+        f = _write(
+            tmp_path,
+            "m.py",
+            """def public():
     return _helper()
 
 
@@ -168,7 +172,8 @@ def _helper():
 
 def _orphan():
     return 2
-""")
+""",
+        )
         default = find_uncalled_functions([f], tmp_path)
         private = find_uncalled_functions([f], tmp_path, private_only=True)
         assert private == {k: v for k, v in default.items() if v.startswith("_")}
@@ -177,13 +182,21 @@ def _orphan():
     def test_assert_entry_passes_for_a_dead_public_function_and_fails_for_a_dead_private_one(self, tmp_path):
         baseline = tmp_path / "b.json"
         baseline.write_text("{}", encoding="utf-8")
-        public = _write(tmp_path, "p.py", """def public_dead():
+        public = _write(
+            tmp_path,
+            "p.py",
+            """def public_dead():
     return 1
-""")
+""",
+        )
         assert_no_new_uncalled_function([public], tmp_path, baseline, private_only=True, refresh=False)
-        private = _write(tmp_path, "q.py", """def _private_dead():
+        private = _write(
+            tmp_path,
+            "q.py",
+            """def _private_dead():
     return 1
-""")
+""",
+        )
         with pytest.raises(BaseException, match="_private_dead"):
             assert_no_new_uncalled_function([private], tmp_path, baseline, private_only=True, refresh=False)
 
@@ -217,6 +230,13 @@ class TestTheRatchet:
         with pytest.raises(pytest.skip.Exception):
             assert_no_new_uncalled_function([f], tmp_path, baseline, refresh=True)
         assert baseline.exists()
+        data = json.loads(baseline.read_text(encoding="utf-8"))
+        for key, entry in data["entries"].items():
+            entry["note"] = (
+                f"{key} is seeded by tests/test_uncalled_functions.py::TestTheRatchet::test_a_missing_baseline_fails_and_is_written_only_on_refresh "
+                "to exercise the missing-baseline refresh branch of the gate, and is not a defect in repo code."
+            )
+        baseline.write_text(json.dumps(data, indent=2, sort_keys=True), encoding="utf-8")
         assert_no_new_uncalled_function([f], tmp_path, baseline)
 
     def test_refresh_via_env_var_as_under_xdist(self, tmp_path, monkeypatch):
