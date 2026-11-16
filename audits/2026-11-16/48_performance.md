@@ -68,7 +68,7 @@ process, back to back.
   like `comment_tokens` (`lru_cache(maxsize=8)` or a one-entry identity memo; the five sites call it with the same `source`). Replace the seven call
   sites. Add one self-gate test: no module under `src/py_ci_shared` other than `_core/source.py` calls `ast.get_source_segment` (AST scan, a
   pinned count of 0), so the class cannot return. ADDITIVE (identical findings, shown above).
-- **Disposition:** OPEN
+- **Disposition:** FIXED (commit on branch worktree-agent-ae53f937c2ecac6f4). `source_segment` / `source_lines` / `segment` in `_core/source.py`; the seven call sites and `git_child_env`'s private copies now use them. Measured (bench, same process, best of 1 for before): 1,200 distinct functions, `get_source_segment` loop 3.56 s -> `source_segment` 0.0043 s (best of 3). Self-gate `tests/test_source_segment.py::test_no_module_calls_ast_get_source_segment` pins 0 call sites. Identical segments on every node of 5 sample texts (CRLF, CR, multi-byte).
 
 ## 48-T2 (P2) `console_unicode` re-resolves and re-reads the `__init__.py` chain for every file: 14x faster with a per-directory memo
 - **Evidence:** `src/py_ci_shared/code_audit/console_unicode.py:78-102`, `_ancestor_package_has_stdio_utf8_reconfigure(py, root)`, called once per
@@ -85,7 +85,7 @@ process, back to back.
 - **Impact:** about a minute of CPU per consumer run on a large tree (mlframe) for one trivial check.
 - **Proposed fix:** in `scan_console_unicode`, create `memo: dict[Path, bool] = {}` and pass it to `_ancestor_package_has_stdio_utf8_reconfigure(py, root, memo)`
   (optional third parameter, default None, so the helper's signature stays compatible); resolve `root` once per scan. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `scan_console_unicode` keeps one `dict[Path, bool]` per scan; the helper's new optional `memo` argument records the answer for every directory on the walked chain. Measured (bench, 200 modules in one package at depth 3, helper called per file): 1.33 s -> 0.13 s. Test `tests/code_audit/test_console_unicode_memo.py` pins one `__init__.py` read per directory (red: 31 reads for 30 modules, then TypeError on the new argument). Pre-existing findings unchanged (11 console_unicode tests pass).
 
 ## 48-T3 (P3) `comment_cites_absolute_line` tokenizes every file; its sibling skips files that cannot match
 - **Evidence:** `src/py_ci_shared/code_audit/comment_names_missing_symbol.py:225-228`: `scan_comment_cites_absolute_line` calls `_comment_texts(py)`
@@ -99,7 +99,7 @@ process, back to back.
 - **Proposed fix:** pre-filter by `_LINE_CITATION.search(text)` over the file text (read once through the shared bytes cache) before `_comment_texts`.
   ADDITIVE. One edge: a docstring that builds "line" and the number by implicit string concatenation would stop matching; the sibling accepted the
   same edge.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `scan_comment_cites_absolute_line` now returns early for a file whose source has no `_LINE_CITATION` match, before `_comment_texts`. Measured (bench, 300 small files with no citation): 37.4 s before (includes one-off setup in `_comment_texts`, so this is an upper bound) -> 0.11 s after. Test `tests/code_audit/test_comment_cites_prefilter.py` pins zero tokenize calls for uncited files (red: 2 calls) and that a real citation is still reported. The audit's mlframe 75 s -> 21 s was not re-measured here.
 
 ## 48-T4 (P3) `doc_identifier_parity._absent` searches a 7 MB corpus string once per distinct token (1.9x available without changing the answer)
 - **Evidence:** `src/py_ci_shared/doc_identifier_parity.py:152-157,159-195`. `_in_corpus` memoises per token, but each distinct token not yet seen does
@@ -113,13 +113,13 @@ process, back to back.
   worst case).
 - **Proposed fix:** build `words = set(re.findall(r"[\w-]+", corpus))` once in `_absent` and test `token in words or token in corpus` in `_in_corpus`
   (pass `words` through the memo argument). ADDITIVE; verdicts identical by construction (a whole word is a substring).
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `_words(corpus)` builds the word set once per `_absent` run; `_in_corpus(token, corpus, words, memo)` answers a whole word from it. Measured (bench, 5.5 MB corpus, 1,003 tokens of which 100 absent): 3.43 s -> 1.24 s, word set included. Test `tests/test_doc_identifier_word_shortcut.py` pins zero corpus searches for a word token and one for an absent token, plus substring matches that are not words. Existing `test_doc_identifier_parity.py` passes.
 
 ## 48-T5 (P3) `source.comment_tokens` is an `lru_cache(maxsize=512)`: a corpus larger than 512 files gets no reuse between gates
 - **Evidence:** `src/py_ci_shared/_core/source.py` (`comment_tokens`, `@functools.lru_cache(maxsize=512)`). `tokc.py` over 1,500 mlframe files, two passes in one process: pass 1 5.2 s (hits=6, misses=1494), pass 2 4.0 s (hits=12, misses=2988), cache full at 512: a sequential scan of more files than the cache holds evicts every entry before it is read again (LRU thrash). mlframe has 2,992 files, so every gate that tokenizes pays again. Profile of `comment_repo_paths` over the pyutilz repo (635 files, above the limit): 13.5 s of 63 s in the C tokenizer and `_make`; on the mlframe snapshot the gate takes 169 s (pyutilz 5.1 s, 33x for 13x the source; `mlframe_top.txt`). Same snapshot: `doc_identifier_parity` 204 s (T4 corpus search plus listing).
 - **Impact:** CPU time on corpora above 512 files; no wrong verdicts.
 - **Proposed fix:** key a bounded cache by the file (path + digest) instead of the text with a size near the corpus, or size the LRU from the corpus (e.g. 8192 entries; tokens of one file are small). The saving was not prototyped beyond the thrash demonstration. ADDITIVE.
-- **Disposition:** OPEN
+- **Disposition:** FIXED. `comment_tokens` LRU raised from 512 to 8192 entries. Measured (bench, two passes over 600 sources): second pass with a 512 LRU 0 hits (re-tokenizes all 600); with 8192, 600 hits. Test `tests/test_comment_tokens_cache.py` pins 600 second-pass hits (red: 0 hits). Wall-time gain on these tiny sources is negligible (0.008 s vs 0.000 s); the gain is on real files, not re-measured on mlframe.
 
 ## Rankings (task: "rank gates by wall time and by time per kilobyte, look at the top ten")
 

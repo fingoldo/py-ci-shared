@@ -4,6 +4,7 @@ from __future__ import annotations
 import ast
 import logging
 from pathlib import Path
+from typing import Optional
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse
 
@@ -80,7 +81,7 @@ def _read_init_source(init_file: Path) -> str:
         return ""
 
 
-def _ancestor_package_has_stdio_utf8_reconfigure(py: Path, root: Path) -> bool:
+def _ancestor_package_has_stdio_utf8_reconfigure(py: Path, root: Path, memo: Optional[dict[Path, bool]] = None) -> bool:
     """True if any ``__init__.py`` from ``py``'s own package up through ``root`` reconfigures
     stdio to UTF-8. A package ``__init__.py`` runs on the FIRST ``import <package>`` regardless
     of entry point (CLI, an API server under uvicorn, a test runner, a script that merely
@@ -89,17 +90,27 @@ def _ancestor_package_has_stdio_utf8_reconfigure(py: Path, root: Path) -> bool:
     ``__main__``. Checked once per package directory (not every ancestor __init__.py needs its
     own separate call; the outermost one that runs first is what matters), stopping at the
     first ``__init__.py`` found reconfiguring, or at ``root`` if none do."""
-    current = py.parent
     root = root.resolve()
+    chain: list[Path] = []
+    current = py.parent
+    result = False
     while True:
+        if memo is not None and current in memo:
+            result = memo[current]
+            break
+        chain.append(current)
         init_file = current / "__init__.py"
-        if init_file.is_file():
-            init_src = _read_init_source(init_file)
-            if _has_stdio_utf8_reconfigure(init_src):
-                return True
+        if init_file.is_file() and _has_stdio_utf8_reconfigure(_read_init_source(init_file)):
+            result = True
+            break
         if current.resolve() == root or current.parent == current:
-            return False
+            break
         current = current.parent
+    if memo is not None:
+        # every directory walked so far reaches the same first reconfiguring __init__ (or the same stop), so one answer covers the chain
+        for directory in chain:
+            memo[directory] = result
+    return result
 
 
 def scan_console_unicode(
@@ -121,6 +132,7 @@ def scan_console_unicode(
     package's own import-time guard instead of a per-file one.
     """
     findings: list[Finding] = []
+    memo: dict[Path, bool] = {}
     for py in _iter_py_files(root, exclude_dirs):
         tree = _safe_parse(py)
         if tree is None:
@@ -128,7 +140,7 @@ def scan_console_unicode(
         src_lines = _read_src_lines(py)
         if _has_stdio_utf8_reconfigure("\n".join(src_lines)):
             continue
-        if _ancestor_package_has_stdio_utf8_reconfigure(py, root):
+        if _ancestor_package_has_stdio_utf8_reconfigure(py, root, memo):
             continue
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):

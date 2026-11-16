@@ -33,6 +33,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.source import source_segment
 from ._core.call_names import call_name_or_none as _call_name
 
 __all__ = ["RULE", "SUPPRESSION", "assert_oof_buffer_zero_init", "find_oof_buffer_zero_init"]
@@ -114,7 +115,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str, lines: list[str]) -> l
             continue
         local = _local_partition_names(func)
         params = {a.arg for a in (*func.args.posonlyargs, *func.args.args, *func.args.kwonlyargs)}
-        covered = bool(_COVERAGE.search(ast.get_source_segment(source, func) or ""))
+        covered = bool(_COVERAGE.search(source_segment(source, func) or ""))
         for loop in (n for n in shared_walk(func) if isinstance(n, (ast.For, ast.AsyncFor))):
             if not _is_fold_loop(loop, params) or _is_local_full_partition(_splitter_of(loop.iter), local):
                 continue

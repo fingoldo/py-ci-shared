@@ -32,6 +32,7 @@ from typing import Optional, Union
 
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
+from ._core.source import source_segment
 
 __all__ = ["RULES", "SUPPRESSION", "assert_ml_api_contracts", "find_ml_api_contracts"]
 
@@ -77,7 +78,7 @@ def _best_iteration_findings(tree: ast.Module, rel: str) -> list[Finding]:
 def _argmax_findings(tree: ast.Module, rel: str, source: str) -> list[Finding]:
     out: list[Finding] = []
     for func in (n for n in shared_walk(tree) if isinstance(n, _FUNCTIONS)):
-        if _MAPPING_WORDS.search(ast.get_source_segment(source, func) or ""):
+        if _MAPPING_WORDS.search(source_segment(source, func) or ""):
             continue
         for cmp_ in (n for n in shared_walk(func) if isinstance(n, ast.Compare)):
             if len(cmp_.ops) != 1 or not isinstance(cmp_.ops[0], (ast.Eq, ast.NotEq)):

@@ -20,6 +20,7 @@ import functools
 import hashlib
 import io
 import os
+import re
 import threading
 import time
 import tokenize
@@ -76,13 +77,46 @@ _BYTES_MAX_TOTAL = 400_000_000
 MAX_SCANNED_BYTES = int(os.environ.get("PY_CI_SHARED_MAX_SCANNED_BYTES") or 16 * 1024 * 1024)
 
 
-@functools.lru_cache(maxsize=512)
+@functools.lru_cache(maxsize=8192)  # above the 512-file LRU that thrashed on corpora of 2,000+ files (48-T5); each entry is one file's comments
 def comment_tokens(source: str) -> tuple[tuple[int, str], ...]:
     """``(line, text)`` of every COMMENT token of *source*, in token order (``text`` keeps its ``#``).
 
     Several gates read the comments of the same file in one process, so the tokenizer runs once per source; a source that does not
     tokenize raises the tokenizer's error, and that error is not cached, so every caller sees it."""
     return tuple((tok.start[0], tok.string) for tok in tokenize.generate_tokens(io.StringIO(source).readline) if tok.type == tokenize.COMMENT)
+
+
+_SOURCE_LINE = re.compile(r"[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+")
+
+
+@functools.lru_cache(maxsize=8)
+def source_lines(source: str) -> tuple[str, ...]:
+    """*source* split the way ``ast`` positions count lines (CRLF, CR and LF each end one), endings kept.
+
+    Memoised on the text: ``ast.get_source_segment`` re-splits the whole source on every call, which made gates that slice one
+    segment per function quadratic in the functions of a file (audit 2026-11-16 48-T1)."""
+    return tuple(_SOURCE_LINE.findall(source))
+
+
+def segment(lines: "tuple[str, ...] | list[str]", node: ast.AST) -> Optional[str]:
+    """``ast.get_source_segment`` over already-split *lines* (see ``source_lines``); ``None`` when *node* has no position."""
+    end_lineno: Optional[int] = getattr(node, "end_lineno", None)
+    end_col: Optional[int] = getattr(node, "end_col_offset", None)
+    if end_lineno is None or end_col is None:
+        return None
+    first: int = getattr(node, "lineno", 1) - 1
+    last: int = end_lineno - 1
+    col: int = getattr(node, "col_offset", 0)
+    if first == last:
+        return lines[first].encode()[col:end_col].decode()
+    head = lines[first].encode()[col:].decode()
+    tail = lines[last].encode()[:end_col].decode()
+    return head + "".join(lines[first + 1 : last]) + tail
+
+
+def source_segment(source: str, node: ast.AST) -> Optional[str]:
+    """``ast.get_source_segment(source, node)`` without re-splitting *source* on every call."""
+    return segment(source_lines(source), node)
 
 
 def read_bytes_cached(path: PathLike) -> bytes:

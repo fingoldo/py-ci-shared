@@ -6,6 +6,7 @@ import ast
 import re
 from pathlib import Path
 
+from .._core.source import source_segment
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _safe_parse, split_src_lines
 
 __all__ = ["scan_inconsistent_filter", "scan_partial_guard_across_siblings"]
@@ -77,7 +78,7 @@ def scan_partial_guard_across_siblings(
             guarded: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
             unguarded: list[ast.FunctionDef | ast.AsyncFunctionDef] = []
             for member in members:
-                body = ast.get_source_segment(src, member) or ""
+                body = source_segment(src, member) or ""
                 (guarded if any(g.search(body) for g in guards) else unguarded).append(member)
             if not unguarded or len(guarded) / len(members) < min_share:
                 continue
@@ -128,7 +129,7 @@ def scan_inconsistent_filter(
         for fn in walk_tree(tree):
             if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
-            body = ast.get_source_segment(src, fn) or ""
+            body = source_segment(src, fn) or ""
             for accessor, required in filter_pairs:
                 if fn.name in (accessor, required):
                     continue

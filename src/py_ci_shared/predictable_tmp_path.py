@@ -27,6 +27,7 @@ from typing import Optional, Union
 from ._core import Baseline, Finding, scan_python
 from ._core import walk as shared_walk
 from ._core.scopes import Scope, iter_scopes
+from ._core.source import source_segment
 from ._core.unparse import unparse_stable
 
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
@@ -127,9 +128,9 @@ def _enclosing_text_of(tree: ast.Module, source: str) -> Callable[[ast.AST], str
         key = id(scope) if scope is not None else 0
         if key not in texts:
             if scope is not None:
-                texts[key] = ast.get_source_segment(source, scope) or ""
+                texts[key] = source_segment(source, scope) or ""
             else:
-                texts[key] = "\n".join(ast.get_source_segment(source, s) or "" for s in module_stmts)
+                texts[key] = "\n".join(source_segment(source, s) or "" for s in module_stmts)
         return texts[key]
 
     return text_of
