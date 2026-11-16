@@ -32,6 +32,7 @@ __all__ = [
     "kind_of",
     "record_write",
     "refresh_hint",
+    "pass_note",
     "running_gate",
     "refreshed_skip",
     "track_writes",
@@ -148,6 +149,20 @@ def entry_delta(writes: "list[Any]") -> Optional[str]:
         removed += len(old - new)
         names.append(Path(path).name)
     return f"+{added} -{removed} entries ({', '.join(names)})"
+
+
+def pass_note(*, files_read: int, accepted: int, baseline: str = "", unparsed_allowed: int = 0) -> str:
+    """The PASS note of a gate (49-T5): what it read, what the baseline accepted, and any unparsed files it allowed to be skipped."""
+    parts = [f"read {files_read} file(s)"]
+    if baseline:
+        parts.append(f"{accepted} finding(s) accepted by {baseline}")
+    elif accepted:
+        parts.append(f"{accepted} finding(s) accepted")
+    else:
+        parts.append("0 finding(s) accepted")
+    if unparsed_allowed:
+        parts.append(f"{unparsed_allowed} unparsed file(s) allowed")
+    return "; ".join(parts)
 
 
 _running: "list[str]" = []
