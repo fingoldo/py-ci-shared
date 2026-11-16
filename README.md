@@ -282,6 +282,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`git_changed_lines`](src/py_ci_shared/git_changed_lines.py) | library | 1.4.0 |  | The line ranges a diff actually touched, per file |
 | [`git_child_env`](src/py_ci_shared/git_child_env.py) | gate | 1.22.8 | `assert_no_new_unscrubbed_git_spawns` | A test that runs ``git`` in a child process must not inherit the caller's ``GIT_*`` variables (opt-in ratchet over test files) |
 | [`git_dependency_pins`](src/py_ci_shared/git_dependency_pins.py) | gate | 1.3.0 | `assert_all_git_dependencies_pinned` (+2) | Every git-URL dependency in pyproject.toml is pinned to a full commit SHA, not floating on a branch/tag |
+| [`global_write_via_reexport_alias`](src/py_ci_shared/global_write_via_reexport_alias.py) | gate | 1.23.12 | `assert_global_write_via_reexport_alias` | A write to a global through a re-exporting facade changes the facade's copy, not the global |
 | [`gpu_timing_sync`](src/py_ci_shared/gpu_timing_sync.py) | gate | 1.3.6 | `assert_no_unsynchronized_gpu_timings` | A wall-clock measurement taken around GPU work must synchronize the device before the timer stops |
 | [`group_blind_split`](src/py_ci_shared/group_blind_split.py) | gate | 1.23.8 | `assert_group_blind_split` | Flags a function that receives groups but builds a KFold/ShuffleSplit/train_test_split without them |
 | [`guard_population`](src/py_ci_shared/guard_population.py) | gate | 1.3.6 | `assert_guards_examine_something` | A guard script is actually looking at something |
@@ -378,6 +379,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`resource_leak_guard`](src/py_ci_shared/resource_leak_guard.py) | library | 1.17.0 |  | Opt-in pytest plugin: a test that leaks a child process, a thread, a socket, ``logging.disable`` or an env var errors at teardown |
 | [`resource_release_paths`](src/py_ci_shared/resource_release_paths.py) | gate | 1.4.0 | `assert_released_on_every_path` | A resource a module OWNS is released on the failure path too |
 | [`rollback_then_continue`](src/py_ci_shared/rollback_then_continue.py) | gate | 1.17.0 | `assert_no_rollback_then_continue` | ``rollback()`` in a loop's ``except`` handler, then on to the next item as if only that item failed |
+| [`route_literal_after_catchall`](src/py_ci_shared/route_literal_after_catchall.py) | gate | 1.23.12 | `assert_route_literal_after_catchall` | A literal route must not come after a same-shape parameter route that shadows it |
 | [`runtime_registry_mutation`](src/py_ci_shared/runtime_registry_mutation.py) | gate | 1.17.0 | `assert_writes_have_replay` | Runtime writes to a module-level registry |
 | [`safe_precommit`](src/py_ci_shared/safe_precommit.py) | cli | 1.1.0 | `main` | Drop-in ``pre-commit`` replacement that survives concurrent-session stash-restore races |
 | [`save_failure_markers`](src/py_ci_shared/save_failure_markers.py) | gate | 1.5.0 | `assert_markers_are_fatal` | Every save-failure marker a writer emits is one the success decision recognises |
@@ -397,6 +399,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`sql_function_privileges`](src/py_ci_shared/sql_function_privileges.py) | gate | 1.3.6 | `assert_definer_functions_are_locked_down` | A ``SECURITY DEFINER`` SQL function is not left executable by every logged-in user |
 | [`sql_verifier_coverage`](src/py_ci_shared/sql_verifier_coverage.py) | gate | 1.12.0 | `assert_verifier_covers_statements` | Every SQL statement a package defines is on its SQL verifier's list, and the list names nothing that has gone |
 | [`sql_verify`](src/py_ci_shared/sql_verify.py) | gate | 1.4.0 | `assert_fragment_matrix` | Execute every SQL statement a project ships against a real PostgreSQL server |
+| [`sql_where_mixed_and_or`](src/py_ci_shared/sql_where_mixed_and_or.py) | gate | 1.23.12 | `assert_sql_where_mixed_and_or` | A WHERE clause must not mix AND and OR at one parenthesis level |
 | [`sqlalchemy_text_binds`](src/py_ci_shared/sqlalchemy_text_binds.py) | gate | 1.8.0 | `assert_no_colon_cast_binds` | No SQLAlchemy ``text()`` bind parameter is followed directly by a ``::`` cast |
 | [`stale_baseline_sweep`](src/py_ci_shared/stale_baseline_sweep.py) | cli | 1.23.10 | `main` | Read-only report of the stale baseline entries in each consumer checkout that a strict ratchet turns red on the next bump |
 | [`stale_comment_age`](src/py_ci_shared/stale_comment_age.py) | gate | 1.3.6 | `assert_no_stale_todos` | A TODO or a commented-out call does not quietly become permanent |
@@ -415,8 +418,10 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`target_leak_canary`](src/py_ci_shared/target_leak_canary.py) | gate | 1.23.8 | `assert_no_train_target_leak` (+1) | A feature builder that fits on the training rows must not return features that correlate with a pure-noise target on those same rows |
 | [`teeth_sweep`](src/py_ci_shared/teeth_sweep.py) | cli | 1.4.0 | `main` | Does anything actually FAIL if an audit fix is undone? Mutate, run the suite, restore |
 | [`test_partition_reachability`](src/py_ci_shared/test_partition_reachability.py) | gate | 1.3.6 | `assert_partitions_reachable` | Every declared test partition is actually selected by some runner |
+| [`thread_lifecycle`](src/py_ci_shared/thread_lifecycle.py) | gate | 1.23.12 | `assert_thread_lifecycle` | A threading.Thread must be daemonised, joined, or owned by a context manager |
 | [`timezone_honest`](src/py_ci_shared/timezone_honest.py) | gate | 1.4.1 | `assert_timezone_honest` | Non-test code states its time frame in the expression, and the scan cannot miss a directory |
 | [`toml_compat`](src/py_ci_shared/toml_compat.py) | library | 1.23.10 |  | ``tomllib`` on the interpreters that have it, ``tomli`` (the same parser) on 3.9 and 3.10 that do not |
+| [`tool_config_dead_entries`](src/py_ci_shared/tool_config_dead_entries.py) | gate | 1.23.12 | `assert_tool_config_dead_entries` | A pyproject ignore, omit or override must name something that exists |
 | [`tool_config_env_vars_set_in_every_tool_job`](src/py_ci_shared/tool_config_env_vars_set_in_every_tool_job.py) | gate | 1.23.10 | `assert_tool_config_env_vars_set_in_every_tool_job` | A variable a tool config reads ($VAR in pyproject) is defined in every CI job that runs the tool |
 | [`tool_versions`](src/py_ci_shared/tool_versions.py) | library | 1.4.1 |  | The linter versions every consuming repo runs, defined in one place |
 | [`tracked_secret_shapes`](src/py_ci_shared/tracked_secret_shapes.py) | gate | 1.21.1 | `assert_no_tracked_secret_shapes` | Tracked files holding a string of a secret shape the consumer configured |
@@ -424,6 +429,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`truncating_discretisation`](src/py_ci_shared/truncating_discretisation.py) | gate | 1.23.8 | `assert_truncating_discretisation` | An ``astype(int)`` guarded only by a distinct-value count, which turns a fractional target into a handful of integer classes |
 | [`uncalled_functions`](src/py_ci_shared/uncalled_functions.py) | gate | 1.4.0 | `assert_no_new_uncalled_function` | A function that production code never calls |
 | [`unexecuted_function_bodies`](src/py_ci_shared/unexecuted_function_bodies.py) | gate | 1.21.1 | `assert_unexecuted_function_bodies` | A function whose body never runs under the unit coverage run |
+| [`unpruned_tree_walk`](src/py_ci_shared/unpruned_tree_walk.py) | gate | 1.23.12 | `assert_unpruned_tree_walk` | A function that walks a repository root must prune agent worktrees |
 | [`unread_function_params`](src/py_ci_shared/unread_function_params.py) | gate | 1.22.3 | `assert_unread_function_params` | Named function parameters (sample_weight, random_state, seed, n_jobs, verbose, timeout, device) that the body never reads |
 | [`unread_init_params`](src/py_ci_shared/unread_init_params.py) | gate | 1.17.0 | `assert_no_unread_init_params` | Constructor parameters nothing ever reads |
 | [`unresolved_imports`](src/py_ci_shared/unresolved_imports.py) | gate | 1.4.0 | `assert_all_from_imports_resolve` | Every ``from X import Y`` must name something X actually defines |
@@ -441,6 +447,7 @@ with both an `assert_*` entry and a `main` is a `gate` with `cli = true`: `kind`
 | [`vulture_warn`](src/py_ci_shared/vulture_warn.py) | cli | 1.0.0 | `main` | Warn-only dead-code check for the pre-commit hook |
 | [`wallclock_test_waits`](src/py_ci_shared/wallclock_test_waits.py) | gate | 1.22.8 | `assert_no_new_wallclock_test_waits` | A test that waits on the wall clock is slow and flaky, so it must not sleep on it (Future.delayed of a Duration, time.sleep); opt-in ratchet over test files |
 | [`worker_budget`](src/py_ci_shared/worker_budget.py) | library | 1.22.7 |  | How many workers the machine can spare now: half of its free physical cores, overridable by PY_CI_WORKERS |
+| [`workflow_installs_pinned`](src/py_ci_shared/workflow_installs_pinned.py) | gate | 1.23.12 | `assert_workflow_installs_pinned` | A CI step that clones or pip-installs a first-party repo from git must pin a commit |
 | [`workflow_runner_labels`](src/py_ci_shared/workflow_runner_labels.py) | gate | 1.20.0 | `assert_workflow_runner_labels_pinned` | Workflows use no moving ``*-latest`` runner label, and pinned actions have a github-actions update channel; ``--fix`` rewrites both |
 | [`worktree_hygiene`](src/py_ci_shared/worktree_hygiene.py) | cli | 1.17.0 | `main` | Which worktrees, branches and leftover directories can go, and which still hold work |
 | [`wrapper_protocol_parity`](src/py_ci_shared/wrapper_protocol_parity.py) | gate | 1.21.0 | `assert_wrapper_protocol_parity` | A wrapper that copies some of a protocol's attributes from its inner callable must copy all of them |

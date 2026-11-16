@@ -31,6 +31,7 @@ Usage::
 from __future__ import annotations
 
 import functools
+import logging
 import re
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -153,7 +154,9 @@ def _tracked(root: Path, use_git: Optional[bool]) -> list[str]:
         return sorted(p.relative_to(root).as_posix() for p in iter_files_pruned(root))
     try:
         return sorted(line for line in git_output(root, "ls-files").splitlines() if line)
-    except Exception:
+    except Exception as exc:
+        # A checkout without git (or a failing git) walks the tree instead: the same files for a clean checkout, but logged.
+        logging.getLogger(__name__).warning("git ls-files failed under %s (%s); walking the tree instead", root, exc)
         return sorted(p.relative_to(root).as_posix() for p in iter_files_pruned(root))
 
 

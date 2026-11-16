@@ -79,37 +79,52 @@ _SEED_METHODS = frozenset({"manual_seed"})
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 
 
+def _int_children(current: ast.AST) -> "list[ast.AST]":
+    """The sub-expressions whose int values :func:`_int_combine` folds into *current*."""
+    if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
+        return [current.left, current.right]
+    if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
+        return [current.operand]
+    if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
+        return [current.args[0]]
+    return []
+
+
+def _int_leaf(current: ast.AST, consts: "dict[str, int]") -> Optional[int]:
+    """The int a literal or a module-constant name stands for, None for anything else."""
+    if isinstance(current, ast.Constant):
+        return current.value if isinstance(current.value, int) and not isinstance(current.value, bool) else None
+    if isinstance(current, ast.Name):
+        return consts.get(current.id)
+    return None
+
+
+def _int_binop(current: ast.BinOp, values: "list[Optional[int]]") -> Optional[int]:
+    """The folded value of a binary operator over two already-folded operands."""
+    left, right = values
+    return None if left is None or right is None else _fold(current.op, left, right)
+
+
+def _int_combine(current: ast.AST, values: "list[Optional[int]]", consts: "dict[str, int]") -> Optional[int]:
+    """The int *current* evaluates to, given the folded values of its :func:`_int_children`."""
+    if isinstance(current, (ast.Constant, ast.Name)):
+        return _int_leaf(current, consts)
+    if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
+        inner = values[0]
+        return None if inner is None else (-inner if isinstance(current.op, ast.USub) else inner)
+    if isinstance(current, ast.Call):
+        return values[0]  # np.int64(3) is the seed 3
+    if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
+        return _int_binop(current, values)
+    return None
+
+
 def _int_value(node: ast.AST, consts: "dict[str, int]") -> Optional[int]:
     """The int *node* evaluates to when it is a literal, a folded ``+ - * // % ** <<`` of literals, a numpy integer scalar of one, or a module constant bound once to one.
 
     Folded bottom-up with an explicit stack: a left-nested ``1 + 1 + ...`` chain is as deep as it is long.
     """
-
-    def children(current: ast.AST) -> "list[ast.AST]":
-        if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
-            return [current.left, current.right]
-        if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
-            return [current.operand]
-        if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
-            return [current.args[0]]
-        return []
-
-    def combine(current: ast.AST, values: "list[Optional[int]]") -> Optional[int]:
-        if isinstance(current, ast.Constant):
-            return current.value if isinstance(current.value, int) and not isinstance(current.value, bool) else None
-        if isinstance(current, ast.Name):
-            return consts.get(current.id)
-        if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
-            inner = values[0]
-            return None if inner is None else (-inner if isinstance(current.op, ast.USub) else inner)
-        if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
-            return values[0]  # np.int64(3) is the seed 3
-        if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
-            left, right = values
-            return None if left is None or right is None else _fold(current.op, left, right)
-        return None
-
-    result: Optional[int] = postorder_fold(node, children, combine)
+    result: Optional[int] = postorder_fold(node, _int_children, lambda current, values: _int_combine(current, values, consts))
     return result
 
 
@@ -324,17 +339,21 @@ def _visit_seed_scopes(
 ) -> list[Finding]:
     """Walk classes and functions below *node*, checking each function that has (or inherits) a seed parameter."""
     out: list[Finding] = []
-    for child in child_nodes(node):
+    # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+    pending: list[tuple[ast.AST, str, frozenset[str]]] = [(child, prefix, inherited) for child in reversed(child_nodes(node))]
+    while pending:
+        child, child_prefix, child_inherited = pending.pop()
         if isinstance(child, ast.ClassDef):
-            out.extend(_visit_seed_scopes(child, f"{prefix}{child.name}.", frozenset(), rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = f"{child_prefix}{child.name}.", frozenset[str]()
         elif isinstance(child, _FUNCTIONS):
-            params = frozenset(_own_params(child)) | inherited
-            qualname = f"{prefix}{child.name}"
+            params = frozenset(_own_params(child)) | child_inherited
+            qualname = f"{child_prefix}{child.name}"
             if params:
                 out.extend(_check_seeds(child, qualname, sorted(params), rel, aliases, lines, consts))
-            out.extend(_visit_seed_scopes(child, f"{qualname}.<locals>.", params, rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = f"{qualname}.<locals>.", params
         else:
-            out.extend(_visit_seed_scopes(child, prefix, inherited, rel, aliases, lines, consts))
+            inner_prefix, inner_inherited = child_prefix, child_inherited
+        pending.extend((grandchild, inner_prefix, inner_inherited) for grandchild in reversed(child_nodes(child)))
     return out
 
 
