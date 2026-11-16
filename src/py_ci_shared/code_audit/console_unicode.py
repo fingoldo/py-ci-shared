@@ -1,4 +1,5 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
@@ -21,28 +22,65 @@ _UNREADABLE_INIT_WARNED: set = set()
 _LOG_METHOD_NAMES = {"info", "warning", "error", "critical", "debug", "exception", "log"}
 
 
-def _is_console_call(call: ast.Call) -> bool:
-    """True for a ``print(...)`` call or a logging-method call (``logger.info`` etc.)."""
+def _is_sys_stream(node: ast.AST, name: str) -> bool:
+    """True for ``sys.<name>`` (``name`` is ``stdout`` or ``stderr``)."""
+    return isinstance(node, ast.Attribute) and node.attr == name and isinstance(node.value, ast.Name) and node.value.id == "sys"
+
+
+def _console_stream(call: ast.Call) -> Optional[str]:
+    """``"stdout"`` or ``"stderr"`` for a call that writes to the console, else ``None``.
+
+    Covers ``print`` (stdout unless ``file=sys.stderr``), logging methods (the default handler writes
+    to stderr), ``sys.stdout.write``/``sys.stderr.write``, ``click.echo`` (stderr with ``err=True``)
+    and ``Console().print`` (rich, stdout).
+    """
     func = call.func
     if isinstance(func, ast.Name) and func.id == "print":
-        return True
-    if isinstance(func, ast.Attribute) and func.attr in _LOG_METHOD_NAMES:
-        return True
-    return False
+        file_kw = next((kw.value for kw in call.keywords if kw.arg == "file"), None)
+        return "stderr" if file_kw is not None and _is_sys_stream(file_kw, "stderr") else "stdout"
+    if not isinstance(func, ast.Attribute):
+        return None
+    if func.attr in _LOG_METHOD_NAMES:
+        return "stderr"
+    if func.attr == "write" and (_is_sys_stream(func.value, "stdout") or _is_sys_stream(func.value, "stderr")):
+        return "stdout" if _is_sys_stream(func.value, "stdout") else "stderr"
+    if func.attr == "echo" and isinstance(func.value, ast.Name) and func.value.id == "click":
+        err = next((kw.value for kw in call.keywords if kw.arg == "err"), None)
+        return "stderr" if isinstance(err, ast.Constant) and err.value is True else "stdout"
+    if func.attr == "print" and isinstance(func.value, ast.Call) and isinstance(func.value.func, (ast.Name, ast.Attribute)):
+        callee = func.value.func.id if isinstance(func.value.func, ast.Name) else func.value.func.attr
+        return "stdout" if callee == "Console" else None
+    return None
+
+
+def _literal_text(node: ast.AST) -> list[str]:
+    """Every string literal that reaches the console from one argument expression: a plain or f-string
+    constant, both operands of ``+`` or ``%`` (``'-> ' + x``, ``'-> %s' % x``), and the receiver of
+    ``.format`` (``'-> {}'.format(x)``). A name or call result contributes nothing: its text is not known."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return [node.value]
+    if isinstance(node, ast.JoinedStr):
+        return [part.value for part in node.values if isinstance(part, ast.Constant) and isinstance(part.value, str)]
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+        return _literal_text(node.left) + _literal_text(node.right)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
+        return _literal_text(node.func.value)
+    return []
 
 
 def _str_arg_values(call: ast.Call) -> list[str]:
-    """Every positional argument that is a string literal (plain or f-string), in order.
+    """Every string literal that reaches the console from a call's arguments, in order: each positional
+    argument, and the ``sep=`` and ``end=`` keywords that print writes between and after them.
 
     All of them, not just the first: `print("done", "->")` and `logger.info("x %s", "->")` reach
     the console exactly as `print("->")` does, and raise the same UnicodeEncodeError on cp1251.
     """
     out: list[str] = []
     for arg in call.args:
-        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-            out.append(arg.value)
-        elif isinstance(arg, ast.JoinedStr):
-            out.extend(part.value for part in arg.values if isinstance(part, ast.Constant) and isinstance(part.value, str))
+        out.extend(_literal_text(arg))
+    for kw in call.keywords:
+        if kw.arg in ("sep", "end"):
+            out.extend(_literal_text(kw.value))
     return out
 
 
@@ -51,18 +89,42 @@ def _has_non_ascii(s: str) -> bool:
     return any(ord(c) > 127 for c in s)
 
 
-def _has_stdio_utf8_reconfigure(source: str) -> bool:
-    """True if ``source`` calls ``sys.stdout.reconfigure(encoding=...)`` /
-    ``sys.stderr.reconfigure(encoding=...)`` anywhere in the module -- the standard idiom for
-    fixing exactly the failure mode this scanner exists to catch (Windows' cp1251/cp1252 default
-    console encoding). A file that already forces UTF-8 stdio at its own entry point cannot hit
-    the ``UnicodeEncodeError`` the scanner warns about, so flagging its non-ASCII literals is a
-    false positive. A plain substring check (not an AST walk restricted to module-top-level) is
-    deliberate: the reconfigure call is just as effective inside an ``if __name__ ==
-    "__main__":`` guard or a ``main()`` function that runs before any print/log call, which is
-    the common placement in this codebase's scripts.
+def _live_reconfigured_streams(tree: ast.AST) -> frozenset[str]:
+    """The streams (``"stdout"``/``"stderr"``) that the module really reconfigures to an encoding.
+
+    A structural test: a ``sys.<stream>.reconfigure(...)`` call with an ``encoding=`` keyword, found in the
+    AST, so a comment, a string literal or a ``reconfigure(line_buffering=...)`` never counts. A call inside
+    a ``def`` whose name nothing in the module references (never called, never passed on) does not run,
+    so it does not count either. Calls at module level, under ``if __name__ == "__main__":``, or inside a
+    called ``main()`` do count: they run before the print/log calls that follow them.
     """
-    return "reconfigure(encoding" in source and (".stdout.reconfigure(encoding" in source or ".stderr.reconfigure(encoding" in source)
+    referenced = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+    dead: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name not in referenced:
+            dead.update(id(inner) for inner in ast.walk(node))
+    streams: set[str] = set()
+    for node in ast.walk(tree):
+        if id(node) in dead or not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "reconfigure" or not any(kw.arg == "encoding" for kw in node.keywords):
+            continue
+        for stream in ("stdout", "stderr"):
+            if _is_sys_stream(node.func.value, stream):
+                streams.add(stream)
+    return frozenset(streams)
+
+
+def _has_stdio_utf8_reconfigure(source: str) -> bool:
+    """True if ``source`` really reconfigures stdout or stderr to an encoding (see
+    :func:`_live_reconfigured_streams`). A file that already forces UTF-8 stdio at its own entry point
+    cannot hit the ``UnicodeEncodeError`` the scanner warns about, so flagging its literals is a false
+    positive. Unparsable source reconfigures nothing."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return bool(_live_reconfigured_streams(tree))
 
 
 def _read_init_source(init_file: Path) -> str:
@@ -138,26 +200,30 @@ def scan_console_unicode(
         if tree is None:
             continue
         src_lines = _read_src_lines(py)
-        if _has_stdio_utf8_reconfigure("\n".join(src_lines)):
-            continue
         if _ancestor_package_has_stdio_utf8_reconfigure(py, root, memo):
             continue
+        own_streams = _live_reconfigured_streams(tree)
         rel = py.relative_to(root).as_posix()
         for node in walk_tree(tree):
-            if not isinstance(node, ast.Call) or not _is_console_call(node):
+            if not isinstance(node, ast.Call):
                 continue
+            stream = _console_stream(node)
+            if stream is None or stream in own_streams:
+                continue  # not a console write, or this module already forces UTF-8 on the stream it writes to
             if not any(_has_non_ascii(literal) for literal in _str_arg_values(node)):
                 continue
-            findings.append(Finding(
-                check="console_unicode",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=_line_text(src_lines, node.lineno),
-                detail=(
-                    "print()/logger.*() call emits a non-ASCII string literal; crashes with "
-                    "UnicodeEncodeError on Windows cp1251/cp1252 stdout. Replace fancy characters "
-                    "(arrows, checkmarks, em-dash) with ASCII equivalents."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="console_unicode",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=_line_text(src_lines, node.lineno),
+                    detail=(
+                        "print()/logger.*() call emits a non-ASCII string literal; crashes with "
+                        "UnicodeEncodeError on Windows cp1251/cp1252 stdout. Replace fancy characters "
+                        "(arrows, checkmarks, em-dash) with ASCII equivalents."
+                    ),
+                )
+            )
     return findings

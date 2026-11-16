@@ -1,4 +1,5 @@
 """Scanner tests for console_unicode, split verbatim out of the former tests/test_code_audit.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -92,3 +93,54 @@ def test_console_unicode_nested_package_without_init_reconfigure_still_flagged(t
     _write(unprotected, "sub.py", 'def f():\n    print("done → next")\n')
     findings = scan_console_unicode(tmp_path)
     assert len(findings) == 1 and "unprotected/sub.py" in findings[0].file, findings
+
+
+# ---- 40-T6: the reconfigure exemption is structural; print argument forms widened ----
+
+
+def _flagged_count(tmp_path: Path, body: str) -> int:
+    _write(tmp_path, "m.py", body)
+    return len(scan_console_unicode(tmp_path))
+
+
+def test_40_t6_commented_out_reconfigure_does_not_exempt(tmp_path: Path):
+    assert _flagged_count(tmp_path, '# sys.stdout.reconfigure(encoding="utf-8")\nprint("done → next")\n') == 1
+
+
+def test_40_t6_reconfigure_inside_a_string_does_not_exempt(tmp_path: Path):
+    assert _flagged_count(tmp_path, 'X = "sys.stdout.reconfigure(encoding)"\nprint("done → next")\n') == 1
+
+
+def test_40_t6_stderr_reconfigure_does_not_exempt_stdout_print(tmp_path: Path):
+    body = 'import sys\nsys.stderr.reconfigure(encoding="utf-8")\nprint("done → next")\n'
+    assert _flagged_count(tmp_path, body) == 1
+
+
+def test_40_t6_never_called_function_reconfigure_does_not_exempt(tmp_path: Path):
+    body = 'import sys\ndef unused():\n    sys.stdout.reconfigure(encoding="utf-8")\nprint("done → next")\n'
+    assert _flagged_count(tmp_path, body) == 1
+
+
+def test_40_t6_called_function_reconfigure_exempts(tmp_path: Path):
+    body = 'import sys\ndef main():\n    sys.stdout.reconfigure(encoding="utf-8")\nmain()\nprint("done → next")\n'
+    assert _flagged_count(tmp_path, body) == 0
+
+
+def test_40_t6_widened_print_forms_are_flagged(tmp_path: Path):
+    forms = [
+        "print('→ ' + x)",
+        "print('→ %s' % x)",
+        "print('→ {}'.format(x))",
+        "print(a, sep=' → ')",
+        "print(a, end='→')",
+        "import sys\nsys.stdout.write('→')",
+        "import click\nclick.echo('→')",
+        "from rich.console import Console\nConsole().print('→')",
+    ]
+    for form in forms:
+        assert _flagged_count(tmp_path, f"x = a = 1\n{form}\n") == 1, form
+
+
+def test_40_t6_print_to_stderr_needs_stderr_reconfigure(tmp_path: Path):
+    body = 'import sys\nsys.stdout.reconfigure(encoding="utf-8")\nprint("done → next", file=sys.stderr)\n'
+    assert _flagged_count(tmp_path, body) == 1

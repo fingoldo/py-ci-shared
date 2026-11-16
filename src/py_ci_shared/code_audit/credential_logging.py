@@ -1,8 +1,10 @@
 """(internal) part of pyutilz.dev.code_audit; see package __init__ for docs."""
+
 from __future__ import annotations
 
 import ast
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
@@ -22,18 +24,70 @@ __all__ = ["scan_credential_shaped_log_args"]
 # `db_password` -- and snake_case compounds (`db_password`, `auth_token`, `user_api_key`,
 # `proxy_url`) are how credentials are actually named. `bypass` still does not match, because
 # the character before `pass` there is alphanumeric.
-_CREDENTIAL_NAME_RE = re.compile(r"(?i)(?:^|[^A-Za-z0-9])(proxy|proxies|password|passwd|pass|auth|token|credential|secret|api_key|apikey|cookie)(?:[^A-Za-z0-9]|$)")
+_CREDENTIAL_NAME_RE = re.compile(
+    r"(?i)(?:^|[^A-Za-z0-9])("
+    r"proxy|proxies|password|passwords|passwd|pass|pwd|auth|authorization|token|tokens|jwt|"
+    r"credential|credentials|secret|secrets|api_key|apikey|api_keys|private_key|cookie|cookies"
+    r")(?:[^A-Za-z0-9]|$)"
+)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _REDACT_HINT_RE = re.compile(r"(?i)redact|mask|sanitiz|\.split\(.@.\)|scrub")
+# How many lines above a log call are searched for an assignment of a redacted copy (code only).
+_REDACT_ASSIGN_WINDOW = 4
 
 
-def _looks_credential_shaped(node: ast.AST) -> bool:
-    """True if ``node`` (a Name/Attribute/keyword value expression) has a name matching the
-    credential-shaped vocabulary."""
-    if isinstance(node, ast.Name):
-        return bool(_CREDENTIAL_NAME_RE.search(node.id))
-    if isinstance(node, ast.Attribute):
-        return bool(_CREDENTIAL_NAME_RE.search(node.attr))
-    return False
+def _is_credential_name(name: str) -> bool:
+    """Vocabulary match on a name, after splitting camelCase (``apiKey`` -> ``api_Key``)."""
+    return bool(_CREDENTIAL_NAME_RE.search(_CAMEL_BOUNDARY.sub("_", name)))
+
+
+def _credential_names_in(arg: ast.AST) -> set[str]:
+    """Credential-shaped names reachable from one logged argument expression.
+
+    Covers a bare Name or attribute, a name inside an f-string or a ``.format``/``%`` operand (any
+    Name/Attribute in the expression tree), a string key read by subscript (``d["password"]``) or
+    ``d.get("api_key")``, and a string key of a dict literal (``extra={"token": t}``). A plain
+    string literal that is only a message is never inspected: ``"password reset sent"`` is prose.
+    """
+    out: set[str] = set()
+    for node in ast.walk(arg):
+        keys: Sequence[ast.AST | None] = ()  # the key expressions this node contributes (string keys only)
+        if isinstance(node, ast.Name) and _is_credential_name(node.id):
+            out.add(node.id)
+        elif isinstance(node, ast.Attribute) and _is_credential_name(node.attr):
+            out.add(node.attr)
+        elif isinstance(node, ast.Subscript):
+            keys = [node.slice]
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "get":
+            keys = node.args[:1]
+        elif isinstance(node, ast.Dict):
+            keys = list(node.keys)
+        for key in keys:
+            text = _str_constant(key)
+            if text is not None and _is_credential_name(text):
+                out.add(text)
+    return out
+
+
+def _str_constant(node: ast.AST | None) -> str | None:
+    """The value of a string-literal node, else ``None``."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _redacting_assign_lines(tree: ast.AST) -> set[int]:
+    """Line numbers of assignments whose value is a redaction call or split (code, never comments)."""
+    return {node.lineno for node in walk_tree(tree) if isinstance(node, ast.Assign) and _REDACT_HINT_RE.search(ast.unparse(node.value))}
+
+
+def _has_redaction_hint(call: ast.Call, redacting_lines: set[int]) -> bool:
+    """Redaction evidence for a log call: the call's own arguments, or a redacting assignment in the few lines
+    above it. Comments and string prose are not code, so they never count."""
+    own = [ast.unparse(a) for a in call.args] + [ast.unparse(k.value) for k in call.keywords]
+    if any(_REDACT_HINT_RE.search(text) for text in own):
+        return True
+    return any(call.lineno - _REDACT_ASSIGN_WINDOW <= line < call.lineno for line in redacting_lines)
 
 
 _LOG_METHODS = frozenset({"debug", "info", "warning", "warn", "error", "exception", "critical", "log"})
@@ -84,37 +138,33 @@ def scan_credential_shaped_log_args(
             continue
         src_lines = _read_src_lines(py)
         rel = py.relative_to(root).as_posix()
+        redacting_lines = _redacting_assign_lines(tree)
         for node in walk_tree(tree):
             if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in _LOG_METHODS):
                 continue
             if not _is_logger_receiver(node.func.value):
                 continue
-            offending = [a for a in node.args if _looks_credential_shaped(a)]
-            offending += [kw.value for kw in node.keywords if _looks_credential_shaped(kw.value)]
-            if not offending:
+            credential_names: set[str] = set()
+            for a in list(node.args) + [kw.value for kw in node.keywords]:
+                credential_names |= _credential_names_in(a)
+            if not credential_names:
                 continue
             line_text = _line_text(src_lines, node.lineno)
-            # Redaction-hint check spans a small window around the call (helper redaction often
-            # happens on the line(s) just before the log call, assigning a redacted copy).
-            window = "\n".join(src_lines[max(0, node.lineno - 4) : node.lineno])
-            if _REDACT_HINT_RE.search(window) or is_line_exempt(src_lines, node.lineno, "credential_shaped_log_arg"):
+            if _has_redaction_hint(node, redacting_lines) or is_line_exempt(src_lines, node.lineno, "credential_shaped_log_arg"):
                 continue
-            credential_names: set[str] = set()
-            for a in offending:
-                if not isinstance(a, (ast.Name, ast.Attribute)):  # _looks_credential_shaped only accepts Name/Attribute nodes; not a security check
-                    raise AssertionError(f"expected Name or Attribute, got {type(a).__name__}")
-                credential_names.add(a.id if isinstance(a, ast.Name) else a.attr)
             names = ", ".join(sorted(credential_names))
-            findings.append(Finding(
-                check="credential_shaped_log_arg",
-                severity="P2",
-                file=rel,
-                line=node.lineno,
-                snippet=line_text,
-                detail=(
-                    f"logger call passes credential-shaped value(s) ({names}) with no redaction "
-                    "hint nearby (.split('@'), redact/mask/sanitize) -- confirm this doesn't leak "
-                    "a plaintext credential into logs."
-                ),
-            ))
+            findings.append(
+                Finding(
+                    check="credential_shaped_log_arg",
+                    severity="P2",
+                    file=rel,
+                    line=node.lineno,
+                    snippet=line_text,
+                    detail=(
+                        f"logger call passes credential-shaped value(s) ({names}) with no redaction "
+                        "hint nearby (.split('@'), redact/mask/sanitize) -- confirm this doesn't leak "
+                        "a plaintext credential into logs."
+                    ),
+                )
+            )
     return findings
