@@ -115,6 +115,7 @@ NON_CORPUS: dict[str, str] = {
     "readme_env_var_parity.find_readme_documented_vars": "takes a README path, not a corpus",
     "repo_hygiene.find_missing_required_files": "needs the repo's list of required files",
     "resource_release_paths": "takes one file and a release method",
+    "route_literal_after_catchall": "needs the router object names the app declares",
     "schema_snapshot_parity": "takes one schema.sql and one snapshot JSON and provisions a throwaway server; not a corpus scan",
     "script_entry_points": "needs the caller's list of flat script directories; repos differ in where their scripts live",
     "sibling_floor_skew.find_floors": "takes one pyproject path; find_sibling_floor_skew runs it from the repo root",

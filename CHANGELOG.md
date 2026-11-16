@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
+
 - New gate `global_write_via_reexport_alias` (`assert_global_write_via_reexport_alias`): the write to a global through a re-exporting facade; a write through a re-exporting facade changes only the facade's copy, not the global. Nothing to do for existing consumers until they enable it.
 - New gate `route_literal_after_catchall` (`assert_route_literal_after_catchall`): a literal route declared after a same-shape parameter route; a literal route shadowed by an earlier parameter route is flagged. Nothing to do for existing consumers until they enable it.
 - New gate `sql_where_mixed_and_or` (`assert_sql_where_mixed_and_or`): a WHERE clause mixing AND and OR at one parenthesis level; a WHERE clause that mixes AND and OR without parentheses is flagged. Nothing to do for existing consumers until they enable it.

@@ -112,7 +112,7 @@ def _int_combine(current: ast.AST, values: "list[Optional[int]]", consts: "dict[
     if isinstance(current, ast.UnaryOp) and isinstance(current.op, (ast.USub, ast.UAdd)):
         inner = values[0]
         return None if inner is None else (-inner if isinstance(current.op, ast.USub) else inner)
-    if isinstance(current, ast.Call):
+    if isinstance(current, ast.Call) and _numpy_integer_scalar(current) and len(current.args) == 1:
         return values[0]  # np.int64(3) is the seed 3
     if isinstance(current, ast.BinOp) and type(current.op) in _FOLDED_OPS:
         return _int_binop(current, values)
