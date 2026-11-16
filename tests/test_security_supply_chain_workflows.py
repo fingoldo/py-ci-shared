@@ -25,6 +25,17 @@ def _steps(doc):
     return [s for j in jobs for s in j.get("steps", [])] or doc["runs"]["steps"]
 
 
+@pytest.mark.parametrize("secret", ["CONSUMER_READ_TOKEN", "RELEASE_TOKEN"])
+def test_a_token_is_scoped_to_the_step_that_needs_it_never_the_job(secret):
+    """Audit 51-T3: a job-level env reaches every step (pip install, the snapshot run); only the step that reads the token gets it."""
+    offenders = []
+    for wf in sorted(WF.glob("*.yml")):
+        for job_name, job in (_load(wf).get("jobs") or {}).items():
+            if secret in (job.get("env") or {}):
+                offenders.append(f"{wf.name}:{job_name}")
+    assert offenders == []
+
+
 def test_lint_blocking_defaults_equal_tool_versions():
     inputs = _load(WF / "lint-blocking.yml")[True]["workflow_call"]["inputs"]
     expected = {

@@ -183,3 +183,24 @@ def test_a_same_size_rewrite_with_a_restored_mtime_is_not_served_stale(tmp_path)
     p.write_text("x=22\n", encoding="utf-8")
     os.utime(p, (old, old))
     assert read_bytes_cached(p) == b"x=22\n"
+
+
+class TestSizeCap:
+    """A file over the scan cap is a typed read error, never read whole into memory (audit 51-T2)."""
+
+    def test_a_file_over_the_cap_is_a_read_error_naming_the_cap(self, tmp_path, monkeypatch):
+        from py_ci_shared._core import source as source_mod
+
+        monkeypatch.setattr(source_mod, "MAX_SCANNED_BYTES", 16)
+        p = _write(tmp_path, b"X = 1\n" * 10)
+        with pytest.raises(SourceReadError, match="larger than 16 bytes, not scanned"):
+            read_source(p)
+        with pytest.raises(SourceReadError, match="larger than 16 bytes, not scanned"):
+            parse_source(p)
+
+    def test_a_file_at_the_cap_is_read(self, tmp_path, monkeypatch):
+        from py_ci_shared._core import source as source_mod
+
+        monkeypatch.setattr(source_mod, "MAX_SCANNED_BYTES", 6)
+        p = _write(tmp_path, b"X = 1\n")
+        assert read_source(p) == "X = 1\n"

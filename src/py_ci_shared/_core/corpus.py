@@ -181,12 +181,20 @@ def iter_files_pruned(root: PathLike, suffixes: Sequence[str] = (), exclude_dirs
     The replacement for ``root.rglob(...)`` and an unpruned ``os.walk(root)``: those descend into ``.claude``, where Claude Code keeps
     its agent worktrees, each a COMPLETE copy of the repository, and a gate handed the repo root then reads every copy (one audit test
     took 19 to 30 minutes with about 20 of them). Directories are pruned before they are entered and only components BELOW *root* are
-    judged, so where *root* itself lives never matters. A missing *root* yields an empty list. Symlinked files are listed, as ``rglob`` did.
+    judged, so where *root* itself lives never matters. A missing *root* yields an empty list. Symlinked files are NOT listed (as in ``iter_files``).
     """
     base = Path(root)
     skip = frozenset(exclude_dirs)
     ends = tuple(suffixes)
-    return [base.joinpath(*rel.split("/")) for rel in sorted(_walk(base, skip)) if not ends or rel.endswith(ends)]
+    out: list[Path] = []
+    for rel in sorted(_walk(base, skip)):
+        if ends and not rel.endswith(ends):
+            continue
+        p = base.joinpath(*rel.split("/"))
+        # A symlink is not corpus content: its target may sit outside the checkout (audit 51-T1), and iter_files drops it for the same reason.
+        if _is_regular_file(p):
+            out.append(p)
+    return out
 
 
 def _matches(rel: str, patterns: Sequence[str], include_stubs: bool = False) -> bool:
