@@ -126,3 +126,53 @@ def test_t17_an_environment_skipif_is_still_not_judged(tmp_path: Path):
 def test_t18_upper_case_py_extension_is_scanned(tmp_path: Path):
     _write(tmp_path, "upper.PY", "def f():\n    try:\n        g()\n    except:\n        pass\n")
     assert [f.file for f in scan_bare_except(tmp_path)] == ["upper.PY"]
+
+
+# ---- 40-T7: a re-raise must be the handler's last top-level statement -----------------------
+
+
+def _bare_hits(tmp_path: Path, body: str) -> list:
+    _write(tmp_path, "m.py", body)
+    return scan_bare_except(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    g()\nexcept* BaseException:\n    pass\n",
+        "try:\n    g()\nexcept (BaseException, ValueError):\n    pass\n",
+        "try:\n    g()\nexcept builtins.BaseException:\n    pass\n",
+        "try:\n    g()\nexcept:\n    if x:\n        raise\n",
+        "try:\n    g()\nexcept:\n    def h():\n        raise\n    pass\n",
+    ],
+    ids=["except-star", "tuple-with-base", "dotted-base", "conditional-reraise", "nested-def-reraise"],
+)
+def test_t7_a_handler_that_can_swallow_is_flagged(tmp_path: Path, body: str):
+    assert _bare_hits(tmp_path, body), body
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "try:\n    g()\nexcept BaseException:\n    cleanup()\n    raise\n",
+        "try:\n    g()\nexcept:\n    if x:\n        cleanup()\n    raise\n",
+        "try:\n    g()\nexcept* BaseException:\n    cleanup()\n    raise\n",
+    ],
+    ids=["plain-cleanup-reraise", "conditional-then-reraise", "except-star-reraise"],
+)
+def test_t7_a_handler_that_always_re_raises_is_not_flagged(tmp_path: Path, body: str):
+    assert _bare_hits(tmp_path, body) == []
+
+
+def test_t7_conditional_reraise_in_broad_except_swallow_is_flagged(tmp_path: Path):
+    from py_ci_shared.code_audit.broad_except import scan_broad_except_swallows
+
+    _write(tmp_path, "m.py", "try:\n    g()\nexcept Exception:\n    if DEBUG:\n        raise\n")
+    assert scan_broad_except_swallows(tmp_path)
+
+
+def test_t7_except_star_broad_swallow_is_flagged(tmp_path: Path):
+    from py_ci_shared.code_audit.broad_except import scan_broad_except_swallows
+
+    _write(tmp_path, "m.py", "try:\n    g()\nexcept* Exception:\n    pass\n")
+    assert scan_broad_except_swallows(tmp_path)

@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T7, `bare_except` and `broad_except_swallow`): a handler counts as re-raising only when its LAST top-level statement is a bare `raise`; a `raise` under an `if` or inside a nested `def` no longer exempts it. `except*` is checked, and a tuple or dotted form containing `BaseException` (`except (BaseException, ValueError):`, `except builtins.BaseException:`) is treated as bare. A conditional re-raise in an `except Exception:` that otherwise passes is a silent swallow. What to do: a flagged handler that re-raises only on one path must re-raise unconditionally at its end (move the `raise` to the last statement), or carry `# audit-exempt: bare_except -- <reason>` on the handler line.
+
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
 - New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.

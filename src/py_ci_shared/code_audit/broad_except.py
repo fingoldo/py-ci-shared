@@ -87,6 +87,9 @@ def _is_tolerated_stmt(s: ast.stmt, debug_only: bool) -> bool:
     call itself and a bare-default return or assignment."""
     if isinstance(s, (ast.Pass, ast.Continue, ast.Break)):
         return True
+    # A conditional re-raise (``if x: raise``) leaves the handler silent on the path where ``x`` is false.
+    if isinstance(s, ast.If) and not s.orelse and _has_raise(s.body):
+        return True
     if not debug_only:
         return False
     if _is_debug_log_stmt(s):
@@ -106,7 +109,8 @@ def _is_silent_swallow(handler: ast.ExceptHandler) -> bool:
     """
     if _has_log_call(handler.body):
         return False
-    if _has_raise(handler.body):
+    last = handler.body[-1] if handler.body else None
+    if isinstance(last, ast.Raise):
         return False
     debug_only = _has_debug_only_log_call(handler.body)
     if debug_only and not _returns_or_assigns_default(handler.body):

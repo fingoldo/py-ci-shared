@@ -11,28 +11,35 @@ import ast
 from .._core.ast_try import TRY_NODES
 from pathlib import Path
 
-from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt, walk_nodes
+from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
 __all__ = ["scan_bare_except"]
 
 # --- bare `except:` / `except BaseException:` ----------------------------
 
 
+def _names_base_exception(node: ast.expr) -> bool:
+    """True for ``BaseException`` or ``builtins.BaseException``."""
+    if isinstance(node, ast.Name):
+        return node.id == "BaseException"
+    return isinstance(node, ast.Attribute) and node.attr == "BaseException" and isinstance(node.value, ast.Name) and node.value.id == "builtins"
+
+
 def _is_bare_except(handler: ast.ExceptHandler) -> bool:
-    """``handler.type`` is None for bare ``except:``; or a Name ``BaseException`` for the
+    """``handler.type`` is None for bare ``except:``; or ``BaseException`` (alone, dotted, or in a tuple) for the
     equivalent dangerous form.
 
-    EXCEPTION: ``except BaseException as e: ... raise`` (bare re-raise) is legitimate --
-    phase-tracking context managers, request-scope cleanup, and similar patterns that audit EVERY
-    exit path. A bare re-raise inside the handler is allowed.
+    EXCEPTION: a handler whose LAST top-level statement is a bare ``raise`` re-raises on every path, so it is
+    legitimate -- phase-tracking context managers, request-scope cleanup, and similar patterns that audit EVERY
+    exit path. A ``raise`` under an ``if`` or inside a nested ``def`` runs on one path only and does not exempt.
     """
-    if handler.type is not None and not (isinstance(handler.type, ast.Name) and handler.type.id == "BaseException"):
-        return False
-    # Bare re-raise exemption applies to BOTH shapes -- a bare `except:` whose body immediately
-    # re-raises swallows nothing either, exactly as the docstring promises.
-    for sub in walk_nodes(handler):
-        if isinstance(sub, ast.Raise) and sub.exc is None:
+    if handler.type is not None:
+        types = handler.type.elts if isinstance(handler.type, ast.Tuple) else [handler.type]
+        if not any(_names_base_exception(t) for t in types):
             return False
+    last = handler.body[-1] if handler.body else None
+    if isinstance(last, ast.Raise) and last.exc is None:
+        return False
     return True
 
 
