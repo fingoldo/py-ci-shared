@@ -131,14 +131,18 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     out: list[Finding] = []
 
     def visit(node: ast.AST, prefix: str, in_protocol: bool, subclass: bool = False) -> None:
-        for child in child_nodes(node):
+        # An explicit stack in source order, not recursion: a deep expression in a generated module must not reach the recursion limit.
+        pending: list[tuple[ast.AST, str, bool, bool]] = [(child, prefix, in_protocol, subclass) for child in reversed(child_nodes(node))]
+        while pending:
+            child, pfx, proto, sub = pending.pop()
             if isinstance(child, ast.ClassDef):
-                visit(child, f"{prefix}{child.name}.", _is_protocol(child, aliases), bool(child.bases))
+                inner = (f"{pfx}{child.name}.", _is_protocol(child, aliases), bool(child.bases))
             elif isinstance(child, _FUNCTIONS):
-                check(child, prefix, in_protocol, subclass)
-                visit(child, f"{prefix}{child.name}.<locals>.", False)
+                check(child, pfx, proto, sub)
+                inner = (f"{pfx}{child.name}.<locals>.", False, False)
             else:
-                visit(child, prefix, in_protocol, subclass)
+                inner = (pfx, proto, sub)
+            pending.extend((grandchild, *inner) for grandchild in reversed(child_nodes(child)))
 
     def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         a = func.args
