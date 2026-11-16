@@ -199,6 +199,7 @@ def find_cuda_clang_tidy(
 
 
 def main(argv: "Optional[Sequence[str]]" = None) -> int:
+    """Run clang-tidy over the CUDA kernel strings under root and return the exit status."""
     ap = argparse.ArgumentParser(prog="python -m py_ci_shared.cuda_clang_tidy", description="clang-tidy pass over CUDA kernel strings (CUDA.md 17)")
     ap.add_argument("root")
     ap.add_argument("--exclude", action="append", default=[], help="path part to skip (repeatable)")
