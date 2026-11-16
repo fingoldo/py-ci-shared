@@ -98,7 +98,9 @@ def find_wallclock_test_waits(root: Union[str, Path], *, python_mode: str = "tex
     if python_mode not in ("text", "ast"):
         raise ValueError(f"python_mode must be 'text' or 'ast', not {python_mode!r}")
     files, unreadable = text_scan(root, ("*.py", "*.dart"))
-    require_text_floor("wallclock_test_waits", sum(is_wallclock_test_file(f.rel) for f in files), min_files=min_files, root=root)
+    # An unreadable file is in the corpus too: the gate reached it and reports it, so it counts toward the floor.
+    corpus_count = sum(is_wallclock_test_file(f.rel) for f in files) + sum(is_wallclock_test_file(k.rsplit(": ", 1)[0]) for k in unreadable)
+    require_text_floor("wallclock_test_waits", corpus_count, min_files=min_files, root=root)
     found = {k: v for k, v in unreadable.items() if is_wallclock_test_file(k.rsplit(": ", 1)[0])}
     for file in files:
         if not is_wallclock_test_file(file.rel):

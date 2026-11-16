@@ -153,7 +153,9 @@ def find_unscrubbed_git_spawns(root: Union[str, Path], *, min_files: int = 1) ->
 
     Raises ``CorpusError`` when fewer than *min_files* test files are found (see :func:`require_text_floor`)."""
     files, unreadable = text_scan(root, ("*.py", "*.dart"))
-    require_text_floor("git_child_env", sum(is_test_path(f.rel) for f in files), min_files=min_files, root=root)
+    # An unreadable file is in the corpus too: the gate reached it and reports it, so it counts toward the floor.
+    corpus_count = sum(is_test_path(f.rel) for f in files) + sum(is_test_path(k.rsplit(": ", 1)[0]) for k in unreadable)
+    require_text_floor("git_child_env", corpus_count, min_files=min_files, root=root)
     found = {k: v for k, v in unreadable.items() if is_test_path(k.rsplit(": ", 1)[0])}
     for file in files:
         if not is_test_path(file.rel):
