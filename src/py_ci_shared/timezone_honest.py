@@ -187,7 +187,13 @@ def timezone_problems(
     if unreasoned:
         problems.append(f"allowance(s) with no reason: {unreasoned}. An allowance is a claim that the finding is correct; say why.")
 
-    found = dtz_findings(root, scan, test_dir_names=tests)
+    try:
+        found = dtz_findings(root, scan, test_dir_names=tests)
+    except RuntimeError as exc:
+        # ruff itself failed (a file it cannot decode, a NUL byte, a crash): that is a finding about the
+        # input, reported as a sentence, not a traceback that the runner files as an ERROR.
+        problems.append(f"ruff could not complete the timezone check, so no DTZ result exists: {exc}")
+        return problems
 
     unexpected = sorted(found - set(allowed))
     if unexpected:
