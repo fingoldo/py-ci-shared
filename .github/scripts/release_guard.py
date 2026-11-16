@@ -102,6 +102,16 @@ def version_problem(version: str, tags: Iterable[str], head: str, tag_commit: Op
     return None
 
 
+def previous_release(version: str, tags: Iterable[str]) -> str:
+    """The newest release tag strictly below ``version`` (``v0.0.0`` when there is none).
+
+    A re-run of ``prepare --check`` after ``v{version}`` was published compares against this base: the release's own edits are then
+    the fixed point the tagged commit already holds (46-T2)."""
+    key = release_key(f"v{version}")
+    below = [t for t in release_tags(tags) if key is not None and (release_key(t) or (0, 0, 0)) < key]
+    return below[-1] if below else "v0.0.0"
+
+
 def ci_verdict(runs: Sequence[dict]) -> tuple[str, str]:
     """``("green" | "pending" | "red", why)`` from the ``self-ci.yml`` runs of one commit (any event)."""
     if any(r.get("conclusion") in GREEN for r in runs):
@@ -388,7 +398,11 @@ def _warn_failed_legs(api: Callable[[str], Any], args: argparse.Namespace) -> No
 def _main_prepare(args: argparse.Namespace) -> int:
     repo_dir = Path(args.repo_dir)
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or ""
-    published = args.published or _published_release(args.repo, token, _git_tags(repo_dir))
+    tags = _git_tags(repo_dir)
+    published = args.published or _published_release(args.repo, token, tags)
+    if published is not None and release_key(published) == release_key(f"v{args.version}"):
+        # verify re-runs after the release was published: check against the release before it (46-T2)
+        published = previous_release(args.version, tags)
     if published is None:
         _say(f"::error::cannot read the GitHub releases of {args.repo}, so the newest published release is unknown: re-run this job, or pass --published X.Y.Z")
         return 2
