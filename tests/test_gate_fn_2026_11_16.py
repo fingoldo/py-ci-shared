@@ -126,3 +126,11 @@ def test_t17_an_environment_skipif_is_still_not_judged(tmp_path: Path):
 def test_t18_upper_case_py_extension_is_scanned(tmp_path: Path):
     _write(tmp_path, "upper.PY", "def f():\n    try:\n        g()\n    except:\n        pass\n")
     assert [f.file for f in scan_bare_except(tmp_path)] == ["upper.PY"]
+
+
+def test_t18_extensionless_python_script_with_a_python_shebang_is_scanned(tmp_path: Path):
+    body = "try:\n    g()\nexcept:\n    pass\n"
+    _write(tmp_path, "deploy", "#!/usr/bin/env python3\n" + body)
+    _write(tmp_path, "run", "#!/bin/sh\n" + body)  # a shell script is not Python source
+    _write(tmp_path, "NOTES", body)  # no shebang: not a script
+    assert [f.file for f in scan_bare_except(tmp_path)] == ["deploy"]

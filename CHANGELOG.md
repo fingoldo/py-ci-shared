@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.12)
 
+- **Behaviour change** (40-T18, code_audit file walk): an extensionless file whose first line is a `python` shebang (`bin/deploy`, `#!/usr/bin/env python3`) is a Python source file for the code_audit scanners, as an upper-case `.PY` already was. A shell script with an extensionless name is not. What to do: fix or waive the findings the scanners now report in such scripts; `# <gate>-ok` markers apply as usual.
+
 - **Behaviour change** (40-T20, `hardcoded_seed_in_library`): a seed written with `**` or `<<` (`random_state=2**5`), a numpy integer scalar (`np.int64(3)`), a string seed (`random.Random("abc")`) is judged as the literal seed it is, and the seed-parameter names `random_generator` and `generator` now make a function a seeded one (`rs` was already). What to do: pass the function's own seed on, or mark a deliberately fixed seed `# seed-ok: <reason>`.
 
 - **Behaviour change** (40-T19, `systemexit_in_library`): in a library module (no `__main__` guard, not a `__main__.py`), an exit that runs at import time (module level, class body, or a lambda) and `os.abort()` are findings, whatever the name. Library modules are the modules that are not scripts or entry points. What to do: move the exit into `main()` and raise a normal exception from the module, or mark the line `# exit-ok: <reason>`.

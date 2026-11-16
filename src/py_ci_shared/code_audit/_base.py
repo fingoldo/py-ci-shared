@@ -252,9 +252,27 @@ def _iter_py_files(root: Path, exclude_dirs: frozenset[str]) -> Iterable[Path]:
     candidates: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-        candidates.extend(Path(dirpath) / name for name in filenames if name.lower().endswith(_PY_EXTS))
+        for name in filenames:
+            path = Path(dirpath) / name
+            if name.lower().endswith(_PY_EXTS) or _is_python_script(path, name):
+                candidates.append(path)
     candidates.sort(key=lambda p: p.as_posix())
     yield from candidates
+
+
+_SHEBANG_PYTHON = re.compile(rb"^#!.*\bpython[0-9.]*\b")
+
+
+def _is_python_script(path: Path, name: str) -> bool:
+    """An extensionless file whose first line is a ``python`` shebang (``bin/deploy``): shipped Python with no suffix to match."""
+    if "." in name:
+        return False
+    try:
+        with path.open("rb") as fh:
+            first = fh.readline(256)
+    except OSError:
+        return False
+    return bool(_SHEBANG_PYTHON.match(first.removeprefix(b"\xef\xbb\xbf")))
 
 
 def _safe_parse(path: Path) -> Optional[ast.Module]:
