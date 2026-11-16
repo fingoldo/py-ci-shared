@@ -1,0 +1,5 @@
+from sklearn.base import BaseEstimator, ClassifierMixin
+
+class Bad(BaseEstimator, ClassifierMixin):
+    def fit(self, X, y):
+        return self

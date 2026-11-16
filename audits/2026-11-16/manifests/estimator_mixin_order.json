@@ -1,0 +1,25 @@
+{
+  "module": "estimator_mixin_order",
+  "kind": "gate",
+  "entries": [
+    "assert_estimator_mixin_order",
+    "find_estimator_mixin_order"
+  ],
+  "summary": "An sklearn mixin listed after BaseEstimator in a class statement silently breaks is_classifier/is_regressor.",
+  "since": "to be set by the lead via release_guard prepare",
+  "files": [
+    "src/py_ci_shared/estimator_mixin_order.py",
+    "tests/test_estimator_mixin_order.py",
+    "tests/canary/estimator_mixin_order/violation/m.py.canary",
+    "tests/canary/estimator_mixin_order/clean/m.py.canary",
+    "tests/canary/estimator_mixin_order/unparsable/m.py.canary",
+    "tests/_gate_teeth_canaries_estimator_mixin_order.py"
+  ],
+  "integration_needed": [
+    "registry.toml entry (sorted by name; since = next version)",
+    "README catalogue row",
+    "tests/canary/estimator_mixin_order/bom/ variant is not yet written",
+    "_gate_teeth_canaries_more.py loads only _gate_teeth_canaries_cuda_*.py fragments; widen the glob or import this fragment explicitly"
+  ],
+  "changelog": "- **New gate `estimator_mixin_order`**: flags a scikit-learn mixin (ClassifierMixin, RegressorMixin, ...) listed after `BaseEstimator` in a class statement, which silently makes `is_classifier`/`is_regressor` return False under scikit-learn >= 1.6. Waive with `# mixin-order-ok: <reason>`. Consumers that have such a class turn red; fix by moving the mixin before `BaseEstimator`."
+}
