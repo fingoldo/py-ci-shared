@@ -32,7 +32,7 @@ That separates accepted lag from neglect, so one standing red job does not hide 
 
 A fixed pin followed by a ``# vX.Y.Z`` comment (``pip install ...@<sha>  # v1.23.8``) is also compared with that tag: with ``--resolve-in`` the
 tag's commit must be the pinned commit, otherwise the pin is a ``ci-pin-comment-not-release`` finding (a comment that lies about the release;
-write ``master <sha7>`` instead). It is report-only unless ``--strict-pin-comments`` is given. Without a checkout the comments are not checked.
+name the commit the tag points at instead). It is report-only unless ``--strict-pin-comments`` is given. Without a checkout the comments are not checked.
 
 A repos file holds ``repos = ["../mlframe", ...]`` (relative to the file) or ``[[repo]]`` tables with ``path`` and an
 optional ``name``.
@@ -48,7 +48,7 @@ import re
 import sys
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional, Union
 
@@ -125,6 +125,7 @@ class RefResolver:
         self.repo = Path(repo) if repo is not None else None
         self._cache: dict[str, Optional[str]] = {}
         self._releases: Optional[list[str]] = None
+        self._dates: Optional[dict[str, date]] = None
 
     def _git(self, *args: str) -> Optional[str]:
         if self.repo is None:
@@ -154,6 +155,36 @@ class RefResolver:
             return None
         have = {t.strip() for t in merged.splitlines()}
         return sum(t not in have for t in releases), releases[-1]
+
+    def file_text(self, sha: str, path: str) -> Optional[str]:
+        """The text of *path* at commit *sha* in the checkout, or None when it is not there."""
+        return self._git("show", f"{sha}:{path}")
+
+    def release_dates(self) -> dict[str, date]:
+        """Creation date of each release tag (``git for-each-ref``); a tag without a readable date is absent."""
+        if self._dates is None:
+            out = self._git("for-each-ref", "--format=%(refname:short) %(creatordate:short)", "refs/tags") or ""
+            dates: dict[str, date] = {}
+            for line in out.splitlines():
+                parts = line.split()
+                if len(parts) == 2 and is_release_tag(parts[0]):
+                    try:
+                        dates[parts[0]] = date.fromisoformat(parts[1])
+                    except ValueError:
+                        continue
+            self._dates = dates
+        return self._dates
+
+    def first_lacking_date(self, sha: str) -> Optional[date]:
+        """Creation date of the oldest release tag that the commit *sha* does not contain; None when it has them all."""
+        merged = self._git("tag", "--list", "v*", "--merged", sha)
+        if merged is None:
+            return None
+        have = {t.strip() for t in merged.splitlines()}
+        for tag in self.releases():
+            if tag not in have:
+                return self.release_dates().get(tag)
+        return None
 
     def __call__(self, ref: str) -> Optional[str]:
         if self.repo is None:
@@ -361,6 +392,9 @@ class RepoReport:
     tag_commits: dict[str, Optional[str]] = field(default_factory=dict)  # tag named in a pin comment -> its commit (None: no such tag)
     known_tags: bool = False  # the resolver saw release tags, so a tag it cannot resolve really does not exist
     enforce_comments: bool = False
+    grace_days: int = 0  # 47-T1: a lag past allow_behind is stale only once the oldest release it lacks is this old (0: at once)
+    lacking_since: dict[str, date] = field(default_factory=dict)  # pin ref -> creation date of the oldest release it lacks
+    today: Optional[date] = None  # the day the grace is measured against (None: today, UTC)
 
     def pin_key(self, pin: Pin) -> str:
         """The identity two pins must share to agree: resolved SHA, else the SHA's 7-char prefix, else the label."""
@@ -386,8 +420,24 @@ class RepoReport:
 
     @property
     def stale_pins(self) -> list[Pin]:
-        """Fixed pins more than ``allow_behind`` releases behind the latest release tag."""
-        return [p for p in self.pins if p.ref is not None and not p.moving and self.behind.get(p.ref, (0, ""))[0] > self.allow_behind]
+        """Fixed pins more than ``allow_behind`` releases behind the latest release tag, and past the grace (47-T1)."""
+        return [
+            p for p in self.pins if p.ref is not None and not p.moving and self.behind.get(p.ref, (0, ""))[0] > self.allow_behind and self._grace_over(p.ref)
+        ]
+
+    def _grace_over(self, ref: str) -> bool:
+        if self.grace_days <= 0:
+            return True
+        since = self.lacking_since.get(ref)
+        if since is None:  # no date for the release: count it, as the release-count rule alone does
+            return True
+        today = self.today or datetime.now(timezone.utc).date()
+        return (today - since).days >= self.grace_days
+
+    @property
+    def unpinned_use(self) -> bool:
+        """The repo imports py_ci_shared modules but pins no py-ci-shared at all (47-T7): a fresh clone cannot run them."""
+        return bool(self.modules) and not self.pins
 
     @property
     def unresolvable_pins(self) -> list[Pin]:
@@ -408,6 +458,7 @@ class RepoReport:
             or bool(self.silent_skips)
             or bool(self.stale_pins)
             or bool(self.unresolvable_pins)
+            or self.unpinned_use
         )
 
     def findings(self) -> list[Finding]:
@@ -432,6 +483,9 @@ class RepoReport:
             for p in self.unresolvable_pins
         )
         out.extend(Finding(p.path, p.line, "ci-pin-comment-not-release", f"{p.target} pinned to {p.label()}: {why}") for p, why in self.comment_mismatches)
+        if self.unpinned_use:
+            module_path = next(iter(self.modules.values()))[0]
+            out.append(Finding(module_path, 0, "unpinned-use", "imports py_ci_shared modules but pins no py-ci-shared: a fresh clone cannot run them. Pin a release in the repo's dev dependencies"))
         out.extend(self.silent_skips)
         if self.waiver_note and self.pins:
             out.append(Finding(self.pins[0].path, self.pins[0].line, "pin-waiver", self.waiver_note))
@@ -447,6 +501,7 @@ def scan_repo(
     local_copies: bool = True,
     allow_behind: int = 0,
     enforce_comments: bool = False,
+    grace_days: int = 0,
 ) -> RepoReport:
     """Read one consumer repo. *resolver* maps a ref to a full SHA; a :class:`RefResolver` also dates each pin."""
     root = Path(repo_root)
@@ -463,6 +518,7 @@ def scan_repo(
         local_copies=_local_copies(root) if local_copies else [],
         allow_behind=allow_behind,
         enforce_comments=enforce_comments,
+        grace_days=grace_days,
     )
     if resolver is not None and not (isinstance(resolver, RefResolver) and resolver.repo is None):
         report.resolved = {p.ref: resolver(p.ref) for p in report.pins if p.ref is not None}
@@ -473,6 +529,10 @@ def scan_repo(
                 lag = resolver.releases_behind(full)
                 if lag is not None:
                     report.behind[p.ref] = lag
+                if grace_days > 0:
+                    since = resolver.first_lacking_date(full)
+                    if since is not None:
+                        report.lacking_since[p.ref] = since
         if resolver.repo is not None:
             report.known_tags = bool(resolver.releases())
             report.tag_commits = {t: resolver(t) for t in {p.comment_tag for p in report.pins if p.comment_tag}}
@@ -545,6 +605,19 @@ def _workflow_lines(reports: Sequence[RepoReport]) -> list[str]:
     return lines
 
 
+def _grouped_finding_lines(name: str, found: Sequence[Finding]) -> list[str]:
+    """One line per root cause (47-T10): findings of one rule about one pinned ref, whatever workflow file carries them, share a line."""
+    groups: dict[tuple[str, str], list[Finding]] = {}
+    for f in found:
+        _subject, sep, rest = f.message.partition(" pinned to ")
+        groups.setdefault((f.rule, rest if sep else f.message), []).append(f)
+    lines = []
+    for members in groups.values():
+        shown = ", ".join(f"`{f.path}:{f.line}`" for f in members[:4]) + (f" (+{len(members) - 4} more)" if len(members) > 4 else "")
+        lines.append(f"- {name}: {shown} {members[0].rule}: {members[0].message}")
+    return lines
+
+
 def _finding_lines(reports: Sequence[RepoReport]) -> list[str]:
     lines = ["", "## Findings", ""]
     any_finding = False
@@ -552,7 +625,7 @@ def _finding_lines(reports: Sequence[RepoReport]) -> list[str]:
         found = r.findings()
         extra = [f"- {r.name}: `{f.path}:{f.line}` local-copy: {f.message}" for f in r.local_copies]
         extra += [f"- {r.name}: unknown-module `py_ci_shared.{m}` in " + ", ".join(f"`{p}`" for p in v[:3]) for m, v in r.unknown_modules.items()]
-        lines.extend(f"- {r.name}: `{f.path}:{f.line}` {f.rule}: {f.message}" for f in found)
+        lines.extend(_grouped_finding_lines(r.name, found))
         lines.extend(extra)
         any_finding = any_finding or bool(found) or bool(extra)
     if not any_finding:
@@ -700,6 +773,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         help="fail (not just report) a pin whose `# vX.Y.Z` comment names a tag whose commit is not the pinned commit (needs --resolve-in)",
     )
     parser.add_argument("--allow-behind", type=int, default=0, help="releases a fixed pin may lag the latest tag (default 0; needs --resolve-in)")
+    parser.add_argument(
+        "--grace-days",
+        type=int,
+        default=0,
+        help="a lag past --allow-behind is stale only once the oldest release the pin lacks is this many days old (default 0: at once; needs --resolve-in)",
+    )
     args = parser.parse_args(argv)
     roots: list[tuple[str, Path]] = [(Path(r).resolve().name, Path(r).resolve()) for r in args.repos]
     if args.repos_file:
@@ -729,6 +808,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             local_copies=not args.no_local_copies,
             allow_behind=allow,
             enforce_comments=args.strict_pin_comments,
+            grace_days=args.grace_days,
         )
         report.waiver_note = note
         reports.append(report)

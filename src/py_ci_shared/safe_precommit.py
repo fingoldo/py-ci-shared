@@ -202,7 +202,13 @@ def patch_stash_restore() -> bool:
 def main(argv: list[str] | None = None) -> int:
     """Run the pre-commit command line with its stash-restore step patched to be safe, and return its exit code."""
     patch_stash_restore()
-    from pre_commit.main import main as pc_main
+    try:
+        from pre_commit.main import main as pc_main
+    except ImportError:  # 47-T3: name the interpreter and the fix instead of a bare traceback
+        sys.stderr.write(
+            f"pre-commit is not installed in {sys.executable}; install it there (pip install pre-commit) or re-run `pre-commit install -f` from the project environment\n"
+        )
+        return 1
 
     return int(pc_main(sys.argv[1:] if argv is None else argv))
 

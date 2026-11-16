@@ -69,6 +69,26 @@ def _vtuple(version: str) -> Optional[tuple[int, ...]]:
     return tuple(int(part) for part in match.group(0).split(".")) if match else None
 
 
+def metadata_mismatch(module_version: Optional[str], metadata_version: Optional[str]) -> Optional[str]:
+    """Message when the installed distribution's metadata disagrees with the imported module's ``__version__`` (47-T13); None otherwise."""
+    if not module_version or not metadata_version or module_version == metadata_version:
+        return None
+    return (
+        f"the imported py_ci_shared reports {module_version} but its installed distribution metadata says {metadata_version}: "
+        "two copies are on sys.path; reinstall so the one that runs is the one the pins are checked against"
+    )
+
+
+def installed_metadata_version() -> Optional[str]:
+    """The version recorded in the installed ``py-ci-shared`` distribution metadata, or None when there is none."""
+    from importlib import metadata
+
+    try:
+        return metadata.version("py-ci-shared")
+    except metadata.PackageNotFoundError:
+        return None
+
+
 def installed_py_ci_shared_version() -> Optional[str]:
     """The ``__version__`` of the py_ci_shared that is imported (what the local hooks run), or None."""
     import py_ci_shared
@@ -231,6 +251,10 @@ def find_pin_skew_findings(
     installed_text = installed_version if installed_version is not None else installed_py_ci_shared_version()
     out = [_no_version(pin) for pin in pins if pin.version is None]
     out.extend(_installed_findings(pinned, installed_text, tolerate_ahead))
+    if installed_version is None:
+        note = metadata_mismatch(installed_py_ci_shared_version(), installed_metadata_version())
+        if note is not None:
+            out.append(Finding(workflows_dir, 0, "ci-pin-installed-metadata-mismatch", note))
     out.extend(_mixed_findings(pinned))
     out.extend(_lag_findings(pinned, known_releases, max_lag))
     return sorted(out, key=lambda f: (f.path, f.line, f.rule))

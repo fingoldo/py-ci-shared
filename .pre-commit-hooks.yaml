@@ -1,6 +1,6 @@
 # Pre-commit hooks manifest for py-ci-shared. Consuming repos reference these via:
 #   - repo: https://github.com/fingoldo/py-ci-shared
-#     rev: v1.17.0            # an exact tag (pre-commit freezes it to a SHA with `pre-commit autoupdate --freeze`)
+#     rev: <latest release tag>  # an exact tag (pre-commit freezes it to a SHA with `pre-commit autoupdate --freeze`)
 #     hooks:
 #       - id: py-ci-shared-run-all
 #       - id: pinned-tool-versions
@@ -66,4 +66,15 @@
   language: system
   types: [python]
   pass_filenames: false
+  stages: [manual]
+
+- id: py-ci-shared-hooks-patched
+  name: "py-ci-shared safe pre-commit hook is installed"
+  description: >-
+    Exit 1 when a clone's .git/hooks/pre-commit (or pre-merge-commit) still runs raw pre_commit instead of py_ci_shared.safe_precommit.
+    Run it by hand after `pre-commit install`, which resets the patch (47-T4).
+  entry: python -m py_ci_shared.install_safe_hook --check
+  language: system
+  pass_filenames: false
+  always_run: true
   stages: [manual]

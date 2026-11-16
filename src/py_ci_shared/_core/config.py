@@ -143,7 +143,11 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     # `secret_shapes` is the data table of the tracked_secret_shapes gate (name = regex), read by that gate, not by the plugin.
     unknown = set(table) - {"enable", "budget", "skip", "gates", "secret_shapes", *PLUGIN_KEYS}
     if unknown:
-        raise ConfigError(f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}")
+        valid = sorted({"enable", "budget", "skip", "gates", "secret_shapes", *PLUGIN_KEYS})
+        raise ConfigError(
+            f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}; valid keys: {', '.join(valid)}. "
+            'Enable a gate with `enable = ["name"]`, or give it settings in a [tool.py_ci_shared.gates.<name>] table'
+        )
     plugins = {key: _bool_key(pyproject, table, key) for key in PLUGIN_KEYS}
     runs = _gate_runs(pyproject, table)
     return RepoConfig(repo_root=Path(repo_root), gates=tuple(runs), budget=budget, skip=skip, **plugins)
