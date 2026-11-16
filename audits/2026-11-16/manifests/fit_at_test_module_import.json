@@ -1,0 +1,14 @@
+{
+  "module": "fit_at_test_module_import",
+  "kind": "gate",
+  "entries": [
+    "src/py_ci_shared/fit_at_test_module_import.py: find_fit_at_test_module_import(tests_root, *, heavy_calls=DEFAULT_HEAVY_CALLS); assert_no_fit_at_test_module_import(tests_root, *, heavy_calls, min_files=1, allow_unparsed=False)",
+    "tests/test_fit_at_test_module_import.py (15 cases)",
+    "tests/canary/fit_at_test_module_import/{violation,clean,bom,unparsable}/",
+    "tests/_gate_teeth_canaries_cuda_fit_at_test_module_import.py: named for the existing loader glob _gate_teeth_canaries_cuda_*.py; the gate is not a CUDA gate",
+    "corpus_drift: tests_root binding already exists; no NON_CORPUS entry needed",
+    "registry.toml: needs a kind=gate entry with the min_files and allow_unparsed keys"
+  ],
+  "summary": "A test module (test_*.py, *_test.py, conftest.py) must not call .fit, .fit_transform or .fit_predict (configurable heavy_calls) at import time: module level, class body, decorators and default arguments. Function and lambda bodies are not reported. Waiver: # import-fit-ok: <reason> on any line the call spans. Incident: mlframe macOS shards held in collection for three hours.",
+  "changelog": "- **New gate `fit_at_test_module_import` (audit 50-T5).** Flags a test module that trains a model while it is imported (module or class-level `.fit`-style calls); waive with `# import-fit-ok: <reason>`. No behaviour change for consumers until it is registered."
+}

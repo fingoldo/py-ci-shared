@@ -1,0 +1,14 @@
+{
+  "module": "append_only_log_shrink",
+  "kind": "gate",
+  "entries": [
+    "src/py_ci_shared/append_only_log_shrink.py: find_append_only_log_shrinks(repo_root, *, rev='HEAD', paths=DEFAULT_PATHS, max_commits=None); assert_append_only_log_shrink(...)",
+    "tests/test_append_only_log_shrink.py (15 cases, throwaway repos via _git_repo_helper)",
+    "tests/canary/append_only_log_shrink/{violation,clean,bom}/ (step<N>/ directories are commits; parses=False, empty=False)",
+    "tests/_gate_teeth_canaries_cuda_append_only_log_shrink.py: named for the existing loader glob _gate_teeth_canaries_cuda_*.py; the gate is not a CUDA gate",
+    "corpus_drift: find_append_only_log_shrinks binds through the existing repo_root binding; no NON_CORPUS entry needed",
+    "registry.toml: needs a kind=gate entry; a history gate has no file floor, so the lead decides the contract keys"
+  ],
+  "summary": "A first-parent commit may not leave an append-only data file (*.jsonl and *.jsonl.gz by default, gunzipped rows) with fewer rows than its first parent. Waived by a non-empty Append-Only-Shrink: trailer. A deleted file counts as 0 rows; a gzip that does not decompress in a commit is reported. Incident class: autopsia 62721781, 2849 rows overwritten by a 1542-row stale copy.",
+  "changelog": "- **New gate `append_only_log_shrink` (audit 50-T12).** Flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered."
+}

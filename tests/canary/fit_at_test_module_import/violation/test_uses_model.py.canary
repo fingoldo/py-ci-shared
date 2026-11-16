@@ -1,0 +1,12 @@
+from sklearn.linear_model import LogisticRegression
+import numpy as np
+
+MODEL = LogisticRegression().fit(np.zeros((10, 2)), np.arange(10) % 2)
+
+
+class TestSeeded:
+    scaled = StandardScaler().fit_transform(np.zeros((4, 2)))
+
+
+def test_uses_model():
+    assert MODEL is not None
