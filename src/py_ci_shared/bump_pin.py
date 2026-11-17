@@ -22,6 +22,8 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 from typing import Optional
 
+from ._core.corpus import iter_files_pruned
+
 __all__ = ["main", "rewrite"]
 
 
@@ -58,7 +60,7 @@ def _is_pin_file(rel: Path) -> bool:
 
 def _candidates(root: Path) -> Iterator[Path]:
     """Pin-bearing files under *root*. Symlinks and anything under a skipped directory are not candidates."""
-    for path in sorted(root.rglob("*")):
+    for path in sorted(iter_files_pruned(root)):
         rel = path.relative_to(root)
         if path.is_symlink() or not path.is_file() or set(rel.parts[:-1]) & _SKIP_DIRS:
             continue
@@ -105,4 +107,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
+    from ._core.console import safe_stdio
+
+    safe_stdio()
     raise SystemExit(main())

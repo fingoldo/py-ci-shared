@@ -7,6 +7,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from .._core.unparse import unparse_stable
 from ._base import walk_tree, Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_nodes, is_line_exempt
 
 __all__ = ["scan_credential_shaped_log_args"]
@@ -78,13 +79,13 @@ def _str_constant(node: ast.AST | None) -> str | None:
 
 def _redacting_assign_lines(tree: ast.AST) -> set[int]:
     """Line numbers of assignments whose value is a redaction call or split (code, never comments)."""
-    return {node.lineno for node in walk_tree(tree) if isinstance(node, ast.Assign) and _REDACT_HINT_RE.search(ast.unparse(node.value))}
+    return {node.lineno for node in walk_tree(tree) if isinstance(node, ast.Assign) and _REDACT_HINT_RE.search(unparse_stable(node.value))}
 
 
 def _has_redaction_hint(call: ast.Call, redacting_lines: set[int]) -> bool:
     """Redaction evidence for a log call: the call's own arguments, or a redacting assignment in the few lines
     above it. Comments and string prose are not code, so they never count."""
-    own = [ast.unparse(a) for a in call.args] + [ast.unparse(k.value) for k in call.keywords]
+    own = [unparse_stable(a) for a in call.args] + [unparse_stable(k.value) for k in call.keywords]
     if any(_REDACT_HINT_RE.search(text) for text in own):
         return True
     return any(call.lineno - _REDACT_ASSIGN_WINDOW <= line < call.lineno for line in redacting_lines)

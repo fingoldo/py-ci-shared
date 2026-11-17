@@ -101,7 +101,7 @@ def find_unpruned_tree_walk(
             roots = _documented_roots(fn)
             if not roots:
                 continue
-            body = ast.get_source_segment(parsed.source, fn) or ""
+            body = "\n".join(parsed.source.splitlines()[fn.lineno - 1 : fn.end_lineno])
             if any(token in body for token in _PRUNE_EVIDENCE):
                 continue
             for name, line in _walks(fn, roots):

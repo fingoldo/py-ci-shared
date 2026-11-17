@@ -34,9 +34,26 @@ _SQL_KEYWORDS = frozenset(
 _SQL_CATALOGUES = frozenset({"information_schema", "pg_catalog"})
 
 
+def _stdlib_top_level() -> frozenset[str]:
+    """``sys.stdlib_module_names`` where it exists (3.10+); on 3.9 the top-level entries of the stdlib directory."""
+    names = getattr(sys, "stdlib_module_names", None)
+    if names is not None:
+        return frozenset(names)
+    import sysconfig
+    from pathlib import Path
+
+    found = set(sys.builtin_module_names)
+    for entry in Path(sysconfig.get_paths()["stdlib"]).iterdir():
+        if entry.suffix == ".py":
+            found.add(entry.stem)
+        elif entry.is_dir() and (entry / "__init__.py").is_file():
+            found.add(entry.name)
+    return frozenset(found)
+
+
 def stdlib_names() -> frozenset[str]:
-    """The standard library's top-level module names (``sys.stdlib_module_names``) and every builtin."""
-    return frozenset(sys.stdlib_module_names) | frozenset(dir(builtins))
+    """The standard library's top-level module names and every builtin."""
+    return _stdlib_top_level() | frozenset(dir(builtins))
 
 
 def sql_keywords() -> frozenset[str]:

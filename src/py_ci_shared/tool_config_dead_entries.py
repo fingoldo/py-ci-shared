@@ -129,7 +129,9 @@ def _module_names(root: Path) -> set[str]:
     for base in (root / "src", root):
         if not base.is_dir():
             continue
-        for path in base.rglob("*.py"):
+        for path in iter_files_pruned(base):
+            if path.suffix != ".py":
+                continue
             rel = path.relative_to(base).as_posix()
             if any(part in _BOILERPLATE for part in rel.split("/")):
                 continue

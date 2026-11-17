@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import textwrap
 from pathlib import Path
 
@@ -148,6 +149,8 @@ def _bare_hits(tmp_path: Path, body: str) -> list:
     ids=["except-star", "tuple-with-base", "dotted-base", "conditional-reraise", "nested-def-reraise"],
 )
 def test_t7_a_handler_that_can_swallow_is_flagged(tmp_path: Path, body: str):
+    if "except*" in body and sys.version_info < (3, 11):
+        pytest.skip("except* is Python 3.11 syntax")
     assert _bare_hits(tmp_path, body), body
 
 
@@ -161,6 +164,8 @@ def test_t7_a_handler_that_can_swallow_is_flagged(tmp_path: Path, body: str):
     ids=["plain-cleanup-reraise", "conditional-then-reraise", "except-star-reraise"],
 )
 def test_t7_a_handler_that_always_re_raises_is_not_flagged(tmp_path: Path, body: str):
+    if "except*" in body and sys.version_info < (3, 11):
+        pytest.skip("except* is Python 3.11 syntax")
     assert _bare_hits(tmp_path, body) == []
 
 
@@ -213,6 +218,8 @@ def test_t9_default_flags_a_from_time_import_sleep(tmp_path: Path):
 
 
 def test_t7_except_star_broad_swallow_is_flagged(tmp_path: Path):
+    if sys.version_info < (3, 11):
+        pytest.skip("except* is Python 3.11 syntax")
     from py_ci_shared.code_audit.broad_except import scan_broad_except_swallows
 
     _write(tmp_path, "m.py", "try:\n    g()\nexcept* Exception:\n    pass\n")
