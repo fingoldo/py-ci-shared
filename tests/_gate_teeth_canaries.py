@@ -730,6 +730,8 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("tracked_env_packages").assert_tracked_env_packages(d, use_git=False),
             parses=False,  # judges directory NAMES, never contents; a syntax error is not its subject
         ),
+        Canary("pytest_defaults_declared", lambda d: _gate("pytest_defaults_declared").assert_pytest_defaults_declared(d, use_git=False),
+               token="pyproject.toml", tokens=("--durations", "cacheprovider")),
     ]
 }
 

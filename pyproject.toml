@@ -119,7 +119,7 @@ py_ci_shared = ["configs/*.toml", "registry.toml", "py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers --durations=200 -p no:cacheprovider"
 # A hung git or python child fails its test after this long instead of holding the job to its 15-minute limit.
 timeout = 300
 markers = [

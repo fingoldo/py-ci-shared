@@ -1462,6 +1462,13 @@ since = "1.17.0"
 summary = "A hook or CI step that names test paths, and runs none of them because ``addopts`` still deselects them"
 
 [[gate]]
+name = "pytest_defaults_declared"
+kind = "gate"
+entries = ["assert_pytest_defaults_declared"]
+since = "1.23.13"
+summary = "A consumer pytest addopts must carry the mandatory flags, so a bare pytest run gets them too"
+
+[[gate]]
 name = "pytest_known_gap"
 kind = "library"
 since = "1.22.3"
