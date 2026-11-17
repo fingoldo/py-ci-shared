@@ -303,6 +303,8 @@ class Baseline:
 
     def __init__(self, path: PathLike, *, gate: str = "", refresh_command: str = "", new_note: str = DEFAULT_NEW_NOTE) -> None:
         self.path = Path(path)
+        # How messages name the baseline: its file name by default, never the machine's absolute path (49-T10/49-T11).
+        self.shown = self.path.name
         self.gate = gate or self.path.stem
         self.refresh_command = refresh_command or f"set PY_CI_SHARED_REFRESH={self.gate} (or pass its --refresh-* flag) and rerun"
         self.new_note = new_note
@@ -313,19 +315,19 @@ class Baseline:
     def load(self) -> tuple["Counter[str]", dict[str, str]]:
         """``(counts, notes)``. Raises :class:`BaselineError` when the file is missing or malformed."""
         if not self.exists():
-            raise BaselineError(f"baseline {self.path} does not exist. Create it with: {self.refresh_text}")
+            raise BaselineError(f"baseline {self.shown} does not exist. Create it with: {self.refresh_text}")
         data = load_json(self.path)
         if isinstance(data, dict):
             # A header written by another gate (a copied file, a wrong baseline_path=) or a newer schema is not this gate's baseline (42-T5).
             if data.get("gate", self.gate) != self.gate:
-                raise BaselineError(f"baseline {self.path} was written for gate {data.get('gate')!r}, not {self.gate!r}; fix the path or the header")
+                raise BaselineError(f"baseline {self.shown} was written for gate {data.get('gate')!r}, not {self.gate!r}; fix the path or the header")
             schema = data.get("schema", SCHEMA_VERSION)
             if isinstance(schema, int) and not isinstance(schema, bool) and schema > SCHEMA_VERSION:
-                raise BaselineError(f"baseline {self.path} has schema {schema}; this py-ci-shared reads up to {SCHEMA_VERSION}")
+                raise BaselineError(f"baseline {self.shown} has schema {schema}; this py-ci-shared reads up to {SCHEMA_VERSION}")
         try:
             return _parse_entries(data, self.path)
         except BaselineError as exc:
-            raise BaselineError(f"baseline {self.path} is unreadable ({exc}); fix or delete it") from exc
+            raise BaselineError(f"baseline {self.shown} is unreadable ({exc}); fix or delete it") from exc
 
     def save(self, counts: Mapping[str, int], notes: Optional[Mapping[str, str]] = None) -> None:
         notes = notes or {}
@@ -363,7 +365,7 @@ class Baseline:
         except BaselineGrowthError as exc:
             logger.warning("baseline refresh refused, growth not written: %s", type(exc).__name__)
             return BaselineOutcome(new=exc.grown, message=str(exc))
-        return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.path}")
+        return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.shown}")
 
     def enforce(
         self,
@@ -393,7 +395,7 @@ class Baseline:
             hint = f" (add --grow: seeding accepts the {len(found)} current finding(s))" if found and "--grow" not in self.refresh_text else ""
             return BaselineOutcome(
                 missing=True,
-                message=f"{self.gate}: baseline {self.path} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_text}{hint}",
+                message=f"{self.gate}: baseline {self.shown} does not exist, so nothing is accepted and nothing was checked against it. Create it with: {self.refresh_text}{hint}",
             )
         accepted, notes = self.load()
         current = self.count(found)
@@ -408,7 +410,7 @@ class Baseline:
         parts: list[str] = []
         if outcome.new:
             lines = "\n    ".join(describe.get(k, k) for k in outcome.new)
-            parts.append(f"{len(outcome.new)} new finding(s) not in {self.path.name}{': ' + guidance if guidance else ''}\n    {lines}")
+            parts.append(f"{len(outcome.new)} new finding(s) not in {self.shown}{': ' + guidance if guidance else ''}\n    {lines}")
         if outcome.unjustified:
             parts.append(
                 f"{len(outcome.unjustified)} baseline entr(ies) still marked {UNJUSTIFIED_MARKER!r}; replace the marker with the reason "

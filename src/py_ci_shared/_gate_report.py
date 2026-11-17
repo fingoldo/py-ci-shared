@@ -205,7 +205,7 @@ def report(
 
     broken: list[str] = []
     if parsed_count < min_files:
-        where = f" under {display_root(root)}" if root is not None else ""
+        where = f" under {display_root(str(root))}" if root is not None else ""
         broken.append(f"{gate}: only {parsed_count} file(s) parsed{where}; expected at least {min_files}. The gate is not reaching the code.")
     if problems and not allow_unparsed:
         broken.append(

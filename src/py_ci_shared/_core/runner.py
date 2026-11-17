@@ -148,6 +148,18 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
         return _run_gate(config, run, refresh=refresh, grow=grow)
 
 
+def _refresh_plan(run: GateRun, refresh: bool, grow: bool, params: Any, kwargs: dict[str, Any], start: float, budget: float) -> Optional[GateResult]:
+    """Set the refresh keywords a gate takes. A gate that keeps no baseline has nothing to rewrite: it reports SKIPPED,
+not a PASS that refreshed nothing (49-T11). None when the gate runs normally."""
+    if refresh and "refresh" not in params:
+        return GateResult(run.name, SKIPPED, "nothing to refresh: this gate keeps no baseline", time.perf_counter() - start, budget)
+    if refresh and "refresh" in params:
+        kwargs["refresh"] = True
+    if refresh and grow and "grow" in params:
+        kwargs["grow"] = True
+    return None
+
+
 def _run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: bool = False) -> GateResult:
     """The body of :func:`run_gate`.
 
@@ -165,13 +177,9 @@ def _run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: 
         func, budget = resolve_gate(run)
         kwargs = resolve_kwargs(func, dict(run.kwargs), config.repo_root)
         params = inspect.signature(func).parameters
-        if refresh and "refresh" not in params:
-            # A gate that keeps no baseline has nothing to rewrite: say so, rather than report a PASS that refreshed nothing (49-T11).
-            return GateResult(run.name, SKIPPED, "nothing to refresh: this gate keeps no baseline", time.perf_counter() - start, budget)
-        if refresh and "refresh" in params:
-            kwargs["refresh"] = True
-        if refresh and grow and "grow" in params:
-            kwargs["grow"] = True
+        early = _refresh_plan(run, refresh, grow, params, kwargs, start, budget)
+        if early is not None:
+            return early
         _check_required(func, run, kwargs)
         defaults = {n: p.default for n, p in params.items() if p.default is not p.empty}
         cache_key = None if refresh else _cache_key(config, run, {**defaults, **kwargs}, budget)
