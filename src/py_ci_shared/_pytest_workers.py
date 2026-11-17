@@ -11,8 +11,11 @@ and ``CI`` set to a true value is serial: a shared runner's free memory says not
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["DEFAULT_WORKER_GIB", "MIN_WORKERS", "RESERVE_FLOOR_GIB", "plan_workers"]
 
@@ -44,6 +47,7 @@ def plan_workers(
         try:
             return max(0, int(explicit))
         except ValueError:
+            logger.warning("PY_CI_SHARED_WORKERS=%r is not an integer; running serial", explicit)
             return 0
     if environ.get("CI", "").strip().lower() in _TRUE:
         return 0
@@ -58,5 +62,9 @@ def _gib(text: Optional[str], default: float) -> float:
     try:
         value = float(text) if text else default
     except ValueError:
+        logger.warning("PY_CI_SHARED_WORKER_GIB=%r is not a number; using the %s GiB default", text, default)
         return default
-    return value if value > 0 else default
+    if value <= 0:
+        logger.warning("PY_CI_SHARED_WORKER_GIB=%r is not positive; using the %s GiB default", text, default)
+        return default
+    return value

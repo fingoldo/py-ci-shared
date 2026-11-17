@@ -55,3 +55,19 @@ def test_a_malformed_per_worker_estimate_falls_back_to_the_default() -> None:
     expected = plan_workers(12 * GIB, 16 * GIB, physical_cores=8, env={})
     assert plan_workers(12 * GIB, 16 * GIB, physical_cores=8, env={"PY_CI_SHARED_WORKER_GIB": "lots"}) == expected
     assert DEFAULT_WORKER_GIB > 0
+
+
+def test_a_malformed_explicit_count_is_logged(caplog) -> None:
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="py_ci_shared._pytest_workers"):
+        assert plan_workers(64 * GIB, 64 * GIB, physical_cores=16, env={"PY_CI_SHARED_WORKERS": "many"}) == 0
+    assert "PY_CI_SHARED_WORKERS='many' is not an integer" in caplog.text
+
+
+def test_a_malformed_per_worker_estimate_is_logged(caplog) -> None:
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="py_ci_shared._pytest_workers"):
+        plan_workers(12 * GIB, 16 * GIB, physical_cores=8, env={"PY_CI_SHARED_WORKER_GIB": "lots"})
+    assert "PY_CI_SHARED_WORKER_GIB='lots' is not a number" in caplog.text
