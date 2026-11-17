@@ -151,7 +151,8 @@ def run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: b
 def _refresh_plan(run: GateRun, refresh: bool, grow: bool, params: Any, kwargs: dict[str, Any], start: float, budget: float) -> Optional[GateResult]:
     """Set the refresh keywords a gate takes. A gate that keeps no baseline has nothing to rewrite: it reports SKIPPED,
 not a PASS that refreshed nothing (49-T11). None when the gate runs normally."""
-    if refresh and "refresh" not in params:
+    takes_refresh = "refresh" in params or any(q.kind is inspect.Parameter.VAR_KEYWORD for q in params.values())
+    if refresh and not takes_refresh:
         return GateResult(run.name, SKIPPED, "nothing to refresh: this gate keeps no baseline", time.perf_counter() - start, budget)
     if refresh and "refresh" in params:
         kwargs["refresh"] = True
