@@ -4,8 +4,6 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
-## 1.23.12
-
 - New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
 
 - New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
@@ -194,6 +192,11 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - **Behaviour change** scanning readers refuse large files (audit 51-T2, defect fix, stricter): `read_source`, `read_text_if_not_binary` and `parse_source` raise `SourceReadError` ("larger than 16777216 bytes, not scanned") for a file over `MAX_SCANNED_BYTES` (16 MiB) instead of reading it whole, so the file is a finding, never a crash or a silent skip. The cap is set by `PY_CI_SHARED_MAX_SCANNED_BYTES`. What to do: a legitimately huge generated module turns its gate red; exclude it from the scan, or raise the cap with `PY_CI_SHARED_MAX_SCANNED_BYTES` on the job.
 
 - Security (audit 51-T3, additive): `corpus-drift.yml` scopes `CONSUMER_READ_TOKEN` to the corpus checkout step instead of the snapshot job, so the install and the snapshot run never hold it. `tests/test_security_supply_chain_workflows.py` fails a workflow job that sets `CONSUMER_READ_TOKEN` or `RELEASE_TOKEN` in its job-level `env`.
+
+
+## 1.23.12
+
+The v1.23.12 tag was never published (its Release run refused its own tag); its entries are listed under 1.23.13.
 
 ## 1.23.11
 

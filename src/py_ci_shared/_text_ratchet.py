@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.paths import display_root
+from ._core.scan import record_files_read, take_files_read
 from ._core import DEFAULT_EXCLUDE
 from ._core.errors import CorpusError
 from ._core.outcome import add_note
@@ -58,6 +59,7 @@ def text_scan(root: Union[str, Path], patterns: Sequence[str], *, under: Iterabl
     names = frozenset(under)
     corpus = read_text_corpus(root, patterns=patterns, skip=DEFAULT_EXCLUDE)
     files = [f for f in corpus.files if not names or f.rel.split("/", 1)[0] in names]
+    record_files_read(len(files))
     unreadable = {
         f"{p.rel}: unreadable": f"cannot be read as text ({p.message}); the gate cannot judge it"
         for p in corpus.unreadable
@@ -115,6 +117,8 @@ def enforce_findings(
     code, text = baseline.check(found, label=label, guidance=guidance)
     if code:
         raise AssertionError(text)
-    if files_read is not None:
-        text = f"read {files_read} file(s); {text}"
+    scanned = take_files_read()
+    count = files_read if files_read is not None else scanned
+    if count is not None:
+        text = f"read {count} file(s); {text}"
     add_note(text)

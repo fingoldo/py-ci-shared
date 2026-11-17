@@ -9,6 +9,7 @@ to report.
 from __future__ import annotations
 
 import ast
+import contextvars
 import logging
 import os
 from collections.abc import Iterable, Iterator, Sequence
@@ -101,6 +102,26 @@ def _problem(exc: SourceError, rel: str) -> SourceProblem:
     return SourceProblem(exc.path, rel, (exc.line if exc.line is not None else 1), exc.kind, exc.message)
 
 
+_LAST_FILES_READ: "contextvars.ContextVar[Optional[int]]" = contextvars.ContextVar("py_ci_shared_files_read", default=None)
+
+
+def record_files_read(count: int) -> None:
+    """Remember how many files the most recent scan read, for the PASS note of the gate that ran it (49-T5)."""
+    _LAST_FILES_READ.set(count)
+
+
+def files_read_by_last_scan() -> Optional[int]:
+    """The file count of the most recent scan in this context, or None when no scan ran."""
+    return _LAST_FILES_READ.get()
+
+
+def take_files_read() -> Optional[int]:
+    """The file count of the scan that just ran, cleared so the next gate does not inherit it (49-T5)."""
+    count = _LAST_FILES_READ.get()
+    _LAST_FILES_READ.set(None)
+    return count
+
+
 def scan_python(
     files_or_root: Union[PathLike, Iterable[PathLike]],
     *,
@@ -159,6 +180,7 @@ def scan_python(
             result.files.append(item)
         else:
             result.unparsed.append(item)
+    record_files_read(result.parsed_count + len(result.unparsed))
     return result
 
 

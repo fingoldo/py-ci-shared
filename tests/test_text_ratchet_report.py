@@ -9,6 +9,7 @@ import pytest
 
 from py_ci_shared import _text_ratchet
 from py_ci_shared._core.outcome import collect_notes
+from py_ci_shared._core.scan import take_files_read
 
 GUIDANCE = "A guard that prints SKIPPED and exits 0 passes with nothing checked. Exit non-zero with the reason."
 
@@ -55,6 +56,8 @@ def test_unjustified_entry_says_it_needs_a_note(tmp_path: Path) -> None:
 
 def test_pass_is_a_note_not_a_stdout_line(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     _write(tmp_path, {"a.py:1": "reason"})
+    # A scan in an earlier test leaves its file count unconsumed; this test has no scan of its own.
+    take_files_read()
     with collect_notes() as notes:
         _text_ratchet.enforce_findings(
             "demo_gate",
