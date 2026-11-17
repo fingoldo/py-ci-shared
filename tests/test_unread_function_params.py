@@ -146,3 +146,20 @@ def test_the_noop_exemption_needs_a_base_class_and_a_body_that_does_nothing(tmp_
         f"T.{expected[0]}"
     ]
     assert _found(tmp_path / "d", "class T(Base):\n    def fit(self, X, sample_weight=None):\n        return X\n") == [f"T.{expected[0]}"]
+
+
+def test_test_doubles_by_name_are_not_reported(tmp_path):
+    src = (
+        "def fake_run(cmd, env):\n    return 0\n\n"
+        "def mock_send(payload, retries):\n    return None\n\n"
+        "class FakeClient:\n    def get(self, key, timeout):\n        return 1\n\n"
+        "class StubRepo:\n    def load(self, path):\n        return 2\n"
+    )
+    assert _found(tmp_path, src) == []
+
+
+def test_an_ordinary_function_with_an_unread_parameter_is_still_reported(tmp_path):
+    src = "def compute(seed):\n    return 0\n\nclass Service:\n    def fetch(self, timeout):\n        return 1\n"
+    found = _found(tmp_path, src)
+    assert any("compute" in f and "'seed'" in f for f in found), found
+    assert any("fetch" in f and "'timeout'" in f for f in found), found

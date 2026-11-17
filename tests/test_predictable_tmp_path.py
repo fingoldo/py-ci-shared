@@ -147,3 +147,17 @@ def test_pytest_tmp_path_factory_mktemp_is_not_reported(tmp_path):
 def test_a_mktemp_that_is_not_from_tempfile_is_not_reported(tmp_path):
     body = "def mktemp():\n    return 1\ndef f(obj):\n    return mktemp(), obj.mktemp()\n"
     assert _tmp_lines(tmp_path, body) == []
+
+
+def test_a_tmp_path_handed_to_a_mock_is_not_reported(tmp_path):
+    src = (
+        "import tempfile\n"
+        "from pathlib import Path\n"
+        "from unittest import mock\n\n\n"
+        "def test_sends(tmp_path):\n"
+        "    client = mock.Mock()\n"
+        "    client.upload(Path(tempfile.gettempdir()) / 'report.csv')\n"
+        "    client.upload.assert_called_once_with(Path(tempfile.gettempdir()) / 'report.csv')\n"
+    )
+    root = _corpus(tmp_path, {"test_mod.py": src.encode()})
+    assert find_predictable_tmp_path(root, use_git=False) == []

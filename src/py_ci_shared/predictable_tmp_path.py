@@ -34,6 +34,9 @@ from ._core.unparse import unparse_stable
 __all__ = ["RULE", "assert_predictable_tmp_path", "find_predictable_tmp_path"]
 
 RULE = "predictable-tmp-path"
+
+# A path handed to a test double (a mock or a fake) is never written: the double records the call (41-T8).
+_DOUBLE_MARKERS = ("Mock(", "mock.", "MagicMock", "mocker.", "fake_")
 SUPPRESSION = "# tmp-path-ok:"
 _USER_MARKERS = ("getuid", "getlogin", "getpass", "USERNAME")
 _UNIQUE_MARKERS = ("mkdtemp", "mkstemp")
@@ -242,6 +245,7 @@ def _findings_in(tree: ast.Module, rel: str, source: str) -> list[Finding]:
         enclosing = enclosing_text(node)
         if not is_mktemp(node) and (
             any(marker in enclosing for marker in _UNIQUE_MARKERS)
+            or any(marker in enclosing for marker in _DOUBLE_MARKERS)
             or _has_user_marker(node)
             or any(isinstance(sub, ast.Name) and sub.id in user_names for sub in shared_walk(node))
         ):

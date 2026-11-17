@@ -114,6 +114,22 @@ def _reads(func: ast.AST) -> tuple[set[str], bool]:
     return loaded, dynamic
 
 
+_TEST_DOUBLE_PREFIXES = ("fake", "mock", "stub", "dummy", "_fake", "_mock", "_stub", "_dummy")
+
+
+def _is_test_double(name: str, prefix: str) -> bool:
+    """A fake, mock, stub or dummy by name: the function, or the class it is a method of (41-T8).
+
+    A test double accepts the signature it stands in for and ignores most of it by design, so an unread parameter
+    there is the point, not a defect.
+    """
+    owner = prefix.split(".", 1)[0] if prefix else ""
+    for candidate in (name.lower(), owner.lower()):
+        if candidate.startswith(_TEST_DOUBLE_PREFIXES):
+            return True
+    return False
+
+
 def _is_protocol(node: ast.ClassDef, aliases: ImportAliases) -> bool:
     return any((aliases.qualified_name(b) or "").rsplit(".", 1)[-1] == "Protocol" for b in node.bases)
 
@@ -147,7 +163,7 @@ def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Opti
     def check(func: Union[ast.FunctionDef, ast.AsyncFunctionDef], prefix: str, in_protocol: bool, subclass: bool = False) -> None:
         a = func.args
         params = [p for p in (*a.posonlyargs, *a.args, *a.kwonlyargs) if p.arg in NAMED_PARAMS]
-        if not params or func.name == "__init__" or in_protocol or _is_stub(func.body):
+        if not params or func.name == "__init__" or in_protocol or _is_stub(func.body) or _is_test_double(func.name, prefix):
             return
         if subclass and _is_noop_override_body(func.body):
             return
