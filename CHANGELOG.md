@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- **Behaviour change**: a pytest run with no `-n` now gets its xdist worker count from free RAM, capped at the physical cores minus one, through the `py_ci_shared` pytest plugin (`_pytest_workers.plan_workers`). A run on a machine with little free memory, or on CI (`CI` set), stays serial as before. What to do: nothing if the suite passes serially; to keep a run serial or fix its count, pass `-n 0` or `-n N`, or set `PY_CI_SHARED_WORKERS=0` (or `=N`). `PY_CI_SHARED_WORKER_GIB` sets the per-worker memory estimate (1.5 GiB is a guess until measured).
+
 - New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
 
 - New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.

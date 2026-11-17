@@ -41,6 +41,7 @@ import pytest  # optional-import-ok: a pytest plugin or test helper, loaded only
 from ._core.config import PLUGIN_KEYS, ConfigError, GateRun, RepoConfig, find_repo_root, load_config
 from ._core.refresh import ENV_VAR, GENERIC_OPTION, GROW_ENV_VAR, GROW_OPTION, register_refresh_options
 from ._core.runner import ERROR, FAILED, REFRESHED_STATUS, SKIPPED, budget_verdict, run_gate
+from ._pytest_workers import plan_workers
 from .randomly_seed_guard import bound_randomly_reseeders
 
 __all__ = ["GateFile", "GateFindingsError", "GateItem", "LEAK_GUARD_PLUGIN", "pytest_addoption", "pytest_collection_modifyitems", "pytest_configure"]
@@ -224,6 +225,44 @@ class GateItem(pytest.Item):
 def _gate_refresh(config: Any, run: GateRun) -> bool:
     tokens = set(_refresh_tokens(config)) | {t for t in os.environ.get(ENV_VAR, "").split(",") if t}
     return bool(tokens & {"all", run.name, run.module, run.name.replace("_", "-"), run.module.replace("_", "-")})
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_cmdline_main(config: Any) -> None:
+    """Give a run with no ``-n`` a worker count from free RAM (``_pytest_workers``), and export the decision for nested runs.
+
+    xdist builds its worker list in its own ``pytest_cmdline_main`` from ``numprocesses`` alone, and it may run before this hook,
+    so this sets ``dist`` and ``tx`` as well. Workers (``workerinput``) and runs with an explicit ``-n`` are left alone.
+    """
+    if hasattr(config, "workerinput") or getattr(config.option, "numprocesses", None) is not None:
+        return
+    try:
+        import psutil  # optional-import-ok: a RAM reading; without it the run stays serial
+        import importlib.util
+
+        if importlib.util.find_spec("xdist") is None:
+            return
+        memory = psutil.virtual_memory()
+        cores = psutil.cpu_count(logical=False) or max((os.cpu_count() or 2) // 2, 1)
+        workers = plan_workers(memory.available, memory.total, cores, os.environ)
+    except ImportError:
+        workers = 0
+    # Nested pytest runs (a gate that spawns pytest) inherit the decision and stay serial. The value is restored when the run
+    # ends, so an in-process pytest run (a pytester test) does not leak it into the tests that follow.
+    previous = os.environ.get("PY_CI_SHARED_WORKERS")
+    os.environ["PY_CI_SHARED_WORKERS"] = str(workers)
+
+    def _restore() -> None:
+        if previous is None:
+            os.environ.pop("PY_CI_SHARED_WORKERS", None)
+        else:
+            os.environ["PY_CI_SHARED_WORKERS"] = previous
+
+    config.add_cleanup(_restore)
+    if workers:
+        config.option.numprocesses = workers
+        config.option.dist = "load"
+        config.option.tx = ["popen"] * workers
 
 
 @pytest.hookimpl(tryfirst=True)
