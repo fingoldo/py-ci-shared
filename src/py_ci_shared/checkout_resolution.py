@@ -27,6 +27,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.paths import display_root
 
 import importlib
 import logging
@@ -75,7 +76,7 @@ def module_resolution_problems(repo_root: Path, module_names: Iterable[str]) -> 
         if origin is None:
             problems.append(
                 f"{name} has no __file__: it resolved to a namespace portion, not a real module. A stale editable "
-                f"install is the usual cause; run `python -m pip install -e . --no-deps` from {root}."
+                f"install is the usual cause; run `python -m pip install -e . --no-deps` from {display_root(root)}."
             )
             continue
         resolved = Path(origin).resolve()

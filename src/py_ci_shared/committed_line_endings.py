@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.paths import display_root
 from ._core import Baseline, CorpusError, EmptyScanError, Finding
 from ._core.git import GitError, git_text, run_git
 
@@ -60,9 +61,9 @@ def _git(root: Path, *args: str, stdin: Optional[bytes] = None) -> bytes:
     try:
         proc = run_git(root, *args, stdin=stdin)
     except GitError as exc:
-        raise CorpusError(f"cannot run git in {root}: {exc}") from exc
+        raise CorpusError(f"cannot run git in {display_root(root)}: {exc}") from exc
     if proc.returncode != 0:
-        raise CorpusError(f"git {' '.join(args[:2])} failed in {root}: {git_text(proc.stderr).strip()}")
+        raise CorpusError(f"git {' '.join(args[:2])} failed in {display_root(root)}: {git_text(proc.stderr).strip()}")
     return proc.stdout
 
 
@@ -167,7 +168,7 @@ def find_committed_line_endings(root: PathLike, *, min_files: int = 1) -> list[F
     in the index: a gate that reads nothing must not pass."""
     endings = index_endings(root)
     if len(endings) < min_files:
-        raise EmptyScanError(f"only {len(endings)} committed text file(s) under {root}; expected at least {min_files}")
+        raise EmptyScanError(f"only {len(endings)} committed text file(s) under {display_root(root)}; expected at least {min_files}")
     return [f for f in (_finding(e) for e in endings) if f is not None]
 
 

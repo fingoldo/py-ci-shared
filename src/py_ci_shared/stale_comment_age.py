@@ -38,6 +38,7 @@ Both accept ``now`` (epoch seconds) to freeze the clock.
 """
 
 from __future__ import annotations
+from ._core.paths import display_root
 from ._core.console import write_text
 
 import ast
@@ -430,7 +431,7 @@ def _scan(
     for d in scan_dirs:
         base = root / d
         if not base.is_dir():
-            problems.append(f"{d}: scan directory does not exist under {root}; nothing in it was checked. Fix scan_dirs.")
+            problems.append(f"{d}: scan directory does not exist under {display_root(root)}; nothing in it was checked. Fix scan_dirs.")
             continue
         try:
             files = list(iter_files(base, patterns, exclude=frozenset(skip_dirs), include_untracked=False, use_git=True))
@@ -463,7 +464,7 @@ def _floor_problems(root: Path, scanned: int, min_files: int) -> list[str]:
     """A scan that read fewer files than *min_files* checked nothing, so its silence proves nothing."""
     if scanned >= min_files:
         return []
-    return [f"only {scanned} file(s) under {root}; expected at least {min_files} -- the scan is reading nothing"]
+    return [f"only {scanned} file(s) under {display_root(root)}; expected at least {min_files} -- the scan is reading nothing"]
 
 
 def _stale(dated: Sequence[_Dated], max_age_days: int, now: float) -> list[str]:

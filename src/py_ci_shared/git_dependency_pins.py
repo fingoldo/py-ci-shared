@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.paths import display_root
 from ._core import SourceParseError, SourceReadError, read_source, relative_posix
 
 __all__ = [
@@ -457,10 +458,10 @@ def installed_pin_problem(package: str, pinned_sha: str, *, dist: str | None = N
     if root is not None:
         head = _git(["rev-parse", "HEAD"], root).stdout.strip()
         if _git(["cat-file", "-e", f"{pinned_sha}^{{commit}}"], root).returncode != 0:
-            return f"{package} is an editable checkout at {root} ({head[:12]}) without the pinned commit {pinned_sha[:12]}; Fetch and update it", None
+            return f"{package} is an editable checkout at {display_root(root)} ({head[:12]}) without the pinned commit {pinned_sha[:12]}; Fetch and update it", None
         if _git(["merge-base", "--is-ancestor", pinned_sha, "HEAD"], root).returncode != 0:
             return (
-                f"{package} at {root} is at {head[:12]}, which does not include the pinned commit {pinned_sha[:12]}; Update the checkout to the pin or past it",
+                f"{package} at {display_root(root)} is at {head[:12]}, which does not include the pinned commit {pinned_sha[:12]}; Update the checkout to the pin or past it",
                 None,
             )
         return None, None

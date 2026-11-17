@@ -71,6 +71,7 @@ import re
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
+from ._core.paths import display_root
 from ._core.console import capped
 from ._core import DEFAULT_EXCLUDE, iter_files
 from ._core.source import read_bytes_cached
@@ -134,7 +135,7 @@ def tracked_files(repo_root: Path) -> list[str]:
     try:
         out = run_git(repo_root, "ls-files", "-z", check=True).stdout
     except GitError as exc:  # pragma: no cover - environment
-        raise RuntimeError(f"git ls-files failed in {repo_root}: {exc}") from exc
+        raise RuntimeError(f"git ls-files failed in {display_root(repo_root)}: {exc}") from exc
     return [rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel]
 
 
@@ -339,7 +340,7 @@ def _floor_problem(repo_root: Path, blobs: Sequence[object], min_files: int) -> 
     """A hygiene pass that read fewer text files than *min_files* checked nothing, so its silence proves nothing."""
     if len(blobs) >= min_files:
         return []
-    return [f"only {len(blobs)} text file(s) under {repo_root}; expected at least {min_files} -- the hygiene checks are reading nothing"]
+    return [f"only {len(blobs)} text file(s) under {display_root(repo_root)}; expected at least {min_files} -- the hygiene checks are reading nothing"]
 
 
 def assert_repo_hygiene(

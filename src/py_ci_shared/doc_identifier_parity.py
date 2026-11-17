@@ -38,6 +38,7 @@ from pathlib import Path
 
 from py_ci_shared.phantom_markdown_links import tracked_markdown_files
 
+from ._core.paths import display_root
 from ._core import DEFAULT_EXCLUDE, SourceReadError, iter_files, read_source, relative_posix
 
 __all__ = [
@@ -235,6 +236,6 @@ def assert_doc_identifiers_exist(
         allow_unparsed=allow_unparsed,
     )
     if checked < min_files:
-        problems.insert(0, f"only {checked} document(s) checked under {repo_root}; expected at least {min_files} -- this would check nothing")
+        problems.insert(0, f"only {checked} document(s) checked under {display_root(repo_root)}; expected at least {min_files} -- this would check nothing")
     if problems:
         pytest.fail(f"{len(problems)} name(s) in the docs that the code does not contain:\n  " + "\n  ".join(problems))

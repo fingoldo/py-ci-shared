@@ -33,6 +33,7 @@ or from CI: ``python -m py_ci_shared.sibling_floor_skew . --resolve-in pyutilz=.
 """
 
 from __future__ import annotations
+from ._core.paths import display_root
 from ._core.console import write_text
 
 import argparse
@@ -332,7 +333,7 @@ def find_sibling_floor_skew(
     root = Path(repo_root)
     pyproject = root / "pyproject.toml"
     if not pyproject.is_file():
-        raise EmptyScanError(f"no pyproject.toml under {root}: no sibling floors to compare the workflows against")
+        raise EmptyScanError(f"no pyproject.toml under {display_root(root)}: no sibling floors to compare the workflows against")
     names = list(siblings)
     try:
         floors = find_floors(pyproject, names)
@@ -377,7 +378,7 @@ def assert_sibling_floor_skew(
     not accept. Skips with a reason when *repo_root* has no ``pyproject.toml``: there are no floors to compare."""
 
     if not (Path(repo_root) / "pyproject.toml").is_file():
-        unevaluated_skip(f"no pyproject.toml under {repo_root}: no sibling floors to compare the workflows against")
+        unevaluated_skip(f"no pyproject.toml under {display_root(repo_root)}: no sibling floors to compare the workflows against")
     found = find_sibling_floor_skew(
         repo_root, siblings=siblings, owner=owner, resolve_in=resolve_in, network=network, resolver=resolver, allow_unparsed=allow_unparsed
     )

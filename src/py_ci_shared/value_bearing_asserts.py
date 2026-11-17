@@ -20,6 +20,7 @@ from the bytecode. The subject is the source.
 from __future__ import annotations
 
 import ast
+from ._core.paths import display_root
 from ._core.unparse import unparse_stable
 from collections.abc import Iterable
 from pathlib import Path
@@ -158,7 +159,7 @@ def assert_no_value_bearing_asserts(
     except AssertionError as exc:
         problems.append(str(exc))
     if seen < min_asserts_seen:
-        problems.append(f"only {seen} assert(s) seen under {package_root}; expected at least {min_asserts_seen} -- the walk is not reaching the code")
+        problems.append(f"only {seen} assert(s) seen under {display_root(package_root)}; expected at least {min_asserts_seen} -- the walk is not reaching the code")
     if scan.unparsed and not allow_unparsed:
         problems.append(
             f"{len(scan.unparsed)} file(s) could not be parsed, so their asserts were not checked:\n    " + "\n    ".join(p.render() for p in scan.unparsed)

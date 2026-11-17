@@ -32,6 +32,7 @@ import re
 import warnings
 from pathlib import Path
 
+from ._core.paths import display_root
 from ._core.git import run_git
 
 __all__ = ["changed_lines", "lines_for"]
@@ -181,7 +182,7 @@ def changed_lines(
     # "nothing changed" and scoped the caller's check to nothing (found by a test that fails only inside a hook).
     completed = run_git(root, *args)
     if completed.returncode != 0:
-        raise RuntimeError(f"git diff failed in {root} (exit {completed.returncode}): " f"{completed.stderr.decode('utf-8', 'replace')[:400]}")
+        raise RuntimeError(f"git diff failed in {display_root(root)} (exit {completed.returncode}): " f"{completed.stderr.decode('utf-8', 'replace')[:400]}")
 
     out = _parse_diff(completed.stdout)
     if include_untracked:

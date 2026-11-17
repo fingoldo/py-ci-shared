@@ -17,6 +17,7 @@ in ``pkg/__init__.py`` is ``pkg.NAME``. A file that cannot be read or parsed fai
 from __future__ import annotations
 
 import ast
+from ._core.paths import display_root
 from ._core.unparse import unparse_stable
 import re
 from collections.abc import Iterable
@@ -237,7 +238,7 @@ def assert_verifier_covers_statements(
     scan = _scan(Path(root), set(exclude_top_dirs))
     found = _constants(scan, tuple(s.upper() for s in statement_starts))
     if len(found) < min_constants:
-        pytest.fail(f"only {len(found)} SQL constant(s) found under {root}; expected at least {min_constants} -- Check the scan, it has lost its subject")
+        pytest.fail(f"only {len(found)} SQL constant(s) found under {display_root(root)}; expected at least {min_constants} -- Check the scan, it has lost its subject")
     listed, excluded = verifier_lists(verifier)
     problems: list[str] = []
     if scan.unparsed and not allow_unparsed:

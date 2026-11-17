@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__, registry
+from ._core.paths import display_root
 from ._core.config import ConfigError, RepoConfig, find_repo_root, load_config
 from ._core.console import write_text
 from ._core.outcome import CLI_ENV_VAR
@@ -199,7 +200,7 @@ def _install_mismatch(root: Path, package_file: str) -> Optional[str]:
         return None
     return (
         f"py_ci_shared is imported from {imported}, not from this checkout ({root}); results describe that copy. "
-        f"Run `python -m pip install -e .` from {root} first."
+        f"Run `python -m pip install -e .` from {display_root(root)} first."
     )
 
 

@@ -44,6 +44,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ._core.paths import display_root
 from ._core import DEFAULT_EXCLUDE, SourceError, iter_files, parse_source, read_source, relative_posix
 from ._core.node_index import walk as _fast_walk
 
@@ -268,7 +269,7 @@ def find_layering_violations(
         problems.extend(_rule_problems(rel, targets, applicable))
     if rules and examined < min_files:
         problems.append(
-            f"no source file under {repo_root} matched any rule's from_glob "
+            f"no source file under {display_root(repo_root)} matched any rule's from_glob "
             f"({[r.from_glob for r in rules]}) - this check examined nothing ({examined} file(s) matched, need {min_files}), which reads as a pass."
         )
     return problems

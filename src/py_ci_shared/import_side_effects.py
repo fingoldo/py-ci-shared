@@ -21,6 +21,7 @@ comment added above one does not re-report it; a baseline entry nothing reproduc
 from __future__ import annotations
 
 import ast
+from ._core.paths import display_root
 from ._core.outcome import refresh_hint, refreshed_skip, unevaluated_skip
 from ._core.unparse import unparse_stable
 import json
@@ -171,10 +172,10 @@ def assert_no_new_import_time_env_mutations(
 
     parsed, keys, unparsed = _scan_env(root, pattern)
     if parsed == 0 and not unparsed and min_files > 0:
-        unevaluated_skip(f"no file matching {pattern!r} under {root}: no test module can write os.environ at import time")
+        unevaluated_skip(f"no file matching {pattern!r} under {display_root(root)}: no test module can write os.environ at import time")
     if parsed < min_files:
         pytest.fail(
-            f"only {parsed} file(s) matching {pattern!r} parsed under {root}; expected at least {min_files} -- Check root, the scan has lost its subject"
+            f"only {parsed} file(s) matching {pattern!r} parsed under {display_root(root)}; expected at least {min_files} -- Check root, the scan has lost its subject"
         )
     current = set(keys)
     do_refresh = refresh if refresh is not None else refresh_requested(refresh_flag, request)

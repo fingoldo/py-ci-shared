@@ -39,3 +39,9 @@ def exists_exact_case(path: Union[str, "os.PathLike[str]"], root: Optional[Union
             return False
         current = current / part
     return True
+
+
+def display_root(root: "Union[str, os.PathLike[str]]") -> str:
+    """The name of a checkout as a message shows it: the folder name, never the machine's absolute path (49-T10)."""
+    name = Path(root).name
+    return name or "the repository"

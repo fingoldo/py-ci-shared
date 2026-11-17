@@ -41,6 +41,7 @@ import sys
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
+from ._core.paths import display_root
 from ._core.console import capped
 from ._core import iter_files
 from ._toml_compat import tomllib
@@ -112,7 +113,7 @@ def dtz_findings(root: Path, scan_paths: Iterable[str] = (".",), *, test_dir_nam
     scan = tuple(_normalise(p) for p in scan_paths)
     missing = [p for p in scan if not (root / p).exists()]
     if missing:
-        raise RuntimeError(f"scan path(s) {missing} do not exist under {root}. ruff would report them as clean.")
+        raise RuntimeError(f"scan path(s) {missing} do not exist under {display_root(root)}. ruff would report them as clean.")
 
     result = subprocess.run(
         [sys.executable, "-I", "-m", "ruff", "check", "--select", "DTZ", "--no-force-exclude", "--output-format", "concise", *scan],

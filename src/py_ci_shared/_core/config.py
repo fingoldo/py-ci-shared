@@ -26,6 +26,7 @@ Every other key is a keyword argument. Paths are relative to the repo root (see 
 """
 
 from __future__ import annotations
+from .paths import display_root
 
 import difflib
 import glob as _glob
@@ -281,7 +282,7 @@ def _expand(repo_root: Path, item: str) -> list[Path]:
         pattern = _glob.escape(str(repo_root)) + "/" + item
         found = sorted(Path(p) for p in _glob.glob(pattern, recursive=True) if "__pycache__" not in Path(p).parts)
         if not found:
-            raise ConfigError(f"{item!r} matches no file under {repo_root}; fix the glob or remove it")
+            raise ConfigError(f"{item!r} matches no file under {display_root(repo_root)}; fix the glob or remove it")
         resolved_root = repo_root.resolve()
         return [_inside_root(resolved_root, path, item) for path in found]
     return [_inside_root(repo_root.resolve(), repo_root / item, item)]

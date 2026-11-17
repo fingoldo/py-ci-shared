@@ -25,6 +25,7 @@ import re
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.paths import display_root
 from ._core import EmptyScanError, Finding
 
 __all__ = ["MARKER", "RULE", "assert_workflow_installs_pinned", "find_workflow_installs_pinned"]
@@ -115,7 +116,7 @@ def find_workflow_installs_pinned(workflows_dir: Union[str, Path], *, min_files:
     root = Path(workflows_dir)
     files = sorted(p for p in root.glob("*.y*ml") if p.is_file())
     if len(files) < min_files:
-        raise EmptyScanError(f"workflow_installs_pinned: found {len(files)} workflow file(s) under {root}, need {min_files}")
+        raise EmptyScanError(f"workflow_installs_pinned: found {len(files)} workflow file(s) under {display_root(root)}, need {min_files}")
     out: list[Finding] = []
     for path in files:
         out.extend(_check_file(path, path.name))

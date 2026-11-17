@@ -25,6 +25,7 @@ be read or parsed.
 from __future__ import annotations
 
 import ast
+from ._core.paths import display_root
 from ._core.unparse import unparse_stable
 import io
 import logging
@@ -213,7 +214,7 @@ def assert_markers_are_fatal(
         messages.append("files that could not be read or parsed, so their markers are unknown:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
     if found_count < min_markers:
         messages.append(
-            f"found {found_count} emitted marker(s) under {root}, expected at least {min_markers}: the scan is not reaching the savers "
+            f"found {found_count} emitted marker(s) under {display_root(root)}, expected at least {min_markers}: the scan is not reaching the savers "
             "(wrong root or glob, or the writers changed shape)."
         )
     if blank:

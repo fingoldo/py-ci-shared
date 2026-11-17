@@ -23,6 +23,7 @@ Rules here:
 """
 
 from __future__ import annotations
+from .paths import display_root
 
 import fnmatch
 import logging
@@ -87,7 +88,7 @@ def _git(root: Path, *args: str) -> "Optional[subprocess.CompletedProcess[bytes]
         return run_git(root, *args)
     except GitError as exc:
         if exc.timed_out:
-            raise CorpusError(f"cannot list the corpus under {root}: {exc}") from exc
+            raise CorpusError(f"cannot list the corpus under {display_root(root)}: {exc}") from exc
         return None
 
 

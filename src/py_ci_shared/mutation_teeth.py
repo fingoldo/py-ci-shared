@@ -96,6 +96,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Optional
 
+from ._core.paths import display_root
 from ._core.outcome import add_note
 from ._core import Baseline as CoreBaseline
 from ._core import atomic_write_text, refresh_requested, register_refresh_options
@@ -615,7 +616,7 @@ def _sweep_in_sandbox(
     target = sandbox / relative
     if not target.is_file():
         raise MutationHarnessError(
-            f"{relative} does not exist under {repo_root}. " "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
+            f"{relative} does not exist under {display_root(repo_root)}. " "`path` must be relative to `repo_root`, not absolute and not relative to the cwd."
         )
 
     mutants, candidates_total, sampled = generate_mutants(target, lines=ranges, limit=limit)
@@ -960,7 +961,7 @@ def assert_revert_fails_tests(
         shutil.copytree(repo_root, sandbox, ignore=_COPY_IGNORE, symlinks=False)
         target = sandbox / relative
         if not target.is_file():
-            raise MutationHarnessError(f"{relative} does not exist under {repo_root}")
+            raise MutationHarnessError(f"{relative} does not exist under {display_root(repo_root)}")
         source = read_target(target)
         original = source.text
         if old not in original:

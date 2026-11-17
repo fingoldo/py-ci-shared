@@ -38,6 +38,7 @@ reports those without failing).
 """
 
 from __future__ import annotations
+from ._core.paths import display_root
 from ._core.console import write_text
 
 import argparse
@@ -83,7 +84,7 @@ def package_dir(library_root: PathLike, package: str) -> Path:
     for candidate in (root / "src" / package, root / package):
         if (candidate / "__init__.py").is_file():
             return candidate
-    raise CoreError(f"no package {package!r} under {root} (looked for src/{package}/__init__.py and {package}/__init__.py)")
+    raise CoreError(f"no package {package!r} under {display_root(root)} (looked for src/{package}/__init__.py and {package}/__init__.py)")
 
 
 def library_alias_map(pkg_dir: PathLike, package: str) -> dict[str, str]:

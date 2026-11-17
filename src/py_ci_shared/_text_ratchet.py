@@ -13,6 +13,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Optional, Union
 
+from ._core.paths import display_root
 from ._core import DEFAULT_EXCLUDE
 from ._core.errors import CorpusError
 from ._core.outcome import add_note
@@ -79,7 +80,7 @@ def require_text_floor(label: str, count: int, *, min_files: int, root: Union[st
     """
     if count < min_files:
         raise CorpusError(
-            f"{label}: {count} file(s) of its corpus under {root}; expected at least {min_files}. "
+            f"{label}: {count} file(s) of its corpus under {display_root(root)}; expected at least {min_files}. "
             "The gate is not reaching the code (wrong root, or the scanned directories are absent). Pass min_files=0 if the repo has none."
         )
 

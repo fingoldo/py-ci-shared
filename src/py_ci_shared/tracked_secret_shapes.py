@@ -49,6 +49,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Union
 
+from ._core.paths import display_root
 from ._core.console import capped
 from ._core.outcome import unevaluated_skip
 from ._core import CorpusError, EmptyScanError, Finding
@@ -257,7 +258,7 @@ def scan_tracked_secret_shapes(
             "Fix or remove them, or pass allow_unparsed to skip them on purpose."
         )
     if report.scanned < min_files:
-        raise EmptyScanError(f"only {report.scanned} file(s) scanned under {root} ({report.summary()}); expected at least {min_files}")
+        raise EmptyScanError(f"only {report.scanned} file(s) scanned under {display_root(root)} ({report.summary()}); expected at least {min_files}")
     report.findings.sort(key=lambda f: (f.path, f.line, f.key))
     return report
 
