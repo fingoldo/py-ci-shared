@@ -29,6 +29,7 @@ metadata keys, which are ignored.
 """
 
 from __future__ import annotations
+from .outcome import entries_word
 
 import json
 import logging
@@ -365,7 +366,7 @@ class Baseline:
         except BaselineGrowthError as exc:
             logger.warning("baseline refresh refused, growth not written: %s", type(exc).__name__)
             return BaselineOutcome(new=exc.grown, message=str(exc))
-        return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} entr(ies) in {self.shown}")
+        return BaselineOutcome(refreshed=True, message=f"{self.gate}: baseline rewritten, {sum(current.values())} {entries_word(sum(current.values()))} in {self.shown}")
 
     def enforce(
         self,
@@ -413,10 +414,10 @@ class Baseline:
             parts.append(f"{len(outcome.new)} new finding(s) not in {self.shown}{': ' + guidance if guidance else ''}\n    {lines}")
         if outcome.unjustified:
             parts.append(
-                f"{len(outcome.unjustified)} baseline entr(ies) still marked {UNJUSTIFIED_MARKER!r}; replace the marker with the reason "
+                f"{len(outcome.unjustified)} baseline {entries_word(len(outcome.unjustified))} still marked {UNJUSTIFIED_MARKER!r}; replace the marker with the reason "
                 "each is acceptable (a refresh records what was found, it does not decide it is fine):\n    " + "\n    ".join(outcome.unjustified)
             )
         if outcome.stale:
-            parts.append(f"{len(outcome.stale)} baseline entr(ies) no longer found; prune with: {self.refresh_text}\n    " + "\n    ".join(outcome.stale))
+            parts.append(f"{len(outcome.stale)} baseline {entries_word(len(outcome.stale))} no longer found; prune with: {self.refresh_text}\n    " + "\n    ".join(outcome.stale))
         outcome.message = f"{self.gate}:\n  " + "\n  ".join(parts) if parts else f"{self.gate}: clean ({sum(accepted.values())} accepted)"
         return outcome

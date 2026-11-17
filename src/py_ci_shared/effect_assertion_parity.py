@@ -34,6 +34,7 @@ no test currently inspects.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import logging
@@ -881,6 +882,6 @@ def assert_effects_are_asserted(
             f"{len(new)} effect(s) performed but inspected by no importing test:\n  " + "\n  ".join(f"{key}: {why}" for key, why in sorted(new.items()))
         )
     if stale:
-        messages.append(f"{len(stale)} accepted entr(ies) no longer found -- remove them so the list keeps shrinking:\n  " + "\n  ".join(stale))
+        messages.append(f"{len(stale)} accepted {entries_word(len(stale))} no longer found -- remove them so the list keeps shrinking:\n  " + "\n  ".join(stale))
     if messages:
         pytest.fail("\n".join(messages))

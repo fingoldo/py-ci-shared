@@ -21,6 +21,7 @@ has a floor on what it parsed: a check whose pattern stopped matching reports a 
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 from ._core.unparse import unparse_stable
@@ -381,7 +382,7 @@ def assert_rounds_filed(
     if new or stale:
         pytest.fail(
             (f"{len(new)} audit round(s) filed against their own tracker - close the rows, or move the round:\n  " + "\n  ".join(new) if new else "")
-            + (f"\n{len(stale)} baseline entr(ies) no longer reproduce - remove them:\n  " + "\n  ".join(stale) if stale else "")
+            + (f"\n{len(stale)} baseline {entries_word(len(stale))} no longer reproduce - remove them:\n  " + "\n  ".join(stale) if stale else "")
         )
 
 

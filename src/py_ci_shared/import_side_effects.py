@@ -19,6 +19,7 @@ comment added above one does not re-report it; a baseline entry nothing reproduc
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 from ._core.paths import display_root
@@ -192,7 +193,7 @@ def assert_no_new_import_time_env_mutations(
             )
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        refreshed_skip(f"{baseline_path.name} rewritten with {len(current)} entr(ies)")
+        refreshed_skip(f"{baseline_path.name} rewritten with {len(current)} {entries_word(len(current))}")
     if baseline_path is not None and not baseline_path.is_file():
         pytest.fail(f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_hint(refresh_flag, 'import_side_effects')}")
     known: set[str] = set(load_json(baseline_path)) if baseline_path is not None else set()
@@ -208,7 +209,7 @@ def assert_no_new_import_time_env_mutations(
             "set it in conftest.py or move the import into the test:\n  " + "\n  ".join(new)
         )
     if stale:
-        problems.append(f"{len(stale)} baseline entr(ies) no longer reproduced -- Remove them, or refresh with {refresh_flag}:\n  " + "\n  ".join(stale))
+        problems.append(f"{len(stale)} baseline {entries_word(len(stale))} no longer reproduced -- Remove them, or refresh with {refresh_flag}:\n  " + "\n  ".join(stale))
     if problems:
         pytest.fail("\n".join(problems))
 

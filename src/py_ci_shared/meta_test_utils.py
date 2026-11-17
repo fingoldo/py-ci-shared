@@ -33,6 +33,7 @@ AST so the count survives reformatting.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import dataclasses
@@ -634,7 +635,7 @@ def findings_ratchet(findings: Iterable[str], baseline_path: Path) -> tuple[list
         known = set(counts)
         marked = sorted(k for k in known if is_unjustified(notes.get(k)))
         if marked:
-            raise BaselineError(f"{baseline_path}: {len(marked)} entr(ies) still marked {UNJUSTIFIED_MARKER!r}: {marked[0]!r}")
+            raise BaselineError(f"{baseline_path}: {len(marked)} {entries_word(len(marked))} still marked {UNJUSTIFIED_MARKER!r}: {marked[0]!r}")
     current = set(findings)
     return sorted(current - known), sorted(known - current)
 

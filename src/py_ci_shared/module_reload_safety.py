@@ -26,6 +26,7 @@ site in a file that names one is reported with that warning, since only a subpro
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 from ._core.unparse import unparse_stable
@@ -458,7 +459,7 @@ def assert_no_reloads_in_code(
     if sites:
         problems.append(f"{len(sites)} module reload/unload site(s) in production code:\n  " + "\n  ".join(f"{s}  {s.text}" for s in sites))
     if stale:
-        problems.append(f"{len(stale)} allowlist entr(ies) that match no site (remove them):\n  " + "\n  ".join(map(str, stale)))
+        problems.append(f"{len(stale)} allowlist {entries_word(len(stale))} that match no site (remove them):\n  " + "\n  ".join(map(str, stale)))
     if problems:
         pytest.fail("\n".join(problems), pytrace=False)
 

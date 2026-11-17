@@ -30,6 +30,7 @@ marker expression selects it?
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import functools
@@ -593,7 +594,7 @@ def assert_every_marked_test_is_selected(
                 if new
                 else ""
             )
-            + (f"\n{len(stale)} accepted entr(ies) now selected or not a test key -- remove them:\n  " + "\n  ".join(stale) if stale else "")
+            + (f"\n{len(stale)} accepted {entries_word(len(stale))} now selected or not a test key -- remove them:\n  " + "\n  ".join(stale) if stale else "")
             + ("\n(file-level keys are no longer accepted: list each `<file>::<test>` the report prints instead)" if legacy else ""),
             pytrace=False,
         )

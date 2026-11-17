@@ -19,6 +19,7 @@ edits to the round files.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import logging
@@ -211,5 +212,5 @@ def assert_disposition_tests_exist(
     if new or stale:
         pytest.fail(
             (f"{len(new)} disposition(s) name a test that does not exist:\n  " + "\n  ".join(new) if new else "")
-            + (f"\n{len(stale)} accepted entr(ies) now resolve -- remove them:\n  " + "\n  ".join(stale) if stale else "")
+            + (f"\n{len(stale)} accepted {entries_word(len(stale))} now resolve -- remove them:\n  " + "\n  ".join(stale) if stale else "")
         )

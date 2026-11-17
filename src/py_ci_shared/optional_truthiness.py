@@ -40,6 +40,7 @@ excuse a site: ``set_params`` bypasses it (the reason 1256fff4d fixed ``max_refi
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 from ._core.unparse import unparse_stable
@@ -555,6 +556,6 @@ def assert_optionals_test_for_none(
     if new:
         problems.append(f"{len(new)} optional(s) tested for truth rather than for None:\n  " + "\n  ".join(new))
     if stale:
-        problems.append(f"{len(stale)} baseline entr(ies) no longer found -- remove them:\n  " + "\n  ".join(stale))
+        problems.append(f"{len(stale)} baseline {entries_word(len(stale))} no longer found -- remove them:\n  " + "\n  ".join(stale))
     if problems:
         pytest.fail("\n".join(problems))

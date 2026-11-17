@@ -17,6 +17,7 @@ every ``run:`` in the workflows, optionally scoped to one project by a path frag
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import re
 from collections.abc import Iterable, Mapping
@@ -184,5 +185,5 @@ def assert_gates_honest(
     if new or stale:
         pytest.fail(
             (f"{len(new)} gate(s) that do not do what they say:\n  " + "\n  ".join(new) if new else "")
-            + (f"\n{len(stale)} accepted entr(ies) no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
+            + (f"\n{len(stale)} accepted {entries_word(len(stale))} no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
         )

@@ -12,6 +12,7 @@ is refreshed to the smaller number (``fail_on_shrink=False`` restores the old be
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 from collections.abc import Iterable
 from pathlib import Path
@@ -31,7 +32,7 @@ def drift_problems(baseline: dict[str, int], current: dict[str, int], *, fail_on
     for key, count in sorted(current.items()):
         old = baseline.get(key)
         if old is None:
-            problems.append(f"NEW list {key}: {count} entr(ies)")
+            problems.append(f"NEW list {key}: {count} {entries_word(count)}")
         elif count > old:
             problems.append(f"GREW {key}: {old} -> {count} (+{count - old})")
         elif fail_on_shrink and count < old:
@@ -74,7 +75,7 @@ def assert_deferred_lists_not_grown(
             write_ratchet(baseline_path, dict(current), gate="deferred-debt", previous=previous, render=dump_json, request=request)
         except BaselineGrowthError as exc:
             pytest.fail(str(exc), pytrace=False)
-        refreshed_skip(f"debt baseline written: {len(current)} list(s), {sum(current.values())} entr(ies) in {baseline_path.name}")
+        refreshed_skip(f"debt baseline written: {len(current)} list(s), {sum(current.values())} {entries_word(sum(current.values()))} in {baseline_path.name}")
     if not Path(baseline_path).is_file():
         pytest.fail(f"debt baseline {baseline_path} does not exist, so nothing was compared. Create it with: pytest ... {refresh_flag}")
     try:

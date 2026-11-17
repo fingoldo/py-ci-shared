@@ -23,6 +23,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 from collections.abc import Iterable
@@ -119,6 +120,6 @@ def assert_no_private_meta_imports(
             "'<test stem>::<dotted name>' to the permitted set with the reason:\n  " + "\n  ".join(new)
         )
     if stale:
-        problems.append(f"{len(stale)} permitted entr(ies) no longer match any import -- Remove them:\n  " + "\n  ".join(stale))
+        problems.append(f"{len(stale)} permitted {entries_word(len(stale))} no longer match any import -- Remove them:\n  " + "\n  ".join(stale))
     if problems:
         pytest.fail("\n".join(problems))

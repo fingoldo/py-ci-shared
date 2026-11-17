@@ -22,6 +22,7 @@ register while a changed statement does.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import difflib
@@ -247,6 +248,6 @@ def assert_no_drifted_duplicate_functions(
             )
         )
     if stale:
-        problems.append(f"{len(stale)} `allow` entr(ies) no longer name a drifted group; remove them: {stale}")
+        problems.append(f"{len(stale)} `allow` {entries_word(len(stale))} no longer name a drifted group; remove them: {stale}")
     if problems:
         raise AssertionError(newline.join(problems))

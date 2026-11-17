@@ -20,6 +20,7 @@ Two checks, both recomputed from the rows:
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import re
 from collections.abc import Iterable
@@ -237,7 +238,7 @@ def assert_tracker_summaries_agree(
     if new or stale:
         pytest.fail(
             (f"{len(new)} place(s) where the tracker's summary disagrees with its rows:\n  " + "\n  ".join(new) if new else "")
-            + (f"\n{len(stale)} accepted entr(ies) no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
+            + (f"\n{len(stale)} accepted {entries_word(len(stale))} no longer reproduce -- remove them:\n  " + "\n  ".join(stale) if stale else "")
         )
 
 

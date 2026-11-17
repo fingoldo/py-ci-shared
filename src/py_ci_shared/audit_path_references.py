@@ -14,6 +14,7 @@ string first. A file that cannot be parsed is reported, never skipped.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 import ast
 import re
@@ -259,6 +260,6 @@ def assert_no_open_round_paths(
     if new:
         problems.append(f"{len(new)} literal path(s) into an open audit round:\n  " + "\n  ".join(keys[k].render() for k in new))
     if stale:
-        problems.append(f"{len(stale)} accepted entr(ies) no longer reproduce -- remove them:\n  " + "\n  ".join(stale))
+        problems.append(f"{len(stale)} accepted {entries_word(len(stale))} no longer reproduce -- remove them:\n  " + "\n  ".join(stale))
     if problems:
         pytest.fail("\n".join(problems))

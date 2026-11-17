@@ -38,6 +38,7 @@ not turn it into a new finding; the list can only shrink.
 """
 
 from __future__ import annotations
+from ._core.outcome import entries_word
 
 from functools import partial
 
@@ -637,7 +638,7 @@ def _refresh_baseline(
         )
     except BaselineGrowthError as exc:
         pytest.fail(str(exc), pytrace=False)
-    refreshed_skip(f"fail-open baseline written: {sum(kept.values())} entr(ies) in {baseline_path}")
+    refreshed_skip(f"fail-open baseline written: {sum(kept.values())} {entries_word(sum(kept.values()))} in {baseline_path}")
 
 
 def _baseline_problems(
