@@ -421,6 +421,8 @@ def test_known_genuine_phantoms_stay_reported_next_to_longer_spelled_out_strings
 
 
 def test_stdlib_source_names_the_standard_library_and_builtins(tmp_path: Path) -> None:
+    if not hasattr(sys, "stdlib_module_names"):
+        pytest.skip("sys.stdlib_module_names exists from Python 3.10; the 3.9 fallback is covered by test_stdlib_names_on_3_9")
     """Source 1: ``sys.stdlib_module_names`` and the builtins are declared vocabulary, not repo names."""
     from py_ci_shared._phantom_vocabulary import stdlib_names
 
