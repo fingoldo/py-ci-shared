@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Optional
 
 from ._core.scan import scan_roots_excluding
-from ._core import ScanResult, nodes_of
+from ._core import nodes_of, ScanResult, unparsed_listing
 
 logger = logging.getLogger(__name__)
 
@@ -214,9 +214,7 @@ def assert_no_epsilon_padded_power_denominators(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed:
-        problems.append(
-            f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {u.render()}" for u in scan.unparsed)
-        )
+        problems.append(unparsed_listing(scan.unparsed, newline))
     findings = [f for f in _findings(scan) if f"{f.path.as_posix()}:{f.lineno}" not in allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

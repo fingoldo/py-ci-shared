@@ -270,7 +270,10 @@ def assert_no_new_incomplete_transaction(
         raise TypeError(f"unexpected keyword argument(s): {sorted(find_kwargs)}")
     scan.assert_ok(allow_unparsed=allow_unparsed)
     do_refresh = refresh if refresh is not None else refresh_requested(REFRESH_FLAG, request)
-    outcome = Baseline(baseline_path, gate="db-transaction", refresh_command=f"pytest {REFRESH_FLAG}").enforce(
+    baseline = Baseline(baseline_path, gate="db-transaction", refresh_command=f"pytest {REFRESH_FLAG}")
+    # The messages name the baseline inside the package, not its bare file name (49-T11).
+    baseline.shown = f"py_ci_shared/{Path(baseline_path).name}"
+    outcome = baseline.enforce(
         [t.key for t in found],
         refresh=do_refresh,
         describe={t.key: f"{t.key} (line {t.lineno})" for t in found},

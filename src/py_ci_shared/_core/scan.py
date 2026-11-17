@@ -190,3 +190,8 @@ def scan_roots_excluding(roots: Iterable[Path | str], exclude: Iterable[str]) ->
             p for p in iter_files(base, ("*.py",), exclude=DEFAULT_EXCLUDE) if not any(fragment in p.relative_to(base).as_posix() for fragment in excluded)
         )
     return scan_python(files)
+
+
+def unparsed_listing(unparsed, newline: str = "\n") -> str:
+    """The one message for files a gate could not check (49-T11): the count, then each file on its own line."""
+    return f"{len(unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {p.render()}" for p in unparsed)

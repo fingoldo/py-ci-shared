@@ -132,7 +132,7 @@ Headline numbers from the 175-gate sweep: a `path:line` is on the first line of 
 - `1 file(s) could not be parsed, so they were not checked: src/broken.py:1: unparsable: invalid syntax` never names the switch (`allow_unparsed`) or the fix.
 - `dup_baseline_percent_key`, `git_child_env`, `guard_without_fixture`, `skip_as_pass`, `wallclock_test_waits` print findings as `key (description); key (description)` on one line; `db_transaction_completeness` names its baseline `baseline.json` (basename only).
 - **Proposed fix:** correct the strings. ADDITIVE.
-- **Disposition:** PARTIAL (f992b0c): the central `ScanResult.check_unparsed` message now names `allow_unparsed`. OPEN: the eleven module-local 'could not be parsed' messages, `refresh naive_utcnow` with no baseline printing PASS, the `key (description)` one-line lists in five gates, and the basename-only baseline name in `db_transaction_completeness`.
+- **Disposition:** PARTIAL (f992b0c, and this round): the central `unparsed_listing` (`_core.scan`, exported from `_core`) now renders the count and the files for four gates' local copies; `refresh` of a gate with no baseline reports SKIPPED with 'nothing to refresh' instead of a PASS; the db-transaction baseline is named inside the package, not by its bare file name. OPEN: the other local 'could not be parsed' messages whose shape differs, and the `key (description)` one-line lists in five gates.
 
 ## Considered and not raised
 

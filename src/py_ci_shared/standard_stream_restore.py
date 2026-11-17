@@ -50,7 +50,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.scan import scan_roots_excluding
-from ._core import ScanResult, nodes_of
+from ._core import nodes_of, ScanResult, unparsed_listing
 from ._core.node_index import parent_map, tree_memo, walk
 from ._core.scopes import iter_scopes
 
@@ -322,9 +322,7 @@ def assert_standard_streams_restored_only_if_still_ours(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed and not allow_unparsed:
-        problems.append(
-            f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {u.render()}" for u in scan.unparsed)
-        )
+        problems.append(unparsed_listing(scan.unparsed, newline))
     findings = [f for f in _findings(scan) if not {f"{f.path.as_posix()}:{f.lineno}", f"{f.path.as_posix()}::{f.function}"} & allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

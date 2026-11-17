@@ -31,7 +31,7 @@ from pathlib import Path
 from typing import Optional, Union
 
 from ._core.scan import scan_roots_excluding
-from ._core import ImportAliases, ScanResult, child_nodes, qualified_functions
+from ._core import child_nodes, ImportAliases, qualified_functions, ScanResult, unparsed_listing
 from ._core.node_index import walk as _fast_walk
 
 __all__ = [
@@ -217,9 +217,7 @@ def assert_no_latched_availability_flags(roots: Sequence[Path], exclude: Iterabl
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed:
-        problems.append(
-            f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {u.render()}" for u in scan.unparsed)
-        )
+        problems.append(unparsed_listing(scan.unparsed, newline))
     findings = [f for f in _findings(scan) if f.flag not in allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

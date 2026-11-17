@@ -165,6 +165,9 @@ def _run_gate(config: RepoConfig, run: GateRun, *, refresh: bool = False, grow: 
         func, budget = resolve_gate(run)
         kwargs = resolve_kwargs(func, dict(run.kwargs), config.repo_root)
         params = inspect.signature(func).parameters
+        if refresh and "refresh" not in params:
+            # A gate that keeps no baseline has nothing to rewrite: say so, rather than report a PASS that refreshed nothing (49-T11).
+            return GateResult(run.name, SKIPPED, "nothing to refresh: this gate keeps no baseline", time.perf_counter() - start, budget)
         if refresh and "refresh" in params:
             kwargs["refresh"] = True
         if refresh and grow and "grow" in params:
