@@ -93,6 +93,7 @@ INTERNAL_MODULES: dict[str, str] = {
     "_mutation_checkpoint": "private part of mutation_teeth: the per-mutant checkpoint a resumed sweep replays",
     "_mutation_operators": "private part of mutation_teeth",
     "_mutation_runner": "private part of mutation_teeth",
+    "_mutation_screen": "private part of mutation_teeth: the two-phase sweep that screens mutants on a cheap test set and re-judges survivors on the full set",
     "_mutation_speed": "private part of mutation_teeth: the cost options of a sweep (baselines, timeout, line map, killer order)",
     "_mutation_sweep": "private part of mutation_teeth: the per-mutant verdict and the state a sweep carries between mutants",
     "_shell_blocks": "private part of skip_as_pass: shell block parser (bodies, heredocs, quotes) and the run: script extractor of workflow files",
