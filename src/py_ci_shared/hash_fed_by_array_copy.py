@@ -172,7 +172,7 @@ def assert_no_hash_fed_by_array_copy(roots: Sequence[Path], exclude: Iterable[st
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed:
-        problems.append(unparsed_listing(scan.unparsed, newline))
+        problems.append(unparsed_listing(scan.unparsed, newline + "  "))
     findings = [f for f in _findings(scan) if f"{f.path.as_posix()}:{f.lineno}" not in allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

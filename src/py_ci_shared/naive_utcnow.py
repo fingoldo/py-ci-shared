@@ -33,6 +33,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 from ._core.unparse import unparse_stable
@@ -141,7 +142,7 @@ def assert_no_naive_utcnow(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed and not allow_unparsed:
-        problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(p.render() for p in scan.unparsed))
+        problems.append(unparsed_listing(scan.unparsed, newline="\n  "))
     if findings:
         problems.append(
             f"{len(findings)} use(s) of `datetime.utcnow()`/`utcfromtimestamp()`, which are deprecated (removal is "

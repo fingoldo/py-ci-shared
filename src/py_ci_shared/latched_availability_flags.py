@@ -217,7 +217,7 @@ def assert_no_latched_availability_flags(roots: Sequence[Path], exclude: Iterabl
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed:
-        problems.append(unparsed_listing(scan.unparsed, newline))
+        problems.append(unparsed_listing(scan.unparsed, newline + "  "))
     findings = [f for f in _findings(scan) if f.flag not in allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

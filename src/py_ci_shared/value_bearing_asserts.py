@@ -18,6 +18,7 @@ from the bytecode. The subject is the source.
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 from ._core.paths import display_root
@@ -161,9 +162,7 @@ def assert_no_value_bearing_asserts(
     if seen < min_asserts_seen:
         problems.append(f"only {seen} assert(s) seen under {display_root(package_root)}; expected at least {min_asserts_seen} -- the walk is not reaching the code")
     if scan.unparsed and not allow_unparsed:
-        problems.append(
-            f"{len(scan.unparsed)} file(s) could not be parsed, so their asserts were not checked:\n    " + "\n    ".join(p.render() for p in scan.unparsed)
-        )
+        problems.append(unparsed_listing(scan.unparsed, newline="\n    "))
     guidance = "these check a VALUE, so `python -O` deletes the check. Use an explicit `raise`"
     if baseline_path is None:
         if findings:

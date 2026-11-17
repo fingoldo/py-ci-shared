@@ -18,6 +18,7 @@ Usage from a repository's meta tests::
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 from collections.abc import Iterable, Iterator, Mapping
@@ -182,7 +183,7 @@ def assert_no_discarded_model_copy(
     stale = sorted(set(allowed) - {d.key for d in found})
     msgs = []
     if scan.unparsed:
-        msgs.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked: " + "; ".join(p.render() for p in scan.unparsed))
+        msgs.append(unparsed_listing(scan.unparsed, newline="\n  "))
     if bad:
         msgs.append("config copies built with model_copy(update=...) that no caller ever receives (the override is lost): " + "; ".join(map(repr, bad)))
     if stale:

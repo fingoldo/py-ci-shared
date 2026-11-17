@@ -37,6 +37,7 @@ findings, ``assert_no_unsynchronized_gpu_timings`` fails a pytest run on any tha
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 import re
@@ -414,7 +415,7 @@ def assert_no_unsynchronized_gpu_timings(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed and not allow_unparsed:
-        problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n" + "\n".join(f"  {u.render()}" for u in scan.unparsed))
+        problems.append(unparsed_listing(scan.unparsed, newline="\n  "))
     findings = [f for f in found if f.key not in allowlist]
     if findings:
         lines = [f"  {f.path.as_posix()}:{f.lineno} in {f.function}() [{f.shape}] -- {f.detail}" for f in findings]

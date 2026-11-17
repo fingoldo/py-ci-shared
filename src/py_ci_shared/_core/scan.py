@@ -214,6 +214,15 @@ def scan_roots_excluding(roots: Iterable[Path | str], exclude: Iterable[str]) ->
     return scan_python(files)
 
 
-def unparsed_listing(unparsed, newline: str = "\n") -> str:
-    """The one message for files a gate could not check (49-T11): the count, then each file on its own line."""
-    return f"{len(unparsed)} file(s) could not be parsed, so they were not checked:" + "".join(f"{newline}  {p.render()}" for p in unparsed)
+def unparsed_listing(unparsed, newline: str = "\n  ") -> str:
+    """The one message for files a gate could not check (49-T11): the count, each file on its own line, and how to clear it.
+
+    *newline* is the whole prefix put before each line, so a caller that joins into a longer message can set its indent.
+    Each entry is an object with ``render()`` (a scan's ``Unparsed``) or already a line of text.
+    """
+    lines = [p.render() if hasattr(p, "render") else str(p) for p in unparsed]
+    return (
+        f"{len(lines)} file(s) could not be parsed, so they were not checked:"
+        + "".join(f"{newline}{line}" for line in lines)
+        + f"{newline}Fix the syntax error in each file; a gate cannot judge code it cannot read."
+    )

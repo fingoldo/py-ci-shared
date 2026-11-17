@@ -38,6 +38,7 @@ not turn it into a new finding; the list can only shrink.
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 from ._core.outcome import entries_word
 
 from functools import partial
@@ -653,7 +654,7 @@ def _baseline_problems(
     """The failure messages for unparsed files (unless *allow_unparsed*), a missing baseline, new handlers and stale baseline scopes."""
     problems: list[str] = []
     if scan.unparsed and not allow_unparsed:
-        problems.append(f"{len(scan.unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(u.render() for u in scan.unparsed))
+        problems.append(unparsed_listing(scan.unparsed, newline="\n  "))
     if not exists:
         problems.append(
             f"baseline {baseline_path} does not exist, so nothing is accepted; create it with {refresh_hint(REFRESH_FLAG, 'fail_open_handlers')} (an empty {{}} for a clean repo)"

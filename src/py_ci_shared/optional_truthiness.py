@@ -40,6 +40,7 @@ excuse a site: ``set_params`` bypasses it (the reason 1256fff4d fixed ``max_refi
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 from ._core.outcome import entries_word
 
 import ast
@@ -552,7 +553,7 @@ def assert_optionals_test_for_none(
             new.append(finding)
     stale = sorted(budget.elements())
     if unparsed:
-        problems.append(f"{len(unparsed)} file(s) could not be parsed, so they were not checked:\n  " + "\n  ".join(unparsed))
+        problems.append(unparsed_listing(unparsed, newline="\n  "))
     if new:
         problems.append(f"{len(new)} optional(s) tested for truth rather than for None:\n  " + "\n  ".join(new))
     if stale:

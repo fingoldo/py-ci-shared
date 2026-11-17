@@ -322,7 +322,7 @@ def assert_standard_streams_restored_only_if_still_ours(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed and not allow_unparsed:
-        problems.append(unparsed_listing(scan.unparsed, newline))
+        problems.append(unparsed_listing(scan.unparsed, newline + "  "))
     findings = [f for f in _findings(scan) if not {f"{f.path.as_posix()}:{f.lineno}", f"{f.path.as_posix()}::{f.function}"} & allowed]
     if findings:
         listing = (newline + "  ").join(str(f) for f in findings)

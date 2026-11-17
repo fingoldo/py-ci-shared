@@ -19,6 +19,7 @@ comment added above one does not re-report it; a baseline entry nothing reproduc
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 from ._core.outcome import entries_word
 
 import ast
@@ -201,7 +202,7 @@ def assert_no_new_import_time_env_mutations(
     stale = sorted(known - current)
     problems: list[str] = []
     if unparsed and not allow_unparsed:
-        problems.append(f"{len(unparsed)} file(s) could not be parsed, so they were not checked -- Fix them:\n  " + "\n  ".join(unparsed))
+        problems.append(unparsed_listing(unparsed, newline="\n  "))
     if new:
         problems.append(
             f"{len(new)} module(s) write os.environ at IMPORT time, which leaks into every later test the same xdist worker "
