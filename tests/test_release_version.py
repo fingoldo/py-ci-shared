@@ -543,7 +543,7 @@ def test_a_prepare_rerun_after_publish_hands_the_previous_release_to_run_prep(mo
 
     seen = {}
     monkeypatch.setattr(guard, "_git_tags", lambda _d: ["v1.23.10", "v1.23.11"])
-    monkeypatch.setattr(guard, "_origin_tag_problem", lambda _d, _t: None)
+    monkeypatch.setattr(guard, "_origin_tag_problem", lambda _d, _t, **_kw: None)
 
     def fake_prep(_d, version, published, *, write):
         seen["published"] = published
