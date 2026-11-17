@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 
 def _unreleased() -> str:
+    """The notes of the next release: its ``## Unreleased`` heading, or once prepared, the heading of the version in pyproject."""
     text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    start = text.index("## Unreleased")
+    version = re.search(r'^version = "([^"]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"), re.M).group(1)
+    heading = re.search(r"^## (?:Unreleased[^\n]*|" + re.escape(version) + r")\s*$", text, re.M)
+    start = heading.start()
     end = text.index("\n## ", start + 1)
     return text[start:end]
 
