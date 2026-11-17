@@ -19,12 +19,11 @@ def _none(_module: str) -> bool:
 
 
 def test_the_mandatory_flags_are_present():
-    """-s, --durations=200, --no-cov, -n 0 and the cache provider off follow the caller's paths."""
+    """-s, --durations=200, --no-cov and the cache provider off follow the caller's paths."""
     command = build_command(["tests/test_a.py"], python="py", installed=_all)
     assert command[:4] == ["py", "-m", "pytest", "tests/test_a.py"]
     for flag in ("-s", "--durations=200", "--no-cov"):
         assert flag in command
-    assert command[command.index("-n") + 1] == "0"
     assert command[command.index("-p") + 1] == "no:cacheprovider"
 
 
@@ -37,17 +36,17 @@ def test_options_of_plugins_that_are_not_installed_are_left_out():
 
 @pytest.mark.parametrize("own", [["-n", "3"], ["-n3"], ["--numprocesses=3"], ["--dist", "loadfile"]])
 def test_a_workers_option_of_the_caller_replaces_the_single_process_default(own):
-    """A project that wants xdist workers says so itself; the default ``-n 0`` is not added next to it."""
+    """A caller's own worker option is passed through unchanged."""
     command = build_command(["tests/test_a.py", *own], python="py", installed=_all)
     pairs = list(zip(command, command[1:]))
     assert ("-n", "0") not in pairs
     assert all(token in command for token in own)
 
 
-def test_without_a_workers_option_the_single_process_default_is_added():
-    """No -n of the caller: exactly one ``-n 0``."""
+def test_without_a_workers_option_the_wrapper_adds_none():
+    """No -n of the caller: none is added, so the py_ci_shared plugin picks the count from free RAM."""
     command = build_command(["tests/test_a.py"], python="py", installed=_all)
-    assert list(zip(command, command[1:])).count(("-n", "0")) == 1
+    assert "-n" not in command and "--numprocesses" not in command
 
 
 def test_a_durations_option_of_the_caller_replaces_the_default():
@@ -73,7 +72,8 @@ def test_a_passing_run_writes_everything_to_the_file_and_returns_zero(tmp_path):
     """The output file holds the progress, the durations and the last line exit=0; the summary line is found in it."""
     sample = _write_tests(tmp_path, "def test_ok():\n    print('visible because of -s')\n")
     out = tmp_path / "out" / "run.txt"
-    assert run_pytest(out, [str(sample)], cwd=tmp_path) == 0
+    # A print from an xdist worker is not forwarded to the parent's output, so this checks the serial run that -s is for.
+    assert run_pytest(out, [str(sample), "-n", "0"], cwd=tmp_path) == 0
     text = out.read_text(encoding="utf-8")
     assert "visible because of -s" in text and "test_sample.py" in text
     assert text.rstrip().endswith("exit=0")

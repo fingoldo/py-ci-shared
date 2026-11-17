@@ -8,7 +8,7 @@ Each default has a failure behind it:
 * no ``-q``: it buffers the progress lines until the end.
 * ``--no-cov`` (when ``pytest-cov`` is installed): on Windows the coverage teardown can die with ``PermissionError`` on a locked ``.coverage`` file after the tests passed, which ``-x``
   then turns into a failed run.
-* ``-n 0`` (when ``pytest-xdist`` is installed): parallel workers each import the project and exhaust the RAM of a small machine; a project that really wants workers passes its own ``-n``.
+* No ``-n`` of its own: the worker count is chosen by the ``py_ci_shared`` pytest plugin from free RAM (``_pytest_workers``), so the wrapper does not force serial. Pass ``-n 0`` to run serially, or ``-n N`` to set the count.
 * ``-p no:cacheprovider``: no ``.pytest_cache`` writes into a checkout that other runs read.
 
 Usage::
@@ -39,17 +39,7 @@ __all__ = ["DEFAULT_DURATIONS", "build_command", "main", "run_pytest", "summary_
 
 DEFAULT_DURATIONS = 200
 _QUIET = ("-q", "-qq", "-qqq", "--quiet")
-_WORKERS = ("-n", "--numprocesses", "--dist")
 _SUMMARY = re.compile(r"^=+ .*\b(passed|failed|error|errors|skipped|xfailed|xpassed|deselected)\b.* =+$")
-
-
-def _has_option(args: Sequence[str], names: Sequence[str]) -> bool:
-    """Whether *args* carries any of *names* as ``-n 3`` / ``-n3`` / ``--numprocesses=3``."""
-    for arg in args:
-        for name in names:
-            if arg == name or arg.startswith(name + "=") or (len(name) == 2 and arg.startswith(name) and arg != name and not arg.startswith("--")):
-                return True
-    return False
 
 
 def build_command(
@@ -61,7 +51,7 @@ def build_command(
 ) -> list[str]:
     """The pytest command line: *args* (paths and the caller's own options) after the mandatory defaults.
 
-    ``--no-cov`` and ``-n 0`` are added only when ``pytest_cov`` / ``xdist`` are importable (*installed*), since pytest rejects an option whose plugin is missing; a caller's own ``-n`` /
+    ``--no-cov`` is added only when ``pytest_cov`` is importable (*installed*), since pytest rejects an option whose plugin is missing; a caller's own ``--cov`` /
     ``--durations`` wins. Raises ``ValueError`` for ``-q`` / ``--quiet``.
     """
     given = list(args)
@@ -72,8 +62,6 @@ def build_command(
         command.append(f"--durations={int(durations)}")
     if installed("pytest_cov") and "--no-cov" not in given and not any(a.startswith("--cov") for a in given):
         command.append("--no-cov")
-    if installed("xdist") and not _has_option(given, _WORKERS):
-        command.extend(["-n", "0"])
     if "no:cacheprovider" not in " ".join(given):
         command.extend(["-p", "no:cacheprovider"])
     return command
