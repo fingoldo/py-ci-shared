@@ -130,12 +130,16 @@ _EMPTINESS_GUARD_TMPL = (
 
 def tracked_files(repo_root: Path) -> list[str]:
     """Tracked paths as git stores them: ``-z`` so a non-ASCII name is not C-quoted (``"audits/\320\277..."``)."""
+    from ._core.config import ConfigError
     from ._core.git import GitError, run_git
 
     try:
         out = run_git(repo_root, "ls-files", "-z", check=True).stdout
     except GitError as exc:  # pragma: no cover - environment
-        raise RuntimeError(f"git ls-files failed in {display_root(repo_root)}: {exc}") from exc
+        raise ConfigError(
+            f"repo_hygiene needs a git work tree: {display_root(repo_root)} is not a git checkout, so its tracked files are unknown. "
+            "Run the gate inside the repository."
+        ) from exc
     return [rel for rel in out.decode("utf-8", errors="surrogateescape").split("\0") if rel]
 
 
