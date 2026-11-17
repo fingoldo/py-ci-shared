@@ -2,7 +2,7 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## Unreleased (next: 1.23.13)
+## 1.23.13
 
 ## 1.23.12
 
