@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
-from typing import Union
+from typing import Optional, Union
 
 from ._core import DEFAULT_EXCLUDE
 from ._core.errors import CorpusError
@@ -103,13 +103,17 @@ def enforce_findings(
     baseline_dir: str,
     label: str,
     guidance: str,
+    files_read: Optional[int] = None,
 ) -> None:
     """Fail (raise ``AssertionError`` carrying the whole report) on each finding the baseline ``<baseline_dir>/<name>.json`` does not
-    accept, on a stale or unjustified entry, and on a scan that found nothing. A pass becomes a note on the gate's PASS row (49-T3)."""
+    accept, on a stale or unjustified entry, and on a scan that found nothing. A pass becomes a note on the gate's PASS row (49-T3),
+    always with the findings the baseline accepted; *files_read* adds the count of files the gate read when the caller has it (49-T5)."""
     baseline = Baseline(name, directory=os.path.join(str(repo_root), baseline_dir))
     # Messages name the baseline repo-relative with posix separators, never the machine's absolute path (49-T10).
     baseline.shown = Path(baseline_dir, f"{name}.json").as_posix()
     code, text = baseline.check(found, label=label, guidance=guidance)
     if code:
         raise AssertionError(text)
+    if files_read is not None:
+        text = f"read {files_read} file(s); {text}"
     add_note(text)

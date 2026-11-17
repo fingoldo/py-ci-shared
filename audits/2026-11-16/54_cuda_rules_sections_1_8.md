@@ -819,7 +819,7 @@ barrier findings); (2) the marker test must be per kernel, not per line, otherwi
 - **Evidence:** `detect_parity3.py` over `mlframe/tests` (snapshot): 72 tests that call a GPU-named and a host-named callable, build random data and compare, 5 with two or more seed sources, 59 with one literal seed, 8 with none. CUDA.md:367: "must pass on 2 or more independent seeds/datasets, not one fixture ... (`_fe_accuracy_gate_kernel.py`, 2026-11-11: converged on the first seed tried, diverged on 4/100 combos of a second)".
 - **Impact:** the incident class (a kernel that mirrors an iterative routine diverging on a boundary input) is untested by construction in most parity tests; the rule exists only as prose.
 - **Proposed fix:** G11 `cuda_parity_test_shape` as ADVISORY with a ratchet baseline of the 67. ADDITIVE.
-- **Disposition:** DEFERRED for the baseline seeding (the owner's decision in mlframe); the gate itself is in place from 62f3f61: new gate `cuda_parity_test_shape` (single-seed gpu-vs-host parity tests, ratchet baseline); 62 hits on mlframe. Status 2026-11-16: the gate's ratchet baseline is the consumer's own file (`baseline_path`); seeding it in mlframe is the owner's decision. DEFERRED (owner of mlframe), not a py-ci-shared defect.
+- **Disposition:** RESOLVED: every GPU-vs-host parity test in mlframe that compares device with host values runs on two seeds or datasets (commits b38c7d1, b58922a93, 7c3fbdd45 on mlframe master); the seven non-parity tests carry `# parity-ok:` reasons (commit ec6a5f852 and its successors). `cuda_parity_test_shape` reports 0 hits on mlframe at 0af26b487, checked 2026-11-17.
 
 ## Considered and not raised
 

@@ -381,7 +381,7 @@ These are real consumer rules not in the catalogue, ranked below the ten for noi
 - Source: mlframe `test_blocking_workflows_run_on_push.py`: twelve whole-project mypy errors reached master between 2026-09-11 and 2026-09-22 because `mypy-full.yml` had no automatic trigger.
 - Not covered: `ci_default_branch_never_cancelled` (cancellation), `ci_workflow_gate` (`continue-on-error`), `test_partition_reachability` (declared partitions).
 - Measured (`wf.py`, workflows whose text names pytest/mypy/ruff/py-ci-shared, trigger set has `pull_request` and not `push`): mlframe 2 (`dep-floors.yml` +schedule, `dependabot-auto-merge.yml`), pyutilz 1 (`dep-floors.yml` +schedule), others 0. Both `dep-floors.yml` hits run on a schedule so they do run unattended; `dependabot-auto-merge.yml` is PR-only by design. Precision 0 of 3 as stated, so a gate needs a per-repo "pushes to default" flag and an allow list; leave for a later round.
-- Disposition: DEFERRED TO THE NEXT ROUND: 0 of 3 hits as stated (both mlframe hits run on a schedule; dependabot-auto-merge is PR-only by design). Needs a per-repo default-branch-push flag and an allow list, which the next round must design.
+- **Disposition:** DEFERRED, owner's decision (2026-11-16): workflow_pull_request_only_gate reports 0 hits as stated; building it needs a per-repo default-branch flag and an allow list, which is not worth the design until a real case appears.
 
 ## Rejected after measurement (do not re-mine)
 
