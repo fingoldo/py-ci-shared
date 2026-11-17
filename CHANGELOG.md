@@ -2,6 +2,8 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## Unreleased (next: 1.23.13)
+
 ## 1.23.12
 
 - New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
