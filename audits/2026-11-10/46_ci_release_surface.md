@@ -51,7 +51,7 @@ Scope read: `.github/workflows/*.yml` (all 15 files, triggers, permissions, secr
 - Proposed disposition: decide per tool. Either (a) add a dependabot `pip` ecosystem entry for `/` with a requirements file that lists the uvx tools pinned to the same versions (dependabot reads `requirements*.txt`; `runtime.txt` may need a rename, which is an owner-visible change), or (b) add a scheduled workflow step that runs `uv pip compile` or `pip index versions` and opens an issue, or (c) record the manual cadence in CLAUDE.md. Recommendation: (b) for the lint tools because dependabot cannot read env-var pins; (a) for runtime.txt. Owner decision on cadence.
 - AST/offline checkable: partly (a test that every `==` pin in the workflows is also listed in an update-tracked file).
 - False-positive risk: low.
-- Disposition: DEFERRED (owner decision on mechanism).
+- Disposition: PARTIAL (owner decision 2026-11-18, mechanism: a dependabot `pip` entry for `.github/constraints`): `.github/dependabot.yml` has a weekly grouped `pip` ecosystem with a 7-day cooldown, so `runtime.txt` and `dev.txt` get update PRs. OPEN: confirm on dependabot's next live run that it recognises those file names; the tool pins in `tool_versions.py` and the workflows' `uvx name==X` lines stay outside its reach.
 
 ## 46-R19 (P3) the mypy pin is written three times and only one copy is tested against tool_versions
 
@@ -87,7 +87,7 @@ Scope read: `.github/workflows/*.yml` (all 15 files, triggers, permissions, secr
 | 46-R15 | P2 | ci-green and the release wait loop raise a traceback on one transient API error instead of pending | RESOLVED |
 | 46-R16 | P2 | rollback fails open: an unreadable releases API skips the published-release check silently | RESOLVED (owner: refuse or warn) |
 | 46-R17 | P3 | prepare falls back to local tags when the API is unreadable and reports the wrong version | RESOLVED |
-| 46-R18 | P3 | pinned tool versions have no automated update channel (dependabot is github-actions only) | DEFERRED (owner: mechanism) |
+| 46-R18 | P3 | pinned tool versions have no automated update channel (dependabot is github-actions only) | PARTIAL |
 | 46-R19 | P3 | mypy pin written three times; the two reusable defaults are untested against tool_versions | RESOLVED |
 | 46-R20 | P3 | self-ci black smoke run is unpinned (uvx black) while black-filtered.yml pins it | RESOLVED |
 | 46-R21 | P3 | Codecov composite action and the CODECOV_TOKEN secret have no caller in this repository | DOC (wire in or classify) |

@@ -102,7 +102,7 @@ gates.yml:35 default: "v1.23.8". CLAUDE.md line 47 says 'the three reusable work
 - Proposed fix: Move RELEASE_TOKEN into the release environment's secrets and delete the repository-level copy; add a test that release.yml is the only workflow naming secrets.RELEASE_TOKEN.
 - AST/offline checkable: yes (only release.yml references RELEASE_TOKEN)
 - False-positive risk: low
-- Disposition: PARTLY RESOLVED 9e32bc2: test that release.yml is the only workflow naming secrets.RELEASE_TOKEN. DEFERRED: moving the secret into the release environment is an owner repository setting.
+- **Disposition:** RESOLVED. RELEASE_TOKEN is an environment secret of `release`: `gh secret list --env release` shows RELEASE_TOKEN, and the repository secrets are CODECOV_TOKEN and CONSUMER_READ_TOKEN (checked 2026-11-18). 9e32bc2 pins that release.yml is the only workflow naming it.
 
 ## 46-F10 (P2) A SHA pin with a `# vX.Y.Z` comment passes ci_pin_version_skew even when the SHA is not that release's commit; three different SHAs claim v1.23.8
 

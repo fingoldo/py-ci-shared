@@ -23,6 +23,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 from ._core.outcome import entries_word
 
 import ast
@@ -113,7 +114,7 @@ def assert_no_private_meta_imports(
     stale = sorted(allowed - found)
     problems: list[str] = []
     if unparsed and not allow_unparsed:
-        problems.append(f"{len(unparsed)} meta-test file(s) could not be parsed, so their imports are unknown:\n  " + "\n  ".join(unparsed))
+        problems.append(unparsed_listing(unparsed, consequence="so their imports are unknown"))
     if new:
         problems.append(
             f"{len(new)} meta-test import(s) of a private name. Either test the public contract instead, or add "

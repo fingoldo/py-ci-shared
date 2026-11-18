@@ -25,6 +25,7 @@ and also fails for an allowed entry that no longer matches anything, so an exemp
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 from collections.abc import Iterable, Mapping, Sequence
@@ -103,7 +104,7 @@ def _parsed(
     if unparsed is not None:
         unparsed.extend(problems)
     elif problems and not allow_unparsed:
-        raise UnparsedFilesError("these files could not be parsed, so their LLM calls are unknown:\n  " + "\n  ".join(problems))
+        raise UnparsedFilesError(unparsed_listing(problems, consequence="so their LLM calls are unknown"))
     return out
 
 
@@ -261,7 +262,7 @@ def assert_every_llm_call_is_archived(
     if len(parsed) < min_files:
         raise AssertionError(f"only {len(parsed)} file(s) parsed under {list(scanned)}; expected at least {min_files} -- the scan examined nothing")
     if unparsed and not allow_unparsed:
-        raise AssertionError("these files could not be parsed, so their LLM calls are unknown:\n  " + "\n  ".join(unparsed))
+        raise AssertionError(unparsed_listing(unparsed, consequence="so their LLM calls are unknown"))
     problems: dict[str, dict[str, list[int]]] = {
         "direct model-SDK call": find_direct_sdk_calls(repo_root, scanned, sdk_methods=sdk_methods, allow_unparsed=allow_unparsed),
         "provider built outside the wrapping factory": find_unwrapped_providers(

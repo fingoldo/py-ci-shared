@@ -30,6 +30,7 @@ marker expression selects it?
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 from ._core.outcome import entries_word
 
 import ast
@@ -241,7 +242,7 @@ def marked_tests(tests_dir: Path, repo_root: Path, *, marker: str) -> list[Marke
     """
     found, problems = _collect(tests_dir, repo_root, marker)
     if problems:
-        raise UnparsedFilesError("test file(s) could not be parsed:\n  " + "\n  ".join(problems))
+        raise UnparsedFilesError(unparsed_listing(problems, consequence="so their markers are unknown"))
     return found
 
 

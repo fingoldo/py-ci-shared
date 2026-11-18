@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- Message wording (49-T10, 49-T11): `unparsed_listing` takes a `consequence` and ends with the fix, and `llm_call_archive_gate`, `marker_runner_coverage`, `meta_private_imports`, `pytest_markers` and `private_imports` build their "could not be parsed" text through it, so every such report names the count, the files and what to do (the phrase "could not be parsed" is unchanged); configuration errors print `<folder>/pyproject.toml` instead of the absolute path; `drifted_duplicate_functions` names each copy by its path under the scanned root. Nothing to do.
+
+- `.github/dependabot.yml` gets a weekly grouped `pip` ecosystem for `.github/constraints`, so the exact pins of the reusable workflows and the scheduled reports receive update PRs (46-R18). Nothing to do.
+
 - `code_audit` `credential_shaped_log_arg` no longer reports a name that carries a counting word next to `token`/`tokens` (`max_tokens`, `input_tokens`, `total_prompt_tokens`, `reasoning_tokens`, `end_token`, `token_count`): those are LLM counts or a text delimiter, not secrets. `auth_token`, `api_token`, `access_token` and a bare `token` are still reported. Nothing to do: a consumer that baselined such names sees them as stale entries after the pin bump and drops them with `--refresh-code-audit-baseline`.
 
 - `ci_health` repeats a GitHub API request that got a transient 500, 502, 503 or 504, up to three tries with a growing pause (`with_retries`, applied by `default_api`), and `gh_api` now reads the HTTP status from `gh`'s error text, so one 502 no longer fails the whole daily health report. Nothing to do.

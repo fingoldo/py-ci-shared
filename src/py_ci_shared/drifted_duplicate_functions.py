@@ -171,11 +171,25 @@ def _best_pair_ratio(dumps: Sequence[str], similarity: float) -> float:
     return best
 
 
-def _groups_from(scan: ScanResult, similarity: float) -> list[DriftGroup]:
+def _under_roots(path: Path, roots: Sequence[Path]) -> Path:
+    """*path* relative to the scanned root that holds it, prefixed with the root's folder name when several roots are scanned.
+
+    A report with the absolute path names the machine's temp or checkout directory in every line and differs from run to run.
+    """
+    for root in roots:
+        try:
+            relative = path.relative_to(root)
+        except ValueError:
+            continue
+        return Path(root.name) / relative if len(roots) > 1 else relative
+    return Path(path.name)
+
+
+def _groups_from(scan: ScanResult, similarity: float, roots: Sequence[Path] = ()) -> list[DriftGroup]:
     groups: dict[tuple[str, str], list[tuple[Path, int, str]]] = defaultdict(list)
     for parsed in scan:
         for node in _module_level_functions(parsed.tree):
-            groups[(node.name, _signature_key(node))].append((parsed.path, node.lineno, _body_dump(node)))
+            groups[(node.name, _signature_key(node))].append((_under_roots(Path(parsed.path), roots), node.lineno, _body_dump(node)))
 
     found: list[DriftGroup] = []
     for (name, _signature), members in groups.items():
@@ -201,7 +215,7 @@ def find_drifted_duplicate_functions(
     different function, not a copy that drifted. A changed default is drift, not a different signature.
     Files that cannot be parsed are not reported here; :func:`assert_no_drifted_duplicate_functions` fails on them.
     """
-    return _groups_from(scan_roots_excluding(roots, exclude), similarity)
+    return _groups_from(scan_roots_excluding(roots, exclude), similarity, roots)
 
 
 def assert_no_drifted_duplicate_functions(
@@ -222,7 +236,7 @@ def assert_no_drifted_duplicate_functions(
     allowed = {entry.strip() for entry in allow if entry.strip()}
     scan = scan_roots_excluding(roots, exclude)
     scan.min_files = min_files
-    every = _groups_from(scan, similarity)
+    every = _groups_from(scan, similarity, roots)
     found = [g for g in every if g.name not in allowed]
     stale = sorted(allowed - {g.name for g in every})
     newline = chr(10)

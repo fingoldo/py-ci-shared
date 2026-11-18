@@ -19,6 +19,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 from collections.abc import Iterable, Iterator
@@ -164,7 +165,7 @@ def assert_no_private_cross_package_imports(
     except AssertionError as exc:
         problems.append(str(exc))
     if scan.unparsed and not allow_unparsed:
-        problems.append("files that could not be parsed, so their imports were not checked:\n    " + _render_unparsed(scan.unparsed, repo_root))
+        problems.append(unparsed_listing(_render_unparsed(scan.unparsed, repo_root).splitlines(), newline="\n    ", consequence="so their imports were not checked"))
     new = sorted(found - allowed)
     if new:
         problems.append(

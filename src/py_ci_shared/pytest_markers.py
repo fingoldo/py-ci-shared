@@ -25,6 +25,7 @@ Usage::
 """
 
 from __future__ import annotations
+from ._core.scan import unparsed_listing
 
 import ast
 import re
@@ -243,7 +244,7 @@ def conftest_markers(tests_dir: Path, *, repo_root: "Path | None" = None, unreso
         if unresolved is not None:
             unresolved.extend(f"{conftest}:{line}" for line in lines)
     if problems and not allow_unparsed:
-        raise UnparsedFilesError("conftest file(s) could not be parsed, so their marker registrations are unknown:\n  " + "\n  ".join(problems))
+        raise UnparsedFilesError(unparsed_listing(problems, consequence="so their marker registrations are unknown"))
     return out
 
 

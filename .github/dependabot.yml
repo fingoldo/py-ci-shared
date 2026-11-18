@@ -14,3 +14,17 @@ updates:
           - "*"
     cooldown:
       default-days: 7
+  # The constraints that the reusable workflows and the scheduled reports install under `-c` (runtime.txt, dev.txt) are exact pins.
+  # Without an update channel a pin stays on the version that was current the day it was written, and every consumer shares the lag.
+  - package-ecosystem: pip
+    directory: "/.github/constraints"
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: deps
+    groups:
+      constraints:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7

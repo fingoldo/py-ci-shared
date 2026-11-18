@@ -72,7 +72,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Superseded pushes in a consumer burn minutes if its caller lacks a group.
 - Proposed fix: Extend ci_workflow_gate to require concurrency in caller workflows invoking shared ones.
 - AST-checkable: True; FP risk: med
-- Disposition: DEFERRED, by scope rather than risk. A `concurrency` group belongs to the CALLER workflow (a reusable workflow's own block does not apply to the caller's runs), so the only lever is a check on callers. An opt-in check could not turn a green consumer red; what stops it is that it is a new gate (module, registry entry, README row, canary, corpus_drift binding), not an option of ci_workflow_gate (the continue-on-error gate, which shares nothing with it), and that making it blocking is the behaviour change the finding names, which needs the per-consumer list of callers without a group first. Taken with the consumer runs of step 8.
+- **Disposition:** WON'T FIX (owner decision 2026-11-18). A concurrency group belongs to the CALLER workflow, so the only lever is a new gate over callers, which costs a module, registry entry, README row, canary and drift binding for a saving of CI minutes.
 
 ## 34-F10 (P3) lint-blocking skips interrogate, deptry and zizmor silently when inputs are empty/false
 

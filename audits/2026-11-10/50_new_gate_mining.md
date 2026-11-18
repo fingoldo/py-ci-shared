@@ -9,11 +9,11 @@ Classes already gated and therefore dropped: stdlib API floor (api_floor), check
 | id | sev | title | disposition |
 |---|---|---|---|
 | 50-R1 | P2 | Loop whose step can be zero or None never advances | DEFERRED |
-| 50-R2 | P2 | Counter or state advanced before the write that it counts | DEFERRED |
+| 50-R2 | P2 | Counter or state advanced before the write that it counts | WON'T FIX |
 | 50-R3 | P1 | Raw UPDATE/DELETE executed without a row-count check | PARTLY RESOLVED as gate |
-| 50-R4 | P3 | Per-item log line inside a network page loop with no throttle | DEFERRED |
+| 50-R4 | P3 | Per-item log line inside a network page loop with no throttle | WON'T FIX |
 | 50-R5 | P3 | Test assertion depends on runner platform or pandas null repr | DEFERRED |
-| 50-R6 | P3 | Doctests and assertions that hold only on one pandas major | DEFERRED |
+| 50-R6 | P3 | Doctests and assertions that hold only on one pandas major | WON'T FIX |
 
 Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 
@@ -49,7 +49,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
   ```
 - Detector idea: per function, when a `+=` on an attribute or subscript precedes a call whose name matches `commit|execute|send|write|post|put` inside the same `try` body, with no `-=` in an except arm. Report with the statement lines.
 - False-positive risk: medium to high. Counters of attempts (not successes) are legitimate; the detector cannot tell attempt counters from success counters without a name hint.
-- Proposed disposition: DEFERRED. Adopt only with an allowlist naming the success counters, or as a warn-only gate first.
+- **Disposition:** WON'T FIX as a gate (owner decision 2026-11-18). A counter advanced before the write it counts cannot be told from an attempt counter without a name hint, so the detector has a medium to high false-positive rate, and the class has one real instance (glossum 413d99b3, fixed there). It stays a review-checklist item.
 
 ## 50-R3 [P1] Raw UPDATE/DELETE executed without a row-count check
 
@@ -79,7 +79,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
   ```
 - Detector idea: AST pass for `log.warning|error|info` calls inside a `for` or `while` body whose iterable is a call to a name matching `fetch|iter_|pages|scan|walk`, with no counter or throttle name (`throttle`, `_once`, `rate`) in the enclosing function.
 - False-positive risk: high. Many loops legitimately log per item at low volume; the iterable-name heuristic is weak.
-- Proposed disposition: DEFERRED. Better handled by a code-review check than a gate until a measured count exists.
+- **Disposition:** WON'T FIX as a gate (owner decision 2026-11-18). The iterable-name heuristic is weak and many loops log per item at a low volume; social already throttles its hot loops (82817970). It stays a review-checklist item.
 
 ## 50-R5 [P3] Test assertion depends on runner platform or pandas null representation
 
@@ -100,7 +100,7 @@ Counts: 6 candidates. ADD as gate: 1. DEFERRED: 4. WON'T FIX: 1.
 - Evidence: pyutilz 0901b3a (see 50-F5). The failing dimension is a dependency version matrix, not source text.
 - Detector idea: none that is static. The only sound check is a CI matrix leg over pandas majors, which is a consumer workflow decision, not a py-ci-shared static gate.
 - False-positive risk: not applicable.
-- Proposed disposition: WON'T FIX as a static gate. Reason: the defect is observable only by running the test suite under two pandas majors; the correct home is the consumer's CI matrix, and pinned_tool_versions and api_floor already cover the version pins that py-ci-shared controls.
+- **Disposition:** WON'T FIX as a static gate (owner decision 2026-11-18, as the finding proposes): the defect shows only when the suite runs under two pandas majors, so its home is the consumer's CI matrix; pinned_tool_versions and api_floor cover the pins py-ci-shared controls.
 
 ## Summary
 

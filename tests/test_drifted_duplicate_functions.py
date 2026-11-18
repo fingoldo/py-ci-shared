@@ -258,3 +258,14 @@ def test_body_dump_is_the_same_text_on_every_interpreter():
     fn = ast.parse("def f(x):\n    return g(x)\n").body[0]
     assert isinstance(fn, ast.FunctionDef)
     assert _body_dump(fn) == "[][Return(value=Call(func=Name(id='g'),args=[Name(id='x')]))]"
+
+
+def test_the_report_names_each_copy_by_its_path_under_the_root_not_the_absolute_path(tmp_path):
+    body = "def helper(x):\n    y = x + 1\n    z = y * 2\n    w = z - 3\n    v = w * w\n    u = v + y\n    return u\n"
+    (tmp_path / "a.py").write_text(body, encoding="utf-8")
+    (tmp_path / "b.py").write_text(body.replace("- 3", "- 4"), encoding="utf-8")
+    with pytest.raises(AssertionError) as raised:
+        assert_no_drifted_duplicate_functions([tmp_path])
+    message = str(raised.value)
+    assert "a.py:1" in message and "b.py:1" in message
+    assert tmp_path.as_posix() not in message.replace("\\", "/")

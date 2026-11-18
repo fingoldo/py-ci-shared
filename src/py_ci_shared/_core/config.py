@@ -120,19 +120,24 @@ def _canonical(name: str) -> str:
     return name.replace("-", "_")
 
 
+def _shown(pyproject: Path) -> str:
+    """``<folder>/pyproject.toml`` for a message: the folder's name, not the machine's absolute path to it."""
+    return f"{display_root(pyproject.parent)}/{pyproject.name}"
+
+
 def find_repo_root(start: Optional[Path] = None) -> Path:
     """The nearest directory at or above *start* (default: cwd) holding a ``pyproject.toml``."""
     here = (start or Path.cwd()).resolve()
     for candidate in (here, *here.parents):
         if (candidate / "pyproject.toml").is_file():
             return candidate
-    raise ConfigError(f"no pyproject.toml at or above {here}")
+    raise ConfigError(f"no pyproject.toml at or above {display_root(here)}")
 
 
 def _bool_key(pyproject: Path, table: dict[str, Any], key: str) -> bool:
     value = table.get(key, False)
     if not isinstance(value, bool):
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] {key} = {value!r}; expected true or false")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared] {key} = {value!r}; expected true or false")
     return value
 
 
@@ -146,24 +151,24 @@ def load_config(repo_root: Path) -> Optional[RepoConfig]:
     try:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8-sig"))
     except tomllib.TOMLDecodeError as exc:
-        raise ConfigError(f"{pyproject}: not valid TOML: {exc}") from exc
+        raise ConfigError(f"{_shown(pyproject)}: not valid TOML: {exc}") from exc
     table = data.get("tool", {}).get("py_ci_shared")
     if table is None:
         return None
     if not isinstance(table, dict):
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] must be a table")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared] must be a table")
     budget = table.get("budget", "warn")
     if budget not in BUDGET_MODES:
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] budget = {budget!r}; expected one of {BUDGET_MODES}")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared] budget = {budget!r}; expected one of {BUDGET_MODES}")
     skip = table.get("skip", "ok")
     if skip not in SKIP_MODES:
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] skip = {skip!r}; expected one of {SKIP_MODES}")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared] skip = {skip!r}; expected one of {SKIP_MODES}")
     # `secret_shapes` is the data table of the tracked_secret_shapes gate (name = regex), read by that gate, not by the plugin.
     unknown = set(table) - {"enable", "budget", "skip", "gates", "secret_shapes", *PLUGIN_KEYS}
     if unknown:
         valid = sorted({"enable", "budget", "skip", "gates", "secret_shapes", *PLUGIN_KEYS})
         raise ConfigError(
-            f"{pyproject}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}; valid keys: {', '.join(valid)}. "
+            f"{_shown(pyproject)}: unknown key(s) in [tool.py_ci_shared]: {sorted(unknown)}; valid keys: {', '.join(valid)}. "
             'Enable a gate with `enable = ["name"]`, or give it settings in a [tool.py_ci_shared.gates.<name>] table'
         )
     plugins = {key: _bool_key(pyproject, table, key) for key in PLUGIN_KEYS}
@@ -175,14 +180,14 @@ def _enable_list(pyproject: Path, table: dict[str, Any]) -> list[str]:
     names = table.get("enable", [])
     # A string is iterable: enable = "naive_utcnow" used to enable the gates 'n', 'a', 'i', ... (audit 2026-10-03 K-7).
     if not isinstance(names, list) or not all(isinstance(n, str) and n for n in names):
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared] enable = {names!r}; expected a list of gate names")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared] enable = {names!r}; expected a list of gate names")
     return names
 
 
 def _section_value(pyproject: Path, name: str, section: dict[str, Any], key: str) -> Optional[str]:
     value = section.get(key)
     if value is not None and not (isinstance(value, str) and value):
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] {key} = {value!r}; expected a non-empty string")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared.gates.{name}] {key} = {value!r}; expected a non-empty string")
     return value
 
 
@@ -191,7 +196,7 @@ def _budget_s(pyproject: Path, name: str, section: dict[str, Any]) -> Optional[f
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, (int, float)) or not value > 0:
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] budget_s = {value!r}; expected a positive number of seconds")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared.gates.{name}] budget_s = {value!r}; expected a positive number of seconds")
     return float(value)
 
 
@@ -207,7 +212,7 @@ def _gate_runs(pyproject: Path, table: dict[str, Any]) -> list[GateRun]:
         if other is not None:
             hint = "a [tool.py_ci_shared.gates.<name>] table already enables its gate, so remove the name from `enable`"
             keep = hint if "`enable`" in (other, where) else "keep one"
-            raise ConfigError(f"{pyproject}: gate {run.name!r} is enabled twice: both {other} and {where}; {keep}")
+            raise ConfigError(f"{_shown(pyproject)}: gate {run.name!r} is enabled twice: both {other} and {where}; {keep}")
         seen[_canonical(run.name)] = where
         runs.append(run)
 
@@ -215,13 +220,13 @@ def _gate_runs(pyproject: Path, table: dict[str, Any]) -> list[GateRun]:
         add(GateRun(name=name, module=name, entry=None), "`enable`")
     gates = table.get("gates", {})
     if not isinstance(gates, dict):
-        raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates] must be a table")
+        raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared.gates] must be a table")
     for name, section in gates.items():
         if not isinstance(section, dict):
-            raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] must be a table")
+            raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared.gates.{name}] must be a table")
         enabled = section.get("enabled", True)
         if not isinstance(enabled, bool):
-            raise ConfigError(f"{pyproject}: [tool.py_ci_shared.gates.{name}] enabled = {enabled!r}; expected true or false")
+            raise ConfigError(f"{_shown(pyproject)}: [tool.py_ci_shared.gates.{name}] enabled = {enabled!r}; expected true or false")
         if not enabled:
             continue
         module = _section_value(pyproject, name, section, "module")
@@ -303,7 +308,7 @@ def _inside_root(resolved_root: Path, path: Path, item: str) -> Path:
     try:
         resolve_cached(path).relative_to(resolved_root)  # remembered per process: every glob match is resolved once, not once per config load
     except ValueError as exc:
-        raise ConfigError(f"{item!r} resolves outside the repository root {resolved_root}; a corpus entry must stay inside it") from exc
+        raise ConfigError(f"{item!r} resolves outside the repository root {display_root(resolved_root)}; a corpus entry must stay inside it") from exc
     return path
 
 
