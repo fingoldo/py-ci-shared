@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- `ci_workflow_timeout_gate` no longer caps a job-level `timeout-minutes` by default: the 120-minute default is gone (`DEFAULT_MAX_MINUTES` is now `None`), so a job may declare up to 359 minutes. A value of 360 or more is still reported, because it equals the platform default and bounds nothing, and a caller that wants a cap still passes `max_minutes`. Nothing to do: a consumer that passed `max_minutes` explicitly (for example 345) keeps working.
+
 - New gate `pytest_defaults_declared` (`assert_pytest_defaults_declared`): a repo whose `[tool.pytest.ini_options] addopts` lacks `--durations=<n>` or `-p no:cacheprovider` is reported, or a repo with no pytest table at all. **Behaviour change**: a consumer that lacks those flags turns red on the next release. What to do: add `--durations=200 -p no:cacheprovider` to `addopts`.
 
 - **Behaviour change**: a pytest run with no `-n` now gets its xdist worker count from free RAM, capped at the physical cores minus one, through the `py_ci_shared` pytest plugin (`_pytest_workers.plan_workers`). A run on a machine with little free memory, or on CI (`CI` set), stays serial as before. What to do: nothing if the suite passes serially; to keep a run serial or fix its count, pass `-n 0` or `-n N`, or set `PY_CI_SHARED_WORKERS=0` (or `=N`). `PY_CI_SHARED_WORKER_GIB` sets the per-worker memory estimate (1.5 GiB is a guess until measured).

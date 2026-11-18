@@ -168,7 +168,9 @@ def test_the_last_job_ends_at_the_next_top_level_section(tmp_path):
         ("360", True),
         ("99999", True),
         ("abc", True),
-        ("121", True),
+        ("359", False),
+        ("345", False),
+        ("121", False),
         ("120", False),
         ("1", False),
         ("'30'", False),
@@ -185,5 +187,6 @@ def test_a_timeout_that_bounds_nothing_counts_as_missing(tmp_path, value, report
 def test_the_cap_is_configurable(tmp_path):
     wf = tmp_path / "w.yml"
     wf.write_text("jobs:\n  a:\n    runs-on: x\n    timeout-minutes: 200\n", encoding="utf-8")
-    assert find_jobs_missing_timeout(wf) == ["a"]
+    assert find_jobs_missing_timeout(wf) == []
+    assert find_jobs_missing_timeout(wf, max_minutes=120) == ["a"]
     assert find_jobs_missing_timeout(wf, max_minutes=240) == []
