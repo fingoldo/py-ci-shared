@@ -56,7 +56,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: A reconnect error containing the DSN is stringified into a JSONB column the dashboard renders; a password reaches the UI and backups.
 - Proposed fix: Configure it as a taint rule on code_audit/provenance_flow.py: source = str/repr/format of a caught exception variable, sink = parameter of execute-family calls, sanitizer names configurable (e.g. _redact). Canary: bound str(e) -> fail; _redact(str(e)) -> pass.
 - AST-checkable: True; FP risk: high
-- **Disposition:** WON'T FIX as a gate (owner decision 2026-11-18). The false-positive risk is high, the 0-hit prototype proves nothing without data flow, and social already enforces the rule with its own test.
+- Disposition: WON'T FIX as a gate (owner decision 2026-11-18). The false-positive risk is high, the 0-hit prototype proves nothing without data flow, and social already enforces the rule with its own test.
 
 ## 31-F8 (P3) process_lifetime_collection_unbounded: module-level or self dict/list/set that grows inside functions and is never evicted or capped
 

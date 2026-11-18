@@ -72,7 +72,7 @@ Round 2026-11-04. Every finding is OPEN until its Disposition line says otherwis
 - Failure scenario: Superseded pushes in a consumer burn minutes if its caller lacks a group.
 - Proposed fix: Extend ci_workflow_gate to require concurrency in caller workflows invoking shared ones.
 - AST-checkable: True; FP risk: med
-- **Disposition:** WON'T FIX (owner decision 2026-11-18). A concurrency group belongs to the CALLER workflow, so the only lever is a new gate over callers, which costs a module, registry entry, README row, canary and drift binding for a saving of CI minutes.
+- Disposition: WON'T FIX (owner decision 2026-11-18). A concurrency group belongs to the CALLER workflow, so the only lever is a new gate over callers, which costs a module, registry entry, README row, canary and drift binding for a saving of CI minutes.
 
 ## 34-F10 (P3) lint-blocking skips interrogate, deptry and zizmor silently when inputs are empty/false
 
