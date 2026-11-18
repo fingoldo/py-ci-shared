@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- `ci_health` repeats a GitHub API request that got a transient 500, 502, 503 or 504, up to three tries with a growing pause (`with_retries`, applied by `default_api`), and `gh_api` now reads the HTTP status from `gh`'s error text, so one 502 no longer fails the whole daily health report. Nothing to do.
+
+- `corpus_drift` records `guard_without_fixture` as a count of 0, not as an errored scan, for a consumer with no guard scripts (`EMPTY_IS_A_COUNT`); the gate's own `min_files` floor is unchanged. Nothing to do.
+
 - `ci_workflow_timeout_gate` no longer caps a job-level `timeout-minutes` by default: the 120-minute default is gone (`DEFAULT_MAX_MINUTES` is now `None`), so a job may declare up to 359 minutes. A value of 360 or more is still reported, because it equals the platform default and bounds nothing, and a caller that wants a cap still passes `max_minutes`. Nothing to do: a consumer that passed `max_minutes` explicitly (for example 345) keeps working.
 
 - New gate `pytest_defaults_declared` (`assert_pytest_defaults_declared`): a repo whose `[tool.pytest.ini_options] addopts` lacks `--durations=<n>` or `-p no:cacheprovider` is reported, or a repo with no pytest table at all. **Behaviour change**: a consumer that lacks those flags turns red on the next release. What to do: add `--durations=200 -p no:cacheprovider` to `addopts`.

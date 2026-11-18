@@ -62,7 +62,7 @@ FAILING_KINDS = ("jump", "blind", "errored", "repo-gone")
 
 # Finders whose empty scan (a repo without the file they compare) is a legitimate count of 0. Their ``min_files`` floor is a
 # gate guard (do not enable the gate where nothing exists), so corpus drift lowers it for them; every other finder keeps its floor.
-EMPTY_IS_A_COUNT: frozenset[str] = frozenset({"find_uv_lock_parity"})
+EMPTY_IS_A_COUNT: frozenset[str] = frozenset({"find_uv_lock_parity", "find_guards_without_fixture"})
 
 # Finders (``module`` for all of its finders, or ``module.find_x``) a repo checkout cannot feed, with the reason.
 NON_CORPUS: dict[str, str] = {

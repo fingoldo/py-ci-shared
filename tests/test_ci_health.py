@@ -711,3 +711,42 @@ def test_a_failed_tag_push_run_is_reported_but_never_turns_the_check_red(tmp_pat
     assert exit_code([repo], 2) == 0
     text = render_markdown([repo], NOW, 2)
     assert "Tag-push runs (report only" in text and "v1.23.11" in text and "failure" in text
+
+
+def _flaky_api(statuses):
+    """An Api that raises ApiError with each status in turn and returns ``{"ok": True}`` once the list is used up."""
+    calls: list[str] = []
+    queue = list(statuses)
+
+    def get(path):
+        calls.append(path)
+        if queue:
+            status = queue.pop(0)
+            raise ci_health.ApiError(f"GET {path}: HTTP {status}", status=status)
+        return {"ok": True}
+
+    return get, calls
+
+
+def test_a_transient_502_is_retried_and_the_answer_returned():
+    api, calls = _flaky_api([502, 503])
+    waits: list[float] = []
+    assert ci_health.with_retries(api, sleep=waits.append)("repos/x/y/actions/runs") == {"ok": True}
+    assert len(calls) == 3
+    assert waits == [2.0, 4.0]
+
+
+def test_the_last_transient_error_is_raised_after_the_attempts_are_used():
+    api, calls = _flaky_api([502, 502, 502, 502])
+    with pytest.raises(ci_health.ApiError) as raised:
+        ci_health.with_retries(api, attempts=3, sleep=lambda _s: None)("repos/x/y")
+    assert raised.value.status == 502
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("status", [403, 404, 422])
+def test_a_client_error_is_raised_at_once_without_a_retry(status):
+    api, calls = _flaky_api([status])
+    with pytest.raises(ci_health.ApiError):
+        ci_health.with_retries(api, sleep=lambda _s: pytest.fail("a client error must not wait"))("repos/x/y")
+    assert len(calls) == 1

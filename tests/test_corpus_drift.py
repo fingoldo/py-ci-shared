@@ -165,6 +165,20 @@ def test_a_repo_without_a_uv_lock_is_a_count_of_zero_for_uv_lock_parity(tmp_path
     assert "min_files" not in bind(lambda repo_root: repo_root, tmp_path)
 
 
+def test_a_repo_without_guard_scripts_is_a_count_of_zero_for_guard_without_fixture(tmp_path):
+    from py_ci_shared import guard_without_fixture
+    from py_ci_shared._core import CorpusError
+    from py_ci_shared.corpus_drift import count_of
+
+    # a repo with no tool/ scripts: the gate's own floor raises CorpusError, which corpus drift must record as a count of 0, not as an error
+    kwargs = bind(guard_without_fixture.find_guards_without_fixture, tmp_path)
+    assert kwargs is not None and kwargs["min_files"] == 0
+    assert count_of(guard_without_fixture.find_guards_without_fixture(**kwargs)) == 0
+    # negative control: the gate itself keeps its floor
+    with pytest.raises(CorpusError):
+        guard_without_fixture.find_guards_without_fixture(tmp_path)
+
+
 def test_snapshot_errors_never_carry_the_exception_text(tmp_path):
     (tmp_path / "a.py").write_bytes(b"x = 1\n")
 

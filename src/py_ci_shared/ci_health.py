@@ -46,6 +46,7 @@ from ._core.console import write_text
 import argparse
 import base64
 import binascii
+import functools
 import json
 import logging
 import os
@@ -81,6 +82,7 @@ __all__ = [
     "assess_repo",
     "assess_workflow",
     "collect",
+    "TRANSIENT_STATUSES",
     "default_api",
     "with_deadline",
     "exit_code",
@@ -88,6 +90,7 @@ __all__ = [
     "main",
     "relevant_runs",
     "render_markdown",
+    "with_retries",
 ]
 
 #: GET ``path`` (relative to https://api.github.com, query string included) and return the parsed JSON.
@@ -456,12 +459,47 @@ def gh_api(executable: str = "gh", *, timeout: float = DEFAULT_REQUEST_TIMEOUT) 
             raise ApiError(f"gh api {path}: no answer in {timeout:g} s") from exc
         if proc.returncode != 0:
             msg = proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else f"exit {proc.returncode}"
-            status = 404 if "HTTP 404" in proc.stderr else None
+            found = re.search(r"HTTP (\d{3})", proc.stderr)
+            status = int(found.group(1)) if found else None
             raise ApiError(f"gh api {path}: {msg}", status=status)
         try:
             return json.loads(proc.stdout)
         except ValueError as exc:
             raise ApiError(f"gh api {path}: not JSON ({exc})") from exc
+
+    return get
+
+
+#: HTTP statuses GitHub answers when its side is briefly unavailable; a request that got one is worth repeating.
+TRANSIENT_STATUSES = frozenset({500, 502, 503, 504})
+
+
+def with_retries(api: Api, *, attempts: int = 3, delay: float = 2.0, sleep: Callable[[float], None] = time.sleep) -> Api:
+    """``api`` that repeats a request GitHub answered with a transient 5xx, up to ``attempts`` tries in all.
+
+    The pause before try ``n + 1`` is ``delay * n`` seconds, each retry is logged at WARNING, and any other error, or the last
+    try's, is raised unchanged. One 502 from GitHub's API must not fail a whole scheduled health report.
+    """
+
+    def once(path: str) -> "tuple[Any, Optional[ApiError]]":
+        try:
+            return api(path), None
+        except ApiError as exc:
+            return None, exc
+
+    @functools.wraps(api)
+    def get(path: str) -> Any:
+        attempt = 1
+        while True:
+            answer, error = once(path)
+            if error is None:
+                return answer
+            if error.status not in TRANSIENT_STATUSES or attempt >= attempts:
+                raise error
+            wait = delay * attempt
+            logger.warning("GET %s answered HTTP %s (try %d of %d); retrying in %.0f s", path, error.status, attempt, attempts, wait)
+            sleep(wait)
+            attempt += 1
 
     return get
 
@@ -472,11 +510,11 @@ def default_api(env: Optional[dict] = None, *, timeout: float = DEFAULT_REQUEST_
     consumer_token = (env.get(TOKEN_ENV) or "").strip()
     token = consumer_token or (env.get("GH_TOKEN") or "").strip() or (env.get("GITHUB_TOKEN") or "").strip()
     if token:
-        return urllib_api(token, timeout=timeout), bool(consumer_token)
+        return with_retries(urllib_api(token, timeout=timeout)), bool(consumer_token)
     gh = shutil.which("gh")
     if gh:
-        return gh_api(gh, timeout=timeout), True
-    return urllib_api(None, timeout=timeout), False
+        return with_retries(gh_api(gh, timeout=timeout)), True
+    return with_retries(urllib_api(None, timeout=timeout)), False
 
 
 def with_deadline(api: Api, deadline: float, *, clock: Callable[[], float] = time.monotonic) -> Api:
