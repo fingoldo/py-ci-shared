@@ -54,7 +54,7 @@ def _is_registered(dotted: str, name: str, registered: "set[tuple[str, str]]") -
     return False
 
 
-def _findings_in(tree: ast.Module, rel: str, registered: "set[tuple[str, str]]", aliases: ImportAliases) -> "list[Finding]":
+def _findings_in(tree: ast.Module, rel: str, registered: "set[tuple[str, str]]", aliases: ImportAliases) -> "list[Finding]":  # noqa: ARG001 - matcher table: every matcher takes (node, aliases)
     """The module-level factories of one parsed file that the registry does not list."""
     dotted = _dotted(rel)
     return [

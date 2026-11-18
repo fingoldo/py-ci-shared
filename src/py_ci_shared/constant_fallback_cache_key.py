@@ -185,7 +185,7 @@ def _visit_functions(node: ast.AST, prefix: str, constants: dict[str, ast.AST], 
     return out
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:  # noqa: ARG001 - matcher table: every matcher takes (node, aliases)
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
     return _visit_functions(tree, "", _module_constants(tree), rel, lines or [])
 

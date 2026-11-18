@@ -122,11 +122,11 @@ def _is_word_char(c: str) -> bool:
 _Scan = Optional[tuple[int, Optional[_Tok]]]
 
 
-def _scan_space(text: str, i: int, line: int) -> _Scan:
+def _scan_space(text: str, i: int, line: int) -> _Scan:  # noqa: ARG001 - scanner table: every scanner takes (text, i, line); the event hook takes the event the dispatcher passes
     return (i + 1, None) if text[i].isspace() else None
 
 
-def _scan_line_comment(text: str, i: int, line: int) -> _Scan:
+def _scan_line_comment(text: str, i: int, line: int) -> _Scan:  # noqa: ARG001 - scanner table: every scanner takes (text, i, line); the event hook takes the event the dispatcher passes
     if not text.startswith("--", i):
         return None
     j = text.find("\n", i)
@@ -390,7 +390,7 @@ class _Catalogue:
         table.name = event[2]
         self.tables[(table.schema, table.name)] = table
 
-    def _drop_table(self, table: _Table, event: _Event) -> None:
+    def _drop_table(self, table: _Table, event: _Event) -> None:  # noqa: ARG002 - scanner table: every scanner takes (text, i, line); the event hook takes the event the dispatcher passes
         self.tables.pop((table.schema, table.name), None)
 
 

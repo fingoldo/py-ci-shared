@@ -161,7 +161,20 @@ extend = "configs/ruff-base.toml"
 target-version = "py39"
 exclude = [".git", "__pycache__", "build", "dist"]
 
+[tool.ruff.lint]
+# Unused arguments (52-R12). A parameter a signature promises and the body ignores is a dead promise; the hook and callback signatures that
+# cannot change carry their own ignore with the reason.
+extend-select = ["ARG001", "ARG002"]
+
 [tool.ruff.lint.per-file-ignores]
+# pytest calls these hooks with a fixed signature (config, call, nextitem, exitstatus, style): the arguments a hook does not need are still passed.
+"src/py_ci_shared/pytest_plugin.py" = ["ARG001", "ARG002"]
+"src/py_ci_shared/resource_leak_guard.py" = ["ARG001", "ARG002"]
+"src/py_ci_shared/secret_safe_test_output.py" = ["ARG001", "ARG002"]
+"src/py_ci_shared/stub_signature_guard.py" = ["ARG001", "ARG002"]
+"src/py_ci_shared/offline_suite_without_credentials.py" = ["ARG001", "ARG002"]
+"src/py_ci_shared/stale_baseline_sweep.py" = ["ARG001", "ARG002"]
+"tests/**" = ["ARG001", "ARG002"]  # a test double takes the signature of the function it replaces, used or not; the rule is for src only
 # Every script here IS a CLI tool whose entire job is printing to stdout/stderr -- that's the
 # interface, not a lint issue vs. converting to logger calls (there is no log configuration to
 # route through; these run standalone or as pre-commit/CI steps).

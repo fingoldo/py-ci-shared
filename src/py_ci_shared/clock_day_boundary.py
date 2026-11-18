@@ -94,7 +94,7 @@ def _crosses_part_of_a_day(seconds: Optional[float]) -> bool:
     return seconds is not None and seconds >= _HOUR and seconds % _DAY != 0
 
 
-def _is_frozen(fn: _FunctionNode, aliases: ImportAliases) -> bool:
+def _is_frozen(fn: _FunctionNode, aliases: ImportAliases) -> bool:  # noqa: ARG001 - matcher table: every matcher takes (node, aliases)
     if any(_FREEZER_DECORATORS.search(unparse_stable(d)) for d in fn.decorator_list):
         return True
     if any(a.arg in _FREEZER_FIXTURES for a in fn.args.args):

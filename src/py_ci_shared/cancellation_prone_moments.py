@@ -273,7 +273,7 @@ def _scope_findings(scope: ast.AST, own: list[ast.AST], rel: str, lines: list[st
     return out
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: Optional[list[str]] = None) -> list[Finding]:  # noqa: ARG001 - matcher table: every matcher takes (node, aliases)
     """The findings in one parsed file. ``lines`` are its source lines, for the suppression comment."""
     lines = lines or []
     out: list[Finding] = []

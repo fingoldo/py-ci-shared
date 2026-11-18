@@ -89,7 +89,7 @@ def _term_pattern(terms: Iterable[str]) -> Optional[re.Pattern[str]]:
 
 def scan_domain_vocabulary_leak(
     root: Path,
-    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,  # unused-ok: every scanner takes exclude_dirs for registry uniformity; this one reads an explicit file list
+    exclude_dirs: frozenset[str] = _DEFAULT_EXCLUDE_DIRS,  # unused-ok: every scanner takes exclude_dirs for registry uniformity; this one reads an explicit file list  # noqa: ARG001 - every scanner takes exclude_dirs for registry uniformity
     *,
     boundary: Sequence[BoundarySymbol] = (),
     vocabulary: Iterable[str] = (),

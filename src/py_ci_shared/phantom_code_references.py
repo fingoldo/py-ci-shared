@@ -587,7 +587,7 @@ def _test_file_problem(token: str, basename: str, test_names: set[str], test_pat
     return None if exists else f"`{token}` names a test file that does not exist"
 
 
-def _outside_head_verdict(token: str, im: "re.Match[str]", known: set[str], imported: frozenset[str]) -> "Optional[bool]":
+def _outside_head_verdict(im: "re.Match[str]", known: set[str], imported: frozenset[str]) -> "Optional[bool]":
     """For ``head.member`` whose head is not this repo's: True when it resolves (by import, or as a library member of a name
     the commented file imports), False when the module or builtin exists but the attribute does not, None when no module
     decides and the caller judges it as an undeclared name."""
@@ -627,7 +627,6 @@ def _spelled_out_elsewhere(token: str, spelled_exact: frozenset[str], spelled_wo
 
 def _token_problem(
     token: str,
-    declared: set[str],
     known: set[str],
     repo_known: set[str],
     test_names: set[str],
@@ -648,7 +647,7 @@ def _token_problem(
         return None
     head, member = im.group("head"), im.group("member")
     if member is not None and head not in repo_known:
-        verdict = _outside_head_verdict(token, im, known, imported)
+        verdict = _outside_head_verdict(im, known, imported)
         if verdict is not None:
             return None if verdict else f"`{token}` does not resolve by import"
     repo_class = member is not None and f"{head}.*" not in known and head in declared_heads
@@ -722,7 +721,6 @@ def find_phantom_code_references(
                 token = m.group(1).strip()
                 problem_text = _token_problem(
                     token,
-                    declared,
                     known,
                     repo_known,
                     test_names,

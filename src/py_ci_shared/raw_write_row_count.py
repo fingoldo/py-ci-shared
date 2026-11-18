@@ -48,7 +48,7 @@ def _sql_text(node: ast.expr) -> Optional[str]:
     return None
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases) -> list[Finding]:
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases) -> list[Finding]:  # noqa: ARG001 - matcher table: every matcher takes (node, aliases)
     """The findings in one parsed file. ``aliases.qualified_name(node)`` resolves ``np.x`` to ``numpy.x``."""
     if _EXCLUDED_PARTS & set(Path(rel).parts) or Path(rel).name.startswith("batch_"):
         return []

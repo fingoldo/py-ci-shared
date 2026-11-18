@@ -46,15 +46,15 @@ class _OwnReturnFinder(ast.NodeVisitor):
         """Record ``node`` as belonging to the enclosing function's own scope."""
         self.hits.append(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
         """Stop traversal at a nested sync function's own scope."""
         return None
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
         """Stop traversal at a nested async function's own scope."""
         return None
 
-    def visit_Lambda(self, node: ast.Lambda) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
         """Stop traversal at a nested lambda's own scope."""
         return None
 

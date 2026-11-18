@@ -171,7 +171,7 @@ def _judge(
     sandbox: Path,
     timeout: float,
     fallback_test_paths: "Sequence[PathArg]",
-    relative: Path,
+    relative: Path,  # noqa: ARG001 - kept so _judge matches its caller in mutation_teeth; dropping it changes the harness and needs a HARNESS_VERSION bump
     state: _SweepState,
     started: float,
 ) -> None:

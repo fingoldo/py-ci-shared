@@ -226,7 +226,7 @@ class _FixtureScope:
     autouse: bool
 
 
-def _conftest_fixtures(tests_dir: Path, parsed_by_path: "dict[Path, tuple[ast.Module, ImportAliases]]") -> "dict[Path, _FixtureScope]":
+def _conftest_fixtures(parsed_by_path: "dict[Path, tuple[ast.Module, ImportAliases]]") -> "dict[Path, _FixtureScope]":
     """Per conftest directory: its restoring fixture names, and whether one of them is autouse."""
     out: dict[Path, _FixtureScope] = {}
     for path, (tree, aliases) in parsed_by_path.items():
@@ -374,7 +374,7 @@ def find_unpaired_reloads(
     if min_files:
         scan.check_floor()
     parsed_by_path = {f.path: (f.tree, ImportAliases.from_tree(f.tree, scoped=True)) for f in scan}
-    conftests = _conftest_fixtures(tests_dir, parsed_by_path)
+    conftests = _conftest_fixtures(parsed_by_path)
     root = tests_dir.resolve()
     out: list[ReloadSite] = [_unparsed_site(p) for p in (() if allow_unparsed else scan.unparsed) if p.rel not in exempt]
     for parsed in scan:

@@ -203,7 +203,7 @@ def find_tool_config_env_vars_set_in_every_tool_job(
     allow_jobs: Iterable[str] = (),
     min_files: int = 1,
     allow_unparsed: bool = False,
-    use_git: Optional[bool] = None,
+    use_git: Optional[bool] = None,  # noqa: ARG001 - public keyword shared by every gate entry; this gate reads no git state
 ) -> "list[Finding]":
     """Every job under ``root/.github/workflows`` that runs a tool without a variable its pyproject config reads, sorted by path and line.
 

@@ -185,17 +185,17 @@ class _BlockingCallFinder(ast.NodeVisitor):
 
     # Don't descend into nested function/lambda scopes -- their own blocking calls are that
     # scope's own concern (a nested `def` might itself be sync, called via run_in_executor).
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
         """Stop traversal at a nested sync function's own scope."""
         return None
 
     def visit_AsyncFunctionDef(
-        self, node: ast.AsyncFunctionDef
+        self, node: ast.AsyncFunctionDef  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
     ) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
         """Stop traversal at a nested async function's own scope."""
         return None
 
-    def visit_Lambda(self, node: ast.Lambda) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule
+    def visit_Lambda(self, node: ast.Lambda) -> None:  # unused-ok: ast.NodeVisitor hook signature; the node is not needed to decide this rule  # noqa: ARG002 - node comes from the visitor dispatch, which passes it to every handler
         """Stop traversal at a nested lambda's own scope."""
         return None
 

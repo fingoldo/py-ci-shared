@@ -275,7 +275,7 @@ class _Detector:
             else:
                 stack.extend(child_nodes(sub))
 
-    def reader_kind(self, node: ast.AST, path_names: set[str], tainted: set[str]) -> str | None:
+    def reader_kind(self, node: ast.AST, path_names: set[str], tainted: set[str]) -> str | None:  # noqa: ARG002 - one interface for every call site: (node, paths, tainted)
         """How *node* yields source text, or None. Checks readers, file reads, helpers and tainted names."""
         for sub in self._walk_text(node):
             if isinstance(sub, ast.Call):

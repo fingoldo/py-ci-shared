@@ -321,7 +321,7 @@ class _Replay:
                 return handler(stmt, m, default_schema)
         return default_schema
 
-    def _on_set_search_path(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_set_search_path(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         names = [_ident(s) for s in _split_top_level(m.group("value"))]
         usable = [s for s in names if s and s not in ("''", "$user", "default")]
         return usable[0] if usable else default_schema
@@ -330,12 +330,12 @@ class _Replay:
         self._create(stmt, m, default_schema)
         return default_schema
 
-    def _on_drop(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_drop(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         for key in _targets(m.group("targets"), default_schema):
             self.functions.pop(key, None)
         return default_schema
 
-    def _on_alter(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_alter(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         key = (_ident(m.group("schema")) or default_schema, _ident(m.group("name")) or "")
         fn = self.functions.get(key)
         rest = m.group("rest")
@@ -350,7 +350,7 @@ class _Replay:
                 fn.search_path = False
         return default_schema
 
-    def _on_default_privs(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_default_privs(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         if not m.group("grant_option"):
             scope = _IN_SCHEMA_RE.search(m.group("scope"))
             schemas: list[Optional[str]] = [_ident(s) for s in _split_top_level(scope.group("schemas"))] if scope else [None]
@@ -363,13 +363,13 @@ class _Replay:
                     bucket -= roles
         return default_schema
 
-    def _on_all(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_all(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         schemas_all = {_ident(s) for s in _split_top_level(m.group("schemas"))}
         keys = [k for k in self.functions if k[0] in schemas_all]
         self._privilege(m, keys)
         return default_schema
 
-    def _on_function(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:
+    def _on_function(self, stmt: _Statement, m: "re.Match[str]", default_schema: str) -> str:  # noqa: ARG002 - the statement handlers are called alike, each with stmt
         self._privilege(m, _targets(m.group("targets"), default_schema))
         return default_schema
 

@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- This repository's own ruff run now selects `ARG001` and `ARG002` for `src` (52-R12): four dead parameters were removed from private helpers (`import_cycles._events`, `module_reload_safety._conftest_fixtures`, `phantom_code_references._outside_head_verdict` and `_token_problem`), and the parameters that belong to a table, visitor, public or pytest-hook signature carry a reasoned `noqa` or a per-file ignore. `HARNESS_VERSION` moves to 49 because one `noqa` comment is part of the tracked mutation harness; no verdict changes. Nothing to do.
+
 - Message wording (49-T10, 49-T11): `unparsed_listing` takes a `consequence` and ends with the fix, and `llm_call_archive_gate`, `marker_runner_coverage`, `meta_private_imports`, `pytest_markers` and `private_imports` build their "could not be parsed" text through it, so every such report names the count, the files and what to do (the phrase "could not be parsed" is unchanged); configuration errors print `<folder>/pyproject.toml` instead of the absolute path; `drifted_duplicate_functions` names each copy by its path under the scanned root. Nothing to do.
 
 - `.github/dependabot.yml` gets a weekly grouped `pip` ecosystem for `.github/constraints`, so the exact pins of the reusable workflows and the scheduled reports receive update PRs (46-R18). Nothing to do.

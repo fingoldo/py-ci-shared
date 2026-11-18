@@ -156,7 +156,7 @@ def _chain(dotted: str) -> list[str]:
     return [".".join(parts[: i + 1]) for i in range(len(parts))]
 
 
-def _events(mod: _Module, tree: ast.Module, package: str, known: Mapping[str, Any]) -> list[ImportEvent]:
+def _events(tree: ast.Module, package: str, known: Mapping[str, Any]) -> list[ImportEvent]:
     out: list[ImportEvent] = []
     guarded = _guarded_lines(tree)
     for stmt in _load_time_statements(tree.body):
@@ -193,7 +193,7 @@ def build_import_graph(scan: ScanResult, src_root: Path, package: str) -> dict[s
     for name, (f, pkg) in known.items():
         mod = _Module(name, f.rel, f.path.name == "__init__.py")
         mod_pkg = name if mod.is_package else pkg
-        mod.events = _events(mod, f.tree, mod_pkg, known)
+        mod.events = _events(f.tree, mod_pkg, known)
         for stmt in _load_time_statements(f.tree.body):
             mod.bindings.extend((stmt.lineno, n) for n in _bindings(stmt))
             if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef)) and stmt.name == "__getattr__":
