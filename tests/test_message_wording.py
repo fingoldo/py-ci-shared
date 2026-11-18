@@ -40,6 +40,8 @@ def test_missing_baseline_names_grow_when_seeding_would_accept_findings(tmp_path
     [
         ("loc_budget", 'Add "loc_budget" to enable = [...]'),
         ("naive_utcnw", 'Did you mean "naive_utcnow"?'),
+        ("bandit_warn", "is a command-line tool, not a gate: run it as `py-ci-shared tool bandit_warn`"),
+        ("pytest_run", "is a command-line tool, not a gate"),
     ],
 )
 def test_not_enabled_message_says_how_to_fix_it(tmp_path, asked: str, expected: str) -> None:

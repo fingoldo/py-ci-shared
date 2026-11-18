@@ -30,7 +30,6 @@ from .paths import display_root
 
 import difflib
 import glob as _glob
-import importlib.util
 import inspect
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,15 +101,18 @@ class RepoConfig:
         enabled_names = [run.name for run in self.gates]
         enabled = ", ".join(enabled_names) or "none"
         # 49-T10: say how to enable a real gate, and suggest the near-miss name of a typo.
-        if wanted not in registry.INTERNAL_MODULES and importlib.util.find_spec(f"py_ci_shared.{wanted}") is not None:
-            # A module of the package that is not a gate (a command-line tool such as bandit_warn): enabling it cannot help.
-            raise ConfigError(f"{name!r} is a tool, not a gate: run it as `py-ci-shared tool {wanted}`; it cannot be listed in enable = [...].")
         try:
-            registry.by_name(wanted)
-            hint = f' Add "{wanted}" to enable = [...] under [tool.py_ci_shared] to run it.'
+            spec = registry.by_name(wanted)
         except KeyError:
             close = difflib.get_close_matches(wanted, [_canonical(n) for n in enabled_names], n=1)
             hint = f' Did you mean "{close[0]}"?' if close else ""
+        else:
+            if spec.kind != "gate":
+                # A registered command-line tool or library (bandit_warn, pytest_run): enabling it cannot help.
+                what = "a command-line tool" if spec.kind == "cli" else f"a {spec.kind} module"
+                use = f"run it as `py-ci-shared tool {wanted}`" if spec.kind == "cli" else "import it from your own tests"
+                raise ConfigError(f"{name!r} is {what}, not a gate: {use}; it cannot be listed in enable = [...].")
+            hint = f' Add "{wanted}" to enable = [...] under [tool.py_ci_shared] to run it.'
         raise ConfigError(f"gate {name!r} is not enabled in [tool.py_ci_shared] of pyproject.toml (enabled: {enabled}).{hint}")
 
 
