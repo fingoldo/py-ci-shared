@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.13
 
+- `code_audit` `credential_shaped_log_arg` no longer reports a name that carries a counting word next to `token`/`tokens` (`max_tokens`, `input_tokens`, `total_prompt_tokens`, `reasoning_tokens`, `end_token`, `token_count`): those are LLM counts or a text delimiter, not secrets. `auth_token`, `api_token`, `access_token` and a bare `token` are still reported. Nothing to do: a consumer that baselined such names sees them as stale entries after the pin bump and drops them with `--refresh-code-audit-baseline`.
+
 - `ci_health` repeats a GitHub API request that got a transient 500, 502, 503 or 504, up to three tries with a growing pause (`with_retries`, applied by `default_api`), and `gh_api` now reads the HTTP status from `gh`'s error text, so one 502 no longer fails the whole daily health report. Nothing to do.
 
 - `corpus_drift` records `guard_without_fixture` as a count of 0, not as an errored scan, for a consumer with no guard scripts (`EMPTY_IS_A_COUNT`); the gate's own `min_files` floor is unchanged. Nothing to do.

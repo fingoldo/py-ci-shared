@@ -37,9 +37,28 @@ _REDACT_HINT_RE = re.compile(r"(?i)redact|mask|sanitiz|\.split\(.@.\)|scrub")
 _REDACT_ASSIGN_WINDOW = 4
 
 
+# Words that make a ``token``/``tokens`` name a COUNT or a delimiter of text, not an authentication token: ``max_tokens``,
+# ``input_tokens``, ``total_prompt_tokens``, ``reasoning_tokens``, ``end_token``. A name with none of them (``auth_token``,
+# ``token``, ``api_token``) is still a credential name.
+_TOKEN_COUNT_WORDS = frozenset(
+    {"max", "min", "input", "output", "prompt", "completion", "total", "reasoning", "cached", "num", "count", "end", "start", "stop", "special", "budget"}
+)
+_NAME_SEGMENT_SPLIT = re.compile(r"[^a-z0-9]+")
+
+
 def _is_credential_name(name: str) -> bool:
-    """Vocabulary match on a name, after splitting camelCase (``apiKey`` -> ``api_Key``)."""
-    return bool(_CREDENTIAL_NAME_RE.search(_CAMEL_BOUNDARY.sub("_", name)))
+    """Vocabulary match on a name, after splitting camelCase (``apiKey`` -> ``api_Key``).
+
+    ``token``/``tokens`` alone is not enough when the name also carries a counting word (see ``_TOKEN_COUNT_WORDS``): an LLM's
+    ``max_tokens`` is a number, not a secret.
+    """
+    snake = _CAMEL_BOUNDARY.sub("_", name)
+    found = _CREDENTIAL_NAME_RE.search(snake)
+    if found is None:
+        return False
+    if found.group(1).lower() in ("token", "tokens") and _TOKEN_COUNT_WORDS & set(_NAME_SEGMENT_SPLIT.split(snake.lower())):
+        return False
+    return True
 
 
 def _credential_names_in(arg: ast.AST) -> set[str]:

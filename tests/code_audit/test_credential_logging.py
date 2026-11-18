@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from py_ci_shared.code_audit import (
     scan_credential_shaped_log_args,
 )
@@ -98,3 +100,31 @@ def test_40_t4_redaction_in_the_call_itself_exempts(tmp_path: Path):
 
 def test_40_t4_plain_message_with_credential_word_is_not_flagged(tmp_path: Path):
     assert _findings_for(tmp_path, _HEAD + 'def f(n):\n    log.info("password reset sent to %s", n)\n') == []
+
+
+def _log_of(tmp_path: Path, name: str):
+    _write(
+        tmp_path,
+        "mod.py",
+        f"""
+import logging
+logger = logging.getLogger(__name__)
+
+def f({name}):
+    logger.info("value %s", {name})
+""",
+    )
+    return scan_credential_shaped_log_args(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["max_tokens", "input_tokens", "total_prompt_tokens", "total_completion_tokens", "reasoning_tokens", "end_token", "num_tokens", "token_count", "maxTokens"],
+)
+def test_a_token_count_or_delimiter_name_is_not_a_credential(tmp_path: Path, name: str):
+    assert _log_of(tmp_path, name) == []
+
+
+@pytest.mark.parametrize("name", ["token", "auth_token", "api_token", "access_token", "refresh_token", "bearer_token", "tokens"])
+def test_a_bare_token_name_is_still_a_credential(tmp_path: Path, name: str):
+    assert len(_log_of(tmp_path, name)) == 1
