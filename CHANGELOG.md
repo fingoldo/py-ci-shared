@@ -2,7 +2,8 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## 1.23.13
+## Unreleased (next: 1.23.14)
+
 
 - This repository's own ruff run now selects `ARG001` and `ARG002` for `src` (52-R12): four dead parameters were removed from private helpers (`import_cycles._events`, `module_reload_safety._conftest_fixtures`, `phantom_code_references._outside_head_verdict` and `_token_problem`), and the parameters that belong to a table, visitor, public or pytest-hook signature carry a reasoned `noqa` or a per-file ignore. `HARNESS_VERSION` moves to 49 because one `noqa` comment is part of the tracked mutation harness; no verdict changes. Nothing to do.
 
@@ -197,25 +198,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - Security (audit 51-T3, additive): `corpus-drift.yml` scopes `CONSUMER_READ_TOKEN` to the corpus checkout step instead of the snapshot job, so the install and the snapshot run never hold it. `tests/test_security_supply_chain_workflows.py` fails a workflow job that sets `CONSUMER_READ_TOKEN` or `RELEASE_TOKEN` in its job-level `env`.
 
 
-## 1.23.12
-
-The v1.23.12 tag was never published (its Release run refused its own tag); its entries are listed under 1.23.13.
-
-- New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
-
-- New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
-
 - New gate `global_write_via_reexport_alias` (`assert_global_write_via_reexport_alias`): the write to a global through a re-exporting facade; a write through a re-exporting facade changes only the facade's copy, not the global. Nothing to do for existing consumers until they enable it.
-
-- New gate `route_literal_after_catchall` (`assert_route_literal_after_catchall`): a literal route declared after a same-shape parameter route; a literal route shadowed by an earlier parameter route is flagged. Nothing to do for existing consumers until they enable it.
-
-- New gate `sql_where_mixed_and_or` (`assert_sql_where_mixed_and_or`): a WHERE clause mixing AND and OR at one parenthesis level; a WHERE clause that mixes AND and OR without parentheses is flagged. Nothing to do for existing consumers until they enable it.
-
-- New gate `thread_lifecycle` (`assert_thread_lifecycle`): a threading.Thread that is neither daemonised, joined nor owned by a context manager; a non-daemon thread that is never joined is flagged. Nothing to do for existing consumers until they enable it.
-
-- New gate `tool_config_dead_entries` (`assert_tool_config_dead_entries`): a pyproject ignore, omit or override naming nothing that exists; a dead pyproject ignore, omit or override entry is flagged. Nothing to do for existing consumers until they enable it.
-
-- New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
 
 - New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
@@ -229,7 +212,44 @@ The v1.23.12 tag was never published (its Release run refused its own tag); its 
 
 - New gate `fit_at_test_module_import` (audit 50-T5): flags a test module that trains a model while it is imported (module or class-level `.fit`-style calls); waive with `# import-fit-ok: <reason>`. No behaviour change for consumers until it is registered.
 
+- New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
+
+- New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `route_literal_after_catchall` (`assert_route_literal_after_catchall`): a literal route declared after a same-shape parameter route; a literal route shadowed by an earlier parameter route is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `sql_where_mixed_and_or` (`assert_sql_where_mixed_and_or`): a WHERE clause mixing AND and OR at one parenthesis level; a WHERE clause that mixes AND and OR without parentheses is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `thread_lifecycle` (`assert_thread_lifecycle`): a threading.Thread that is neither daemonised, joined nor owned by a context manager; a non-daemon thread that is never joined is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `tool_config_dead_entries` (`assert_tool_config_dead_entries`): a pyproject ignore, omit or override naming nothing that exists; a dead pyproject ignore, omit or override entry is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
+
 - New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
+
+## 1.23.13
+
+Tag `v1.23.13` was pushed at `d6e76b7` and its verify job failed (the registry recorded 34 shipped modules as new): it is not a release. Its changes are under the next version.
+
+## 1.23.12
+
+The v1.23.12 tag was never published (its Release run refused its own tag); its entries are listed under 1.23.13.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## 1.23.11
 
