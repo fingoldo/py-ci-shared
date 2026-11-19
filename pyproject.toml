@@ -175,6 +175,7 @@ extend-select = ["ARG001", "ARG002"]
 "src/py_ci_shared/offline_suite_without_credentials.py" = ["ARG001", "ARG002"]
 "src/py_ci_shared/stale_baseline_sweep.py" = ["ARG001", "ARG002"]
 "tests/**" = ["ARG001", "ARG002"]  # a test double takes the signature of the function it replaces, used or not; the rule is for src only
+"audits/2026-11-20/*.py" = ["T201", "PERF203"]  # measurement scripts: printing the report is their interface, and the try per file times each parse
 # Every script here IS a CLI tool whose entire job is printing to stdout/stderr -- that's the
 # interface, not a lint issue vs. converting to logger calls (there is no log configuration to
 # route through; these run standalone or as pre-commit/CI steps).

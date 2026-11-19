@@ -349,6 +349,27 @@ def test_an_entry_that_imports_a_blocked_extra_fails_to_start_and_names_it(tmp_p
     assert_entry_imports_without_extras(root, ["mypkg.features"], ["db"], name_map=mapping)
 
 
+def test_the_entries_run_concurrently_and_the_failures_keep_the_order_of_the_entries(tmp_path):
+    files = {
+        "fakewavelets.py": "VALUE = 1\n",
+        "mypkg/__init__.py": "",
+        "mypkg/ok.py": "VALUE = 1\n",
+        "mypkg/bad_one.py": "import fakewavelets\n",
+        "mypkg/bad_two.py": "import fakewavelets\n",
+    }
+    root = _repo(tmp_path, [], files=files, pyproject=PYPROJECT.replace('"pywavelets"', '"fake-wavelets"'))
+    mapping = {"fakewavelets": "fake-wavelets"}
+    entries = ["mypkg.bad_two", "mypkg.ok", "mypkg.bad_one"]
+    messages = []
+    for workers in (1, 3):
+        with pytest.raises(AssertionError) as raised:
+            assert_entry_imports_without_extras(root, entries, ["signal"], name_map=mapping, workers=workers)
+        messages.append(str(raised.value))
+    assert messages[0] == messages[1]
+    assert messages[0].index("import mypkg.bad_two") < messages[0].index("import mypkg.bad_one")
+    assert "mypkg.ok" not in messages[0].split("fail to start:")[1]
+
+
 def test_an_availability_probe_sees_a_blocked_extra_as_absent_while_its_import_fails(tmp_path):
     """pyutilz-style ``find_spec(name) is not None`` must be False for a blocked package, as on a core-only install."""
     probe = (

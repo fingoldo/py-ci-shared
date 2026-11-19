@@ -1,0 +1,130 @@
+walk: 2242 files in 0.215s
+cold parse of every file through _core.source: 94.3s (0 unparsable)
+
+PASS 1 (cold), 105 scanners, total 462.9s
+    36.95s  near_duplicate_function_body                     findings=1
+    27.57s  default_via_or                                   findings=2
+    18.27s  record_field_flow                                findings=99
+    16.53s  unthrottled_hot_loop_log                         findings=0
+    13.11s  console_unicode                                  findings=0
+    12.75s  vacuous_loop_assertion                           findings=0
+    12.52s  getattr_unknown_attribute                        findings=0
+    12.36s  missing_network_timeout                          findings=0
+    12.18s  parameter_aliasing_mutation                      findings=2
+    11.80s  readonly_to_numpy_mutation                       findings=0
+    10.73s  async_primitive_reinit_per_call                  findings=0
+    10.03s  mutable_default                                  findings=0
+     9.56s  accumulator_helper_bypassed                      findings=0
+     9.20s  llm_call_missing_max_tokens_cap                  findings=0
+     9.19s  stale_source_citation                            findings=32
+     9.11s  duplicate_function_body                          findings=2
+     8.71s  credential_shaped_log_arg                        findings=0
+     7.90s  write_counted_from_input                         findings=0
+     7.39s  guard_decidable_from_constants                   findings=2
+     6.92s  import_cycle                                     findings=0
+     6.41s  docstring_names_a_caller_that_does_not_call      findings=0
+     6.07s  resource_handle_safety                           findings=0
+     5.86s  late_binding_closure                             findings=0
+     5.77s  effect_flag_outside_its_effect                   findings=0
+     5.41s  dead_public_callable                             findings=161
+     5.15s  sql_aggregate_before_cast                        findings=0
+     4.80s  possibly_dead_import                             findings=6
+     4.80s  additive_epsilon_denominator                     findings=0
+     4.77s  unraised_exception_class                         findings=0
+     4.66s  duplicate_credential_regex                       findings=0
+  scanners under 0.5s: 16 of 105, their total 3.5s
+
+PASS 2 (warm, under cProfile): 1041.3s
+
+--- top 35 by cumulative ---
+         1413457962 function calls (1381168316 primitive calls) in 1041.230 seconds
+
+   Ordered by: cumulative time
+   List reduced from 1193 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      105    0.425    0.004 1041.281    9.917 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\registry.py:452(_run_scanner)
+854379508  213.856    0.000  213.856    0.000 {built-in method builtins.isinstance}
+ 24093638   67.327    0.000  111.735    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\node_index.py:99(child_nodes)
+        1    1.684    1.684   80.814   80.814 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:891(scan_default_via_or_trap)
+        1    1.436    1.436   77.516   77.516 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\near_duplicate_function_body.py:441(scan_near_duplicate_function_body)
+        1    0.042    0.042   74.348   74.348 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\log_throttle.py:342(scan_unthrottled_hot_loop_log)
+        1    0.060    0.060   69.426   69.426 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\provenance_flow.py:90(scan_record_field_flow)
+     1303    7.106    0.005   56.212    0.043 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\difflib.py:666(get_close_matches)
+        1    2.971    2.971   48.443   48.443 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\readonly_to_numpy_mutation.py:59(scan_readonly_to_numpy_mutation)
+        1    1.119    1.119   43.738   43.738 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\getattr_unknown_attribute.py:260(scan_getattr_unknown_attribute)
+7097434/1874139    5.626    0.000   42.838    0.000 {method 'join' of 'str' objects}
+3225047/2242   14.645    0.000   42.169    0.019 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\log_throttle.py:220(_visit_if_aware)
+        1    1.321    1.321   42.116   42.116 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\mutable_defaults.py:408(scan_parameter_aliasing_mutation)
+  6242944   10.197    0.000   41.162    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\_base.py:493(_own_nodes)
+    31024    0.184    0.000   39.630    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\duplicate_function_body.py:40(_normalized_body)
+        1   14.068   14.068   39.629   39.629 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\near_duplicate_function_body.py:282(_candidate_pairs)
+7199965/31024   24.859    0.000   39.446    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\drifted_duplicate_functions.py:73(_canonical)
+2774857/222262    1.787    0.000   38.804    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\drifted_duplicate_functions.py:91(<genexpr>)
+    17003    3.896    0.000   38.756    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\mutable_defaults.py:365(_find_param_aliasing_mutation)
+  1488517   20.714    0.000   33.259    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\difflib.py:622(quick_ratio)
+     2242    0.012    0.000   32.955    0.015 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:170(_enclosing_symbols)
+3225047/2242    9.739    0.000   32.943    0.015 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:180(walk)
+   242244    3.241    0.000   31.045    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\_base.py:231(_iter_py_files)
+     2242    8.479    0.004   30.949    0.014 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\log_throttle.py:163(_single_shot_log_calls)
+        1    1.510    1.510   30.462   30.462 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\near_duplicate_function_body.py:224(_collect_entries)
+   207213    2.699    0.000   29.201    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\pathlib\__init__.py:476(relative_to)
+     6726    9.646    0.001   29.154    0.004 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\sql_lint.py:147(_string_constants)
+     2242    0.030    0.000   27.371    0.012 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\getattr_unknown_attribute.py:148(_receivers_defined_in_tree)
+    17003    0.042    0.000   26.071    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\mutable_defaults.py:240(_branch_paths)
+3181080/17003    8.440    0.000   26.029    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\mutable_defaults.py:254(visit)
+ 80820240   25.709    0.000   25.709    0.000 {built-in method builtins.getattr}
+3225047/2242    7.838    0.000   25.445    0.011 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\getattr_unknown_attribute.py:180(_collect_function_scopes)
+        1    0.006    0.006   25.383   25.383 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\duplicate_function_body.py:81(scan_duplicate_function_body)
+        1    1.497    1.497   25.374   25.374 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\duplicate_function_body.py:54(_group_by_body)
+        1    4.992    4.992   24.262   24.262 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\async_primitive_reinit.py:211(scan_async_primitive_reinit_per_call)
+
+
+
+
+--- top 35 by tottime ---
+         1413457962 function calls (1381168316 primitive calls) in 1041.230 seconds
+
+   Ordered by: internal time
+   List reduced from 1193 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+854379508  213.856    0.000  213.856    0.000 {built-in method builtins.isinstance}
+ 24093638   67.327    0.000  111.735    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\node_index.py:99(child_nodes)
+ 80820240   25.709    0.000   25.709    0.000 {built-in method builtins.getattr}
+7199965/31024   24.859    0.000   39.446    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\drifted_duplicate_functions.py:73(_canonical)
+  1488517   20.714    0.000   33.259    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\difflib.py:622(quick_ratio)
+ 59160169   20.407    0.000   20.408    0.000 {method 'get' of 'dict' objects}
+3225047/2242   14.645    0.000   42.169    0.019 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\log_throttle.py:220(_visit_if_aware)
+   278196   14.607    0.000   19.441    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\_base.py:296(walk_tree)
+        1   14.068   14.068   39.629   39.629 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\near_duplicate_function_body.py:282(_candidate_pairs)
+ 36874744   13.110    0.000   13.110    0.000 {method 'append' of 'list' objects}
+    14934   12.464    0.001   19.443    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\near_duplicate_function_body.py:200(_shingles)
+   335420   11.720    0.000   11.958    0.000 {built-in method nt.stat}
+     2242   10.560    0.005   21.264    0.009 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:405(_build_parent_field_map)
+  6242944   10.197    0.000   41.162    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\_base.py:493(_own_nodes)
+3225047/2242    9.739    0.000   32.943    0.015 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:180(walk)
+     6726    9.646    0.001   29.154    0.004 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\sql_lint.py:147(_string_constants)
+  5876530    8.752    0.000   14.207    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\difflib.py:651(real_quick_ratio)
+  1795838    8.741    0.000    8.741    0.000 {method 'search' of 're.Pattern' objects}
+     2242    8.479    0.004   30.949    0.014 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\log_throttle.py:163(_single_shot_log_calls)
+3181080/17003    8.440    0.000   26.029    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\mutable_defaults.py:254(visit)
+3225047/2242    7.838    0.000   25.445    0.011 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\getattr_unknown_attribute.py:180(_collect_function_scopes)
+ 31591169    7.759    0.000    7.759    0.000 {built-in method builtins.id}
+    18834    7.142    0.000   10.798    0.001 <frozen os>:297(walk)
+  2544535    7.107    0.000   10.848    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\pathlib\__init__.py:135(__init__)
+     1303    7.106    0.005   56.212    0.043 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\difflib.py:666(get_close_matches)
+ 17799717    6.617    0.000    7.332    0.000 {method 'extend' of 'list' objects}
+ 16900288    6.241    0.000    6.241    0.000 {built-in method builtins.hash}
+ 26374491    6.211    0.000    6.211    0.000 {method '__contains__' of 'dict' objects}
+    21487    6.116    0.000   11.156    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\network_timeout.py:77(_bindings_in)
+22710287/21485005    5.875    0.000    6.557    0.000 {built-in method builtins.len}
+  3225047    5.745    0.000    9.794    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\default_via_or.py:557(_assigned_names_and_values)
+     6726    5.716    0.001   10.917    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\sql_lint.py:122(_docstring_constant_ids)
+  9654492    5.691    0.000    7.821    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\ast.py:268(iter_fields)
+7097434/1874139    5.626    0.000   42.838    0.000 {method 'join' of 'str' objects}
+ 20677905    5.341    0.000    5.341    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\code_audit\dead_wiring.py:76(<genexpr>)
+
+
+
+exit 0

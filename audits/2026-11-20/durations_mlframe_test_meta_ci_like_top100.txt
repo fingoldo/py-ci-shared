@@ -1,0 +1,166 @@
+============================ slowest 100 durations ============================
+177.07s call     tests/test_meta/test_optional_third_party_imports_are_guarded.py::test_core_only_install_can_import_the_public_subpackages
+114.30s call     tests/test_meta/test_x_test_suite_architecture_fixes.py::test_f8_run_heavy_automl_flag_registered
+109.36s call     tests/test_meta/test_fuzz_config_field_coverage.py::test_semantic_generators_move_every_registered_field_off_its_default
+76.63s call     tests/test_meta/test_bounded_eviction_drops_no_pending_work.py::test_no_eviction_drops_pending_work
+69.00s call     tests/test_meta/test_shared_checks_wired.py::test_package_doctests_pass
+60.63s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_module_attribute_reads_resolve
+52.76s call     tests/test_meta/test_no_nondiscriminating_assert.py::test_no_new_nondiscriminating_assert
+49.04s call     tests/test_meta/test_no_unsafe_module_reload.py::test_no_unpaired_module_reload_in_tests
+46.78s call     tests/test_meta/test_mrmr_research_doc_consistency.py::test_fleuret_module_confirms_jmim_synergy_mitigation_shipped
+43.44s setup    tests/test_meta/test_no_unguarded_nested_parallel.py::test_a_module_that_threads_into_a_prange_kernel_takes_the_guard
+40.96s call     tests/test_meta/test_cuda_kernels_offline_per_arch.py::test_every_elementwise_kernel_site_is_built
+40.14s call     tests/test_meta/test_heavy_training_shares_fixture.py::test_heavy_trainings_are_shared_through_a_fixture
+38.50s call     tests/test_meta/test_shared_gates_adopted.py::test_numba_seeds_fit_the_seed_argument
+37.68s call     tests/test_meta/test_fe_gpu_streaming_contract.py::test_every_cpu_twin_names_a_real_module_with_a_numba_kernel
+36.23s call     tests/test_meta/test_pydoclint_baseline.py::test_no_new_pydoclint_findings
+34.07s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_ci_install_covers_what_entry_modules_import
+33.92s call     tests/test_meta/test_progress_xdist_plugin_conflict.py::test_no_xdist_flag_does_not_crash_with_plugin_validation_error
+32.76s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_tests_do_not_wait_on_the_wall_clock
+28.37s call     tests/test_meta/test_no_source_text_claims.py::test_no_new_source_text_claims
+26.26s call     tests/test_meta/test_cuda_kernel_pointer_types_gate.py::test_no_kernel_takes_an_untemplated_double_pointer_without_a_review_marker
+24.17s call     tests/test_meta/test_no_single_shot_timing_assertion.py::test_tests_time_best_of_n
+22.46s call     tests/test_meta/test_no_module_level_env_mutation_in_tests.py::test_no_new_module_level_env_mutation
+22.08s call     tests/test_meta/test_shared_checks_wired.py::test_every_database_effect_is_asserted_by_an_importing_test
+21.86s call     tests/test_meta/test_no_unsafe_deserialization.py::test_no_unsafe_deserialization_in_package
+21.08s call     tests/test_meta/test_fe_gpu_streaming_contract.py::test_every_gpu_backend_is_a_real_module_that_meets_the_contract_itself
+20.98s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_files_are_written_with_lf_line_endings
+19.89s call     tests/test_meta/test_shared_checks_wired.py::test_runtime_registry_writes_have_a_replay
+19.62s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_predictable_tmp_paths_carry_a_per_user_component
+19.34s call     tests/test_meta/test_shared_gates_adopted.py::test_no_new_xfail_that_defers_a_fix
+18.19s call     tests/test_meta/test_shared_checks_wired.py::test_no_check_then_act_outside_lock
+16.72s call     tests/test_meta/test_shared_checks_wired.py::test_no_new_floorless_assert_loop
+16.69s call     tests/test_meta/test_workflow_supply_chain.py::test_workflow_install_is_enough_to_import_mlframe_and_run_its_dry_run_entry[fs-benchmark-nightly.yml]
+16.60s call     tests/test_meta/test_tests_restore_environment_writes.py::test_no_new_unrestored_environment_write_in_tests
+16.60s call     tests/test_meta/test_no_drifted_duplicate_functions.py::test_no_new_drifted_duplicate_functions
+15.75s call     tests/test_meta/test_fe_gpu_streaming_contract.py::test_every_tuner_dispatched_backend_names_a_real_dispatcher
+15.19s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_hash_keys_are_deterministic_across_processes
+14.92s call     tests/test_meta/test_no_hardcoded_seed_in_library.py::test_no_hardcoded_seed_in_library
+14.68s call     tests/test_meta/test_import_graph_stays_light.py::test_the_numba_typed_dict_warmup_does_not_run_at_import
+14.68s call     tests/test_meta/test_no_tiny_cupy_ops_in_python_loops.py::test_no_new_launch_bound_cupy_loops
+14.37s call     tests/test_meta/test_readme_env_var_parity.py::test_environment_variables_doc_is_current
+12.87s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_stub_signatures_match_the_callables_they_replace
+12.66s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_atomic_write_staging_is_unique_per_writer
+12.60s call     tests/test_meta/test_shared_checks_wired.py::test_optional_numbers_are_tested_for_none
+12.37s call     tests/test_meta/test_readme_env_var_parity.py::test_no_new_undocumented_env_vars
+12.30s call     tests/test_meta/test_function_complexity.py::test_functions_do_not_get_more_complex
+12.17s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_no_order_losing_filter_selects_rows_by_an_index_built_mask
+12.16s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_no_loop_recomputes_a_loop_invariant_cast_or_sort
+11.74s call     tests/test_meta/test_cuda_launch_geometry_gate.py::test_no_new_kernel_launch_takes_a_literal_block_size
+11.56s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_no_two_tests_in_a_file_share_a_body
+11.30s call     tests/test_meta/test_shared_checks_wired.py::test_gpu_timings_synchronize_the_device
+11.26s call     tests/test_meta/test_shared_checks_wired.py::test_every_from_import_resolves
+11.20s call     tests/test_meta/test_shared_checks_wired.py::test_docs_name_real_identifiers
+11.04s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_comments_name_files_that_exist
+10.72s call     tests/test_meta/test_cuda_kernel_sources_use_explicit_64bit_types.py::test_cuda_kernel_sources_use_explicit_64bit_types
+10.63s call     tests/test_meta/test_no_unprotected_shap_treeexplainer.py::test_no_new_unprotected_shap_treeexplainer
+10.61s call     tests/test_meta/test_readonly_to_numpy_mutation.py::test_no_new_readonly_to_numpy_mutation
+10.38s call     tests/test_meta/test_shared_checks_wired.py::test_no_inert_patch_targets
+10.37s call     tests/test_meta/test_import_graph_stays_light.py::test_the_filters_stack_is_not_imported[mlframe.reporting]
+10.09s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_no_clock_day_boundary_in_tests
+9.96s call     tests/test_meta/test_shared_checks_wired.py::test_no_lock_held_across_io
+9.85s call     tests/test_meta/test_no_audit_metadata_in_comments.py::test_no_new_audit_metadata_in_comments
+9.68s call     tests/test_meta/test_no_fit_at_test_module_import.py::test_no_test_module_trains_a_model_at_import
+9.63s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_committed_files_keep_lf_line_endings
+9.48s call     tests/test_meta/test_import_graph_stays_light.py::test_the_filters_stack_is_not_imported[mlframe.preprocessing]
+9.35s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_no_stdlib_json_outside_the_digest_paths
+9.28s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_library_code_does_not_exit_the_interpreter
+9.22s call     tests/test_meta/test_no_tick_isinstance_offset_check.py::test_no_new_tick_isinstance_check
+9.03s call     tests/test_meta/test_fuzz_config_field_coverage.py::test_no_new_uncovered_config_fields
+8.95s call     tests/test_meta/test_no_unread_function_params.py::test_no_unread_function_params
+8.89s call     tests/test_meta/test_no_constant_fallback_cache_key.py::test_no_constant_fallback_cache_key
+8.85s call     tests/test_meta/test_id_keyed_cache_validates_identity.py::test_id_keyed_caches_validate_identity
+8.50s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_no_tracked_file_holds_a_vendor_token_shape
+8.39s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_ranks_are_not_built_by_ordinal_scatter
+8.28s call     tests/test_meta/test_shared_checks_wired.py::test_no_new_stale_todos
+8.22s call     tests/test_meta/test_no_drifted_duplicate_functions.py::test_the_recorded_groups_still_exist
+8.18s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_no_duplicated_literal_set_drifts_apart
+8.16s call     tests/test_meta/test_no_numba_config_env_restore_footgun.py::test_no_new_numba_config_env_mutation
+8.03s call     tests/test_meta/test_config_field_consumption.py::test_every_config_field_has_a_consumer
+7.94s call     tests/test_meta/test_shared_checks_wired.py::test_no_new_fail_open_handlers
+7.81s call     tests/test_meta/test_logger_lazy_formatting.py::test_no_new_eager_log_format_on_debug_or_info
+7.62s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_module_level_mutable_state_has_a_test_side_reset
+7.61s call     tests/test_meta/test_no_cancellation_prone_moments.py::test_no_cancellation_prone_moments
+7.60s call     tests/test_meta/test_markers_registered.py::test_every_used_marker_is_registered
+7.49s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_id_keyed_caches_validate_identity
+7.44s call     tests/test_meta/test_python_version_floor_respected.py::test_every_module_in_the_tree_parses
+7.39s call     tests/test_meta/test_estimator_kwarg_parity.py::test_every_estimator_kwarg_routes_to_a_constructor
+7.34s call     tests/test_meta/test_no_persisted_negative_hardware_probe.py::test_no_persisted_negative_hardware_probe
+7.07s call     tests/test_meta/test_shared_gates_adopted.py::test_no_swallowed_io_or_broad_failures
+6.86s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_addopts_does_not_deselect_the_tests_a_hook_names
+6.84s call     tests/test_meta/test_no_asarray_for_length.py::test_no_new_copy_made_only_to_read_a_size
+6.81s call     tests/test_meta/test_dead_helpers.py::test_no_dead_public_helpers
+6.79s call     tests/test_meta/test_no_tiny_cupy_ops_in_python_loops.py::test_baseline_has_no_stale_entries
+6.78s call     tests/test_meta/test_threshold_literals_gate.py::test_no_threshold_literal_is_restated_across_modules
+6.76s call     tests/test_meta/test_shared_checks_wired.py::test_no_silent_default_return_in_library
+6.73s call     tests/test_meta/test_shared_gates_adopted.py::test_source_citations_point_at_real_lines
+6.70s call     tests/test_meta/test_tiny_cupy_high_triage_table.py::test_table_rows_are_the_current_hits_of_its_severity[high-table0]
+6.54s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_estimator_api_contracts_hold
+6.49s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_monkeypatches_target_the_binding_the_code_under_test_reads
+6.48s call     tests/test_meta/test_shared_gates_adopted_pass3.py::test_a_verified_file_is_not_reopened_to_load_it
+6.45s call     tests/test_meta/test_shared_gates_adopted_pass2.py::test_failed_probes_do_not_persist_a_negative_verdict
+=========================== short test summary info ===========================
+SKIPPED [1] tests\test_meta\test_changelog_sensor_cross_walk.py:74: CHANGELOG.md has no audit-cycle section; convention not yet applicable
+SKIPPED [1] ..\py-ci-shared\src\py_ci_shared\_core\outcome.py:56: CHANGELOG.md has no section matching section_pattern; convention not yet applicable
+SKIPPED [1] tests\test_meta\test_mutation_teeth.py:91: no changed src/mlframe module with a suite under tests/ against HEAD~1
+SKIPPED [1] tests\test_meta\test_perm_loop_invariants_hoisted.py:176: got empty parameter set for (rel)
+SKIPPED [1] tests\test_meta\test_shared_gates_adopted_pass2.py:234: got empty parameter set for (path, canary)
+SKIPPED [1] tests\test_meta\test_tick_labels_are_budgeted.py:86: PlotlyRenderer._bar is exempt for a recorded reason; see the EXEMPT entry above it
+FAILED tests/test_meta/test_cuda_kernels_offline_per_arch.py::test_kernel_assembles_without_spill_on_arch[mlframe/feature_selection/filters/_feature_engineering_pairs/_pairs_analytic_gpu.py::_FUSED_SR
+FAILED tests/test_meta/test_cuda_kernels_offline_per_arch.py::test_kernel_assembles_without_spill_on_arch[mlframe/feature_selection/filters/_feature_engineering_pairs/_pairs_analytic_gpu.py::_FUSED_SR
+FAILED tests/test_meta/test_c901_debt_ratchet.py::test_c901_complexity_debt_does_not_grow
+FAILED tests/test_meta/test_code_audit_baseline.py::test_no_new_code_audit_findings
+FAILED tests/test_meta/test_code_audit_tests_baseline.py::test_no_new_test_quality_findings_in_the_test_suite
+FAILED tests/test_meta/test_cuda_kernel_sources_use_explicit_64bit_types.py::test_cuda_kernel_sources_use_explicit_64bit_types
+FAILED tests/test_meta/test_discovery_algo_version_bumped.py::test_discovery_algo_version_is_bumped_with_its_sources
+FAILED tests/test_meta/test_filters_numba_invariant.py::test_no_cross_module_njit_imports
+FAILED tests/test_meta/test_ktc_dispatch_selects_more_than_one_path.py::test_pair_residual_sweep_chooses_cpu_small_and_gpu_large
+FAILED tests/test_meta/test_meta_meta.py::test_meta_tests_dont_reach_private_internals
+FAILED tests/test_meta/test_module_cache_mutated_without_its_lock.py::test_no_new_cache_mutation_outside_a_lock
+FAILED tests/test_meta/test_mypy_gate_floor.py::test_precommit_mypy_runs_through_mypy_gate_with_a_floor_sized_from_the_tree
+FAILED tests/test_meta/test_no_asarray_for_length.py::test_no_new_copy_made_only_to_read_a_size
+FAILED tests/test_meta/test_no_audit_metadata_in_comments.py::test_no_new_audit_metadata_in_comments
+FAILED tests/test_meta/test_no_audit_wave_filenames.py::test_no_audit_wave_filenames
+FAILED tests/test_meta/test_no_bare_except.py::test_no_new_verbose_gated_or_silent_except_exception
+FAILED tests/test_meta/test_no_cancellation_prone_moments.py::test_no_cancellation_prone_moments
+FAILED tests/test_meta/test_no_fe_family_enabled_without_budget.py::test_no_new_fe_family_enabled_under_a_zero_budget
+FAILED tests/test_meta/test_no_drifted_duplicate_functions.py::test_no_new_drifted_duplicate_functions
+FAILED tests/test_meta/test_no_drifted_duplicate_functions.py::test_the_recorded_groups_still_exist
+FAILED tests/test_meta/test_no_file_over_1k_loc.py::test_no_mlframe_file_exceeds_1k_loc
+FAILED tests/test_meta/test_no_new_explicit_float64.py::test_no_file_gains_explicit_float64_uses
+FAILED tests/test_meta/test_no_njit_unsupported_numpy_reduction.py::test_no_unsupported_numpy_reduction_in_njit
+FAILED tests/test_meta/test_no_nondiscriminating_assert.py::test_no_new_nondiscriminating_assert
+FAILED tests/test_meta/test_no_underscore_imports_cross_package.py::test_no_new_underscore_imports_cross_package
+FAILED tests/test_meta/test_no_tiny_cupy_ops_in_python_loops.py::test_no_new_launch_bound_cupy_loops
+FAILED tests/test_meta/test_no_unlocked_module_cache.py::test_no_new_unlocked_module_level_cache
+FAILED tests/test_meta/test_no_unprotected_shap_treeexplainer.py::test_no_new_unprotected_shap_treeexplainer
+FAILED tests/test_meta/test_no_unread_function_params.py::test_no_unread_function_params
+FAILED tests/test_meta/test_no_unguarded_nested_parallel.py::test_a_module_that_threads_into_a_prange_kernel_takes_the_guard
+FAILED tests/test_meta/test_no_unsafe_module_reload.py::test_no_unpaired_module_reload_in_tests
+FAILED tests/test_meta/test_no_value_bearing_asserts.py::test_no_new_value_bearing_asserts
+FAILED tests/test_meta/test_printed_advice_wired.py::test_every_composite_advice_has_a_test_that_follows_it
+FAILED tests/test_meta/test_public_annotations.py::test_no_new_unannotated_public_functions
+FAILED tests/test_meta/test_readme_env_var_parity.py::test_no_new_undocumented_env_vars
+FAILED tests/test_meta/test_scanning_gates_fail_closed.py::test_no_new_unguarded_scanning_gate
+FAILED tests/test_meta/test_readme_env_var_parity.py::test_environment_variables_doc_is_current
+FAILED tests/test_meta/test_shared_checks_wired.py::test_gpu_timings_synchronize_the_device
+FAILED tests/test_meta/test_shared_checks_wired.py::test_no_new_fail_open_handlers
+FAILED tests/test_meta/test_shared_checks_wired.py::test_no_silent_default_return_in_library
+FAILED tests/test_meta/test_shared_checks_wired.py::test_no_new_floorless_assert_loop
+FAILED tests/test_meta/test_shared_checks_wired.py::test_docs_name_real_identifiers
+FAILED tests/test_meta/test_shared_checks_wired.py::test_blocking_gate_narrowings_are_declared
+FAILED tests/test_meta/test_shared_gates_adopted_pass2.py::test_no_stdlib_json_outside_the_digest_paths
+FAILED tests/test_meta/test_shared_gates_adopted_pass2.py::test_no_duplicated_literal_set_drifts_apart
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_ranks_are_not_built_by_ordinal_scatter
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_compiled_bodies_call_nothing_numba_or_torchscript_rejects
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_no_definition_follows_the_script_entry_guard
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_ci_pin_version_matches_the_installed_py_ci_shared_release
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_tests_do_not_wait_on_the_wall_clock
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_monkeypatches_target_the_binding_the_code_under_test_reads
+FAILED tests/test_meta/test_shared_gates_adopted_pass3.py::test_module_level_mutable_state_has_a_test_side_reset
+FAILED tests/test_meta/test_shared_uncalled_functions.py::test_no_new_function_without_a_caller
+FAILED tests/test_meta/test_tiny_cupy_high_triage_table.py::test_table_rows_are_the_current_hits_of_its_severity[low-table1]
+FAILED tests/test_meta/test_workflow_supply_chain.py::test_no_text_mode_open_in_src_relies_on_the_platform_default_encoding
+FAILED tests/test_meta/test_x_test_suite_architecture_fixes.py::test_f1_f2_no_typeerror_importerror_skip_around_suite_call[tests.training.test_biz_val_training_core-test_biz_val_training_suite_regress
+==== 56 failed, 2172 passed, 6 skipped, 10 warnings in 1690.34s (0:28:10) =====
+==== 56 failed, 2172 passed, 6 skipped, 10 warnings in 1690.34s (0:28:10) =====

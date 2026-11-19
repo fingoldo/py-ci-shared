@@ -37,6 +37,7 @@ guarded import the static reader misjudged (or a lazy path executed at import) s
 
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import re
 import subprocess
@@ -514,19 +515,21 @@ def assert_entry_imports_without_extras(
     name_map: Optional[Mapping[str, Any]] = None,
     timeout: float = 600.0,
     python_path: Optional[Sequence[Union[str, Path]]] = None,
+    workers: Optional[int] = None,
 ) -> None:
     """Start each entry in a subprocess where the import names of every distribution of *blocked_extras* are unimportable.
 
     An entry is a module name (``"mypkg"``: imported) or an argument list (``["mypkg.nightly", "--dry-run"]``: run like
     ``python -m mypkg.nightly --dry-run``). Raises ``AssertionError`` with the tail of the traceback for each entry that
     does not exit 0. ``python_path`` defaults to the repo root and its ``src``; the interpreter is the running one.
+    The entries are independent, so up to *workers* of them run at once (default: the CPU count, at most 4, because each interpreter
+    imports the whole package); the failures are reported in the order of *entries* whatever the schedule.
     """
     base = Path(root).resolve()
     names = blocked_import_names(base, blocked_extras, name_map)
     paths = [str(p) for p in (python_path if python_path is not None else [base / "src", base])]
     env = {**os.environ, "PYTHONPATH": os.pathsep.join([*paths, os.environ.get("PYTHONPATH", "")]).strip(os.pathsep), "PYTHONIOENCODING": "utf-8"}
-    failures: list[str] = []
-    for entry in entries:
+    def probe(entry: Union[str, Sequence[str]]) -> Optional[str]:
         kind, target, args = ("import", entry, []) if isinstance(entry, str) else ("run", entry[0], list(entry[1:]))
         proc = subprocess.run(
             [sys.executable, "-c", _BLOCKER, ",".join(names), kind, target, *args],
@@ -539,7 +542,12 @@ def assert_entry_imports_without_extras(
             check=False,
         )
         if proc.returncode != 0:
-            failures.append(f"{kind} {target} {' '.join(args)}".strip() + f" exited {proc.returncode}:\n{proc.stderr[-1500:]}")
+            return f"{kind} {target} {' '.join(args)}".strip() + f" exited {proc.returncode}:\n{proc.stderr[-1500:]}"
+        return None
+
+    parallel = max(1, min(workers if workers is not None else 4, len(entries), os.cpu_count() or 1))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=parallel) as pool:
+        failures = [result for result in pool.map(probe, entries) if result is not None]
     if failures:
         raise AssertionError(
             f"with {sorted(set(blocked_extras))} unimportable ({len(names)} names blocked), {len(failures)} entry(ies) fail to start:\n  "

@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.14)
 
+- `assert_entry_imports_without_extras` starts its entries concurrently (new keyword `workers`, default the CPU count capped at 4) instead of one after another; the failures are still reported in the order of the entries and the per-entry timeout is unchanged. mlframe's core-only import test went from 177 s to 43 s on the same 16 entries. Nothing to do.
+
 
 - This repository's own ruff run now selects `ARG001` and `ARG002` for `src` (52-R12): four dead parameters were removed from private helpers (`import_cycles._events`, `module_reload_safety._conftest_fixtures`, `phantom_code_references._outside_head_verdict` and `_token_problem`), and the parameters that belong to a table, visitor, public or pytest-hook signature carry a reasoned `noqa` or a per-file ignore. `HARNESS_VERSION` moves to 49 because one `noqa` comment is part of the tracked mutation harness; no verdict changes. Nothing to do.
 
