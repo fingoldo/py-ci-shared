@@ -1,9 +1,11 @@
 """On-disk memo of full code-audit runs, shared by every gate in every process of a test session.
 
 Several gates scan the same production tree, and under pytest-xdist each worker used to repeat the whole scan. The key covers
-everything a result depends on: the scanned root and its check selection, the excluded directories, every file under the root
-(scanners read ``.sql``, tests and docs too, not only ``.py``), and the code_audit package itself. A hit is therefore a result
-the current tree and scanner code would reproduce. The cache is an optimisation: any read or write failure falls back to a
+everything a result depends on: the scanned root and its check selection, the excluded directories, the CONTENT of every file under
+the root (scanners read ``.sql``, tests and docs too, not only ``.py``), and the content of the whole ``py_ci_shared`` package (the
+scanners use ``_core`` and other gate modules, not only ``code_audit/``). A hit is therefore a result the current tree and scanner code
+would reproduce. The signature is a hash of contents, not of modification times, so a fresh checkout (every mtime new) still hits
+an entry written by an earlier run of the same files, which is what lets a CI job restore this directory between runs. The cache is an optimisation: any read or write failure falls back to a
 fresh scan.
 
 The directory lives under the user's home, not the shared temp directory, so another local user cannot pre-create or plant an
@@ -16,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional
 from collections.abc import Iterable
@@ -25,12 +28,31 @@ from ._base import Finding
 
 logger = logging.getLogger(__name__)
 
-_PACKAGE_DIR = Path(__file__).resolve().parent
+#: The whole package, not only ``code_audit``: scanners import ``_core`` and other gate modules, and a change there changes findings.
+_PACKAGE_DIR = Path(__file__).resolve().parent.parent
+#: A file untouched for this long cannot still be mid-write, so its content hash may be remembered for the process (same idea as ``_core.source``).
+_SETTLED_NS = 3_000_000_000
+_DIGESTS: dict[tuple[str, int, int], str] = {}
 
 
-def _signature(root: Path, exclude_dirs: frozenset[str]) -> tuple[tuple[str, int, int], ...]:
-    """(relative path, mtime_ns, size) of every regular file under *root* outside *exclude_dirs*, sorted."""
-    entries: list[tuple[str, int, int]] = []
+def _file_digest(full: Path, stat: os.stat_result) -> Optional[str]:
+    """SHA-256 of one file's bytes; remembered per (path, mtime, size) once the file is old enough not to be mid-write. None when unreadable."""
+    key = (str(full), stat.st_mtime_ns, stat.st_size)
+    cached = _DIGESTS.get(key)
+    if cached is not None:
+        return cached
+    try:
+        digest = hashlib.sha256(full.read_bytes()).hexdigest()
+    except OSError:
+        return None
+    if time.time_ns() - stat.st_mtime_ns > _SETTLED_NS:
+        _DIGESTS[key] = digest
+    return digest
+
+
+def _signature(root: Path, exclude_dirs: frozenset[str]) -> str:
+    """One digest over (relative path, content hash) of every regular file under *root* outside *exclude_dirs*, in sorted order."""
+    entries: list[tuple[str, str]] = []
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
         for name in filenames:
@@ -39,16 +61,18 @@ def _signature(root: Path, exclude_dirs: frozenset[str]) -> tuple[tuple[str, int
                 stat = full.stat()
             except OSError:
                 continue
-            entries.append((full.relative_to(root).as_posix(), stat.st_mtime_ns, stat.st_size))
+            digest = _file_digest(full, stat)
+            if digest is not None:
+                entries.append((full.relative_to(root).as_posix(), digest))
     entries.sort()
-    return tuple(entries)
+    return hashlib.sha256(repr(entries).encode("utf-8")).hexdigest()
 
 
 def cache_key(root: Path, selected: Iterable[str], exclude_dirs: frozenset[str], consumer_roots: Iterable[Path] = ()) -> tuple[str, tuple]:
-    """A hex digest for the run, and the signature it was computed from (stored alongside, compared on read).
+    """A hex digest for the run, and the content signature it was computed from (stored alongside, compared on read).
 
     ``consumer_roots`` are extra trees a scanner may read (see ``scan_possibly_dead_import``): their file
-    stats join the signature, so editing a test that consumes a re-export invalidates the cached run.
+    contents join the signature, so editing a test that consumes a re-export invalidates the cached run.
     """
     consumers = tuple(sorted(str(c.resolve()) for c in consumer_roots))
     signature = (

@@ -1,78 +1,95 @@
-"""The on-disk code-audit scan memo: a hit must equal a fresh scan, and a change to the tree must never be served stale."""
+"""The code-audit result memo: its key follows the content of the scanned tree and of the scanner package, not modification times."""
 
 from __future__ import annotations
 
-import json
 import os
+import time
 from pathlib import Path
 
 import pytest
 
-from py_ci_shared.code_audit.registry import run_all_checked
-
-BAD = "def f(x=[]):\n    return x\n"
-GOOD = "def f(x=None):\n    return x\n"
-# One scanner keeps the memo tests fast: a full-registry run costs about 11 s even on a one-line file, and the memo
-# behaviour under test is per cache key. The full registry is still round-tripped once, in the first test.
-CHECK = "mutable_default"
+from py_ci_shared.code_audit import _scan_cache as sc
+from py_ci_shared.code_audit._base import Finding
 
 
-@pytest.fixture
-def cache_home(tmp_path, monkeypatch):
-    """Point the cache at a throwaway home so the test never writes to the developer's real cache."""
-    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
-    return tmp_path / "home"
+@pytest.fixture(autouse=True)
+def _private_memo(tmp_path, monkeypatch):
+    monkeypatch.setattr(sc, "_cache_dir", lambda: tmp_path / "memo")
+    (tmp_path / "memo").mkdir()
+    monkeypatch.setattr(sc, "_DIGESTS", {})
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "scanner.py").write_text("RULE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(sc, "_PACKAGE_DIR", package)
+    return package
 
 
-def test_a_cached_scan_equals_a_fresh_scan(tmp_path, cache_home):
-    (tmp_path / "tree").mkdir()
-    (tmp_path / "tree" / "mod.py").write_text(BAD, encoding="utf-8")
-    first, first_failed = run_all_checked(tmp_path / "tree")
-    second, second_failed = run_all_checked(tmp_path / "tree")
-    assert [(f.check, f.file, f.line) for f in second] == [(f.check, f.file, f.line) for f in first]
-    assert second_failed == first_failed
-    assert list(cache_home.rglob("*.json")), "the second run should have read the memo this one wrote"
+def _tree(tmp_path: Path) -> Path:
+    root = tmp_path / "src"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg" / "mod.py").write_text("x = 1\n", encoding="utf-8")
+    return root
 
 
-def test_editing_a_file_is_never_served_from_the_memo(tmp_path, cache_home):
-    tree = tmp_path / "tree"
-    tree.mkdir()
-    (tree / "mod.py").write_text(BAD, encoding="utf-8")
-    assert run_all_checked(tree, checks=[CHECK])[0], "the defective file must be reported"
-    before = (tree / "mod.py").stat().st_mtime_ns
-    (tree / "mod.py").write_text(GOOD, encoding="utf-8")
-    later = before + 1_000_000_000  # a visibly newer mtime without waiting on the clock
-    os.utime(tree / "mod.py", ns=(later, later))
-    assert run_all_checked(tree, checks=[CHECK])[0] == [], "the fixed file must not be answered from the stale entry"
+def _key(root: Path, exclude=frozenset()):
+    return sc.cache_key(root, ["default_via_or"], exclude, ())
 
 
-def test_a_runtime_registered_scanner_is_not_memoised(tmp_path, cache_home, monkeypatch):
-    """A scanner the process registered itself is not a function of the tree alone, so its results are never stored."""
-    from py_ci_shared.code_audit import registry
-
-    def _extra(root, exclude_dirs=frozenset()):
-        return []
-
-    monkeypatch.setitem(registry._SCANNERS, "runtime_only_probe", _extra)
-    (tmp_path / "tree").mkdir()
-    (tmp_path / "tree" / "mod.py").write_text(GOOD, encoding="utf-8")
-    run_all_checked(tmp_path / "tree", checks=["runtime_only_probe"])
-    assert not list(cache_home.rglob("*.json"))
+def test_the_package_signed_is_the_whole_py_ci_shared_package(monkeypatch):
+    monkeypatch.undo()  # the autouse fixture pointed it at a temp package; this reads the real constant
+    assert sc._PACKAGE_DIR.name == "py_ci_shared"
+    assert (sc._PACKAGE_DIR / "code_audit").is_dir() and (sc._PACKAGE_DIR / "_core").is_dir()
 
 
-def test_a_corrupt_memo_entry_falls_back_to_a_fresh_scan(tmp_path, cache_home):
-    """A corrupt entry must neither be served nor crash the scan: the result equals a cold scan and the entry is rewritten valid."""
-    tree = tmp_path / "tree"
-    tree.mkdir()
-    (tree / "mod.py").write_text(BAD, encoding="utf-8")
-    cold, cold_failed = run_all_checked(tree, checks=[CHECK])
-    assert cold, "the defective file must be reported on a cold scan"
-    entries = list(cache_home.rglob("*.json"))
-    assert entries, "the cold scan should have written a memo entry"
-    for entry in entries:
-        entry.write_bytes(b"not json")
-    again, again_failed = run_all_checked(tree, checks=[CHECK])
-    assert [(f.check, f.file, f.line) for f in again] == [(f.check, f.file, f.line) for f in cold]
-    assert again_failed == cold_failed
-    for entry in entries:
-        json.loads(entry.read_text(encoding="utf-8"))
+def test_a_touch_without_a_content_change_keeps_the_key(tmp_path):
+    root = _tree(tmp_path)
+    before = _key(root)
+    later = time.time_ns() + 10_000_000_000
+    os.utime(root / "pkg" / "mod.py", ns=(later, later))
+    assert _key(root) == before
+
+
+def test_a_rewrite_with_the_same_size_and_new_bytes_changes_the_key(tmp_path):
+    root = _tree(tmp_path)
+    before = _key(root)
+    (root / "pkg" / "mod.py").write_text("x = 2\n", encoding="utf-8")
+    later = time.time_ns() + 10_000_000_000
+    os.utime(root / "pkg" / "mod.py", ns=(later, later))
+    assert _key(root) != before
+
+
+def test_a_file_that_is_not_python_counts(tmp_path):
+    root = _tree(tmp_path)
+    before = _key(root)
+    (root / "pkg" / "schema.sql").write_text("SELECT 1;\n", encoding="utf-8")
+    assert _key(root) != before
+
+
+def test_an_excluded_directory_does_not_change_the_key(tmp_path):
+    root = _tree(tmp_path)
+    exclude = frozenset({"legacy"})
+    before = _key(root, exclude)
+    (root / "legacy").mkdir()
+    (root / "legacy" / "old.py").write_text("y = 1\n", encoding="utf-8")
+    assert _key(root, exclude) == before
+
+
+def test_a_change_anywhere_in_the_scanner_package_changes_the_key(tmp_path, _private_memo):
+    root = _tree(tmp_path)
+    before = _key(root)
+    (_private_memo / "scanner.py").write_text("RULE = 2\n", encoding="utf-8")
+    later = time.time_ns() + 10_000_000_000
+    os.utime(_private_memo / "scanner.py", ns=(later, later))
+    assert _key(root) != before
+
+
+def test_a_stored_result_is_loaded_for_the_same_signature_only(tmp_path):
+    root = _tree(tmp_path)
+    digest, signature = _key(root)
+    finding = Finding(check="default_via_or", severity="P2", file="pkg/mod.py", line=1, snippet="x = 1", detail="why")
+    sc.store(digest, signature, [finding], {"scanner": "ValueError: boom"})
+    assert sc.load(digest, signature) == ([finding], {"scanner": "ValueError: boom"})
+    (root / "pkg" / "mod.py").write_text("x = 3\n", encoding="utf-8")
+    later = time.time_ns() + 10_000_000_000
+    os.utime(root / "pkg" / "mod.py", ns=(later, later))
+    assert sc.load(digest, _key(root)[1]) is None

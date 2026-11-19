@@ -4,6 +4,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## Unreleased (next: 1.23.14)
 
+- The on-disk memo of a full code-audit run (`code_audit/_scan_cache.py`, `~/.cache/pyutilz-code-audit`) is keyed on the CONTENT of the scanned tree and of the whole `py_ci_shared` package, not on modification times and not only on `code_audit/`. A fresh checkout, where every mtime is new, now hits an entry that an earlier run of the same files wrote, so a CI job can restore the directory (`actions/cache`) and skip a scan that took minutes on a large repo; a change to `_core` or any other gate module now invalidates it, which the old key missed. The first run after the upgrade scans once. Nothing to do.
+
 - `assert_entry_imports_without_extras` starts its entries concurrently (new keyword `workers`, default the CPU count capped at 4) instead of one after another; the failures are still reported in the order of the entries and the per-entry timeout is unchanged. mlframe's core-only import test went from 177 s to 43 s on the same 16 entries. Nothing to do.
 
 

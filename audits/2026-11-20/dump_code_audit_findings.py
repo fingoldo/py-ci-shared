@@ -22,10 +22,7 @@ for name, fn in registry._SCANNERS.items():
     findings, error = registry._run_scanner(name, fn, root, exclude)
     if error:
         failed[name] = error
-    rows.extend(
-        [name, f.path.as_posix() if hasattr(f.path, "as_posix") else str(f.path), getattr(f, "line", 0), getattr(f, "severity", ""), getattr(f, "message", "")]
-        for f in findings
-    )
+    rows.extend([f.check, f.file, f.line, f.severity, f.snippet, f.detail] for f in findings)
 rows.sort()
 out.write_text(json.dumps({"failed": failed, "findings": rows}, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
 print(f"{len(rows)} findings, {len(failed)} failed scanners -> {out}")
