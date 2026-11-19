@@ -1,0 +1,3477 @@
+{
+ "failed": {},
+ "findings": [
+  [
+   "bare_except",
+   "utils/daemon_task.py",
+   28,
+   "P1",
+   "except BaseException as exc:  # handed to the waiting caller, which classifies it",
+   "bare `except:` (or `except BaseException:`) swallows KeyboardInterrupt/SystemExit and masks real bugs. Replace with `except Exception:` or a narrower specific exception type."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_cmim_min_gpu.py",
+   236,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_fe_cmi_redundancy_null.py",
+   498,
+   "P1",
+   "except Exception:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_score_steps.py",
+   186,
+   "P1",
+   "except Exception as e:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_fleuret_confirm_gpu.py",
+   315,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_gain_stats_codes_gpu.py",
+   162,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_gain_stats_codes_gpu.py",
+   209,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_gate_rank_divergence.py",
+   270,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_grouped_quantile_gpu.py",
+   175,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_hinge_precheck_gpu.py",
+   218,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_meta_fingerprint_gpu.py",
+   133,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_mi_greedy_cmi_fe.py",
+   419,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/filters/_resident_candidate_mi.py",
+   353,
+   "P1",
+   "except Exception as exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap_catboost.py",
+   37,
+   "P1",
+   "except Exception:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "inference/tree_shap.py",
+   110,
+   "P1",
+   "except Exception:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "broad_except_swallow",
+   "training/cb/_cb_pool_build.py",
+   187,
+   "P1",
+   "except Exception as _verify_exc:",
+   "except Exception with silent body (pass/continue/return, no logger.warning/error, no re-raise). Operators get no signal when this fires."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_engineering/transformer/_kernels_njit.py",
+   209,
+   "Low",
+   "# mirror the sibling kernel's guard at line 120;",
+   "prose here cites absolute line 120. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_cat_confirm_permutation.py",
+   889,
+   "Low",
+   "# Bandit UCB1 budget allocation is dispatched upstream (see top-level driver, _confirm_pairs_bandit_ucb1 call ~line 2837): when cfg.perm_budget_strategy ==",
+   "prose here cites absolute line 2837. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_dynamic_cluster_discovery/_dcd_swap.py",
+   627,
+   "Low",
+   "# (lines 451-454 / 511-514 / 559-562 / 654-657); without this reset, any",
+   "prose here cites absolute line 451. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_fe_batched_mi_mm_values.py",
+   403,
+   "Low",
+   "# w-=1 decrement (lines 239-241) for all-distinct interior edges, so the buffer must hold nbins rows.",
+   "prose here cites absolute line 239. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_emit_extval.py",
+   45,
+   "Low",
+   "rows = np.empty((len(factors), n_rows), dtype=np.float64)  # Intentional float64: ext-val parameter buffer keeps native float64 precision (see note at line 294)",
+   "prose here cites absolute line 294. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_emit_extval.py",
+   70,
+   "Low",
+   "_ev_buf = np.empty((n_rows, _ev_K), dtype=np.float64)  # Intentional float64: ext-val buffer keeps numpy bin_func native float64 precision (see note at line 294)",
+   "prose here cites absolute line 294. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_score_steps.py",
+   519,
+   "Low",
+   "# disproves that: line 310 (``final_transformed_vals[:, i] = bin_func(param_a, param_b)``)",
+   "prose here cites absolute line 310. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_gpu_resident_select_kernels.py",
+   109,
+   "Low",
+   "# Wl (<=R<=40) active window prefixes to find the ONE matching ``pm = u & hmask`` (lines 139-140). Each row",
+   "prose here cites absolute line 139. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_joblib_safe.py",
+   11,
+   "Low",
+   "File \"...llvmlite/binding/ffi.py\", line 212 in __call__",
+   "prose here cites absolute line 212. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_joblib_safe.py",
+   12,
+   "Low",
+   "File \"...llvmlite/binding/executionengine.py\", line 99 in finalize_object",
+   "prose here cites absolute line 99. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_joblib_safe.py",
+   13,
+   "Low",
+   "File \"...numba/core/codegen.py\", line 1071 in wrapper",
+   "prose here cites absolute line 1071. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_joblib_safe.py",
+   15,
+   "Low",
+   "File \"...numba/core/codegen.py\", line 1169 in unserialize_library",
+   "prose here cites absolute line 1169. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   202,
+   "Low",
+   "reference line 47, ``intens=1e-10``). Without this, k-NN on",
+   "prose here cites absolute line 47. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   294,
+   "Low",
+   "Pipeline (matches reference lines 141-200):",
+   "prose here cites absolute line 141. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   424,
+   "Low",
+   "intens: tie-breaking noise magnitude (Gao 2015 line 47 of reference).",
+   "prose here cites absolute line 47. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   461,
+   "Low",
+   "# Tie-breaking noise (NPEET_LNC line 47).",
+   "prose here cites absolute line 47. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   469,
+   "Low",
+   "# (NOT the joint L-inf radius). Reference lines 128-131.",
+   "prose here cites absolute line 128. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_ksg.py",
+   489,
+   "Low",
+   "# LNC correction term (NPEET_LNC lines 139-200).",
+   "prose here cites absolute line 139. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_mrmr_fingerprints.py",
+   501,
+   "Low",
+   "# pass the SAME X frame in tight succession (line 131 builds the",
+   "prose here cites absolute line 131. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_mrmr_fingerprints.py",
+   502,
+   "Low",
+   "# signature for the cache lookup; line 158 re-runs the full hash for",
+   "prose here cites absolute line 158. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_mrmr_validate_transform.py",
+   457,
+   "Low",
+   "# column-name validation at lines 297-308 protected the DataFrame",
+   "prose here cites absolute line 297. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/_orthogonal_univariate_fe/__init__.py",
+   723,
+   "Low",
+   "# on-device (line 311 is never reached for THIS family). Scope note: the orth-uni hybrid is NOT the dominant :311 H2D site - a full-fit byte-audit",
+   "prose here cites absolute line 311. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/discretization/_discretization_dataset.py",
+   252,
+   "Low",
+   "# ``data.max(axis=0) + 1`` (line 1151) recomputes ``nbins`` per col.",
+   "prose here cites absolute line 1151. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/engineered_recipes/_recipe_poly_cluster.py",
+   189,
+   "Low",
+   "# the final ``nan_to_num(out)`` at line 352 zeroes the row - but the",
+   "prose here cites absolute line 352. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/engineered_recipes/_recipe_poly_cluster.py",
+   281,
+   "Low",
+   "# diverging from ``_apply_factorize`` (line 512) and",
+   "prose here cites absolute line 512. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/engineered_recipes/_recipe_poly_cluster.py",
+   282,
+   "Low",
+   "# ``_apply_factorize_kway`` (line 556, iter-13 fix) which both raise.",
+   "prose here cites absolute line 556. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/evaluation.py",
+   191,
+   "Low",
+   "#     (line 575-577 only sets expected_gains when fully",
+   "prose here cites absolute line 575. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/mrmr/_mrmr_class_transform.py",
+   165,
+   "Low",
+   "# ~700 lines BEFORE ``support_`` (line 942), so a fit() that",
+   "prose here cites absolute line 942. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/filters/permutation.py",
+   880,
+   "Low",
+   "# line 412-427.",
+   "prose here cites absolute line 412. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "feature_selection/shap_proxied_fs/_shap_proxied_resolvers.py",
+   24,
+   "Low",
+   "#    prescreen step (shap_proxied_fs.py near line 866) narrows the candidate pool to this many",
+   "prose here cites absolute line 866. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "metrics/_ice_metric.py",
+   139,
+   "Low",
+   "# boolean returns object-dtype and silently mis-casts None entries to 1 -- the bug the audit caught at metric line 189.",
+   "prose here cites absolute line 189. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "models/ensembling/score_gate.py",
+   205,
+   "Low",
+   "The legacy peer-median gate at line 2106 below uses median MAE across members for K>2 but the median IS THE GROUP being judged -- if 2 of 4 members are catastrophic the median MAE is HALF-catastrophic and the relative threshold (2.5x median) may still let the disasters through. This helper runs FIRST when target is available for the gate-source split: any member whose MAE-to-target exceeds the catastrophic ratio relative to the BEST member is removed before the peer-median gate sees it.",
+   "prose here cites absolute line 2106. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/_nan_processing.py",
+   14,
+   "Low",
+   "# to call sites (line 110, 114) to break the cycle.",
+   "prose here cites absolute line 110. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/_preprocessing_configs.py",
+   862,
+   "Low",
+   "explicit list per the docstring at lines 670-677; operator who composed a preset",
+   "prose here cites absolute line 670. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/composite/_pseudo_bma.py",
+   26,
+   "Low",
+   "line 521, which today does ``weights = gains / gains.sum()`` on RMSE-gains) can call ``pseudo_bma_weights(oof_preds, y,",
+   "prose here cites absolute line 521. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/core/_predict_main_from_models.py",
+   514,
+   "Low",
+   "# twin path at line 995 already uses exc_info=True;",
+   "prose here cites absolute line 995. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/core/_predict_main_from_models.py",
+   597,
+   "Low",
+   "# keep df_pre_pipeline as polars (line 996 skips the pandas",
+   "prose here cites absolute line 996. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/extractors/_extractors_simple.py",
+   169,
+   "Low",
+   "# ``allowed_targets`` was documented as a filter at lines 648-649 but pre-fix the",
+   "prose here cites absolute line 648. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/logging_transformers.py",
+   154,
+   "Low",
+   "# two joblib threads wrapping the same estimator type raced lines 159-177; both",
+   "prose here cites absolute line 159. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/neural/_muon_triton_kernel.py",
+   164,
+   "Low",
+   "# kernel SKIPS strict-lower-triangle tiles (line 96-97 early return)",
+   "prose here cites absolute line 96. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/neural/base/_base_fit_steps.py",
+   361,
+   "Low",
+   "# (network init at line 357, dataloader shuffle, dropout mask",
+   "prose here cites absolute line 357. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/neural/base/_base_predict.py",
+   190,
+   "Low",
+   "# left unbound; line 522 ``datamodule.setup_predict(...)`` then",
+   "prose here cites absolute line 522. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/neural/ranker.py",
+   817,
+   "Low",
+   "# local generators (lines 224 + 488/509: np.random.default_rng(self.seed)",
+   "prose here cites absolute line 224. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/pipeline/_pipeline_fit_state.py",
+   425,
+   "Low",
+   "# Mirror the sibling branch above (lines 373-378): bare ``held.to_pandas()`` consolidates Arrow buffers (~30x slower on wide frames + degrades pl.Enum to object dtype). Route through the project Arrow split-blocks bridge.",
+   "prose here cites absolute line 373. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/reporting/_reporting.py",
+   38,
+   "Low",
+   "# (See line 477 / 580 for the two call-sites.)",
+   "prose here cites absolute line 477. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/reporting/_reporting_probabilistic.py",
+   627,
+   "Low",
+   "# See sibling fix in report_regression_model_perf at line 659.",
+   "prose here cites absolute line 659. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "comment_cites_absolute_line",
+   "training/utils.py",
+   170,
+   "Low",
+   "# `import polars as pl` is wrapped in try/except (line 27) so `pl`",
+   "prose here cites absolute line 27. That is wrong as soon as anything is inserted above the target and no tool can check it -- one such citation was found 92 lines stale, itself a recurrence. Cite the symbol."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   12,
+   "P2",
+   "def make_regression_data(n: int, n_features: int, seed: int = 0) -> tuple[pd.DataFrame, np.ndarray]:",
+   "public callable 'make_regression_data' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   20,
+   "P2",
+   "def make_neural_regression_float32_data(n: int, n_features: int, seed: int = 0) -> tuple[np.ndarray, np.ndarray]:",
+   "public callable 'make_neural_regression_float32_data' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   29,
+   "P2",
+   "def make_latent_projection_data(n: int, d: int, seed: int) -> np.ndarray:",
+   "public callable 'make_latent_projection_data' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   37,
+   "P2",
+   "def make_binary_ensemble_pred_matrix(m: int, n: int, seed: int) -> tuple[np.ndarray, np.ndarray]:",
+   "public callable 'make_binary_ensemble_pred_matrix' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   50,
+   "P2",
+   "def make_binary_noise_dataset(n_rows: int, n_cols: int, seed: int) -> tuple[pd.DataFrame, np.ndarray]:",
+   "public callable 'make_binary_noise_dataset' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_data_shared.py",
+   59,
+   "P2",
+   "def make_meta_stacker_oof(n_rows: int, n_components: int, seed: int) -> tuple[np.ndarray, np.ndarray]:",
+   "public callable 'make_meta_stacker_oof' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_rmse_shared.py",
+   17,
+   "P2",
+   "def rmse_asarray(a: np.ndarray, b: np.ndarray) -> float:",
+   "public callable 'rmse_asarray' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_rmse_shared.py",
+   22,
+   "P2",
+   "def mae_asarray(a: np.ndarray, b: np.ndarray) -> float:",
+   "public callable 'mae_asarray' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   11,
+   "P2",
+   "def best_of_median_seconds(fn: Callable, n: int = 5) -> tuple[float, float]:",
+   "public callable 'best_of_median_seconds' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   24,
+   "P2",
+   "def time_call(fn: Callable, *args, iters: int) -> float:",
+   "public callable 'time_call' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   33,
+   "P2",
+   "def best_of_seconds_with_output(fn: Callable, *args, reps: int = 7) -> \"tuple[float, Any]\":",
+   "public callable 'best_of_seconds_with_output' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   44,
+   "P2",
+   "def best_of_seconds_zero_arg(fn: Callable, repeats: int = 3) -> float:",
+   "public callable 'best_of_seconds_zero_arg' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   55,
+   "P2",
+   "def best_of_seconds(fn: Callable, *args, reps: int = 5) -> float:",
+   "public callable 'best_of_seconds' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   66,
+   "P2",
+   "def best_of_seconds_no_warmup(fn: Callable, *args, repeat: int = 5) -> float:",
+   "public callable 'best_of_seconds_no_warmup' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   76,
+   "P2",
+   "def best_of_seconds_args_no_warmup(fn: Callable, args: tuple, reps: int = 5) -> float:",
+   "public callable 'best_of_seconds_args_no_warmup' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   87,
+   "P2",
+   "def time_once(fn: Callable) -> float:",
+   "public callable 'time_once' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   94,
+   "P2",
+   "def best_of_min_median_args_no_warmup(fn: Callable, *args, r: int = 20) -> tuple[float, float]:",
+   "public callable 'best_of_min_median_args_no_warmup' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_bench_timing_shared.py",
+   107,
+   "P2",
+   "def best_of_ms(fn: Callable, *args, repeat: int = 5) -> float:",
+   "public callable 'best_of_ms' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "_numba_cache_deps.py",
+   205,
+   "P2",
+   "def track_package(name: str, root: str) -> None:",
+   "public callable 'track_package' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/probabilities.py",
+   94,
+   "P2",
+   "def generate_probs_from_outcomes(",
+   "public callable 'generate_probs_from_outcomes' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/probabilities.py",
+   136,
+   "P2",
+   "def generate_similar_probs_logit_space(",
+   "public callable 'generate_similar_probs_logit_space' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/probabilities.py",
+   165,
+   "P2",
+   "def generate_similar_probs_random_walk(",
+   "public callable 'generate_similar_probs_random_walk' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/probabilities.py",
+   195,
+   "P2",
+   "def generate_similar_probs(",
+   "public callable 'generate_similar_probs' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/probabilities.py",
+   252,
+   "P2",
+   "def generate_similar_probs_by_ranking(",
+   "public callable 'generate_similar_probs_by_ranking' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/quality.py",
+   56,
+   "P2",
+   "def mutual_information_score(y: np.ndarray, y_preds: np.ndarray) -> float:",
+   "public callable 'mutual_information_score' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "calibration/quality.py",
+   73,
+   "P2",
+   "def hyvarinen_score(y: np.ndarray, y_preds: np.ndarray) -> float:",
+   "public callable 'hyvarinen_score' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "core/arrays.py",
+   306,
+   "P2",
+   "def topk_by_partition(arr: np.ndarray, k: int, axis: int | None = None, ascending: bool = False) -> tuple:",
+   "public callable 'topk_by_partition' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "core/helpers.py",
+   94,
+   "P2",
+   "def MakeSureBlasAndLaPackAreInstalled() -> None:",
+   "public callable 'MakeSureBlasAndLaPackAreInstalled' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "core/helpers.py",
+   102,
+   "P2",
+   "def ListAllSkLearnClassifiers() -> None:",
+   "public callable 'ListAllSkLearnClassifiers' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "core/helpers.py",
+   305,
+   "P2",
+   "def show_sys_ram_usage() -> None:",
+   "public callable 'show_sys_ram_usage' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "core/stats.py",
+   26,
+   "P2",
+   "def get_dist_percentage_span_for_sd(sd_sigma: float, dist: norm_gen = norm, **dist_kwargs) -> float:",
+   "public callable 'get_dist_percentage_span_for_sd' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   451,
+   "P2",
+   "def create_dummy_lagged_predictions(y_true: np.ndarray, strategy: str = \"constant_lag\", lag: int = 1) -> np.ndarray:",
+   "public callable 'create_dummy_lagged_predictions' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   492,
+   "P2",
+   "def log_plus_c(x: np.ndarray, c: float = 0.0) -> np.ndarray:",
+   "public callable 'log_plus_c' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   500,
+   "P2",
+   "def inv_log_plus_c(x: np.ndarray, c: float = 0.0) -> np.ndarray:",
+   "public callable 'inv_log_plus_c' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   505,
+   "P2",
+   "def box_cox_plus_c(x: np.ndarray, c: float = 50.0, lmbda: float = -1) -> np.ndarray:",
+   "public callable 'box_cox_plus_c' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   513,
+   "P2",
+   "def inv_box_cox_plus_c(x: np.ndarray, c: float = 50.0, lmbda: float = -1, transformer: \"PowerTransformer | None\" = None) -> np.ndarray:",
+   "public callable 'inv_box_cox_plus_c' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   551,
+   "P2",
+   "def soft_winsorize(",
+   "public callable 'soft_winsorize' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   598,
+   "P2",
+   "def clip_to_quantiles(arr: np.ndarray, quantile: float = 0.01, method: str = \"winsor_quantile\", winsor_rel_muliplier: float = 0.05) -> np.ndarray:",
+   "public callable 'clip_to_quantiles' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   638,
+   "P2",
+   "def clip_to_quantiles_winsor_quantile(arr: np.ndarray) -> np.ndarray:",
+   "public callable 'clip_to_quantiles_winsor_quantile' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/custom.py",
+   651,
+   "P2",
+   "def clip_to_quantiles_hard(arr: np.ndarray) -> np.ndarray:",
+   "public callable 'clip_to_quantiles_hard' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   78,
+   "P2",
+   "def get_fqn(params_pipe: dict, sep: str = \":\", hide_keys: tuple = (\"models\", \"wrappers\")) -> str:",
+   "public callable 'get_fqn' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   83,
+   "P2",
+   "def agg_pipeline_metric(cv_results: dict, metric: str = \"root_mean_squared_error\", func: Callable[..., Any] = np.nanmean) -> float:",
+   "public callable 'agg_pipeline_metric' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   96,
+   "P2",
+   "def replay_cv_results(fname: str, trusted_root: Optional[str] = None) -> dict:",
+   "public callable 'replay_cv_results' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   124,
+   "P2",
+   "def optimize_pipeline_by_gridsearch(",
+   "public callable 'optimize_pipeline_by_gridsearch' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   229,
+   "P2",
+   "def compare_cv_metrics(",
+   "public callable 'compare_cv_metrics' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   276,
+   "P2",
+   "def compute_ml_metrics(y_true: np.ndarray, y_preds: np.ndarray, scorers: Sequence[Callable[..., float]], storage: Optional[dict] = None) -> dict:",
+   "public callable 'compute_ml_metrics' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "estimators/pipelines.py",
+   303,
+   "P2",
+   "def visualize_prediction_vs_truth(",
+   "public callable 'visualize_prediction_vs_truth' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   88,
+   "P2",
+   "def train_test_split_from_generator(gen: Any, X: Any = None, y: Any = None, groups: Optional[np.ndarray] = None) -> tuple[np.ndarray, np.ndarray] | None:",
+   "public callable 'train_test_split_from_generator' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   108,
+   "P2",
+   "def get_predicted_classes(predictions: np.ndarray, thresholds: Optional[np.ndarray] = None) -> tuple[np.ndarray, np.ndarray]:",
+   "public callable 'get_predicted_classes' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   129,
+   "P2",
+   "def regression_stats(y_test: Any, preds: Any, fmt: str = \"_.8f\") -> str:",
+   "public callable 'regression_stats' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   138,
+   "P2",
+   "def evaluate_estimators(",
+   "public callable 'evaluate_estimators' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   611,
+   "P2",
+   "def evaluate_grouped(",
+   "public callable 'evaluate_grouped' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   710,
+   "P2",
+   "def predictions_beautify_linear(preds: np.ndarray, known_outcomes: np.ndarray, alpha: float = 0.01) -> np.ndarray:",
+   "public callable 'predictions_beautify_linear' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   743,
+   "P2",
+   "def plot_beautified_lift(",
+   "public callable 'plot_beautified_lift' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   797,
+   "P2",
+   "def plot_pr_curve(",
+   "public callable 'plot_pr_curve' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "evaluation/reports.py",
+   874,
+   "P2",
+   "def plot_roc_curve(",
+   "public callable 'plot_roc_curve' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_engineering/_safe_ratio.py",
+   22,
+   "P2",
+   "def safe_rel_err(abs_err: Any, ref_abs: Any) -> np.ndarray:",
+   "public callable 'safe_rel_err' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_engineering/transformer/_row_attention_ann.py",
+   231,
+   "P2",
+   "def reset_openmp_smoke() -> None:",
+   "public callable 'reset_openmp_smoke' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_engineering/transformer/_smote_kernels_shared.py",
+   70,
+   "P2",
+   "def smote_synthesize_rowloop(X: np.ndarray, n_syn: int, k_neighbors: int, seed: int) -> np.ndarray:",
+   "public callable 'smote_synthesize_rowloop' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_engineering/transformer/_utils.py",
+   124,
+   "P2",
+   "def reset_gpu_probe() -> None:",
+   "public callable 'reset_gpu_probe' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_engineering/wavelet_dwt.py",
+   422,
+   "P2",
+   "def set_wavedec_dispatch_threshold(n_signals: int) -> None:",
+   "public callable 'set_wavedec_dispatch_threshold' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/_bench_timing_shared.py",
+   14,
+   "P2",
+   "def best_of(fn: Callable, *a, reps: int) -> float:",
+   "public callable 'best_of' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/_bench_timing_shared.py",
+   24,
+   "P2",
+   "def median_time(fn: Callable, n_runs: int = 7) -> float:",
+   "public callable 'median_time' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/_bench_timing_shared.py",
+   35,
+   "P2",
+   "def best_of_args(fn: Callable, args: tuple, reps: int) -> float:",
+   "public callable 'best_of_args' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/boruta_shap/__init__.py",
+   811,
+   "P2",
+   "def load_data(data_type=\"classification\"):",
+   "public callable 'load_data' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_accuracy_gate_newton.py",
+   111,
+   "P2",
+   "def fit_logistic_ridge_newton_numpy(X: np.ndarray, y01: np.ndarray, C: float = 1.0) -> \"tuple[np.ndarray, float] | None\":",
+   "public callable 'fit_logistic_ridge_newton_numpy' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_family_timing.py",
+   151,
+   "P2",
+   "def reset_fe_family_wall() -> None:",
+   "public callable 'reset_fe_family_wall' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_family_timing.py",
+   165,
+   "P2",
+   "def get_fe_family_max_concurrency() -> int:",
+   "public callable 'get_fe_family_max_concurrency' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_frame_ops.py",
+   110,
+   "P2",
+   "def fe_n_rows(X: Any) -> int:",
+   "public callable 'fe_n_rows' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_frame_ops.py",
+   119,
+   "P2",
+   "def fe_column_blocks(X: Any, names: \"Iterable[str] | None\" = None, budget_bytes: int = 256 * 1024 * 1024, dtype: Any = np.float32) -> \"Iterator[tuple[list[str], np.ndarray]]\":",
+   "public callable 'fe_column_blocks' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_fe_usability_signal.py",
+   343,
+   "P2",
+   "def pair_is_tail_concentrated(y: np.ndarray, x0: np.ndarray, x1: np.ndarray, *, min_corr: float, pairness_margin: float) -> bool:",
+   "public callable 'pair_is_tail_concentrated' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_fe.py",
+   198,
+   "P2",
+   "def fe_gpu_resident_enabled() -> bool:",
+   "public callable 'fe_gpu_resident_enabled' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_fe.py",
+   649,
+   "P2",
+   "def gpu_resident_pair_candidate_mi(a: np.ndarray, b: np.ndarray, y_codes: np.ndarray, *, nbins: int = 20) -> tuple[list[str], np.ndarray]:",
+   "public callable 'gpu_resident_pair_candidate_mi' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_materialise.py",
+   421,
+   "P2",
+   "def clear_pinned_d2h() -> bool:",
+   "public callable 'clear_pinned_d2h' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   264,
+   "P2",
+   "def ensure_fe_gpu_pairs_mi_tuning(force: bool = False) -> list | None:",
+   "public callable 'ensure_fe_gpu_pairs_mi_tuning' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   410,
+   "P2",
+   "def ensure_fe_gpu_binning_tuning(force: bool = False) -> list | None:",
+   "public callable 'ensure_fe_gpu_binning_tuning' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   431,
+   "P2",
+   "def grand_fused_pair_mi(",
+   "public callable 'grand_fused_pair_mi' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   580,
+   "P2",
+   "def grand_fused_pair_mi_fused(",
+   "public callable 'grand_fused_pair_mi_fused' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   638,
+   "P2",
+   "def gpu_resident_pair_recipes(",
+   "public callable 'gpu_resident_pair_recipes' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_pair_mi.py",
+   708,
+   "P2",
+   "def pair_candidate_mi_dispatch(a: np.ndarray, b: np.ndarray, y_codes: np.ndarray, *, nbins: int = 20) -> tuple[list, np.ndarray]:",
+   "public callable 'pair_candidate_mi_dispatch' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_gpu_resident_rank_bin.py",
+   91,
+   "P2",
+   "def rank_bin_codes_gpu_resident(x_gpu: Any, n_bins: int) -> Any:",
+   "public callable 'rank_bin_codes_gpu_resident' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_honest_null_k3.py",
+   93,
+   "P2",
+   "def fits_shared(n: int) -> bool:",
+   "public callable 'fits_shared' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_honest_null_k3.py",
+   98,
+   "P2",
+   "def get_kernel_k3(cp: Any) -> Any:",
+   "public callable 'get_kernel_k3' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_honest_null_k3.py",
+   106,
+   "P2",
+   "def launch_k3(cp: Any, order: Any, tie: Any, ybits_wb: Any, tab: Any, counts: Any, n: int, n_perm: int, kc: int, min_split: int, h_full: float, words: int, d_gain: Any, d_ncand: Any, d_idx: Any) -> None:",
+   "public callable 'launch_k3' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_honest_null_k4.py",
+   80,
+   "P2",
+   "def kernel_k4f(cp: Any, real: Any = None) -> Any:",
+   "public callable 'kernel_k4f' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_honest_null_k4.py",
+   95,
+   "P2",
+   "def get_kernel_k4f(cp: Any) -> Any:",
+   "public callable 'get_kernel_k4f' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_mah.py",
+   124,
+   "P2",
+   "def clear_mah_y_binning_cache() -> None:",
+   "public callable 'clear_mah_y_binning_cache' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_mdlp_honest_bycol_njit.py",
+   29,
+   "P2",
+   "def permuted_labels(y_raw: np.ndarray, y_codes: np.ndarray, perm_rows: Iterable[np.ndarray], count: int) -> \"tuple[np.ndarray, np.ndarray]\":",
+   "public callable 'permuted_labels' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_mdlp_validated_split.py",
+   615,
+   "P2",
+   "def mdlp_bin_edges_validated(",
+   "public callable 'mdlp_bin_edges_validated' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_numba_polynom_optimizer.py",
+   779,
+   "P2",
+   "def optimize_all_pairs_numba_kernel(",
+   "public callable 'optimize_all_pairs_numba_kernel' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_orthogonal_univariate_fe/_streamed_gpu_mi.py",
+   249,
+   "P2",
+   "def mi_classif_streamed_fill(fill: Any, n_blocks: int, widths: list, y: np.ndarray, *, nbins: int, n_rows: int, dtype: Any, max_devices: Optional[int] = None) -> np.ndarray:",
+   "public callable 'mi_classif_streamed_fill' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_usability_pool_resident_ktc.py",
+   47,
+   "P2",
+   "def pool_table_use_resident(n_rows: int, npairs: int, n_combos: int) -> bool:",
+   "public callable 'pool_table_use_resident' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_vendored/infonet/infer.py",
+   82,
+   "P2",
+   "def compute_smi_mean(",
+   "public callable 'compute_smi_mean' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/_vendored/infonet/infer.py",
+   132,
+   "P2",
+   "def example_highd() -> None:",
+   "public callable 'example_highd' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/discretization/_discretization_dataset.py",
+   95,
+   "P2",
+   "def clear_numeric_code_cache() -> int:",
+   "public callable 'clear_numeric_code_cache' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/fe_baselines.py",
+   154,
+   "P2",
+   "def auto_unary_transforms(x: np.ndarray, y: np.ndarray, *,",
+   "public callable 'auto_unary_transforms' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/fe_baselines.py",
+   194,
+   "P2",
+   "def best_unary_transform(x: np.ndarray, y: np.ndarray, **kwargs) -> tuple:",
+   "public callable 'best_unary_transform' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/fe_baselines.py",
+   203,
+   "P2",
+   "def triplet_pair_features(x_a: np.ndarray, x_b: np.ndarray, x_c: np.ndarray) -> dict:",
+   "public callable 'triplet_pair_features' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/fe_baselines.py",
+   222,
+   "P2",
+   "def score_triplet_baselines(",
+   "public callable 'score_triplet_baselines' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/feature_engineering.py",
+   302,
+   "P2",
+   "def gpu_compatible_binary_names() -> set:",
+   "public callable 'gpu_compatible_binary_names' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/feature_engineering.py",
+   346,
+   "P2",
+   "def apply_gpu_unary_batched(",
+   "public callable 'apply_gpu_unary_batched' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/feature_engineering.py",
+   386,
+   "P2",
+   "def apply_gpu_binary_batched(",
+   "public callable 'apply_gpu_binary_batched' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   155,
+   "P2",
+   "def plugin_mi_classif_batch_fast(X_cols: np.ndarray, y: np.ndarray, n_bins: int = 20) -> np.ndarray:",
+   "public callable 'plugin_mi_classif_batch_fast' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/importance.py",
+   52,
+   "P2",
+   "def show_shap_beeswarm_plot(model: object, df: pd.DataFrame, **kwargs) -> None:",
+   "public callable 'show_shap_beeswarm_plot' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/importance.py",
+   394,
+   "P2",
+   "def explain_top_feature_importances(",
+   "public callable 'explain_top_feature_importances' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/optbinning.py",
+   42,
+   "P2",
+   "def get_binningprocess_featureselectors(",
+   "public callable 'get_binningprocess_featureselectors' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_calibrate.py",
+   41,
+   "P2",
+   "def subset_redundancy(phi: np.ndarray, idx: Iterable[int]) -> float:",
+   "public callable 'subset_redundancy' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_calibrate.py",
+   160,
+   "P2",
+   "def rerank_candidates(corrector: ProxyCorrector, candidates: list[tuple[float, Sequence[int]]], phi: np.ndarray) -> list[tuple[float, Sequence[int]]]:",
+   "public callable 'rerank_candidates' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_catboost.py",
+   55,
+   "P2",
+   "def reset_catboost_available_cache() -> None:",
+   "public callable 'reset_catboost_available_cache' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_cluster_su.py",
+   111,
+   "P2",
+   "def reset_cluster_su_gpu_probe() -> None:",
+   "public callable 'reset_cluster_su_gpu_probe' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_compose.py",
+   25,
+   "P2",
+   "def proposal_generator(",
+   "public callable 'proposal_generator' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_compose.py",
+   42,
+   "P2",
+   "def fold_vote_weights(fidelities: list, weight_by_fidelity: bool) -> list:",
+   "public callable 'fold_vote_weights' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_compose.py",
+   53,
+   "P2",
+   "def per_fold_stability_select(",
+   "public callable 'per_fold_stability_select' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_objective.py",
+   256,
+   "P2",
+   "def subset_uncertainty(phi_var: np.ndarray, feature_idx: Sequence[int] | np.ndarray) -> float:",
+   "public callable 'subset_uncertainty' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap_table_gpu.py",
+   154,
+   "P2",
+   "def kernel_preorder(cp, real=np.float32):",
+   "public callable 'kernel_preorder' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "feature_selection/wrappers/_univariate_ht.py",
+   47,
+   "P2",
+   "def is_numba_active() -> bool:",
+   "public callable 'is_numba_active' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "integrations/mlflow.py",
+   65,
+   "P2",
+   "def flatten_classification_report(cr: dict, separate_metrics: Sequence[str] = (\"accuracy\", \"balanced_accuracy\", \"brier_score_loss\", \"roc_auc\"), source: str = \"\") -> dict:",
+   "public callable 'flatten_classification_report' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "integrations/mlflow.py",
+   86,
+   "P2",
+   "def log_classification_report_to_mlflow(cr: dict, step: int, separate_metrics: Sequence[str] = (\"accuracy\",), source: str = \"\") -> None:",
+   "public callable 'log_classification_report_to_mlflow' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "integrations/mlflow.py",
+   92,
+   "P2",
+   "def embed_website_to_mlflow(url:str,fname:str=\"url\",extension:str='.html',width:int=700,height:int=450)->None:",
+   "public callable 'embed_website_to_mlflow' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "integrations/mlflow.py",
+   208,
+   "P2",
+   "def get_or_create_mlflow_run(run_name: str, parent_run_id: Optional[str] = None, experiment_name: Optional[str] = None, experiment_id: Optional[str] = None, tags: Optional[dict] = None) -> Tuple[object, bool]:",
+   "public callable 'get_or_create_mlflow_run' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "integrations/mlflow.py",
+   231,
+   "P2",
+   "def create_mlflow_run_label(params: Optional[dict] = None, category: Optional[str] = None) -> str:",
+   "public callable 'create_mlflow_run_label' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "metrics/_core_auc_brier.py",
+   152,
+   "P2",
+   "def reset_gpu_argsort_probe() -> None:",
+   "public callable 'reset_gpu_argsort_probe' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "metrics/_gpu_metrics.py",
+   176,
+   "P2",
+   "def reset_gpu_metrics_probe() -> None:",
+   "public callable 'reset_gpu_metrics_probe' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "preprocessing/opt_in_slow.py",
+   48,
+   "P2",
+   "def resolve_opt_in_slow(name: str, enabled: Optional[Iterable[str]]) -> Callable:",
+   "public callable 'resolve_opt_in_slow' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "reporting/charts/_grouping.py",
+   48,
+   "P2",
+   "def group_values_by_label(values: Any, labels: Sequence[Any]) -> Dict[str, np.ndarray]:",
+   "public callable 'group_values_by_label' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "reporting/charts/_split_gain_ranking.py",
+   97,
+   "P2",
+   "def rank_features_by_split_gain(mat: np.ndarray, err: np.ndarray, n_features: int, *, nbins: int = DEFAULT_RANKING_BINS) -> List[int]:",
+   "public callable 'rank_features_by_split_gain' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "signal/dtw.py",
+   413,
+   "P2",
+   "def dtw_cupy_full(",
+   "public callable 'dtw_cupy_full' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "signal/dtw.py",
+   511,
+   "P2",
+   "def set_dtw_dispatch_threshold(n_cells: int) -> None:",
+   "public callable 'set_dtw_dispatch_threshold' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/_conformal_split.py",
+   43,
+   "P2",
+   "def carve_calib_conformal_iid(",
+   "public callable 'carve_calib_conformal_iid' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/_conformal_split.py",
+   65,
+   "P2",
+   "def carve_calib_conformal_temporal(",
+   "public callable 'carve_calib_conformal_temporal' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/_conformal_split.py",
+   108,
+   "P2",
+   "def carve_calib_conformal_grouped(",
+   "public callable 'carve_calib_conformal_grouped' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/_conformal_split.py",
+   142,
+   "P2",
+   "def carve_calib_conformal(",
+   "public callable 'carve_calib_conformal' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/_helpers_training_configs.py",
+   885,
+   "P2",
+   "def disable_native_es_for_slice_stable(configs: Any) -> None:",
+   "public callable 'disable_native_es_for_slice_stable' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/cb/_cb_pool_budget.py",
+   121,
+   "P2",
+   "def forget_pool_bytes(label: str, key: Any) -> None:",
+   "public callable 'forget_pool_bytes' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/cb/_cb_pool_budget.py",
+   127,
+   "P2",
+   "def cache_bytes(label: str) -> int:",
+   "public callable 'cache_bytes' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/composite/discovery/_per_group_discovery.py",
+   33,
+   "P2",
+   "def route_spec_column_by_group(",
+   "public callable 'route_spec_column_by_group' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/core/_main_train_suite_phases.py",
+   36,
+   "P2",
+   "def unpack_ctx_configs_to_locals(ctx: Any) -> dict:",
+   "public callable 'unpack_ctx_configs_to_locals' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/feature_drift_report.py",
+   376,
+   "P2",
+   "def translate_sklearn_mlp_overrides_to_recurrent_config_kwargs(",
+   "public callable 'translate_sklearn_mlp_overrides_to_recurrent_config_kwargs' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/neural/_triton_bootstrap.py",
+   133,
+   "P2",
+   "def is_triton_available() -> bool:",
+   "public callable 'is_triton_available' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "training/suite_artefact_cache.py",
+   482,
+   "P2",
+   "def set_default_cache(cache: Optional[SuiteArtefactCache]) -> None:",
+   "public callable 'set_default_cache' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "utils/numba_cache_guard.py",
+   66,
+   "P2",
+   "def invalidate_stale_numba_caches(package_dir: \"str | Path\") -> list[str]:",
+   "public callable 'invalidate_stale_numba_caches' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/data_processing.py",
+   14,
+   "P2",
+   "def preprocess_glue(glue: pd.DataFrame, head: int | None = None) -> tuple[pd.DataFrame, dict[str, float]]:",
+   "public callable 'preprocess_glue' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/data_processing.py",
+   52,
+   "P2",
+   "def preprocess_sglue(sglue: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, float]]:",
+   "public callable 'preprocess_sglue' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/data_processing.py",
+   84,
+   "P2",
+   "def preprocess_value(value: pd.DataFrame) -> pd.DataFrame:",
+   "public callable 'preprocess_value' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   28,
+   "P2",
+   "def naive_masking_score(model: Any, tokenizer: Any, sentence: str) -> float:",
+   "public callable 'naive_masking_score' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   40,
+   "P2",
+   "def naive_t5_score(model: Any, tokenizer: Any, sentence: str) -> float:",
+   "public callable 'naive_t5_score' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   61,
+   "P2",
+   "def naive_gpt2_score(model: Any, tokenizer: Any, sentence: str) -> float:",
+   "public callable 'naive_gpt2_score' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   69,
+   "P2",
+   "def naive_model_scores(model: Any, tokenizer: Any, sentences: list[str], scorer: Callable[[Any, Any, str], float]) -> np.ndarray:",
+   "public callable 'naive_model_scores' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   75,
+   "P2",
+   "def crows_pipeline(model: Any, tokenizer: Any, good_sentences: list[str], bad_sentences: list[str], scorer: Callable[[Any, Any, str], float]) -> float:",
+   "public callable 'crows_pipeline' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   83,
+   "P2",
+   "def stereo_pipeline(model: Any, tokenizer: Any, scorer: Callable[[Any, Any, str], float], good: list[str], bad: list[str], unrelated: list[str]) -> dict[str, float]:",
+   "public callable 'stereo_pipeline' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/fairness_computation.py",
+   95,
+   "P2",
+   "def winobias_pipeline(model: Any, tokenizer: Any, wb_data: dict[str, dict[str, list[str]]], scorer: Callable[[Any, Any, str], float]) -> dict[str, float]:",
+   "public callable 'winobias_pipeline' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/iia_exp.py",
+   20,
+   "P2",
+   "def fine_sorted_ranking(ranking: pd.Series) -> list[str]:",
+   "public callable 'fine_sorted_ranking' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/iia_exp.py",
+   27,
+   "P2",
+   "def compute_iia_for_fixed_models(method: str, table: pd.DataFrame, models_order: list[str], weights: dict[str, float]) -> int:",
+   "public callable 'compute_iia_for_fixed_models' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/iia_exp.py",
+   53,
+   "P2",
+   "def compute_iia(method: str, table: pd.DataFrame, weights: dict[str, float], num_repetitions: int) -> tuple[float, float, list[int]]:",
+   "public callable 'compute_iia' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/stability_exp.py",
+   25,
+   "P2",
+   "def spearman_exp(lb: Leaderboard, num_repeats: int, exp_range: Sequence[float], top_k: int = 7) -> dict[str, Any]:",
+   "public callable 'spearman_exp' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/stability_exp.py",
+   105,
+   "P2",
+   "def count_and_plot(lb: Leaderboard, num_repeats: int, exp_range: Sequence[float], top_k: int = 7) -> None:",
+   "public callable 'count_and_plot' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/stability_exp.py",
+   114,
+   "P2",
+   "def get_res_df(exp_range: Sequence[float], exp_res: dict[str, Any]) -> pd.DataFrame:",
+   "public callable 'get_res_df' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/stability_exp.py",
+   127,
+   "P2",
+   "def create_exp_pic(exp_range: list[float], exp_res: dict[str, Any], filename: str | None = None) -> None:",
+   "public callable 'create_exp_pic' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/utils.py",
+   34,
+   "P2",
+   "def agreement_rate(df: pd.DataFrame, k: int, top_k: bool = True) -> dict[str, float]:",
+   "public callable 'agreement_rate' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/utils.py",
+   51,
+   "P2",
+   "def tracker_filename(model: str, task: str, dirpath: str) -> str:",
+   "public callable 'tracker_filename' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "dead_public_callable",
+   "votenrank/utils.py",
+   78,
+   "P2",
+   "def get_tracker_table(data: pd.DataFrame, dirpath: str) -> pd.DataFrame:",
+   "public callable 'get_tracker_table' is not reachable from any module body, entry point, decorator or consumer outside the test suite -- it is built, documented and dead. Wire it or delete it."
+  ],
+  [
+   "default_via_or",
+   "feature_selection/filters/_confirm_predictor_helpers.py",
+   106,
+   "P2",
+   "nfailed, nchecked = take_precomputed_recheck(ctx, X) or _recheck_counts(ctx, X, next_best_gain, nexisting, _fleuret_base_seed)",
+   "`or <call>(...)` at `fleuret_conditional_recheck: take_precomputed_recheck(ctx, X) or _recheck_counts(ctx, X, next_best_gai...`: callable RHS runs the default-compute branch when caller passed a legitimate falsy value (empty list/df/array). Confirm semantics."
+  ],
+  [
+   "default_via_or",
+   "feature_selection/filters/_fe_additive_fusion.py",
+   112,
+   "P2",
+   "return bool(fe_gpu_strict_enabled()) and (fe_gpu_strict_forced() or fusion_use_device(n_rows))",
+   "`or <call>(...)` at `_fusion_auto_device: fe_gpu_strict_forced() or fusion_use_device(n_rows)`: callable RHS runs the default-compute branch when caller passed a legitimate falsy value (empty list/df/array). Confirm semantics."
+  ],
+  [
+   "docstring_numbers_moved_to_config",
+   "feature_selection/filters/_bootstrap_rank_mi_gpu.py",
+   180,
+   "Low",
+   "def _ties_on_device() -> bool:",
+   "`_ties_on_device`'s docstring states threshold value(s) ['10'], but the body contains no numeric literals and reads its values from configuration -- the prose is the only remaining record of numbers that no longer exist. State the config keys instead of the values, so the documentation cannot go stale again."
+  ],
+  [
+   "docstring_numbers_moved_to_config",
+   "feature_selection/filters/_fe_usability_signal.py",
+   148,
+   "Low",
+   "def _crit_np_dtype() -> type[np.floating]:",
+   "`_crit_np_dtype`'s docstring states threshold value(s) ['0.6'], but the body contains no numeric literals and reads its values from configuration -- the prose is the only remaining record of numbers that no longer exist. State the config keys instead of the values, so the documentation cannot go stale again."
+  ],
+  [
+   "docstring_numbers_moved_to_config",
+   "feature_selection/filters/_gpu_strict_fe/_entry.py",
+   262,
+   "Low",
+   "def fe_gpu_device_born_modular_enabled() -> bool:",
+   "`fe_gpu_device_born_modular_enabled`'s docstring states threshold value(s) ['12'], but the body contains no numeric literals and reads its values from configuration -- the prose is the only remaining record of numbers that no longer exist. State the config keys instead of the values, so the documentation cannot go stale again."
+  ],
+  [
+   "docstring_numbers_moved_to_config",
+   "feature_selection/filters/_numba_warmup.py",
+   66,
+   "Low",
+   "def start_background_prewarm() -> None:",
+   "`start_background_prewarm`'s docstring states threshold value(s) ['77.6'], but the body contains no numeric literals and reads its values from configuration -- the prose is the only remaining record of numbers that no longer exist. State the config keys instead of the values, so the documentation cannot go stale again."
+  ],
+  [
+   "duplicate_function_body",
+   "feature_selection/filters/_meta_fingerprint_gpu.py",
+   202,
+   "P2",
+   "def column_block_width(n_rows: int) -> int:",
+   "def column_block_width(...) has a structurally identical body to feature_selection/filters/_hinge_precheck_gpu.py:298 (def column_block_width) -- extract into one shared function/module and import it from both call sites instead of maintaining copies that can silently drift apart."
+  ],
+  [
+   "duplicate_function_body",
+   "feature_selection/filters/_synergy_combo_gpu.py",
+   108,
+   "P2",
+   "def kernel(cp: Any, real: Any) -> Any:",
+   "def kernel(...) has a structurally identical body to feature_selection/filters/_relaxmrmr_pair_gpu.py:129 (def kernel) -- extract into one shared function/module and import it from both call sites instead of maintaining copies that can silently drift apart."
+  ],
+  [
+   "field_read_never_written",
+   "__init__.py",
+   310,
+   "P1",
+   "_orig_init = getattr(_ci, \"init\", None)",
+   "'init' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'int'?"
+  ],
+  [
+   "field_read_never_written",
+   "calibration/post.py",
+   298,
+   "P1",
+   "obj = getattr(self.calibrator, \"calibrator\", self.calibrator)",
+   "'calibrator' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'calibrators'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/boruta_shap/__init__.py",
+   467,
+   "P1",
+   "resolved_model = getattr(self, \"model_\", None)",
+   "'model_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'model'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/boruta_shap/__init__.py",
+   593,
+   "P1",
+   "names_in = getattr(self, \"feature_names_in_\", None)",
+   "'feature_names_in_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_names'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/boruta_shap/_fit_explain.py",
+   256,
+   "P1",
+   "return list(getattr(sub, \"accepted_\", []) or [])",
+   "'accepted_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'accepted'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/boruta_shap/_fit_explain.py",
+   406,
+   "P1",
+   "_early_stop_patience = int(getattr(self, \"early_stop_patience\", 20))",
+   "'early_stop_patience' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'early_stopping_patience'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/compare_selectors.py",
+   95,
+   "P1",
+   "sel = getattr(selector, \"selected_features_\", None)",
+   "'selected_features_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'selected_features'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/compare_selectors.py",
+   100,
+   "P1",
+   "support = getattr(selector, \"support_\", None)",
+   "'support_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'support'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_adaptive_nbins_columns.py",
+   88,
+   "P1",
+   "val_min_split_size=kwargs.get(\"mdlp_val_min_split_size\", 5),",
+   "'mdlp_val_min_split_size' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'val_min_split_size'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_confirm_predictor_engineered.py",
+   161,
+   "P1",
+   "raw_names = getattr(ctx, \"raw_feature_names\", None)",
+   "'raw_feature_names' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_names'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_dynamic_cluster_discovery/__init__.py",
+   386,
+   "P1",
+   "seed = int(dcd_config.get(\"tau_calibration_seed\", 0))",
+   "'tau_calibration_seed' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'tau_calibration'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_fe_rejection_ledger.py",
+   156,
+   "P1",
+   "_cap_cfg = getattr(mrmr_self, \"fe_rejection_ledger_cap\", None)",
+   "'fe_rejection_ledger_cap' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_rejection_ledger_'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_fe_sufficient_summary.py",
+   135,
+   "P1",
+   "getattr(self, \"is_classification_\", None)",
+   "'is_classification_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'classification'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_fourier_detect_cap.py",
+   28,
+   "P1",
+   "return getattr(_state, \"cap\", None)",
+   "'cap' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'cmap'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_honest_oj_fused.py",
+   254,
+   "P1",
+   "binner = getattr(honest_codes_fn, \"binner\", None)",
+   "'binner' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'inner'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fe_step/_step_core_parts.py",
+   678,
+   "P1",
+   "fe_mi_estimator=getattr(self, \"fe_mi_estimator\", \"plugin\"),",
+   "'fe_mi_estimator' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'mi_estimator'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fe_step/_step_core_parts.py",
+   682,
+   "P1",
+   "fe_optimizer=getattr(self, \"fe_optimizer\", \"cma_batch\"),",
+   "'fe_optimizer' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'optimizer'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fe_step_helpers.py",
+   424,
+   "P1",
+   "quantile=float(getattr(self, \"fe_pair_maxt_null_quantile\", 0.95)),",
+   "'fe_pair_maxt_null_quantile' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_triple_maxt_null_quantile'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fe_step_helpers.py",
+   483,
+   "P1",
+   "_pair_maxt_perms = int(getattr(self, \"fe_pair_maxt_null_permutations\", 25) or 0)",
+   "'fe_pair_maxt_null_permutations' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_triple_maxt_null_permutations'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_fe_stage_cascade_early_a.py",
+   523,
+   "P1",
+   "_fourier_powers = tuple(int(p) for p in getattr(self, \"fe_hybrid_orth_fourier_powers\", (1, 2)))",
+   "'fe_hybrid_orth_fourier_powers' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_hybrid_orth_fourier_freqs'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_fe_stage_cascade_early_a.py",
+   588,
+   "P1",
+   "max_adaptive_cols=getattr(self, \"fe_univariate_fourier_adaptive_max_cols\", None),",
+   "'fe_univariate_fourier_adaptive_max_cols' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_univariate_fourier_adaptive_min_val_corr'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_fe_stage_cascade_mid_b.py",
+   510,
+   "P1",
+   "_cqr_cols = tuple(getattr(self, \"fe_conditional_quantile_rank_cols\", ()) or ())",
+   "'fe_conditional_quantile_rank_cols' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'conditional_quantile_rank'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_fe_stage_cascade_mid_b.py",
+   679,
+   "P1",
+   "max_cols=getattr(self, \"fe_wavelet_max_cols\", None),",
+   "'fe_wavelet_max_cols' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_wavelet_max_legs'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_fit_impl_core_parts.py",
+   689,
+   "P1",
+   "_cat_fe_cfg_probe is not None and getattr(_cat_fe_cfg_probe, \"enable\", True) and getattr(_cat_fe_cfg_probe, \"include_numeric\", False)",
+   "'enable' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'enabled'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/_mrmr_fit_impl/_friend_graph_and_redundancy/_group3.py",
+   192,
+   "P1",
+   "full_npermutations=int(getattr(self, \"full_npermutations\", 0) or 0),",
+   "'full_npermutations' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_npermutations'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/mrmr/_mrmr_class.py",
+   3241,
+   "P1",
+   "r = f\"{_inner}{_sep}n_workers={getattr(self, 'n_workers', 1)})\"",
+   "'n_workers' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'num_workers'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/mrmr/_mrmr_class_fit_stages.py",
+   197,
+   "P1",
+   "_mo_strategy = getattr(self, \"multioutput_strategy\", \"union\")",
+   "'multioutput_strategy' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'multioutput_strategy_'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/filters/mrmr/_mrmr_class_fit_stages.py",
+   391,
+   "P1",
+   "int(getattr(self, \"cpt_n_permutations\", 200)),",
+   "'cpt_n_permutations' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'n_permutations'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/hybrid_selector.py",
+   387,
+   "P1",
+   "imp = getattr(pi, \"importances\", None)",
+   "'importances' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'importance'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/shap_proxied_fs/_shap_proxy_compose.py",
+   80,
+   "P1",
+   "fidelities.append(float(sel.shap_proxy_report_.get(\"trust\", {}).get(\"spearman\", 1.0) or 0.0))",
+   "'spearman' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'Spearman'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap.py",
+   109,
+   "P1",
+   "weights = raw.get(\"learner\", {}).get(\"gradient_booster\", {}).get(\"weight_drop\")",
+   "'learner' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'learned'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap.py",
+   693,
+   "P1",
+   "n_features = int(booster.dump_model().get(\"max_feature_idx\", 0)) + 1",
+   "'max_feature_idx' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'bag_feature_idx'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/_helpers_importance_agg.py",
+   116,
+   "P1",
+   "coef = getattr(m, \"coef_\", None)",
+   "'coef_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'coef_b'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/rfecv/__init__.py",
+   536,
+   "P1",
+   "if getattr(self, \"estimators\", None):",
+   "'estimators' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'estimators_'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/rfecv/_fit.py",
+   252,
+   "P1",
+   "_eff_n_repeats = int(getattr(self, \"n_repeats\", 5))",
+   "'n_repeats' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'to_n_repeats'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/rfecv/_fit_fold.py",
+   346,
+   "P1",
+   "cpi_min_samples_leaf=int(getattr(self, \"cpi_min_samples_leaf\", 10)),",
+   "'cpi_min_samples_leaf' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'min_samples_leaf'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/rfecv/_fit_summary.py",
+   39,
+   "P1",
+   "if n_kept != int(nf[best]) and isinstance(rule, str) and rule.startswith(\"one_se\") and not getattr(self, \"feature_cost\", 0.0):",
+   "'feature_cost' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_cols'?"
+  ],
+  [
+   "field_read_never_written",
+   "feature_selection/wrappers/rfecv/_futility_stop.py",
+   110,
+   "P1",
+   "if getattr(self, \"max_nfeatures\", None) is not None:",
+   "'max_nfeatures' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'max_features'?"
+  ],
+  [
+   "field_read_never_written",
+   "inference/predict.py",
+   310,
+   "P1",
+   "classes = getattr(model, \"classes_\", None)",
+   "'classes_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'classes_y'?"
+  ],
+  [
+   "field_read_never_written",
+   "preprocessing/outlier_policy.py",
+   39,
+   "P1",
+   "steps = getattr(model, \"steps\", None)",
+   "'steps' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'nsteps'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/_diagnostics_dispatch_extra.py",
+   125,
+   "P1",
+   "preds = getattr(entry, \"test_preds\", None)",
+   "'test_preds' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'test_pred'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/charts/_error_analysis_splits.py",
+   326,
+   "P1",
+   "if getattr(target_panel, \"xlim\", None) is not None and getattr(target_panel, \"xscale\", \"linear\") == \"linear\":",
+   "'xscale' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'scale'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/charts/_pdp_carrier.py",
+   44,
+   "P1",
+   "names = getattr(inner, \"feature_names_\", None) or carrier_columns",
+   "'feature_names_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_names'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/charts/pdp_ice.py",
+   751,
+   "P1",
+   "_ranges.append((getattr(_pnl, \"xlabel\", \"?\"), float(np.nanmax(_mean) - np.nanmin(_mean))))",
+   "'xlabel' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'label'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/renderers/_plotly_interactivity.py",
+   44,
+   "P1",
+   "axis = getattr(tr, \"xaxis\", None)",
+   "'xaxis' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'axis'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/renderers/_plotly_interactivity.py",
+   148,
+   "P1",
+   "_yl = getattr(panel, \"ylabel\", \"\")",
+   "'ylabel' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'label'?"
+  ],
+  [
+   "field_read_never_written",
+   "reporting/renderers/_plotly_line.py",
+   127,
+   "P1",
+   "if getattr(p, \"yscale\", \"linear\") == \"log\":",
+   "'yscale' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'y_scale'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/_dataset_cache_fingerprint.py",
+   252,
+   "P1",
+   "if hasattr(X, \"row\") and hasattr(X, \"slice\") and callable(getattr(X, \"row\", None)):",
+   "'row' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'rows'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/_model_cache_fingerprint.py",
+   79,
+   "P1",
+   "have = getattr(loaded_model, \"training_fingerprint_\", None)",
+   "'training_fingerprint_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'train_fingerprint'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/_trainer_train_and_evaluate_parts.py",
+   250,
+   "P1",
+   "\"slice_aggregate_quantile_level\": float(getattr(_slice_cfg, \"quantile_level\", 0.9)),",
+   "'quantile_level' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'quantize_levels'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/_trainer_train_and_evaluate_parts.py",
+   251,
+   "P1",
+   "\"slice_correlation_inflation\": float(getattr(_slice_cfg, \"correlation_inflation\", 1.5)),",
+   "'correlation_inflation' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'slice_correlation_inflation'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/cb/_cb_pool.py",
+   775,
+   "P1",
+   "return callable(getattr(_Pool, \"set_label\", None)) and callable(getattr(_Pool, \"set_weight\", None))",
+   "'set_weight' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'std_weight'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/bagging.py",
+   68,
+   "P1",
+   "iloc = getattr(X, \"iloc\", None)",
+   "'iloc' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'loc'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/bagging.py",
+   285,
+   "P1",
+   "aggregation = getattr(self, \"aggregation\", \"mean\")",
+   "'aggregation' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'aggregator'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/classification.py",
+   159,
+   "P1",
+   "n_classes = int(getattr(self, \"n_classes_\", 2))",
+   "'n_classes_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'n_classes'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/conformal.py",
+   285,
+   "P1",
+   "params = getattr(self, \"fitted_params_\", {}) or {}",
+   "'fitted_params_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fitted_params'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/__init__.py",
+   230,
+   "P1",
+   "if not getattr(self, \"specs_\", None):",
+   "'specs_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'specs'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/__init__.py",
+   332,
+   "P1",
+   "return [dict(r) for r in getattr(self, \"report_\", [])]",
+   "'report_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'report'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/__init__.py",
+   341,
+   "P1",
+   "return [dict(r) for r in getattr(self, \"rejection_ledger_\", [])]",
+   "'rejection_ledger_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fe_rejection_ledger_'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/_honest_holdout.py",
+   404,
+   "P1",
+   "n_neighbors = int(getattr(cfg, \"mi_n_neighbors\", 3))",
+   "'mi_n_neighbors' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'n_neighbors'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/_per_group_discovery.py",
+   51,
+   "P1",
+   "group_column = getattr(discovery.config, \"per_group_column\", None)",
+   "'per_group_column' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'group_column'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/discovery/_tiny_rerank.py",
+   558,
+   "P1",
+   "and getattr(self, \"honest_holdout_idx_\", None) is not None",
+   "'honest_holdout_idx_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'honest_holdout_mi_y'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/ensemble/_cross_target.py",
+   208,
+   "P1",
+   "chosen_alpha = float(getattr(ridge, \"alpha_\", ridge_alpha_grid[0]))",
+   "'alpha_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'alpha_t'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/ensemble/_stackers.py",
+   243,
+   "P1",
+   "chosen_l1_ratio = float(elasticnet_l1_ratio) if elasticnet_l1_ratio is not None else float(getattr(ecv, \"l1_ratio_\", elasticnet_l1_ratio_grid[0]))",
+   "'l1_ratio_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'l1_ratio'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/ensemble/_stackers.py",
+   409,
+   "P1",
+   "notes[\"ridge_intercept\"] = float(getattr(meta, \"intercept_\", 0.0))",
+   "'intercept_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'intercept'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/estimator/_utils.py",
+   17,
+   "P1",
+   "est = getattr(self, \"estimator_\", None)",
+   "'estimator_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'estimators_'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/highlevel.py",
+   397,
+   "P1",
+   "val = getattr(discovery, \"val_idx_\", None)",
+   "'val_idx_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'val_idx'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/highlevel.py",
+   398,
+   "P1",
+   "test = getattr(discovery, \"test_idx_\", None)",
+   "'test_idx_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'test_idx'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/report.py",
+   421,
+   "P1",
+   "if config is not None and not getattr(config, \"emit_composite_value_report\", True):",
+   "'emit_composite_value_report' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'composite_value_report'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/sklearn_compat.py",
+   319,
+   "P1",
+   "return getattr(self, \"transform_name_\", self.transform_name)",
+   "'transform_name_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'transform_name'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/composite/sklearn_compat.py",
+   354,
+   "P1",
+   "base_arr = getattr(self, \"base_\", None)",
+   "'base_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'base'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_diversity_recommendations.py",
+   163,
+   "P1",
+   "top_k=getattr(behavior_config, \"diversity_recommendation_top_k\", None),",
+   "'diversity_recommendation_top_k' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'diversity_recommendations'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_main_train_suite_phases.py",
+   462,
+   "P1",
+   "for _tt, _by_name in (getattr(ctx, \"ensembles\", None) or {}).items():",
+   "'ensembles' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'ensemble'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_main_train_suite_target_distribution.py",
+   67,
+   "P1",
+   "_null_bar = float(getattr(getattr(getattr(behavior_config, \"feature_selection_config\", None), \"pre_screen\", None), \"null_fraction_threshold\", 0.99))",
+   "'pre_screen' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'prescreen'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_misc_helpers.py",
+   610,
+   "P1",
+   "prop = getattr(target_type, \"is_classification\", None)",
+   "'is_classification' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'classification'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_composite_discovery.py",
+   200,
+   "P1",
+   "if getattr(",
+   "'composite_feature_stacking_enabled' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'composite_feature_stacking'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_composite_post_xt_ensemble/__init__.py",
+   323,
+   "P1",
+   "st._oof_frac = float(getattr(",
+   "'oof_holdout_frac' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'holdout_frac'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_composite_post_xt_ensemble/__init__.py",
+   591,
+   "P1",
+   "_oof_kfold = int(getattr(",
+   "'oof_kfold' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'oof_folds'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_composite_post_xt_ensemble/__init__.py",
+   659,
+   "P1",
+   "_oof_rs = int(getattr(composite_target_discovery_config, \"oof_random_state\", _DEFAULT_OOF_RANDOM_STATE))",
+   "'oof_random_state' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'random_state'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_finalize_calib_skipped.py",
+   161,
+   "P1",
+   "if \"regression\" in types and reg_cal is not None and bool(getattr(reg_cal, \"apply_confidence_shrinkage\", False)):",
+   "'apply_confidence_shrinkage' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'confidence_shrinkage'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_helpers_fit_pipeline.py",
+   534,
+   "P1",
+   "_ordinal = getattr(pipeline_config, \"categorical_encoding\", None) == \"ordinal\" and not getattr(pipeline_config, \"skip_categorical_encoding\", False)",
+   "'categorical_encoding' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'skip_categorical_encoding'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_temporal_audit.py",
+   50,
+   "P1",
+   "_audit_ts_override = getattr(behavior_config, \"target_temporal_audit_column\", None) if behavior_config else None",
+   "'target_temporal_audit_column' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'target_temporal_audit'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_temporal_audit.py",
+   120,
+   "P1",
+   "_override_unit = getattr(behavior_config, \"target_temporal_audit_unit\", None) if behavior_config is not None else None",
+   "'target_temporal_audit_unit' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'target_temporal_audit'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_body.py",
+   167,
+   "P1",
+   "_cs_pc[\"misses\"] += int(getattr(st.pipeline_cache, \"n_misses\", 0))",
+   "'n_misses' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'n_miss'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_ensembling.py",
+   50,
+   "P1",
+   "_extra_methods = tuple(getattr(behavior_config, \"extra_ensembling_methods\", ()) or ())",
+   "'extra_ensembling_methods' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'ensembling_methods'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_ensembling.py",
+   339,
+   "P1",
+   "mode = getattr(behavior_config, \"tune_decision_threshold\", \"auto\")",
+   "'tune_decision_threshold' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'decision_threshold'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_helpers.py",
+   189,
+   "P1",
+   "_rejected = set(getattr(selector, \"rejected_\", None) or [])",
+   "'rejected_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'rejected'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_helpers.py",
+   190,
+   "P1",
+   "_tentative = set(getattr(selector, \"tentative_\", None) or [])",
+   "'tentative_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'tentative'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_post.py",
+   224,
+   "P1",
+   "_y_full = (getattr(ctx, \"target_by_type\", {}) or {}).get(str(target_type), {}).get(_orig_n)",
+   "'target_by_type' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'target_type'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_phase_train_one_target_pre_screen.py",
+   60,
+   "P1",
+   "for _series in (getattr(ctx, \"group_ids_raw\", None), getattr(ctx, \"group_ids\", None), getattr(ctx, \"timestamps\", None)):",
+   "'group_ids_raw' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'group_ids_train'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_predict_main_from_models.py",
+   316,
+   "P1",
+   "_expected = getattr(model, \"feature_name_\", None)",
+   "'feature_name_' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_name'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_predict_pre_pipeline.py",
+   257,
+   "P1",
+   "elif config.get(\"extreme_columns_fit_reference\", True):",
+   "'extreme_columns_fit_reference' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'extreme_columns_reference'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/core/_predict_pre_pipeline.py",
+   742,
+   "P1",
+   "if type(_step).__name__ == \"FunctionTransformer\" and getattr(_step, \"func\", None) is None:",
+   "'func' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'fun'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/neural/base/_base_fit_steps.py",
+   409,
+   "P1",
+   "features_dtype = self.datamodule_params.get(\"features_dtype\", torch.float32)",
+   "'features_dtype' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'feature_dtype'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/pipeline/_categorical_composite_fe.py",
+   55,
+   "P1",
+   "_max_group_size = getattr(config, \"categorical_group_concat_max_group_size\", None)",
+   "'categorical_group_concat_max_group_size' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'categorical_group_concat_auto_groups'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/pipeline/_latent_interaction_svd_composite_fe.py",
+   83,
+   "P1",
+   "use_tfidf = bool(getattr(config, \"latent_interaction_svd_use_tfidf\", True))",
+   "'latent_interaction_svd_use_tfidf' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'latent_interaction_svd_fitted'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/ranking/_ranker_suite_train.py",
+   120,
+   "P1",
+   "fte_target_col = getattr(features_and_targets_extractor, \"target_column\", None)",
+   "'target_column' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'target_col'?"
+  ],
+  [
+   "field_read_never_written",
+   "training/reporting/_reporting_diagnostics.py",
+   147,
+   "P1",
+   "if not getattr(reporting_config, \"training_curves\", True):",
+   "'training_curves' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'training_curve'?"
+  ],
+  [
+   "field_read_never_written",
+   "utils/misc.py",
+   323,
+   "P1",
+   "return flag in info.get(\"flags\", [])",
+   "'flags' is read with a default but nothing in this tree writes it -- the default wins on every run, so whatever depends on it never fires. Did you mean 'lags'?"
+  ],
+  [
+   "guard_decidable_from_constants",
+   "feature_selection/filters/_neural_mi.py",
+   269,
+   "P2",
+   "if _INFONET_CACHE_DIR is not None:  # audit-exempt: guard_decidable_from_constants -- the module global is a seam that tests rebind with monkeypatch; the source never assigns it",
+   "this condition is already decided at import time: `_INFONET_CACHE_DIR` is bound once in this module to the literal None and nothing can rebind it. One arm is dead code no test can reach, while the guard reads as a runtime decision. Remove the branch, or make the constant genuinely configurable."
+  ],
+  [
+   "guard_decidable_from_constants",
+   "feature_selection/filters/_orthogonal_univariate_fe/_orth_extra_basis_fe_helpers.py",
+   407,
+   "P2",
+   "if _COARSE_GEMV is not None:  # audit-exempt: guard_decidable_from_constants -- the module global is a seam that tests rebind with monkeypatch; the source never assigns it",
+   "this condition is already decided at import time: `_COARSE_GEMV` is bound once in this module to the literal None and nothing can rebind it. One arm is dead code no test can reach, while the guard reads as a runtime decision. Remove the branch, or make the constant genuinely configurable."
+  ],
+  [
+   "near_duplicate_function_body",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap_ktc.py",
+   63,
+   "Low",
+   "def _sweep() -> list:",
+   "def _sweep(...) is 99% structurally similar to feature_selection/shap_proxied_fs/_shap_proxy_treeshap_interactions_ktc.py:67 (def _sweep) -- likely copy-paste that then drifted; consider unifying into one shared function, or confirm these are genuinely independent implementations that happen to look alike."
+  ],
+  [
+   "non_neutral_except_fallback",
+   "feature_selection/shap_proxied_fs/_shap_proxy_explain.py",
+   217,
+   "P1",
+   "except Exception:",
+   "handler returns 0 without logging above debug level, so the substituted value is indistinguishable downstream from a real result. Ask whether anything would notice if it were wrong -- and note that such a value is often non-neutral in the direction that DISABLES the check it feeds (0.0 for a max error, True for a permission guard, -inf for a score being minimised), which is how a safety mechanism switches itself off in exactly the conditions that trip it. Use a warning (throttled on a hot path), a NaN/None that reads as 'unknown' rather than as a measurement, or re-raise."
+  ],
+  [
+   "non_neutral_except_fallback",
+   "feature_selection/shap_proxied_fs/_shap_proxy_treeshap_catboost.py",
+   37,
+   "P1",
+   "except Exception:",
+   "handler returns False without logging above debug level, so the substituted value is indistinguishable downstream from a real result. Ask whether anything would notice if it were wrong -- and note that such a value is often non-neutral in the direction that DISABLES the check it feeds (0.0 for a max error, True for a permission guard, -inf for a score being minimised), which is how a safety mechanism switches itself off in exactly the conditions that trip it. Use a warning (throttled on a hot path), a NaN/None that reads as 'unknown' rather than as a measurement, or re-raise."
+  ],
+  [
+   "non_neutral_except_fallback",
+   "inference/tree_shap.py",
+   110,
+   "P1",
+   "except Exception:",
+   "handler returns False without logging above debug level, so the substituted value is indistinguishable downstream from a real result. Ask whether anything would notice if it were wrong -- and note that such a value is often non-neutral in the direction that DISABLES the check it feeds (0.0 for a max error, True for a permission guard, -inf for a score being minimised), which is how a safety mechanism switches itself off in exactly the conditions that trip it. Use a warning (throttled on a hot path), a NaN/None that reads as 'unknown' rather than as a measurement, or re-raise."
+  ],
+  [
+   "parameter_aliasing_mutation",
+   "feature_selection/filters/batch_pair_usability_corr_gpu.py",
+   372,
+   "P0",
+   "i += _WARP_SIZE  # audit-exempt: parameter_aliasing_mutation -- the aliased value is an int lane index, which rebinds instead of mutating the caller's object",
+   "`i = lane` (bare alias, no `.copy()`) then mutated in place -- this silently mutates the CALLER's `lane` object too, since no copy was ever made."
+  ],
+  [
+   "parameter_aliasing_mutation",
+   "feature_selection/filters/batch_pair_usability_corr_gpu.py",
+   404,
+   "P0",
+   "i += _WARP_SIZE  # audit-exempt: parameter_aliasing_mutation -- the aliased value is an int lane index, which rebinds instead of mutating the caller's object",
+   "`i = lane` (bare alias, no `.copy()`) then mutated in place -- this silently mutates the CALLER's `lane` object too, since no copy was ever made."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "feature_selection/filters/_dynamic_cluster_discovery/_dcd_swap_stages.py",
+   39,
+   "P2",
+   "def stage_fit_aggregate(st: Any, state: Any, anchor: int, X_raw: Any, target_y: Optional[np.ndarray]) -> Optional[SwapDecision]:",
+   "'stage_fit_aggregate' does not guard 'st' while 3 of 5 sibling stage_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "feature_selection/filters/_dynamic_cluster_discovery/_dcd_swap_stages.py",
+   107,
+   "P2",
+   "def stage_relevance(st: Any, state: Any, anchor: int, selected_vars: list, target_y: Optional[np.ndarray], entropy_cache: Optional[dict]) -> Optional[SwapDecision]:",
+   "'stage_relevance' does not guard 'st' while 3 of 5 sibling stage_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "feature_selection/filters/_prewarm.py",
+   31,
+   "P2",
+   "def prewarm_fs_numba_cache(verbose: bool = False) -> None:",
+   "'prewarm_fs_numba_cache' does not guard 'verbose' while 2 of 3 sibling prewarm_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "feature_selection/filters/_ratio_delta_fe.py",
+   532,
+   "P2",
+   "def pairwise_log_ratio_with_recipes(",
+   "'pairwise_log_ratio_with_recipes' does not guard 'X' while 3 of 4 sibling pairwise_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "feature_selection/filters/batch_mi_noise_gate_gpu.py",
+   334,
+   "P2",
+   "def _resident_y_all_device_for_cupy(classes_y, classes_y_safe, base_seed, nperm, n, P):",
+   "'_resident_y_all_device_for_cupy' does not guard 'classes_y' while 2 of 3 sibling resident_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "training/_trainer_configure_helpers.py",
+   228,
+   "P2",
+   "def _configure_training_xgb_rfecv_rfecv(use_regression, metamodel_func, configs, prefer_calibrated_classifiers, cat_features, rfecv_scoring, rfecv_params, cb_params, lgb_params, xgb_params, hgb_params, mlp_params, ngb_params, gated_outlier_params, bagging_params, composite_classification_params):",
+   "'_configure_training_xgb_rfecv_rfecv' does not guard 'use_regression' while 2 of 3 sibling configure_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "partial_guard_across_siblings",
+   "training/composite/transforms/extended.py",
+   551,
+   "P2",
+   "def _reciprocal_residual_forward(",
+   "'_reciprocal_residual_forward' does not guard 'y' while 2 of 3 sibling reciprocal_* functions do -- a fix applied to the family and not to this member."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   373,
+   "Low",
+   "benchmark_polyeval_cpu_backends,",
+   "'from _hermite_oracle import benchmark_polyeval_cpu_backends' binds 'benchmark_polyeval_cpu_backends', never referenced as a bare name in this file and never accessed as '<anything>.benchmark_polyeval_cpu_backends' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   792,
+   "Low",
+   "detect_pair_symmetry,",
+   "'from _hermite_fe_optimise import detect_pair_symmetry' binds 'detect_pair_symmetry', never referenced as a bare name in this file and never accessed as '<anything>.detect_pair_symmetry' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   799,
+   "Low",
+   "optimise_pair_multimode,",
+   "'from _hermite_fe_optimise import optimise_pair_multimode' binds 'optimise_pair_multimode', never referenced as a bare name in this file and never accessed as '<anything>.optimise_pair_multimode' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   813,
+   "Low",
+   "plugin_mi_classif_dispatch,",
+   "'from _hermite_fe_mi import plugin_mi_classif_dispatch' binds 'plugin_mi_classif_dispatch', never referenced as a bare name in this file and never accessed as '<anything>.plugin_mi_classif_dispatch' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/hermite_fe/__init__.py",
+   817,
+   "Low",
+   "plugin_mi_classif_fast,",
+   "'from _hermite_fe_mi import plugin_mi_classif_fast' binds 'plugin_mi_classif_fast', never referenced as a bare name in this file and never accessed as '<anything>.plugin_mi_classif_fast' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "possibly_dead_import",
+   "feature_selection/filters/mrmr/__init__.py",
+   82,
+   "Low",
+   "from pyutilz.parallel import mem_map_array, parallel_run, split_list_into_chunks  # public facade re-export (F401 already blanket-ignored for __init__.py) (mem_map_array)",
+   "'from pyutilz.parallel import split_list_into_chunks' binds 'split_list_into_chunks', never referenced as a bare name in this file and never accessed as '<anything>.split_list_into_chunks' anywhere in the scanned corpus -- looks genuinely unused, not a facade re-export. Remove it, or if it IS consumed indirectly in a way this scan can't see (e.g. via getattr(), a string-keyed dispatch table, or an external consumer outside this scan root), leave a comment explaining why."
+  ],
+  [
+   "signature_gated_kwarg_drop",
+   "training/pipeline/__init__.py",
+   133,
+   "P2",
+   "if \"quantile_method\" in inspect.signature(KBinsDiscretizer.__init__).parameters:",
+   "`quantile_method` is forwarded only when the callee's signature names it, and dropped in silence when it does not: the call then runs with the callee's default and the caller is never told. Report the drop in the negative branch. Note that a signature taking `**kwargs` names no parameters of its own, so a forwarding subclass reads as accepting nothing."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_dynamic_cluster_discovery/__init__.py",
+   52,
+   "P2",
+   "# Thread-local toggle (matches the SU/JMIM/BUR pattern at info_theory.py:282)",
+   "cites `info_theory.py:282`, and no file in the tree resolves to `info_theory.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_fe_stability_vote.py",
+   437,
+   "P2",
+   "# _mrmr_fit_impl.py:6603). The ``classes_y`` codes the FE sweep scored against",
+   "cites `_mrmr_fit_impl.py:6603`, and no file in the tree resolves to `_mrmr_fit_impl.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_feature_engineering_mem_budget.py",
+   59,
+   "P2",
+   "# drop updates silently, under-reporting the diagnostic at mrmr.py:1691.",
+   "cites `mrmr.py:1691`, and `training/fs_params/mrmr.py` has 620 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_common.py",
+   24,
+   "P2",
+   "# drop updates silently, under-reporting the diagnostic at mrmr.py:1691.",
+   "cites `mrmr.py:1691`, and `training/fs_params/mrmr.py` has 620 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_mi_greedy_cmi_fe_binning.py",
+   195,
+   "P2",
+   "# _orthogonal_univariate_fe.py:451 applies only to that hermite MI kernel,",
+   "cites `_orthogonal_univariate_fe.py:451`, and no file in the tree resolves to `_orthogonal_univariate_fe.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_mrmr_fe_step/_step_core_helpers.py",
+   60,
+   "P2",
+   "# (see default_filtering.py:165): apply the",
+   "cites `default_filtering.py:165`, and no file in the tree resolves to `default_filtering.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_mrmr_fe_step/_step_core_parts.py",
+   464,
+   "P2",
+   "# (see default_filtering.py:165): screening",
+   "cites `default_filtering.py:165`, and no file in the tree resolves to `default_filtering.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_mrmr_fe_step/_step_core_parts.py",
+   630,
+   "P2",
+   "# polynom search would never fire (default_filtering.py:165). In that",
+   "cites `default_filtering.py:165`, and no file in the tree resolves to `default_filtering.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/_mrmr_fingerprints.py",
+   500,
+   "P2",
+   "# _full_x_content_hash. Caller sites at _mrmr_fit_impl.py:131 + :158",
+   "cites `_mrmr_fit_impl.py:131`, and no file in the tree resolves to `_mrmr_fit_impl.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/filters/discretization/__init__.py",
+   354,
+   "P2",
+   "# mean-nonzero feature. Sibling CUDA path at discretization.py:850",
+   "cites `discretization.py:850`, and no file in the tree resolves to `discretization.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "feature_selection/shap_proxied_fs/_shap_proxy_explain.py",
+   563,
+   "P2",
+   "#   (C) Module-level _init: there is none - core.py:1553 is QuantileDMatrix._init, an instance",
+   "cites `core.py:1553`, and `metrics/core.py` has 318 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "metrics/_core_numba_warmup.py",
+   791,
+   "P2",
+   "# ``parfor.py:3886`` lookup() as well as any compile / runtime fault",
+   "cites `parfor.py:3886`, and no file in the tree resolves to `parfor.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "metrics/calibration/_calibration_plot.py",
+   652,
+   "P2",
+   "# (single-class preds, all-NaN preds, or the sparse-hits filter at metrics.py:600).",
+   "cites `metrics.py:600`, and no file in the tree resolves to `metrics.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "metrics/calibration/_calibration_plot.py",
+   660,
+   "P2",
+   "# if some bins are empty (sparse hits filter at metrics.py:600) we fall back",
+   "cites `metrics.py:600`, and no file in the tree resolves to `metrics.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "models/ensembling/process_method.py",
+   125,
+   "P2",
+   "# _ensembling_base.py:493). Calibrating before rank fusion is a no-op on rank order and a small loss on the",
+   "cites `_ensembling_base.py:493`, and no file in the tree resolves to `_ensembling_base.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "models/ensembling/score_flavours.py",
+   476,
+   "P2",
+   "# F2 fix: use the SHORT tag list (cb / xgb / lgb / ...) for the rebuilt ensemble label rather than the full class names; matches the original short-label contract from core.py:5483 and keeps chart titles compact.",
+   "cites `core.py:5483`, and `metrics/core.py` has 318 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "testing/parametric.py",
+   118,
+   "P2",
+   "# ``_handle_null_probability_deprecation`` (core.py:610). The float rate",
+   "cites `core.py:610`, and `metrics/core.py` has 318 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/_model_configs.py",
+   352,
+   "P2",
+   "# get_training_configs (see helpers.py:778); both fields stay live until",
+   "cites `helpers.py:778`, and `training/helpers.py` has 232 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/_model_factories.py",
+   437,
+   "P2",
+   "# module-load (see neural/base.py:32-45 for the chain). On Windows that",
+   "cites `neural/base.py:32`, and no file in the tree resolves to `neural/base.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/_trainer_train_and_evaluate.py",
+   620,
+   "P2",
+   "\"\"\"Train and evaluate a machine learning model with comprehensive metrics and optional caching.",
+   "cites `ensembling.py:1098`, and `calibration/ensembling.py` has 296 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/_trainer_train_and_evaluate.py",
+   620,
+   "P2",
+   "\"\"\"Train and evaluate a machine learning model with comprehensive metrics and optional caching.",
+   "cites `ensembling.py:1524`, and `calibration/ensembling.py` has 296 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/core/_phase_composite_discovery_target.py",
+   322,
+   "P2",
+   "# pickle.load (safe in isolation), but the class docstring at composite_cache.py:649",
+   "cites `composite_cache.py:649`, and no file in the tree resolves to `composite_cache.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/core/_phase_helpers_fit_pipeline.py",
+   590,
+   "P2",
+   "# ``bp.materialize()`` produces a pipeline; ``pipeline.transform(df)`` returns a new DataFrame (see pipeline.py:1037). Polars frames are conceptually",
+   "cites `pipeline.py:1037`, and no file in the tree resolves to `pipeline.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/core/_predict_pre_pipeline.py",
+   561,
+   "P2",
+   "\"\"\"Apply ``model_obj.pre_pipeline.transform`` with text/embedding passthrough stash + feature-subset fallback.",
+   "cites `predict.py:1372`, and `training/core/predict.py` has 949 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/feature_drift_report.py",
+   326,
+   "P2",
+   "\"\"\"Translate a sklearn-MLPRegressor-shape override dict (produced by the",
+   "cites `training/neural/_flat_torch_module.py:86`, and no file in the tree resolves to `training/neural/_flat_torch_module.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/feature_handling/compat.py",
+   82,
+   "P2",
+   "# (existing wiring at ``training/core.py:4020-4023`` -- extended in",
+   "cites `training/core.py:4020`, and no file in the tree resolves to `training/core.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/metrics_registry.py",
+   167,
+   "P2",
+   "# (e.g. dummy_baselines.py:606 included AUC; dummy_baselines.py:1807",
+   "cites `dummy_baselines.py:1807`, and no file in the tree resolves to `dummy_baselines.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/metrics_registry.py",
+   167,
+   "P2",
+   "# (e.g. dummy_baselines.py:606 included AUC; dummy_baselines.py:1807",
+   "cites `dummy_baselines.py:606`, and no file in the tree resolves to `dummy_baselines.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/neural/base/_base_fit_helpers.py",
+   380,
+   "P2",
+   "# logger (neural/base.py:771). Lightning's verbose=True",
+   "cites `neural/base.py:771`, and no file in the tree resolves to `neural/base.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/neural/base/_base_fit_steps.py",
+   251,
+   "P2",
+   "# (see _flat_torch_module.py:530-533), so the optimizer / scheduler",
+   "cites `_flat_torch_module.py:530`, and no file in the tree resolves to `_flat_torch_module.py`. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/strategies/hgb.py",
+   90,
+   "P2",
+   "# core.py:2992 which also passes strict=False on the test split.",
+   "cites `core.py:2992`, and `metrics/core.py` has 318 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "stale_source_citation",
+   "training/strategies/xgboost.py",
+   221,
+   "P2",
+   "# rather than crashing -- consistent with core.py:2992 behaviour.",
+   "cites `core.py:2992`, and `metrics/core.py` has 318 lines. A location citation that no longer resolves reads as a precise pointer; point it at the current place, or drop the line number."
+  ],
+  [
+   "table_header_row_drift",
+   "feature_selection/filters/_fe_synergy_exhaustive.py",
+   409,
+   "P2",
+   "f\"running FULL exhaustive C({n_raw},2)={n_pairs}-pair joint-MI sweep over ALL raw numeric columns \"",
+   "decide_exhaustive_sweep() formats a wide table from independent f-strings with [6, 7, 9] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "feature_selection/structure_discovery.py",
+   284,
+   "P2",
+   "desc = f\"regime switch: y ~ ({a} if {c}>{h.tau:.3g} else {b})  \" f\"[MI {h.feat_mi:.3f}, lift {_fmt_lift(lift)}{_fmt_p(pval, n_perm)}]\"",
+   "_gate_relations() formats a wide table from independent f-strings with [6, 7] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "reporting/charts/drift.py",
+   396,
+   "P2",
+   "f\"{title}{_psi_verdict(matrix, psi_noise_floor, row_labels)}\\n(stable < {PSI_MODERATE:g}; moderate {PSI_MODERATE:g}-{PSI_SIGNIFICANT:g}; \"",
+   "psi_heatmap() formats a wide table from independent f-strings with [6, 9] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "reporting/charts/split_comparison.py",
+   211,
+   "P2",
+   "reason = f\"{lo}->{hi} ROC_AUC drop {gap:+.3f} ({a_train:.3f} -> {a_test:.3f}){_bar_note}\"",
+   "_overfit_verdict() formats a wide table from independent f-strings with [6, 7] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "training/baselines/_dummy_report_type.py",
+   202,
+   "P2",
+   "f\"[DUMMY_BASELINES] target='{self.target_name}' {self.target_type}\"",
+   "format_text() formats a wide table from independent f-strings with [7, 9] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "training/composite/_value_report.py",
+   450,
+   "P2",
+   "L.append(f\"- vs raw: {vr['helped']} helped / {vr['hurt']} hurt / {vr['tied']} tied \"",
+   "render_composite_value_report() formats a wide table from independent f-strings with [6, 7, 9] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "table_header_row_drift",
+   "training/core/_phase_composite_post_summary.py",
+   303,
+   "P2",
+   "f\"{_comp[:40]:<40} {(str(_best[1].get('model_name')) if _best else '-')[:28]:<28} {_f(_comp_val):>11} {_f(_comp_test):>11} \"",
+   "format_composite_vs_raw_block() formats a wide table from independent f-strings with [11, 12] fields. Build labels and cells from one indexed structure and zip them with strict=True."
+  ],
+  [
+   "tautological_guard",
+   "feature_selection/filters/_batch_mi_noise_gate_gpu_helpers.py",
+   111,
+   "P1",
+   "if _rshape == (n, K) and _rdt.itemsize <= 2 and _rdt == np.dtype(_disc_dt):",
+   "`and` combines a threshold on '_rdt.itemsize' with a pin of '_rdt' to one value: only that value can reach the threshold, so the threshold is vacuous and the guard reduces to the pin."
+  ],
+  [
+   "tautological_guard",
+   "models/ensembling/_correlation.py",
+   61,
+   "P1",
+   "if not all(a.size == arrays[0].size and a.size >= 2 for a in arrays):",
+   "`and` combines a threshold on 'a.size' with a pin of 'a.size' to one value: only that value can reach the threshold, so the threshold is vacuous and the guard reduces to the pin."
+  ],
+  [
+   "tautological_guard",
+   "models/ensembling/_correlation.py",
+   81,
+   "P1",
+   "if not all(a.shape == probs_arrays[0].shape and a.shape[0] >= 2 for a in probs_arrays):",
+   "`and` combines a threshold on 'a.shape[]' with a pin of 'a.shape' to one value: only that value can reach the threshold, so the threshold is vacuous and the guard reduces to the pin."
+  ],
+  [
+   "tautological_guard",
+   "training/composite/discovery/_fit_steps.py",
+   317,
+   "P1",
+   "if st.x_remaining_matrix is not None and st.x_remaining_matrix.shape[1] > 0 and st.x_remaining_matrix.shape[0] == base_screen.shape[0]:",
+   "`and` combines a threshold on 'st.x_remaining_matrix.shape[]' with a pin of 'st.x_remaining_matrix.shape[]' to one value: only that value can reach the threshold, so the threshold is vacuous and the guard reduces to the pin."
+  ],
+  [
+   "tautological_guard",
+   "training/core/_phase_composite_post_xt_ensemble/_xt_ensemble_helpers.py",
+   285,
+   "P1",
+   "and _oof_pred_matrix.shape[1] == len(_ensemble.component_models)",
+   "`and` combines a threshold on '_oof_pred_matrix.shape[]' with a pin of '_oof_pred_matrix.shape[]' to one value: only that value can reach the threshold, so the threshold is vacuous and the guard reduces to the pin."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "calibration/__init__.py",
+   89,
+   "P2",
+   "_p = importlib.import_module(\"mlframe.calibration.probabilities\")",
+   "`__dir__()` takes no varying input yet calls `importlib.import_module` on every call, which walks the import system. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "evaluation/__init__.py",
+   121,
+   "P2",
+   "_r = importlib.import_module(\"mlframe.evaluation.reports\")",
+   "`__dir__()` takes no varying input yet calls `importlib.import_module` on every call, which walks the import system. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "feature_selection/filters/_ktc_fallback.py",
+   182,
+   "P2",
+   "importlib.import_module(args[0])",
+   "`_main()` takes no varying input yet calls `importlib.import_module` on every call, which walks the import system. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "system/kernel_tuning_cache/_discovery.py",
+   57,
+   "P2",
+   "spec = importlib.util.find_spec(package)",
+   "`registering_modules()` takes no varying input yet calls `importlib.util.find_spec` on every call, which walks the import system. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "system/kernel_tuning_cache/_ensure.py",
+   101,
+   "P2",
+   "base.mkdir(parents=True, exist_ok=True)",
+   "`_lock_path()` takes no varying input yet calls `base.mkdir` on every call, which hits the filesystem. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/_gpu_state_probe.py",
+   89,
+   "P2",
+   "exe = shutil.which(\"nvidia-smi\", path=search)",
+   "`_resolve_smi()` takes no varying input yet calls `shutil.which` on every call, which scans every PATH entry. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/_gpu_state_probe.py",
+   109,
+   "P2",
+   "out2 = subprocess.run(  # nosec B603",
+   "`_probe_smi()` takes no varying input yet calls `subprocess.run` on every call, which spawns a process. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/_param_model_spec.py",
+   48,
+   "P2",
+   "return getattr(importlib.import_module(self.target_module), self.target_attr)",
+   "`target()` takes no varying input yet calls `importlib.import_module` on every call, which walks the import system. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/_profile_fs_suite_integration.py",
+   89,
+   "P2",
+   "results_dir.mkdir(parents=True, exist_ok=True)",
+   "`main()` takes no varying input yet calls `results_dir.mkdir` on every call, which hits the filesystem. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/core/_setup_helpers_pipeline_cache.py",
+   232,
+   "P2",
+   "os.makedirs(_parent_dir, exist_ok=True)",
+   "`_persist_pipeline_disk_cache()` takes no varying input yet calls `os.makedirs` on every call, which hits the filesystem (measurably slower than exists-then-skip). Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/feature_handling/cache.py",
+   335,
+   "P2",
+   "os.makedirs(d, mode=0o700, exist_ok=True)",
+   "`_disk_dir()` takes no varying input yet calls `os.makedirs` on every call, which hits the filesystem (measurably slower than exists-then-skip). Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "training/suite_artefact_cache.py",
+   216,
+   "P2",
+   "Path(self.cache_dir).mkdir(parents=True, exist_ok=True, mode=0o700)",
+   "`_ensure_dir()` takes no varying input yet calls `Path.mkdir` on every call, which hits the filesystem. Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "uncached_constant_cost_probe",
+   "utils/_param_oracle.py",
+   138,
+   "P2",
+   "os.makedirs(path, exist_ok=True)",
+   "`default_store_dir()` takes no varying input yet calls `os.makedirs` on every call, which hits the filesystem (measurably slower than exists-then-skip). Nothing memoizes the result (no lru_cache/cache/cached_property, no module-level memo), so a hot dispatch path pays this cost per decision. Cache it, unless this probe genuinely has to be re-taken every time."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_engineering/multi_decomposition_bank.py",
+   133,
+   "P1",
+   "if all(c in near_noise for c in method_cols):",
+   "all(... for ... in method_cols) in multi_decomposition_feature_bank() is True when method_cols is empty, so an empty pattern matches every input. Write `bool(method_cols) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_fe_additive_fusion_gpu_resident.py",
+   126,
+   "P1",
+   "if all(hasattr(c, \"dev\") for c in _vals_cols):",
+   "all(... for ... in _vals_cols) in _upload_and_subsample() is True when _vals_cols is empty, so an empty pattern matches every input. Write `bool(_vals_cols) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_fe_cmi_redundancy_gate.py",
+   765,
+   "P1",
+   "if all(d is not None for d in devs):",
+   "all(... for ... in devs) in _joint_with_winner() is True when devs is empty, so an empty pattern matches every input. Write `bool(devs) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_fe_retention_subsumption.py",
+   248,
+   "P1",
+   "if _resident and _all_finite(cand) and all(_all_finite(c) for c in _inc_clean):",
+   "all(... for ... in _inc_clean) in retention_form_is_subsumed() is True when _inc_clean is empty, so an empty pattern matches every input. Write `bool(_inc_clean) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_feature_engineering_pairs/_pairs_emit_extval.py",
+   107,
+   "P1",
+   "if all(hasattr(c, \"dev\") for c in chunks):",
+   "all(... for ... in chunks) in _hstack_chunk_codes() is True when chunks is empty, so an empty pattern matches every input. Write `bool(chunks) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_hermite_fe_optimise.py",
+   75,
+   "P1",
+   "if _fill_bf_batch_njit is not None and all(i >= 0 for i in _bf_ids1):",
+   "all(... for ... in _bf_ids1) in _pair_bf_rows() is True when _bf_ids1 is empty, so an empty pattern matches every input. Write `bool(_bf_ids1) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_hermite_fe_optimise_parts.py",
+   39,
+   "P1",
+   "if _fill_bf_batch_njit is not None and all(i >= 0 for i in _bf_ids):",
+   "all(... for ... in _bf_ids) in _assemble_bf_columns() is True when _bf_ids is empty, so an empty pattern matches every input. Write `bool(_bf_ids) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_meta_fe_recommender.py",
+   418,
+   "P1",
+   "if all(f in learned for f in ALL_FE_MASTER_FLAGS):",
+   "all(... for ... in ALL_FE_MASTER_FLAGS) in recommend() is True when ALL_FE_MASTER_FLAGS is empty, so an empty pattern matches every input. Write `bool(ALL_FE_MASTER_FLAGS) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_mrmr_fe_step/_step_score_parts2.py",
+   288,
+   "P1",
+   "replayable = all(name in raw_names or engineered_recipes.get(name) is not None or subsumed_store.get(name) is not None for name in operands)",
+   "all(... for ... in operands) in _filter_unreplayable_pair_block() is True when operands is empty, so an empty pattern matches every input. Write `bool(operands) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/filters/_mrmr_fit_impl/_hybrid_orth_family_variants/_group1.py",
+   179,
+   "P1",
+   "_explicit_triplets = [tr for tr in _gbm_seeded_triplet_names if all((c in _xcols and fe_is_numeric_col(X, c)) for c in tr)] or None",
+   "all(... for ... in tr) in _hybrid_orth_family_variants_group1_part1() is True when tr is empty, so an empty pattern matches every input. Write `bool(tr) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "feature_selection/wrappers/rfecv/_cb_border_cache.py",
+   187,
+   "P1",
+   "hit = all(n in fold.known for n in names)",
+   "all(... for ... in names) in fit_catboost_with_cached_borders() is True when names is empty, so an empty pattern matches every input. Write `bool(names) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "models/ensembling/_correlation.py",
+   128,
+   "P1",
+   "if all(p is not None for p in cand):",
+   "all(... for ... in cand) in compute_high_correlation_pairs() is True when cand is empty, so an empty pattern matches every input. Write `bool(cand) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "models/ensembling/_correlation.py",
+   143,
+   "P1",
+   "if all(p is not None for p in cand):",
+   "all(... for ... in cand) in compute_high_correlation_pairs() is True when cand is empty, so an empty pattern matches every input. Write `bool(cand) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "models/ensembling/score_gate.py",
+   109,
+   "P1",
+   "if all(isinstance(p, np.ndarray) for p in _candidate):",
+   "all(... for ... in _candidate) in select_gate_source_split() is True when _candidate is empty, so an empty pattern matches every input. Write `bool(_candidate) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "models/ensembling/score_gate.py",
+   134,
+   "P1",
+   "if all(isinstance(p, np.ndarray) for p in _candidate):",
+   "all(... for ... in _candidate) in select_gate_source_split() is True when _candidate is empty, so an empty pattern matches every input. Write `bool(_candidate) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/composite/_canonical_hash.py",
+   102,
+   "P1",
+   "return \"string\" if all(isinstance(v, str) for v in vals) else \"object\"",
+   "all(... for ... in vals) in pandas_logical_type() is True when vals is empty, so an empty pattern matches every input. Write `bool(vals) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/composite/discovery/_grouped_causal_bases.py",
+   307,
+   "P1",
+   "if all(c in existing for c in needed):",
+   "all(... for ... in needed) in grouped_causal_bases_for_frame() is True when needed is empty, so an empty pattern matches every input. Write `bool(needed) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/composite/feature_subset_bagging.py",
+   89,
+   "P1",
+   "if all(not pool for pool in cluster_pools):",
+   "all(... for ... in cluster_pools) in correlation_cluster_feature_subsets() is True when cluster_pools is empty, so an empty pattern matches every input. Write `bool(cluster_pools) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/core/_calib_frame_replay.py",
+   126,
+   "P1",
+   "if all(c in cand_cols for c in test_cols):",
+   "all(... for ... in test_cols) in align_calib_to_test_schema() is True when test_cols is empty, so an empty pattern matches every input. Write `bool(test_cols) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/core/_phase_helpers_fit_split.py",
+   479,
+   "P1",
+   "if all(_a.ndim == 1 and len(_a) == _n for _a in _arrs):",
+   "all(... for ... in _arrs) in _composite_stratify_labels() is True when _arrs is empty, so an empty pattern matches every input. Write `bool(_arrs) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/core/_predict_composite_routing.py",
+   51,
+   "P1",
+   "if all(c in have for c in needed):",
+   "all(... for ... in needed) in composite_stage_frame() is True when needed is empty, so an empty pattern matches every input. Write `bool(needed) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/core/_predict_pre_pipeline.py",
+   686,
+   "P1",
+   "if all(c in _have for c in _inner_list):",
+   "all(... for ... in _inner_list) in _transform_with_model_pre_pipeline() is True when _inner_list is empty, so an empty pattern matches every input. Write `bool(_inner_list) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/pipeline/_categorical_composite_fe.py",
+   75,
+   "P1",
+   "if not all(c in _pd_view.columns for c in _group):",
+   "all(... for ... in _group) in _attach_auto_group_composites() is True when _group is empty, so an empty pattern matches every input. Write `bool(_group) and all(...)` or refuse earlier."
+  ],
+  [
+   "vacuous_empty_pattern_match",
+   "training/pipeline/_categorical_composite_fe.py",
+   191,
+   "P1",
+   "if not all(c in _pd_view.columns for c in _group):",
+   "all(... for ... in _group) in replay_categorical_composite_fe() is True when _group is empty, so an empty pattern matches every input. Write `bool(_group) and all(...)` or refuse earlier."
+  ]
+ ]
+}

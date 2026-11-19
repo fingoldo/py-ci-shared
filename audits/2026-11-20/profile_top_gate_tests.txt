@@ -1,0 +1,86 @@
+18 slowest mlframe meta gate tests, one process, MLFRAME_FAST=1, no GPU, under cProfile (times inflated ~2x)
+
+=== top 30 by tottime ===
+Fri Nov 20 06:09:56 2026    C:\Users\Admin/top_gates.prof
+
+         2704287623 function calls (2666357373 primitive calls) in 2432.778 seconds
+
+   Ordered by: internal time
+   List reduced from 40777 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+1029907572  298.873    0.000  298.951    0.000 {built-in method builtins.isinstance}
+196471482  238.977    0.000  482.660    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\ast.py:280(iter_child_nodes)
+ 52748804  166.362    0.000  276.797    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\node_index.py:99(child_nodes)
+254042294  123.150    0.000  173.103    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\ast.py:268(iter_fields)
+277702334/277699277   97.874    0.000   98.374    0.000 {built-in method builtins.getattr}
+ 20488991   76.316    0.000  125.075    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\node_index.py:57(_walk)
+25800376/17936   67.799    0.000  222.465    0.012 C:\Users\Admin\Machine learning\mlframe\tests\test_meta\_offline_elementwise_sources.py:104(_collect)
+ 63643579   62.716    0.000  128.195    0.000 {method 'extend' of 'list' objects}
+ 50852695   57.309    0.000  341.057    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\ast.py:386(walk)
+ 11414688   57.001    0.000  183.954    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\unresolved_module_attributes.py:113(_own_nodes)
+ 56688304   45.731    0.000  273.224    0.000 {method 'extend' of 'collections.deque' objects}
+91344/91342   44.193    0.000   12.726    0.000 {method 'read' of '_io.TextIOWrapper' objects}
+    74272   43.179    0.001  127.605    0.002 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\aliases.py:210(_scan_scope)
+        4   42.902   10.725   42.902   10.725 {built-in method gc.collect}
+ 94485748   36.123    0.000   36.255    0.000 {method 'get' of 'dict' objects}
+    19124   35.127    0.002   35.127    0.002 {built-in method builtins.compile}
+ 97212444   33.028    0.000   33.028    0.000 {method 'append' of 'list' objects}
+   151063   31.785    0.000   31.785    0.000 {built-in method nt._getfinalpathname}
+    28317   30.631    0.001   33.908    0.001 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\glob.py:530(scandir)
+    40764   26.436    0.001   62.035    0.002 C:\Users\Admin\Machine learning\mlframe\tests\test_meta\conftest.py:34(_shared_parse)
+   109671   22.540    0.000   24.293    0.000 {built-in method _io.open}
+ 63038656   22.174    0.000   22.174    0.000 {method 'pop' of 'list' objects}
+    87760   21.361    0.000  121.060    0.001 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\node_index.py:144(_index)
+   468334   20.545    0.000   72.570    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\aliases.py:168(_parent_map)
+   697476   18.491    0.000   35.366    0.000 {built-in method nt._path_isfile}
+     7934   18.006    0.002   18.006    0.002 {built-in method _io.open_code}
+ 70889487   17.498    0.000   17.498    0.000 {method 'popleft' of 'collections.deque' objects}
+  7270144   15.691    0.000   26.541    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\_core\aliases.py:71(_bound_targets)
+  3770972   15.334    0.000   32.432    0.000 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\unresolved_imports.py:269(_names_bound_by)
+4138354/3824   13.214    0.000   46.545    0.012 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\cuda_kernel_integer_width.py:169(visit)
+
+
+
+=== top 30 by cumulative ===
+Fri Nov 20 06:09:56 2026    C:\Users\Admin/top_gates.prof
+
+         2704287623 function calls (2666357373 primitive calls) in 2432.778 seconds
+
+   Ordered by: cumulative time
+   List reduced from 40777 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+  10120/1    1.512    0.000 2432.439 2432.439 {built-in method builtins.exec}
+  3069/66    0.008    0.000 2432.202   36.852 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pluggy\_manager.py:111(_hookexec)
+  3069/66    0.038    0.000 2432.201   36.852 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pluggy\_callers.py:76(_multicall)
+   2632/2    0.040    0.000 2432.191 1216.096 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pluggy\_hooks.py:497(__call__)
+      2/1    0.000    0.000 2374.440 2374.440 <frozen runpy>:201(run_module)
+      2/1    0.000    0.000 2374.440 2374.440 <frozen runpy>:65(_run_code)
+      2/1    0.000    0.000 2374.440 2374.440 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytest\__main__.py:1(<module>)
+      2/1    0.000    0.000 2374.438 2374.438 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\config\__init__.py:246(_console_main)
+        1    0.000    0.000 2374.438 2374.438 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\config\__init__.py:204(_main)
+        1    0.000    0.000 2374.436 2374.436 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\main.py:376(pytest_cmdline_main)
+        1    0.000    0.000 2374.435 2374.435 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\main.py:317(wrap_session)
+        1    0.000    0.000 2332.954 2332.954 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\main.py:380(_main)
+    74/55    0.001    0.000 2326.100   42.293 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:340(from_call)
+       54    0.001    0.000 2244.820   41.571 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:236(call_and_report)
+        1    0.000    0.000 2244.806 2244.806 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\main.py:397(pytest_runtestloop)
+       18    0.000    0.000 2244.733  124.707 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:115(pytest_runtest_protocol)
+       18    0.001    0.000 2244.719  124.707 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:123(runtestprotocol)
+       54    0.000    0.000 2244.502   41.565 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:250(<lambda>)
+       18    0.000    0.000 2217.451  123.192 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\runner.py:173(pytest_runtest_call)
+       18    0.000    0.000 2217.449  123.192 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\python.py:1705(runtest)
+       18    0.042    0.002 2217.448  123.192 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\_pytest\python.py:160(pytest_pyfunc_call)
+ 1178/911    0.004    0.000 1787.714    1.962 {method 'send' of 'generator' objects}
+      542    0.003    0.000 1772.221    3.270 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pluggy\_callers.py:25(run_old_style_hookwrapper)
+       36    0.001    0.000 1772.210   49.228 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytest_timeout.py:178(pytest_runtest_protocol)
+196471482  238.977    0.000  482.660    0.000 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\ast.py:280(iter_child_nodes)
+        3    0.000    0.000  472.566  157.522 C:\Users\Admin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\pytest_timeout.py:241(pytest_exception_interact)
+        1    0.000    0.000  392.460  392.460 C:\Users\Admin\Machine learning\mlframe\tests\test_meta\test_shared_gates_adopted_pass2.py:205(test_module_attribute_reads_resolve)
+        1    0.007    0.007  392.460  392.460 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\unresolved_module_attributes.py:575(assert_no_unresolved_module_attributes)
+        1    0.263    0.263  392.451  392.451 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\unresolved_module_attributes.py:530(scan_module_attributes)
+     3428    5.799    0.002  375.598    0.110 C:\Users\Admin\Machine learning\py-ci-shared\src\py_ci_shared\unresolved_module_attributes.py:478(_scan_file)
+
+
+
