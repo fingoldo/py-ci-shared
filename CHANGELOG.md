@@ -22,16 +22,8 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - **Behaviour change**: a pytest run with no `-n` now gets its xdist worker count from free RAM, capped at the physical cores minus one, through the `py_ci_shared` pytest plugin (`_pytest_workers.plan_workers`). A run on a machine with little free memory, or on CI (`CI` set), stays serial as before. What to do: nothing if the suite passes serially; to keep a run serial or fix its count, pass `-n 0` or `-n N`, or set `PY_CI_SHARED_WORKERS=0` (or `=N`). `PY_CI_SHARED_WORKER_GIB` sets the per-worker memory estimate (1.5 GiB is a guess until measured).
 
-- New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
 
-- New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
 
-- New gate `global_write_via_reexport_alias` (`assert_global_write_via_reexport_alias`): the write to a global through a re-exporting facade; a write through a re-exporting facade changes only the facade's copy, not the global. Nothing to do for existing consumers until they enable it.
-- New gate `route_literal_after_catchall` (`assert_route_literal_after_catchall`): a literal route declared after a same-shape parameter route; a literal route shadowed by an earlier parameter route is flagged. Nothing to do for existing consumers until they enable it.
-- New gate `sql_where_mixed_and_or` (`assert_sql_where_mixed_and_or`): a WHERE clause mixing AND and OR at one parenthesis level; a WHERE clause that mixes AND and OR without parentheses is flagged. Nothing to do for existing consumers until they enable it.
-- New gate `thread_lifecycle` (`assert_thread_lifecycle`): a threading.Thread that is neither daemonised, joined nor owned by a context manager; a non-daemon thread that is never joined is flagged. Nothing to do for existing consumers until they enable it.
-- New gate `tool_config_dead_entries` (`assert_tool_config_dead_entries`): a pyproject ignore, omit or override naming nothing that exists; a dead pyproject ignore, omit or override entry is flagged. Nothing to do for existing consumers until they enable it.
-- New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
 
 - **Behaviour change** (audit 49-T3): the text-ratchet gates (`skip_as_pass`, `wallclock_test_waits`, `guard_without_fixture`, `git_child_env`, `dup_baseline_percent_key` and others built on `enforce_findings`) now fail with the whole report: header, one finding per line, guidance, and the real reason for a stale or unjustified entry (previously "0 new violation(s)"). A PASS prints its count as a note on its row. Exit codes are unchanged. What to do: nothing for a green consumer; for a red one, read the listed findings, and for a stale entry delete the named keys from the baseline file.
 - **Behaviour change** (40-T6, `console_unicode`): the UTF-8 exemption is now structural: a module is exempt for a stream only when its AST has a live `sys.stdout.reconfigure(encoding=...)` (or `sys.stderr`) call. A comment, a string, a stderr-only reconfigure for stdout output, or a function nothing calls no longer exempts. The scanner also reads non-ASCII text in `print(...)` built with `+`, `%` or `.format`, in `sep=`/`end=`, and in `sys.stdout.write`, `click.echo` and `Console().print`. Print and logger output is matched to its stream (`file=sys.stderr` and logging are stderr). What to do: a module flagged now either adds `sys.stdout.reconfigure(encoding="utf-8")` at its entry point (or `sys.stderr` for stderr output), or replaces the non-ASCII text with ASCII, or waives it with an `audit-exempt` marker naming `console_unicode` plus a reason.
@@ -69,19 +61,12 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - New tool `bump_pin` (audit 47-T8): `py-ci-shared tool bump_pin <ref> <checkout> [--write]` moves every py-ci-shared pin line of one consumer checkout (workflow `uses:`, `py-ci-shared-ref:` inputs, pre-commit `rev:`, requirements and pyproject URLs) to one ref. Dry run by default; it never writes outside the given checkout and does not follow symlinks. Nothing to do for consumers until they run it.
 
-- New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
 
-- New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
 
-- New gate `cuda_wide_load_alignment` (audit 55-T8): flags a byte-pointer cast to a wider type in a CUDA kernel whose signature has no stride, pitch, pad or ld parameter; waive with `// align-ok: <reason>`. Nothing to do for existing consumers until they enable it.
 
-- New gate `deprecated_docstring_without_warn`: a public function documented as deprecated in its docstring's first paragraph must call `warnings.warn` or carry a `deprecated` decorator. Suppress with `# deprecated-ok: <reason>`. Consumers with such a function turn red; add the warning or the waiver.
 
-- New gate `estimator_mixin_order`: flags a scikit-learn mixin (ClassifierMixin, RegressorMixin, ...) listed after `BaseEstimator` in a class statement, which silently makes `is_classifier`/`is_regressor` return False under scikit-learn >= 1.6. Waive with `# mixin-order-ok: <reason>`. Consumers that have such a class turn red; fix by moving the mixin before `BaseEstimator`.
 
-- New gate `fit_at_test_module_import` (audit 50-T5): flags a test module that trains a model while it is imported (module or class-level `.fit`-style calls); waive with `# import-fit-ok: <reason>`. No behaviour change for consumers until it is registered.
 
-- New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
 
 - **Behaviour change** (`ci_install_covers_entry_imports`): the generated core-only blocker now makes `importlib.util.find_spec` return `None` for every package it blocks, so an entry that probes with `find_spec(name) is not None` sees a blocked extra as absent instead of crashing the import. An entry whose probe now takes its fallback path runs that path, so it can turn red on a real core-only defect it used to hide. What to do: nothing for an entry that never probes; an entry whose probe now takes its fallback path must be checked for real: fix the fallback or add the extra to the install.
 
@@ -215,6 +200,36 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 ## 1.23.12
 
 The v1.23.12 tag was never published (its Release run refused its own tag); its entries are listed under 1.23.13.
+
+- New gate `tracked_env_packages` (`assert_tracked_env_packages`): a tracked Python file under an `env`, `venv`, `build` or `dist` directory is reported, because the code_audit scanners prune those names and never read it (40-T1). The code_audit walk keeps its pruning for speed. Nothing to do for existing consumers until they enable it; a flagged package is renamed or moved out of the pruned name.
+
+- New gate `unpruned_tree_walk` (`assert_unpruned_tree_walk`): a repository-root walk that enters agent worktrees; a walk that does not prune `.claude/worktrees` is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `global_write_via_reexport_alias` (`assert_global_write_via_reexport_alias`): the write to a global through a re-exporting facade; a write through a re-exporting facade changes only the facade's copy, not the global. Nothing to do for existing consumers until they enable it.
+
+- New gate `route_literal_after_catchall` (`assert_route_literal_after_catchall`): a literal route declared after a same-shape parameter route; a literal route shadowed by an earlier parameter route is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `sql_where_mixed_and_or` (`assert_sql_where_mixed_and_or`): a WHERE clause mixing AND and OR at one parenthesis level; a WHERE clause that mixes AND and OR without parentheses is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `thread_lifecycle` (`assert_thread_lifecycle`): a threading.Thread that is neither daemonised, joined nor owned by a context manager; a non-daemon thread that is never joined is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `tool_config_dead_entries` (`assert_tool_config_dead_entries`): a pyproject ignore, omit or override naming nothing that exists; a dead pyproject ignore, omit or override entry is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
+
+- New gate `append_only_log_shrink` (audit 50-T12): flags a first-parent commit that shrinks an append-only data file (JSONL, gzipped JSONL) relative to its parent; waive with an `Append-Only-Shrink: <reason>` trailer. No behaviour change for consumers until it is registered.
+
+- New gate `cuda_device_idioms` (audit 55-T10): flags literal device ids in device calls, cupy `.power` with small integer exponents, and explicit `axis=0` device sorts; waive with `# device-ok:`, `# power-ok:` or `# sort-ok:` plus a reason. Nothing to do for existing consumers until they enable it.
+
+- New gate `cuda_wide_load_alignment` (audit 55-T8): flags a byte-pointer cast to a wider type in a CUDA kernel whose signature has no stride, pitch, pad or ld parameter; waive with `// align-ok: <reason>`. Nothing to do for existing consumers until they enable it.
+
+- New gate `deprecated_docstring_without_warn`: a public function documented as deprecated in its docstring's first paragraph must call `warnings.warn` or carry a `deprecated` decorator. Suppress with `# deprecated-ok: <reason>`. Consumers with such a function turn red; add the warning or the waiver.
+
+- New gate `estimator_mixin_order`: flags a scikit-learn mixin (ClassifierMixin, RegressorMixin, ...) listed after `BaseEstimator` in a class statement, which silently makes `is_classifier`/`is_regressor` return False under scikit-learn >= 1.6. Waive with `# mixin-order-ok: <reason>`. Consumers that have such a class turn red; fix by moving the mixin before `BaseEstimator`.
+
+- New gate `fit_at_test_module_import` (audit 50-T5): flags a test module that trains a model while it is imported (module or class-level `.fit`-style calls); waive with `# import-fit-ok: <reason>`. No behaviour change for consumers until it is registered.
+
+- New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
 
 ## 1.23.11
 
