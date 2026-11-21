@@ -228,3 +228,27 @@ def test_a_bom_audit_file_is_read(tmp_path):
     (audit / "01_correctness.md").write_bytes(b"\xef\xbb\xbf- Disposition: RESOLVED - `tool/gone.py`\n")
     problems = find_unsupported_dispositions(audit, root)
     assert len(problems) == 1 and "gone.py" in problems[0]
+
+
+
+def test_fixed_disposition_must_cite_an_existing_test(tmp_path):
+    """With require_test_citation, a FIXED line that names no test file is a problem, and a cited test must exist."""
+    from py_ci_shared.audit_disposition_parity import find_unsupported_dispositions
+
+    repo = tmp_path / "repo"
+    (repo / "tests").mkdir(parents=True)
+    (repo / "tests" / "test_real.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    audit = tmp_path / "audit"
+    audit.mkdir()
+    (audit / "01.md").write_text(
+        "#### F1\n- Disposition: FIXED - Guard added. Test tests/test_real.py.\n"
+        "#### F2\n- Disposition: FIXED - Guard added, no test named here.\n"
+        "#### F3\n- Disposition: FIXED - Guard added. Test tests/test_gone.py.\n",
+        encoding="utf-8",
+    )
+    problems = find_unsupported_dispositions(audit, repo, require_test_citation=True)
+    assert any("01.md:4" in p and "names no test file" in p for p in problems), problems
+    assert any("01.md:6" in p and "tests/test_gone.py" in p for p in problems), problems
+    assert not any("01.md:2" in p for p in problems), problems
+    # Off by default: the same file is clean for existing consumers.
+    assert find_unsupported_dispositions(audit, repo) == []

@@ -4,6 +4,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.14
 
+- Three new code_audit scanners, each a meta-test for a defect class that reached a mlframe commit (`code_audit/unread_declared_field.py`, `code_audit/salted_hash_seed.py`, `code_audit/optional_dep_test_import.py`): a public dataclass field that no code reads as `.name`, a builtin `hash()` feeding a random seed (salted per process, so a seeded result changes on every run), and a test module importing `lightning` at module level without an earlier `importorskip`. Each one is reported as P2 and can be suppressed on one line with a reasoned `# audit-exempt:` marker. Nothing to do; a consumer that runs the whole registry sees the new findings.
+
+- `audit_disposition_parity.find_unsupported_dispositions` takes `require_test_citation=True`: a `Disposition: FIXED` line must name a test file (`tests/...py` or `test_*.py`) and that file must exist. Off by default, so a consumer opts in once its FIXED lines cite their tests. Nothing to do until you opt in.
+
 - The on-disk memo of a full code-audit run (`code_audit/_scan_cache.py`, `~/.cache/pyutilz-code-audit`) is keyed on the CONTENT of the scanned tree and of the whole `py_ci_shared` package, not on modification times and not only on `code_audit/`. A fresh checkout, where every mtime is new, now hits an entry that an earlier run of the same files wrote, so a CI job can restore the directory (`actions/cache`) and skip a scan that took minutes on a large repo; a change to `_core` or any other gate module now invalidates it, which the old key missed. The first run after the upgrade scans once. Nothing to do.
 
 - `assert_entry_imports_without_extras` starts its entries concurrently (new keyword `workers`, default the CPU count capped at 4) instead of one after another; the failures are still reported in the order of the entries and the per-entry timeout is unchanged. mlframe's core-only import test went from 177 s to 43 s on the same 16 entries. Nothing to do.
