@@ -1,0 +1,5 @@
+import numpy as np
+import pandas as pd
+
+big = np.zeros((10, 3), dtype=np.float32)
+frame = pd.DataFrame(big, columns=["a", "b", "c"])

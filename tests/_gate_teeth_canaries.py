@@ -732,6 +732,7 @@ CANARIES: dict[str, Canary] = {
         ),
         Canary("pytest_defaults_declared", lambda d: _gate("pytest_defaults_declared").assert_pytest_defaults_declared(d, use_git=False),
                token="pyproject.toml", tokens=("--durations", "cacheprovider")),
+        Canary("pandas_frame_copy_default", lambda d: _gate("pandas_frame_copy_default").assert_pandas_frame_copy_default(d, advisory=False, use_git=False)),
     ]
 }
 

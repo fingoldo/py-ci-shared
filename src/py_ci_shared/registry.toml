@@ -1337,6 +1337,13 @@ budget_s = 120
 summary = "The doctests a package ships actually run, and there are some to run"
 
 [[gate]]
+name = "pandas_frame_copy_default"
+kind = "gate"
+entries = ["assert_pandas_frame_copy_default"]
+since = "1.23.14"
+summary = "pd.DataFrame built over existing arrays without copy=False copies them (pandas 3 default)"
+
+[[gate]]
 name = "patch_target_read_at_call"
 kind = "gate"
 entries = ["assert_patch_target_read_at_call"]
