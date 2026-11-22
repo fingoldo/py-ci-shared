@@ -154,8 +154,33 @@ def _claim_problems(
     return problems
 
 
+# Verdicts that claim a code change, which must cite the test that pins it. ``require_test_citation`` turns the check on.
+_TEST_CITED_VERDICTS = frozenset({"FIXED"})
+# A test path: ``tests/...py`` or a bare ``test_*.py`` name. A disposition that claims a fix and names none has left its fix unpinned.
+_TEST_PATH_RE = re.compile(r"(?<![\w/])(?:tests?/[\w./\-]+\.py|test_[\w]+\.py)(?![\w])")
+
+
+def _test_citation_problems(where: str, verdict: str, text: str, roots: Sequence[Path]) -> list[str]:
+    """Problems for a fix disposition (``require_test_citation``): it must name a test file, and that file must exist."""
+    cited = {m.replace("\\", "/") for m in _TEST_PATH_RE.findall(text)}
+    if not cited:
+        return [
+            f"{where}: disposition says {verdict} and names no test file. A fix is only recorded once a regression "
+            f"test pins it: cite the test path (tests/...py) in the disposition."
+        ]
+    if any(any((root / path).exists() or (root / path.split("/", 1)[-1]).exists() for root in roots) for path in cited):
+        return []
+    return [f"{where}: disposition says {verdict} and cites test {sorted(cited)[0]!r}, which does not exist under the repository."]
+
+
 def _file_problems(
-    path: Path, assertive: set[str], ignored: set[str], roots: Sequence[Path], migration_prefixes: set[str], migrations_name: str
+    path: Path,
+    assertive: set[str],
+    ignored: set[str],
+    roots: Sequence[Path],
+    migration_prefixes: set[str],
+    migrations_name: str,
+    require_test_citation: bool = False,
 ) -> tuple[list[str], int]:
     """``(problems, dispositions seen)`` for one audit file; an unreadable file is itself a problem."""
     try:
@@ -172,6 +197,8 @@ def _file_problems(
         verdict, text = parsed
         if verdict in assertive:
             problems.extend(_claim_problems(f"{path.name}:{lineno}", verdict, text, ignored, roots, migration_prefixes, migrations_name))
+            if require_test_citation and verdict in _TEST_CITED_VERDICTS:
+                problems.extend(_test_citation_problems(f"{path.name}:{lineno}", verdict, text, roots))
     return problems, seen
 
 
@@ -183,6 +210,7 @@ def find_unsupported_dispositions(
     ignore_paths: Iterable[str] = (),
     verdicts: Sequence[str] = tuple(sorted(_ASSERTIVE_VERDICTS)),
     search_roots: Sequence[Path] = (),
+    require_test_citation: bool = False,
 ) -> list[str]:
     """Return one problem string per disposition that claims a file or migration which is absent.
 
@@ -207,7 +235,9 @@ def find_unsupported_dispositions(
     # disposition shape at all means this check is reading the wrong format and would pass everything.
     seen_any = 0
     for path in files:
-        file_problems, seen = _file_problems(path, assertive, ignored, (repo_root, *search_roots), migration_prefixes, migrations_dir.name)
+        file_problems, seen = _file_problems(
+            path, assertive, ignored, (repo_root, *search_roots), migration_prefixes, migrations_dir.name, require_test_citation
+        )
         problems.extend(file_problems)
         seen_any += seen
     if seen_any == 0:

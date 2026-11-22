@@ -63,6 +63,9 @@ list[Finding]):
   batches silently skips rows under OFFSET (keyset pagination on a
   stable id column is immune).
 
+- ``scan_unread_declared_fields``: a public dataclass field never read as ``.name`` anywhere in the tree.
+- ``scan_salted_hash_seeds``: builtin ``hash()`` feeding a random seed (salted per process).
+- ``scan_unguarded_optional_test_imports``: a test module importing an optional dependency at module level without importorskip.
 - ``scan_dead_cli_flags``: an ``argparse`` ``add_argument(...)`` whose
   bound attribute (``args.<name>``) is never referenced anywhere in the
   scanned tree -- either dead code or a flag that silently does nothing.
@@ -550,6 +553,9 @@ from .nan_equality import scan_nan_equality
 from .mutation_during_iteration import scan_mutation_during_iteration
 from .sql_lint import scan_sql_limit_without_order_by, scan_sql_offset_pagination, scan_sql_aggregate_before_cast
 from .dead_cli_flags import scan_dead_cli_flags
+from .unread_declared_field import scan_unread_declared_fields
+from .salted_hash_seed import scan_salted_hash_seeds
+from .optional_dep_test_import import scan_unguarded_optional_test_imports
 from .settings_container_nodecode import scan_settings_container_field_needs_nodecode
 from .dead_endpoint_params import scan_dead_endpoint_parameters
 from .stale_source_citations import scan_stale_source_citations
@@ -664,6 +670,9 @@ __all__ = [
     "scan_sql_limit_without_order_by",
     "scan_sql_offset_pagination",
     "scan_dead_cli_flags",
+    "scan_unread_declared_fields",
+    "scan_salted_hash_seeds",
+    "scan_unguarded_optional_test_imports",
     "scan_settings_container_field_needs_nodecode",
     "scan_dead_endpoint_parameters",
     "scan_stale_source_citations",

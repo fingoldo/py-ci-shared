@@ -24,6 +24,9 @@ from .getattr_unknown_attribute import scan_getattr_unknown_attribute
 from .getattr_literal_on_known_dataclass import scan_getattr_literal_on_known_dataclass
 from .locals_get import scan_locals_get_fragile_lookup
 from .dead_cli_flags import scan_dead_cli_flags
+from .unread_declared_field import scan_unread_declared_fields
+from .salted_hash_seed import scan_salted_hash_seeds
+from .optional_dep_test_import import scan_unguarded_optional_test_imports
 from .settings_container_nodecode import scan_settings_container_field_needs_nodecode
 from .dead_endpoint_params import scan_dead_endpoint_parameters
 from .stale_source_citations import scan_stale_source_citations
@@ -179,6 +182,9 @@ register_scanner("mutation_during_iteration", scan_mutation_during_iteration)
 register_scanner("sql_limit_without_order_by", scan_sql_limit_without_order_by)
 register_scanner("sql_offset_pagination", scan_sql_offset_pagination)
 register_scanner("dead_cli_flag", scan_dead_cli_flags)
+register_scanner("unread_declared_field", scan_unread_declared_fields)
+register_scanner("salted_hash_seed", scan_salted_hash_seeds)
+register_scanner("unguarded_optional_test_import", scan_unguarded_optional_test_imports)
 register_scanner("settings_container_field_needs_nodecode", scan_settings_container_field_needs_nodecode)
 register_scanner("dead_endpoint_parameter", scan_dead_endpoint_parameters)
 register_scanner("stale_source_citation", scan_stale_source_citations)

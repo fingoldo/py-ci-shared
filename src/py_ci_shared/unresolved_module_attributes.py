@@ -231,6 +231,8 @@ class _Resolver:
     def __init__(self) -> None:
         self._infos: dict[Path, _ModuleInfo] = {}
         self._active: set[Path] = set()
+        # Filled by _alias_candidates. Keyed on the importing directory, which fixes the search directories for one scan.
+        self.alias_memo: dict[tuple, tuple[str, list[_Candidate]]] = {}
 
     @staticmethod
     def candidates_in(dirs: Iterable[Path], dotted: str) -> list[_Candidate]:
@@ -415,7 +417,19 @@ def _hasattr_by_scope(tree: ast.Module) -> "dict[int, dict[str, set[str]]]":
 
 
 def _alias_candidates(binding: _Binding, file: Path, dirs: Sequence[Path], resolver: _Resolver) -> "tuple[str, list[_Candidate]]":
-    """``(dotted display name, candidate sources)`` of the module an import binding names; no candidates for a non-first-party or non-module target."""
+    """``(dotted display name, candidate sources)`` of the module an import binding names; no candidates for a non-first-party or non-module target.
+
+    Within one scan the search directories are a function of the importing directory, so the answer is memoised per (binding, directory).
+    """
+    memo_key = (binding.level, binding.module, binding.member, file.parent)
+    cached = resolver.alias_memo.get(memo_key)
+    if cached is None:
+        cached = _alias_candidates_uncached(binding, file, dirs, resolver)
+        resolver.alias_memo[memo_key] = cached
+    return cached
+
+
+def _alias_candidates_uncached(binding: _Binding, file: Path, dirs: Sequence[Path], resolver: _Resolver) -> "tuple[str, list[_Candidate]]":
     if binding.level:
         base = file.parent
         for _ in range(binding.level - 1):
