@@ -564,8 +564,6 @@ def _origin_and_clone(tmp_path):
     run = lambda *a, cwd: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)  # noqa: E731
     run("init", "--bare", str(origin), cwd=tmp_path)
     run("clone", str(origin), str(clone), cwd=tmp_path)
-    run("config", "user.email", "t@example.com", cwd=clone)
-    run("config", "user.name", "t", cwd=clone)
     (clone / "f.txt").write_text("x", encoding="utf-8")
     run("add", "f.txt", cwd=clone)
     run("commit", "-m", "c", cwd=clone)
