@@ -6,10 +6,6 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 - Added `pandas_frame_copy_default`: lists `pandas.DataFrame(data, ...)` calls over existing arrays without `copy=` (pandas 3 copies them; at a multi-GB frame that doubles a step's peak memory). Advisory by default, `advisory=False` fails or ratchets with `baseline_path`; `# copy-ok: <reason>` suppresses.
 
-- Modules first listed in 1.23.14 that carry `since = "1.23.15"` because the `v1.23.14` tag was cut on a commit whose CI was red (its Release run could not pass `verify`), so 1.23.15 is the first release of them: `append_only_log_shrink`, `bump_pin`, `cuda_atomic_determinism`, `cuda_barrier_divergence`, `cuda_clang_tidy`, `cuda_const_restrict`, `cuda_device_idioms`, `cuda_fallback_logged`, `cuda_grid_caps`, `cuda_kernel_fp_types`, `cuda_ktc_residency`, `cuda_launch_bounds_literal`, `cuda_nvrtc_headers`, `cuda_offline_arch`, `cuda_optout_allocations`, `cuda_parity_test_shape`, `cuda_profile_records`, `cuda_tree_reduction_block`, `cuda_warp_intrinsics`, `cuda_wide_load_alignment`, `deprecated_docstring_without_warn`, `estimator_mixin_order`, `fit_at_test_module_import`, `global_write_via_reexport_alias`, `ktc_sweep_tolerances`, `numba_cuda_kernels`, `pytest_defaults_declared`, `required_call_kwargs`, `route_literal_after_catchall`, `sql_where_mixed_and_or`, `thread_lifecycle`, `tool_config_dead_entries`, `tracked_env_packages`, `unpruned_tree_walk`, `workflow_installs_pinned`. Their descriptions are in the 1.23.14 section below. Nothing to do.
-
-## 1.23.14
-
 - Three new code_audit scanners, each a meta-test for a defect class that reached a mlframe commit (`code_audit/unread_declared_field.py`, `code_audit/salted_hash_seed.py`, `code_audit/optional_dep_test_import.py`): a public dataclass field that no code reads as `.name`, a builtin `hash()` feeding a random seed (salted per process, so a seeded result changes on every run), and a test module importing `lightning` at module level without an earlier `importorskip`. Each one is reported as P2 and can be suppressed on one line with a reasoned `# audit-exempt:` marker. Nothing to do; a consumer that runs the whole registry sees the new findings.
 
 - `audit_disposition_parity.find_unsupported_dispositions` takes `require_test_citation=True`: a `Disposition: FIXED` line must name a test file (`tests/...py` or `test_*.py`) and that file must exist. Off by default, so a consumer opts in once its FIXED lines cite their tests. Nothing to do until you opt in.
@@ -241,6 +237,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
 
 - New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
+
+## 1.23.14
+
+- Tagged on a commit whose CI was red and never published (the Release run could not pass `verify`); everything it carried is listed under 1.23.15, where the modules it introduced carry `since = "1.23.15"`. Nothing to do.
 
 ## 1.23.13
 
