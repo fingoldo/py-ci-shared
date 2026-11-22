@@ -2,7 +2,9 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
-## 1.23.15
+## 1.23.16
+
+- `release_guard.py prepare --check` no longer refuses the tag its own commit carries when that tag is ANNOTATED: `git ls-remote refs/tags/<tag>` lists an annotated tag's own object, not the commit it points to, so the release run verifying `v1.23.13`, `v1.23.14` and `v1.23.15` found `HEAD` missing from the tag's targets and stopped with "already exists on origin: another session prepared that version". The check now also reads the peeled `refs/tags/<tag>^{}` line (tests: `tests/test_release_version.py::test_the_release_run_may_verify_the_tag_its_own_commit_carries`, both tag kinds). Nothing to do.
 
 - Added `pandas_frame_copy_default`: lists `pandas.DataFrame(data, ...)` calls over existing arrays without `copy=` (pandas 3 copies them; at a multi-GB frame that doubles a step's peak memory). Advisory by default, `advisory=False` fails or ratchets with `baseline_path`; `# copy-ok: <reason>` suppresses.
 
@@ -237,6 +239,10 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 - New gate `workflow_installs_pinned` (`assert_workflow_installs_pinned`): a CI step that clones or pip-installs a first-party repo without a pinned commit; a CI git clone or pip install from git without a commit pin is flagged. Nothing to do for existing consumers until they enable it.
 
 - New gate `required_call_kwargs` (hard, no advisory mode): a call to a configured callee that passes none of its keywords fails. Default preset: `asyncpg.create_pool` needs `command_timeout`, `asyncpg.connect` needs `timeout`; `**kwargs` counts as present. Suppress with `# call-kwarg-ok: <reason>`. Consumers that call those without the keyword turn red; add it.
+
+## 1.23.15
+
+- Tagged but never published: its Release run stopped in `verify` on the annotated-tag defect described under 1.23.16; everything it carried is listed under 1.23.16, where the modules it introduced carry `since = "1.23.16"`. Nothing to do.
 
 ## 1.23.14
 

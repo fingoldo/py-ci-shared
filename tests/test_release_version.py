@@ -553,3 +553,37 @@ def test_a_prepare_rerun_after_publish_hands_the_previous_release_to_run_prep(mo
     args = argparse.Namespace(repo_dir=str(tmp_path), repo="x/y", published="1.23.11", version="1.23.11", write=False, check=True)
     assert guard._main_prepare(args) == 0
     assert seen["published"] == "v1.23.10"
+
+
+def _origin_and_clone(tmp_path):
+    """A bare origin and a clone of it holding one commit; returns ``(clone_dir, head_sha)``."""
+    import subprocess
+
+    origin = tmp_path / "origin.git"
+    clone = tmp_path / "clone"
+    run = lambda *a, cwd: subprocess.run(["git", *a], cwd=cwd, check=True, capture_output=True, text=True)  # noqa: E731
+    run("init", "--bare", str(origin), cwd=tmp_path)
+    run("clone", str(origin), str(clone), cwd=tmp_path)
+    run("config", "user.email", "t@example.com", cwd=clone)
+    run("config", "user.name", "t", cwd=clone)
+    (clone / "f.txt").write_text("x", encoding="utf-8")
+    run("add", "f.txt", cwd=clone)
+    run("commit", "-m", "c", cwd=clone)
+    return clone, run("rev-parse", "HEAD", cwd=clone).stdout.strip(), run
+
+
+@pytest.mark.parametrize("annotated", [True, False])
+def test_the_release_run_may_verify_the_tag_its_own_commit_carries(tmp_path, annotated):
+    """``prepare --check`` of the tagged commit (``allow_head``) passes for a lightweight tag and for an ANNOTATED one, whose ls-remote line holds the tag object, not the commit; a tag on another commit, or ``allow_head`` off, still refuses."""
+    clone, head, run = _origin_and_clone(tmp_path)
+    if annotated:
+        run("tag", "-a", "v9.9.9", "-m", "r", cwd=clone)
+    else:
+        run("tag", "v9.9.9", cwd=clone)
+    run("push", "origin", "v9.9.9", cwd=clone)
+    assert guard._origin_tag_problem(clone, "v9.9.9", allow_head=True) is None
+    assert "already exists on origin" in guard._origin_tag_problem(clone, "v9.9.9", allow_head=False)
+    (clone / "g.txt").write_text("y", encoding="utf-8")
+    run("add", "g.txt", cwd=clone)
+    run("commit", "-m", "later", cwd=clone)
+    assert "already exists on origin" in guard._origin_tag_problem(clone, "v9.9.9", allow_head=True)

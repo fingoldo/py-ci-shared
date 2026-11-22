@@ -274,13 +274,14 @@ def _origin_tag_problem(repo_dir: Path, tag: str, *, allow_head: bool = False) -
     and a second session must not write files for the same version (46-T3). Origin unreadable is a refusal, not a pass."""
     try:
         out = subprocess.run(
-            ["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"], cwd=repo_dir, capture_output=True, text=True, check=True, timeout=120
+            ["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}", f"refs/tags/{tag}^{{}}"], cwd=repo_dir, capture_output=True, text=True, check=True, timeout=120
         )
     except (OSError, subprocess.SubprocessError):
         return f"cannot read the tags of origin in {repo_dir}, so {tag} cannot be checked against it: re-run this job"
     if out.stdout.strip():
         head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo_dir, capture_output=True, text=True, check=True, timeout=60).stdout.strip()
-        # The tag this very commit carries (the release run verifying its own tag) is not another session's reservation.
+        # The tag this very commit carries (the release run verifying its own tag) is not another session's reservation. An annotated tag lists its own object first and the commit it points to on the
+        # peeled ``^{}`` line, so both lines count: with only the first, the run verifying an annotated tag refused its own release (v1.23.13, v1.23.14 and v1.23.15 all failed so).
         targets = {line.split()[0] for line in out.stdout.splitlines() if line.strip()}
         if allow_head and head in targets:
             return None
