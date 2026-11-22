@@ -1,6 +1,9 @@
 import numpy as np
 import pandas as pd
+from pandas import DataFrame as Frame
 
 big = np.zeros((10, 3), dtype=np.float32)
-frame = pd.DataFrame(big, columns=["a", "b", "c"], copy=False)
+positional = pd.DataFrame(big, columns=["a", "b", "c"], copy=False)
+keyword = pd.DataFrame(data=big, columns=["a", "b", "c"], copy=False)
+aliased = Frame(big, columns=["a", "b", "c"], copy=False)
 rows = pd.DataFrame([[1, 2], [3, 4]], columns=["a", "b"])

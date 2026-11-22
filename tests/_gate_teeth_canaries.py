@@ -730,9 +730,17 @@ CANARIES: dict[str, Canary] = {
             lambda d: _gate("tracked_env_packages").assert_tracked_env_packages(d, use_git=False),
             parses=False,  # judges directory NAMES, never contents; a syntax error is not its subject
         ),
-        Canary("pytest_defaults_declared", lambda d: _gate("pytest_defaults_declared").assert_pytest_defaults_declared(d, use_git=False),
-               token="pyproject.toml", tokens=("--durations", "cacheprovider")),
-        Canary("pandas_frame_copy_default", lambda d: _gate("pandas_frame_copy_default").assert_pandas_frame_copy_default(d, advisory=False, use_git=False)),
+        Canary(
+            "pytest_defaults_declared",
+            lambda d: _gate("pytest_defaults_declared").assert_pytest_defaults_declared(d, use_git=False),
+            token="pyproject.toml",
+            tokens=("--durations", "cacheprovider"),
+        ),
+        Canary(
+            "pandas_frame_copy_default",
+            lambda d: _gate("pandas_frame_copy_default").assert_pandas_frame_copy_default(d, advisory=False, use_git=False),
+            tokens=("seed.py:6", "seed.py:7", "seed.py:8"),
+        ),
     ]
 }
 
