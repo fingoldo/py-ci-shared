@@ -6,6 +6,7 @@ import ast
 from pathlib import Path
 from collections.abc import Iterable
 
+from .._core.node_index import walk as walk_nodes
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, is_line_exempt
 
 __all__ = ["scan_unguarded_optional_test_imports"]
@@ -24,7 +25,7 @@ _DEFAULT_OPTIONAL = frozenset({"lightning", "pytorch_lightning"})
 def _importorskip_roots(stmt: ast.stmt) -> set[str]:
     """The top-level package names a statement guards with ``importorskip("<name>")``."""
     roots: set[str] = set()
-    for node in ast.walk(stmt):
+    for node in walk_nodes(stmt):
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)

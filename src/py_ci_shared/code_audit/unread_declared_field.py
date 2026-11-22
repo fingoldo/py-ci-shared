@@ -7,6 +7,7 @@ import logging
 import re
 from pathlib import Path
 
+from .._core.unparse import unparse_stable
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_tree, is_line_exempt
 
 __all__ = ["scan_unread_declared_fields"]
@@ -47,7 +48,7 @@ def _declared_fields(cls: ast.ClassDef) -> list[tuple[str, ast.AnnAssign]]:
     for stmt in cls.body:
         if not isinstance(stmt, ast.AnnAssign) or not isinstance(stmt.target, ast.Name):
             continue
-        if stmt.target.id.startswith("_") or "ClassVar" in ast.unparse(stmt.annotation):
+        if stmt.target.id.startswith("_") or "ClassVar" in unparse_stable(stmt.annotation):
             continue
         fields.append((stmt.target.id, stmt))
     return fields

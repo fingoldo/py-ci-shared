@@ -156,7 +156,7 @@ def _claim_problems(
 
 # Verdicts that claim a code change, which must cite the test that pins it. ``require_test_citation`` turns the check on.
 _TEST_CITED_VERDICTS = frozenset({"FIXED"})
-# A test path: ``tests/...py`` or a bare ``test_*.py`` name. A disposition that claims a fix and names none has left its fix unpinned.
+# A test path: a ``tests`` directory path ending in ``.py`` or a bare ``test_*.py`` name. A disposition that claims a fix and names none has left its fix unpinned.
 _TEST_PATH_RE = re.compile(r"(?<![\w/])(?:tests?/[\w./\-]+\.py|test_[\w]+\.py)(?![\w])")
 
 

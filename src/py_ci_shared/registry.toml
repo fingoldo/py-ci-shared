@@ -1341,7 +1341,7 @@ name = "pandas_frame_copy_default"
 kind = "gate"
 entries = ["assert_pandas_frame_copy_default"]
 since = "1.23.14"
-summary = "pd.DataFrame built over existing arrays without copy=False copies them (pandas 3 default)"
+summary = "``pd.DataFrame`` built over existing arrays without ``copy=False`` copies them (pandas 3 default)"
 
 [[gate]]
 name = "patch_target_read_at_call"

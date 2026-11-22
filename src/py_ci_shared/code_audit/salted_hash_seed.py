@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .._core.node_index import walk as walk_nodes
 from ._base import Finding, _DEFAULT_EXCLUDE_DIRS, _iter_py_files, _line_text, _read_src_lines, _safe_parse, walk_tree, is_line_exempt
 
 __all__ = ["scan_salted_hash_seeds"]
@@ -33,7 +34,7 @@ def _callee_name(call: ast.Call) -> str | None:
 
 def _has_builtin_hash(node: ast.AST) -> bool:
     """True when ``hash(...)`` (the builtin, by bare name) is called anywhere inside *node*."""
-    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "hash" for n in ast.walk(node))
+    return any(isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "hash" for n in walk_nodes(node))
 
 
 def _target_names(stmt: ast.Assign | ast.AnnAssign) -> list[str]:

@@ -13,7 +13,7 @@ Usage in a consumer's meta test::
     from py_ci_shared.pandas_frame_copy_default import assert_pandas_frame_copy_default
 
     def test_pandas_frame_copy_default():
-        assert_pandas_frame_copy_default("src", advisory=False, baseline_path="tests/pandas_frame_copy_baseline.json")
+        assert_pandas_frame_copy_default("src", advisory=False, baseline_path="pandas_frame_copy_baseline.json")
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from collections.abc import Collection
 from pathlib import Path
 from typing import Optional, Union
 
-from ._core import Baseline, Finding, ImportAliases, scan_python
+from ._core import Baseline, Finding, ImportAliases, nodes_of, scan_python
 
 __all__ = ["DEFAULT_RECORD_NAMES", "RULE", "SUPPRESSION", "PandasFrameCopyWarning", "assert_pandas_frame_copy_default", "find_pandas_frame_copy_default"]
 
@@ -68,8 +68,8 @@ def _data_argument(call: ast.Call) -> "ast.expr | None":
 def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str], record_names: "Collection[str]" = DEFAULT_RECORD_NAMES) -> list[Finding]:
     """The findings in one parsed file."""
     out: list[Finding] = []
-    for node in ast.walk(tree):
-        if not isinstance(node, ast.Call) or aliases.qualified_name(node.func) != "pandas.DataFrame":
+    for node in nodes_of(tree, ast.Call):
+        if aliases.qualified_name(node.func) != "pandas.DataFrame":
             continue
         data = _data_argument(node)
         if data is None or _literal_rows(data) or _record_like(data, record_names) or any(kw.arg == "copy" for kw in node.keywords):
