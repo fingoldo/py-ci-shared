@@ -66,6 +66,22 @@ def test_an_empty_corpus_fails_the_floor(tmp_path):
         find_pandas_frame_copy_default(tmp_path, use_git=False)
 
 
+def test_record_lists_are_not_reported_but_arrays_are(tmp_path):
+    """``pd.DataFrame(rows)`` / ``list(...)`` / ``sorted(...)`` hold records; a name outside *record_names* is still data."""
+    src = (
+        b"import pandas as pd\n"
+        b"a = pd.DataFrame(rows)\n"
+        b"b = pd.DataFrame(records, columns=['x'])\n"
+        b"c = pd.DataFrame(list(items), columns=['x'])\n"
+        b"d = pd.DataFrame(sorted(items))\n"
+        b"e = pd.DataFrame(table)\n"
+    )
+    found = find_pandas_frame_copy_default(_corpus(tmp_path, {"m.py": src}), use_git=False)
+    assert [f.line for f in found] == [6]
+    custom = find_pandas_frame_copy_default(tmp_path, use_git=False, record_names=("table",))
+    assert [f.line for f in custom] == [2, 3]
+
+
 def test_advisory_warns_and_strict_mode_fails(tmp_path):
     root = _corpus(tmp_path, {"m.py": VIOLATION})
     with pytest.warns(PandasFrameCopyWarning, match="copy="):

@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import ast
 import warnings
+from collections.abc import Collection
 from pathlib import Path
 from typing import Optional, Union
 
 from ._core import Baseline, Finding, ImportAliases, scan_python
 
-__all__ = ["RULE", "SUPPRESSION", "PandasFrameCopyWarning", "assert_pandas_frame_copy_default", "find_pandas_frame_copy_default"]
+__all__ = ["DEFAULT_RECORD_NAMES", "RULE", "SUPPRESSION", "PandasFrameCopyWarning", "assert_pandas_frame_copy_default", "find_pandas_frame_copy_default"]
 
 RULE = "pandas-frame-copy-default"
 SUPPRESSION = "# copy-ok:"
@@ -43,6 +44,17 @@ def _literal_rows(node: ast.expr) -> bool:
     return isinstance(node, ast.Dict) and all(v is not None and isinstance(v, _LITERALS) for v in node.values)
 
 
+DEFAULT_RECORD_NAMES = ("rows", "records")
+_RECORD_BUILDERS = frozenset({"list", "tuple", "sorted", "reversed"})
+
+
+def _record_like(node: ast.expr, record_names: "Collection[str]") -> bool:
+    """The argument holds records (a list of row dicts or tuples), not an array: a name from *record_names*, or ``list(...)`` / ``tuple(...)`` / ``sorted(...)`` of something. Nothing is shared with them."""
+    if isinstance(node, ast.Name):
+        return node.id in record_names
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _RECORD_BUILDERS
+
+
 def _data_argument(call: ast.Call) -> "ast.expr | None":
     """The ``data`` argument of the call, ``None`` when it has none."""
     if call.args:
@@ -53,14 +65,14 @@ def _data_argument(call: ast.Call) -> "ast.expr | None":
     return None
 
 
-def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str]) -> list[Finding]:
+def _findings_in(tree: ast.Module, rel: str, aliases: ImportAliases, lines: list[str], record_names: "Collection[str]" = DEFAULT_RECORD_NAMES) -> list[Finding]:
     """The findings in one parsed file."""
     out: list[Finding] = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call) or aliases.qualified_name(node.func) != "pandas.DataFrame":
             continue
         data = _data_argument(node)
-        if data is None or _literal_rows(data) or any(kw.arg == "copy" for kw in node.keywords):
+        if data is None or _literal_rows(data) or _record_like(data, record_names) or any(kw.arg == "copy" for kw in node.keywords):
             continue
         if any(kw.arg is None for kw in node.keywords):  # **kwargs may carry copy=
             continue
@@ -83,8 +95,10 @@ def find_pandas_frame_copy_default(
     min_files: int = 1,
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
+    record_names: "Collection[str]" = DEFAULT_RECORD_NAMES,
 ) -> list[Finding]:
-    """Every finding under *root*, sorted by path and line.
+    """Every finding under *root*, sorted by path and line. A first argument that is a name in *record_names* (default ``rows``, ``records``) or ``list(...)`` / ``tuple(...)`` / ``sorted(...)`` is a list of
+    records, not an array, and is not reported.
 
     Raises ``EmptyScanError`` when fewer than *min_files* files parsed and ``UnparsedFilesError`` for a file that
     cannot be read or parsed (unless *allow_unparsed*): a gate that cannot read the code must not pass it.
@@ -93,7 +107,7 @@ def find_pandas_frame_copy_default(
     scan.assert_ok(allow_unparsed=allow_unparsed)
     out: list[Finding] = []
     for parsed in scan:
-        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines()))
+        out.extend(_findings_in(parsed.tree, parsed.rel, ImportAliases.from_tree(parsed.tree), parsed.source.splitlines(), record_names))
     return sorted(out, key=lambda f: (f.path, f.line))
 
 
@@ -106,9 +120,10 @@ def assert_pandas_frame_copy_default(
     min_files: int = 1,
     allow_unparsed: bool = False,
     use_git: Optional[bool] = None,
+    record_names: "Collection[str]" = DEFAULT_RECORD_NAMES,
 ) -> None:
     """Warn on each finding (``advisory=True``, the default); with ``advisory=False`` fail on any finding, or on any finding *baseline_path* does not accept."""
-    found = find_pandas_frame_copy_default(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git)
+    found = find_pandas_frame_copy_default(root, min_files=min_files, allow_unparsed=allow_unparsed, use_git=use_git, record_names=record_names)
     if advisory:
         for f in found:
             warnings.warn(f.render(), PandasFrameCopyWarning, stacklevel=2)
