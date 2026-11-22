@@ -2,13 +2,17 @@
 
 Milestones only; the commit log has the detail. Versions are the release tags (`vX.Y.Z`).
 
+## 1.23.15
+
+- Added `pandas_frame_copy_default`: lists `pandas.DataFrame(data, ...)` calls over existing arrays without `copy=` (pandas 3 copies them; at a multi-GB frame that doubles a step's peak memory). Advisory by default, `advisory=False` fails or ratchets with `baseline_path`; `# copy-ok: <reason>` suppresses.
+
+- Modules first listed in 1.23.14 that carry `since = "1.23.15"` because the `v1.23.14` tag was cut on a commit whose CI was red (its Release run could not pass `verify`), so 1.23.15 is the first release of them: `append_only_log_shrink`, `bump_pin`, `cuda_atomic_determinism`, `cuda_barrier_divergence`, `cuda_clang_tidy`, `cuda_const_restrict`, `cuda_device_idioms`, `cuda_fallback_logged`, `cuda_grid_caps`, `cuda_kernel_fp_types`, `cuda_ktc_residency`, `cuda_launch_bounds_literal`, `cuda_nvrtc_headers`, `cuda_offline_arch`, `cuda_optout_allocations`, `cuda_parity_test_shape`, `cuda_profile_records`, `cuda_tree_reduction_block`, `cuda_warp_intrinsics`, `cuda_wide_load_alignment`, `deprecated_docstring_without_warn`, `estimator_mixin_order`, `fit_at_test_module_import`, `global_write_via_reexport_alias`, `ktc_sweep_tolerances`, `numba_cuda_kernels`, `pytest_defaults_declared`, `required_call_kwargs`, `route_literal_after_catchall`, `sql_where_mixed_and_or`, `thread_lifecycle`, `tool_config_dead_entries`, `tracked_env_packages`, `unpruned_tree_walk`, `workflow_installs_pinned`. Their descriptions are in the 1.23.14 section below. Nothing to do.
+
 ## 1.23.14
 
 - Three new code_audit scanners, each a meta-test for a defect class that reached a mlframe commit (`code_audit/unread_declared_field.py`, `code_audit/salted_hash_seed.py`, `code_audit/optional_dep_test_import.py`): a public dataclass field that no code reads as `.name`, a builtin `hash()` feeding a random seed (salted per process, so a seeded result changes on every run), and a test module importing `lightning` at module level without an earlier `importorskip`. Each one is reported as P2 and can be suppressed on one line with a reasoned `# audit-exempt:` marker. Nothing to do; a consumer that runs the whole registry sees the new findings.
 
 - `audit_disposition_parity.find_unsupported_dispositions` takes `require_test_citation=True`: a `Disposition: FIXED` line must name a test file (`tests/...py` or `test_*.py`) and that file must exist. Off by default, so a consumer opts in once its FIXED lines cite their tests. Nothing to do until you opt in.
-
-- Added `pandas_frame_copy_default`: lists `pandas.DataFrame(data, ...)` calls over existing arrays without `copy=` (pandas 3 copies them; at a multi-GB frame that doubles a step's peak memory). Advisory by default, `advisory=False` fails or ratchets with `baseline_path`; `# copy-ok: <reason>` suppresses.
 
 - The on-disk memo of a full code-audit run (`code_audit/_scan_cache.py`, `~/.cache/pyutilz-code-audit`) is keyed on the CONTENT of the scanned tree and of the whole `py_ci_shared` package, not on modification times and not only on `code_audit/`. A fresh checkout, where every mtime is new, now hits an entry that an earlier run of the same files wrote, so a CI job can restore the directory (`actions/cache`) and skip a scan that took minutes on a large repo; a change to `_core` or any other gate module now invalidates it, which the old key missed. The first run after the upgrade scans once. Nothing to do.
 
