@@ -573,7 +573,7 @@ def _origin_and_clone(tmp_path):
 @pytest.mark.parametrize("annotated", [True, False])
 def test_the_release_run_may_verify_the_tag_its_own_commit_carries(tmp_path, annotated):
     """``prepare --check`` of the tagged commit (``allow_head``) passes for a lightweight tag and for an ANNOTATED one, whose ls-remote line holds the tag object, not the commit; a tag on another commit, or ``allow_head`` off, still refuses."""
-    clone, head, run = _origin_and_clone(tmp_path)
+    clone, _head, run = _origin_and_clone(tmp_path)
     if annotated:
         run("tag", "-a", "v9.9.9", "-m", "r", cwd=clone)
     else:
