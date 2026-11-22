@@ -165,8 +165,10 @@ def _test_citation_problems(where: str, verdict: str, text: str, roots: Sequence
     cited = {m.replace("\\", "/") for m in _TEST_PATH_RE.findall(text)}
     if not cited:
         return [
-            f"{where}: disposition says {verdict} and names no test file. A fix is only recorded once a regression "
-            f"test pins it: cite the test path (tests/...py) in the disposition."
+            (
+                f"{where}: disposition says {verdict} and names no test file. A fix is only recorded once a regression "
+                f"test pins it: cite the test path (tests/...py) in the disposition."
+            )
         ]
     if any(any((root / path).exists() or (root / path.split("/", 1)[-1]).exists() for root in roots) for path in cited):
         return []
