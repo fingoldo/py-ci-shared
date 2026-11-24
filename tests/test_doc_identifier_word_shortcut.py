@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from py_ci_shared.doc_identifier_parity import _in_corpus, _words
+from py_ci_shared.doc_identifier_parity import _membership, _words
 
 CORPUS = "def alpha_beta():\n    return --dry-run\n"
 
@@ -21,7 +21,7 @@ def test_whole_word_token_is_answered_from_the_word_set() -> None:
     CountingText.searches = 0
     corpus = CountingText(CORPUS)
     words = _words(corpus)
-    assert _in_corpus("alpha_beta", corpus, words, {}) is True
+    assert _membership(["alpha_beta"], corpus, words) == {"alpha_beta": True}
     assert CountingText.searches == 0
 
 
@@ -29,12 +29,11 @@ def test_absent_token_still_searches_the_corpus() -> None:
     CountingText.searches = 0
     corpus = CountingText(CORPUS)
     words = _words(corpus)
-    assert _in_corpus("gamma_delta", corpus, words, {}) is False
+    assert _membership(["gamma_delta"], corpus, words) == {"gamma_delta": False}
     assert CountingText.searches == 1
 
 
 def test_substring_that_is_not_a_word_still_matches() -> None:
     corpus = CORPUS
     words = _words(corpus)
-    assert _in_corpus("lpha_bet", corpus, words, {}) is True
-    assert _in_corpus("--dry", corpus, words, {}) is True
+    assert _membership(["lpha_bet", "--dry"], corpus, words) == {"lpha_bet": True, "--dry": True}

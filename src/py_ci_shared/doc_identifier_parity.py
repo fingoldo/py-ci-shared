@@ -222,38 +222,17 @@ def _membership(tokens: list[str], corpus: str, words: frozenset[str]) -> dict[s
     return memo
 
 
-def _in_corpus(token: str, corpus: str, words: frozenset[str], memo: dict[str, bool]) -> bool:
-    """``token in corpus``, each distinct token decided once per run. A whole word is answered from *words*; only the rest
-    pay for the multi-megabyte substring search (audit 2026-11-16 48-T4: 2.78 s -> 1.48 s on pyutilz, same answers)."""
-    if token not in memo:
-        memo[token] = token in words or token in corpus
-    return memo[token]
-
-
-def _absent(
-    repo_root: Path,
-    *,
-    doc_files: Iterable[Path] | None,
-    corpus_files: Iterable[Path] | None,
-    exclude_docs: Iterable[str],
-    ignore: Iterable[str],
+def _collect_entries(
+    docs: list[Path],
+    root: Path,
+    skipped: set[str],
+    ignored: set[str],
     external_commands: frozenset[str],
-    allow_unparsed: bool = False,
-) -> tuple[list[str], int]:
-    """``(problems, documents checked)``. An unreadable document is a problem unless *allow_unparsed*, which skips it."""
-    root = repo_root.resolve()
-    checked = 0
-    docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
-    if corpus_files is None:
-        corpus_files = default_corpus_files(root)
-    # A directory named like a source file (vendored trees can hold `*.py` directories) is not corpus text (audit 41-T3).
-    corpus = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in corpus_files if p.is_file())
-    skipped = set(exclude_docs)
-    ignored = set(ignore)
-    problems: list[str] = []
-    words = _words(corpus)
-    # Pass 1 keeps document order: unreadable documents are reported in place, every other token is queued for the corpus test.
+    allow_unparsed: bool,
+) -> tuple[list, int]:
+    """Pass 1: every checkable token in document order, unreadable documents reported in place, and the documents checked."""
     entries: list = []
+    checked = 0
     for doc in docs:
         rel = relative_posix(doc.resolve(), root)
         if rel in skipped or any(rel.startswith(s) for s in skipped if s.endswith("/")):
@@ -268,18 +247,42 @@ def _absent(
         lines = _without_html_comments(text).split("\n")
         foreign = _external_flags(lines, external_commands)
         for lineno, line in enumerate(lines, start=1):
-            for token in _FLAG.findall(line) + _IDENT.findall(line):
-                if token in ignored or token in foreign:
-                    continue
-                entries.append((rel, lineno, token))
-    # Pass 2 decides each distinct token once; large batches are searched across processes (see _membership).
-    present = _membership([entry[2] for entry in entries if isinstance(entry, tuple)], corpus, words)
+            entries.extend((rel, lineno, token) for token in _FLAG.findall(line) + _IDENT.findall(line) if token not in ignored and token not in foreign)
+    return entries, checked
+
+
+def _report(entries: list, present: dict[str, bool]) -> list[str]:
+    """Problems in document order: unreadable documents as they were found, then each token absent from the corpus."""
+    problems: list[str] = []
     for entry in entries:
         if isinstance(entry, str):
             problems.append(entry)
         elif not present[entry[2]]:
             problems.append(f"{entry[0]}:{entry[1]}: `{entry[2]}` occurs nowhere in the source, config or tests")
-    return problems, checked
+    return problems
+
+
+def _absent(
+    repo_root: Path,
+    *,
+    doc_files: Iterable[Path] | None,
+    corpus_files: Iterable[Path] | None,
+    exclude_docs: Iterable[str],
+    ignore: Iterable[str],
+    external_commands: frozenset[str],
+    allow_unparsed: bool = False,
+) -> tuple[list[str], int]:
+    """``(problems, documents checked)``. An unreadable document is a problem unless *allow_unparsed*, which skips it."""
+    root = repo_root.resolve()
+    docs = list(doc_files) if doc_files is not None else tracked_markdown_files(root)
+    if corpus_files is None:
+        corpus_files = default_corpus_files(root)
+    # A directory named like a source file (vendored trees can hold `*.py` directories) is not corpus text (audit 41-T3).
+    corpus = "\n".join(p.read_text(encoding="utf-8-sig", errors="replace") for p in corpus_files if p.is_file())
+    words = _words(corpus)
+    entries, checked = _collect_entries(docs, root, set(exclude_docs), set(ignore), external_commands, allow_unparsed)
+    present = _membership([entry[2] for entry in entries if isinstance(entry, tuple)], corpus, words)
+    return _report(entries, present), checked
 
 
 def assert_doc_identifiers_exist(
