@@ -4,6 +4,7 @@ Milestones only; the commit log has the detail. Versions are the release tags (`
 
 ## 1.23.16
 
+- `doc_identifier_parity` checks each distinct backticked token against the corpus once, in two passes; large batches run in a process pool over one shared-memory copy of the corpus. The autopsia identifier gate went from 588.5 s to 74.1 s with the same answers.
 - `release_guard.py prepare --check` no longer refuses the tag its own commit carries when that tag is ANNOTATED: `git ls-remote refs/tags/<tag>` lists an annotated tag's own object, not the commit it points to, so the release run verifying `v1.23.13`, `v1.23.14` and `v1.23.15` found `HEAD` missing from the tag's targets and stopped with "already exists on origin: another session prepared that version". The check now also reads the peeled `refs/tags/<tag>^{}` line (tests: `tests/test_release_version.py::test_the_release_run_may_verify_the_tag_its_own_commit_carries`, both tag kinds). Nothing to do.
 
 - Added `pandas_frame_copy_default`: lists `pandas.DataFrame(data, ...)` calls over existing arrays without `copy=` (pandas 3 copies them; at a multi-GB frame that doubles a step's peak memory). Advisory by default, `advisory=False` fails or ratchets with `baseline_path`; `# copy-ok: <reason>` suppresses.
