@@ -158,6 +158,66 @@ def _words(corpus: str) -> frozenset[str]:
     return frozenset(_CORPUS_WORD.findall(corpus))
 
 
+_PARALLEL_MIN_TOKENS = 64
+
+_WORKER_CORPUS: bytes | None = None
+
+
+def _init_corpus_worker(shm_name: str, size: int) -> None:
+    """Give a worker its own copy of the corpus bytes, read once from the shared-memory block the parent filled."""
+    global _WORKER_CORPUS
+    from multiprocessing import shared_memory
+
+    shm = shared_memory.SharedMemory(name=shm_name)
+    try:
+        _WORKER_CORPUS = bytes(shm.buf[:size])
+    finally:
+        shm.close()
+
+
+def _check_chunk(tokens: list[str]) -> list[tuple[str, bool]]:
+    """Substring membership of each token in the corpus, searched as the UTF-8 bytes the serial test sees."""
+    corpus = _WORKER_CORPUS
+    if corpus is None:
+        raise RuntimeError("corpus worker was not initialised")
+    return [(token, token.encode("utf-8") in corpus) for token in tokens]
+
+
+def _membership(tokens: list[str], corpus: str, words: frozenset[str]) -> dict[str, bool]:
+    """``token in corpus`` for every distinct token. Small batches are searched in-process; large ones run in a process
+    pool over one shared copy of the corpus, so the answers are the same and the wall time is divided by the cores."""
+    import os
+
+    memo: dict[str, bool] = {}
+    pending: list[str] = []
+    for token in dict.fromkeys(tokens):
+        if token in words:
+            memo[token] = True
+        else:
+            pending.append(token)
+    if len(pending) < _PARALLEL_MIN_TOKENS:
+        for token in pending:
+            memo[token] = token in corpus
+        return memo
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import shared_memory
+
+    data = corpus.encode("utf-8")
+    workers = max(1, min(os.cpu_count() or 1, len(pending)))
+    per_chunk = max(1, len(pending) // (workers * 4) + 1)
+    chunks = [pending[i : i + per_chunk] for i in range(0, len(pending), per_chunk)]
+    shm = shared_memory.SharedMemory(create=True, size=len(data))
+    try:
+        shm.buf[: len(data)] = data
+        with ProcessPoolExecutor(max_workers=workers, initializer=_init_corpus_worker, initargs=(shm.name, len(data))) as pool:
+            for result in pool.map(_check_chunk, chunks):
+                memo.update(result)
+    finally:
+        shm.close()
+        shm.unlink()
+    return memo
+
+
 def _in_corpus(token: str, corpus: str, words: frozenset[str], memo: dict[str, bool]) -> bool:
     """``token in corpus``, each distinct token decided once per run. A whole word is answered from *words*; only the rest
     pay for the multi-megabyte substring search (audit 2026-11-16 48-T4: 2.78 s -> 1.48 s on pyutilz, same answers)."""
@@ -188,7 +248,8 @@ def _absent(
     ignored = set(ignore)
     problems: list[str] = []
     words = _words(corpus)
-    in_corpus: dict[str, bool] = {}
+    # Pass 1 keeps document order: unreadable documents are reported in place, every other token is queued for the corpus test.
+    entries: list = []
     for doc in docs:
         rel = relative_posix(doc.resolve(), root)
         if rel in skipped or any(rel.startswith(s) for s in skipped if s.endswith("/")):
@@ -198,15 +259,22 @@ def _absent(
             text = read_source(doc)
         except SourceReadError as exc:
             if not allow_unparsed:
-                problems.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: unreadable, so its names were not checked: {exc.message}")
+                entries.append(f"{rel}:{(exc.line if exc.line is not None else 1)}: unreadable, so its names were not checked: {exc.message}")
             continue
         lines = _without_html_comments(text).split("\n")
         foreign = _external_flags(lines, external_commands)
         for lineno, line in enumerate(lines, start=1):
             for token in _FLAG.findall(line) + _IDENT.findall(line):
-                if token in ignored or token in foreign or _in_corpus(token, corpus, words, in_corpus):
+                if token in ignored or token in foreign:
                     continue
-                problems.append(f"{rel}:{lineno}: `{token}` occurs nowhere in the source, config or tests")
+                entries.append((rel, lineno, token))
+    # Pass 2 decides each distinct token once; large batches are searched across processes (see _membership).
+    present = _membership([entry[2] for entry in entries if isinstance(entry, tuple)], corpus, words)
+    for entry in entries:
+        if isinstance(entry, str):
+            problems.append(entry)
+        elif not present[entry[2]]:
+            problems.append(f"{entry[0]}:{entry[1]}: `{entry[2]}` occurs nowhere in the source, config or tests")
     return problems, checked
 
 
