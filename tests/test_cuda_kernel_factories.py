@@ -89,3 +89,15 @@ def test_the_assert_names_every_unregistered_factory(tmp_path):
     with pytest.raises(AssertionError, match=r"unregistered kernel factory"):
         assert_cuda_kernel_factories(root, use_git=False)
     assert_cuda_kernel_factories(root, registered={("pkg.lof", "kernel")}, use_git=False)
+
+
+def test_a_factory_built_by_a_helper_and_bound_to_the_name_is_a_factory(tmp_path):
+    """``kernel = code_width_kernel(_kernel)`` is the factory the registry compiles, built by a shared helper: reported when unregistered, silent when listed; other assignments are not factories."""
+    lines = ["from helpers import code_width_kernel", "", "", "def _kernel(cp, narrow):", "    return 1", "", "", "kernel = code_width_kernel(_kernel)", "kernel_rows = code_width_kernel(_kernel)", ""]
+    built = chr(10).join(lines).encode()
+    root = _corpus(tmp_path / "a", {"pkg/m.py": built})
+    found = _find(root)
+    assert [(f.line, f.message.split("(")[0]) for f in found] == [(8, "the kernel factory kernel"), (9, "the kernel factory kernel_rows")]
+    assert _find(root, registered={("pkg.m", "kernel"), ("pkg.m", "kernel_rows")}) == []
+    other = chr(10).join(["kernel = None", "kernel_cache = {}", "size = compute(1)", "kernel_a = kernel_b = make()", "kernel_c: int = make()", ""]).encode()
+    assert _find(_corpus(tmp_path / "b", {"pkg/m.py": other})) == []

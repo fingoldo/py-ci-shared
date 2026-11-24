@@ -4,10 +4,11 @@ A spill (``local_size_bytes > 0``) costs 30 to 800 cycles on every access to the
 asserts no spill. That test only sees the kernels in its registry, and a registry is a list somebody has to remember to extend: a new kernel is silently outside it.
 
 * ``cuda-kernel-factory-unregistered``: a module-level function named ``kernel`` or ``kernel_*`` whose first two parameters are ``cp`` and ``real`` (the shape ``kernel(cp, real)`` the registry compiles for each
-  float type) that no entry of the consumer's registry names. The consumer passes its registry as ``registered``, an iterable of ``(dotted module, function name)``; a registered module matches a file when the
+  float type), or a module-level assignment of a call to such a name (``kernel = code_width_kernel(_kernel)``: the factory built by a shared helper instead of a wrapper function repeated in every module), that no
+  entry of the consumer's registry names. The consumer passes its registry as ``registered``, an iterable of ``(dotted module, function name)``; a registered module matches a file when the
   file's dotted path (``pkg.sub.mod`` from the path below *root*) is the whole registered module or its tail (``registered`` may carry the package prefix *root* lacks).
 
-Not reported: a function with another name or other first parameters (``kernel(x, y)``, ``kernel_size(cp)``), a method, a nested function, and a factory the registry lists.
+Not reported: a function with another name or other first parameters (``kernel(x, y)``, ``kernel_size(cp)``), a method, a nested function, an assignment of a name other than ``kernel`` / ``kernel_*`` or of a non-call value (``kernel = None``), and a factory the registry lists.
 
 Usage in a consumer's meta test::
 
@@ -47,6 +48,16 @@ def _is_factory(node: ast.FunctionDef) -> bool:
     return params[:2] == ["cp", "real"]
 
 
+def _factory_name(node: ast.stmt) -> Optional[str]:
+    """The name a module-level statement defines as a ``kernel(cp, real)`` factory: a ``def`` of that shape, or ``kernel = <call>`` (a name ``kernel`` / ``kernel_*`` bound to the result of a call: the factory a helper built)."""
+    if isinstance(node, ast.FunctionDef):
+        return node.name if _is_factory(node) else None
+    if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+        name = node.targets[0].id
+        return name if name == "kernel" or name.startswith("kernel_") else None
+    return None
+
+
 def _is_registered(dotted: str, name: str, registered: "set[tuple[str, str]]") -> bool:
     for module, factory in registered:
         if factory == name and (module == dotted or module.endswith("." + dotted) or dotted.endswith("." + module)):
@@ -62,10 +73,11 @@ def _findings_in(tree: ast.Module, rel: str, registered: "set[tuple[str, str]]",
             rel,
             node.lineno,
             RULE,
-            f"the kernel factory {node.name}(cp, real, ...) is not in the register-pressure registry: its spills are never checked on a device; register it or rename it if it is not a kernel factory",
+            f"the kernel factory {name}(cp, real, ...) is not in the register-pressure registry: its spills are never checked on a device; register it or rename it if it is not a kernel factory",
         )
         for node in tree.body
-        if isinstance(node, ast.FunctionDef) and _is_factory(node) and not _is_registered(dotted, node.name, registered)
+        for name in [_factory_name(node)]
+        if name is not None and not _is_registered(dotted, name, registered)
     ]
 
 
