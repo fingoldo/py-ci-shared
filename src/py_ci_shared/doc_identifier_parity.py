@@ -170,6 +170,8 @@ def _init_corpus_worker(shm_name: str, size: int) -> None:
 
     shm = shared_memory.SharedMemory(name=shm_name)
     try:
+        if shm.buf is None:
+            raise RuntimeError("shared corpus block has no buffer")
         _WORKER_CORPUS = bytes(shm.buf[:size])
     finally:
         shm.close()
@@ -208,6 +210,8 @@ def _membership(tokens: list[str], corpus: str, words: frozenset[str]) -> dict[s
     chunks = [pending[i : i + per_chunk] for i in range(0, len(pending), per_chunk)]
     shm = shared_memory.SharedMemory(create=True, size=len(data))
     try:
+        if shm.buf is None:
+            raise RuntimeError("shared corpus block has no buffer")
         shm.buf[: len(data)] = data
         with ProcessPoolExecutor(max_workers=workers, initializer=_init_corpus_worker, initargs=(shm.name, len(data))) as pool:
             for result in pool.map(_check_chunk, chunks):
